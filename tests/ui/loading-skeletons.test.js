@@ -280,3 +280,108 @@ describe('Critical Darlings skeleton matches the album cards', () => {
     expect(skeleton).not.toMatch(/w-28 h-28|bg-white rounded-xl border/);
   });
 });
+
+describe('Home skeletons match the Home rows', () => {
+  const dir = path.join(__dirname, '..', '..', 'src', 'renderer', 'components');
+  const sections = fs.readFileSync(path.join(dir, 'home-sections.js'), 'utf8');
+  const skeletons = fs.readFileSync(path.join(dir, 'home-skeletons.js'), 'utf8');
+  const sk = require('../../src/renderer/components/home-skeletons');
+
+  test('the row sizes are the spec values', () => {
+    expect(sk.HOME_TILE_HEIGHT).toBe(72);
+    expect(sk.HOME_ROW_CARDS).toBe(6);
+    expect(sk.HOME_HALF_ROW_CARDS).toBe(3);
+    expect(sk.HOME_CONCERT_CARDS).toBe(4);
+  });
+
+  test('Home\'s album and playlist cards are the app\'s card, and so are their skeletons', () => {
+    const app = fs.readFileSync(path.join(dir, '..', 'app.js'), 'utf8');
+    // The Playlists page's card, which Home copies.
+    expect(app).toMatch(/className: 'group cursor-pointer release-card card-fade-up',\s*style: \{\s*padding: '10px',\s*borderRadius: '10px',\s*backgroundColor: 'var\(--card-bg\)',\s*boxShadow: 'var\(--card-shadow\)',/);
+    expect(app).toContain("className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-5'");
+    expect(sk.HOME_CARD_BOX).toEqual({ padding: '10px', borderRadius: '10px', backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)' });
+    expect(sk.HOME_CARD_ART_RADIUS).toBe(8);
+    // Both cards and the skeleton card use the box; the cards get the hover lift.
+    expect((sections.match(/className: 'release-card', style: Object\.assign\(\{\}, HOME_CARD_BOX/g) || []).length).toBe(2);
+    expect(skeletons).toContain('style: Object.assign({}, HOME_CARD_BOX');
+    expect(skeletons).toContain('borderRadius: `${HOME_CARD_ART_RADIUS}px`');
+  });
+
+  test('album card skeletons have one subtitle line (the artist), playlist card skeletons two', () => {
+    const React = require('react');
+    const { renderToStaticMarkup } = require('react-dom/server');
+    const bars = (props) => (renderToStaticMarkup(React.createElement(sk.CardRowSkeleton, Object.assign({ count: 1 }, props))).match(/h-3[ "]/g) || []).length;
+    expect(bars({})).toBe(2);
+    expect(bars({ lines: 1 })).toBe(1);
+    const page = fs.readFileSync(path.join(dir, 'home-page.js'), 'utf8');
+    expect(page).toContain("skeletonSection('albums', 'Albums you might love', React.createElement(CardRowSkeleton, { lines: 1 }))");
+    expect(page).toContain("skeletonSection('playlists', 'Your playlists, freshest first', React.createElement(CardRowSkeleton))");
+  });
+
+  test('card rows and their skeletons share one gap', () => {
+    expect(sk.HOME_ROW_GAP).toBe(16);
+    expect(sk.HOME_CARD_TEXT_GAP).toBe(10);
+    expect(sections).toContain('${HOME_ROW_GAP}px');
+    expect(skeletons).toContain('${HOME_ROW_GAP}px');
+    expect(sections).toContain('${HOME_CARD_TEXT_GAP}px');
+    expect(skeletons).toContain('${HOME_CARD_TEXT_GAP}px');
+    expect(sections).not.toMatch(/minmax\(0, 1fr\)\)`, '16px'\)/);
+  });
+
+  test('both files use the same HOME_* constants', () => {
+    for (const name of ['HOME_TILE_HEIGHT', 'HOME_ROW_CARDS', 'HOME_HALF_ROW_CARDS', 'HOME_CONCERT_CARDS']) {
+      expect(sections).toContain(name);
+      expect(skeletons).toContain(name);
+    }
+  });
+
+  test('both files use the same grid strings', () => {
+    const grids = (src) => new Set(src.match(/repeat\([^)]*, minmax\(0, 1fr\)\)/g));
+    const inSections = grids(sections);
+    expect(inSections.size).toBeGreaterThan(0);
+    // The concert cards are a fixed grid in both files; the card rows pass
+    // their count to CardRowSkeleton, which builds the same string.
+    for (const g of ['repeat(${HOME_CONCERT_CARDS}, minmax(0, 1fr))']) {
+      expect(inSections.has(g)).toBe(true);
+      expect(grids(skeletons).has(g)).toBe(true);
+    }
+    // Jump back in: one shared grid string (four across, two by two when
+    // narrow) and gap, used by the row and its skeleton.
+    expect(sections).toContain('gridTemplateColumns: HOME_JUMP_GRID, gap: `${HOME_JUMP_GAP}px`');
+    expect(skeletons).toContain('gridTemplateColumns: HOME_JUMP_GRID, gap: `${HOME_JUMP_GAP}px`');
+    expect(sections).not.toContain("'repeat(4, minmax(0, 1fr))'");
+    expect(sections).toContain('repeat(${HOME_ROW_CARDS}, minmax(0, 1fr))');
+    expect(sections).toContain('repeat(${HOME_HALF_ROW_CARDS}, minmax(0, 1fr))');
+    expect(skeletons).toContain('repeat(${cols}, minmax(0, 1fr))');
+  });
+
+  test('the jump tile skeleton uses the real tile\'s background token', () => {
+    expect(sections).toMatch(/reveal\.shown \? 'var\(--accent-surface\)' : 'var\(--bg-secondary\)'/);
+    const jump = skeletons.slice(skeletons.indexOf('function JumpBackInSkeleton'), skeletons.indexOf('function CardRowSkeleton'));
+    expect(jump).toContain("backgroundColor: 'var(--bg-secondary)'");
+    expect(jump).not.toContain('--card-bg');
+  });
+
+  test('Fresh Drops and Critical Darlings halves share one fixed basis, loading or loaded', () => {
+    expect(sk.HOME_HALF_FLEX).toBe(`0 0 calc(50% - ${sk.HOME_HALF_GAP / 2}px)`);
+    expect(sections).toContain('flex: HOME_HALF_FLEX');
+    // The loading half renders CardRowSkeleton inside the same section box.
+    expect(sections).toContain('e(CardRowSkeleton, { count: HOME_HALF_ROW_CARDS, lines: 1 })');
+  });
+
+  test('the tile and card box match the real ones', () => {
+    expect(sections).toContain('height: `${HOME_TILE_HEIGHT}px`');
+    expect(skeletons).toContain('height: `${HOME_TILE_HEIGHT}px`');
+    expect(sections).toMatch(/aspectRatio: '1'/);
+    expect(skeletons).toContain('aspect-square');
+  });
+
+  test('skeletons render', () => {
+    global.React = global.React || require('react');
+    const { renderToStaticMarkup } = require('react-dom/server');
+    expect(renderToStaticMarkup(React.createElement(sk.JumpBackInSkeleton))).toContain('shimmer');
+    expect((renderToStaticMarkup(React.createElement(sk.CardRowSkeleton, { count: 6 })).match(/aspect-square/g) || []).length).toBe(6);
+    expect((renderToStaticMarkup(React.createElement(sk.CardRowSkeleton, { count: 3, columns: 3 })).match(/aspect-square/g) || []).length).toBe(3);
+    expect(renderToStaticMarkup(React.createElement(sk.ConcertRowSkeleton))).toContain('shimmer');
+  });
+});

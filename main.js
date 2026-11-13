@@ -4511,7 +4511,7 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
 
   // Only add queue/playlist options for types that have playable tracks
   // Exclude friend-track since it has its own specific menu items
-  if (data.type !== 'artist' && data.type !== 'friend' && data.type !== 'friend-track' && data.type !== 'collection-album') {
+  if (data.type !== 'artist' && data.type !== 'friend' && data.type !== 'friend-track' && data.type !== 'collection-album' && data.type !== 'loves') {
     menuItems.push({
       label: menuLabel,
       enabled: enabled,
@@ -4537,6 +4537,28 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
           sourceName: data.type === 'track' ? data.track?.title : data.name,
           sourceType: data.type
         });
+      }
+    });
+  }
+
+  // Home's recent-loves tile: Add to Queue, and Open in Collection
+  // (Collection's songs, newest loved first).
+  if (data.type === 'loves') {
+    menuItems.push({
+      label: `Add to Queue (${data.tracks?.length || 0} tracks)`,
+      enabled: data.tracks?.length > 0,
+      click: () => {
+        safeSendToRenderer('track-context-menu-action', {
+          action: 'add-to-queue',
+          tracks: data.tracks,
+          sourceType: 'loves'
+        });
+      }
+    });
+    menuItems.push({
+      label: 'Open in Collection',
+      click: () => {
+        safeSendToRenderer('track-context-menu-action', { action: 'open-collection-loves' });
       }
     });
   }

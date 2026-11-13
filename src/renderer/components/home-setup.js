@@ -74,7 +74,8 @@ function HomeSetupButton({ setup, onAction, onDismiss, onOpenWhatsNew }) {
       role: 'dialog',
       'aria-label': 'Finish setting up',
       style: {
-        position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 30, minWidth: '280px',
+        // Anchored right: the pill sits at the right of Home's header.
+        position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 30, minWidth: '280px',
         padding: '8px', borderRadius: '10px',
         backgroundColor: 'var(--card-bg)', border: '1px solid var(--border-default)',
         boxShadow: 'var(--card-shadow)'

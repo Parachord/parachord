@@ -1,0 +1,217 @@
+/**
+ * The redesigned Home page (spec: docs/superpowers/specs/2026-11-12-home-redesign-design.md).
+ * Pins the section order, that the old sections are gone, the one
+ * background-load effect, and that the page renders under plain Node with the
+ * props app.js passes.
+ */
+const fs = require('fs');
+const path = require('path');
+
+global.React = require('react');
+global.ReactDOM = require('react-dom');
+const { renderToStaticMarkup } = require('react-dom/server');
+
+const ROOT = path.join(__dirname, '..', '..');
+const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+const page = read('src/renderer/components/home-page.js');
+const app = read('src/renderer/app.js');
+const main = read('main.js');
+const { HomePage, HOME_PAGE_HANDLERS } = require('../../src/renderer/components/home-page');
+
+describe('source', () => {
+  test.each(['Continue Listening', 'Recently Added', 'Friend Activity', 'Enhance Your Experience',
+    'Album Suggestions', 'Artist Suggestions', "'Discover'", 'Surprise Me', 'Sync Your Collection',
+    'linear-gradient(135deg, #667eea'])('the old "%s" is gone', (s) => {
+    expect(page).not.toContain(s);
+  });
+
+  test('sections render in the spec order, header first', () => {
+    const order = ['HomeBanner', 'HomeSetupButton', 'JumpBackIn', 'MixesRow', 'PlaylistsRow', 'AlbumsRow',
+      'FreshCriticalRow', 'ConcertsRow', 'AskShuffleupagus'];
+    const at = order.map((name) => page.indexOf(`React.createElement(${name},`));
+    at.forEach((i, n) => expect([order[n], i]).not.toEqual([order[n], -1]));
+    expect([...at].sort((a, b) => a - b)).toEqual(at);
+  });
+
+  test('one background-load effect, after paint, through requestIdleCallback', () => {
+    const i = page.indexOf('globalThis.requestIdleCallback');
+    expect(i).toBeGreaterThan(-1);
+    const effect = page.slice(page.lastIndexOf('React.useEffect(', i), page.indexOf('}, [cacheLoaded]);', i));
+    expect(effect).toMatch(/setTimeout\([^,]+, 0\)/);
+    expect(effect).toMatch(/!newReleasesLoaded && !newReleasesLoading\) loadNewReleases\(\)/);
+    expect(effect).toMatch(/!criticsPicksLoaded && !criticsPicksLoading\) loadCriticsPicks\(\)/);
+    expect(effect).toMatch(/!concertsLoaded && !concertsLoading && !concertsError\) loadConcerts\(\)/);
+    // Recommendations: every Home mount, unless a load is running or a full
+    // load finished in the last 10 minutes; the per-provider cache TTL
+    // inside decides what is fetched.
+    expect(effect).toContain('loadHomeRecommendations();');
+    const i2 = app.indexOf('const loadHomeRecommendations = () => {');
+    const fn = app.slice(i2, app.indexOf('\n  };', i2));
+    expect(fn).toMatch(/if \(!shouldLoadHomeRecommendations\(\{[\s\S]*loading: recommendations\.loading,[\s\S]*loadStarted: recommendationProviderIdsRef\.current !== null,[\s\S]*lastFullLoadAt: recommendationsFullLoadAtRef\.current,[\s\S]*\}\)\) return;\s*loadRecommendations\(\);/);
+  });
+
+  test('a full recommendations load stamps when it finishes, from cache or after fetching', () => {
+    const i = app.indexOf('const loadRecommendations = async');
+    const fn = app.slice(i, app.indexOf('\n  };', i));
+    // One stamp, behind the pure rule, called from both finish paths.
+    expect(fn.match(/recommendationsFullLoadAtRef\.current = Date\.now\(\);/g) || []).toHaveLength(1);
+    expect(fn).toMatch(/if \(!metaOnly && shouldStampHomeRecommendationsLoad\(\{ fetched, failed, sectionCount: loadSectionCount\(\) \}\)\) \{\s*recommendationsFullLoadAtRef\.current = Date\.now\(\);/);
+    expect(fn).toMatch(/if \(toFetch\.length === 0 && similarToFetch\.length === 0\) \{\s*stampFullLoad\(0, 0\);/);
+    expect(fn).toMatch(/saveRecommendationsCache\(\);\s*stampFullLoad\(toFetch\.length, failed\);/);
+  });
+
+  test('the import card leads to Library Sync in Settings', () => {
+    expect(page).toContain("onImport: () => { navigateTo('settings'); setSettingsTab('general'); },");
+    expect(page).not.toContain("navigateTo('search')");
+  });
+
+  test('the Ask box is not re-keyed on the example (that wiped typed text)', () => {
+    expect(page).not.toMatch(/key: examplePrompt/);
+  });
+
+  test('the rows are memoized', () => {
+    for (const name of ['tiles', 'albums', 'fresh', 'critical']) {
+      expect(page).toMatch(new RegExp(`const ${name} = React\\.useMemo\\(`));
+    }
+  });
+
+  test('app.js no longer runs its own Home discovery load', () => {
+    expect(app).not.toContain('Load discovery data (recommendations, charts, critics picks) for HOME view previews');
+    expect(app).not.toContain('const recommendationsPreview = useMemo(');
+  });
+
+  test('the new handlers are stable handlers', () => {
+    for (const name of ['openServicePlaylist', 'loadConcerts', 'loadHomeRecommendations', 'askShuffleupagus',
+      'dismissHomeBanner', 'openHomeBannerCta', 'dismissHomeSetupItem', 'showHomeContextMenu']) {
+      expect(HOME_PAGE_HANDLERS).toContain(name);
+    }
+  });
+
+  test('recent loves play with the loves context', () => {
+    expect(page).toContain("const LOVES_CONTEXT = { type: 'loves', name: 'Recent Loves' };");
+  });
+
+  test('a concert card only links tickets: Home no longer opens the Concerts flyout', () => {
+    expect(page).not.toContain('setConcertsTicketFlyout');
+    expect(page).not.toContain('onOpenTickets');
+  });
+
+  test('every cover that fails reports through reportBrokenAlbumArt', () => {
+    expect(page).toContain('globalThis.reportBrokenAlbumArt');
+    expect(page).toContain('createCoalescedUpdater');
+  });
+
+  test('openServicePlaylist is one function both pages call', () => {
+    expect(app).toMatch(/const openServicePlaylist = \(item, sourceName\) => \{/);
+    expect(app).toMatch(/const openRecommendationPlaylist = \(item, section\) => openServicePlaylist\(item, itemSourceName\(item, section\)\);/);
+  });
+
+  test('the loves context menu offers Add to Queue and Open in Collection', () => {
+    const i = main.indexOf("if (data.type === 'loves') {");
+    expect(i).toBeGreaterThan(-1);
+    const block = main.slice(i, i + 1200);
+    expect(block).toContain("label: `Add to Queue (${data.tracks?.length || 0} tracks)`");
+    expect(block).toContain("label: 'Open in Collection'");
+    expect(app).toContain("data.action === 'open-collection-loves'");
+  });
+});
+
+describe('render', () => {
+  const noop = () => {};
+  const handlers = Object.fromEntries(HOME_PAGE_HANDLERS.map((k) => [k, noop]));
+  const now = Date.now();
+  const base = {
+    ...handlers,
+    allPlaylistCovers: {}, allResolvers: [], appVersion: '1.0.0', bannerItems: [], cacheLoaded: true,
+    chatAvailable: true,
+    collectionData: { tracks: [], albums: [], artists: [] }, collectionLoading: false,
+    concerts: [], concertsLoaded: true, concertsLoading: false, concertsLocation: '',
+    criticsPicks: [], criticsPicksLoaded: true, criticsPicksLoading: false,
+    extensionConnected: null, homeActive: {}, homeData: {}, homeSetupDismissed: [],
+    library: [], metaServiceConfigs: {}, mixes: [], newReleases: [], newReleasesLoaded: true, newReleasesLoading: false,
+    playlists: [], playlistsLoading: false, recommendationAlbums: [], recommendations: { sections: [], loading: false },
+    setAddToPlaylistPanel: noop, setConcertsTicketFlyout: noop, setExtensionInfoOpen: noop, setHomeData: noop,
+    setRaycastInfoOpen: noop, setSettingsTab: noop, showToast: noop, spotifyConnected: false, whatsNewUnread: false,
+  };
+  const render = (props) => renderToStaticMarkup(React.createElement(HomePage, { ...base, ...props }));
+
+  test('Home opens with the collapsed page hero, in its sidebar colour, above the scroller', () => {
+    // Other pages' collapsed heroes (80px, the uppercase light title and shadow)
+    // and Home's sidebar colour (the accent, #7c3aed: Tailwind violet-600).
+    expect(app).toMatch(/className: 'text-2xl font-light text-white',\s*style: \{\s*textShadow: '0 2px 10px rgba\(0,0,0,0\.5\)',\s*letterSpacing: '0\.2em',/);
+    expect(app).toContain("color: activeView === 'home' ? 'var(--accent-primary)' : 'var(--nav-inactive)',");
+    expect(fs.readFileSync(path.join(__dirname, '../../index.html'), 'utf8')).toMatch(/--accent-primary: #7c3aed;/);
+    const html = render({});
+    const hero = html.slice(html.indexOf('data-home-hero-banner'), html.indexOf('scrollable-content'));
+    expect(html.indexOf('data-home-hero-banner')).toBeGreaterThan(-1);
+    expect(html.indexOf('data-home-hero-banner')).toBeLessThan(html.indexOf('scrollable-content'));
+    expect(hero).toMatch(/^data-home-hero-banner=""[^>]*style="height:80px;flex-shrink:0;overflow:hidden"/);
+    expect(hero).toContain('class="absolute inset-0 bg-gradient-to-br from-purple-500 via-violet-600 to-indigo-600"');
+    expect(hero).toMatch(/<h1 class="text-2xl font-light text-white" style="text-shadow:0 2px 10px rgba\(0,0,0,0\.5\);letter-spacing:0\.2em;text-transform:uppercase">Home<\/h1>/);
+    // The hero replaces the macOS title-bar band, and the greeting is no longer a second h1.
+    expect(html).not.toContain('data-home-titlebar');
+    expect(html.match(/<h1/g)).toHaveLength(1);
+  });
+
+  test('Your playlists cards add their tracks to a playlist the way the Playlists page does', () => {
+    const page = read('src/renderer/components/home-page.js');
+    const actions = page.slice(page.indexOf('const playlistActions = {'), page.indexOf('const mixActions = {'));
+    expect(actions).toContain("onAddToPlaylist: (p) => { const tracks = playlistTracks(p); if (tracks.length > 0) setAddToPlaylistPanel({ open: true, tracks, sourceName: p.title, sourceType: 'playlist' }); },");
+  });
+
+  test('Made from your listening shows Recent Loves even with no service mixes', () => {
+    const tracks = [
+      { id: 't1', title: 'One', artist: 'A', album: 'X', addedAt: 3 },
+      { id: 't2', title: 'Two', artist: 'B', album: 'Y', addedAt: 2 },
+    ];
+    const html = render({ collectionData: { tracks, albums: [], artists: [] }, mixes: [] });
+    const row = html.slice(html.indexOf('id="home-mixes"'));
+    expect(html).toContain('id="home-mixes"');
+    expect(row.indexOf('aria-label="Open Recent Loves"')).toBeGreaterThan(-1);
+    expect(row).toContain('Your 2 latest loves');
+    expect(row).toContain('aria-label="Add Recent Loves to a playlist"');
+    expect(render({ mixes: [] })).not.toContain('id="home-mixes"');
+  });
+
+  test('a new user sees the import card and the Ask box', () => {
+    const html = render({});
+    expect(html).toContain('Build your collection');
+    expect(html).toContain('Ask Shuffleupagus');
+    expect(html).not.toContain('Your playlists, freshest first');
+  });
+
+  test('with data, every section shows', () => {
+    const html = render({
+      collectionData: {
+        tracks: [{ id: 't1', title: 'Song', artist: 'Hovvdy', album: 'Frog', addedAt: now }],
+        albums: [], artists: [],
+      },
+      playlists: [{ id: 'p1', title: 'Daily Brew', tracks: [{ title: 'a', artist: 'b' }], lastModified: now }],
+      recommendationAlbums: [{ id: 'a1', title: 'Heavy', artist: 'Nap Eyes', resolverId: 'lastfm', sourceLabel: 'Last.fm' }],
+      newReleases: [{ id: 'n1', title: 'New One', artist: 'Frog', date: '2026-11-13' }],
+      criticsPicks: [{ id: 'c1', title: 'Acclaimed', artist: 'Someone' }],
+      concerts: [{ id: 'e1', artist: 'Hovvdy', date: '2099-01-02', venue: { name: 'Hall', city: 'Town' } }],
+      concertsLocation: 'Town',
+    });
+    for (const s of ['Jump back in', 'Daily Brew', 'Recent Loves', 'Your playlists, freshest first',
+      'Albums you might love', 'Fresh Drops', 'Critical Darlings', 'Concerts near you', 'Ask Shuffleupagus',
+      'Play Collection Radio']) {
+      expect(html).toContain(s);
+    }
+    // The Ask box's example is built from the collection's artists.
+    expect(html).toMatch(/id="home-ask-prompt"[^>]*value="[^"]*Hovvdy/);
+  });
+
+  test('loading data shows the skeletons, not an empty page', () => {
+    const html = render({
+      collectionLoading: true, playlistsLoading: true, recommendations: { sections: [], loading: true },
+      newReleasesLoaded: false, criticsPicksLoaded: false, concertsLoaded: false, concertsLocation: 'Town',
+    });
+    expect((html.match(/animate-shimmer/g) || []).length).toBeGreaterThan(10);
+    expect(html).not.toContain('Build your collection');
+  });
+
+  test('with no chat plugin, Ask offers set-up', () => {
+    expect(render({ chatAvailable: false })).toContain('Set up Shuffleupagus');
+  });
+});

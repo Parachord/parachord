@@ -5,7 +5,7 @@
  */
 const fs = require('fs');
 const path = require('path');
-const { buildChatPromptUrl, shouldSendPendingChatPrompt } = require('../../protocol-url');
+const { buildChatPromptUrl, shouldSendPendingChatPrompt, shouldDropPendingChatPrompt } = require('../../protocol-url');
 
 const appSrc = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
 
@@ -47,6 +47,33 @@ describe('shouldSendPendingChatPrompt', () => {
     ['a reply is in flight', { loading: true }],
   ])('waits when %s', (_n, over) => {
     expect(shouldSendPendingChatPrompt({ ...ready, ...over })).toBe(false);
+  });
+});
+
+describe('shouldDropPendingChatPrompt', () => {
+  test('drops only on an open-to-closed change', () => {
+    expect(shouldDropPendingChatPrompt({ wasOpen: true, chatOpen: false })).toBe(true);
+  });
+  test.each([
+    ['the panel is opening (Ask queued it in the same tick)', { wasOpen: false, chatOpen: true }],
+    ['the panel stays open', { wasOpen: true, chatOpen: true }],
+    ['the panel stays closed (mount)', { wasOpen: false, chatOpen: false }],
+  ])('keeps it when %s', (_n, state) => {
+    expect(shouldDropPendingChatPrompt(state)).toBe(false);
+  });
+});
+
+describe('closing the panel drops a queued prompt (source pins)', () => {
+  const i = appSrc.indexOf('const aiChatWasOpenRef = useRef(aiChatOpen);');
+  const effect = appSrc.slice(i, appSrc.indexOf('}, [aiChatOpen]);', i));
+  test('the effect keys on aiChatOpen and compares with the previous value', () => {
+    expect(i).toBeGreaterThan(-1);
+    expect(effect).toContain('window.shouldDropPendingChatPrompt({ wasOpen: aiChatWasOpenRef.current, chatOpen: aiChatOpen })');
+    expect(effect).toContain('pendingChatPromptRef.current = null;');
+    expect(effect).toContain('aiChatWasOpenRef.current = aiChatOpen;');
+  });
+  test('it comes after the send effect, so an open render can still send first', () => {
+    expect(appSrc.indexOf('window.shouldSendPendingChatPrompt({')).toBeLessThan(i);
   });
 });
 

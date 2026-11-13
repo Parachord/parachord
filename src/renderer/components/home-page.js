@@ -1,71 +1,97 @@
-// src/renderer/components/home-page.js — the Home page, moved out of the
-// Parachord component (maintainability plan Track 2b, second state-domain
-// slice; the first is collection-page.js). Home is the landing page, so it is
-// on screen through the busiest stretch of state churn (startup cache
-// restore, library load, resolution, art backfills, discovery fetches) and
-// while music plays; it used to re-render on every one of those setStates.
+// src/renderer/components/home-page.js: the Home page (spec:
+// docs/superpowers/specs/2026-11-12-home-redesign-design.md). Top to bottom:
+// the announcement banner, the header (greeting, what changed, the setup
+// checklist, Play Collection Radio), Jump back in, Made from your listening,
+// Your playlists, Albums you might love, Fresh Drops + Critical Darlings,
+// Concerts near you, Ask Shuffleupagus. The rows and cards are props-driven
+// components in home-sections.js; this module prepares their data and
+// wires their actions.
 //
 // React.memo, fed only stable props: state values, useState setters, refs,
-// useCallback results, and Parachord's plain functions as stable wrappers
+// useMemo results, and Parachord's plain functions as stable wrappers
 // (useStableHandlers in app.js; the list is HOME_PAGE_HANDLERS).
-// `_metaServices` is not read here: getChatServices() reads it during this
-// render through its stable wrapper, so it is passed only to invalidate the
-// memo when chat plugins change. tests/renderer/page-memo.test.js checks the
-// call site.
+// tests/renderer/page-memo.test.js checks the call site.
 //
-// The body is the original render expression, unchanged: it reads its inputs
-// from props under their old names.
+// Nothing here runs on the first-paint path: the network loads wait for
+// requestIdleCallback, and covers resolve after paint through getAlbumArt
+// (background lane) into one coalesced map.
 
-const Icons = require('./icons');
-const { FixedTooltip } = require('./ui-atoms');
 const { HomeBanner } = require('./home-banner');
 const { HomeSetupButton } = require('./home-setup');
+// (Single-line destructures above the props one: page-memo.test.js reads
+// the first multi-line `const {` block as the props list.)
+const { JumpBackIn, MixesRow, PlaylistsRow, AlbumsRow, FreshCriticalRow, ConcertsRow, AskShuffleupagus } = require('./home-sections');
+const { JumpBackInSkeleton, CardRowSkeleton, ConcertRowSkeleton, HOME_HALF_ROW_CARDS, HOME_ROW_CARDS } = require('./home-skeletons');
 const { homeSetupItems, missingPopularResolverCount } = require('../lib/home-setup');
-const { generateArtistPattern, PlayTop10Icon, QueueTop10Icon } = require('./cards');
-
-const { Play, Pause } = Icons;
+const { freshestPlaylists, recentLoves, changeBadge, freshChangeLine, jumpBackInTiles } = require('../lib/home-model');
+const { playlistSubtitle, homeSections, exampleShufflePrompt, homeTopArtists, albumsNeedingArt, lovesMosaicAlbums } = require('../lib/home-model');
+const { trackSlug } = require('../lib/track-slug');
 
 // Plain functions from Parachord, passed as stable wrappers.
 const HOME_PAGE_HANDLERS = [
-  'activateListenAlong',
   'addToQueue',
   'askShuffleupagus',
   'copyParachordLink',
-  'deactivateListenAlong',
-  'fetchAlbumTracksFromMusicBrainz',
-  'fetchArtistData',
+  'dismissHomeBanner',
+  'dismissHomeSetupItem',
+  'fetchAlbumTracksByName',
   'getAlbumArt',
-  'getArtistImage',
-  'getArtistTopTracks',
-  'getChatServices',
   'handleCollectionAlbumClick',
-  'handlePlay',
-  'handlePlayPause',
   'handleStartCollectionStation',
-  'isOnAir',
-  'isServiceEnabled',
-  'loadAiRecommendations',
-  'loadCharts',
+  'loadConcerts',
   'loadCriticsPicks',
+  'loadHomeRecommendations',
   'loadNewReleases',
   'loadPlaylist',
   'navigateTo',
-  'navigateToFriend',
-  'dismissHomeBanner',
-  'dismissHomeSetupItem',
-  'openAiChat',
   'openCriticsPicksAlbum',
   'openHomeBannerCta',
-  'openWhatsNew',
+  'openServicePlaylist',
   'openSyncSetupModal',
   'openTopAlbum',
+  'openWhatsNew',
   'playTrackCollection',
-  'setQueueWithContext',
+  'prefetchTopAlbumTracks',
+  'showHomeContextMenu',
 ];
+
+// Playing recent loves from Home: the context isActiveContext matches.
+const LOVES_CONTEXT = { type: 'loves', name: 'Recent Loves' };
+
+const PLAY_FILL = '#7c3aed'; // fill-accent
+const ON_FILL = '#fff'; // on-color
+
+const H2_STYLE = { margin: 0, fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)' };
+
+const artKey = (artist, album) => `${artist || ''}\u0000${album || ''}`.toLowerCase();
+
+const greetingFor = (hour) => {
+  if (hour >= 5 && hour < 12) return 'Good morning';
+  if (hour >= 12 && hour < 18) return 'Good afternoon';
+  return 'Good evening';
+};
+
+// A playlist's tracks with the ids every no-album context keys on.
+const playlistTracks = (p) => (p.tracks || []).map((t) => ({
+  ...t,
+  id: trackSlug(t.artist || 'unknown', t.title || 'untitled'),
+  sources: {},
+}));
+
+// A loading row: its heading, then the skeleton in the row's grid.
+const skeletonSection = (key, title, body) => React.createElement('section', {
+  key, 'aria-busy': 'true', style: { display: 'flex', flexDirection: 'column', gap: '14px', minWidth: 0 },
+}, React.createElement('h2', { style: H2_STYLE }, title), body);
+
+// The collapsed page hero's height (the other pages' collapsed heroes), Home's
+// gradient (centred on violet-600, the sidebar's accent #7c3aed) and the
+// circle pattern Home's hero always had.
+const HOME_HERO_HEIGHT = 80;
+const HOME_HERO_GRADIENT = 'bg-gradient-to-br from-purple-500 via-violet-600 to-indigo-600';
+const HOME_HERO_PATTERN = 'url("data:image/svg+xml,%3Csvg width=\'100\' height=\'100\' viewBox=\'0 0 100 100\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'%23ffffff\'%3E%3Ccircle cx=\'50\' cy=\'50\' r=\'40\' fill=\'none\' stroke=\'%23fff\' stroke-width=\'2\'/%3E%3Ccircle cx=\'50\' cy=\'50\' r=\'25\' fill=\'none\' stroke=\'%23fff\' stroke-width=\'1.5\'/%3E%3Ccircle cx=\'50\' cy=\'50\' r=\'10\' fill=\'none\' stroke=\'%23fff\' stroke-width=\'1\'/%3E%3C/g%3E%3C/svg%3E")';
 
 const HomePage = React.memo(function HomePage(props) {
   const {
-    activateListenAlong,
     addToQueue,
     allPlaylistCovers,
     allResolvers,
@@ -73,74 +99,68 @@ const HomePage = React.memo(function HomePage(props) {
     askShuffleupagus,
     bannerItems,
     cacheLoaded,
-    charts,
+    chatAvailable,
     collectionData,
     collectionLoading,
+    concerts,
+    concertsError,
+    concertsLoaded,
+    concertsLoading,
+    concertsLocation,
     copyParachordLink,
     criticsPicks,
-    currentQueue,
-    currentTrack,
-    deactivateListenAlong,
+    criticsPicksError,
+    criticsPicksLoaded,
+    criticsPicksLoading,
     dismissHomeBanner,
     dismissHomeSetupItem,
-    discoveryUnread,
     extensionConnected,
-    fetchAlbumTracksFromMusicBrainz,
-    fetchArtistData,
-    friends,
+    fetchAlbumTracksByName,
     getAlbumArt,
-    getArtistImage,
-    getArtistTopTracks,
-    getChatServices,
     handleCollectionAlbumClick,
-    handlePlay,
-    handlePlayPause,
     handleStartCollectionStation,
+    homeActive,
     homeData,
-    homeFriendsSortRef,
-    homeHeaderCollapsed,
     homeSetupDismissed,
-    isOnAir,
-    isPlaying,
-    isServiceEnabled,
     library,
-    listenAlongFriend,
-    loadAiRecommendations,
-    loadCharts,
+    loadConcerts,
     loadCriticsPicks,
+    loadHomeRecommendations,
     loadNewReleases,
     loadPlaylist,
     metaServiceConfigs,
+    mixes,
     navigateTo,
-    navigateToFriend,
     newReleases,
-    openAiChat,
+    newReleasesError,
+    newReleasesLoaded,
+    newReleasesLoading,
     openCriticsPicksAlbum,
     openHomeBannerCta,
-    openWhatsNew,
+    openServicePlaylist,
     openSyncSetupModal,
     openTopAlbum,
+    openWhatsNew,
     playTrackCollection,
     playlists,
+    playlistsLoading,
+    prefetchTopAlbumTracks,
+    recommendationAlbums,
     recommendations,
-    resolverSyncSettings,
-    setAddFriendModalOpen,
     setAddToPlaylistPanel,
+    setCollectionSort,
     setCollectionTab,
-    setCurrentQueue,
     setExtensionInfoOpen,
-    setHomeData,
-    setHomeHeaderCollapsed,
-    setQueueWithContext,
     setRaycastInfoOpen,
     setSettingsTab,
-    setTrackLoading,
-    showDiscoveryBadges,
+    showHomeContextMenu,
     showToast,
+    sourceColors,
     spotifyConnected,
-    trackSourcesCache,
     whatsNewUnread,
   } = props;
+
+  // ---------------------------------------------------------------- setup
 
   // The setup checklist: same checks the old cards used.
   const homeSetup = React.useMemo(() => homeSetupItems({
@@ -164,1526 +184,412 @@ const HomePage = React.memo(function HomePage(props) {
     else if (id === 'raycast') setRaycastInfoOpen(true);
   };
 
-  return React.createElement('div', {
-          className: 'flex-1 flex flex-col h-full',
-          style: { overflow: 'hidden', minHeight: 0 }
+  // ------------------------------------------------------- background loads
+
+  // One effect, after first paint. Recommendations load on every visit
+  // unless a load is running (loadHomeRecommendations in app.js): each
+  // provider that answered within the hour is served from its cache and only
+  // the stale ones are asked, as the Recommendations page does on each visit. The other loaders run only
+  // while their data isn't loaded (or failed), so a return visit refetches
+  // nothing. Concerts load only with a location set, since the row hides
+  // without one.
+  React.useEffect(() => {
+    if (!cacheLoaded) return undefined;
+    const run = () => {
+      loadHomeRecommendations();
+      if (!newReleasesLoaded && !newReleasesLoading) loadNewReleases();
+      if (!criticsPicksLoaded && !criticsPicksLoading) loadCriticsPicks();
+      if (concertsLocation && !concertsLoaded && !concertsLoading && !concertsError) loadConcerts();
+    };
+    const idle = globalThis.requestIdleCallback;
+    if (typeof idle === 'function') {
+      const id = idle(run);
+      return () => { if (globalThis.cancelIdleCallback) globalThis.cancelIdleCallback(id); };
+    }
+    const timer = setTimeout(run, 0);
+    return () => clearTimeout(timer);
+    // Keyed on mount and the cache restore: the guards above read this
+    // render's values, and the loaders guard against re-entry themselves.
+  }, [cacheLoaded]);
+
+  // ------------------------------------------------------------------- art
+
+  // Covers Home asks getAlbumArt for, in one coalesced map (one render per
+  // batch, never one per cover). Only answers to requests land here.
+  const [art, setArt] = React.useState({});
+  const artWriter = React.useRef(null);
+  if (!artWriter.current) {
+    const apply = (batch) => setArt((prev) => {
+      const next = { ...prev };
+      for (const [key, ops] of batch) next[key] = ops[ops.length - 1].value;
+      return next;
+    });
+    const make = globalThis.createCoalescedUpdater;
+    artWriter.current = typeof make === 'function'
+      ? make(apply, 100)
+      : { queue: (key, value) => apply(new Map([[key, [{ value }]]])) };
+  }
+  const artRequested = React.useRef(new Set());
+  const brokenArt = React.useRef(new Set());
+  const usable = (url) => (url && !brokenArt.current.has(url) ? url : null);
+  const coverFor = (artist, album, own) => usable(own) || usable(art[artKey(artist, album)]) || null;
+  const requestArt = (artist, album) => {
+    if (!artist || !album) return;
+    const key = artKey(artist, album);
+    if (artRequested.current.has(key)) return;
+    artRequested.current.add(key);
+    Promise.resolve(getAlbumArt(artist, album))
+      .then((url) => artWriter.current.queue(key, url || null))
+      .catch(() => artWriter.current.queue(key, null));
+  };
+  // A cover that failed: drop it, and report it so the art pipeline retries
+  // (the album-art rule). A fresh cover lands in the same map.
+  const reportBroken = (url, artist, album) => {
+    if (!url) return;
+    brokenArt.current.add(url);
+    const key = artKey(artist, album);
+    artWriter.current.queue(key, art[key] && art[key] !== url ? art[key] : null);
+    const report = globalThis.reportBrokenAlbumArt;
+    if (report && artist && album) {
+      report(url, { artist, album }).then((fresh) => {
+        if (fresh) artWriter.current.queue(key, fresh);
+      }).catch(() => {});
+    }
+  };
+
+  // ------------------------------------------------------------ local data
+
+  const loves = React.useMemo(() => recentLoves(collectionData.tracks, 50), [collectionData.tracks]);
+
+  const tilesRaw = React.useMemo(
+    () => jumpBackInTiles({ playlists, loves, mixes, active: homeActive }),
+    [playlists, loves, mixes, homeActive],
+  );
+  const lovesCover = React.useMemo(() => (loves.length > 0
+    ? { imageUrl: coverFor(loves[0].artist, loves[0].album, loves[0].albumArt), artist: loves[0].artist, title: loves[0].album }
+    : null), [loves, art]);
+  const tiles = React.useMemo(() => tilesRaw.map((tile) => {
+    if (tile.kind === 'playlist') return { ...tile, mosaic: allPlaylistCovers[tile.item.id] || null };
+    if (tile.kind === 'loves') return { ...tile, imageUrl: lovesCover && lovesCover.imageUrl };
+    if (tile.kind === 'album') {
+      const { album, artist } = tile.item;
+      const own = (loves.find((t) => t.album === album && t.artist === artist && t.albumArt) || {}).albumArt;
+      const imageUrl = coverFor(artist, album, own);
+      return { ...tile, imageUrl, item: { ...tile.item, imageUrl, title: album } };
+    }
+    return tile;
+  }), [tilesRaw, allPlaylistCovers, lovesCover, loves, art]);
+
+  // Recent Loves as Made from your listening's lead card: a mosaic of the
+  // newest loved albums (a single cover until four have art).
+  const lovesAlbums = React.useMemo(() => lovesMosaicAlbums(loves), [loves]);
+  const lovesCard = React.useMemo(() => {
+    if (loves.length === 0) return null;
+    const covers = lovesAlbums.map((a) => coverFor(a.artist, a.album, a.albumArt)).filter(Boolean);
+    return {
+      id: 'recent-loves', title: 'Recent Loves',
+      subtitle: loves.length === 1 ? 'Your latest love' : `Your ${loves.length} latest loves`,
+      mosaic: covers.length >= 4 ? covers : null,
+      imageUrl: covers.length >= 4 ? null : (covers[0] || null),
+    };
+  }, [loves, lovesAlbums, art]);
+
+  const homePlaylists = React.useMemo(() => {
+    const now = Date.now();
+    return freshestPlaylists(playlists, 6).map((p) => ({
+      ...p,
+      badge: changeBadge(p, now),
+      subtitle: playlistSubtitle(p, now),
+      mosaic: allPlaylistCovers[p.id] || null,
+    }));
+  }, [playlists, allPlaylistCovers]);
+
+  const changeLine = React.useMemo(
+    () => freshChangeLine(freshestPlaylists(playlists, 1)[0], Date.now()),
+    [playlists],
+  );
+
+  // ----------------------------------------------------------- album rows
+
+  // The cover map (`art`) is a dependency: coverFor reads it, and a broken
+  // URL is dropped by a write to it.
+  const albums = React.useMemo(
+    () => (recommendationAlbums || []).map((a) => ({ ...a, imageUrl: coverFor(a.artist, a.title, a.imageUrl) })),
+    [recommendationAlbums, art],
+  );
+  // A Fresh Drops card carries its releaseType, which AlbumCard badges the
+  // way the Fresh Drops page does.
+  const fresh = React.useMemo(() => (newReleases || []).slice(0, HOME_HALF_ROW_CARDS).map((r) => ({
+    ...r, imageUrl: coverFor(r.artist, r.title, r.albumArt), homeRow: 'fresh',
+  })), [newReleases, art]);
+  const critical = React.useMemo(() => (criticsPicks || []).slice(0, HOME_HALF_ROW_CARDS)
+    .map((c) => ({ ...c, imageUrl: coverFor(c.artist, c.title, c.albumArt), homeRow: 'critical' })), [criticsPicks, art]);
+
+  // Covers Home resolves itself: the album tile and recommended albums that
+  // came without one (the first six of the whole list and of each source's,
+  // so a source chip never shows uncovered cards). Fresh Drops and Critical
+  // Darlings resolve their own; a cover of theirs that fails is retried into
+  // this map (reportBroken).
+  React.useEffect(() => {
+    for (const tile of tilesRaw) {
+      if (tile.kind !== 'album') continue;
+      const { album, artist } = tile.item;
+      if (!loves.some((t) => t.album === album && t.artist === artist && t.albumArt)) requestArt(artist, album);
+    }
+    if (loves.length > 0 && !loves[0].albumArt) requestArt(loves[0].artist, loves[0].album);
+    for (const a of lovesAlbums) if (!a.albumArt) requestArt(a.artist, a.album);
+    for (const a of albumsNeedingArt(recommendationAlbums, HOME_ROW_CARDS)) {
+      if (!a.imageUrl) requestArt(a.artist, a.title);
+    }
+  }, [tilesRaw, loves, lovesAlbums, recommendationAlbums]);
+
+  const onArtError = (item) => {
+    const target = Array.isArray(item) ? lovesCover : item;
+    if (!target || !target.imageUrl) return;
+    reportBroken(target.imageUrl, target.artist, target.title || target.album);
+  };
+
+  // ---------------------------------------------------------------- actions
+
+  const albumTracks = async (album) => {
+    const own = (collectionData.tracks || [])
+      .filter((t) => t.artist === album.artist && t.album === album.title)
+      .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
+    if (own.length > 0) return own;
+    return (await fetchAlbumTracksByName(album.artist, album.title, album.imageUrl || null)) || [];
+  };
+  const withAlbumTracks = (album, use) => albumTracks(album).then((tracks) => {
+    if (tracks.length > 0) use(tracks);
+    else showToast(`Couldn't load the tracks on ${album.title}`, 'error');
+  }).catch(() => showToast(`Couldn't load the tracks on ${album.title}`, 'error'));
+  const albumContext = (album) => ({ type: 'album', name: album.title, artist: album.artist });
+  const albumActions = {
+    onPlay: (album) => withAlbumTracks(album, (tracks) => playTrackCollection(tracks, albumContext(album))),
+    onQueue: (album) => withAlbumTracks(album, (tracks) => {
+      addToQueue(tracks, albumContext(album));
+      showToast(`Added ${tracks.length} tracks from ${album.title}`, 'success');
+    }),
+    onAddToPlaylist: (album) => withAlbumTracks(album, (tracks) => setAddToPlaylistPanel({
+      open: true, tracks, sourceName: `${album.title} by ${album.artist}`, sourceType: 'album',
+    })),
+    onContextMenu: (ev, album) => showHomeContextMenu('album', album),
+    onHoverPrefetch: (album) => prefetchTopAlbumTracks(album.artist, album.title, album.imageUrl || null),
+    onArtError,
+  };
+  const openAlbum = (album) => handleCollectionAlbumClick({ title: album.title, artist: album.artist, albumArt: album.imageUrl || null });
+
+  const playPlaylist = (p) => {
+    const tracks = playlistTracks(p);
+    if (tracks.length === 0) { loadPlaylist(p); return; }
+    playTrackCollection(tracks, { type: 'playlist', id: p.id, name: p.title });
+  };
+  const queuePlaylist = (p) => {
+    const tracks = playlistTracks(p);
+    if (tracks.length === 0) return;
+    addToQueue(tracks, { type: 'playlist', id: p.id, name: p.title });
+    showToast(`Added ${tracks.length} tracks from ${p.title}`, 'success');
+  };
+  const playlistActions = {
+    onOpen: (p) => loadPlaylist(p),
+    onPlay: playPlaylist,
+    onQueue: queuePlaylist,
+    // As the Playlists page's card: the playlist's tracks into the panel.
+    onAddToPlaylist: (p) => { const tracks = playlistTracks(p); if (tracks.length > 0) setAddToPlaylistPanel({ open: true, tracks, sourceName: p.title, sourceType: 'playlist' }); },
+    onContextMenu: (ev, p) => showHomeContextMenu('playlist', p),
+    onArtError,
+  };
+  // A service mix opens the remote-playlist view the Recommendations cards
+  // open. Play and Add to Queue land with the mixes (Phase C).
+  const openMix = (m) => openServicePlaylist(m, m.serviceLabel);
+  const mixActions = {
+    onOpen: openMix, onPlay: openMix, onQueue: openMix,
+    onContextMenu: (ev, m) => showHomeContextMenu('playlist', m),
+    onArtError,
+  };
+
+  // Jump back in: the tile opens its page, its Play button plays it.
+  // Recent Loves opens Collection's songs, newest loved first.
+  const onOpenTile = (tile) => {
+    if (tile.kind === 'playlist') loadPlaylist(tile.item);
+    else if (tile.kind === 'mix') openMix(tile.item);
+    else if (tile.kind === 'album') openAlbum({ title: tile.item.album, artist: tile.item.artist, imageUrl: tile.imageUrl || tile.item.imageUrl || null });
+    else if (tile.kind === 'loves') {
+      navigateTo('library');
+      setCollectionTab('tracks');
+      setCollectionSort((prev) => ({ ...prev, tracks: 'recent' }));
+    }
+  };
+  const onPlayTile = (tile) => {
+    if (tile.kind === 'playlist') playPlaylist(tile.item);
+    else if (tile.kind === 'loves') playTrackCollection(loves, LOVES_CONTEXT);
+    else if (tile.kind === 'album') albumActions.onPlay(tile.item);
+    else if (tile.kind === 'mix') openMix(tile.item);
+  };
+  // The Recent Loves card does what the tile does, plus Queue and Add to
+  // Playlist like every playlist card.
+  const lovesActions = {
+    onOpen: () => onOpenTile({ kind: 'loves' }),
+    onPlay: () => playTrackCollection(loves, LOVES_CONTEXT),
+    onQueue: () => addToQueue(loves, LOVES_CONTEXT),
+    onAddToPlaylist: () => setAddToPlaylistPanel({ open: true, tracks: loves, sourceName: 'Recent Loves', sourceType: 'playlist' }),
+    onContextMenu: () => showHomeContextMenu('loves', loves),
+  };
+  const onTileMenu = (ev, tile) => {
+    if (tile.kind === 'loves') showHomeContextMenu('loves', loves);
+    else if (tile.kind === 'album') showHomeContextMenu('album', tile.item);
+    else showHomeContextMenu('playlist', tile.item);
+  };
+
+  const aiLoading = !!homeData.aiRecommendations?.loading;
+
+  // The Ask box's example: built from local collection names only (Home's
+  // Ask skips the chat confirmation), with a phrasing picked once per visit.
+  // The box adopts a new example only while its field is untouched; and once
+  // the example is built from artists it stays put for the visit, so a
+  // background collection update doesn't keep changing it.
+  const askSeed = React.useRef(Date.now());
+  const askPrompt = React.useRef(null);
+  const topArtists = React.useMemo(() => homeTopArtists(loves), [loves]);
+  const examplePrompt = React.useMemo(() => {
+    if (!askPrompt.current || askPrompt.current.generic) {
+      askPrompt.current = { text: exampleShufflePrompt(topArtists, askSeed.current), generic: topArtists.length === 0 };
+    }
+    return askPrompt.current.text;
+  }, [topArtists]);
+
+  // -------------------------------------------------------------- sections
+
+  const hasCollection = (collectionData.tracks || []).length > 0 || (library || []).length > 0;
+  const show = homeSections({
+    bannerItems, tiles, mixes, loves, playlists: homePlaylists, albums, fresh, critical, concerts, concertsLocation, hasCollection,
+  });
+  const jumpLoading = !show.jump && (collectionLoading || playlistsLoading);
+  const albumsLoading = !show.albums && (!!recommendations.loading || aiLoading);
+  const freshLoading = !show.fresh && !newReleasesError && (newReleasesLoading || !newReleasesLoaded);
+  const criticalLoading = !show.critical && !criticsPicksError && (criticsPicksLoading || !criticsPicksLoaded);
+  const concertsSkeleton = !show.concerts && !!concertsLocation && !concertsError && (concertsLoading || !concertsLoaded);
+
+  // Backend announcements: one banner, Home only.
+  const banner = React.createElement(HomeBanner, {
+    items: bannerItems,
+    onDismiss: dismissHomeBanner,
+    onCta: openHomeBannerCta,
+  });
+
+  const header = React.createElement('header', {
+    style: { display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', justifyContent: 'space-between', gap: '16px' },
+  },
+    React.createElement('div', { style: { minWidth: 0 } },
+      React.createElement('h2', {
+        onContextMenu: copyParachordLink,
+        style: { margin: 0, fontSize: '28px', fontWeight: 700, color: 'var(--text-primary)' },
+      }, greetingFor(new Date().getHours())),
+      changeLine && React.createElement('p', {
+        style: { margin: '4px 0 0', fontSize: '14px', color: 'var(--text-secondary)' },
+      }, changeLine)),
+    React.createElement('div', { style: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '12px' } },
+      React.createElement(HomeSetupButton, {
+        setup: homeSetup,
+        onAction: onSetupAction,
+        onDismiss: dismissHomeSetupItem,
+        onOpenWhatsNew: openWhatsNew,
+      }),
+      hasCollection && React.createElement('button', {
+        type: 'button',
+        className: 'no-drag',
+        onClick: handleStartCollectionStation,
+        style: {
+          font: 'inherit', fontSize: '14px', fontWeight: 600, border: 'none', borderRadius: '999px', cursor: 'pointer',
+          display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 16px 6px 6px', minHeight: '40px',
+          backgroundColor: PLAY_FILL, color: ON_FILL,
         },
-          // Hero header with gradient
-          React.createElement('div', {
-            className: 'relative',
-            style: {
-              height: homeHeaderCollapsed ? '80px' : '280px',
-              flexShrink: 0,
-              transition: 'height 300ms cubic-bezier(0.4, 0, 0.2, 1)',
-              overflow: 'hidden'
-            }
+      },
+        React.createElement('span', {
+          'aria-hidden': 'true',
+          style: {
+            width: '28px', height: '28px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            backgroundColor: ON_FILL, color: PLAY_FILL,
           },
-            // Gradient background - warm sunset vibes
-            React.createElement('div', {
-              className: 'absolute inset-0',
-              style: {
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%)'
-              }
-            }),
-            // Animated background pattern
-            React.createElement('div', {
-              className: 'absolute inset-0',
-              style: {
-                opacity: 0.1,
-                backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'100\' height=\'100\' viewBox=\'0 0 100 100\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'%23ffffff\'%3E%3Ccircle cx=\'50\' cy=\'50\' r=\'40\' fill=\'none\' stroke=\'%23fff\' stroke-width=\'2\'/%3E%3Ccircle cx=\'50\' cy=\'50\' r=\'25\' fill=\'none\' stroke=\'%23fff\' stroke-width=\'1.5\'/%3E%3Ccircle cx=\'50\' cy=\'50\' r=\'10\' fill=\'none\' stroke=\'%23fff\' stroke-width=\'1\'/%3E%3C/g%3E%3C/svg%3E")'
-              }
-            }),
-            // EXPANDED STATE — title + subtitle only. The Parachord
-            // wordmark img used to render above the title here but was
-            // removed: it sat at a different Y position than the splash
-            // SVG and the user saw a "wordmark jump" as the splash
-            // faded into it. Keeping the home hero without a second
-            // wordmark lets the splash stay viewport-centered and just
-            // fade away cleanly with no competing element.
-            !homeHeaderCollapsed && React.createElement('div', {
-              className: 'absolute inset-0 flex flex-col items-center justify-center text-center px-6 z-10'
-            },
-              // Title (matching other page headers)
-              React.createElement('h1', {
-                className: 'text-5xl font-light text-white',
-                style: {
-                  textShadow: '0 2px 20px rgba(0,0,0,0.5)',
-                  letterSpacing: '0.3em',
-                  textTransform: 'uppercase'
-                },
-                onContextMenu: copyParachordLink
-              }, 'HOME'),
-              // Subtitle with stats
-              React.createElement('p', {
-                className: 'text-white/70 text-sm mt-6',
-                style: { textShadow: '0 1px 10px rgba(0,0,0,0.3)' }
-              }, `${collectionData.albums.length} albums · ${collectionData.artists.length} artists · ${playlists.length} playlists`)
-            ),
-            // COLLAPSED STATE — title only (right-side wordmark img
-            // removed for consistency with the expanded variant).
-            homeHeaderCollapsed && React.createElement('div', {
-              className: 'absolute inset-0 flex items-center px-6 z-10'
-            },
-              React.createElement('h1', {
-                className: 'text-2xl font-light text-white',
-                style: {
-                  textShadow: '0 2px 10px rgba(0,0,0,0.5)',
-                  letterSpacing: '0.2em',
-                  textTransform: 'uppercase'
-                },
-                onContextMenu: copyParachordLink
-              }, 'HOME')
-            )
-          ),
+        },
+          React.createElement('svg', { width: 12, height: 12, viewBox: '0 0 24 24', fill: 'currentColor' },
+            React.createElement('path', { d: 'M7 4v16l13-8z' }))),
+        'Play Collection Radio')));
 
-          // Sticky header bar with Collection Radio button
-          React.createElement('div', {
-            className: 'flex items-center justify-end px-6 py-3',
-            style: { flexShrink: 0, minHeight: '52px', backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
-          },
-            // Start Collection Radio button
-            (collectionData.tracks.length > 0 || library.length > 0) && React.createElement('button', {
-              onClick: handleStartCollectionStation,
-              className: 'px-4 py-1.5 rounded-full text-sm font-medium text-white transition-all hover:scale-105 no-drag',
-              style: {
-                backgroundColor: '#E91E63'
-              }
-            }, 'Start Collection Radio')
-          ),
+  return React.createElement('div', {
+    className: 'flex-1 flex flex-col h-full',
+    style: { overflow: 'hidden', minHeight: 0, backgroundColor: 'var(--bg-primary)' },
+  },
+    // The collapsed page hero every page has (80px, the uppercase light title),
+    // in Home's sidebar colour: a gradient through violet-600, the accent
+    // #7c3aed, with Home's circle pattern. It sits above the scroller, so on
+    // macOS the title-bar drag strip lies over it as on other pages and
+    // scrolled content stops at its edge.
+    React.createElement('div', {
+      'data-home-hero-banner': '', className: 'relative',
+      style: { height: `${HOME_HERO_HEIGHT}px`, flexShrink: 0, overflow: 'hidden' },
+    },
+      React.createElement('div', { className: `absolute inset-0 ${HOME_HERO_GRADIENT}` }),
+      React.createElement('div', { className: 'absolute inset-0', style: { opacity: 0.1, backgroundImage: HOME_HERO_PATTERN } }),
+      React.createElement('div', { className: 'absolute inset-0 flex items-center px-6 z-10' },
+        React.createElement('h1', {
+          className: 'text-2xl font-light text-white',
+          style: { textShadow: '0 2px 10px rgba(0,0,0,0.5)', letterSpacing: '0.2em', textTransform: 'uppercase' },
+          onContextMenu: copyParachordLink,
+        }, 'Home'))),
+    React.createElement('div', { className: 'flex-1 overflow-y-auto scrollable-content', style: { minHeight: 0 } },
+      banner,
+      React.createElement('div', {
+        style: { display: 'flex', flexDirection: 'column', gap: '40px', padding: '28px 24px 40px', maxWidth: '1400px' },
+      },
+        header,
 
-          // Scrollable content area
-          React.createElement('div', {
-            className: 'flex-1 overflow-y-auto scrollable-content',
-            style: { minHeight: 0 },
-            onScroll: (e) => {
-              const scrollTop = e.target.scrollTop;
-              if (scrollTop > 50 && !homeHeaderCollapsed) {
-                setHomeHeaderCollapsed(true);
-              } else if (scrollTop <= 50 && homeHeaderCollapsed) {
-                setHomeHeaderCollapsed(false);
-              }
-            }
-          },
-            // Backend announcements: one banner, Home only.
-            React.createElement(HomeBanner, {
-              items: bannerItems,
-              onDismiss: dismissHomeBanner,
-              onCta: openHomeBannerCta
-            }),
-            React.createElement('div', { className: 'p-6 space-y-8' },
+        jumpLoading
+          ? skeletonSection('jump', 'Jump back in', React.createElement(JumpBackInSkeleton))
+          : React.createElement(JumpBackIn, {
+            tiles, onOpenTile, onPlayTile, onContextMenu: onTileMenu, onArtError, showImport: show.importCard,
+            // Library Sync lives in Settings › General.
+            onImport: () => { navigateTo('settings'); setSettingsTab('general'); },
+          }),
 
-              // SECTION: Finish setting up (checklist button). It replaces the old
-              // setup cards, including the empty-collection card, which
-              // returns in Jump back in.)
-              React.createElement('div', { className: 'mb-2' },
-                React.createElement(HomeSetupButton, {
-                  setup: homeSetup,
-                  onAction: onSetupAction,
-                  onDismiss: dismissHomeSetupItem,
-                  onOpenWhatsNew: openWhatsNew
-                })
-              ),
+        show.mixes && React.createElement(MixesRow, { mixes, loves: lovesCard, lovesActions, sourceColors, ...mixActions }),
 
-              // SECTION: Quick Play / Continue Listening
-              currentTrack && React.createElement('div', { className: 'mb-2' },
-                React.createElement('div', { className: 'flex items-center justify-between mb-4' },
-                  React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Continue Listening')
-                ),
-                React.createElement('div', {
-                  className: 'flex items-center gap-4 p-4 cursor-pointer rounded-xl transition-colors duration-200 hover:bg-purple-50/80',
-                  style: {
-                    background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.06) 0%, rgba(99, 102, 241, 0.06) 100%)'
-                  },
-                  onClick: () => { if (!isPlaying) handlePlayPause(); }
-                },
-                  React.createElement('div', {
-                    className: 'w-16 h-16 rounded-lg overflow-hidden flex-shrink-0',
-                    style: { boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }
-                  },
-                    currentTrack.albumArt ?
-                      React.createElement('img', { src: currentTrack.albumArt, alt: currentTrack.album, className: 'w-full h-full object-cover' }) :
-                      React.createElement('div', { className: 'w-full h-full bg-gradient-to-br from-purple-400 to-indigo-500 flex items-center justify-center' },
-                        React.createElement('svg', { className: 'w-8 h-8 text-white/80', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
-                        )
-                      )
-                  ),
-                  React.createElement('div', { className: 'flex-1 min-w-0' },
-                    React.createElement('p', {
-                      className: 'text-gray-900 truncate',
-                      style: { fontSize: '14px', fontWeight: 500 }
-                    }, currentTrack.title),
-                    React.createElement('p', { className: 'text-sm text-gray-500 truncate' }, currentTrack.artist),
-                    currentQueue.length > 0 && React.createElement('p', { className: 'text-xs text-purple-600 mt-1 font-medium' }, `${currentQueue.length} more in queue`)
-                  ),
-                  React.createElement('button', {
-                    className: 'w-10 h-10 flex items-center justify-center transition-all hover:scale-110',
-                    onClick: (e) => { e.stopPropagation(); handlePlayPause(); }
-                  },
-                    isPlaying
-                      ? React.createElement(Pause, { size: 24, className: 'text-purple-500 fill-purple-500' })
-                      : React.createElement(Play, { size: 24, className: 'text-purple-500 fill-purple-500' })
-                  )
-                )
-              ),
+        show.playlists
+          ? React.createElement(PlaylistsRow, { playlists: homePlaylists, navigateTo, ...playlistActions })
+          : playlistsLoading && skeletonSection('playlists', 'Your playlists, freshest first', React.createElement(CardRowSkeleton)),
 
-              // SECTION: Recently Added Albums (with skeleton loading)
-              (collectionLoading || collectionData.albums.length > 0) && React.createElement('div', null,
-                React.createElement('div', { className: 'flex items-center justify-between mb-4' },
-                  React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Recently Added'),
-                  !collectionLoading && collectionData.albums.length > 0 && React.createElement('button', {
-                    onClick: () => { navigateTo('library'); setCollectionTab('albums'); },
-                    className: 'text-sm text-purple-600 hover:text-purple-700 font-medium transition-colors'
-                  }, 'See all')
-                ),
-                React.createElement('div', {
-                  className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4'
-                },
-                  // Skeleton loaders while loading
-                  collectionLoading && Array.from({ length: 5 }).map((_, i) =>
-                    React.createElement('div', {
-                      key: `album-skeleton-${i}`,
-                      className: 'animate-pulse',
-                      style: {
-                        backgroundColor: 'var(--card-bg)',
-                        borderRadius: '10px',
-                        padding: '10px',
-                        boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)'
-                      }
-                    },
-                      React.createElement('div', {
-                        className: 'aspect-square rounded-md mb-2',
-                        style: { backgroundColor: 'var(--placeholder-bg)' }
-                      }),
-                      React.createElement('div', {
-                        className: 'h-4 rounded mb-2',
-                        style: { backgroundColor: 'var(--placeholder-bg)', width: '80%' }
-                      }),
-                      React.createElement('div', {
-                        className: 'h-3 rounded',
-                        style: { backgroundColor: 'var(--placeholder-bg)', width: '60%' }
-                      })
-                    )
-                  ),
-                  // Actual albums
-                  !collectionLoading && [...collectionData.albums]
-                    .sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0))
-                    .slice(0, 5)
-                    .map((album, index) =>
-                      React.createElement('button', {
-                        key: album.id || `${album.artist}-${album.title}`,
-                        className: 'release-card card-fade-up text-left group/art',
-                        style: {
-                          backgroundColor: 'var(--card-bg)',
-                          borderRadius: '10px',
-                          padding: '10px',
-                          border: 'none',
-                          boxShadow: 'var(--card-shadow)',
-                          animationDelay: `${index * 50}ms`
-                        },
-                        onClick: () => handleCollectionAlbumClick(album),
-                        onContextMenu: (e) => {
-                          e.preventDefault();
-                          const albumTracks = collectionData.tracks
-                            .filter(t => t.artist === album.artist && t.album === album.title)
-                            .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
-                          window.electron?.contextMenu?.showTrackMenu({
-                            type: 'collection-album',
-                            album: album,
-                            tracks: albumTracks
-                          });
-                        }
-                      },
-                        React.createElement('div', {
-                          className: 'album-art-container aspect-square rounded-md overflow-hidden mb-2',
-                          style: { position: 'relative' }
-                        },
-                          album.art ?
-                            React.createElement('img', {
-                              src: album.art,
-                              alt: album.title,
-                              className: 'w-full h-full object-cover transition-transform duration-300 group-hover/art:scale-105'
-                            }) :
-                            React.createElement('div', {
-                              className: 'w-full h-full flex items-center justify-center',
-                              style: { background: 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)' }
-                            },
-                              React.createElement('svg', { className: 'w-12 h-12', style: { color: 'rgba(255, 255, 255, 0.2)' }, fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
-                              )
-                            ),
-                          // Hover overlay with action buttons
-                          React.createElement('div', {
-                            className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-2',
-                            style: { pointerEvents: 'auto' }
-                          },
-                            // Add to Playlist button
-                            React.createElement('button', {
-                              onClick: async (e) => {
-                                e.stopPropagation();
-                                // This used to call setPlaylistSelectorTrack, which
-                                // was never declared: every click threw a
-                                // ReferenceError (found by the strict lint tier
-                                // when the page moved out of app.js). Open the
-                                // add-to-playlist panel the way the Collection
-                                // page's album cards do, with the album's
-                                // collection tracks, else the same top-tracks
-                                // lookup this card's Play button uses.
-                                let albumTracks = collectionData.tracks
-                                  .filter(t => t.artist === album.artist && t.album === album.title)
-                                  .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
-                                if (albumTracks.length === 0) {
-                                  const tracks = await getArtistTopTracks(album.artist);
-                                  albumTracks = tracks.filter(t => t.album?.toLowerCase() === album.title.toLowerCase());
-                                }
-                                if (albumTracks.length === 0) {
-                                  showToast(`Couldn't find the tracks on ${album.title}`, 'error');
-                                  return;
-                                }
-                                setAddToPlaylistPanel({
-                                  open: true,
-                                  tracks: albumTracks,
-                                  sourceName: `${album.title} by ${album.artist}`,
-                                  sourceType: 'album'
-                                });
-                              },
-                              className: 'w-9 h-9 rounded-full flex items-center justify-center transition-all hover:scale-110',
-                              style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-                              title: 'Add to Playlist'
-                            },
-                              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
-                              )
-                            ),
-                            // Play button (center, larger)
-                            React.createElement('button', {
-                              onClick: async (e) => {
-                                e.stopPropagation();
-                                // Fetch and play album tracks
-                                showToast(`Playing ${album.title}...`, 'info');
-                                const tracks = await getArtistTopTracks(album.artist);
-                                if (tracks.length > 0) {
-                                  const albumTracks = tracks.filter(t =>
-                                    t.album?.toLowerCase() === album.title.toLowerCase()
-                                  );
-                                  const tracksToPlay = albumTracks.length > 0 ? albumTracks : tracks.slice(0, 10);
-                                  if (tracksToPlay.length > 0) {
-                                    playTrackCollection(tracksToPlay, { type: 'album', name: album.title });
-                                  }
-                                }
-                              },
-                              className: 'w-11 h-11 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
-                              style: { border: 'none', cursor: 'pointer' },
-                              title: 'Play'
-                            },
-                              React.createElement('svg', { className: 'w-5 h-5 text-gray-800 ml-0.5', fill: 'currentColor', viewBox: '0 0 24 24' },
-                                React.createElement('path', { d: 'M8 5v14l11-7z' })
-                              )
-                            ),
-                            // Add to Queue button
-                            React.createElement('button', {
-                              onClick: async (e) => {
-                                e.stopPropagation();
-                                showToast(`Adding ${album.title} to queue...`, 'info');
-                                const tracks = await getArtistTopTracks(album.artist);
-                                if (tracks.length > 0) {
-                                  const albumTracks = tracks.filter(t =>
-                                    t.album?.toLowerCase() === album.title.toLowerCase()
-                                  );
-                                  const tracksToAdd = albumTracks.length > 0 ? albumTracks : tracks.slice(0, 10);
-                                  if (tracksToAdd.length > 0) {
-                                    setCurrentQueue(prev => [...prev, ...tracksToAdd]);
-                                    showToast(`Added ${tracksToAdd.length} tracks to queue`, 'success');
-                                  }
-                                }
-                              },
-                              className: 'w-9 h-9 rounded-full flex items-center justify-center transition-all hover:scale-110',
-                              style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-                              title: 'Add to Queue'
-                            },
-                              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
-                              )
-                            )
-                          )
-                        ),
-                        React.createElement('p', {
-                          className: 'text-gray-900 truncate',
-                          style: { fontSize: '13px', fontWeight: 500, letterSpacing: '0.005em' }
-                        }, album.title),
-                        React.createElement('p', { className: 'text-xs text-gray-500 truncate mt-0.5' }, album.artist)
-                      )
-                    )
-                )
-              ),
+        show.albums
+          ? React.createElement(AlbumsRow, {
+            albums, sourceColors, navigateTo, ...albumActions, onOpen: openAlbum,
+          })
+          : albumsLoading && skeletonSection('albums', 'Albums you might love', React.createElement(CardRowSkeleton, { lines: 1 })),
 
-              // SECTION: Your Playlists & Friends Listening Now (side by side)
-              (() => {
-                const onlineFriends = friends.filter(f => isOnAir(f));
-                // Friends with recent listening activity (have a cached track), sorted: online first, then by most recent
-                // Use a stable sort cache so the list only reorders when a friend starts a new song
-                const eligibleFriends = friends.filter(f => f.cachedRecentTrack && f.savedToCollection);
-                // Build a fingerprint from track identity only — re-sort when a friend starts a new song,
-                // NOT when their on-air status changes from time passing
-                const fingerprint = eligibleFriends.map(f =>
-                  `${f.id}:${f.cachedRecentTrack?.name}:${f.cachedRecentTrack?.artist}`
-                ).join('|');
-                let friendsWithActivity;
-                if (fingerprint !== homeFriendsSortRef.current.fingerprint) {
-                  // A friend started a new song - re-sort
-                  friendsWithActivity = eligibleFriends
-                    .sort((a, b) => {
-                      const aOnAir = isOnAir(a);
-                      const bOnAir = isOnAir(b);
-                      if (aOnAir && !bOnAir) return -1;
-                      if (!aOnAir && bOnAir) return 1;
-                      return (b.cachedRecentTrack?.timestamp || 0) - (a.cachedRecentTrack?.timestamp || 0);
-                    })
-                    .slice(0, 5);
-                  homeFriendsSortRef.current = { fingerprint, sorted: friendsWithActivity };
-                } else {
-                  // No change in track data - use cached order, but refresh objects for updated props
-                  friendsWithActivity = homeFriendsSortRef.current.sorted.map(cached =>
-                    eligibleFriends.find(f => f.id === cached.id) || cached
-                  );
-                }
-                const showPlaylists = playlists.length > 0;
-                const showFriends = friendsWithActivity.length > 0;
+        // One row for both halves, loaded or not: a half still loading draws
+        // its skeleton in its own place, so nothing moves when it lands.
+        (show.fresh || show.critical || freshLoading || criticalLoading)
+          && React.createElement(FreshCriticalRow, {
+            fresh,
+            critical,
+            freshLoading,
+            criticalLoading,
+            navigateTo,
+            ...albumActions,
+            // Each half opens its album the way its own page does; a Fresh
+            // Drops card passes its release-group id, so no string search.
+            onOpen: (album) => (album.homeRow === 'fresh'
+              ? openTopAlbum({ ...album, name: album.title, image: album.imageUrl, releaseGroupId: album.id })
+              : openCriticsPicksAlbum(album)),
+          }),
 
-                // Only render if at least one section has content
-                if (!showPlaylists && !showFriends) return null;
+        show.concerts
+          ? React.createElement(ConcertsRow, { concerts, navigateTo })
+          : concertsSkeleton && skeletonSection('concerts', 'Concerts near you', React.createElement(ConcertRowSkeleton)),
 
-                // Helper: format relative time
-                const formatTimeAgo = (timestamp) => {
-                  if (!timestamp) return '';
-                  const diff = Date.now() - timestamp;
-                  const minutes = Math.floor(diff / 60000);
-                  if (minutes < 1) return 'Just now';
-                  if (minutes < 60) return `${minutes}m ago`;
-                  const hours = Math.floor(minutes / 60);
-                  if (hours < 24) return `${hours}h ago`;
-                  const days = Math.floor(hours / 24);
-                  return `${days}d ago`;
-                };
-
-                return React.createElement('div', {
-                  className: 'grid grid-cols-1 md:grid-cols-2 gap-6',
-                  style: { minHeight: '220px' } // Minimum height for 3 playlist cards
-                },
-                  // Left column: Your Playlists
-                  showPlaylists && React.createElement('div', { className: 'flex flex-col' },
-                    React.createElement('div', { className: 'flex items-center justify-between mb-4' },
-                      React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Your Playlists'),
-                      React.createElement('button', {
-                        onClick: () => navigateTo('playlists'),
-                        className: 'text-sm text-purple-600 hover:text-purple-700 font-medium transition-colors'
-                      }, 'See all')
-                    ),
-                    React.createElement('div', { className: 'space-y-2 flex-1' },
-                      [...playlists]
-                        .sort((a, b) => (b.lastModified || b.addedAt || 0) - (a.lastModified || a.addedAt || 0))
-                        .slice(0, 4)
-                        .map((playlist, index) =>
-                          React.createElement('button', {
-                            key: playlist.id,
-                            className: 'release-card card-fade-up flex items-center gap-3 p-3 text-left w-full',
-                            style: {
-                              backgroundColor: 'var(--card-bg)',
-                              borderRadius: '10px',
-                              border: 'none',
-                              boxShadow: 'var(--card-shadow)',
-                              animationDelay: `${index * 50}ms`
-                            },
-                            onClick: () => {
-                              loadPlaylist(playlist);
-                            },
-                            onContextMenu: (e) => {
-                              e.preventDefault();
-                              if (window.electron?.contextMenu?.showTrackMenu) {
-                                window.electron.contextMenu.showTrackMenu({
-                                  type: 'playlist',
-                                  playlistId: playlist.id,
-                                  name: playlist.title,
-                                  creator: playlist.creator || null,
-                                  tracks: playlist.tracks || []
-                                });
-                              }
-                            }
-                          },
-                            // 2x2 album art grid or placeholder with hover play button
-                            React.createElement('div', {
-                              className: 'relative w-14 h-14 rounded-lg overflow-hidden flex-shrink-0 group/mosaic'
-                            },
-                              React.createElement('div', {
-                                className: `w-full h-full grid grid-cols-2 grid-rows-2${!allPlaylistCovers[playlist.id] ? ' animate-shimmer' : ''}`,
-                                style: {
-                                  background: allPlaylistCovers[playlist.id]
-                                    ? 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)'
-                                    : 'linear-gradient(to right, var(--shimmer-from), var(--shimmer-via), var(--shimmer-to))',
-                                  backgroundSize: !allPlaylistCovers[playlist.id] ? '200% 100%' : undefined
-                                }
-                              },
-                                allPlaylistCovers[playlist.id]?.slice(0, 4).map((url, i) =>
-                                  React.createElement('img', {
-                                    key: i,
-                                    src: url,
-                                    alt: '',
-                                    className: 'w-full h-full object-cover'
-                                  })
-                                ) || Array.from({ length: 4 }).map((_, i) =>
-                                  React.createElement('div', {
-                                    key: `placeholder-${i}`,
-                                    className: 'w-full h-full',
-                                    style: { backgroundColor: 'transparent' }
-                                  })
-                                )
-                              ),
-                              // Hover play button overlay
-                              React.createElement('div', {
-                                className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/mosaic:opacity-100 transition-opacity flex items-center justify-center'
-                              },
-                                React.createElement('button', {
-                                  className: 'w-8 h-8 rounded-full bg-white flex items-center justify-center hover:scale-110 transition-transform shadow-lg',
-                                  onClick: async (e) => {
-                                    e.stopPropagation();
-                                    // Play all tracks in the playlist
-                                    if (playlist.tracks && playlist.tracks.length > 0) {
-                                      playTrackCollection(playlist.tracks, { type: 'playlist', name: playlist.title });
-                                      showToast(`Playing ${playlist.title}`, 'success');
-                                    } else {
-                                      showToast('Playlist is empty', 'info');
-                                    }
-                                  }
-                                },
-                                  React.createElement('svg', { className: 'w-4 h-4 text-gray-900 ml-0.5', fill: 'currentColor', viewBox: '0 0 24 24' },
-                                    React.createElement('path', { d: 'M8 5v14l11-7z' })
-                                  )
-                                )
-                              )
-                            ),
-                            React.createElement('div', { className: 'flex-1 min-w-0' },
-                              React.createElement('p', {
-                                className: 'text-gray-900 truncate',
-                                style: { fontSize: '13px', fontWeight: 500, letterSpacing: '0.005em' }
-                              }, playlist.title),
-                              React.createElement('p', { className: 'text-xs text-gray-500 mt-0.5' }, `${playlist.tracks?.length || 0} tracks`)
-                            )
-                          )
-                        )
-                    )
-                  ),
-
-                  // Right column: Friends Listening
-                  showFriends && React.createElement('div', { className: 'flex flex-col' },
-                    React.createElement('div', { className: 'flex items-center justify-between mb-4' },
-                      React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Friend Activity'),
-                      // The on-air count and "See all" sit side by side: the
-                      // count used to replace the link, so with anyone on air
-                      // Home had no way to the rest of the list. "See all" opens
-                      // the Collection's Friends tab (the old standalone
-                      // 'friends' view was a placeholder) and shows only when
-                      // that tab lists more friends than the 5 here.
-                      React.createElement('div', { className: 'flex items-center gap-4' },
-                        onlineFriends.length > 0 && React.createElement('span', { className: 'flex items-center gap-1.5 text-sm text-green-600 font-medium' },
-                          React.createElement('span', { className: 'w-2 h-2 rounded-full bg-green-500 animate-pulse' }),
-                          `${onlineFriends.length} listening now`
-                        ),
-                        friends.filter(f => f.savedToCollection !== false).length > friendsWithActivity.length && React.createElement('button', {
-                          onClick: () => { navigateTo('library'); setCollectionTab('friends'); },
-                          className: 'text-sm text-purple-600 hover:text-purple-700 font-medium transition-colors'
-                        }, 'See all')
-                      )
-                    ),
-                    React.createElement('div', { className: 'space-y-2 flex-1' },
-                      friendsWithActivity.map((friend, index) => {
-                        const onAir = isOnAir(friend);
-                        const track = friend.cachedRecentTrack;
-                        return React.createElement('div', {
-                          key: friend.id,
-                          className: 'release-card card-fade-up flex items-center gap-3 p-3 cursor-pointer',
-                          style: {
-                            backgroundColor: 'var(--card-bg)',
-                            borderRadius: '10px',
-                            boxShadow: 'var(--card-shadow)',
-                            animationDelay: `${index * 50}ms`
-                          },
-                          onClick: () => navigateToFriend(friend)
-                        },
-                          // Friend avatar with hexagon shape (matching sidebar style)
-                          React.createElement('div', {
-                            className: 'relative w-10 h-10 flex-shrink-0'
-                          },
-                            React.createElement('div', {
-                              className: 'w-full h-full overflow-hidden',
-                              style: {
-                                clipPath: 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)'
-                              }
-                            },
-                              friend.avatarUrl
-                                ? React.createElement('img', { src: friend.avatarUrl, alt: friend.displayName, className: 'w-full h-full object-cover' })
-                                : React.createElement('div', { className: 'w-full h-full flex items-center justify-center text-white text-sm font-medium bg-gradient-to-br from-purple-400 to-pink-400' },
-                                    friend.displayName?.charAt(0).toUpperCase()
-                                  )
-                            ),
-                            // On-air indicator dot (green for listening, gray for offline)
-                            React.createElement('div', {
-                              className: `absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white ${onAir ? 'bg-green-500' : 'bg-gray-300'}`
-                            })
-                          ),
-                          // Friend info with track details
-                          React.createElement('div', { className: 'flex-1 min-w-0' },
-                            React.createElement('div', { className: 'flex items-center gap-1.5' },
-                              React.createElement('p', {
-                                className: 'text-gray-900 truncate',
-                                style: { fontSize: '13px', fontWeight: 500 }
-                              }, friend.displayName),
-                              // Time indicator
-                              React.createElement('span', {
-                                className: 'text-xs flex-shrink-0',
-                                style: { color: onAir ? '#16a34a' : 'var(--text-tertiary)' }
-                              }, onAir ? 'now' : formatTimeAgo(track?.timestamp))
-                            ),
-                            // Track info - click to play, right-click for context menu
-                            track && React.createElement('p', {
-                              className: 'text-xs truncate mt-0.5 cursor-pointer hover:underline flex items-center gap-1',
-                              style: { color: onAir ? 'var(--nav-inactive)' : 'var(--text-tertiary)' },
-                              onClick: (e) => {
-                                e.stopPropagation();
-                                const cacheKey = `${track.artist.toLowerCase()}|${track.name.toLowerCase()}`;
-                                const cachedSources = trackSourcesCache.current[cacheKey]?.sources || {};
-                                const trackObj = {
-                                  title: track.name,
-                                  artist: track.artist,
-                                  album: track.album,
-                                  albumArt: track.albumArt,
-                                  sources: cachedSources
-                                };
-                                setQueueWithContext([], { type: 'friend-track', name: `${friend.displayName}'s track` });
-                                handlePlay(trackObj);
-                              },
-                              onContextMenu: (e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                if (window.electron?.contextMenu?.showTrackMenu) {
-                                  const cacheKey = `${track.artist.toLowerCase()}|${track.name.toLowerCase()}`;
-                                  const cachedSources = trackSourcesCache.current[cacheKey]?.sources || {};
-                                  window.electron.contextMenu.showTrackMenu({
-                                    type: 'track',
-                                    track: {
-                                      title: track.name,
-                                      artist: track.artist,
-                                      album: track.album,
-                                      albumArt: track.albumArt,
-                                      sources: cachedSources
-                                    }
-                                  });
-                                }
-                              }
-                            },
-                              React.createElement('span', {
-                                style: { color: onAir ? '#22c55e' : 'var(--text-tertiary)', flexShrink: 0 }
-                              }, '\u266A'),
-                              React.createElement('span', { className: 'truncate' }, `${track.name} \u00B7 ${track.artist}`)
-                            )
-                          ),
-                          // Listen along button (only for online friends)
-                          onAir && React.createElement('button', {
-                            className: `px-3 py-1.5 text-xs font-medium rounded-full transition-all ${
-                              listenAlongFriend?.id === friend.id
-                                ? 'bg-purple-600 text-white'
-                                : 'text-purple-600 bg-purple-50 hover:bg-purple-100'
-                            }`,
-                            onClick: (e) => {
-                              e.stopPropagation();
-                              if (listenAlongFriend?.id === friend.id) {
-                                deactivateListenAlong();
-                              } else {
-                                activateListenAlong(friend);
-                              }
-                            }
-                          },
-                            React.createElement('svg', {
-                              className: 'w-3 h-3 inline-block mr-1 -mt-px',
-                              fill: 'none',
-                              viewBox: '0 0 24 24',
-                              stroke: 'currentColor',
-                              strokeWidth: 2
-                            },
-                              React.createElement('path', {
-                                strokeLinecap: 'round',
-                                strokeLinejoin: 'round',
-                                d: 'M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1'
-                              })
-                            ),
-                            listenAlongFriend?.id === friend.id ? 'Listening' : 'Listen Along'
-                          )
-                        );
-                      })
-                    )
-                  ),
-
-                  // If only playlists but no friends, show placeholder in right column
-                  showPlaylists && !showFriends && React.createElement('div', { className: 'flex flex-col' },
-                    React.createElement('div', { className: 'flex items-center justify-between mb-4' },
-                      React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Friend Activity')
-                    ),
-                    React.createElement('div', {
-                      className: 'flex-1 flex flex-col items-center justify-center rounded-xl p-6',
-                      style: { backgroundColor: 'var(--bg-secondary)' }
-                    },
-                      React.createElement('svg', { className: 'w-12 h-12 text-gray-300 mb-3', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z' })
-                      ),
-                      React.createElement(React.Fragment, null,
-                        React.createElement('p', { className: 'text-gray-600 text-sm text-center font-medium mb-1' },
-                          friends.length === 0 ? 'Add friends to see what they\'re listening to' : 'No friends currently listening'
-                        ),
-                        friends.length === 0 && React.createElement('p', { className: 'text-gray-400 text-xs text-center mb-3' }, 'Import users from Last.fm or ListenBrainz'),
-                        React.createElement('button', {
-                          onClick: () => setAddFriendModalOpen(true),
-                          className: 'mt-3 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors'
-                        }, 'Add Friend')
-                      )
-                    )
-                  )
-                );
-              })(),
-
-              // SECTION: Discover New Music
-              React.createElement('div', null,
-                React.createElement('div', { className: 'mb-4' },
-                  React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Discover')
-                ),
-                React.createElement('div', { className: 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4' },
-                  // 1. For You / Recommendations card (indigo->purple->pink)
-                  React.createElement('div', {
-                    className: 'card-fade-up rounded-xl text-left text-white transition-all hover:shadow-lg overflow-hidden flex flex-col',
-                    style: {
-                      background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 50%, #ec4899 100%)',
-                      animationDelay: '0ms'
-                    }
-                  },
-                    // Header section - clickable to recommendations page
-                    React.createElement('button', {
-                      className: 'w-full block p-5 pb-4 text-left hover:bg-white/10 transition-colors',
-                      onClick: () => navigateTo('recommendations')
-                    },
-                      React.createElement('svg', { className: 'w-8 h-8 mb-3 opacity-90', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z' })
-                      ),
-                      React.createElement('h3', { className: 'font-semibold text-lg flex items-center gap-2' },
-                        'For You',
-                        showDiscoveryBadges && discoveryUnread.recommendations && React.createElement('span', {
-                          className: 'w-2.5 h-2.5 rounded-full bg-white animate-pulse'
-                        })
-                      ),
-                      React.createElement('p', { className: 'text-white/70 text-sm mt-1' }, 'Personalized recommendations')
-                    ),
-                    // Top artist preview - clickable to artist page
-                    recommendations.artists.length > 0 && React.createElement('button', {
-                      className: 'w-full flex-1 flex items-center gap-3 p-5 border-t border-white/20 text-left hover:bg-white/10 transition-colors',
-                      onClick: (e) => {
-                        e.stopPropagation();
-                        fetchArtistData(recommendations.artists[0].name);
-                      }
-                    },
-                      React.createElement('div', {
-                        className: 'w-12 h-12 rounded-full overflow-hidden flex-shrink-0',
-                        style: { background: 'linear-gradient(135deg, #4c1d95 0%, var(--accent-primary) 100%)' }
-                      },
-                        recommendations.artists[0].image
-                          ? React.createElement('img', {
-                              src: recommendations.artists[0].image,
-                              alt: recommendations.artists[0].name,
-                              className: 'w-full h-full object-cover'
-                            })
-                          : React.createElement('div', { className: 'w-full h-full flex items-center justify-center text-white/60 text-lg font-bold' },
-                              recommendations.artists[0].name.charAt(0).toUpperCase()
-                            )
-                      ),
-                      React.createElement('div', { className: 'flex-1 min-w-0' },
-                        React.createElement('p', { className: 'text-white/60 text-xs' }, 'Top pick'),
-                        React.createElement('p', { className: 'text-white font-medium truncate' }, recommendations.artists[0].name)
-                      )
-                    ),
-                    // Padding when no preview
-                    recommendations.artists.length === 0 && React.createElement('div', { className: 'flex-1' })
-                  ),
-
-                  // 2. Critical Darlings card (amber->orange->red)
-                  React.createElement('div', {
-                    className: 'card-fade-up rounded-xl text-left text-white transition-all hover:shadow-lg overflow-hidden flex flex-col',
-                    style: {
-                      background: 'linear-gradient(135deg, #f59e0b 0%, #f97316 50%, #ef4444 100%)',
-                      animationDelay: '50ms'
-                    }
-                  },
-                    // Header section - clickable to critics-picks page
-                    React.createElement('button', {
-                      className: 'w-full block p-5 pb-4 text-left hover:bg-white/10 transition-colors',
-                      onClick: () => { navigateTo('critics-picks'); loadCriticsPicks(); }
-                    },
-                      React.createElement('svg', { className: 'w-8 h-8 mb-3 opacity-90', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 2h12v6a6 6 0 01-12 0V2zM9 21h6M12 14v7M6 4H3v2a3 3 0 003 3M18 4h3v2a3 3 0 01-3 3' })
-                      ),
-                      React.createElement('h3', { className: 'font-semibold text-lg flex items-center gap-2' },
-                        'Critical Darlings',
-                        showDiscoveryBadges && discoveryUnread.criticsPicks && React.createElement('span', {
-                          className: 'w-2.5 h-2.5 rounded-full bg-white animate-pulse'
-                        })
-                      ),
-                      React.createElement('p', { className: 'text-white/70 text-sm mt-1' }, 'Acclaimed by critics')
-                    ),
-                    // Most recent album preview - clickable to album page
-                    criticsPicks.length > 0 && React.createElement('button', {
-                      className: 'w-full flex-1 flex items-center gap-3 p-5 border-t border-white/20 text-left hover:bg-white/10 transition-colors',
-                      onClick: (e) => {
-                        e.stopPropagation();
-                        openCriticsPicksAlbum(criticsPicks[0]);
-                      }
-                    },
-                      React.createElement('div', {
-                        className: 'w-12 h-12 rounded-lg overflow-hidden flex-shrink-0',
-                        style: { background: 'linear-gradient(135deg, #1f1f1f 0%, #2d2d2d 100%)' }
-                      },
-                        criticsPicks[0].albumArt
-                          ? React.createElement('img', {
-                              src: criticsPicks[0].albumArt,
-                              alt: criticsPicks[0].title,
-                              className: 'w-full h-full object-cover'
-                            })
-                          : React.createElement('div', { className: 'w-full h-full flex items-center justify-center text-white/40' },
-                              React.createElement('svg', { className: 'w-5 h-5', fill: 'currentColor', viewBox: '0 0 24 24' },
-                                React.createElement('path', { d: 'M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z' })
-                              )
-                            )
-                      ),
-                      React.createElement('div', { className: 'flex-1 min-w-0' },
-                        React.createElement('p', { className: 'text-white/60 text-xs' }, 'Latest review'),
-                        React.createElement('p', { className: 'text-white font-medium truncate' }, criticsPicks[0].title),
-                        React.createElement('p', { className: 'text-white/70 text-xs truncate' }, criticsPicks[0].artist)
-                      )
-                    ),
-                    // Padding when no preview
-                    criticsPicks.length === 0 && React.createElement('div', { className: 'flex-1' })
-                  ),
-
-                  // 3. Pop of the Tops / Charts card (orange->pink->purple)
-                  React.createElement('div', {
-                    className: 'card-fade-up rounded-xl text-left text-white transition-all hover:shadow-lg overflow-hidden flex flex-col',
-                    style: {
-                      background: 'linear-gradient(135deg, #f97316 0%, #ec4899 50%, #9333ea 100%)',
-                      animationDelay: '100ms'
-                    }
-                  },
-                    // Header section - clickable to discover page
-                    React.createElement('button', {
-                      className: 'w-full block p-5 pb-4 text-left hover:bg-white/10 transition-colors',
-                      onClick: () => { navigateTo('discover'); if (cacheLoaded) loadCharts(); }
-                    },
-                      React.createElement('svg', { className: 'w-8 h-8 mb-3 opacity-90', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' })
-                      ),
-                      React.createElement('h3', { className: 'font-semibold text-lg flex items-center gap-2' },
-                        'Pop of the Tops',
-                        showDiscoveryBadges && discoveryUnread.charts && React.createElement('span', {
-                          className: 'w-2.5 h-2.5 rounded-full bg-white animate-pulse'
-                        })
-                      ),
-                      React.createElement('p', { className: 'text-white/70 text-sm mt-1' }, 'What everyone\'s playing')
-                    ),
-                    // #1 album preview - clickable to open the album
-                    charts.length > 0 && React.createElement('button', {
-                      className: 'w-full flex-1 flex items-center gap-3 p-5 border-t border-white/20 text-left hover:bg-white/10 transition-colors',
-                      onClick: (e) => {
-                        e.stopPropagation();
-                        // Open the #1 chart album with correct field mapping
-                        openTopAlbum({ ...charts[0], name: charts[0].title, image: charts[0].albumArt });
-                      }
-                    },
-                      React.createElement('div', {
-                        className: 'w-12 h-12 rounded-lg overflow-hidden flex-shrink-0',
-                        style: { background: 'linear-gradient(135deg, #1f1f1f 0%, #2d2d2d 100%)' }
-                      },
-                        charts[0].albumArt
-                          ? React.createElement('img', {
-                              src: charts[0].albumArt,
-                              alt: charts[0].title,
-                              className: 'w-full h-full object-cover'
-                            })
-                          : React.createElement('div', { className: 'w-full h-full flex items-center justify-center text-white/40' },
-                              React.createElement('svg', { className: 'w-5 h-5', fill: 'currentColor', viewBox: '0 0 24 24' },
-                                React.createElement('path', { d: 'M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z' })
-                              )
-                            )
-                      ),
-                      React.createElement('div', { className: 'flex-1 min-w-0' },
-                        React.createElement('p', { className: 'text-white/60 text-xs' }, '#1 Album'),
-                        React.createElement('p', { className: 'text-white font-medium truncate' }, charts[0].title),
-                        React.createElement('p', { className: 'text-white/70 text-xs truncate' }, charts[0].artist)
-                      )
-                    ),
-                    // Padding when no preview
-                    charts.length === 0 && React.createElement('div', { className: 'flex-1' })
-                  ),
-
-                  // 4. Fresh Drops / New Releases card (emerald->teal->cyan)
-                  React.createElement('div', {
-                    className: 'card-fade-up rounded-xl text-left text-white transition-all hover:shadow-lg overflow-hidden flex flex-col',
-                    style: {
-                      background: 'linear-gradient(135deg, #10b981 0%, #10c9b4 50%, #06b6d4 100%)',
-                      animationDelay: '150ms'
-                    }
-                  },
-                    // Header section - clickable to new-releases page
-                    React.createElement('button', {
-                      className: 'w-full block p-5 pb-4 text-left hover:bg-white/10 transition-colors',
-                      onClick: () => { navigateTo('new-releases'); loadNewReleases(); }
-                    },
-                      React.createElement('svg', { className: 'w-8 h-8 mb-3 opacity-90', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M12 22a7 7 0 0 0 7-7c0-5-7-13-7-13S5 10 5 15a7 7 0 0 0 7 7z' })
-                      ),
-                      React.createElement('h3', { className: 'font-semibold text-lg flex items-center gap-2' },
-                        'Fresh Drops',
-                        showDiscoveryBadges && discoveryUnread.newReleases && React.createElement('span', {
-                          className: 'w-2.5 h-2.5 rounded-full bg-white animate-pulse'
-                        })
-                      ),
-                      React.createElement('p', { className: 'text-white/70 text-sm mt-1' }, 'New from artists you love')
-                    ),
-                    // Newest release preview
-                    newReleases.length > 0 && React.createElement('button', {
-                      className: 'w-full flex-1 flex items-center gap-3 p-5 border-t border-white/20 text-left hover:bg-white/10 transition-colors',
-                      onClick: (e) => {
-                        e.stopPropagation();
-                        openTopAlbum({ ...newReleases[0], name: newReleases[0].title, image: newReleases[0].albumArt, releaseGroupId: newReleases[0].id });
-                      }
-                    },
-                      React.createElement('div', {
-                        className: 'w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 relative',
-                        style: { background: 'linear-gradient(135deg, #1f1f1f 0%, #2d2d2d 100%)' }
-                      },
-                        // Always show placeholder underneath
-                        React.createElement('div', { className: 'absolute inset-0 flex items-center justify-center text-white/40' },
-                          React.createElement('svg', { className: 'w-5 h-5', fill: 'currentColor', viewBox: '0 0 24 24' },
-                            React.createElement('path', { d: 'M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z' })
-                          )
-                        ),
-                        // Overlay image when art URL exists
-                        newReleases[0].albumArt && React.createElement('img', {
-                          src: newReleases[0].albumArt,
-                          alt: newReleases[0].title,
-                          className: 'absolute inset-0 w-full h-full object-cover',
-                          onError: (e) => { e.target.style.display = 'none'; }
-                        })
-                      ),
-                      React.createElement('div', { className: 'flex-1 min-w-0' },
-                        React.createElement('p', { className: 'text-white/60 text-xs' }, 'Latest'),
-                        React.createElement('p', { className: 'text-white font-medium truncate' }, newReleases[0].title),
-                        React.createElement('p', { className: 'text-white/70 text-xs truncate' }, newReleases[0].artist)
-                      )
-                    ),
-                    // Padding when no preview
-                    newReleases.length === 0 && React.createElement('div', { className: 'flex-1' })
-                  )
-                )
-              ),
-
-              // SECTION: AI Recommendations or Surprise Me fallback
-              (() => {
-                const chatServices = getChatServices();
-                const hasEnabledChat = chatServices.some(isServiceEnabled);
-
-                const aiRecs = homeData.aiRecommendations;
-                const hasAiRecs = aiRecs && (aiRecs.albums?.length > 0 || aiRecs.artists?.length > 0);
-
-                // Show AI recommendations if loaded
-                if (hasAiRecs) {
-                  return React.createElement('div', null,
-                    // Row 1: Recommended Albums
-                    (aiRecs.albums?.length > 0 || aiRecs.loading) && React.createElement('div', { className: 'mb-6' },
-                      React.createElement('div', { className: 'flex items-center gap-2 mb-4' },
-                        React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Album Suggestions'),
-                        React.createElement('span', {
-                          className: 'px-2 py-0.5 rounded-full text-xs font-medium',
-                          style: { backgroundColor: 'var(--accent-surface)', color: 'var(--accent-primary)' }
-                        }, 'Shuffleupagus'),
-                        React.createElement('button', {
-                          className: 'ml-auto p-1.5 text-purple-600 hover:text-purple-700 transition-colors',
-                          disabled: aiRecs.loading,
-                          title: 'Refresh',
-                          onClick: async () => {
-                            // Keep existing data visible, just mark as loading
-                            setHomeData(prev => ({ ...prev, aiRecommendations: { ...prev.aiRecommendations, loading: true } }));
-                            const freshAlbums = [];
-                            const onUpdate = ({ artists, newAlbum }) => {
-                              if (artists) {
-                                setHomeData(prev => ({
-                                  ...prev,
-                                  aiRecommendations: { ...prev.aiRecommendations, artists }
-                                }));
-                                for (const artist of artists) {
-                                  getArtistImage(artist.name).then(imgResult => {
-                                    setHomeData(prev => {
-                                      if (!prev.aiRecommendations) return prev;
-                                      return { ...prev, aiRecommendations: { ...prev.aiRecommendations, artists: prev.aiRecommendations.artists.map(a => a.name === artist.name ? { ...a, image: imgResult?.url || null } : a) } };
-                                    });
-                                  }).catch(() => {});
-                                }
-                              }
-                              if (newAlbum) {
-                                freshAlbums.push(newAlbum);
-                                getAlbumArt(newAlbum.artist, newAlbum.title).then(artUrl => {
-                                  if (artUrl) {
-                                    const idx = freshAlbums.findIndex(a => a.title === newAlbum.title && a.artist === newAlbum.artist);
-                                    if (idx >= 0) freshAlbums[idx] = { ...freshAlbums[idx], art: artUrl };
-                                    setHomeData(prev => {
-                                      if (!prev.aiRecommendations) return prev;
-                                      return { ...prev, aiRecommendations: { ...prev.aiRecommendations, albums: prev.aiRecommendations.albums.map(a => a.title === newAlbum.title && a.artist === newAlbum.artist ? { ...a, art: artUrl } : a) } };
-                                    });
-                                  }
-                                }).catch(() => {});
-                              }
-                            };
-                            const result = await loadAiRecommendations(onUpdate);
-                            if (result) {
-                              setHomeData(prev => ({
-                                ...prev,
-                                aiRecommendations: {
-                                  ...prev.aiRecommendations,
-                                  albums: freshAlbums.length > 0 ? freshAlbums : (prev.aiRecommendations?.albums || []),
-                                  loading: false
-                                }
-                              }));
-                            } else {
-                              // Keep cached data visible on failure, and say so: a silent
-                              // failure looks exactly like "nothing new to suggest".
-                              showToast("Couldn't refresh suggestions. Check your AI provider in Settings.", 'error');
-                              setHomeData(prev => {
-                                const existing = prev.aiRecommendations;
-                                if (existing?.albums?.length > 0 || existing?.artists?.length > 0) {
-                                  return { ...prev, aiRecommendations: { ...existing, loading: false } };
-                                }
-                                return { ...prev, aiRecommendations: null };
-                              });
-                            }
-                          }
-                        },
-                          React.createElement('svg', { className: 'w-4 h-4' + (aiRecs.loading ? ' animate-spin' : ''), fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                            React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M20 4v5h-.582m-15.356 2A8.001 8.001 0 0119.418 9m0 0H15m-11 11v-5h.581m0 0a8.003 8.003 0 0015.357-2m-15.357 2H9' })
-                          )
-                        )
-                      ),
-                      React.createElement('div', {
-                        className: 'grid grid-cols-5 gap-4'
-                      },
-                        ...aiRecs.albums.map((album, index) =>
-                          React.createElement('button', {
-                            key: `ai-album-${album.artist}-${album.title}`,
-                            className: 'group text-left release-card card-fade-up',
-                            style: {
-                              padding: '10px',
-                              borderRadius: '10px',
-                              backgroundColor: 'var(--card-bg)',
-                              border: 'none',
-                              boxShadow: 'var(--card-shadow)',
-                              animationDelay: `${index * 50}ms`
-                            },
-                            onClick: () => handleCollectionAlbumClick({ title: album.title, artist: album.artist }),
-                            onContextMenu: (e) => {
-                              e.preventDefault();
-                              if (window.electron?.contextMenu?.showTrackMenu) {
-                                const albumTracks = (collectionData?.tracks || [])
-                                  .filter(t => t.artist === album.artist && t.album === album.title)
-                                  .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
-                                window.electron.contextMenu.showTrackMenu({
-                                  type: 'release',
-                                  name: album.title,
-                                  album: {
-                                    title: album.title,
-                                    artist: album.artist,
-                                    art: album.art || null
-                                  },
-                                  tracks: albumTracks
-                                });
-                              }
-                            }
-                          },
-                            React.createElement('div', {
-                              className: 'album-art-container group/art',
-                              style: {
-                                width: '100%',
-                                aspectRatio: '1',
-                                borderRadius: '6px',
-                                marginBottom: '10px',
-                                overflow: 'hidden',
-                                position: 'relative',
-                                background: album.art
-                                  ? 'var(--placeholder-bg-light)'
-                                  : 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)'
-                              }
-                            },
-                              // Show image when art exists
-                              album.art && React.createElement('img', {
-                                src: album.art,
-                                alt: album.title,
-                                className: 'group-hover/art:scale-105',
-                                style: {
-                                  width: '100%',
-                                  height: '100%',
-                                  objectFit: 'cover',
-                                  transition: 'opacity 0.35s ease-out, transform 0.3s ease'
-                                }
-                              }),
-                              // Placeholder icon when no art
-                              !album.art && React.createElement('div', {
-                                style: { width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }
-                              },
-                                React.createElement('svg', {
-                                  style: { width: '36px', height: '36px', color: 'rgba(255, 255, 255, 0.2)' },
-                                  fill: 'none',
-                                  viewBox: '0 0 24 24',
-                                  stroke: 'currentColor'
-                                },
-                                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
-                                )
-                              ),
-                              // Hover overlay with action buttons
-                              React.createElement('div', {
-                                className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 pointer-events-none group-hover/art:pointer-events-auto transition-opacity duration-200 flex items-center justify-center gap-3',
-                                style: { borderRadius: '6px', zIndex: 20 }
-                              },
-                                // Add to Playlist button
-                                React.createElement('button', {
-                                  onClick: async (e) => {
-                                    e.stopPropagation();
-                                    let albumTracks = (collectionData?.tracks || [])
-                                      .filter(t => t.artist === album.artist && t.album === album.title)
-                                      .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
-                                    if (albumTracks.length === 0) {
-                                      showToast(`Loading ${album.title} tracks...`, 'info');
-                                      albumTracks = await fetchAlbumTracksFromMusicBrainz(album.artist, album.title, album.art);
-                                    }
-                                    if (albumTracks.length > 0) {
-                                      setAddToPlaylistPanel({
-                                        open: true,
-                                        tracks: albumTracks,
-                                        sourceName: `${album.title} by ${album.artist}`,
-                                        sourceType: 'album'
-                                      });
-                                    } else {
-                                      showToast('Could not load album tracks', 'error');
-                                    }
-                                  },
-                                  className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
-                                  style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-                                  onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
-                                  onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                                  title: 'Add to Playlist'
-                                },
-                                  React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
-                                  )
-                                ),
-                                // Play album button
-                                React.createElement('button', {
-                                  onClick: async (e) => {
-                                    e.stopPropagation();
-                                    let albumTracks = (collectionData?.tracks || [])
-                                      .filter(t => t.artist === album.artist && t.album === album.title)
-                                      .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
-                                    if (albumTracks.length === 0) {
-                                      showToast(`Loading ${album.title}...`, 'info');
-                                      albumTracks = await fetchAlbumTracksFromMusicBrainz(album.artist, album.title, album.art);
-                                    }
-                                    if (albumTracks.length > 0) {
-                                      playTrackCollection(albumTracks, { type: 'album', name: album.title, artist: album.artist });
-                                    } else {
-                                      showToast('Could not load album tracks', 'error');
-                                    }
-                                  },
-                                  className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
-                                  style: { border: 'none', cursor: 'pointer' },
-                                  title: 'Play album'
-                                },
-                                  React.createElement(Play, { size: 22, className: 'text-gray-800 ml-0.5' })
-                                ),
-                                // Add to queue button
-                                React.createElement('button', {
-                                  onClick: async (e) => {
-                                    e.stopPropagation();
-                                    let albumTracks = (collectionData?.tracks || [])
-                                      .filter(t => t.artist === album.artist && t.album === album.title)
-                                      .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
-                                    if (albumTracks.length === 0) {
-                                      showToast(`Loading ${album.title} tracks...`, 'info');
-                                      albumTracks = await fetchAlbumTracksFromMusicBrainz(album.artist, album.title, album.art);
-                                    }
-                                    if (albumTracks.length > 0) {
-                                      addToQueue(albumTracks, { type: 'album', name: album.title, artist: album.artist });
-                                      showToast(`Added ${albumTracks.length} tracks from ${album.title}`, 'success');
-                                    } else {
-                                      showToast('Could not load album tracks', 'error');
-                                    }
-                                  },
-                                  className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
-                                  style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-                                  onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
-                                  onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                                  title: 'Add album to queue'
-                                },
-                                  React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
-                                  )
-                                )
-                              )
-                            ),
-                            // Album title + artist with reason tooltip
-                            React.createElement(FixedTooltip, { content: album.reason },
-                              React.createElement('div', null,
-                                React.createElement('h3', {
-                                  style: {
-                                    fontWeight: '500',
-                                    fontSize: '13px',
-                                    color: 'var(--text-primary)',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    whiteSpace: 'nowrap',
-                                    marginBottom: '2px'
-                                  }
-                                }, album.title),
-                                React.createElement('p', {
-                                  style: { fontSize: '12px', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
-                                }, album.artist)
-                              )
-                            )
-                          )
-                        ),
-                        // Skeleton placeholders for remaining album slots while loading
-                        ...(aiRecs.loading ? Array.from({ length: Math.max(0, 5 - (aiRecs.albums?.length || 0)) }).map((_, i) =>
-                          React.createElement('div', {
-                            key: `ai-album-skeleton-${i}`,
-                            style: {
-                              backgroundColor: 'var(--card-bg)',
-                              borderRadius: '10px',
-                              padding: '10px',
-                              boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)'
-                            }
-                          },
-                            React.createElement('div', {
-                              className: 'aspect-square rounded-md mb-2 animate-shimmer',
-                              style: { background: 'linear-gradient(to right, var(--shimmer-from), var(--shimmer-via), var(--shimmer-to))' }
-                            }),
-                            React.createElement('div', { className: 'h-4 rounded mb-2 animate-shimmer', style: { background: 'linear-gradient(to right, var(--shimmer-from), var(--shimmer-via), var(--shimmer-to))', width: '80%' } }),
-                            React.createElement('div', { className: 'h-3 rounded animate-shimmer', style: { background: 'linear-gradient(to right, var(--shimmer-from), var(--shimmer-via), var(--shimmer-to))', width: '60%' } })
-                          )
-                        ) : [])
-                      )
-                    ),
-                    // Row 2: Recommended Artists
-                    aiRecs.artists?.length > 0 && React.createElement('div', null,
-                      React.createElement('div', { className: 'flex items-center gap-2 mb-4' },
-                        React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Artist Suggestions'),
-                        React.createElement('span', {
-                          className: 'px-2 py-0.5 rounded-full text-xs font-medium',
-                          style: { backgroundColor: 'var(--accent-surface)', color: 'var(--accent-primary)' }
-                        }, 'Shuffleupagus')
-                      ),
-                      React.createElement('div', {
-                        className: 'grid grid-cols-5 gap-4'
-                      },
-                        aiRecs.artists.map((artist, index) =>
-                          React.createElement('div', {
-                            key: `ai-artist-${artist.name}`,
-                            className: 'rounded-lg overflow-hidden cursor-pointer group release-card card-fade-up',
-                            style: {
-                              backgroundColor: 'var(--card-bg)',
-                              boxShadow: 'var(--card-shadow)',
-                              animationDelay: `${index * 50}ms`
-                            },
-                            onClick: () => fetchArtistData(artist.name)
-                          },
-                            React.createElement('div', {
-                              className: 'aspect-square relative group/art overflow-hidden',
-                              style: { background: artist.image === null ? generateArtistPattern(artist.name).gradient : 'var(--placeholder-bg)' }
-                            },
-                              // Loading shimmer
-                              artist.image === undefined && React.createElement('div', {
-                                className: 'absolute inset-0 shimmer-strong animate-shimmer',
-                                style: { backgroundSize: '200% 100%' }
-                              }),
-                              // Artist image
-                              typeof artist.image === 'string' && React.createElement('img', {
-                                src: artist.image,
-                                alt: artist.name,
-                                className: 'absolute inset-0 w-full h-full object-cover transition-all duration-300 group-hover/art:scale-105',
-                                style: { opacity: 0 },
-                                ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
-                                onLoad: (e) => { e.target.style.opacity = '1'; },
-                                onError: (e) => { e.target.style.display = 'none'; }
-                              }),
-                              // Initials fallback
-                              artist.image === null && React.createElement('div', {
-                                className: 'absolute inset-0 flex items-center justify-center',
-                                style: { color: generateArtistPattern(artist.name).textColor, opacity: 0.4 }
-                              },
-                                React.createElement('span', {
-                                  className: 'font-bold tracking-wider',
-                                  style: { fontSize: '2.5rem', textShadow: '0 2px 8px rgba(0,0,0,0.3)' }
-                                }, generateArtistPattern(artist.name).initials)
-                              ),
-                              // Hover overlay with action buttons (Play top 10, Queue top 10)
-                              React.createElement('div', {
-                                className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-3',
-                                style: { pointerEvents: 'auto' }
-                              },
-                                // Play top 10 button (center, larger)
-                                React.createElement('button', {
-                                  onClick: (e) => {
-                                    e.stopPropagation();
-                                    (async () => {
-                                      setTrackLoading(true);
-                                      const tracks = await getArtistTopTracks(artist.name);
-                                      if (tracks.length > 0) {
-                                        const context = { type: 'artist', name: artist.name };
-                                        const [firstTrack, ...remainingTracks] = tracks;
-                                        const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
-                                        setQueueWithContext(remainingTracks, context, true);
-                                        handlePlay(taggedFirstTrack);
-                                      } else {
-                                        setTrackLoading(false);
-                                        showToast(`No top tracks found for ${artist.name}`, 'error');
-                                      }
-                                    })();
-                                  },
-                                  className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
-                                  style: { border: 'none', cursor: 'pointer' },
-                                  title: 'Play top 10 tracks'
-                                },
-                                  React.createElement(PlayTop10Icon, { size: 26, className: 'text-gray-800' })
-                                ),
-                                // Add top 10 to Queue button
-                                React.createElement('button', {
-                                  onClick: (e) => {
-                                    e.stopPropagation();
-                                    (async () => {
-                                      const tracks = await getArtistTopTracks(artist.name);
-                                      if (tracks.length > 0) {
-                                        addToQueue(tracks, { type: 'artist', name: artist.name });
-                                        showToast(`Added ${tracks.length} tracks from ${artist.name}`, 'success');
-                                      } else {
-                                        showToast(`No top tracks found for ${artist.name}`, 'error');
-                                      }
-                                    })();
-                                  },
-                                  className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
-                                  style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-                                  onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
-                                  onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                                  title: 'Add top 10 to queue'
-                                },
-                                  React.createElement(QueueTop10Icon, { size: 20 })
-                                )
-                              )
-                            ),
-                            // Artist name section with reason tooltip
-                            React.createElement(FixedTooltip, { content: artist.reason },
-                              React.createElement('div', { className: 'p-3' },
-                                React.createElement('p', {
-                                  className: 'font-medium text-gray-900 truncate text-sm'
-                                }, artist.name)
-                              )
-                            )
-                          )
-                        )
-                      )
-                    )
-                  );
-                }
-
-                // Loading state - show skeleton
-                if (aiRecs?.loading) {
-                  return React.createElement('div', null,
-                    React.createElement('div', { className: 'flex items-center gap-2 mb-4' },
-                      React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Album Suggestions'),
-                      React.createElement('span', {
-                        className: 'px-2 py-0.5 rounded-full text-xs font-medium',
-                        style: { backgroundColor: 'var(--accent-surface)', color: 'var(--accent-primary)' }
-                      }, 'Shuffleupagus')
-                    ),
-                    React.createElement('div', { className: 'grid grid-cols-5 gap-4 mb-6' },
-                      Array.from({ length: 5 }).map((_, i) =>
-                        React.createElement('div', {
-                          key: `ai-album-skeleton-${i}`,
-                          style: {
-                            backgroundColor: 'var(--card-bg)',
-                            borderRadius: '10px',
-                            padding: '10px',
-                            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)'
-                          }
-                        },
-                          React.createElement('div', {
-                            className: 'aspect-square rounded-md mb-2 animate-shimmer',
-                            style: { background: 'linear-gradient(to right, var(--shimmer-from), var(--shimmer-via), var(--shimmer-to))' }
-                          }),
-                          React.createElement('div', { className: 'h-4 rounded mb-2 animate-shimmer', style: { background: 'linear-gradient(to right, var(--shimmer-from), var(--shimmer-via), var(--shimmer-to))', width: '80%' } }),
-                          React.createElement('div', { className: 'h-3 rounded animate-shimmer', style: { background: 'linear-gradient(to right, var(--shimmer-from), var(--shimmer-via), var(--shimmer-to))', width: '60%' } })
-                        )
-                      )
-                    ),
-                    React.createElement('div', { className: 'flex items-center gap-2 mb-4' },
-                      React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Artist Suggestions'),
-                      React.createElement('span', {
-                        className: 'px-2 py-0.5 rounded-full text-xs font-medium',
-                        style: { backgroundColor: 'var(--accent-surface)', color: 'var(--accent-primary)' }
-                      }, 'Shuffleupagus')
-                    ),
-                    React.createElement('div', { className: 'grid grid-cols-5 gap-4' },
-                      Array.from({ length: 5 }).map((_, i) =>
-                        React.createElement('div', {
-                          key: `ai-artist-skeleton-${i}`,
-                          style: {
-                            backgroundColor: 'var(--card-bg)',
-                            borderRadius: '10px',
-                            padding: '10px',
-                            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)'
-                          }
-                        },
-                          React.createElement('div', {
-                            className: 'aspect-square rounded-lg mb-2 animate-shimmer',
-                            style: { background: 'linear-gradient(to right, var(--shimmer-from), var(--shimmer-via), var(--shimmer-to))' }
-                          }),
-                          React.createElement('div', { className: 'h-4 rounded animate-shimmer', style: { background: 'linear-gradient(to right, var(--shimmer-from), var(--shimmer-via), var(--shimmer-to))', width: '70%' } })
-                        )
-                      )
-                    )
-                  );
-                }
-
-                // Fallback: original Surprise Me card
-                return React.createElement('div', {
-                  className: 'p-6 rounded-xl text-center',
-                  style: {
-                    background: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4c1d95 100%)'
-                  }
-                },
-                  React.createElement('div', { className: 'inline-flex items-center justify-center w-16 h-16 rounded-full bg-white/10 mb-4' },
-                    React.createElement('svg', { className: 'w-8 h-8 text-white', viewBox: '0 0 56 56', fill: 'currentColor' },
-                      React.createElement('path', { d: 'M 26.6875 12.6602 C 26.9687 12.6602 27.1094 12.4961 27.1797 12.2383 C 27.9062 8.3242 27.8594 8.2305 31.9375 7.4570 C 32.2187 7.4102 32.3828 7.2461 32.3828 6.9648 C 32.3828 6.6836 32.2187 6.5195 31.9375 6.4726 C 27.8828 5.6524 28.0000 5.5586 27.1797 1.6914 C 27.1094 1.4336 26.9687 1.2695 26.6875 1.2695 C 26.4062 1.2695 26.2656 1.4336 26.1953 1.6914 C 25.3750 5.5586 25.5156 5.6524 21.4375 6.4726 C 21.1797 6.5195 20.9922 6.6836 20.9922 6.9648 C 20.9922 7.2461 21.1797 7.4102 21.4375 7.4570 C 25.5156 8.2774 25.4687 8.3242 26.1953 12.2383 C 26.2656 12.4961 26.4062 12.6602 26.6875 12.6602 Z M 15.3438 28.7852 C 15.7891 28.7852 16.0938 28.5039 16.1406 28.0821 C 16.9844 21.8242 17.1953 21.8242 23.6641 20.5821 C 24.0860 20.5117 24.3906 20.2305 24.3906 19.7852 C 24.3906 19.3633 24.0860 19.0586 23.6641 18.9883 C 17.1953 18.0977 16.9609 17.8867 16.1406 11.5117 C 16.0938 11.0899 15.7891 10.7852 15.3438 10.7852 C 14.9219 10.7852 14.6172 11.0899 14.5703 11.5352 C 13.7969 17.8164 13.4687 17.7930 7.0469 18.9883 C 6.6250 19.0821 6.3203 19.3633 6.3203 19.7852 C 6.3203 20.2539 6.6250 20.5117 7.1406 20.5821 C 13.5156 21.6133 13.7969 21.7774 14.5703 28.0352 C 14.6172 28.5039 14.9219 28.7852 15.3438 28.7852 Z M 31.2344 54.7305 C 31.8438 54.7305 32.2891 54.2852 32.4062 53.6524 C 34.0703 40.8086 35.8750 38.8633 48.5781 37.4570 C 49.2344 37.3867 49.6797 36.8945 49.6797 36.2852 C 49.6797 35.6758 49.2344 35.2070 48.5781 35.1133 C 35.8750 33.7070 34.0703 31.7617 32.4062 18.9180 C 32.2891 18.2852 31.8438 17.8633 31.2344 17.8633 C 30.6250 17.8633 30.1797 18.2852 30.0860 18.9180 C 28.4219 31.7617 26.5938 33.7070 13.9140 35.1133 C 13.2344 35.2070 12.7891 35.6758 12.7891 36.2852 C 12.7891 36.8945 13.2344 37.3867 13.9140 37.4570 C 26.5703 39.1211 28.3281 40.8321 30.0860 53.6524 C 30.1797 54.2852 30.6250 54.7305 31.2344 54.7305 Z' })
-                    )
-                  ),
-                  React.createElement('h3', { className: 'text-xl font-bold text-white mb-2' }, 'Surprise Me'),
-                  React.createElement('p', { className: 'text-white/70 text-sm mb-4 max-w-md mx-auto' },
-                    hasEnabledChat
-                      ? 'Shuffleupagus, your AI companion, can recommend music, provide insights, control your playback experience and integrates with other AI agents so they can control it too.'
-                      : 'Shuffleupagus, your AI companion, can recommend music, provide insights, control your playback experience and integrates with other AI agents so they can control it too. Enable at least one AI plug-in (like ChatGPT, Gemini, or Claude) to get started.'
-                  ),
-                  hasEnabledChat
-                    ? React.createElement('button', {
-                        className: 'px-6 py-2.5 bg-white text-purple-700 font-semibold rounded-full hover:bg-purple-50 transition-colors',
-                        onClick: () => {
-                          openAiChat();
-                        }
-                      }, 'Chat with Shuffleupagus')
-                    : React.createElement('button', {
-                        className: 'px-6 py-2.5 bg-white/20 text-white font-semibold rounded-full hover:bg-white/30 transition-colors',
-                        onClick: () => {
-                          navigateTo('settings');
-                          setSettingsTab('plugins');
-                        }
-                      }, 'Set Up AI Plug-in')
-                );
-              })(),
-
-              // SECTION: Collection Stats & Sync
-              (() => {
-                const hasSyncEnabled = Object.values(resolverSyncSettings).some(s => s?.enabled);
-                const statsGrid = React.createElement('div', { className: 'grid grid-cols-2 md:grid-cols-5 gap-4 mt-4' },
-                  [
-                    { label: 'Songs', value: library.length + collectionData.tracks.length, icon: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z', color: '#3b82f6', onClick: () => { navigateTo('library'); setCollectionTab('tracks'); } },
-                    { label: 'Albums', value: collectionData.albums.length, icon: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3', color: 'var(--accent-secondary)', onClick: () => { navigateTo('library'); setCollectionTab('albums'); } },
-                    { label: 'Artists', value: collectionData.artists.length, icon: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z', color: '#ec4899', onClick: () => { navigateTo('library'); setCollectionTab('artists'); } },
-                    { label: 'Playlists', value: playlists.length, icon: 'M4 6h16M4 10h16M4 14h16M4 18h16', color: '#f59e0b', onClick: () => navigateTo('playlists') },
-                    { label: 'Friends', value: friends.length, icon: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z', color: '#10b981', onClick: () => { navigateTo('library'); setCollectionTab('friends'); } }
-                  ].map((stat, index) =>
-                    React.createElement('button', {
-                      key: stat.label,
-                      className: 'release-card card-fade-up p-4 text-left',
-                      style: {
-                        backgroundColor: 'var(--card-bg)',
-                        borderRadius: '10px',
-                        border: 'none',
-                        boxShadow: 'var(--card-shadow)',
-                        animationDelay: `${index * 50}ms`
-                      },
-                      onClick: stat.onClick
-                    },
-                      React.createElement('div', {
-                        className: 'w-10 h-10 rounded-lg flex items-center justify-center mb-3',
-                        style: { backgroundColor: `${stat.color}15` }
-                      },
-                        React.createElement('svg', { className: 'w-5 h-5', style: { color: stat.color }, fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: stat.icon })
-                        )
-                      ),
-                      React.createElement('p', { className: 'text-2xl font-bold text-gray-900' }, stat.value),
-                      React.createElement('p', { className: 'text-sm text-gray-500' }, stat.label)
-                    )
-                  )
-                );
-
-                const sectionHeader = React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Collection');
-
-                // When sync is already enabled, just show the stats grid
-                if (hasSyncEnabled) return React.createElement('div', null, sectionHeader, statsGrid);
-
-                // When sync is not enabled, wrap stats inside the sync container
-                return React.createElement('div', null, sectionHeader, React.createElement('div', {
-                  className: 'rounded-xl overflow-hidden mt-4',
-                  style: {
-                    background: 'var(--bg-inset)',
-                    border: '1px solid var(--border-subtle)'
-                  }
-                },
-                  React.createElement('div', { className: 'p-5' },
-                    React.createElement('div', { className: 'flex items-center gap-2 mb-1' },
-                      React.createElement('svg', { className: 'w-5 h-5 text-green-600', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M20 4v5h-.582m-15.356 2A8.001 8.001 0 0119.418 9m0 0H15m-11 11v-5h.581m0 0a8.003 8.003 0 0015.357-2m-15.357 2H9' })
-                      ),
-                      React.createElement('h3', { className: 'text-base font-semibold text-gray-900' }, 'Sync Your Collection')
-                    ),
-                    React.createElement('p', { className: 'text-sm text-gray-500 mb-4' },
-                      'Import your saved music from Spotify or Apple Music to build your Parachord collection. Your library stays in sync automatically.'
-                    ),
-                    statsGrid,
-                    React.createElement('div', { className: 'flex gap-3 mt-4' },
-                      React.createElement('button', {
-                        className: 'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white transition-opacity hover:opacity-90',
-                        style: { backgroundColor: '#1DB954', border: 'none', cursor: 'pointer' },
-                        onClick: () => openSyncSetupModal('spotify')
-                      },
-                        React.createElement('svg', { style: { width: '16px', height: '16px' }, viewBox: '0 0 24 24', fill: '#ffffff' },
-                          React.createElement('path', { d: 'M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z' })
-                        ),
-                        'Sync Spotify'
-                      ),
-                      React.createElement('button', {
-                        className: 'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white transition-opacity hover:opacity-90',
-                        style: { backgroundColor: '#FA243C', border: 'none', cursor: 'pointer' },
-                        onClick: () => openSyncSetupModal('applemusic')
-                      },
-                        React.createElement('svg', { style: { width: '16px', height: '16px' }, viewBox: '0 0 122.88 122.88', fill: '#ffffff' },
-                          React.createElement('path', { d: 'M47.76,86.16v-38.4c0-1.44,0.8-2.32,2.4-2.64l33.12-6.72c1.76-0.32,2.72,0.48,2.88,2.4v29.28c0,2.4-3.6,4-10.8,4.8c-13.68,2.16-11.52,25.2,7.2,18.96c7.2-2.64,8.4-9.6,8.4-16.56V21.12c0,0,0-4.8-4.08-3.6l-40.8,8.4c0,0-3.12,0.48-3.12,4.32v48.72c0,2.4-3.6,4-10.8,4.8c-13.68,2.16-11.52,25.2,7.2,18.96C46.56,100.08,47.76,93.12,47.76,86.16z' })
-                        ),
-                        'Sync Apple Music'
-                      )
-                    )
-                  )
-                ));
-              })()
-            )
-          )
-        );
+        React.createElement(AskShuffleupagus, {
+          initialPrompt: examplePrompt,
+          chatAvailable,
+          onAsk: askShuffleupagus,
+          onSetup: () => { navigateTo('settings'); setSettingsTab('plugins'); },
+        }))));
 });
 
-module.exports = { HomePage, HOME_PAGE_HANDLERS };
+module.exports = { HomePage, HOME_PAGE_HANDLERS, LOVES_CONTEXT };

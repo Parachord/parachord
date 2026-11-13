@@ -227,11 +227,13 @@ Tooltip({ children, content, position, variant, className })
 ### FixedTooltip
 
 ```
-FixedTooltip({ children, content })
+FixedTooltip({ children, content, id })
 ```
 
 - Uses `position: fixed` + `ReactDOM.createPortal` to escape `overflow: hidden` containers (e.g., sidebar)
-- Positioned below the trigger element
+- Positioned below the trigger, left-aligned; shifted left to stay inside the window and flipped above the trigger near the bottom (`placeFixedTooltip`, pure). Coordinates are set only after the tip is measured, so showing it again (focus after hover) keeps the clamp
+- Shows on hover or on keyboard focus inside the trigger and stays while either lasts; Escape dismisses it until the pointer or focus comes back (WCAG 1.4.13)
+- The tip is `role="tooltip"`, with `id` when given. A tooltip is not an accessible name or description by itself: give the trigger an `aria-describedby` (Home's badges point it at a visually hidden copy of the text)
 
 ### TrackRow
 

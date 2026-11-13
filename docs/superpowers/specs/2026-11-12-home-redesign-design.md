@@ -20,6 +20,7 @@ Home is the first thing you see, and its job is to get you playing something in 
   - the play-history mixes your services make (#1342 kept them off Recommendations so they could go here);
   - Fresh Drops, Critical Darlings and concerts.
 - **Smarter setup prompts.** They disappear once done, can each be dismissed, and live behind one small button, not cards in the page.
+- **The app's own cards and hovers.** Every album and playlist card on Home is the card the Playlists page and Collection use (padding, corners, `--card-bg`, `--card-shadow`, the `release-card` hover lift, a 16px grid gap) with the same art hover (dim, Add to Playlist / Play / Add to Queue). Home invents no card treatment of its own.
 - **The remote announcement banner becomes a Home-only slot.**
 
 ## Non-goals
@@ -64,14 +65,14 @@ Today's banner moves from the main content area (`activeAnnouncements` in `src/r
 - On the right:
   - **Finish setting up · N of M**, the setup checklist (below).
   - **Play Collection Radio**, styled as a play action: a white circle with a play triangle inside an accent pill. It replaces "Start Collection Radio".
-- Today's gradient hero header goes. My call: it pushed the first play button down the page.
+- Today's tall gradient hero goes; Home keeps only the collapsed hero every page has (80px, "HOME" in the uppercase light title), in Home's sidebar colour: a gradient through violet-600 (the accent, #7c3aed) with Home's circle pattern. The tall version pushed the first play button down the page.
 
 ### 3. Jump back in
 
-One row of four tiles. Each tile has art, a title, a subtitle and a play button on hover. There's one tile of each kind, in this order:
+One row of four tiles (two by two when the page is narrow). Each tile has art, a title, a subtitle and its own Play button; clicking the rest of the tile opens the item (see "Decisions after the first build"). There's one tile of each kind, in this order:
 
 1. **Freshest playlist.** The playlist with the most recent `lastModified` (see Your playlists for what counts as a change). The subtitle says what changed ("Playlist · 12 new today").
-2. **Recent loves.** Your last 50 loved tracks: collection tracks, newest `addedAt` first, played as a queue.
+2. **Recent Loves.** Your last 50 loved tracks: collection tracks, newest `addedAt` first, played as a queue.
 3. **The album behind your latest love.** The album of the most recently loved track.
    - Skip to the next love when that track is a single with no album, or the album is already playing or in the queue.
    - The subtitle names the track ("Frog · the album behind your latest love, Hartsdale Hotbox").
@@ -83,12 +84,14 @@ This replaces **Continue Listening**.
 
 ### 4. Made from your listening
 
-The play-history mixes your services make, up to six cards.
+The play-history mixes your services make, led by Recent Loves, up to six cards.
 
-- Each card shows the mix's title on its art, plus a service label and a one-line description.
+- **Recent Loves always comes first**: your last 50 loved tracks, as a card with a mosaic of the newest loved albums. It opens Collection's songs newest loved first, and plays and queues under the `loves` context. It's no service's, so it adds no filter chip and shows whatever chip is selected.
+
+- Each card shows the mix's title and a one-line description. The row's source filter names the services, so the card carries no service label.
 - **Source filters**: All, then one chip per service that returned at least one mix. A chip filters only this row.
 - **No "See all"**, because no page lists these: Recommendations leaves them out on purpose.
-- **Hidden** when no service returns a mix.
+- **Hidden** when there are no loves and no service returns a mix.
 
 Which mixes count as play history:
 
@@ -109,7 +112,7 @@ Which mixes count as play history:
 Six playlist cards, ordered by **when each playlist last changed**, not by when it was created. A playlist that refreshes itself (a hosted XSPF, a synced mirror) stays up front however old it is.
 
 - The art is a 2×2 mosaic.
-- A badge shows how many tracks the latest change added ("+12"), while that change is recent. See point 3 of "Settled after a builder's read".
+- A badge shows how many tracks the latest change added ("Δ 12"), while that change is recent. See point 3 of "Settled after a builder's read".
 - The subtitle reads "Refreshed 2h ago · since 2023": when it last changed, and the year it was created.
 - **See all** opens the Playlists page.
 - **Hidden** with no playlists.
@@ -127,12 +130,12 @@ Six album cards from every source that recommends albums:
 - the plugins' `getRecommendations` album picks (Apple Music, Amazon Music, ListenBrainz, Last.fm);
 - Shuffleupagus's album suggestions.
 
-Each card names its source and why it was picked ("Last.fm · like Hovvdy").
+An album card names no source: the source filter does that, and only playlist cards (a service's own curation) carry the service. Shuffleupagus's reason is a badge with a tooltip (see "Decisions after the first build").
 
 - **Source filters**: All, then one chip per source with at least one album. A chip filters only this row.
 - **See all** opens Recommendations.
 - Home reads the answers Recommendations caches (`cache_recommendations`). When that cache is empty or stale, Home fills it itself, in the background. See point 1 of "Settled after a builder's read".
-- Shuffleupagus's batch keeps its Refresh, a small icon button on this section, and keeps the "Refresh Home suggestions on every visit" setting (`lib/home-suggestions-refresh.js`), because the Recommendations spec says Home is where that batch refreshes.
+- No Refresh control on this section. Shuffleupagus's batch refreshes from the Recommendations page's Refresh, or on every visit with the "Refresh Home suggestions on every visit" setting (`lib/home-suggestions-refresh.js`).
 - **Hidden** when no source has albums.
 
 This replaces the Discover, Album Suggestions and Artist Suggestions sections.
@@ -143,9 +146,10 @@ This replaces the Discover, Album Suggestions and Artist Suggestions sections.
 
 Two rows side by side, each with three album cards, a short description and a **See all** link to its own page.
 
-- **Fresh Drops**: new releases from artists in your collection, from the Fresh Drops data (`newReleases`). Each card is tagged with its release date ("Out Friday", "This week").
-- **Critical Darlings**: from `criticsPicks`, with its score or source as the tag.
-- Each half hides on its own when it's empty.
+- **Fresh Drops**: new releases from artists in your collection, from the Fresh Drops data (`newReleases`). Each card wears the Fresh Drops page's release-type badge (Album, EP, Single) in the art's top-right corner, in that page's colours.
+- **Both halves** are cards that open with a slim band copied from their pages' heroes: the same gradient (emerald to cyan, amber to red) and the collapsed hero's uppercase light title, with the sidebar's icon and a "See all" link. The cards sit below on the page background.
+- **Critical Darlings**: from `criticsPicks`, with its score or source as the tag. A pick with a critics' summary carries it in a lower-right badge with a tooltip.
+- Each half hides on its own when it's empty, and a half that is alone stays half width.
 - Home starts neither fetch on its critical path. When the data isn't loaded yet, it loads in the background lane, after the sections above have their data.
 
 ### 8. Concerts near you
@@ -155,7 +159,7 @@ Four concert cards from the Concerts page's data (`concerts`, filtered by `conce
 - a date block;
 - the artist;
 - the venue and city;
-- a Tickets link.
+- a Tickets link, the card's only action (see "Decisions after the first build").
 
 **See all** opens Concerts. The section is **hidden** when no location is set or no shows are coming up. Same background-loading rule as section 7.
 
@@ -199,15 +203,15 @@ Every card on Home matches what the same kind of thing does elsewhere in the app
   - **On hover:** **Add to Queue** and **Play** at the bottom-right of the art.
   - **Clicking the card** opens the playlist view. For a service mix that isn't a local playlist, it opens the same remote-playlist view the Recommendations page's playlist cards open.
   - **Right-click** opens the playlist context menu.
-- **Recent loves tile:**
+- **Recent Loves tile:**
   - **On hover:** shows play.
   - **Clicking** plays the loves as a queue.
   - **Right-click** offers Add to Queue and "Open in Collection" (Collection's songs, newest loved first).
-- **Jump back in tiles in general:** the whole tile is the play button, so one click plays. That's the row's whole point. Opening the item and adding it to the queue are in the right-click menu for its type.
+- **Jump back in tiles in general:** clicking the tile opens the item (the playlist, the album page, Collection's songs for recent loves, the remote-playlist view for a mix), and a separate Play button on the tile plays it. Adding to the queue is in the right-click menu for its type. (This replaces "the whole tile is the play button"; see "Decisions after the first build".)
 - **Concert:**
-  - **On hover:** the card highlights and its Tickets link underlines.
-  - **Clicking** opens the same ticket flyout the Concerts page uses.
-  - **Tickets** goes straight to the seller.
+  - **The card has no click action.** Tickets is its only action.
+  - **One seller:** Tickets is a direct link to that seller.
+  - **Several sellers:** Tickets is a disclosure button that shows a list of links, one per seller. It closes on an outside click, on Escape (focus returns to Tickets) and when focus leaves it.
 
 Every action button has an `aria-label` naming the item. Actions appear on `:focus-within` as well as hover, so a keyboard user can reach them.
 
@@ -295,7 +299,7 @@ A fresh reviewer read this spec as its builder and raised the points below. Each
    - Also store `lastChangeAdded`, the number of tracks the latest change added (new ids minus old ids), computed at the same moment.
    - Both ride along in the save payload through `buildPlaylistSavePayload`'s spread. No field list changes, and no sync contract changes, because neither field is pushed to a service.
    - A playlist saved before the field exists falls back to `lastModified` until its tracks next change.
-3. **The "+N" badge and "N new" lines use the latest change, not "since your last visit" (my call; this replaces the window stated in section 5).**
+3. **The "Δ N" badge and "N new" lines use the latest change, not "since your last visit" (my call; this replaces the window stated in section 5).**
    - The badge shows `+lastChangeAdded` while `tracksChangedAt` is within the last 7 days, and is hidden otherwise.
    - The header line and the freshest tile's subtitle use the same two fields ("picked up 12 new tracks this morning", "12 new today"), with the time phrase taken from `tracksChangedAt`.
    - No visit timestamp or per-playlist snapshot is stored.
@@ -318,7 +322,26 @@ A fresh reviewer read this spec as its builder and raised the points below. Each
 8. **What Play does.**
    - Every play action on Home, tiles and Play Collection Radio included, does what Play does everywhere else in the app: it replaces the queue through `handlePlay` with the item's context, under the same spinoff and listen-along rules.
    - Add to Queue is the non-destructive path.
-9. **Shuffleupagus's reason.** Its album suggestions already carry `reason` (today's Home shows it in a tooltip). The card's second line is "Shuffleupagus · " plus that reason.
+9. **Shuffleupagus's reason.** Its album suggestions already carry `reason` (today's Home shows it in a tooltip). Superseded by the user's later call: the reason is a lower-right badge with a tooltip, not a text line (see "Decisions after the first build").
+
+## Decisions after the first build
+
+The user's calls after reviewing the built page (2026-11-12). They override anything above that says otherwise, and PRs 3 and 4 and the Android ticket should follow them.
+
+1. **Jump back in tiles open the item, with a separate Play button.** Clicking a tile opens what it shows; its own Play button plays it. The row is four tiles across, and two by two below about 920px of row width.
+2. **Concert cards have no card click.** Tickets is the only action: a direct link for one seller, a disclosure list of links for several. Only http(s) ticket URLs are linked.
+3. **The Shuffleupagus reason and the critics' summary are badges.** Each is a round badge in the art's lower-right corner with a tooltip (Shuffleupagus's icon for both), not a text line. The text is also the badge button's accessible description, so a screen reader gets it without the tooltip. A Critical Darlings pick with no summary has no badge. Escape dismisses the tooltip.
+4. **Source filter pills are colour-coded.** Each source's pill takes its plugin's `resolver.color` (Shuffleupagus uses the fill accent): a dot in that colour when idle, the colour as the fill when selected. The selected pill's text colour is picked by `readableTextOn` (`src/renderer/lib/readable-text.js`) by strict WCAG contrast against the fill. "All" stays neutral.
+5. **Rows use a 24px gap** between cards (`HOME_ROW_GAP`), shared with the skeletons.
+6. **Playlist subtitles are two lines**: the refresh age, then "Since 2023".
+
+Also settled while fixing the first build's review (my calls):
+
+- **Fresh Drops and Critical Darlings** each sit at a fixed half-width basis. A half still loading draws its skeleton in its own place while the other half shows cards, so nothing moves when data lands.
+- **The import card** shows only for a new user: no collection and no playlists. A collection with nothing in Jump back in hides the row instead.
+- **A playlist with no covers yet** shows the Playlists page's playlist glyph. Covers the cache holds go on screen at once, and missing ones are fetched freshest first, Home's order.
+- **Home's recommendations load** is skipped when a full recommendations load finished in the last 10 minutes.
+- **The Ask example** strips control and bidi characters from artist names and caps each at 40 characters.
 
 ## Left to the builder
 

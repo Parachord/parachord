@@ -66,13 +66,16 @@ describe('recommendations wiring', () => {
     expect(fn).toMatch(/if \(forceRefresh\) \{\s*expandedSectionsRef\.current = \{\};/);
   });
 
-  test("Home's For You preview asks only the meta-services (a resolver's page loads never queue ahead of Home resolution)", () => {
-    // The Home discovery effect's call is filtered…
-    const homeCall = app.indexOf('loadRecommendations({ metaServicesOnly: true });');
-    expect(homeCall).toBeGreaterThan(-1);
-    const homeEffect = app.slice(app.lastIndexOf('useEffect', homeCall), homeCall);
-    expect(homeEffect).toContain('hasScrobbler');
-    // …and loadRecommendations implements the filter (meta-service ids only).
+  test("Home's load waits for first paint, and the meta-services-only option stays available", () => {
+    // The redesigned Home shows every provider's album picks, so it runs the
+    // full load, from an idle callback after paint (home-page.js), never from
+    // an app.js effect on navigation.
+    expect(app).not.toContain('loadRecommendations({ metaServicesOnly: true });');
+    const home = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/home-page.js'), 'utf8');
+    const idle = home.indexOf('globalThis.requestIdleCallback');
+    const effect = home.slice(home.lastIndexOf('React.useEffect(', idle), home.indexOf('}, [cacheLoaded]);', idle));
+    expect(effect).toContain('loadHomeRecommendations();');
+    expect(app).toMatch(/const loadHomeRecommendations = \(\) => \{[\s\S]{0,400}loadRecommendations\(\);/);
     const i = app.indexOf('const loadRecommendations = async');
     const fn = app.slice(i, app.indexOf('\n  };', i));
     expect(fn).toContain('const metaOnly = opts !== true && !!opts?.metaServicesOnly;');
@@ -137,13 +140,15 @@ describe('recommendations wiring', () => {
   });
 
   test('opening a recommended playlist is provider-neutral (creator/source from the item and section, trackSlug ids)', () => {
-    const i = app.indexOf('const openRecommendationPlaylist = (item, section) => {');
+    // One opener for the Recommendations cards and Home's service mixes.
+    expect(app).toContain('const openRecommendationPlaylist = (item, section) => openServicePlaylist(item, itemSourceName(item, section));');
+    const i = app.indexOf('const openServicePlaylist = (item, sourceName) => {');
     expect(i).toBeGreaterThan(-1);
-    const fn = app.slice(i, app.indexOf('\n            };', i));
+    const fn = app.slice(i, app.indexOf('\n  };', i));
     // The record's identity comes from the item's resolver and that source's
     // name on the row (rows are blended) — never a hard-coded service.
     expect(fn).toContain('id: `${item.resolverId}-rec-${item.id}`');
-    expect(fn).toContain("const resolverName = itemSourceName(item, section) || 'the service';");
+    expect(fn).toContain("const resolverName = sourceName || 'the service';");
     const name = app.slice(app.indexOf('const itemSourceName = (item, row) => {'), app.indexOf('const openRecommendationPlaylist = async'));
     expect(name).toContain('const src = ((row && row.sources) || []).find(x => x.id === item.resolverId);');
     expect(fn).toContain('creator: resolverName');
@@ -164,8 +169,8 @@ describe('opening a recommended playlist is responsive', () => {
   const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
 
   test('the click opens the view at once and the tracks fill in when the lookup lands', () => {
-    const open = app.slice(app.indexOf('const openRecommendationPlaylist = (item, section) => {'));
-    const body = open.slice(0, open.indexOf('\n            };'));
+    const open = app.slice(app.indexOf('const openServicePlaylist = (item, sourceName) => {'));
+    const body = open.slice(0, open.indexOf('\n  };'));
     // No waiting before the view changes: no await, no global spinner.
     expect(body).not.toContain('await ');
     expect(body).not.toContain('setTrackLoading');
@@ -358,7 +363,7 @@ describe('the grouped model wiring (similar users, weekly sections, readers)', (
     expect(fn).not.toMatch(/recommendationsLoadingMoreRef\.current\[section\.key\]/);
   });
 
-  test('all five readers call flattenRecommendationItems', () => {
+  test('the readers call flattenRecommendationItems', () => {
     // the discovery-unread hash on the page…
     const seen = app.slice(app.indexOf("if (activeView === 'recommendations' && recommendations.sections.length > 0) {"));
     expect(seen.slice(0, 300)).toMatch(/generateDiscoveryHash\(flattenRecommendationItems\(recommendations\.sections\), i => i\.name\)/);
@@ -368,9 +373,9 @@ describe('the grouped model wiring (similar users, weekly sections, readers)', (
     // the song list the scheduler resolves
     const songs = app.slice(app.indexOf('const recommendationSongs = useMemo('));
     expect(songs.slice(0, 400)).toContain('flattenRecommendationItems(recommendations.sections)');
-    // Home's For You preview
-    const preview = app.slice(app.indexOf('const recommendationsPreview = useMemo(() => {'));
-    expect(preview.slice(0, 300)).toContain('flattenRecommendationItems(recommendations.sections)');
+    // (Home's For You preview was the fifth; the redesigned Home reads the
+    // album items per row in its recommendationAlbums memo, for the row's
+    // source names.)
     // the image fetch
     const images = app.slice(app.indexOf('const recommendationImageFetchesRef = useRef(new Set());'));
     expect(images.slice(0, 900)).toContain('for (const item of flattenRecommendationItems(recommendations.sections))');
