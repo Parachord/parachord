@@ -122,7 +122,13 @@ module.exports = {
       }
       if (c.type === 'playlists') {
         if (isPlayHistoryMix(a)) return null;
-        return { type: 'playlist', id: 'applemusic-playlist-' + c.id, name: a.name, imageUrl: art(a), url: a.url || null };
+        var item = { type: 'playlist', id: 'applemusic-playlist-' + c.id, name: a.name, imageUrl: art(a), url: a.url || null };
+        // The page's category from Apple's own playlistType; other types
+        // carry none.
+        var cats = { 'personal-mix': 'personal', 'editorial': 'editorial', 'user-shared': 'community' };
+        var cat = Object.prototype.hasOwnProperty.call(cats, a.playlistType) ? cats[a.playlistType] : null;
+        if (cat) item.category = cat;
+        return item;
       }
       if (c.type === 'songs') {
         var song = { type: 'song', name: a.name, artist: a.artistName || '', imageUrl: art(a), url: a.url || null };

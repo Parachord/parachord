@@ -414,8 +414,8 @@ describe('the five-section page render', () => {
     expect(view).toMatch(/const contentSections = sections\.filter\(s => s\.type !== 'friend'\);/);
     expect(view).toMatch(/const friendsSection = sections\.find\(s => s\.type === 'friend'\) \|\| null;/);
     const typeSection = between('const renderTypeSection = (section) =>', '// ── The page');
-    expect(typeSection).toMatch(/section\.subsections\.map\(renderSubsection\)/);
-    const header = between('const subsectionHeader = (sub, ', 'const renderSubsection = (sub) => {');
+    expect(typeSection).toMatch(/visibleRows\.map\(sub => renderSubsection\(sub, \{ cardRows \}\)\)/);
+    const header = between('const subsectionHeader = (sub, ', 'const renderSubsection = (sub, { cardRows = CARD_ROWS } = {}) => {');
     // The app's section title (Home's), not a page-local heading.
     expect(header).toMatch(/React\.createElement\(SectionHeader, \{\s*title: sub\.title,/);
     // No provider row titles or per-row source tags any more.
@@ -423,6 +423,13 @@ describe('the five-section page render', () => {
     expect(header).not.toMatch(/React\.createElement\('h3'/);
     // No item counts beside titles (the old header printed items.length).
     expect(view).not.toMatch(/`\$\{section\.items\.length\}`|`\$\{sub\.items\.length\}`/);
+  });
+
+  test('category rows are subsections under one "Playlists" SectionHeader', () => {
+    const typeSection = between('const renderTypeSection = (section) =>', '// ── The page');
+    expect(typeSection).toMatch(/if \(visibleRows\.some\(sub => sub\.category\)\) \{[\s\S]*?React\.createElement\(SectionHeader, \{ title: section\.title, style: SECTION_HEADER_GAP \}\)/);
+    const header = between('const subsectionHeader = (sub, ', "// ── One section's row");
+    expect(header).toContain("size: sub.category ? 'sub' : 'section',");
   });
 
   test('"See all" / "Show less" is the section header\'s in-place link, labelled "See all"', () => {
@@ -434,7 +441,7 @@ describe('the five-section page render', () => {
     expect(header).toMatch(/label: expanded \? 'Show less' : 'See all'/);
     expect(header).toMatch(/onClick: \(\) => toggleRecommendationSection\(sub\.key\)/);
     // Only for a row with more than its preview, or more to load.
-    const row = between('const renderSubsection = (sub) => {', '// ── Types');
+    const row = between('const renderSubsection = (sub, { cardRows = CARD_ROWS } = {}) => {', '// ── Types');
     expect(row).toMatch(/const showToggle = expanded \|\| canExpand \|\| sub\.canLoadMore;/);
   });
 
@@ -472,7 +479,7 @@ describe('the five-section page render', () => {
     expect(view).toMatch(/const activeSourceFilter = pageSources\(allSections\)\.some\(src => src\.id === recommendationSourceFilter\) \? recommendationSourceFilter : 'all';/);
     // A section the pick leaves empty is left out.
     expect(view).toMatch(/allSections\.filter\(sec => sec\.subsections\.some\(sub => filterRowBySource\(sub, activeSourceFilter\)\.length > 0\)\)/);
-    const row = between('const renderSubsection = (sub) => {', '// ── Types');
+    const row = between('const renderSubsection = (sub, { cardRows = CARD_ROWS } = {}) => {', '// ── Types');
     expect(row).toMatch(/const items = filterRowBySource\(sub, activeSourceFilter\);/);
     for (const line of app.split('\n').filter(l => l.includes('recommendationSourceFilter') || l.includes('RecommendationSourceFilter'))) {
       expect(line).not.toMatch(/store|localStorage/);
@@ -578,5 +585,22 @@ describe('the five-section page render', () => {
     // A late Friends answer clears an empty message the round already showed.
     const fetchBlock = fn.slice(fn.indexOf('const fetchSimilarUsers = async (provider) => {'), fn.indexOf('await Promise.all(['));
     expect(fetchBlock).toMatch(/saveRecommendationsCache\(\);\s*(\/\/[^\n]*\n\s*)?if \(isLatest\(\) && recommendationsFriendsShownRef\.current\) \{\s*setRecommendations\(prev => \(\{ \.\.\.prev, loading: false, error: null \}\)\);/);
+  });
+});
+
+describe('playlist category rows on the page', () => {
+  test('playlist category rows: per-row preview, hidden empty rows, tail by category', () => {
+    expect(app).toContain("lastPageCategories: [...new Set(result.items.filter(i => i && i.type === 'playlist').map(i => playlistCategory(i, section.category)))]");
+    expect(app).toContain('expansion.lastPageCategories.includes(sub.category)');
+    expect(app).toContain('visibleRows.length > 1 ? 1 : CARD_ROWS');
+    // Under a source filter only a page from that provider can fill a row, so
+    // only its in-flight page keeps an otherwise empty row on the page.
+    expect(app).toContain('recommendationsLoadingMore[p.pagingKey] && (!filteringOne || p.resolverId === activeSourceFilter)');
+    expect(app).toContain('(recommendationsGridColumns.cards || 6) * cardRows');
+    expect(app).toMatch(/exhausted: true, lastPageTypes: \[\], lastPageCategories: \[\]/);
+  });
+
+  test('playlist category rows have space between them', () => {
+    expect(app).toContain("className: 'mb-10', style: { display: 'flex', flexDirection: 'column', gap: '32px' }");
   });
 });

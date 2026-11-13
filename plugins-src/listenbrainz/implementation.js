@@ -163,8 +163,8 @@ module.exports = {
       .filter(Boolean);
     const explorationItems = weeklyItems('weekly exploration', 'weekly-exploration', 'Weekly Exploration');
     const jamsItems = weeklyItems('weekly jams', 'weekly-jam', 'Weekly Jams');
-    if (explorationItems.length) sections.push({ id: 'weekly-exploration', title: 'Weekly Exploration', items: explorationItems });
-    if (jamsItems.length) sections.push({ id: 'weekly-jams', title: 'Weekly Jams', items: jamsItems });
+    if (explorationItems.length) sections.push({ id: 'weekly-exploration', title: 'Weekly Exploration', category: 'personal', items: explorationItems });
+    if (jamsItems.length) sections.push({ id: 'weekly-jams', title: 'Weekly Jams', category: 'personal', items: jamsItems });
     return { sections };
   },
 

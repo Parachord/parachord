@@ -32,6 +32,16 @@ describe('section header style', () => {
   });
 });
 
+describe('SectionHeader size', () => {
+  test('a subsection title is a 15px semibold h3; the default is the 20px h2', () => {
+    expect(H.SUBSECTION_TITLE_STYLE).toEqual({ margin: 0, fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)' });
+    expect(h({ title: 'Made for you', size: 'sub' }))
+      .toContain('<h3 style="margin:0;font-size:15px;font-weight:600;color:var(--text-primary)">Made for you</h3>');
+    expect(h({ title: 'Made for you', size: 'sub', as: 'h4' })).toContain('<h4 style="margin:0;font-size:15px');
+    expect(h({ title: 'Playlists' })).toContain('<h2 style="margin:0;font-size:20px;font-weight:700;color:var(--text-primary)">Playlists</h2>');
+  });
+});
+
 describe('SectionHeader', () => {
   test('title and subtitle on the left', () => {
     const html = h({ id: 'x', title: 'Concerts near you', sub: 'Playing soon' });
