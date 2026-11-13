@@ -29,6 +29,7 @@ const { trackSlug } = require('../lib/track-slug');
 
 // Plain functions from Parachord, passed as stable wrappers.
 const HOME_PAGE_HANDLERS = [
+  'addServicePlaylistToPlaylist',
   'addToQueue',
   'askShuffleupagus',
   'copyParachordLink',
@@ -92,6 +93,7 @@ const HOME_TITLEBAR_HEIGHT = 32;
 
 const HomePage = React.memo(function HomePage(props) {
   const {
+    addServicePlaylistToPlaylist,
     addToQueue,
     allPlaylistCovers,
     allResolvers,
@@ -393,8 +395,9 @@ const HomePage = React.memo(function HomePage(props) {
     onArtError,
   };
   // A service mix: the card opens the remote-playlist view the
-  // Recommendations cards open, and Play and Add to Queue load its tracks
-  // through the same lookup. The 'mix' context lets Jump back in leave the
+  // Recommendations cards open, and Add to Playlist, Play and Add to Queue
+  // (the hover every playlist card has) load its tracks through the same
+  // lookup. The 'mix' context lets Jump back in leave the
   // mix out while it plays or waits in the queue.
   const mixContext = (m) => ({ type: 'mix', id: m.id, name: m.title });
   const openMix = (m) => openServicePlaylist(m, m.resolverName);
@@ -402,6 +405,7 @@ const HomePage = React.memo(function HomePage(props) {
     onOpen: openMix,
     onPlay: (m) => playServicePlaylist(m, mixContext(m)),
     onQueue: (m) => queueServicePlaylist(m, mixContext(m)),
+    onAddToPlaylist: addServicePlaylistToPlaylist,
     // No context menu: a service mix has no library copy to act on.
     onArtError,
   };

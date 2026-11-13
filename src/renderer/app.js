@@ -35854,6 +35854,17 @@ useEffect(() => {
       showToast(error?.message || `Could not load ${item.name}`, 'error');
     }
   };
+  // Add a service playlist's tracks to one of the user's playlists (the
+  // Playlists page cards' Add to Playlist), through the same lookup.
+  const addServicePlaylistToPlaylist = async (item) => {
+    if (!item || !item.url) return;
+    try {
+      const tracks = await recommendationPlaylistTracks(item);
+      setAddToPlaylistPanel({ open: true, tracks, sourceName: item.name, sourceType: 'playlist' });
+    } catch (error) {
+      showToast(error?.message || `Could not load ${item.name}`, 'error');
+    }
+  };
 
   // Open a service playlist (a recommended playlist, or one of Home's
   // history mixes) in the playlist view: the ephemeral external-playlist
@@ -36102,7 +36113,7 @@ useEffect(() => {
   // Stable function props for the memo'd HomePage (keys must match
   // HOME_PAGE_HANDLERS in home-page.js).
   const homePageHandlers = useStableHandlers({
-    addToQueue, askShuffleupagus, copyParachordLink, dismissHomeBanner, dismissHomeSetupItem,
+    addServicePlaylistToPlaylist, addToQueue, askShuffleupagus, copyParachordLink, dismissHomeBanner, dismissHomeSetupItem,
     fetchAlbumTracksByName, getAlbumArt, handleCollectionAlbumClick, handleStartCollectionStation,
     loadAiRecommendations, loadConcerts, loadCriticsPicks, loadNewReleases, loadPlaylist,
     loadHomeHistoryMixes, loadHomeRecommendations, navigateTo, openCriticsPicksAlbum, openHomeBannerCta, openServicePlaylist,
@@ -41089,15 +41100,7 @@ useEffect(() => {
             // The playlist card's other two standard hover actions (the same
             // set as the Playlists page's cards: Add to Playlist, Play, Add to
             // Queue).
-            const addRecommendationPlaylistToPlaylist = async (item) => {
-              if (!item.url) return;
-              try {
-                const tracks = await recommendationPlaylistTracks(item);
-                setAddToPlaylistPanel({ open: true, tracks, sourceName: item.name, sourceType: 'playlist' });
-              } catch (error) {
-                showToast(error?.message || `Could not load ${item.name}`, 'error');
-              }
-            };
+            const addRecommendationPlaylistToPlaylist = async (item) => addServicePlaylistToPlaylist(item);
             const queueRecommendationPlaylist = async (item) => queueServicePlaylist(item);
 
             // Open a recommended playlist in the playlist view (the same
