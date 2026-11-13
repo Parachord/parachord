@@ -65,7 +65,7 @@ Today's banner moves from the main content area (`activeAnnouncements` in `src/r
 - On the right:
   - **Finish setting up · N of M**, the setup checklist (below).
   - **Play Collection Radio**, styled as a play action: a white circle with a play triangle inside an accent pill. It replaces "Start Collection Radio".
-- Today's gradient hero header goes. My call: it pushed the first play button down the page.
+- Today's tall gradient hero goes; Home keeps only the collapsed hero every page has (80px, "HOME" in the uppercase light title), in Home's sidebar colour: a gradient through violet-600 (the accent, #7c3aed) with Home's circle pattern. The tall version pushed the first play button down the page.
 
 ### 3. Jump back in
 

@@ -135,14 +135,22 @@ describe('render', () => {
   };
   const render = (props) => renderToStaticMarkup(React.createElement(HomePage, { ...base, ...props }));
 
-  test('on macOS an opaque band under the title-bar drag strip keeps text off the window edge', () => {
-    const mac = render({ isMac: true });
-    expect(mac).toMatch(/data-home-titlebar[^>]*height:32px[^>]*background-color:var\(--bg-primary\)|data-home-titlebar[^>]*background-color:var\(--bg-primary\)[^>]*height:32px/);
-    // The band sits above the scroller, not inside it.
-    expect(mac.indexOf('data-home-titlebar')).toBeLessThan(mac.indexOf('scrollable-content'));
-    expect(render({ isMac: false })).not.toContain('data-home-titlebar');
-    // 32px is the drag strip's h-8; they move together.
-    expect(app).toContain("className: 'h-8 flex-shrink-0 absolute top-0 left-0 right-0 z-10 drag'");
+  test('Home opens with the collapsed page hero, in its sidebar colour, above the scroller', () => {
+    // Other pages' collapsed heroes (80px, the uppercase light title and shadow)
+    // and Home's sidebar colour (the accent, #7c3aed: Tailwind violet-600).
+    expect(app).toMatch(/className: 'text-2xl font-light text-white',\s*style: \{\s*textShadow: '0 2px 10px rgba\(0,0,0,0\.5\)',\s*letterSpacing: '0\.2em',/);
+    expect(app).toContain("color: activeView === 'home' ? 'var(--accent-primary)' : 'var(--nav-inactive)',");
+    expect(fs.readFileSync(path.join(__dirname, '../../index.html'), 'utf8')).toMatch(/--accent-primary: #7c3aed;/);
+    const html = render({});
+    const hero = html.slice(html.indexOf('data-home-hero-banner'), html.indexOf('scrollable-content'));
+    expect(html.indexOf('data-home-hero-banner')).toBeGreaterThan(-1);
+    expect(html.indexOf('data-home-hero-banner')).toBeLessThan(html.indexOf('scrollable-content'));
+    expect(hero).toMatch(/^data-home-hero-banner=""[^>]*style="height:80px;flex-shrink:0;overflow:hidden"/);
+    expect(hero).toContain('class="absolute inset-0 bg-gradient-to-br from-purple-500 via-violet-600 to-indigo-600"');
+    expect(hero).toMatch(/<h1 class="text-2xl font-light text-white" style="text-shadow:0 2px 10px rgba\(0,0,0,0\.5\);letter-spacing:0\.2em;text-transform:uppercase">Home<\/h1>/);
+    // The hero replaces the macOS title-bar band, and the greeting is no longer a second h1.
+    expect(html).not.toContain('data-home-titlebar');
+    expect(html.match(/<h1/g)).toHaveLength(1);
   });
 
   test('Your playlists cards add their tracks to a playlist the way the Playlists page does', () => {
