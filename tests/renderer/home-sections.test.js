@@ -383,6 +383,15 @@ describe('Rows', () => {
     expect(html).toContain('Tickets');
     expect(html).toContain('aria-label="See all in Concerts"');
   });
+  test('the venue and the city / state are separate lines', () => {
+    const concerts = [{ id: 'c1', date: '2026-12-05', artist: 'Hovvdy', venue: { name: 'Lodge Room', city: 'Los Angeles', region: 'CA' } }];
+    const html = h(S.ConcertsRow, { concerts, navigateTo: () => {} });
+    expect(html).toMatch(/>Lodge Room<\/span><span[^>]*>Los Angeles, CA<\/span>/);
+    expect(html).not.toContain(' · ');
+    // No city: the venue line alone, no empty line under it.
+    const bare = h(S.ConcertsRow, { concerts: [{ ...concerts[0], venue: { name: 'Lodge Room' } }], navigateTo: () => {} });
+    expect(bare).toMatch(/>Lodge Room<\/span>(?!<span)/);
+  });
 });
 
 describe('Concert cards', () => {

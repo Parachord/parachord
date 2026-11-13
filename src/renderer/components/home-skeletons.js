@@ -88,7 +88,7 @@ function CardRowSkeleton({ count = HOME_ROW_CARDS, columns, lines = 2 } = {}) {
     lines > 1 && bar('h-3', { width: '35%', animationDelay: stagger(i) }))));
 }
 
-/** Concerts: four cards, a date block beside three text lines. */
+/** Concerts: four cards, a date block beside four text lines (artist, venue, city, tickets). */
 function ConcertRowSkeleton() {
   return React.createElement('div', {
     'aria-hidden': 'true',
@@ -107,6 +107,7 @@ function ConcertRowSkeleton() {
     React.createElement('div', { style: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '6px' } },
       bar('h-3.5', { width: '70%', animationDelay: stagger(i) }),
       bar('h-3', { width: '55%', animationDelay: stagger(i) }),
+      bar('h-3', { width: '45%', animationDelay: stagger(i) }),
       bar('h-3', { width: '35%', animationDelay: stagger(i) })))));
 }
 

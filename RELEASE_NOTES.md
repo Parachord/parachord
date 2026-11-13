@@ -16,6 +16,8 @@
 - **Announcements show on Home only,** one at a time, dismissable.
 - **ListenBrainz playlist links open in Parachord.** A link to a ListenBrainz playlist now opens, plays and imports like a Spotify or Apple Music one, with album covers in its mosaic.
 - **Gone from Home:** Continue Listening (the player has your queue), Recently Added, Friend Activity (your friends are in the sidebar), the collection stats and the separate suggestion rows.
+- **Section titles look the same on every page.** Recommendations, search results and an artist's upcoming concerts now use Home's larger, bolder section titles, with "See all", "Show less" or "Show more" on the right in the same style. The search headings now read Artists, Songs, Albums and Playlists instead of capitals.
+- **Filter buttons look the same on every page.** The filters on Fresh Drops, Recommendations, an artist's releases and related artists, and the plugin marketplace in Settings now match Home's. A colour-coded filter, such as a service or a release type, shows a dot in its colour, and fills with that colour when you pick it.
 
 ## Amazon Music
 
