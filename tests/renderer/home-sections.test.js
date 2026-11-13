@@ -79,10 +79,26 @@ describe('AlbumCard', () => {
     expect(icon(html, 'What the critics said')).toMatch(/width="18"/);
     expect(icon(html, 'What the critics said')).toBe(icon(shuffle, 'Why Shuffleupagus picked this'));
   });
-  test('shows the tag and the artist', () => {
-    const html = h(S.AlbumCard, { album });
-    expect(html).toContain('Out Friday');
-    expect(html).toContain('Hovvdy');
+  test('shows the artist', () => {
+    expect(h(S.AlbumCard, { album })).toContain('Hovvdy');
+  });
+  test('a Fresh Drops card wears the Fresh Drops page\'s release-type badge, top right', () => {
+    const app = fs.readFileSync(path.join(COMP, '..', 'app.js'), 'utf8');
+    // The page's own badge colours, which Home copies.
+    expect(app).toContain("backgroundColor: release.releaseType === 'album' ? 'rgba(99, 102, 241, 0.9)' :");
+    expect(app).toContain("release.releaseType === 'ep' ? 'rgba(168, 85, 247, 0.9)' :");
+    expect(app).toContain("'rgba(236, 72, 153, 0.9)',");
+    const badge = (releaseType) => {
+      const html = h(S.AlbumCard, { album: { ...album, homeRow: 'fresh', releaseType } });
+      return (html.match(/<div style="position:absolute;top:8px;right:8px"><span class="release-badge" style="([^"]*)">([^<]*)<\/span>/) || []).slice(1);
+    };
+    expect(badge('album')).toEqual(['background-color:rgba(99, 102, 241, 0.9);color:white', 'Album']);
+    expect(badge('ep')).toEqual(['background-color:rgba(168, 85, 247, 0.9);color:white', 'EP']);
+    expect(badge('single')).toEqual(['background-color:rgba(236, 72, 153, 0.9);color:white', 'Single']);
+    // No date chip, and no badge outside Fresh Drops or without a type.
+    expect(h(S.AlbumCard, { album: { ...album, homeRow: 'fresh', releaseType: 'album' } })).not.toContain('Out Friday');
+    expect(h(S.AlbumCard, { album: { ...album, releaseType: 'album' } })).not.toContain('release-badge');
+    expect(h(S.AlbumCard, { album: { ...album, homeRow: 'fresh' } })).not.toContain('release-badge');
   });
 });
 

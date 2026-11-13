@@ -24,7 +24,7 @@ const { JumpBackIn, MixesRow, PlaylistsRow, AlbumsRow, FreshCriticalRow, Concert
 const { JumpBackInSkeleton, CardRowSkeleton, ConcertRowSkeleton, HOME_HALF_ROW_CARDS, HOME_ROW_CARDS } = require('./home-skeletons');
 const { homeSetupItems, missingPopularResolverCount } = require('../lib/home-setup');
 const { freshestPlaylists, recentLoves, changeBadge, freshChangeLine, jumpBackInTiles } = require('../lib/home-model');
-const { playlistSubtitle, homeSections, exampleShufflePrompt, releaseTag, homeTopArtists, albumsNeedingArt } = require('../lib/home-model');
+const { playlistSubtitle, homeSections, exampleShufflePrompt, homeTopArtists, albumsNeedingArt } = require('../lib/home-model');
 const { trackSlug } = require('../lib/track-slug');
 
 // Plain functions from Parachord, passed as stable wrappers.
@@ -314,11 +314,11 @@ const HomePage = React.memo(function HomePage(props) {
     () => (recommendationAlbums || []).map((a) => ({ ...a, imageUrl: coverFor(a.artist, a.title, a.imageUrl) })),
     [recommendationAlbums, art],
   );
-  // "Out Friday" and the like are relative to now, fixed when the list changes.
-  const freshNow = React.useMemo(() => Date.now(), [newReleases]);
+  // A Fresh Drops card carries its releaseType, which AlbumCard badges the
+  // way the Fresh Drops page does.
   const fresh = React.useMemo(() => (newReleases || []).slice(0, HOME_HALF_ROW_CARDS).map((r) => ({
-    ...r, imageUrl: coverFor(r.artist, r.title, r.albumArt), tag: releaseTag(r.date, freshNow), homeRow: 'fresh',
-  })), [newReleases, freshNow, art]);
+    ...r, imageUrl: coverFor(r.artist, r.title, r.albumArt), homeRow: 'fresh',
+  })), [newReleases, art]);
   const critical = React.useMemo(() => (criticsPicks || []).slice(0, HOME_HALF_ROW_CARDS)
     .map((c) => ({ ...c, imageUrl: coverFor(c.artist, c.title, c.albumArt), homeRow: 'critical' })), [criticsPicks, art]);
 

@@ -73,7 +73,6 @@ describe('source', () => {
     for (const name of ['tiles', 'albums', 'fresh', 'critical']) {
       expect(page).toMatch(new RegExp(`const ${name} = React\\.useMemo\\(`));
     }
-    expect(page).not.toMatch(/releaseTag\(r\.date, Date\.now\(\)\)/);
   });
 
   test('app.js no longer runs its own Home discovery load', () => {
