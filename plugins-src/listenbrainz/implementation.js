@@ -228,6 +228,18 @@ module.exports = {
     const data = await response.json();
     const playlists = (data && data.playlists) || [];
     const NAMES = { 'daily-jams': 'Daily Jams', 'weekly-jams': 'Weekly Jams' };
+    // The card's subhead: the dated part of ListenBrainz's title ("Weekly Jams
+    // for x, week of 2026-09-14 Mon" -> "Week of Sep 14, 2026"; "Daily Jams
+    // for x, 2026-11-11" -> "Nov 11, 2026"), since the card's title already
+    // names the mix. A title of another shape stays as it is.
+    const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const datedPart = (title) => {
+      const m = /,\s*(week of\s+)?(\d{4})-(\d{2})-(\d{2})/i.exec(title);
+      const month = m && MONTHS[Number(m[3]) - 1];
+      if (!month) return title;
+      const date = `${month} ${Number(m[4])}, ${m[2]}`;
+      return m[1] ? `Week of ${date}` : date;
+    };
     const mixes = [];
     ['daily-jams', 'weekly-jams'].forEach((type) => {
       const newest = playlists
@@ -239,8 +251,7 @@ module.exports = {
         type: 'playlist',
         id,
         name: NAMES[type],
-        // The dated full title ("Daily Jams for x, generated on ...").
-        description: String(newest.playlist.title || '') || undefined,
+        description: datedPart(String(newest.playlist.title || '')) || undefined,
         url: `https://listenbrainz.org/playlist/${id}/`
       });
     });
