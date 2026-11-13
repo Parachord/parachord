@@ -205,11 +205,21 @@ describe('wiring', () => {
   });
 
   test("a mix with no cover gets its mosaic through Play's lookup, on Home only", () => {
-    const effect = app.slice(app.indexOf('const todo = mixesNeedingMosaic('), app.indexOf('}, [activeView, homeMixes]);'));
+    const effect = app.slice(app.indexOf('const todo = mixesNeedingMosaic('), app.indexOf('}, [activeView, homeMixes, homeMixCoverRetry]);'));
     expect(app).toContain("if (activeView !== 'home') return;\n    const todo = mixesNeedingMosaic(homeMixes, homeMixCoversTried.current);");
     expect(effect).toContain('await lookupRecommendationPlaylist(mix)');
     expect(effect).toContain('await getPlaylistCovers(mix.id, tracks)');
     expect(effect).toContain('homeMixCoversTried.current.add(mix.id)');
+  });
+
+  test('a failed mosaic lookup is retried, a capped number of times', () => {
+    const effect = app.slice(app.indexOf('const todo = mixesNeedingMosaic('), app.indexOf('}, [activeView, homeMixes, homeMixCoverRetry]);'));
+    expect(effect).toContain('if (attempts < HOME_MIX_COVER_ATTEMPTS) {');
+    expect(effect).toContain('homeMixCoversTried.current.delete(mix.id);');
+    expect(effect).toContain('}, HOME_MIX_COVER_RETRY_MS);');
+    const m = require('../../src/renderer/lib/home-model');
+    expect(m.HOME_MIX_COVER_ATTEMPTS).toBe(3);
+    expect(m.HOME_MIX_COVER_RETRY_MS).toBe(60000);
   });
 
   test("Home's background effect loads the mixes, and a mix plays and queues its tracks", () => {

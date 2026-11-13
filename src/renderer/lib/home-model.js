@@ -417,6 +417,11 @@ function mixesNeedingMosaic(mixes, tried) {
     && !(Array.isArray(m.mosaic) && m.mosaic.length > 0) && !(tried && tried.has(m.id)));
 }
 
+// A mosaic lookup that fails is retried this long after, this many tries in
+// all (the first seconds after launch often have no network yet).
+const HOME_MIX_COVER_ATTEMPTS = 3;
+const HOME_MIX_COVER_RETRY_MS = 60 * 1000;
+
 function withMixMosaics(mixes, covers) {
   if (!Array.isArray(mixes) || !covers || Object.keys(covers).length === 0) return mixes;
   return mixes.map((m) => {
@@ -431,5 +436,5 @@ module.exports = {
   normalizeHistoryMixes, flattenHistoryMixes, historyMixCacheEntry, historyMixEntriesFor, sameHistoryMixEntries,
   exampleShufflePrompt, filterBySource, releaseTag, homeTopArtists, albumsNeedingArt,
   shouldLoadHomeRecommendations, shouldStampHomeRecommendationsLoad, HOME_RECOMMENDATIONS_THROTTLE_MS,
-  pluginColors, mixesNeedingMosaic, withMixMosaics,
+  pluginColors, mixesNeedingMosaic, withMixMosaics, HOME_MIX_COVER_ATTEMPTS, HOME_MIX_COVER_RETRY_MS,
 };
