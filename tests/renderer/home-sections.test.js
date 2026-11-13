@@ -258,9 +258,20 @@ describe('Rows', () => {
     expect(html.match(/aria-pressed=/g)).toHaveLength(2); // All, ListenBrainz
   });
   test('Mixes row has no See all', () => {
-    const html = h(S.MixesRow, { mixes: [{ id: 'm', title: 'Heavy Rotation', resolverId: 'applemusic', serviceLabel: 'Apple Music' }] });
+    const html = h(S.MixesRow, { mixes: [{ id: 'm', title: 'Heavy Rotation', resolverId: 'applemusic', resolverName: 'Apple Music' }] });
     expect(html).not.toContain('See all');
     expect(html).toContain('Heavy Rotation');
+    // The card names its service.
+    expect(html).toContain('Apple Music');
+  });
+  test('a selected source chip that is gone falls back to All', () => {
+    const spy = jest.spyOn(React, 'useState').mockImplementation(() => ['lastfm', () => {}]);
+    try {
+      const mixes = h(S.MixesRow, { mixes: [{ id: 'm', title: 'Heavy Rotation', resolverId: 'applemusic', resolverName: 'Apple Music' }] });
+      expect(mixes).toContain('Heavy Rotation');
+      const albums = h(S.AlbumsRow, { albums: [{ title: 'Frog', artist: 'Hovvdy', resolverId: 'listenbrainz' }], navigateTo: () => {} });
+      expect(albums).toContain('Frog');
+    } finally { spy.mockRestore(); }
   });
   test('a mix card names no service on its art: the source filter does that', () => {
     const one = h(S.MixesRow, { mixes: [{ id: 'm', title: 'Heavy Rotation', resolverId: 'applemusic', serviceLabel: 'Apple Music', resolverName: 'Apple Music' }] });

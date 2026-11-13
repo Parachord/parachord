@@ -50,6 +50,8 @@ const ALLOWED_STORE_KEYS = new Set([
   // discovery_seen_* keys now sit in the alphabetical block above, via #994).
   'cache_critics_picks', 'cache_release_details', 'cache_recommendations',
   'hosted_playlists', 'sync_engine_mode', 'sync_playlist_channels',
+  // The "Made from your listening" mixes on Home (getHistoryMixes), per provider.
+  'cache_history_mixes',
 ]);
 
 function registerStoreIpc({ ipcMain, store, app, getPluginsCacheDir }) {

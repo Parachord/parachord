@@ -2,7 +2,7 @@
   "manifest": {
     "id": "applemusic",
     "name": "Apple Music",
-    "version": "1.3.2",
+    "version": "1.4.1",
     "author": "Parachord Team",
     "description": "Search and identify tracks via iTunes/Apple Music catalog. URL lookup for music.apple.com links. MusicKit integration available with Apple Developer account.",
     "icon": "🍎",
@@ -17,7 +17,8 @@
     "browse": false,
     "urlLookup": true,
     "albumSearch": true,
-    "recommendations": true
+    "recommendations": true,
+    "historyMixes": true
   },
   "urlPatterns": [
     "music.apple.com/*/album/*/*",

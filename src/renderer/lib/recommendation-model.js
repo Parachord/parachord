@@ -272,13 +272,18 @@ function sourcesFor(items, order, names) {
 //   similarUsers is
 //   [{ resolverId, resolverName, users: [{ username, similarity, avatarUrl? }] }];
 //   exclude is { friendKeys, selfKeys }, Sets of `service:username-lowercased`.
+//   excludePlaylistIds     a Set of playlist ids the page leaves out: Home's
+//                          history mixes (getHistoryMixes). An older plugin
+//                          still returns some of them from getRecommendations
+//                          (for older apps), and they are play history, not
+//                          recommendations.
 //
 // A row's `pageable` lists the provider sections that can still page items
 // of its type ({ resolverId, resolverName, sectionId, title, pagingKey,
 // nextCursor }); opening the row pages each of them. Paged items append
 // AFTER the blended first pages, in provider order, so a page landing never
 // moves a card already on screen.
-function buildRecommendationPage({ providers, shuffleupagus, expandedSections, expandableResolverIds, similarUsers, exclude } = {}) {
+function buildRecommendationPage({ providers, shuffleupagus, expandedSections, expandableResolverIds, similarUsers, exclude, excludePlaylistIds } = {}) {
   const names = {};
   const order = [];
   const addProvider = (id, name) => {
@@ -376,6 +381,11 @@ function buildRecommendationPage({ providers, shuffleupagus, expandedSections, e
         items = items.map((item, i) => ({ item, i }))
           .sort((a, b) => (rank(a.item) - rank(b.item)) || (a.i - b.i))
           .map(x => x.item);
+        // History mixes go after the newest-week pick: dropping this week's
+        // Jams first would let last week's take its place.
+        if (excludePlaylistIds && excludePlaylistIds.size > 0) {
+          items = items.filter(item => !excludePlaylistIds.has(item.id));
+        }
       }
       if (items.length) {
         const sources = sourcesFor(items, order, names);
@@ -389,6 +399,26 @@ function buildRecommendationPage({ providers, shuffleupagus, expandedSections, e
     if (row) page.push({ type, title, subsections: [row] });
   }
   return page;
+}
+
+// The page, plus the sections Home's weekly mirror reads (weeklyHomeEntries).
+// The mirror is built before the history-mix exclusion: once a plugin
+// returns Weekly Jams from getHistoryMixes too, the page leaves them out, but
+// a restored playlist view of them and the queue drawer's "Go to source"
+// still look them up in the mirror. Only the providers carry weekly
+// playlists, so the second build skips Shuffleupagus and the Listeners row,
+// and it runs only when something is excluded.
+function buildRecommendationViews(args = {}) {
+  const sections = buildRecommendationPage(args);
+  const ids = args.excludePlaylistIds;
+  const weeklySections = ids && ids.size > 0
+    ? buildRecommendationPage({
+      providers: args.providers,
+      expandedSections: args.expandedSections,
+      expandableResolverIds: args.expandableResolverIds
+    })
+    : sections;
+  return { sections, weeklySections };
 }
 
 // Friends: one blended row, each service most similar first and the services
@@ -604,6 +634,7 @@ module.exports = {
   recommendationItemKey,
   dedupeItems,
   buildRecommendationPage,
+  buildRecommendationViews,
   filterRowBySource,
   pageSources,
   flattenRecommendationItems,

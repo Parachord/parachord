@@ -423,6 +423,49 @@ class ResolverLoader {
   }
 
   /**
+   * Resolvers and meta-services that make mixes from the user's own
+   * listening (Heavy Rotation, Daily Jams, ...), for Home's "Made from your
+   * listening" row: they declare capabilities.historyMixes and implement
+   * getHistoryMixes (docs/architecture/plugins.md, "History mixes"). A
+   * marketplace install can be older than the app, so the method is checked,
+   * not just the flag. Meta-services pass the same app.js initResolvers gate
+   * as recommendations.
+   * @returns {object[]}
+   */
+  getHistoryMixResolvers() {
+    return this.getAllResolvers().filter(r =>
+      r.capabilities?.historyMixes &&
+      typeof r.getHistoryMixes === 'function'
+    );
+  }
+
+  /**
+   * Ask one provider for its history mixes.
+   * @param {string} resolverId
+   * @param {object} configOverride - Optional config to override resolver's stored config
+   * @returns {Promise<object[]>} [{ type: 'playlist', id, name, description?,
+   *          imageUrl?, url }]; [] when the provider lacks the capability or
+   *          answers without a `mixes` array (entries that aren't objects are
+   *          dropped). REJECTS when the plugin throws, so the app keeps its
+   *          cached mixes instead of caching an outage as "no mixes".
+   */
+  async getHistoryMixes(resolverId, configOverride = null) {
+    const resolver = this.resolvers.get(resolverId);
+    if (!resolver || !resolver.capabilities?.historyMixes || typeof resolver.getHistoryMixes !== 'function') {
+      return [];
+    }
+    try {
+      const result = await resolver.getHistoryMixes(configOverride || resolver.config || {});
+      const mixes = result && Array.isArray(result.mixes) ? result.mixes : [];
+      return mixes.filter(m => m && typeof m === 'object');
+    } catch (error) {
+      // The message only: a config can carry a token.
+      console.error(`History mixes error for ${resolverId}:`, error?.message || error);
+      throw error;
+    }
+  }
+
+  /**
    * Resolvers and meta-services that know listeners with similar taste, for
    * the Recommendations page's Friends row: they declare
    * capabilities.similarUsers and implement getSimilarUsers. A marketplace
@@ -595,6 +638,10 @@ class ResolverLoader {
         return url.includes('?i=') ? 'track' : 'album';
       }
       if (url.includes('/song/')) return 'track';
+    }
+    // ListenBrainz (a playlist page, e.g. a Daily or Weekly Jams mix)
+    if (url.includes('listenbrainz.org')) {
+      if (/listenbrainz\.org\/playlist\/[^/?#]+/i.test(url)) return 'playlist';
     }
     // YouTube
     if (url.includes('youtube.com') || url.includes('youtu.be')) {

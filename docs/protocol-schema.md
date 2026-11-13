@@ -248,6 +248,7 @@ parachord://play/playlist?tracks={base64_json}&title={display_name}
 | `music.apple.com/<region>/playlist/<slug>/<id>` | Apple Music playlist import |
 | `soundcloud.com/<user>/sets/<slug>` | SoundCloud playlist import |
 | `music.amazon.com/playlists/<id>`, `music.amazon.com/my/playlists/<id>`, `music.amazon.com/user-playlists/<id>` (the share-link shape for user-created playlists; the id may be a plain or dashed hex uuid) | Amazon Music playlist import (requires being signed in to Amazon Music in the app — the page only renders authenticated) |
+| `listenbrainz.org/playlist/<mbid>` | ListenBrainz playlist import (the plug-in fetches the JSPF from the ListenBrainz API; the user's token is sent when set, so their private playlists load) |
 | `youtube.com/playlist?list=<id>`, `music.youtube.com/playlist?list=<id>` | YouTube playlist import (the plug-in reads the playlist page and stops at 100 tracks) |
 | `on.soundcloud.com/<short-id>` | Short-link — app follows the 302 to `soundcloud.com/<user>/sets/...` itself, then re-validates the final host before importing. The website does NOT pre-resolve the short link. |
 | `achordion.xyz/playlist/<mbid>` | Fetched from `https://achordion.xyz/api/playlist/<mbid>/xspf` (public, returns XSPF) — the page itself is bot-challenged by Vercel; only the `/api/` route is reachable from the app's IP. |

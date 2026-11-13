@@ -376,9 +376,7 @@ function PlaylistCard({ playlist, badge, subtitle, onOpen, onPlay, onQueue, onAd
             padding: '3px 8px', backgroundColor: 'var(--bg-primary)', color: 'var(--text-primary)',
           },
         }, badge),
-        // The app's overlay. A mix (a service playlist, tracks not loaded)
-        // has no Add to Playlist, so it shows Play and Add to Queue, as the
-        // app's cards do when an action is missing.
+        // The app's overlay: Add to Playlist, Play, Add to Queue.
         e(ArtOverlay, {
           shown: reveal.shown, title, onClick: open,
           onAddToPlaylist: onAddToPlaylist && (() => onAddToPlaylist(playlist)),
@@ -452,11 +450,13 @@ const grid = (cols, gap) => ({ display: 'grid', gridTemplateColumns: cols, gap }
 // Mixes are playlist cards; the source filter names their services. Recent
 // loves (`loves`, a card with its own `lovesActions`) always leads the row: it
 // is no service's, so it adds no chip and shows whatever the filter.
-function MixesRow({ mixes, loves, lovesActions, sourceColors, onOpen, onPlay, onQueue, onContextMenu, onArtError }) {
-  const [source, setSource] = React.useState('All');
+function MixesRow({ mixes, loves, lovesActions, sourceColors, onOpen, onPlay, onQueue, onAddToPlaylist, onContextMenu, onArtError }) {
+  const [picked, setSource] = React.useState('All');
   const all = Array.isArray(mixes) ? mixes : [];
   if (all.length === 0 && !loves) return null;
-  const chips = sourceChips(all, (m, id) => m.serviceLabel || id, sourceColors);
+  const chips = sourceChips(all, (m, id) => m.resolverName || id, sourceColors);
+  // A chip whose source has gone leaves the row on All.
+  const source = picked === 'All' || chips.some((c) => c.id === picked) ? picked : 'All';
   const shown = filterBySource(all, source).slice(0, HOME_ROW_CARDS - (loves ? 1 : 0));
   return e('section', { 'aria-labelledby': 'home-mixes', style: SECTION_STYLE },
     e(SectionHeader, { id: 'home-mixes', title: 'Made from your listening', sub: "From the services you've connected" }),
@@ -465,7 +465,7 @@ function MixesRow({ mixes, loves, lovesActions, sourceColors, onOpen, onPlay, on
       loves && e(PlaylistCard, Object.assign({ key: 'recent-loves', playlist: loves, subtitle: loves.subtitle, onArtError }, lovesActions)),
       shown.map((m, i) => e(PlaylistCard, {
         key: m.id || i, playlist: m, subtitle: m.description || m.subtitle,
-        onOpen, onPlay, onQueue, onContextMenu, onArtError,
+        onOpen, onPlay, onQueue, onAddToPlaylist, onContextMenu, onArtError,
       }))));
 }
 
@@ -494,10 +494,12 @@ function albumHandlers(p) {
 
 function AlbumsRow(props) {
   const { albums, navigateTo } = props;
-  const [source, setSource] = React.useState('All');
+  const [picked, setSource] = React.useState('All');
   const all = Array.isArray(albums) ? albums : [];
   if (all.length === 0) return null;
   const chips = sourceChips(all, (a, id) => a.sourceLabel || id, props.sourceColors);
+  // A chip whose source has gone leaves the row on All.
+  const source = picked === 'All' || chips.some((c) => c.id === picked) ? picked : 'All';
   const shown = filterBySource(all, source).slice(0, HOME_ROW_CARDS);
   return e('section', { 'aria-labelledby': 'home-albums', style: SECTION_STYLE },
     e(SectionHeader, {

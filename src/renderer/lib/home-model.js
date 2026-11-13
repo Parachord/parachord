@@ -176,6 +176,89 @@ function whenPhraseShort(at, now) {
   return p.startsWith('this ') ? 'today' : p;
 }
 
+// One provider's getHistoryMixes answer as Home's mix cards: playlists with
+// an id, a name and a URL (the URL is what opens and plays them, through the
+// same lookup the Recommendations page's playlist cards use). `title` is
+// what the playlist card and the Jump back in tile print; `resolverId` and
+// `resolverName` name the service for the source chips and the card label.
+const trimmed = (v) => (typeof v === 'string' ? v.trim() : '');
+function normalizeHistoryMixes(items, provider) {
+  const resolverId = (provider && provider.id) || null;
+  const resolverName = (provider && provider.name) || resolverId;
+  const out = [];
+  for (const raw of Array.isArray(items) ? items : []) {
+    if (!raw || typeof raw !== 'object') continue;
+    if (raw.type != null && raw.type !== 'playlist') continue;
+    const id = trimmed(raw.id);
+    const name = trimmed(raw.name);
+    const url = trimmed(raw.url);
+    if (!id || !name || !url) continue;
+    const mix = { type: 'playlist', id, name, title: name };
+    if (trimmed(raw.description)) mix.description = trimmed(raw.description);
+    if (trimmed(raw.imageUrl)) mix.imageUrl = trimmed(raw.imageUrl);
+    mix.url = url;
+    mix.resolverId = resolverId;
+    mix.resolverName = resolverName;
+    out.push(mix);
+  }
+  return out;
+}
+
+// Every provider's mixes as one list: round-robin in provider order (the
+// first of each, then the second of each, ...), so a service with many mixes
+// doesn't fill the row before the next one shows. An id seen once is kept
+// where it first appeared.
+function flattenHistoryMixes(entries) {
+  const lists = (Array.isArray(entries) ? entries : [])
+    .map((e) => (e && Array.isArray(e.items) ? e.items : []));
+  const longest = lists.reduce((n, l) => Math.max(n, l.length), 0);
+  const out = [];
+  const seen = new Set();
+  for (let i = 0; i < longest; i++) {
+    for (const list of lists) {
+      const mix = list[i];
+      if (!mix || mix.id == null || seen.has(mix.id)) continue;
+      seen.add(mix.id);
+      out.push(mix);
+    }
+  }
+  return out;
+}
+
+// A provider's cached history mixes, or null when there are none to use:
+// not a list, or saved for another account (a meta-service's username; a
+// changed ListenBrainz user must never see the old one's mixes).
+function historyMixCacheEntry(entry, account) {
+  if (!entry || !Array.isArray(entry.items)) return null;
+  return (entry.account || '') === (account || '') ? entry : null;
+}
+
+// The entries Home shows, in provider priority order: one per provider that
+// has mixes. `entryFor(provider)` is that provider's answer (fresh or stale),
+// or nothing.
+function historyMixEntriesFor(providers, entryFor) {
+  const out = [];
+  for (const provider of providers || []) {
+    const entry = provider && entryFor(provider);
+    if (!entry || !Array.isArray(entry.items) || entry.items.length === 0) continue;
+    out.push({ resolverId: provider.id, resolverName: provider.name || provider.id, items: entry.items });
+  }
+  return out;
+}
+
+// Whether two entry lists show the same thing: the same providers in the
+// same order, holding the same item objects. A cached answer keeps its item
+// objects, and a fetched one makes new ones, so a refetch always counts.
+function sameHistoryMixEntries(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+  return a.every((entry, i) => {
+    const other = b[i];
+    return !!other && entry.resolverId === other.resolverId && entry.resolverName === other.resolverName
+      && entry.items.length === other.items.length
+      && entry.items.every((item, j) => item === other.items[j]);
+  });
+}
+
 // The import card is for a new user only: no collection and no playlists.
 // Empty tiles alone (a collection with no loves, say) don't show it.
 function homeSections({
@@ -305,6 +388,28 @@ function pluginColors(registry) {
   return map;
 }
 
+// A history mix with no cover of its own (ListenBrainz sends none) gets the
+// same 2x2 mosaic as any playlist, built from its tracks. These pick the
+// mixes still needing one (each tried once per session) and attach the
+// covers that arrived.
+function mixesNeedingMosaic(mixes, tried) {
+  return (Array.isArray(mixes) ? mixes : []).filter((m) => m && m.id && m.url && !m.imageUrl
+    && !(Array.isArray(m.mosaic) && m.mosaic.length > 0) && !(tried && tried.has(m.id)));
+}
+
+// A mosaic lookup that fails is retried this long after, this many tries in
+// all (the first seconds after launch often have no network yet).
+const HOME_MIX_COVER_ATTEMPTS = 3;
+const HOME_MIX_COVER_RETRY_MS = 60 * 1000;
+
+function withMixMosaics(mixes, covers) {
+  if (!Array.isArray(mixes) || !covers || Object.keys(covers).length === 0) return mixes;
+  return mixes.map((m) => {
+    const c = m && covers[m.id];
+    return Array.isArray(c) && c.length > 0 ? { ...m, mosaic: c.slice(0, 4) } : m;
+  });
+}
+
 // The Recent Loves card's mosaic: the newest distinct albums among the loves
 // (artist and album, with the track's own cover when it has one).
 function lovesMosaicAlbums(loves, n = 4) {
@@ -324,7 +429,8 @@ function lovesMosaicAlbums(loves, n = 4) {
 module.exports = {
   playlistFreshness, freshestPlaylists, recentLoves, changeBadge, freshChangeLine,
   isActiveContext, latestLoveAlbum, jumpBackInTiles, playlistSubtitle, homeSections,
+  normalizeHistoryMixes, flattenHistoryMixes, historyMixCacheEntry, historyMixEntriesFor, sameHistoryMixEntries,
   exampleShufflePrompt, filterBySource, homeTopArtists, albumsNeedingArt,
   shouldLoadHomeRecommendations, shouldStampHomeRecommendationsLoad, HOME_RECOMMENDATIONS_THROTTLE_MS,
-  pluginColors, lovesMosaicAlbums,
+  pluginColors, mixesNeedingMosaic, withMixMosaics, HOME_MIX_COVER_ATTEMPTS, HOME_MIX_COVER_RETRY_MS, lovesMosaicAlbums,
 };

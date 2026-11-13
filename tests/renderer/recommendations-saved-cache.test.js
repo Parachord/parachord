@@ -187,11 +187,16 @@ describe('recommended playlist cards', () => {
   });
 
   test('every playlist action uses the same trackSlug-keyed tracks', () => {
-    for (const fn of ['playRecommendationPlaylist', 'addRecommendationPlaylistToPlaylist', 'queueRecommendationPlaylist']) {
+    // Play, Add to Playlist and Add to Queue are the shared service-playlist
+    // helpers Home's mixes use too.
+    for (const fn of ['playServicePlaylist', 'addServicePlaylistToPlaylist', 'queueServicePlaylist']) {
       const at = app.indexOf(`const ${fn} = async`);
       expect(at).toBeGreaterThan(-1);
       expect(app.slice(at, at + 400)).toMatch(/await recommendationPlaylistTracks\(item\)/);
     }
+    expect(app).toContain('const playRecommendationPlaylist = async (item) => playServicePlaylist(item);');
+    expect(app).toContain('const queueRecommendationPlaylist = async (item) => queueServicePlaylist(item);');
+    expect(app).toContain('const addRecommendationPlaylistToPlaylist = async (item) => addServicePlaylistToPlaylist(item);');
     // Open hands the same lookup to the playlist view, which fills in when it lands.
     const open = app.slice(app.indexOf('const openServicePlaylist = (item, sourceName) => {'));
     expect(open.slice(0, 900)).toContain('fetchTracks: () => recommendationPlaylistTracks(item)');

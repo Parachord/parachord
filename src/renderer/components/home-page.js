@@ -29,6 +29,7 @@ const { trackSlug } = require('../lib/track-slug');
 
 // Plain functions from Parachord, passed as stable wrappers.
 const HOME_PAGE_HANDLERS = [
+  'addServicePlaylistToPlaylist',
   'addToQueue',
   'askShuffleupagus',
   'copyParachordLink',
@@ -40,6 +41,7 @@ const HOME_PAGE_HANDLERS = [
   'handleStartCollectionStation',
   'loadConcerts',
   'loadCriticsPicks',
+  'loadHomeHistoryMixes',
   'loadHomeRecommendations',
   'loadNewReleases',
   'loadPlaylist',
@@ -50,8 +52,10 @@ const HOME_PAGE_HANDLERS = [
   'openSyncSetupModal',
   'openTopAlbum',
   'openWhatsNew',
+  'playServicePlaylist',
   'playTrackCollection',
   'prefetchTopAlbumTracks',
+  'queueServicePlaylist',
   'showHomeContextMenu',
 ];
 
@@ -92,6 +96,7 @@ const HOME_HERO_PATTERN = 'url("data:image/svg+xml,%3Csvg width=\'100\' height=\
 
 const HomePage = React.memo(function HomePage(props) {
   const {
+    addServicePlaylistToPlaylist,
     addToQueue,
     allPlaylistCovers,
     allResolvers,
@@ -125,6 +130,7 @@ const HomePage = React.memo(function HomePage(props) {
     library,
     loadConcerts,
     loadCriticsPicks,
+    loadHomeHistoryMixes,
     loadHomeRecommendations,
     loadNewReleases,
     loadPlaylist,
@@ -141,10 +147,12 @@ const HomePage = React.memo(function HomePage(props) {
     openSyncSetupModal,
     openTopAlbum,
     openWhatsNew,
+    playServicePlaylist,
     playTrackCollection,
     playlists,
     playlistsLoading,
     prefetchTopAlbumTracks,
+    queueServicePlaylist,
     recommendationAlbums,
     recommendations,
     setAddToPlaylistPanel,
@@ -186,10 +194,12 @@ const HomePage = React.memo(function HomePage(props) {
 
   // ------------------------------------------------------- background loads
 
-  // One effect, after first paint. Recommendations load on every visit
-  // unless a load is running (loadHomeRecommendations in app.js): each
-  // provider that answered within the hour is served from its cache and only
-  // the stale ones are asked, as the Recommendations page does on each visit. The other loaders run only
+  // One effect, after first paint. Recommendations and the history mixes
+  // load on every visit unless a load is running or one answered within 10
+  // minutes (loadHomeRecommendations and loadHomeHistoryMixes in app.js):
+  // each provider that answered within the hour is served from its cache and
+  // only the stale ones are asked, as the Recommendations page does on each
+  // visit. The other loaders run only
   // while their data isn't loaded (or failed), so a return visit refetches
   // nothing. Concerts load only with a location set, since the row hides
   // without one.
@@ -197,6 +207,7 @@ const HomePage = React.memo(function HomePage(props) {
     if (!cacheLoaded) return undefined;
     const run = () => {
       loadHomeRecommendations();
+      loadHomeHistoryMixes();
       if (!newReleasesLoaded && !newReleasesLoading) loadNewReleases();
       if (!criticsPicksLoaded && !criticsPicksLoading) loadCriticsPicks();
       if (concertsLocation && !concertsLoaded && !concertsLoading && !concertsError) loadConcerts();
@@ -398,12 +409,19 @@ const HomePage = React.memo(function HomePage(props) {
     onContextMenu: (ev, p) => showHomeContextMenu('playlist', p),
     onArtError,
   };
-  // A service mix opens the remote-playlist view the Recommendations cards
-  // open. Play and Add to Queue land with the mixes (Phase C).
-  const openMix = (m) => openServicePlaylist(m, m.serviceLabel);
+  // A service mix: the card opens the remote-playlist view the
+  // Recommendations cards open, and Add to Playlist, Play and Add to Queue
+  // (the hover every playlist card has) load its tracks through the same
+  // lookup. The 'mix' context lets Jump back in leave the
+  // mix out while it plays or waits in the queue.
+  const mixContext = (m) => ({ type: 'mix', id: m.id, name: m.title });
+  const openMix = (m) => openServicePlaylist(m, m.resolverName);
   const mixActions = {
-    onOpen: openMix, onPlay: openMix, onQueue: openMix,
-    onContextMenu: (ev, m) => showHomeContextMenu('playlist', m),
+    onOpen: openMix,
+    onPlay: (m) => playServicePlaylist(m, mixContext(m)),
+    onQueue: (m) => queueServicePlaylist(m, mixContext(m)),
+    onAddToPlaylist: addServicePlaylistToPlaylist,
+    // No context menu: a service mix has no library copy to act on.
     onArtError,
   };
 
@@ -423,7 +441,7 @@ const HomePage = React.memo(function HomePage(props) {
     if (tile.kind === 'playlist') playPlaylist(tile.item);
     else if (tile.kind === 'loves') playTrackCollection(loves, LOVES_CONTEXT);
     else if (tile.kind === 'album') albumActions.onPlay(tile.item);
-    else if (tile.kind === 'mix') openMix(tile.item);
+    else if (tile.kind === 'mix') playServicePlaylist(tile.item, mixContext(tile.item));
   };
   // The Recent Loves card does what the tile does, plus Queue and Add to
   // Playlist like every playlist card.
@@ -437,7 +455,7 @@ const HomePage = React.memo(function HomePage(props) {
   const onTileMenu = (ev, tile) => {
     if (tile.kind === 'loves') showHomeContextMenu('loves', loves);
     else if (tile.kind === 'album') showHomeContextMenu('album', tile.item);
-    else showHomeContextMenu('playlist', tile.item);
+    else if (tile.kind !== 'mix') showHomeContextMenu('playlist', tile.item);
   };
 
   const aiLoading = !!homeData.aiRecommendations?.loading;
