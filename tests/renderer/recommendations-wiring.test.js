@@ -586,6 +586,9 @@ describe('playlist category rows on the page', () => {
     expect(app).toContain("lastPageCategories: [...new Set(result.items.filter(i => i && i.type === 'playlist').map(i => playlistCategory(i, section.category)))]");
     expect(app).toContain('expansion.lastPageCategories.includes(sub.category)');
     expect(app).toContain('visibleRows.length > 1 ? 1 : CARD_ROWS');
+    // Under a source filter only a page from that provider can fill a row, so
+    // only its in-flight page keeps an otherwise empty row on the page.
+    expect(app).toContain('recommendationsLoadingMore[p.pagingKey] && (!filteringOne || p.resolverId === activeSourceFilter)');
     expect(app).toContain('(recommendationsGridColumns.cards || 6) * cardRows');
     expect(app).toMatch(/exhausted: true, lastPageTypes: \[\], lastPageCategories: \[\]/);
   });

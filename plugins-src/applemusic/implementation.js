@@ -125,7 +125,8 @@ module.exports = {
         var item = { type: 'playlist', id: 'applemusic-playlist-' + c.id, name: a.name, imageUrl: art(a), url: a.url || null };
         // The page's category from Apple's own playlistType; other types
         // carry none.
-        var cat = { 'personal-mix': 'personal', 'editorial': 'editorial', 'user-shared': 'community' }[a.playlistType];
+        var cats = { 'personal-mix': 'personal', 'editorial': 'editorial', 'user-shared': 'community' };
+        var cat = Object.prototype.hasOwnProperty.call(cats, a.playlistType) ? cats[a.playlistType] : null;
         if (cat) item.category = cat;
         return item;
       }

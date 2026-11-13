@@ -110,8 +110,7 @@ All of this is in `src/renderer/app.js`, Recommendations view.
 - **Loading skeleton:**
   - while the page has no playlists yet, the Playlists section's skeleton keeps today's shape;
   - when category rows render from cache, they render at once;
-  - the skeleton for a still-loading Playlists section is one category-row heading and one row of cards, matching a collapsed category row;
-  - pin it in `tests/ui/loading-skeletons.test.js` (CLAUDE.md, "A layout change ships with its loading skeleton").
+  - while providers are still being asked, the page's generic pending skeleton stands in, since nothing knows yet whether a provider will bring playlists; once rows are on the page, each row's loading tail is one collapsed row of cards (its `preview`), pinned in `tests/ui/loading-skeletons.test.js` (my call, after the final review).
 
 ## Tests
 

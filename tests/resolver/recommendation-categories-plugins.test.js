@@ -76,6 +76,11 @@ describe('Apple Music sends playlist categories', () => {
     expect(axe.manifest.version).toBe('1.5.0');
   });
 
+  test('Apple ignores inherited property names as playlistType', async () => {
+    const { sections } = await run([grp('g3', 'Made for You', [pl('p7', 'Odd', 'constructor'), pl('p8', 'Odder', 'toString')])]);
+    expect(sections.flatMap(s => s.items).map(i => i.category)).toEqual([undefined, undefined]);
+  });
+
   test('Apple sends no artist category', async () => {
     const { sections } = await run([grp('g2', 'Radiohead Fans Like', [pl('p6', 'Some Picks', 'editorial')])]);
     expect(sections.some(s => s.category === 'artist')).toBe(false);

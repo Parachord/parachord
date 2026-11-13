@@ -41970,7 +41970,7 @@ useEffect(() => {
               // each, so the section stays compact; a lone row keeps two.
               const visibleRows = section.subsections.filter(sub =>
                 filterRowBySource(sub, activeSourceFilter).length > 0
-                || (sub.pageable || []).some(p => recommendationsLoadingMore[p.pagingKey]));
+                || (sub.pageable || []).some(p => recommendationsLoadingMore[p.pagingKey] && (!filteringOne || p.resolverId === activeSourceFilter)));
               const cardRows = visibleRows.length > 1 ? 1 : CARD_ROWS;
               return React.createElement('div', { key: `type:${section.type}`, className: 'mb-10' },
                 ...visibleRows.map(sub => renderSubsection(sub, { cardRows }))
