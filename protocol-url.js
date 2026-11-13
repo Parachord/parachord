@@ -175,7 +175,37 @@
     return JSON.parse(text);
   }
 
+  // The deep link Home's Ask Shuffleupagus box sends through. The 500-character
+  // cap is the parachord://chat limit.
+  function buildChatPromptUrl(prompt) {
+    let text = String(prompt == null ? '' : prompt).slice(0, 500);
+    // The cut can split a surrogate pair; a lone high surrogate makes
+    // encodeURIComponent throw.
+    if (/[\uD800-\uDBFF]$/.test(text)) text = text.slice(0, -1);
+    return 'parachord://chat?prompt=' + encodeURIComponent(text);
+  }
+
+  // Whether a prompt queued by Home's Ask box can be sent now: the chat panel
+  // has committed open with a provider and no reply is in flight. Sending
+  // earlier would read the previous render's chat state.
+  /** @param {{ pending?: string|null, chatOpen?: boolean, providerId?: string|null, loading?: boolean }} [opts] */
+  function shouldSendPendingChatPrompt({ pending, chatOpen, providerId, loading } = {}) {
+    return !!(pending && String(pending).trim() && chatOpen && providerId && !loading);
+  }
+
+  // Whether a queued Ask prompt is dropped: only when the chat panel goes from
+  // open to closed (the user closed it before the prompt went out). A panel
+  // that is still closed, or still opening, keeps it: the Ask path queues the
+  // prompt in the same tick it opens the panel.
+  /** @param {{ wasOpen?: boolean, chatOpen?: boolean }} [opts] */
+  function shouldDropPendingChatPrompt({ wasOpen, chatOpen } = {}) {
+    return !!wasOpen && !chatOpen;
+  }
+
   const api = {
+    buildChatPromptUrl,
+    shouldSendPendingChatPrompt,
+    shouldDropPendingChatPrompt,
     isPublicHttpUrl,
     HOSTED_PLAYLIST_MAX_BYTES,
     hostedPlaylistFetchProblem,
@@ -187,6 +217,9 @@
   };
 
   if (typeof window !== 'undefined') {
+    /** @type {any} */ (window).buildChatPromptUrl = buildChatPromptUrl;
+    /** @type {any} */ (window).shouldSendPendingChatPrompt = shouldSendPendingChatPrompt;
+    /** @type {any} */ (window).shouldDropPendingChatPrompt = shouldDropPendingChatPrompt;
     /** @type {any} */ (window).isPublicHttpUrl = isPublicHttpUrl;
     /** @type {any} */ (window).HOSTED_PLAYLIST_MAX_BYTES = HOSTED_PLAYLIST_MAX_BYTES;
     /** @type {any} */ (window).hostedPlaylistFetchProblem = hostedPlaylistFetchProblem;

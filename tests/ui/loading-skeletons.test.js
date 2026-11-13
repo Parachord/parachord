@@ -25,7 +25,7 @@ describe('Recommendations skeletons match the sectioned page', () => {
   const skel = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'components', 'recommendation-skeletons.js'), 'utf8');
   const view = app.slice(app.indexOf("activeView === 'recommendations' && React.createElement"));
   const loading = view.slice(view.indexOf('recommendations.loading && allSections.length === 0 ?'), view.indexOf(": recommendations.error === 'not_configured' ?"));
-  const renderSubsection = view.slice(view.indexOf('const renderSubsection = (sub) => {'));
+  const renderSubsection = view.slice(view.indexOf('const renderSubsection = (sub, { cardRows = CARD_ROWS } = {}) => {'));
   const songRow = view.slice(view.indexOf('const songRow = (item, index, allSongs, section) => {'), view.indexOf('// ── Friends'));
   const friendCard = view.slice(view.indexOf('const friendCard = (item, index, row) => {'), view.indexOf("// ── One section's row"));
   const artistCard = view.slice(view.indexOf('const artistCard = (item, index) => {'), view.indexOf('const albumCard = (item, index) => {'));
@@ -93,7 +93,7 @@ describe('Recommendations skeletons match the sectioned page', () => {
     expect(view).toContain('const CARD_ROWS = 2;');
     expect(view).toContain('const SECTION_PREVIEW = (recommendationsGridColumns.cards || 6) * CARD_ROWS;');
     expect(view).toContain('const FRIEND_PREVIEW = recommendationsGridColumns.friends || 6;');
-    expect(renderSubsection).toContain("const preview = isSongs ? SONG_PREVIEW : sub.type === 'friend' ? FRIEND_PREVIEW : SECTION_PREVIEW;");
+    expect(renderSubsection).toContain("const preview = isSongs ? SONG_PREVIEW : sub.type === 'friend' ? FRIEND_PREVIEW : (recommendationsGridColumns.cards || 6) * cardRows;");
     expect(skel).toContain('const CARD_PREVIEW = 6;');
     const songs = view.match(/const SONG_PREVIEW = (\d+);/)[1];
     expect(skel).toContain(`const SONG_PREVIEW = ${songs};`);
@@ -118,7 +118,9 @@ describe('Recommendations skeletons match the sectioned page', () => {
     // Only while there are no picks to show (a refresh keeps the cached batch as real cards).
     expect(view).toMatch(/const llmHasPicks = !!\(ai && \(\(ai\.albums \|\| \[\]\)\.length > 0 \|\| \(ai\.artists \|\| \[\]\)\.length > 0\)\);/);
     expect(view).toMatch(/const llmLoading = !!ai\?\.loading && !llmHasPicks;/);
-    expect(view).toMatch(/const LLM_TAIL_ROWS = new Set\(\['type:album', 'type:artist'\]\);/);
+    // Albums split into category rows (#1377): Shuffleupagus's albums are
+    // Based on your listening, so its tail goes on that row.
+    expect(view).toMatch(/const LLM_TAIL_ROWS = new Set\(\['type:album', 'type:artist', 'albums:personal'\]\);/);
     expect(renderSubsection).toMatch(/const llmTail = llmLoading && LLM_TAIL_ROWS\.has\(sub\.key\) && \(!filteringOne \|\| activeSourceFilter === 'shuffleupagus'\) \? LLM_TAIL : 0;/);
     expect(renderSubsection).toMatch(/Array\.from\(\{ length: llmTail \}[\s\S]{0,160}RecommendationCardSkeleton/);
     // The tail trails the row's real preview, never replaces it.
@@ -128,11 +130,27 @@ describe('Recommendations skeletons match the sectioned page', () => {
     const grid = renderSubsection.slice(renderSubsection.indexOf('...visible.map((item, index) => cardFor(item, index, sub))'));
     expect(grid.indexOf('...visible.map((item, index) => cardFor(item, index, sub))')).toBe(0);
     expect(grid.indexOf('Array.from({ length: llmTail }')).toBeGreaterThan(0);
-    expect(view).toMatch(/const llmPlaceholder = llmLoading && !filteringOne && !allSubsections\.some\(s => LLM_TAIL_ROWS\.has\(s\.key\)\);/);
+    // The Albums slot only when there is no album section at all: with one,
+    // the tail or the Based on your listening placeholder covers it.
+    expect(view).toMatch(/const llmPlaceholder = llmLoading && !filteringOne && !allSections\.some\(s => s\.type === 'album'\) && !allSubsections\.some\(s => LLM_TAIL_ROWS\.has\(s\.key\)\);/);
     // The slot is a whole section under the Albums heading its picks will
     // bring, placed after Songs.
     expect(view).toMatch(/llmPlaceholder && React\.createElement\(RecommendationSectionSkeleton, \{ key: 'type:album-pending', kind: 'cards', lines: 2, title: 'Albums', count: SECTION_PREVIEW \}\)/);
     expect(view.match(/contentBlocks\.push\(llmSlot\)/g) || []).toHaveLength(2);
+  });
+
+  test('Shuffleupagus thinking with Albums in category rows and no Based on your listening row: one row of album card skeletons under that subsection title', () => {
+    const typeSection = view.slice(view.indexOf('const renderTypeSection = (section) => {'), view.indexOf('// ── The page'));
+    const pending = view.slice(view.indexOf('const llmPersonalPendingRow = '), view.indexOf('const renderTypeSection = (section) => {'));
+    expect(pending).toMatch(/^const llmPersonalPendingRow = llmLoading && React\.createElement\('div', \{ key: 'albums:personal-pending' \}/);
+    expect(pending).toMatch(/React\.createElement\(SectionHeader, \{ title: 'Based on your listening', size: 'sub', style: SECTION_HEADER_GAP \}\)/);
+    // The real cards' grid, one row of cards (what each category row shows
+    // when Albums has several), album cards' two text lines.
+    expect(pending).toContain("gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))'");
+    expect(pending).toMatch(/Array\.from\(\{ length: \(recommendationsGridColumns\.cards \|\| 6\) \* 1 \}, \(_, i\) => React\.createElement\(RecommendationCardSkeleton, \{ key: `rec-llm-\$\{i\}`, index: i, lines: 2 \}\)\)/);
+    // It counts as a row: the section's rows show one row of cards each.
+    expect(typeSection).toContain('const rowCount = visibleRows.length + (llmPersonalPending ? 1 : 0);');
+    expect(typeSection).toContain('if (llmPersonalPending) rows.splice(newAt + 1, 0, llmPersonalPendingRow);');
   });
 
   test('Friends shows hexagon skeletons while its answer is pending and nothing is cached', () => {
@@ -161,15 +179,23 @@ describe('Recommendations skeletons match the sectioned page', () => {
     const more = app.slice(app.indexOf('const loadMoreRecommendationSection = async'), app.indexOf('// Re-merge when a "load more" answered'));
     expect(more).toMatch(/lastPageTypes: \[\.\.\.new Set\(result\.items\.map\(i => i && i\.type\)\.filter\(Boolean\)\)\]/);
     expect(more).toMatch(/exhausted: true, lastPageTypes: \[\]/);
+    // The loading tail's cards use the row's own preview, not the whole-page
+    // SECTION_PREVIEW, so a one-row category row shows one row of placeholders.
+    expect(renderSubsection).toMatch(/showLoadingTail[\s\S]{0,200}Array\.from\(\{ length: preview \}[\s\S]{0,120}RecommendationCardSkeleton/);
   });
 
   test('the real section header and the skeleton header share the heading line', () => {
-    const header = view.slice(view.indexOf('const subsectionHeader = (sub, { expanded, showToggle }) =>'), view.indexOf('const renderSubsection = (sub) => {'));
-    for (const part of ["className: 'flex items-center justify-between gap-4 mb-4'", "minHeight: '28px'", "className: 'text-lg font-semibold truncate'"]) {
-      expect(header).toContain(part);
-      expect(skel).toContain(part);
-    }
-    expect(view).toMatch(/const renderTypeSection = \(section\) => React\.createElement\('div', \{ key: `type:\$\{section\.type\}`, className: 'mb-10' \}/);
+    const header = view.slice(view.indexOf('const subsectionHeader = (sub, { expanded, showToggle }) =>'), view.indexOf('const renderSubsection = (sub, { cardRows = CARD_ROWS } = {}) => {'));
+    // Both draw the app's SectionHeader with the shared gap below it.
+    expect(header).toMatch(/React\.createElement\(SectionHeader, \{/);
+    expect(header).toContain('style: SECTION_HEADER_GAP');
+    expect(skel).toMatch(/React\.createElement\(SectionHeader, \{/);
+    expect(skel).toContain('style: SECTION_HEADER_GAP');
+    // The unnamed heading's bar is inline in the title's line, so it keeps
+    // the title's 30px line height.
+    expect(skel).toMatch(/display: 'inline-block', verticalAlign: 'middle'/);
+    // (2500: the window grew with Shuffleupagus's Albums placeholder, #1377.)
+    expect(view).toMatch(/const renderTypeSection = \(section\) => \{[\s\S]{0,2500}React\.createElement\('div', \{ key: `type:\$\{section\.type\}`, className: 'mb-10', style: \{ display: 'flex', flexDirection: 'column', gap: '32px' \} \}/);
     expect(skel).toContain("React.createElement('div', { className: 'mb-10', 'aria-hidden': 'true' }");
   });
 
@@ -224,6 +250,8 @@ describe('Recommendations skeleton components render', () => {
     const songs = render(RecommendationSectionSkeleton, { kind: 'songs' });
     expect(count(songs, 'flex items-center gap-4 py-3 px-4')).toBe(5);
     expect(songs).not.toContain('<h2');
+    // The bar sits in the section title's style, so it is the title's height.
+    expect(songs).toContain('font-size:20px;font-weight:700');
     const cards = render(RecommendationSectionSkeleton, { kind: 'cards', lines: 2, title: 'Albums' });
     expect(count(cards, 'aspect-square')).toBe(6);
     expect(cards).toMatch(/<h2[^>]*>Albums<\/h2>/);
@@ -278,5 +306,110 @@ describe('Critical Darlings skeleton matches the album cards', () => {
 
   test('the old 112px box is gone', () => {
     expect(skeleton).not.toMatch(/w-28 h-28|bg-white rounded-xl border/);
+  });
+});
+
+describe('Home skeletons match the Home rows', () => {
+  const dir = path.join(__dirname, '..', '..', 'src', 'renderer', 'components');
+  const sections = fs.readFileSync(path.join(dir, 'home-sections.js'), 'utf8');
+  const skeletons = fs.readFileSync(path.join(dir, 'home-skeletons.js'), 'utf8');
+  const sk = require('../../src/renderer/components/home-skeletons');
+
+  test('the row sizes are the spec values', () => {
+    expect(sk.HOME_TILE_HEIGHT).toBe(72);
+    expect(sk.HOME_ROW_CARDS).toBe(6);
+    expect(sk.HOME_HALF_ROW_CARDS).toBe(3);
+    expect(sk.HOME_CONCERT_CARDS).toBe(4);
+  });
+
+  test('Home\'s album and playlist cards are the app\'s card, and so are their skeletons', () => {
+    const app = fs.readFileSync(path.join(dir, '..', 'app.js'), 'utf8');
+    // The Playlists page's card, which Home copies.
+    expect(app).toMatch(/className: 'group cursor-pointer release-card card-fade-up',\s*style: \{\s*padding: '10px',\s*borderRadius: '10px',\s*backgroundColor: 'var\(--card-bg\)',\s*boxShadow: 'var\(--card-shadow\)',/);
+    expect(app).toContain("className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-5'");
+    expect(sk.HOME_CARD_BOX).toEqual({ padding: '10px', borderRadius: '10px', backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)' });
+    expect(sk.HOME_CARD_ART_RADIUS).toBe(8);
+    // Both cards and the skeleton card use the box; the cards get the hover lift.
+    expect((sections.match(/className: 'release-card', style: Object\.assign\(\{\}, HOME_CARD_BOX/g) || []).length).toBe(2);
+    expect(skeletons).toContain('style: Object.assign({}, HOME_CARD_BOX');
+    expect(skeletons).toContain('borderRadius: `${HOME_CARD_ART_RADIUS}px`');
+  });
+
+  test('album card skeletons have one subtitle line (the artist), playlist card skeletons two', () => {
+    const React = require('react');
+    const { renderToStaticMarkup } = require('react-dom/server');
+    const bars = (props) => (renderToStaticMarkup(React.createElement(sk.CardRowSkeleton, Object.assign({ count: 1 }, props))).match(/h-3[ "]/g) || []).length;
+    expect(bars({})).toBe(2);
+    expect(bars({ lines: 1 })).toBe(1);
+    const page = fs.readFileSync(path.join(dir, 'home-page.js'), 'utf8');
+    expect(page).toContain("skeletonSection('albums', 'Albums you might love', React.createElement(CardRowSkeleton, { lines: 1 }))");
+    expect(page).toContain("skeletonSection('playlists', 'Your playlists, freshest first', React.createElement(CardRowSkeleton))");
+  });
+
+  test('card rows and their skeletons share one gap', () => {
+    expect(sk.HOME_ROW_GAP).toBe(16);
+    expect(sk.HOME_CARD_TEXT_GAP).toBe(10);
+    expect(sections).toContain('${HOME_ROW_GAP}px');
+    expect(skeletons).toContain('${HOME_ROW_GAP}px');
+    expect(sections).toContain('${HOME_CARD_TEXT_GAP}px');
+    expect(skeletons).toContain('${HOME_CARD_TEXT_GAP}px');
+    expect(sections).not.toMatch(/minmax\(0, 1fr\)\)`, '16px'\)/);
+  });
+
+  test('both files use the same HOME_* constants', () => {
+    for (const name of ['HOME_TILE_HEIGHT', 'HOME_ROW_CARDS', 'HOME_HALF_ROW_CARDS', 'HOME_CONCERT_CARDS']) {
+      expect(sections).toContain(name);
+      expect(skeletons).toContain(name);
+    }
+  });
+
+  test('both files use the same grid strings', () => {
+    const grids = (src) => new Set(src.match(/repeat\([^)]*, minmax\(0, 1fr\)\)/g));
+    const inSections = grids(sections);
+    expect(inSections.size).toBeGreaterThan(0);
+    // The concert cards are a fixed grid in both files; the card rows pass
+    // their count to CardRowSkeleton, which builds the same string.
+    for (const g of ['repeat(${HOME_CONCERT_CARDS}, minmax(0, 1fr))']) {
+      expect(inSections.has(g)).toBe(true);
+      expect(grids(skeletons).has(g)).toBe(true);
+    }
+    // Jump back in: one shared grid string (four across, two by two when
+    // narrow) and gap, used by the row and its skeleton.
+    expect(sections).toContain('gridTemplateColumns: HOME_JUMP_GRID, gap: `${HOME_JUMP_GAP}px`');
+    expect(skeletons).toContain('gridTemplateColumns: HOME_JUMP_GRID, gap: `${HOME_JUMP_GAP}px`');
+    expect(sections).not.toContain("'repeat(4, minmax(0, 1fr))'");
+    expect(sections).toContain('repeat(${HOME_ROW_CARDS}, minmax(0, 1fr))');
+    expect(sections).toContain('repeat(${HOME_HALF_ROW_CARDS}, minmax(0, 1fr))');
+    expect(skeletons).toContain('repeat(${cols}, minmax(0, 1fr))');
+  });
+
+  test('the jump tile skeleton uses the real tile\'s background token', () => {
+    expect(sections).toMatch(/reveal\.shown \? 'var\(--accent-surface\)' : 'var\(--bg-secondary\)'/);
+    const jump = skeletons.slice(skeletons.indexOf('function JumpBackInSkeleton'), skeletons.indexOf('function CardRowSkeleton'));
+    expect(jump).toContain("backgroundColor: 'var(--bg-secondary)'");
+    expect(jump).not.toContain('--card-bg');
+  });
+
+  test('Fresh Drops and Critical Darlings halves share one fixed basis, loading or loaded', () => {
+    expect(sk.HOME_HALF_FLEX).toBe(`0 0 calc(50% - ${sk.HOME_HALF_GAP / 2}px)`);
+    expect(sections).toContain('flex: HOME_HALF_FLEX');
+    // The loading half renders CardRowSkeleton inside the same section box.
+    expect(sections).toContain('e(CardRowSkeleton, { count: HOME_HALF_ROW_CARDS, lines: 1 })');
+  });
+
+  test('the tile and card box match the real ones', () => {
+    expect(sections).toContain('height: `${HOME_TILE_HEIGHT}px`');
+    expect(skeletons).toContain('height: `${HOME_TILE_HEIGHT}px`');
+    expect(sections).toMatch(/aspectRatio: '1'/);
+    expect(skeletons).toContain('aspect-square');
+  });
+
+  test('skeletons render', () => {
+    global.React = global.React || require('react');
+    const { renderToStaticMarkup } = require('react-dom/server');
+    expect(renderToStaticMarkup(React.createElement(sk.JumpBackInSkeleton))).toContain('shimmer');
+    expect((renderToStaticMarkup(React.createElement(sk.CardRowSkeleton, { count: 6 })).match(/aspect-square/g) || []).length).toBe(6);
+    expect((renderToStaticMarkup(React.createElement(sk.CardRowSkeleton, { count: 3, columns: 3 })).match(/aspect-square/g) || []).length).toBe(3);
+    expect(renderToStaticMarkup(React.createElement(sk.ConcertRowSkeleton))).toContain('shimmer');
   });
 });

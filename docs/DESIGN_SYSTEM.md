@@ -2,6 +2,17 @@
 
 Reference guide for the visual design language, tokens, components, and patterns used across the Parachord desktop application.
 
+> **Partly out of date (2026-11-13).** The [design audit](plans/2026-11-13-design-audit.md) compared this guide with the code. It found several points where they disagree:
+> - tokens documented here that nothing uses (radius, tracking, leading, z-index, motion)
+> - "no breakpoint-based responsive design" (20 grids use breakpoints)
+> - the Recommendations heading style
+> - the Bandcamp colour
+> - the Tailwind scan path
+> - animations listed as in use
+> - the blue slider thumbs
+>
+> Until this guide is rewritten, the "Design system" section of [CLAUDE.md](../CLAUDE.md) and the audit win where they disagree. The design-drift ratchet (`tests/ci/design-drift.test.js`) enforces them.
+
 ## Overview
 
 Parachord is an Electron-based music player built with React (via `React.createElement`, no JSX), Tailwind CSS v3, and CSS custom properties for theming. The UI supports light and dark modes, toggled via the `.dark` class on the root element (`darkMode: 'class'`).
@@ -227,11 +238,13 @@ Tooltip({ children, content, position, variant, className })
 ### FixedTooltip
 
 ```
-FixedTooltip({ children, content })
+FixedTooltip({ children, content, id })
 ```
 
 - Uses `position: fixed` + `ReactDOM.createPortal` to escape `overflow: hidden` containers (e.g., sidebar)
-- Positioned below the trigger element
+- Positioned below the trigger, left-aligned; shifted left to stay inside the window and flipped above the trigger near the bottom (`placeFixedTooltip`, pure). Coordinates are set only after the tip is measured, so showing it again (focus after hover) keeps the clamp
+- Shows on hover or on keyboard focus inside the trigger and stays while either lasts; Escape dismisses it until the pointer or focus comes back (WCAG 1.4.13)
+- The tip is `role="tooltip"`, with `id` when given. A tooltip is not an accessible name or description by itself: give the trigger an `aria-describedby` (Home's badges point it at a visually hidden copy of the text)
 
 ### TrackRow
 

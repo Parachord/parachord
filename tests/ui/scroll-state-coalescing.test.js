@@ -181,10 +181,11 @@ describe('card click opens the release page before the lookup', () => {
     expect(app).not.toMatch(/Error opening (Top Album|Critic)/);
   });
 
-  test('the home Fresh Drops hero passes the release-group id instead of a string search', () => {
-    // The Home page moved into its own module (Track 2b split).
+  test('a Home Fresh Drops card passes the release-group id instead of a string search', () => {
+    // The Home page moved into its own module (Track 2b split); its Fresh
+    // Drops row (2026-11 redesign) opens each card with the release-group id.
     const homePage = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'components', 'home-page.js'), 'utf8');
-    expect(homePage).toMatch(/openTopAlbum\(\{ \.\.\.newReleases\[0\][^\n]*releaseGroupId: newReleases\[0\]\.id/);
+    expect(homePage).toMatch(/album\.homeRow === 'fresh'\s*\?\s*openTopAlbum\(\{ \.\.\.album, name: album\.title, image: album\.imageUrl, releaseGroupId: album\.id \}\)/);
   });
 
   test('the playbar album link shows the release page before its MusicBrainz search', () => {

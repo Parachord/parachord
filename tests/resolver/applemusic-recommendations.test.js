@@ -86,7 +86,7 @@ describe('Apple Music recommendations (capabilities.recommendations)', () => {
     expect(mix).toEqual({
       type: 'playlist', id: 'applemusic-playlist-pl.pm-3', name: 'Chill',
       imageUrl: 'https://is1-ssl.mzstatic.com/image/thumb/pl.pm-3/600x600bb.jpg',
-      url: 'https://music.apple.com/us/playlist/chill/pl.pm-3'
+      url: 'https://music.apple.com/us/playlist/chill/pl.pm-3', category: 'personal'
     });
     sections.splice(1, 1);
     expect(sections[1].items[1]).toEqual({

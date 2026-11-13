@@ -33,6 +33,7 @@
     "prestart": "node scripts/build-axes.js && node scripts/build-amazon-preload.js && node scripts/build-renderer.js",
     "predev": "node scripts/build-axes.js && node scripts/build-amazon-preload.js && node scripts/build-renderer.js",
     "lint": "eslint .",
+    "design-drift": "node scripts/design-drift.js",
     "typecheck": "tsc --noEmit --allowJs --checkJs --target ES2022 --module commonjs --skipLibCheck protocol-url.js"
   },
   "keywords": [

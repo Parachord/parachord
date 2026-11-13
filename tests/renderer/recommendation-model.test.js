@@ -184,7 +184,9 @@ describe('buildRecommendationPage', () => {
   test('For you interleaves providers round-robin with Shuffleupagus last', () => {
     const providers = [
       norm('lastfm', 'Last.fm', [{ items: [song('a'), song('b'), song('c')] }]),
-      norm('listenbrainz', 'ListenBrainz', [{ items: [song('d'), song('e'), { type: 'album', name: 'x', artist: 'A' }, { type: 'album', name: 'y', artist: 'A' }] }])
+      // `personal`, like Shuffleupagus's albums (#1377), so every album shares
+      // one category and the Albums section stays its single blended row.
+      norm('listenbrainz', 'ListenBrainz', [{ category: 'personal', items: [song('d'), song('e'), { type: 'album', name: 'x', artist: 'A' }, { type: 'album', name: 'y', artist: 'A' }] }])
     ];
     const shuffle = shuffleupagusSection({
       albums: [{ title: 's1', artist: 'A', reason: 'r1' }, { title: 's2', artist: 'A', reason: 'r2' }]
@@ -260,7 +262,7 @@ describe('buildRecommendationPage', () => {
     const page = buildRecommendationPage({ providers, expandableResolverIds: ['amazonmusic'] });
     const pl = sub(page, 'type:playlist');
     const al = sub(page, 'type:album');
-    const entry = { resolverId: 'amazonmusic', resolverName: 'Amazon Music', sectionId: 's1', title: 'Hot', pagingKey: 'amazonmusic|s1', nextCursor: 'c0' };
+    const entry = { resolverId: 'amazonmusic', resolverName: 'Amazon Music', sectionId: 's1', title: 'Hot', category: null, pagingKey: 'amazonmusic|s1', nextCursor: 'c0' };
     expect(pl.pageable).toEqual([entry]);
     expect(al.pageable).toEqual([entry]);
     expect(pl.canLoadMore).toBe(true);
@@ -309,8 +311,11 @@ describe('buildRecommendationPage', () => {
       ] },
       { items: [{ type: 'playlist', name: 'Mix', url: 'https://x/mix' }] }
     ])];
-    const row = sub(buildRecommendationPage({ providers }), 'type:playlist');
-    expect(row.items.map(i => (i.weekly ? i.weekly.id : i.name))).toEqual(['e-this', 'j-this', 'Mix']);
+    // Weekly playlists are Made for you and the uncategorized Mix is More
+    // playlists, so the section is two category rows, in that order.
+    const playlists = buildRecommendationPage({ providers }).find(s => s.type === 'playlist');
+    const items = playlists.subsections.flatMap(s => s.items);
+    expect(items.map(i => (i.weekly ? i.weekly.id : i.name))).toEqual(['e-this', 'j-this', 'Mix']);
   });
 
   test('weekly playlists lead Playlists, Exploration before Jams, the rest blended', () => {
@@ -324,8 +329,10 @@ describe('buildRecommendationPage', () => {
       ])
     ];
     const playlists = buildRecommendationPage({ providers }).find(s => s.type === 'playlist');
-    expect(playlists.subsections.map(s => s.key)).toEqual(['type:playlist']);
-    expect(names(playlists.subsections[0])).toEqual(['E1', 'J1', 'AP', 'Mix']);
+    // Weekly playlists are Made for you; the uncategorized ones are More
+    // playlists, still in their blended order.
+    expect(playlists.subsections.map(s => s.key)).toEqual(['playlists:personal', 'playlists:other']);
+    expect(playlists.subsections.flatMap(names)).toEqual(['E1', 'J1', 'AP', 'Mix']);
   });
 
   describe('Friends', () => {
@@ -521,5 +528,381 @@ describe('shuffleupagusSection', () => {
   test('entries without both artist and title (or name) are dropped; empty → null', () => {
     expect(shuffleupagusSection({ albums: [{ title: 'No Artist' }], artists: [{}] })).toBeNull();
     expect(shuffleupagusSection({})).toBeNull();
+  });
+});
+
+describe('playlist categories: contract and helpers', () => {
+  const m = recommendationModel;
+  test('playlistCategory: weekly, then item, then section, then other', () => {
+    expect(m.playlistCategory({ weekly: { id: 'w' }, category: 'editorial' }, 'community')).toBe('personal');
+    expect(m.playlistCategory({ category: 'editorial' }, 'community')).toBe('editorial');
+    expect(m.playlistCategory({}, 'community')).toBe('community');
+    expect(m.playlistCategory({ category: 'bogus' }, 'nope')).toBe('other');
+    expect(m.playlistCategory({}, undefined)).toBe('other');
+  });
+  test('artistRowTitle: one, two, three, four or more; blanks and case-repeats dropped', () => {
+    expect(m.artistRowTitle(['Radiohead'])).toBe('Because you like Radiohead');
+    expect(m.artistRowTitle(['Radiohead', 'Arctic Monkeys'])).toBe('Because you like Radiohead and Arctic Monkeys');
+    expect(m.artistRowTitle(['Radiohead', 'Arctic Monkeys', 'The Strokes'])).toBe('Because you like Radiohead, Arctic Monkeys and The Strokes');
+    expect(m.artistRowTitle(['A', 'B', 'C', 'D'])).toBe('Because you like A, B, C and more');
+    expect(m.artistRowTitle(['Radiohead', ' radiohead ', '', '  ', 'Blur'])).toBe('Because you like Radiohead and Blur');
+    expect(m.artistRowTitle([])).toBe('Because of artists you like');
+  });
+  test('normalizers keep valid category and seedArtist', () => {
+    const out = m.normalizeRecommendationSections({ sections: [
+      { id: 's1', title: 'Fans Like', category: 'artist', seedArtist: ' Radiohead ', items: [
+        { type: 'playlist', id: 'p1', name: 'P1', category: 'editorial' },
+        { type: 'album', id: 'a1', name: 'A1', artist: 'X', category: 'editorial' },
+      ] },
+      { id: 's2', title: 'Odd', category: 'bogus', seedArtist: 'Ignored', items: [{ type: 'playlist', id: 'p2', name: 'P2', category: 'nope' }] },
+      { id: 's3', title: 'Mixes', category: 'personal', seedArtist: 'Ignored', items: [{ type: 'playlist', id: 'p3', name: 'P3' }] },
+    ] }, { resolverId: 'x' });
+    const [s1, s2, s3] = out.sections;
+    expect(s1.category).toBe('artist');
+    expect(s1.seedArtist).toBe('Radiohead');
+    expect(s1.items[0].category).toBe('editorial');
+    // An album keeps a category valid for albums (#1377); `editorial` is one.
+    expect(s1.items[1].category).toBe('editorial');
+    expect(s2.category).toBeUndefined();
+    expect(s2.seedArtist).toBeUndefined();
+    expect(s2.items[0].category).toBeUndefined();
+    expect(s3.seedArtist).toBeUndefined();
+    expect(m.PLAYLIST_CATEGORIES.map(c => c.id)).toEqual(['personal', 'artist', 'editorial', 'community', 'other']);
+  });
+});
+
+describe('playlist category rows', () => {
+  const m = recommendationModel;
+  const norm = (resolverId, resolverName, sections) =>
+    m.normalizeRecommendationSections({ sections }, { resolverId, resolverName });
+  const pl = (id, extra = {}) => ({ type: 'playlist', id, name: id.toUpperCase(), url: `https://x/${id}`, ...extra });
+  const playlistRows = (page) => (page.find(s => s.type === 'playlist') || { subsections: [] }).subsections;
+  const row = (page, key) => playlistRows(page).find(s => s.key === key);
+  const ids = (sub) => sub.items.map(i => i.id);
+
+  test('rows follow category order and blend providers', () => {
+    const providers = [
+      norm('a', 'A', [
+        { id: 'mine', title: 'Mine', category: 'personal', items: [pl('p1'), pl('p2')] },
+        { id: 'comm', title: 'Comm', category: 'community', items: [pl('c1')] }
+      ]),
+      norm('b', 'B', [
+        { id: 'ed', title: 'Ed', category: 'editorial', items: [pl('e1')] },
+        { id: 'misc', title: 'Misc', items: [pl('o1')] }
+      ])
+    ];
+    const page = m.buildRecommendationPage({ providers });
+    const section = page.find(s => s.type === 'playlist');
+    expect(section.title).toBe('Playlists');
+    expect(section.subsections.map(s => s.key)).toEqual(['playlists:personal', 'playlists:editorial', 'playlists:community', 'playlists:other']);
+    expect(section.subsections.map(s => s.title)).toEqual(['Made for you', 'From the editors', 'From other listeners', 'More playlists']);
+    expect(section.subsections.map(s => s.category)).toEqual(['personal', 'editorial', 'community', 'other']);
+    expect(ids(row(page, 'playlists:personal'))).toEqual(['p1', 'p2']);
+    expect(row(page, 'playlists:personal').sources).toEqual([{ id: 'a', name: 'A' }]);
+    expect(row(page, 'playlists:personal').blended).toBe(false);
+    expect(section.subsections.every(s => s.type === 'playlist')).toBe(true);
+  });
+
+  test('an item category overrides its section, and a mixed section feeds two rows with one pagingKey each', () => {
+    const providers = [norm('amazonmusic', 'Amazon Music', [
+      { id: 'g', title: 'G', category: 'editorial', items: [
+        { type: 'playlist', id: 'e1', name: 'E1' },
+        { type: 'playlist', id: 'p1', name: 'P1', category: 'personal' }
+      ] }
+    ])];
+    const page = m.buildRecommendationPage({ providers, expandableResolverIds: ['amazonmusic'] });
+    expect(ids(row(page, 'playlists:personal'))).toEqual(['p1']);
+    expect(ids(row(page, 'playlists:editorial'))).toEqual(['e1']);
+    for (const key of ['playlists:personal', 'playlists:editorial']) {
+      const r = row(page, key);
+      expect(r.pageable).toHaveLength(1);
+      expect(r.pageable[0]).toMatchObject({ pagingKey: 'amazonmusic|g', category: 'editorial' });
+      expect(r.canLoadMore).toBe(true);
+    }
+  });
+
+  test("one category: today's single Playlists row", () => {
+    const w = (id, contextType) => ({ id, contextType, label: id, weekLabel: 'This Week' });
+    const providers = [norm('listenbrainz', 'ListenBrainz', [
+      { id: 'weekly-jams', title: 'Weekly Jams', items: [{ type: 'playlist', name: 'Jams', weekly: w('j1', 'weekly-jam') }] },
+      { id: 'weekly-exploration', title: 'Weekly Exploration', items: [{ type: 'playlist', name: 'Exploration', weekly: w('e1', 'weekly-exploration') }] }
+    ])];
+    const page = m.buildRecommendationPage({ providers, expandableResolverIds: ['listenbrainz'] });
+    const subs = playlistRows(page);
+    expect(subs.length).toBe(1);
+    expect(subs[0]).toMatchObject({ key: 'type:playlist', title: 'Playlists', category: null });
+    expect(subs[0].items.map(i => i.weekly.id)).toEqual(['e1', 'j1']);
+    expect(subs[0].pageable.map(p => p.pagingKey)).toEqual(['listenbrainz|weekly-jams', 'listenbrainz|weekly-exploration']);
+    expect(subs[0].pageable.every(p => p.category === null)).toBe(true);
+  });
+
+  test('weekly items lead Made for you even without a category', () => {
+    const providers = [
+      norm('b', 'B', [
+        { id: 'mine', title: 'Mine', category: 'personal', items: [pl('p1')] },
+        { id: 'ed', title: 'Ed', category: 'editorial', items: [pl('e1')] }
+      ]),
+      norm('a', 'A', [
+        { id: 'weekly-jams', title: 'Weekly Jams', items: [{ type: 'playlist', name: 'Jams', weekly: { id: 'j1', contextType: 'weekly-jam', label: 'Jams', weekLabel: 'This Week' } }] }
+      ])
+    ];
+    const page = m.buildRecommendationPage({ providers });
+    const personal = row(page, 'playlists:personal');
+    expect(personal.items[0].weekly.id).toBe('j1');
+    expect(personal.items.map(i => i.name)).toEqual(['Jams', 'P1']);
+    expect(ids(row(page, 'playlists:editorial'))).toEqual(['e1']);
+  });
+
+  test('an uncategorized older plugin beside a categorized one', () => {
+    const providers = [
+      norm('a', 'A', [{ id: 'old', title: 'Old', items: [pl('o1'), pl('o2')] }]),
+      norm('b', 'B', [{ id: 'mine', title: 'Mine', category: 'personal', items: [pl('p1')] }])
+    ];
+    const page = m.buildRecommendationPage({ providers });
+    expect(ids(row(page, 'playlists:other'))).toEqual(['o1', 'o2']);
+    expect(ids(row(page, 'playlists:personal'))).toEqual(['p1']);
+    const all = playlistRows(page).flatMap(s => s.items.map(i => i.id));
+    expect(all.filter(id => id === 'o1')).toHaveLength(1);
+    expect(all.filter(id => id === 'o2')).toHaveLength(1);
+  });
+
+  test('two providers disagree: the earliest category wins', () => {
+    const providers = [
+      norm('a', 'A', [{ id: 'ed', title: 'Ed', category: 'editorial', items: [pl('x'), pl('e2')] }]),
+      norm('b', 'B', [{ id: 'mine', title: 'Mine', category: 'personal', items: [pl('x')] }])
+    ];
+    const page = m.buildRecommendationPage({ providers });
+    const personal = row(page, 'playlists:personal');
+    expect(ids(personal)).toEqual(['x']);
+    expect(personal.items[0].sourceIds).toEqual(expect.arrayContaining(['a', 'b']));
+    expect(ids(row(page, 'playlists:editorial'))).toEqual(['e2']);
+    const all = playlistRows(page).flatMap(s => s.items.map(i => i.id));
+    expect(all.filter(id => id === 'x')).toHaveLength(1);
+  });
+
+  test('artist row title from seeds', () => {
+    const providers = [norm('a', 'A', [
+      { id: 'fl1', title: 'Fans Like Radiohead', category: 'artist', seedArtist: 'Radiohead', items: [pl('r1')] },
+      { id: 'fl2', title: 'Fans Like radiohead', category: 'artist', seedArtist: 'radiohead', items: [pl('r2')] },
+      { id: 'fl3', title: 'Fans Like Blur', category: 'artist', seedArtist: 'Blur', items: [pl('b1')] },
+      { id: 'mine', title: 'Mine', category: 'personal', items: [pl('p1')] }
+    ])];
+    const page = m.buildRecommendationPage({ providers });
+    const artist = row(page, 'playlists:artist');
+    expect(artist.title).toBe('Because you like Radiohead and Blur');
+    expect(artist.category).toBe('artist');
+    expect(artist.items.map(i => i.seedArtist)).toEqual(['Radiohead', 'radiohead', 'Blur']);
+    expect(row(page, 'playlists:personal').items[0].seedArtist).toBeUndefined();
+  });
+
+  test('paged items take their section category', () => {
+    const providers = [
+      norm('a', 'A', [{ id: 'mine', title: 'Mine', category: 'personal', items: [pl('p1')] }]),
+      norm('amazonmusic', 'Amazon Music', [{ id: 'comm', title: 'Comm', category: 'community', items: [pl('c1'), pl('c2')] }])
+    ];
+    const expandedSections = { 'amazonmusic|comm': { nextCursor: 'n1', items: [{ type: 'playlist', id: 'c3', name: 'C3', url: 'https://x/c3' }] } };
+    const page = m.buildRecommendationPage({ providers, expandedSections, expandableResolverIds: ['amazonmusic'] });
+    const community = row(page, 'playlists:community');
+    expect(ids(community)).toEqual(['c1', 'c2', 'c3']);
+    expect(community.pageable).toEqual([expect.objectContaining({ pagingKey: 'amazonmusic|comm', category: 'community', nextCursor: 'n1' })]);
+    expect(row(page, 'playlists:personal').pageable).toEqual([]);
+    expect(ids(row(page, 'playlists:personal'))).toEqual(['p1']);
+  });
+
+  test('history mixes still excluded before the split', () => {
+    const providers = [norm('a', 'A', [
+      { id: 'mine', title: 'Mine', category: 'personal', items: [pl('mix1'), pl('p1')] },
+      { id: 'ed', title: 'Ed', category: 'editorial', items: [pl('e1')] }
+    ])];
+    const page = m.buildRecommendationPage({ providers, excludePlaylistIds: new Set(['mix1']) });
+    const all = playlistRows(page).flatMap(s => s.items.map(i => i.id));
+    expect(all).not.toContain('mix1');
+    expect(ids(row(page, 'playlists:personal'))).toEqual(['p1']);
+  });
+
+  test('every other subsection carries category null, and stamping leaves the provider items alone', () => {
+    const providers = [norm('a', 'A', [
+      { id: 'mine', title: 'Mine', category: 'personal', items: [pl('p1'), { type: 'album', name: 'Alb', artist: 'X' }, { type: 'song', name: 'S', artist: 'X' }] },
+      { id: 'misc', title: 'Misc', items: [pl('o1')] }
+    ])];
+    const page = m.buildRecommendationPage({ providers, similarUsers: [{ resolverId: 'lastfm', resolverName: 'Last.fm', users: [{ username: 'Bob', similarity: 1 }] }] });
+    for (const section of page) {
+      if (section.type === 'playlist') continue;
+      for (const sub of section.subsections) expect(sub.category).toBeNull();
+    }
+    expect(providers[0].sections[1].items[0].category).toBeUndefined();
+    expect(providers[0].sections[0].items[1].category).toBeUndefined();
+    // Albums are stamped too (#1377); on the single Albums row the items keep
+    // their stamped category while the row's own stays null.
+    expect(page.find(s => s.type === 'album').subsections[0].items[0].category).toBe('personal');
+  });
+});
+
+describe('album categories: tables and helpers', () => {
+  const m = recommendationModel;
+  test('categoryFor: album values, playlist values, type-specific validity', () => {
+    expect(m.categoryFor('album', { category: 'new' }, 'personal')).toBe('new');
+    expect(m.categoryFor('album', {}, 'personal')).toBe('personal');
+    expect(m.categoryFor('album', { category: 'community' }, undefined)).toBe('other');
+    expect(m.categoryFor('playlist', { category: 'new' }, undefined)).toBe('other');
+    expect(m.categoryFor('playlist', { weekly: { id: 'w' } }, 'editorial')).toBe('personal');
+    expect(m.categoryFor('album', { weekly: { id: 'w' } }, 'editorial')).toBe('editorial');
+    expect(m.categoryFor('song', { category: 'personal' }, 'personal')).toBeNull();
+    expect(m.playlistCategory({ category: 'community' }, undefined)).toBe('community');
+    expect(m.ALBUM_CATEGORIES.map(c => c.id)).toEqual(['new', 'personal', 'artist', 'editorial', 'other']);
+  });
+  test('normalizers keep album categories valid for albums only', () => {
+    const out = m.normalizeRecommendationSections({ sections: [
+      { id: 'n', title: 'New', category: 'new', items: [
+        { type: 'album', id: 'a1', name: 'A1', artist: 'X' },
+        { type: 'album', id: 'a2', name: 'A2', artist: 'X', category: 'community' },
+        { type: 'playlist', id: 'p1', name: 'P1', category: 'new' },
+      ] },
+    ] }, { resolverId: 'x' });
+    const [sec] = out.sections;
+    expect(sec.category).toBe('new');
+    expect(sec.items[1].category).toBeUndefined();
+    expect(sec.items[2].category).toBeUndefined();
+  });
+});
+
+describe('album category rows', () => {
+  const m = recommendationModel;
+  const norm = (resolverId, resolverName, sections) =>
+    m.normalizeRecommendationSections({ sections }, { resolverId, resolverName });
+  const al = (name, artist = 'X', extra = {}) => ({ type: 'album', name, artist, ...extra });
+  const rowsOf = (page, type) => (page.find(s => s.type === type) || { subsections: [] }).subsections;
+  const row = (page, key) => page.flatMap(s => s.subsections).find(s => s.key === key);
+  const names = (sub) => sub.items.map(i => i.name);
+
+  test('album rows follow the album order, keys and titles', () => {
+    const providers = [norm('a', 'A', [
+      { id: 'ed', title: 'Ed', category: 'editorial', items: [al('E1')] },
+      { id: 'misc', title: 'Misc', items: [al('O1')] },
+      { id: 'mine', title: 'Mine', category: 'personal', items: [al('P1')] },
+      { id: 'fresh', title: 'Fresh', category: 'new', items: [al('N1')] }
+    ])];
+    const page = m.buildRecommendationPage({ providers });
+    const subs = rowsOf(page, 'album');
+    expect(page.find(s => s.type === 'album').title).toBe('Albums');
+    expect(subs.map(s => s.key)).toEqual(['albums:new', 'albums:personal', 'albums:editorial', 'albums:other']);
+    expect(subs.map(s => s.title)).toEqual(['New for you', 'Based on your listening', 'From the editors', 'More albums']);
+    expect(subs.map(s => s.category)).toEqual(['new', 'personal', 'editorial', 'other']);
+    expect(subs.every(s => s.type === 'album')).toBe(true);
+    expect(names(row(page, 'albums:new'))).toEqual(['N1']);
+    expect(names(row(page, 'albums:other'))).toEqual(['O1']);
+    expect(row(page, 'albums:new').sources).toEqual([{ id: 'a', name: 'A' }]);
+  });
+
+  test("one album category: today's single Albums row", () => {
+    const providers = [norm('a', 'A', [{ items: [al('O1'), al('O2')] }])];
+    const subs = rowsOf(m.buildRecommendationPage({ providers }), 'album');
+    expect(subs).toHaveLength(1);
+    expect(subs[0]).toMatchObject({ key: 'type:album', title: 'Albums', category: null });
+    expect(names(subs[0])).toEqual(['O1', 'O2']);
+  });
+
+  test('Shuffleupagus albums land in Based on your listening', () => {
+    const shuffle = m.shuffleupagusSection({ albums: [{ title: 'S', artist: 'Y', reason: 'r' }], artists: [] });
+    expect(shuffle.sections[0].category).toBe('personal');
+    const providers = [norm('a', 'A', [{ id: 'ed', title: 'Ed', category: 'editorial', items: [al('E1')] }])];
+    const page = m.buildRecommendationPage({ providers, shuffleupagus: shuffle });
+    expect(names(row(page, 'albums:personal'))).toEqual(['S']);
+    expect(row(page, 'albums:personal').sources).toEqual([{ id: 'shuffleupagus', name: 'Shuffleupagus' }]);
+    expect(names(row(page, 'albums:editorial'))).toEqual(['E1']);
+  });
+
+  test('an artist album row titles from its seeds', () => {
+    const providers = [norm('a', 'A', [
+      { id: 'fl', title: 'Fans Like', category: 'artist', seedArtist: 'FIDLAR', items: [al('F1', 'Z')] },
+      { id: 'mine', title: 'Mine', category: 'personal', items: [al('P1')] }
+    ])];
+    const page = m.buildRecommendationPage({ providers });
+    expect(row(page, 'albums:artist').title).toBe('Because you like FIDLAR');
+    expect(row(page, 'albums:artist').items[0].seedArtist).toBe('FIDLAR');
+    expect(row(page, 'albums:personal').items[0].seedArtist).toBeUndefined();
+  });
+
+  test('providers disagree on an album: the earliest album category wins', () => {
+    // A owns the merged copy (editorial); B's `new` ranks earlier in the album
+    // table, so mergeOwned moves it. `new` ranks nowhere in the playlist table,
+    // so this only passes when the album rank is the one consulted.
+    const providers = [
+      norm('a', 'A', [{ id: 'ed', title: 'Ed', category: 'editorial', items: [al('Same', 'Q'), al('E2')] }]),
+      norm('b', 'B', [{ id: 'fresh', title: 'Fresh', category: 'new', items: [al('same', 'q')] }])
+    ];
+    const page = m.buildRecommendationPage({ providers });
+    const fresh = row(page, 'albums:new');
+    expect(names(fresh)).toEqual(['Same']);
+    expect(fresh.items[0].sourceIds).toEqual(['a', 'b']);
+    expect(names(row(page, 'albums:editorial'))).toEqual(['E2']);
+    const all = rowsOf(page, 'album').flatMap(s => s.items.map(i => i.name.toLowerCase()));
+    expect(all.filter(n => n === 'same')).toHaveLength(1);
+  });
+
+  test('paged albums take their section category', () => {
+    const providers = [
+      norm('a', 'A', [{ id: 'mine', title: 'Mine', category: 'personal', items: [al('P1')] }]),
+      norm('amazonmusic', 'Amazon Music', [{ id: 'ed', title: 'Ed', category: 'editorial', items: [al('E1'), al('E2')] }])
+    ];
+    const expandedSections = { 'amazonmusic|ed': { nextCursor: 'n1', items: [{ type: 'album', name: 'E3', artist: 'X' }] } };
+    const page = m.buildRecommendationPage({ providers, expandedSections, expandableResolverIds: ['amazonmusic'] });
+    const editorial = row(page, 'albums:editorial');
+    expect(names(editorial)).toEqual(['E1', 'E2', 'E3']);
+    expect(editorial.items[2].category).toBe('editorial');
+    expect(editorial.pageable).toEqual([expect.objectContaining({ pagingKey: 'amazonmusic|ed', category: 'editorial', nextCursor: 'n1' })]);
+    expect(editorial.canLoadMore).toBe(true);
+    expect(row(page, 'albums:personal').pageable).toEqual([]);
+    expect(names(row(page, 'albums:personal'))).toEqual(['P1']);
+  });
+
+  test("a single Albums row's pageable entries carry the section's category", () => {
+    const providers = [norm('amazonmusic', 'Amazon Music', [{ id: 'fresh', title: 'Fresh', category: 'new', items: [al('N1')] }])];
+    const subs = rowsOf(m.buildRecommendationPage({ providers, expandableResolverIds: ['amazonmusic'] }), 'album');
+    expect(subs).toHaveLength(1);
+    expect(subs[0]).toMatchObject({ key: 'type:album', category: null });
+    expect(subs[0].pageable).toEqual([expect.objectContaining({ pagingKey: 'amazonmusic|fresh', category: 'new' })]);
+  });
+
+  test('album items carry their position in the blend, categorized or not', () => {
+    const providers = [
+      norm('a', 'A', [{ items: [al('A0'), al('A1')] }]),
+      norm('b', 'B', [
+        { id: 'mine', title: 'Mine', category: 'personal', items: [al('B0')] },
+        { id: 'ed', title: 'Ed', category: 'editorial', items: [al('B1'), { type: 'playlist', id: 'p1', name: 'P1', url: 'https://x/p1' }] }
+      ])
+    ];
+    const page = m.buildRecommendationPage({ providers });
+    const byName = Object.fromEntries(rowsOf(page, 'album').flatMap(s => s.items).map(i => [i.name, i.blendIndex]));
+    expect(byName).toEqual({ A0: 0, B0: 1, A1: 2, B1: 3 });
+    expect(rowsOf(page, 'playlist')[0].items[0].blendIndex).toBeUndefined();
+    for (const p of providers) for (const sec of p.sections) for (const item of sec.items) {
+      expect(item).not.toHaveProperty('blendIndex');
+    }
+
+    const single = [norm('a', 'A', [{ items: [al('O1'), al('O2')] }]), norm('b', 'B', [{ items: [al('O3')] }])];
+    const subs = rowsOf(m.buildRecommendationPage({ providers: single }), 'album');
+    expect(subs.map(s => s.key)).toEqual(['type:album']);
+    expect(subs[0].items.map(i => [i.name, i.blendIndex])).toEqual([['O1', 0], ['O3', 1], ['O2', 2]]);
+    for (const p of single) for (const sec of p.sections) for (const item of sec.items) {
+      expect(item).not.toHaveProperty('blendIndex');
+    }
+  });
+
+  test('playlist rows are unchanged beside album rows', () => {
+    const pl = (id) => ({ type: 'playlist', id, name: id.toUpperCase(), url: `https://x/${id}` });
+    const sections = [
+      { id: 'pa', title: 'Picks A', category: 'personal', items: [al('P1')] },
+      { id: 'pp', title: 'Picks P', category: 'personal', items: [pl('p1')] }
+    ];
+    const page = m.buildRecommendationPage({ providers: [norm('a', 'A', sections)] });
+    expect(rowsOf(page, 'playlist').map(s => s.key)).toEqual(['type:playlist']);
+    expect(rowsOf(page, 'album').map(s => s.key)).toEqual(['type:album']);
+    const more = m.buildRecommendationPage({ providers: [norm('a', 'A', [
+      ...sections, { id: 'pc', title: 'Comm', category: 'community', items: [pl('c1')] }
+    ])] });
+    expect(rowsOf(more, 'playlist').map(s => s.key)).toEqual(['playlists:personal', 'playlists:community']);
+    expect(rowsOf(more, 'playlist').map(s => s.title)).toEqual(['Made for you', 'From other listeners']);
+    expect(rowsOf(more, 'album').map(s => s.key)).toEqual(['type:album']);
   });
 });

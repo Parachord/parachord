@@ -27,7 +27,7 @@ describe('shouldAutoRefreshHomeSuggestions', () => {
     expect(shouldAutoRefreshHomeSuggestions()).toBe(true);
   });
 
-  test('fetches when only artists are cached (the Refresh button lives on the album row)', () => {
+  test('fetches when only artists are cached', () => {
     expect(shouldAutoRefreshHomeSuggestions({ autoRefresh: false, suggestions: { albums: [], artists: [{ name: 'B' }] } })).toBe(true);
   });
 });
@@ -35,8 +35,7 @@ describe('shouldAutoRefreshHomeSuggestions', () => {
 describe('app.js', () => {
   const src = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
   // The fetch flow (component scope: the auto-fetch effect and the
-  // Recommendations page's Refresh button both run it; Home's button runs
-  // loadAiRecommendations directly, as on main).
+  // Recommendations page's Refresh button both run it; Home has no button).
   const fnStart = src.indexOf('const fetchAiRecommendations = async () => {');
   const flow = src.slice(fnStart, src.indexOf('// Load AI suggestions when HOME or the RECOMMENDATIONS view is active', fnStart));
   // The auto-fetch trigger effect.

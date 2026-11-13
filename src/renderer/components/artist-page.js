@@ -20,6 +20,8 @@
 // from props under their old names.
 
 const { Tooltip } = require('./ui-atoms');
+const { SectionHeader } = require('./section-header');
+const { FilterChips } = require('./filter-chips');
 const { ReleasePage, ReleaseCard, generateArtistPattern, PlayTop10Icon, QueueTop10Icon } = require('./cards');
 const { trackSlug } = require('../lib/track-slug');
 const { formatCalendarDate } = require('../lib/calendar-date');
@@ -813,35 +815,27 @@ const ArtistPage = React.memo(function ArtistPage(props) {
             className: 'sticky top-0 z-10 flex items-center px-6 py-3',
             style: { backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
           },
-            // Release type filter pills
-            React.createElement('div', { className: 'flex gap-2 flex-wrap' },
-              [
-                { value: 'all', label: 'All', activeColor: '#7c3aed' },
-                { value: 'album', label: 'Studio Albums', activeColor: 'rgb(99, 102, 241)' },
-                { value: 'ep', label: 'EPs', activeColor: '#a855f7' },
-                { value: 'single', label: 'Singles', activeColor: '#db2777' },
-                { value: 'live', label: 'Live', activeColor: '#d97706' },
-                { value: 'compilation', label: 'Compilations', activeColor: '#0eb3a0' }
-              ].map(({ value, label, activeColor }) => {
-                const searchFiltered = filterArtistReleases(artistReleases);
+            // Release type filters: the app's filter chips (FilterChips), All
+            // neutral, each type in its colour.
+            (() => {
+              const searchFiltered = filterArtistReleases(artistReleases);
+              const chips = [
+                { value: 'all', label: 'All' },
+                { value: 'album', label: 'Studio Albums', color: 'rgb(99, 102, 241)' },
+                { value: 'ep', label: 'EPs', color: '#a855f7' },
+                { value: 'single', label: 'Singles', color: '#db2777' },
+                { value: 'live', label: 'Live', color: '#d97706' },
+                { value: 'compilation', label: 'Compilations', color: '#0eb3a0' }
+              ].map(({ value, label, color }) => {
                 const count = value === 'all'
                   ? searchFiltered.length
                   : searchFiltered.filter(r => r.releaseType === value).length;
-
                 // While loading, show all filter types; otherwise hide those with 0 count (except 'all')
                 if (!loadingArtist && count === 0 && value !== 'all') return null;
-
-                const isActive = releaseTypeFilter === value;
-                return React.createElement('button', {
-                  key: value,
-                  onClick: () => setReleaseTypeFilter(value),
-                  className: `px-3 py-1.5 rounded-full text-sm transition-all no-drag ${
-                    isActive ? 'text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`,
-                  style: isActive ? { backgroundColor: activeColor } : undefined
-                }, loadingArtist ? label : `${label} (${count})`);
-              })
-            ),
+                return { id: value, label: loadingArtist ? label : `${label} (${count})`, color };
+              }).filter(Boolean);
+              return React.createElement(FilterChips, { chips, value: releaseTypeFilter, onChange: setReleaseTypeFilter, label: 'Filter releases by type' });
+            })(),
             // Spacer
             React.createElement('div', { className: 'flex-1' }),
             // Sort dropdown
@@ -1687,27 +1681,22 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                 className: 'sticky top-0 z-10 flex items-center px-6 py-3',
               style: { backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
               },
-                React.createElement('div', { className: 'flex gap-2' },
-                  [
+                // The app's filter chips (FilterChips): All neutral, each source
+                // in the colour it had (orange-500, red-600, and Both the two
+                // as a gradient).
+                React.createElement(FilterChips, {
+                  chips: [
                     { value: 'all', label: 'All', count: relatedArtists.length },
-                    { value: 'listenbrainz', label: 'ListenBrainz', count: listenbrainzCount + bothCount },
-                    { value: 'lastfm', label: 'Last.fm', count: lastfmCount + bothCount },
-                    { value: 'both', label: 'Both', count: bothCount }
-                  ].filter(({ value, count }) => value === 'all' || count > 0).map(({ value, label, count }) =>
-                    React.createElement('button', {
-                      key: value,
-                      onClick: () => setRelatedArtistsSourceFilter(value),
-                      className: `px-3 py-1.5 rounded-full text-sm transition-all no-drag ${
-                        relatedArtistsSourceFilter === value
-                          ? value === 'listenbrainz' ? 'bg-orange-500 text-white'
-                            : value === 'lastfm' ? 'bg-red-600 text-white'
-                            : value === 'both' ? 'bg-gradient-to-r from-orange-500 to-red-600 text-white'
-                            : 'bg-purple-600 text-white'
-                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                      }`
-                    }, loadingRelated ? label : `${label} (${count})`)
-                  )
-                )
+                    { value: 'listenbrainz', label: 'ListenBrainz', count: listenbrainzCount + bothCount, color: '#f97316' },
+                    { value: 'lastfm', label: 'Last.fm', count: lastfmCount + bothCount, color: '#dc2626' },
+                    { value: 'both', label: 'Both', count: bothCount, color: '#dc2626', gradient: 'linear-gradient(to right, #f97316, #dc2626)' }
+                  ].filter(({ value, count }) => value === 'all' || count > 0).map(({ value, label, count, color, gradient }) => (
+                    { id: value, label: loadingRelated ? label : `${label} (${count})`, color, gradient }
+                  )),
+                  value: relatedArtistsSourceFilter,
+                  onChange: setRelatedArtistsSourceFilter,
+                  label: 'Filter related artists by source'
+                })
               ),
               // Content with padding
               React.createElement('div', { className: 'p-6' },
@@ -1872,23 +1861,21 @@ const ArtistPage = React.memo(function ArtistPage(props) {
             const sortedMonths = Object.keys(grouped).sort();
 
             return React.createElement('div', { className: 'p-6' },
-              // Header row with count and refresh
-              React.createElement('div', {
-                className: `flex items-center justify-between mb-6`
-              },
-                React.createElement('div', { className: 'flex items-center gap-3' },
-                  React.createElement('h2', {
-                    className: `text-lg font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`
-                  }, `${events.length} Upcoming Concert${events.length !== 1 ? 's' : ''}`),
+              // The app's section title (SectionHeader): the count, a spinner
+              // beside it while loading, and refresh on the right.
+              React.createElement(SectionHeader, {
+                title: React.createElement(React.Fragment, null,
+                  `${events.length} Upcoming Concert${events.length !== 1 ? 's' : ''}`,
                   artistConcertsLoading && React.createElement('svg', {
                     className: 'w-4 h-4 animate-spin text-teal-500',
+                    style: { display: 'inline-block', verticalAlign: 'middle', marginLeft: '12px' },
                     fill: 'none', viewBox: '0 0 24 24'
                   },
                     React.createElement('circle', { className: 'opacity-25', cx: 12, cy: 12, r: 10, stroke: 'currentColor', strokeWidth: 4 }),
                     React.createElement('path', { className: 'opacity-75', fill: 'currentColor', d: 'M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z' })
-                  )
-                ),
-                React.createElement('button', {
+                  )),
+                style: { marginBottom: '24px', alignItems: 'center' },
+                extra: React.createElement('button', {
                   onClick: () => currentArtist && loadArtistConcerts(currentArtist.name, true),
                   disabled: artistConcertsLoading,
                   className: `p-1.5 transition-colors ${artistConcertsLoading ? 'text-teal-500' : (isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600')}`,
@@ -1901,7 +1888,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                     React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M20 4v5h-.582m-15.356 2A8.001 8.001 0 0119.418 9m0 0H15m-11 11v-5h.581m0 0a8.003 8.003 0 0015.357-2m-15.357 2H9' })
                   )
                 )
-              ),
+              }),
 
               // Empty state
               events.length === 0 && !artistConcertsLoading && React.createElement('div', {

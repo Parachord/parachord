@@ -66,13 +66,16 @@ describe('recommendations wiring', () => {
     expect(fn).toMatch(/if \(forceRefresh\) \{\s*expandedSectionsRef\.current = \{\};/);
   });
 
-  test("Home's For You preview asks only the meta-services (a resolver's page loads never queue ahead of Home resolution)", () => {
-    // The Home discovery effect's call is filtered…
-    const homeCall = app.indexOf('loadRecommendations({ metaServicesOnly: true });');
-    expect(homeCall).toBeGreaterThan(-1);
-    const homeEffect = app.slice(app.lastIndexOf('useEffect', homeCall), homeCall);
-    expect(homeEffect).toContain('hasScrobbler');
-    // …and loadRecommendations implements the filter (meta-service ids only).
+  test("Home's load waits for first paint, and the meta-services-only option stays available", () => {
+    // The redesigned Home shows every provider's album picks, so it runs the
+    // full load, from an idle callback after paint (home-page.js), never from
+    // an app.js effect on navigation.
+    expect(app).not.toContain('loadRecommendations({ metaServicesOnly: true });');
+    const home = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/home-page.js'), 'utf8');
+    const idle = home.indexOf('globalThis.requestIdleCallback');
+    const effect = home.slice(home.lastIndexOf('React.useEffect(', idle), home.indexOf('}, [cacheLoaded]);', idle));
+    expect(effect).toContain('loadHomeRecommendations();');
+    expect(app).toMatch(/const loadHomeRecommendations = \(\) => \{[\s\S]{0,400}loadRecommendations\(\);/);
     const i = app.indexOf('const loadRecommendations = async');
     const fn = app.slice(i, app.indexOf('\n  };', i));
     expect(fn).toContain('const metaOnly = opts !== true && !!opts?.metaServicesOnly;');
@@ -137,13 +140,15 @@ describe('recommendations wiring', () => {
   });
 
   test('opening a recommended playlist is provider-neutral (creator/source from the item and section, trackSlug ids)', () => {
-    const i = app.indexOf('const openRecommendationPlaylist = (item, section) => {');
+    // One opener for the Recommendations cards and Home's service mixes.
+    expect(app).toContain('const openRecommendationPlaylist = (item, section) => openServicePlaylist(item, itemSourceName(item, section));');
+    const i = app.indexOf('const openServicePlaylist = (item, sourceName) => {');
     expect(i).toBeGreaterThan(-1);
-    const fn = app.slice(i, app.indexOf('\n            };', i));
+    const fn = app.slice(i, app.indexOf('\n  };', i));
     // The record's identity comes from the item's resolver and that source's
     // name on the row (rows are blended) — never a hard-coded service.
     expect(fn).toContain('id: `${item.resolverId}-rec-${item.id}`');
-    expect(fn).toContain("const resolverName = itemSourceName(item, section) || 'the service';");
+    expect(fn).toContain("const resolverName = sourceName || 'the service';");
     const name = app.slice(app.indexOf('const itemSourceName = (item, row) => {'), app.indexOf('const openRecommendationPlaylist = async'));
     expect(name).toContain('const src = ((row && row.sources) || []).find(x => x.id === item.resolverId);');
     expect(fn).toContain('creator: resolverName');
@@ -164,8 +169,8 @@ describe('opening a recommended playlist is responsive', () => {
   const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
 
   test('the click opens the view at once and the tracks fill in when the lookup lands', () => {
-    const open = app.slice(app.indexOf('const openRecommendationPlaylist = (item, section) => {'));
-    const body = open.slice(0, open.indexOf('\n            };'));
+    const open = app.slice(app.indexOf('const openServicePlaylist = (item, sourceName) => {'));
+    const body = open.slice(0, open.indexOf('\n  };'));
     // No waiting before the view changes: no await, no global spinner.
     expect(body).not.toContain('await ');
     expect(body).not.toContain('setTrackLoading');
@@ -341,7 +346,7 @@ describe('the grouped model wiring (similar users, weekly sections, readers)', (
   test('every merge applies the friend exclusions (a follow since the fetch drops out at once)', () => {
     const i = app.indexOf('const refreshMergedRecommendations = () => {');
     const fn = app.slice(i, app.indexOf('\n  };', i));
-    expect(fn).toMatch(/buildRecommendationPage\(\{[\s\S]*similarUsers: Object\.values\(similarUsersRef\.current\),[\s\S]*exclude: recommendationExclusions\(\)/);
+    expect(fn).toMatch(/buildRecommendation(?:Page|Views)\(\{[\s\S]*similarUsers: Object\.values\(similarUsersRef\.current\),[\s\S]*exclude: recommendationExclusions\(\)/);
     const ex = app.slice(app.indexOf('const recommendationExclusions = () => {'), app.indexOf('const refreshMergedRecommendations'));
     expect(ex).toMatch(/friendsRef\.current/);
     expect(ex).toMatch(/hiddenFriendKeysRef\.current/);
@@ -358,7 +363,7 @@ describe('the grouped model wiring (similar users, weekly sections, readers)', (
     expect(fn).not.toMatch(/recommendationsLoadingMoreRef\.current\[section\.key\]/);
   });
 
-  test('all five readers call flattenRecommendationItems', () => {
+  test('the readers call flattenRecommendationItems', () => {
     // the discovery-unread hash on the page…
     const seen = app.slice(app.indexOf("if (activeView === 'recommendations' && recommendations.sections.length > 0) {"));
     expect(seen.slice(0, 300)).toMatch(/generateDiscoveryHash\(flattenRecommendationItems\(recommendations\.sections\), i => i\.name\)/);
@@ -368,9 +373,9 @@ describe('the grouped model wiring (similar users, weekly sections, readers)', (
     // the song list the scheduler resolves
     const songs = app.slice(app.indexOf('const recommendationSongs = useMemo('));
     expect(songs.slice(0, 400)).toContain('flattenRecommendationItems(recommendations.sections)');
-    // Home's For You preview
-    const preview = app.slice(app.indexOf('const recommendationsPreview = useMemo(() => {'));
-    expect(preview.slice(0, 300)).toContain('flattenRecommendationItems(recommendations.sections)');
+    // (Home's For You preview was the fifth; the redesigned Home reads the
+    // album items per row in its recommendationAlbums memo, for the row's
+    // source names.)
     // the image fetch
     const images = app.slice(app.indexOf('const recommendationImageFetchesRef = useRef(new Set());'));
     expect(images.slice(0, 900)).toContain('for (const item of flattenRecommendationItems(recommendations.sections))');
@@ -382,10 +387,11 @@ describe('the grouped model wiring (similar users, weekly sections, readers)', (
   test('loadWeeklyPlaylists no longer exists, and no playlists/createdfor URL is left in app.js', () => {
     expect(app).not.toContain('loadWeeklyPlaylists');
     expect(app).not.toContain('playlists/createdfor');
-    // The weekly fields are filled from the merged page's weekly items.
+    // The weekly fields are filled from the merged page's weekly items,
+    // before the history-mix exclusion (buildRecommendationViews).
     const i = app.indexOf('const refreshMergedRecommendations = () => {');
     const fn = app.slice(i, app.indexOf('\n  };', i));
-    expect(fn).toMatch(/const weekly = weeklyHomeEntries\(sections, prev\);/);
+    expect(fn).toMatch(/const weekly = weeklyHomeEntries\(weeklySections, prev\);/);
     expect(fn).toMatch(/if \(weekly\.weeklyJams === prev\.weeklyJams && weekly\.weeklyExploration === prev\.weeklyExploration\) return prev;/);
   });
 });
@@ -408,9 +414,10 @@ describe('the five-section page render', () => {
     expect(view).toMatch(/const contentSections = sections\.filter\(s => s\.type !== 'friend'\);/);
     expect(view).toMatch(/const friendsSection = sections\.find\(s => s\.type === 'friend'\) \|\| null;/);
     const typeSection = between('const renderTypeSection = (section) =>', '// ── The page');
-    expect(typeSection).toMatch(/section\.subsections\.map\(renderSubsection\)/);
-    const header = between('const subsectionHeader = (sub, ', 'const renderSubsection = (sub) => {');
-    expect(header).toMatch(/React\.createElement\('h2', \{ className: 'text-lg font-semibold truncate', style: \{ color: 'var\(--text-primary\)' \} \}, sub\.title\)/);
+    expect(typeSection).toMatch(/visibleRows\.map\(sub => renderSubsection\(sub, \{ cardRows \}\)\)/);
+    const header = between('const subsectionHeader = (sub, ', 'const renderSubsection = (sub, { cardRows = CARD_ROWS } = {}) => {');
+    // The app's section title (Home's), not a page-local heading.
+    expect(header).toMatch(/React\.createElement\(SectionHeader, \{\s*title: sub\.title,/);
     // No provider row titles or per-row source tags any more.
     expect(view).not.toContain('const sourceTags = ');
     expect(header).not.toMatch(/React\.createElement\('h3'/);
@@ -418,12 +425,23 @@ describe('the five-section page render', () => {
     expect(view).not.toMatch(/`\$\{section\.items\.length\}`|`\$\{sub\.items\.length\}`/);
   });
 
-  test('"See all" / "Show less" carry Home\'s link classes exactly', () => {
+  test('category rows are subsections under one "Playlists" SectionHeader', () => {
+    const typeSection = between('const renderTypeSection = (section) =>', '// ── The page');
+    expect(typeSection).toMatch(/if \(visibleRows\.some\(sub => sub\.category\)\) \{[\s\S]*?React\.createElement\(SectionHeader, \{ title: section\.title, style: SECTION_HEADER_GAP \}\)/);
     const header = between('const subsectionHeader = (sub, ', "// ── One section's row");
-    expect(header).toMatch(/className: 'text-sm text-purple-600 hover:text-purple-700 font-medium( [^']*)?'/);
-    expect(header).toMatch(/expanded \? 'Show less' : 'See all'/);
+    expect(header).toContain("size: sub.category ? 'sub' : 'section',");
+  });
+
+  test('"See all" / "Show less" is the section header\'s in-place link, labelled "See all"', () => {
+    const header = between('const subsectionHeader = (sub, ', "// ── One section's row");
+    // SectionHeader's link style (Home's); no page-local link classes.
+    expect(header).toMatch(/action: showToggle \? \{/);
+    expect(header).not.toMatch(/text-purple-600/);
+    // It opens the row in place, so it is not "See all in Recommendations".
+    expect(header).toMatch(/label: expanded \? 'Show less' : 'See all'/);
+    expect(header).toMatch(/onClick: \(\) => toggleRecommendationSection\(sub\.key\)/);
     // Only for a row with more than its preview, or more to load.
-    const row = between('const renderSubsection = (sub) => {', '// ── Types');
+    const row = between('const renderSubsection = (sub, { cardRows = CARD_ROWS } = {}) => {', '// ── Types');
     expect(row).toMatch(/const showToggle = expanded \|\| canExpand \|\| sub\.canLoadMore;/);
   });
 
@@ -434,26 +452,24 @@ describe('the five-section page render', () => {
     expect(view).not.toContain('Thinking…');
   });
 
-  test('the filter bar sits under the hero, as on the other tabs: All plus one pill per source, no counts, each in its own colour', () => {
+  test('the filter bar sits under the hero, as on the other tabs: All plus one chip per source, no counts, each in its own colour', () => {
     const bar = between('// Filter bar (outside scrollable area), as on the other tabs', '// Scrollable content area: the grouped page');
     expect(bar.length).toBeGreaterThan(0);
     // After the hero, before the scroll area, so it stays put while the page scrolls.
     expect(view.indexOf("'RECOMMENDATIONS'")).toBeLessThan(view.indexOf('// Filter bar (outside scrollable area)'));
     expect(bar).toContain('const sources = pageSources(recommendations.sections);');
-    expect(bar).toContain("const pills = [{ id: 'all', name: 'All' }, ...sources];");
-    expect(bar).toContain('}, name);');
-    expect(bar).not.toMatch(/\$\{name\} \(/);
-    // Each pill's own active colour, as the other tabs' pills have: All the
-    // tabs' purple, a source its manifest colour, Shuffleupagus the accent.
-    expect(bar).toContain('style: isActive ? { backgroundColor: activeColorFor(id) } : undefined');
-    expect(bar).toContain("if (id === 'shuffleupagus') return 'var(--accent-primary)';");
-    expect(bar).toContain("return resolver && resolver.color && resolver.color !== '#888888' ? resolver.color : '#7c3aed';");
-    // Fresh Drops' bar and pills, verbatim.
+    // The app's filter chips (Home's), All neutral, then one per source with
+    // its name and no count.
+    expect(bar).toContain("const chips = [{ id: 'all', label: 'All' }, ...sources.map(src => ({ id: src.id, label: src.name, color: colorFor(src.id) }))];");
+    expect(bar).not.toMatch(/\$\{(name|src\.name)\} \(/);
+    expect(bar).toContain("React.createElement(FilterChips, { chips, value: active, onChange: setRecommendationSourceFilter, label: 'Filter recommendations by source' })");
+    // A source's colour is Home's (the plugins' manifest colours), Shuffleupagus
+    // the fixed accent, a source with none the grey.
+    expect(bar).toContain("const colorFor = (id) => (id === 'shuffleupagus' ? '#7c3aed' : (homeSourceColors && homeSourceColors[id]) || 'var(--text-secondary)');");
+    // Fresh Drops' bar, verbatim; no page-local pill classes.
     expect(bar).toContain("className: 'flex items-center px-6 py-3'");
     expect(bar).toContain("style: { flexShrink: 0, backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }");
-    expect(bar).toMatch(/className: `px-3 py-1\.5 rounded-full text-sm transition-all no-drag \$\{\s*isActive \? 'text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'\s*\}`/);
-    expect(bar).toContain("onClick: () => setRecommendationSourceFilter(id),");
-    expect(bar).toContain("'aria-pressed': isActive ? 'true' : 'false',");
+    expect(bar).not.toMatch(/rounded-full|bg-gray-100/);
     // Never a service by name.
     expect(bar).not.toMatch(/'lastfm'|'listenbrainz'|'amazonmusic'/);
   });
@@ -463,7 +479,7 @@ describe('the five-section page render', () => {
     expect(view).toMatch(/const activeSourceFilter = pageSources\(allSections\)\.some\(src => src\.id === recommendationSourceFilter\) \? recommendationSourceFilter : 'all';/);
     // A section the pick leaves empty is left out.
     expect(view).toMatch(/allSections\.filter\(sec => sec\.subsections\.some\(sub => filterRowBySource\(sub, activeSourceFilter\)\.length > 0\)\)/);
-    const row = between('const renderSubsection = (sub) => {', '// ── Types');
+    const row = between('const renderSubsection = (sub, { cardRows = CARD_ROWS } = {}) => {', '// ── Types');
     expect(row).toMatch(/const items = filterRowBySource\(sub, activeSourceFilter\);/);
     for (const line of app.split('\n').filter(l => l.includes('recommendationSourceFilter') || l.includes('RecommendationSourceFilter'))) {
       expect(line).not.toMatch(/store|localStorage/);
@@ -569,5 +585,49 @@ describe('the five-section page render', () => {
     // A late Friends answer clears an empty message the round already showed.
     const fetchBlock = fn.slice(fn.indexOf('const fetchSimilarUsers = async (provider) => {'), fn.indexOf('await Promise.all(['));
     expect(fetchBlock).toMatch(/saveRecommendationsCache\(\);\s*(\/\/[^\n]*\n\s*)?if \(isLatest\(\) && recommendationsFriendsShownRef\.current\) \{\s*setRecommendations\(prev => \(\{ \.\.\.prev, loading: false, error: null \}\)\);/);
+  });
+});
+
+describe('playlist category rows on the page', () => {
+  test('playlist category rows: per-row preview, hidden empty rows, tail by category', () => {
+    // Typed since albums split into category rows too (#1377): `playlist:personal`
+    // and `album:personal` are different rows.
+    expect(app).toContain("lastPageCategories: [...new Set(result.items.filter(i => i && (i.type === 'playlist' || i.type === 'album')).map(i => `${i.type}:${categoryFor(i.type, i, section.category)}`))]");
+    expect(app).toContain('expansion.lastPageCategories.includes(`${sub.type}:${sub.category}`)');
+    expect(app).not.toContain('expansion.lastPageCategories.includes(sub.category)');
+    expect(app).toContain('rowCount > 1 ? 1 : CARD_ROWS');
+    // Under a source filter only a page from that provider can fill a row, so
+    // only its in-flight page keeps an otherwise empty row on the page.
+    expect(app).toContain('recommendationsLoadingMore[p.pagingKey] && (!filteringOne || p.resolverId === activeSourceFilter)');
+    expect(app).toContain('(recommendationsGridColumns.cards || 6) * cardRows');
+    expect(app).toMatch(/exhausted: true, lastPageTypes: \[\], lastPageCategories: \[\]/);
+  });
+
+  test('playlist category rows have space between them', () => {
+    expect(app).toContain("className: 'mb-10', style: { display: 'flex', flexDirection: 'column', gap: '32px' }");
+  });
+});
+
+describe('album category rows on the page', () => {
+  test('album category rows: typed loading tail, Shuffleupagus placeholder in Based on your listening', () => {
+    expect(app).toContain("lastPageCategories: [...new Set(result.items.filter(i => i && (i.type === 'playlist' || i.type === 'album')).map(i => `${i.type}:${categoryFor(i.type, i, section.category)}`))]");
+    expect(app).toContain('expansion.lastPageCategories.includes(`${sub.type}:${sub.category}`)');
+    // The model's typed category helper, imported with the other model helpers.
+    expect(app).toMatch(/shuffleupagusSection, FRIEND_SERVICES, categoryFor\s*\} = require\('\.\/lib\/recommendation-model'\)/);
+    expect(app).toContain("const LLM_TAIL_ROWS = new Set(['type:album', 'type:artist', 'albums:personal']);");
+    expect(app).toContain("'albums:personal-pending'");
+    expect(app).toContain("title: 'Based on your listening'");
+    // The Albums pending slot only when the page has no album section at all.
+    expect(app).toContain("!allSections.some(s => s.type === 'album')");
+  });
+
+  test('the placeholder subsection sits after New for you, else first, under All or the Shuffleupagus chip', () => {
+    const fn = app.slice(app.indexOf('const renderTypeSection = (section) => {'));
+    const body = fn.slice(0, fn.indexOf('// ── The page'));
+    expect(body).toMatch(/const llmPersonalPending = section\.type === 'album' && llmLoading\s*&& \(!filteringOne \|\| activeSourceFilter === 'shuffleupagus'\)\s*&& visibleRows\.some\(sub => sub\.category\)\s*&& !visibleRows\.some\(sub => sub\.key === 'albums:personal'\);/);
+    expect(body).toContain("const newAt = visibleRows.findIndex(sub => sub.key === 'albums:new');");
+    expect(body).toContain('rows.splice(newAt + 1, 0, llmPersonalPendingRow)');
+    // The placeholder is a subsection: a 15px subsection header, no link.
+    expect(app).toMatch(/React\.createElement\(SectionHeader, \{ title: 'Based on your listening', size: 'sub', style: SECTION_HEADER_GAP \}\)/);
   });
 });

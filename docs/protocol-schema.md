@@ -248,6 +248,7 @@ parachord://play/playlist?tracks={base64_json}&title={display_name}
 | `music.apple.com/<region>/playlist/<slug>/<id>` | Apple Music playlist import |
 | `soundcloud.com/<user>/sets/<slug>` | SoundCloud playlist import |
 | `music.amazon.com/playlists/<id>`, `music.amazon.com/my/playlists/<id>`, `music.amazon.com/user-playlists/<id>` (the share-link shape for user-created playlists; the id may be a plain or dashed hex uuid) | Amazon Music playlist import (requires being signed in to Amazon Music in the app — the page only renders authenticated) |
+| `listenbrainz.org/playlist/<mbid>` | ListenBrainz playlist import (the plug-in fetches the JSPF from the ListenBrainz API; the user's token is sent when set, so their private playlists load) |
 | `youtube.com/playlist?list=<id>`, `music.youtube.com/playlist?list=<id>` | YouTube playlist import (the plug-in reads the playlist page and stops at 100 tracks) |
 | `on.soundcloud.com/<short-id>` | Short-link — app follows the 302 to `soundcloud.com/<user>/sets/...` itself, then re-validates the final host before importing. The website does NOT pre-resolve the short link. |
 | `achordion.xyz/playlist/<mbid>` | Fetched from `https://achordion.xyz/api/playlist/<mbid>/xspf` (public, returns XSPF) — the page itself is bot-challenged by Vercel; only the `/api/` route is reachable from the app's IP. |
@@ -626,6 +627,8 @@ parachord://search?q=shoegaze&source=spotify
 Open the AI DJ chat panel, optionally with a pre-filled prompt.
 
 > **User confirmation required.** When a `prompt` parameter is provided, Parachord shows a confirmation dialog displaying the message before sending it to the AI. This prevents external sources from silently injecting prompts. See [Security Considerations](#security-considerations).
+>
+> The one exception is the app itself: the Home Ask box that the Home redesign adds sends its prompt through this same link with an in-app origin, skips the dialog and sends once the chat panel is ready (it waits for the chat state), because the user typed or approved the prompt in the app. The origin is an option the renderer passes when it calls the protocol handler directly. It is never a URL parameter, so a link from the OS, the local `/protocol` endpoint or the browser extension always confirms.
 
 ```
 parachord://chat?prompt={text}
@@ -909,7 +912,7 @@ Protocol URLs can be triggered by **any application on the system** — a webpag
 
 ### Threat model
 
-- **Prompt injection via `chat`:** A malicious link could auto-send instructions to the AI DJ. Mitigated by requiring user confirmation before any prompt is sent, and capping prompt length at 500 characters.
+- **Prompt injection via `chat`:** A malicious link could auto-send instructions to the AI DJ. Mitigated by requiring user confirmation before any prompt from an outside link is sent (the app's own Ask box is the only caller that skips it, and no URL can claim that origin), and capping prompt length at 500 characters.
 - **SSRF via URL parameters:** Crafted URLs in `import?url=`, `play/album?url=`, `play/playlist?url=`, or `play/radio?url=`/`refill=` could make Parachord fetch attacker-controlled or internal URLs. Mitigated by `isPublicHttpUrl` which rejects non-HTTP(S) schemes and any literal IP in the loopback (`127.0.0.0/8`, `0.0.0.0/8`, `::1`), RFC1918 (`10/8`, `172.16/12`, `192.168/16`), CGNAT (`100.64/10`), link-local (`169.254/16` — including the AWS/GCP/Azure cloud-metadata IP), `.local` mDNS, IPv6 link-local (`fe80::/10`), IPv6 ULA (`fc00::/7`), and IPv4-mapped IPv6 (`::ffff:0:0/96`) ranges. `import` additionally requires user confirmation showing the target hostname; `play-*` commands rely on the SSRF guard without confirmation since they only affect playback. **The guard does NOT defend against DNS rebinding** — a public hostname resolving to a private IP is accepted.
 - **Data stuffing via `import` / `play-*`:** An oversized base64 payload in `tracks` could consume memory or disk. `import` caps the encoded payload at 100KB and 500 tracks; `play/album` / `play/playlist` / `play/radio` apply the same caps.
 - **Silent side effects:** Commands like `play`, `play/album`, `play/playlist`, `play/radio`, `listen-along`, `queue/add`, `queue/clear`, `control/*`, `shuffle`, and `volume` execute without confirmation. These are considered low-risk since they only affect local playback state and are easily reversed (skip / pause / exit listen-along). `import` and `chat` are the two commands that DO prompt because they write to library state or send to the AI.

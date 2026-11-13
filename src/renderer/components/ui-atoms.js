@@ -23,35 +23,79 @@ const Tooltip = ({ children, content, position = 'top', variant = 'light', class
   );
 };
 
-// FixedTooltip - uses position:fixed to escape overflow:hidden containers
-// Shows tooltip below the trigger element, left-aligned to avoid sidebar clipping
-const FixedTooltip = ({ children, content }) => {
-  const [visible, setVisible] = React.useState(false);
-  const [coords, setCoords] = React.useState({ top: 0, left: 0 });
-  const triggerRef = React.useRef(null);
+// Where a fixed tooltip goes: below the trigger and left-aligned with it,
+// shifted left so it stays inside the right edge (a trigger in a window's
+// right-hand column), and flipped above the trigger when it would pass the
+// bottom. Pure, so the clamp and the flip are tested without a DOM.
+const placeFixedTooltip = (rect, tip, view, margin = 8, gap = 6) => {
+  const left = Math.max(margin, Math.min(rect.left, view.width - tip.width - margin));
+  const below = rect.bottom + gap;
+  const top = below + tip.height > view.height - margin
+    ? Math.max(margin, rect.top - gap - tip.height)
+    : below;
+  return { top, left };
+};
 
-  const show = () => {
-    if (triggerRef.current) {
-      const rect = triggerRef.current.getBoundingClientRect();
-      setCoords({ top: rect.bottom + 6, left: rect.left });
+// FixedTooltip - uses position:fixed to escape overflow:hidden containers.
+// Shows on hover or on keyboard focus inside the trigger, and stays while
+// either lasts (a blur with the pointer still over it keeps it). Escape
+// dismisses it (WCAG 1.4.13) until the pointer or focus comes back.
+// Coordinates are set only by the layout effect, which measures the tip
+// before paint, so a second show (focus after hover) can't undo the clamp.
+// `id` names the tip (role="tooltip") for a trigger's aria-describedby.
+const FixedTooltip = ({ children, content, id }) => {
+  const [hover, setHover] = React.useState(false);
+  const [focus, setFocus] = React.useState(false);
+  const [dismissed, setDismissed] = React.useState(false);
+  const [coords, setCoords] = React.useState(null);
+  const triggerRef = React.useRef(null);
+  const tipRef = React.useRef(null);
+  const visible = (hover || focus) && !dismissed && !!content;
+
+  React.useLayoutEffect(() => {
+    if (!visible) {
+      setCoords(null);
+      return;
     }
-    setVisible(true);
-  };
-  const hide = () => setVisible(false);
+    if (!tipRef.current || !triggerRef.current) return;
+    const next = placeFixedTooltip(
+      triggerRef.current.getBoundingClientRect(),
+      tipRef.current.getBoundingClientRect(),
+      { width: window.innerWidth, height: window.innerHeight }
+    );
+    setCoords((c) => (c && c.left === next.left && c.top === next.top ? c : next));
+  }, [visible, content]);
+
+  React.useEffect(() => {
+    if (!visible) return undefined;
+    const onKey = (ev) => { if (ev.key === 'Escape') setDismissed(true); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [visible]);
 
   return React.createElement('div', {
     ref: triggerRef,
-    onMouseEnter: show,
-    onMouseLeave: hide,
+    onMouseEnter: () => { setHover(true); setDismissed(false); },
+    onMouseLeave: () => setHover(false),
+    // Keyboard focus anywhere inside shows it too (React's focus events bubble).
+    onFocus: () => { if (!focus) setDismissed(false); setFocus(true); },
+    onBlur: (ev) => {
+      if (!ev.currentTarget.contains(ev.relatedTarget)) setFocus(false);
+    },
     style: { position: 'relative' }
   },
     children,
-    visible && content && ReactDOM.createPortal(
+    visible && ReactDOM.createPortal(
       React.createElement('div', {
+        ref: tipRef,
+        id,
+        role: 'tooltip',
         style: {
           position: 'fixed',
-          top: coords.top,
-          left: coords.left,
+          top: coords ? coords.top : 0,
+          left: coords ? coords.left : 0,
+          // Unplaced (the first, measuring render) it stays hidden.
+          visibility: coords ? 'visible' : 'hidden',
           zIndex: 99999,
           maxWidth: 280,
           minWidth: 180,
@@ -63,9 +107,7 @@ const FixedTooltip = ({ children, content }) => {
           fontSize: 12,
           lineHeight: 1.5,
           boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15), 0 2px 4px rgba(0, 0, 0, 0.1)',
-          pointerEvents: 'none',
-          opacity: visible ? 1 : 0,
-          transition: 'opacity 150ms ease'
+          pointerEvents: 'none'
         }
       }, content),
       document.body
@@ -343,7 +385,7 @@ const ShareButton = ({ open = false, onClick }) => {
 };
 
 module.exports = {
-  Tooltip, FixedTooltip, SERVICE_LOGO_PATHS, SERVICE_LOGO_IMAGES,
+  Tooltip, FixedTooltip, placeFixedTooltip, SERVICE_LOGO_PATHS, SERVICE_LOGO_IMAGES,
   ResolverIcon, SERVICE_LOGOS,
   ParachordWordmark, PlaybackProgress, ShareButton,
 };

@@ -39,7 +39,7 @@ const ALLOWED_STORE_KEYS = new Set([
   'skip_external_prompt', 'skip_unsaved_friend_warning',
   'suppressed_sync_playlists',
   'theme_preference',
-  'tutorial_completed', 'uninstalled_resolvers', 'whats_new_dismissed_version',
+  'tutorial_completed', 'uninstalled_resolvers', 'whats_new_dismissed_version', 'home_setup_dismissed',
   'cached_announcements', 'dismissed_announcement_ids',
   'playlists_sort',
   'hidden_friend_keys',
@@ -50,6 +50,8 @@ const ALLOWED_STORE_KEYS = new Set([
   // discovery_seen_* keys now sit in the alphabetical block above, via #994).
   'cache_critics_picks', 'cache_release_details', 'cache_recommendations',
   'hosted_playlists', 'sync_engine_mode', 'sync_playlist_channels',
+  // The "Made from your listening" mixes on Home (getHistoryMixes), per provider.
+  'cache_history_mixes',
 ]);
 
 function registerStoreIpc({ ipcMain, store, app, getPluginsCacheDir }) {

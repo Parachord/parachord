@@ -1,4 +1,4 @@
-// Source of truth for plugins/listenbrainz.axe v1.3.0.
+// Source of truth for plugins/listenbrainz.axe v1.5.0.
 // Imported from the .axe by `node scripts/build-axes.js --import`.
 // Edit here, bump manifest.version in manifest.json, then run `node scripts/build-axes.js`.
 // The functions materialize fully isolated (resolver-loader.js uses
@@ -163,9 +163,167 @@ module.exports = {
       .filter(Boolean);
     const explorationItems = weeklyItems('weekly exploration', 'weekly-exploration', 'Weekly Exploration');
     const jamsItems = weeklyItems('weekly jams', 'weekly-jam', 'Weekly Jams');
-    if (explorationItems.length) sections.push({ id: 'weekly-exploration', title: 'Weekly Exploration', items: explorationItems });
-    if (jamsItems.length) sections.push({ id: 'weekly-jams', title: 'Weekly Jams', items: jamsItems });
+    if (explorationItems.length) sections.push({ id: 'weekly-exploration', title: 'Weekly Exploration', category: 'personal', items: explorationItems });
+    if (jamsItems.length) sections.push({ id: 'weekly-jams', title: 'Weekly Jams', category: 'personal', items: jamsItems });
     return { sections };
+  },
+
+  // capabilities.historyMixes (docs/architecture/plugins.md, "History
+  // mixes"): the newest Daily Jams and the newest Weekly Jams, both made from
+  // the user's own listening. The ids and urls are the ones getRecommendations
+  // gives its weekly-jams playlist items (the bare playlist MBID,
+  // https://listenbrainz.org/playlist/<mbid>/), so the Recommendations page
+  // can drop a mix by id. getRecommendations still returns the Weekly Jams
+  // for apps older than this capability. No username is a miss; a failed
+  // request throws so an outage never replaces the cached mixes with [].
+  getHistoryMixes: async function (config) {
+    const username = config && config.username;
+    if (!username) return { mixes: [] };
+    // Inline retry helper (functions materialize isolated), as in
+    // getRecommendations.
+    const fetchListenBrainz = async (url) => {
+      const maxRetries = 3;
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+          const response = await fetch(url);
+          if (response.ok) return response;
+          if (response.status === 429 || response.status === 503) {
+            const delay = Math.pow(2, attempt) * 1500;
+            await new Promise(resolve => setTimeout(resolve, delay));
+            continue;
+          }
+          return response;
+        } catch (networkError) {
+          if (attempt < maxRetries - 1) {
+            const delay = Math.pow(2, attempt) * 1500;
+            await new Promise(resolve => setTimeout(resolve, delay));
+          } else {
+            throw networkError;
+          }
+        }
+      }
+      return fetch(url);
+    };
+    const dateOf = (entry) => {
+      const t = Date.parse((entry && entry.playlist && entry.playlist.date) || '');
+      return Number.isFinite(t) ? t : 0;
+    };
+    // Same classification as getRecommendations: the algorithm source_patch,
+    // then the title.
+    const typeOf = (entry) => {
+      const pl = (entry && entry.playlist) || {};
+      const ext = (pl.extension && pl.extension['https://musicbrainz.org/doc/jspf#playlist']) || {};
+      const meta = (ext.additional_metadata && ext.additional_metadata.algorithm_metadata) || {};
+      if (typeof meta.source_patch === 'string' && meta.source_patch) return meta.source_patch;
+      const title = String(pl.title || '').toLowerCase();
+      if (title.indexOf('weekly exploration') === 0) return 'weekly-exploration';
+      if (title.indexOf('daily jams') === 0) return 'daily-jams';
+      if (title.indexOf('weekly jams') === 0) return 'weekly-jams';
+      return '';
+    };
+    const response = await fetchListenBrainz(`https://api.listenbrainz.org/1/user/${encodeURIComponent(username)}/playlists/recommendations`);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch ListenBrainz history mixes: ${response.status}`);
+    }
+    const data = await response.json();
+    const playlists = (data && data.playlists) || [];
+    const NAMES = { 'daily-jams': 'Daily Jams', 'weekly-jams': 'Weekly Jams' };
+    // The card's subhead: the dated part of ListenBrainz's title ("Weekly Jams
+    // for x, week of 2026-09-14 Mon" -> "Week of Sep 14, 2026"; "Daily Jams
+    // for x, 2026-11-11" -> "Nov 11, 2026"), since the card's title already
+    // names the mix. A title of another shape stays as it is.
+    const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const datedPart = (title) => {
+      const m = /,\s*(week of\s+)?(\d{4})-(\d{2})-(\d{2})/i.exec(title);
+      const month = m && MONTHS[Number(m[3]) - 1];
+      if (!month) return title;
+      const date = `${month} ${Number(m[4])}, ${m[2]}`;
+      return m[1] ? `Week of ${date}` : date;
+    };
+    const mixes = [];
+    ['daily-jams', 'weekly-jams'].forEach((type) => {
+      const newest = playlists
+        .filter(entry => typeOf(entry) === type)
+        .sort((a, b) => dateOf(b) - dateOf(a))[0];
+      const id = newest && String((newest.playlist && newest.playlist.identifier) || '').split('/').pop();
+      if (!id) return;
+      mixes.push({
+        type: 'playlist',
+        id,
+        name: NAMES[type],
+        description: datedPart(String(newest.playlist.title || '')) || undefined,
+        url: `https://listenbrainz.org/playlist/${id}/`
+      });
+    });
+    return { mixes };
+  },
+
+  // The urlLookup capability for a ListenBrainz playlist page
+  // (https://listenbrainz.org/playlist/<mbid>, with or without www. or a
+  // trailing slash): what Home's history-mix cards and any pasted playlist
+  // link go through (resolver-loader.js lookupPlaylist). Fetches the JSPF
+  // from /1/playlist/<mbid> and maps its tracks. A page that isn't a playlist
+  // URL is a miss (null); a failed request throws so the caller can say so
+  // instead of treating an outage as an empty playlist.
+  lookupPlaylist: async function (url, config) {
+    const match = String(url || '').match(/listenbrainz\.org\/playlist\/([^/?#]+)/i);
+    if (!match) return null;
+    const mbid = match[1];
+    const headers = config && config.userToken ? { Authorization: 'Token ' + config.userToken } : {};
+    // Inline retry helper (functions materialize isolated), as in
+    // getRecommendations.
+    const maxRetries = 3;
+    let response = null;
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        response = await fetch(`https://api.listenbrainz.org/1/playlist/${encodeURIComponent(mbid)}`, { headers });
+        if (response.ok) break;
+        if (response.status === 429 || response.status === 503) {
+          if (attempt < maxRetries - 1) {
+            await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1500));
+          }
+          continue;
+        }
+        break;
+      } catch (networkError) {
+        if (attempt < maxRetries - 1) {
+          await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1500));
+        } else {
+          throw networkError;
+        }
+      }
+    }
+    if (!response || !response.ok) {
+      throw new Error(`Failed to fetch the ListenBrainz playlist: ${response ? response.status : 'no response'}`);
+    }
+    const data = await response.json();
+    const playlist = (data && data.playlist) || {};
+    const tracks = [];
+    for (const track of (playlist.track || [])) {
+      const title = track && track.title;
+      if (!title) continue;
+      const mbid = (track.identifier && track.identifier[0] || '').split('/').pop() || null;
+      const out = {
+        artist: (track && track.creator) || 'Unknown Artist',
+        title: title,
+        duration: track.duration ? Math.floor(track.duration / 1000) : null
+      };
+      // The release ListenBrainz matched rides in the JSPF track extension
+      // (generated playlists carry no plain album); with it the playlist
+      // mosaic finds album covers instead of artist photos.
+      const ext = (track.extension && track.extension['https://musicbrainz.org/doc/jspf#track']) || {};
+      const meta = ext.additional_metadata || {};
+      const album = [track.album, ext.release_name, meta.release_name]
+        .find(v => typeof v === 'string' && v.trim());
+      if (album) out.album = album.trim();
+      if (mbid) out.mbid = mbid;
+      tracks.push(out);
+    }
+    return {
+      name: playlist.title || 'ListenBrainz Playlist',
+      creator: playlist.creator || undefined,
+      tracks: tracks
+    };
   },
 
   // The similarUsers capability: listeners whose taste is closest to the
