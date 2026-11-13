@@ -24,8 +24,10 @@ const fs = require('fs');
 const path = require('path');
 
 global.React = global.React || require('react');
+global.ReactVirtual = global.ReactVirtual || require('@tanstack/react-virtual');
 const { renderToStaticMarkup } = require('react-dom/server');
 const { PlaylistCoverImage } = require('../../src/renderer/components/playlist-cover');
+const { PlaylistViewPage } = require('../../src/renderer/components/playlist-view-page');
 
 const ROOT = path.join(__dirname, '..', '..');
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
@@ -124,11 +126,89 @@ describe('every playlist-cover surface renders the record\'s cover over the mosa
     expect(view).toContain('albumArt: playlistCover || playlistCoverArt?.[0] || null');
   });
 
-  test('the Playlists page grid card and table row, and the add-to-playlist panel', () => {
-    expect(app).toContain("playlist.coverArt && React.createElement(PlaylistCoverImage, { url: playlist.coverArt })");
+  // PAINT ORDER (the live-reported bug): the cover <img> and the mosaic's
+  // tiles are both positioned, and positioned siblings paint in DOM order —
+  // the cover must come AFTER the mosaic/placeholder or the tiles cover it.
+  // The live failure: a recommended playlist showed its cover while the
+  // tracks loaded (over the static placeholder) and the tiled mosaic replaced
+  // it the moment they landed.
+  test('the playlist view renders the cover ABOVE the mosaic tiles (paint order)', () => {
+    const props = {
+      activeResolvers: [], allPlaylistCovers: {}, allResolvers: [], currentTrack: null,
+      draggedPlaylistTrack: null, editedPlaylistData: null, formatTime: (s) => String(s || ''),
+      handlePlaylistTracksScrollRef: { current: null }, isPlaying: false, playbackContext: null,
+      playlistCoverArt: [
+        'https://img.example/tile1.jpg', 'https://img.example/tile2.jpg',
+        'https://img.example/tile3.jpg', 'https://img.example/tile4.jpg'
+      ],
+      playlistDropTarget: null, playlistEditMode: false, playlistObserverRef: { current: null },
+      playlistScrollContainerReady: false, playlistScrollContainerRef: { current: null },
+      playlistTrackRowRefs: { current: new Map() }, playlistTracks: [],
+      playlistTracksScrollRef: { current: null }, publishCollectionSmartLink: () => {},
+      refreshingPlaylist: null, resolverLoaderRef: { current: null }, resolverOrder: [],
+      selectedPlaylist: {
+        id: 'test-1', title: 'Test Playlist', creator: 'Amazon Music', tracks: [],
+        coverArt: 'https://img.example/cover.jpg'
+      },
+      setAddToPlaylistPanel: () => {}, setDraggedPlaylistTrack: () => {}, setDraggingTrackForPlaylist: () => {},
+      setEditedPlaylistData: () => {}, setPlaylistCoverArt: () => {}, setPlaylistDropTarget: () => {},
+      setPlaylistEditMode: () => {}, setPlaylistScrollContainerReady: () => {}, setPlaylistTracks: () => {},
+      setPlaylists: () => {}, setRefreshingPlaylist: () => {}, setSelectedPlaylist: () => {},
+      setSelectedPlaylistsForAdd: () => {}, setShareDropdownOpen: () => {}, setSyncDeleteDialog: () => {},
+      setTrackLoading: () => {}, shareDropdownOpen: false, showToast: () => {}, trackSources: {},
+      addToQueue: () => {}, copyParachordLink: () => {}, deletePlaylistLocally: () => {},
+      getPlaylistMirrorTargets: () => [], handleExportPlaylist: () => {}, handleImportPlaylistFromUrl: () => {},
+      handlePlay: () => {}, handlePlaylistDragEnd: () => {}, loadPlaylist: () => {}, navigateTo: () => {},
+      navigateBack: () => {}, openCollection: () => {}, refreshHostedPlaylist: () => {}, setQueueWithContext: () => {},
+      markPlaylistAsLocallyModified: () => {}, fetchArtistData: () => {},
+    };
+    const markup = renderToStaticMarkup(React.createElement(PlaylistViewPage, props));
+    // lastIndexOf: the hero's blurred backdrop uses the same cover URL first;
+    // the card's cover layer is the LAST occurrence.
+    const coverIdx = markup.lastIndexOf('img.example/cover.jpg');
+    const lastTileIdx = markup.lastIndexOf('img.example/tile4.jpg');
+    const overlayIdx = markup.indexOf('title="Add to Playlist"');
+    expect(coverIdx).toBeGreaterThan(-1);
+    expect(lastTileIdx).toBeGreaterThan(-1);
+    // The cover paints after (above) the mosaic tiles…
+    expect(coverIdx).toBeGreaterThan(lastTileIdx);
+    // …and before the hover overlay (the later sibling stays on top).
+    expect(overlayIdx).toBeGreaterThan(coverIdx);
   });
 
-  test('the Home page playlist row', () => {
-    expect(home).toContain("playlist.coverArt && React.createElement(PlaylistCoverImage, { url: playlist.coverArt })");
+  test('the Playlists grid card, table row and add-to-playlist panel: the cover comes after the mosaic in DOM order', () => {
+    const orderAfter = (src, startMarker, endMarker, beforeMarker) => {
+      const start = src.indexOf(startMarker);
+      expect(start).toBeGreaterThan(-1);
+      const block = src.slice(start, src.indexOf(endMarker, start));
+      expect(block.length).toBeGreaterThan(0);
+      const cover = block.indexOf('playlist.coverArt && React.createElement(PlaylistCoverImage');
+      expect(cover).toBeGreaterThan(-1);
+      expect(cover).toBeGreaterThan(block.indexOf(beforeMarker));
+    };
+    // Grid card and table thumbnail: anchored against the placeholder branch's
+    // trailing svg path — the last markup before the cover — so a cover moved
+    // INSIDE the mosaic map (between positioned tiles, where later tiles paint
+    // over it) fails too, not just one moved before the ternary.
+    const lastBeforeCover = 'M15 13.5v6l5.5-3-5.5-3z';
+    orderAfter(app, '// The mosaic/placeholder; the playlist\'s own cover',
+      '// Refresh for hosted XSPF (auto-polled)', lastBeforeCover);
+    orderAfter(app, '// Thumbnail (the mosaic/placeholder', '// Playlist name', lastBeforeCover);
+    // Add-to-playlist panel thumbnail: after the first-tile image.
+    orderAfter(app, '// Playlist thumbnail (gray square)', '// Playlist name', 'allPlaylistCovers[playlist.id]?.[0]');
+  });
+
+  test('the Home page playlist row: the cover comes after the grid in DOM order', () => {
+    const start = home.indexOf('// 2x2 album art grid or placeholder with hover play');
+    expect(start).toBeGreaterThan(-1);
+    const block = home.slice(start, home.indexOf('// Hover play button overlay', start));
+    const cover = block.indexOf('playlist.coverArt && React.createElement(PlaylistCoverImage');
+    expect(cover).toBeGreaterThan(block.indexOf('animate-shimmer'));
+  });
+
+  test('a pre-dedupe tiled cache entry self-heals at load (the same URL four times)', () => {
+    const load = sliceFrom(app, '// Load playlist cover cache', '// Load charts cache');
+    expect(load).toContain('dedupeCovers');
+    expect(load).toContain('[...new Set(entry.covers)]');
   });
 });

@@ -19,11 +19,20 @@
 // playlist cover lives on the playlist record, not in a cache, so the
 // fallback here is visual only). It also covers the CSS-background case
 // (the playlist view's blurred hero): layered over the fallback there, the
-// <img> reports the death a background image cannot. The parent box must be
-// `relative` (every playlist-cover box already is). Purely presentational:
-// no app state.
-// React is the renderer's vendor global (loaded by index.html before app.js;
-// jest and the smoke test set it before requiring this module).
+// <img> reports the death a background image cannot.
+//
+// THE CALLER MUST RENDER IT AFTER THE MOSAIC/PLACEHOLDER IN DOM ORDER. The
+// cover <img> and the mosaic's tiles are both positioned, and positioned
+// siblings paint in DOM order: placed before the mosaic, the tiles painted
+// over the cover the moment the tracks loaded (the cover showed only over
+// the static placeholder while loading). After it, the cover sits above the
+// tiles; whatever must stay above the cover (hover overlays, badges) renders
+// after it. The parent box must be `relative` (every playlist-cover box
+// already is). tests/renderer/playlist-cover-art.test.js pins the order per
+// surface and renders the view page functionally.
+// Purely presentational: no app state. React is the renderer's vendor global
+// (loaded by index.html before app.js; jest and the smoke test set it before
+// requiring this module).
 
 // `url`: the playlist's cover URL. Anything that is not a non-empty string
 // (null, undefined, a number, whitespace) renders nothing, so callers can

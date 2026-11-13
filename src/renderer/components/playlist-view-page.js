@@ -753,10 +753,16 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                   }
                 },
                   // Album art mosaic with hover overlay. The playlist's own
-                  // cover (playlistCover) layers over the mosaic: the exact
-                  // image the provider gave — what the Recommendations page's
-                  // card showed — instead of four track covers; a dead URL
-                  // removes itself and the mosaic shows again.
+                  // cover (playlistCover) renders AFTER the mosaic/placeholder
+                  // in DOM order: the cover img and the mosaic tiles are both
+                  // positioned, and positioned siblings paint in DOM order —
+                  // placed before the mosaic, the tiles painted OVER the cover
+                  // the moment the tracks landed (the static placeholder was
+                  // the only thing the cover could sit above while loading).
+                  // After it, the exact image the provider gave — what the
+                  // Recommendations page's card showed — sits above the tiles,
+                  // and a dead URL removes itself so the mosaic shows again.
+                  // The hover overlay after it stays on top.
                   React.createElement('div', {
                     className: 'rounded-lg overflow-hidden album-art-container group/art relative',
                     style: {
@@ -764,7 +770,6 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                       height: '192px'
                     }
                   },
-                    playlistCover && React.createElement(PlaylistCoverImage, { url: playlistCover }),
                     hasCachedCovers ?
                       React.createElement('div', { className: 'grid grid-cols-2 grid-rows-2 w-full h-full' },
                         [0, 1, 2, 3].map(idx => {
@@ -798,6 +803,9 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                           React.createElement('path', { d: 'M15 13.5v6l5.5-3-5.5-3z' })
                         )
                       ),
+                    // The playlist's own cover, over the mosaic/placeholder
+                    // (DOM order = paint order here; see the comment above).
+                    playlistCover && React.createElement(PlaylistCoverImage, { url: playlistCover }),
                     // Hover overlay with action buttons
                     React.createElement('div', {
                       className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-3',

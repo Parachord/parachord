@@ -19119,10 +19119,17 @@ ${trackListXml}
 
       // Load playlist cover cache
       if (playlistCoverData) {
-        // Filter out expired entries
-        const validEntries = Object.entries(playlistCoverData).filter(
-          ([_, entry]) => now - entry.timestamp < CACHE_TTL.playlistCover
-        );
+        // Filter out expired entries, and dedupe each entry's cover URLs:
+        // entries written before the URL-dedupe fix (getPlaylistCovers) can
+        // hold the same URL four times — a playlist cover once stamped on
+        // every track's albumArt tiled one image across the whole 2x2 grid.
+        // Deduped (fewer than 4 covers), the entry no longer satisfies the
+        // cache-hit check and the next view recomputes real per-album covers.
+        const dedupeCovers = (entry) =>
+          (entry && Array.isArray(entry.covers)) ? [...new Set(entry.covers)] : entry;
+        const validEntries = Object.entries(playlistCoverData)
+          .filter(([_, entry]) => now - entry.timestamp < CACHE_TTL.playlistCover)
+          .map(([id, entry]) => [id, { ...entry, covers: dedupeCovers(entry) }]);
         playlistCoverCache.current = Object.fromEntries(validEntries);
         console.log(`📦 Loaded ${validEntries.length} playlist cover entries from cache`);
       }
@@ -38270,11 +38277,14 @@ useEffect(() => {
                         }));
                       }
                     },
-                      // The playlist's own cover (a provider import's
-                      // coverArt) layered over the mosaic: it covers the
-                      // mosaic when it loads, and a dead URL removes itself so
-                      // the mosaic shows again.
-                      playlist.coverArt && React.createElement(PlaylistCoverImage, { url: playlist.coverArt }),
+                      // The mosaic/placeholder; the playlist's own cover
+                      // (a provider import's coverArt) comes AFTER it in DOM
+                      // order — the cover img and the tiles are both
+                      // positioned, and positioned siblings paint in DOM order,
+                      // so before the mosaic the tiles painted over the cover.
+                      // The badges and hover overlay after the cover stay on
+                      // top; a dead cover URL removes itself and the mosaic
+                      // shows again.
                       hasCachedCovers ?
                         React.createElement('div', { className: 'grid grid-cols-2 grid-rows-2 w-full h-full' },
                           [0, 1, 2, 3].map(idx => {
@@ -38308,6 +38318,9 @@ useEffect(() => {
                             React.createElement('path', { d: 'M15 13.5v6l5.5-3-5.5-3z' })
                           )
                         ),
+                      // The playlist's own cover, over the mosaic/placeholder
+                      // (DOM order = paint order; see the comment above).
+                      playlist.coverArt && React.createElement(PlaylistCoverImage, { url: playlist.coverArt }),
 
                       // Refresh for hosted XSPF (auto-polled) and provider snapshots
                       // (manual only — startup reload of a provider page is the
@@ -38551,12 +38564,12 @@ useEffect(() => {
                   },
                   className: `group flex items-center gap-4 py-3 px-4 cursor-pointer hover:bg-gray-50 transition-colors ${index > 0 ? 'border-t border-gray-100' : ''}`
                 },
-                  // Thumbnail (small mosaic or placeholder, with the
-                  // playlist's own cover layered over it)
+                  // Thumbnail (the mosaic/placeholder, with the playlist's
+                  // own cover AFTER it — the cover img and the tiles are both
+                  // positioned, and positioned siblings paint in DOM order)
                   React.createElement('div', {
                     className: 'relative w-12 h-12 rounded overflow-hidden flex-shrink-0'
                   },
-                    playlist.coverArt && React.createElement(PlaylistCoverImage, { url: playlist.coverArt }),
                     hasCachedCovers ?
                       React.createElement('div', { className: 'grid grid-cols-2 grid-rows-2 w-full h-full' },
                         [0, 1, 2, 3].map(idx => {
@@ -38598,7 +38611,9 @@ useEffect(() => {
                           React.createElement('rect', { x: 3, y: 17, width: 7, height: 2, rx: 1 }),
                           React.createElement('path', { d: 'M15 13.5v6l5.5-3-5.5-3z' })
                         )
-                      )
+                      ),
+                    // The playlist's own cover, over the mosaic/placeholder
+                    playlist.coverArt && React.createElement(PlaylistCoverImage, { url: playlist.coverArt })
                   ),
                   // Playlist name
                   React.createElement('div', { className: 'flex-1 min-w-0' },
@@ -53682,15 +53697,15 @@ useEffect(() => {
                 React.createElement('div', {
                   className: 'relative w-10 h-10 rounded bg-gray-200 flex-shrink-0 flex items-center justify-center overflow-hidden'
                 },
-                  // The playlist's own cover over the first mosaic tile
-                  playlist.coverArt && React.createElement(PlaylistCoverImage, { url: playlist.coverArt }),
                   allPlaylistCovers[playlist.id]?.[0] ?
                     React.createElement('img', {
                       src: allPlaylistCovers[playlist.id][0],
                       className: 'w-full h-full object-cover'
                     })
                   :
-                    React.createElement(Music, { size: 16, className: 'text-gray-400' })
+                    React.createElement(Music, { size: 16, className: 'text-gray-400' }),
+                  // The playlist's own cover, over the first mosaic tile
+                  playlist.coverArt && React.createElement(PlaylistCoverImage, { url: playlist.coverArt })
                 ),
                 // Playlist name
                 React.createElement('span', {
