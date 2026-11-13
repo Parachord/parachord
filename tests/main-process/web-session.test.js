@@ -311,15 +311,27 @@ describe('the load chain — rule 1: loads serialize', () => {
         await new Promise((resolve) => { releaseFirst = resolve; });
       }
     });
-    const first = host.load('https://music.testsvc.com/a');
-    const second = host.load('https://music.testsvc.com/b');
+    const capture = { urlPrefixes: ['https://gql.testsvc.com/*'], quietMs: 100 };
+    const first = host.load('https://music.testsvc.com/a', { capture });
+    const second = host.load('https://music.testsvc.com/b', { capture });
     await jest.advanceTimersByTimeAsync(0);
     expect(loads).toEqual(['https://music.testsvc.com/a']);
+    // The webRequest single listener slot is the point: while the first load
+    // is mid-flight, ONLY its capture is attached — the second's cannot
+    // replace it (that would interleave two loads' captures).
+    const webRequest = theSession().webRequest;
+    expect(webRequest.onBeforeRequest).toHaveBeenCalledTimes(1);
     releaseFirst();
-    await jest.advanceTimersByTimeAsync(0);
+    await jest.advanceTimersByTimeAsync(500); // the first load's quiet window ends, the chain releases
     expect(loads).toEqual(['https://music.testsvc.com/a', 'https://music.testsvc.com/b']);
     await first;
     await second;
+    // Full order: attach, detach, attach, detach — never two attaches alive.
+    expect(webRequest.onBeforeRequest).toHaveBeenCalledTimes(4);
+    const order = webRequest.onBeforeRequest.mock.invocationCallOrder;
+    expect(order[0]).toBeLessThan(order[1]); // attach then detach
+    expect(order[1]).toBeLessThan(order[2]); // the second attaches only after the first detached
+    expect(order[2]).toBeLessThan(order[3]);
   });
 });
 
@@ -382,14 +394,18 @@ describe('the fuse — rule 3: the idle park', () => {
     expect(view.webContents.loadURL).toHaveBeenCalledWith('about:blank');
   });
 
-  test('a load schedules the park; a pageFetch cancels a pending park', async () => {
+  test('a load schedules the park; a pageFetch re-arms it at its tail', async () => {
     const { host, view } = await warmSession({ warmMs: 1000 });
     await host.load('https://music.testsvc.com/page');
     await jest.advanceTimersByTimeAsync(800);
     view.webContents.executeJavaScript.mockResolvedValue({ status: 200, text: '{}' });
     await host.pageFetch({ url: 'https://gql.testsvc.com/' });
-    await jest.advanceTimersByTimeAsync(500); // the fetch re-armed the fuse
+    // The fetch re-armed the fuse: no blank at the ORIGINAL fire time...
+    await jest.advanceTimersByTimeAsync(300);
     expect(view.webContents.loadURL).not.toHaveBeenCalledWith('about:blank');
+    // ...and the blank comes one warmMs after the fetch settled, not never.
+    await jest.advanceTimersByTimeAsync(800);
+    expect(view.webContents.loadURL).toHaveBeenCalledWith('about:blank');
   });
 });
 
@@ -603,17 +619,21 @@ describe('clear — sign out', () => {
 });
 
 describe('view hardening', () => {
-  test('the hidden view: UA mask, no throttling, window-open denied, collapsed until used', async () => {
+  test('the hidden view: UA mask, no throttling, window-open denied, offscreen on use', async () => {
     const host = newSession();
     const win = makeHostWindow();
     host.setHost(win);
-    await host.load('https://music.testsvc.com/home');
+    host.ensureView();
     const view = host._view;
     expect(view.webContents.setUserAgent).toHaveBeenCalledWith('UA/1.0');
     expect(view.webContents.setBackgroundThrottling).toHaveBeenCalledWith(false);
     expect(view.webContents.setWindowOpenHandler).toHaveBeenCalledWith(expect.any(Function));
     expect(view.webContents.setWindowOpenHandler.mock.calls[0][0]()).toEqual({ action: 'deny' });
-    expect(view.bounds).toEqual({ x: 0, y: 0, width: 0, height: 0 });
+    expect(view.bounds).toEqual({ x: 0, y: 0, width: 0, height: 0 }); // born collapsed
+    await host.load('https://music.testsvc.com/home');
+    // Offscreen at a real size, not 0×0: SPAs collapse widgets to max-width: 0
+    // in a 0×0 view, and the page's own requests then never fire.
+    expect(view.bounds).toEqual({ x: -1200, y: 0, width: 1100, height: 800 });
     expect(host._host).toBe(win);
   });
 

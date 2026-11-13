@@ -159,6 +159,9 @@ function createWebSessionHost(config = {}) {
   const cfg = { ...DEFAULTS, ...config };
   if (!cfg.id) throw new Error('web-session: config.id is required');
   if (!cfg.partition) throw new Error(`web-session ${cfg.id}: config.partition is required`);
+  if (!Array.isArray(cfg.cookieDomains) || cfg.cookieDomains.length === 0) {
+    throw new Error(`web-session ${cfg.id}: config.cookieDomains is required (state() reports and clear() removes these — a shared-cookie-store host must be able to scope them)`);
+  }
 
   function electron() { return require('electron'); }
 
@@ -355,10 +358,15 @@ function createWebSessionHost(config = {}) {
     // park — is the writer (waits for all readers, excludes new ones).
 
     async beginNavigation() {
+      // The flag flips BEFORE the drain, not after: readers arriving while
+      // the drain is in progress must be refused, or a stream of parallel
+      // pageFetches (which the architecture deliberately allows off-chain)
+      // starves the navigation forever (createReplayGate's "sync flag flip
+      // first, then drain" rule).
+      this._navigating = true;
       while (this._replayReaders > 0) {
         await sleep(50);
       }
-      this._navigating = true;
     },
 
     endNavigation() {
@@ -486,7 +494,15 @@ function createWebSessionHost(config = {}) {
     async load(url, opts = {}) {
       return this.enqueue(async () => {
         const view = this.ensureView();
+        // The offscreen size, not the 0×0 collapse: SPAs collapse widgets to
+        // max-width: 0 in a 0×0 view, and the page's own requests then never
+        // fire (amazon-web-player's layoutSearch ran per flow for exactly
+        // this — a load without it captures nothing).
+        this.layoutOffscreen(view);
         this.cancelPark();
+        if (opts.capture && (!Array.isArray(opts.capture.urlPrefixes) || !opts.capture.urlPrefixes.every((p) => typeof p === 'string'))) {
+          throw notReady('invalid', `[web-session ${cfg.id}] capture needs urlPrefixes (an array of URL patterns)`);
+        }
         const captureState = opts.capture ? this.attachCapture(opts.capture.urlPrefixes) : null;
         try {
           await this.beginNavigation();
@@ -547,6 +563,11 @@ function createWebSessionHost(config = {}) {
       } finally {
         this._chainBusy -= 1;
         this.exitReplay();
+        // Re-arm the fuse: pageFetch activity keeps the view warm the same
+        // warmMs as a load (a session whose last call was a pageFetch would
+        // otherwise idle on the service page at full speed forever — the
+        // fuse's whole reason).
+        this.schedulePark();
       }
     },
 
@@ -639,7 +660,7 @@ function createWebSessionHost(config = {}) {
     // shortcut, not the contract).
     async cookieNames() {
       const names = new Set();
-      for (const domain of (cfg.cookieDomains || [cfg.id])) {
+      for (const domain of cfg.cookieDomains) {
         const url = `https://${domain.replace(/^\./, '')}/`;
         for (const cookie of await this.jarCookies(url)) {
           if (cookie.value) names.add(cookie.name);
