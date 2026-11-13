@@ -18,6 +18,7 @@
 
 const Icons = require('./icons');
 const { ResolverIcon, ShareButton } = require('./ui-atoms');
+const { PlaylistCoverImage } = require('./playlist-cover');
 const { VirtualizedTrackList, getBestSourceConfidence } = require('./track-lists');
 const { trackSlug } = require('../lib/track-slug');
 
@@ -103,6 +104,12 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
     showToast,
     trackSources,
   } = props;
+  // The playlist's own cover, when its provider gave it one (a recommended
+  // playlist's image — the same one the Recommendations page's card showed —
+  // or a provider import's coverArt on a saved record). Shown instead of the
+  // 2x2 mosaic everywhere this view renders a cover: the blurred hero
+  // background, the 192px card and the share link.
+  const playlistCover = (typeof selectedPlaylist?.coverArt === 'string' && selectedPlaylist.coverArt.trim()) || null;
   return React.createElement('div', {
         className: 'flex-1 flex flex-col',
         style: { overflow: 'hidden' }
@@ -116,12 +123,12 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
             overflow: 'hidden'
           }
         },
-          // Background with first album art or gradient
+          // Background with the playlist's own cover, the first mosaic tile, or the gradient
           React.createElement('div', {
             className: 'absolute inset-0',
             style: {
-              backgroundImage: playlistCoverArt[0]
-                ? `url(${playlistCoverArt[0]})`
+              backgroundImage: (playlistCover || playlistCoverArt[0])
+                ? `url(${playlistCover || playlistCoverArt[0]})`
                 : 'linear-gradient(to bottom right, #f43f5e, #ec4899, #c026d3)',
               backgroundSize: 'cover',
               backgroundPosition: 'center',
@@ -243,7 +250,16 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                   // (hosted-<url-hash> id, the provider snapshot shape), so the
                   // two buttons can never disagree.
                   if (selectedPlaylist.sourceUrl) {
-                    await handleImportPlaylistFromUrl(selectedPlaylist.sourceUrl);
+                    // coverArt rides along as a metadata override so the saved
+                    // record keeps the exact cover this view is showing (the
+                    // lookup's own cover can be a different crop of the same
+                    // playlist's image; the override wins).
+                    await handleImportPlaylistFromUrl(
+                      selectedPlaylist.sourceUrl,
+                      false,
+                      null,
+                      selectedPlaylist.coverArt ? { coverArt: selectedPlaylist.coverArt } : null
+                    );
                     return;
                   }
                   // Weekly Jams from Home: save to library. Built by spreading
@@ -731,7 +747,11 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                     }
                   }
                 },
-                  // Album art mosaic with hover overlay
+                  // Album art mosaic with hover overlay. The playlist's own
+                  // cover (playlistCover) layers over the mosaic: the exact
+                  // image the provider gave — what the Recommendations page's
+                  // card showed — instead of four track covers; a dead URL
+                  // removes itself and the mosaic shows again.
                   React.createElement('div', {
                     className: 'rounded-lg overflow-hidden album-art-container group/art relative',
                     style: {
@@ -739,6 +759,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                       height: '192px'
                     }
                   },
+                    playlistCover && React.createElement(PlaylistCoverImage, { url: playlistCover }),
                     hasCachedCovers ?
                       React.createElement('div', { className: 'grid grid-cols-2 grid-rows-2 w-full h-full' },
                         [0, 1, 2, 3].map(idx => {
@@ -1055,7 +1076,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                         title: selectedPlaylist.title,
                         artist: null,
                         creator: selectedPlaylist.creator || null,
-                        albumArt: playlistCoverArt?.[0] || null,
+                        albumArt: playlistCover || playlistCoverArt?.[0] || null,
                         type: 'playlist',
                         tracks: (playlistTracks || []).map((t, i) => ({
                           title: t.title || 'Unknown',
