@@ -28,6 +28,8 @@ const PLAY_FILL = '#7c3aed'; // fill-accent
 const ON_FILL = '#fff'; // on-color
 const SHUFFLE_COLOR = '#7c3aed'; // fill-accent: the accent var turns light purple in dark mode
 
+// Inner padding of the Fresh Drops / Critical Darlings panels.
+const HOME_HALF_PANEL_PAD = 20;
 const SECTION_STYLE = { display: 'flex', flexDirection: 'column', gap: '14px' };
 const H2_STYLE = { margin: 0, fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)' };
 const SUB_STYLE = { fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' };
@@ -237,6 +239,7 @@ const SIDE_BTN = 'clamp(34px, 14%, 40px)';
 const MAIN_BTN = 'clamp(46px, 19%, 52px)';
 
 // The sidebar's Critical Darlings icon.
+const DropletGlyph = () => svg(16, e('path', { d: 'M12 22a7 7 0 0 0 7-7c0-5-7-13-7-13S5 10 5 15a7 7 0 0 0 7 7z' }));
 const TrophyGlyph = () => svg(16, e('path', { d: 'M6 2h12v6a6 6 0 01-12 0V2zM9 21h6M12 14v7M6 4H3v2a3 3 0 003 3M18 4h3v2a3 3 0 01-3 3' }));
 
 // Shuffleupagus's icon from the shared icon set, sized to 18px.
@@ -397,11 +400,23 @@ function sourceChips(items, labelOf, colors) {
   return [{ id: 'All', label: 'All' }].concat(Array.from(seen, ([id, label]) => ({ id, label, color: colorOf(id) })));
 }
 
-function SectionHeader({ id, title, sub, page, view, navigateTo, extra }) {
+// `icon` and `tone` (a theme colour) put the section's icon in a tinted
+// square before the title, as the half panels do.
+function SectionHeader({ id, title, sub, page, view, navigateTo, extra, icon, tone }) {
+  const heading = e('div', null,
+    e('h2', { id, style: H2_STYLE }, title),
+    sub && e('div', { style: SUB_STYLE }, sub));
   return e('div', { style: { display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' } },
-    e('div', null,
-      e('h2', { id, style: H2_STYLE }, title),
-      sub && e('div', { style: SUB_STYLE }, sub)),
+    icon ? e('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 } },
+      e('span', {
+        'aria-hidden': 'true', 'data-section-icon': '',
+        style: {
+          width: '32px', height: '32px', borderRadius: '10px', flexShrink: 0,
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          color: tone, backgroundColor: `color-mix(in srgb, ${tone} 18%, transparent)`,
+        },
+      }, icon),
+      heading) : heading,
     e('div', { style: { display: 'flex', alignItems: 'center', gap: '12px' } },
       extra,
       page && e('button', {
@@ -490,11 +505,18 @@ function AlbumsRow(props) {
 // shows its cards. A half that is neither loading nor has cards is left out.
 function FreshCriticalRow(props) {
   const { fresh, critical, freshLoading, criticalLoading, navigateTo } = props;
-  const half = (id, title, sub, page, view, items, loading) => e('section', {
+  // Each half is a panel tinted with its own theme colour (Fresh Drops green,
+  // Critical Darlings amber), mixed into the page background so both themes
+  // follow, with the sidebar's icon for it beside the title.
+  const half = (id, title, sub, page, view, items, loading, tone, icon) => e('section', {
     key: id, 'aria-labelledby': id, 'aria-busy': loading ? 'true' : undefined,
-    style: Object.assign({ flex: HOME_HALF_FLEX, minWidth: 0 }, SECTION_STYLE),
+    style: Object.assign({ flex: HOME_HALF_FLEX, minWidth: 0 }, SECTION_STYLE, {
+      padding: `${HOME_HALF_PANEL_PAD}px`, borderRadius: '16px',
+      backgroundColor: `color-mix(in srgb, ${tone} 7%, var(--bg-primary))`,
+      border: `1px solid color-mix(in srgb, ${tone} 22%, transparent)`,
+    }),
   },
-    e(SectionHeader, { id, title, sub, page, view, navigateTo }),
+    e(SectionHeader, { id, title, sub, page, view, navigateTo, tone, icon }),
     loading
       ? e(CardRowSkeleton, { count: HOME_HALF_ROW_CARDS })
       : e('div', { style: grid(`repeat(${HOME_HALF_ROW_CARDS}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
@@ -505,8 +527,8 @@ function FreshCriticalRow(props) {
   const showC = c.length > 0 || !!criticalLoading;
   if (!showF && !showC) return null;
   return e('div', { style: { display: 'flex', gap: `${HOME_HALF_GAP}px` } },
-    showF && half('home-fresh', 'Fresh Drops', 'New releases from artists in your collection', 'Fresh Drops', 'new-releases', f, f.length === 0),
-    showC && half('home-critical', 'Critical Darlings', 'Albums the critics are loving', 'Critical Darlings', 'critics-picks', c, c.length === 0));
+    showF && half('home-fresh', 'Fresh Drops', 'New releases from artists in your collection', 'Fresh Drops', 'new-releases', f, f.length === 0, 'var(--success)', DropletGlyph()),
+    showC && half('home-critical', 'Critical Darlings', 'Albums the critics are loving', 'Critical Darlings', 'critics-picks', c, c.length === 0, 'var(--warning)', TrophyGlyph()));
 }
 
 // A concert card is not clickable as a whole: "Tickets" is its only action.

@@ -234,6 +234,22 @@ describe('Rows', () => {
     const loading = h(S.FreshCriticalRow, { fresh: [], critical: [], freshLoading: true, criticalLoading: true });
     expect((loading.match(/flex:0 0 calc\(50% - 16px\)/g) || []).length).toBe(2);
   });
+  test('each half is its own tinted panel with its icon, Fresh Drops green and Critical Darlings amber', () => {
+    const html = h(S.FreshCriticalRow, { fresh: [{ title: 'T', artist: 'A' }], critical: [{ title: 'U', artist: 'B' }], navigateTo: () => {} });
+    const sections = html.split('<section').slice(1);
+    expect(sections).toHaveLength(2);
+    expect(sections[0]).toMatch(/^[^>]*background-color:color-mix\(in srgb, var\(--success\) \d+%, var\(--bg-primary\)\)/);
+    expect(sections[1]).toMatch(/^[^>]*background-color:color-mix\(in srgb, var\(--warning\) \d+%, var\(--bg-primary\)\)/);
+    for (const sec of sections) {
+      expect(sec).toMatch(/^[^>]*border-radius:16px/);
+      expect(sec).toMatch(/^[^>]*padding:20px/);
+      expect(sec).toContain('data-section-icon');
+    }
+    // A half still loading keeps the panel, so the skeleton sits where the cards will.
+    const loading = h(S.FreshCriticalRow, { fresh: [], critical: [], freshLoading: true, criticalLoading: true });
+    expect(loading.split('<section').slice(1).every((sec) => /^[^>]*border-radius:16px/.test(sec))).toBe(true);
+  });
+
   test('neither half: nothing', () => {
     expect(h(S.FreshCriticalRow, { fresh: [], critical: [] })).toBe('');
   });
