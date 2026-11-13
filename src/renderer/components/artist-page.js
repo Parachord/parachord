@@ -20,6 +20,7 @@
 // from props under their old names.
 
 const { Tooltip } = require('./ui-atoms');
+const { SectionHeader } = require('./section-header');
 const { ReleasePage, ReleaseCard, generateArtistPattern, PlayTop10Icon, QueueTop10Icon } = require('./cards');
 const { trackSlug } = require('../lib/track-slug');
 const { formatCalendarDate } = require('../lib/calendar-date');
@@ -1872,23 +1873,21 @@ const ArtistPage = React.memo(function ArtistPage(props) {
             const sortedMonths = Object.keys(grouped).sort();
 
             return React.createElement('div', { className: 'p-6' },
-              // Header row with count and refresh
-              React.createElement('div', {
-                className: `flex items-center justify-between mb-6`
-              },
-                React.createElement('div', { className: 'flex items-center gap-3' },
-                  React.createElement('h2', {
-                    className: `text-lg font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`
-                  }, `${events.length} Upcoming Concert${events.length !== 1 ? 's' : ''}`),
+              // The app's section title (SectionHeader): the count, a spinner
+              // beside it while loading, and refresh on the right.
+              React.createElement(SectionHeader, {
+                title: React.createElement(React.Fragment, null,
+                  `${events.length} Upcoming Concert${events.length !== 1 ? 's' : ''}`,
                   artistConcertsLoading && React.createElement('svg', {
                     className: 'w-4 h-4 animate-spin text-teal-500',
+                    style: { display: 'inline-block', verticalAlign: 'middle', marginLeft: '12px' },
                     fill: 'none', viewBox: '0 0 24 24'
                   },
                     React.createElement('circle', { className: 'opacity-25', cx: 12, cy: 12, r: 10, stroke: 'currentColor', strokeWidth: 4 }),
                     React.createElement('path', { className: 'opacity-75', fill: 'currentColor', d: 'M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z' })
-                  )
-                ),
-                React.createElement('button', {
+                  )),
+                style: { marginBottom: '24px', alignItems: 'center' },
+                extra: React.createElement('button', {
                   onClick: () => currentArtist && loadArtistConcerts(currentArtist.name, true),
                   disabled: artistConcertsLoading,
                   className: `p-1.5 transition-colors ${artistConcertsLoading ? 'text-teal-500' : (isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600')}`,
@@ -1901,7 +1900,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                     React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M20 4v5h-.582m-15.356 2A8.001 8.001 0 0119.418 9m0 0H15m-11 11v-5h.581m0 0a8.003 8.003 0 0015.357-2m-15.357 2H9' })
                   )
                 )
-              ),
+              }),
 
               // Empty state
               events.length === 0 && !artistConcertsLoading && React.createElement('div', {

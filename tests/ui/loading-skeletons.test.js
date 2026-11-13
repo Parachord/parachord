@@ -165,10 +165,14 @@ describe('Recommendations skeletons match the sectioned page', () => {
 
   test('the real section header and the skeleton header share the heading line', () => {
     const header = view.slice(view.indexOf('const subsectionHeader = (sub, { expanded, showToggle }) =>'), view.indexOf('const renderSubsection = (sub) => {'));
-    for (const part of ["className: 'flex items-center justify-between gap-4 mb-4'", "minHeight: '28px'", "className: 'text-lg font-semibold truncate'"]) {
-      expect(header).toContain(part);
-      expect(skel).toContain(part);
-    }
+    // Both draw the app's SectionHeader with the shared gap below it.
+    expect(header).toMatch(/React\.createElement\(SectionHeader, \{/);
+    expect(header).toContain('style: SECTION_HEADER_GAP');
+    expect(skel).toMatch(/React\.createElement\(SectionHeader, \{/);
+    expect(skel).toContain('style: SECTION_HEADER_GAP');
+    // The unnamed heading's bar is inline in the title's line, so it keeps
+    // the title's 30px line height.
+    expect(skel).toMatch(/display: 'inline-block', verticalAlign: 'middle'/);
     expect(view).toMatch(/const renderTypeSection = \(section\) => React\.createElement\('div', \{ key: `type:\$\{section\.type\}`, className: 'mb-10' \}/);
     expect(skel).toContain("React.createElement('div', { className: 'mb-10', 'aria-hidden': 'true' }");
   });
@@ -224,6 +228,8 @@ describe('Recommendations skeleton components render', () => {
     const songs = render(RecommendationSectionSkeleton, { kind: 'songs' });
     expect(count(songs, 'flex items-center gap-4 py-3 px-4')).toBe(5);
     expect(songs).not.toContain('<h2');
+    // The bar sits in the section title's style, so it is the title's height.
+    expect(songs).toContain('font-size:20px;font-weight:700');
     const cards = render(RecommendationSectionSkeleton, { kind: 'cards', lines: 2, title: 'Albums' });
     expect(count(cards, 'aspect-square')).toBe(6);
     expect(cards).toMatch(/<h2[^>]*>Albums<\/h2>/);

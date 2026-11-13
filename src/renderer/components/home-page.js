@@ -22,6 +22,8 @@ const { HomeSetupButton } = require('./home-setup');
 // the first multi-line `const {` block as the props list.)
 const { JumpBackIn, MixesRow, PlaylistsRow, AlbumsRow, FreshCriticalRow, ConcertsRow, AskShuffleupagus } = require('./home-sections');
 const { JumpBackInSkeleton, CardRowSkeleton, ConcertRowSkeleton, HOME_HALF_ROW_CARDS, HOME_ROW_CARDS } = require('./home-skeletons');
+// The app's section title, which a loading row's heading uses.
+const { SECTION_TITLE_STYLE: H2_STYLE } = require('./section-header');
 const { homeSetupItems, missingPopularResolverCount } = require('../lib/home-setup');
 const { freshestPlaylists, recentLoves, changeBadge, freshChangeLine, jumpBackInTiles } = require('../lib/home-model');
 const { playlistSubtitle, homeSections, exampleShufflePrompt, homeTopArtists, albumsNeedingArt, lovesMosaicAlbums } = require('../lib/home-model');
@@ -64,8 +66,6 @@ const LOVES_CONTEXT = { type: 'loves', name: 'Recent Loves' };
 
 const PLAY_FILL = '#7c3aed'; // fill-accent
 const ON_FILL = '#fff'; // on-color
-
-const H2_STYLE = { margin: 0, fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)' };
 
 const artKey = (artist, album) => `${artist || ''}\u0000${album || ''}`.toLowerCase();
 

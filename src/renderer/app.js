@@ -1962,6 +1962,8 @@ const { HomePage } = require('./components/home-page');
 const { PlaylistViewPage } = require('./components/playlist-view-page');
 const { ArtistPage } = require('./components/artist-page');
 const { SearchPage } = require('./components/search-page');
+// The app's section title (Home's), over every page's rows and grids.
+const { SectionHeader, SECTION_HEADER_GAP } = require('./components/section-header');
 const {
   RecommendationCardSkeleton,
   RecommendationSongRowSkeleton,
@@ -41873,23 +41875,24 @@ useEffect(() => {
             };
 
             // ── The section header ───────────────────────────────────────
-            // The heading (Home's section size, no count) and See all / Show
-            // less in Home's link style on the right. Sources are filtered for
-            // the whole page in the filter bar under the hero.
-            const subsectionHeader = (sub, { expanded, showToggle }) => React.createElement('div', {
-              className: 'flex items-center justify-between gap-4 mb-4',
-              style: { minHeight: '28px' }
-            },
-              React.createElement('h2', { className: 'text-lg font-semibold truncate', style: { color: 'var(--text-primary)' } }, sub.title),
+            // The app's section title (SectionHeader, Home's style) and See
+            // all / Show less in its link style on the right. The link opens
+            // the row in place rather than going to another page, so it says
+            // "See all" (not "See all in <page>") and takes the accent (no
+            // destination page's colour). Sources are filtered for the whole
+            // page in the filter bar under the hero.
+            const subsectionHeader = (sub, { expanded, showToggle }) => React.createElement(SectionHeader, {
+              title: sub.title,
+              style: SECTION_HEADER_GAP,
               // Opening a row that can load more also starts its background
               // page fetches (the auto-paging effect), so there is no separate
               // load-more control.
-              showToggle && React.createElement('button', {
-                type: 'button',
-                onClick: () => toggleRecommendationSection(sub.key),
-                className: 'text-sm text-purple-600 hover:text-purple-700 font-medium transition-colors flex-shrink-0 no-drag'
-              }, expanded ? 'Show less' : 'See all')
-            );
+              action: showToggle ? {
+                label: expanded ? 'Show less' : 'See all',
+                expanded,
+                onClick: () => toggleRecommendationSection(sub.key)
+              } : null
+            });
 
             // ── One section's row ─────────────────────────────────────────
             // The header, then the items the page's source filter keeps
