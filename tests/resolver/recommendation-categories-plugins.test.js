@@ -46,3 +46,39 @@ describe('ListenBrainz sends playlist categories', () => {
     expect(axe.manifest.version).toBe('1.6.0');
   });
 });
+
+describe('Apple Music sends playlist categories', () => {
+  afterEach(() => { delete global.window; });
+
+  const pl = (id, name, playlistType) => ({ id, type: 'playlists', attributes: { name, playlistType, url: `https://music.apple.com/us/playlist/x/${id}` } });
+  const grp = (id, title, contents) => ({
+    id, type: 'personal-recommendation',
+    attributes: { kind: 'music-recommendations', title: { stringForDisplay: title } },
+    relationships: { contents: { data: contents } }
+  });
+  const run = async (data) => {
+    const axe = load('applemusic');
+    global.window = { appleMusicPersonalRecommendations: jest.fn().mockResolvedValue({ data }) };
+    const getRecommendations = new Function('return ' + axe.implementation.getRecommendations)();
+    return { axe, ...(await getRecommendations({})) };
+  };
+
+  test('Apple maps playlistType to category', async () => {
+    const { axe, sections } = await run([grp('g1', 'Made for You', [
+      pl('p1', 'Chill Mix', 'personal-mix'),
+      pl('p2', 'Indie Essentials', 'editorial'),
+      pl('p3', 'Fan Picks', 'user-shared'),
+      pl('p4', 'Other', 'external'),
+      pl('p5', 'Heavy Rotation', 'personal-mix')
+    ])]);
+    const items = sections.flatMap(s => s.items);
+    expect(items.map(i => i.category)).toEqual(['personal', 'editorial', 'community', undefined]);
+    expect(axe.manifest.version).toBe('1.5.0');
+  });
+
+  test('Apple sends no artist category', async () => {
+    const { sections } = await run([grp('g2', 'Radiohead Fans Like', [pl('p6', 'Some Picks', 'editorial')])]);
+    expect(sections.some(s => s.category === 'artist')).toBe(false);
+    expect(sections.flatMap(s => s.items).some(i => i.category === 'artist')).toBe(false);
+  });
+});
