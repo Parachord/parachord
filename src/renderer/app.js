@@ -35742,7 +35742,7 @@ useEffect(() => {
   const homePageHandlers = useStableHandlers({
     addToQueue, askShuffleupagus, copyParachordLink, dismissHomeBanner, dismissHomeSetupItem,
     fetchAlbumTracksByName, getAlbumArt, handleCollectionAlbumClick, handleStartCollectionStation,
-    loadAiRecommendations, loadConcerts, loadCriticsPicks, loadNewReleases, loadPlaylist,
+    loadConcerts, loadCriticsPicks, loadNewReleases, loadPlaylist,
     loadHomeRecommendations, navigateTo, openCriticsPicksAlbum, openHomeBannerCta, openServicePlaylist,
     openSyncSetupModal, openTopAlbum, openWhatsNew, playTrackCollection, prefetchTopAlbumTracks,
     showHomeContextMenu,
@@ -37869,7 +37869,7 @@ useEffect(() => {
 
         // HOME view - dynamic personalized landing page
         activeView === 'home' && React.createElement(HomePage, {
-          allPlaylistCovers, allResolvers, appVersion, bannerItems, cacheLoaded, chatAvailable: homeChatAvailable, collectionData, collectionLoading, concerts: homeConcerts, concertsError, concertsLoaded, concertsLoading, concertsLocation, criticsPicks, criticsPicksError, criticsPicksLoaded, criticsPicksLoading, extensionConnected, homeActive, homeData, homeSetupDismissed, isMac, library, metaServiceConfigs, mixes: homeMixes, newReleases, newReleasesError, newReleasesLoaded, newReleasesLoading, playlists, playlistsLoading, recommendationAlbums, recommendations, setAddToPlaylistPanel, setCollectionSort, setCollectionTab, setExtensionInfoOpen, setHomeData, setRaycastInfoOpen, setSettingsTab, showToast, sourceColors: homeSourceColors, spotifyConnected, whatsNewUnread,
+          allPlaylistCovers, allResolvers, appVersion, bannerItems, cacheLoaded, chatAvailable: homeChatAvailable, collectionData, collectionLoading, concerts: homeConcerts, concertsError, concertsLoaded, concertsLoading, concertsLocation, criticsPicks, criticsPicksError, criticsPicksLoaded, criticsPicksLoading, extensionConnected, homeActive, homeData, homeSetupDismissed, isMac, library, metaServiceConfigs, mixes: homeMixes, newReleases, newReleasesError, newReleasesLoaded, newReleasesLoading, playlists, playlistsLoading, recommendationAlbums, recommendations, setAddToPlaylistPanel, setCollectionSort, setCollectionTab, setExtensionInfoOpen, setRaycastInfoOpen, setSettingsTab, showToast, sourceColors: homeSourceColors, spotifyConnected, whatsNewUnread,
           ...homePageHandlers
         }),
 

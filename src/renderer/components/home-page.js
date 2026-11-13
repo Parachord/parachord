@@ -38,7 +38,6 @@ const HOME_PAGE_HANDLERS = [
   'getAlbumArt',
   'handleCollectionAlbumClick',
   'handleStartCollectionStation',
-  'loadAiRecommendations',
   'loadConcerts',
   'loadCriticsPicks',
   'loadHomeRecommendations',
@@ -121,7 +120,6 @@ const HomePage = React.memo(function HomePage(props) {
     homeSetupDismissed,
     isMac,
     library,
-    loadAiRecommendations,
     loadConcerts,
     loadCriticsPicks,
     loadHomeRecommendations,
@@ -150,7 +148,6 @@ const HomePage = React.memo(function HomePage(props) {
     setCollectionSort,
     setCollectionTab,
     setExtensionInfoOpen,
-    setHomeData,
     setRaycastInfoOpen,
     setSettingsTab,
     showHomeContextMenu,
@@ -440,42 +437,7 @@ const HomePage = React.memo(function HomePage(props) {
     else showHomeContextMenu('playlist', tile.item);
   };
 
-  // Shuffleupagus's batch keeps its Refresh: the cached batch stays on
-  // screen until the new one lands, and a failure says so.
   const aiLoading = !!homeData.aiRecommendations?.loading;
-  const refreshSuggestions = async () => {
-    setHomeData((prev) => ({
-      ...prev,
-      aiRecommendations: { albums: [], artists: [], ...(prev.aiRecommendations || {}), loading: true },
-    }));
-    const freshAlbums = [];
-    const onUpdate = ({ artists, newAlbum }) => {
-      if (artists) setHomeData((prev) => ({ ...prev, aiRecommendations: { ...prev.aiRecommendations, artists } }));
-      if (newAlbum) freshAlbums.push(newAlbum);
-    };
-    const result = await loadAiRecommendations(onUpdate);
-    if (result) {
-      setHomeData((prev) => ({
-        ...prev,
-        aiRecommendations: {
-          ...prev.aiRecommendations,
-          albums: freshAlbums.length > 0 ? freshAlbums : (prev.aiRecommendations?.albums || []),
-          loading: false,
-        },
-      }));
-      return;
-    }
-    // Keep cached data visible on failure, and say so: a silent failure
-    // looks exactly like "nothing new to suggest".
-    showToast("Couldn't refresh suggestions. Check your AI provider in Settings.", 'error');
-    setHomeData((prev) => {
-      const existing = prev.aiRecommendations;
-      if (existing?.albums?.length > 0 || existing?.artists?.length > 0) {
-        return { ...prev, aiRecommendations: { ...existing, loading: false } };
-      }
-      return { ...prev, aiRecommendations: null };
-    });
-  };
 
   // The Ask box's example: built from local collection names only (Home's
   // Ask skips the chat confirmation), with a phrasing picked once per visit.
@@ -586,7 +548,6 @@ const HomePage = React.memo(function HomePage(props) {
         show.albums
           ? React.createElement(AlbumsRow, {
             albums, sourceColors, navigateTo, ...albumActions, onOpen: openAlbum,
-            onRefresh: chatAvailable ? refreshSuggestions : undefined, refreshing: aiLoading,
           })
           : albumsLoading && skeletonSection('albums', 'Albums you might love', React.createElement(CardRowSkeleton)),
 

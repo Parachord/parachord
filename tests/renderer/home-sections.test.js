@@ -340,14 +340,9 @@ describe('Rows', () => {
   test('neither half: nothing', () => {
     expect(h(S.FreshCriticalRow, { fresh: [], critical: [] })).toBe('');
   });
-  test('the Refresh icon says it is busy and spins while a refresh runs', () => {
-    const albums = [{ title: 'T', artist: 'A', resolverId: 'lastfm' }];
-    const idle = h(S.AlbumsRow, { albums, onRefresh: () => {}, refreshing: false });
-    expect(idle).toMatch(/<button[^>]*aria-label="Refresh suggestions"[^>]*aria-busy="false"/);
-    expect(idle).not.toContain('animate-spin');
-    const busy = h(S.AlbumsRow, { albums, onRefresh: () => {}, refreshing: true });
-    expect(busy).toMatch(/<button[^>]*aria-busy="true"[^>]*disabled=""/);
-    expect(busy).toContain('class="animate-spin"');
+  test('the Albums row has no refresh control (the Recommendations page keeps its own)', () => {
+    const html = h(S.AlbumsRow, { albums: [{ title: 'T', artist: 'A', resolverId: 'lastfm' }], onRefresh: () => {}, refreshing: true });
+    expect(html).not.toMatch(/Refresh suggestions|Refreshing suggestions|animate-spin/);
   });
   test('a playlist card with no covers shows the playlist glyph', () => {
     expect(h(S.PlaylistCard, { playlist: { id: 'p', title: 'P' } })).toContain('data-playlist-glyph');

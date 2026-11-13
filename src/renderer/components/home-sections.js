@@ -490,25 +490,15 @@ function albumHandlers(p) {
 }
 
 function AlbumsRow(props) {
-  const { albums, navigateTo, onRefresh, refreshing } = props;
+  const { albums, navigateTo } = props;
   const [source, setSource] = React.useState('All');
   const all = Array.isArray(albums) ? albums : [];
   if (all.length === 0) return null;
   const chips = sourceChips(all, (a, id) => a.sourceLabel || id, props.sourceColors);
   const shown = filterBySource(all, source).slice(0, HOME_ROW_CARDS);
-  // While a refresh runs the icon spins, is disabled and says it's busy.
-  const refresh = onRefresh && e('button', {
-    type: 'button', 'aria-label': refreshing ? 'Refreshing suggestions' : 'Refresh suggestions',
-    'aria-busy': refreshing ? 'true' : 'false', disabled: !!refreshing,
-    onClick: () => { if (!refreshing) onRefresh(); },
-    style: {
-      background: 'none', border: 'none', cursor: refreshing ? 'default' : 'pointer',
-      color: 'var(--text-secondary)', padding: '4px', display: 'flex',
-    },
-  }, svg(16, e('path', { d: 'M21 12a9 9 0 1 1-3-6.7M21 3v6h-6' }), refreshing ? { className: 'animate-spin' } : undefined));
   return e('section', { 'aria-labelledby': 'home-albums', style: SECTION_STYLE },
     e(SectionHeader, {
-      id: 'home-albums', title: 'Albums you might love', page: 'Recommendations', view: 'recommendations', navigateTo, extra: refresh,
+      id: 'home-albums', title: 'Albums you might love', page: 'Recommendations', view: 'recommendations', navigateTo,
       pageColor: PAGE_COLOR.recommendations,
     }),
     chips.length > 1 && e(SourceFilter, { sources: chips, value: source, onChange: setSource }),
