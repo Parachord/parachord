@@ -7,7 +7,7 @@ module.exports = {
   searchArtistEvents: async function (artistName, config) {
     if (!config.apiKey) {
       throw new Error(
-        'Ticketmaster API Key is required. Get one at https://developer-acct.ticketmaster.com',
+        'Ticketmaster API Key is required. Get one at https://developer.ticketmaster.com/',
       );
     }
 
