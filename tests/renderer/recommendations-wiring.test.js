@@ -445,26 +445,24 @@ describe('the five-section page render', () => {
     expect(view).not.toContain('Thinking…');
   });
 
-  test('the filter bar sits under the hero, as on the other tabs: All plus one pill per source, no counts, each in its own colour', () => {
+  test('the filter bar sits under the hero, as on the other tabs: All plus one chip per source, no counts, each in its own colour', () => {
     const bar = between('// Filter bar (outside scrollable area), as on the other tabs', '// Scrollable content area: the grouped page');
     expect(bar.length).toBeGreaterThan(0);
     // After the hero, before the scroll area, so it stays put while the page scrolls.
     expect(view.indexOf("'RECOMMENDATIONS'")).toBeLessThan(view.indexOf('// Filter bar (outside scrollable area)'));
     expect(bar).toContain('const sources = pageSources(recommendations.sections);');
-    expect(bar).toContain("const pills = [{ id: 'all', name: 'All' }, ...sources];");
-    expect(bar).toContain('}, name);');
-    expect(bar).not.toMatch(/\$\{name\} \(/);
-    // Each pill's own active colour, as the other tabs' pills have: All the
-    // tabs' purple, a source its manifest colour, Shuffleupagus the accent.
-    expect(bar).toContain('style: isActive ? { backgroundColor: activeColorFor(id) } : undefined');
-    expect(bar).toContain("if (id === 'shuffleupagus') return 'var(--accent-primary)';");
-    expect(bar).toContain("return resolver && resolver.color && resolver.color !== '#888888' ? resolver.color : '#7c3aed';");
-    // Fresh Drops' bar and pills, verbatim.
+    // The app's filter chips (Home's), All neutral, then one per source with
+    // its name and no count.
+    expect(bar).toContain("const chips = [{ id: 'all', label: 'All' }, ...sources.map(src => ({ id: src.id, label: src.name, color: colorFor(src.id) }))];");
+    expect(bar).not.toMatch(/\$\{(name|src\.name)\} \(/);
+    expect(bar).toContain("React.createElement(FilterChips, { chips, value: active, onChange: setRecommendationSourceFilter, label: 'Filter recommendations by source' })");
+    // A source's colour is Home's (the plugins' manifest colours), Shuffleupagus
+    // the fixed accent, a source with none the grey.
+    expect(bar).toContain("const colorFor = (id) => (id === 'shuffleupagus' ? '#7c3aed' : (homeSourceColors && homeSourceColors[id]) || 'var(--text-secondary)');");
+    // Fresh Drops' bar, verbatim; no page-local pill classes.
     expect(bar).toContain("className: 'flex items-center px-6 py-3'");
     expect(bar).toContain("style: { flexShrink: 0, backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }");
-    expect(bar).toMatch(/className: `px-3 py-1\.5 rounded-full text-sm transition-all no-drag \$\{\s*isActive \? 'text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'\s*\}`/);
-    expect(bar).toContain("onClick: () => setRecommendationSourceFilter(id),");
-    expect(bar).toContain("'aria-pressed': isActive ? 'true' : 'false',");
+    expect(bar).not.toMatch(/rounded-full|bg-gray-100/);
     // Never a service by name.
     expect(bar).not.toMatch(/'lastfm'|'listenbrainz'|'amazonmusic'/);
   });
