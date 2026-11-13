@@ -15,7 +15,12 @@ const HOME_HALF_ROW_CARDS = 3;
 const HOME_CONCERT_CARDS = 4;
 // Gap between cards in every card row (columns and wrapped rows), and the
 // art-to-title gap inside a card. Rows and skeletons both read these.
-const HOME_ROW_GAP = 24;
+// The card grids' gap: the Playlists page's (gap-x-4).
+const HOME_ROW_GAP = 16;
+// The app's album and playlist card (the Playlists grid in app.js,
+// CollectionAlbumCard in cards.js): Home's cards and their skeletons share it.
+const HOME_CARD_BOX = { padding: '10px', borderRadius: '10px', backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)' };
+const HOME_CARD_ART_RADIUS = 8;
 const HOME_CARD_TEXT_GAP = 10;
 // Jump back in: four tiles across on a wide page, two by two below about
 // 920px of row width (four tiles under ~220px each can't show their text).
@@ -70,11 +75,11 @@ function CardRowSkeleton({ count = HOME_ROW_CARDS, columns } = {}) {
     style: { display: 'grid', gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gap: `${HOME_ROW_GAP}px` }
   }, Array.from({ length: count }, (_, i) => React.createElement('div', {
     key: i,
-    style: { display: 'flex', flexDirection: 'column', gap: `${HOME_CARD_TEXT_GAP}px` }
+    style: Object.assign({}, HOME_CARD_BOX, { display: 'flex', flexDirection: 'column', gap: `${HOME_CARD_TEXT_GAP}px` })
   },
     React.createElement('div', {
       className: 'aspect-square shimmer-strong animate-shimmer',
-      style: { borderRadius: '10px', backgroundSize: '200% 100%', animationDelay: stagger(i) }
+      style: { borderRadius: `${HOME_CARD_ART_RADIUS}px`, backgroundSize: '200% 100%', animationDelay: stagger(i) }
     }),
     bar('h-3.5', { width: '70%', animationDelay: stagger(i) }),
     // Two subtitle lines: the real card's subtitle can wrap to two.
@@ -107,5 +112,5 @@ function ConcertRowSkeleton() {
 module.exports = {
   JumpBackInSkeleton, CardRowSkeleton, ConcertRowSkeleton,
   HOME_TILE_HEIGHT, HOME_ROW_CARDS, HOME_HALF_ROW_CARDS, HOME_CONCERT_CARDS,
-  HOME_ROW_GAP, HOME_CARD_TEXT_GAP, HOME_JUMP_GRID, HOME_JUMP_GAP, HOME_HALF_GAP, HOME_HALF_FLEX,
+  HOME_ROW_GAP, HOME_CARD_TEXT_GAP, HOME_CARD_BOX, HOME_CARD_ART_RADIUS, HOME_JUMP_GRID, HOME_JUMP_GAP, HOME_HALF_GAP, HOME_HALF_FLEX,
 };
