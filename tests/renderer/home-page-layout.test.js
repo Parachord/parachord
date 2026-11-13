@@ -136,6 +136,16 @@ describe('render', () => {
   };
   const render = (props) => renderToStaticMarkup(React.createElement(HomePage, { ...base, ...props }));
 
+  test('on macOS an opaque band under the title-bar drag strip keeps text off the window edge', () => {
+    const mac = render({ isMac: true });
+    expect(mac).toMatch(/data-home-titlebar[^>]*height:32px[^>]*background-color:var\(--bg-primary\)|data-home-titlebar[^>]*background-color:var\(--bg-primary\)[^>]*height:32px/);
+    // The band sits above the scroller, not inside it.
+    expect(mac.indexOf('data-home-titlebar')).toBeLessThan(mac.indexOf('scrollable-content'));
+    expect(render({ isMac: false })).not.toContain('data-home-titlebar');
+    // 32px is the drag strip's h-8; they move together.
+    expect(app).toContain("className: 'h-8 flex-shrink-0 absolute top-0 left-0 right-0 z-10 drag'");
+  });
+
   test('a new user sees the import card and the Ask box', () => {
     const html = render({});
     expect(html).toContain('Build your collection');
