@@ -294,8 +294,21 @@ describe('Home skeletons match the Home rows', () => {
     expect(sk.HOME_CONCERT_CARDS).toBe(4);
   });
 
+  test('Home\'s album and playlist cards are the app\'s card, and so are their skeletons', () => {
+    const app = fs.readFileSync(path.join(dir, '..', 'app.js'), 'utf8');
+    // The Playlists page's card, which Home copies.
+    expect(app).toMatch(/className: 'group cursor-pointer release-card card-fade-up',\s*style: \{\s*padding: '10px',\s*borderRadius: '10px',\s*backgroundColor: 'var\(--card-bg\)',\s*boxShadow: 'var\(--card-shadow\)',/);
+    expect(app).toContain("className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-5'");
+    expect(sk.HOME_CARD_BOX).toEqual({ padding: '10px', borderRadius: '10px', backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)' });
+    expect(sk.HOME_CARD_ART_RADIUS).toBe(8);
+    // Both cards and the skeleton card use the box; the cards get the hover lift.
+    expect((sections.match(/className: 'release-card', style: Object\.assign\(\{\}, HOME_CARD_BOX/g) || []).length).toBe(2);
+    expect(skeletons).toContain('style: Object.assign({}, HOME_CARD_BOX');
+    expect(skeletons).toContain('borderRadius: `${HOME_CARD_ART_RADIUS}px`');
+  });
+
   test('card rows and their skeletons share one gap', () => {
-    expect(sk.HOME_ROW_GAP).toBe(24);
+    expect(sk.HOME_ROW_GAP).toBe(16);
     expect(sk.HOME_CARD_TEXT_GAP).toBe(10);
     expect(sections).toContain('${HOME_ROW_GAP}px');
     expect(skeletons).toContain('${HOME_ROW_GAP}px');
