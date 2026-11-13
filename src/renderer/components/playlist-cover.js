@@ -25,20 +25,22 @@
 // React is the renderer's vendor global (loaded by index.html before app.js;
 // jest and the smoke test set it before requiring this module).
 
-// `url`: the playlist's cover URL, or null/undefined (nothing renders, the
-// caller's fallback layer shows alone).
+// `url`: the playlist's cover URL. Anything that is not a non-empty string
+// (null, undefined, a number, whitespace) renders nothing, so callers can
+// pass a record's `coverArt` field straight through.
 const PlaylistCoverImageBase = ({ url }) => {
+  const coverUrl = (typeof url === 'string' && url.trim()) ? url : null;
   const [broken, setBroken] = React.useState(false);
   // A fresh URL (a refresh swapped the playlist's cover) retries instead of
   // staying dropped.
-  React.useEffect(() => { setBroken(false); }, [url]);
-  if (!url || broken) return null;
+  React.useEffect(() => { setBroken(false); }, [coverUrl]);
+  if (!coverUrl || broken) return null;
   return React.createElement('img', {
     // Keyed on the URL: React reuses the element (and its cached load) when
     // the playlist is re-rendered with the same cover, and remounts it when
     // a refresh swaps the URL, so the fade-in plays again.
-    key: url,
-    src: url,
+    key: coverUrl,
+    src: coverUrl,
     alt: '',
     className: 'absolute inset-0 w-full h-full object-cover transition-opacity duration-300',
     style: { opacity: 0 },

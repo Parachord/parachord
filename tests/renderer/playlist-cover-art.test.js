@@ -53,7 +53,10 @@ describe('PlaylistCoverImage (the shared cover layer)', () => {
     const src = read('src/renderer/components/playlist-cover.js');
     expect(src).toContain('onError: () => setBroken(true)');
     // A fresh URL retries instead of staying dropped.
-    expect(src).toMatch(/React\.useEffect\(\(\) => \{ setBroken\(false\); \}, \[url\]\)/);
+    expect(src).toMatch(/React\.useEffect\(\(\) => \{ setBroken\(false\); \}, \[coverUrl\]\)/);
+    // A non-string URL renders nothing, so callers pass a record's coverArt
+    // straight through.
+    expect(src).toContain('const coverUrl = (typeof url === \'string\' && url.trim()) ? url : null;');
   });
 
   test('is React.memo\'d like every kit component', () => {
@@ -113,8 +116,11 @@ describe('every playlist-cover surface renders the record\'s cover over the mosa
   test('the playlist view: hero background, 192px card, share link', () => {
     expect(view).toContain('const playlistCover = (typeof selectedPlaylist?.coverArt');
     // The hero layers the cover over the tile/gradient backdrop (the <img>
-    // reports its own death; a CSS background cannot).
-    expect(view).toMatch(/backgroundImage: playlistCoverArt\[0\][\s\S]*?playlistCover && React\.createElement\(PlaylistCoverImage, \{ url: playlistCover \}\)/);
+    // reports its own death; a CSS background cannot). The slice is the hero
+    // block only, so a later `playlistCover &&` elsewhere can't satisfy it.
+    const hero = sliceFrom(view, '// Background with the first mosaic tile or the gradient', '// Gradient overlay');
+    expect(hero).toContain('backgroundImage: playlistCoverArt[0]');
+    expect(hero).toContain('playlistCover && React.createElement(PlaylistCoverImage, { url: playlistCover })');
     expect(view).toContain('albumArt: playlistCover || playlistCoverArt?.[0] || null');
   });
 
