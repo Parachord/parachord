@@ -13,6 +13,7 @@
 const { filterBySource } = require('../lib/home-model');
 const { readableTextOn } = require('../lib/readable-text');
 const { FixedTooltip, SERVICE_LOGOS } = require('./ui-atoms');
+const { Play } = require('./icons');
 const {
   HOME_TILE_HEIGHT, HOME_ROW_CARDS, HOME_HALF_ROW_CARDS, HOME_CONCERT_CARDS, HOME_ROW_GAP, HOME_CARD_TEXT_GAP,
   HOME_JUMP_GRID, HOME_JUMP_GAP, HOME_HALF_FLEX, HOME_HALF_GAP, CardRowSkeleton,
@@ -23,11 +24,14 @@ const e = React.createElement;
 // Drawn over album art or on a filled accent: the same in both themes.
 const CHIP_BG = 'rgba(255,255,255,.94)'; // on-art
 const CHIP_FG = '#111827'; // on-art
-const ART_DIM = 'rgba(17,24,39,.38)'; // on-art
 const PLAY_FILL = '#7c3aed'; // fill-accent
 const ON_FILL = '#fff'; // on-color
 const SHUFFLE_COLOR = '#7c3aed'; // fill-accent: the accent var turns light purple in dark mode
 
+// The sidebar's highlight for each page (app.js): its colour, and its 10% fill
+// as the panel background. The same in both themes, as the sidebar is.
+const FRESH_TONE = { color: '#10b981', fill: 'rgba(16, 185, 129, 0.1)', border: 'rgba(16, 185, 129, 0.25)' };
+const CRITICAL_TONE = { color: '#ef4444', fill: 'rgba(239, 68, 68, 0.1)', border: 'rgba(239, 68, 68, 0.25)' };
 // Inner padding of the Fresh Drops / Critical Darlings panels.
 const HOME_HALF_PANEL_PAD = 20;
 const SECTION_STYLE = { display: 'flex', flexDirection: 'column', gap: '14px' };
@@ -66,31 +70,51 @@ const svg = (size, children, extra) => e('svg', Object.assign({
   fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
 }, extra), children);
 
-const PlayGlyph = (size) => svg(size, e('path', { d: 'M7 4v16l13-8z' }), { fill: 'currentColor', stroke: 'none' });
-const QueueGlyph = () => svg(16, [
-  e('path', { key: 'a', d: 'M3 6h18M3 12h12M3 18h8' }),
-  e('path', { key: 'b', d: 'M16 15l5 3-5 3z', fill: 'currentColor' }),
-]);
-const AddGlyph = () => svg(16, e('path', { d: 'M3 6h12M3 12h12M3 18h8M18 14v8M14 18h8' }));
 
 // A round action over art. `primary` is the filled play button.
-function ActionButton({ label, onClick, primary, size, children }) {
-  const px = size || (primary ? 44 : 40);
-  // A number is fixed pixels; a CSS string (a clamp()) is a width that can
-  // shrink with the art, the height following through aspect-ratio.
-  const fluid = typeof px === 'string';
+// The app's art hover, copied from CollectionAlbumCard (cards.js) and the
+// Playlists grid so Home looks like every other page: the art dims, Add to
+// Playlist and Add to Queue flank a larger white Play, and the cover scales up
+// a little. The class strings are the app's own; only the reveal is ours (state,
+// so keyboard focus shows the buttons too). A card passes only the actions its
+// type has, as the app's cards do.
+const APP_OVERLAY = 'absolute inset-0 bg-black/50 transition-opacity duration-200 flex items-center justify-center gap-3';
+const APP_SIDE_BTN = 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110';
+const APP_PLAY_BTN = 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110';
+const APP_SIDE_BG = 'rgba(255, 255, 255, 0.15)'; // on-art
+const APP_SIDE_BG_HOVER = 'rgba(255, 255, 255, 0.25)'; // on-art
+const APP_SIDE_FG = '#ffffff'; // on-art
+const APP_ART_ZOOM = 'scale(1.05)';
+// The app's sizes (40/48/40px) need 152px of art. Home's half-row cards can be
+// narrower, so the buttons may shrink in proportion and stay round instead
+// of clipping; at the app's usual widths they are its exact sizes.
+const SHRINK = { flexShrink: 1, minWidth: 0, height: 'auto', aspectRatio: '1' };
+
+function SideButton({ label, onClick, path }) {
   return e('button', {
-    type: 'button',
-    'aria-label': label,
+    type: 'button', 'aria-label': label, title: label,
     onClick: (ev) => { ev.stopPropagation(); if (onClick) onClick(ev); },
-    style: {
-      width: fluid ? px : `${px}px`, height: fluid ? 'auto' : `${px}px`, aspectRatio: '1',
-      minWidth: 0, borderRadius: '50%', border: 'none', cursor: 'pointer', padding: 0,
-      display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: fluid ? 1 : 0,
-      backgroundColor: primary ? PLAY_FILL : CHIP_BG,
-      color: primary ? ON_FILL : CHIP_FG,
-    },
-  }, children);
+    className: APP_SIDE_BTN,
+    style: Object.assign({ backgroundColor: APP_SIDE_BG, color: APP_SIDE_FG, border: 'none', cursor: 'pointer', padding: 0 }, SHRINK),
+    onMouseEnter: (ev) => { ev.currentTarget.style.backgroundColor = APP_SIDE_BG_HOVER; },
+    onMouseLeave: (ev) => { ev.currentTarget.style.backgroundColor = APP_SIDE_BG; },
+  }, e('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2, 'aria-hidden': 'true' },
+    e('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: path })));
+}
+
+function ArtOverlay({ shown, title, onClick, onPlay, onQueue, onAddToPlaylist }) {
+  return e('div', {
+    'data-art-actions': '', onClick, className: APP_OVERLAY,
+    style: { opacity: shown ? 1 : 0, pointerEvents: shown ? 'auto' : 'none', zIndex: 1, padding: '8px', boxSizing: 'border-box' },
+  },
+    onAddToPlaylist && e(SideButton, { label: `Add ${title} to a playlist`, onClick: onAddToPlaylist, path: 'M12 4v16m8-8H4' }),
+    onPlay && e('button', {
+      type: 'button', 'aria-label': `Play ${title}`, title: `Play ${title}`,
+      onClick: (ev) => { ev.stopPropagation(); onPlay(ev); },
+      className: APP_PLAY_BTN,
+      style: Object.assign({ border: 'none', cursor: 'pointer', padding: 0 }, SHRINK),
+    }, e(Play, { size: 22, className: 'text-gray-800 ml-0.5' })),
+    onQueue && e(SideButton, { label: `Add ${title} to the queue`, onClick: onQueue, path: 'M4 6h16M4 12h16M4 18h7' }));
 }
 
 const chipStyle = (extra) => Object.assign({
@@ -112,7 +136,7 @@ const PlaylistGlyph = () => e('svg', {
 // Square art: a mosaic (2x2), one cover, or a placeholder block. A playlist
 // with no covers yet (`placeholder: 'playlist'`) shows the Playlists page's
 // glyph rather than an empty box.
-function ArtBox({ imageUrl, mosaic, item, onArtError, children, style, placeholder }) {
+function ArtBox({ imageUrl, mosaic, item, onArtError, children, style, placeholder, zoom }) {
   const tiles = Array.isArray(mosaic) ? mosaic.filter(Boolean).slice(0, 4) : [];
   const fail = () => { if (onArtError) onArtError(item); };
   let art;
@@ -136,12 +160,16 @@ function ArtBox({ imageUrl, mosaic, item, onArtError, children, style, placehold
     art = e('div', { style: { width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' } },
       PlaylistGlyph());
   }
+  // `zoom` scales the art the way the app's cards do on hover.
+  const zoomed = art && e('div', {
+    style: { width: '100%', height: '100%', transition: 'transform 0.3s ease', transform: zoom ? APP_ART_ZOOM : 'none' },
+  }, art);
   return e('div', {
     style: Object.assign({
       position: 'relative', aspectRatio: '1', borderRadius: '10px', overflow: 'hidden',
       backgroundColor: 'var(--accent-surface)',
     }, style),
-  }, art, children);
+  }, zoomed, children);
 }
 
 // ---------------------------------------------------------------- Jump back in
@@ -160,43 +188,42 @@ function JumpTile({ tile, onOpenTile, onPlayTile, onContextMenu, onArtError }) {
   return e('div', Object.assign({
     onContextMenu: (ev) => { if (onContextMenu) { ev.preventDefault(); onContextMenu(ev, tile); } },
     style: {
-      display: 'flex', alignItems: 'center', gap: '8px',
+      display: 'flex', alignItems: 'center', gap: '12px',
       padding: '0 12px 0 0', borderRadius: '10px', overflow: 'hidden',
       height: `${HOME_TILE_HEIGHT}px`, minWidth: 0,
       backgroundColor: reveal.shown ? 'var(--accent-surface)' : 'var(--bg-secondary)',
       color: 'var(--text-primary)',
     },
   }, reveal.props),
+    // The art takes the app's card hover with Play alone (as the
+    // Recommendations page's single-action playlist cards do); the rest of
+    // the tile opens the page.
+    e('span', { style: { flex: `0 0 ${HOME_TILE_HEIGHT}px`, height: `${HOME_TILE_HEIGHT}px`, display: 'block', cursor: 'pointer' } },
+      e(ArtBox, {
+        imageUrl, mosaic, item, onArtError, placeholder, zoom: reveal.shown,
+        style: { width: `${HOME_TILE_HEIGHT}px`, height: `${HOME_TILE_HEIGHT}px`, borderRadius: 0, aspectRatio: 'auto' },
+      },
+        e(ArtOverlay, {
+          shown: reveal.shown, title,
+          onClick: () => onOpenTile && onOpenTile(tile),
+          onPlay: () => onPlayTile && onPlayTile(tile),
+        }))),
     e('button', {
       type: 'button', 'aria-label': `Open ${title}`,
       onClick: () => onOpenTile && onOpenTile(tile),
       style: {
         font: 'inherit', textAlign: 'left', color: 'inherit', background: 'none', border: 'none', padding: 0,
-        cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: 0,
+        cursor: 'pointer', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '2px', flex: 1, minWidth: 0,
         height: `${HOME_TILE_HEIGHT}px`,
       },
     },
-      e('span', { style: { flex: `0 0 ${HOME_TILE_HEIGHT}px`, height: `${HOME_TILE_HEIGHT}px`, display: 'block' } },
-        e(ArtBox, {
-          imageUrl, mosaic, item, onArtError, placeholder,
-          style: { width: `${HOME_TILE_HEIGHT}px`, height: `${HOME_TILE_HEIGHT}px`, borderRadius: 0, aspectRatio: 'auto' },
-        })),
-      e('span', { style: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' } },
-        e('span', { style: Object.assign({ fontWeight: 600, fontSize: '14px' }, ELLIPSIS) }, title),
-        // On the hover fill (--accent-surface) the secondary grey falls under
-        // 4.5:1 in light mode, so the subtitle takes the primary text colour.
-        e('span', {
-          'data-jump-subtitle': '',
-          style: Object.assign({ fontSize: '12px', color: reveal.shown ? 'var(--text-primary)' : 'var(--text-secondary)' }, ELLIPSIS),
-        }, tile.subtitle))),
-    e('button', {
-      type: 'button', 'aria-label': `Play ${title}`,
-      onClick: () => onPlayTile && onPlayTile(tile),
-      style: {
-        flex: '0 0 38px', width: '38px', height: '38px', borderRadius: '50%', border: 'none', padding: 0, cursor: 'pointer',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: PLAY_FILL, color: ON_FILL,
-      },
-    }, PlayGlyph(15)));
+      e('span', { style: Object.assign({ fontWeight: 600, fontSize: '14px' }, ELLIPSIS) }, title),
+      // On the hover fill (--accent-surface) the secondary grey falls under
+      // 4.5:1 in light mode, so the subtitle takes the primary text colour.
+      e('span', {
+        'data-jump-subtitle': '',
+        style: Object.assign({ fontSize: '12px', color: reveal.shown ? 'var(--text-primary)' : 'var(--text-secondary)' }, ELLIPSIS),
+      }, tile.subtitle)));
 }
 
 // The import card shows only for a new user (no collection, no playlists:
@@ -233,10 +260,6 @@ function JumpBackIn({ tiles, onOpenTile, onPlayTile, onContextMenu, onImport, on
 
 // ----------------------------------------------------------------------- Cards
 
-// Overlay buttons size with the art (a clamp on its width), so they never
-// clip at a narrow card: 34/46/34px at the narrowest, 40/52/40px at most.
-const SIDE_BTN = 'clamp(34px, 14%, 40px)';
-const MAIN_BTN = 'clamp(46px, 19%, 52px)';
 
 // The sidebar's Critical Darlings icon.
 const DropletGlyph = () => svg(16, e('path', { d: 'M12 22a7 7 0 0 0 7-7c0-5-7-13-7-13S5 10 5 15a7 7 0 0 0 7 7z' }));
@@ -285,19 +308,14 @@ function AlbumCard({ album, onOpen, onPlay, onQueue, onAddToPlaylist, onContextM
     onContextMenu: (ev) => { if (onContextMenu) { ev.preventDefault(); onContextMenu(ev, album); } },
     style: { display: 'flex', flexDirection: 'column', gap: `${HOME_CARD_TEXT_GAP}px`, minWidth: 0 },
   }, reveal.props, dwell),
-    e(ArtBox, { imageUrl: album.imageUrl, item: album, onArtError, style: { cursor: 'pointer' } },
+    e(ArtBox, { imageUrl: album.imageUrl, item: album, onArtError, zoom: reveal.shown, style: { cursor: 'pointer' } },
       album.tag && e('span', { style: chipStyle() }, album.tag),
-      e('div', {
-        onClick: open,
-        style: {
-          position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          gap: 'clamp(4px, 2%, 8px)', padding: '8px', boxSizing: 'border-box',
-          backgroundColor: ART_DIM, opacity: reveal.shown ? 1 : 0, transition: 'opacity .15s',
-        },
-      },
-        e(ActionButton, { label: `Add ${title} to a playlist`, size: SIDE_BTN, onClick: () => onAddToPlaylist && onAddToPlaylist(album) }, AddGlyph()),
-        e(ActionButton, { label: `Play ${title}`, primary: true, size: MAIN_BTN, onClick: () => onPlay && onPlay(album) }, PlayGlyph(18)),
-        e(ActionButton, { label: `Add ${title} to the queue`, size: SIDE_BTN, onClick: () => onQueue && onQueue(album) }, QueueGlyph())),
+      e(ArtOverlay, {
+        shown: reveal.shown, title, onClick: open,
+        onAddToPlaylist: () => onAddToPlaylist && onAddToPlaylist(album),
+        onPlay: () => onPlay && onPlay(album),
+        onQueue: () => onQueue && onQueue(album),
+      }),
       // The reason is the button's description: a hidden copy is always in
       // the tree for screen readers, and the tooltip draws it on hover/focus.
       badge && e('div', { style: { position: 'absolute', bottom: '8px', right: '8px', zIndex: 2 } },
@@ -337,7 +355,7 @@ function PlaylistCard({ playlist, badge, chip, subtitle, onOpen, onPlay, onQueue
     style: { display: 'flex', flexDirection: 'column', gap: `${HOME_CARD_TEXT_GAP}px`, minWidth: 0 },
   }, reveal.props),
     e('div', { onClick: open, style: { cursor: 'pointer' } },
-      e(ArtBox, { imageUrl: playlist.imageUrl, mosaic: playlist.mosaic, item: playlist, onArtError, placeholder: 'playlist' },
+      e(ArtBox, { imageUrl: playlist.imageUrl, mosaic: playlist.mosaic, item: playlist, onArtError, placeholder: 'playlist', zoom: reveal.shown },
         chip && e('span', { style: chipStyle() }, chip),
         badge && e('span', {
           style: {
@@ -345,15 +363,14 @@ function PlaylistCard({ playlist, badge, chip, subtitle, onOpen, onPlay, onQueue
             padding: '3px 8px', backgroundColor: 'var(--bg-primary)', color: 'var(--text-primary)',
           },
         }, badge),
-        e('div', {
-          style: {
-            position: 'absolute', right: '8px', bottom: '8px', display: 'flex', gap: '6px', alignItems: 'center', justifyContent: 'flex-end',
-            left: '8px',
-            opacity: reveal.shown ? 1 : 0, transition: 'opacity .15s',
-          },
-        },
-          e(ActionButton, { label: `Add ${title} to the queue`, size: 'clamp(32px, 16%, 40px)', onClick: () => onQueue && onQueue(playlist) }, QueueGlyph()),
-          e(ActionButton, { label: `Play ${title}`, primary: true, size: 'clamp(36px, 19%, 44px)', onClick: () => onPlay && onPlay(playlist) }, PlayGlyph(16))))),
+        // Home has no add-to-playlist for a playlist, so its card shows the
+        // app's overlay with Play and Add to Queue, as the app's cards do when
+        // an action is missing.
+        e(ArtOverlay, {
+          shown: reveal.shown, title, onClick: open,
+          onPlay: () => onPlay && onPlay(playlist),
+          onQueue: () => onQueue && onQueue(playlist),
+        }))),
     e('button', {
       type: 'button', onClick: open, 'aria-label': `Open ${title}`,
       style: Object.assign({ font: 'inherit', textAlign: 'left', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }, ELLIPSIS),
@@ -505,18 +522,18 @@ function AlbumsRow(props) {
 // shows its cards. A half that is neither loading nor has cards is left out.
 function FreshCriticalRow(props) {
   const { fresh, critical, freshLoading, criticalLoading, navigateTo } = props;
-  // Each half is a panel tinted with its own theme colour (Fresh Drops green,
-  // Critical Darlings amber), mixed into the page background so both themes
-  // follow, with the sidebar's icon for it beside the title.
+  // Each half is a panel in its page's sidebar highlight (the same fill and
+  // colour the sidebar shows when that page is open), with the sidebar's icon
+  // for it beside the title.
   const half = (id, title, sub, page, view, items, loading, tone, icon) => e('section', {
     key: id, 'aria-labelledby': id, 'aria-busy': loading ? 'true' : undefined,
     style: Object.assign({ flex: HOME_HALF_FLEX, minWidth: 0 }, SECTION_STYLE, {
       padding: `${HOME_HALF_PANEL_PAD}px`, borderRadius: '16px',
-      backgroundColor: `color-mix(in srgb, ${tone} 7%, var(--bg-primary))`,
-      border: `1px solid color-mix(in srgb, ${tone} 22%, transparent)`,
+      backgroundColor: tone.fill,
+      border: `1px solid ${tone.border}`,
     }),
   },
-    e(SectionHeader, { id, title, sub, page, view, navigateTo, tone, icon }),
+    e(SectionHeader, { id, title, sub, page, view, navigateTo, tone: tone.color, icon }),
     loading
       ? e(CardRowSkeleton, { count: HOME_HALF_ROW_CARDS })
       : e('div', { style: grid(`repeat(${HOME_HALF_ROW_CARDS}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
@@ -527,8 +544,8 @@ function FreshCriticalRow(props) {
   const showC = c.length > 0 || !!criticalLoading;
   if (!showF && !showC) return null;
   return e('div', { style: { display: 'flex', gap: `${HOME_HALF_GAP}px` } },
-    showF && half('home-fresh', 'Fresh Drops', 'New releases from artists in your collection', 'Fresh Drops', 'new-releases', f, f.length === 0, 'var(--success)', DropletGlyph()),
-    showC && half('home-critical', 'Critical Darlings', 'Albums the critics are loving', 'Critical Darlings', 'critics-picks', c, c.length === 0, 'var(--warning)', TrophyGlyph()));
+    showF && half('home-fresh', 'Fresh Drops', 'New releases from artists in your collection', 'Fresh Drops', 'new-releases', f, f.length === 0, FRESH_TONE, DropletGlyph()),
+    showC && half('home-critical', 'Critical Darlings', 'Albums the critics are loving', 'Critical Darlings', 'critics-picks', c, c.length === 0, CRITICAL_TONE, TrophyGlyph()));
 }
 
 // A concert card is not clickable as a whole: "Tickets" is its only action.
