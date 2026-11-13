@@ -571,9 +571,20 @@ module.exports = {
       // shelf is GET_STARTED. The genre shelf ("Soundtracks") is a strategy
       // but a promo, so it is named out. Live-captured 2026-11-12.
       var EDITORIAL_STRATEGIES = { mp3GenreForYouStrategy: true };
+      var strategyName = function (id) {
+        return String(id || '').split('/').pop().replace(/^(browse|music)-home_/, '');
+      };
       var isPersonal = function (id) {
-        var last = String(id || '').split('/').pop().replace(/^(browse|music)-home_/, '');
+        var last = strategyName(id);
         return /Strategy$/.test(last) && !EDITORIAL_STRATEGIES[last];
+      };
+      // The category the Recommendations page files a playlist section under.
+      // Only the two playlist strategies say; the rest send none.
+      var categoryOf = function (id) {
+        var last = strategyName(id);
+        if (last === 'playlistStrategy') return 'personal';
+        if (last === 'mp3CommunityPlaylistsStrategy') return 'community';
+        return undefined;
       };
       var sections = (result.sections || []).filter(function (s) {
         return s && Array.isArray(s.items) && s.items.length > 0 && isPersonal(s.id);
@@ -581,10 +592,13 @@ module.exports = {
         // The bridge's synthesized "Playlists for You" section carries its
         // first page's continuation cursor — pass it through so the page's
         // first "Load more" starts from it.
+        var category = categoryOf(s.id);
+        var out = s;
         if (s.nextCursor != null) {
-          return { id: s.id, title: s.title, description: s.description, items: s.items, nextCursor: String(s.nextCursor) };
+          out = { id: s.id, title: s.title, description: s.description, items: s.items, nextCursor: String(s.nextCursor) };
         }
-        return s;
+        if (category) out = Object.assign({}, out, { category: category });
+        return out;
       });
       console.log(
         '[Amazon] resolver recommendations',
