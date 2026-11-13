@@ -268,6 +268,17 @@ describe('Rows', () => {
     expect(two.match(/Apple Music/g)).toHaveLength(1);
     expect(two.match(/ListenBrainz/g)).toHaveLength(1);
   });
+  test('each See all takes its page\'s sidebar colour', () => {
+    const app = fs.readFileSync(path.join(COMP, '..', 'app.js'), 'utf8');
+    // The sidebar's colours for those pages, which the links copy.
+    expect(app).toContain("color: playlistsNavActive ? '#ec4899' : 'var(--nav-inactive)',");
+    expect(app).toContain("color: recommendationsNavActive ? '#f59e0b' : 'var(--nav-inactive)',");
+    expect(app).toContain("color: activeView === 'concerts' ? '#10c9b4' : 'var(--nav-inactive)',");
+    const link = (html, page) => (html.match(new RegExp(`aria-label="See all in ${page}"[^>]*style="[^"]*color:(#[0-9a-f]{6})`)) || [])[1];
+    expect(link(h(S.PlaylistsRow, { playlists: [{ id: 'a', title: 'A' }], navigateTo: () => {} }), 'Playlists')).toBe('#ec4899');
+    expect(link(h(S.AlbumsRow, { albums: [{ title: 'T', artist: 'A', resolverId: 'lastfm' }], navigateTo: () => {} }), 'Recommendations')).toBe('#f59e0b');
+    expect(link(h(S.ConcertsRow, { concerts: [{ id: 'c', artist: 'A', date: '2099-01-01', venue: { name: 'V', city: 'C' } }], navigateTo: () => {} }), 'Concerts')).toBe('#10c9b4');
+  });
   test('Albums row see-all goes to Recommendations', () => {
     const html = h(S.AlbumsRow, { albums: [{ title: 'T', artist: 'A', resolverId: 'lastfm' }], navigateTo: () => {} });
     expect(html).toContain('aria-label="See all in Recommendations"');
