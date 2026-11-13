@@ -594,8 +594,8 @@ function ConcertCard({ concert }) {
   const mon = valid ? d.toLocaleDateString('en-US', { month: 'short' }) : '';
   const day = valid ? d.getDate() : '?';
   const venue = concert.venue || {};
+  // The venue, then its city and state on a line of their own.
   const city = [venue.city, venue.region, venue.country].filter(Boolean).join(', ');
-  const place = [venue.name || 'Venue TBA', city].filter(Boolean).join(' · ');
   const sellers = (concert.ticketSources || []).filter((s) => s && isHttpUrl(s.ticketUrl));
   return e('div', {
     style: {
@@ -614,7 +614,8 @@ function ConcertCard({ concert }) {
       e('span', { style: { fontSize: '22px', fontWeight: 700, lineHeight: 1, color: 'var(--text-primary)' } }, day)),
     e('div', { style: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' } },
       e('span', { style: Object.assign({ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }, ELLIPSIS) }, concert.artist),
-      e('span', { style: Object.assign({ fontSize: '12px', color: 'var(--text-secondary)' }, ELLIPSIS) }, place),
+      e('span', { style: Object.assign({ fontSize: '12px', color: 'var(--text-secondary)' }, ELLIPSIS) }, venue.name || 'Venue TBA'),
+      city && e('span', { style: Object.assign({ fontSize: '12px', color: 'var(--text-secondary)' }, ELLIPSIS) }, city),
       e(TicketsLink, { sellers, artist: concert.artist })));
 }
 
