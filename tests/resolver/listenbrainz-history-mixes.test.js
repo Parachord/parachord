@@ -50,7 +50,19 @@ describe('ListenBrainz history mixes (capabilities.historyMixes)', () => {
     expect(mixes.map(m => m.id)).toEqual(['daily-new', 'weekly-new']);
     expect(mixes.every(m => m.type === 'playlist' && m.url === `https://listenbrainz.org/playlist/${m.id}/`)).toBe(true);
     expect(mixes.map(m => m.name)).toEqual(['Daily Jams', 'Weekly Jams']);
-    expect(mixes[0].description).toBe('Daily Jams for someone, 2026-11-11');
+    // Just the dated part: the card's title already says which mix it is.
+    expect(mixes.map(m => m.description)).toEqual(['Nov 11, 2026', 'Week of Nov 9, 2026']);
+  });
+
+  test('the description is the date part of the title, ListenBrainz\'s weekday dropped, else the title', async () => {
+    const one = (title) => {
+      global.fetch = jest.fn(async () => ({ ok: true, status: 200, json: async () => ({ playlists: [
+        { playlist: { identifier: 'https://listenbrainz.org/playlist/w', title, date: iso(1), extension: { 'https://musicbrainz.org/doc/jspf#playlist': { additional_metadata: { algorithm_metadata: { source_patch: 'weekly-jams' } } } } } },
+      ] }) }));
+      return getHistoryMixes({ username: 'someone' }).then(({ mixes }) => mixes[0].description);
+    };
+    await expect(one('Weekly Jams for someone, week of 2026-09-14 Mon')).resolves.toBe('Week of Sep 14, 2026');
+    await expect(one('Weekly Jams for someone')).resolves.toBe('Weekly Jams for someone');
   });
 
   test('the Weekly Jams id is the one getRecommendations uses for it', async () => {
