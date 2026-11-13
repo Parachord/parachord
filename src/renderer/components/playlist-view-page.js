@@ -169,7 +169,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                 padding: '2px 6px',
                 borderRadius: '4px',
                 backgroundColor: 'var(--accent-secondary, #6366f1)',
-                color: 'var(--accent-secondary-fg, #fff)',
+                color: 'var(--accent-secondary-fg)',
                 fontWeight: 600,
                 marginLeft: '6px',
                 display: 'inline-block',

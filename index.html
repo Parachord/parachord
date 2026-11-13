@@ -16,6 +16,11 @@
   <style>
     /* ========== Design Tokens (CSS Custom Properties) ========== */
     :root {
+      /* Native controls (checkboxes, ranges, selects, scrollbars) and inputs
+         with no background follow the theme. Without it they stayed light in
+         dark mode: white Settings fields with near-white text. */
+      color-scheme: light;
+
       /* Backgrounds */
       --bg-primary: #ffffff;
       --bg-secondary: #f9fafb;
@@ -47,10 +52,24 @@
       --accent-primary-alpha-50: rgba(124, 58, 237, 0.50);
       --accent-primary-alpha-60: rgba(124, 58, 237, 0.60);
 
-      /* Semantic */
+      /* Semantic: fills and icons. Each has a dark value under .dark. */
       --success: #10b981;
       --warning: #f59e0b;
       --error: #ef4444;
+      --info: #2563eb;
+      /* Status text on the page background, at least 4.5:1 in each theme. */
+      --text-success: #15803d;
+      --text-warning: #b45309;
+      --text-danger: #b91c1c;
+      --text-info: #1d4ed8;
+      /* A fill that stays the deep accent in both themes, with white text on
+         it (the "fill-accent" convention in home-sections.js and
+         filter-chips.js). --accent-primary turns light purple in dark mode,
+         where white text on it is 2.72:1. */
+      --accent-fill: #7c3aed;
+      --on-accent: #ffffff;
+      /* Text on --accent-secondary (the SHARED badge). */
+      --accent-secondary-fg: #ffffff;
 
       /* Shadows */
       --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
@@ -149,6 +168,8 @@
 
     /* Dark theme overrides */
     .dark {
+      color-scheme: dark;
+
       --bg-primary: #161616;
       --bg-secondary: #1e1e1e;
       --bg-elevated: #252525;
@@ -175,6 +196,17 @@
       --accent-primary-alpha-30: rgba(167, 139, 250, 0.30);
       --accent-primary-alpha-50: rgba(167, 139, 250, 0.50);
       --accent-primary-alpha-60: rgba(167, 139, 250, 0.60);
+
+      --success: #34d399;
+      --warning: #fbbf24;
+      --error: #f87171;
+      --info: #60a5fa;
+      --text-success: #4ade80;
+      --text-warning: #fbbf24;
+      --text-danger: #f87171;
+      --text-info: #93c5fd;
+      /* --accent-fill and --on-accent stay as in :root. */
+      --accent-secondary-fg: #1e1b4b;
 
       --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
       --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.4);
