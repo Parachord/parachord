@@ -1979,6 +1979,8 @@ const { homeBannerItems, bannerViewId } = require('./lib/home-banners');
 const { toastBackground } = require('./lib/toast-style');
 const { statusBadgeStyle } = require('./lib/status-badge');
 const { PAGE_COLORS, pageTint } = require('./lib/page-colors');
+// Room the queue drawer leaves above it: the title bar and a little air.
+const QUEUE_DRAWER_TOP_GAP = 48;
 const { sellerColor, sellerTextColor, sellerBadgeBg, sellerShortName, sellerName } = require('./lib/ticket-sellers');
 const { withCollectionState } = require('./lib/menu-collection-state');
 const { runPlaybackControl } = require('../../tools/playback-control');
@@ -39437,7 +39439,7 @@ useEffect(() => {
             ),
 
             // Skeleton loading state
-            !newReleasesError && newReleasesLoading && newReleases.length === 0 && React.createElement('div', {
+            !newReleasesError && (newReleasesLoading || !cacheLoaded) && newReleases.length === 0 && React.createElement('div', {
               className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4'
             },
               Array.from({ length: 12 }).map((_, i) =>
@@ -40709,7 +40711,7 @@ useEffect(() => {
             ),
 
             // Loading skeleton
-            concertsLoading && concerts.length === 0 && React.createElement('div', {
+            (concertsLoading || !cacheLoaded) && !concertsError && concerts.length === 0 && React.createElement('div', {
               className: 'p-6 space-y-4'
             },
               Array.from({ length: 8 }).map((_, i) =>
@@ -55728,9 +55730,14 @@ useEffect(() => {
     // Gradient transparency: more opaque near playbar, more transparent at top
     React.createElement('div', {
       className: 'fixed left-0 right-0 backdrop-blur-md shadow-2xl transition-all duration-300 ease-in-out z-40',
+      // Closed, it's off-screen but was still in the Tab order (audit bug 24).
+      inert: queueDrawerOpen ? undefined : '',
+      'aria-hidden': queueDrawerOpen ? undefined : 'true',
       style: {
         bottom: queueDrawerOpen ? '85px' : -queueDrawerHeight, // Position above the playbar (85px height)
-        height: queueDrawerHeight + 'px',
+        // Never taller than the window above the playbar, so a short window
+        // can't push the drawer's header off the top (audit bug 24).
+        height: Math.min(queueDrawerHeight, Math.max(200, (typeof window !== 'undefined' ? window.innerHeight : 900) - 85 - QUEUE_DRAWER_TOP_GAP)) + 'px',
         background: 'linear-gradient(to top, var(--surface-dark-gradient-from), var(--surface-dark-gradient-to))',
         borderTop: '1px solid var(--surface-dark-border)'
       }
@@ -55756,7 +55763,8 @@ useEffect(() => {
 
               const handleMouseMove = (moveEvent) => {
                 const deltaY = startY - moveEvent.clientY;
-                const newHeight = Math.max(200, Math.min(600, startHeight + deltaY));
+                const maxHeight = Math.min(600, window.innerHeight - 85 - QUEUE_DRAWER_TOP_GAP);
+                const newHeight = Math.max(200, Math.min(maxHeight, startHeight + deltaY));
                 setQueueDrawerHeight(newHeight);
               };
 

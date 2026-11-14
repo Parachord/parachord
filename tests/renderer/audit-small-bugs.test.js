@@ -45,3 +45,13 @@ test('the release page and release cards share one release-type palette (bug 4)'
 test('Recommendations says so when it loads with nothing to show (bug 2)', () => {
   expect(app).toMatch(/filteringOne \? 'Nothing from this source yet' : 'No recommendations yet'/);
 });
+
+test('Fresh Drops and Concerts show their skeleton before the caches load (bug 28)', () => {
+  expect(app).toContain("!newReleasesError && (newReleasesLoading || !cacheLoaded) && newReleases.length === 0 && React.createElement('div', {");
+  expect(app).toContain("(concertsLoading || !cacheLoaded) && !concertsError && concerts.length === 0 && React.createElement('div', {");
+});
+
+test('the closed queue drawer is inert, and it never grows past the window (bug 24)', () => {
+  expect(app).toMatch(/inert: queueDrawerOpen \? undefined : '',/);
+  expect(app).toMatch(/const maxHeight = Math\.min\(600, window\.innerHeight - 85 - QUEUE_DRAWER_TOP_GAP\);/);
+});
