@@ -21,7 +21,10 @@ describe('the ephemeral playlist SAVE button', () => {
   test('a provider playlist saves through the Import path (both buttons produce the same record)', () => {
     expect(saveStart).toBeGreaterThan(-1);
     expect(save).toContain('if (selectedPlaylist.sourceUrl) {');
-    expect(save).toContain('await handleImportPlaylistFromUrl(selectedPlaylist.sourceUrl);');
+    // The full arg list, pinned: (url, skipStorageUpdate, storedAddedAt,
+    // metadataOverrides, opts) — coverArt must ride as the 4th arg.
+    expect(save).toContain('await handleImportPlaylistFromUrl(');
+    expect(save).toMatch(/selectedPlaylist\.sourceUrl,\s*false,\s*null,\s*selectedPlaylist\.coverArt \? \{ coverArt: selectedPlaylist\.coverArt \} : null\s*\);/);
   });
 
   test('the Weekly Jams record spreads the whole playlist, no hand-picked field list', () => {
