@@ -2,13 +2,17 @@
   "manifest": {
     "id": "subsonic",
     "name": "Subsonic",
-    "version": "0.3.2",
+    "version": "0.3.3",
     "author": "Parachord Team",
     "description": "Stream music from your self-hosted Subsonic-compatible server (Navidrome, Subsonic, Airsonic, Gonic, ...). Configure the server URL, username and password in settings.",
     "icon": "📡",
     "color": "#14b8a6",
     "homepage": "https://subsonic.org",
-    "email": ""
+    "email": "",
+    "minAppVersion": {
+      "android": "0.9.11",
+      "ios": "0.3.0"
+    }
   },
   "capabilities": {
     "resolve": true,
@@ -16,7 +20,7 @@
     "stream": true,
     "browse": false,
     "urlLookup": false,
-    "mobile": false,
+    "mobile": true,
     "albumSearch": true,
     "html5Stream": true,
     "artistImage": true
