@@ -32,3 +32,26 @@ describe('History: Recent', () => {
     expect(block).toMatch(/key: `\$\{track\.id\}\|\$\{track\.playedAt \?\? index\}`,/);
   });
 });
+
+describe('Collection: Albums', () => {
+  const collectionPage = read('components', 'collection-page.js');
+  const cards = read('components', 'cards.js');
+
+  test('album cards are keyed by album id, never by position', () => {
+    expect(collectionPage).not.toMatch(/key: `\$\{album\.title\}-\$\{album\.artist\}-\$\{index\}`/);
+    const at = collectionPage.indexOf('React.createElement(CollectionAlbumCard, {');
+    expect(collectionPage.slice(at, at + 120)).toMatch(/key: albumKey\(album\),/);
+    expect(collectionPage).toMatch(/const base = album\.id \|\| `\$\{album\.artist\}\|\$\{album\.title\}`;/);
+    // a repeated id still gets a key of its own
+    expect(collectionPage).toMatch(/return n === 1 \? base : `\$\{base\}#\$\{n\}`;/);
+  });
+
+  test('a late broken-art answer only paints the album the card still shows', () => {
+    const at = cards.indexOf('const CollectionAlbumCard = (');
+    const card = cards.slice(at, cards.indexOf('\n};\n', at));
+    expect(card).toMatch(/shownAlbumRef\.current = `\$\{album\.artist\}\|\$\{album\.title\}`;/);
+    expect(card).toMatch(/return \(\) => \{ mountedRef\.current = false; \};/);
+    expect(card).toMatch(/const forAlbum = shownAlbumRef\.current;/);
+    expect(card).toMatch(/if \(url && mountedRef\.current && shownAlbumRef\.current === forAlbum\) setImageUrl\(url\);/);
+  });
+});

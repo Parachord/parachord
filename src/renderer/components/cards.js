@@ -560,6 +560,16 @@ const CollectionArtistCard = ({ artist, getArtistImage, onNavigate, onPlayTopTra
 const CollectionAlbumCard = ({ album, getAlbumArt, onNavigate, onAddToPlaylist, onPlay, onAddToQueue, onContextMenu, animationDelay = 0 }) => {
   // States: undefined (fetching), null (no art found), string (URL)
   const [imageUrl, setImageUrl] = React.useState(album.art || undefined);
+  // The album this card shows now, and whether it is mounted: a broken-art
+  // retry answers late, and must not paint its cover on a card that has
+  // moved on to another album or gone.
+  const shownAlbumRef = React.useRef(null);
+  shownAlbumRef.current = `${album.artist}|${album.title}`;
+  const mountedRef = React.useRef(true);
+  React.useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   React.useEffect(() => {
     // If we already have embedded art, don't fetch
@@ -628,9 +638,14 @@ const CollectionAlbumCard = ({ album, getAlbumArt, onNavigate, onAddToPlaylist, 
         // A dead cached URL: placeholder now, the art pipeline's retry if it finds one.
         onError: () => {
           const broken = imageUrl;
+          const forAlbum = shownAlbumRef.current;
           setImageUrl(null);
           const report = globalThis.reportBrokenAlbumArt;
-          if (report) report(broken, { artist: album.artist, album: album.title }).then((url) => { if (url) setImageUrl(url); });
+          if (report) {
+            report(broken, { artist: album.artist, album: album.title }).then((url) => {
+              if (url && mountedRef.current && shownAlbumRef.current === forAlbum) setImageUrl(url);
+            });
+          }
         }
       }),
       // Placeholder icon when no art found
