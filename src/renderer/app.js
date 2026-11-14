@@ -42221,6 +42221,22 @@ useEffect(() => {
                       className: 'px-4 py-2 bg-accent-fill text-ink-on-accent rounded-lg hover:bg-accent-fill-hover transition-colors'
                     }, 'Try Again')
                   )
+                // Loaded, no error, and nothing to show: say so instead of a
+                // blank page (audit bug 2).
+                : (!recommendations.loading && recommendationsPending.length === 0 && !friendsSection && !friendsPending
+                    && contentBlocks.filter(Boolean).length === 0) ?
+                  React.createElement('div', { className: 'text-center py-16', role: 'status' },
+                    React.createElement('h3', { className: 'text-xl font-medium text-ink-primary mb-2' },
+                      filteringOne ? 'Nothing from this source yet' : 'No recommendations yet'),
+                    React.createElement('p', { className: 'text-ink-tertiary mb-6 max-w-md mx-auto' },
+                      filteringOne
+                        ? 'This source has no recommendations right now. Pick All to see the others.'
+                        : 'Your connected services had nothing to suggest. Listen a little more, or try again later.'),
+                    React.createElement('button', {
+                      onClick: () => loadRecommendations({ forceRefresh: true }),
+                      className: 'px-4 py-2 bg-accent-fill text-ink-on-accent rounded-lg hover:bg-accent-fill-hover transition-colors'
+                    }, 'Try again')
+                  )
                 // The sections (Friends last)
                 : React.createElement('div', null,
                     ...contentBlocks,

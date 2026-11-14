@@ -32,3 +32,16 @@ test('counts in item menus and the repair toast pluralise (bug 38)', () => {
   expect(main).toMatch(/const trackCount = \(n\) => `\$\{n\} \$\{n === 1 \? 'track' : 'tracks'\}`;/);
   expect(app).not.toMatch(/copy\$\{[^}]*'ies'/);
 });
+
+test('the release page and release cards share one release-type palette (bug 4)', () => {
+  const cards = fs.readFileSync(path.join(root, 'src/renderer/components/cards.js'), 'utf8');
+  expect(cards.match(/const badgeStyles = RELEASE_BADGE_STYLES;/g)).toHaveLength(2);
+  global.React = require('react');
+  const { RELEASE_BADGE_STYLES: B } = require('../../src/renderer/components/cards');
+  expect(B.ep.color).toBe('#a855f7');
+  expect(B.single.color).toBe('#db2777');
+});
+
+test('Recommendations says so when it loads with nothing to show (bug 2)', () => {
+  expect(app).toMatch(/filteringOne \? 'Nothing from this source yet' : 'No recommendations yet'/);
+});

@@ -24,6 +24,17 @@ const { regionName } = require('../lib/mb-region');
 
 // Generate a unique pattern/gradient for an artist based on their name
 // Returns an object with CSS gradient and optional SVG pattern
+// Release-type badge colours, shared by the release cards and the release
+// page (the filter chips use the same colours). The release page had EP and
+// Single swapped (audit bug 4).
+const RELEASE_BADGE_STYLES = {
+  album: { bg: 'rgba(99, 102, 241, 0.08)', color: 'rgb(99, 102, 241)' },
+  ep: { bg: 'rgba(168, 85, 247, 0.08)', color: '#a855f7' },
+  single: { bg: 'rgba(236, 72, 153, 0.08)', color: '#db2777' },
+  live: { bg: 'rgba(245, 158, 11, 0.08)', color: '#d97706' },
+  compilation: { bg: 'rgba(16, 201, 180, 0.08)', color: '#0eb3a0' },
+};
+
 const generateArtistPattern = (artistName) => {
   const hash = hashString(artistName.toLowerCase());
 
@@ -779,14 +790,7 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, 
     fetchReleaseData(release, currentArtist);
   };
 
-  // Badge colors - refined palette matching app aesthetic
-  const badgeStyles = {
-    album: { bg: 'rgba(99, 102, 241, 0.08)', color: 'rgb(99, 102, 241)' },
-    ep: { bg: 'rgba(168, 85, 247, 0.08)', color: '#a855f7' },
-    single: { bg: 'rgba(236, 72, 153, 0.08)', color: '#db2777' },
-    live: { bg: 'rgba(245, 158, 11, 0.08)', color: '#d97706' },
-    compilation: { bg: 'rgba(16, 201, 180, 0.08)', color: '#0eb3a0' }
-  };
+  const badgeStyles = RELEASE_BADGE_STYLES;
   const badge = badgeStyles[release.releaseType] || badgeStyles.album;
 
   return React.createElement('button', {
@@ -1418,14 +1422,7 @@ const ReleasePage = ({
     // LEFT COLUMN: Album card - matching ReleaseCard styling
     (() => {
       const year = release.date ? release.date.split('-')[0] : '';
-      // Badge colors - matching ReleaseCard palette
-      const badgeStyles = {
-        album: { bg: 'rgba(99, 102, 241, 0.08)', color: 'rgb(99, 102, 241)' },
-        ep: { bg: 'rgba(233, 30, 99, 0.08)', color: '#db2777' },
-        single: { bg: 'rgba(168, 85, 247, 0.08)', color: '#a855f7' },
-        live: { bg: 'rgba(245, 158, 11, 0.08)', color: '#d97706' },
-        compilation: { bg: 'rgba(16, 201, 180, 0.08)', color: '#0eb3a0' }
-      };
+      const badgeStyles = RELEASE_BADGE_STYLES;
       const releaseType = release.releaseType || 'album';
       const badge = badgeStyles[releaseType] || badgeStyles.album;
 
@@ -2037,6 +2034,7 @@ const ReleasePage = ({
 };
 
 module.exports = {
+  RELEASE_BADGE_STYLES,
   generateArtistPattern,
   PlayTop10Icon,
   QueueTop10Icon,
