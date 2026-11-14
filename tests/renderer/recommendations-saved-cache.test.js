@@ -73,7 +73,13 @@ describe('saved recommendations', () => {
     expect(card).toContain(": recommendationReleaseDates[releaseDateKey(item.artist || '', item.name)];");
     expect(card).toContain('const label = entry && upcomingLabel(entry.date);');
     expect(card).toContain("className: 'release-badge',");
-    expect(card).toContain("style: { position: 'absolute', top: '8px', right: '8px', zIndex: 10 }");
+    expect(card).toContain("style: { position: 'absolute', top: '8px', right: '8px', zIndex: 1 }");
+  });
+
+  test("the hover overlay sits under Shuffleupagus's badge, so the badge's tooltip still shows on hover", () => {
+    const card = app.slice(app.indexOf('const albumCard = (item, index) => {'), app.indexOf('const playlistCard = (item, index, section) => {'));
+    expect(card).toContain("style: { borderRadius: '6px', zIndex: 1 }");
+    expect(fs.readFileSync(require('path').join(__dirname, '../../src/renderer/components/reason-badge.js'), 'utf8')).toContain('zIndex: 2');
   });
 
   test('fresh answers are used as is; stale ones show while their provider refreshes', () => {

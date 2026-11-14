@@ -40992,7 +40992,7 @@ React.createElement('div', {
                     const label = entry && upcomingLabel(entry.date);
                     return label && React.createElement('div', {
                       className: 'pointer-events-none',
-                      style: { position: 'absolute', top: '8px', right: '8px', zIndex: 10 }
+                      style: { position: 'absolute', top: '8px', right: '8px', zIndex: 1 }
                     },
                       React.createElement('span', {
                         className: 'release-badge',
@@ -41026,7 +41026,9 @@ React.createElement('div', {
                   }),
                   React.createElement('div', {
                     className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 pointer-events-none group-hover/art:pointer-events-auto transition-opacity duration-200 flex items-center justify-center gap-3',
-                    style: { borderRadius: '6px', zIndex: 20 }
+                    // Over the cover and the "Coming" badge (same layer, later), under
+                    // the reason badge (zIndex 2), which stays hoverable.
+                    style: { borderRadius: '6px', zIndex: 1 }
                   },
                     React.createElement('button', {
                       onClick: async (e) => {
