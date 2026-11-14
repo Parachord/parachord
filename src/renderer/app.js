@@ -37264,30 +37264,9 @@ useEffect(() => {
           // Import Playlist button: the outlined secondary style of the album
           // and playlist Share button (theme variables, card-style border and
           // hover), sized to sit level with the filled New button beside it.
-          React.createElement('button', {
-            type: 'button',
-            onClick: () => setShowUrlImportDialog(true),
-            className: 'ml-3 flex items-center gap-1.5 no-drag',
-            style: {
-              padding: '5px 12px',
-              borderRadius: '8px',
-              border: '1px solid var(--border-default)',
-              backgroundColor: 'var(--card-bg)',
-              color: 'var(--text-secondary)',
-              fontSize: '14px',
-              fontWeight: 500,
-              lineHeight: '20px',
-              cursor: 'pointer',
-              transition: 'border-color 150ms ease, color 150ms ease'
-            },
-            onMouseEnter: (e) => { e.currentTarget.style.borderColor = 'var(--text-tertiary)'; e.currentTarget.style.color = 'var(--text-primary)'; },
-            onMouseLeave: (e) => { e.currentTarget.style.borderColor = 'var(--border-default)'; e.currentTarget.style.color = 'var(--text-secondary)'; }
-          },
-            React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+          React.createElement(Button, { variant: 'secondary', size: 'sm', type: 'button', onClick: () => setShowUrlImportDialog(true), className: 'ml-3 no-drag' }, React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
               React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4 -4l-4 4m0 0l-4-4m4 4V4' })
-            ),
-            'Import'
-          ),
+            ), 'Import'),
           // Create New Playlist button
           React.createElement('button', {
             onClick: () => {
@@ -39893,10 +39872,7 @@ useEffect(() => {
               React.createElement('p', {
                 className: 'text-sm text-ink-tertiary text-center max-w-md'
               }, 'Add artists to your collection or listen to more music. We\'ll check for upcoming shows from artists you love.'),
-              React.createElement('button', {
-                onClick: () => loadConcerts(true),
-                className: 'mt-4 px-4 py-2 text-teal-600 border border-teal-300 rounded-lg text-sm hover:bg-teal-50 transition-colors'
-              }, 'Refresh')
+              React.createElement(Button, { variant: 'secondary', size: 'sm', onClick: () => loadConcerts(true), className: 'mt-4' }, 'Refresh')
             ),
 
             // Concert list
@@ -42335,18 +42311,7 @@ useEffect(() => {
               React.createElement('div', { className: 'flex-1' }),
               // A person opened from Recommendations isn't a friend yet: Follow
               // adds them (and pins them); pinning a non-friend would pin nothing.
-              !friends.some(f => f.id === currentFriend.id) && React.createElement('button', {
-                type: 'button',
-                disabled: followingRecommended,
-                onClick: () => followRecommendedFriend(currentFriend),
-                className: 'flex items-center gap-2 px-3 py-1.5 text-sm rounded-full transition-colors',
-                style: {
-                  backgroundColor: 'var(--accent-fill)',
-                  color: 'var(--on-accent)',
-                  opacity: followingRecommended ? 0.6 : 1,
-                  cursor: followingRecommended ? 'default' : 'pointer'
-                }
-              }, followingRecommended ? 'Following\u2026' : 'Follow'),
+              !friends.some(f => f.id === currentFriend.id) && React.createElement(Button, { variant: 'primary', size: 'sm', type: 'button', disabled: followingRecommended, onClick: () => followRecommendedFriend(currentFriend) }, followingRecommended ? 'Following\u2026' : 'Follow'),
               // Pin/Unpin button on right side of filter bar
               friends.some(f => f.id === currentFriend.id) && React.createElement('button', {
                 onClick: () => pinnedFriendIds.includes(currentFriend.id) ? unpinFriend(currentFriend.id) : pinFriend(currentFriend.id),
@@ -43019,26 +42984,9 @@ useEffect(() => {
                   )
                 ),
                 // Add from file button
-                React.createElement('button', {
-                  onClick: handleInstallResolver,
-                  className: 'flex items-center gap-2 transition-all',
-                  style: {
-                    padding: '10px 16px',
-                    fontSize: '13px',
-                    fontWeight: '500',
-                    color: 'var(--text-primary)',
-                    backgroundColor: 'var(--card-bg)',
-                    border: '1px solid var(--border-subtle)',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)'
-                  }
-                },
-                  React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                React.createElement(Button, { variant: 'secondary', size: 'sm', onClick: handleInstallResolver }, React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                     React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' })
-                  ),
-                  'Add from file'
-                )
+                  ), 'Add from file')
               ),
 
               // Plug-in architecture description
@@ -43784,8 +43732,7 @@ useEffect(() => {
                       lineHeight: '1.6'
                     }
                   }, 'This will remove cached artist images, album art, and API responses. Loading may be slower temporarily while data is re-fetched.'),
-                  React.createElement('button', {
-                    onClick: async () => {
+                  React.createElement(Button, { variant: 'destructive', size: 'sm', onClick: async () => {
                       // Clear all caches
                       artistImageCache.current = {};
                       albumArtCache.current = {};
@@ -43803,23 +43750,9 @@ useEffect(() => {
                       }
 
                       showToast('Cache cleared');
-                    },
-                    className: 'inline-flex items-center gap-2 transition-colors bg-status-error hover:bg-status-error-hover',
-                    style: {
-                      padding: '10px 16px',
-                      color: 'var(--on-accent)',
-                      fontSize: '13px',
-                      fontWeight: '500',
-                      borderRadius: '8px',
-                      border: 'none',
-                      cursor: 'pointer'
-                    }
-                  },
-                    React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                    } }, React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                       React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16' })
-                    ),
-                    'Clear Cache'
-                  )
+                    ), 'Clear cache')
                 ),
 
                 // Playback Quality Section (global for Widevine/stream resolvers)
@@ -43946,30 +43879,14 @@ React.createElement(Select, { value: playbackAbr ? 'on' : 'off', onChange: (v) =
 
                   // Reset button - refined
                   React.createElement('div', { style: { marginTop: '24px', paddingTop: '20px', borderTop: '1px solid var(--border-subtle)' } },
-                    React.createElement('button', {
-                      onClick: () => setResolverVolumeOffsets({
+                    React.createElement(Button, { variant: 'secondary', size: 'sm', onClick: () => setResolverVolumeOffsets({
                         spotify: 0,
                         applemusic: 0,
                         localfiles: 0,
                         soundcloud: 0,
                         bandcamp: -3,
                         youtube: -6
-                      }),
-                      className: 'inline-flex items-center gap-2 transition-all',
-                      style: {
-                        padding: '10px 16px',
-                        fontSize: '13px',
-                        fontWeight: '500',
-                        color: 'var(--text-primary)',
-                        backgroundColor: 'var(--card-bg)',
-                        border: '1px solid var(--border-subtle)',
-                        borderRadius: '8px',
-                        cursor: 'pointer'
-                      }
-                    },
-                      React.createElement(Icons.RefreshCw, { className: 'w-4 h-4' }),
-                      'Reset to Defaults'
-                    )
+                      }) }, React.createElement(Icons.RefreshCw, { className: 'w-4 h-4' }), 'Reset to defaults')
                   )
                 ),
 
@@ -44277,8 +44194,7 @@ React.createElement(Switch, { checked: skipExternalPrompt, onToggle: async () =>
                     )
                   ),
                   // Reset all button
-                  (skipExternalPrompt || skipUnsavedFriendWarning || skipUnplayablePrompt || homeSetupDismissed.length > 0) && React.createElement('button', {
-                    onClick: async () => {
+                  (skipExternalPrompt || skipUnsavedFriendWarning || skipUnplayablePrompt || homeSetupDismissed.length > 0) && React.createElement(Button, { variant: 'primary', size: 'sm', onClick: async () => {
                       setSkipExternalPrompt(false);
                       setSkipUnsavedFriendWarning(false);
                       setSkipUnplayablePrompt(false);
@@ -44290,12 +44206,7 @@ React.createElement(Switch, { checked: skipExternalPrompt, onToggle: async () =>
                         await window.electron.store.set('home_setup_dismissed', []);
                       }
                       showToast('All dialog preferences reset');
-                    },
-                    className: 'inline-flex items-center gap-2 px-4 py-2 bg-accent-fill text-white text-sm font-medium rounded-lg hover:bg-accent-fill-hover transition-colors'
-                  },
-                    React.createElement(Icons.RefreshCw, { className: 'w-4 h-4' }),
-                    'Reset All Dialogs'
-                  ),
+                    } }, React.createElement(Icons.RefreshCw, { className: 'w-4 h-4' }), 'Reset all dialogs'),
                   // All dialogs showing message
                   (!skipExternalPrompt && !skipUnsavedFriendWarning && homeSetupDismissed.length === 0) && React.createElement('p', {
                     className: 'text-sm text-ink-tertiary italic'
@@ -44546,13 +44457,10 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                         className: 'text-xs text-ink-tertiary mt-0.5'
                       }, 'Show the first-run tutorial again on next app launch')
                     ),
-                    React.createElement('button', {
-                      onClick: async () => {
+                    React.createElement(Button, { variant: 'text', size: 'sm', onClick: async () => {
                         await window.electron.store.delete('tutorial_completed');
                         showToast('The welcome tutorial will show the next time you open Parachord');
-                      },
-                      className: 'px-3 py-1.5 text-xs font-medium text-accent bg-accent-tint rounded-lg hover:bg-accent-tint-hover transition-colors'
-                    }, 'Reset')
+                      } }, 'Reset')
                   ),
                   // Show Tutorial Now button
                   React.createElement('div', {
@@ -44566,12 +44474,9 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                         className: 'text-xs text-ink-tertiary mt-0.5'
                       }, 'Open the first-run tutorial immediately')
                     ),
-                    React.createElement('button', {
-                      onClick: () => {
+                    React.createElement(Button, { variant: 'text', size: 'sm', onClick: () => {
                         setFirstRunTutorial(prev => ({ ...prev, open: true, step: 'welcome' }));
-                      },
-                      className: 'px-3 py-1.5 text-xs font-medium text-accent bg-accent-tint rounded-lg hover:bg-accent-tint-hover transition-colors'
-                    }, 'Show')
+                      } }, 'Show')
                   ),
                   // Use new sync — N-way migration preview / armed state (parachord#911)
                   React.createElement('div', {
@@ -44592,10 +44497,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                           onClick: () => revertNwayMigration(),
                           className: 'px-3 py-1.5 text-xs font-medium text-ink-secondary bg-surface-inset rounded-lg hover:bg-surface-hover transition-colors'
                         }, 'Switch back to classic')
-                      : React.createElement('button', {
-                          onClick: () => startNwayMigration(),
-                          className: 'px-3 py-1.5 text-xs font-medium text-accent bg-accent-tint rounded-lg hover:bg-accent-tint-hover transition-colors'
-                        }, 'Preview')
+                      : React.createElement(Button, { variant: 'text', size: 'sm', onClick: () => startNwayMigration() }, 'Preview')
                   )
                 ),
 
@@ -44802,8 +44704,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                   },
                     'Capture the last ~2,000 console entries for bug reports.'
                   ),
-                  React.createElement('button', {
-                    onClick: async () => {
+                  React.createElement(Button, { variant: 'secondary', size: 'sm', onClick: async () => {
                       if (typeof window.copyDiagnosticLog !== 'function') {
                         showToast('Diagnostic log not available', 'error');
                         return;
@@ -44814,19 +44715,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                       } catch (err) {
                         showToast(`Could not copy log: ${err.message || err}`, 'error');
                       }
-                    },
-                    style: {
-                      fontSize: '12px',
-                      color: 'var(--accent-primary)',
-                      fontWeight: '500',
-                      textDecoration: 'none',
-                      background: 'transparent',
-                      border: '1px solid var(--accent-primary)',
-                      borderRadius: '6px',
-                      padding: '6px 12px',
-                      cursor: 'pointer'
-                    }
-                  }, 'Copy Diagnostic Log')
+                    } }, 'Copy diagnostic log')
                 ),
 
                 // Copyright
@@ -46960,45 +46849,18 @@ React.createElement('div', {
                     opacity: spotifyClientIdInput.trim() ? 1 : 0.6
                   }
                 }, 'Save'),
-                spotifyClientIdInput && React.createElement('button', {
-                  onClick: () => {
+                spotifyClientIdInput && React.createElement(Button, { variant: 'text', size: 'sm', onClick: () => {
                     setSpotifyClientIdInput('');
                     // Pass the cleared value: the input state hasn't updated
                     // yet, and reading it re-saved the old Client ID.
                     saveSpotifyCredentials('');
-                  },
-                  style: {
-                    padding: '6px 12px',
-                    fontSize: '12px',
-                    fontWeight: '500',
-                    color: 'var(--text-secondary)',
-                    backgroundColor: 'transparent',
-                    border: '1px solid var(--border-subtle)',
-                    borderRadius: '6px',
-                    cursor: 'pointer'
-                  }
-                }, 'Clear')
+                  } }, 'Clear')
               )
             ),
             // Show credentials source when connected
-            spotifyConnected && spotifyCredentialsSource === 'user' && React.createElement('button', {
-              onClick: () => setSpotifyAdvancedOpen(!spotifyAdvancedOpen),
-              className: 'flex items-center gap-1',
-              style: {
-                marginTop: '12px',
-                fontSize: '11px',
-                color: 'var(--text-secondary)',
-                backgroundColor: 'transparent',
-                border: 'none',
-                cursor: 'pointer',
-                padding: '0'
-              }
-            },
-              React.createElement(Icons.ChevronRight, {
+            spotifyConnected && spotifyCredentialsSource === 'user' && React.createElement(Button, { variant: 'text', size: 'sm', onClick: () => setSpotifyAdvancedOpen(!spotifyAdvancedOpen) }, React.createElement(Icons.ChevronRight, {
                 className: `w-3.5 h-3.5 transform transition-transform ${spotifyAdvancedOpen ? 'rotate-90' : ''}`
-              }),
-              'Change Client ID'
-            ),
+              }), 'Change client ID'),
             spotifyConnected && spotifyAdvancedOpen && React.createElement('div', {
               style: { marginTop: '8px', padding: '12px', backgroundColor: 'var(--hover-bg-default)', borderRadius: '8px' }
             },
@@ -47080,37 +46942,8 @@ React.createElement('div', {
                   React.createElement('div', {
                     style: { display: 'flex', gap: '8px', marginTop: '4px' }
                   },
-                    React.createElement('button', {
-                      onClick: () => openSyncSetupModal(selectedResolver.id),
-                      style: {
-                        padding: '8px 14px',
-                        backgroundColor: 'var(--hover-bg-default)',
-                        color: 'var(--text-primary)',
-                        fontSize: '13px',
-                        fontWeight: '500',
-                        borderRadius: '8px',
-                        border: '1px solid var(--border-subtle)',
-                        cursor: 'pointer',
-                        transition: 'background-color 150ms ease'
-                      },
-                      onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = 'var(--hover-bg-subtle)'; },
-                      onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'var(--hover-bg-default)'; }
-                    }, 'Manage Sync'),
-                    React.createElement('button', {
-                      onClick: () => setStopSyncDialog({ open: true, providerId: selectedResolver.id }),
-                      style: {
-                        padding: '8px 14px',
-                        backgroundColor: 'transparent',
-                        color: 'var(--text-tertiary)',
-                        fontSize: '13px',
-                        fontWeight: '500',
-                        border: 'none',
-                        cursor: 'pointer',
-                        transition: 'color 150ms ease'
-                      },
-                      onMouseEnter: (e) => e.currentTarget.style.color = 'var(--text-danger)',
-                      onMouseLeave: (e) => e.currentTarget.style.color = 'var(--text-tertiary)'
-                    }, 'Stop Syncing')
+                    React.createElement(Button, { variant: 'secondary', onClick: () => openSyncSetupModal(selectedResolver.id) }, 'Manage sync'),
+                    React.createElement(Button, { variant: 'text', onClick: () => setStopSyncDialog({ open: true, providerId: selectedResolver.id }) }, 'Stop syncing')
                   )
                 )
               : React.createElement('button', {
@@ -47375,8 +47208,7 @@ React.createElement('div', {
                         opacity: !soundcloudClientIdInput.trim() || !soundcloudClientSecretInput.trim() ? 0.6 : 1
                       }
                     }, 'Save Credentials'),
-                    soundcloudCredentialsSource === 'user' && React.createElement('button', {
-                      onClick: async () => {
+                    soundcloudCredentialsSource === 'user' && React.createElement(Button, { variant: 'secondary', onClick: async () => {
                         if (window.electron?.soundcloud?.setCredentials) {
                           const result = await window.electron.soundcloud.setCredentials({ clientId: '', clientSecret: '' });
                           if (result.success) {
@@ -47386,18 +47218,7 @@ React.createElement('div', {
                             showToast('Custom credentials cleared. Using default credentials.', 'info');
                           }
                         }
-                      },
-                      style: {
-                        padding: '8px 14px',
-                        fontSize: '12px',
-                        fontWeight: '500',
-                        color: 'var(--text-secondary)',
-                        backgroundColor: 'var(--hover-bg-default)',
-                        border: 'none',
-                        borderRadius: '6px',
-                        cursor: 'pointer'
-                      }
-                    }, 'Clear')
+                      } }, 'Clear')
                   )
                 )
               )
@@ -47750,8 +47571,7 @@ React.createElement('div', {
                             cursor: 'pointer'
                           }
                         }, 'Save'),
-                        metaServiceConfigs.lastfm.apiKey && React.createElement('button', {
-                          onClick: async () => {
+                        metaServiceConfigs.lastfm.apiKey && React.createElement(Button, { variant: 'secondary', onClick: async () => {
                             setLastfmApiKeyInput('');
                             setLastfmApiSecretInput('');
                             await saveMetaServiceConfig('lastfm', {
@@ -47760,18 +47580,7 @@ React.createElement('div', {
                               apiSecret: null
                             });
                             showToast('Custom credentials cleared. Using default credentials.', 'info');
-                          },
-                          style: {
-                            padding: '8px 14px',
-                            fontSize: '12px',
-                            fontWeight: '500',
-                            color: 'var(--text-secondary)',
-                            backgroundColor: 'var(--hover-bg-default)',
-                            border: 'none',
-                            borderRadius: '6px',
-                            cursor: 'pointer'
-                          }
-                        }, 'Clear')
+                          } }, 'Clear')
                       )
                     )
                   ),
@@ -48881,8 +48690,7 @@ React.createElement('div', {
                       : 'This build cannot play DRM-protected Amazon streams')
               ),
               amazonMusicStatus?.web?.signedIn
-                ? React.createElement('button', {
-                    onClick: async () => {
+                ? React.createElement(Button, { variant: 'secondary', onClick: async () => {
                       // Stop the shared engine BEFORE the session dies — the
                       // shaka session (license + buffered signed URLs) must
                       // not keep playing a signed-out account's content, and
@@ -48908,27 +48716,14 @@ React.createElement('div', {
                       } else {
                         showToast((r && r.error) || 'Could not sign out of Amazon Music', 'error');
                       }
-                    },
-                    style: {
-                      padding: '6px 12px', fontSize: '12px', fontWeight: '500',
-                      color: 'var(--text-primary)', backgroundColor: 'var(--hover-bg-default)',
-                      borderRadius: '8px'
-                    }
-                  }, 'Sign out')
-                : React.createElement('button', {
-                    onClick: async () => {
+                    } }, 'Sign out')
+                : React.createElement(Button, { variant: 'primary', onClick: async () => {
                       const ok = await manageAmazonMusic({ explicit: true, reason: 'not-signed-in', forcePrompt: true });
                       if (ok) {
                         const s = await window.electron.amazonMusic.getStatus().catch(() => null);
                         if (s && s.success) applyAmazonMusicStatus(s);
                       }
-                    },
-                    style: {
-                      padding: '6px 12px', fontSize: '12px', fontWeight: '500',
-                      color: 'var(--on-accent)', backgroundColor: 'var(--accent-fill)',
-                      borderRadius: '8px'
-                    }
-                  }, 'Sign in')
+                    } }, 'Sign in')
             ),
           ),
 
@@ -49035,26 +48830,7 @@ React.createElement('div', {
             ),
 
             // Add folder button
-            React.createElement('button', {
-              onClick: handleAddWatchFolder,
-              disabled: isScanning,
-              className: 'flex items-center justify-center gap-2 transition-colors',
-              style: {
-                width: '100%',
-                padding: '10px 16px',
-                fontSize: '13px',
-                fontWeight: '500',
-                color: 'var(--text-secondary)',
-                backgroundColor: 'transparent',
-                border: '1px dashed var(--border-subtle)',
-                borderRadius: '8px',
-                cursor: isScanning ? 'not-allowed' : 'pointer',
-                opacity: isScanning ? 0.5 : 1
-              }
-            },
-              React.createElement('span', null, '+'),
-              'Add Watch Folder'
-            ),
+            React.createElement(Button, { variant: 'secondary', onClick: handleAddWatchFolder, disabled: isScanning, className: 'w-full' }, React.createElement(Icons.Plus, { size: 16 }), 'Add watch folder'),
 
             // Scan progress
             isScanning && React.createElement('div', { style: { marginTop: '16px' } },
@@ -49162,17 +48938,8 @@ React.createElement('div', {
                   )
                 )
               ),
-              React.createElement('button', {
-                onClick: handleRescanAll,
-                disabled: isScanning || watchFolders.length === 0,
-                className: 'mt-4 px-4 py-2 text-sm text-accent hover:bg-accent-tint rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
-              }, 'Rescan All Folders'),
-              React.createElement('button', {
-                onClick: handleRemoveMissingFiles,
-                disabled: isScanning || watchFolders.length === 0,
-                'data-tooltip': 'Remove library entries for files that are no longer on disk',
-                className: 'mt-4 ml-2 px-4 py-2 text-sm text-accent hover:bg-accent-tint rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
-              }, 'Remove Missing Files')
+              React.createElement(Button, { variant: 'text', size: 'sm', onClick: handleRescanAll, disabled: isScanning || watchFolders.length === 0, className: 'mt-4' }, 'Rescan all folders'),
+              React.createElement(Button, { variant: 'text', size: 'sm', onClick: handleRemoveMissingFiles, disabled: isScanning || watchFolders.length === 0, 'data-tooltip': 'Remove library entries for files that are no longer on disk', className: 'mt-4 ml-2' }, 'Remove missing files')
             )
           )
         ),
@@ -49188,23 +48955,10 @@ React.createElement('div', {
           React.createElement('div', null,
             // Check if this is a user-installed resolver (not built-in core plugins)
             !['spotify', 'localfiles'].includes(selectedResolver.id) &&
-              React.createElement('button', {
-                onClick: async () => {
+              React.createElement(Button, { variant: 'secondary', size: 'sm', onClick: async () => {
                   await handleUninstallResolver(selectedResolver.id);
                   setSelectedResolver(null);
-                },
-                className: 'transition-colors',
-                style: {
-                  padding: '8px 14px',
-                  fontSize: '13px',
-                  fontWeight: '500',
-                  color: 'var(--text-danger)',
-                  backgroundColor: 'transparent',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }
-              }, 'Remove')
+                } }, 'Remove')
           ),
           // Right side: Update button (if available) and Done
           React.createElement('div', { className: 'flex items-center gap-2' },
@@ -49264,8 +49018,7 @@ React.createElement('div', {
                 }
               }
 
-              return React.createElement('button', {
-                onClick: async () => {
+              return React.createElement(Button, { variant: 'primary', onClick: async () => {
                   if (showEnable) {
                     const isLoaded = allResolvers.some(r => r.id === selectedResolver.id)
                       || metaServices.some(s => s.id === selectedResolver.id);
@@ -49304,19 +49057,7 @@ React.createElement('div', {
                     }
                   }
                   setSelectedResolver(null);
-                },
-                className: 'transition-colors',
-                style: {
-                  padding: '8px 16px',
-                  fontSize: '13px',
-                  fontWeight: '500',
-                  color: showEnable ? '#ffffff' : 'var(--text-primary)',
-                  backgroundColor: showEnable ? 'var(--accent-primary)' : 'var(--hover-bg-default)',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }
-              }, showEnable ? 'Enable' : 'Done');
+                } }, showEnable ? 'Enable' : 'Done');
             })()
           )
         )),
@@ -49540,28 +49281,12 @@ React.createElement('div', {
           selectedMarketplaceItem.isInstalled
             ? React.createElement(React.Fragment, null,
                 // Remove button on the left (disabled for core built-in plugins)
-                React.createElement('button', {
-                  onClick: async () => {
+                React.createElement(Button, { variant: 'secondary', size: 'sm', onClick: async () => {
                     await handleUninstallResolver(selectedMarketplaceItem.id);
                     setSelectedMarketplaceItem(null);
-                  },
-                  disabled: ['spotify', 'localfiles'].includes(selectedMarketplaceItem.id),
-                  className: 'transition-colors',
-                  style: {
-                    padding: '8px 14px',
-                    fontSize: '13px',
-                    fontWeight: '500',
-                    color: 'var(--text-danger)',
-                    backgroundColor: 'transparent',
-                    border: 'none',
-                    borderRadius: '8px',
-                    cursor: ['spotify', 'localfiles'].includes(selectedMarketplaceItem.id) ? 'not-allowed' : 'pointer',
-                    opacity: ['spotify', 'localfiles'].includes(selectedMarketplaceItem.id) ? 0.5 : 1
-                  },
-                  'data-tooltip': ['spotify', 'localfiles'].includes(selectedMarketplaceItem.id)
+                  }, disabled: ['spotify', 'localfiles'].includes(selectedMarketplaceItem.id), 'data-tooltip': ['spotify', 'localfiles'].includes(selectedMarketplaceItem.id)
                     ? 'Core plug-ins cannot be removed'
-                    : 'Remove this plug-in'
-                }, 'Remove'),
+                    : 'Remove this plug-in' }, 'Remove'),
                 // Right side buttons
                 React.createElement('div', { className: 'flex items-center gap-2' },
                   // Update button if newer version available
@@ -49586,20 +49311,7 @@ React.createElement('div', {
                       }
                     }, installingResolvers.has(selectedMarketplaceItem.id) ? 'Updating...' : 'Update'),
                   // Done button
-                  React.createElement('button', {
-                    onClick: () => setSelectedMarketplaceItem(null),
-                    className: 'transition-colors',
-                    style: {
-                      padding: '8px 16px',
-                      fontSize: '13px',
-                      fontWeight: '500',
-                      color: 'var(--text-primary)',
-                      backgroundColor: 'var(--hover-bg-default)',
-                      border: 'none',
-                      borderRadius: '8px',
-                      cursor: 'pointer'
-                    }
-                  }, 'Done')
+                  React.createElement(Button, { variant: 'secondary', onClick: () => setSelectedMarketplaceItem(null) }, 'Done')
                 )
               )
             : React.createElement(React.Fragment, null,
@@ -49607,39 +49319,11 @@ React.createElement('div', {
                 React.createElement('div', null),
                 // Right side with Install and Done buttons
                 React.createElement('div', { className: 'flex items-center gap-2' },
-                  React.createElement('button', {
-                    onClick: async () => {
+                  React.createElement(Button, { variant: 'primary', busy: installingResolvers.has(selectedMarketplaceItem.id), onClick: async () => {
                       await handleInstallFromMarketplace(selectedMarketplaceItem);
                       setSelectedMarketplaceItem(null);
-                    },
-                    disabled: installingResolvers.has(selectedMarketplaceItem.id),
-                    className: 'transition-colors',
-                    style: {
-                      padding: '8px 14px',
-                      fontSize: '13px',
-                      fontWeight: '500',
-                      color: '#ffffff',
-                      backgroundColor: installingResolvers.has(selectedMarketplaceItem.id) ? '#9ca3af' : 'var(--accent-primary)',
-                      border: 'none',
-                      borderRadius: '8px',
-                      cursor: installingResolvers.has(selectedMarketplaceItem.id) ? 'not-allowed' : 'pointer',
-                      opacity: installingResolvers.has(selectedMarketplaceItem.id) ? 0.6 : 1
-                    }
-                  }, installingResolvers.has(selectedMarketplaceItem.id) ? 'Installing...' : 'Install'),
-                  React.createElement('button', {
-                    onClick: () => setSelectedMarketplaceItem(null),
-                    className: 'transition-colors',
-                    style: {
-                      padding: '8px 16px',
-                      fontSize: '13px',
-                      fontWeight: '500',
-                      color: 'var(--text-primary)',
-                      backgroundColor: 'var(--hover-bg-default)',
-                      border: 'none',
-                      borderRadius: '8px',
-                      cursor: 'pointer'
-                    }
-                  }, 'Done')
+                    }, disabled: installingResolvers.has(selectedMarketplaceItem.id) }, installingResolvers.has(selectedMarketplaceItem.id) ? 'Installing…' : 'Install'),
+                  React.createElement(Button, { variant: 'secondary', onClick: () => setSelectedMarketplaceItem(null) }, 'Done')
                 )
               )
         )),
@@ -49844,20 +49528,7 @@ React.createElement('div', {
             gap: '12px'
           }
         },
-          React.createElement('button', {
-            onClick: () => setExtensionInfoOpen(false),
-            className: 'transition-colors',
-            style: {
-              padding: '10px 16px',
-              fontSize: '13px',
-              fontWeight: '500',
-              color: 'var(--text-primary)',
-              backgroundColor: 'var(--hover-bg-default)',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: 'pointer'
-            }
-          }, 'Done')
+          React.createElement(Button, { variant: 'secondary', onClick: () => setExtensionInfoOpen(false) }, 'Done')
         )),
 
     // Raycast Extension Info Modal
@@ -50048,20 +49719,7 @@ React.createElement('div', {
               cursor: 'pointer'
             }
           }, 'Install from Raycast Store'),
-          React.createElement('button', {
-            onClick: () => setRaycastInfoOpen(false),
-            className: 'transition-colors',
-            style: {
-              padding: '10px 16px',
-              fontSize: '13px',
-              fontWeight: '500',
-              color: 'var(--text-primary)',
-              backgroundColor: 'var(--hover-bg-default)',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: 'pointer'
-            }
-          }, 'Done')
+          React.createElement(Button, { variant: 'secondary', onClick: () => setRaycastInfoOpen(false) }, 'Done')
         )),
 
     // What's New Modal - shows release notes after app update
@@ -50188,43 +49846,17 @@ React.createElement('div', {
             gap: '12px'
           }
         },
-          React.createElement('button', {
-            onClick: () => {
+          React.createElement(Button, { variant: 'primary', onClick: () => {
               if (window.electron?.shell?.openExternal) {
                 window.electron.shell.openExternal('https://github.com/Parachord/parachord/releases');
               } else {
                 window.open('https://github.com/Parachord/parachord/releases', '_blank');
               }
-            },
-            className: 'transition-colors',
-            style: {
-              padding: '10px 16px',
-              fontSize: '13px',
-              fontWeight: '500',
-              color: '#ffffff',
-              backgroundColor: 'var(--accent-fill)',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: 'pointer'
-            }
-          }, 'Full Release Notes'),
-          React.createElement('button', {
-            onClick: async () => {
+            } }, 'Full release notes'),
+          React.createElement(Button, { variant: 'secondary', onClick: async () => {
               setWhatsNewOpen(false);
               await markWhatsNewSeen();
-            },
-            className: 'transition-colors',
-            style: {
-              padding: '10px 16px',
-              fontSize: '13px',
-              fontWeight: '500',
-              color: 'var(--text-primary)',
-              backgroundColor: 'var(--hover-bg-default)',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: 'pointer'
-            }
-          }, 'Dismiss')
+            } }, 'Dismiss')
         )),
 
     // Add to Playlist Slide-out Panel - refined styling
@@ -50378,8 +50010,7 @@ React.createElement('div', {
               }, addToPlaylistPanel.tracks[0]?.artist || `${addToPlaylistPanel.tracks.length} tracks`)
             ),
             // DONE button - executes additions for all selected playlists
-            React.createElement('button', {
-              onClick: () => {
+            React.createElement(Button, { variant: selectedPlaylistsForAdd.length > 0 ? 'primary' : 'secondary', onClick: () => {
                 // Add tracks to all selected playlists
                 if (selectedPlaylistsForAdd.length > 0) {
                   const tracksToAdd = addToPlaylistPanel.tracks.map(t => ({
@@ -50418,21 +50049,7 @@ React.createElement('div', {
                 setNewPlaylistName('');
                 setAddToPlaylistSearch('');
                 setAddToPlaylistSearchOpen(false);
-              },
-              className: 'transition-colors',
-              style: {
-                padding: '8px 14px',
-                fontSize: '13px',
-                fontWeight: '500',
-                // Neutral "Done" takes the page's text colour: white on the
-                // near-white neutral fill was unreadable in light mode.
-                color: selectedPlaylistsForAdd.length > 0 ? '#ffffff' : 'var(--text-primary)',
-                backgroundColor: selectedPlaylistsForAdd.length > 0 ? 'var(--accent-primary)' : 'var(--hover-bg-default)',
-                border: 'none',
-                borderRadius: '8px',
-                cursor: 'pointer'
-              }
-            }, selectedPlaylistsForAdd.length > 0
+              } }, selectedPlaylistsForAdd.length > 0
               ? `Add to ${selectedPlaylistsForAdd.length} Playlist${selectedPlaylistsForAdd.length > 1 ? 's' : ''}`
               : 'Done')
           )
@@ -51585,8 +51202,7 @@ React.createElement('div', {
                   React.createElement('div', {
                     style: { display: 'flex', justifyContent: 'flex-end', gap: '12px', marginBottom: '4px', padding: '0 12px' }
                   },
-                    React.createElement('button', {
-                      onClick: () => {
+                    React.createElement(Button, { variant: 'text', size: 'sm', onClick: () => {
                         const filteredIds = syncSetupModal.playlists
                           .filter(p => syncSetupModal.playlistFilter === 'all' ? true :
                             syncSetupModal.playlistFilter === 'owned' ? p.isOwnedByUser : !p.isOwnedByUser)
@@ -51595,18 +51211,8 @@ React.createElement('div', {
                           ...prev,
                           selectedPlaylists: [...new Set([...prev.selectedPlaylists, ...filteredIds])]
                         }));
-                      },
-                      style: {
-                        fontSize: '12px',
-                        fontWeight: '500',
-                        color: syncProviderConfig[syncSetupModal.providerId]?.color || '#1DB954',
-                        backgroundColor: 'transparent',
-                        border: 'none',
-                        cursor: 'pointer'
-                      }
-                    }, 'Select All'),
-                    React.createElement('button', {
-                      onClick: () => {
+                      } }, 'Select all'),
+                    React.createElement(Button, { variant: 'text', size: 'sm', onClick: () => {
                         const filteredIds = new Set(syncSetupModal.playlists
                           .filter(p => syncSetupModal.playlistFilter === 'all' ? true :
                             syncSetupModal.playlistFilter === 'owned' ? p.isOwnedByUser : !p.isOwnedByUser)
@@ -51615,16 +51221,7 @@ React.createElement('div', {
                           ...prev,
                           selectedPlaylists: prev.selectedPlaylists.filter(id => !filteredIds.has(id))
                         }));
-                      },
-                      style: {
-                        fontSize: '12px',
-                        fontWeight: '500',
-                        color: 'var(--text-secondary)',
-                        backgroundColor: 'transparent',
-                        border: 'none',
-                        cursor: 'pointer'
-                      }
-                    }, 'Deselect All')
+                      } }, 'Deselect all')
                   ),
                   // Playlist list
                   React.createElement('div', {
@@ -51830,21 +51427,7 @@ React.createElement('div', {
         },
           // Options step buttons
           syncSetupModal.step === 'options' && React.createElement(React.Fragment, null,
-            React.createElement('button', {
-              onClick: () => setSyncSetupModal(prev => ({ ...prev, open: false })),
-              style: {
-                padding: '10px 20px',
-                fontSize: '14px',
-                fontWeight: '500',
-                color: 'var(--text-secondary)',
-                backgroundColor: 'transparent',
-                border: 'none',
-                borderRadius: '10px',
-                cursor: 'pointer'
-              },
-              onMouseEnter: (e) => e.currentTarget.style.color = 'var(--text-primary)',
-              onMouseLeave: (e) => e.currentTarget.style.color = 'var(--text-secondary)'
-            }, 'Cancel'),
+            React.createElement(Button, { variant: 'secondary', onClick: () => setSyncSetupModal(prev => ({ ...prev, open: false })) }, 'Cancel'),
             React.createElement('button', {
               onClick: async () => {
                 if (syncSetupModal.settings.syncPlaylists) {
@@ -51901,21 +51484,7 @@ React.createElement('div', {
 
           // Playlists step buttons
           syncSetupModal.step === 'playlists' && React.createElement(React.Fragment, null,
-            React.createElement('button', {
-              onClick: () => setSyncSetupModal(prev => ({ ...prev, step: 'options' })),
-              style: {
-                padding: '10px 20px',
-                fontSize: '14px',
-                fontWeight: '500',
-                color: 'var(--text-secondary)',
-                backgroundColor: 'transparent',
-                border: 'none',
-                borderRadius: '10px',
-                cursor: 'pointer'
-              },
-              onMouseEnter: (e) => e.currentTarget.style.color = 'var(--text-primary)',
-              onMouseLeave: (e) => e.currentTarget.style.color = 'var(--text-secondary)'
-            }, 'Back'),
+            React.createElement(Button, { variant: 'secondary', onClick: () => setSyncSetupModal(prev => ({ ...prev, step: 'options' })) }, 'Back'),
             React.createElement('button', {
               onClick: startSync,
               style: {
@@ -52069,23 +51638,11 @@ React.createElement('div', {
           className: 'flex justify-between',
           style: { padding: '16px 24px 20px', borderTop: '1px solid var(--border-subtle)' }
         },
-          React.createElement('button', {
-            onClick: () => {
+          React.createElement(Button, { variant: 'secondary', onClick: () => {
               setSyncStatusModal({ open: false });
               navigateTo('settings');
               setSettingsTab('plugins');
-            },
-            style: {
-              fontSize: '13px',
-              fontWeight: '500',
-              color: 'var(--text-secondary)',
-              backgroundColor: 'transparent',
-              border: 'none',
-              cursor: 'pointer'
-            },
-            onMouseEnter: (e) => e.currentTarget.style.color = 'var(--text-primary)',
-            onMouseLeave: (e) => e.currentTarget.style.color = 'var(--text-secondary)'
-          }, 'Manage settings'),
+            } }, 'Manage settings'),
           React.createElement('button', {
             onClick: async () => {
               let latestCollection = null;
@@ -52268,40 +51825,11 @@ firstRunTutorial.step === 'welcome' && React.createElement(React.Fragment, null,
               alignItems: 'center'
             }
           },
-            React.createElement('button', {
-              onClick: async () => {
+            React.createElement(Button, { variant: 'text', size: 'sm', onClick: async () => {
                 await window.electron.store.set('tutorial_completed', true);
                 setFirstRunTutorial(prev => ({ ...prev, open: false }));
-              },
-              style: {
-                fontSize: '14px',
-                fontWeight: '500',
-                color: 'var(--text-secondary)',
-                backgroundColor: 'transparent',
-                border: 'none',
-                cursor: 'pointer',
-                padding: '10px 16px',
-                borderRadius: '10px'
-              },
-              onMouseEnter: (e) => e.currentTarget.style.color = 'var(--text-primary)',
-              onMouseLeave: (e) => e.currentTarget.style.color = 'var(--text-secondary)'
-            }, 'Skip tutorial'),
-            React.createElement('button', {
-              onClick: () => setFirstRunTutorial(prev => ({ ...prev, step: 'sources' })),
-              style: {
-                padding: '10px 24px',
-                fontSize: '14px',
-                fontWeight: '500',
-                color: 'var(--on-accent)',
-                backgroundColor: 'var(--accent-fill)',
-                border: 'none',
-                borderRadius: '10px',
-                cursor: 'pointer',
-                transition: 'background-color 150ms ease'
-              },
-              onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'var(--accent-primary-hover)',
-              onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'var(--accent-primary)'
-            }, 'Get Started')
+              } }, 'Skip tutorial'),
+            React.createElement(Button, { variant: 'primary', onClick: () => setFirstRunTutorial(prev => ({ ...prev, step: 'sources' })) }, 'Get started')
           )
         ),
 firstRunTutorial.step === 'sources' && React.createElement(React.Fragment, null,
@@ -52393,45 +51921,10 @@ firstRunTutorial.step === 'sources' && React.createElement(React.Fragment, null,
               alignItems: 'center'
             }
           },
-            React.createElement('button', {
-              onClick: () => setFirstRunTutorial(prev => ({ ...prev, step: 'welcome' })),
-              style: {
-                fontSize: '14px',
-                fontWeight: '500',
-                color: 'var(--text-secondary)',
-                backgroundColor: 'transparent',
-                border: 'none',
-                cursor: 'pointer',
-                padding: '10px 16px',
-                borderRadius: '10px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px'
-              },
-              onMouseEnter: (e) => e.currentTarget.style.color = 'var(--text-primary)',
-              onMouseLeave: (e) => e.currentTarget.style.color = 'var(--text-secondary)'
-            },
-              React.createElement('svg', { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+            React.createElement(Button, { variant: 'secondary', onClick: () => setFirstRunTutorial(prev => ({ ...prev, step: 'welcome' })) }, React.createElement('svg', { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
                 React.createElement('path', { d: 'M19 12H5M12 19l-7-7 7-7' })
-              ),
-              'Back'
-            ),
-            React.createElement('button', {
-              onClick: () => setFirstRunTutorial(prev => ({ ...prev, step: 'complete' })),
-              style: {
-                padding: '10px 24px',
-                fontSize: '14px',
-                fontWeight: '500',
-                color: 'var(--on-accent)',
-                backgroundColor: 'var(--accent-fill)',
-                border: 'none',
-                borderRadius: '10px',
-                cursor: 'pointer',
-                transition: 'background-color 150ms ease'
-              },
-              onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'var(--accent-primary-hover)',
-              onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'var(--accent-primary)'
-            }, 'Continue')
+              ), 'Back'),
+            React.createElement(Button, { variant: 'primary', onClick: () => setFirstRunTutorial(prev => ({ ...prev, step: 'complete' })) }, 'Continue')
           )
         ),
 firstRunTutorial.step === 'complete' && React.createElement(React.Fragment, null,
@@ -52523,24 +52016,8 @@ firstRunTutorial.step === 'complete' && React.createElement(React.Fragment, null
               gap: '12px'
             }
           },
-            React.createElement('button', {
-              onClick: () => setFirstRunTutorial(prev => ({ ...prev, step: 'sources' })),
-              style: {
-                padding: '10px 20px',
-                fontSize: '14px',
-                fontWeight: '500',
-                color: 'var(--text-secondary)',
-                backgroundColor: 'transparent',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: '10px',
-                cursor: 'pointer',
-                transition: 'color 150ms ease, border-color 150ms ease'
-              },
-              onMouseEnter: (e) => { e.currentTarget.style.borderColor = 'var(--border-subtle)'; e.currentTarget.style.color = 'var(--text-primary)'; },
-              onMouseLeave: (e) => { e.currentTarget.style.borderColor = 'var(--border-subtle)'; e.currentTarget.style.color = 'var(--text-secondary)'; }
-            }, 'Back'),
-            React.createElement('button', {
-              onClick: async () => {
+            React.createElement(Button, { variant: 'secondary', onClick: () => setFirstRunTutorial(prev => ({ ...prev, step: 'sources' })) }, 'Back'),
+            React.createElement(Button, { variant: 'primary', onClick: async () => {
                 // Save tutorial completion
                 await window.electron.store.set('tutorial_completed', true);
                 // Save resolver settings (use refs to avoid stale closure)
@@ -52551,21 +52028,7 @@ firstRunTutorial.step === 'complete' && React.createElement(React.Fragment, null
                 // Always navigate to Settings > Plug-Ins
                 setSettingsTab('plugins');
                 navigateTo('settings');
-              },
-              style: {
-                padding: '10px 24px',
-                fontSize: '14px',
-                fontWeight: '500',
-                color: 'var(--on-accent)',
-                backgroundColor: 'var(--accent-fill)',
-                border: 'none',
-                borderRadius: '10px',
-                cursor: 'pointer',
-                transition: 'background-color 150ms ease'
-              },
-              onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'var(--accent-primary-hover)',
-              onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'var(--accent-primary)'
-            }, 'Go to Settings')
+              } }, 'Go to Settings')
           )
         )),
 

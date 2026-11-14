@@ -7,6 +7,7 @@
 // the friends' now-playing mini bar. All props-driven (config, callbacks and
 // the app's config-mutation functions arrive via props); no app state.
 const Icons = require('./icons');
+const { Button } = require('./button');
 const { TextField, SecretField, Switch } = require('./fields');
 const { Tooltip, SERVICE_LOGOS } = require('./ui-atoms');
 
@@ -447,11 +448,7 @@ const ScrobblerSettingsCard = React.memo(({
       ),
 
       // Connect button
-      React.createElement('button', {
-        onClick: handleConnect,
-        disabled: connecting || isPolling || (scrobbler.id === 'listenbrainz' && !tokenInput) || (scrobbler.id === 'librefm' && (!usernameInput || !passwordInput)),
-        className: 'w-full py-2 px-4 bg-accent-fill text-white rounded-lg font-medium hover:bg-accent-fill-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors'
-      }, connecting ? 'Authenticating...' : scrobbler.id === 'lastfm' ? 'Authenticate Scrobbling' : 'Connect'),
+      React.createElement(Button, { variant: 'primary', busy: connecting, onClick: handleConnect, disabled: connecting || isPolling || (scrobbler.id === 'listenbrainz' && !tokenInput) || (scrobbler.id === 'librefm' && (!usernameInput || !passwordInput)), className: 'w-full' }, connecting ? 'Authenticating…' : scrobbler.id === 'lastfm' ? 'Authenticate Scrobbling' : 'Connect'),
 
       // Waiting for authorization (auto-polling active)
       isPolling && React.createElement('div', {
@@ -495,17 +492,11 @@ const ScrobblerSettingsCard = React.memo(({
                 `Push newly loved tracks to ${scrobbler.id === 'lastfm' ? 'Last.fm' : 'ListenBrainz'}`
               )
             ),
-            React.createElement('button', {
-              onClick: onRunBackfill,
-              disabled: backfillRunning || unpushedCount === 0,
-              className: 'w-full py-1.5 px-3 text-sm bg-accent-tint text-accent rounded-lg font-medium hover:bg-accent-tint-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors'
-            },
-              backfillRunning && backfillProgress
+            React.createElement(Button, { variant: 'text', size: 'sm', onClick: onRunBackfill, disabled: backfillRunning || unpushedCount === 0, className: 'w-full' }, backfillRunning && backfillProgress
                 ? `Pushing… ${backfillProgress.done}/${backfillProgress.total}`
                 : unpushedCount > 0
                   ? `Backfill ${unpushedCount} loved track${unpushedCount === 1 ? '' : 's'} → ${scrobbler.id === 'lastfm' ? 'Last.fm' : 'ListenBrainz'}`
-                  : 'All loves already pushed'
-            ),
+                  : 'All loves already pushed'),
             React.createElement('p', { className: 'text-xs text-ink-tertiary' },
               'Backfilled loves are stamped at the time of push (the remote service has no backdate API).'
             )

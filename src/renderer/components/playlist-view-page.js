@@ -17,6 +17,7 @@
 // from props under their old names.
 
 const Icons = require('./icons');
+const { Button } = require('./button');
 const { CardButton } = require('./card-button');
 const { ResolverIcon, ShareButton } = require('./ui-atoms');
 const { Menu } = require('./menu');
@@ -308,8 +309,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                   onMouseLeave: (e) => { e.currentTarget.style.color = 'var(--text-tertiary)'; e.currentTarget.style.backgroundColor = 'transparent'; }
                 }, 'CANCEL'),
                 // Done button
-                React.createElement('button', {
-                  onClick: async () => {
+                React.createElement(Button, { variant: 'primary', size: 'sm', onClick: async () => {
                     if (editedPlaylistData) {
                       const updated = {
                         ...selectedPlaylist,
@@ -328,12 +328,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                     }
                     setPlaylistEditMode(false);
                     setEditedPlaylistData(null);
-                  },
-                  className: 'flex items-center gap-1 px-3 py-1 text-xs text-white rounded transition-colors no-drag',
-                  style: { backgroundColor: 'var(--accent-fill)' },
-                  onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = '#6d28d9'; },
-                  onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'var(--accent-fill)'; }
-                }, 'DONE')
+                  }, className: 'no-drag' }, 'Done')
               ) : React.createElement('button', {
                 onClick: () => {
                   setPlaylistEditMode(true);
@@ -420,9 +415,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                       setSelectedPlaylist(fresh.find(p => p.id === playlist.id) || null);
                     }
                   }, 'Stop syncing'),
-                  React.createElement('button', {
-                    className: 'text-xs px-3 py-1.5 rounded-md bg-accent-tint text-accent hover:bg-accent-tint-hover transition-colors',
-                    onClick: async () => {
+                  React.createElement(Button, { variant: 'text', size: 'sm', onClick: async () => {
                       // Re-create on service — clear syncedTo for this provider
                       const updatedSyncedTo = { ...playlist.syncedTo };
                       delete updatedSyncedTo[providerId];
@@ -434,8 +427,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                       setPlaylists(prev => prev.map(p => p.id === playlist.id ? updatedPlaylist : p));
                       await window.electron.playlists.save(updatedPlaylist);
                       showToast(`Will re-create "${playlist.title}" on ${providerName} during next sync`);
-                    }
-                  }, 'Re-create')
+                    } }, 'Re-create')
                 )
               );
             });

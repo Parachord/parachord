@@ -45,7 +45,7 @@ describe('follow a recommended listener', () => {
   });
 
   test('the friend header shows Follow only for a non-friend', () => {
-    expect(src).toMatch(/!friends\.some\(f => f\.id === currentFriend\.id\) && React\.createElement\('button'/);
+    expect(src).toMatch(/!friends\.some\(f => f\.id === currentFriend\.id\) && React\.createElement\(Button, \{ variant: 'primary'/);
   });
 
   test('Follow calls the core with the person and adopts the returned friend', () => {
