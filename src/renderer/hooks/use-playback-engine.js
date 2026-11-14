@@ -1213,7 +1213,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
           setTrackLoading(false); // Clear loading state
           setCurrentTrack(prev => prev?.id === placeholderTrack.id ? { ...prev, status: 'error' } : prev);
           if (autoSkipIfAdvancing('no playable source')) return;
-          reportUnplayable('No source found', 'Could not find a playable source for this track. Try turning on more plug-ins.');
+          reportUnplayable('No source found', 'Could not find a playable source for this track. Try enabling more plug-ins.');
           return;
         }
 
@@ -1292,7 +1292,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         }));
         if (autoSkipIfAdvancing('no enabled source matches')) return;
         setTrackLoading(false); // Clear loading state
-        reportUnplayable('No enabled source', 'This track has sources, but none from the plug-ins you have turned on.');
+        reportUnplayable('No enabled source', 'This track has sources, but none from the plug-ins you have enabled.');
         return;
       }
 
