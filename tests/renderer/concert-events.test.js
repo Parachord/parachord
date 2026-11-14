@@ -26,7 +26,8 @@ describe('uniqueConcerts', () => {
   test('one row per event id, even when it was found under two artists', () => {
     const out = uniqueConcerts([show('tm-1', 'Modest Mouse'), show('tm-1', 'Interpol')]);
     expect(out).toHaveLength(1);
-    expect(out[0].artist).toBe('Modest Mouse');
+    // Interpol is billed above Modest Mouse on the lineup
+    expect(out[0].artist).toBe('Interpol');
   });
 
   test('the fresh copy wins, and a stale cached copy with another date or venue is dropped', () => {
@@ -87,6 +88,61 @@ describe('uniqueConcerts', () => {
     const out = uniqueConcerts([null, 'x', show(undefined, 'Greg Freeman'), show(undefined, 'Greg Freeman', { date: '2027-02-11' })]);
     expect(out).toHaveLength(2);
     expect(uniqueConcerts(undefined)).toEqual([]);
+  });
+});
+
+// A merged show is listed under its headliner, not whichever copy came
+// first: from the date-sorted cache that was often the opener, and Home's
+// "Concerts near you" shows only the row's artist.
+describe('uniqueConcerts: the headliner names the row', () => {
+  const tour = (artist, artistSource, extra = {}) => show('sg-fontaines', artist, {
+    source: 'seatgeek', date: '2027-04-27', venue: { name: 'Fox Theatre Detroit' },
+    lineup: ['Fontaines D.C.', 'Westside Cowboy'], artistSource, ...extra,
+  });
+
+  test('the opener found first gives way to the headliner, with its artistSource', () => {
+    const out = uniqueConcerts([tour('Westside Cowboy', 'history', { description: 'fresh' }), tour('Fontaines D.C.', 'collection', { description: 'cached' })]);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ artist: 'Fontaines D.C.', artistSource: 'collection', description: 'fresh' });
+    expect(out[0].lineup).toEqual(['Fontaines D.C.', 'Westside Cowboy']);
+  });
+
+  test('billing order wins over the artist source (Dinosaur Jr. over Horse Jumper of Love)', () => {
+    const bill = { date: '2027-03-13', venue: { name: 'Citizens House of Blues Boston' }, lineup: ['Dinosaur Jr.', 'Horse Jumper of Love'] };
+    const out = uniqueConcerts([
+      show('sg-dino', 'Horse Jumper of Love', { ...bill, artistSource: 'library' }),
+      show('sg-dino', 'Dinosaur Jr.', { ...bill, artistSource: 'history' }),
+    ]);
+    expect(out[0]).toMatchObject({ artist: 'Dinosaur Jr.', artistSource: 'history' });
+  });
+
+  test('an artist not on the lineup ranks after those that are', () => {
+    const out = uniqueConcerts([
+      show('tm-x', 'Somebody Else', { lineup: ['Beck', 'Courtney Barnett'], artistSource: 'collection' }),
+      show('tm-x', 'Courtney Barnett', { lineup: ['Beck', 'Courtney Barnett'], artistSource: 'history' }),
+    ]);
+    expect(out[0]).toMatchObject({ artist: 'Courtney Barnett', artistSource: 'history' });
+  });
+
+  test('a tie goes to collection, then library, then history, then the first copy', () => {
+    const noBill = { lineup: [] };
+    const bySource = uniqueConcerts([
+      show('tm-t', 'A', { ...noBill, artistSource: 'history' }),
+      show('tm-t', 'B', { ...noBill, artistSource: 'library' }),
+      show('tm-t', 'C', { ...noBill, artistSource: 'collection' }),
+    ]);
+    expect(bySource[0]).toMatchObject({ artist: 'C', artistSource: 'collection' });
+    const first = uniqueConcerts([show('tm-u', 'A', noBill), show('tm-u', 'B', noBill)]);
+    expect(first[0].artist).toBe('A');
+  });
+
+  test('lineup names match through normalizeForDedup ("Fontaines DC" is "Fontaines D.C.")', () => {
+    const out = uniqueConcerts([
+      tour('Westside Cowboy', 'history'),
+      tour('Fontaines DC', 'collection', { lineup: ['Fontaines DC', 'Westside Cowboy'] }),
+    ]);
+    expect(out[0].lineup).toEqual(['Fontaines D.C.', 'Westside Cowboy']);
+    expect(out[0].artist).toBe('Fontaines DC');
   });
 });
 
