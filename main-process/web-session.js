@@ -361,10 +361,12 @@ function createWebSessionHost(config = {}) {
 
     async beginNavigation() {
       // Writers exclude each other (an idle park and a load must not abort
-      // each other's navigation); every wait here is bounded (pageFetch by
-      // pageFetchTimeoutMs, a load by loadTimeoutMs). The check-then-claim
-      // below has no await between the two, so two writers cannot both
-      // claim.
+      // each other's navigation). The reader drain is bounded (pageFetch by
+      // pageFetchTimeoutMs, a load by loadTimeoutMs); the writer wait can
+      // additionally sit behind the park's unbudgeted about:blank load — a
+      // same-origin internal navigation that in practice does not stall.
+      // The check-then-claim below has no await between the two, so two
+      // writers cannot both claim.
       while (this._navigating) {
         await sleep(50);
       }
