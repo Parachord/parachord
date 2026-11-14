@@ -155,6 +155,11 @@ const VirtualizedQueueList = React.memo(({
   currentTrack,
   resolverOrder,
   allResolvers,
+  // The resolvers that can play on this account: app.js passes
+  // playbackResolvers (activeResolvers minus plan-blocked ones, e.g. Amazon
+  // on Prime, Apple Music signed out). A row's source icons are limited to
+  // these, as on the pages (docs/architecture/playback.md "Playback limits").
+  activeResolvers,
   queueDropTarget,
   draggedQueueTrack,
   insertedTrackId,
@@ -266,11 +271,17 @@ const VirtualizedQueueList = React.memo(({
     const isCurrentTrack = currentTrack?.id === track.id;
     const isLoading = track.status === 'loading';
     const isError = track.status === 'error';
-    const availableSources = Object.keys(track.sources || {}).sort((a, b) => {
-      const aIndex = resolverOrder.indexOf(a);
-      const bIndex = resolverOrder.indexOf(b);
-      return aIndex - bIndex;
-    });
+    // Every resolver the track resolved on, then only the ones that can play
+    // it. A track with sources but none playable shows no icons, as the page
+    // lists do; the "resolving" shimmer is for a track with no sources yet.
+    const resolvedSourceIds = Object.keys(track.sources || {});
+    const availableSources = resolvedSourceIds
+      .filter(id => !Array.isArray(activeResolvers) || activeResolvers.includes(id))
+      .sort((a, b) => {
+        const aIndex = resolverOrder.indexOf(a);
+        const bIndex = resolverOrder.indexOf(b);
+        return aIndex - bIndex;
+      });
 
     const isDraggedOver = queueDropTarget === index;
     const isDragging = draggedQueueTrack === index;
@@ -479,6 +490,7 @@ const VirtualizedQueueList = React.memo(({
               }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
             });
           })()
+        : resolvedSourceIds.length > 0 ? null
         :
           React.createElement('div', { className: 'flex items-center gap-1' },
             React.createElement('div', {
