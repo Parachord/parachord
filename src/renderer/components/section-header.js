@@ -12,7 +12,12 @@
 // under plain Node.
 
 // Each page's sidebar colour (app.js), which a link to that page takes.
-const PAGE_COLOR = { playlists: '#ec4899', recommendations: '#f59e0b', concerts: '#10c9b4' };
+const { PAGE_COLORS } = require('../lib/page-colors');
+const PAGE_COLOR = {
+  playlists: PAGE_COLORS.playlists.color,
+  recommendations: PAGE_COLORS.recommendations.color,
+  concerts: PAGE_COLORS.concerts.color,
+};
 
 // 20px bold, in the page's 1.5 line height: a 30px line. A skeleton that
 // stands in for a header draws its bar inside a SectionHeader (or an element

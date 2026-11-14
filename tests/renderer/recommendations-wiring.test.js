@@ -557,8 +557,8 @@ describe('the five-section page render', () => {
     expect(app).toContain("const viewingRecommendedPlaylist = activeView === 'playlist-view' && !!selectedPlaylist?.isEphemeral;");
     expect(app).toContain("const playlistsNavActive = activeView === 'playlists' || (activeView === 'playlist-view' && !viewingRecommendedPlaylist);");
     expect(app).toContain("const recommendationsNavActive = activeView === 'recommendations' || viewingRecommendedPlaylist;");
-    expect(app).toContain("backgroundColor: playlistsNavActive ? 'rgba(236, 72, 153, 0.1)' : 'transparent',");
-    expect(app).toContain("backgroundColor: recommendationsNavActive ? 'rgba(245, 158, 11, 0.1)' : 'transparent',");
+    expect(app).toContain("backgroundColor: playlistsNavActive ? pageTint('playlists') : 'transparent',");
+    expect(app).toContain("backgroundColor: recommendationsNavActive ? pageTint('recommendations') : 'transparent',");
     expect(app).not.toContain("(activeView === 'playlists' || activeView === 'playlist-view') ? '#ec4899'");
   });
 

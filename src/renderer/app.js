@@ -1978,6 +1978,7 @@ const { useStableHandlers } = require('./lib/stable-handlers');
 const { homeBannerItems, bannerViewId } = require('./lib/home-banners');
 const { toastBackground } = require('./lib/toast-style');
 const { statusBadgeStyle } = require('./lib/status-badge');
+const { PAGE_COLORS, pageTint } = require('./lib/page-colors');
 const { withCollectionState } = require('./lib/menu-collection-state');
 const { runPlaybackControl } = require('../../tools/playback-control');
 const { runQueueAdd } = require('../../tools/queue-add');
@@ -36431,14 +36432,14 @@ useEffect(() => {
               onDrop: handlePlaylistDrop,
               className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
               style: playlistDropHighlight ? {
-                backgroundColor: 'rgba(236, 72, 153, 0.1)',
-                outline: '2px solid #ec4899',
+                backgroundColor: pageTint('playlists'),
+                outline: `2px solid ${PAGE_COLORS.playlists.color}`,
                 outlineOffset: '-2px',
                 borderRadius: '4px',
-                color: '#ec4899'
+                color: PAGE_COLORS.playlists.color
               } : {
-                backgroundColor: playlistsNavActive ? 'rgba(236, 72, 153, 0.1)' : 'transparent',
-                color: playlistsNavActive ? '#ec4899' : 'var(--nav-inactive)',
+                backgroundColor: playlistsNavActive ? pageTint('playlists') : 'transparent',
+                color: playlistsNavActive ? PAGE_COLORS.playlists.color : 'var(--nav-inactive)',
                 fontWeight: playlistsNavActive ? '500' : '400'
               }
             },
@@ -36466,14 +36467,14 @@ useEffect(() => {
               onDrop: handleCollectionDrop,
               className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
               style: collectionDropHighlight ? {
-                backgroundColor: 'rgba(6, 182, 212, 0.1)',
-                outline: '2px solid #06b6d4',
+                backgroundColor: pageTint('library'),
+                outline: `2px solid ${PAGE_COLORS.library.color}`,
                 outlineOffset: '-2px',
                 borderRadius: '4px',
-                color: '#06b6d4'
+                color: PAGE_COLORS.library.color
               } : {
-                backgroundColor: activeView === 'library' ? 'rgba(6, 182, 212, 0.1)' : 'transparent',
-                color: activeView === 'library' ? '#06b6d4' : 'var(--nav-inactive)',
+                backgroundColor: activeView === 'library' ? pageTint('library') : 'transparent',
+                color: activeView === 'library' ? PAGE_COLORS['library'].color : 'var(--nav-inactive)',
                 fontWeight: activeView === 'library' ? '500' : '400'
               }
             },
@@ -36500,8 +36501,8 @@ useEffect(() => {
               },
               className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
               style: {
-                backgroundColor: activeView === 'history' ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
-                color: activeView === 'history' ? '#3b82f6' : 'var(--nav-inactive)',
+                backgroundColor: activeView === 'history' ? pageTint('history') : 'transparent',
+                color: activeView === 'history' ? PAGE_COLORS['history'].color : 'var(--nav-inactive)',
                 fontWeight: activeView === 'history' ? '500' : '400'
               }
             },
@@ -36531,8 +36532,8 @@ useEffect(() => {
               },
               className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
               style: {
-                backgroundColor: activeView === 'new-releases' ? 'rgba(16, 185, 129, 0.1)' : 'transparent',
-                color: activeView === 'new-releases' ? '#10b981' : 'var(--nav-inactive)',
+                backgroundColor: activeView === 'new-releases' ? pageTint('new-releases') : 'transparent',
+                color: activeView === 'new-releases' ? PAGE_COLORS['new-releases'].color : 'var(--nav-inactive)',
                 fontWeight: activeView === 'new-releases' ? '500' : '400'
               }
             },
@@ -36551,8 +36552,8 @@ useEffect(() => {
               onClick: () => navigateTo('recommendations'),
               className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
               style: {
-                backgroundColor: recommendationsNavActive ? 'rgba(245, 158, 11, 0.1)' : 'transparent',
-                color: recommendationsNavActive ? '#f59e0b' : 'var(--nav-inactive)',
+                backgroundColor: recommendationsNavActive ? pageTint('recommendations') : 'transparent',
+                color: recommendationsNavActive ? PAGE_COLORS.recommendations.color : 'var(--nav-inactive)',
                 fontWeight: recommendationsNavActive ? '500' : '400'
               }
             },
@@ -36575,8 +36576,8 @@ useEffect(() => {
               },
               className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
               style: {
-                backgroundColor: activeView === 'discover' ? 'rgba(249, 115, 22, 0.1)' : 'transparent',
-                color: activeView === 'discover' ? '#f97316' : 'var(--nav-inactive)',
+                backgroundColor: activeView === 'discover' ? pageTint('discover') : 'transparent',
+                color: activeView === 'discover' ? PAGE_COLORS['discover'].color : 'var(--nav-inactive)',
                 fontWeight: activeView === 'discover' ? '500' : '400'
               }
             },
@@ -36598,8 +36599,8 @@ useEffect(() => {
               },
               className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
               style: {
-                backgroundColor: activeView === 'critics-picks' ? 'rgba(239, 68, 68, 0.1)' : 'transparent',
-                color: activeView === 'critics-picks' ? '#ef4444' : 'var(--nav-inactive)',
+                backgroundColor: activeView === 'critics-picks' ? pageTint('critics-picks') : 'transparent',
+                color: activeView === 'critics-picks' ? PAGE_COLORS['critics-picks'].color : 'var(--nav-inactive)',
                 fontWeight: activeView === 'critics-picks' ? '500' : '400'
               }
             },
@@ -36620,8 +36621,8 @@ useEffect(() => {
               },
               className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
               style: {
-                backgroundColor: activeView === 'concerts' ? 'rgba(16, 201, 180, 0.1)' : 'transparent',
-                color: activeView === 'concerts' ? '#10c9b4' : 'var(--nav-inactive)',
+                backgroundColor: activeView === 'concerts' ? pageTint('concerts') : 'transparent',
+                color: activeView === 'concerts' ? PAGE_COLORS['concerts'].color : 'var(--nav-inactive)',
                 fontWeight: activeView === 'concerts' ? '500' : '400'
               }
             },
@@ -37590,7 +37591,7 @@ useEffect(() => {
         },
           // Gradient background
           React.createElement('div', {
-            className: 'absolute inset-0 bg-gradient-to-br from-rose-500 via-pink-500 to-fuchsia-600'
+            className: `absolute inset-0 ${PAGE_COLORS['playlists'].hero}`
           }),
           // Background pattern
           React.createElement('div', {
@@ -38433,7 +38434,7 @@ useEffect(() => {
           },
               // Gradient background
               React.createElement('div', {
-                className: 'absolute inset-0 bg-gradient-to-br from-orange-500 via-pink-500 to-purple-600'
+                className: `absolute inset-0 ${PAGE_COLORS['discover'].hero}`
               }),
               // Background pattern
               React.createElement('div', {
@@ -39270,7 +39271,7 @@ useEffect(() => {
           },
               // Gradient background
               React.createElement('div', {
-                className: 'absolute inset-0 bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-600'
+                className: `absolute inset-0 ${PAGE_COLORS['new-releases'].hero}`
               }),
               // Background pattern - droplets
               React.createElement('div', {
@@ -39757,7 +39758,7 @@ useEffect(() => {
           },
               // Gradient background
               React.createElement('div', {
-                className: 'absolute inset-0 bg-gradient-to-br from-amber-500 via-orange-500 to-red-500'
+                className: `absolute inset-0 ${PAGE_COLORS['critics-picks'].hero}`
               }),
               // Background pattern
               React.createElement('div', {
@@ -40275,7 +40276,7 @@ useEffect(() => {
           },
               // Gradient background
               React.createElement('div', {
-                className: 'absolute inset-0 bg-gradient-to-br from-teal-500 via-teal-500 to-cyan-600'
+                className: `absolute inset-0 ${PAGE_COLORS['concerts'].hero}`
               }),
               // Background pattern - musical notes
               React.createElement('div', {
@@ -40428,7 +40429,7 @@ useEffect(() => {
               concertsLocationCoords && React.createElement('button', {
                 onClick: (e) => { e.stopPropagation(); setConcertsLocationOpen(!concertsLocationOpen); },
                 className: 'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors',
-                style: { backgroundColor: 'var(--accent-primary-alpha-10)', color: 'var(--accent-primary)' },
+                style: { backgroundColor: pageTint('concerts'), color: PAGE_COLORS.concerts.color },
                 title: `${concertsLocation} (${concertsLocationRadius} mi radius)`
               },
                 React.createElement('svg', { className: 'w-3.5 h-3.5 flex-shrink-0', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
@@ -40440,7 +40441,7 @@ useEffect(() => {
                 React.createElement('span', {
                   onClick: (e) => { e.stopPropagation(); setConcertsLocation(''); setConcertsLocationCoords(null); setConcertsLocationRadius(50); },
                   className: 'ml-0.5 rounded-full p-0.5 transition-colors cursor-pointer',
-                  style: { color: 'var(--accent-primary)' }
+                  style: { color: PAGE_COLORS.concerts.color }
                 },
                   React.createElement('svg', { className: 'w-3.5 h-3.5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                     React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2.5, d: 'M6 18L18 6M6 6l12 12' })
@@ -40451,7 +40452,7 @@ useEffect(() => {
               !concertsLocationCoords && React.createElement('button', {
                 onClick: (e) => { e.stopPropagation(); setConcertsLocationOpen(!concertsLocationOpen); },
                 className: 'p-1.5 transition-colors',
-                style: { color: concertsLocation ? 'var(--accent-primary)' : 'var(--text-tertiary)' },
+                style: { color: concertsLocation ? PAGE_COLORS.concerts.color : 'var(--text-tertiary)' },
                 title: concertsLocation ? `Filtered: ${concertsLocation}` : 'Filter by location'
               },
                 React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
@@ -40504,7 +40505,7 @@ useEffect(() => {
                     placeholder: 'City or region...',
                     className: 'flex-1 text-sm outline-none transition-colors',
                     style: { backgroundColor: 'var(--bg-inset)', color: 'var(--text-primary)', border: '1px solid var(--border-default)', borderRadius: '10px', padding: '8px 14px' },
-                    onFocus: (e) => { e.currentTarget.style.borderColor = 'var(--accent-primary)'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(124, 58, 237, 0.15)'; },
+                    onFocus: (e) => { e.currentTarget.style.borderColor = PAGE_COLORS.concerts.color; e.currentTarget.style.boxShadow = `0 0 0 3px ${pageTint('concerts')}`; },
                     onBlur: (e) => { e.currentTarget.style.borderColor = 'var(--border-default)'; e.currentTarget.style.boxShadow = 'none'; }
                   }),
                   // "Use my location" button
@@ -40526,7 +40527,7 @@ useEffect(() => {
                     disabled: concertsGeocodingLoading,
                     className: 'flex-shrink-0 transition-colors',
                     style: { padding: '8px', borderRadius: '10px', backgroundColor: 'var(--bg-inset)', border: '1px solid var(--border-default)', color: 'var(--text-tertiary)' },
-                    onMouseEnter: (e) => { e.currentTarget.style.color = 'var(--accent-primary)'; e.currentTarget.style.borderColor = 'var(--accent-primary)'; },
+                    onMouseEnter: (e) => { e.currentTarget.style.color = PAGE_COLORS.concerts.color; e.currentTarget.style.borderColor = PAGE_COLORS.concerts.color; },
                     onMouseLeave: (e) => { e.currentTarget.style.color = 'var(--text-tertiary)'; e.currentTarget.style.borderColor = 'var(--border-default)'; },
                     title: 'Use my location'
                   },
@@ -40589,7 +40590,7 @@ useEffect(() => {
                     value: concertsLocationRadius,
                     onChange: (e) => setConcertsLocationRadius(parseInt(e.target.value)),
                     className: 'w-full',
-                    style: { accentColor: 'var(--accent-primary)', height: '4px' }
+                    style: { accentColor: PAGE_COLORS.concerts.color, height: '4px' }
                   })
                 ),
                 // Action buttons row
@@ -40622,9 +40623,7 @@ useEffect(() => {
                       setConcertsLocationOpen(false);
                     },
                     disabled: concertsGeocodingLoading,
-                    style: { fontSize: '13px', fontWeight: '500', padding: '6px 16px', borderRadius: '8px', backgroundColor: 'var(--accent-fill)', color: '#fff' },
-                    onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = '#6d28d9'; },
-                    onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'var(--accent-fill)'; }
+                    style: { fontSize: '13px', fontWeight: '500', padding: '6px 16px', borderRadius: '8px', backgroundColor: PAGE_COLORS.concerts.fill, color: 'var(--on-accent)' }
                   }, concertsGeocodingLoading ? 'Looking up...' : 'Apply')
                 )
               )
@@ -41104,7 +41103,7 @@ useEffect(() => {
           },
             // Gradient background - purple/indigo theme for recommendations
             React.createElement('div', {
-              className: 'absolute inset-0 bg-gradient-to-br from-amber-400 via-amber-500 to-orange-500'
+              className: `absolute inset-0 ${PAGE_COLORS['recommendations'].hero}`
             }),
             // Background pattern - stars for recommendations
             React.createElement('div', {
@@ -42272,7 +42271,7 @@ useEffect(() => {
           },
             // Gradient background - blue/cyan theme for history
             React.createElement('div', {
-              className: 'absolute inset-0 bg-gradient-to-br from-cyan-500 via-blue-500 to-indigo-600'
+              className: `absolute inset-0 ${PAGE_COLORS['history'].hero}`
             }),
             // Background pattern - clock/time icons
             React.createElement('div', {
@@ -43243,12 +43242,9 @@ useEffect(() => {
                 overflow: 'hidden'
               }
             },
-              // Gradient background - purple/magenta theme for friends
               React.createElement('div', {
-                className: 'absolute inset-0',
-                style: {
-                  background: 'linear-gradient(135deg, #9333ea 0%, #c026d3 50%, #e11d48 100%)'
-                }
+                // A friend's history is a History page: History's gradient.
+                className: `absolute inset-0 ${PAGE_COLORS.history.hero}`
               }),
               // Background pattern - hexagon pattern for friends
               React.createElement('div', {

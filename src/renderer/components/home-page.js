@@ -90,7 +90,7 @@ const skeletonSection = (key, title, body) => React.createElement('section', {
 // gradient (centred on violet-600, the sidebar's accent #7c3aed) and the
 // circle pattern Home's hero always had.
 const HOME_HERO_HEIGHT = 80;
-const HOME_HERO_GRADIENT = 'bg-gradient-to-br from-purple-500 via-violet-600 to-indigo-600';
+const HOME_HERO_GRADIENT = require('../lib/page-colors').PAGE_COLORS.home.hero;
 const HOME_HERO_PATTERN = 'url("data:image/svg+xml,%3Csvg width=\'100\' height=\'100\' viewBox=\'0 0 100 100\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'%23ffffff\'%3E%3Ccircle cx=\'50\' cy=\'50\' r=\'40\' fill=\'none\' stroke=\'%23fff\' stroke-width=\'2\'/%3E%3Ccircle cx=\'50\' cy=\'50\' r=\'25\' fill=\'none\' stroke=\'%23fff\' stroke-width=\'1.5\'/%3E%3Ccircle cx=\'50\' cy=\'50\' r=\'10\' fill=\'none\' stroke=\'%23fff\' stroke-width=\'1\'/%3E%3C/g%3E%3C/svg%3E")';
 
 const HomePage = React.memo(function HomePage(props) {

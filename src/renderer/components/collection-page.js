@@ -125,7 +125,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
           },
               // Gradient background
               React.createElement('div', {
-                className: 'absolute inset-0 bg-gradient-to-br from-cyan-500 via-cyan-600 to-blue-700'
+                className: `absolute inset-0 ${require('../lib/page-colors').PAGE_COLORS.library.hero}`
               }),
               // Vinyl pattern overlay
               React.createElement('div', {
