@@ -18,6 +18,7 @@
 - **Gone from Home:** Continue Listening (the player has your queue), Recently Added, Friend Activity (your friends are in the sidebar), the collection stats and the separate suggestion rows.
 - **Section titles look the same on every page.** Recommendations, search results and an artist's upcoming concerts now use Home's larger, bolder section titles, with "See all", "Show less" or "Show more" on the right in the same style. The search headings now read Artists, Songs, Albums and Playlists instead of capitals.
 - **Filter buttons look the same on every page.** The filters on Fresh Drops, Recommendations, an artist's releases and related artists, and the plugin marketplace in Settings now match Home's. A colour-coded filter, such as a service or a release type, shows a dot in its colour, and fills with that colour when you pick it.
+- **Fresh Drops no longer disappears from Home at launch.** When its saved list was more than a few hours old, the refresh at launch could start before your collection had loaded, find no artists, and empty the list, so Home hid Fresh Drops until something redrew the page. The refresh now waits for your collection, and keeps the releases it already has if it finds no artists.
 
 ## Amazon Music
 
