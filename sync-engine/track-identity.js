@@ -22,6 +22,8 @@
 
 'use strict';
 
+const { normalizeStr } = require('../sync-providers/confidence-scoring');
+
 // An album that isn't one: nothing, "Single", or the name of one of the track's
 // own sources (a plugin with no album naming its service). A service name with
 // no such source could be a real title, so it stays. Never compare through
@@ -35,23 +37,43 @@ const isPlaceholderAlbum = (album, sources) => {
   return ids.some((id) => String(id).toLowerCase() === compact);
 };
 
-const sameName = (a, b) => {
-  const x = typeof a === 'string' ? a.trim().toLowerCase() : '';
-  return !!x && x === (typeof b === 'string' ? b.trim().toLowerCase() : '');
-};
+// Names compare through the shared normalizeStr (confidence-scoring.js):
+// case, accents, spaces and punctuation drop out, so Apple Music's
+// "Mondo Cozmo & Jim James" and Spotify's "Mondo Cozmo, Jim James" agree,
+// while non-Latin letters stay.
+const nameOf = (s) => (typeof s === 'string' ? normalizeStr(s) : '');
 
-const hasPlaceholderAlbum = (row) => isPlaceholderAlbum(row && row.album, row && row.sources);
+// An album name without the store's own suffix: Apple Music calls a single
+// "X - Single" and an EP "X - EP" where Spotify says "X". Editions ("Deluxe
+// Edition", "Live") stay, since those are different releases.
+const albumKey = (album) => nameOf(typeof album === 'string'
+  ? album.trim().replace(/\s+-\s+(single|ep)\s*$/i, '')
+  : '');
+
+// For matching, an album is a placeholder when the shared rule says so, or
+// when it's the "Unknown Album" both providers' transforms fall back to.
+const UNKNOWN_ALBUM = nameOf('Unknown Album');
+const hasPlaceholderAlbum = (row) => !!row
+  && (isPlaceholderAlbum(row.album, row.sources) || albumKey(row.album) === UNKNOWN_ALBUM);
 
 // Two copies of one recording can stand for the same saved track when their
 // albums agree, or when either has no real album. Two real, different albums
 // are two editions the user may have saved on purpose.
-const albumsCompatible = (a, b) =>
-  sameName(a && a.album, b && b.album) || hasPlaceholderAlbum(a) || hasPlaceholderAlbum(b);
+const albumsCompatible = (a, b) => {
+  if (hasPlaceholderAlbum(a) || hasPlaceholderAlbum(b)) return true;
+  const ka = albumKey(a && a.album);
+  return !!ka && ka === albumKey(b && b.album);
+};
 
 const nameKey = (row) => {
-  const artist = typeof row.artist === 'string' ? row.artist.trim().toLowerCase() : '';
-  const title = typeof row.title === 'string' ? row.title.trim().toLowerCase() : '';
+  const artist = nameOf(row.artist);
+  const title = nameOf(row.title);
   return artist && title ? `${artist}\u0000${title}` : null;
+};
+
+const sameTrackName = (a, b) => {
+  const ka = nameKey(a);
+  return !!ka && ka === nameKey(b);
 };
 
 // The provider's native ids for a row: from the row itself and from its source
@@ -170,8 +192,7 @@ function matchTracks(remoteItems, localItems, { providerId, nativeIdOf } = {}) {
     for (const nid of nids) {
       for (const r of byNative.get(nid) || []) {
         if (r === pair.local || claimed.has(r.id) || siblings.includes(r)) continue;
-        if (sameName(r.artist, pair.local.artist) && sameName(r.title, pair.local.title)
-          && albumsCompatible(r, pair.local)) {
+        if (sameTrackName(r, pair.local) && albumsCompatible(r, pair.local)) {
           siblings.push(r);
         }
       }

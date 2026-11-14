@@ -12,6 +12,7 @@
 
 const { syncDataType } = require('../../sync-engine');
 const SpotifyProvider = require('../../sync-providers/spotify');
+const AppleMusicProvider = require('../../sync-providers/applemusic');
 
 const SPOTIFY_ID = '75RrvGMJftSdTwt6fjD3rL';
 
@@ -202,6 +203,84 @@ describe('library sync: an incoming track matches the row that already holds it'
     const localAlbum = { id: 'radiohead-pablo-honey', title: 'Pablo Honey', artist: 'Radiohead', album: '', syncSources: { manual: {} } };
     const remoteAlbum = { id: 'radiohead-pablo-honey-deluxe', title: 'Pablo Honey', artist: 'Radiohead', album: '' };
     const result = await sync([remoteAlbum], [localAlbum], 'albums');
+    expect(result.data).toHaveLength(2);
+  });
+
+  test('a row whose album was never known matches a synced copy reported as "Unknown Album"', async () => {
+    // Both providers fall back to "Unknown Album" when a track has none.
+    const saved = {
+      id: 'radiohead-creep-pablo-honey', title: 'Creep', artist: 'Radiohead', album: 'Pablo Honey',
+      sources: {}, addedAt: 1000, syncSources: { manual: { addedAt: 1000 } }
+    };
+    const remote = remoteTrack({ id: 'radiohead-creep-unknown-album', artist: 'Radiohead', title: 'Creep', album: 'Unknown Album', spotifyId: 'u1' });
+    const result = await sync([remote], [saved]);
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0].id).toBe('radiohead-creep-pablo-honey');
+  });
+});
+
+describe('library sync with Apple Music: the same rules hold with its naming', () => {
+  const CATALOG_ID = '1440857781';
+  const amProvider = (remote) => ({
+    id: 'applemusic',
+    nativeIdOf: (t) => AppleMusicProvider.nativeIdOf(t),
+    fetchTracks: jest.fn(async () => remote),
+    fetchAlbums: jest.fn(async () => remote),
+    fetchArtists: jest.fn(async () => remote)
+  });
+  const amSync = (remote, local) =>
+    syncDataType(amProvider(remote), 'token', 'tracks', local, () => {}, null);
+
+  // What sync-providers/applemusic.js transformTrack produces: Apple Music
+  // writes "A & B" where Spotify writes "A, B", and suffixes singles and EPs.
+  const amWhiteRoses = () => ({
+    id: 'mondo-cozmo-jim-james-white-roses-white-roses-single',
+    externalId: 'i.abc123',
+    title: 'White Roses',
+    artist: 'Mondo Cozmo & Jim James',
+    album: 'White Roses - Single',
+    duration: 259,
+    addedAt: 1794689768000,
+    appleMusicId: CATALOG_ID,
+    sources: { applemusic: { id: `applemusic-${CATALOG_ID}`, title: 'White Roses', artist: 'Mondo Cozmo & Jim James', album: 'White Roses - Single', appleMusicId: CATALOG_ID, confidence: 1 } }
+  });
+  const amHeartRow = () => ({
+    id: 'mondo-cozmo-jim-james-white-roses-white-roses',
+    title: 'White Roses',
+    artist: 'Mondo Cozmo, Jim James',
+    album: 'White Roses',
+    sources: { applemusic: { appleMusicId: CATALOG_ID } },
+    addedAt: 1794689768232,
+    syncSources: { manual: { addedAt: 1794689768232 } }
+  });
+
+  test('a heart, then an Apple Music sync that names the album "X - Single", leaves one row', async () => {
+    const result = await amSync([amWhiteRoses()], [amHeartRow()]);
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0].id).toBe('mondo-cozmo-jim-james-white-roses-white-roses');
+    expect(result.data[0].syncSources.applemusic).toBeDefined();
+    expect(result.data[0].externalId).toBe('i.abc123');
+  });
+
+  test('an existing pair heals although Apple Music writes the artists with "&"', async () => {
+    const synced = { ...amWhiteRoses(), syncSources: { applemusic: { addedAt: 1794689768000, syncedAt: 1794690013903 } } };
+    const result = await amSync([amWhiteRoses()], [amHeartRow(), synced]);
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0].id).toBe('mondo-cozmo-jim-james-white-roses-white-roses');
+    expect(result.stats.merged).toBe(1);
+  });
+
+  test('a deluxe edition is still a different album', async () => {
+    const saved = {
+      id: 'x-song-live-forever', title: 'Song', artist: 'X', album: 'Live Forever',
+      sources: { applemusic: { appleMusicId: '42' } }, addedAt: 1, syncSources: { manual: { addedAt: 1 } }
+    };
+    const remote = {
+      id: 'x-song-live-forever-deluxe-edition', externalId: 'i.42', title: 'Song', artist: 'X',
+      album: 'Live Forever (Deluxe Edition)', addedAt: 2, appleMusicId: '42',
+      sources: { applemusic: { appleMusicId: '42' } }
+    };
+    const result = await amSync([remote], [saved]);
     expect(result.data).toHaveLength(2);
   });
 });
