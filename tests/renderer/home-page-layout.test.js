@@ -438,7 +438,7 @@ describe('design-audit layout fixes (#1382)', () => {
 describe('design-audit small fixes (#1382)', () => {
   test('History offers to connect a missing service instead of "Try Again"', () => {
     expect(app).toContain("const notConnected = /^No (listening history service|Last\\.fm account) connected/.test(error || '');");
-    expect(app).toContain("? services.map(s => button(`Connect ${s.name}`, () => openPluginSettings(s.id)))");
+    expect(app).toContain("actions: services.map(sv => ({ label: `Connect ${sv.name}`, onClick: () => openPluginSettings(sv.id) })),");
     expect((app.match(/historyErrorState\((listeningHistory|topTracks|topArtists|topAlbums)\.error,/g) || []).length).toBe(4);
   });
 

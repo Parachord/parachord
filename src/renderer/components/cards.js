@@ -12,6 +12,7 @@ const { ResolverIcon, PlaybackProgress, ShareButton } = require('./ui-atoms');
 const { activateOnKey } = require('../lib/activate-on-key');
 const { getBestSourceConfidence } = require('./track-lists');
 const Icons = require('./icons');
+const { EmptyState, ErrorState } = require('./states');
 const { Play } = Icons;
 // hashString (module scope in app.js) is used by generateArtistPattern;
 // exported back so app.js's own call sites keep the same binding.
@@ -1703,20 +1704,7 @@ const ReleasePage = ({
     // RIGHT COLUMN: Tracklist
     React.createElement('div', { className: 'flex-1 min-w-0 pt-6 scrollable-content', style: { overflowY: 'auto' } },
       // A load that failed: the reason and a retry, in place of the skeleton
-      !release.tracks && release._loadError ? React.createElement('div', {
-        className: 'flex flex-col items-start gap-3 py-6 px-4',
-        role: 'alert'
-      },
-        React.createElement('p', { style: { color: 'var(--text-primary)', fontSize: '0.9375rem', fontWeight: 500 } },
-          "Couldn't load this album's tracks"),
-        React.createElement('p', { style: { color: 'var(--text-secondary)', fontSize: '0.875rem', maxWidth: '32rem' } },
-          release._loadError),
-        onRetryLoad && React.createElement('button', {
-          onClick: (e) => { e.stopPropagation(); onRetryLoad(); },
-          className: 'px-4 py-2 text-white rounded-lg text-sm transition-opacity hover:opacity-90',
-          style: { backgroundColor: 'var(--accent-fill)' }
-        }, 'Try Again')
-      ) :
+      !release.tracks && release._loadError ? React.createElement(ErrorState, { align: 'start', compact: true, title: 'Couldn’t load this album’s tracks', body: release._loadError, onRetry: onRetryLoad || undefined }) :
       // Show skeleton while tracks are loading
       !release.tracks ? React.createElement('div', { className: 'space-y-0' },
         [75, 60, 85, 55, 70, 80, 50, 65, 90, 58].map((width, i) =>

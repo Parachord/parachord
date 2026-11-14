@@ -23,6 +23,7 @@ const { sellerColor, sellerTextColor, sellerBadgeBg, sellerShortName, sellerName
 const { activateOnKey } = require('../lib/activate-on-key');
 const { Tooltip } = require('./ui-atoms');
 const Icons = require('./icons');
+const { EmptyState, ErrorState } = require('./states');
 const { SortMenu } = require('./sort-menu');
 const { HeroTabs } = require('./hero-tabs');
 const { SectionHeader } = require('./section-header');
@@ -1173,20 +1174,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
             // stood in (#874): say so, with Try again, rather than "No albums
             // found", which reads as an artist with no releases.
             !loadingArtist && artistReleases.length === 0 && artistLoadError &&
-              currentArtist && artistLoadError.name === currentArtist.name ? React.createElement('div', {
-              className: 'flex flex-col items-center gap-3 py-12 px-4 text-center',
-              role: 'alert'
-            },
-              React.createElement('p', { style: { color: 'var(--text-primary)', fontSize: '0.9375rem', fontWeight: 500 } },
-                "Couldn't load this artist's discography"),
-              React.createElement('p', { style: { color: 'var(--text-secondary)', fontSize: '0.875rem', maxWidth: '32rem' } },
-                artistLoadError.message),
-              React.createElement('button', {
-                onClick: () => fetchArtistData(currentArtist.name, { mbid: currentArtist.mbid }),
-                className: 'px-4 py-2 text-white rounded-lg text-sm transition-opacity hover:opacity-90',
-                style: { backgroundColor: 'var(--accent-fill)' }
-              }, 'Try Again')
-            ) :
+              currentArtist && artistLoadError.name === currentArtist.name ? React.createElement(ErrorState, { title: 'Couldn’t load this artist’s discography', body: artistLoadError.message, onRetry: () => fetchArtistData(currentArtist.name, { mbid: currentArtist.mbid }) }) :
             // Empty state (only show when not loading)
             !loadingArtist && (() => {
               const filtered = sortArtistReleases(filterArtistReleases(artistReleases));

@@ -36,8 +36,7 @@ describe('friend page tab errors', () => {
     const view = app.slice(app.indexOf("!friendHistoryLoading && friendHistoryData.errors?.[friendHistoryTab] && (() => {"));
     const block = view.slice(0, view.indexOf('// Recent tab content'));
     expect(block).toContain('.find(r => r.id === currentFriend?.service)');
-    expect(block).toContain("`Couldn't reach ${serviceName}. Check your connection and try again.`");
-    expect(block).toContain("}, 'Try again')");
+    expect(block).toContain("React.createElement(ErrorState, { title: `Couldn’t reach ${serviceName}`, body: 'Check your connection and try again.', onRetry: retry })");
     expect(block).toContain("if (friendHistoryTab === 'recent') loadFriendRecentTracks(currentFriend);");
     expect(block).not.toMatch(/'lastfm'|'listenbrainz'/);
     for (const tab of ['recent', 'topTracks', 'topAlbums', 'topArtists']) {

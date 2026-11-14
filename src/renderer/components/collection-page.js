@@ -16,6 +16,7 @@
 // from props under their old names.
 
 const Icons = require('./icons');
+const { EmptyState, ErrorState } = require('./states');
 const { SortMenu } = require('./sort-menu');
 const { HeroTabs } = require('./hero-tabs');
 const { activateOnKey } = require('../lib/activate-on-key');
@@ -543,18 +544,11 @@ const CollectionPage = React.memo(function CollectionPage(props) {
               const sorted = collectionSongsSorted;
 
               if (sorted.length === 0 && collectionSearch) {
-                return React.createElement('div', { className: 'text-center py-12 text-ink-tertiary' },
-                  React.createElement(Icons.Search, { className: 'w-12 h-12 mx-auto mb-4 text-ink-faint', strokeWidth: 1.5 }),
-                  React.createElement('div', { className: 'text-sm' }, 'No tracks match your search')
-                );
+                return React.createElement(EmptyState, { compact: true, icon: Icons.Search, title: "No tracks match your search" });
               }
 
               if (sorted.length === 0) {
-                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-ink-tertiary py-20' },
-                  React.createElement(Icons.Music, { className: 'w-16 h-16 mb-4 text-ink-faint', strokeWidth: 1.5 }),
-                  React.createElement('p', { className: 'text-lg font-medium text-ink-tertiary mb-2' }, 'No tracks yet'),
-                  React.createElement('p', { className: 'text-sm text-ink-tertiary' }, 'Drag tracks here or add local music folders in Settings')
-                );
+                return React.createElement(EmptyState, { icon: Icons.Music, title: "No tracks yet", body: "Drag tracks here, or add a music folder in the Local Files plug-in." });
               }
 
               // Windowed render (parachord#783). Below the virtualization
@@ -859,19 +853,11 @@ const CollectionPage = React.memo(function CollectionPage(props) {
               const sorted = sortCollectionItems(filtered, 'artists');
 
               if (sorted.length === 0 && collectionSearch) {
-                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-ink-tertiary py-20' },
-                  React.createElement('p', { className: 'text-lg font-medium text-ink-tertiary' }, 'No artists match your search')
-                );
+                return React.createElement(EmptyState, { compact: true, icon: Icons.Search, title: "No artists match your search" });
               }
 
               if (sorted.length === 0) {
-                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-ink-tertiary py-20' },
-                  React.createElement('svg', { className: 'w-16 h-16 mb-4 text-ink-faint', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' })
-                  ),
-                  React.createElement('p', { className: 'text-lg font-medium text-ink-tertiary mb-2' }, 'No artists yet'),
-                  React.createElement('p', { className: 'text-sm text-ink-tertiary' }, 'Drag artists here to add them to your collection')
-                );
+                return React.createElement(EmptyState, { icon: Icons.Users, title: "No artists yet", body: "Drag artists here to add them to your collection." });
               }
 
               return React.createElement('div', {
@@ -925,17 +911,11 @@ const CollectionPage = React.memo(function CollectionPage(props) {
               const sorted = sortCollectionItems(filtered, 'albums');
 
               if (sorted.length === 0 && collectionSearch) {
-                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-ink-tertiary py-20' },
-                  React.createElement('p', { className: 'text-lg font-medium text-ink-tertiary' }, 'No albums match your search')
-                );
+                return React.createElement(EmptyState, { compact: true, icon: Icons.Search, title: "No albums match your search" });
               }
 
               if (sorted.length === 0) {
-                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-ink-tertiary py-20' },
-                  React.createElement(Icons.Music, { className: 'w-16 h-16 mb-4 text-ink-faint', strokeWidth: 1.5 }),
-                  React.createElement('p', { className: 'text-lg font-medium text-ink-tertiary mb-2' }, 'No albums yet'),
-                  React.createElement('p', { className: 'text-sm text-ink-tertiary' }, 'Drag albums here to add them to your collection')
-                );
+                return React.createElement(EmptyState, { icon: Icons.Music, title: "No albums yet", body: "Drag albums here to add them to your collection." });
               }
 
               return React.createElement('div', {
@@ -1052,43 +1032,19 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                     : filtered;
 
               if (displayFriends.length === 0 && collectionSearch) {
-                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-ink-tertiary py-20' },
-                  React.createElement('p', { className: 'text-lg font-medium text-ink-tertiary' }, 'No friends match your search')
-                );
+                return React.createElement(EmptyState, { compact: true, icon: Icons.Search, title: "No friends match your search" });
               }
 
               if (displayFriends.length === 0 && collectionSort.friends === 'on-air') {
-                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-ink-tertiary py-20' },
-                  React.createElement('svg', { className: 'w-16 h-16 mb-4 text-ink-faint', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M5.636 18.364a9 9 0 010-12.728m12.728 0a9 9 0 010 12.728m-9.9-2.829a5 5 0 010-7.07m7.072 0a5 5 0 010 7.07M13 12a1 1 0 11-2 0 1 1 0 012 0z' })
-                  ),
-                  React.createElement('p', { className: 'text-lg font-medium text-ink-tertiary mb-2' }, 'No friends on air right now'),
-                  React.createElement('p', { className: 'text-sm text-ink-tertiary' }, 'Check back later to see who\'s listening')
-                );
+                return React.createElement(EmptyState, { icon: Icons.Radio, title: "No friends on air right now", body: "Check back later to see who’s listening." });
               }
 
               if (displayFriends.length === 0 && collectionSort.friends === 'active') {
-                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-ink-tertiary py-20' },
-                  React.createElement('svg', { className: 'w-16 h-16 mb-4 text-ink-faint', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' })
-                  ),
-                  React.createElement('p', { className: 'text-lg font-medium text-ink-tertiary mb-2' }, 'No friends active in the last 14 days'),
-                  React.createElement('p', { className: 'text-sm text-ink-tertiary' }, 'Try a different sort to see all your friends')
-                );
+                return React.createElement(EmptyState, { icon: Icons.Users, title: "No friends active in the last 14 days", body: "Try a different sort to see all your friends." });
               }
 
               if (savedFriends.length === 0) {
-                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-ink-tertiary py-20' },
-                  React.createElement('svg', { className: 'w-16 h-16 mb-4 text-ink-faint', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z' })
-                  ),
-                  React.createElement('p', { className: 'text-lg font-medium text-ink-tertiary mb-2' }, 'No friends in collection'),
-                  React.createElement('p', { className: 'text-sm text-ink-tertiary mb-4' }, 'Add friends to your collection to see them here'),
-                  React.createElement('button', {
-                    onClick: () => setAddFriendModalOpen(true),
-                    className: 'px-4 py-2 bg-accent-fill hover:bg-accent-fill-hover text-white rounded-lg text-sm font-medium transition-colors'
-                  }, 'Add Friend')
-                );
+                return React.createElement(EmptyState, { icon: Icons.Users, title: "No friends in your collection yet", body: "Add friends to see what they’re listening to.", actions: [{ label: 'Add friend', onClick: () => setAddFriendModalOpen(true) }] });
               }
 
               return React.createElement('div', {

@@ -113,12 +113,13 @@ describe('fetchArtistData', () => {
 describe('ArtistPage', () => {
   test('shows the error with Try again for the artist it belongs to, in place of the empty state', () => {
     expect(app).toMatch(/React\.createElement\(ArtistPage, \{[^}]*artistLoadError,/);
-    const at = artistPage.indexOf("\"Couldn't load this artist's discography\"");
+    const at = artistPage.indexOf("'Couldn’t load this artist’s discography'");
     expect(at).toBeGreaterThan(-1);
     const block = artistPage.slice(artistPage.lastIndexOf('!loadingArtist && artistReleases.length === 0 && artistLoadError', at), at + 900);
     expect(block).toMatch(/artistLoadError\.name === currentArtist\.name/);
-    expect(block).toMatch(/onClick: \(\) => fetchArtistData\(currentArtist\.name, \{ mbid: currentArtist\.mbid \}\)/);
-    expect(block).toMatch(/'Try Again'/);
+    // The shared ErrorState (components/states.js) supplies "Try again".
+    expect(block).toMatch(/onRetry: \(\) => fetchArtistData\(currentArtist\.name, \{ mbid: currentArtist\.mbid \}\)/);
+    expect(block).toMatch(/React\.createElement\(ErrorState, \{/);
     // the plain empty state is the other branch
     expect(artistPage.indexOf('// Empty state (only show when not loading)', at)).toBeGreaterThan(at);
   });

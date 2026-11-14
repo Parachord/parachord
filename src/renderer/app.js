@@ -1986,6 +1986,7 @@ const { ToastRegion, NowPlayingAnnouncer } = require('./components/toast');
 const { SortMenu } = require('./components/sort-menu');
 const { HeroTabs } = require('./components/hero-tabs');
 const { SettingRow, Select, TextField, SecretField, Switch, RadioGroup } = require('./components/fields');
+const { EmptyState, ErrorState } = require('./components/states');
 // Room the queue drawer leaves above it: the title bar and a little air.
 const QUEUE_DRAWER_TOP_GAP = 48;
 const { sellerColor, sellerTextColor, sellerBadgeBg, sellerShortName, sellerName } = require('./lib/ticket-sellers');
@@ -9405,24 +9406,14 @@ const Parachord = () => {
   // CSS variables, the accent button.
   const historyErrorState = (error, onRetry, services) => {
     const notConnected = /^No (listening history service|Last\.fm account) connected/.test(error || '');
-    const button = (label, onClick) => React.createElement('button', {
-      key: label,
-      type: 'button',
-      onClick,
-      className: 'px-4 py-2 rounded-lg text-sm hover:opacity-90',
-      style: { backgroundColor: 'var(--accent-fill)', color: 'var(--on-accent)', border: 'none', cursor: 'pointer' }
-    }, label);
-    return React.createElement('div', {
-      role: 'alert',
-      style: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', padding: '48px 24px', textAlign: 'center' }
-    },
-      React.createElement('p', { style: { fontSize: '14px', color: 'var(--text-secondary)', maxWidth: '32rem' } }, error),
-      React.createElement('div', { style: { display: 'flex', gap: '12px', justifyContent: 'center' } },
-        notConnected
-          ? services.map(s => button(`Connect ${s.name}`, () => openPluginSettings(s.id)))
-          : button('Try again', onRetry)
-      )
-    );
+    // Not connected isn't a failure: an empty state that offers to connect.
+    return notConnected
+      ? React.createElement(EmptyState, {
+        title: 'Connect a scrobbling service',
+        body: error,
+        actions: services.map(sv => ({ label: `Connect ${sv.name}`, onClick: () => openPluginSettings(sv.id) })),
+      })
+      : React.createElement(ErrorState, { title: 'Couldn’t load your history', body: error, onRetry });
   };
 
   const openSyncSetupModal = async (providerId) => {
@@ -38491,16 +38482,7 @@ React.createElement('div', {
             onScroll: handleChartsScroll
           },
             // ALBUMS TAB - Error state
-            chartsTab === 'albums' && chartsError && !chartsLoading && React.createElement('div', {
-              className: 'text-center py-12'
-            },
-              React.createElement(Icons.AlertTriangle, { className: 'w-12 h-12 mx-auto mb-4 text-ink-faint', strokeWidth: 1.5 }),
-              React.createElement('div', { className: 'text-ink-tertiary mb-4' }, chartsError),
-              React.createElement('button', {
-                onClick: () => { setChartsError(null); loadCharts(); },
-                className: 'px-4 py-2 bg-accent-fill text-ink-on-accent rounded-lg hover:bg-accent-fill-hover transition-colors'
-              }, 'Retry')
-            ),
+            chartsTab === 'albums' && chartsError && !chartsLoading && chartsTab === 'albums' && chartsError && !chartsLoading && React.createElement(ErrorState, { title: 'Couldn’t load the charts', body: chartsError, onRetry: () => { setChartsError(null); loadCharts(); } }),
 
             // ALBUMS TAB - Grid of iTunes albums (skeleton loading)
             chartsTab === 'albums' && !chartsError && (chartsLoading || !chartsLoaded) && React.createElement('div', {
@@ -39154,16 +39136,7 @@ React.createElement('div', {
             onScroll: handleNewReleasesScroll
           },
             // Error state
-            newReleasesError && !newReleasesLoading && React.createElement('div', {
-              className: 'text-center py-12'
-            },
-              React.createElement(Icons.AlertTriangle, { className: 'w-12 h-12 mx-auto mb-4 text-ink-faint', strokeWidth: 1.5 }),
-              React.createElement('div', { className: 'text-ink-tertiary mb-4' }, newReleasesError),
-              React.createElement('button', {
-                onClick: () => { setNewReleasesError(null); setNewReleasesLoaded(false); loadNewReleases(true); },
-                className: 'px-4 py-2 bg-accent-fill text-ink-on-accent rounded-lg hover:bg-accent-fill-hover transition-colors'
-              }, 'Retry')
-            ),
+            newReleasesError && !newReleasesLoading && newReleasesError && !newReleasesLoading && React.createElement(ErrorState, { title: 'Couldn’t load Fresh Drops', body: newReleasesError, onRetry: () => { setNewReleasesError(null); setNewReleasesLoaded(false); loadNewReleases(true); } }),
 
             // Skeleton loading state
             !newReleasesError && (newReleasesLoading || !cacheLoaded) && newReleases.length === 0 && React.createElement('div', {
@@ -39196,19 +39169,12 @@ React.createElement('div', {
             ),
 
             // Empty state (no artists in collection)
-            !newReleasesError && !newReleasesLoading && newReleasesLoaded && newReleases.length === 0 && React.createElement('div', {
-              className: 'text-center py-16'
-            },
-              React.createElement('svg', { className: 'w-16 h-16 mx-auto mb-4 text-ink-faint', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M12 22a7 7 0 0 0 7-7c0-5-7-13-7-13S5 10 5 15a7 7 0 0 0 7 7z' })
-              ),
-              React.createElement('div', { className: 'text-ink-tertiary font-medium mb-2' }, 'No new releases found'),
-              React.createElement('div', { className: 'text-ink-tertiary text-sm max-w-md mx-auto' },
-                collectionData.artists?.length === 0 && collectionData.tracks?.length === 0
-                  ? 'Add artists to your collection or listen to some music to see new releases from artists you like.'
-                  : 'None of your artists have released new music in the last 6 months. Check back later!'
-              )
-            ),
+            !newReleasesError && !newReleasesLoading && newReleasesLoaded && newReleases.length === 0 && !newReleasesError && !newReleasesLoading && newReleasesLoaded && newReleases.length === 0 && React.createElement(EmptyState, {
+              title: 'No new releases yet',
+              body: collectionData.artists?.length === 0 && collectionData.tracks?.length === 0
+                ? 'Add artists to your collection or listen to some music to see new releases from artists you like.'
+                : 'None of your artists have released new music in the last 6 months. Check back later.'
+            }),
 
             // Release grid
             !newReleasesError && newReleases.length > 0 && (() => {
@@ -39226,9 +39192,7 @@ React.createElement('div', {
               }
 
               if (filtered.length === 0 && (newReleasesFilter !== 'all' || newReleasesSearch.trim())) {
-                return React.createElement('div', { className: 'text-center py-12 text-ink-tertiary' },
-                  React.createElement('div', { className: 'text-sm' }, 'No releases match your filters')
-                );
+                return React.createElement(EmptyState, { compact: true, icon: Icons.Search, title: 'No releases match your filters' });
               }
 
               return React.createElement('div', null,
@@ -39595,16 +39559,7 @@ React.createElement('div', {
             onScroll: handleCriticsScroll
           },
             // Error state for critics picks
-            criticsPicksError && !criticsPicksLoading && React.createElement('div', {
-              className: 'text-center py-12'
-            },
-              React.createElement(Icons.AlertTriangle, { className: 'w-12 h-12 mx-auto mb-4 text-ink-faint', strokeWidth: 1.5 }),
-              React.createElement('div', { className: 'text-ink-tertiary mb-4' }, criticsPicksError),
-              React.createElement('button', {
-                onClick: () => { setCriticsPicksError(null); loadCriticsPicks(); },
-                className: 'px-4 py-2 bg-accent-fill text-ink-on-accent rounded-lg hover:bg-accent-fill-hover transition-colors'
-              }, 'Retry')
-            ),
+            criticsPicksError && !criticsPicksLoading && criticsPicksError && !criticsPicksLoading && React.createElement(ErrorState, { title: 'Couldn’t load Critical Darlings', body: criticsPicksError, onRetry: () => { setCriticsPicksError(null); loadCriticsPicks(); } }),
 
             // Skeleton loading state - show when loading OR when critics picks haven't been loaded yet.
             // Same box as the album cards below (12px padding, 10px radius, card
@@ -40324,38 +40279,14 @@ React.createElement('div', {
             onScroll: handleConcertsScroll
           },
             // Error state - no concert services configured
-            concertsError === 'no_services' && !concertsLoading && React.createElement('div', {
-              className: 'flex flex-col items-center justify-center py-20 px-6'
-            },
-              React.createElement('div', {
-                className: 'w-16 h-16 rounded-full bg-teal-100 flex items-center justify-center mb-4'
-              },
-                React.createElement('svg', { className: 'w-8 h-8 text-teal-400', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z' })
-                )
-              ),
-              React.createElement('h3', {
-                className: 'text-lg font-medium text-ink-primary mb-2'
-              }, 'No Concert Services Configured'),
-              React.createElement('p', {
-                className: 'text-sm text-ink-tertiary text-center max-w-md mb-4'
-              }, 'Enable a concert service plugin (Bandsintown, Songkick, SeatGeek, or Ticketmaster) in Settings to see upcoming shows for artists you love.'),
-              React.createElement('button', {
-                onClick: () => { navigateTo('settings'); },
-                className: 'px-4 py-2 bg-teal-500 text-white rounded-lg text-sm hover:bg-teal-600 transition-colors'
-              }, 'Go to Settings')
-            ),
+            concertsError === 'no_services' && !concertsLoading && concertsError === 'no_services' && !concertsLoading && React.createElement(EmptyState, {
+              title: 'No concert plug-ins enabled',
+              body: 'Enable a concert plug-in (Bandsintown, Songkick, SeatGeek or Ticketmaster) to see upcoming shows for artists you love.',
+              actions: [{ label: 'Open Plug-Ins', onClick: () => { navigateTo('settings'); setSettingsTab('plugins'); } }]
+            }),
 
             // Error state - generic error
-            concertsError && concertsError !== 'no_services' && !concertsLoading && React.createElement('div', {
-              className: 'flex flex-col items-center justify-center py-20 px-6'
-            },
-              React.createElement('p', { className: 'text-sm text-ink-danger mb-3' }, concertsError),
-              React.createElement('button', {
-                onClick: () => loadConcerts(true),
-                className: 'px-4 py-2 bg-teal-500 text-white rounded-lg text-sm hover:bg-teal-600 transition-colors'
-              }, 'Try Again')
-            ),
+            concertsError && concertsError !== 'no_services' && !concertsLoading && concertsError && concertsError !== 'no_services' && !concertsLoading && React.createElement(ErrorState, { title: 'Couldn’t load concerts', body: concertsError, onRetry: () => loadConcerts(true) }),
 
             // Loading skeleton
             (concertsLoading || !cacheLoaded) && !concertsError && concerts.length === 0 && React.createElement('div', {
@@ -41802,70 +41733,33 @@ React.createElement('div', {
                   React.createElement(RecommendationsPageSkeleton, { cardCount: SECTION_PREVIEW })
                 // Not configured state
                 : recommendations.error === 'not_configured' ?
-                  React.createElement('div', { className: 'text-center py-16' },
-                    React.createElement('div', {
-                      className: 'w-20 h-20 mx-auto mb-6 rounded-full bg-surface-inset flex items-center justify-center'
-                    },
-                      React.createElement('svg', { className: 'w-10 h-10 text-ink-tertiary', fill: 'currentColor', viewBox: '0 0 24 24' },
-                        React.createElement('path', { d: 'M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z' })
-                      )
-                    ),
-                    React.createElement('h3', {
-                      className: 'text-xl font-medium text-ink-primary mb-2'
-                    }, 'Connect a music service'),
-                    React.createElement('p', { className: 'text-ink-tertiary mb-6 max-w-md mx-auto' },
-                      'Get personalized recommendations based on your listening history. Connect Last.fm or ListenBrainz, sign in to Amazon Music, or enable an AI chat provider for Shuffleupagus suggestions.'
-                    ),
-                    React.createElement('div', { className: 'flex gap-3 justify-center' },
-                      React.createElement('button', {
-                        onClick: () => {
-                          setActiveView('settings');
-                          setSettingsTab('plugins');
-                          const listenbrainzService = metaServices.find(s => s.id === 'listenbrainz');
-                          if (listenbrainzService) {
-                            setSelectedResolver(listenbrainzService);
-                          }
-                        },
-                        className: 'px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium'
-                      }, 'Connect ListenBrainz'),
-                      React.createElement('button', {
-                        onClick: () => {
-                          setActiveView('settings');
-                          setSettingsTab('plugins');
-                          const lastfmService = metaServices.find(s => s.id === 'lastfm');
-                          if (lastfmService) {
-                            setSelectedResolver(lastfmService);
-                          }
-                        },
-                        className: 'px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium'
-                      }, 'Connect Last.fm')
-                    )
-                  )
+                  React.createElement(EmptyState, {
+                    title: 'Connect a music service',
+                    body: 'Get personalized recommendations based on your listening history. Connect Last.fm or ListenBrainz, sign in to Amazon Music, or enable an AI plug-in for Shuffleupagus suggestions.',
+                    actions: ['listenbrainz', 'lastfm'].map(id => ({
+                      label: id === 'lastfm' ? 'Connect Last.fm' : 'Connect ListenBrainz',
+                      onClick: () => {
+                        setActiveView('settings');
+                        setSettingsTab('plugins');
+                        const service = metaServices.find(s => s.id === id);
+                        if (service) setSelectedResolver(service);
+                      },
+                    })),
+                  })
                 // Other error state
                 : recommendations.error ?
-                  React.createElement('div', { className: 'text-center py-12' },
-                    React.createElement('div', { className: 'text-ink-tertiary mb-4' }, recommendations.error),
-                    React.createElement('button', {
-                      onClick: () => loadRecommendations({ forceRefresh: true }),
-                      className: 'px-4 py-2 bg-accent-fill text-ink-on-accent rounded-lg hover:bg-accent-fill-hover transition-colors'
-                    }, 'Try Again')
-                  )
+                  React.createElement(ErrorState, { title: 'Couldn’t load recommendations', body: recommendations.error, onRetry: () => loadRecommendations({ forceRefresh: true }) })
                 // Loaded, no error, and nothing to show: say so instead of a
                 // blank page (audit bug 2).
                 : (!recommendations.loading && recommendationsPending.length === 0 && !friendsSection && !friendsPending
                     && contentBlocks.filter(Boolean).length === 0) ?
-                  React.createElement('div', { className: 'text-center py-16', role: 'status' },
-                    React.createElement('h3', { className: 'text-xl font-medium text-ink-primary mb-2' },
-                      filteringOne ? 'Nothing from this source yet' : 'No recommendations yet'),
-                    React.createElement('p', { className: 'text-ink-tertiary mb-6 max-w-md mx-auto' },
-                      filteringOne
-                        ? 'This source has no recommendations right now. Pick All to see the others.'
-                        : 'Your connected services had nothing to suggest. Listen a little more, or try again later.'),
-                    React.createElement('button', {
-                      onClick: () => loadRecommendations({ forceRefresh: true }),
-                      className: 'px-4 py-2 bg-accent-fill text-ink-on-accent rounded-lg hover:bg-accent-fill-hover transition-colors'
-                    }, 'Try again')
-                  )
+                  React.createElement(EmptyState, {
+                    title: filteringOne ? 'Nothing from this source yet' : 'No recommendations yet',
+                    body: filteringOne
+                      ? 'This source has no recommendations right now. Pick All to see the others.'
+                      : 'Your connected services had nothing to suggest. Listen a little more, or try again later.',
+                    actions: [{ label: 'Try again', onClick: () => loadRecommendations({ forceRefresh: true }) }]
+                  })
                 // The sections (Friends last)
                 : React.createElement('div', null,
                     ...contentBlocks,
@@ -42997,14 +42891,8 @@ React.createElement('div', {
                     else if (friendHistoryTab === 'topAlbums') loadFriendTopAlbums(currentFriend);
                     else loadFriendTopArtists(currentFriend);
                   };
-                  return React.createElement('div', { className: 'text-center py-12', 'data-friend-tab-error': friendHistoryTab },
-                    React.createElement('p', { className: 'mb-4', style: { color: 'var(--text-secondary)' } }, `Couldn't reach ${serviceName}. Check your connection and try again.`),
-                    React.createElement('button', {
-                      type: 'button',
-                      onClick: retry,
-                      className: 'px-4 py-2 bg-accent-fill text-ink-on-accent rounded-lg hover:bg-accent-fill-hover transition-colors no-drag'
-                    }, 'Try again')
-                  );
+                  return React.createElement('div', { 'data-friend-tab-error': friendHistoryTab },
+                    React.createElement(ErrorState, { title: `Couldn’t reach ${serviceName}`, body: 'Check your connection and try again.', onRetry: retry }));
                 })(),
                 // Recent tab content - matching History page layout
                 !friendHistoryLoading && !friendHistoryData.errors?.recent && friendHistoryTab === 'recent' && (() => {

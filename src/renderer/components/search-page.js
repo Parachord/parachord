@@ -19,6 +19,7 @@
 // from props under their old names.
 
 const Icons = require('./icons');
+const { EmptyState, ErrorState } = require('./states');
 const { SortMenu } = require('./sort-menu');
 const { activateOnKey } = require('../lib/activate-on-key');
 const { ResolverIcon } = require('./ui-atoms');
@@ -1204,10 +1205,7 @@ const SearchPage = React.memo(function SearchPage(props) {
               )
             ) :
             // No history yet - show placeholder
-            React.createElement('div', { className: 'text-center py-12' },
-              React.createElement(Icons.Search, { className: 'w-12 h-12 mx-auto text-ink-faint mb-4', strokeWidth: 1.5 }),
-              React.createElement('p', { className: 'text-ink-tertiary text-sm' }, 'Start typing to search')
-            )
+            React.createElement(EmptyState, { icon: Icons.Search, title: 'Search your services', body: 'Start typing to find artists, albums, tracks and playlists.' })
           ) :
         // Skeletons only until the first results land: each category shows as
         // soon as it has rows (the services answer in a few hundred ms,
