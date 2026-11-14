@@ -1994,6 +1994,7 @@ const { EmptyState, ErrorState } = require('./components/states');
 const QUEUE_DRAWER_TOP_GAP = 48;
 const { sellerColor, sellerTextColor, sellerBadgeBg, sellerShortName, sellerName } = require('./lib/ticket-sellers');
 const { withCollectionState } = require('./lib/menu-collection-state');
+const { releaseMenu, artistMenu, playlistMenu } = require('./lib/item-menus');
 const { runPlaybackControl } = require('../../tools/playback-control');
 const { runQueueAdd } = require('../../tools/queue-add');
 const { EMBED_PLAYER_KINDS } = require('./lib/embed-players');
@@ -37624,13 +37625,7 @@ React.createElement('div', {
                           const trackId = trackSlug(track.artist || 'unknown', track.title || 'untitled', track.album || 'noalbum');
                           return { ...track, id: trackId, sources: {} };
                         });
-                        window.showItemMenu({
-                          type: 'playlist',
-                          playlistId: playlist.id,
-                          name: playlist.title,
-                          creator: playlist.creator || null,
-                          tracks: tracksWithIds
-                        });
+                        window.showItemMenu(playlistMenu(playlist, tracksWithIds));
                       }
                     },
                     className: 'group cursor-pointer release-card card-fade-up',
@@ -37924,13 +37919,7 @@ React.createElement('div', {
                         const trackId = trackSlug(track.artist || 'unknown', track.title || 'untitled', track.album || 'noalbum');
                         return { ...track, id: trackId, sources: {} };
                       });
-                      window.showItemMenu({
-                        type: 'playlist',
-                        playlistId: playlist.id,
-                        name: playlist.title,
-                        creator: playlist.creator || null,
-                        tracks: tracksWithIds
-                      });
+                      window.showItemMenu(playlistMenu(playlist, tracksWithIds));
                     }
                   },
                   className: `group flex items-center gap-4 py-3 px-4 cursor-pointer hover:bg-surface-hover transition-colors ${index > 0 ? 'border-t border-line-light' : ''}`
@@ -38391,16 +38380,7 @@ React.createElement('div', {
                     e.preventDefault();
                     if (window.electron?.contextMenu?.showTrackMenu) {
                       const prefetched = prefetchedReleases[item.id];
-                      window.showItemMenu({
-                        type: 'release',
-                        name: item.title,
-                        album: {
-                          title: item.title,
-                          artist: item.artist,
-                          art: item.albumArt || null
-                        },
-                        tracks: prefetched?.tracks || []
-                      });
+                      window.showItemMenu(releaseMenu(item, { tracks: prefetched?.tracks }));
                     }
                   }
                 },
@@ -39067,16 +39047,7 @@ React.createElement('div', {
                         e.preventDefault();
                         if (window.electron?.contextMenu?.showTrackMenu) {
                           const prefetched = prefetchedReleases[release.id];
-                          window.showItemMenu({
-                            type: 'release',
-                            name: release.title,
-                            album: {
-                              title: release.title,
-                              artist: release.artist,
-                              art: release.albumArt || null
-                            },
-                            tracks: prefetched?.tracks || []
-                          });
+                          window.showItemMenu(releaseMenu({ ...release, releaseGroupMbid: release.id }, { tracks: prefetched?.tracks }));
                         }
                       }
                     },
@@ -39503,16 +39474,7 @@ React.createElement('div', {
                   e.preventDefault();
                   if (window.electron?.contextMenu?.showTrackMenu) {
                     const prefetched = prefetchedReleases[album.id];
-                    window.showItemMenu({
-                      type: 'release',
-                      name: album.title,
-                      album: {
-                        title: album.title,
-                        artist: album.artist,
-                        art: album.albumArt || null
-                      },
-                      tracks: prefetched?.tracks || []
-                    });
+                    window.showItemMenu(releaseMenu(album, { tracks: prefetched?.tracks }));
                   }
                 }
               },
@@ -40634,10 +40596,7 @@ React.createElement('div', {
                   e.preventDefault();
                   e.stopPropagation();
                   if (window.electron?.contextMenu?.showTrackMenu) {
-                    window.showItemMenu({
-                      type: 'artist',
-                      artist: { id: item.id, name: item.name, image: img }
-                    });
+                    window.showItemMenu(artistMenu({ id: item.id, name: item.name, image: img }));
                   }
                 }
               },
@@ -40745,13 +40704,7 @@ React.createElement('div', {
                     const cached = topAlbumTracksCache.current[cacheKey];
                     // A right-click is intent: fetch now if the hover didn't.
                     if (!cached) prefetchTopAlbumTracks(item.artist, item.name, art);
-                    window.showItemMenu({
-                      type: 'release',
-                      name: item.name,
-                      album: { title: item.name, artist: item.artist, art },
-                      tracks: cached || [],
-                      loading: !cached
-                    });
+                    window.showItemMenu(releaseMenu({ title: item.name, artist: item.artist, art }, { tracks: cached, loading: !cached }));
                   }
                 }
               },
@@ -41025,14 +40978,7 @@ React.createElement('div', {
                 onContextMenu: (e) => {
                   e.preventDefault();
                   if (window.electron?.contextMenu?.showTrackMenu) {
-                    window.showItemMenu({
-                      type: 'playlist',
-                      playlistId: record.id,
-                      name: record.title,
-                      creator: record.creator,
-                      tracks: record.tracks,
-                      isEphemeral: true
-                    });
+                    window.showItemMenu(playlistMenu(record, record.tracks, { isEphemeral: true }));
                   }
                 }
               },
@@ -42066,14 +42012,7 @@ React.createElement('div', {
                         e.preventDefault();
                         e.stopPropagation();
                         if (window.electron?.contextMenu?.showTrackMenu) {
-                          window.showItemMenu({
-                            type: 'artist',
-                            artist: {
-                              id: artist.id,
-                              name: artist.name,
-                              image: artist.image
-                            }
-                          });
+                          window.showItemMenu(artistMenu({ id: artist.id, name: artist.name, image: artist.image }));
                         }
                       }
                     },
@@ -42245,16 +42184,7 @@ React.createElement('div', {
                         if (window.electron?.contextMenu?.showTrackMenu) {
                           const cacheKey = `${album.artist}-${album.name}`.toLowerCase();
                           const cached = topAlbumTracksCache.current[cacheKey];
-                          window.showItemMenu({
-                            type: 'release',
-                            name: album.name,
-                            album: {
-                              title: album.name,
-                              artist: album.artist,
-                              art: album.image || null
-                            },
-                            tracks: cached || []
-                          });
+                          window.showItemMenu(releaseMenu({ title: album.name, artist: album.artist, image: album.image }, { tracks: cached }));
                         }
                       }
                     },
@@ -42922,16 +42852,7 @@ React.createElement('div', {
                             if (window.electron?.contextMenu?.showTrackMenu) {
                               const cacheKey = `${album.artist}-${album.name}`.toLowerCase();
                               const cached = topAlbumTracksCache.current[cacheKey];
-                              window.showItemMenu({
-                                type: 'release',
-                                name: album.name,
-                                album: {
-                                  title: album.name,
-                                  artist: album.artist,
-                                  art: album.image || null
-                                },
-                                tracks: cached || []
-                              });
+                              window.showItemMenu(releaseMenu({ title: album.name, artist: album.artist, image: album.image }, { tracks: cached }));
                             }
                           }
                         },

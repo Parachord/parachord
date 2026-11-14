@@ -14,6 +14,7 @@ const { getBestSourceConfidence } = require('./track-lists');
 const Icons = require('./icons');
 const { EmptyState, ErrorState } = require('./states');
 const { Menu } = require('./menu');
+const { artistMenu } = require('../lib/item-menus');
 const { Play } = Icons;
 // hashString (module scope in app.js) is used by generateArtistPattern;
 // exported back so app.js's own call sites keep the same binding.
@@ -227,14 +228,7 @@ const RelatedArtistCard = ({ artist, getArtistImage, onNavigate }) => {
       e.preventDefault();
       e.stopPropagation();
       if (window.electron?.contextMenu?.showTrackMenu) {
-        window.showItemMenu({
-          type: 'artist',
-          artist: {
-            id: slug(artist.name || 'unknown'),
-            name: artist.name,
-            image: imageUrl
-          }
-        });
+        window.showItemMenu(artistMenu({ id: slug(artist.name || 'unknown'), name: artist.name, image: imageUrl }));
       }
     }
   },

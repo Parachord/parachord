@@ -28,6 +28,7 @@ const { artistOpenOptions, creditOpenOptions, trackArtistOpenOptions } = require
 const { VirtualizedTrackList, getBestSourceConfidence } = require('./track-lists');
 const { generateArtistPattern, PlayTop10Icon, QueueTop10Icon, SearchArtistCard, SearchHistoryItem } = require('./cards');
 const { trackSlug, slug } = require('../lib/track-slug');
+const { releaseMenu, artistMenu } = require('../lib/item-menus');
 
 const { Play } = Icons;
 // The in-flight album prefetch set app.js keeps on window, shared so a
@@ -360,14 +361,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                         e.preventDefault();
                         e.stopPropagation();
                         if (window.electron?.contextMenu?.showTrackMenu) {
-                          window.showItemMenu({
-                            type: 'artist',
-                            artist: {
-                              id: slug(artist.name || 'unknown'),
-                              name: artist.name,
-                              image: artist.image || null
-                            }
-                          });
+                          window.showItemMenu(artistMenu({ id: slug(artist.name || 'unknown'), name: artist.name, image: artist.image || null }));
                         }
                       }
                     },
@@ -538,21 +532,10 @@ const SearchPage = React.memo(function SearchPage(props) {
                         e.preventDefault();
                         e.stopPropagation();
                         const artistName = album['artist-credit']?.[0]?.name || 'Unknown';
-                        const albumData = {
-                          title: album.title,
-                          artist: artistName,
-                          year: album['first-release-date']?.split('-')[0] ? parseInt(album['first-release-date'].split('-')[0]) : null,
-                          art: album.albumArt || null
-                        };
+                        const albumData = { ...album, artist: artistName, releaseGroupMbid: album.id }; // a MusicBrainz release group
                         const prefetched = prefetchedReleasesRef.current[album.id];
                         const isLoading = prefetchInProgress.has(album.id);
-                        window.showItemMenu({
-                          type: 'release',
-                          name: album.title,
-                          album: albumData,
-                          tracks: prefetched?.tracks || [],
-                          loading: isLoading
-                        });
+                        window.showItemMenu(releaseMenu(albumData, { tracks: prefetched?.tracks, loading: isLoading }));
                       }
                     },
                       // Album art with dark placeholder and inner shadow
@@ -1405,14 +1388,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                   },
                   onContextMenu: (artist) => {
                     if (window.electron?.contextMenu?.showTrackMenu) {
-                      window.showItemMenu({
-                        type: 'artist',
-                        artist: {
-                          id: slug(artist.name || 'unknown'),
-                          name: artist.name,
-                          image: null
-                        }
-                      });
+                      window.showItemMenu(artistMenu({ id: slug(artist.name || 'unknown'), name: artist.name, image: null }));
                     }
                   }
                 })
@@ -1685,22 +1661,11 @@ const SearchPage = React.memo(function SearchPage(props) {
                     e.stopPropagation();
                     if (window.electron?.contextMenu?.showTrackMenu) {
                       const artistName = album['artist-credit']?.[0]?.name || 'Unknown';
-                      const albumData = {
-                        title: album.title,
-                        artist: artistName,
-                        year: album['first-release-date']?.split('-')[0] ? parseInt(album['first-release-date'].split('-')[0]) : null,
-                        art: album.albumArt || null
-                      };
+                      const albumData = { ...album, artist: artistName, releaseGroupMbid: album.id }; // a MusicBrainz release group
                       // Check prefetched cache (use ref) and loading state (use module-level Set)
                       const prefetched = prefetchedReleasesRef.current[album.id];
                       const isLoading = prefetchInProgress.has(album.id);
-                      window.showItemMenu({
-                        type: 'release',
-                        name: album.title,
-                        album: albumData,
-                        tracks: prefetched?.tracks || [],
-                        loading: isLoading
-                      });
+                      window.showItemMenu(releaseMenu(albumData, { tracks: prefetched?.tracks, loading: isLoading }));
                     }
                   }
                 },

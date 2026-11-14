@@ -72,7 +72,7 @@ describe('menu wiring', () => {
   test('a Recommendations album menu has tracks to queue', () => {
     const i = app.indexOf("onMouseEnter: () => scheduleTopAlbumHoverPrefetch(item.artist, item.name, art),");
     expect(i).toBeGreaterThan(-1);
-    expect(app.slice(i, i + 1400)).toContain('tracks: cached || [],');
+    expect(app.slice(i, i + 1400)).toContain('{ tracks: cached, loading: !cached }');
   });
 });
 

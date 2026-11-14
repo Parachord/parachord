@@ -30,7 +30,8 @@ const { HeroTabs } = require('./hero-tabs');
 const { SectionHeader } = require('./section-header');
 const { FilterChips } = require('./filter-chips');
 const { ReleasePage, ReleaseCard, generateArtistPattern, PlayTop10Icon, QueueTop10Icon } = require('./cards');
-const { trackSlug } = require('../lib/track-slug');
+const { trackSlug, slug } = require('../lib/track-slug');
+const { releaseMenu, artistMenu } = require('../lib/item-menus');
 const { formatCalendarDate } = require('../lib/calendar-date');
 const { generateArtistId } = require('../lib/collection-ids');
 const { parseBioMarkup } = require('../lib/discogs-markup');
@@ -725,18 +726,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
             },
             onAlbumContextMenu: (rel) => {
               if (window.electron?.contextMenu?.showTrackMenu) {
-                window.showItemMenu({
-                  type: 'release',
-                  name: rel.title,
-                  artist: rel.artist?.name,
-                  albumArt: rel.albumArt,
-                  album: {
-                    title: rel.title,
-                    artist: rel.artist?.name,
-                    art: rel.albumArt
-                  },
-                  tracks: rel.tracks || []
-                });
+                window.showItemMenu(releaseMenu(rel, { tracks: rel.tracks }));
               }
             },
             publishCollectionSmartLink: publishCollectionSmartLink,
@@ -999,21 +989,12 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                   onContextMenu: async (rel) => {
                     // For releases, show context menu with tracks
                     if (window.electron?.contextMenu?.showTrackMenu) {
-                      const albumData = {
-                        title: rel.title,
-                        artist: currentArtist?.name,
-                        year: rel.date?.split('-')[0] ? parseInt(rel.date.split('-')[0]) : null,
-                        art: rel.albumArt
-                      };
+                      // The same album menu as everywhere (lib/item-menus.js).
+                      const albumData = { ...rel, artist: currentArtist?.name };
                       // Check prefetched cache first (use ref to avoid stale closure)
                       const prefetched = prefetchedReleasesRef.current[rel.id];
                       if (prefetched?.tracks?.length > 0) {
-                        window.showItemMenu({
-                          type: 'release',
-                          name: rel.title,
-                          album: albumData,
-                          tracks: prefetched.tracks
-                        });
+                        window.showItemMenu(releaseMenu(albumData, { tracks: prefetched.tracks }));
                       } else if (currentRelease?.id === rel.id && currentRelease?.tracks?.length > 0) {
                         // Use already loaded tracks from current release
                         const tracks = currentRelease.tracks.map(t => {
@@ -1027,23 +1008,10 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                             sources: trackSources[trackId] || {}
                           };
                         });
-                        window.showItemMenu({
-                          type: 'release',
-                          name: rel.title,
-                          album: albumData,
-                          tracks: tracks
-                        });
+                        window.showItemMenu(releaseMenu(albumData, { tracks: tracks }));
                       } else {
                         // No tracks available yet - show with 0 tracks
-                        window.showItemMenu({
-                          type: 'release',
-                          name: rel.title,
-                          album: albumData,
-                          releaseId: rel.id,
-                          artist: currentArtist?.name,
-                          albumArt: rel.albumArt,
-                          tracks: []
-                        });
+                        window.showItemMenu(releaseMenu(albumData, { tracks: [] }));
                       }
                     }
                   },
@@ -1671,14 +1639,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                         e.preventDefault();
                         e.stopPropagation();
                         if (window.electron?.contextMenu?.showTrackMenu) {
-                          window.showItemMenu({
-                            type: 'artist',
-                            artist: {
-                              id: artist.name.toLowerCase().replace(/[^a-z0-9]/g, '-'),
-                              name: artist.name,
-                              image: artist.image
-                            }
-                          });
+                          window.showItemMenu(artistMenu({ id: slug(artist.name || 'unknown'), name: artist.name, image: artist.image }));
                         }
                       }
                     },

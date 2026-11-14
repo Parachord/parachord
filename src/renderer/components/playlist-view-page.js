@@ -20,6 +20,7 @@ const Icons = require('./icons');
 const { activateOnKey } = require('../lib/activate-on-key');
 const { ResolverIcon, ShareButton } = require('./ui-atoms');
 const { Menu } = require('./menu');
+const { playlistMenu } = require('../lib/item-menus');
 const { VirtualizedTrackList, getBestSourceConfidence } = require('./track-lists');
 const { trackSlug } = require('../lib/track-slug');
 
@@ -721,13 +722,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                   onContextMenu: (e) => {
                     e.preventDefault();
                     if (window.electron?.contextMenu?.showTrackMenu) {
-                      window.showItemMenu({
-                        type: 'playlist',
-                        playlistId: selectedPlaylist.id,
-                        name: selectedPlaylist.title,
-                        creator: selectedPlaylist.creator || null,
-                        tracks: playlistTracks || []
-                      });
+                      window.showItemMenu(playlistMenu(selectedPlaylist, playlistTracks || []));
                     }
                   }
                 },
