@@ -1887,6 +1887,14 @@ const discordPresenceStatusTone = (status) => {
 
 const CANONICAL_RESOLVER_ORDER = ['spotify', 'applemusic', 'amazonmusic', 'bandcamp', 'soundcloud', 'localfiles', 'subsonic', 'youtube'];
 
+// Append an id to a resolver list unless it is already there. The plugin
+// order and the active list are rendered keyed by id, and a reinstall used to
+// append an id the order still held, listing the plugin twice until restart.
+function appendUniqueId(list, id) {
+  const prev = Array.isArray(list) ? list : [];
+  return prev.includes(id) ? prev : [...prev, id];
+}
+
 // Insert a resolver ID into an order array at its canonical position
 function insertInCanonicalOrder(order, newId) {
   if (order.includes(newId)) return order;
@@ -24762,10 +24770,10 @@ ${trackListXml}
           setLoadedResolvers(prev => [...prev, newResolverInstance]);
 
           // Add to resolver order
-          setResolverOrder(prev => [...prev, resolverId]);
+          setResolverOrder(prev => appendUniqueId(prev, resolverId));
 
           // Enable by default
-          setActiveResolvers(prev => [...prev, resolverId]);
+          setActiveResolvers(prev => appendUniqueId(prev, resolverId));
 
           console.log(`➕ Added resolver: ${resolverName}`);
           showConfirmDialog({
@@ -24932,9 +24940,9 @@ ${trackListXml}
         if (existing) {
           // Already loaded - just enable it
           if (!activeResolvers.includes(id)) {
-            setActiveResolvers(prev => [...prev, id]);
+            setActiveResolvers(prev => appendUniqueId(prev, id));
             if (!resolverOrder.includes(id)) {
-              setResolverOrder(prev => [...prev, id]);
+              setResolverOrder(prev => appendUniqueId(prev, id));
             }
             showToast(`${name} enabled`, 'success');
           } else {
@@ -24960,8 +24968,8 @@ ${trackListXml}
           // Wrap through the global limiter (parachord#797) before mounting.
           window.wrapResolverSearchesWithLimiter([instance]);
           setLoadedResolvers(prev => [...prev, { ...instance, weight: prev.length }]);
-          setResolverOrder(prev => [...prev, id]);
-          setActiveResolvers(prev => [...prev, id]);
+          setResolverOrder(prev => appendUniqueId(prev, id));
+          setActiveResolvers(prev => appendUniqueId(prev, id));
           showToast(`${name} enabled`, 'success');
           return;
         }
@@ -25086,8 +25094,8 @@ ${trackListXml}
           });
         } else {
           setLoadedResolvers(prev => [...prev, newResolverInstance]);
-          setResolverOrder(prev => [...prev, resolverId]);
-          setActiveResolvers(prev => [...prev, resolverId]);
+          setResolverOrder(prev => appendUniqueId(prev, resolverId));
+          setActiveResolvers(prev => appendUniqueId(prev, resolverId));
           showConfirmDialog({
             type: 'success',
             title: 'Installed',
@@ -51556,7 +51564,7 @@ useEffect(() => {
                     }
 
                     if (isContentResolver) {
-                      setActiveResolvers(prev => [...prev, selectedResolver.id]);
+                      setActiveResolvers(prev => appendUniqueId(prev, selectedResolver.id));
                       setResolverOrder(prev => insertInCanonicalOrder(prev, selectedResolver.id));
                     } else if (isMetaService) {
                       saveMetaServiceConfig(selectedResolver.id, {
@@ -55317,7 +55325,7 @@ useEffect(() => {
                         savedActiveResolversRef.current = savedActiveResolversRef.current.filter(id => id !== resolver.id);
                       }
                     } else {
-                      setActiveResolvers(prev => [...prev, resolver.id]);
+                      setActiveResolvers(prev => appendUniqueId(prev, resolver.id));
                       setResolverOrder(prev => insertInCanonicalOrder(prev, resolver.id));
                       // Mark as explicitly enabled so reEnableResolver can restore it after auth failures
                       if (savedActiveResolversRef.current && !savedActiveResolversRef.current.includes(resolver.id)) {

@@ -55,3 +55,23 @@ describe('Collection: Albums', () => {
     expect(card).toMatch(/if \(url && mountedRef\.current && shownAlbumRef\.current === forAlbum\) setImageUrl\(url\);/);
   });
 });
+
+describe('Plugin marketplace: install and reinstall', () => {
+  test('an install never appends a resolver id that is already in the order or the active list', () => {
+    // A reinstall found the id still in resolverOrder and listed the plugin twice.
+    expect(app).not.toMatch(/setResolverOrder\(prev => \[\.\.\.prev, /);
+    expect(app).not.toMatch(/setActiveResolvers\(prev => \[\.\.\.prev, /);
+    expect((app.match(/setResolverOrder\(prev => appendUniqueId\(prev, (resolverId|id)\)\)/g) || []).length).toBeGreaterThanOrEqual(4);
+  });
+
+  test('appendUniqueId appends once', () => {
+    const at = app.indexOf('function appendUniqueId(');
+    expect(at).toBeGreaterThan(-1);
+    const src = app.slice(at, app.indexOf('\n}\n', at) + 2);
+    const appendUniqueId = new Function(`${src}; return appendUniqueId;`)();
+    const order = ['spotify', 'bandcamp'];
+    expect(appendUniqueId(order, 'bandcamp')).toBe(order);
+    expect(appendUniqueId(order, 'qobuz')).toEqual(['spotify', 'bandcamp', 'qobuz']);
+    expect(appendUniqueId(undefined, 'x')).toEqual(['x']);
+  });
+});
