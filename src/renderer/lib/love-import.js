@@ -30,6 +30,12 @@ const { trackSlug } = require('./track-slug');
 
 const isMbid = (m) => typeof m === 'string' && /^[a-f0-9-]{36}$/i.test(m);
 
+// A love must be this much NEWER than the removal to count as a fresh
+// decision: clock skew between the machine and the service, and a love push
+// in flight when the removal happened, both land a love dated seconds after
+// the removal — a fresh decision they are not (issue #1071 review).
+const LOVE_TOMBSTONE_GRACE_MS = 5 * 60 * 1000;
+
 // A loved-at timestamp in SECONDS. Last.fm's `date.uts` is a string,
 // ListenBrainz's `created` a number; 0/NaN/negative mean unknown (real
 // accounts always carry a date, but a missing one must not read as epoch).
@@ -196,7 +202,32 @@ function blockedByDate(tombstones, love) {
   const removedAt = loveTombstoneAt(tombstones, love);
   if (removedAt == null) return false;
   const lovedAtMs = typeof love.lovedAt === 'number' ? love.lovedAt * 1000 : 0;
-  return lovedAtMs <= removedAt;
+  return lovedAtMs <= removedAt + LOVE_TOMBSTONE_GRACE_MS;
+}
+
+// ── Pre-ship removals ───────────────────────────────────────────────────────
+
+// A removal from before this feature shipped has no tombstone — but its
+// `love_pushed_keys` mark is still there. The mark usually sits under an
+// album-bearing id (`artist-title-album` — a heart from an album page),
+// while the import candidate computes `artist-title-noalbum`; the song is
+// still the same, so match the exact id first, then the
+// `normalizeForId(artist)-normalizeForId(title)-` prefix form. trackSlug ids
+// (non-Latin names) keep exact matching only: their fold shares no prefix
+// shape. Run this ONLY where no tombstone entry exists at all (see
+// loveTombstoneAt) — a removed-then-re-loved track has one and is governed
+// by the date rule instead.
+function isOrphanedLovePush(orphanIds, row) {
+  if (!orphanIds || orphanIds.size === 0 || !row || !row.id) return false;
+  if (orphanIds.has(row.id)) return true;
+  const artist = normalizeForId(row.artist);
+  const title = normalizeForId(row.title);
+  if (!artist || !title) return false; // a trackSlug id has no prefix form
+  const prefix = `${artist}-${title}-`;
+  for (const id of orphanIds) {
+    if (id.startsWith(prefix)) return true;
+  }
+  return false;
 }
 
 // ── The plan: what a love import adds ──────────────────────────────────────
@@ -215,6 +246,7 @@ function blockedByDate(tombstones, love) {
 function planLoveImport(loves, tracks, tombstones, nowMs = Date.now()) {
   const byMbid = new Map();
   const byName = new Map();
+  const byId = new Map();
   for (const row of Array.isArray(tracks) ? tracks : []) {
     if (!row || typeof row !== 'object') continue;
     const mbids = [row.mbid];
@@ -227,6 +259,7 @@ function planLoveImport(loves, tracks, tombstones, nowMs = Date.now()) {
     }
     const key = loveNameKey(row);
     if (key && !byName.has(key)) byName.set(key, row);
+    if (typeof row.id === 'string' && row.id && !byId.has(row.id)) byId.set(row.id, row);
   }
 
   // The batch's own rows, indexed by id / MBID / name, so a second love of
@@ -237,22 +270,34 @@ function planLoveImport(loves, tracks, tombstones, nowMs = Date.now()) {
   const addedByName = new Map();
   const matchedIds = [];
   let tombstoned = 0;
+  let merged = 0;
 
   for (const love of Array.isArray(loves) ? loves : []) {
     if (!love || love.needsLookup) continue;
     if (isLoveTombstoned(tombstones, love)) { tombstoned++; continue; }
     const addedAt = typeof love.lovedAt === 'number' ? love.lovedAt * 1000 : nowMs;
-    const rowId = loveRowId(love);
     const nameKey = loveNameKey(love);
-    const batchRow = add.get(rowId)
-      || (isMbid(love.mbid) ? addedByMbid.get(love.mbid) : null)
+    const batchRow = (isMbid(love.mbid) ? addedByMbid.get(love.mbid) : null)
       || (nameKey ? addedByName.get(nameKey) : null);
     if (batchRow) {
+      // A second love of the same recording in the same batch: keep the row,
+      // with the earlier lovedAt — and count it, so the summary doesn't lose
+      // loves to the merge.
       if (addedAt < batchRow.addedAt) batchRow.addedAt = addedAt;
+      merged++;
       continue;
     }
     const matched = (isMbid(love.mbid) && byMbid.get(love.mbid)) || byName.get(nameKey);
     if (matched) { matchedIds.push(matched.id); continue; }
+    // A row id can collide without the name key matching: `generateTrackId`
+    // strips everything non-ASCII, so `BTS – 봄날 (Spring Day)` and
+    // `BTS – 春の日 (Spring Day)` both come out `bts-spring-day-noalbum` —
+    // different songs that must not silently merge. Same id AND same name key
+    // is the same song (matched above); the same id with a DIFFERENT name key
+    // falls back to the collision-resistant trackSlug id.
+    let rowId = loveRowId(love);
+    const idOwner = add.get(rowId) || byId.get(rowId);
+    if (idOwner && loveNameKey(idOwner) !== nameKey) rowId = trackSlug(love.artist, love.title, love.album);
     const row = {
       id: rowId,
       title: love.title,
@@ -269,7 +314,7 @@ function planLoveImport(loves, tracks, tombstones, nowMs = Date.now()) {
     if (nameKey) addedByName.set(nameKey, row);
   }
 
-  return { add: [...add.values()], matchedIds, tombstoned };
+  return { add: [...add.values()], matchedIds, tombstoned, merged };
 }
 
 // recording MBID → row, over a track list (for the runner's lookup tail: a
@@ -372,7 +417,11 @@ function collectLoves({
         || (parsed.totalPages && page >= parsed.totalPages)
         || page >= maxPages;
       if (lastPage) {
-        return { loves, skipped, needsLookup, complete: true, error: null, capped: page >= maxPages, total };
+        // Capped claims only when the account had more: an account whose
+        // loves end EXACTLY at the page cap finished naturally, and its
+        // summary shouldn't apologize for a cap it never hit.
+        const moreRemained = parsed.total > 0 ? seen < parsed.total : parsed.returned >= pageSize;
+        return { loves, skipped, needsLookup, complete: true, error: null, capped: page >= maxPages && moreRemained, total };
       }
       page++;
       offset += parsed.returned;
@@ -410,6 +459,8 @@ function withLovesPushed(pushedKeys, trackIds, service, now = Date.now()) {
 }
 
 module.exports = {
+  LOVE_TOMBSTONE_GRACE_MS,
+  isOrphanedLovePush,
   parseLastfmLovedPage,
   parseListenbrainzFeedbackPage,
   loveNameKey,

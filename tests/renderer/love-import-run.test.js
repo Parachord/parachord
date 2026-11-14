@@ -150,6 +150,24 @@ describe('collectLoves', () => {
     expect(loves.map((l) => l.lovedAt)).toEqual([3000, 2000, 1000]);
   });
 
+  test('stops at the remote totalPages (no last empty request), and a natural finish is not capped', async () => {
+    let call = 0;
+    const fetchPage = async () => {
+      call++;
+      return { lovedtracks: { '@attr': { total: '2', totalPages: '1' }, track: [
+        { name: 'A', artist: { name: 'X' }, date: { uts: '2000' } },
+        { name: 'B', artist: { name: 'X' }, date: { uts: '1000' } },
+      ] } };
+    };
+    const { loves, complete, capped } = await collectLoves({
+      fetchPage, parse: parseLastfmLovedPage, cursor: 0, pageSize: 10, onProgress: noProgress, ...fast,
+    });
+    expect(complete).toBe(true);
+    expect(call).toBe(1); // totalPages: 1 — the walk never asks for page 2
+    expect(capped).toBe(false);
+    expect(loves).toHaveLength(2);
+  });
+
   test('the page cap ends the walk with capped: true (the toast says so)', async () => {
     const fetchPage = makeFetchPage([[2000], [1500]]);
     const { capped, complete } = await collectLoves({
@@ -228,6 +246,41 @@ describe('wiring (source markers)', () => {
 
   test('the pre-ship-removals heuristic only applies where no tombstone entry exists (the date rule governs the rest)', () => {
     expect(app).toContain('loveTombstoneAt(now, love) == null');
+    expect(app).toContain('LoveImport.isOrphanedLovePush(orphanPushedIds, row)');
+  });
+
+  test('the cross-service confirmation is wired for cancel, backdrop and supersede, and only offers a connected service', () => {
+    expect(app).toContain('const superseded = pendingConfirmCancelRef.current;');
+    expect(app).toContain('if (superseded) superseded();');
+    // Cancel button and backdrop dismiss consume-and-fire; OK consumes without.
+    expect(app).toContain('const fn = closeConfirmDialog();');
+    expect(app).toContain('onConfirm: () => resolve(true),');
+    expect(app).toContain('onCancel: () => resolve(false),');
+    // Connected, not just toggled.
+    expect(app).toContain('otherConnected = await otherScrobbler.isEnabled();');
+  });
+
+  test('a failed tombstone read stops the run', () => {
+    expect(app).toContain("Couldn't read your removed-tracks list, so nothing was imported");
+  });
+
+  test('only confirmed adds are marked pushed (a failed save must not leave orphan marks)', () => {
+    expect(app).toContain("...(saveOk ? writeBox.addedIds : [])");
+  });
+
+  test('the running flag is taken synchronously, before the first await (a fast double click)', () => {
+    const runStart = app.indexOf('const runLoveImport = useCallback');
+    const tryAt = app.indexOf('try {', runStart);
+    const flagAt = app.indexOf('loveImportRunningRef.current = { ...loveImportRunningRef.current, [service]: true };', runStart);
+    expect(tryAt).toBeGreaterThan(-1);
+    expect(flagAt).toBeGreaterThan(-1);
+    expect(flagAt).toBeLessThan(tryAt);
+  });
+
+  test('a removal mid-run drops queued love-pushes (the push must not land after the removal)', () => {
+    expect(app).toContain('loveRetryQueueRef.current.delete(matchId);');
+    expect(app).toContain('if (!stillThere) { removedMidRun++; continue; }');
+    expect(app).toContain('const stillThere = (collectionDataRef.current?.tracks || []).some((t) => t && t.id === track.id);');
   });
 
   test('love_import_cursor is in the bulk-load list', () => {

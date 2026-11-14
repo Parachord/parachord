@@ -535,12 +535,12 @@ const ScrobblerSettingsCard = React.memo(({
               disabled: loveImportRunning,
               className: 'w-full py-1.5 px-3 text-sm rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors',
               style: {
-                // CSS variables, not palette classes — the design-drift ratchet
-                // (#1380); accent-soft tints both themes.
+                // The tint token, not a palette class (design-drift ratchet
+                // #1380) and not --accent-soft (a text colour — it left the
+                // label at ~2:1 contrast; --accent-surface is the tint).
                 color: 'var(--accent-primary)',
-                backgroundColor: 'var(--accent-soft)',
-                border: '1px solid var(--border-default)',
-                cursor: 'pointer'
+                backgroundColor: 'var(--accent-surface)',
+                border: '1px solid var(--border-default)'
               }
             },
               loveImportRunning && loveImportProgress

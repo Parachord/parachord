@@ -148,6 +148,8 @@ describe('planLoveImport', () => {
         { service: 'listenbrainz', artist: 'Portishead', title: 'Roads', album: '', mbid: null, lovedAt: 3000 },
       ],
       tracks, tombstones);
+    // (3000s is 1,000,000ms newer than the removal — past the 5-minute
+    // grace a clock-skew or in-flight push would need.)
     expect(plan.tombstoned).toBe(1);
     expect(plan.add).toHaveLength(1);
     expect(plan.add[0].addedAt).toBe(3000000);
@@ -166,7 +168,47 @@ describe('planLoveImport', () => {
     const plan = planLoveImport(
       [{ service: 'listenbrainz', mbid: MBID, lovedAt: 100, needsLookup: true, artist: '', title: '', album: '' }],
       tracks, {});
-    expect(plan).toEqual({ add: [], matchedIds: [], tombstoned: 0 });
+    expect(plan).toMatchObject({ add: [], matchedIds: [], tombstoned: 0, merged: 0 });
+  });
+
+  test('a re-love only minutes after the removal stays blocked (the grace window)', () => {
+    const key = loveNameKey({ artist: 'Portishead', title: 'Roads' });
+    const tombstones = { 'love-import': { [key]: { removedAt: 2000000 } } };
+    // 2000s = 2,000,000ms: newer than the removal, but inside the 5-minute
+    // grace that covers clock skew and a push in flight when the removal
+    // happened. A minute past the grace is a fresh decision.
+    const within = planLoveImport(
+      [{ service: 'lastfm', artist: 'Portishead', title: 'Roads', album: '', mbid: null, lovedAt: 2000 }],
+      tracks, tombstones);
+    expect(within.tombstoned).toBe(1);
+    expect(within.add).toEqual([]);
+    const past = planLoveImport(
+      [{ service: 'lastfm', artist: 'Portishead', title: 'Roads', album: '', mbid: null, lovedAt: 2400 }],
+      tracks, tombstones);
+    expect(past.add).toHaveLength(1);
+  });
+
+  test('partly non-Latin titles that slug to the same ASCII id stay two songs (trackSlug fallback)', () => {
+    // `BTS – 봄날 (Spring Day)` and `BTS – 春の日 (Spring Day)` both
+    // normalizeForId to `bts-spring-day` — same row id, different name keys.
+    const plan = planLoveImport(
+      [
+        { service: 'lastfm', artist: 'BTS', title: '봄날 (Spring Day)', album: '', mbid: null, lovedAt: 100 },
+        { service: 'lastfm', artist: 'BTS', title: '春の日 (Spring Day)', album: '', mbid: null, lovedAt: 200 },
+      ],
+      tracks, {});
+    expect(plan.add).toHaveLength(2);
+    expect(new Set(plan.add.map((r) => r.id)).size).toBe(2);
+    // The same song loved twice (same name key) still merges, and counts.
+    const mergedPlan = planLoveImport(
+      [
+        { service: 'lastfm', artist: 'BTS', title: '봄날 (Spring Day)', album: '', mbid: null, lovedAt: 300 },
+        { service: 'lastfm', artist: 'BTS', title: '봄날 (Spring Day)', album: '', mbid: null, lovedAt: 200 },
+      ],
+      tracks, {});
+    expect(mergedPlan.add).toHaveLength(1);
+    expect(mergedPlan.add[0].addedAt).toBe(200000);
+    expect(mergedPlan.merged).toBe(1);
   });
 
   test('20,000 loves against 20,000 rows plans in under a second (an index, not a scan per love)', () => {

@@ -32,6 +32,21 @@ describe('loveTombstoneEntries', () => {
   });
 });
 
+describe('isOrphanedLovePush (pre-ship removals)', () => {
+  test('an exact id matches, and so does the album-bearing form of the same song', () => {
+    const { isOrphanedLovePush } = require('../../src/renderer/lib/love-import');
+    const orphanIds = new Set(['radiohead-creep-pablohoney', 'wire-map-ref-41n-93-w-noalbum']);
+    // The import candidate computes the album-less id; the heart was marked
+    // under the album-bearing one. Same song.
+    expect(isOrphanedLovePush(orphanIds, { id: 'radiohead-creep-noalbum', artist: 'Radiohead', title: 'Creep', album: '' })).toBe(true);
+    expect(isOrphanedLovePush(orphanIds, { id: 'wire-map-ref-41n-93-w-noalbum', artist: 'Wire', title: 'Map Ref. 41°N 93°W', album: '' })).toBe(true);
+    // A different song by the same artist does not match the prefix.
+    expect(isOrphanedLovePush(orphanIds, { id: 'radiohead-karma-police-noalbum', artist: 'Radiohead', title: 'Karma Police', album: '' })).toBe(false);
+    // trackSlug ids (non-Latin) keep exact matching only.
+    expect(isOrphanedLovePush(orphanIds, { id: '宇多田ヒカル-光-', artist: '宇多田ヒカル', title: '光', album: '' })).toBe(false);
+  });
+});
+
 describe('the removal → import round trip', () => {
   test('removing a Last.fm-imported track keeps a ListenBrainz love for it out (cross-service)', () => {
     // removeTrackFromCollection writes every entry from loveTombstoneEntries
@@ -53,13 +68,13 @@ describe('the removal → import round trip', () => {
     const key = loveNameKey({ artist: 'Portishead', title: 'Roads' });
     const tombstones = { 'love-import': { [key]: { removedAt: 1700000000000 } } };
     const plan = planLoveImport(
-      [{ service: 'lastfm', artist: 'Portishead', title: 'Roads', album: '', mbid: null, lovedAt: 1700000100 }],
+      [{ service: 'lastfm', artist: 'Portishead', title: 'Roads', album: '', mbid: null, lovedAt: 1700001000 }],
       [], tombstones);
     expect(plan.add).toHaveLength(1);
   });
 
   test('loveTombstoneAt: null only when NO entry exists, so the pre-ship heuristic and the date rule never fight', () => {
-    const reloved = { service: 'lastfm', artist: 'Portishead', title: 'Roads', album: '', mbid: null, lovedAt: 1700000100 };
+    const reloved = { service: 'lastfm', artist: 'Portishead', title: 'Roads', album: '', mbid: null, lovedAt: 1700001000 };
     const key = loveNameKey(reloved);
     const tombstones = { 'love-import': { [key]: { removedAt: 1700000000000 } } };
     // A removed-then-re-loved track HAS an entry → the heuristic doesn't
