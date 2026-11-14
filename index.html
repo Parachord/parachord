@@ -31,8 +31,10 @@
 
       /* Text */
       --text-primary: #111827;
-      --text-secondary: #6b7280;
-      --text-tertiary: #9ca3af;
+      /* Secondary and tertiary both pass 4.5:1 on white and stay two
+         distinct levels (#1383; tertiary was #9ca3af, 2.5:1). */
+      --text-secondary: #4b5563;
+      --text-tertiary: #6b7280;
 
       /* Borders */
       --border-default: #e5e7eb;
@@ -190,7 +192,8 @@
 
       --text-primary: #f3f4f6;
       --text-secondary: #9ca3af;
-      --text-tertiary: #6b7280;
+      /* 5.6:1 on the page, 4.7:1 on cards (was #6b7280, 3.2:1 on cards). */
+      --text-tertiary: #8b8f97;
 
       --border-default: #2e2e2e;
       --border-light: #252525;

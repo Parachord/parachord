@@ -83,3 +83,27 @@ describe('status fills and the accent (#1383 step 3)', () => {
     expect(sliders).toMatch(/var\(--playbar-accent\)/);
   });
 });
+
+describe('secondary and tertiary text pass contrast in both themes', () => {
+  const html3 = require('fs').readFileSync(require('path').join(__dirname, '../../index.html'), 'utf8');
+  const lum = (h) => {
+    const c = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255)
+      .map((x) => (x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  };
+  const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((m, n) => n - m); return (x + 0.05) / (y + 0.05); };
+  const darkStart = html3.indexOf('.dark {');
+  const tok = (name, dark) => {
+    const re = new RegExp(`--${name}: (#[0-9a-fA-F]{6});`, 'g');
+    const all = [...html3.matchAll(re)];
+    const m = all.find((x) => (dark ? x.index > darkStart : x.index < darkStart));
+    return m[1];
+  };
+  test.each([false, true])('dark=%s', (dark) => {
+    const bgs = [tok('bg-primary', dark), tok('bg-elevated', dark)];
+    for (const name of ['text-secondary', 'text-tertiary']) {
+      for (const bg of bgs) expect(ratio(tok(name, dark), bg)).toBeGreaterThanOrEqual(4.5);
+    }
+    expect(tok('text-secondary', dark)).not.toBe(tok('text-tertiary', dark));
+  });
+});

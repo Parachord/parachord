@@ -21,7 +21,7 @@ Each step is one commit. Each runs `npm test`, rewrites the drift baseline when 
 - [x] Status-text tokens for coloured text on page backgrounds, readable in both themes: `--text-success`, `--text-warning`, `--text-danger`, `--text-info`.
 - [x] `--accent-fill` (fixed `#7c3aed`) and `--on-accent` (`#fff`): the fill-accent convention Home and FilterChips already use, given a name.
 - [x] Define `--accent-secondary-fg` (the last undefined variable), or replace its 3 uses.
-- [ ] (Waiting on a design decision.) `--text-tertiary` contrast: about `#6b7280` in light, `#9ca3af` in dark. Check every surface that uses it (about 330 places), especially the 10–11px labels.
+- [x] `--text-tertiary` contrast. Decided: light secondary `#4b5563` / tertiary `#6b7280`; dark tertiary `#8b8f97` (secondary stays `#9ca3af`). Both levels pass 4.5:1 on pages and cards in both themes and stay distinct. Check every surface that uses it (about 330 places), especially the 10–11px labels.
 
 **Check:** the drift test's undefined-variable list is empty. Settings fields, sliders and checkboxes look right in dark mode.
 
