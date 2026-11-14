@@ -133,7 +133,7 @@ describe('source', () => {
     const i = main.indexOf("if (data.type === 'loves') {");
     expect(i).toBeGreaterThan(-1);
     const block = main.slice(i, i + 1200);
-    expect(block).toContain("label: `Add to Queue (${data.tracks?.length || 0} tracks)`");
+    expect(block).toContain("label: `Add to Queue (${trackCount(data.tracks?.length || 0)})`");
     expect(block).toContain("label: 'Open in Collection'");
     expect(app).toContain("data.action === 'open-collection-loves'");
   });
