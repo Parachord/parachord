@@ -56262,6 +56262,7 @@ useEffect(() => {
             currentTrack,
             resolverOrder,
             allResolvers,
+            activeResolvers: playbackResolvers,
             queueDropTarget,
             draggedQueueTrack,
             insertedTrackId,
