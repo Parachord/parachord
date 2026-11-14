@@ -16,12 +16,12 @@ Every colour in the renderer comes from a CSS variable that has a light and a da
 Each step is one commit. Each runs `npm test`, rewrites the drift baseline when a count falls, and gets a light/dark check in the running app before the next step.
 
 ### 1. Foundations in `index.html` (no page changes yet)
-- [ ] `color-scheme: light` on `:root`, `color-scheme: dark` on `.dark`. This fixes native checkboxes, ranges, radios, selects, scrollbars and the background-less inputs (the white Settings fields) in one line.
-- [ ] Dark values for `--success`, `--warning` and `--error`, which are light-only today. Add `--info`.
-- [ ] Status-text tokens for coloured text on page backgrounds, readable in both themes: `--text-success`, `--text-warning`, `--text-danger`, `--text-info`.
-- [ ] `--accent-fill` (fixed `#7c3aed`) and `--on-accent` (`#fff`): the fill-accent convention Home and FilterChips already use, given a name.
-- [ ] Define `--accent-secondary-fg` (the last undefined variable), or replace its 3 uses.
-- [ ] `--text-tertiary` contrast: about `#6b7280` in light, `#9ca3af` in dark. Check every surface that uses it (about 330 places), especially the 10–11px labels.
+- [x] `color-scheme: light` on `:root`, `color-scheme: dark` on `.dark`. This fixes native checkboxes, ranges, radios, selects, scrollbars and the background-less inputs (the white Settings fields) in one line.
+- [x] Dark values for `--success`, `--warning` and `--error`, which are light-only today. Add `--info`.
+- [x] Status-text tokens for coloured text on page backgrounds, readable in both themes: `--text-success`, `--text-warning`, `--text-danger`, `--text-info`.
+- [x] `--accent-fill` (fixed `#7c3aed`) and `--on-accent` (`#fff`): the fill-accent convention Home and FilterChips already use, given a name.
+- [x] Define `--accent-secondary-fg` (the last undefined variable), or replace its 3 uses.
+- [ ] (Waiting on a design decision.) `--text-tertiary` contrast: about `#6b7280` in light, `#9ca3af` in dark. Check every surface that uses it (about 330 places), especially the 10–11px labels.
 
 **Check:** the drift test's undefined-variable list is empty. Settings fields, sliders and checkboxes look right in dark mode.
 
