@@ -134,7 +134,7 @@ Each rule below exists because the audit found its absence. Read the audit's are
 - **Look before calling a UI change done.** Check it in light mode, in dark mode, and at the 1000px minimum window width (the content area is then 744px wide; Tailwind `md:`/`lg:` measure the window, not the content). Update its loading skeleton in the same PR (Renderer patterns above).
 - **Copy.**
   - Terms:
-    - **plugin**: what you install
+    - **plug-in**: what you install ("Plug-Ins" in Title Case; never "resolver" in UI text, whatever its type; code and docs may say plugin)
     - **service**: Spotify, Apple Music and so on
     - **source**: where a track plays from
     - also **Collection**, **Loves**, **Shuffleupagus**, **track**, **album**/**edition**, **sync**/**import**

@@ -1182,9 +1182,9 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
           showConfirmDialog({
             type: 'error',
             title: 'No Source Found',
-            message: 'Could not find a playable source for this track. Try enabling more resolvers in settings.',
+            message: 'Could not find a playable source for this track. Try turning on more plug-ins.',
             actionButton: {
-              label: 'Open Resolver Settings',
+              label: 'Open Plug-Ins',
               onClick: () => { setActiveView('settings'); setSettingsTab('plugins'); },
             },
           });
@@ -1269,9 +1269,9 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         showConfirmDialog({
           type: 'error',
           title: 'No Enabled Source',
-          message: 'This track has sources but none match your enabled resolvers. Check your resolver settings.',
+          message: 'This track has sources, but none from the plug-ins you have turned on.',
           actionButton: {
-            label: 'Open Resolver Settings',
+            label: 'Open Plug-Ins',
             onClick: () => { setActiveView('settings'); setSettingsTab('plugins'); },
           },
         });

@@ -17029,7 +17029,7 @@ ${trackListXml}
             showConfirmDialog({
               type: 'error',
               title: 'Track Not Found',
-              message: `Could not find "${title}" by ${artist} on any of your enabled music services. Try searching manually or check your resolver settings.`
+              message: `Could not find "${title}" by ${artist} on any of your enabled music services. Try searching for it, or check which plug-ins are turned on.`
             });
           }
         } catch (err) {
@@ -24866,7 +24866,7 @@ ${trackListXml}
         showConfirmDialog({
           type: 'error',
           title: 'Load Failed',
-          message: `Resolver installed but failed to load. Please restart the app.\n\n${error.message}`
+          message: `The plug-in was installed but didn’t load. Restart Parachord to finish.\n\n${error.message}`
         });
       }
     } catch (error) {
@@ -24901,7 +24901,7 @@ ${trackListXml}
     // Use simpler confirmation for marketplace plugins since they can be easily reinstalled
     const confirmMessage = isInMarketplace
       ? `Remove "${resolverName}"?`
-      : `Are you sure you want to uninstall "${resolverName}"?\n\nThis will permanently remove the resolver from your system.`;
+      : `Are you sure you want to uninstall "${resolverName}"?\n\nThis permanently removes the plug-in.`;
 
     const shouldUninstall = await confirmAsync({ title: `Remove ${resolverName}?`, message: confirmMessage, confirmLabel: 'Remove', destructive: true });
 
@@ -43775,7 +43775,7 @@ React.createElement('div', {
                       textTransform: 'uppercase',
                       letterSpacing: '0.08em'
                     }
-                  }, 'Content Resolvers'),
+                  }, 'Music Plug-Ins'),
                   React.createElement('p', {
                     style: {
                       fontSize: '12px',
@@ -43963,7 +43963,7 @@ React.createElement('div', {
                       textTransform: 'uppercase',
                       letterSpacing: '0.08em'
                     }
-                  }, 'Meta Services'),
+                  }, 'Other Plug-Ins'),
                   React.createElement('p', {
                     style: {
                       fontSize: '12px',
@@ -44439,7 +44439,7 @@ React.createElement('div', {
                     }, 'Playback Quality'),
                     React.createElement('p', {
                       style: { fontSize: '12px', color: 'var(--text-secondary)' }
-                    }, 'Stream quality for sources that play through the shared player (Amazon Music and future stream resolvers). Bandwidth ceilings only — codec is irrelevant to the tier; spatial/Atmos rungs need the preference below.')
+                    }, 'Stream quality for sources that play through the shared player (Amazon Music and future streaming plug-ins). Bandwidth ceilings only — codec is irrelevant to the tier; spatial/Atmos rungs need the preference below.')
                   ),
                   React.createElement(SettingRow, { label: 'Quality', hint: 'Applies to the current stream immediately.' },
 React.createElement(Select, { value: playbackQuality, onChange: (v) => setPlaybackQuality(v), options: [{ value: 'max', label: 'Max (best available, lossless where playable)' }, { value: 'high', label: 'High (up to 500 kbps)' }, { value: 'standard', label: 'Standard (up to 200 kbps)' }, { value: 'saver', label: 'Data saver (up to 100 kbps)' }] })),
@@ -44485,7 +44485,7 @@ React.createElement(Select, { value: playbackAbr ? 'on' : 'off', onChange: (v) =
                       marginBottom: '24px',
                       lineHeight: '1.6'
                     }
-                  }, 'Adjust volume offsets per resolver to balance loudness. Negative values reduce volume for louder sources.'),
+                  }, 'Adjust each plug-in’s volume to balance loudness. Negative values reduce volume for louder sources.'),
 
                   // Resolver volume offset sliders - only show enabled content resolvers
                   React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px' } },

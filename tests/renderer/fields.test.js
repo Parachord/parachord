@@ -72,3 +72,17 @@ test('plugin panels say "Use <service>", toggles use the chevron icon, installs 
   expect(app).not.toMatch(/title: 'Resolver (Updated|Installed)'/);
   expect(app).toContain("showToast(`${resolverName} installed`, 'success');");
 });
+
+// UI text says "plug-in", never "resolver" (2026-11-14). Code identifiers,
+// logs and thrown errors may keep the word.
+test('no user-facing "resolver" in labels, toasts, dialogs or native menus', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const root = path.join(__dirname, '../..');
+  const files = ['src/renderer/app.js', 'src/renderer/hooks/use-playback-engine.js', 'main.js'];
+  // the word as text: not a ${resolver...} variable or a resolverX identifier
+  const word = '(?<![${.\\w])[Rr]esolvers?(?![\\w.(])';
+  const ui = new RegExp(`(?:label|title|message|confirmLabel|name)\\s*:\\s*['\`][^'\`\\n]*${word}|\\}, '[^'\\n]*${word}[^'\\n]*'\\)|showToast\\(['\`][^'\`\\n]*${word}`, 'g');
+  const hits = files.flatMap((f) => (fs.readFileSync(path.join(root, f), 'utf8').match(ui) || []).map((m) => `${f}: ${m}`));
+  expect(hits).toEqual([]);
+});

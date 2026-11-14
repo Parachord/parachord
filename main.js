@@ -4326,10 +4326,10 @@ ipcMain.handle('resolvers-pick-file', async () => {
   const { dialog } = require('electron');
   
   const result = await dialog.showOpenDialog(mainWindow, {
-    title: 'Select Resolver (.axe file)',
+    title: 'Choose a Plug-In',
     buttonLabel: 'Install',
     filters: [
-      { name: 'Parachord Resolver', extensions: ['axe'] },
+      { name: 'Parachord Plug-In', extensions: ['axe'] },
       { name: 'All Files', extensions: ['*'] }
     ],
     properties: ['openFile']
@@ -4456,7 +4456,7 @@ ipcMain.handle('resolvers-show-context-menu', async (event, resolverId) => {
 
   const menu = Menu.buildFromTemplate([
     {
-      label: 'Uninstall Resolver',
+      label: 'Uninstall Plug-In',
       click: () => {
         // Send back to renderer
         safeSendToRenderer('resolver-context-menu-action', {
