@@ -301,21 +301,19 @@ describe('withLovesPushed', () => {
   });
 });
 
-describe('the mark → tombstone → import round trip', () => {
-  test('a removed hearted track is blocked by the MBID its push stored, and a later import of the same recording is dropped', () => {
+describe('an MBID tombstone (the kind a mark-stored MBID writes on removal)', () => {
+  // The removal wiring itself (deriveTombstoneEntries reading the mark, writing
+  // the entry) is marker-pinned below; what this checks is the date rule
+  // against a tombstone keyed the way that wiring keys it.
+  test('a love for a tombstoned recording MBID is blocked by the date rule, and nothing else blocks it', () => {
     const { isLoveTombstoned } = require('../../src/renderer/lib/love-import');
     const MBID = '9bd9f6a2-2c27-4d3c-b1d9-6e56a5ee72c2';
-    const heartedRow = { id: 'the-beatles-here-comes-the-sun-remastered-2009', artist: 'The Beatles', title: 'Here Comes the Sun - Remastered 2009', album: '', sources: {} };
-    const mark = { listenbrainz: { at: 1700000000000, mbid: MBID } };
-    // deriveTombstoneEntries turns the mark into a ('listenbrainz', mbid)
-    // tombstone on removal; the app-side wiring is marker-pinned below.
     const tombstones = { listenbrainz: { [MBID]: { removedAt: 1700000500000 } } };
     const candidate = { service: 'listenbrainz', artist: 'The Beatles', title: 'Here Comes the Sun', album: '1', mbid: MBID, lovedAt: 1700000000 };
     // Blocked by the date rule (the removal is newer than the love).
     expect(isLoveTombstoned(tombstones, candidate)).toBe(true);
-    // And the mark's MBID really is the key that blocks it.
+    // Without the entry, the same love passes.
     expect(isLoveTombstoned({}, candidate)).toBe(false);
-    expect(mark.listenbrainz.mbid).toBe(MBID);
   });
 
   test('the summary counts merged loves under "already in your collection"', () => {
