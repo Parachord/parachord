@@ -50,7 +50,8 @@ function SettingRow({ label, hint, id, children, className, style }) {
 
 function Select({ value, onChange, options, size = 'md', className, style, ...rest }) {
   const e = React.createElement;
-  return e('div', { className: 'relative inline-flex items-center' },
+  const full = /\bw-full\b/.test(className || '');
+  return e('div', { className: full ? 'relative flex items-center w-full' : 'relative inline-flex items-center' },
     e('select', Object.assign({}, rest, {
       value,
       onChange: (ev) => onChange && onChange(ev.target.value, ev),
@@ -83,8 +84,8 @@ function TextField({ value, onChange, type = 'text', size = 'md', invalid = fals
 function SecretField(props) {
   const e = React.createElement;
   const [shown, setShown] = React.useState(false);
-  return e('div', { className: 'relative flex items-center' },
-    e(TextField, Object.assign({}, props, { type: shown ? 'text' : 'password', className: ['pr-16', props.className].filter(Boolean).join(' '), autoComplete: 'off', spellCheck: false })),
+  return e('div', { className: 'relative flex items-center w-full' },
+    e(TextField, Object.assign({}, props, { type: shown ? 'text' : 'password', className: ['pr-16 w-full', props.className].filter(Boolean).join(' '), autoComplete: 'off', spellCheck: false })),
     e('button', {
       type: 'button',
       onClick: () => setShown((s) => !s),

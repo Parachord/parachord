@@ -41,13 +41,14 @@ test('Clear Cache confirms with a toast, not alert()', () => {
 // A switch's knob was bg-white, which dark mode remaps to the card colour,
 // on an off track of rgba(0,0,0,.15): in dark mode the whole switch nearly
 // vanished (2026-11, Settings > Playback's Atmos toggle).
-test('every switch has a white knob on the control tokens', () => {
-  const files = ['src/renderer/app.js', 'src/renderer/components/settings-cards.js', 'src/renderer/components/fields.js']
-    .map((f) => fs.readFileSync(path.join(root, f), 'utf8')).join('\n');
-  const knobs = files.match(/absolute top-0\.5 left-0\.5 (?:w-[45] h-[45]|rounded-full)[^'`]*/g) || [];
-  expect(knobs.length).toBeGreaterThanOrEqual(5);
-  for (const k of knobs) expect(k).toMatch(/bg-control-knob/);
-  expect(files).not.toMatch(/'var\(--accent-primary\)' : 'rgba\(0, 0, 0, 0\.15\)'/);
+test('every switch is the shared Switch, with a white knob on the control tokens', () => {
+  const read = (f) => fs.readFileSync(path.join(root, f), 'utf8');
+  for (const f of ['src/renderer/app.js', 'src/renderer/components/settings-cards.js']) {
+    expect([f, read(f).includes('bg-control-knob')]).toEqual([f, false]);
+  }
+  const fields = read('src/renderer/components/fields.js');
+  expect(fields).toMatch(/bg-control-knob/);
+  expect(fields).toMatch(/checked \? 'bg-accent-fill' : 'bg-control-off'/);
   expect(html).toMatch(/--control-knob: #ffffff;/);
   const dark = html.slice(html.indexOf('.dark {'));
   expect(dark).toMatch(/--control-off: #707070;/);
@@ -82,15 +83,12 @@ test.each(['search-page.js', 'artist-page.js', 'collection-page.js', 'playlist-v
 // #1385 step 7 / #1386: every switch says it's a switch, whether it's on,
 // and what it switches.
 test('every switch has role="switch", its state and a name', () => {
-  const files = ['src/renderer/app.js', 'src/renderer/components/settings-cards.js']
-    .map((f) => fs.readFileSync(path.join(root, f), 'utf8')).join('\n');
-  const knobs = (files.match(/bg-control-knob/g) || []).length;
-  const switches = (files.match(/role: 'switch',|React\.createElement\(Switch, \{/g) || []).length;
-  expect(switches).toBeGreaterThanOrEqual(knobs);
-  // Settings > General's switches are the shared Switch in a SettingRow,
-  // which names them by the row's label.
-  expect(files).toMatch(/React\.createElement\(Switch, \{ checked: skipExternalPrompt,/);
-  expect(files).toMatch(/React\.createElement\(Switch, \{ checked: playbackSpatial === true,/);
-  const fields = fs.readFileSync(path.join(root, 'src/renderer/components/fields.js'), 'utf8');
+  const read = (f) => fs.readFileSync(path.join(root, f), 'utf8');
+  const fields = read('src/renderer/components/fields.js');
   expect(fields).toMatch(/role: 'switch',\n\s*'aria-checked': checked \? 'true' : 'false',/);
+  const app = read('src/renderer/app.js');
+  // Plugin panels name their switch; General's are named by their SettingRow.
+  expect(app).toMatch(/React\.createElement\(Switch, \{ checked: activeResolvers\.includes\(selectedResolver\.id\), onToggle: [^\n]*'aria-label': `Use \$\{selectedResolver\.name\}`/);
+  expect(read('src/renderer/components/settings-cards.js')).toMatch(/React\.createElement\(Switch, \{ checked: config\?\.enabled, onToggle: handleToggleEnabled, 'aria-label': `Scrobble to \$\{scrobbler\.name\}`/);
+  expect(app).toContain('React.createElement(Switch, { checked: skipExternalPrompt,');
 });

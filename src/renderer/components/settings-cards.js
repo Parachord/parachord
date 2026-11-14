@@ -7,6 +7,7 @@
 // the friends' now-playing mini bar. All props-driven (config, callbacks and
 // the app's config-mutation functions arrive via props); no app state.
 const Icons = require('./icons');
+const { TextField, SecretField, Switch } = require('./fields');
 const { activateOnKey } = require('../lib/activate-on-key');
 const { Tooltip, SERVICE_LOGOS } = require('./ui-atoms');
 
@@ -402,17 +403,7 @@ const ScrobblerSettingsCard = React.memo(({
         )
       ),
       // Enabled toggle (only when connected)
-      isConnected && React.createElement('button', {
-        role: 'switch',
-        'aria-checked': config?.enabled ? 'true' : 'false',
-        'aria-label': `Scrobble to ${scrobbler.name}`,
-        onClick: handleToggleEnabled,
-        className: `relative w-11 h-6 rounded-full transition-colors ${config?.enabled ? 'bg-accent-fill' : 'bg-control-off'}`
-      },
-        React.createElement('span', {
-          className: `absolute top-0.5 left-0.5 w-5 h-5 bg-control-knob rounded-full shadow transition-transform ${config?.enabled ? 'translate-x-5' : 'translate-x-0'}`
-        })
-      )
+      isConnected && React.createElement(Switch, { checked: config?.enabled, onToggle: handleToggleEnabled, 'aria-label': `Scrobble to ${scrobbler.name}` })
     ),
 
     // Error message
@@ -435,13 +426,7 @@ const ScrobblerSettingsCard = React.memo(({
             className: 'ml-2 text-accent hover:underline'
           }, 'Get token')
         ),
-        React.createElement('input', {
-          type: 'text',
-          value: tokenInput,
-          onChange: (e) => setTokenInput(e.target.value),
-          placeholder: 'Enter your ListenBrainz token',
-          className: 'w-full px-3 py-2 border border-line-strong rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent', 'aria-label': 'Enter your ListenBrainz token'
-        })
+        React.createElement(TextField, { value: tokenInput, onChange: (_v, e) => setTokenInput(e.target.value), placeholder: 'Enter your ListenBrainz token', 'aria-label': 'Enter your ListenBrainz token', className: 'w-full' })
       ),
 
       // Libre.fm username/password inputs
@@ -457,21 +442,9 @@ const ScrobblerSettingsCard = React.memo(({
             className: 'ml-2 text-accent hover:underline'
           }, 'Create account')
         ),
-        React.createElement('input', {
-          type: 'text',
-          value: usernameInput,
-          onChange: (e) => setUsernameInput(e.target.value),
-          placeholder: 'Your Libre.fm username',
-          className: 'w-full px-3 py-2 border border-line-strong rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent', 'aria-label': 'Your Libre.fm username'
-        }),
+        React.createElement(TextField, { value: usernameInput, onChange: (_v, e) => setUsernameInput(e.target.value), placeholder: 'Your Libre.fm username', 'aria-label': 'Your Libre.fm username', className: 'w-full' }),
         React.createElement('label', { className: 'block text-sm text-ink-secondary mb-1' }, 'Password'),
-        React.createElement('input', {
-          type: 'password',
-          value: passwordInput,
-          onChange: (e) => setPasswordInput(e.target.value),
-          placeholder: 'Your Libre.fm password',
-          className: 'w-full px-3 py-2 border border-line-strong rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent', 'aria-label': 'Your Libre.fm password'
-        })
+        React.createElement(SecretField, { value: passwordInput, onChange: (_v, e) => setPasswordInput(e.target.value), placeholder: 'Your Libre.fm password', 'aria-label': 'Your Libre.fm password', className: 'w-full' })
       ),
 
       // Connect button

@@ -43719,17 +43719,7 @@ React.createElement('div', {
                 // Bottom row: Dropdown + Category pills together
                 React.createElement('div', { className: 'flex items-center gap-3 flex-wrap' },
                   // Install status dropdown filter
-                  React.createElement('select', {
-                    'aria-label': 'Filter plug-ins',
-                    value: pluginsFilter,
-                    onChange: (e) => setPluginsFilter(e.target.value),
-                    className: 'px-3 py-1.5 rounded-lg text-sm border border-line bg-surface-card text-ink-secondary cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent',
-                    style: { minWidth: '100px' }
-                  },
-                    React.createElement('option', { value: 'all' }, 'All'),
-                    React.createElement('option', { value: 'installed' }, 'Installed'),
-                    React.createElement('option', { value: 'available' }, 'Available')
-                  ),
+                  React.createElement(Select, { 'aria-label': 'Filter plug-ins', value: pluginsFilter, onChange: (_v, e) => setPluginsFilter(e.target.value), options: [{ value: 'all', label: 'All' }, { value: 'installed', label: 'Installed' }, { value: 'available', label: 'Available' }], style: { minWidth: '100px' } }),
                   // Category filters: the app's filter chips (FilterChips); a
                   // category has no colour, so every chip is neutral.
                   React.createElement(FilterChips, {
@@ -47410,11 +47400,7 @@ React.createElement('div', { style: { padding: '20px 24px 24px' } },
             ),
             // Input with inline button
             React.createElement('div', { className: 'flex gap-2' },
-              React.createElement('input', {
-                type: 'url',
-                value: urlImportValue,
-                onChange: (e) => setUrlImportValue(e.target.value),
-                onKeyDown: (e) => {
+              React.createElement(TextField, { type: 'url', value: urlImportValue, onChange: (_v, e) => setUrlImportValue(e.target.value), onKeyDown: (e) => {
                   // Prevent global shortcuts from interfering while typing
                   e.stopPropagation();
                   if (e.key === 'Enter' && urlImportValue.trim() && !urlImportLoading) {
@@ -47440,24 +47426,7 @@ React.createElement('div', { style: { padding: '20px 24px 24px' } },
                       }
                     })();
                   }
-                },
-                placeholder: 'Paste playlist URL...',
-                style: {
-                  flex: 1,
-                  padding: '10px 14px',
-                  fontSize: '14px',
-                  color: 'var(--text-primary)',
-                  backgroundColor: 'var(--card-bg)',
-                  border: '1px solid var(--border-default)',
-                  borderRadius: '8px',
-                  outline: 'none',
-                  transition: 'border-color 150ms ease, box-shadow 150ms ease'
-                },
-                onFocus: (e) => { e.target.style.borderColor = 'var(--accent-primary)'; e.target.style.boxShadow = '0 0 0 3px rgba(124, 58, 237, 0.25)'; },
-                onBlur: (e) => { e.target.style.borderColor = 'var(--border-default)'; e.target.style.boxShadow = 'none'; },
-                disabled: urlImportLoading,
-                autoFocus: true, 'aria-label': 'Paste playlist URL'
-              }),
+                }, placeholder: 'Paste playlist URL...', disabled: urlImportLoading, autoFocus: true, 'aria-label': 'Paste playlist URL', className: 'flex-1' }),
               React.createElement('button', {
                 onClick: async () => {
                   if (!urlImportValue.trim()) return;
@@ -47602,33 +47571,13 @@ React.createElement('div', { style: { padding: '20px 24px' } },
           },
             'Enter a Last.fm or ListenBrainz username, or paste a profile URL.'
           ),
-          React.createElement('input', {
-            type: 'text',
-            value: addFriendInput,
-            onChange: (e) => setAddFriendInput(e.target.value),
-            onKeyDown: (e) => {
+          React.createElement(TextField, { value: addFriendInput, onChange: (_v, e) => setAddFriendInput(e.target.value), onKeyDown: (e) => {
               // Prevent global shortcuts from interfering while typing
               e.stopPropagation();
               if (e.key === 'Enter' && addFriendInput.trim()) {
                 addFriend(addFriendInput);
               }
-            },
-            placeholder: 'Username or profile URL',
-            style: {
-              width: '100%',
-              padding: '12px 16px',
-              fontSize: '14px',
-              color: 'var(--text-primary)',
-              backgroundColor: 'var(--card-bg)',
-              border: '1px solid var(--border-default)',
-              borderRadius: '10px',
-              outline: 'none',
-              transition: 'border-color 150ms ease, box-shadow 150ms ease'
-            },
-            onFocus: (e) => { e.target.style.borderColor = 'var(--accent-primary)'; e.target.style.boxShadow = '0 0 0 3px rgba(124, 58, 237, 0.25)'; },
-            onBlur: (e) => { e.target.style.borderColor = 'var(--border-default)'; e.target.style.boxShadow = 'none'; },
-            autoFocus: true, 'aria-label': 'Username or profile URL'
-          }),
+            }, placeholder: 'Username or profile URL', autoFocus: true, 'aria-label': 'Username or profile URL', className: 'w-full' }),
           // Example hints
           React.createElement('div', { style: { marginTop: '12px', fontSize: '12px', color: 'var(--text-tertiary)' } },
             React.createElement('p', null, 'Examples:'),
@@ -47830,17 +47779,7 @@ React.createElement('div', {
                 }
               }, 'Include in search and playback')
             ),
-            React.createElement('div', {
-              className: 'relative w-11 h-6 cursor-pointer',
-              onClick: () => toggleResolver(selectedResolver.id), role: 'switch', 'aria-checked': activeResolvers.includes(selectedResolver.id) ? 'true' : 'false', 'aria-label': `Use ${selectedResolver.name}`, tabIndex: 0, onKeyDown: activateOnKey
-            },
-              React.createElement('div', {
-                className: `w-full h-full rounded-full transition-colors ${activeResolvers.includes(selectedResolver.id) ? 'bg-accent-fill' : 'bg-control-off'}`
-              }),
-              React.createElement('div', {
-                className: `absolute top-0.5 left-0.5 w-5 h-5 bg-control-knob rounded-full shadow transition-transform ${activeResolvers.includes(selectedResolver.id) ? 'translate-x-5' : 'translate-x-0'}`
-              })
-            )
+            React.createElement(Switch, { checked: activeResolvers.includes(selectedResolver.id), onToggle: () => toggleResolver(selectedResolver.id), 'aria-label': `Use ${selectedResolver.name}` })
           ),
 
           // Authentication section (for services that require it)
@@ -47972,22 +47911,7 @@ React.createElement('div', {
                 React.createElement('label', {
                   style: { fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }
                 }, 'Client ID'),
-                React.createElement('input', {
-                  type: 'password',
-                  value: spotifyClientIdInput,
-                  onChange: (e) => setSpotifyClientIdInput(e.target.value),
-                  placeholder: 'Paste your Spotify Client ID here',
-                  style: {
-                    width: '100%',
-                    padding: '8px 10px',
-                    fontSize: '12px',
-                    color: 'var(--text-primary)',
-                    backgroundColor: 'var(--card-bg)',
-                    border: '1px solid var(--border-subtle)',
-                    borderRadius: '6px',
-                    outline: 'none'
-                  }, 'aria-label': 'Paste your Spotify Client ID here'
-                })
+                React.createElement(SecretField, { value: spotifyClientIdInput, onChange: (_v, e) => setSpotifyClientIdInput(e.target.value), placeholder: 'Paste your Spotify Client ID here', 'aria-label': 'Paste your Spotify Client ID here', className: 'w-full' })
               ),
               // Redirect URIs (always visible for reference)
               React.createElement('div', { style: { marginBottom: '12px' } },
@@ -47995,22 +47919,7 @@ React.createElement('div', {
                   style: { fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }
                 }, 'Redirect URIs'),
                 React.createElement('div', { style: { display: 'flex', gap: '6px', marginBottom: '6px' } },
-                  React.createElement('input', {
-                    'aria-label': 'Redirect URI (IPv4)',
-                    type: 'text',
-                    value: `http://127.0.0.1:${authPort}/callback`,
-                    readOnly: true,
-                    style: {
-                      flex: 1,
-                      padding: '8px 10px',
-                      fontSize: '12px',
-                      color: 'var(--text-secondary)',
-                      backgroundColor: 'var(--bg-secondary)',
-                      border: '1px solid var(--border-subtle)',
-                      borderRadius: '6px',
-                      outline: 'none'
-                    }
-                  }),
+                  React.createElement(TextField, { 'aria-label': 'Redirect URI (IPv4)', value: `http://127.0.0.1:${authPort}/callback`, readOnly: true, className: 'flex-1' }),
                   React.createElement('button', {
                     onClick: () => {
                       navigator.clipboard.writeText(`http://127.0.0.1:${authPort}/callback`);
@@ -48029,22 +47938,7 @@ React.createElement('div', {
                   }, 'Copy')
                 ),
                 React.createElement('div', { style: { display: 'flex', gap: '6px' } },
-                  React.createElement('input', {
-                    'aria-label': 'Redirect URI (IPv6)',
-                    type: 'text',
-                    value: `http://[::1]:${authPort}/callback`,
-                    readOnly: true,
-                    style: {
-                      flex: 1,
-                      padding: '8px 10px',
-                      fontSize: '12px',
-                      color: 'var(--text-secondary)',
-                      backgroundColor: 'var(--bg-secondary)',
-                      border: '1px solid var(--border-subtle)',
-                      borderRadius: '6px',
-                      outline: 'none'
-                    }
-                  }),
+                  React.createElement(TextField, { 'aria-label': 'Redirect URI (IPv6)', value: `http://[::1]:${authPort}/callback`, readOnly: true, className: 'flex-1' }),
                   React.createElement('button', {
                     onClick: () => {
                       navigator.clipboard.writeText(`http://[::1]:${authPort}/callback`);
@@ -48129,17 +48023,7 @@ React.createElement('div', {
                 React.createElement('label', {
                   style: { fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }
                 }, 'Client ID'),
-                React.createElement('input', {
-                  type: 'password',
-                  value: spotifyClientIdInput,
-                  onChange: (e) => setSpotifyClientIdInput(e.target.value),
-                  placeholder: 'Your Spotify Client ID',
-                  style: {
-                    width: '100%', padding: '8px 10px', fontSize: '12px', color: 'var(--text-primary)',
-                    backgroundColor: 'var(--card-bg)', border: '1px solid var(--border-subtle)',
-                    borderRadius: '6px', outline: 'none'
-                  }, 'aria-label': 'Your Spotify Client ID'
-                })
+                React.createElement(SecretField, { value: spotifyClientIdInput, onChange: (_v, e) => setSpotifyClientIdInput(e.target.value), placeholder: 'Your Spotify Client ID', 'aria-label': 'Your Spotify Client ID', className: 'w-full' })
               ),
               React.createElement('button', {
                 onClick: saveSpotifyCredentials,
@@ -48294,11 +48178,7 @@ React.createElement('div', {
                   'Start Spotify in background when Parachord opens. Ensures a device is always available for playback.'
                 )
               ),
-              React.createElement('button', {
-                role: 'switch',
-                'aria-checked': autoLaunchSpotify ? 'true' : 'false',
-                'aria-label': 'Open Spotify in the background at startup',
-                onClick: async () => {
+              React.createElement(Switch, { checked: autoLaunchSpotify, onToggle: async () => {
                   const newValue = !autoLaunchSpotify;
                   setAutoLaunchSpotify(newValue);
                   if (window.electron?.store) {
@@ -48309,14 +48189,7 @@ React.createElement('div', {
                     window.electron.spotify.launchInBackground();
                     showToast('Spotify launched in background', 'success');
                   }
-                },
-                className: `relative w-11 h-6 rounded-full transition-colors ${autoLaunchSpotify ? 'bg-accent-fill' : 'bg-control-off'}`,
-                style: { flexShrink: 0, marginLeft: '16px' }
-              },
-                React.createElement('span', {
-                  className: `absolute top-0.5 left-0.5 w-5 h-5 bg-control-knob rounded-full shadow transition-transform ${autoLaunchSpotify ? 'translate-x-5' : 'translate-x-0'}`
-                })
-              )
+                }, 'aria-label': 'Open Spotify in the background at startup', style: { flexShrink: 0, marginLeft: '16px' } })
             )
           ),
 
@@ -48455,22 +48328,7 @@ React.createElement('div', {
                         marginBottom: '4px'
                       }
                     }, 'Client ID'),
-                    React.createElement('input', {
-                      type: 'password',
-                      value: soundcloudClientIdInput,
-                      onChange: (e) => setSoundcloudClientIdInput(e.target.value),
-                      placeholder: 'Your SoundCloud Client ID',
-                      style: {
-                        width: '100%',
-                        padding: '8px 10px',
-                        fontSize: '12px',
-                        color: 'var(--text-primary)',
-                        backgroundColor: 'var(--card-bg)',
-                        border: '1px solid var(--border-subtle)',
-                        borderRadius: '6px',
-                        outline: 'none'
-                      }, 'aria-label': 'Your SoundCloud Client ID'
-                    })
+                    React.createElement(SecretField, { value: soundcloudClientIdInput, onChange: (_v, e) => setSoundcloudClientIdInput(e.target.value), placeholder: 'Your SoundCloud Client ID', 'aria-label': 'Your SoundCloud Client ID', className: 'w-full' })
                   ),
                   React.createElement('div', { style: { marginBottom: '10px' } },
                     React.createElement('label', {
@@ -48482,22 +48340,7 @@ React.createElement('div', {
                         marginBottom: '4px'
                       }
                     }, 'Client Secret'),
-                    React.createElement('input', {
-                      type: 'password',
-                      value: soundcloudClientSecretInput,
-                      onChange: (e) => setSoundcloudClientSecretInput(e.target.value),
-                      placeholder: 'Your SoundCloud Client Secret',
-                      style: {
-                        width: '100%',
-                        padding: '8px 10px',
-                        fontSize: '12px',
-                        color: 'var(--text-primary)',
-                        backgroundColor: 'var(--card-bg)',
-                        border: '1px solid var(--border-subtle)',
-                        borderRadius: '6px',
-                        outline: 'none'
-                      }, 'aria-label': 'Your SoundCloud Client Secret'
-                    })
+                    React.createElement(SecretField, { value: soundcloudClientSecretInput, onChange: (_v, e) => setSoundcloudClientSecretInput(e.target.value), placeholder: 'Your SoundCloud Client Secret', 'aria-label': 'Your SoundCloud Client Secret', className: 'w-full' })
                   ),
                   React.createElement('div', { style: { marginBottom: '12px' } },
                     React.createElement('label', {
@@ -48514,22 +48357,7 @@ React.createElement('div', {
                         gap: '6px'
                       }
                     },
-                      React.createElement('input', {
-                        'aria-label': 'SoundCloud redirect URI',
-                        type: 'text',
-                        value: `http://127.0.0.1:${authPort}/callback/soundcloud`,
-                        readOnly: true,
-                        style: {
-                          flex: 1,
-                          padding: '8px 10px',
-                          fontSize: '12px',
-                          color: 'var(--text-secondary)',
-                          backgroundColor: 'var(--bg-secondary)',
-                          border: '1px solid var(--border-subtle)',
-                          borderRadius: '6px',
-                          outline: 'none'
-                        }
-                      }),
+                      React.createElement(TextField, { 'aria-label': 'SoundCloud redirect URI', value: `http://127.0.0.1:${authPort}/callback/soundcloud`, readOnly: true, className: 'flex-1' }),
                       React.createElement('button', {
                         onClick: () => {
                           navigator.clipboard.writeText(`http://127.0.0.1:${authPort}/callback/soundcloud`);
@@ -48779,22 +48607,7 @@ React.createElement('div', {
                       marginBottom: '4px'
                     }
                   }, 'MusicKit Developer Token (JWT)'),
-                  React.createElement('input', {
-                    type: 'password',
-                    value: appleMusicDeveloperToken,
-                    onChange: (e) => setAppleMusicDeveloperToken(e.target.value),
-                    placeholder: 'eyJ...',
-                    style: {
-                      width: '100%',
-                      padding: '8px 10px',
-                      fontSize: '12px',
-                      color: 'var(--text-primary)',
-                      backgroundColor: 'var(--card-bg)',
-                      border: '1px solid var(--border-subtle)',
-                      borderRadius: '6px',
-                      outline: 'none'
-                    }, 'aria-label': 'Apple Music developer token'
-                  })
+                  React.createElement(SecretField, { value: appleMusicDeveloperToken, onChange: (_v, e) => setAppleMusicDeveloperToken(e.target.value), placeholder: 'eyJ...', 'aria-label': 'Apple Music developer token', className: 'w-full' })
                 ),
                 React.createElement('p', {
                   style: {
@@ -48925,22 +48738,7 @@ React.createElement('div', {
                             marginBottom: '4px'
                           }
                         }, 'API Key'),
-                        React.createElement('input', {
-                          type: 'password',
-                          value: lastfmApiKeyInput || metaServiceConfigs.lastfm.apiKey || '',
-                          onChange: (e) => setLastfmApiKeyInput(e.target.value),
-                          placeholder: 'Your Last.fm API key',
-                          style: {
-                            width: '100%',
-                            padding: '8px 10px',
-                            fontSize: '12px',
-                            color: 'var(--text-primary)',
-                            backgroundColor: 'var(--card-bg)',
-                            border: '1px solid var(--border-subtle)',
-                            borderRadius: '6px',
-                            outline: 'none'
-                          }, 'aria-label': 'Your Last.fm API key'
-                        })
+                        React.createElement(SecretField, { value: lastfmApiKeyInput || metaServiceConfigs.lastfm.apiKey || '', onChange: (_v, e) => setLastfmApiKeyInput(e.target.value), placeholder: 'Your Last.fm API key', 'aria-label': 'Your Last.fm API key', className: 'w-full' })
                       ),
                       React.createElement('div', { style: { marginBottom: '12px' } },
                         React.createElement('label', {
@@ -48952,22 +48750,7 @@ React.createElement('div', {
                             marginBottom: '4px'
                           }
                         }, 'API Secret'),
-                        React.createElement('input', {
-                          type: 'password',
-                          value: lastfmApiSecretInput || metaServiceConfigs.lastfm.apiSecret || '',
-                          onChange: (e) => setLastfmApiSecretInput(e.target.value),
-                          placeholder: 'Your Last.fm API secret',
-                          style: {
-                            width: '100%',
-                            padding: '8px 10px',
-                            fontSize: '12px',
-                            color: 'var(--text-primary)',
-                            backgroundColor: 'var(--card-bg)',
-                            border: '1px solid var(--border-subtle)',
-                            borderRadius: '6px',
-                            outline: 'none'
-                          }, 'aria-label': 'Your Last.fm API secret'
-                        })
+                        React.createElement(SecretField, { value: lastfmApiSecretInput || metaServiceConfigs.lastfm.apiSecret || '', onChange: (_v, e) => setLastfmApiSecretInput(e.target.value), placeholder: 'Your Last.fm API secret', 'aria-label': 'Your Last.fm API secret', className: 'w-full' })
                       ),
                       React.createElement('div', { className: 'flex gap-2' },
                         React.createElement('button', {
@@ -49097,22 +48880,7 @@ React.createElement('div', {
                         marginBottom: '6px'
                       }
                     }, 'Username'),
-                    React.createElement('input', {
-                      type: 'text',
-                      value: lastfmUsernameInput,
-                      onChange: (e) => setLastfmUsernameInput(e.target.value),
-                      placeholder: 'Your Last.fm username',
-                      style: {
-                        width: '100%',
-                        padding: '10px 12px',
-                        fontSize: '13px',
-                        color: 'var(--text-primary)',
-                        backgroundColor: 'var(--card-bg)',
-                        border: '1px solid var(--border-subtle)',
-                        borderRadius: '8px',
-                        outline: 'none'
-                      }, 'aria-label': 'Your Last.fm username'
-                    })
+                    React.createElement(TextField, { value: lastfmUsernameInput, onChange: (_v, e) => setLastfmUsernameInput(e.target.value), placeholder: 'Your Last.fm username', 'aria-label': 'Your Last.fm username', className: 'w-full' })
                   ),
                   // Advanced accordion
                   React.createElement('div', { style: { marginBottom: '16px' } },
@@ -49161,22 +48929,7 @@ React.createElement('div', {
                             marginBottom: '4px'
                           }
                         }, 'API Key'),
-                        React.createElement('input', {
-                          type: 'password',
-                          value: lastfmApiKeyInput,
-                          onChange: (e) => setLastfmApiKeyInput(e.target.value),
-                          placeholder: 'Your Last.fm API key',
-                          style: {
-                            width: '100%',
-                            padding: '8px 10px',
-                            fontSize: '12px',
-                            color: 'var(--text-primary)',
-                            backgroundColor: 'var(--card-bg)',
-                            border: '1px solid var(--border-subtle)',
-                            borderRadius: '6px',
-                            outline: 'none'
-                          }, 'aria-label': 'Your Last.fm API key'
-                        })
+                        React.createElement(SecretField, { value: lastfmApiKeyInput, onChange: (_v, e) => setLastfmApiKeyInput(e.target.value), placeholder: 'Your Last.fm API key', 'aria-label': 'Your Last.fm API key', className: 'w-full' })
                       ),
                       React.createElement('div', null,
                         React.createElement('label', {
@@ -49188,22 +48941,7 @@ React.createElement('div', {
                             marginBottom: '4px'
                           }
                         }, 'API Secret'),
-                        React.createElement('input', {
-                          type: 'password',
-                          value: lastfmApiSecretInput,
-                          onChange: (e) => setLastfmApiSecretInput(e.target.value),
-                          placeholder: 'Your Last.fm API secret',
-                          style: {
-                            width: '100%',
-                            padding: '8px 10px',
-                            fontSize: '12px',
-                            color: 'var(--text-primary)',
-                            backgroundColor: 'var(--card-bg)',
-                            border: '1px solid var(--border-subtle)',
-                            borderRadius: '6px',
-                            outline: 'none'
-                          }, 'aria-label': 'Your Last.fm API secret'
-                        })
+                        React.createElement(SecretField, { value: lastfmApiSecretInput, onChange: (_v, e) => setLastfmApiSecretInput(e.target.value), placeholder: 'Your Last.fm API secret', 'aria-label': 'Your Last.fm API secret', className: 'w-full' })
                       )
                     )
                   ),
@@ -49298,22 +49036,7 @@ React.createElement('div', {
                         marginBottom: '4px'
                       }
                     }, 'User Token'),
-                    React.createElement('input', {
-                      'aria-label': 'ListenBrainz user token',
-                      type: 'password',
-                      defaultValue: metaServiceConfigs.listenbrainz.userToken,
-                      readOnly: true,
-                      style: {
-                        width: '100%',
-                        padding: '8px 10px',
-                        fontSize: '12px',
-                        color: 'var(--text-primary)',
-                        backgroundColor: 'var(--bg-secondary)',
-                        border: '1px solid var(--border-subtle)',
-                        borderRadius: '6px',
-                        outline: 'none'
-                      }
-                    })
+                    React.createElement(SecretField, { 'aria-label': 'ListenBrainz user token', defaultValue: metaServiceConfigs.listenbrainz.userToken, readOnly: true, className: 'w-full' })
                   ),
 
                   // Scrobbling section for ListenBrainz
@@ -49392,22 +49115,7 @@ React.createElement('div', {
                         marginBottom: '6px'
                       }
                     }, 'Username'),
-                    React.createElement('input', {
-                      type: 'text',
-                      value: listenbrainzUsernameInput,
-                      onChange: (e) => setListenbrainzUsernameInput(e.target.value),
-                      placeholder: 'Your ListenBrainz username',
-                      style: {
-                        width: '100%',
-                        padding: '10px 12px',
-                        fontSize: '13px',
-                        color: 'var(--text-primary)',
-                        backgroundColor: 'var(--card-bg)',
-                        border: '1px solid var(--border-subtle)',
-                        borderRadius: '8px',
-                        outline: 'none'
-                      }, 'aria-label': 'Your ListenBrainz username'
-                    })
+                    React.createElement(TextField, { value: listenbrainzUsernameInput, onChange: (_v, e) => setListenbrainzUsernameInput(e.target.value), placeholder: 'Your ListenBrainz username', 'aria-label': 'Your ListenBrainz username', className: 'w-full' })
                   ),
                   // Advanced accordion
                   React.createElement('div', { style: { marginBottom: '16px' } },
@@ -49456,22 +49164,7 @@ React.createElement('div', {
                             marginBottom: '4px'
                           }
                         }, 'User Token'),
-                        React.createElement('input', {
-                          type: 'password',
-                          value: listenbrainzTokenInput,
-                          onChange: (e) => setListenbrainzTokenInput(e.target.value),
-                          placeholder: 'Your ListenBrainz user token',
-                          style: {
-                            width: '100%',
-                            padding: '8px 10px',
-                            fontSize: '12px',
-                            color: 'var(--text-primary)',
-                            backgroundColor: 'var(--card-bg)',
-                            border: '1px solid var(--border-subtle)',
-                            borderRadius: '6px',
-                            outline: 'none'
-                          }, 'aria-label': 'Your ListenBrainz user token'
-                        })
+                        React.createElement(SecretField, { value: listenbrainzTokenInput, onChange: (_v, e) => setListenbrainzTokenInput(e.target.value), placeholder: 'Your ListenBrainz user token', 'aria-label': 'Your ListenBrainz user token', className: 'w-full' })
                       )
                     )
                   ),
@@ -49553,14 +49246,7 @@ React.createElement('div', {
                       lineHeight: '1.5'
                     }
                   }, fieldSetting.description),
-                  React.createElement('input', {
-                    type: fieldSetting.type === 'password' ? 'password' : 'text',
-                    defaultValue: saved[fieldKey] || fieldSetting.default || '',
-                    placeholder: fieldSetting.placeholder || '',
-                    spellCheck: false,
-                    onBlur: (e) => saveField(fieldKey, fieldSetting.type === 'password' ? e.target.value : e.target.value.trim()),
-                    style: inputStyle, 'aria-label': fieldSetting.label || fieldKey
-                  })
+                  React.createElement(TextField, { defaultValue: saved[fieldKey] || fieldSetting.default || '', placeholder: fieldSetting.placeholder || '', spellCheck: false, onBlur: (e) => saveField(fieldKey, fieldSetting.type === 'password' ? e.target.value : e.target.value.trim()), 'aria-label': fieldSetting.label || fieldKey, className: 'w-full' })
                 )
               ),
               (usernameSetting || passwordSetting) && React.createElement('div', {
@@ -49575,27 +49261,11 @@ React.createElement('div', {
               },
                 usernameSetting && React.createElement('div', { style: { flex: '1 1 140px', minWidth: 0 } },
                   React.createElement('label', { style: labelStyle }, usernameSetting.label || 'Username'),
-                  React.createElement('input', {
-                    type: 'text',
-                    defaultValue: saved.username || '',
-                    placeholder: usernameSetting.placeholder || '',
-                    autoComplete: 'username',
-                    spellCheck: false,
-                    onBlur: (e) => saveField('username', e.target.value.trim()),
-                    style: inputStyle, 'aria-label': usernameSetting.label || 'Username'
-                  })
+                  React.createElement(TextField, { defaultValue: saved.username || '', placeholder: usernameSetting.placeholder || '', autoComplete: 'username', spellCheck: false, onBlur: (e) => saveField('username', e.target.value.trim()), 'aria-label': usernameSetting.label || 'Username', className: 'w-full' })
                 ),
                 passwordSetting && React.createElement('div', { style: { flex: '1 1 140px', minWidth: 0 } },
                   React.createElement('label', { style: labelStyle }, passwordSetting.label || 'Password'),
-                  React.createElement('input', {
-                    type: 'password',
-                    defaultValue: saved.password || '',
-                    placeholder: passwordSetting.placeholder || '',
-                    autoComplete: 'current-password',
-                    spellCheck: false,
-                    onBlur: (e) => saveField('password', e.target.value),
-                    style: inputStyle, 'aria-label': passwordSetting.label || 'Password'
-                  })
+                  React.createElement(SecretField, { defaultValue: saved.password || '', placeholder: passwordSetting.placeholder || '', autoComplete: 'current-password', spellCheck: false, onBlur: (e) => saveField('password', e.target.value), 'aria-label': passwordSetting.label || 'Password', className: 'w-full' })
                 ),
                 credentialNote && React.createElement('p', {
                   style: {
@@ -49663,10 +49333,7 @@ React.createElement('div', {
                   marginBottom: '6px'
                 }
               }, authFieldSettings.label || 'API Key'),
-              React.createElement('input', {
-                type: 'password',
-                defaultValue: metaServiceConfigs[selectedResolver.id]?.[authFieldKey] || '',
-                onBlur: (e) => {
+              React.createElement(SecretField, { defaultValue: metaServiceConfigs[selectedResolver.id]?.[authFieldKey] || '', onBlur: (e) => {
                   // Services whose key is optional (requiresAuth: false, e.g. local
                   // custom-LLM endpoints) keep their explicit enabled toggle — blurring
                   // an empty key field must not silently disable them. Note `=== true ||`,
@@ -49690,19 +49357,7 @@ React.createElement('div', {
                       fetchDynamicModels(resolver, { ...metaServiceConfigs[selectedResolver.id], [authFieldKey]: e.target.value });
                     }
                   }, 100);
-                },
-                placeholder: authFieldSettings.placeholder || (selectedResolver.id === 'chatgpt' ? 'sk-...' : selectedResolver.id === 'gemini' ? 'AIza...' : selectedResolver.id === 'claude' ? 'sk-ant-...' : ''),
-                style: {
-                  width: '100%',
-                  padding: '10px 12px',
-                  fontSize: '13px',
-                  color: 'var(--text-primary)',
-                  backgroundColor: 'var(--card-bg)',
-                  border: '1px solid var(--border-subtle)',
-                  borderRadius: '8px',
-                  outline: 'none'
-                }, 'aria-label': `${selectedResolver.name} API key`
-              }),
+                }, placeholder: authFieldSettings.placeholder || (selectedResolver.id === 'chatgpt' ? 'sk-...' : selectedResolver.id === 'gemini' ? 'AIza...' : selectedResolver.id === 'claude' ? 'sk-ant-...' : ''), 'aria-label': `${selectedResolver.name} API key`, className: 'w-full' }),
               selectedResolver.homepage && React.createElement('a', {
                 href: '#',
                 onClick: (e) => {
@@ -49771,18 +49426,12 @@ React.createElement('div', {
 
                 // Free-form model id — for endpoints whose model names aren't a fixed list
                 if (modelSetting?.type === 'text') {
-                  return React.createElement('input', {
-                    type: 'text',
-                    defaultValue: metaServiceConfigs[selectedResolver.id]?.model || modelSetting?.default || '',
-                    placeholder: modelSetting?.placeholder || '',
-                    onBlur: (e) => {
+                  return React.createElement(TextField, { defaultValue: metaServiceConfigs[selectedResolver.id]?.model || modelSetting?.default || '', placeholder: modelSetting?.placeholder || '', onBlur: (e) => {
                       saveMetaServiceConfig(selectedResolver.id, {
                         ...metaServiceConfigs[selectedResolver.id],
                         model: e.target.value.trim()
                       });
-                    },
-                    style: modelInputStyle, 'aria-label': 'Model'
-                  });
+                    }, 'aria-label': 'Model', className: 'w-full' });
                 }
 
                 // Free-form model id with fetched suggestions (allowCustom) — lets users
@@ -49795,19 +49444,12 @@ React.createElement('div', {
                     : (modelSetting?.fallbackOptions || []);
                   const listId = `model-suggestions-${selectedResolver.id}`;
                   return React.createElement('div', null,
-                    React.createElement('input', {
-                      type: 'text',
-                      list: listId,
-                      defaultValue: metaServiceConfigs[selectedResolver.id]?.model || modelSetting?.default || '',
-                      placeholder: modelSetting?.placeholder || 'model id',
-                      onBlur: (e) => {
+                    React.createElement(TextField, { list: listId, defaultValue: metaServiceConfigs[selectedResolver.id]?.model || modelSetting?.default || '', placeholder: modelSetting?.placeholder || 'model id', onBlur: (e) => {
                         saveMetaServiceConfig(selectedResolver.id, {
                           ...metaServiceConfigs[selectedResolver.id],
                           model: e.target.value.trim()
                         });
-                      },
-                      style: modelInputStyle, 'aria-label': 'Model'
-                    }),
+                      }, 'aria-label': 'Model', className: 'w-full' }),
                     React.createElement('datalist', { id: listId },
                       suggestions.map(opt =>
                         React.createElement('option', { key: opt.value, value: opt.value }, opt.label)
@@ -49926,19 +49568,13 @@ React.createElement('div', {
                           React.createElement('option', { key: opt.value, value: opt.value }, opt.label)
                         )
                       )
-                    : React.createElement('input', {
-                        type: fieldSetting.type === 'number' ? 'number' : 'text',
-                        defaultValue: savedValue || fieldSetting.default || '',
-                        placeholder: fieldSetting.placeholder || '',
-                        onBlur: (e) => {
+                    : React.createElement(TextField, { defaultValue: savedValue || fieldSetting.default || '', placeholder: fieldSetting.placeholder || '', onBlur: (e) => {
                           saveMetaServiceConfig(selectedResolver.id, {
                             ...metaServiceConfigs[selectedResolver.id],
                             [fieldKey]: e.target.value.trim()
                           });
                           if (refetchModels) refetchModels(e.target.value.trim());
-                        },
-                        style: fieldInputStyle, 'aria-label': fieldSetting.label || fieldKey
-                      })
+                        }, 'aria-label': fieldSetting.label || fieldKey, className: 'w-full' })
                 );
               }),
             // Explicit enable toggle for no-key AI services (requiresAuth: false).
@@ -49953,20 +49589,14 @@ React.createElement('div', {
             },
               React.createElement('span', { style: { fontSize: '13px', color: 'var(--text-primary)' } },
                 `Enable ${selectedResolver.name || selectedResolver.id}`),
-              React.createElement('label', { className: 'relative inline-block w-10 h-5 cursor-pointer' },
-                React.createElement('input', {
-                  type: 'checkbox',
-                  checked: metaServiceConfigs[selectedResolver.id]?.enabled === true,
-                  role: 'switch',
-                  'aria-label': `Use ${selectedResolver.name}`,
-                  onChange: async (e) => {
+              React.createElement(Switch, { checked: metaServiceConfigs[selectedResolver.id]?.enabled === true, onToggle: async () => { const next = !(metaServiceConfigs[selectedResolver.id]?.enabled === true);
                     saveMetaServiceConfig(selectedResolver.id, {
                       ...metaServiceConfigs[selectedResolver.id],
-                      enabled: e.target.checked
+                      enabled: next
                     });
                     // When enabling, ensure the plugin is actually loaded (e.g.
                     // previously uninstalled)
-                    if (e.target.checked) {
+                    if (next) {
                       const isLoaded = metaServices.some(s => s.id === selectedResolver.id);
                       if (!isLoaded) {
                         const uninstalled = await window.electron.store.get('uninstalled_resolvers') || [];
@@ -49979,18 +49609,7 @@ React.createElement('div', {
                         }
                       }
                     }
-                  },
-                  className: 'sr-only peer'
-                }),
-                React.createElement('div', {
-                  className: 'w-full h-full rounded-full transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-accent peer-focus-visible:ring-offset-2',
-                  style: { backgroundColor: metaServiceConfigs[selectedResolver.id]?.enabled === true ? 'var(--accent-fill)' : 'var(--control-off)' }
-                }),
-                React.createElement('div', {
-                  className: 'absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-control-knob shadow transition-transform',
-                  style: { transform: metaServiceConfigs[selectedResolver.id]?.enabled === true ? 'translateX(20px)' : 'translateX(0)' }
-                })
-              )
+                  }, 'aria-label': `Use ${selectedResolver.name}` })
             ),
             // Connection status
             metaServiceConfigs[selectedResolver.id]?.[authFieldKey] && React.createElement('div', {
@@ -50068,10 +49687,7 @@ React.createElement('div', {
                   marginBottom: '6px'
                 }
               }, 'Ollama URL'),
-              React.createElement('input', {
-                type: 'text',
-                defaultValue: metaServiceConfigs[selectedResolver.id]?.endpoint || 'http://localhost:11434',
-                onBlur: (e) => {
+              React.createElement(TextField, { defaultValue: metaServiceConfigs[selectedResolver.id]?.endpoint || 'http://localhost:11434', onBlur: (e) => {
                   // Saving an empty URL doesn't switch the plugin on.
                   saveMetaServiceConfig(selectedResolver.id, {
                     ...metaServiceConfigs[selectedResolver.id],
@@ -50086,19 +49702,7 @@ React.createElement('div', {
                       fetchDynamicModels(resolver, { ...metaServiceConfigs[selectedResolver.id], endpoint: e.target.value });
                     }
                   }, 100);
-                },
-                placeholder: 'http://localhost:11434',
-                style: {
-                  width: '100%',
-                  padding: '10px 12px',
-                  fontSize: '13px',
-                  color: 'var(--text-primary)',
-                  backgroundColor: 'var(--card-bg)',
-                  border: '1px solid var(--border-subtle)',
-                  borderRadius: '8px',
-                  outline: 'none'
-                }, 'aria-label': 'Ollama server URL'
-              }),
+                }, placeholder: 'http://localhost:11434', 'aria-label': 'Ollama server URL', className: 'w-full' }),
             ),
             // Model selector for Ollama - supports dynamic-select
             React.createElement('div', { style: { marginBottom: '16px' } },
@@ -50192,19 +49796,13 @@ React.createElement('div', {
             // Enable toggle
             React.createElement('div', { className: 'flex items-center justify-between' },
               React.createElement('span', { style: { fontSize: '13px', color: 'var(--text-primary)' } }, 'Enable Ollama'),
-              React.createElement('label', { className: 'relative inline-block w-10 h-5 cursor-pointer' },
-                React.createElement('input', {
-                  type: 'checkbox',
-                  checked: metaServiceConfigs[selectedResolver.id]?.enabled === true,
-                  role: 'switch',
-                  'aria-label': `Use ${selectedResolver.name}`,
-                  onChange: async (e) => {
+              React.createElement(Switch, { checked: metaServiceConfigs[selectedResolver.id]?.enabled === true, onToggle: async () => { const next = !(metaServiceConfigs[selectedResolver.id]?.enabled === true);
                     saveMetaServiceConfig(selectedResolver.id, {
                       ...metaServiceConfigs[selectedResolver.id],
-                      enabled: e.target.checked
+                      enabled: next
                     });
                     // When enabling, ensure the plugin is actually loaded
-                    if (e.target.checked) {
+                    if (next) {
                       const isLoaded = metaServices.some(s => s.id === selectedResolver.id);
                       if (!isLoaded) {
                         // Remove from uninstalled list so it loads on next restart
@@ -50219,18 +49817,7 @@ React.createElement('div', {
                         }
                       }
                     }
-                  },
-                  className: 'sr-only peer'
-                }),
-                React.createElement('div', {
-                  className: 'w-full h-full rounded-full transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-accent peer-focus-visible:ring-offset-2',
-                  style: { backgroundColor: metaServiceConfigs[selectedResolver.id]?.enabled === true ? 'var(--accent-fill)' : 'var(--control-off)' }
-                }),
-                React.createElement('div', {
-                  className: 'absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-control-knob shadow transition-transform',
-                  style: { transform: metaServiceConfigs[selectedResolver.id]?.enabled === true ? 'translateX(20px)' : 'translateX(0)' }
-                })
-              )
+                  }, 'aria-label': `Use ${selectedResolver.name}` })
             )
           ),
 
@@ -50900,10 +50487,7 @@ React.createElement('div', {
             // API Key input
             React.createElement('div', { className: 'space-y-2' },
               React.createElement('label', { className: 'block text-sm text-ink-secondary' }, 'API Key'),
-              React.createElement('input', {
-                type: 'password',
-                defaultValue: metaServiceConfigs[selectedMarketplaceItem.id]?.apiKey || '',
-                onBlur: (e) => {
+              React.createElement(SecretField, { defaultValue: metaServiceConfigs[selectedMarketplaceItem.id]?.apiKey || '', onBlur: (e) => {
                   // Saving an empty key doesn't switch the plugin on (the
                   // resolver modal's key field already worked this way).
                   saveMetaServiceConfig(selectedMarketplaceItem.id, {
@@ -50911,10 +50495,7 @@ React.createElement('div', {
                     apiKey: e.target.value,
                     enabled: !!e.target.value.trim()
                   });
-                },
-                placeholder: selectedMarketplaceItem.id === 'chatgpt' ? 'sk-...' : 'AIza...',
-                className: 'w-full px-3 py-2 border border-line-strong rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent', 'aria-label': `${selectedMarketplaceItem.name} API key`
-              }),
+                }, placeholder: selectedMarketplaceItem.id === 'chatgpt' ? 'sk-...' : 'AIza...', 'aria-label': `${selectedMarketplaceItem.name} API key`, className: 'w-full' }),
               React.createElement('a', {
                 href: '#',
                 onClick: (e) => {
@@ -52017,11 +51598,7 @@ React.createElement('div', {
                 onClick: (e) => e.stopPropagation(), // Prevent row click when interacting with form
                 style: { pointerEvents: 'auto' } // Allow form interaction
               },
-                React.createElement('input', {
-                  type: 'text',
-                  value: newPlaylistName,
-                  onChange: (e) => setNewPlaylistName(e.target.value),
-                  onKeyDown: (e) => {
+                React.createElement(TextField, { value: newPlaylistName, onChange: (_v, e) => setNewPlaylistName(e.target.value), onKeyDown: (e) => {
                     // Prevent global shortcuts from interfering while typing
                     e.stopPropagation();
                     if (e.key === 'Enter' && newPlaylistName.trim()) {
@@ -52059,11 +51636,7 @@ React.createElement('div', {
                       setNewPlaylistName('');
                       setDroppedTrackForNewPlaylist(null); // Clear dropped track
                     }
-                  },
-                  placeholder: 'Playlist name...',
-                  autoFocus: true,
-                  className: 'flex-1 px-3 py-1.5 text-sm border border-line-strong rounded focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent', 'aria-label': 'Playlist name'
-                }),
+                  }, placeholder: 'Playlist name...', autoFocus: true, 'aria-label': 'Playlist name', className: 'flex-1' }),
                 React.createElement('button', {
                   onClick: () => {
                     if (!newPlaylistName.trim()) return;
@@ -52346,22 +51919,7 @@ React.createElement('div', {
                 marginBottom: '6px'
               }
             }, 'Title'),
-            React.createElement('input', {
-              type: 'text',
-              value: id3EditorValues.title,
-              onChange: (e) => setId3EditorValues(v => ({ ...v, title: e.target.value })),
-              placeholder: 'Track title',
-              style: {
-                width: '100%',
-                padding: '10px 12px',
-                fontSize: '13px',
-                color: 'var(--text-primary)',
-                backgroundColor: 'var(--card-bg)',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: '8px',
-                outline: 'none'
-              }, 'aria-label': 'Track title'
-            })
+            React.createElement(TextField, { value: id3EditorValues.title, onChange: (_v, e) => setId3EditorValues(v => ({ ...v, title: e.target.value })), placeholder: 'Track title', 'aria-label': 'Track title', className: 'w-full' })
           ),
           // Artist field
           React.createElement('div', { style: { marginBottom: '16px' } },
@@ -52374,22 +51932,7 @@ React.createElement('div', {
                 marginBottom: '6px'
               }
             }, 'Artist'),
-            React.createElement('input', {
-              type: 'text',
-              value: id3EditorValues.artist,
-              onChange: (e) => setId3EditorValues(v => ({ ...v, artist: e.target.value })),
-              placeholder: 'Artist name',
-              style: {
-                width: '100%',
-                padding: '10px 12px',
-                fontSize: '13px',
-                color: 'var(--text-primary)',
-                backgroundColor: 'var(--card-bg)',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: '8px',
-                outline: 'none'
-              }, 'aria-label': 'Artist name'
-            })
+            React.createElement(TextField, { value: id3EditorValues.artist, onChange: (_v, e) => setId3EditorValues(v => ({ ...v, artist: e.target.value })), placeholder: 'Artist name', 'aria-label': 'Artist name', className: 'w-full' })
           ),
           // Album field
           React.createElement('div', { style: { marginBottom: '16px' } },
@@ -52402,22 +51945,7 @@ React.createElement('div', {
                 marginBottom: '6px'
               }
             }, 'Album'),
-            React.createElement('input', {
-              type: 'text',
-              value: id3EditorValues.album,
-              onChange: (e) => setId3EditorValues(v => ({ ...v, album: e.target.value })),
-              placeholder: 'Album name',
-              style: {
-                width: '100%',
-                padding: '10px 12px',
-                fontSize: '13px',
-                color: 'var(--text-primary)',
-                backgroundColor: 'var(--card-bg)',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: '8px',
-                outline: 'none'
-              }, 'aria-label': 'Album name'
-            })
+            React.createElement(TextField, { value: id3EditorValues.album, onChange: (_v, e) => setId3EditorValues(v => ({ ...v, album: e.target.value })), placeholder: 'Album name', 'aria-label': 'Album name', className: 'w-full' })
           ),
           // Track Number and Year row
           React.createElement('div', { className: 'flex gap-4', style: { marginBottom: '20px' } },
@@ -52432,22 +51960,7 @@ React.createElement('div', {
                   marginBottom: '6px'
                 }
               }, 'Track #'),
-              React.createElement('input', {
-                type: 'text',
-                value: id3EditorValues.trackNumber,
-                onChange: (e) => setId3EditorValues(v => ({ ...v, trackNumber: e.target.value })),
-                placeholder: '1',
-                style: {
-                  width: '100%',
-                  padding: '10px 12px',
-                  fontSize: '13px',
-                  color: 'var(--text-primary)',
-                  backgroundColor: 'var(--card-bg)',
-                  border: '1px solid var(--border-subtle)',
-                  borderRadius: '8px',
-                  outline: 'none'
-                }, 'aria-label': '1'
-              })
+              React.createElement(TextField, { value: id3EditorValues.trackNumber, onChange: (_v, e) => setId3EditorValues(v => ({ ...v, trackNumber: e.target.value })), placeholder: '1', 'aria-label': '1', className: 'w-full' })
             ),
             // Year field
             React.createElement('div', { className: 'flex-1' },
@@ -52460,22 +51973,7 @@ React.createElement('div', {
                   marginBottom: '6px'
                 }
               }, 'Year'),
-              React.createElement('input', {
-                type: 'text',
-                value: id3EditorValues.year,
-                onChange: (e) => setId3EditorValues(v => ({ ...v, year: e.target.value })),
-                placeholder: '2024',
-                style: {
-                  width: '100%',
-                  padding: '10px 12px',
-                  fontSize: '13px',
-                  color: 'var(--text-primary)',
-                  backgroundColor: 'var(--card-bg)',
-                  border: '1px solid var(--border-subtle)',
-                  borderRadius: '8px',
-                  outline: 'none'
-                }, 'aria-label': '2024'
-              })
+              React.createElement(TextField, { value: id3EditorValues.year, onChange: (_v, e) => setId3EditorValues(v => ({ ...v, year: e.target.value })), placeholder: '2024', 'aria-label': '2024', className: 'w-full' })
             )
           ),
 
