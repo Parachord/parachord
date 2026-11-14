@@ -156,17 +156,30 @@ function ConfirmModalBody({ dialog, onClose: close }) {
   const e = React.createElement;
   const { type = 'info', title, message, onConfirm, onCancel, confirmLabel, cancelLabel, destructive, actionButton, dontShowAgain } = dialog;
   const [suppress, setSuppress] = React.useState(false);
+  // close is the app's closeConfirmDialog: it hides the dialog and returns
+  // the cancel still pending for it (null once another dialog replaced it),
+  // or undefined where nothing tracks one.
   const onClose = () => {
     if (dontShowAgain && suppress && dontShowAgain.onChange) dontShowAgain.onChange(true);
-    close();
+    return close();
   };
   const [iconName, color] = TYPE_ICON[type] || TYPE_ICON.info;
   // Any way out that isn't the confirm button is a cancel (onCancel lets
   // confirmAsync resolve false).
-  const cancel = () => { if (onCancel) onCancel(); onClose(); };
-  const confirm = () => { if (onConfirm) onConfirm(); onClose(); };
+  // Close first, then run the callback, so a callback that opens another
+  // dialog isn't closed with this one (#1363's chained confirmations).
+  const cancel = () => {
+    const pending = onClose();
+    // A function: the cancel still owed. null: already answered or replaced
+    // by another dialog. Anything else: nothing tracks it, so onCancel.
+    const fn = typeof pending === 'function' ? pending : (pending === null ? null : onCancel);
+    if (fn) fn();
+  };
+  const confirm = () => { onClose(); if (onConfirm) onConfirm(); };
   const fix = actionButton && (() => { const fn = actionButton.onClick; cancel(); if (fn) fn(); });
-  const showCancel = !!(cancelLabel || destructive);
+  // Two-button dialogs: a cancel label, a destructive action, or a named
+  // confirm with an onCancel to answer (the love-import confirmation).
+  const showCancel = !!(cancelLabel || destructive || (confirmLabel && onCancel));
   const footer = [
     showCancel && e(Button, { key: 'cancel', variant: 'secondary', onClick: cancel }, cancelLabel || 'Cancel'),
     e(Button, {

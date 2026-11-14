@@ -26,7 +26,8 @@ const { SortMenu } = require('./sort-menu');
 const { ResolverIcon } = require('./ui-atoms');
 const { SectionHeader, SECTION_HEADER_GAP } = require('./section-header');
 const { artistOpenOptions, creditOpenOptions, trackArtistOpenOptions } = require('../lib/artist-open');
-const { VirtualizedTrackList, getBestSourceConfidence } = require('./track-lists');
+const { VirtualizedTrackList } = require('./track-lists');
+const { visibleSources, sourceRowState } = require('../lib/visible-sources');
 const { generateArtistPattern, PlayTop10Icon, QueueTop10Icon, SearchArtistCard, SearchHistoryItem } = require('./cards');
 const { trackSlug, slug } = require('../lib/track-slug');
 const { releaseMenu, artistMenu } = require('../lib/item-menus');
@@ -695,10 +696,13 @@ const SearchPage = React.memo(function SearchPage(props) {
                   tracks: filteredTracks,
                   parentRef: searchScrollContainerRef,
                   renderRow: (track, index) => {
-                    // Use track.id to look up resolved sources from trackSources state
-                    const resolvedSources = trackSources[track.id] || track.sources || {};
-                    const hasResolved = Object.keys(resolvedSources).length > 0;
-                    const isResolving = !hasResolved && track.resolving;
+                    // The row's sources, one rule for every list (lib/visible-sources):
+                    // resolving (shimmer, while Search is still resolving it),
+                    // unplayable (dimmed, no icons) or playable.
+                    const { shown: shownSources, state: sourceState } = sourceRowState(track, { trackSources, playbackResolvers: activeResolvers, resolverOrder });
+                    const hasResolved = sourceState === 'playable';
+                    const isResolving = sourceState === 'resolving' && track.resolving;
+                    const isUnplayable = sourceState === 'unplayable';
                     const isCurrentTrack = currentTrack?.id === track.id;
                     const isNowPlaying = isCurrentTrack && playbackContext?.type === 'search';
 
@@ -737,7 +741,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       handlePlaylistDragEnd();
                     },
                     className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${
-                      isResolving ? 'opacity-60' : ''
+                      isResolving || isUnplayable ? 'opacity-60' : ''
                     } ${isNowPlaying && isPlaying ? 'bg-accent-tint' : 'hover:bg-surface-hover'}`,
                     style: {
                       borderRadius: '8px',
@@ -855,15 +859,8 @@ const SearchPage = React.memo(function SearchPage(props) {
                           })
                         )
                       : hasResolved ? (() => {
-                          const bestConf = getBestSourceConfidence(resolvedSources);
-                          return Object.entries(resolvedSources)
-                            .filter(([resolverId]) => activeResolvers.includes(resolverId))
-                            .sort(([aId], [bId]) => {
-                              const aIndex = resolverOrder.indexOf(aId);
-                              const bIndex = resolverOrder.indexOf(bId);
-                              return aIndex - bIndex;
-                            })
-                            .map(([resolverId, source]) => {
+                          return shownSources
+                            .map(({ resolverId, source, dim }) => {
                               const resolver = allResolvers.find(r => r.id === resolverId);
                               if (!resolver || !resolver.play) return null;
                               return React.createElement('button', {
@@ -887,7 +884,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                                   alignItems: 'center',
                                   justifyContent: 'center',
                                   pointerEvents: 'auto',
-                                  opacity: (source.confidence || 0) < bestConf ? 0.6 : 1,
+                                  opacity: dim ? 0.6 : 1,
                                   transition: 'transform 0.1s'
                                 },
                                 onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
@@ -924,7 +921,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                 searchResults.playlists.map((playlist, index) => {
                   const animationDelay = Math.min(index * 30, 300);
                   return React.createElement(CardButton, { label: playlist.title,
-                    key: playlist.title,
+                    key: playlist.id || `${playlist.title}-${index}`,
                     className: 'cursor-pointer group release-card card-fade-up',
                     style: {
                       padding: '10px',
@@ -1542,24 +1539,28 @@ const SearchPage = React.memo(function SearchPage(props) {
                         )
                       )
                     ),
-                    // Resolver dots - bottom right corner (hidden on hover)
-                    track.sources && Object.keys(track.sources).filter(id => !track.sources[id]?.noMatch).length > 0 && React.createElement('div', {
-                      className: 'absolute bottom-1.5 right-1.5 flex gap-1 transition-opacity group-hover:opacity-0'
-                    },
-                      ...Object.keys(track.sources).filter(id => !track.sources[id]?.noMatch).slice(0, 4).map(source => {
-                        const sourceResolver = (allResolvers || []).find(r => r.id === source);
-                        return React.createElement('div', {
-                          key: source,
+                    // Source dots - bottom right corner (hidden on hover): the
+                    // shared source-icon rule (lib/visible-sources), first four,
+                    // each in its plugin's colour, dimmed like the row icons.
+                    (() => {
+                      const dots = visibleSources(track, { trackSources, playbackResolvers: activeResolvers, resolverOrder }).slice(0, 4);
+                      if (dots.length === 0) return null;
+                      return React.createElement('div', {
+                        className: 'absolute bottom-1.5 right-1.5 flex gap-1 transition-opacity group-hover:opacity-0'
+                      },
+                        ...dots.map(({ resolverId, dim }) => React.createElement('div', {
+                          key: resolverId,
                           style: {
                             width: '7px',
                             height: '7px',
                             borderRadius: '50%',
-                            backgroundColor: (sourceResolver && sourceResolver.color) || 'var(--text-tertiary)',
+                            backgroundColor: allResolvers.find(r => r.id === resolverId)?.color || 'var(--text-tertiary)',
+                            opacity: dim ? 0.6 : 1,
                             boxShadow: '0 1px 2px rgba(0,0,0,0.3)'
                           }
-                        });
-                      })
-                    )
+                        }))
+                      );
+                    })()
                   ),
                   // Track title - refined typography
                   React.createElement('div', {
@@ -1820,7 +1821,7 @@ const SearchPage = React.memo(function SearchPage(props) {
               ...searchResults.playlists.slice(0, 20).map((playlist, index) => {
                 const animationDelay = Math.min(index * 40, 300);
                 return React.createElement('button', { type: 'button',
-                  key: playlist.title,
+                  key: playlist.id || `${playlist.title}-${index}`,
                   onClick: () => {
                     saveSearchHistory(searchQuery, {
                       type: 'playlist',

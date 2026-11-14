@@ -906,3 +906,96 @@ describe('album category rows', () => {
     expect(rowsOf(more, 'album').map(s => s.key)).toEqual(['type:album']);
   });
 });
+
+// A provider id (an ASIN, an MBID) is the card key, so one id is one card.
+// A provider can send one album under "A" in one section and "A, B" in
+// another: the name keys differ, both used to survive, and the row then had
+// two cards with one key (2026-11).
+describe('one item per provider id', () => {
+  const m = recommendationModel;
+  const norm = (resolverId, resolverName, sections) =>
+    m.normalizeRecommendationSections({ sections }, { resolverId, resolverName });
+  const al = (id, name, artist, extra = {}) => ({ type: 'album', id, name, artist, ...extra });
+  const items = (page, type) => page.filter(s => s.type === type).flatMap(s => s.subsections).flatMap(s => s.items);
+
+  test('one provider, one id under two artist strings: one item, earliest category', () => {
+    const providers = [norm('amazonmusic', 'Amazon Music', [
+      { id: 'ed', title: 'Editorial', category: 'editorial', items: [al('B0ASIN', 'Site Unseen', 'Waxahatchee')] },
+      { id: 'new', title: 'New', category: 'new', items: [al('B0ASIN', 'Site Unseen', 'Waxahatchee, MJ Lenderman')] }
+    ])];
+    const all = items(m.buildRecommendationPage({ providers }), 'album');
+    expect(all.map(i => i.id)).toEqual(['B0ASIN']);
+    expect(all[0]).toMatchObject({ artist: 'Waxahatchee', category: 'new', sourceIds: ['amazonmusic'] });
+  });
+
+  test('two providers sending one id merge their sources', () => {
+    const providers = [
+      norm('a', 'A', [{ items: [al('mbid-1', 'Sunbather', 'Deafheaven')] }]),
+      norm('b', 'B', [{ items: [al('mbid-1', 'Sunbather (Remastered)', 'Deafheaven')] }])
+    ];
+    const all = items(m.buildRecommendationPage({ providers }), 'album');
+    expect(all).toHaveLength(1);
+    expect(all[0]).toMatchObject({ name: 'Sunbather', resolverId: 'a', sourceIds: ['a', 'b'] });
+  });
+
+  test('a later copy matching either the id or the name of a merged copy joins it', () => {
+    const providers = [
+      norm('a', 'A', [{ items: [al('id-1', 'Ride', 'Arkells')] }]),
+      norm('b', 'B', [{ items: [al('id-1', 'Ride', 'Arkells, Someone')] }]),
+      norm('c', 'C', [{ items: [al('id-other', 'Ride', 'Arkells, Someone')] }])
+    ];
+    const all = items(m.buildRecommendationPage({ providers }), 'album');
+    expect(all).toHaveLength(1);
+    expect(all[0].sourceIds).toEqual(['a', 'b', 'c']);
+  });
+
+  test('different ids and names stay separate, and a song never merges into an album', () => {
+    const providers = [norm('a', 'A', [{ title: 'Mixed', items: [
+      al('id-1', 'Ride', 'Arkells'),
+      al('id-2', 'Ride', 'Someone Else'),
+      { type: 'song', id: 'id-1', name: 'Ride', artist: 'Arkells' }
+    ] }])];
+    const page = m.buildRecommendationPage({ providers });
+    expect(items(page, 'album').map(i => i.id)).toEqual(['id-1', 'id-2']);
+    expect(items(page, 'song').map(i => i.id)).toEqual(['id-1']);
+  });
+});
+
+// Home's "Albums you might love" picks albums from every Recommendations row
+// plus Shuffleupagus's, once each, keyed by item id.
+describe('homeRecommendationAlbums', () => {
+  const m = recommendationModel;
+  const sections = (...subs) => [{ type: 'album', subsections: subs }];
+  const subOf = (sources, ...its) => ({ sources, items: its });
+  const al = (id, name, artist, extra = {}) => ({ type: 'album', id, name, artist, resolverId: 'a', ...extra });
+
+  test('one card per id, even when the artist strings differ', () => {
+    const out = m.homeRecommendationAlbums({
+      sections: sections(
+        subOf([{ id: 'a', name: 'A' }], al('B0ASIN', 'Site Unseen', 'Waxahatchee', { blendIndex: 0 })),
+        subOf([{ id: 'a', name: 'A' }], al('B0ASIN', 'Site Unseen', 'Waxahatchee, MJ Lenderman', { blendIndex: 1 }))
+      )
+    });
+    expect(out.map(a => a.id)).toEqual(['B0ASIN']);
+    expect(out[0]).toMatchObject({ title: 'Site Unseen', artist: 'Waxahatchee', sourceLabel: 'A', why: 'A' });
+  });
+
+  test('keeps blend order, dedupes by artist and title as before, and appends Shuffleupagus once', () => {
+    const out = m.homeRecommendationAlbums({
+      sections: sections(
+        subOf([{ id: 'a', name: 'A' }], al('x2', 'Two', 'X', { blendIndex: 1 }), al('x1', 'One', 'X', { blendIndex: 0 })),
+        subOf([{ id: 'b', name: 'B' }], al('y1', 'one', 'x', { blendIndex: 2, resolverId: 'b' }))
+      ),
+      aiAlbums: [{ title: 'Two', artist: 'X' }, { title: 'Three', artist: 'X', reason: 'peak', art: 'https://i/3.jpg' }],
+      imageFor: (item) => `img:${item.id}`
+    });
+    expect(out.map(a => a.title)).toEqual(['One', 'Two', 'Three']);
+    expect(out[0].imageUrl).toBe('img:x1');
+    expect(out[2]).toMatchObject({ resolverId: 'shuffleupagus', sourceLabel: 'Shuffleupagus', why: 'Shuffleupagus · peak', imageUrl: 'https://i/3.jpg' });
+    expect(new Set(out.map(a => a.id)).size).toBe(out.length);
+  });
+
+  test('tolerates nothing at all', () => {
+    expect(m.homeRecommendationAlbums({})).toEqual([]);
+  });
+});

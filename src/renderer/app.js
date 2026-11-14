@@ -452,6 +452,56 @@ window.resolveMbidForLove = async (track) => {
   return null;
 };
 
+// Resolve a recording MBID to names for the loved-tracks import
+// (parachord#1071): ListenBrainz feedback whose MBID the mapping cache
+// doesn't know carries no track_metadata, so the import resolves names from
+// the recording itself. `/ws/2/recording/{mbid}?inc=artist-credits+releases`
+// through the app's wrapped fetch on the background lane (the ~1.1s MusicBrainz
+// spacing — a big library of metadata-less loves takes minutes, which #1071
+// accepts; the button shows a "Looking up names…" phase). Artist-credit
+// joinphrases are kept so "Simon & Garfunkel" doesn't come back as
+// "SimonGarfunkel", and the FIRST release's title is the album. On a merged
+// MBID MusicBrainz answers with the target recording, so `data.id` replaces
+// the stale MBID the candidate carried. No User-Agent header: Chromium strips
+// it from renderer fetches anyway, and the main process stamps the canonical
+// `Parachord/<version>` on every MetaBrainz request.
+//
+// Returns { status: 'ok', artist, title, album, mbid } | { status: 'missing' }
+// (the recording is gone: a real 404 or 400, or no usable names) | { status:
+// 'transient' } (throttled or unreachable after the fetch layer's retries —
+// the caller counts that differently and holds the cursor, because a missed
+// recording and an unreachable server must not read the same). Never throws.
+window.lookupRecordingTitle = async (mbid) => {
+  if (!mbid || !/^[a-f0-9-]{36}$/i.test(mbid)) return { status: 'missing' };
+  try {
+    const url = `https://musicbrainz.org/ws/2/recording/${encodeURIComponent(mbid)}?fmt=json&inc=artist-credits+releases`;
+    const resp = await fetch(url, {
+      mbBackground: true,
+      headers: {
+        'Accept': 'application/json',
+      },
+    });
+    if (resp.status === 404 || resp.status === 400) return { status: 'missing' };
+    if (!resp.ok) return { status: 'transient' };
+    const data = await resp.json();
+    const title = typeof data?.title === 'string' ? data.title.trim() : '';
+    const credit = Array.isArray(data?.['artist-credit']) ? data['artist-credit'] : [];
+    let artist = '';
+    for (const c of credit) {
+      if (c?.name) artist += c.name;
+      if (c?.joinphrase) artist += c.joinphrase;
+    }
+    artist = artist.trim();
+    const releases = Array.isArray(data?.releases) ? data.releases : [];
+    const album = typeof releases[0]?.title === 'string' ? releases[0].title.trim() : '';
+    const resolvedMbid = /^[a-f0-9-]{36}$/i.test(data?.id || '') ? data.id : mbid;
+    if (!title || !artist) return { status: 'missing' };
+    return { status: 'ok', artist, title, album, mbid: resolvedMbid };
+  } catch (e) {
+    return { status: 'transient' };
+  }
+};
+
 // Resolve an album to a release MBID via the MBID Mapper, given the artist
 // and any recording from the album. Achordion's entity-link endpoint
 // accepts release MBIDs and maps them to the canonical release-group page
@@ -557,6 +607,8 @@ const {
 const { carriedReleaseArt, withArchiveCover, createReleaseGroupPicks } = require('./lib/release-open');
 const { firstNonEmptyList, entriesFromMusicBrainzRelease, entriesFromCatalogRelease, pickReleaseGroup } = require('./lib/album-track-list');
 const { pickRelease } = require('./lib/release-pick');
+const { uniqueReleases } = require('./lib/fresh-drops-releases');
+const { uniqueConcerts, concertSourceKeys, concertMatchesSource } = require('./lib/concert-events');
 const { createReleaseLookup, releaseFormats, hasCurrentAlias } = require('./lib/release-lookup');
 const { artistLookupPlan, loadArtistReleaseGroups, musicBrainzHttpError, discographyOutcome } = require('./lib/artist-discography');
 const { searchMusicBrainzArtists, searchMusicBrainzAlbums, searchMusicBrainzTracks, createPopularityLookup } = require('./lib/search-requests');
@@ -1171,11 +1223,17 @@ window.isMusicKitAvailable = () => {
 // Collection track/album/artist ids (must match sync-providers/spotify.js);
 // in lib/collection-ids.js so the extracted page modules can share them.
 const { normalizeForId, generateTrackId, generateAlbumId, generateArtistId, isPlaceholderAlbum, findSavedTrack, clearPlaceholderAlbums } = require('./lib/collection-ids');
+// Loved-tracks import helpers (parachord#1071) — pure parsing/plan/
+// tombstone/cursor logic per docs/plans/2026-11-06-import-loved-tracks.md;
+// the run (runLoveImport) and fetchers live below.
+const LoveImport = require('./lib/love-import');
+const { loveTombstoneEntries } = LoveImport;
 
 // Generate a unique hash from a string (for deterministic pattern generation)
 // Unicode-aware track/album id slugs — replaces the ASCII-only strip formula
 // that collapsed every non-Latin track to the same id (lib/track-slug.js).
 const { trackSlug, slug } = require('./lib/track-slug');
+const { interpolatedProgress } = require('./lib/progress-interpolation');
 const { createDebouncedSaver } = require('./lib/debounced-saver');
 // The track-sources cache is saved this long after the last resolution, and
 // no later than the max after the first unsaved one (debounced-saver.js;
@@ -1202,7 +1260,7 @@ const { discogsRefIds, normalizeDiscogsProfile, REF_PATH: DISCOGS_REF_PATH, MAX_
 const { playlistShareTarget, notSyncedSharePrompt } = require('./lib/playlist-share');
 const { emptyRecommendationsMessage } = require('./lib/recommendations-empty');
 const {
-  blockedItemPick, normalizeRecommendationSections, buildRecommendationPage, buildRecommendationViews, flattenRecommendationItems,
+  blockedItemPick, normalizeRecommendationSections, buildRecommendationPage, buildRecommendationViews, flattenRecommendationItems, homeRecommendationAlbums,
   filterRowBySource, pageSources, weeklyHomeEntries, shuffleupagusSection, FRIEND_SERVICES, categoryFor
 } = require('./lib/recommendation-model');
 const { releaseDateKey, releaseGroupSearchUrl, pickReleaseGroupDate, upcomingLabel, RELEASE_DATE_TTL_MS } = require('./lib/release-date');
@@ -1243,16 +1301,15 @@ const prefetchInProgress = window._prefetchInProgress;
 
 // ─── Icons + track lists (src/renderer/components/) ────────────────────────
 // The lucide-react icon kit moves to components/icons.js (app.js keeps its
-// own icon destructure below, unchanged); TrackRow + the windowed lists +
-// getBestSourceConfidence (badge dimming) move to components/track-lists.js
-// (Track 2b, presentational slice 2). getBestSourceConfidence is exported
-// back — the 10 in-component badge call sites keep the same binding.
-// Behavior-identical, memoized as before.
+// own icon destructure below, unchanged); TrackRow + the windowed lists move
+// to components/track-lists.js (Track 2b, presentational slice 2). The
+// in-component badge lists get their icons, order and dimming from
+// lib/visible-sources.js, the same rule as the queue and the pages.
 const Icons = require('./components/icons');
 const {
-  getBestSourceConfidence,
   VirtualizedQueueList, VirtualizedTrackList,
 } = require('./components/track-lists');
+const { sourceRowState } = require('./lib/visible-sources');
 const { Play, Pause, SkipForward, SkipBack, Volume2, Search, List, Settings, Plus, Music, Radio, Users, Heart, X } = Icons;
 
 
@@ -1885,6 +1942,14 @@ const discordPresenceStatusTone = (status) => {
 };
 
 const CANONICAL_RESOLVER_ORDER = ['spotify', 'applemusic', 'amazonmusic', 'bandcamp', 'soundcloud', 'localfiles', 'subsonic', 'youtube'];
+
+// Append an id to a resolver list unless it is already there. The plugin
+// order and the active list are rendered keyed by id, and a reinstall used to
+// append an id the order still held, listing the plugin twice until restart.
+function appendUniqueId(list, id) {
+  const prev = Array.isArray(list) ? list : [];
+  return prev.includes(id) ? prev : [...prev, id];
+}
 
 // Insert a resolver ID into an order array at its canonical position
 function insertInCanonicalOrder(order, newId) {
@@ -3540,6 +3605,9 @@ const Parachord = () => {
   const [loadingExtendedInfo, setLoadingExtendedInfo] = useState(false);
   const [relatedArtists, setRelatedArtists] = useState([]); // Related artists from Last.fm and ListenBrainz
   const [relatedArtistsSourceFilter, setRelatedArtistsSourceFilter] = useState('all'); // 'all' | 'lastfm' | 'listenbrainz' | 'both'
+  // The artist the related-artists source filter was picked for (lowercased
+  // name): a new artist puts the filter back on All.
+  const relatedFilterArtistRef = useRef(null);
   const [loadingBio, setLoadingBio] = useState(false);
   const [loadingRelated, setLoadingRelated] = useState(false);
   const [loadingArtist, setLoadingArtist] = useState(false);
@@ -3833,10 +3901,17 @@ const Parachord = () => {
   // docs/plans/2026-05-03-loved-tracks-scrobbler-push-design.md.
   const [scrobblerLovePushEnabled, setScrobblerLovePushEnabled] = useState({});
   const scrobblerLovePushEnabledRef = useRef({});
-  const lovePushedKeysRef = useRef({}); // { [trackId]: { lastfm?: ts, listenbrainz?: ts } }
+  const lovePushedKeysRef = useRef({}); // { [trackId]: { lastfm?: ts, listenbrainz?: ts | { at, mbid } } }
   const [loveBackfillRunning, setLoveBackfillRunning] = useState({}); // { [service]: boolean }
   const loveBackfillRunningRef = useRef({});
   const [loveBackfillProgress, setLoveBackfillProgress] = useState({}); // { [service]: { done, total } }
+  // Loved-tracks IMPORT (parachord#1071): the inbound half of the
+  // loved-tracks scrobbler sync. One run per service, manual button in
+  // the scrobbler's card; the cursor makes later runs only fetch new loves.
+  const [loveImportRunning, setLoveImportRunning] = useState({}); // { [service]: boolean }
+  const loveImportRunningRef = useRef({});
+  const [loveImportProgress, setLoveImportProgress] = useState({}); // { [service]: { done, total, phase? } }
+  const loveImportCursorRef = useRef({}); // { [service]: loved-at seconds — newest seen }
   // In-memory retry queue for love-pushes that failed transiently (mapper
   // 5xx/502, LB API 5xx/429, network errors). Walked by a periodic runner
   // that re-attempts pushLoveToScrobblers on each entry. Max 5 attempts,
@@ -5364,8 +5439,31 @@ const Parachord = () => {
     { value: 'alpha-desc', label: 'Z-A' }
   ], []);
 
-  // Set default release type filter to 'all' to show complete discography
+  // The release-type filter belongs to one artist. Its default ('all', the
+  // complete discography) is set once, when an artist's page starts loading
+  // (startReleaseTypeFilterFor, from fetchArtistData and the back button);
+  // data arriving afterwards (the services' discography, MusicBrainz's first
+  // batch, the end of the load) calls setSmartReleaseTypeFilter, which never
+  // overwrites a type the user picked for this artist. It used to reset the
+  // filter on every batch, so Singles clicked during a load jumped back to
+  // All when the albums landed. Leaving the artist view resets it.
+  const releaseTypeFilterOwnerRef = useRef({ artist: null, picked: false });
+  const startReleaseTypeFilterFor = useCallback((artistName) => {
+    const artist = String(artistName || '').trim().toLowerCase();
+    if (releaseTypeFilterOwnerRef.current.artist === artist) return;
+    releaseTypeFilterOwnerRef.current = { artist, picked: false };
+    setReleaseTypeFilter('all');
+  }, []);
+  const pickReleaseTypeFilter = useCallback((value) => {
+    releaseTypeFilterOwnerRef.current.picked = true;
+    setReleaseTypeFilter(value);
+  }, []);
+  const resetReleaseTypeFilter = useCallback(() => {
+    releaseTypeFilterOwnerRef.current = { artist: null, picked: false };
+    setReleaseTypeFilter('all');
+  }, []);
   const setSmartReleaseTypeFilter = useCallback((releases) => {
+    if (releaseTypeFilterOwnerRef.current.picked) return;
     setReleaseTypeFilter('all');
   }, []);
 
@@ -5557,6 +5655,7 @@ const Parachord = () => {
     message: '',
     onConfirm: null,
     actionButton: null, // optional: { label: string, onClick: () => void }
+    onCancel: null, // optional — a two-button dialog (confirmLabel set) fires it on Cancel/backdrop
   });
 
   // Helper to show styled confirmation dialogs.
@@ -5564,7 +5663,15 @@ const Parachord = () => {
   // button alongside OK. Useful for "fix this" dialogs (e.g. "No Enabled
   // Source" → "Open Resolver Settings"). The action also closes the dialog
   // before invoking onClick so the user is taken straight to the target.
+  // options.onCancel (optional, used with confirmLabel): firing Cancel.
+  // A dialog REPLACED while open (any later showConfirmDialog) also counts as
+  // cancelled — otherwise a caller awaiting the dialog's answer (the
+  // love-import confirm, parachord#1071) would hang forever with no dialog
+  // left to answer.
+  const pendingConfirmCancelRef = useRef(null);
   const showConfirmDialog = (options) => {
+    const superseded = pendingConfirmCancelRef.current;
+    pendingConfirmCancelRef.current = options.onCancel || null;
     setConfirmDialog({
       show: true,
       type: options.type || 'info',
@@ -5579,11 +5686,18 @@ const Parachord = () => {
       onCancel: options.onCancel || null,
       dontShowAgain: options.dontShowAgain || null,
       actionButton: options.actionButton || null,
+      onCancel: options.onCancel || null,
     });
+    if (superseded) superseded();
   };
 
+  // Closes the dialog and hands back its pending onCancel (unfired) — the
+  // caller decides whether this dismissal is a cancel.
   const closeConfirmDialog = () => {
+    const pending = pendingConfirmCancelRef.current;
+    pendingConfirmCancelRef.current = null;
     setConfirmDialog(prev => ({ ...prev, show: false }));
+    return pending;
   };
 
   // A confirm dialog as a promise: resolves true on the confirm button,
@@ -6290,6 +6404,16 @@ const Parachord = () => {
 
   // Reset header collapse and tab when navigating to a new artist (but not when opening a release or restoring state)
   useEffect(() => {
+    // The related-artists source filter belongs to one artist. It used to
+    // carry over: ListenBrainz picked on an artist with an MBID, then an
+    // artist without one (no chips to switch back) showed "No artists from
+    // ListenBrainz." A second update of the same artist (its full data
+    // arriving) keeps the pick.
+    const relatedFilterArtist = (currentArtist?.name || '').trim().toLowerCase();
+    if (relatedFilterArtistRef.current !== relatedFilterArtist) {
+      relatedFilterArtistRef.current = relatedFilterArtist;
+      setRelatedArtistsSourceFilter('all');
+    }
     // Don't reset header if we're opening a release - it should stay collapsed
     if (openingReleaseRef.current) {
       openingReleaseRef.current = false;
@@ -12552,23 +12676,22 @@ ${trackListXml}
         // 1. We have a valid baseline from native polling (timestamp > 0)
         // 2. Preview audio is NOT actively playing (it has its own timeupdate)
         // 3. Baseline indicates playback is happening
+        // A loading track holds its position: the old one is already paused
+        // (lib/progress-interpolation.js).
         const previewPlaying = window._appleMusicPreviewAudio && !window._appleMusicPreviewAudio.paused;
-        if (baseline.timestamp > 0 && baseline.isPlaying && !previewPlaying && !seekingRef.current) {
-          const elapsed = (Date.now() - baseline.timestamp) / 1000;
-          const interpolatedProgress = baseline.progress + elapsed;
-
-          if (interpolatedProgress < currentTrack.duration && interpolatedProgress >= 0) {
-            setProgress(interpolatedProgress);
-            if (window.scrobbleManager) {
-              window.scrobbleManager.onProgressUpdate(interpolatedProgress);
-            }
+        if (previewPlaying) return;
+        const position = interpolatedProgress({ baseline, now: Date.now(), duration: currentTrack.duration, seeking: seekingRef.current, loading: trackLoading });
+        if (position !== null) {
+          setProgress(position);
+          if (window.scrobbleManager) {
+            window.scrobbleManager.onProgressUpdate(position);
           }
         }
       }, 1000);
 
       return () => clearInterval(interval);
     }
-  }, [isPlaying, currentTrack]);
+  }, [isPlaying, trackLoading, currentTrack]);
 
 
   // Listen for context menu actions (only set up once)
@@ -13129,27 +13252,22 @@ ${trackListXml}
       const interval = setInterval(() => {
         const baseline = spotifyProgressBaselineRef.current;
 
-        // Only interpolate if:
-        // 1. We have a valid baseline (timestamp > 0 means API has set it)
-        // 2. Spotify reports that playback is actually happening (isPlaying from API)
-        if (baseline.timestamp > 0 && baseline.isPlaying && !seekingRef.current) {
-          const elapsed = (Date.now() - baseline.timestamp) / 1000;
-          const interpolatedProgress = baseline.progress + elapsed;
-
-          // Don't exceed track duration and don't go backwards
-          if (interpolatedProgress < currentTrack.duration && interpolatedProgress >= 0) {
-            setProgress(interpolatedProgress);
-            // Notify scrobble manager of progress for scrobble threshold checking
-            if (window.scrobbleManager) {
-              window.scrobbleManager.onProgressUpdate(interpolatedProgress);
-            }
+        // Counts forward from the last poll while Spotify reports playing;
+        // holds while seeking, and while a new track is loading (the old one
+        // is already paused) — lib/progress-interpolation.js.
+        const position = interpolatedProgress({ baseline, now: Date.now(), duration: currentTrack.duration, seeking: seekingRef.current, loading: trackLoading });
+        if (position !== null) {
+          setProgress(position);
+          // Notify scrobble manager of progress for scrobble threshold checking
+          if (window.scrobbleManager) {
+            window.scrobbleManager.onProgressUpdate(position);
           }
         }
       }, 1000); // Update every second for smooth progress bar
 
       return () => clearInterval(interval);
     }
-  }, [isPlaying, currentTrack, browserPlaybackActive]);
+  }, [isPlaying, trackLoading, currentTrack, browserPlaybackActive]);
 
   // Auto-dismiss toast after a default of 3 seconds (6 if it has an action
   // button, never if persistent). Callers can override with `duration` to
@@ -13584,8 +13702,12 @@ ${trackListXml}
   }, [showToast]);
 
   // Save collection to disk
+  // Returns whether the save landed, so the love-import cursor can wait for
+  // a confirmed write before advancing (parachord#1071: a failed save must
+  // re-import, not skip those loves forever). Callers that ignore the
+  // result are unaffected.
   const saveCollection = useCallback(async (newData) => {
-    if (!window.electron?.collection?.save) return;
+    if (!window.electron?.collection?.save) return false;
 
     // Defense against the startup-race wipe: if the collection hasn't
     // finished loading yet, refuse to write a wholesale-empty payload
@@ -13593,7 +13715,7 @@ ${trackListXml}
     // before-loadCollection race documented in issue #758. Real
     // intentional clears (user 'Remove all' button) should route through
     // a separate confirmed code path, not this.
-    if (!newData) return;
+    if (!newData) return false;
     const isWholesaleEmpty =
       (newData.tracks?.length || 0) === 0 &&
       (newData.albums?.length || 0) === 0 &&
@@ -13601,16 +13723,19 @@ ${trackListXml}
     if (isWholesaleEmpty && collectionLoadingRef.current) {
       console.warn('[saveCollection] refusing to write empty collection before loadCollection completes (issue #758)');
       console.warn('[saveCollection] caller stack:', new Error().stack?.split('\n').slice(1, 5).join('\n'));
-      return;
+      return false;
     }
 
     try {
       const result = await window.electron.collection.save(newData);
       if (!result?.success) {
         console.error('Collection save failed:', result?.error);
+        return false;
       }
+      return true;
     } catch (error) {
       console.error('Collection save error:', error);
+      return false;
     }
   }, []);
 
@@ -13810,10 +13935,23 @@ ${trackListXml}
     push('applemusic', track.appleMusicId);
     push('applemusic', track.sources?.applemusic?.appleMusicId);
     // ListenBrainz uses recording MBID as the external identifier on
-    // its sync surface (loved-tracks sync — currently one-way push,
-    // no inbound; included for forward-compat if LB inbound lands).
+    // its sync surface (loved-tracks sync — the import side reads these
+    // back, parachord#1071).
     push('listenbrainz', track.mbid);
     push('listenbrainz', track.sources?.listenbrainz?.mbid);
+    // The loved-tracks import (parachord#1071) checks ONE tombstone provider
+    // for both services, keyed by the normalized name (loveNameKey in
+    // src/renderer/lib/love-import.js), so a track loved on both services
+    // and removed once stays removed from both imports.
+    entries.push(...loveTombstoneEntries(track));
+    // A heart-added track's ListenBrainz push resolved a recording MBID it
+    // never wrote on the row; the mark kept it, so the removal tombstones the
+    // exact recording the service holds (the name key can miss when
+    // Parachord's names differ from MusicBrainz's).
+    const pushedMbid = lovePushedKeysRef.current?.[track.id]?.listenbrainz;
+    if (pushedMbid && typeof pushedMbid === 'object' && /^[a-f0-9-]{36}$/i.test(pushedMbid.mbid || '')) {
+      push('listenbrainz', pushedMbid.mbid);
+    }
     return entries;
   }, []);
 
@@ -13878,7 +14016,7 @@ ${trackListXml}
 
     // Push love to LB/LFM (opt-in per service). Fire-and-forget — local
     // collection state is authoritative, remote love is best-effort.
-    pushLoveToScrobblers({ ...track, id: trackId }).catch(err => {
+    pushLoveToScrobblers({ ...track, id: trackId }, { justAdded: true }).catch(err => {
       console.warn('[love-push] error:', err?.message || err);
     });
   }, [saveCollection, showToast, showSidebarBadge, deriveTombstoneEntries]);
@@ -13888,8 +14026,21 @@ ${trackListXml}
   // checkpoints to electron-store immediately so backfill resumes
   // correctly across restarts. Used by both the live-add path
   // (addTrackToCollection above) and the manual backfill button.
-  const pushLoveToScrobblers = useCallback(async (track) => {
+  const pushLoveToScrobblers = useCallback(async (track, { justAdded = false } = {}) => {
     if (!track?.id) return;
+    // A re-push (the periodic retry runner) must confirm the track is still in
+    // the collection: a love landing on the service after the user removed the
+    // track is dated newer than the removal and would come straight back on
+    // the next import (issue #1071 review). The live add path skips this —
+    // the row is being added as the push starts.
+    if (!justAdded) {
+      const stillThere = (collectionDataRef.current?.tracks || []).some((t) => t && t.id === track.id);
+      if (!stillThere) {
+        loveRetryQueueRef.current.delete(track.id);
+        console.log(`[love-push] skip "${track.title}" — removed from the collection since the love was queued`);
+        return;
+      }
+    }
     const enabled = scrobblerLovePushEnabledRef.current || {};
     const pushed = lovePushedKeysRef.current[track.id] || {};
     const tasks = [];
@@ -13924,7 +14075,8 @@ ${trackListXml}
             return;
           }
           await window.listenbrainzScrobbler.loveTrack({ ...track, mbid });
-          await markLovePushed(track.id, 'listenbrainz');
+          await markLovePushed(track.id, 'listenbrainz', mbid);
+          clearListenbrainzLoveTombstone(mbid);
           console.log(`[love-push] LB ✓ ${track.artist} – ${track.title}`);
         } catch (err) {
           console.warn(`[love-push] LB failed for "${track.title}":`, err?.message || err);
@@ -13995,10 +14147,27 @@ ${trackListXml}
   // Persist a single love-pushed checkpoint. Keeps the ref hot and
   // writes through to electron-store so a backfill mid-run survives
   // a crash.
-  const markLovePushed = useCallback(async (trackId, service) => {
+  // A successful ListenBrainz push clears the tombstone its own MBID may
+  // have written on an earlier removal: a re-add after a removal must import
+  // again, and the mark's MBID is the tombstone key (parachord#1071 review).
+  const clearListenbrainzLoveTombstone = (mbid) => {
+    if (!mbid || !/^[a-f0-9-]{36}$/i.test(mbid) || !window.electron?.tombstones) return;
+    window.electron.tombstones.clearBatch([{ providerId: 'listenbrainz', externalId: mbid }])
+      .catch((err) => console.warn('[love-push] could not clear the ListenBrainz tombstone:', err?.message || err));
+  };
+
+  // markLovePushed(trackId, service, mbid): the entry is the push timestamp,
+  // or { at, mbid } when the push resolved a recording MBID (ListenBrainz) —
+  // storing it means a later removal can tombstone the exact recording the
+  // service holds, even though the collection row itself never carries it.
+  // Both shapes are truthy, so every "already pushed" check keeps working.
+  const markLovePushed = useCallback(async (trackId, service, mbid) => {
+    const stamped = (typeof mbid === 'string' && /^[a-f0-9-]{36}$/i.test(mbid))
+      ? { at: Date.now(), mbid }
+      : Date.now();
     const next = {
       ...lovePushedKeysRef.current,
-      [trackId]: { ...(lovePushedKeysRef.current[trackId] || {}), [service]: Date.now() },
+      [trackId]: { ...(lovePushedKeysRef.current[trackId] || {}), [service]: stamped },
     };
     lovePushedKeysRef.current = next;
     try { await window.electron.store.set('love_pushed_keys', next); }
@@ -14018,7 +14187,12 @@ ${trackListXml}
   // Manual backfill: walks the collection, pushes any track not yet
   // marked as pushed for this service. Soft rate-limit ~1 req/sec.
   // Idempotency cache means re-clicks are cheap.
-  const runLoveBackfill = useCallback(async (service) => {
+  // { onlyIds } restricts the walk to those ids — the love-import's
+  // confirmed cross-service push (parachord#1071): only what was just
+  // imported goes to the other service, never the user's older unpushed
+  // tracks, and never a per-track live push (which would flood the retry
+  // queue when MBIDs can't resolve).
+  const runLoveBackfill = useCallback(async (service, { onlyIds } = {}) => {
     if (loveBackfillRunningRef.current[service]) return;
     if (!['lastfm', 'listenbrainz'].includes(service)) return;
     const scrobbler = service === 'lastfm' ? window.lastfmScrobbler : window.listenbrainzScrobbler;
@@ -14027,9 +14201,9 @@ ${trackListXml}
     if (!isEnabled) { showToast(`${service} not connected`); return; }
 
     const tracks = (collectionDataRef.current?.tracks || []);
-    const todo = tracks.filter(t => !lovePushedKeysRef.current[t.id]?.[service]);
+    const todo = tracks.filter(t => !lovePushedKeysRef.current[t.id]?.[service] && (!onlyIds || onlyIds.has(t.id)));
     if (todo.length === 0) {
-      showToast(`Already up to date — no loves to push to ${service === 'lastfm' ? 'Last.fm' : 'ListenBrainz'}`);
+      if (!onlyIds) showToast(`Already up to date: no loves to push to ${service === 'lastfm' ? 'Last.fm' : 'ListenBrainz'}`);
       return;
     }
 
@@ -14037,9 +14211,13 @@ ${trackListXml}
     setLoveBackfillRunning(prev => ({ ...prev, [service]: true }));
     setLoveBackfillProgress(prev => ({ ...prev, [service]: { done: 0, total: todo.length } }));
 
-    let pushed = 0, skipped = 0, failed = 0;
+    let pushed = 0, skipped = 0, failed = 0, removedMidRun = 0;
     for (let i = 0; i < todo.length; i++) {
       const track = todo[i];
+      // The todo list is a snapshot: a track removed since the walk started
+      // must not get its love pushed after the removal (parachord#1071 review).
+      const stillThere = (collectionDataRef.current?.tracks || []).some((t) => t && t.id === track.id);
+      if (!stillThere) { removedMidRun++; continue; }
       try {
         if (service === 'lastfm') {
           await window.lastfmScrobbler.loveTrack({
@@ -14052,7 +14230,8 @@ ${trackListXml}
           const mbid = await window.resolveMbidForLove(track);
           if (!mbid) { skipped++; continue; }
           await window.listenbrainzScrobbler.loveTrack({ ...track, mbid });
-          await markLovePushed(track.id, 'listenbrainz');
+          await markLovePushed(track.id, 'listenbrainz', mbid);
+          clearListenbrainzLoveTombstone(mbid);
           pushed++;
         }
       } catch (err) {
@@ -14070,10 +14249,338 @@ ${trackListXml}
 
     const label = service === 'lastfm' ? 'Last.fm' : 'ListenBrainz';
     let msg = `Backfilled ${pushed} love${pushed === 1 ? '' : 's'} to ${label}`;
-    if (skipped > 0) msg += ` (${skipped} skipped — no MBID)`;
+    if (skipped > 0) msg += ` (${skipped} skipped: no MBID)`;
+    if (removedMidRun > 0) msg += ` (${removedMidRun} removed during the run)`;
     if (failed > 0) msg += ` (${failed} failed)`;
     showToast(msg);
   }, [showToast, markLovePushed]);
+
+  // ── Loved-tracks IMPORT (parachord#1071) ──────────────────────────────
+  // Pulls the user's loves from a scrobbler service into the collection —
+  // the inbound half of the loved-tracks sync. Plan:
+  // docs/plans/2026-11-06-import-loved-tracks.md. Rules:
+  //   1. No loop: added AND matched rows are marked in love_pushed_keys for
+  //      the service the loves came FROM, so the push toggle and the
+  //      backfill never send a love straight back to its origin.
+  //   2. Cross-service propagation is explicit AND confirmed: when the other
+  //      service's push toggle is on and it's actually connected, a dialog
+  //      says so up front; the imported ids then go to the other service
+  //      through a RESTRICTED backfill (onlyIds), never a per-track live
+  //      push (a resolver outage would flood the retry queue and hammer the
+  //      mapper in parallel).
+  //   3. Identity dedupe, not id: recording MBID, then the normalized name
+  //      (planLoveImport). Last.fm's mbid is ignored (stale); non-Latin
+  //      loves get trackSlug ids so 宇多田ヒカル/光 and 宇多田ヒカル/First Love
+  //      are two rows, not one `--noalbum`.
+  //   4. Tombstones: one provider ('love-import', name key) written on every
+  //      removal and checked for both services, plus the recording-MBID
+  //      entry. A love NEWER than the removal gets through, and a removal
+  //      during the run is honored before each write.
+  //   5. addedAt keeps the service's loved-at time.
+  //   6. One-way stays one-way: importing never unloves anything remotely.
+
+  const runLoveImport = useCallback(async (service) => {
+    if (!['lastfm', 'listenbrainz'].includes(service)) return;
+    if (loveImportRunningRef.current[service]) return;
+    const label = service === 'lastfm' ? 'Last.fm' : 'ListenBrainz';
+    const otherService = service === 'lastfm' ? 'listenbrainz' : 'lastfm';
+    const otherLabel = service === 'lastfm' ? 'ListenBrainz' : 'Last.fm';
+    // A not-yet-loaded collection reads as empty: the dedupe would add
+    // every love as new. Same guard class as saveCollection (#758).
+    if (collectionLoadingRef.current) {
+      showToast('Your library is still loading. Try the import again in a moment.', 'info');
+      return;
+    }
+    const scrobbler = service === 'lastfm' ? window.lastfmScrobbler : window.listenbrainzScrobbler;
+    if (!scrobbler) { showToast(`${label} scrobbler not loaded`, 'error'); return; }
+    // Take the running flag synchronously, before any await: a fast second
+    // click must not pass the guard while the first run sits between awaits
+    // (the updater re-check already prevents duplicate rows; this stops the
+    // doubled counts).
+    loveImportRunningRef.current = { ...loveImportRunningRef.current, [service]: true };
+    setLoveImportRunning(prev => ({ ...prev, [service]: true }));
+    setLoveImportProgress(prev => ({ ...prev, [service]: { done: 0, total: 0 } }));
+    try {
+      let connected = false;
+      try { connected = await scrobbler.isEnabled(); } catch (e) { connected = false; }
+      if (!connected) { showToast(`${label} is not connected`, 'error'); return; }
+
+      // Cross-service propagation, confirmed up front (issue #1071 rule 2).
+      // Connected, not just toggled — the dialog must not promise pushes a
+      // disconnected service can't make. Cancel (the button or the backdrop)
+      // stops the run.
+      let crossConfirm = false;
+      const otherScrobbler = otherService === 'lastfm' ? window.lastfmScrobbler : window.listenbrainzScrobbler;
+      if (scrobblerLovePushEnabledRef.current?.[otherService] && otherScrobbler) {
+        let otherConnected = false;
+        try { otherConnected = await otherScrobbler.isEnabled(); } catch (e) { otherConnected = false; }
+        if (otherConnected) {
+          setLoveImportProgress(prev => ({ ...prev, [service]: { done: 0, total: 0, phase: 'confirm' } }));
+          crossConfirm = await new Promise((resolve) => {
+            showConfirmDialog({
+              type: 'info',
+              title: 'Import loved tracks',
+              message: `Tracks you import from ${label} will also be loved on ${otherLabel}, because "Push newly loved tracks to ${otherLabel}" is on. This can't be undone from Parachord.`,
+              confirmLabel: 'Import',
+              onConfirm: () => resolve(true),
+              onCancel: () => resolve(false),
+            });
+          });
+          if (!crossConfirm) return;
+        }
+      }
+
+      const cursor = loveImportCursorRef.current?.[service] || 0; // loved-at seconds
+      const setProgress = (done, total, phase) =>
+        setLoveImportProgress(prev => ({ ...prev, [service]: { done, total, ...(phase ? { phase } : {}) } }));
+
+      // 1. Fetch: only loves newer than the cursor (collectLoves owns the
+      //    paging, the per-page retries and the stop rules).
+      const fetchPage = service === 'lastfm'
+        ? async ({ page, count }) => window.lastfmScrobbler.getLovedTracksPage({ page, count })
+        : async ({ offset, count }) => window.listenbrainzScrobbler.getLovedTracksPage({ offset, count });
+      const { loves, skipped, complete, error, capped } = await LoveImport.collectLoves({
+        fetchPage,
+        parse: service === 'lastfm' ? LoveImport.parseLastfmLovedPage : LoveImport.parseListenbrainzFeedbackPage,
+        cursor,
+        pageSize: service === 'lastfm' ? 200 : 100,
+        onProgress: (done, total) => setProgress(done, total),
+      });
+      if (error && loves.length === 0 && skipped === 0) {
+        if (error === 'Not connected') showToast(`Reconnect ${label} to import your loved tracks`, 'error');
+        else showToast(`Couldn't import from ${label}: ${error}`, 'error');
+        return;
+      }
+      if (loves.length === 0 && !error) {
+        showToast(cursor > 0 ? `No new loved tracks on ${label}` : `No loved tracks found on ${label}`);
+        return;
+      }
+
+      // 2. The tombstone list is load-bearing: importing without it could
+      //    bring removed tracks back, so a failed read stops the run.
+      let tombstones = {};
+      try { tombstones = await window.electron.tombstones.list(); }
+      catch (e) {
+        showToast(`Couldn't read your removed-tracks list, so nothing was imported: ${e?.message || e}`, 'error');
+        return;
+      }
+
+      const collectionTracks = collectionDataRef.current?.tracks || [];
+      // Removals from before this feature shipped have no tombstone. A mark
+      // in love_pushed_keys whose id is no longer in the collection was a
+      // Parachord love the user later removed, so it counts as removed.
+      const collectionIds = new Set(collectionTracks.map((t) => t && t.id).filter(Boolean));
+      const orphanPushedIds = new Set(
+        Object.keys(lovePushedKeysRef.current || {}).filter((id) => !collectionIds.has(id)));
+
+      const dropRemoved = async (plan) => {
+        // A removal during the run (the LB name-lookup tail can run for
+        // minutes) must not be undone by this write — re-read and re-check.
+        // A mid-run re-read failure falls back to the start-of-run snapshot;
+        // the gating read in step 2 already stopped the run when the list
+        // couldn't be read at all.
+        let now = tombstones;
+        try { now = await window.electron.tombstones.list(); } catch (e) { /* keep the snapshot */ }
+        // One predicate drives both the count and the filter, so the summary
+        // can't drift from what was dropped. The pre-ship heuristic ONLY
+        // applies where no tombstone entry exists at all: a removed-then-
+        // re-loved track HAS one, and the date rule governs it.
+        const removed = (row) => {
+          const love = { service, artist: row.artist, title: row.title, mbid: row.mbid, lovedAt: row.addedAt / 1000 };
+          if (LoveImport.isLoveTombstoned(now, love)) return true;
+          return LoveImport.isOrphanedLovePush(orphanPushedIds, row) && LoveImport.loveTombstoneAt(now, love) == null;
+        };
+        plan.tombstoned += plan.add.filter(removed).length;
+        plan.add = plan.add.filter((row) => !removed(row));
+        return plan;
+      };
+
+      // 3. Plan and commit: rows with names land immediately; the
+      //    metadata-less lookup tail commits as a second batch, so quitting
+      //    during a long tail keeps the loves that never needed a lookup.
+      // One batch per commit, each with its own updater flag and saves, so
+      // a later batch can't read as confirmed off an earlier one's updater
+      // run. A batch's marks are written when IT confirms (a quit during
+      // the LB lookup tail must not leave batch 1 unmarked — Backfill would
+      // re-offer those loves to the service they came from).
+      const batches = [];
+      const commitBatch = (plan) => {
+        const batch = { planned: plan.add.length, updaterRan: false, savePromises: [], addedIds: [], saveOk: true };
+        batches.push(batch);
+        if (plan.add.length === 0) return batch;
+        setCollectionData(prev => {
+          batch.updaterRan = true;
+          const prevIds = new Set(prev.tracks.map((t) => t && t.id).filter(Boolean));
+          const fresh = plan.add.filter((r) => !prevIds.has(r.id));
+          if (fresh.length === 0) return prev; // everything appeared concurrently; nothing to save
+          const newData = { ...prev, tracks: [...prev.tracks, ...fresh] };
+          batch.savePromises.push(saveCollection(newData));
+          batch.addedIds.push(...fresh.map((r) => r.id));
+          return newData;
+        });
+        return batch;
+      };
+      const writeMarks = async (ids) => {
+        if (ids.length === 0) return;
+        const marked = LoveImport.withLovesPushed(lovePushedKeysRef.current, ids, service);
+        lovePushedKeysRef.current = marked;
+        try { await window.electron.store.set('love_pushed_keys', marked); }
+        catch (e) { console.warn(`[love-import ${service}] could not persist no-loop marks:`, e?.message || e); }
+      };
+      // Confirm a batch and mark its rows. Matched ids are already in the
+      // collection, so their marks are safe whatever the save did; added ids
+      // wait for THIS batch's confirmed save — a mark on a row a failed save
+      // never wrote would, after a restart, read as "you removed this"
+      // through the pre-ship heuristic and lose the love for good. A matched
+      // id can name an earlier batch's planned-but-unsaved row (plan2 matches
+      // plan1.add): marking that would orphan it the same way, so only ids
+      // that were in the collection when the run started, or that an earlier
+      // batch CONFIRMED, are marked. The setTimeout yield lets React commit
+      // the updater before its save promises are read (MessageChannel
+      // flushes ahead of timers).
+      const confirmBatch = async (batch, matchedIds) => {
+        const markableIds = new Set(collectionIds);
+        for (const b of batches) {
+          if (b === batch) break;
+          if (b.saveOk) for (const id of b.addedIds) markableIds.add(id);
+        }
+        await writeMarks(matchedIds.filter((id) => markableIds.has(id)));
+        await new Promise((r) => setTimeout(r, 0));
+        if (batch.planned > 0) {
+          if (!batch.updaterRan) batch.saveOk = false;
+          else if (batch.savePromises.length > 0) batch.saveOk = (await Promise.all(batch.savePromises)).every(Boolean);
+        }
+        if (batch.saveOk) await writeMarks(batch.addedIds);
+        return batch.saveOk;
+      };
+
+      // The MBIDs a heart's ListenBrainz push resolved and stored on its
+      // mark: indexed alongside the rows' own MBIDs so a love for that MBID
+      // matches the hearted row instead of duplicating it. Marks from before
+      // this shipped are plain timestamps and contribute nothing.
+      const markMbids = {};
+      for (const [id, entry] of Object.entries(lovePushedKeysRef.current || {})) {
+        const stamped = entry && entry.listenbrainz;
+        if (stamped && typeof stamped === 'object' && /^[a-f0-9-]{36}$/i.test(stamped.mbid || '')) {
+          markMbids[id] = stamped.mbid;
+        }
+      }
+
+      const namedLoves = loves.filter((l) => !l.needsLookup);
+      const needsLookupLoves = loves.filter((l) => l.needsLookup);
+      const plan1 = await dropRemoved(LoveImport.planLoveImport(namedLoves, collectionTracks, tombstones, markMbids));
+      const batch1 = commitBatch(plan1);
+      await confirmBatch(batch1, plan1.matchedIds);
+
+      // 4. The lookup tail (ListenBrainz's metadata-less loves; none for
+      //    Last.fm). One MB request each, on the background lane; a removed
+      //    love is checked FIRST against the start-of-run snapshot (its MBID
+      //    is all the tombstone key needs, so no 1.1s request is spent on a
+      //    love that will drop, and a transient lookup failure can't hold
+      //    the cursor for it; a removal DURING the run still costs one
+      //    lookup before dropRemoved's re-read drops it at the write); a row
+      //    already in the collection by MBID matches without the request; a
+      //    transient MusicBrainz failure holds the cursor (the love isn't
+      //    lost, just not this run) while a real miss is skipped.
+      let lookupTransient = 0, lookupSkipped = 0, lookupRemoved = 0;
+      const lookupMatchedIds = [];
+      const resolvedLoves = [];
+      if (needsLookupLoves.length > 0 && typeof window.lookupRecordingTitle === 'function') {
+        const mbidIndex = LoveImport.rowMbidIndex([...collectionTracks, ...plan1.add], markMbids);
+        setProgress(0, needsLookupLoves.length, 'lookup');
+        for (let i = 0; i < needsLookupLoves.length; i++) {
+          const cand = needsLookupLoves[i];
+          if (LoveImport.isLoveTombstoned(tombstones, cand)) { lookupRemoved++; continue; }
+          const existing = mbidIndex.get(cand.mbid);
+          if (existing) { lookupMatchedIds.push(existing.id); }
+          else {
+            const result = await window.lookupRecordingTitle(cand.mbid);
+            if (result?.status === 'ok') {
+              resolvedLoves.push({ ...cand, artist: result.artist, title: result.title, album: result.album || '', mbid: result.mbid || cand.mbid, needsLookup: undefined });
+            } else if (result?.status === 'transient') { lookupTransient++; }
+            else { lookupSkipped++; }
+          }
+          setProgress(i + 1, needsLookupLoves.length, 'lookup');
+        }
+      } else if (needsLookupLoves.length > 0) {
+        lookupSkipped += needsLookupLoves.length;
+      }
+      const plan2 = await dropRemoved(LoveImport.planLoveImport(resolvedLoves, [...collectionTracks, ...plan1.add], tombstones, markMbids));
+      const batch2 = commitBatch(plan2);
+      await confirmBatch(batch2, [...plan2.matchedIds, ...lookupMatchedIds]);
+
+      // 5. Roll up the batches (each already confirmed and marked in
+      //    confirmBatch above): the cursor moves only when every batch
+      //    confirmed its write; the summary counts what actually landed; the
+      //    cross-service push carries only the confirmed ids.
+      const saveOk = batches.every((b) => b.saveOk);
+      const plannedRows = batches.reduce((n, b) => n + b.planned, 0);
+      const addedIds = batches.reduce((acc, b) => acc.concat(b.addedIds), []);
+      const confirmedIds = batches.reduce((acc, b) => (b.saveOk ? acc.concat(b.addedIds) : acc), []);
+      const anyUpdaterRan = batches.some((b) => b.updaterRan);
+      const added = addedIds.length > 0 || plannedRows === 0 ? addedIds.length : (anyUpdaterRan ? addedIds.length : plannedRows);
+      if (added > 0) showSidebarBadge('collection');
+      // Two loves that match the same collection row are ONE mark but TWO
+      // loves: the summary counts loves, so it adds up to what the service
+      // returned.
+      const matchedLoves = plan1.matchedIds.length + plan2.matchedIds.length + lookupMatchedIds.length;
+
+      // 7. The cursor advances only when the whole window was read, nothing
+      //    transient failed, and the save landed — otherwise the next run
+      //    re-walks and self-heals instead of losing those loves forever.
+      const nextCursor = (complete && saveOk && lookupTransient === 0)
+        ? LoveImport.nextLoveCursor(cursor, loves, true)
+        : cursor;
+      if (nextCursor > cursor) {
+        loveImportCursorRef.current = { ...(loveImportCursorRef.current || {}), [service]: nextCursor };
+        window.electron.store.set('love_import_cursor', loveImportCursorRef.current).catch(() => {});
+      }
+
+      // 8. The summary. Rows the plan merged into one count as
+      //    "already in your collection" — the summary must add up to what
+      //    the service shows.
+      const matched = matchedLoves + plan1.merged + plan2.merged;
+      const tombstoned = plan1.tombstoned + plan2.tombstoned + lookupRemoved;
+      const allSkipped = skipped + lookupSkipped;
+      let msg = `Imported ${added} from ${label}. ${matched} already in your collection, ${allSkipped} skipped`;
+      if (tombstoned > 0) msg += `, ${tombstoned} you removed`;
+      if (capped) msg += '. Stopped at the import page cap, so older loves were left out';
+      if (lookupTransient > 0) msg += `. Couldn't reach MusicBrainz for ${lookupTransient} of them; run the import again`;
+      if (!saveOk) {
+        // Without a restart the rows are already in memory, so a re-run
+        // matches them and the confirmed cross-service push never fires —
+        // say how to push them anyway.
+        msg += `. Saving the library failed; run the import again after a restart${crossConfirm ? `, or push the imported loves with Backfill on the ${otherLabel} card` : ''}`;
+      }
+      if (!complete && error) {
+        showToast(`Imported ${added} from ${label}, then stopped: ${error}. Run it again to pick up the rest.`, 'error', null, { duration: 8000 });
+      } else {
+        showToast(msg, saveOk ? 'success' : 'error', null, { duration: 8000 });
+      }
+
+      // 9. Cross-service propagation, confirmed in the pre-run dialog: just
+      //    the imported ids, through the restricted backfill (its own
+      //    progress on the other card), never a per-track live push.
+      if (crossConfirm && confirmedIds.length > 0) {
+        // The restricted backfill is a no-op while that service's own backfill
+        // is running — say so instead of silently skipping the confirmed push.
+        if (loveBackfillRunningRef.current[otherService]) {
+          showToast(`A ${otherLabel} backfill is still running. Once it finishes, run Backfill on the ${otherLabel} card to push the ${confirmedIds.length} imported loves.`, 'info');
+        } else {
+          runLoveBackfill(otherService, { onlyIds: new Set(confirmedIds) }).catch((err) => {
+            console.warn(`[love-import ${service}] cross-service push failed:`, err?.message || err);
+          });
+        }
+      }
+    } catch (err) {
+      console.warn(`[love-import ${service}] failed:`, err?.message || err);
+      showToast(`Couldn't import from ${label}: ${err?.message || err}`, 'error');
+    } finally {
+      loveImportRunningRef.current = { ...loveImportRunningRef.current, [service]: false };
+      setLoveImportRunning(prev => ({ ...prev, [service]: false }));
+      setLoveImportProgress(prev => ({ ...prev, [service]: null }));
+    }
+  }, [showToast, showSidebarBadge, showConfirmDialog, saveCollection, runLoveBackfill]);
 
   // Remove track from collection
   const removeTrackFromCollection = useCallback((track) => {
@@ -14120,6 +14627,26 @@ ${trackListXml}
         window.electron.tombstones.addBatch(tombstoneEntries)
           .then(r => r?.written > 0 && console.log(`[Tombstones] Wrote ${r.written} entries for removed "${track.title}"`))
           .catch(err => console.warn('[Tombstones] addBatch failed:', err?.message || err));
+      }
+
+      // A queued love-push for a removed track must not fire after the removal
+      // (it would land a love newer than the removal and bring the track back
+      // on the next import, parachord#1071 review).
+      if (loveRetryQueueRef.current.size > 0 && matchId) {
+        loveRetryQueueRef.current.delete(matchId);
+      }
+      // Delete the removed row's love-push mark: this removal writes its own
+      // `love-import` name tombstone, so the mark isn't needed — and left
+      // behind it would read as a pre-ship removal through the orphan
+      // heuristic on the next import (parachord#1071 review). If that
+      // tombstone write itself fails, neither protection holds and the next
+      // import re-adds the track — same blast radius a failed tombstone write
+      // already has for sync (#864).
+      if (matchId && lovePushedKeysRef.current && lovePushedKeysRef.current[matchId]) {
+        const without = { ...lovePushedKeysRef.current };
+        delete without[matchId];
+        lovePushedKeysRef.current = without;
+        window.electron.store.set('love_pushed_keys', without).catch(() => {});
       }
 
       // Remove from connected sync providers
@@ -18499,8 +19026,9 @@ ${trackListXml}
         // Queue & tutorial
         'saved_queue', 'saved_queue_position', 'saved_playback_context', 'saved_shuffle_state', 'repeat_mode',
         'tutorial_completed', 'whats_new_dismissed_version', 'home_setup_dismissed',
-        // Loved-tracks push to LB/LFM (opt-in per service)
-        'scrobbler_love_push_enabled', 'love_pushed_keys',
+        // Loved-tracks push to LB/LFM (opt-in per service) + the import
+        // cursor (newest loved-at seen per service, parachord#1071)
+        'scrobbler_love_push_enabled', 'love_pushed_keys', 'love_import_cursor',
         // In-app announcements (banner)
         'cached_announcements', 'dismissed_announcement_ids',
         // Playlists page sort preference
@@ -18663,10 +19191,12 @@ ${trackListXml}
         const upperFuture = new Date();
         upperFuture.setDate(upperFuture.getDate() + 14);
         const upperCutoffDate = upperFuture.toISOString().split('T')[0];
-        const filteredReleases = newReleasesData.releases.filter(r =>
+        // uniqueReleases also heals a cache saved with a collaboration twice
+        // (lib/fresh-drops-releases.js).
+        const filteredReleases = uniqueReleases(newReleasesData.releases.filter(r =>
           r.releaseType !== 'broadcast' && !(r.secondaryTypes || []).includes('broadcast')
           && (!r.date || r.date <= upperCutoffDate)
-        );
+        ));
         const now = Date.now();
         if (now - newReleasesData.timestamp < CACHE_TTL.newReleases) {
           newReleasesCache.current = { releases: filteredReleases, timestamp: newReleasesData.timestamp, lastFullScan: newReleasesData.lastFullScan || 0 };
@@ -18710,17 +19240,20 @@ ${trackListXml}
       const concertsData = dCaches['cache_concerts'];
       if (concertsData && concertsData.events && concertsData.events.length > 0) {
         const now2 = Date.now();
+        // One row per show: a cache written before uniqueConcerts holds a
+        // shared bill once per artist under one event id (lib/concert-events.js).
+        const restoredEvents = uniqueConcerts(concertsData.events);
         if (concertsData.timestamp && (now2 - concertsData.timestamp) < CACHE_TTL.concerts) {
-          concertsCache.current = { events: concertsData.events, timestamp: concertsData.timestamp };
-          setConcerts(concertsData.events);
+          concertsCache.current = { events: restoredEvents, timestamp: concertsData.timestamp };
+          setConcerts(restoredEvents);
           setConcertsLoaded(true);
-          console.log(`📦 Loaded ${concertsData.events.length} concerts from cache`);
+          console.log(`📦 Loaded ${restoredEvents.length} concerts from cache`);
         } else {
           // Stale but still useful to display immediately
-          concertsCache.current = { events: concertsData.events, timestamp: concertsData.timestamp };
-          setConcerts(concertsData.events);
+          concertsCache.current = { events: restoredEvents, timestamp: concertsData.timestamp };
+          setConcerts(restoredEvents);
           setConcertsLoaded(true);
-          console.log(`📦 Loaded ${concertsData.events.length} stale concerts from cache (will refresh)`);
+          console.log(`📦 Loaded ${restoredEvents.length} stale concerts from cache (will refresh)`);
         }
       }
 
@@ -19321,6 +19854,8 @@ ${trackListXml}
       const lovePushedKeys = d['love_pushed_keys'] || {};
       setScrobblerLovePushEnabled(lovePushEnabled);
       lovePushedKeysRef.current = lovePushedKeys;
+      // Loved-tracks import cursor (parachord#1071): { lastfm?: secs, listenbrainz?: secs }
+      loveImportCursorRef.current = d['love_import_cursor'] || {};
 
       // Restore saved queue if remember queue is enabled, and only when nothing
       // has started playing in this run (#1287, mobile's QueueRestorePolicy): a
@@ -20072,6 +20607,9 @@ ${trackListXml}
 
     // Clear any current release view when navigating to a new artist
     setCurrentRelease(null);
+    // A new artist's release-type filter starts on its default; a refetch of
+    // the same artist keeps the user's pick.
+    startReleaseTypeFilterFor(artistName);
 
     // Only add to artist history if we're already on the artist view
     // This prevents search results from building up history
@@ -21740,6 +22278,9 @@ ${trackListXml}
   const showReleasePlaceholder = ({ id, artist, title, albumArt, date, releaseType }) => {
     const placeholderArtist = { id: null, name: artist };
     openingReleaseRef.current = true;
+    // Back from the album fetches this artist's releases only when none are
+    // loaded; the previous artist's would show as this one's discography.
+    setArtistReleases([]);
     setCurrentArtist(placeholderArtist);
     setCurrentRelease({
       id,
@@ -22007,6 +22548,10 @@ ${trackListXml}
 
       // Clear artist history so back button returns to Collection, not previous artist
       setArtistHistory([]);
+      // And the previous artist's releases: Back from the album fetches this
+      // artist's only when none are loaded, so stale ones showed the wrong
+      // discography (as handleAlbumClick does).
+      setArtistReleases([]);
 
       openingReleaseRef.current = true;
       setCurrentArtist(artist);
@@ -24708,10 +25253,10 @@ ${trackListXml}
           setLoadedResolvers(prev => [...prev, newResolverInstance]);
 
           // Add to resolver order
-          setResolverOrder(prev => [...prev, resolverId]);
+          setResolverOrder(prev => appendUniqueId(prev, resolverId));
 
           // Enable by default
-          setActiveResolvers(prev => [...prev, resolverId]);
+          setActiveResolvers(prev => appendUniqueId(prev, resolverId));
 
           console.log(`➕ Added resolver: ${resolverName}`);
           showToast(`${resolverName} installed`, 'success');
@@ -24874,9 +25419,9 @@ ${trackListXml}
         if (existing) {
           // Already loaded - just enable it
           if (!activeResolvers.includes(id)) {
-            setActiveResolvers(prev => [...prev, id]);
+            setActiveResolvers(prev => appendUniqueId(prev, id));
             if (!resolverOrder.includes(id)) {
-              setResolverOrder(prev => [...prev, id]);
+              setResolverOrder(prev => appendUniqueId(prev, id));
             }
             showToast(`${name} enabled`, 'success');
           } else {
@@ -24902,8 +25447,8 @@ ${trackListXml}
           // Wrap through the global limiter (parachord#797) before mounting.
           window.wrapResolverSearchesWithLimiter([instance]);
           setLoadedResolvers(prev => [...prev, { ...instance, weight: prev.length }]);
-          setResolverOrder(prev => [...prev, id]);
-          setActiveResolvers(prev => [...prev, id]);
+          setResolverOrder(prev => appendUniqueId(prev, id));
+          setActiveResolvers(prev => appendUniqueId(prev, id));
           showToast(`${name} enabled`, 'success');
           return;
         }
@@ -25023,8 +25568,8 @@ ${trackListXml}
           showToast(`${resolverName} updated`, 'success');
         } else {
           setLoadedResolvers(prev => [...prev, newResolverInstance]);
-          setResolverOrder(prev => [...prev, resolverId]);
-          setActiveResolvers(prev => [...prev, resolverId]);
+          setResolverOrder(prev => appendUniqueId(prev, resolverId));
+          setActiveResolvers(prev => appendUniqueId(prev, resolverId));
           showConfirmDialog({
             type: 'success',
             title: 'Installed',
@@ -26447,7 +26992,7 @@ ${tracks}
         if (brandNew.length > 0) {
           console.log(`✨ Found ${brandNew.length} new releases to add`);
           // Prepend new releases and re-sort
-          const merged = [...brandNew, ...newReleases].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+          const merged = uniqueReleases([...brandNew, ...newReleases]).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
           setNewReleases(merged);
           newReleasesCache.current = { releases: merged, timestamp: Date.now(), lastFullScan: newReleasesCache.current.lastFullScan || 0 };
 
@@ -26481,8 +27026,15 @@ ${tracks}
       const artistList = await gatherNewReleasesArtists();
 
       if (artistList.length === 0) {
-        console.log('✨ No artists found in collection or history');
-        setNewReleases([]);
+        // No artists to check is not "no releases": the collection or the
+        // listening history may simply not have loaded yet. Keep the
+        // releases already on screen (the restored cache) rather than
+        // blanking Fresh Drops, and only show the empty state when there
+        // were none (2026-11: Home lost Fresh Drops after a stale-cache
+        // launch until something re-rendered it).
+        const kept = newReleasesCache.current.releases || [];
+        console.log(`✨ No artists found in collection or history${kept.length ? `; keeping ${kept.length} cached releases` : ''}`);
+        if (kept.length === 0) setNewReleases([]);
         setNewReleasesLoaded(true);
         setNewReleasesLoading(false);
         return;
@@ -26505,13 +27057,7 @@ ${tracks}
           const withArt = results.map(r => window.hydrateReleaseArt(r, albumArtCache.current));
           // Merge in-progress results with prior cache so user sees all releases during loading
           const progressMerged = [...withArt, ...priorCachedReleases];
-          const seen = new Set();
-          const deduped = progressMerged.filter(r => {
-            const key = `${r.artist.toLowerCase()}-${r.title.toLowerCase()}`;
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-          }).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+          const deduped = uniqueReleases(progressMerged).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
           setNewReleases(deduped);
           // Keep cache ref in sync so periodic saveCacheToStore captures
           // in-progress results (prevents data loss on rebuild/crash)
@@ -26524,28 +27070,22 @@ ${tracks}
       // full fetch only covers a subset of the user's library).
       const merged = [...allNewReleases, ...priorCachedReleases];
 
-      // Sort and deduplicate (fresh results take priority since they come first)
-      const seenReleases = new Set();
-      const uniqueReleases = merged
-        .filter(r => {
-          const key = `${r.artist.toLowerCase()}-${r.title.toLowerCase()}`;
-          if (seenReleases.has(key)) return false;
-          seenReleases.add(key);
-          return true;
-        })
+      // Sort and deduplicate by release id, then artist + title (fresh
+      // results take priority since they come first).
+      const uniqueList = uniqueReleases(merged)
         .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
 
-      console.log(`✨ Found ${allNewReleases.length} fresh + ${priorCachedReleases.length} cached → ${uniqueReleases.length} unique releases from ${artistsProcessed} artists`);
+      console.log(`✨ Found ${allNewReleases.length} fresh + ${priorCachedReleases.length} cached → ${uniqueList.length} unique releases from ${artistsProcessed} artists`);
 
-      setNewReleases(uniqueReleases);
+      setNewReleases(uniqueList);
       setNewReleasesLoaded(true);
 
-      newReleasesCache.current = { releases: uniqueReleases, timestamp: Date.now(), lastFullScan: Date.now() };
+      newReleasesCache.current = { releases: uniqueList, timestamp: Date.now(), lastFullScan: Date.now() };
 
-      const hash = generateDiscoveryHash(uniqueReleases);
+      const hash = generateDiscoveryHash(uniqueList);
       checkDiscoveryUnread('newReleases', hash);
 
-      fetchNewReleasesAlbumArt(uniqueReleases);
+      fetchNewReleasesAlbumArt(uniqueList);
 
       // Persist immediately so data isn't lost if app is rebuilt/killed
       saveCacheToStore();
@@ -27229,32 +27769,16 @@ Return ONLY the JSON array, no other text.`;
       // Merge fresh results with prior cached events (so we don't lose results
       // from artists that weren't in this run's selection)
       const merged = [...allEvents, ...priorCachedEvents];
-      const seenMergeKeys = new Map(); // key -> index in uniqueEvents
       const today = new Date().toISOString().split('T')[0];
-      const uniqueEvents = [];
-      for (const e of merged) {
-        if (e.date && e.date < today) continue; // Drop past events
-        const key = `${e.date || ''}-${normalizeForDedup(e.artist)}-${normalizeForDedup(e.venue?.name).slice(0, 20)}`;
-        if (seenMergeKeys.has(key)) {
-          // Merge ticketSources from duplicate into existing
-          const idx = seenMergeKeys.get(key);
-          const existing = uniqueEvents[idx];
-          if (e.ticketSources) {
-            for (const src of e.ticketSources) {
-              if (src.ticketUrl && !existing.ticketSources?.some(s => s.source === src.source && s.aiProvider === src.aiProvider)) {
-                (existing.ticketSources = existing.ticketSources || []).push(src);
-              }
-            }
-          }
-          continue;
-        }
+      // One row per show (lib/concert-events.js): a show with two of the
+      // user's artists on the bill comes back once per artist under one
+      // event id, and the list keys its rows by that id. Fresh copies come
+      // first, so they win over a stale cached copy; ticket sources and the
+      // artists each copy was found under are merged into the kept row.
+      const uniqueEvents = uniqueConcerts(merged
+        .filter(e => !(e.date && e.date < today)) // Drop past events
         // Ensure ticketSources exists (for legacy cached events)
-        if (!e.ticketSources) {
-          e.ticketSources = [makeTicketSource(e)];
-        }
-        seenMergeKeys.set(key, uniqueEvents.length);
-        uniqueEvents.push(e);
-      }
+        .map(e => (e.ticketSources ? e : { ...e, ticketSources: [makeTicketSource(e)] })));
       uniqueEvents.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
 
       console.log(`🎤 Found ${allEvents.length} fresh + ${priorCachedEvents.length} cached → ${uniqueEvents.length} unique concerts for ${artistList.length} artists`);
@@ -28985,11 +29509,14 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
   // Load new releases lazily in background once cache is loaded (data updates at most daily)
   // This ensures Fresh Drops tab is ready when the user navigates to it
+  // It waits for the collection too: the scan reads collectionData from the
+  // render it starts in, so starting before the collection loaded found no
+  // artists.
   useEffect(() => {
-    if (cacheLoaded && !newReleasesLoaded && !newReleasesLoading) {
+    if (cacheLoaded && !collectionLoading && !newReleasesLoaded && !newReleasesLoading) {
       loadNewReleases();
     }
-  }, [cacheLoaded, newReleasesLoaded, newReleasesLoading]);
+  }, [cacheLoaded, collectionLoading, newReleasesLoaded, newReleasesLoading]);
 
   // Lazily pre-load concerts in the background after startup (lowest priority)
   // This ensures concert data is ready before the user navigates to the tab
@@ -33415,7 +33942,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       setArtistImage(null);
       setArtistImagePosition('center 25%');
       setArtistReleases([]);
-      setReleaseTypeFilter('all');
+      resetReleaseTypeFilter();
       albumArtQueue.current = [];
       visibleAlbumIds.current.clear();
       return;
@@ -33432,6 +33959,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       const newArtistHistory = [...artistHistory];
       const previousArtist = newArtistHistory.pop();
       setArtistHistory(newArtistHistory);
+      startReleaseTypeFilterFor(previousArtist);
 
       // Fetch the previous artist's data
       const loadPreviousArtist = async () => {
@@ -33551,7 +34079,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         setArtistImage(null);
         setArtistImagePosition('center 25%');
         setArtistReleases([]);
-        setReleaseTypeFilter('all');
+        resetReleaseTypeFilter();
         setArtistHistory([]); // Clear artist history when leaving artist view
         // Clear album art loading queue
         albumArtQueue.current = [];
@@ -36080,59 +36608,13 @@ useEffect(() => {
   // why it was picked. The provider albums keep the page's provider blend
   // across the Albums category rows (each item's `blendIndex`, from
   // recommendation-model.js), so the leading row can't fill Home's row by
-  // itself.
-  const recommendationAlbums = useMemo(() => {
-    const out = [];
-    const seen = new Set();
-    const keyOf = (artist, title) => `${(artist || '').trim().toLowerCase()}|${(title || '').trim().toLowerCase()}`;
-    const why = (label, reason) => (reason ? `${label} · ${reason}` : label);
-    // Collect first, then sort by blend position, then dedupe, so the
-    // earliest copy in the blend wins. An item with no blendIndex (a page
-    // cached before the field) sorts by its collection position.
-    const picked = [];
-    for (const section of recommendations.sections || []) {
-      for (const sub of section.subsections || []) {
-        for (const item of sub.items || []) {
-          if (item.type !== 'album' || !item.name) continue;
-          const at = picked.length;
-          picked.push({ item, sub, at, rank: Number.isFinite(item.blendIndex) ? item.blendIndex : at });
-        }
-      }
-    }
-    picked.sort((a, b) => (a.rank - b.rank) || (a.at - b.at));
-    for (const { item, sub } of picked) {
-      const key = keyOf(item.artist, item.name);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const source = (sub.sources || []).find(src => src.id === item.resolverId);
-      const sourceLabel = item.resolverId === 'shuffleupagus'
-        ? 'Shuffleupagus'
-        : ((source && source.name) || item.resolverId || '');
-      out.push({
-        ...item,
-        title: item.name,
-        sourceLabel,
-        imageUrl: recommendationImageFor(item),
-        why: why(sourceLabel, item.reason)
-      });
-    }
-    for (const album of homeData.aiRecommendations?.albums || []) {
-      if (!album || !album.title) continue;
-      const key = keyOf(album.artist, album.title);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push({
-        ...album,
-        id: `shuffleupagus:album:${trackSlug(album.artist || '', album.title)}`,
-        resolverId: 'shuffleupagus',
-        reason: album.reason || null,
-        sourceLabel: 'Shuffleupagus',
-        imageUrl: album.art || null,
-        why: why('Shuffleupagus', album.reason)
-      });
-    }
-    return out;
-  }, [recommendations.sections, homeData.aiRecommendations, recommendationImages]);
+  // itself. An album whose id was already kept is skipped too: the card is
+  // keyed by id (homeRecommendationAlbums, recommendation-model.js).
+  const recommendationAlbums = useMemo(() => homeRecommendationAlbums({
+    sections: recommendations.sections,
+    aiAlbums: homeData.aiRecommendations?.albums,
+    imageFor: recommendationImageFor
+  }), [recommendations.sections, homeData.aiRecommendations, recommendationImages]);
 
   // Stable function props for the memo'd HomePage (keys must match
   // HOME_PAGE_HANDLERS in home-page.js).
@@ -36958,7 +37440,7 @@ useEffect(() => {
 
       // Main content area - Artist Page (completely separate layout)
       activeView === 'artist' ? React.createElement(ArtistPage, {
-          activeResolvers: playbackResolvers, addArtistToCollection, albumArtObserver, albumArtQueue, albumVersions, artistBio, artistConcerts, artistConcertsLoaded, artistConcertsLoading, artistExtendedInfo, artistImage, artistImagePosition, artistPageScrollRef, artistPageTab, artistReleases, artistSearch, artistSearchOpen, artistSort, artistSortOptions, collectionData, copyCollectionEmbedCode, currentArtist, currentRelease, currentTrack, effectiveTheme, filterArtistReleases, handleArtistPageScroll, isCompactHeader, isHeaderCollapsed, isPlaying, artistLoadError, loadingArtist, loadingBio, loadingExtendedInfo, loadingRelated, loadingRelease, playbackContext, prefetchedReleasesRef, publishCollectionSmartLink, relatedArtists, relatedArtistsSourceFilter, releaseObserverRef, releaseTrackRowRefs, releaseTypeFilter, removeArtistFromCollection, resolvers, setAddToPlaylistPanel, setArtistBio, setArtistPageTab, setArtistSearch, setArtistSearchOpen, setArtistSort, setCurrentRelease, setDraggingTrackForPlaylist, setIsHeaderCollapsed, setLoadingBio, setRelatedArtists, setRelatedArtistsSourceFilter, setReleaseTypeFilter, setSelectedPlaylistsForAdd, setTrackLoading, showToast, sortArtistReleases, trackSources, visibleAlbumIds,
+          activeResolvers: playbackResolvers, addArtistToCollection, albumArtObserver, albumArtQueue, albumVersions, artistBio, artistConcerts, artistConcertsLoaded, artistConcertsLoading, artistExtendedInfo, artistImage, artistImagePosition, artistPageScrollRef, artistPageTab, artistReleases, artistSearch, artistSearchOpen, artistSort, artistSortOptions, collectionData, copyCollectionEmbedCode, currentArtist, currentRelease, currentTrack, effectiveTheme, filterArtistReleases, handleArtistPageScroll, isCompactHeader, isHeaderCollapsed, isPlaying, artistLoadError, loadingArtist, loadingBio, loadingExtendedInfo, loadingRelated, loadingRelease, playbackContext, prefetchedReleasesRef, publishCollectionSmartLink, relatedArtists, relatedArtistsSourceFilter, releaseObserverRef, releaseTrackRowRefs, releaseTypeFilter, removeArtistFromCollection, resolvers, setAddToPlaylistPanel, setArtistBio, setArtistPageTab, setArtistSearch, setArtistSearchOpen, setArtistSort, setCurrentRelease, setDraggingTrackForPlaylist, setIsHeaderCollapsed, setLoadingBio, setRelatedArtists, setRelatedArtistsSourceFilter, setReleaseTypeFilter: pickReleaseTypeFilter, setSelectedPlaylistsForAdd, setTrackLoading, showToast, sortArtistReleases, trackSources, visibleAlbumIds,
           // Not read by the page directly; read during its render through a
           // stable handler, so it must invalidate the memo.
           _metaServiceConfigs: metaServiceConfigs,
@@ -38410,9 +38892,12 @@ useEffect(() => {
               return React.createElement('div', { className: 'space-y-0' },
                 filtered.map((track, index) => {
                   // Look up resolved sources from trackSources state
-                  const resolvedSources = trackSources[track.id] || {};
-                  const hasResolved = Object.keys(resolvedSources).length > 0;
-                  const isResolving = !hasResolved;
+                  // The row's sources, one rule for every list (lib/visible-sources):
+                  // resolving (shimmer), unplayable (dimmed, no icons) or playable.
+                  const { shown: shownSources, state: sourceState } = sourceRowState(track, { trackSources, playbackResolvers, resolverOrder });
+                  const hasResolved = sourceState === 'playable';
+                  const isResolving = sourceState === 'resolving';
+                  const isUnplayable = sourceState === 'unplayable';
                   const isCurrentTrack = currentTrack?.title === track.title && currentTrack?.artist === track.artist;
                   const isNowPlaying = isCurrentTrack && isPlaying;
 
@@ -38434,7 +38919,7 @@ useEffect(() => {
                       }
                     },
                     className: `flex items-center gap-4 py-3 px-4 cursor-pointer transition-all group ${
-                      isResolving ? 'opacity-60' : ''
+                      isResolving || isUnplayable ? 'opacity-60' : ''
                     } ${isNowPlaying ? 'bg-accent-tint' : 'hover:bg-surface-hover'}`,
                     style: { borderRadius: '8px', marginBottom: '2px' },
                     onActivate: () => {
@@ -38529,15 +39014,8 @@ useEffect(() => {
                           })
                         )
                       : hasResolved ? (() => {
-                          const bestConf = getBestSourceConfidence(resolvedSources);
-                          return Object.entries(resolvedSources)
-                            .filter(([resolverId]) => playbackResolvers.includes(resolverId))
-                            .sort(([aId], [bId]) => {
-                              const aIndex = resolverOrder.indexOf(aId);
-                              const bIndex = resolverOrder.indexOf(bId);
-                              return aIndex - bIndex;
-                            })
-                            .map(([resolverId, source]) => {
+                          // The shared source-icon rule (lib/visible-sources).
+                          return shownSources.map(({ resolverId, source, dim }) => {
                               const resolver = allResolvers.find(r => r.id === resolverId);
                               if (!resolver || !resolver.play) return null;
                               return React.createElement('button', {
@@ -38561,7 +39039,7 @@ useEffect(() => {
                                   alignItems: 'center',
                                   justifyContent: 'center',
                                   pointerEvents: 'auto',
-                                  opacity: (source.confidence || 0) < bestConf ? 0.6 : 1,
+                                  opacity: dim ? 0.6 : 1,
                                   transition: 'transform 0.1s'
                                 },
                                 onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
@@ -39443,11 +39921,7 @@ useEffect(() => {
           const _searchL = concertsSearch.toLowerCase().trim();
           const _locL = concertsLocation.toLowerCase().trim();
           const filteredConcertsCount = concerts.filter(event => {
-            if (concertsSourceFilter !== 'all') {
-              if (concertsSourceFilter.startsWith('ai:')) {
-                if (event.source !== 'ai' || event.aiProvider !== concertsSourceFilter.slice(3)) return false;
-              } else if (event.source !== concertsSourceFilter) return false;
-            }
+            if (!concertMatchesSource(event, concertsSourceFilter)) return false;
             if (concertsLocationCoords) {
               const vLat = event.venue?.latitude, vLng = event.venue?.longitude;
               if (vLat != null && vLng != null) {
@@ -39556,23 +40030,27 @@ useEffect(() => {
             style: { flexShrink: 0, backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
           },
             // Source filter: the app's filter chips (FilterChips), as on Home
-            // and Recommendations. All neutral; each source that returned
-            // shows in its plugin's colour (resolver.color).
+            // and Recommendations. All neutral; each service that lists a show
+            // (including those merged into another service's row, its
+            // ticketSources, lib/concert-events.js) in its plugin's colour.
             (() => {
               const allResolvers = resolverLoaderRef.current ? resolverLoaderRef.current.getAllResolvers() : [];
               const chips = [{ id: 'all', label: 'All' }];
               const seen = new Set();
               for (const event of concerts) {
-                const id = event.source === 'ai' && event.aiProvider ? `ai:${event.aiProvider}` : event.source;
-                if (!id || seen.has(id)) continue;
-                seen.add(id);
-                const resolverId = id.startsWith('ai:') ? id.slice(3) : id;
-                const resolver = allResolvers.find(r => r.id === resolverId);
-                chips.push({
-                  id,
-                  label: id.startsWith('ai:') ? (event.aiProviderName || resolver?.name || resolverId) : (resolver?.name || resolverId),
-                  color: resolver?.color || undefined,
-                });
+                for (const key of concertSourceKeys(event)) {
+                  if (seen.has(key)) continue;
+                  seen.add(key);
+                  if (key.startsWith('ai:')) {
+                    const aiId = key.slice(3);
+                    const named = [event, ...(event.ticketSources || [])].find(s => s && s.source === 'ai' && s.aiProvider === aiId);
+                    const resolver = allResolvers.find(r => r.id === aiId);
+                    chips.push({ id: key, label: (named && named.aiProviderName) || resolver?.name || aiId, color: resolver?.color || undefined });
+                  } else {
+                    const resolver = allResolvers.find(r => r.id === key);
+                    chips.push({ id: key, label: resolver?.name || key, color: resolver?.color || undefined });
+                  }
+                }
               }
               // One source, or none yet: nothing to pick between.
               if (chips.length < 3) return null;
@@ -39890,15 +40368,10 @@ useEffect(() => {
               const searchLower = concertsSearch.toLowerCase().trim();
               const locationLower = concertsLocation.toLowerCase().trim();
               const filtered = concerts.filter(event => {
-                // Source filter (supports 'all', dedicated service IDs, and 'ai:providerId')
-                if (concertsSourceFilter !== 'all') {
-                  if (concertsSourceFilter.startsWith('ai:')) {
-                    const aiProviderId = concertsSourceFilter.slice(3);
-                    if (event.source !== 'ai' || event.aiProvider !== aiProviderId) return false;
-                  } else if (event.source !== concertsSourceFilter) {
-                    return false;
-                  }
-                }
+                // Source filter ('all', a service id, or 'ai:providerId'). A
+                // show several services list matches each of them
+                // (lib/concert-events.js concertSourceKeys).
+                if (!concertMatchesSource(event, concertsSourceFilter)) return false;
                 // Location filter — coordinate-based distance when available, text fallback
                 if (concertsLocationCoords) {
                   const vLat = event.venue?.latitude;
@@ -40806,9 +41279,12 @@ useEffect(() => {
             // the whole remainder, like the flat page, not just the visible tail.
             const songRow = (item, index, allSongs, section) => {
               const track = item.track;
-              const resolvedSources = trackSources[track.id] || track.sources || {};
-              const hasResolved = Object.keys(resolvedSources).length > 0;
-              const isResolving = Object.keys(resolvedSources).length === 0;
+              // The row's sources, one rule for every list (lib/visible-sources):
+              // resolving (shimmer), unplayable (dimmed, no icons) or playable.
+              const { shown: shownSources, state: sourceState } = sourceRowState(track, { trackSources, playbackResolvers, resolverOrder });
+              const hasResolved = sourceState === 'playable';
+              const isResolving = sourceState === 'resolving';
+              const isUnplayable = sourceState === 'unplayable';
               // The row playing now: this track, played from THIS row (the
               // context a row click sets), the playlist view's rule with the
               // row's key standing in for the playlist id. The key, not the
@@ -40850,7 +41326,7 @@ useEffect(() => {
                 },
                 onDragEnd: () => handlePlaylistDragEnd(),
                 className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group no-drag ${
-                  isResolving ? 'opacity-60' : ''
+                  isResolving || isUnplayable ? 'opacity-60' : ''
                 } ${isNowPlaying ? 'bg-accent-tint' : (isResolving ? '' : 'hover:bg-surface-hover')}`,
                 style: { borderRadius: '8px', marginBottom: '2px' },
                 onActivate: () => queueTail(),
@@ -40896,15 +41372,8 @@ useEffect(() => {
                         React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: '0.1s' } })
                       )
                     : hasResolved ? (() => {
-                        const bestConf = getBestSourceConfidence(resolvedSources);
-                        return Object.entries(resolvedSources)
-                          .filter(([resolverId]) => playbackResolvers.includes(resolverId))
-                          .sort(([aId], [bId]) => {
-                            const aIndex = resolverOrder.indexOf(aId);
-                            const bIndex = resolverOrder.indexOf(bId);
-                            return aIndex - bIndex;
-                          })
-                          .map(([resolverId, source]) => {
+                        // The shared source-icon rule (lib/visible-sources).
+                        return shownSources.map(({ resolverId, source, dim }) => {
                             const resolver = allResolvers.find(r => r.id === resolverId);
                             if (!resolver || !resolver.play) return null;
                             return React.createElement('button', {
@@ -40925,7 +41394,7 @@ useEffect(() => {
                                 alignItems: 'center',
                                 justifyContent: 'center',
                                 pointerEvents: 'auto',
-                                opacity: (source.confidence || 0) < bestConf ? 0.6 : 1,
+                                opacity: dim ? 0.6 : 1,
                                 transition: 'transform 0.1s'
                               },
                               onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
@@ -40934,10 +41403,7 @@ useEffect(() => {
                             }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
                           });
                       })()
-                    : React.createElement('div', { className: 'flex items-center gap-1' },
-                        React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', title: 'Resolving track...' }),
-                        React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: '0.1s' } })
-                      )
+                    : null
                 )
               );
             };
@@ -41515,12 +41981,19 @@ useEffect(() => {
                   return React.createElement('div', { className: 'space-y-0' },
                     ...sorted.map((track, index) => {
                       // Use track.id to look up resolved sources from trackSources state
-                      const resolvedSources = trackSources[track.id] || track.sources || {};
-                      const hasResolved = Object.keys(resolvedSources).length > 0;
-                      const isResolving = Object.keys(resolvedSources).length === 0;
+                      // The row's sources, one rule for every list (lib/visible-sources):
+                      // resolving (shimmer), unplayable (dimmed, no icons) or playable.
+                      const { shown: shownSources, state: sourceState } = sourceRowState(track, { trackSources, playbackResolvers, resolverOrder });
+                      const hasResolved = sourceState === 'playable';
+                      const isResolving = sourceState === 'resolving';
+                      const isUnplayable = sourceState === 'unplayable';
 
                       return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`,
-                        key: track.id,
+                        // One song listened to twice is two rows with one
+                        // track.id (ListenBrainz's recording_msid); the listen
+                        // time tells them apart. track.id itself stays the
+                        // trackSources key.
+                        key: `${track.id}|${track.playedAt ?? index}`,
                         'data-track-id': track.id,
                         ref: (el) => {
                           if (el) {
@@ -41544,7 +42017,7 @@ useEffect(() => {
                         onDragEnd: () => {
                           handlePlaylistDragEnd();
                         },
-                        className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${isResolving ? 'opacity-60' : 'hover:bg-surface-hover'}`,
+                        className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${isResolving || isUnplayable ? 'opacity-60' : 'hover:bg-surface-hover'}`,
                         style: {
                           borderRadius: '8px',
                           marginBottom: '2px'
@@ -41593,15 +42066,15 @@ useEffect(() => {
                               React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: '0.1s' } })
                             )
                           : hasResolved ? (() => {
-                              const bestConf = getBestSourceConfidence(resolvedSources);
-                              return Object.entries(resolvedSources).filter(([resolverId]) => playbackResolvers.includes(resolverId)).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
+                              // The shared source-icon rule (lib/visible-sources).
+                              return shownSources.map(({ resolverId, source, dim }) => {
                                 const resolver = allResolvers.find(r => r.id === resolverId);
                                 if (!resolver || !resolver.play) return null;
                                 return React.createElement('button', {
                                   key: resolverId,
                                   className: 'no-drag',
                                   onClick: (e) => { e.stopPropagation(); const tracksAfter = sorted.slice(index + 1); const context = { type: 'history', name: 'History' }; setQueueWithContext(tracksAfter, context); handlePlay({ ...track, preferredResolver: resolverId }); },
-                                  style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', opacity: (source.confidence || 0) < bestConf ? 0.6 : 1, transition: 'transform 0.1s' },
+                                  style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', opacity: dim ? 0.6 : 1, transition: 'transform 0.1s' },
                                   onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                                   onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
                                   'aria-label': `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`, 'data-tooltip': `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
@@ -41609,10 +42082,7 @@ useEffect(() => {
                               });
                             })()
                           :
-                            React.createElement('div', { className: 'flex items-center gap-1' },
-                              React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', title: 'Resolving track...' }),
-                              React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: '0.1s' } })
-                            )
+                            null
                         )
                       );
                     })
@@ -41652,8 +42122,12 @@ useEffect(() => {
                   return React.createElement('div', { className: 'space-y-0' },
                     ...filtered.map((track, index) => {
                       // Use track.id to look up resolved sources from trackSources state
-                      const resolvedSources = trackSources[track.id] || track.sources || {};
-                      const hasResolved = Object.keys(resolvedSources).length > 0;
+                      // The row's sources, one rule for every list (lib/visible-sources):
+                      // resolving (shimmer), unplayable (dimmed, no icons) or playable.
+                      const { shown: shownSources, state: sourceState } = sourceRowState(track, { trackSources, playbackResolvers, resolverOrder });
+                      const hasResolved = sourceState === 'playable';
+                      const isResolving = sourceState === 'resolving';
+                      const isUnplayable = sourceState === 'unplayable';
                       return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`,
                         key: track.id,
                         'data-track-id': track.id,
@@ -41693,15 +42167,15 @@ useEffect(() => {
                         React.createElement('span', { className: 'text-right tabular-nums flex-shrink-0', style: { width: '80px', fontSize: '12px', color: 'var(--text-tertiary)' } }, `${track.playCount} plays`),
                         React.createElement('div', { className: 'flex items-center gap-1 justify-end', style: { width: '140px', flexShrink: 0, minHeight: '24px' } },
                           hasResolved ? (() => {
-                              const bestConf = getBestSourceConfidence(resolvedSources);
-                              return Object.entries(resolvedSources).filter(([resolverId]) => playbackResolvers.includes(resolverId)).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
+                              // The shared source-icon rule (lib/visible-sources).
+                              return shownSources.map(({ resolverId, source, dim }) => {
                                 const resolver = allResolvers.find(r => r.id === resolverId);
                                 if (!resolver || !resolver.play) return null;
                                 return React.createElement('button', {
                                   key: resolverId,
                                   className: 'no-drag',
                                   onClick: (e) => { e.stopPropagation(); const tracksAfter = filtered.slice(index + 1); const context = { type: 'history', name: 'Top Tracks' }; setQueueWithContext(tracksAfter, context); handlePlay({ ...track, preferredResolver: resolverId }); },
-                                  style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: (source.confidence || 0) < bestConf ? 0.6 : 1, transition: 'transform 0.1s' },
+                                  style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: dim ? 0.6 : 1, transition: 'transform 0.1s' },
                                   onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                                   onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
                                   'aria-label': `Play from ${resolver.name}`, 'data-tooltip': `Play from ${resolver.name}`
@@ -41709,10 +42183,7 @@ useEffect(() => {
                               });
                             })()
                           :
-                            React.createElement('div', { className: 'flex items-center gap-1' },
-                              React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer' }),
-                              React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: '0.1s' } })
-                            )
+                            null
                         )
                       );
                     })
@@ -42393,9 +42864,12 @@ useEffect(() => {
                   return React.createElement('div', { className: 'space-y-0' },
                     ...sorted.map((track, index) => {
                       // Use track.id to look up resolved sources from trackSources state
-                      const resolvedSources = trackSources[track.id] || track.sources || {};
-                      const hasResolved = Object.keys(resolvedSources).length > 0;
-                      const isResolving = Object.keys(resolvedSources).length === 0;
+                      // The row's sources, one rule for every list (lib/visible-sources):
+                      // resolving (shimmer), unplayable (dimmed, no icons) or playable.
+                      const { shown: shownSources, state: sourceState } = sourceRowState(track, { trackSources, playbackResolvers, resolverOrder });
+                      const hasResolved = sourceState === 'playable';
+                      const isResolving = sourceState === 'resolving';
+                      const isUnplayable = sourceState === 'unplayable';
                       const tracksAfterRecent = sorted.slice(index + 1);
 
                       return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`,
@@ -42420,7 +42894,7 @@ useEffect(() => {
                         onDragEnd: () => {
                           handlePlaylistDragEnd();
                         },
-                        className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${isResolving ? 'opacity-60' : 'hover:bg-surface-hover'}`,
+                        className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${isResolving || isUnplayable ? 'opacity-60' : 'hover:bg-surface-hover'}`,
                         style: { borderRadius: '8px', marginBottom: '2px' },
                         onActivate: () => {
                           const tracksAfter = sorted.slice(index + 1);
@@ -42466,15 +42940,15 @@ useEffect(() => {
                                 React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: '0.1s' } })
                               )
                             : hasResolved ? (() => {
-                                const bestConf = getBestSourceConfidence(resolvedSources);
-                                return Object.entries(resolvedSources).filter(([resolverId]) => playbackResolvers.includes(resolverId)).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
+                                // The shared source-icon rule (lib/visible-sources).
+                                return shownSources.map(({ resolverId, source, dim }) => {
                                   const resolver = allResolvers.find(r => r.id === resolverId);
                                   if (!resolver || !resolver.play) return null;
                                   return React.createElement('button', {
                                     key: resolverId,
                                     className: 'no-drag',
                                     onClick: (e) => { e.stopPropagation(); const context = { type: 'friend', name: currentFriend?.name || 'Friend', tab: 'recent' }; setQueueWithContext(tracksAfterRecent, context); handlePlay({ ...track, preferredResolver: resolverId }); },
-                                    style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', opacity: (source.confidence || 0) < bestConf ? 0.6 : 1, transition: 'transform 0.1s' },
+                                    style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', opacity: dim ? 0.6 : 1, transition: 'transform 0.1s' },
                                     onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                                     onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
                                     'aria-label': `Play from ${resolver.name}`, 'data-tooltip': `Play from ${resolver.name}`
@@ -42482,10 +42956,7 @@ useEffect(() => {
                                 });
                               })()
                             :
-                              React.createElement('div', { className: 'flex items-center gap-1' },
-                                React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', title: 'Resolving track...' }),
-                                React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: '0.1s' } })
-                              )
+                              null
                           )
                       );
                     })
@@ -42497,9 +42968,12 @@ useEffect(() => {
                     ? React.createElement('p', { className: 'text-center text-ink-tertiary py-8' }, 'No top tracks data')
                     : friendHistoryData.topTracks.map((track, index) => {
                         // Use track.id to look up resolved sources from trackSources state
-                        const resolvedSources = trackSources[track.id] || track.sources || {};
-                        const hasResolved = Object.keys(resolvedSources).length > 0;
-                        const isResolving = Object.keys(resolvedSources).length === 0;
+                        // The row's sources, one rule for every list (lib/visible-sources):
+                        // resolving (shimmer), unplayable (dimmed, no icons) or playable.
+                        const { shown: shownSources, state: sourceState } = sourceRowState(track, { trackSources, playbackResolvers, resolverOrder });
+                        const hasResolved = sourceState === 'playable';
+                        const isResolving = sourceState === 'resolving';
+                        const isUnplayable = sourceState === 'unplayable';
 
                         return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`,
                           key: track.id || index,
@@ -42523,7 +42997,7 @@ useEffect(() => {
                           onDragEnd: () => {
                             handlePlaylistDragEnd();
                           },
-                          className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${isResolving ? 'opacity-60' : 'hover:bg-surface-hover'}`,
+                          className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${isResolving || isUnplayable ? 'opacity-60' : 'hover:bg-surface-hover'}`,
                           style: { borderRadius: '8px', marginBottom: '2px' },
                           onActivate: () => {
                             const tracksAfter = friendHistoryData.topTracks.slice(index + 1);
@@ -42569,15 +43043,15 @@ useEffect(() => {
                                 React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: '0.1s' } })
                               )
                             : hasResolved ? (() => {
-                                const bestConf = getBestSourceConfidence(resolvedSources);
-                                return Object.entries(resolvedSources).filter(([resolverId]) => playbackResolvers.includes(resolverId)).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
+                                // The shared source-icon rule (lib/visible-sources).
+                                return shownSources.map(({ resolverId, source, dim }) => {
                                   const resolver = allResolvers.find(r => r.id === resolverId);
                                   if (!resolver || !resolver.play) return null;
                                   return React.createElement('button', {
                                     key: resolverId,
                                     className: 'no-drag',
                                     onClick: (e) => { e.stopPropagation(); const context = { type: 'friend', name: currentFriend?.name || 'Friend', tab: 'topTracks' }; setQueueWithContext(friendHistoryData.topTracks.slice(index + 1), context); handlePlay({ ...track, preferredResolver: resolverId }); },
-                                    style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', opacity: (source.confidence || 0) < bestConf ? 0.6 : 1, transition: 'transform 0.1s' },
+                                    style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', opacity: dim ? 0.6 : 1, transition: 'transform 0.1s' },
                                     onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                                     onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
                                     'aria-label': `Play from ${resolver.name}`, 'data-tooltip': `Play from ${resolver.name}`
@@ -42585,10 +43059,7 @@ useEffect(() => {
                                 });
                               })()
                             :
-                              React.createElement('div', { className: 'flex items-center gap-1' },
-                                React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', title: 'Resolving track...' }),
-                                React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: '0.1s' } })
-                              )
+                              null
                           )
                         );
                       })
@@ -47575,6 +48046,10 @@ React.createElement('div', {
                         backfillRunning: !!loveBackfillRunning.lastfm,
                         backfillProgress: loveBackfillProgress.lastfm,
                         unpushedCount: (collectionDataRef.current?.tracks || collectionData.tracks).filter(t => !lovePushedKeysRef.current[t.id]?.lastfm).length,
+                        onRunLoveImport: () => runLoveImport('lastfm'),
+                        loveImportRunning: !!loveImportRunning.lastfm,
+                        loveImportProgress: loveImportProgress.lastfm,
+                        hasImportedLoves: !!loveImportCursorRef.current?.lastfm,
                       })
                   )
                 )
@@ -47797,6 +48272,10 @@ React.createElement('div', {
                         backfillRunning: !!loveBackfillRunning.listenbrainz,
                         backfillProgress: loveBackfillProgress.listenbrainz,
                         unpushedCount: (collectionDataRef.current?.tracks || collectionData.tracks).filter(t => !lovePushedKeysRef.current[t.id]?.listenbrainz).length,
+                        onRunLoveImport: () => runLoveImport('listenbrainz'),
+                        loveImportRunning: !!loveImportRunning.listenbrainz,
+                        loveImportProgress: loveImportProgress.listenbrainz,
+                        hasImportedLoves: !!loveImportCursorRef.current?.listenbrainz,
                       })
                   )
                 )
@@ -48976,7 +49455,7 @@ React.createElement('div', {
                     }
 
                     if (isContentResolver) {
-                      setActiveResolvers(prev => [...prev, selectedResolver.id]);
+                      setActiveResolvers(prev => appendUniqueId(prev, selectedResolver.id));
                       setResolverOrder(prev => insertInCanonicalOrder(prev, selectedResolver.id));
                     } else if (isMetaService) {
                       saveMetaServiceConfig(selectedResolver.id, {
@@ -51809,7 +52288,7 @@ firstRunTutorial.step === 'sources' && React.createElement(React.Fragment, null,
                         savedActiveResolversRef.current = savedActiveResolversRef.current.filter(id => id !== resolver.id);
                       }
                     } else {
-                      setActiveResolvers(prev => [...prev, resolver.id]);
+                      setActiveResolvers(prev => appendUniqueId(prev, resolver.id));
                       setResolverOrder(prev => insertInCanonicalOrder(prev, resolver.id));
                       // Mark as explicitly enabled so reEnableResolver can restore it after auth failures
                       if (savedActiveResolversRef.current && !savedActiveResolversRef.current.includes(resolver.id)) {
@@ -52098,6 +52577,8 @@ firstRunTutorial.step === 'complete' && React.createElement(React.Fragment, null
             currentTrack,
             resolverOrder,
             allResolvers,
+            playbackResolvers,
+            trackSources,
             queueDropTarget,
             draggedQueueTrack,
             insertedTrackId,

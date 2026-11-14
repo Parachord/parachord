@@ -94,7 +94,7 @@ beforeEach(() => {
 describe('subsonic .axe structure', () => {
   test('manifest identifies the resolver', () => {
     expect(axe.manifest.id).toBe('subsonic');
-    expect(axe.manifest.version).toBe('0.3.2');
+    expect(axe.manifest.version).toBe('0.3.3');
   });
 
   test('declares streaming capabilities with userpass auth', () => {
@@ -104,7 +104,11 @@ describe('subsonic .axe structure', () => {
     expect(axe.settings.requiresAuth).toBe(true);
     // No API key. Username and password are a credential pair the settings
     // panel groups together — they must stay adjacent.
-    expect(axe.capabilities.mobile).toBe(false);
+    // Mobile hosts the html5Stream engine (Parachord/parachord-mobile#401);
+    // older mobile apps than the floors stay hidden from it.
+    expect(axe.capabilities.mobile).toBe(true);
+    expect(axe.capabilities.html5Stream).toBe(true);
+    expect(axe.manifest.minAppVersion).toEqual({ android: '0.9.11', ios: '0.3.0' });
     expect(axe.settings.authType).toBe('userpass');
     expect(axe.settings.configurable.username.type).toBe('text');
     expect(axe.settings.configurable.password.type).toBe('password');
@@ -192,22 +196,40 @@ describe('subsonic search', () => {
     expect(t.streamQuality).toBeUndefined();
   });
 
-  test('API error (status != ok) returns []', async () => {
+  test('API error (status != ok) throws with the Subsonic error code', async () => {
     const resolver = instantiate(axe);
     mockFetch(() => ({
       ok: true,
       status: 200,
       json: async () => ({ 'subsonic-response': { status: 'failed', error: { code: 40, message: 'Wrong username or password' } } })
     }));
-    const results = await resolver.search('pyramid song', CONFIG);
-    expect(results).toEqual([]);
+    await expect(resolver.search('pyramid song', CONFIG)).rejects.toThrow(
+      'Subsonic search failed: 40 Wrong username or password'
+    );
   });
 
-  test('HTTP error returns []', async () => {
+  test('HTTP error throws with the status', async () => {
     const resolver = instantiate(axe);
     mockFetch(() => ({ ok: false, status: 502 }));
-    const results = await resolver.search('pyramid song', CONFIG);
-    expect(results).toEqual([]);
+    await expect(resolver.search('pyramid song', CONFIG)).rejects.toThrow('Subsonic search failed: HTTP 502');
+  });
+
+  test('a body that is not a Subsonic response throws', async () => {
+    const resolver = instantiate(axe);
+    mockFetch(() => ({ ok: true, status: 200, json: async () => ({ hello: 'world' }) }));
+    await expect(resolver.search('pyramid song', CONFIG)).rejects.toThrow('not a Subsonic response');
+  });
+
+  test('a network failure throws instead of answering no match', async () => {
+    const resolver = instantiate(axe);
+    mockFetch(() => { throw new TypeError('Failed to fetch'); });
+    await expect(resolver.search('pyramid song', CONFIG)).rejects.toThrow('Failed to fetch');
+  });
+
+  test('resolve passes a failed search on instead of answering no match', async () => {
+    const resolver = instantiate(axe);
+    mockFetch(() => ({ ok: false, status: 503 }));
+    await expect(resolver.resolve('Radiohead', 'Pyramid Song', '', CONFIG)).rejects.toThrow('503');
   });
 
   test('missing config returns [] without fetching', async () => {
@@ -328,23 +350,21 @@ describe('subsonic search re-asks a CJK query as its letter runs after a miss', 
     expect(askedQueries()).toEqual(['マキシマムザホルモン ぶっ生き返す!!']);
   });
 
-  test('a CJK miss on a failed ask is not re-asked', async () => {
+  test('a CJK miss on a failed ask throws without a re-ask', async () => {
     const resolver = instantiate(axe);
     const calls = mockFetch(() => ({ ok: false, status: 502, json: async () => ({}) }));
-    const results = await resolver.search('マキシマムザホルモン ぶっ生き返す!!', CONFIG);
-    expect(results).toEqual([]);
+    await expect(resolver.search('マキシマムザホルモン ぶっ生き返す!!', CONFIG)).rejects.toThrow('HTTP 502');
     expect(calls).toHaveLength(1);
   });
 
-  test('a CJK miss on an API error is not re-asked either', async () => {
+  test('a CJK miss on an API error throws without a re-ask either', async () => {
     const resolver = instantiate(axe);
     const calls = mockFetch(() => ({
       ok: true,
       status: 200,
       json: async () => ({ 'subsonic-response': { status: 'error', error: { code: 40, message: 'Wrong username or password' } } }),
     }));
-    const results = await resolver.search('マキシマムザホルモン ぶっ生き返す!!', CONFIG);
-    expect(results).toEqual([]);
+    await expect(resolver.search('マキシマムザホルモン ぶっ生き返す!!', CONFIG)).rejects.toThrow('Wrong username or password');
     expect(calls).toHaveLength(1);
   });
 
@@ -637,6 +657,14 @@ describe('subsonic album search (capabilities.albumSearch)', () => {
     const calls = mockFetch(() => subsonicOk({}));
     expect(await resolver.searchAlbums({ artist: 'Radiohead', title: 'Amnesiac' }, {})).toEqual([]);
     expect(calls).toHaveLength(0);
+  });
+
+  test('a failed album search throws instead of answering no albums', async () => {
+    const resolver = instantiate(axe);
+    mockFetch(() => ({ ok: false, status: 500 }));
+    await expect(
+      resolver.searchAlbums({ artist: 'Radiohead', title: 'Amnesiac' }, CONFIG)
+    ).rejects.toThrow('Subsonic album search failed: HTTP 500');
   });
 });
 

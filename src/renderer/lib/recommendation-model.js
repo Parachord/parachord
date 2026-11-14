@@ -285,19 +285,39 @@ const CATEGORY_RANK = Object.fromEntries(Object.entries(CATEGORY_TABLES)
 // Returns one owned list per input list (so the caller can interleave them).
 // The key carries the type, as dedupeItems' does: a mixed titled section can
 // hold an album and its same-named title track, and both must survive.
+// An item is also matched by its id (`${type}:${id}`): the id is the card's
+// React key, and a provider can send one id (an ASIN, an MBID) under "A" in
+// one section and "A, B" in another, whose name keys differ (2026-11). Only a
+// provider's own id counts: the fallback id normalizeRecommendationItem makes
+// from the name ignores a playlist's url and weekly id, so two playlists the
+// name key keeps apart can share it.
+function providerIdKey(item) {
+  if (!item.id) return null;
+  const fallback = item.type === 'song'
+    ? trackSlug(item.artist || '', item.name)
+    : `${item.type}:${recommendationItemKey({ type: item.type, name: item.name, artist: item.artist })}`;
+  return item.id === fallback ? null : `${item.type}:${item.id}`;
+}
+
 function mergeOwned(lists) {
   const kept = new Map();
+  const keptById = new Map();
   return lists.map((list) => {
     const owned = [];
     for (const item of list) {
       const key = `${item.type}:${recommendationItemKey(item)}`;
-      const existing = kept.get(key);
+      const idKey = providerIdKey(item);
+      const existing = kept.get(key) || (idKey && keptById.get(idKey));
       if (!existing) {
         const copy = { ...item, sourceIds: [item.resolverId] };
         kept.set(key, copy);
+        if (idKey) keptById.set(idKey, copy);
         owned.push(copy);
         continue;
       }
+      // Either key of a merged copy finds the kept item from now on.
+      if (!kept.has(key)) kept.set(key, existing);
+      if (idKey && !keptById.has(idKey)) keptById.set(idKey, existing);
       if (item.resolverId && !existing.sourceIds.includes(item.resolverId)) existing.sourceIds.push(item.resolverId);
       if (!existing.reason && item.reason && item.resolverId === 'shuffleupagus') existing.reason = item.reason;
       const rank = CATEGORY_RANK[item.type];
@@ -807,6 +827,72 @@ function shuffleupagusSection({ albums, artists } = {}) {
   };
 }
 
+
+// Home's "Albums you might love": every album the Recommendations page shows
+// (its `sections`, as buildRecommendationPage returns them) plus
+// Shuffleupagus's own album picks (`aiAlbums`, homeData.aiRecommendations),
+// once each. Provider albums keep the page's provider blend across its
+// category rows (each item's `blendIndex`; an item cached before the field
+// sorts by its position), so the leading row can't fill Home's row by itself.
+// An album is dropped when its artist + title or its id was already kept: the
+// card is keyed by id, and one id can arrive under two artist strings.
+// `imageFor(item)` is the page's cover for an item. Pure; app.js memoizes it.
+function homeRecommendationAlbums({ sections, aiAlbums, imageFor } = {}) {
+  const out = [];
+  const seen = new Set();
+  const seenIds = new Set();
+  const keyOf = (artist, title) => `${(artist || '').trim().toLowerCase()}|${(title || '').trim().toLowerCase()}`;
+  const why = (label, reason) => (reason ? `${label} · ${reason}` : label);
+  const keep = (key, id) => {
+    if (seen.has(key) || (id && seenIds.has(id))) return false;
+    seen.add(key);
+    if (id) seenIds.add(id);
+    return true;
+  };
+  // Collect first, then sort by blend position, then dedupe, so the earliest
+  // copy in the blend wins.
+  const picked = [];
+  for (const section of sections || []) {
+    for (const sub of (section && section.subsections) || []) {
+      for (const item of (sub && sub.items) || []) {
+        if (!item || item.type !== 'album' || !item.name) continue;
+        const at = picked.length;
+        picked.push({ item, sub, at, rank: Number.isFinite(item.blendIndex) ? item.blendIndex : at });
+      }
+    }
+  }
+  picked.sort((a, b) => (a.rank - b.rank) || (a.at - b.at));
+  for (const { item, sub } of picked) {
+    if (!keep(keyOf(item.artist, item.name), item.id)) continue;
+    const source = (sub.sources || []).find(src => src.id === item.resolverId);
+    const sourceLabel = item.resolverId === 'shuffleupagus'
+      ? 'Shuffleupagus'
+      : ((source && source.name) || item.resolverId || '');
+    out.push({
+      ...item,
+      title: item.name,
+      sourceLabel,
+      imageUrl: imageFor ? imageFor(item) : (item.imageUrl || null),
+      why: why(sourceLabel, item.reason)
+    });
+  }
+  for (const album of aiAlbums || []) {
+    if (!album || !album.title) continue;
+    const id = `shuffleupagus:album:${trackSlug(album.artist || '', album.title)}`;
+    if (!keep(keyOf(album.artist, album.title), id)) continue;
+    out.push({
+      ...album,
+      id,
+      resolverId: 'shuffleupagus',
+      reason: album.reason || null,
+      sourceLabel: 'Shuffleupagus',
+      imageUrl: album.art || null,
+      why: why('Shuffleupagus', album.reason)
+    });
+  }
+  return out;
+}
+
 module.exports = {
   PLAYLIST_CATEGORIES,
   ALBUM_CATEGORIES,
@@ -824,6 +910,7 @@ module.exports = {
   dedupeItems,
   buildRecommendationPage,
   buildRecommendationViews,
+  homeRecommendationAlbums,
   filterRowBySource,
   pageSources,
   flattenRecommendationItems,

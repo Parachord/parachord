@@ -235,7 +235,7 @@ Components use `React.createElement()` (no JSX). The reusable ones live in `src/
 |--------|---------|
 | `ui-atoms.js` | `Tooltip`, `FixedTooltip`, `TooltipLayer`, `ResolverIcon`, `SERVICE_LOGO_PATHS`, `SERVICE_LOGO_IMAGES`, `SERVICE_LOGOS`, `ParachordWordmark`, `PlaybackProgress` |
 | `icons.js` | `Icons` (the fallback icon set) |
-| `track-lists.js` | `TrackRow`, `VirtualizedQueueList`, `VirtualizedTrackList`, `getBestSourceConfidence` |
+| `track-lists.js` | `TrackRow`, `VirtualizedQueueList`, `VirtualizedTrackList`, (badge icons from `lib/visible-sources.js`) |
 | `cards.js` | `ReleaseCard`, `ReleasePage`, `RelatedArtistCard`, `SearchArtistCard`, `SearchHistoryItem`, `CollectionArtistCard`, `CollectionAlbumCard`, `PlayTop10Icon`, `QueueTop10Icon`, `generateArtistPattern` |
 | `settings-cards.js` | `ResolverCard`, `McpSettingsSection`, `ScrobblerSettingsCard`, `FriendMiniPlaybar` |
 | `home-page.js`, `collection-page.js`, `artist-page.js`, `playlist-view-page.js`, `search-page.js` | Whole pages (`HomePage`, `CollectionPage`, `ArtistPage`, `PlaylistViewPage`, `SearchPage`), each `React.memo`'d |

@@ -206,7 +206,10 @@ module.exports = {
       var h = ensureHelpers();
 
       // One search3 call. Returns the raw songs, or null when there is no
-      // server to ask or the call failed (each reason logs, as before).
+      // server to ask (unconfigured). Every failure THROWS with the status or
+      // the Subsonic error code in the message (Parachord/parachord#1358): a
+      // resolver that couldn't answer must not read as "no match", or one
+      // trip away from home Wi-Fi would record misses across the library.
       var searchOnce = async function (q) {
         var url = h.apiUrl(
           config,
@@ -218,16 +221,12 @@ module.exports = {
           return null;
         }
         var resp = await fetch(url);
-        if (!resp.ok) {
-          console.warn('Subsonic: search failed, HTTP ' + resp.status);
-          return null;
-        }
+        if (!resp.ok) throw new Error('Subsonic search failed: HTTP ' + resp.status);
         var data = await resp.json();
         var sub = data && data['subsonic-response'];
         if (!sub || sub.status !== 'ok') {
-          var apiErr = sub && sub.error ? sub.error.code + ' ' + sub.error.message : 'bad response';
-          console.warn('Subsonic: API error:', apiErr);
-          return null;
+          var apiErr = sub && sub.error ? sub.error.code + ' ' + sub.error.message : 'not a Subsonic response';
+          throw new Error('Subsonic search failed: ' + apiErr);
         }
         return (sub.searchResult3 && sub.searchResult3.song) || [];
       };
@@ -249,29 +248,33 @@ module.exports = {
       // re-ask only happens after a miss, which was a dead end before, so a
       // server that reads the query differently keeps getting it as written.
       // No property-escape literal (an engine without them must still parse
-      // the function); a query left with no runs keeps the miss.
+      // the function); a query left with no runs keeps the miss. Only the
+      // constructors are guarded — a re-ask that fails must throw, not read
+      // as another miss (#1358).
       if (songs.length === 0) {
+        var cjkRe = null;
+        var nonAlnumRe = /[^a-z0-9]/g;
         try {
-          var CJK = new RegExp(
+          cjkRe = new RegExp(
             '[\\p{Script=Han}\\p{Script=Hiragana}\\p{Script=Katakana}\\p{Script=Hangul}]',
             'u',
           );
-          var NON_ALNUM = new RegExp('[^\\p{L}\\p{N}]', 'gu');
-          if (CJK.test(query)) {
-            var runs = query.trim().split(NON_ALNUM);
-            var words = [];
-            for (var i = 0; i < runs.length; i++) {
-              if (runs[i]) words.push(runs[i]);
-            }
-            var folded = words.length ? words.join(' ') : '';
-            if (folded && folded !== query.trim()) {
-              console.log(
-                'Subsonic: CJK query found nothing as written, asking again as "' + folded + '"',
-              );
-              songs = (await searchOnce(folded)) || [];
-            }
-          }
+          nonAlnumRe = new RegExp('[^\\p{L}\\p{N}]', 'gu');
         } catch (e) {}
+        if (cjkRe && cjkRe.test(query)) {
+          var runs = query.trim().split(nonAlnumRe);
+          var words = [];
+          for (var i = 0; i < runs.length; i++) {
+            if (runs[i]) words.push(runs[i]);
+          }
+          var folded = words.length ? words.join(' ') : '';
+          if (folded && folded !== query.trim()) {
+            console.log(
+              'Subsonic: CJK query found nothing as written, asking again as "' + folded + '"',
+            );
+            songs = (await searchOnce(folded)) || [];
+          }
+        }
       }
       var results = [];
       for (var i = 0; i < songs.length; i++) {
@@ -312,7 +315,7 @@ module.exports = {
       return results;
     } catch (error) {
       console.error('Subsonic search error:', error);
-      return [];
+      throw error;
     }
   },
   resolve: async function (artist, track, album, config) {
@@ -415,7 +418,9 @@ module.exports = {
       if (!h) return [];
 
       // One albums-only search3 call. Returns the raw albums, or null when
-      // there is no server to ask or the call failed.
+      // there is no server to ask (unconfigured). Every failure THROWS with
+      // the status or the Subsonic error code in the message (#1358), like
+      // search's searchOnce.
       var askAlbums = async function (t) {
         var url = h.apiUrl(
           config,
@@ -424,10 +429,13 @@ module.exports = {
         );
         if (!url) return null;
         var resp = await fetch(url);
-        if (!resp.ok) return null;
+        if (!resp.ok) throw new Error('Subsonic album search failed: HTTP ' + resp.status);
         var data = await resp.json();
         var sub = data && data['subsonic-response'];
-        if (!sub || sub.status !== 'ok') return null;
+        if (!sub || sub.status !== 'ok') {
+          var apiErr = sub && sub.error ? sub.error.code + ' ' + sub.error.message : 'not a Subsonic response';
+          throw new Error('Subsonic album search failed: ' + apiErr);
+        }
         return (sub.searchResult3 && sub.searchResult3.album) || [];
       };
 
@@ -437,29 +445,33 @@ module.exports = {
       // The same CJK re-ask as search(): an album name with CJK in it is
       // matched by Navidrome word-for-word with punctuation as written, so
       // '!!' vs '！！' in the same title is a miss there. Runs of letters and
-      // numbers, asked only after a miss; a query left with no runs keeps it.
+      // numbers, asked only after an answered miss; a query left with no runs
+      // keeps it. Only the constructors are guarded — a re-ask that fails
+      // must throw, not read as another miss (#1358).
       if (albums.length === 0) {
+        var albumCjkRe = null;
+        var albumNonAlnumRe = /[^a-z0-9]/g;
         try {
-          var CJK = new RegExp(
+          albumCjkRe = new RegExp(
             '[\\p{Script=Han}\\p{Script=Hiragana}\\p{Script=Katakana}\\p{Script=Hangul}]',
             'u',
           );
-          var NON_ALNUM = new RegExp('[^\\p{L}\\p{N}]', 'gu');
-          if (CJK.test(term)) {
-            var runs = term.split(NON_ALNUM);
-            var words = [];
-            for (var i = 0; i < runs.length; i++) {
-              if (runs[i]) words.push(runs[i]);
-            }
-            var folded = words.length ? words.join(' ') : '';
-            if (folded && folded !== term) {
-              console.log(
-                'Subsonic: CJK album query found nothing as written, asking again as "' + folded + '"',
-              );
-              albums = (await askAlbums(folded)) || [];
-            }
-          }
+          albumNonAlnumRe = new RegExp('[^\\p{L}\\p{N}]', 'gu');
         } catch (e) {}
+        if (albumCjkRe && albumCjkRe.test(term)) {
+          var runs = term.split(albumNonAlnumRe);
+          var words = [];
+          for (var i = 0; i < runs.length; i++) {
+            if (runs[i]) words.push(runs[i]);
+          }
+          var folded = words.length ? words.join(' ') : '';
+          if (folded && folded !== term) {
+            console.log(
+              'Subsonic: CJK album query found nothing as written, asking again as "' + folded + '"',
+            );
+            albums = (await askAlbums(folded)) || [];
+          }
+        }
       }
       var out = [];
       for (var i = 0; i < albums.length; i++) {
@@ -478,7 +490,7 @@ module.exports = {
       return out;
     } catch (error) {
       console.error('Subsonic album search error:', error);
-      return [];
+      throw error;
     }
   },
   // An artist photo from the user's own server (docs/architecture/plugins.md,

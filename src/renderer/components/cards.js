@@ -9,7 +9,7 @@
 // app.js for the in-component call sites; PlayTop10Icon / QueueTop10Icon are
 // cards-only (the playtop-10 / queue-top-10 affordances).
 const { ResolverIcon, PlaybackProgress, ShareButton } = require('./ui-atoms');
-const { getBestSourceConfidence } = require('./track-lists');
+const { sourceRowState } = require('../lib/visible-sources');
 const Icons = require('./icons');
 const { EmptyState, ErrorState } = require('./states');
 const { Menu } = require('./menu');
@@ -547,6 +547,16 @@ const CollectionArtistCard = ({ artist, getArtistImage, onNavigate, onPlayTopTra
 const CollectionAlbumCard = ({ album, getAlbumArt, onNavigate, onAddToPlaylist, onPlay, onAddToQueue, onContextMenu, animationDelay = 0 }) => {
   // States: undefined (fetching), null (no art found), string (URL)
   const [imageUrl, setImageUrl] = React.useState(album.art || undefined);
+  // The album this card shows now, and whether it is mounted: a broken-art
+  // retry answers late, and must not paint its cover on a card that has
+  // moved on to another album or gone.
+  const shownAlbumRef = React.useRef(null);
+  shownAlbumRef.current = `${album.artist}|${album.title}`;
+  const mountedRef = React.useRef(true);
+  React.useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   React.useEffect(() => {
     // If we already have embedded art, don't fetch
@@ -617,9 +627,14 @@ const CollectionAlbumCard = ({ album, getAlbumArt, onNavigate, onAddToPlaylist, 
         // A dead cached URL: placeholder now, the art pipeline's retry if it finds one.
         onError: () => {
           const broken = imageUrl;
+          const forAlbum = shownAlbumRef.current;
           setImageUrl(null);
           const report = globalThis.reportBrokenAlbumArt;
-          if (report) report(broken, { artist: album.artist, album: album.title }).then((url) => { if (url) setImageUrl(url); });
+          if (report) {
+            report(broken, { artist: album.artist, album: album.title }).then((url) => {
+              if (url && mountedRef.current && shownAlbumRef.current === forAlbum) setImageUrl(url);
+            });
+          }
         }
       }),
       // Placeholder icon when no art found
@@ -1728,11 +1743,15 @@ const ReleasePage = ({
             // Build track ID first, then use it to look up resolved sources
             const trackId = trackSlug(release.artist.name || 'unknown', track.title || 'untitled', release.title || 'noalbum');
             const sources = trackSources[trackId] || {};
-            const availableResolvers = Object.keys(sources).filter(id => activeResolvers.includes(id) && !sources[id]?.noMatch);
-            // Tri-state for badge area: still-loading vs resolved-with-no-matches vs playable.
-            // Set to true ONLY when resolution definitively completed across all enabled
-            // resolvers and none returned a real match. Drives gray-out + skip-shimmer below.
-            const hasNoMatches = sources.__noMatchAll === true;
+            // The shared source-icon rule (lib/visible-sources), with
+            // activeResolvers = playbackResolvers from app.js and `resolvers`
+            // already in the user's resolver order.
+            const { shown: shownSources, state: sourceState } = sourceRowState({ id: trackId }, { trackSources, playbackResolvers: activeResolvers, resolverOrder: resolvers.map(r => r.id) });
+            const availableResolvers = shownSources.map(s => s.resolverId);
+            // Tri-state for badge area: still-loading vs resolved-with-nothing-playable
+            // (no match anywhere, or only on services the plan can't play) vs
+            // playable. Drives gray-out + skip-shimmer below.
+            const hasNoMatches = sourceState === 'unplayable';
 
             // Build track object for drag/drop and playback
             const trackForDrag = {
@@ -1897,20 +1916,11 @@ const ReleasePage = ({
                     );
                   }
 
-                  // Sort resolvers by priority order (left to right = highest to lowest priority)
-                  const sortedResolverIds = [...availableResolverIds].sort((a, b) => {
-                    const aIndex = resolvers.findIndex(r => r.id === a);
-                    const bIndex = resolvers.findIndex(r => r.id === b);
-                    return aIndex - bIndex;
-                  });
-
                   // Show resolver icons for available sources (only if they support playback)
-                  const bestConf = getBestSourceConfidence(sources);
-                  return sortedResolverIds.map(resolverId => {
+                  return shownSources.map(({ resolverId, source, dim }) => {
                     const resolver = resolvers.find(r => r.id === resolverId);
                     if (!resolver || !resolver.play) return null;
 
-                    const source = sources[resolverId];
                     const confidence = source.confidence || 0;
 
                     return React.createElement('button', {
@@ -1954,7 +1964,7 @@ const ReleasePage = ({
                         alignItems: 'center',
                         justifyContent: 'center',
                         pointerEvents: 'auto',
-                        opacity: confidence < bestConf ? 0.6 : 1,
+                        opacity: dim ? 0.6 : 1,
                         transition: 'transform 0.1s'
                       },
                       onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',

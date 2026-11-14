@@ -136,12 +136,13 @@ test('confirmAsync resolves false on any way out but the confirm button', () => 
   React.useState = realUseState;
   // Modal element's onClose is the cancel path (X, Escape, backdrop)
   tree.props.onClose();
-  expect(calls).toEqual(['no', 'close']);
+  // Close first, then the callback (#1363: a callback may open another dialog).
+  expect(calls).toEqual(['close', 'no']);
   const cancelBtn = tree.props.footer.find((b) => b.key === 'cancel');
   cancelBtn.props.onClick();
   const confirmBtn = tree.props.footer.find((b) => b.key === 'confirm');
   confirmBtn.props.onClick();
-  expect(calls).toEqual(['no', 'close', 'no', 'close', 'yes', 'close']);
+  expect(calls).toEqual(['close', 'no', 'close', 'no', 'close', 'yes']);
 });
 
 test('the no-source dialog offers "Don\u2019t show this again"', () => {
@@ -155,3 +156,21 @@ test('the no-source dialog offers "Don\u2019t show this again"', () => {
   const store = require('fs').readFileSync(require('path').join(__dirname, '../../main-process/ipc/store.js'), 'utf8');
   expect(store).toContain("'skip_unplayable_prompt'");
 });
+
+test("the confirm dialog fires the cancel closeConfirmDialog hands back, and none once it's been replaced", () => {
+  const { ConfirmModalBody } = require('../../src/renderer/components/modal');
+  const realUseState = React.useState;
+  React.useState = (v) => [v, () => {}];
+  const calls = [];
+  const dialog = { show: true, title: 'Import?', confirmLabel: 'Import', onCancel: () => calls.push('stale') };
+  const pending = () => calls.push('pending');
+  const a = ConfirmModalBody({ dialog, onClose: () => pending });
+  const b = ConfirmModalBody({ dialog, onClose: () => null });
+  React.useState = realUseState;
+  // A named confirm with an onCancel has a Cancel button (the love import).
+  expect(a.props.footer.some((x) => x.key === 'cancel')).toBe(true);
+  a.props.onClose();
+  b.props.onClose();
+  expect(calls).toEqual(['pending']);
+});
+

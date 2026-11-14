@@ -21,7 +21,8 @@ const { EmptyState, ErrorState } = require('./states');
 const { SortMenu } = require('./sort-menu');
 const { Menu } = require('./menu');
 const { HeroTabs } = require('./hero-tabs');
-const { VirtualizedTrackList, getBestSourceConfidence } = require('./track-lists');
+const { VirtualizedTrackList } = require('./track-lists');
+const { sourceRowState } = require('../lib/visible-sources');
 const { ResolverIcon } = require('./ui-atoms');
 const { CollectionArtistCard, CollectionAlbumCard } = require('./cards');
 
@@ -501,7 +502,12 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                   );
                   const isCurrentTrack = currentTrack?.id === track.id || (currentTrack?.filePath && track.filePath && currentTrack.filePath === track.filePath);
                   const isNowPlaying = isCurrentTrack && playbackContext?.type === 'library';
-                  const isResolving = Object.keys(effectiveSources).length === 0;
+                  // The row's sources, one rule for every list (lib/visible-sources):
+                  // resolving (shimmer), unplayable (dimmed, no icons) or playable.
+                  // A local file always plays, so it is never unplayable.
+                  const { shown: shownSources, state: sourceState } = sourceRowState(track, { trackSources, playbackResolvers: activeResolvers, resolverOrder });
+                  const isResolving = sourceState === 'resolving';
+                  const isUnplayable = sourceState === 'unplayable' && !track.filePath;
 
                   return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`,
                   current: isNowPlaying,
@@ -540,7 +546,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                     },
                     className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all no-drag group ${
                       isNowPlaying && isPlaying ? 'bg-accent-tint' : 'hover:bg-surface-hover'
-                    }`,
+                    } ${isUnplayable ? 'opacity-60' : ''}`,
                     style: {
                       borderRadius: '8px',
                       marginBottom: '2px'
@@ -651,21 +657,11 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                       style: { pointerEvents: 'none', minHeight: '20px', width: '140px', justifyContent: 'flex-end' }
                     },
                       (() => {
-                        const sources = effectiveSources;
-                        const sourceIds = Object.keys(sources).filter(id => !sources[id]?.noMatch);
-                        const hasExternalSources = sourceIds.some(id => id !== 'localfiles');
+                        const hasExternalSources = shownSources.some(s => s.resolverId !== 'localfiles');
 
                         if (hasExternalSources) {
-                          // Show resolver icons only for enabled resolvers
-                          const bestConf = getBestSourceConfidence(sources);
-                          return Object.entries(sources)
-                            .filter(([resolverId, v]) => activeResolvers.includes(resolverId) && !v?.noMatch)
-                            .sort(([aId], [bId]) => {
-                              const aIndex = resolverOrder.indexOf(aId);
-                              const bIndex = resolverOrder.indexOf(bId);
-                              return aIndex - bIndex;
-                            })
-                            .map(([resolverId, source]) => {
+                          return shownSources
+                            .map(({ resolverId, source, dim }) => {
                               const resolver = allResolvers.find(r => r.id === resolverId);
                               if (!resolver) return null;
                               return React.createElement('button', {
@@ -689,7 +685,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                                   alignItems: 'center',
                                   justifyContent: 'center',
                                   pointerEvents: 'auto',
-                                  opacity: (source.confidence || 1) < bestConf ? 0.6 : 1,
+                                  opacity: dim ? 0.6 : 1,
                                   transition: 'transform 0.1s'
                                 },
                                 onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
@@ -856,13 +852,26 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                 return React.createElement(EmptyState, { icon: Icons.Music, title: "No albums yet", body: "Drag albums here to add them to your collection." });
               }
 
+              // Each card is keyed by its album id, so after a search or sort a
+              // card stays with its album (an index key handed a card, and its
+              // cover, to whichever album moved into its place). Ids are
+              // unique by construction (add and sync both refuse a repeat);
+              // a repeat from older data still gets its own key.
+              const albumKeyCounts = new Map();
+              const albumKey = (album) => {
+                const base = album.id || `${album.artist}|${album.title}`;
+                const n = (albumKeyCounts.get(base) || 0) + 1;
+                albumKeyCounts.set(base, n);
+                return n === 1 ? base : `${base}#${n}`;
+              };
+
               return React.createElement('div', {
                 className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-5',
                 style: { minHeight: 'calc(100vh - 160px)', alignContent: 'start' }  // Ensure enough scroll area to prevent header bounce
               },
                 sorted.map((album, index) =>
                   React.createElement(CollectionAlbumCard, {
-                    key: `${album.title}-${album.artist}-${index}`,
+                    key: albumKey(album),
                     album: { ...album, trackCount: album.trackCount ?? collectionData.tracks.filter(t => t.artist === album.artist && t.album === album.title).length },
                     getAlbumArt: getAlbumArt,
                     onNavigate: () => handleCollectionAlbumClick(album),

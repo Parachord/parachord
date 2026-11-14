@@ -75,9 +75,36 @@ describe('findSavedTrack', () => {
     expect(findSavedTrack([row], { artist: 'A', title: 'B', album: 'Second Album' })).toBeNull();
   });
 
-  test('a real saved album is not matched by a track with no album', () => {
+  test('a track with no album of its own matches a saved row with a real album (parachord#1071: the heart on an imported row)', () => {
+    // The heart's empty album is a placeholder, the same rule the row-side
+    // tier applies to saved rows — this is what lets a heart from search, the
+    // queue or now-playing find an imported row whose album-bearing trackSlug
+    // id no id tier matches.
     const row = saved('A', 'B', 'First Album');
-    expect(findSavedTrack([row], { artist: 'A', title: 'B', album: '' })).toBeNull();
+    expect(findSavedTrack([row], { artist: 'A', title: 'B', album: '' })).toBe(row);
+  });
+
+  test('a non-Latin heart with no album finds an imported trackSlug row (artist and title)', () => {
+    const { trackSlug } = require('../../src/renderer/lib/track-slug');
+    const row = { id: trackSlug('宇多田ヒカル', '光', 'Deep River'), artist: '宇多田ヒカル', title: '光', album: 'Deep River', sources: {} };
+    // A heart from search carries no album: the slug id (with the album) never
+    // matches, but the placeholder-album tier on the candidate finds the row.
+    expect(findSavedTrack([row], { artist: '宇多田ヒカル', title: '光', album: '' })).toBe(row);
+  });
+
+  test('a heart carrying the same album matches an imported trackSlug row by slug', () => {
+    const { trackSlug } = require('../../src/renderer/lib/track-slug');
+    const row = { id: trackSlug('宇多田ヒカル', '光', 'Deep River'), artist: '宇多田ヒカル', title: '光', album: 'Deep River', sources: {} };
+    expect(findSavedTrack([row], { artist: '宇多田ヒカル', title: '光', album: 'Deep River' })).toBe(row);
+  });
+
+  test('the slug tier is gated for Latin hearts: "Every Day" does not match a saved "Everyday"', () => {
+    const row = { id: 'a-everyday-single', artist: 'A', title: 'Everyday', album: 'Single', sources: {} };
+    // Without the album the slugs differ anyway; WITH the same album carried,
+    // an ungated slug tier would match ('a-everyday-single' both ways) — this
+    // is the case that pins the gate.
+    expect(findSavedTrack([row], { artist: 'A', title: 'Every Day', album: '' })).toBeNull();
+    expect(findSavedTrack([row], { artist: 'A', title: 'Every Day', album: 'Single' })).toBeNull();
   });
 
   test('different non-Latin songs are different songs', () => {

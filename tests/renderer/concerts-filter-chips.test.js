@@ -12,7 +12,9 @@ describe("Concerts' source filter", () => {
     expect(app).toContain("pageColor: PAGE_COLORS.concerts.fill, label: 'Filter concerts by source',");
   });
   test('each source chip takes its plugin colour', () => {
-    expect(app).toMatch(/const resolver = allResolvers\.find\(r => r\.id === resolverId\);\s*chips\.push\(\{[\s\S]{0,300}color: resolver\?\.color \|\| undefined,/);
+    // Every service that lists a show (lib/concert-events.js concertSourceKeys).
+    expect(app).toMatch(/for \(const key of concertSourceKeys\(event\)\)/);
+    expect(app).toContain("chips.push({ id: key, label: resolver?.name || key, color: resolver?.color || undefined });");
   });
   test('the old dropdown and its state are gone', () => {
     expect(app).not.toContain('concertsSourceFilterDropdownOpen');

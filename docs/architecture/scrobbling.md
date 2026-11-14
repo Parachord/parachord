@@ -43,7 +43,7 @@ The plugin contract is `window.scrobbleManager.registerPlugin({ id, isEnabled, s
 | Libre.fm scrobbler | [scrobbler-loader.js](../../scrobbler-loader.js) — `LibreFmScrobbler` |
 | Recommendations / library metadata for those services | `plugins/lastfm.axe`, `listenbrainz.axe`, `librefm.axe` (meta-service) |
 | Playback-telemetry plugin (Achordion) | [plugins/achordion.axe](../../plugins/achordion.axe) |
-| Loved-tracks push toggles + backfill | inline in app.js, persisted at `scrobbler_love_push_enabled` / `love_pushed_keys` |
+| Loved-tracks push toggles + backfill, and the import action (`runLoveImport`) | inline in app.js, persisted at `scrobbler_love_push_enabled` / `love_pushed_keys` / `love_import_cursor`; pure helpers in `src/renderer/lib/love-import.js` |
 | Removed | `scrobblers/` directory and `scrobble-manager.js` were a dead older copy, deleted 2026-10 (parachord#757; consolidation was commit [`26b7ebd`](https://github.com/Parachord/parachord/commit/26b7ebd)) |
 
 ### A resumed track isn't scrobbled twice

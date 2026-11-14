@@ -54,3 +54,17 @@ test('the restored artist page waits for the caches before fetching', () => {
   expect(restore).toMatch(/waitForBigCaches\(\)\.then\(\(\) => fetchArtistData\(savedLastView\.artistName\)\)/);
   expect(restore).not.toMatch(/setTimeout\(\(\) => fetchArtistData\(/);
 });
+
+// A stale-cache launch started the Fresh Drops refresh before the collection
+// had loaded: the scan found no artists and set the list to [], so Home's
+// Fresh Drops half vanished while 405 cached releases sat on disk (2026-11).
+test('Fresh Drops waits for the collection and never blanks cached releases for want of artists', () => {
+  const empty = between("if (artistList.length === 0) {\n        // No artists to check", "const sixMonthsAgo");
+  expect(empty).toMatch(/newReleasesCache\.current\.releases/);
+  expect(empty).toMatch(/if \(kept\.length === 0\) setNewReleases\(\[\]\)/);
+  const effect = between('// Load new releases lazily in background', '// Lazily pre-load concerts');
+  expect(effect).toMatch(/cacheLoaded && !collectionLoading && !newReleasesLoaded/);
+  expect(effect).toMatch(/\[cacheLoaded, collectionLoading, newReleasesLoaded, newReleasesLoading\]/);
+  const home = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/home-page.js'), 'utf8');
+  expect(home).toMatch(/if \(!collectionLoading && !newReleasesLoaded && !newReleasesLoading\) loadNewReleases\(\)/);
+});
