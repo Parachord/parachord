@@ -557,6 +557,7 @@ const { carriedReleaseArt, withArchiveCover, createReleaseGroupPicks } = require
 const { firstNonEmptyList, entriesFromMusicBrainzRelease, entriesFromCatalogRelease, pickReleaseGroup } = require('./lib/album-track-list');
 const { pickRelease } = require('./lib/release-pick');
 const { uniqueReleases } = require('./lib/fresh-drops-releases');
+const { uniqueConcerts } = require('./lib/concert-events');
 const { createReleaseLookup, releaseFormats, hasCurrentAlias } = require('./lib/release-lookup');
 const { artistLookupPlan, loadArtistReleaseGroups, musicBrainzHttpError, discographyOutcome } = require('./lib/artist-discography');
 const { searchMusicBrainzArtists, searchMusicBrainzAlbums, searchMusicBrainzTracks, createPopularityLookup } = require('./lib/search-requests');
@@ -18766,17 +18767,20 @@ ${trackListXml}
       const concertsData = dCaches['cache_concerts'];
       if (concertsData && concertsData.events && concertsData.events.length > 0) {
         const now2 = Date.now();
+        // One row per show: a cache written before uniqueConcerts holds a
+        // shared bill once per artist under one event id (lib/concert-events.js).
+        const restoredEvents = uniqueConcerts(concertsData.events);
         if (concertsData.timestamp && (now2 - concertsData.timestamp) < CACHE_TTL.concerts) {
-          concertsCache.current = { events: concertsData.events, timestamp: concertsData.timestamp };
-          setConcerts(concertsData.events);
+          concertsCache.current = { events: restoredEvents, timestamp: concertsData.timestamp };
+          setConcerts(restoredEvents);
           setConcertsLoaded(true);
-          console.log(`📦 Loaded ${concertsData.events.length} concerts from cache`);
+          console.log(`📦 Loaded ${restoredEvents.length} concerts from cache`);
         } else {
           // Stale but still useful to display immediately
-          concertsCache.current = { events: concertsData.events, timestamp: concertsData.timestamp };
-          setConcerts(concertsData.events);
+          concertsCache.current = { events: restoredEvents, timestamp: concertsData.timestamp };
+          setConcerts(restoredEvents);
           setConcertsLoaded(true);
-          console.log(`📦 Loaded ${concertsData.events.length} stale concerts from cache (will refresh)`);
+          console.log(`📦 Loaded ${restoredEvents.length} stale concerts from cache (will refresh)`);
         }
       }
 
@@ -27274,32 +27278,16 @@ Return ONLY the JSON array, no other text.`;
       // Merge fresh results with prior cached events (so we don't lose results
       // from artists that weren't in this run's selection)
       const merged = [...allEvents, ...priorCachedEvents];
-      const seenMergeKeys = new Map(); // key -> index in uniqueEvents
       const today = new Date().toISOString().split('T')[0];
-      const uniqueEvents = [];
-      for (const e of merged) {
-        if (e.date && e.date < today) continue; // Drop past events
-        const key = `${e.date || ''}-${normalizeForDedup(e.artist)}-${normalizeForDedup(e.venue?.name).slice(0, 20)}`;
-        if (seenMergeKeys.has(key)) {
-          // Merge ticketSources from duplicate into existing
-          const idx = seenMergeKeys.get(key);
-          const existing = uniqueEvents[idx];
-          if (e.ticketSources) {
-            for (const src of e.ticketSources) {
-              if (src.ticketUrl && !existing.ticketSources?.some(s => s.source === src.source && s.aiProvider === src.aiProvider)) {
-                (existing.ticketSources = existing.ticketSources || []).push(src);
-              }
-            }
-          }
-          continue;
-        }
+      // One row per show (lib/concert-events.js): a show with two of the
+      // user's artists on the bill comes back once per artist under one
+      // event id, and the list keys its rows by that id. Fresh copies come
+      // first, so they win over a stale cached copy; ticket sources and the
+      // artists each copy was found under are merged into the kept row.
+      const uniqueEvents = uniqueConcerts(merged
+        .filter(e => !(e.date && e.date < today)) // Drop past events
         // Ensure ticketSources exists (for legacy cached events)
-        if (!e.ticketSources) {
-          e.ticketSources = [makeTicketSource(e)];
-        }
-        seenMergeKeys.set(key, uniqueEvents.length);
-        uniqueEvents.push(e);
-      }
+        .map(e => (e.ticketSources ? e : { ...e, ticketSources: [makeTicketSource(e)] })));
       uniqueEvents.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
 
       console.log(`🎤 Found ${allEvents.length} fresh + ${priorCachedEvents.length} cached → ${uniqueEvents.length} unique concerts for ${artistList.length} artists`);
