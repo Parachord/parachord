@@ -40,6 +40,12 @@ test('SecretField hides by default and has a Show button', () => {
   expect(out).toMatch(/aria-pressed="false"[^>]*>Show</);
 });
 
+test('SecretField offers Show only once there is something to show', () => {
+  expect(html(h(F.SecretField, { value: '', 'aria-label': 'API key' }))).not.toContain('>Show<');
+  expect(html(h(F.SecretField, { defaultValue: '', 'aria-label': 'API key' }))).not.toContain('>Show<');
+  expect(html(h(F.SecretField, { defaultValue: 'saved', 'aria-label': 'API key' }))).toContain('>Show<');
+});
+
 test('RadioGroup marks the picked option', () => {
   const out = html(h(F.RadioGroup, { name: 'k', value: 'b', label: 'Keys', options: [{ value: 'a', label: 'A' }, { value: 'b', label: 'B', hint: 'bee' }] }));
   expect(out).toContain('role="radiogroup" aria-label="Keys"');

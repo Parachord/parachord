@@ -84,9 +84,17 @@ function TextField({ value, onChange, type = 'text', size = 'md', invalid = fals
 function SecretField(props) {
   const e = React.createElement;
   const [shown, setShown] = React.useState(false);
+  // Show/Hide only once there's something to show. A controlled field reads
+  // its value; an uncontrolled one (defaultValue) tracks what's typed.
+  const [typed, setTyped] = React.useState(!!props.defaultValue);
+  const hasText = props.value !== undefined ? String(props.value || '').length > 0 : typed;
+  const onChange = (v, ev) => {
+    if (props.value === undefined) setTyped(String(v || '').length > 0);
+    if (props.onChange) props.onChange(v, ev);
+  };
   return e('div', { className: 'relative flex items-center w-full' },
-    e(TextField, Object.assign({}, props, { type: shown ? 'text' : 'password', className: ['pr-16 w-full', props.className].filter(Boolean).join(' '), autoComplete: 'off', spellCheck: false })),
-    e('button', {
+    e(TextField, Object.assign({}, props, { onChange, type: shown ? 'text' : 'password', className: [hasText ? 'pr-16' : '', 'w-full', props.className].filter(Boolean).join(' '), autoComplete: 'off', spellCheck: false })),
+    hasText && e('button', {
       type: 'button',
       onClick: () => setShown((s) => !s),
       'aria-pressed': shown ? 'true' : 'false',

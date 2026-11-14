@@ -47920,41 +47920,19 @@ React.createElement('div', {
                 }, 'Redirect URIs'),
                 React.createElement('div', { style: { display: 'flex', gap: '6px', marginBottom: '6px' } },
                   React.createElement(TextField, { 'aria-label': 'Redirect URI (IPv4)', value: `http://127.0.0.1:${authPort}/callback`, readOnly: true, className: 'flex-1' }),
-                  React.createElement('button', {
-                    onClick: () => {
+                  React.createElement(Button, { variant: 'secondary', 'aria-label': 'Copy redirect URI', title: 'Copy', onClick: () => {
                       navigator.clipboard.writeText(`http://127.0.0.1:${authPort}/callback`);
                       showToast('Copied to clipboard', 'success');
-                    },
-                    title: 'Copy to clipboard',
-                    style: {
-                      padding: '8px 10px',
-                      fontSize: '12px',
-                      color: 'var(--text-secondary)',
-                      backgroundColor: 'var(--bg-secondary)',
-                      border: '1px solid var(--border-subtle)',
-                      borderRadius: '6px',
-                      cursor: 'pointer'
-                    }
-                  }, 'Copy')
+                    } },
+  React.createElement(Icons.Copy, { className: 'w-4 h-4' }))
                 ),
                 React.createElement('div', { style: { display: 'flex', gap: '6px' } },
                   React.createElement(TextField, { 'aria-label': 'Redirect URI (IPv6)', value: `http://[::1]:${authPort}/callback`, readOnly: true, className: 'flex-1' }),
-                  React.createElement('button', {
-                    onClick: () => {
+                  React.createElement(Button, { variant: 'secondary', 'aria-label': 'Copy redirect URI', title: 'Copy', onClick: () => {
                       navigator.clipboard.writeText(`http://[::1]:${authPort}/callback`);
                       showToast('Copied to clipboard', 'success');
-                    },
-                    title: 'Copy to clipboard',
-                    style: {
-                      padding: '8px 10px',
-                      fontSize: '12px',
-                      color: 'var(--text-secondary)',
-                      backgroundColor: 'var(--bg-secondary)',
-                      border: '1px solid var(--border-subtle)',
-                      borderRadius: '6px',
-                      cursor: 'pointer'
-                    }
-                  }, 'Copy')
+                    } },
+  React.createElement(Icons.Copy, { className: 'w-4 h-4' }))
                 ),
                 React.createElement('p', {
                   style: { fontSize: '10px', color: 'var(--text-tertiary)', marginTop: '4px' }
@@ -48358,22 +48336,11 @@ React.createElement('div', {
                       }
                     },
                       React.createElement(TextField, { 'aria-label': 'SoundCloud redirect URI', value: `http://127.0.0.1:${authPort}/callback/soundcloud`, readOnly: true, className: 'flex-1' }),
-                      React.createElement('button', {
-                        onClick: () => {
+                      React.createElement(Button, { variant: 'secondary', 'aria-label': 'Copy redirect URI', title: 'Copy', onClick: () => {
                           navigator.clipboard.writeText(`http://127.0.0.1:${authPort}/callback/soundcloud`);
                           showToast('Redirect URI copied', 'success');
-                        },
-                        title: 'Copy to clipboard',
-                        style: {
-                          padding: '8px 10px',
-                          fontSize: '12px',
-                          color: 'var(--text-secondary)',
-                          backgroundColor: 'var(--bg-secondary)',
-                          border: '1px solid var(--border-subtle)',
-                          borderRadius: '6px',
-                          cursor: 'pointer'
-                        }
-                      }, '📋')
+                        } },
+  React.createElement(Icons.Copy, { className: 'w-4 h-4' }))
                     ),
                     React.createElement('p', {
                       style: {
