@@ -357,24 +357,20 @@ ParachordWordmark({ fill, height })
 
 ### Primary Icon Set
 
-`src/renderer/components/icons.js` exports `Icons`: the `lucideReact` global if one is loaded, otherwise a fallback set. Nothing loads Lucide (there is no script for it in `index.html` and no copy in `vendor/`), so the fallbacks below are what actually renders wherever `Icons` is used: mostly single glyphs or emoji, and an SVG for `List`. Most other icons in the app are inline SVG paths written where they are used.
+`src/renderer/components/icons.js` is the app's icon set: each icon is a component drawn with Lucide's paths (ISC licence), inlined so nothing has to load at runtime. Use it for every interface icon; don't paste an SVG `<path>` or use a text glyph (✕ × ✓ ⚠ ◌ …) as an icon. `tests/renderer/icons.test.js` fails on a glyph icon, and the design-drift `svgPaths` count tracks the pasted SVGs still to move.
 
-| Icon | Lucide name (unused) | What renders |
-|------|--------|----------|
-| Play | `lucideReact.Play` | `▶` |
-| Pause | `lucideReact.Pause` | `⏸` |
-| SkipForward | `lucideReact.SkipForward` | `⏭` |
-| SkipBack | `lucideReact.SkipBack` | `⏮` |
-| Volume2 | `lucideReact.Volume2` | `🔊` |
-| Music | `lucideReact.Music` | `♫` |
-| List | `lucideReact.List` | SVG (3 horizontal lines) |
-| Users | `lucideReact.Users` | `👥` |
-| Radio | `lucideReact.Radio` | `📻` |
-| Heart | `lucideReact.Heart` | `♥` |
-| Search | `lucideReact.Search` | `🔍` |
-| Settings | `lucideReact.Settings` | `⚙` |
-| Plus | `lucideReact.Plus` | `+` |
-| X | `lucideReact.X` | `✕` |
+```js
+const Icons = require('./icons');            // in a component module
+React.createElement(Icons.X, { className: 'w-4 h-4' })
+React.createElement(Icons.Check, { size: 16, strokeWidth: 2.5 })
+React.createElement(Icons.Spinner, { className: 'w-5 h-5', label: 'Loading' })
+```
+
+Props: `size` (default 24; a `w-*`/`h-*` class or `style` overrides it), `className`, `style`, `strokeWidth` (default 2), `fill`, and `title`. An icon is `aria-hidden` unless it has a `title`; an icon-only button carries the `aria-label`. The transport icons (Play, Pause, SkipBack, SkipForward) are solid; the rest are outlines. Inside text, size an icon to the text with `style: { width: '1em', height: '1em' }`.
+
+**Sizes:** 16px (`w-4 h-4`) in rows, chips and inline with text; 20px (`w-5 h-5`) in buttons and dialogs; stroke 2.
+
+**The set:** Play, Pause, SkipForward, SkipBack, Volume2, Music, List, Users, Radio, Heart, Search, Settings, Plus, X, Check, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Info, AlertTriangle, RefreshCw, ExternalLink, Trash2, and **Spinner** (the one loading spinner). To add an icon, copy its shapes from lucide.dev into `SHAPES` in `icons.js`.
 
 ### Service Logos
 
