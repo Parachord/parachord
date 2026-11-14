@@ -1232,6 +1232,7 @@ const { loveTombstoneEntries } = LoveImport;
 // Unicode-aware track/album id slugs — replaces the ASCII-only strip formula
 // that collapsed every non-Latin track to the same id (lib/track-slug.js).
 const { trackSlug, slug } = require('./lib/track-slug');
+const { interpolatedProgress } = require('./lib/progress-interpolation');
 const { createDebouncedSaver } = require('./lib/debounced-saver');
 // The track-sources cache is saved this long after the last resolution, and
 // no later than the max after the first unsaved one (debounced-saver.js;
@@ -12741,23 +12742,22 @@ ${trackListXml}
         // 1. We have a valid baseline from native polling (timestamp > 0)
         // 2. Preview audio is NOT actively playing (it has its own timeupdate)
         // 3. Baseline indicates playback is happening
+        // A loading track holds its position: the old one is already paused
+        // (lib/progress-interpolation.js).
         const previewPlaying = window._appleMusicPreviewAudio && !window._appleMusicPreviewAudio.paused;
-        if (baseline.timestamp > 0 && baseline.isPlaying && !previewPlaying && !seekingRef.current) {
-          const elapsed = (Date.now() - baseline.timestamp) / 1000;
-          const interpolatedProgress = baseline.progress + elapsed;
-
-          if (interpolatedProgress < currentTrack.duration && interpolatedProgress >= 0) {
-            setProgress(interpolatedProgress);
-            if (window.scrobbleManager) {
-              window.scrobbleManager.onProgressUpdate(interpolatedProgress);
-            }
+        if (previewPlaying) return;
+        const position = interpolatedProgress({ baseline, now: Date.now(), duration: currentTrack.duration, seeking: seekingRef.current, loading: trackLoading });
+        if (position !== null) {
+          setProgress(position);
+          if (window.scrobbleManager) {
+            window.scrobbleManager.onProgressUpdate(position);
           }
         }
       }, 1000);
 
       return () => clearInterval(interval);
     }
-  }, [isPlaying, currentTrack]);
+  }, [isPlaying, trackLoading, currentTrack]);
 
 
   // Listen for context menu actions (only set up once)
@@ -13319,27 +13319,22 @@ ${trackListXml}
       const interval = setInterval(() => {
         const baseline = spotifyProgressBaselineRef.current;
 
-        // Only interpolate if:
-        // 1. We have a valid baseline (timestamp > 0 means API has set it)
-        // 2. Spotify reports that playback is actually happening (isPlaying from API)
-        if (baseline.timestamp > 0 && baseline.isPlaying && !seekingRef.current) {
-          const elapsed = (Date.now() - baseline.timestamp) / 1000;
-          const interpolatedProgress = baseline.progress + elapsed;
-
-          // Don't exceed track duration and don't go backwards
-          if (interpolatedProgress < currentTrack.duration && interpolatedProgress >= 0) {
-            setProgress(interpolatedProgress);
-            // Notify scrobble manager of progress for scrobble threshold checking
-            if (window.scrobbleManager) {
-              window.scrobbleManager.onProgressUpdate(interpolatedProgress);
-            }
+        // Counts forward from the last poll while Spotify reports playing;
+        // holds while seeking, and while a new track is loading (the old one
+        // is already paused) — lib/progress-interpolation.js.
+        const position = interpolatedProgress({ baseline, now: Date.now(), duration: currentTrack.duration, seeking: seekingRef.current, loading: trackLoading });
+        if (position !== null) {
+          setProgress(position);
+          // Notify scrobble manager of progress for scrobble threshold checking
+          if (window.scrobbleManager) {
+            window.scrobbleManager.onProgressUpdate(position);
           }
         }
       }, 1000); // Update every second for smooth progress bar
 
       return () => clearInterval(interval);
     }
-  }, [isPlaying, currentTrack, browserPlaybackActive]);
+  }, [isPlaying, trackLoading, currentTrack, browserPlaybackActive]);
 
   // Auto-dismiss toast after a default of 3 seconds (6 if it has an action
   // button, never if persistent). Callers can override with `duration` to

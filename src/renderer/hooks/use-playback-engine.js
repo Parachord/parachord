@@ -866,6 +866,13 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     console.log('🎵 Playing track:', trackOrSource.title, 'by', trackOrSource.artist);
     setLoadingTrack(trackOrSource);
     setTrackLoading(true); // Show loading state in playbar
+    // The bar starts the new track at 0:00 as soon as it is clicked, not when
+    // it starts playing: the old track is paused from here on, and its
+    // position under the loading shimmer read as still playing. A resume
+    // (startAt) shows where it will start instead, so a restored queue's Play
+    // never jumps to 0:00 and back (#1346). The Spotify / Apple Music
+    // estimates hold while loading (lib/progress-interpolation.js).
+    setProgress(startAt > 0 ? startAt : 0);
     playStartRequestedAtRef.current = Date.now();
     if (resumePendingRef.current) setResumePending(false);
 
