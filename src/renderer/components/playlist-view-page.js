@@ -1180,7 +1180,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                       } : undefined,
                       className: `flex items-center gap-4 py-3 px-4 transition-all no-drag group ${
                         playlistEditMode ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
-                      } ${isResolving ? 'opacity-60' : ''} ${isDragging ? 'opacity-50 bg-gray-100' : ''} ${isDraggedOver ? 'border-t-2 border-t-purple-500' : ''} ${isNowPlaying && isPlaying ? 'bg-purple-50' : 'hover:bg-gray-50/80'}`,
+                      } ${isResolving ? 'opacity-60' : ''} ${isDragging ? 'opacity-50 bg-gray-100' : ''} ${isDraggedOver ? 'border-t-2 border-t-purple-500' : ''} ${isNowPlaying && isPlaying ? 'bg-accent-tint' : 'hover:bg-surface-hover'}`,
                       style: {
                         borderRadius: '8px',
                         marginBottom: '2px'

@@ -29,6 +29,7 @@ module.exports = {
           danger: 'var(--text-danger)',
           info: 'var(--text-info)',
           'on-accent': 'var(--on-accent)',
+          faint: 'var(--icon-faint)',
         },
         surface: {
           page: 'var(--bg-primary)',

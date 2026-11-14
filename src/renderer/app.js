@@ -38560,16 +38560,16 @@ useEffect(() => {
               chartsTab === 'songs' && React.createElement('div', { className: 'relative' },
                 React.createElement('button', {
                   onClick: (e) => { e.stopPropagation(); setChartsSongsSourceDropdownOpen(!chartsSongsSourceDropdownOpen); },
-                  className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors'
+                  className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-ink-tertiary hover:text-ink-secondary transition-colors'
                 },
-                  React.createElement('span', { className: 'text-gray-400 mr-1' }, 'Source:'),
+                  React.createElement('span', { className: 'text-ink-tertiary mr-1' }, 'Source:'),
                   React.createElement('span', null, chartsSongsSource === 'apple' ? 'Apple Music' : 'Last.fm'),
                   React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                     React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
                   )
                 ),
                 chartsSongsSourceDropdownOpen && React.createElement('div', {
-                  className: 'absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-gray-200'
+                  className: 'absolute left-0 top-full mt-1 bg-surface-card rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-line'
                 },
                   React.createElement('button', {
                     onClick: (e) => {
@@ -38580,8 +38580,8 @@ useEffect(() => {
                         loadAppleMusicSongsCharts({ country: chartsCountry });
                       }
                     },
-                    className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between ${
-                      chartsSongsSource === 'apple' ? 'text-gray-900 font-medium' : 'text-gray-600'
+                    className: `w-full px-4 py-2 text-left text-sm hover:bg-surface-hover flex items-center justify-between ${
+                      chartsSongsSource === 'apple' ? 'text-ink-primary font-medium' : 'text-ink-secondary'
                     }`
                   },
                     'Apple Music',
@@ -38598,8 +38598,8 @@ useEffect(() => {
                         loadLastfmCharts({ country: chartsCountry });
                       }
                     },
-                    className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between ${
-                      chartsSongsSource === 'lastfm' ? 'text-gray-900 font-medium' : 'text-gray-600'
+                    className: `w-full px-4 py-2 text-left text-sm hover:bg-surface-hover flex items-center justify-between ${
+                      chartsSongsSource === 'lastfm' ? 'text-ink-primary font-medium' : 'text-ink-secondary'
                     }`
                   },
                     'Last.fm',
@@ -38613,9 +38613,9 @@ useEffect(() => {
               chartsTab === 'songs' && React.createElement('div', { className: 'relative ml-2' },
                 React.createElement('button', {
                   onClick: (e) => { e.stopPropagation(); setChartsCountryDropdownOpen(!chartsCountryDropdownOpen); },
-                  className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors'
+                  className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-ink-tertiary hover:text-ink-secondary transition-colors'
                 },
-                  React.createElement('span', { className: 'text-gray-400 mr-1' }, 'Region:'),
+                  React.createElement('span', { className: 'text-ink-tertiary mr-1' }, 'Region:'),
                   // Apple Music doesn't have "Global", so show "United States" when empty; Last.fm shows "Global"
                   React.createElement('span', null, chartsCountry
                     ? (CHARTS_COUNTRIES.find(c => c.code === chartsCountry)?.name || 'United States')
@@ -38625,7 +38625,7 @@ useEffect(() => {
                   )
                 ),
                 chartsCountryDropdownOpen && React.createElement('div', {
-                  className: 'absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[160px] max-h-64 overflow-y-auto z-30 border border-gray-200'
+                  className: 'absolute left-0 top-full mt-1 bg-surface-card rounded-lg shadow-lg py-1 min-w-[160px] max-h-64 overflow-y-auto z-30 border border-line'
                 },
                   // Global option (Last.fm only - Apple Music doesn't have a global chart)
                   chartsSongsSource === 'lastfm' && React.createElement('button', {
@@ -38636,8 +38636,8 @@ useEffect(() => {
                       setChartsCountryDropdownOpen(false);
                       loadLastfmCharts({ forceReload: true });
                     },
-                    className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between ${
-                      !chartsCountry ? 'text-gray-900 font-medium' : 'text-gray-600'
+                    className: `w-full px-4 py-2 text-left text-sm hover:bg-surface-hover flex items-center justify-between ${
+                      !chartsCountry ? 'text-ink-primary font-medium' : 'text-ink-secondary'
                     }`
                   },
                     'Global',
@@ -38665,11 +38665,11 @@ useEffect(() => {
                           loadLastfmCharts({ country: country.code, forceReload: true });
                         }
                       },
-                      className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between ${
+                      className: `w-full px-4 py-2 text-left text-sm hover:bg-surface-hover flex items-center justify-between ${
                         // For Apple Music, empty chartsCountry means 'us' (first country)
                         (chartsSongsSource === 'apple' && !chartsCountry && country.code === 'us')
-                          ? 'text-gray-900 font-medium'
-                          : chartsCountry === country.code ? 'text-gray-900 font-medium' : 'text-gray-600'
+                          ? 'text-ink-primary font-medium'
+                          : chartsCountry === country.code ? 'text-ink-primary font-medium' : 'text-ink-secondary'
                       }`
                     },
                       country.name,
@@ -38689,7 +38689,7 @@ useEffect(() => {
               // Search
               React.createElement('div', { className: 'flex items-center' },
                 chartsSearchOpen ?
-                  React.createElement('div', { className: 'flex items-center border border-gray-300 rounded-full px-3 py-[5px] filter-pill' },
+                  React.createElement('div', { className: 'flex items-center border border-line-strong rounded-full px-3 py-[5px] filter-pill' },
                     React.createElement('input', {
                       type: 'text',
                       value: chartsSearch,
@@ -38697,12 +38697,12 @@ useEffect(() => {
                       onBlur: () => { if (!chartsSearch.trim()) setChartsSearchOpen(false); },
                       autoFocus: true,
                       placeholder: 'Filter...',
-                      className: 'bg-transparent text-gray-700 text-sm placeholder-gray-400 outline-none',
+                      className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none',
                       style: { width: '150px' }
                     }),
                     chartsSearch && React.createElement('button', {
                       onClick: () => { setChartsSearch(''); setChartsSearchOpen(false); },
-                      className: 'ml-2 text-gray-400 hover:text-gray-600'
+                      className: 'ml-2 text-ink-tertiary hover:text-ink-secondary'
                     },
                       React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                         React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
@@ -38712,7 +38712,7 @@ useEffect(() => {
                 :
                   React.createElement('button', {
                     onClick: () => setChartsSearchOpen(true),
-                    className: 'p-1.5 text-gray-400 hover:text-gray-600 transition-colors'
+                    className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors'
                   },
                     React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                       React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
@@ -38741,13 +38741,13 @@ useEffect(() => {
             chartsTab === 'albums' && chartsError && !chartsLoading && React.createElement('div', {
               className: 'text-center py-12'
             },
-              React.createElement('svg', { className: 'w-12 h-12 mx-auto mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+              React.createElement('svg', { className: 'w-12 h-12 mx-auto mb-4 text-ink-faint', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                 React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z' })
               ),
-              React.createElement('div', { className: 'text-gray-400 mb-4' }, chartsError),
+              React.createElement('div', { className: 'text-ink-tertiary mb-4' }, chartsError),
               React.createElement('button', {
                 onClick: () => { setChartsError(null); loadCharts(); },
-                className: 'px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors'
+                className: 'px-4 py-2 bg-accent-fill text-ink-on-accent rounded-lg hover:bg-accent-fill-hover transition-colors'
               }, 'Retry')
             ),
 
@@ -38780,8 +38780,8 @@ useEffect(() => {
               const filtered = filterCharts(charts);
 
               if (filtered.length === 0 && chartsSearch) {
-                return React.createElement('div', { className: 'text-center py-12 text-gray-400' },
-                  React.createElement('svg', { className: 'w-12 h-12 mx-auto mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                return React.createElement('div', { className: 'text-center py-12 text-ink-tertiary' },
+                  React.createElement('svg', { className: 'w-12 h-12 mx-auto mb-4 text-ink-faint', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                     React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
                   ),
                   React.createElement('div', { className: 'text-sm' }, 'No albums match your search')
@@ -38789,7 +38789,7 @@ useEffect(() => {
               }
 
               if (filtered.length === 0) {
-                return React.createElement('div', { className: 'text-center py-12 text-gray-400' },
+                return React.createElement('div', { className: 'text-center py-12 text-ink-tertiary' },
                   React.createElement('div', { className: 'text-sm' }, 'No chart data available')
                 );
               }
@@ -38956,11 +38956,11 @@ useEffect(() => {
                             setTrackLoading(false);
                           }
                         },
-                        className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
+                        className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
                         style: { border: 'none', cursor: 'pointer' },
                         title: 'Play'
                       },
-                        React.createElement(Play, { size: 22, className: 'text-gray-800 ml-0.5' })
+                        React.createElement(Play, { size: 22, className: 'text-ink-primary ml-0.5' })
                       ),
                       // Add to Queue button
                       React.createElement('button', {
@@ -39005,7 +39005,7 @@ useEffect(() => {
                         cursor: 'pointer',
                         transition: 'color 0.2s ease'
                       },
-                      className: 'hover:text-purple-600',
+                      className: 'hover:text-accent',
                       onClick: (e) => {
                         e.stopPropagation();
                         fetchArtistData(item.artist);
@@ -39068,8 +39068,8 @@ useEffect(() => {
               const filtered = filterCharts(songsData);
 
               if (filtered.length === 0 && chartsSearch) {
-                return React.createElement('div', { className: 'text-center py-12 text-gray-400' },
-                  React.createElement('svg', { className: 'w-12 h-12 mx-auto mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                return React.createElement('div', { className: 'text-center py-12 text-ink-tertiary' },
+                  React.createElement('svg', { className: 'w-12 h-12 mx-auto mb-4 text-ink-faint', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                     React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
                   ),
                   React.createElement('div', { className: 'text-sm' }, 'No tracks match your search')
@@ -39077,7 +39077,7 @@ useEffect(() => {
               }
 
               if (filtered.length === 0) {
-                return React.createElement('div', { className: 'text-center py-12 text-gray-400' },
+                return React.createElement('div', { className: 'text-center py-12 text-ink-tertiary' },
                   React.createElement('div', { className: 'text-sm' }, 'No chart data available')
                 );
               }
@@ -39109,7 +39109,7 @@ useEffect(() => {
                     },
                     className: `flex items-center gap-4 py-3 px-4 cursor-pointer transition-all group ${
                       isResolving ? 'opacity-60' : ''
-                    } ${isNowPlaying ? 'bg-purple-50' : 'hover:bg-gray-50/80'}`,
+                    } ${isNowPlaying ? 'bg-accent-tint' : 'hover:bg-surface-hover'}`,
                     style: { borderRadius: '8px', marginBottom: '2px' },
                     onClick: () => {
                       const tracksAfter = filtered.slice(index + 1);
@@ -39162,7 +39162,7 @@ useEffect(() => {
 
                     // Artist name - flexible column, clickable
                     React.createElement('span', {
-                      className: 'truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
+                      className: 'truncate hover:text-accent hover:underline cursor-pointer transition-colors',
                       style: {
                         flex: '0.7 1 0',
                         minWidth: 0,
@@ -39360,7 +39360,7 @@ useEffect(() => {
             React.createElement('button', {
               onClick: () => loadNewReleases(true),
               disabled: newReleasesLoading,
-              className: `ml-2 p-1.5 transition-colors ${newReleasesLoading ? 'text-emerald-500' : 'text-gray-400 hover:text-gray-600'}`,
+              className: `ml-2 p-1.5 transition-colors ${newReleasesLoading ? 'text-emerald-500' : 'text-ink-tertiary hover:text-ink-secondary'}`,
               title: newReleasesLoading ? 'Loading...' : 'Refresh'
             },
               React.createElement('svg', {
@@ -39374,7 +39374,7 @@ useEffect(() => {
             // Search
             React.createElement('div', { className: 'flex items-center' },
               newReleasesSearchOpen ?
-                React.createElement('div', { className: 'flex items-center border border-gray-300 rounded-full px-3 py-[5px] filter-pill' },
+                React.createElement('div', { className: 'flex items-center border border-line-strong rounded-full px-3 py-[5px] filter-pill' },
                   React.createElement('input', {
                     type: 'text',
                     value: newReleasesSearch,
@@ -39382,12 +39382,12 @@ useEffect(() => {
                     onBlur: () => { if (!newReleasesSearch.trim()) setNewReleasesSearchOpen(false); },
                     autoFocus: true,
                     placeholder: 'Filter...',
-                    className: 'bg-transparent text-gray-700 text-sm placeholder-gray-400 outline-none',
+                    className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none',
                     style: { width: '150px' }
                   }),
                   newReleasesSearch && React.createElement('button', {
                     onClick: () => { setNewReleasesSearch(''); setNewReleasesSearchOpen(false); },
-                    className: 'ml-2 text-gray-400 hover:text-gray-600'
+                    className: 'ml-2 text-ink-tertiary hover:text-ink-secondary'
                   },
                     React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                       React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
@@ -39397,7 +39397,7 @@ useEffect(() => {
               :
                 React.createElement('button', {
                   onClick: () => setNewReleasesSearchOpen(true),
-                  className: 'p-1.5 text-gray-400 hover:text-gray-600 transition-colors'
+                  className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors'
                 },
                   React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                     React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
@@ -39420,13 +39420,13 @@ useEffect(() => {
             newReleasesError && !newReleasesLoading && React.createElement('div', {
               className: 'text-center py-12'
             },
-              React.createElement('svg', { className: 'w-12 h-12 mx-auto mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+              React.createElement('svg', { className: 'w-12 h-12 mx-auto mb-4 text-ink-faint', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                 React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z' })
               ),
-              React.createElement('div', { className: 'text-gray-400 mb-4' }, newReleasesError),
+              React.createElement('div', { className: 'text-ink-tertiary mb-4' }, newReleasesError),
               React.createElement('button', {
                 onClick: () => { setNewReleasesError(null); setNewReleasesLoaded(false); loadNewReleases(true); },
-                className: 'px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors'
+                className: 'px-4 py-2 bg-accent-fill text-ink-on-accent rounded-lg hover:bg-accent-fill-hover transition-colors'
               }, 'Retry')
             ),
 
@@ -39464,11 +39464,11 @@ useEffect(() => {
             !newReleasesError && !newReleasesLoading && newReleasesLoaded && newReleases.length === 0 && React.createElement('div', {
               className: 'text-center py-16'
             },
-              React.createElement('svg', { className: 'w-16 h-16 mx-auto mb-4 text-gray-200', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+              React.createElement('svg', { className: 'w-16 h-16 mx-auto mb-4 text-ink-faint', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                 React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M12 22a7 7 0 0 0 7-7c0-5-7-13-7-13S5 10 5 15a7 7 0 0 0 7 7z' })
               ),
-              React.createElement('div', { className: 'text-gray-500 font-medium mb-2' }, 'No new releases found'),
-              React.createElement('div', { className: 'text-gray-400 text-sm max-w-md mx-auto' },
+              React.createElement('div', { className: 'text-ink-tertiary font-medium mb-2' }, 'No new releases found'),
+              React.createElement('div', { className: 'text-ink-tertiary text-sm max-w-md mx-auto' },
                 collectionData.artists?.length === 0 && collectionData.tracks?.length === 0
                   ? 'Add artists to your collection or listen to some music to see new releases from artists you like.'
                   : 'None of your artists have released new music in the last 6 months. Check back later!'
@@ -39491,7 +39491,7 @@ useEffect(() => {
               }
 
               if (filtered.length === 0 && (newReleasesFilter !== 'all' || newReleasesSearch.trim())) {
-                return React.createElement('div', { className: 'text-center py-12 text-gray-400' },
+                return React.createElement('div', { className: 'text-center py-12 text-ink-tertiary' },
                   React.createElement('div', { className: 'text-sm' }, 'No releases match your filters')
                 );
               }
@@ -39653,11 +39653,11 @@ useEffect(() => {
                                 showToast('Could not load album tracks', 'error');
                               }
                             },
-                            className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
+                            className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
                             style: { border: 'none', cursor: 'pointer' },
                             title: 'Play album'
                           },
-                            React.createElement(Play, { size: 22, className: 'text-gray-800 ml-0.5' })
+                            React.createElement(Play, { size: 22, className: 'text-ink-primary ml-0.5' })
                           ),
                           // Add to queue button
                           React.createElement('button', {
@@ -39715,7 +39715,7 @@ useEffect(() => {
                               cursor: 'pointer',
                               transition: 'color 0.2s ease'
                             },
-                            className: 'hover:text-purple-600',
+                            className: 'hover:text-accent',
                             onClick: (e) => {
                               e.stopPropagation();
                               fetchArtistData(release.artist);
@@ -39828,7 +39828,7 @@ useEffect(() => {
               React.createElement('div', { className: 'relative' },
                 React.createElement('button', {
                   onClick: (e) => { e.stopPropagation(); setCriticsSortDropdownOpen(!criticsSortDropdownOpen); },
-                  className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors'
+                  className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-ink-tertiary hover:text-ink-secondary transition-colors'
                 },
                   React.createElement('span', null, criticsSortOptions.find(o => o.value === criticsSort)?.label || 'Sort'),
                   React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
@@ -39836,7 +39836,7 @@ useEffect(() => {
                   )
                 ),
                 criticsSortDropdownOpen && React.createElement('div', {
-                  className: 'absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-gray-200'
+                  className: 'absolute left-0 top-full mt-1 bg-surface-card rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-line'
                 },
                   criticsSortOptions.map(option =>
                     React.createElement('button', {
@@ -39846,8 +39846,8 @@ useEffect(() => {
                         setCriticsSort(option.value);
                         setCriticsSortDropdownOpen(false);
                       },
-                      className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between ${
-                        criticsSort === option.value ? 'text-gray-900 font-medium' : 'text-gray-600'
+                      className: `w-full px-4 py-2 text-left text-sm hover:bg-surface-hover flex items-center justify-between ${
+                        criticsSort === option.value ? 'text-ink-primary font-medium' : 'text-ink-secondary'
                       }`
                     },
                       option.label,
@@ -39867,7 +39867,7 @@ useEffect(() => {
               // Search
               React.createElement('div', { className: 'flex items-center' },
                 criticsSearchOpen ?
-                  React.createElement('div', { className: 'flex items-center border border-gray-300 rounded-full px-3 py-[5px] filter-pill' },
+                  React.createElement('div', { className: 'flex items-center border border-line-strong rounded-full px-3 py-[5px] filter-pill' },
                     React.createElement('input', {
                       type: 'text',
                       value: criticsSearch,
@@ -39875,12 +39875,12 @@ useEffect(() => {
                       onBlur: () => { if (!criticsSearch.trim()) setCriticsSearchOpen(false); },
                       autoFocus: true,
                       placeholder: 'Filter...',
-                      className: 'bg-transparent text-gray-700 text-sm placeholder-gray-400 outline-none',
+                      className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none',
                       style: { width: '150px' }
                     }),
                     criticsSearch && React.createElement('button', {
                       onClick: () => { setCriticsSearch(''); setCriticsSearchOpen(false); },
-                      className: 'ml-2 text-gray-400 hover:text-gray-600'
+                      className: 'ml-2 text-ink-tertiary hover:text-ink-secondary'
                     },
                       React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                         React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
@@ -39890,7 +39890,7 @@ useEffect(() => {
                 :
                   React.createElement('button', {
                     onClick: () => setCriticsSearchOpen(true),
-                    className: 'p-1.5 text-gray-400 hover:text-gray-600 transition-colors'
+                    className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors'
                   },
                     React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                       React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
@@ -39913,13 +39913,13 @@ useEffect(() => {
             criticsPicksError && !criticsPicksLoading && React.createElement('div', {
               className: 'text-center py-12'
             },
-              React.createElement('svg', { className: 'w-12 h-12 mx-auto mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+              React.createElement('svg', { className: 'w-12 h-12 mx-auto mb-4 text-ink-faint', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                 React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z' })
               ),
-              React.createElement('div', { className: 'text-gray-400 mb-4' }, criticsPicksError),
+              React.createElement('div', { className: 'text-ink-tertiary mb-4' }, criticsPicksError),
               React.createElement('button', {
                 onClick: () => { setCriticsPicksError(null); loadCriticsPicks(); },
-                className: 'px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors'
+                className: 'px-4 py-2 bg-accent-fill text-ink-on-accent rounded-lg hover:bg-accent-fill-hover transition-colors'
               }, 'Retry')
             ),
 
@@ -39971,8 +39971,8 @@ useEffect(() => {
             const sorted = sortCriticsPicks(filtered);
 
             if (sorted.length === 0 && criticsSearch) {
-              return React.createElement('div', { className: 'text-center py-12 text-gray-400' },
-                React.createElement('svg', { className: 'w-12 h-12 mx-auto mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+              return React.createElement('div', { className: 'text-center py-12 text-ink-tertiary' },
+                React.createElement('svg', { className: 'w-12 h-12 mx-auto mb-4 text-ink-faint', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                   React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
                 ),
                 React.createElement('div', { className: 'text-sm' }, 'No albums match your search')
@@ -39980,7 +39980,7 @@ useEffect(() => {
             }
 
             if (sorted.length === 0) {
-              return React.createElement('div', { className: 'text-center py-12 text-gray-400' },
+              return React.createElement('div', { className: 'text-center py-12 text-ink-tertiary' },
                 React.createElement('div', { className: 'text-sm' }, 'No critic picks available')
               );
             }
@@ -40151,11 +40151,11 @@ useEffect(() => {
                           setTrackLoading(false);
                         }
                       },
-                      className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
+                      className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
                       style: { border: 'none', cursor: 'pointer' },
                       title: 'Play'
                     },
-                      React.createElement(Play, { size: 22, className: 'text-gray-800 ml-0.5' })
+                      React.createElement(Play, { size: 22, className: 'text-ink-primary ml-0.5' })
                     ),
                     // Add to Queue button
                     React.createElement('button', {
@@ -40202,7 +40202,7 @@ useEffect(() => {
                       cursor: 'pointer',
                       transition: 'color 0.2s ease'
                     },
-                    className: 'hover:text-purple-600',
+                    className: 'hover:text-accent',
                     onClick: (e) => {
                       e.stopPropagation();
                       fetchArtistData(album.artist);
@@ -41332,10 +41332,10 @@ useEffect(() => {
                           showToast(`No top tracks found for ${item.name}`, 'error');
                         }
                       },
-                      className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
+                      className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
                       style: { border: 'none', cursor: 'pointer' },
                       title: 'Play top 10 tracks'
-                    }, React.createElement(PlayTop10Icon, { size: 26, className: 'text-gray-800' })),
+                    }, React.createElement(PlayTop10Icon, { size: 26, className: 'text-ink-primary' })),
                     React.createElement('button', {
                       onClick: async (e) => {
                         e.stopPropagation();
@@ -41356,8 +41356,8 @@ useEffect(() => {
                 React.createElement('div', { className: 'p-3' },
                   item.reason
                     ? React.createElement(FixedTooltip, { content: item.reason },
-                        React.createElement('p', { className: 'font-medium text-gray-900 truncate text-sm transition-colors' }, item.name))
-                    : React.createElement('p', { className: 'font-medium text-gray-900 truncate text-sm transition-colors' }, item.name)
+                        React.createElement('p', { className: 'font-medium text-ink-primary truncate text-sm transition-colors' }, item.name))
+                    : React.createElement('p', { className: 'font-medium text-ink-primary truncate text-sm transition-colors' }, item.name)
                 )
               );
             };
@@ -41497,10 +41497,10 @@ useEffect(() => {
                           showToast('Could not load album tracks', 'error');
                         }
                       },
-                      className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
+                      className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
                       style: { border: 'none', cursor: 'pointer' },
                       title: 'Play album'
-                    }, React.createElement(Play, { size: 22, className: 'text-gray-800 ml-0.5' })),
+                    }, React.createElement(Play, { size: 22, className: 'text-ink-primary ml-0.5' })),
                     React.createElement('button', {
                       onClick: async (e) => {
                         e.stopPropagation();
@@ -41525,9 +41525,9 @@ useEffect(() => {
                 React.createElement('div', { className: 'p-3' },
                   item.reason
                     ? React.createElement(FixedTooltip, { content: item.reason },
-                        React.createElement('p', { className: 'font-medium text-gray-900 truncate text-sm transition-colors' }, item.name))
-                    : React.createElement('p', { className: 'font-medium text-gray-900 truncate text-sm transition-colors' }, item.name),
-                  React.createElement('p', { className: 'text-xs text-gray-500 truncate mt-0.5' }, item.artist || '')
+                        React.createElement('p', { className: 'font-medium text-ink-primary truncate text-sm transition-colors' }, item.name))
+                    : React.createElement('p', { className: 'font-medium text-ink-primary truncate text-sm transition-colors' }, item.name),
+                  React.createElement('p', { className: 'text-xs text-ink-tertiary truncate mt-0.5' }, item.artist || '')
                 )
               );
             };
@@ -41588,10 +41588,10 @@ useEffect(() => {
                         e.stopPropagation();
                         playRecommendationPlaylist(item);
                       },
-                      className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
+                      className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
                       style: { border: 'none', cursor: 'pointer' },
                       title: 'Play'
-                    }, React.createElement(Play, { size: 22, className: 'text-gray-800 ml-0.5' })),
+                    }, React.createElement(Play, { size: 22, className: 'text-ink-primary ml-0.5' })),
                     React.createElement('button', {
                       onClick: (e) => {
                         e.stopPropagation();
@@ -41608,9 +41608,9 @@ useEffect(() => {
                   )
                 ),
                 React.createElement('div', { className: 'p-3' },
-                  React.createElement('p', { className: 'font-medium text-gray-900 truncate text-sm transition-colors' }, item.name),
+                  React.createElement('p', { className: 'font-medium text-ink-primary truncate text-sm transition-colors' }, item.name),
                   // Every playlist card names its source (the row is blended).
-                  React.createElement('p', { className: 'text-xs text-gray-500 truncate mt-0.5' }, itemSourceName(item, section) || '')
+                  React.createElement('p', { className: 'text-xs text-ink-tertiary truncate mt-0.5' }, itemSourceName(item, section) || '')
                 )
               );
             };
@@ -41717,18 +41717,18 @@ useEffect(() => {
                         e.stopPropagation();
                         playWeeklyPlaylist(item);
                       },
-                      className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
+                      className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
                       style: { border: 'none', cursor: 'pointer' },
                       title: 'Play'
-                    }, React.createElement(Play, { size: 22, className: 'text-gray-800 ml-0.5' }))
+                    }, React.createElement(Play, { size: 22, className: 'text-ink-primary ml-0.5' }))
                   )
                 ),
                 React.createElement('div', { className: 'p-3' },
                   // The playlist's full name ("Weekly Exploration"), then its
                   // source, like every playlist card (only the newest week is
                   // on the page, so the week needs no label).
-                  React.createElement('p', { className: 'font-medium text-gray-900 truncate text-sm transition-colors' }, item.weekly.label),
-                  React.createElement('p', { className: 'text-xs text-gray-500 truncate mt-0.5' }, creator || '')
+                  React.createElement('p', { className: 'font-medium text-ink-primary truncate text-sm transition-colors' }, item.weekly.label),
+                  React.createElement('p', { className: 'text-xs text-ink-tertiary truncate mt-0.5' }, creator || '')
                 )
               );
             };
@@ -41790,7 +41790,7 @@ useEffect(() => {
                 onDragEnd: () => handlePlaylistDragEnd(),
                 className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group no-drag ${
                   isResolving ? 'opacity-60' : ''
-                } ${isNowPlaying ? 'bg-purple-50' : (isResolving ? '' : 'hover:bg-gray-50/80')}`,
+                } ${isNowPlaying ? 'bg-accent-tint' : (isResolving ? '' : 'hover:bg-surface-hover')}`,
                 style: { borderRadius: '8px', marginBottom: '2px' },
                 onClick: () => queueTail(),
                 onContextMenu: (e) => {
@@ -41814,7 +41814,7 @@ useEffect(() => {
                   style: { pointerEvents: 'none', flex: '1 1 0', minWidth: 0, fontSize: '13px', fontWeight: isNowPlaying ? '500' : '400', color: isNowPlaying ? 'var(--accent-primary)' : hasResolved ? 'var(--text-primary)' : 'var(--text-tertiary)' }
                 }, track.title),
                 React.createElement('span', {
-                  className: 'truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
+                  className: 'truncate hover:text-accent hover:underline cursor-pointer transition-colors',
                   style: { flex: '0.7 1 0', minWidth: 0, fontSize: '12px', color: 'var(--text-secondary)' },
                   onClick: (e) => {
                     e.stopPropagation();
@@ -42187,16 +42187,16 @@ useEffect(() => {
                 : recommendations.error === 'not_configured' ?
                   React.createElement('div', { className: 'text-center py-16' },
                     React.createElement('div', {
-                      className: 'w-20 h-20 mx-auto mb-6 rounded-full bg-gray-100 flex items-center justify-center'
+                      className: 'w-20 h-20 mx-auto mb-6 rounded-full bg-surface-inset flex items-center justify-center'
                     },
-                      React.createElement('svg', { className: 'w-10 h-10 text-gray-400', fill: 'currentColor', viewBox: '0 0 24 24' },
+                      React.createElement('svg', { className: 'w-10 h-10 text-ink-tertiary', fill: 'currentColor', viewBox: '0 0 24 24' },
                         React.createElement('path', { d: 'M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z' })
                       )
                     ),
                     React.createElement('h3', {
-                      className: 'text-xl font-medium text-gray-900 mb-2'
+                      className: 'text-xl font-medium text-ink-primary mb-2'
                     }, 'Connect a music service'),
-                    React.createElement('p', { className: 'text-gray-500 mb-6 max-w-md mx-auto' },
+                    React.createElement('p', { className: 'text-ink-tertiary mb-6 max-w-md mx-auto' },
                       'Get personalized recommendations based on your listening history. Connect Last.fm or ListenBrainz, sign in to Amazon Music, or enable an AI chat provider for Shuffleupagus suggestions.'
                     ),
                     React.createElement('div', { className: 'flex gap-3 justify-center' },
@@ -42227,10 +42227,10 @@ useEffect(() => {
                 // Other error state
                 : recommendations.error ?
                   React.createElement('div', { className: 'text-center py-12' },
-                    React.createElement('div', { className: 'text-gray-400 mb-4' }, recommendations.error),
+                    React.createElement('div', { className: 'text-ink-tertiary mb-4' }, recommendations.error),
                     React.createElement('button', {
                       onClick: () => loadRecommendations({ forceRefresh: true }),
-                      className: 'px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors'
+                      className: 'px-4 py-2 bg-accent-fill text-ink-on-accent rounded-lg hover:bg-accent-fill-hover transition-colors'
                     }, 'Try Again')
                   )
                 // The sections (Friends last)
@@ -42392,7 +42392,7 @@ useEffect(() => {
               React.createElement('div', { className: 'relative' },
                 React.createElement('button', {
                   onClick: (e) => { e.stopPropagation(); setHistorySortDropdownOpen(!historySortDropdownOpen); },
-                  className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors'
+                  className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-ink-tertiary hover:text-ink-secondary transition-colors'
                 },
                   React.createElement('span', null, historySortOptions.find(o => o.value === historySort)?.label || 'Sort'),
                   React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
@@ -42400,7 +42400,7 @@ useEffect(() => {
                   )
                 ),
                 historySortDropdownOpen && React.createElement('div', {
-                  className: 'absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-gray-200'
+                  className: 'absolute left-0 top-full mt-1 bg-surface-card rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-line'
                 },
                   historySortOptions.map(option =>
                     React.createElement('button', {
@@ -42410,8 +42410,8 @@ useEffect(() => {
                         setHistorySort(option.value);
                         setHistorySortDropdownOpen(false);
                       },
-                      className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between ${
-                        historySort === option.value ? 'text-gray-900 font-medium' : 'text-gray-600'
+                      className: `w-full px-4 py-2 text-left text-sm hover:bg-surface-hover flex items-center justify-between ${
+                        historySort === option.value ? 'text-ink-primary font-medium' : 'text-ink-secondary'
                       }`
                     },
                       option.label,
@@ -42429,7 +42429,7 @@ useEffect(() => {
               React.createElement('div', { className: 'relative' },
                 React.createElement('button', {
                   onClick: (e) => { e.stopPropagation(); setHistoryPeriodDropdownOpen(!historyPeriodDropdownOpen); },
-                  className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors'
+                  className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-ink-tertiary hover:text-ink-secondary transition-colors'
                 },
                   React.createElement('span', null, historyPeriodOptions.find(o => o.value === historyPeriod)?.label || 'Period'),
                   React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
@@ -42437,7 +42437,7 @@ useEffect(() => {
                   )
                 ),
                 historyPeriodDropdownOpen && React.createElement('div', {
-                  className: 'absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-gray-200'
+                  className: 'absolute left-0 top-full mt-1 bg-surface-card rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-line'
                 },
                   historyPeriodOptions.map(option =>
                     React.createElement('button', {
@@ -42451,8 +42451,8 @@ useEffect(() => {
                         else if (historyTab === 'topArtists') loadTopArtists(option.value);
                         else if (historyTab === 'topAlbums') loadTopAlbums(option.value);
                       },
-                      className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between ${
-                        historyPeriod === option.value ? 'text-gray-900 font-medium' : 'text-gray-600'
+                      className: `w-full px-4 py-2 text-left text-sm hover:bg-surface-hover flex items-center justify-between ${
+                        historyPeriod === option.value ? 'text-ink-primary font-medium' : 'text-ink-secondary'
                       }`
                     },
                       option.label,
@@ -42469,7 +42469,7 @@ useEffect(() => {
             // Search (only for recent and top tracks)
             (historyTab === 'recent' || historyTab === 'topTracks') && React.createElement('div', { className: 'flex items-center' },
               historySearchOpen ?
-                React.createElement('div', { className: 'flex items-center border border-gray-300 rounded-full px-3 py-[5px] filter-pill' },
+                React.createElement('div', { className: 'flex items-center border border-line-strong rounded-full px-3 py-[5px] filter-pill' },
                   React.createElement('input', {
                     type: 'text',
                     value: historySearch,
@@ -42477,12 +42477,12 @@ useEffect(() => {
                     onBlur: () => { if (!historySearch.trim()) setHistorySearchOpen(false); },
                     autoFocus: true,
                     placeholder: 'Filter...',
-                    className: 'bg-transparent text-gray-700 text-sm placeholder-gray-400 outline-none',
+                    className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none',
                     style: { width: '150px' }
                   }),
                   historySearch && React.createElement('button', {
                     onClick: () => { setHistorySearch(''); setHistorySearchOpen(false); },
-                    className: 'ml-2 text-gray-400 hover:text-gray-600'
+                    className: 'ml-2 text-ink-tertiary hover:text-ink-secondary'
                   },
                     React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                       React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
@@ -42492,7 +42492,7 @@ useEffect(() => {
               :
                 React.createElement('button', {
                   onClick: () => setHistorySearchOpen(true),
-                  className: 'p-1.5 text-gray-400 hover:text-gray-600 transition-colors'
+                  className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors'
                 },
                   React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                     React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
@@ -42520,7 +42520,7 @@ useEffect(() => {
                   ...Array(15).fill(null).map((_, i) =>
                     React.createElement('div', {
                       key: `history-skeleton-${i}`,
-                      className: 'flex items-center gap-4 py-2 px-3 border-b border-gray-100'
+                      className: 'flex items-center gap-4 py-2 px-3 border-b border-line-light'
                     },
                       React.createElement('div', {
                         className: 'w-8 h-4 shimmer-light animate-shimmer flex-shrink-0',
@@ -42562,7 +42562,7 @@ useEffect(() => {
 
                   if (sorted.length === 0) {
                     return React.createElement('div', {
-                      className: 'text-center py-12 text-gray-400'
+                      className: 'text-center py-12 text-ink-tertiary'
                     }, historySearch ? 'No tracks match your search.' : 'No recent tracks found.');
                   }
 
@@ -42598,7 +42598,7 @@ useEffect(() => {
                         onDragEnd: () => {
                           handlePlaylistDragEnd();
                         },
-                        className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${isResolving ? 'opacity-60' : 'hover:bg-gray-50/80'}`,
+                        className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${isResolving ? 'opacity-60' : 'hover:bg-surface-hover'}`,
                         style: {
                           borderRadius: '8px',
                           marginBottom: '2px'
@@ -42625,7 +42625,7 @@ useEffect(() => {
                           style: { pointerEvents: 'none', flex: '1 1 0', minWidth: 0, fontSize: '13px', fontWeight: track.nowPlaying ? '500' : '400', color: track.nowPlaying ? 'var(--accent-primary)' : hasResolved ? 'var(--text-primary)' : 'var(--text-tertiary)' }
                         }, track.title),
                         React.createElement('span', {
-                          className: 'truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
+                          className: 'truncate hover:text-accent hover:underline cursor-pointer transition-colors',
                           style: { flex: '0.7 1 0', minWidth: 0, fontSize: '12px', color: 'var(--text-secondary)' },
                           onClick: (e) => { e.stopPropagation(); fetchArtistData(track.artist); }
                         }, track.artist),
@@ -42681,7 +42681,7 @@ useEffect(() => {
                   ...Array(15).fill(null).map((_, i) =>
                     React.createElement('div', {
                       key: `top-track-skeleton-${i}`,
-                      className: 'flex items-center gap-4 py-2 px-3 border-b border-gray-100'
+                      className: 'flex items-center gap-4 py-2 px-3 border-b border-line-light'
                     },
                       React.createElement('div', { className: 'w-8 h-4 shimmer-light animate-shimmer flex-shrink-0', style: { backgroundSize: '200% 100%' } }),
                       React.createElement('div', { className: 'h-4 shimmer-light animate-shimmer', style: { flex: '1 1 0', minWidth: 0, backgroundSize: '200% 100%' } }),
@@ -42699,7 +42699,7 @@ useEffect(() => {
                   ) : topTracks.tracks;
 
                   if (filtered.length === 0) {
-                    return React.createElement('div', { className: 'text-center py-12 text-gray-400' },
+                    return React.createElement('div', { className: 'text-center py-12 text-ink-tertiary' },
                       historySearch ? 'No tracks match your search.' : 'No top tracks found for this period.');
                   }
 
@@ -42728,7 +42728,7 @@ useEffect(() => {
                           e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'track', track }));
                         },
                         onDragEnd: () => { handlePlaylistDragEnd(); },
-                        className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${!hasResolved ? 'opacity-60' : 'hover:bg-gray-50/80'}`,
+                        className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${!hasResolved ? 'opacity-60' : 'hover:bg-surface-hover'}`,
                         style: { borderRadius: '8px', marginBottom: '2px' },
                         onClick: () => { const tracksAfter = filtered.slice(index + 1); const context = { type: 'history', name: 'Top Tracks' }; setQueueWithContext(tracksAfter, context); handlePlay(track); },
                         onContextMenu: (e) => { e.preventDefault(); if (window.electron?.contextMenu?.showTrackMenu) window.showItemMenu({ type: 'track', track }); }
@@ -42736,7 +42736,7 @@ useEffect(() => {
                         React.createElement('span', { className: 'flex-shrink-0 text-right', style: { width: '32px', fontSize: '12px', fontWeight: '500', color: 'var(--text-tertiary)' } }, `#${track.rank}`),
                         React.createElement('span', { className: 'truncate transition-colors', style: { flex: '1 1 0', minWidth: 0, fontSize: '13px', fontWeight: '400', color: hasResolved ? 'var(--text-primary)' : 'var(--text-tertiary)' } }, track.title),
                         React.createElement('span', {
-                          className: 'truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
+                          className: 'truncate hover:text-accent hover:underline cursor-pointer transition-colors',
                           style: { flex: '0.7 1 0', minWidth: 0, fontSize: '12px', color: 'var(--text-secondary)' },
                           onClick: (e) => { e.stopPropagation(); fetchArtistData(track.artist); }
                         }, track.artist),
@@ -42785,7 +42785,7 @@ useEffect(() => {
                   Array.from({ length: 12 }).map((_, i) =>
                     React.createElement('div', {
                       key: `artist-skeleton-${i}`,
-                      className: 'bg-white rounded-lg overflow-hidden'
+                      className: 'bg-surface-card rounded-lg overflow-hidden'
                     },
                       React.createElement('div', {
                         className: 'aspect-square shimmer-light animate-shimmer',
@@ -42807,7 +42807,7 @@ useEffect(() => {
               : topArtists.error ?
                 historyErrorState(topArtists.error, () => loadTopArtists(), [{ id: 'lastfm', name: 'Last.fm' }])
               : topArtists.artists.length === 0 ?
-                React.createElement('div', { className: 'text-center py-12 text-gray-400' }, 'No top artists found for this period.')
+                React.createElement('div', { className: 'text-center py-12 text-ink-tertiary' }, 'No top artists found for this period.')
               :
                 // Top Artists grid - Square card design
                 React.createElement('div', {
@@ -42905,11 +42905,11 @@ useEffect(() => {
                                 showToast(`No top tracks found for ${artist.name}`, 'error');
                               }
                             },
-                            className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
+                            className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
                             style: { border: 'none', cursor: 'pointer' },
                             title: 'Play top 10 tracks'
                           },
-                            React.createElement(PlayTop10Icon, { size: 26, className: 'text-gray-800' })
+                            React.createElement(PlayTop10Icon, { size: 26, className: 'text-ink-primary' })
                           ),
                           // Add top 10 to Queue button
                           React.createElement('button', {
@@ -42936,10 +42936,10 @@ useEffect(() => {
                       // Artist name and play count section
                       React.createElement('div', { className: 'p-3' },
                         React.createElement('p', {
-                          className: 'font-medium text-gray-900 truncate text-sm transition-colors'
+                          className: 'font-medium text-ink-primary truncate text-sm transition-colors'
                         }, artist.name),
                         React.createElement('p', {
-                          className: 'text-xs text-gray-400 mt-1'
+                          className: 'text-xs text-ink-tertiary mt-1'
                         }, `${artist.playCount} plays`)
                       )
                     );
@@ -42992,7 +42992,7 @@ useEffect(() => {
               : topAlbums.error ?
                 historyErrorState(topAlbums.error, () => loadTopAlbums(), [{ id: 'lastfm', name: 'Last.fm' }])
               : topAlbums.albums.length === 0 ?
-                React.createElement('div', { className: 'text-center py-12 text-gray-400' }, 'No top albums found for this period.')
+                React.createElement('div', { className: 'text-center py-12 text-ink-tertiary' }, 'No top albums found for this period.')
               :
                 // Top Albums grid - Cinematic Light design
                 React.createElement('div', {
@@ -43151,11 +43151,11 @@ useEffect(() => {
                                 setTrackLoading(false);
                               }
                             },
-                            className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
+                            className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
                             style: { border: 'none', cursor: 'pointer' },
                             title: 'Play album'
                           },
-                            React.createElement(Play, { size: 22, className: 'text-gray-800 ml-0.5' })
+                            React.createElement(Play, { size: 22, className: 'text-ink-primary ml-0.5' })
                           ),
                           // Add to queue button
                           React.createElement('button', {
@@ -43210,7 +43210,7 @@ useEffect(() => {
                             cursor: 'pointer',
                             transition: 'color 0.2s ease'
                           },
-                          className: 'hover:text-purple-600',
+                          className: 'hover:text-accent',
                           onClick: (e) => {
                             e.stopPropagation();
                             fetchArtistData(album.artist);
@@ -43298,7 +43298,7 @@ useEffect(() => {
                   isOnAir(currentFriend) && React.createElement('span', {
                     className: 'px-2 py-1 bg-green-500 text-white text-xs font-medium rounded-full flex items-center gap-1'
                   },
-                    React.createElement('span', { className: 'w-2 h-2 bg-white rounded-full animate-pulse' }),
+                    React.createElement('span', { className: 'w-2 h-2 bg-surface-card rounded-full animate-pulse' }),
                     'On Air'
                   )
                 ),
@@ -43413,7 +43413,7 @@ useEffect(() => {
                 React.createElement('div', { className: 'relative' },
                   React.createElement('button', {
                     onClick: (e) => { e.stopPropagation(); setFriendHistorySortDropdownOpen(!friendHistorySortDropdownOpen); },
-                    className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors'
+                    className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-ink-tertiary hover:text-ink-secondary transition-colors'
                   },
                     React.createElement('span', null, historySortOptions.find(o => o.value === friendHistorySort)?.label || 'Sort'),
                     React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
@@ -43421,7 +43421,7 @@ useEffect(() => {
                     )
                   ),
                   friendHistorySortDropdownOpen && React.createElement('div', {
-                    className: 'absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-gray-200'
+                    className: 'absolute left-0 top-full mt-1 bg-surface-card rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-line'
                   },
                     historySortOptions.map(option =>
                       React.createElement('button', {
@@ -43431,8 +43431,8 @@ useEffect(() => {
                           setFriendHistorySort(option.value);
                           setFriendHistorySortDropdownOpen(false);
                         },
-                        className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between ${
-                          friendHistorySort === option.value ? 'text-gray-900 font-medium' : 'text-gray-600'
+                        className: `w-full px-4 py-2 text-left text-sm hover:bg-surface-hover flex items-center justify-between ${
+                          friendHistorySort === option.value ? 'text-ink-primary font-medium' : 'text-ink-secondary'
                         }`
                       },
                         option.label,
@@ -43449,7 +43449,7 @@ useEffect(() => {
                 React.createElement('div', { className: 'relative' },
                   React.createElement('button', {
                     onClick: (e) => { e.stopPropagation(); setHistoryPeriodDropdownOpen(!historyPeriodDropdownOpen); },
-                    className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors'
+                    className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-ink-tertiary hover:text-ink-secondary transition-colors'
                   },
                     React.createElement('span', null, historyPeriodOptions.find(o => o.value === friendHistoryPeriod)?.label || 'Period'),
                     React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
@@ -43457,7 +43457,7 @@ useEffect(() => {
                     )
                   ),
                   historyPeriodDropdownOpen && React.createElement('div', {
-                    className: 'absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-gray-200'
+                    className: 'absolute left-0 top-full mt-1 bg-surface-card rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-line'
                   },
                     historyPeriodOptions.map(option =>
                       React.createElement('button', {
@@ -43470,8 +43470,8 @@ useEffect(() => {
                           else if (friendHistoryTab === 'topAlbums') loadFriendTopAlbums(currentFriend, option.value);
                           else if (friendHistoryTab === 'topArtists') loadFriendTopArtists(currentFriend, option.value);
                         },
-                        className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between ${
-                          friendHistoryPeriod === option.value ? 'text-gray-900 font-medium' : 'text-gray-600'
+                        className: `w-full px-4 py-2 text-left text-sm hover:bg-surface-hover flex items-center justify-between ${
+                          friendHistoryPeriod === option.value ? 'text-ink-primary font-medium' : 'text-ink-secondary'
                         }`
                       },
                         option.label,
@@ -43538,7 +43538,7 @@ useEffect(() => {
             },
                 // Loading state
                 friendHistoryLoading && React.createElement('div', { className: 'flex items-center justify-center py-12' },
-                  React.createElement('div', { className: 'w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin' })
+                  React.createElement('div', { className: 'w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin' })
                 ),
                 // A tab whose load failed (the service unreachable): say so,
                 // with Try again, rather than an empty list that reads as
@@ -43557,7 +43557,7 @@ useEffect(() => {
                     React.createElement('button', {
                       type: 'button',
                       onClick: retry,
-                      className: 'px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors no-drag'
+                      className: 'px-4 py-2 bg-accent-fill text-ink-on-accent rounded-lg hover:bg-accent-fill-hover transition-colors no-drag'
                     }, 'Try again')
                   );
                 })(),
@@ -43565,11 +43565,11 @@ useEffect(() => {
                 !friendHistoryLoading && !friendHistoryData.errors?.recent && friendHistoryTab === 'recent' && (() => {
                   const sorted = sortFriendHistory(friendHistoryData.recent);
                   if (sorted.length === 0 && friendHistoryData.recentHidden) {
-                    return React.createElement('p', { className: 'text-center text-gray-400 py-8' },
+                    return React.createElement('p', { className: 'text-center text-ink-tertiary py-8' },
                       `${currentFriend.displayName} hides their recent listening on Last.fm. Their top tracks, albums and artists are in the other tabs.`);
                   }
                   if (sorted.length === 0) {
-                    return React.createElement('p', { className: 'text-center text-gray-400 py-8' }, 'No recent listens');
+                    return React.createElement('p', { className: 'text-center text-ink-tertiary py-8' }, 'No recent listens');
                   }
                   return React.createElement('div', { className: 'space-y-0' },
                     ...sorted.map((track, index) => {
@@ -43601,7 +43601,7 @@ useEffect(() => {
                         onDragEnd: () => {
                           handlePlaylistDragEnd();
                         },
-                        className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${isResolving ? 'opacity-60' : 'hover:bg-gray-50/80'}`,
+                        className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${isResolving ? 'opacity-60' : 'hover:bg-surface-hover'}`,
                         style: { borderRadius: '8px', marginBottom: '2px' },
                         onClick: () => {
                           const tracksAfter = sorted.slice(index + 1);
@@ -43625,7 +43625,7 @@ useEffect(() => {
                             style: { pointerEvents: 'none', flex: '1 1 0', minWidth: 0, fontSize: '13px', fontWeight: track.nowPlaying ? '500' : '400', color: track.nowPlaying ? 'var(--accent-primary)' : hasResolved ? 'var(--text-primary)' : 'var(--text-tertiary)' }
                           }, track.title),
                           React.createElement('span', {
-                            className: 'truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
+                            className: 'truncate hover:text-accent hover:underline cursor-pointer transition-colors',
                             style: { flex: '0.7 1 0', minWidth: 0, fontSize: '12px', color: 'var(--text-secondary)' },
                             onClick: (e) => { e.stopPropagation(); fetchArtistData(track.artist); }
                           }, track.artist),
@@ -43675,7 +43675,7 @@ useEffect(() => {
                 // Top tracks tab content - matching History page layout
                 !friendHistoryLoading && !friendHistoryData.errors?.topTracks && friendHistoryTab === 'topTracks' && React.createElement('div', { className: 'space-y-0' },
                   friendHistoryData.topTracks.length === 0
-                    ? React.createElement('p', { className: 'text-center text-gray-400 py-8' }, 'No top tracks data')
+                    ? React.createElement('p', { className: 'text-center text-ink-tertiary py-8' }, 'No top tracks data')
                     : friendHistoryData.topTracks.map((track, index) => {
                         // Use track.id to look up resolved sources from trackSources state
                         const resolvedSources = trackSources[track.id] || track.sources || {};
@@ -43704,7 +43704,7 @@ useEffect(() => {
                           onDragEnd: () => {
                             handlePlaylistDragEnd();
                           },
-                          className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${isResolving ? 'opacity-60' : 'hover:bg-gray-50/80'}`,
+                          className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${isResolving ? 'opacity-60' : 'hover:bg-surface-hover'}`,
                           style: { borderRadius: '8px', marginBottom: '2px' },
                           onClick: () => {
                             const tracksAfter = friendHistoryData.topTracks.slice(index + 1);
@@ -43728,7 +43728,7 @@ useEffect(() => {
                             style: { flex: '1 1 0', minWidth: 0, fontSize: '13px', fontWeight: '400', color: hasResolved ? 'var(--text-primary)' : 'var(--text-tertiary)' }
                           }, track.title),
                           React.createElement('span', {
-                            className: 'truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
+                            className: 'truncate hover:text-accent hover:underline cursor-pointer transition-colors',
                             style: { flex: '0.7 1 0', minWidth: 0, fontSize: '12px', color: 'var(--text-secondary)' },
                             onClick: (e) => { e.stopPropagation(); fetchArtistData(track.artist); }
                           }, track.artist),
@@ -43779,7 +43779,7 @@ useEffect(() => {
                   className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4'
                 },
                   friendHistoryData.topAlbums.length === 0
-                    ? React.createElement('p', { className: 'col-span-full text-center text-gray-400 py-8' }, 'No top albums data')
+                    ? React.createElement('p', { className: 'col-span-full text-center text-ink-tertiary py-8' }, 'No top albums data')
                     : friendHistoryData.topAlbums.map((album, index) => {
                         const albumPattern = generateArtistPattern(`${album.artist} ${album.name}`);
                         return React.createElement('div', {
@@ -43902,11 +43902,11 @@ useEffect(() => {
                                     setTrackLoading(false);
                                   }
                                 },
-                                className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
+                                className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
                                 style: { border: 'none', cursor: 'pointer' },
                                 title: 'Play album'
                               },
-                                React.createElement(Play, { size: 22, className: 'text-gray-800 ml-0.5' })
+                                React.createElement(Play, { size: 22, className: 'text-ink-primary ml-0.5' })
                               ),
                               // Add to queue button
                               React.createElement('button', {
@@ -43937,9 +43937,9 @@ useEffect(() => {
                             )
                           ),
                           React.createElement('div', { className: 'p-3' },
-                            React.createElement('p', { className: 'font-medium text-gray-900 truncate text-sm' }, album.name),
-                            React.createElement('p', { className: 'text-xs text-gray-500 truncate' }, album.artist),
-                            React.createElement('p', { className: 'text-xs text-gray-400 mt-1' }, `${album.playCount} plays`)
+                            React.createElement('p', { className: 'font-medium text-ink-primary truncate text-sm' }, album.name),
+                            React.createElement('p', { className: 'text-xs text-ink-tertiary truncate' }, album.artist),
+                            React.createElement('p', { className: 'text-xs text-ink-tertiary mt-1' }, `${album.playCount} plays`)
                           )
                         );
                       })
@@ -43949,7 +43949,7 @@ useEffect(() => {
                   className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4'
                 },
                   friendHistoryData.topArtists.length === 0
-                    ? React.createElement('p', { className: 'col-span-full text-center text-gray-400 py-8' }, 'No top artists data')
+                    ? React.createElement('p', { className: 'col-span-full text-center text-ink-tertiary py-8' }, 'No top artists data')
                     : friendHistoryData.topArtists.map((artist, index) => {
                         const artistPattern = generateArtistPattern(artist.name);
                         return React.createElement('div', {
@@ -44010,11 +44010,11 @@ useEffect(() => {
                                     setTrackLoading(false);
                                   }
                                 },
-                                className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
+                                className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
                                 style: { border: 'none', cursor: 'pointer' },
                                 title: 'Play top 10 tracks'
                               },
-                                React.createElement(PlayTop10Icon, { size: 26, className: 'text-gray-800' })
+                                React.createElement(PlayTop10Icon, { size: 26, className: 'text-ink-primary' })
                               ),
                               // Add to queue button
                               React.createElement('button', {
@@ -44039,8 +44039,8 @@ useEffect(() => {
                             )
                           ),
                           React.createElement('div', { className: 'p-3' },
-                            React.createElement('p', { className: 'font-medium text-gray-900 truncate text-sm' }, artist.name),
-                            React.createElement('p', { className: 'text-xs text-gray-400 mt-1' }, `${artist.playCount} plays`)
+                            React.createElement('p', { className: 'font-medium text-ink-primary truncate text-sm' }, artist.name),
+                            React.createElement('p', { className: 'text-xs text-ink-tertiary mt-1' }, `${artist.playCount} plays`)
                           )
                         );
                       })

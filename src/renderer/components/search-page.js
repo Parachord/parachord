@@ -894,7 +894,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                     },
                     className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${
                       isResolving ? 'opacity-60' : ''
-                    } ${isNowPlaying && isPlaying ? 'bg-purple-50' : 'hover:bg-gray-50/80'}`,
+                    } ${isNowPlaying && isPlaying ? 'bg-accent-tint' : 'hover:bg-surface-hover'}`,
                     style: {
                       borderRadius: '8px',
                       marginBottom: '2px'

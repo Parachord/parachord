@@ -1838,7 +1838,7 @@ const ReleasePage = ({
                   onDragEnd();
                 }
               },
-              className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all no-drag group ${isNowPlaying ? 'bg-purple-50' : 'hover:bg-gray-50/80'}`,
+              className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all no-drag group ${isNowPlaying ? 'bg-accent-tint' : 'hover:bg-surface-hover'}`,
               style: {
                 borderRadius: '8px',
                 marginBottom: '2px'

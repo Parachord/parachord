@@ -102,7 +102,7 @@ describe('recommendations wiring', () => {
     expect(row).toMatch(/const context = \{ type: 'recommendations', name: contextName, rowKey: section\.key \};/);
     expect(row).not.toMatch(/playbackContext\?\.name === contextName/);
     // the playlist view's marks: tinted row, a play glyph for the number, accent title
-    expect(row).toMatch(/isNowPlaying \? 'bg-purple-50'/);
+    expect(row).toMatch(/isNowPlaying \? 'bg-accent-tint'/);
     expect(row).toMatch(/isNowPlaying \? '▶' : String\(index \+ 1\)\.padStart\(2, '0'\)/);
     expect(row).toMatch(/color: isNowPlaying \? 'var\(--accent-primary\)'/);
   });
@@ -497,10 +497,10 @@ describe('the five-section page render', () => {
     expect(play.slice(0, 1400)).toMatch(/playTrackCollection\(tracks, \{ type: item\.weekly\.contextType, name/);
     // Titled with the playlist's full name, its source under it, as on every
     // playlist card (only the newest week is on the page).
-    expect(card).toContain("React.createElement('p', { className: 'font-medium text-gray-900 truncate text-sm transition-colors' }, item.weekly.label)");
-    expect(card).toContain("React.createElement('p', { className: 'text-xs text-gray-500 truncate mt-0.5' }, creator || '')");
+    expect(card).toContain("React.createElement('p', { className: 'font-medium text-ink-primary truncate text-sm transition-colors' }, item.weekly.label)");
+    expect(card).toContain("React.createElement('p', { className: 'text-xs text-ink-tertiary truncate mt-0.5' }, creator || '')");
     const plain = between('const playlistCard = (item, index, section) => {', '// ── Weekly playlists');
-    expect(plain).toContain("React.createElement('p', { className: 'text-xs text-gray-500 truncate mt-0.5' }, itemSourceName(item, section) || '')");
+    expect(plain).toContain("React.createElement('p', { className: 'text-xs text-ink-tertiary truncate mt-0.5' }, itemSourceName(item, section) || '')");
     expect(view).toContain("const cardLines = sub.type === 'album' || sub.type === 'playlist' ? 2 : 1;");
     // Routed by the item's field, never by provider name.
     expect(view).toMatch(/item\.weekly \? weeklyCard\(item, index, sub\)/);
