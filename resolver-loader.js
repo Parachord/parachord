@@ -74,30 +74,33 @@ class ResolverLoader {
     // `this.lib`. It is the one shared scope a plugin gets: a helper two
     // functions need is defined once in the factory instead of copy-pasted
     // into each (the confidence gate is duplicated across four shipped
-    // plugins today), and cross-call state (a request-template cache, a
-    // breaker) lives on the library object instead of on window globals.
-    // Methods can also keep state directly on `this` (the resolver instance,
-    // shared by every method since _bindContext below) — the library is the
-    // canonical home for shared helpers; either way nothing is shared across
-    // two loaded instances of the same plugin.
+    // plugins today).
+    //
+    // Purity contract (the later whole-module migration depends on it): the
+    // factory returns HELPERS AND CONSTANTS ONLY — functions and immutable
+    // values, no I/O, no timers, no window/globalThis access, no mutable
+    // state. Per-instance state (a request-template cache, a breaker) lives
+    // on `this` (the resolver instance — shared by every method since
+    // _bindContext below, fresh per loaded instance). The factory runs for
+    // EVERY instance — including disabled plugins and every hot reload — so
+    // any side effect in it runs far more often than anyone expects.
+    //
+    // A malformed or failing library FAILS THE LOAD (like a malformed
+    // manifest), never a null this.lib: a plugin whose every method sits on
+    // the library would otherwise look enabled and throw on every call.
     const { _lib: libSource, ...methods } = axe.implementation || {};
     let pluginLib = null;
     if (libSource !== undefined) {
-      try {
-        if (typeof libSource !== 'string') {
-          throw new Error('implementation._lib must be serialized function source (a String(fn) of the factory)');
-        }
-        const libFactory = new Function('return ' + libSource)();
-        if (typeof libFactory !== 'function') {
-          throw new Error('implementation._lib must be a function');
-        }
-        pluginLib = libFactory();
-        if (!pluginLib || (typeof pluginLib !== 'object' && typeof pluginLib !== 'function')) {
-          throw new Error('implementation._lib must return the library (an object)');
-        }
-      } catch (error) {
-        console.error(`Failed to create the plugin library for ${manifest.id}:`, error);
-        pluginLib = null;
+      if (typeof libSource !== 'string') {
+        throw new Error(`implementation._lib for ${manifest.id} must be serialized function source (a String(fn) of the factory)`);
+      }
+      const libFactory = new Function('return ' + libSource)();
+      if (typeof libFactory !== 'function') {
+        throw new Error(`implementation._lib for ${manifest.id} must be a function`);
+      }
+      pluginLib = libFactory();
+      if (!pluginLib || typeof pluginLib !== 'object') {
+        throw new Error(`implementation._lib for ${manifest.id} must return the library (an object)`);
       }
     }
 

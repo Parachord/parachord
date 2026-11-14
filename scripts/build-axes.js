@@ -182,6 +182,11 @@ function buildAxe(id) {
     impl[key] = String(value);
   }
 
+  const problems = validateImplementationEntries(impl);
+  for (const problem of problems) {
+    fail(`plugins-src/${id}/implementation.js: ${problem}`);
+  }
+
   const axe = { ...manifestJson };
   if (Object.keys(impl).length > 0) axe.implementation = impl;
   return axe;
@@ -414,8 +419,53 @@ function runCheck() {
   console.log(`✅ all ${plans.length} plugins-src plugins match plugins/, ${path.relative(ROOT, GENERATED_FALLBACK_PATH)} and marketplace-manifest.json`);
 }
 
-(async () => {
-  if (MODE === 'import') await runImport();
-  else if (MODE === 'check') runCheck();
-  else runWrite();
-})();
+// Self-containment check (review on the #1356 plugin library): serialized
+// functions lose their closure, so an implementation entry that reaches for
+// module scope only fails at RUNTIME, on a user's machine, with a
+// ReferenceError. Materialize every entry the way resolver-loader does — in
+// a clean scope with nothing closed over — and CALL the _lib factory once
+// (it must be pure, so calling it is safe at build time). A method that
+// closes over module scope can only be caught by calling it, which is not
+// safe here — its self-containment is the author's to keep and the runtime's
+// to fail loudly. Returns the problems (empty = valid).
+function validateImplementationEntries(impl) {
+  const problems = [];
+  for (const [key, src] of Object.entries(impl || {})) {
+    let materialized;
+    try {
+      materialized = new Function('return ' + src)();
+    } catch (error) {
+      problems.push(`entry "${key}" does not materialize (new Function): ${(error && error.message) || error}`);
+      continue;
+    }
+    if (typeof materialized !== 'function') {
+      problems.push(`entry "${key}" materializes to a ${typeof materialized}, not a function`);
+      continue;
+    }
+    if (key === '_lib') {
+      let lib = null;
+      try {
+        lib = materialized();
+      } catch (error) {
+        problems.push(`_lib closes over module scope or throws when called in a clean scope: ${(error && error.message) || error}`);
+        continue;
+      }
+      if (!lib || typeof lib !== 'object') {
+        problems.push(`_lib must return the library (an object); got ${lib === null ? 'null' : typeof lib}`);
+      }
+    }
+  }
+  return problems;
+}
+
+if (require.main === module) {
+  (async () => {
+    if (MODE === 'import') await runImport();
+    else if (MODE === 'check') runCheck();
+    else runWrite();
+  })();
+} else {
+  // Test surface only (tests/scripts/build-axes-validation.test.js); the
+  // writer must never run on require.
+  module.exports = { validateImplementationEntries };
+}
