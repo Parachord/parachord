@@ -3490,7 +3490,6 @@ const Parachord = () => {
   const [searchResultsFilter, setSearchResultsFilter] = useState(''); // Filter text for search results
   const [searchResultsFilterOpen, setSearchResultsFilterOpen] = useState(false); // Filter input open state
   const [searchResultsSort, setSearchResultsSort] = useState('relevance'); // Sort option for search results
-  const [searchResultsSortDropdownOpen, setSearchResultsSortDropdownOpen] = useState(false); // Sort dropdown open state
   const [searchHistory, setSearchHistory] = useState([]);
   const [filteredHistoryMatches, setFilteredHistoryMatches] = useState([]); // History entries matching current query
   const [activeView, setActiveView] = useState(null); // null until restored from storage or defaults to 'home'
@@ -3534,7 +3533,6 @@ const Parachord = () => {
   const [artistPageTab, setArtistPageTab] = useState('music'); // music | biography | related
   const [artistSearchOpen, setArtistSearchOpen] = useState(false);
   const [artistSearch, setArtistSearch] = useState('');
-  const [artistSortDropdownOpen, setArtistSortDropdownOpen] = useState(false);
   const [artistSort, setArtistSort] = useState('date-desc'); // date-desc, date-asc, alpha-asc, alpha-desc
   const [artistBio, setArtistBio] = useState(null); // Artist biography from Last.fm (for artist page)
   const [playbarArtistBio, setPlaybarArtistBio] = useState(null); // Artist bio for playbar tooltip (current track's artist)
@@ -3865,7 +3863,6 @@ const Parachord = () => {
   const [collectionHeaderCollapsed, setCollectionHeaderCollapsed] = useState(false);
   const [collectionSearchOpen, setCollectionSearchOpen] = useState(false);
   const [collectionSearch, setCollectionSearch] = useState('');
-  const [collectionSortDropdownOpen, setCollectionSortDropdownOpen] = useState(false);
   const [collectionSort, setCollectionSort] = useState({
     artists: 'alpha-asc',
     albums: 'recent',
@@ -4764,7 +4761,6 @@ const Parachord = () => {
   });
   const [friendHistoryPeriod, setFriendHistoryPeriod] = useState('7day');
   const [friendHistorySort, setFriendHistorySort] = useState('recent');
-  const [friendHistorySortDropdownOpen, setFriendHistorySortDropdownOpen] = useState(false);
   const [friendHistoryLoading, setFriendHistoryLoading] = useState(false);
   const [addFriendModalOpen, setAddFriendModalOpen] = useState(false);
   const [addFriendInput, setAddFriendInput] = useState('');
@@ -4811,7 +4807,6 @@ const Parachord = () => {
   const [playlistsHeaderCollapsed, setPlaylistsHeaderCollapsed] = useState(false);
   const [playlistsSearchOpen, setPlaylistsSearchOpen] = useState(false);
   const [playlistsSearch, setPlaylistsSearch] = useState('');
-  const [playlistsSortDropdownOpen, setPlaylistsSortDropdownOpen] = useState(false);
   const [playlistsSort, setPlaylistsSort] = useState('added');
   const [playlistsViewMode, setPlaylistsViewMode] = useState('grid'); // 'grid' | 'table'
 
@@ -4821,12 +4816,10 @@ const Parachord = () => {
   const [chartsSearch, setChartsSearch] = useState('');
   const [chartsTab, setChartsTab] = useState('albums'); // 'albums' (iTunes) | 'songs' (Last.fm)
   const [chartsCountry, setChartsCountry] = useState(''); // Empty = global, or ISO code for country charts
-  const [chartsCountryDropdownOpen, setChartsCountryDropdownOpen] = useState(false);
   const [lastfmCharts, setLastfmCharts] = useState([]); // Last.fm top tracks
   const [lastfmChartsLoading, setLastfmChartsLoading] = useState(false);
   const [lastfmChartsLoaded, setLastfmChartsLoaded] = useState(false);
   const [chartsSongsSource, setChartsSongsSource] = useState('apple'); // 'apple' | 'lastfm'
-  const [chartsSongsSourceDropdownOpen, setChartsSongsSourceDropdownOpen] = useState(false);
   const [appleMusicSongsCharts, setAppleMusicSongsCharts] = useState([]); // Apple Music top songs
   const [appleMusicSongsChartsLoading, setAppleMusicSongsChartsLoading] = useState(false);
   const [appleMusicSongsChartsLoaded, setAppleMusicSongsChartsLoaded] = useState(false);
@@ -4835,7 +4828,6 @@ const Parachord = () => {
   const [criticsHeaderCollapsed, setCriticsHeaderCollapsed] = useState(false);
   const [criticsSearchOpen, setCriticsSearchOpen] = useState(false);
   const [criticsSearch, setCriticsSearch] = useState('');
-  const [criticsSortDropdownOpen, setCriticsSortDropdownOpen] = useState(false);
   const [criticsSort, setCriticsSort] = useState('recent');
 
   // New Releases page state
@@ -4843,7 +4835,6 @@ const Parachord = () => {
   const [newReleasesSearchOpen, setNewReleasesSearchOpen] = useState(false);
   const [newReleasesSearch, setNewReleasesSearch] = useState('');
   const [newReleasesFilter, setNewReleasesFilter] = useState('all'); // 'all' | 'album' | 'ep' | 'single'
-  const [newReleasesFilterDropdownOpen, setNewReleasesFilterDropdownOpen] = useState(false);
 
   // Concerts page state
   const [concerts, setConcerts] = useState([]);
@@ -4906,11 +4897,9 @@ const Parachord = () => {
   const [pendingPlaylistLoad, setPendingPlaylistLoad] = useState(null); // Track pending playlist load from view restore
   const [pendingFriendLoad, setPendingFriendLoad] = useState(null); // Track pending friend load from view restore
   const [historyPeriod, setHistoryPeriod] = useState('7day'); // 'overall' | '7day' | '1month' | '3month' | '6month' | '12month'
-  const [historyPeriodDropdownOpen, setHistoryPeriodDropdownOpen] = useState(false);
   const [historyHeaderCollapsed, setHistoryHeaderCollapsed] = useState(false);
   const [historySearchOpen, setHistorySearchOpen] = useState(false);
   const [historySearch, setHistorySearch] = useState('');
-  const [historySortDropdownOpen, setHistorySortDropdownOpen] = useState(false);
   const [historySort, setHistorySort] = useState('recent');
   const [listeningHistory, setListeningHistory] = useState({ tracks: [], loading: true, error: null });
   const [topTracks, setTopTracks] = useState({ tracks: [], loading: false, error: null });
@@ -4974,15 +4963,6 @@ const Parachord = () => {
     setDiscoveryUnread(prev => ({ ...prev, [feature]: hasNewContent }));
   }, []);
 
-  // Close collection sort dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = () => setCollectionSortDropdownOpen(false);
-    if (collectionSortDropdownOpen) {
-      document.addEventListener('click', handleClickOutside);
-      return () => document.removeEventListener('click', handleClickOutside);
-    }
-  }, [collectionSortDropdownOpen]);
-
   // Close share dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = () => setShareDropdownOpen(false);
@@ -5044,51 +5024,6 @@ const Parachord = () => {
     }
   }, [effectiveTheme]);
 
-  // Close playlists sort dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = () => setPlaylistsSortDropdownOpen(false);
-    if (playlistsSortDropdownOpen) {
-      document.addEventListener('click', handleClickOutside);
-      return () => document.removeEventListener('click', handleClickOutside);
-    }
-  }, [playlistsSortDropdownOpen]);
-
-  // Close charts country dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = () => setChartsCountryDropdownOpen(false);
-    if (chartsCountryDropdownOpen) {
-      document.addEventListener('click', handleClickOutside);
-      return () => document.removeEventListener('click', handleClickOutside);
-    }
-  }, [chartsCountryDropdownOpen]);
-
-  // Close charts songs source dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = () => setChartsSongsSourceDropdownOpen(false);
-    if (chartsSongsSourceDropdownOpen) {
-      document.addEventListener('click', handleClickOutside);
-      return () => document.removeEventListener('click', handleClickOutside);
-    }
-  }, [chartsSongsSourceDropdownOpen]);
-
-  // Close critics sort dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = () => setCriticsSortDropdownOpen(false);
-    if (criticsSortDropdownOpen) {
-      document.addEventListener('click', handleClickOutside);
-      return () => document.removeEventListener('click', handleClickOutside);
-    }
-  }, [criticsSortDropdownOpen]);
-
-  // Close new-releases filter dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = () => setNewReleasesFilterDropdownOpen(false);
-    if (newReleasesFilterDropdownOpen) {
-      document.addEventListener('click', handleClickOutside);
-      return () => document.removeEventListener('click', handleClickOutside);
-    }
-  }, [newReleasesFilterDropdownOpen]);
-
   // Close concerts location dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = () => setConcertsLocationOpen(false);
@@ -5116,48 +5051,11 @@ const Parachord = () => {
     }
   }, [artistConcertsTicketFlyout]);
 
-  // Close history sort dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = () => setHistorySortDropdownOpen(false);
-    if (historySortDropdownOpen) {
-      document.addEventListener('click', handleClickOutside);
-      return () => document.removeEventListener('click', handleClickOutside);
-    }
-  }, [historySortDropdownOpen]);
-
-  // Close friend history sort dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = () => setFriendHistorySortDropdownOpen(false);
-    if (friendHistorySortDropdownOpen) {
-      document.addEventListener('click', handleClickOutside);
-      return () => document.removeEventListener('click', handleClickOutside);
-    }
-  }, [friendHistorySortDropdownOpen]);
-
-  // Close artist sort dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = () => setArtistSortDropdownOpen(false);
-    if (artistSortDropdownOpen) {
-      document.addEventListener('click', handleClickOutside);
-      return () => document.removeEventListener('click', handleClickOutside);
-    }
-  }, [artistSortDropdownOpen]);
-
-  // Close search results sort dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = () => setSearchResultsSortDropdownOpen(false);
-    if (searchResultsSortDropdownOpen) {
-      document.addEventListener('click', handleClickOutside);
-      return () => document.removeEventListener('click', handleClickOutside);
-    }
-  }, [searchResultsSortDropdownOpen]);
-
   // Reset search results filter/sort when changing categories
   useEffect(() => {
     setSearchResultsFilter('');
     setSearchResultsFilterOpen(false);
     setSearchResultsSort('relevance');
-    setSearchResultsSortDropdownOpen(false);
   }, [searchDetailCategory]);
 
   // Load artist images when artists tab is selected in search results
@@ -5314,7 +5212,6 @@ const Parachord = () => {
     if (activeView !== 'artist') {
       setArtistSearchOpen(false);
       setArtistSearch('');
-      setArtistSortDropdownOpen(false);
     }
   }, [activeView]);
 
@@ -5679,7 +5576,6 @@ const Parachord = () => {
   const [addToPlaylistSort, setAddToPlaylistSort] = useState('added'); // Sort option for add-to-playlist panel
   const [addToPlaylistSearch, setAddToPlaylistSearch] = useState(''); // Search filter for add-to-playlist panel
   const [addToPlaylistSearchOpen, setAddToPlaylistSearchOpen] = useState(false); // Search input expanded state
-  const [addToPlaylistSortDropdownOpen, setAddToPlaylistSortDropdownOpen] = useState(false); // Sort dropdown open state
 
   // Confirmation dialog state
   const [confirmDialog, setConfirmDialog] = useState({
@@ -6150,15 +6046,6 @@ const Parachord = () => {
     return () => { cancelled = true; };
   }, [selectedResolver]);
   const [dynamicModelOptions, setDynamicModelOptions] = useState({}); // { [resolverId]: { loading, options: [{value,label}], error } }
-
-  // Close add-to-playlist sort dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = () => setAddToPlaylistSortDropdownOpen(false);
-    if (addToPlaylistSortDropdownOpen) {
-      document.addEventListener('click', handleClickOutside);
-      return () => document.removeEventListener('click', handleClickOutside);
-    }
-  }, [addToPlaylistSortDropdownOpen]);
 
   // Close playbar source dropdown when clicking outside
   useEffect(() => {
@@ -37305,14 +37192,14 @@ React.createElement('div', {
     // Search Page - Full page search view
     activeView === 'search' ? (
       React.createElement(SearchPage, {
-          activeResolvers: playbackResolvers, activeView, allResolvers, artistImageCache, currentTrack, filteredHistoryMatches, formatTime, handleSearchDetailScroll, handleSearchScrollContainerRef, isPlaying, isSearching, playbackContext, playlists, prefetchedReleasesRef, resolverOrder, searchContainerWidth, searchDetailCategory, searchHeaderCollapsed, searchHistory, searchInputRef, searchQuery, searchResults, searchResultsContainerRef, searchResultsFilter, searchResultsFilterOpen, searchResultsSort, searchResultsSortDropdownOpen, searchScrollContainerRef, searchTracksObserverRef, searchTracksRowRefs, setAddToPlaylistPanel, setDraggingTrackForPlaylist, setSearchDetailCategory, setSearchPreviewItem, setSearchResultsFilter, setSearchResultsFilterOpen, setSearchResultsSort, setSearchResultsSortDropdownOpen, setTrackLoading, showToast, trackSources,
+          activeResolvers: playbackResolvers, activeView, allResolvers, artistImageCache, currentTrack, filteredHistoryMatches, formatTime, handleSearchDetailScroll, handleSearchScrollContainerRef, isPlaying, isSearching, playbackContext, playlists, prefetchedReleasesRef, resolverOrder, searchContainerWidth, searchDetailCategory, searchHeaderCollapsed, searchHistory, searchInputRef, searchQuery, searchResults, searchResultsContainerRef, searchResultsFilter, searchResultsFilterOpen, searchResultsSort, searchScrollContainerRef, searchTracksObserverRef, searchTracksRowRefs, setAddToPlaylistPanel, setDraggingTrackForPlaylist, setSearchDetailCategory, setSearchPreviewItem, setSearchResultsFilter, setSearchResultsFilterOpen, setSearchResultsSort, setTrackLoading, showToast, trackSources,
           ...searchPageHandlers
         }) // end main view
     ) : // end activeView === 'search' ternary
 
       // Main content area - Artist Page (completely separate layout)
       activeView === 'artist' ? React.createElement(ArtistPage, {
-          activeResolvers: playbackResolvers, addArtistToCollection, albumArtObserver, albumArtQueue, albumVersions, artistBio, artistConcerts, artistConcertsLoaded, artistConcertsLoading, artistConcertsTicketFlyout, artistExtendedInfo, artistImage, artistImagePosition, artistPageScrollRef, artistPageTab, artistReleases, artistSearch, artistSearchOpen, artistSort, artistSortDropdownOpen, artistSortOptions, collectionData, copyCollectionEmbedCode, currentArtist, currentRelease, currentTrack, effectiveTheme, filterArtistReleases, handleArtistPageScroll, isCompactHeader, isHeaderCollapsed, isPlaying, artistLoadError, loadingArtist, loadingBio, loadingExtendedInfo, loadingRelated, loadingRelease, playbackContext, prefetchedReleasesRef, publishCollectionSmartLink, relatedArtists, relatedArtistsSourceFilter, releaseObserverRef, releaseTrackRowRefs, releaseTypeFilter, removeArtistFromCollection, resolvers, setAddToPlaylistPanel, setArtistBio, setArtistConcertsTicketFlyout, setArtistPageTab, setArtistSearch, setArtistSearchOpen, setArtistSort, setArtistSortDropdownOpen, setCurrentRelease, setDraggingTrackForPlaylist, setIsHeaderCollapsed, setLoadingBio, setRelatedArtists, setRelatedArtistsSourceFilter, setReleaseTypeFilter, setSelectedPlaylistsForAdd, setShareDropdownOpen, setTrackLoading, shareDropdownOpen, showToast, sortArtistReleases, trackSources, visibleAlbumIds,
+          activeResolvers: playbackResolvers, addArtistToCollection, albumArtObserver, albumArtQueue, albumVersions, artistBio, artistConcerts, artistConcertsLoaded, artistConcertsLoading, artistConcertsTicketFlyout, artistExtendedInfo, artistImage, artistImagePosition, artistPageScrollRef, artistPageTab, artistReleases, artistSearch, artistSearchOpen, artistSort, artistSortOptions, collectionData, copyCollectionEmbedCode, currentArtist, currentRelease, currentTrack, effectiveTheme, filterArtistReleases, handleArtistPageScroll, isCompactHeader, isHeaderCollapsed, isPlaying, artistLoadError, loadingArtist, loadingBio, loadingExtendedInfo, loadingRelated, loadingRelease, playbackContext, prefetchedReleasesRef, publishCollectionSmartLink, relatedArtists, relatedArtistsSourceFilter, releaseObserverRef, releaseTrackRowRefs, releaseTypeFilter, removeArtistFromCollection, resolvers, setAddToPlaylistPanel, setArtistBio, setArtistConcertsTicketFlyout, setArtistPageTab, setArtistSearch, setArtistSearchOpen, setArtistSort, setCurrentRelease, setDraggingTrackForPlaylist, setIsHeaderCollapsed, setLoadingBio, setRelatedArtists, setRelatedArtistsSourceFilter, setReleaseTypeFilter, setSelectedPlaylistsForAdd, setShareDropdownOpen, setTrackLoading, shareDropdownOpen, showToast, sortArtistReleases, trackSources, visibleAlbumIds,
           // Not read by the page directly; read during its render through a
           // stable handler, so it must invalidate the memo.
           _metaServiceConfigs: metaServiceConfigs,
@@ -38279,7 +38166,7 @@ React.createElement('div', {
 
         // Library view with collapsible hero header (matching Recommendations pattern)
         activeView === 'library' && React.createElement(CollectionPage, {
-          activeResolvers: playbackResolvers, allResolvers, autoPinnedFriendIds, collectionData, collectionHeaderCollapsed, collectionLoading, collectionObserverRef, collectionScrollContainerRef, collectionSearch, collectionSearchOpen, collectionSongsSorted, collectionSort, collectionSortDropdownOpen, collectionTab, collectionTrackRowRefs, currentTrack, filterCollectionItems, formatTime, friendSyncInProgress, friends, handleCollectionScrollContainerRef, isPlaying, library, libraryLoading, metaServiceConfigs, pinnedFriendIds, playbackContext, resolverOrder, resolverSyncSettings, setAddFriendModalOpen, setAddToPlaylistPanel, setCollectionHeaderCollapsed, setCollectionSearch, setCollectionSearchOpen, setCollectionSort, setCollectionSortDropdownOpen, setCollectionTab, setDraggingTrackForPlaylist, setSyncMenuOpen, setSyncStatusModal, setTrackLoading, showToast, sortCollectionItems, syncMenuOpen, syncProviderConfig, syncStatus, trackSources,
+          activeResolvers: playbackResolvers, allResolvers, autoPinnedFriendIds, collectionData, collectionHeaderCollapsed, collectionLoading, collectionObserverRef, collectionScrollContainerRef, collectionSearch, collectionSearchOpen, collectionSongsSorted, collectionSort, collectionTab, collectionTrackRowRefs, currentTrack, filterCollectionItems, formatTime, friendSyncInProgress, friends, handleCollectionScrollContainerRef, isPlaying, library, libraryLoading, metaServiceConfigs, pinnedFriendIds, playbackContext, resolverOrder, resolverSyncSettings, setAddFriendModalOpen, setAddToPlaylistPanel, setCollectionHeaderCollapsed, setCollectionSearch, setCollectionSearchOpen, setCollectionSort, setCollectionTab, setDraggingTrackForPlaylist, setSyncMenuOpen, setSyncStatusModal, setTrackLoading, showToast, sortCollectionItems, syncMenuOpen, syncProviderConfig, syncStatus, trackSources,
           ...collectionPageHandlers
         }),
 
