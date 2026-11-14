@@ -19,6 +19,7 @@
 // The body is the original render expression, unchanged: it reads its inputs
 // from props under their old names.
 
+const { sellerColor, sellerTextColor, sellerBadgeBg, sellerShortName, sellerName } = require('../lib/ticket-sellers');
 const { Tooltip } = require('./ui-atoms');
 const { SectionHeader } = require('./section-header');
 const { FilterChips } = require('./filter-chips');
@@ -1844,7 +1845,6 @@ const ArtistPage = React.memo(function ArtistPage(props) {
 
           // On Tour tab — upcoming concerts for this artist
           artistPageTab === 'on-tour' && (() => {
-            const isDark = effectiveTheme === 'dark';
             const events = artistConcerts;
 
             // Group events by month
@@ -1958,19 +1958,12 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                             }, event.title || `${currentArtist?.name || event.artist} live`),
                             // Source badges
                             ...(() => {
-                              const bgAlpha = isDark ? 0.2 : 0.1;
-                              const srcColors = {
-                                bandsintown: { bg: `rgba(0, 180, 179, ${bgAlpha})`, text: isDark ? '#2dd4bf' : '#00B4B3' },
-                                songkick: { bg: `rgba(248, 0, 70, ${bgAlpha})`, text: isDark ? '#fb7185' : '#F80046' },
-                                seatgeek: { bg: `rgba(252, 76, 2, ${bgAlpha})`, text: isDark ? '#fb923c' : '#FC4C02' },
-                                ticketmaster: { bg: `rgba(2, 108, 223, ${bgAlpha})`, text: isDark ? '#60a5fa' : '#026CDF' }
-                              };
-                              const badgeLabel = (src) => src.source === 'bandsintown' ? 'BIT' : src.source === 'songkick' ? 'SK' : src.source === 'seatgeek' ? 'SG' : src.source === 'ticketmaster' ? 'TM' : (src.label || 'Unknown');
-                              const badgeFullName = (src) => src.source === 'bandsintown' ? 'Bandsintown' : src.source === 'songkick' ? 'Songkick' : src.source === 'seatgeek' ? 'SeatGeek' : src.source === 'ticketmaster' ? 'Ticketmaster' : (src.label || 'Unknown');
+                              const badgeLabel = sellerShortName;
+                              const badgeFullName = sellerName;
                               const sources = event.ticketSources || [{ source: event.source, aiProviderName: event.aiProviderName }];
                               const hasAiSource = sources.some(s => s.source === 'ai');
                               const badges = sources.map((src, si) => {
-                                const c = srcColors[src.source] || { bg: `rgba(16, 201, 180, ${bgAlpha})`, text: isDark ? '#66f0da' : '#10c9b4' };
+                                const c = { bg: sellerBadgeBg(src.source), text: sellerTextColor(src.source) };
                                 return React.createElement('span', {
                                   key: `badge-${si}`,
                                   className: 'flex-shrink-0 px-1.5 py-0.5 text-xs rounded-full',
@@ -2042,13 +2035,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                               onClick: (e) => e.stopPropagation()
                             },
                               sources.map((src, si) => {
-                                const srcColors = {
-                                  bandsintown: isDark ? '#2dd4bf' : '#00B4B3',
-                                  songkick: isDark ? '#fb7185' : '#F80046',
-                                  seatgeek: isDark ? '#fb923c' : '#FC4C02',
-                                  ticketmaster: isDark ? '#60a5fa' : '#026CDF'
-                                };
-                                const color = srcColors[src.source] || '#10c9b4';
+                                const color = sellerColor(src.source);
                                 return React.createElement('a', {
                                   key: si,
                                   href: src.ticketUrl,

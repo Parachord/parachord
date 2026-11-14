@@ -1979,6 +1979,7 @@ const { homeBannerItems, bannerViewId } = require('./lib/home-banners');
 const { toastBackground } = require('./lib/toast-style');
 const { statusBadgeStyle } = require('./lib/status-badge');
 const { PAGE_COLORS, pageTint } = require('./lib/page-colors');
+const { sellerColor, sellerTextColor, sellerBadgeBg, sellerShortName, sellerName } = require('./lib/ticket-sellers');
 const { withCollectionState } = require('./lib/menu-collection-state');
 const { runPlaybackControl } = require('../../tools/playback-control');
 const { runQueueAdd } = require('../../tools/queue-add');
@@ -40340,7 +40341,6 @@ useEffect(() => {
           ),
           // Filter bar (outside scrollable area)
           (() => {
-            const isDark = effectiveTheme === 'dark';
             return React.createElement('div', {
             className: 'flex items-center px-6 py-3',
             style: { flexShrink: 0, backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
@@ -40848,7 +40848,6 @@ useEffect(() => {
                         const dayNum = eventDate ? eventDate.getDate() : '?';
                         const monthShort = eventDate ? eventDate.toLocaleDateString('en-US', { month: 'short' }) : '';
                         const location = [event.venue?.city, event.venue?.region, event.venue?.country].filter(Boolean).join(', ');
-                        const isDark = effectiveTheme === 'dark';
                         const artistImg = event.artist ? concertsArtistImages[event.artist.trim().toLowerCase()] : null;
                         // Build reason string based on why this artist was recommended
                         const reasonText = (() => {
@@ -40921,19 +40920,12 @@ useEffect(() => {
                                 }, event.artist),
                                 // Source badges
                                 ...(() => {
-                                  const bgAlpha = isDark ? 0.2 : 0.1;
-                                  const srcColors = {
-                                    bandsintown: { bg: `rgba(0, 180, 179, ${bgAlpha})`, text: isDark ? '#2dd4bf' : '#00B4B3' },
-                                    songkick: { bg: `rgba(248, 0, 70, ${bgAlpha})`, text: isDark ? '#fb7185' : '#F80046' },
-                                    seatgeek: { bg: `rgba(252, 76, 2, ${bgAlpha})`, text: isDark ? '#fb923c' : '#FC4C02' },
-                                    ticketmaster: { bg: `rgba(2, 108, 223, ${bgAlpha})`, text: isDark ? '#60a5fa' : '#026CDF' }
-                                  };
-                                  const badgeLabel = (src) => src.source === 'bandsintown' ? 'BIT' : src.source === 'songkick' ? 'SK' : src.source === 'seatgeek' ? 'SG' : src.source === 'ticketmaster' ? 'TM' : (src.aiProviderName || 'AI');
-                                  const badgeFullName = (src) => src.source === 'bandsintown' ? 'Bandsintown' : src.source === 'songkick' ? 'Songkick' : src.source === 'seatgeek' ? 'SeatGeek' : src.source === 'ticketmaster' ? 'Ticketmaster' : (src.aiProviderName || 'AI');
+                                  const badgeLabel = sellerShortName;
+                                  const badgeFullName = sellerName;
                                   const sources = event.ticketSources || [{ source: event.source, aiProviderName: event.aiProviderName }];
                                   const hasAiSource = sources.some(s => s.source === 'ai');
                                   const badges = sources.map((src, si) => {
-                                    const c = srcColors[src.source] || { bg: `rgba(16, 201, 180, ${bgAlpha})`, text: isDark ? '#66f0da' : '#10c9b4' };
+                                    const c = { bg: sellerBadgeBg(src.source), text: sellerTextColor(src.source) };
                                     return React.createElement('span', {
                                       key: `badge-${si}`,
                                       className: 'flex-shrink-0 px-1.5 py-0.5 text-xs rounded-full',
@@ -41014,20 +41006,13 @@ useEffect(() => {
                                 )
                               ),
                               isOpen && (() => {
-                                const isDkFlyout = effectiveTheme === 'dark';
                                 return React.createElement('div', {
                                 className: 'absolute right-0 top-full mt-1 rounded-lg shadow-lg border py-1 z-30 bg-surface-card border-line',
                                 style: { minWidth: '180px' },
                                 onClick: (e) => e.stopPropagation()
                               },
                                 sources.map((src, si) => {
-                                  const srcColors = {
-                                    bandsintown: isDkFlyout ? '#2dd4bf' : '#00B4B3',
-                                    songkick: isDkFlyout ? '#fb7185' : '#F80046',
-                                    seatgeek: isDkFlyout ? '#fb923c' : '#FC4C02',
-                                    ticketmaster: isDkFlyout ? '#60a5fa' : '#026CDF'
-                                  };
-                                  const color = srcColors[src.source] || (isDkFlyout ? '#66f0da' : '#10c9b4');
+                                  const color = sellerColor(src.source);
                                   return React.createElement('a', {
                                     key: si,
                                     href: src.ticketUrl,
@@ -54590,12 +54575,12 @@ useEffect(() => {
                           fontSize: '13px',
                           fontWeight: '500',
                           color: syncSetupModal.playlistFilter === filter.key ? 'var(--text-primary)' : 'var(--text-secondary)',
-                          backgroundColor: syncSetupModal.playlistFilter === filter.key ? (effectiveTheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : '#ffffff') : 'transparent',
+                          backgroundColor: syncSetupModal.playlistFilter === filter.key ? 'var(--bg-elevated)' : 'transparent',
                           border: 'none',
                           borderRadius: '8px',
                           cursor: 'pointer',
                           transition: 'background-color 150ms ease, color 150ms ease, box-shadow 150ms ease',
-                          boxShadow: syncSetupModal.playlistFilter === filter.key ? (effectiveTheme === 'dark' ? '0 1px 3px rgba(0,0,0,0.3)' : '0 1px 3px rgba(0,0,0,0.1)') : 'none'
+                          boxShadow: syncSetupModal.playlistFilter === filter.key ? 'var(--shadow-sm)' : 'none'
                         }
                       }, filter.label)
                     )
