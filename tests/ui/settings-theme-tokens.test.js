@@ -42,10 +42,10 @@ test('Clear Cache confirms with a toast, not alert()', () => {
 // on an off track of rgba(0,0,0,.15): in dark mode the whole switch nearly
 // vanished (2026-11, Settings > Playback's Atmos toggle).
 test('every switch has a white knob on the control tokens', () => {
-  const files = ['src/renderer/app.js', 'src/renderer/components/settings-cards.js']
+  const files = ['src/renderer/app.js', 'src/renderer/components/settings-cards.js', 'src/renderer/components/fields.js']
     .map((f) => fs.readFileSync(path.join(root, f), 'utf8')).join('\n');
-  const knobs = files.match(/absolute top-0\.5 left-0\.5 w-[45] h-[45][^'`]*/g) || [];
-  expect(knobs.length).toBeGreaterThanOrEqual(12);
+  const knobs = files.match(/absolute top-0\.5 left-0\.5 (?:w-[45] h-[45]|rounded-full)[^'`]*/g) || [];
+  expect(knobs.length).toBeGreaterThanOrEqual(5);
   for (const k of knobs) expect(k).toMatch(/bg-control-knob/);
   expect(files).not.toMatch(/'var\(--accent-primary\)' : 'rgba\(0, 0, 0, 0\.15\)'/);
   expect(html).toMatch(/--control-knob: #ffffff;/);
@@ -85,8 +85,12 @@ test('every switch has role="switch", its state and a name', () => {
   const files = ['src/renderer/app.js', 'src/renderer/components/settings-cards.js']
     .map((f) => fs.readFileSync(path.join(root, f), 'utf8')).join('\n');
   const knobs = (files.match(/bg-control-knob/g) || []).length;
-  const switches = (files.match(/role: 'switch',/g) || []).length;
+  const switches = (files.match(/role: 'switch',|React\.createElement\(Switch, \{/g) || []).length;
   expect(switches).toBeGreaterThanOrEqual(knobs);
-  expect(files).toMatch(/role: 'switch',\n\s*'aria-checked': skipExternalPrompt \? 'true' : 'false',\n\s*'aria-label': 'Skip the open-in-browser prompt',/);
-  expect(files).toMatch(/checked: playbackSpatial === true,\n\s*role: 'switch',\n\s*'aria-label': 'Prefer Dolby Atmos mixes',/);
+  // Settings > General's switches are the shared Switch in a SettingRow,
+  // which names them by the row's label.
+  expect(files).toMatch(/React\.createElement\(Switch, \{ checked: skipExternalPrompt,/);
+  expect(files).toMatch(/React\.createElement\(Switch, \{ checked: playbackSpatial === true,/);
+  const fields = fs.readFileSync(path.join(root, 'src/renderer/components/fields.js'), 'utf8');
+  expect(fields).toMatch(/role: 'switch',\n\s*'aria-checked': checked \? 'true' : 'false',/);
 });

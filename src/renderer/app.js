@@ -1985,6 +1985,7 @@ const { activateOnKey } = require('./lib/activate-on-key');
 const { ToastRegion, NowPlayingAnnouncer } = require('./components/toast');
 const { SortMenu } = require('./components/sort-menu');
 const { HeroTabs } = require('./components/hero-tabs');
+const { SettingRow, Select, TextField, SecretField, Switch, RadioGroup } = require('./components/fields');
 // Room the queue drawer leaves above it: the title bar and a little air.
 const QUEUE_DRAWER_TOP_GAP = 48;
 const { sellerColor, sellerTextColor, sellerBadgeBg, sellerShortName, sellerName } = require('./lib/ticket-sellers');
@@ -44462,80 +44463,12 @@ React.createElement('div', {
                       style: { fontSize: '12px', color: 'var(--text-secondary)' }
                     }, 'Stream quality for sources that play through the shared player (Amazon Music and future stream resolvers). Bandwidth ceilings only — codec is irrelevant to the tier; spatial/Atmos rungs need the preference below.')
                   ),
-                  React.createElement('div', { className: 'flex items-center justify-between', style: { marginBottom: '10px', gap: '12px' } },
-                    React.createElement('div', null,
-                      React.createElement('p', { style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' } }, 'Quality'),
-                      React.createElement('p', { style: { fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' } }, 'Applies to the current stream immediately.')
-                    ),
-                    React.createElement('select', {
-                      'aria-label': 'Playback quality',
-                      value: playbackQuality,
-                      onChange: (e) => setPlaybackQuality(e.target.value),
-                      style: {
-                        backgroundColor: 'var(--card-bg)',
-                        color: 'var(--text-primary)',
-                        border: '1px solid var(--border-subtle)',
-                        borderRadius: '8px',
-                        padding: '6px 8px',
-                        fontSize: '12px'
-                      }
-                    },
-                      React.createElement('option', { value: 'max' }, 'Max (best available, lossless where playable)'),
-                      React.createElement('option', { value: 'high' }, 'High (up to 500 kbps)'),
-                      React.createElement('option', { value: 'standard' }, 'Standard (up to 200 kbps)'),
-                      React.createElement('option', { value: 'saver' }, 'Data saver (up to 100 kbps)')
-                    )
-                  ),
-                  React.createElement('div', { className: 'flex items-center justify-between', style: { gap: '12px' } },
-                    React.createElement('div', null,
-                      React.createElement('p', { style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' } }, 'Auto adjust quality'),
-                      React.createElement('p', { style: { fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' } }, 'Adapt to current network speed at or below the chosen tier.')
-                    ),
-                    React.createElement('select', {
-                      'aria-label': 'Auto adjust quality',
-                      value: playbackAbr ? 'on' : 'off',
-                      onChange: (e) => setPlaybackAbr(e.target.value === 'on'),
-                      style: {
-                        backgroundColor: 'var(--card-bg)',
-                        color: 'var(--text-primary)',
-                        border: '1px solid var(--border-subtle)',
-                        borderRadius: '8px',
-                        padding: '6px 8px',
-                        fontSize: '12px'
-                      }
-                    },
-                      React.createElement('option', { value: 'on' }, 'On'),
-                      React.createElement('option', { value: 'off' }, 'Off')
-                    )
-                  ),
-                  React.createElement('div', {
-                    className: 'flex items-center justify-between',
-                    style: { marginTop: '10px', gap: '12px' }
-                  },
-                    React.createElement('div', null,
-                      React.createElement('p', { style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' } }, 'Prefer Dolby Atmos mixes'),
-                      React.createElement('p', {
-                        style: { fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }
-                      }, 'Plays the 5.1 core of a track’s Atmos mix when available. This isn’t full Atmos: it’s mixed down on stereo output, and it replaces lossless FLAC at the Max tier.')
-                    ),
-                    React.createElement('label', { className: 'relative inline-block w-10 h-5 cursor-pointer flex-shrink-0' },
-                      React.createElement('input', {
-                        type: 'checkbox',
-                        checked: playbackSpatial === true,
-                        role: 'switch',
-                        'aria-label': 'Prefer Dolby Atmos mixes',
-                        onChange: (e) => setPlaybackSpatial(e.target.checked),
-                        className: 'sr-only peer'
-                      }),
-                      React.createElement('div', {
-                        className: 'w-full h-full rounded-full transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-accent peer-focus-visible:ring-offset-2',
-                        style: { backgroundColor: playbackSpatial === true ? 'var(--accent-fill)' : 'var(--control-off)' }
-                      }),
-                      React.createElement('div', {
-                        className: 'absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-control-knob shadow transition-transform',
-                        style: { transform: playbackSpatial === true ? 'translateX(20px)' : 'translateX(0)' }
-                      })
-                    )
+                  React.createElement(SettingRow, { label: 'Quality', hint: 'Applies to the current stream immediately.' },
+React.createElement(Select, { value: playbackQuality, onChange: (v) => setPlaybackQuality(v), options: [{ value: 'max', label: 'Max (best available, lossless where playable)' }, { value: 'high', label: 'High (up to 500 kbps)' }, { value: 'standard', label: 'Standard (up to 200 kbps)' }, { value: 'saver', label: 'Data saver (up to 100 kbps)' }] })),
+                  React.createElement(SettingRow, { label: 'Auto adjust quality', hint: 'Adapt to current network speed at or below the chosen tier.' },
+React.createElement(Select, { value: playbackAbr ? 'on' : 'off', onChange: (v) => setPlaybackAbr(v === 'on'), options: [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }] })),
+                  React.createElement(SettingRow, { label: 'Prefer Dolby Atmos mixes', hint: 'Plays the 5.1 core of a track’s Atmos mix when available. This isn’t full Atmos: it’s mixed down on stereo output, and it replaces lossless FLAC at the Max tier.' },
+                    React.createElement(Switch, { checked: playbackSpatial === true, onToggle: () => setPlaybackSpatial(playbackSpatial !== true) })
                   )
                 ),
 
@@ -44693,33 +44626,14 @@ React.createElement('div', {
                     }, 'Configure how external tracks are handled')
                   ),
                   // Skip external prompt toggle - refined
-                  React.createElement('div', { className: 'flex items-center justify-between', style: { padding: '12px 0' } },
-                    React.createElement('div', null,
-                      React.createElement('p', { style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' } },
-                        'Auto-open external tracks'
-                      ),
-                      React.createElement('p', { style: { fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '2px' } },
-                        'Skip the confirmation prompt for Bandcamp, YouTube, etc.'
-                      )
-                    ),
-                    React.createElement('button', {
-                      role: 'switch',
-                      'aria-checked': skipExternalPrompt ? 'true' : 'false',
-                      'aria-label': 'Skip the open-in-browser prompt',
-                      onClick: async () => {
+                  React.createElement(SettingRow, { label: 'Auto-open external tracks', hint: 'Skip the confirmation prompt for Bandcamp, YouTube, etc.' },
+React.createElement(Switch, { checked: skipExternalPrompt, onToggle: async () => {
                         const newValue = !skipExternalPrompt;
                         setSkipExternalPrompt(newValue);
                         if (window.electron?.store) {
                           await window.electron.store.set('skip_external_prompt', newValue);
                         }
-                      },
-                      className: `relative w-11 h-6 rounded-full transition-colors ${skipExternalPrompt ? 'bg-accent-fill' : 'bg-control-off'}`
-                    },
-                      React.createElement('span', {
-                        className: `absolute top-0.5 left-0.5 w-5 h-5 bg-control-knob rounded-full shadow transition-transform ${skipExternalPrompt ? 'translate-x-5' : 'translate-x-0'}`
-                      })
-                    )
-                  ),
+                      } })),
                 ),
 
                 // Media Keys Section
@@ -44759,114 +44673,26 @@ React.createElement('div', {
                     }
                   }, 'When using the Spotify plugin, Spotify also runs in the background and may capture media keys. Choose how Parachord should handle potential conflicts.'),
                   // Radio options for media key mode
-                  React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '12px' } },
-                    // Always option
-                    React.createElement('label', {
-                      style: {
-                        display: 'flex',
-                        alignItems: 'flex-start',
-                        gap: '12px',
-                        padding: '12px',
-                        borderRadius: '8px',
-                        backgroundColor: mediaKeyMode === 'always' ? 'var(--accent-primary-alpha-08)' : 'var(--hover-bg-default)',
-                        cursor: 'pointer',
-                        border: mediaKeyMode === 'always' ? '1px solid var(--accent-primary-alpha-30)' : '1px solid transparent'
+                  React.createElement(RadioGroup, {
+                    name: 'mediaKeyMode',
+                    label: 'Media key handling',
+                    value: mediaKeyMode,
+                    options: [
+                      { value: 'always', label: 'Always capture', hint: 'Parachord always handles media keys. May conflict with Spotify.' },
+                      { value: 'non-spotify', label: 'Only when not using Spotify', hint: 'Let Spotify handle media keys when playing via Spotify Connect. Parachord handles them for other sources.' },
+                      { value: 'never', label: 'Never capture', hint: 'Parachord never handles media keys. Use this if you prefer Spotify or other apps to control playback.' },
+                    ],
+                    onChange: async (mode) => {
+                      setMediaKeyMode(mode);
+                      if (window.electron?.mediaKeys) {
+                        await window.electron.mediaKeys.setMode(mode);
+                        // Spotify Connect: follow the current playback source
+                        if (mode === 'non-spotify' && currentTrack?.resolver) {
+                          await window.electron.mediaKeys.updatePlaybackSource(currentTrack.resolver);
+                        }
                       }
                     },
-                      React.createElement('input', {
-                        type: 'radio',
-                        name: 'mediaKeyMode',
-                        value: 'always',
-                        checked: mediaKeyMode === 'always',
-                        onChange: async (e) => {
-                          const mode = e.target.value;
-                          setMediaKeyMode(mode);
-                          if (window.electron?.mediaKeys) {
-                            await window.electron.mediaKeys.setMode(mode);
-                          }
-                        },
-                        style: { marginTop: '2px', accentColor: 'var(--accent-primary)' }
-                      }),
-                      React.createElement('div', null,
-                        React.createElement('p', { style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' } }, 'Always capture'),
-                        React.createElement('p', { style: { fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '2px' } },
-                          'Parachord always handles media keys. May conflict with Spotify.'
-                        )
-                      )
-                    ),
-                    // Non-Spotify option
-                    React.createElement('label', {
-                      style: {
-                        display: 'flex',
-                        alignItems: 'flex-start',
-                        gap: '12px',
-                        padding: '12px',
-                        borderRadius: '8px',
-                        backgroundColor: mediaKeyMode === 'non-spotify' ? 'var(--accent-primary-alpha-08)' : 'var(--hover-bg-default)',
-                        cursor: 'pointer',
-                        border: mediaKeyMode === 'non-spotify' ? '1px solid var(--accent-primary-alpha-30)' : '1px solid transparent'
-                      }
-                    },
-                      React.createElement('input', {
-                        type: 'radio',
-                        name: 'mediaKeyMode',
-                        value: 'non-spotify',
-                        checked: mediaKeyMode === 'non-spotify',
-                        onChange: async (e) => {
-                          const mode = e.target.value;
-                          setMediaKeyMode(mode);
-                          if (window.electron?.mediaKeys) {
-                            await window.electron.mediaKeys.setMode(mode);
-                            // Update based on current playback source
-                            if (currentTrack?.resolver) {
-                              await window.electron.mediaKeys.updatePlaybackSource(currentTrack.resolver);
-                            }
-                          }
-                        },
-                        style: { marginTop: '2px', accentColor: 'var(--accent-primary)' }
-                      }),
-                      React.createElement('div', null,
-                        React.createElement('p', { style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' } }, 'Only when not using Spotify'),
-                        React.createElement('p', { style: { fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '2px' } },
-                          'Let Spotify handle media keys when playing via Spotify Connect. Parachord handles them for other sources.'
-                        )
-                      )
-                    ),
-                    // Never option
-                    React.createElement('label', {
-                      style: {
-                        display: 'flex',
-                        alignItems: 'flex-start',
-                        gap: '12px',
-                        padding: '12px',
-                        borderRadius: '8px',
-                        backgroundColor: mediaKeyMode === 'never' ? 'var(--accent-primary-alpha-08)' : 'var(--hover-bg-default)',
-                        cursor: 'pointer',
-                        border: mediaKeyMode === 'never' ? '1px solid var(--accent-primary-alpha-30)' : '1px solid transparent'
-                      }
-                    },
-                      React.createElement('input', {
-                        type: 'radio',
-                        name: 'mediaKeyMode',
-                        value: 'never',
-                        checked: mediaKeyMode === 'never',
-                        onChange: async (e) => {
-                          const mode = e.target.value;
-                          setMediaKeyMode(mode);
-                          if (window.electron?.mediaKeys) {
-                            await window.electron.mediaKeys.setMode(mode);
-                          }
-                        },
-                        style: { marginTop: '2px', accentColor: 'var(--accent-primary)' }
-                      }),
-                      React.createElement('div', null,
-                        React.createElement('p', { style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' } }, 'Never capture'),
-                        React.createElement('p', { style: { fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '2px' } },
-                          'Parachord never handles media keys. Use this if you prefer Spotify or other apps to control playback.'
-                        )
-                      )
-                    )
-                  )
+                  })
                 ),
 
                 // Discord Rich Presence Section
@@ -44893,32 +44719,10 @@ React.createElement('div', {
                       style: { fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '4px' }
                     }, 'Show what you are playing on your Discord profile')
                   ),
-                  React.createElement('div', {
-                    style: {
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: '16px',
-                      padding: '12px',
-                      borderRadius: '8px',
-                      backgroundColor: 'var(--hover-bg-default)'
-                    }
-                  },
-                    React.createElement('div', null,
-                      React.createElement('p', { style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' } }, 'Share my now playing'),
-                      React.createElement('p', { style: { fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '2px' } },
-                        'Needs the Discord desktop app open alongside Parachord.'
-                      )
-                    ),
-                    React.createElement('button', {
-                      role: 'switch',
-                      'aria-checked': discordPresenceEnabled ? 'true' : 'false',
-                      'aria-label': 'Share my now playing on Discord',
-                      type: 'button',
-                      role: 'switch',
-                      'aria-checked': discordPresenceEnabled,
-                      'aria-label': 'Share my now playing on Discord',
-                      onClick: async () => {
+                  React.createElement(SettingRow, { label: 'Share my now playing', hint: 'Needs the Discord desktop app open alongside Parachord.' },
+                    React.createElement(Switch, {
+                      checked: discordPresenceEnabled,
+                      onToggle: async () => {
                         const next = !discordPresenceEnabled;
                         setDiscordPresenceEnabled(next);
                         const discordBridge = window.electron?.discordPresence;
@@ -44926,13 +44730,8 @@ React.createElement('div', {
                         const status = await discordBridge.setEnabled(next).catch(() => null);
                         if (status) setDiscordPresenceState(status);
                         showToast(next ? 'Discord presence turned on' : 'Discord presence turned off');
-                      },
-                      className: `relative w-11 h-6 rounded-full transition-colors ${discordPresenceEnabled ? 'bg-accent-fill' : 'bg-control-off'}`
-                    },
-                      React.createElement('span', {
-                        className: `absolute top-0.5 left-0.5 w-5 h-5 bg-control-knob rounded-full shadow transition-transform ${discordPresenceEnabled ? 'translate-x-5' : 'translate-x-0'}`
-                      })
-                    )
+                      }
+                    })
                   ),
                   // Connection state, straight from the main process.
                   discordPresenceEnabled && (() => {
@@ -44992,72 +44791,43 @@ React.createElement('div', {
                       style: { fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '4px' }
                     }, 'Receives Spotify and SoundCloud sign-in, and parachord:// links from Raycast or curl. Change it if another app already uses this port.')
                   ),
-                  React.createElement('div', {
-                    style: {
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: '16px',
-                      padding: '12px',
-                      borderRadius: '8px',
-                      backgroundColor: 'var(--hover-bg-default)',
-                      flexWrap: 'wrap'
-                    }
+                  React.createElement(SettingRow, {
+                    label: 'Port',
+                    hint: authServerStatus?.error?.code === 'EADDRINUSE'
+                      ? `Port ${authPort} is in use by another app, so sign-in is not working.`
+                      : authServerStatus?.listening
+                        ? `Running on 127.0.0.1:${authPort}`
+                        : `127.0.0.1:${authPort}`,
                   },
-                    React.createElement('div', null,
-                      React.createElement('p', { style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' } }, 'Port'),
-                      React.createElement('p', { style: { fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '2px' } },
-                        authServerStatus?.error?.code === 'EADDRINUSE'
-                          ? `Port ${authPort} is in use by another app, so sign-in is not working.`
-                          : authServerStatus?.listening
-                            ? `Running on 127.0.0.1:${authPort}`
-                            : `127.0.0.1:${authPort}`
-                      )
-                    ),
-                    React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } },
-                      React.createElement('input', {
-                        type: 'number',
-                        min: 1024,
-                        max: 65535,
+                    // A real form, so Enter in the field saves.
+                    React.createElement('form', {
+                      className: 'flex items-center gap-2',
+                      onSubmit: async (e) => {
+                        e.preventDefault();
+                        const bridge = window.electron?.authServer;
+                        if (!bridge?.setPort) return;
+                        const result = await bridge.setPort(authPortInput).catch(() => null);
+                        if (!result) return;
+                        setAuthServerStatus(result);
+                        if (!result.success) {
+                          showToast(result.message, 'error');
+                          return;
+                        }
+                        setAuthPortInput(String(result.configuredPort));
+                        showToast(result.configuredPort === result.port
+                          ? `Using port ${result.port}`
+                          : `Saved. Restart Parachord to switch to port ${result.configuredPort}.`, 'success');
+                      },
+                    },
+                      React.createElement(TextField, {
+                        type: 'number', min: 1024, max: 65535, size: 'sm',
                         value: authPortInput,
                         'aria-label': 'Local server port',
-                        onChange: (e) => setAuthPortInput(e.target.value),
-                        style: {
-                          width: '96px',
-                          padding: '6px 8px',
-                          fontSize: '13px',
-                          color: 'var(--text-primary)',
-                          backgroundColor: 'var(--card-bg)',
-                          border: '1px solid var(--border-subtle)',
-                          borderRadius: '6px',
-                          outline: 'none'
-                        }
+                        onChange: (v) => setAuthPortInput(v),
+                        style: { width: '96px' },
                       }),
-                      React.createElement('button', {
-                        type: 'button',
-                        onClick: async () => {
-                          const bridge = window.electron?.authServer;
-                          if (!bridge?.setPort) return;
-                          const result = await bridge.setPort(authPortInput).catch(() => null);
-                          if (!result) return;
-                          setAuthServerStatus(result);
-                          if (!result.success) {
-                            showToast(result.message, 'error');
-                            return;
-                          }
-                          setAuthPortInput(String(result.configuredPort));
-                          showToast(result.configuredPort === result.port
-                            ? `Using port ${result.port}`
-                            : `Saved. Restart Parachord to switch to port ${result.configuredPort}.`, 'success');
-                        },
-                        className: 'px-3 py-1.5 text-sm font-medium rounded-lg bg-accent-fill text-white hover:bg-accent-fill-hover transition-colors'
-                      }, 'Save'),
-                      React.createElement('button', {
-                        type: 'button',
-                        onClick: () => setAuthPortInput('8888'),
-                        className: 'px-3 py-1.5 text-sm rounded-lg transition-colors',
-                        style: { color: 'var(--text-secondary)', backgroundColor: 'var(--card-bg)', border: '1px solid var(--border-subtle)' }
-                      }, 'Default')
+                      React.createElement(Button, { type: 'submit', size: 'sm' }, 'Save'),
+                      React.createElement(Button, { variant: 'secondary', size: 'sm', onClick: () => setAuthPortInput('8888') }, 'Default')
                     )
                   ),
                   authServerStatus && authServerStatus.configuredPort !== authServerStatus.port && React.createElement('p', {
@@ -45156,20 +44926,8 @@ React.createElement('div', {
                     }, 'Configure queue persistence')
                   ),
                   // Remember queue toggle
-                  React.createElement('div', { className: 'flex items-center justify-between py-3' },
-                    React.createElement('div', null,
-                      React.createElement('p', { className: 'text-sm text-ink-primary font-medium' },
-                        'Remember queue'
-                      ),
-                      React.createElement('p', { className: 'text-xs text-ink-tertiary mt-0.5' },
-                        'Restore your queue when you reopen the app'
-                      )
-                    ),
-                    React.createElement('button', {
-                      role: 'switch',
-                      'aria-checked': rememberQueue ? 'true' : 'false',
-                      'aria-label': 'Remember the queue',
-                      onClick: async () => {
+                  React.createElement(SettingRow, { label: 'Remember queue', hint: 'Restore your queue when you reopen the app' },
+React.createElement(Switch, { checked: rememberQueue, onToggle: async () => {
                         const newValue = !rememberQueue;
                         setRememberQueue(newValue);
                         if (window.electron?.store) {
@@ -45180,14 +44938,7 @@ React.createElement('div', {
                             await window.electron.store.set('saved_playback_context', null);
                           }
                         }
-                      },
-                      className: `relative w-11 h-6 rounded-full transition-colors ${rememberQueue ? 'bg-accent-fill' : 'bg-control-off'}`
-                    },
-                      React.createElement('span', {
-                        className: `absolute top-0.5 left-0.5 w-5 h-5 bg-control-knob rounded-full shadow transition-transform ${rememberQueue ? 'translate-x-5' : 'translate-x-0'}`
-                      })
-                    )
-                  )
+                      } }))
                 ),
 
                 // Discover Settings Section
@@ -45203,62 +44954,24 @@ React.createElement('div', {
                     }, 'Configure discovery feature settings')
                   ),
                   // Show unread badges toggle
-                  React.createElement('div', { className: 'flex items-center justify-between py-3' },
-                    React.createElement('div', { className: 'flex-1 min-w-0 pr-12' },
-                      React.createElement('p', { className: 'text-sm text-ink-primary font-medium' },
-                        'Show unread badges'
-                      ),
-                      React.createElement('p', { className: 'text-xs text-ink-tertiary mt-0.5' },
-                        'Display badges when Recommendations, Critical Darlings, Pop of the Tops, or Concerts have new content'
-                      )
-                    ),
-                    React.createElement('button', {
-                      role: 'switch',
-                      'aria-checked': showDiscoveryBadges ? 'true' : 'false',
-                      'aria-label': 'Show discovery badges',
-                      onClick: async () => {
+                  React.createElement(SettingRow, { label: 'Show unread badges', hint: 'Display badges when Recommendations, Critical Darlings, Pop of the Tops, or Concerts have new content' },
+React.createElement(Switch, { checked: showDiscoveryBadges, onToggle: async () => {
                         const newValue = !showDiscoveryBadges;
                         setShowDiscoveryBadges(newValue);
                         if (window.electron?.store) {
                           await window.electron.store.set('show_discovery_badges', newValue);
                         }
-                      },
-                      className: `relative w-11 h-6 flex-shrink-0 rounded-full transition-colors ${showDiscoveryBadges ? 'bg-accent-fill' : 'bg-control-off'}`
-                    },
-                      React.createElement('span', {
-                        className: `absolute top-0.5 left-0.5 w-5 h-5 bg-control-knob rounded-full shadow transition-transform ${showDiscoveryBadges ? 'translate-x-5' : 'translate-x-0'}`
-                      })
-                    )
-                  ),
+                      } })),
                   // Refresh Shuffleupagus suggestions on every visit toggle
-                  React.createElement('div', { className: 'flex items-center justify-between py-3' },
-                    React.createElement('div', { className: 'flex-1 min-w-0 pr-12' },
-                      React.createElement('p', { className: 'text-sm text-ink-primary font-medium' },
-                        'Refresh Shuffleupagus suggestions on every visit'
-                      ),
-                      React.createElement('p', { className: 'text-xs text-ink-tertiary mt-0.5' },
-                        'Ask Shuffleupagus for new album and artist suggestions each time you open Home or the Recommendations page. When off, they stay until you press Refresh'
-                      )
-                    ),
-                    React.createElement('button', {
-                      role: 'switch',
-                      'aria-checked': homeSuggestionsAutoRefresh ? 'true' : 'false',
-                      'aria-label': 'Refresh Home suggestions automatically',
-                      onClick: async () => {
+                  React.createElement(SettingRow, { label: 'Refresh Shuffleupagus suggestions on every visit', hint: 'Ask Shuffleupagus for new album and artist suggestions each time you open Home or the Recommendations page. When off, they stay until you press Refresh' },
+React.createElement(Switch, { checked: homeSuggestionsAutoRefresh, onToggle: async () => {
                         const newValue = !homeSuggestionsAutoRefresh;
                         homeSuggestionsAutoRefreshRef.current = newValue;
                         setHomeSuggestionsAutoRefresh(newValue);
                         if (window.electron?.store) {
                           await window.electron.store.set('home_suggestions_auto_refresh', newValue);
                         }
-                      },
-                      className: `relative w-11 h-6 flex-shrink-0 rounded-full transition-colors ${homeSuggestionsAutoRefresh ? 'bg-accent-fill' : 'bg-control-off'}`
-                    },
-                      React.createElement('span', {
-                        className: `absolute top-0.5 left-0.5 w-5 h-5 bg-control-knob rounded-full shadow transition-transform ${homeSuggestionsAutoRefresh ? 'translate-x-5' : 'translate-x-0'}`
-                      })
-                    )
-                  )
+                      } }))
                 ),
 
                 // Scrobbling Section
@@ -45279,33 +44992,14 @@ React.createElement('div', {
                   ),
 
                   // Global enable/disable toggle
-                  React.createElement('div', { className: 'flex items-center justify-between py-3 px-3 bg-surface-subtle rounded-lg' },
-                    React.createElement('div', null,
-                      React.createElement('p', { className: 'text-sm text-ink-primary font-medium' },
-                        'Enable Scrobbling'
-                      ),
-                      React.createElement('p', { className: 'text-xs text-ink-tertiary mt-0.5' },
-                        'Send your listening activity to connected services'
-                      )
-                    ),
-                    React.createElement('button', {
-                      role: 'switch',
-                      'aria-checked': scrobblingEnabled ? 'true' : 'false',
-                      'aria-label': 'Scrobbling',
-                      onClick: async () => {
+                  React.createElement(SettingRow, { label: 'Enable Scrobbling', hint: 'Send your listening activity to connected services' },
+React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => {
                         const newValue = !scrobblingEnabled;
                         setScrobblingEnabled(newValue);
                         if (window.electron?.store) {
                           await window.electron.store.set('scrobbling-enabled', newValue);
                         }
-                      },
-                      className: `relative w-11 h-6 rounded-full transition-colors ${scrobblingEnabled ? 'bg-accent-fill' : 'bg-control-off'}`
-                    },
-                      React.createElement('span', {
-                        className: `absolute top-0.5 left-0.5 w-5 h-5 bg-control-knob rounded-full shadow transition-transform ${scrobblingEnabled ? 'translate-x-5' : 'translate-x-0'}`
-                      })
-                    )
-                  ),
+                      } })),
 
                   // Note about configuring scrobblers
                   React.createElement('p', {

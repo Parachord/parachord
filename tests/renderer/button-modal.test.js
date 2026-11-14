@@ -116,7 +116,7 @@ test('bare mode keeps the panel and adds the dialog semantics', () => {
   expect(out).toContain('role="dialog"');
   expect(out).toContain('aria-modal="true"');
   expect(out).toContain('aria-label="Add friend"');
-  expect(out).toContain('class="modal-panel max-w-md"');
+  expect(out).toContain('class="modal-panel focus:outline-none max-w-md"');
   expect(out).not.toContain('aria-label="Close"');
 });
 

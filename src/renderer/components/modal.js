@@ -95,8 +95,8 @@ function Modal(props) {
     const pp = panelProps || {};
     return scrim(e('div', Object.assign({}, pp, {
       ref: panelRef, role, 'aria-modal': 'true', 'aria-label': label, tabIndex: -1,
-      className: ['modal-panel', pp.className].filter(Boolean).join(' '),
-      style: Object.assign({ outline: 'none' }, pp.style),
+      className: ['modal-panel focus:outline-none', pp.className].filter(Boolean).join(' '),
+      style: pp.style,
     }), children));
   }
   const titleId = `${id}-title`;
@@ -109,8 +109,8 @@ function Modal(props) {
     'aria-labelledby': title ? titleId : undefined,
     'aria-describedby': descId,
     tabIndex: -1,
-    className: ['modal-panel bg-surface-card text-ink-primary w-full flex flex-col', className].filter(Boolean).join(' '),
-    style: { maxWidth: WIDTHS[size] || WIDTHS.md, maxHeight: 'calc(100vh - 32px)', borderRadius: '16px', boxShadow: 'var(--shadow-lg)', outline: 'none' },
+    className: ['modal-panel focus:outline-none bg-surface-card text-ink-primary w-full flex flex-col', className].filter(Boolean).join(' '),
+    style: { maxWidth: WIDTHS[size] || WIDTHS.md, maxHeight: 'calc(100vh - 32px)', borderRadius: '16px', boxShadow: 'var(--shadow-lg)' },
   },
   (title || !hideClose) && e('div', { className: 'flex items-start gap-3', style: { padding: '20px 20px 0 24px' } },
     icon && e('div', { className: 'flex-shrink-0', style: { marginTop: '2px' } }, icon),
