@@ -113,7 +113,7 @@ const ResolverCard = React.memo(({
           borderRadius: '6px',
           fontSize: '11px',
           fontWeight: '600',
-          color: hasUpdate ? '#ffffff' : '#22c55e'
+          color: hasUpdate ? '#ffffff' : 'var(--text-success)'
         },
         title: hasUpdate ? 'Update available' : 'Enabled'
       }, hasUpdate ? '↑' : '✓'),
@@ -135,7 +135,7 @@ const ResolverCard = React.memo(({
           right: '8px',
           width: '22px',
           height: '22px',
-          backgroundColor: '#fbbf24',
+          backgroundColor: 'var(--warning)',
           borderRadius: '6px',
           fontSize: '12px',
           fontWeight: '600',
@@ -161,11 +161,11 @@ const ResolverCard = React.memo(({
     }, resolver.name),
     // "Setup required" label - enabled but needs configuration
     needsConfiguration && isEnabled && React.createElement('span', {
-      style: { fontSize: '10px', fontWeight: '500', color: '#d97706', marginTop: '2px' }
+      style: { fontSize: '10px', fontWeight: '500', color: 'var(--text-warning)', marginTop: '2px' }
     }, 'Setup required'),
     // A limit the resolver is set up under (statusTitle explains it)
     !needsConfiguration && isEnabled && statusLabel && React.createElement('span', {
-      style: { fontSize: '10px', fontWeight: '500', color: '#d97706', marginTop: '2px' },
+      style: { fontSize: '10px', fontWeight: '500', color: 'var(--text-warning)', marginTop: '2px' },
       title: statusTitle || undefined
     }, statusLabel),
     // "Available" label - not enabled
@@ -241,7 +241,7 @@ const McpSettingsSection = () => {
           padding: '4px 10px',
           fontSize: '11px',
           fontWeight: '500',
-          color: copied ? '#059669' : 'var(--text-secondary)',
+          color: copied ? 'var(--text-success)' : 'var(--text-secondary)',
           backgroundColor: copied ? '#ecfdf5' : 'var(--placeholder-bg-light)',
           border: '1px solid ' + (copied ? '#a7f3d0' : 'var(--border-default)'),
           borderRadius: '6px',

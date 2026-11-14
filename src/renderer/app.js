@@ -37268,7 +37268,7 @@ useEffect(() => {
             }
           },
             React.createElement('svg', {
-              style: { width: '24px', height: '24px', color: '#f59e0b' },
+              style: { width: '24px', height: '24px', color: 'var(--warning)' },
               fill: 'none',
               viewBox: '0 0 24 24',
               stroke: 'currentColor'
@@ -40570,7 +40570,7 @@ useEffect(() => {
                 // Status line
                 concertsLocationCoords && React.createElement('div', {
                   className: 'flex items-center gap-1.5 mb-3',
-                  style: { fontSize: '13px', color: '#10b981' }
+                  style: { fontSize: '13px', color: 'var(--text-success)' }
                 },
                   React.createElement('svg', { className: 'w-3.5 h-3.5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                     React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2.5, d: 'M5 13l4 4L19 7' })
@@ -48871,7 +48871,7 @@ useEffect(() => {
                       padding: '8px 14px',
                       fontSize: '13px',
                       fontWeight: '500',
-                      color: '#dc2626',
+                      color: 'var(--text-danger)',
                       backgroundColor: 'rgba(220, 38, 38, 0.08)',
                       border: 'none',
                       borderRadius: '8px',
@@ -48886,7 +48886,7 @@ useEffect(() => {
                       fontSize: '13px',
                       fontWeight: '500',
                       color: '#ffffff',
-                      backgroundColor: '#22c55e',
+                      backgroundColor: 'var(--fill-success)',
                       border: 'none',
                       borderRadius: '8px',
                       cursor: 'pointer'
@@ -48898,7 +48898,7 @@ useEffect(() => {
               style: {
                 marginTop: '12px',
                 fontSize: '12px',
-                color: '#22c55e'
+                color: 'var(--text-success)'
               }
             },
               React.createElement('span', null, '✓'),
@@ -48915,7 +48915,7 @@ useEffect(() => {
             },
               spotifyCredentialsSource === 'env'
                 ? React.createElement('p', {
-                    style: { fontSize: '11px', color: '#22c55e', marginBottom: '8px', lineHeight: '1.5' }
+                    style: { fontSize: '11px', color: 'var(--text-success)', marginBottom: '8px', lineHeight: '1.5' }
                   }, 'Using Client ID from environment variable.')
                 : React.createElement('p', {
                     style: { fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '12px', lineHeight: '1.5' }
@@ -49068,7 +49068,7 @@ useEffect(() => {
                     fontSize: '12px',
                     fontWeight: '500',
                     color: '#ffffff',
-                    backgroundColor: spotifyClientIdInput.trim() ? '#22c55e' : '#9ca3af',
+                    backgroundColor: spotifyClientIdInput.trim() ? 'var(--fill-success)' : '#9ca3af',
                     border: 'none',
                     borderRadius: '6px',
                     cursor: spotifyClientIdInput.trim() ? 'pointer' : 'default',
@@ -49138,7 +49138,7 @@ useEffect(() => {
                 disabled: !spotifyClientIdInput.trim(),
                 style: {
                   padding: '6px 12px', fontSize: '12px', fontWeight: '500', color: '#ffffff',
-                  backgroundColor: spotifyClientIdInput.trim() ? '#22c55e' : '#9ca3af',
+                  backgroundColor: spotifyClientIdInput.trim() ? 'var(--fill-success)' : '#9ca3af',
                   border: 'none', borderRadius: '6px',
                   cursor: spotifyClientIdInput.trim() ? 'pointer' : 'default'
                 }
@@ -49178,10 +49178,10 @@ useEffect(() => {
                       style: { color: 'var(--text-secondary)' }
                     }, 'Status'),
                     React.createElement('span', {
-                      style: { color: '#22c55e', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '500' }
+                      style: { color: 'var(--text-success)', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '500' }
                     },
                       React.createElement('span', {
-                        style: { width: '8px', height: '8px', backgroundColor: '#22c55e', borderRadius: '50%' }
+                        style: { width: '8px', height: '8px', backgroundColor: 'var(--success)', borderRadius: '50%' }
                       }),
                       'Active'
                     )
@@ -49233,7 +49233,7 @@ useEffect(() => {
                         cursor: 'pointer',
                         transition: 'color 150ms ease'
                       },
-                      onMouseEnter: (e) => e.currentTarget.style.color = '#dc2626',
+                      onMouseEnter: (e) => e.currentTarget.style.color = 'var(--text-danger)',
                       onMouseLeave: (e) => e.currentTarget.style.color = 'var(--text-tertiary)'
                     }, 'Stop Syncing')
                   )
@@ -49243,7 +49243,7 @@ useEffect(() => {
                   style: {
                     width: '100%',
                     padding: '10px 16px',
-                    backgroundColor: syncProviderConfig[selectedResolver.id]?.color || '#22c55e',
+                    backgroundColor: syncProviderConfig[selectedResolver.id]?.color || 'var(--fill-success)',
                     color: '#ffffff',
                     borderRadius: '10px',
                     fontWeight: '500',
@@ -49252,8 +49252,8 @@ useEffect(() => {
                     cursor: 'pointer',
                     transition: 'background-color 150ms ease'
                   },
-                  onMouseEnter: (e) => e.currentTarget.style.backgroundColor = syncProviderConfig[selectedResolver.id]?.colorHover || '#16a34a',
-                  onMouseLeave: (e) => e.currentTarget.style.backgroundColor = syncProviderConfig[selectedResolver.id]?.color || '#22c55e'
+                  onMouseEnter: (e) => e.currentTarget.style.backgroundColor = syncProviderConfig[selectedResolver.id]?.colorHover || 'var(--fill-success)',
+                  onMouseLeave: (e) => e.currentTarget.style.backgroundColor = syncProviderConfig[selectedResolver.id]?.color || 'var(--fill-success)'
                 }, 'Set Up Library Sync')
           ),
 
@@ -49347,7 +49347,7 @@ useEffect(() => {
                         padding: '8px 14px',
                         fontSize: '13px',
                         fontWeight: '500',
-                        color: '#dc2626',
+                        color: 'var(--text-danger)',
                         backgroundColor: 'rgba(220, 38, 38, 0.08)',
                         border: 'none',
                         borderRadius: '8px',
@@ -49423,7 +49423,7 @@ useEffect(() => {
                   React.createElement('p', {
                     style: {
                       fontSize: '11px',
-                      color: soundcloudCredentialsSource === 'user' || soundcloudCredentialsSource === 'env' ? '#22c55e' : 'var(--text-secondary)',
+                      color: soundcloudCredentialsSource === 'user' || soundcloudCredentialsSource === 'env' ? 'var(--text-success)' : 'var(--text-secondary)',
                       marginBottom: '12px',
                       lineHeight: '1.5'
                     }
@@ -49613,7 +49613,7 @@ useEffect(() => {
                 backgroundColor: 'rgba(34, 197, 94, 0.08)',
                 borderRadius: '8px',
                 fontSize: '12px',
-                color: '#15803d'
+                color: 'var(--text-success)'
               }
             },
               '✓ Native MusicKit available for direct Apple Music playback'
@@ -49684,7 +49684,7 @@ useEffect(() => {
                         padding: '8px 14px',
                         fontSize: '13px',
                         fontWeight: '500',
-                        color: '#dc2626',
+                        color: 'var(--text-danger)',
                         backgroundColor: 'rgba(220, 38, 38, 0.08)',
                         border: 'none',
                         borderRadius: '8px',
@@ -49712,7 +49712,7 @@ useEffect(() => {
               style: {
                 marginTop: '12px',
                 fontSize: '12px',
-                color: '#22c55e'
+                color: 'var(--text-success)'
               }
             },
               React.createElement('span', null, '✓'),
@@ -49798,7 +49798,7 @@ useEffect(() => {
                     padding: '6px 12px',
                     fontSize: '12px',
                     fontWeight: '500',
-                    color: appleMusicTokenSaved ? '#22c55e' : '#ffffff',
+                    color: appleMusicTokenSaved ? 'var(--text-success)' : '#ffffff',
                     backgroundColor: appleMusicTokenSaved ? 'rgba(34, 197, 94, 0.1)' : '#FA243C',
                     border: 'none',
                     borderRadius: '6px',
@@ -49845,7 +49845,7 @@ useEffect(() => {
                         padding: '8px 14px',
                         fontSize: '13px',
                         fontWeight: '500',
-                        color: '#dc2626',
+                        color: 'var(--text-danger)',
                         backgroundColor: 'rgba(220, 38, 38, 0.08)',
                         border: 'none',
                         borderRadius: '8px',
@@ -49858,7 +49858,7 @@ useEffect(() => {
                     style: {
                       marginTop: '12px',
                       fontSize: '12px',
-                      color: '#22c55e'
+                      color: 'var(--text-success)'
                     }
                   },
                     React.createElement('span', null, '✓'),
@@ -49894,7 +49894,7 @@ useEffect(() => {
                       React.createElement('p', {
                         style: {
                           fontSize: '11px',
-                          color: metaServiceConfigs.lastfm.apiKey ? '#22c55e' : 'var(--text-secondary)',
+                          color: metaServiceConfigs.lastfm.apiKey ? 'var(--text-success)' : 'var(--text-secondary)',
                           marginBottom: '12px',
                           lineHeight: '1.5'
                         }
@@ -50252,7 +50252,7 @@ useEffect(() => {
                         padding: '8px 14px',
                         fontSize: '13px',
                         fontWeight: '500',
-                        color: '#dc2626',
+                        color: 'var(--text-danger)',
                         backgroundColor: 'rgba(220, 38, 38, 0.08)',
                         border: 'none',
                         borderRadius: '8px',
@@ -50265,7 +50265,7 @@ useEffect(() => {
                     style: {
                       marginTop: '12px',
                       fontSize: '12px',
-                      color: '#22c55e'
+                      color: 'var(--text-success)'
                     }
                   },
                     React.createElement('span', null, '✓'),
@@ -50596,7 +50596,7 @@ useEffect(() => {
               ),
               configured && React.createElement('div', {
                 className: 'flex items-center gap-2',
-                style: { marginTop: '12px', fontSize: '12px', color: '#22c55e' }
+                style: { marginTop: '12px', fontSize: '12px', color: 'var(--text-success)' }
               },
                 React.createElement('span', null, '\u2713'),
                 React.createElement('span', null, 'Credentials saved')
@@ -51621,7 +51621,7 @@ useEffect(() => {
                   padding: '8px 14px',
                   fontSize: '13px',
                   fontWeight: '500',
-                  color: '#dc2626',
+                  color: 'var(--text-danger)',
                   backgroundColor: 'transparent',
                   border: 'none',
                   borderRadius: '8px',
@@ -51987,7 +51987,7 @@ useEffect(() => {
                     padding: '8px 14px',
                     fontSize: '13px',
                     fontWeight: '500',
-                    color: '#dc2626',
+                    color: 'var(--text-danger)',
                     backgroundColor: 'transparent',
                     border: 'none',
                     borderRadius: '8px',
@@ -52686,7 +52686,7 @@ useEffect(() => {
               fontSize: '13px',
               fontWeight: '500',
               color: '#ffffff',
-              backgroundColor: '#f59e0b',
+              backgroundColor: 'var(--accent-fill)',
               border: 'none',
               borderRadius: '8px',
               cursor: 'pointer'
@@ -53648,14 +53648,14 @@ useEffect(() => {
                   className: 'truncate',
                   style: {
                     fontSize: '12px',
-                    color: '#22c55e',
+                    color: 'var(--text-success)',
                     marginTop: '2px'
                   }
                 }, id3SelectedArt.artistName),
                 id3SelectedArt.year && React.createElement('div', {
                   style: {
                     fontSize: '12px',
-                    color: '#22c55e'
+                    color: 'var(--text-success)'
                   }
                 }, id3SelectedArt.year)
               ),
@@ -53663,7 +53663,7 @@ useEffect(() => {
                 onClick: () => setId3SelectedArt(null),
                 style: {
                   padding: '4px',
-                  color: '#22c55e',
+                  color: 'var(--text-success)',
                   backgroundColor: 'transparent',
                   border: 'none',
                   cursor: 'pointer'
@@ -54163,7 +54163,7 @@ useEffect(() => {
             }
           },
             React.createElement('span', {
-              style: { fontSize: '24px', color: '#dc2626' }
+              style: { fontSize: '24px', color: 'var(--text-danger)' }
             }, '✕')
           ),
           React.createElement('h3', {
@@ -54203,7 +54203,7 @@ useEffect(() => {
               fontSize: '13px',
               fontWeight: '500',
               color: '#ffffff',
-              backgroundColor: '#dc2626',
+              backgroundColor: 'var(--fill-error)',
               border: 'none',
               borderRadius: '10px',
               cursor: 'pointer'
@@ -54264,13 +54264,13 @@ useEffect(() => {
               ),
               React.createElement('p', { style: { fontSize: '13px', color: 'var(--text-secondary)', margin: 0 } }, 'Checking your playlists…')
             );
-            if (d.error) return React.createElement('p', { style: { padding: '8px 0 16px', fontSize: '13px', color: '#dc2626' } }, `Couldn't run the preview: ${d.error}`);
+            if (d.error) return React.createElement('p', { style: { padding: '8px 0 16px', fontSize: '13px', color: 'var(--text-danger)' } }, `Couldn't run the preview: ${d.error}`);
             const s = d.summary;
             if (!s) return null;
             const banner = (bg, border, color, text) => React.createElement('div', { style: { backgroundColor: bg, border: `1px solid ${border}`, borderRadius: '8px', padding: '9px 11px', marginBottom: '12px' } }, React.createElement('span', { style: { fontSize: '12px', color, lineHeight: '1.45' } }, text));
             const rows = [];
-            if (d.recomputed) rows.push(banner('rgba(245,158,11,0.12)', 'rgba(245,158,11,0.4)', '#b45309', 'The remote changed since you opened this. This is the updated diff.'));
-            if (s.hasRemoves) rows.push(banner('rgba(220,38,38,0.10)', 'rgba(220,38,38,0.35)', '#b91c1c', `${s.totalRemoves} track${s.totalRemoves === 1 ? '' : 's'} would be removed. Review the removals before you accept.`));
+            if (d.recomputed) rows.push(banner('rgba(245,158,11,0.12)', 'rgba(245,158,11,0.4)', 'var(--text-warning)', 'The remote changed since you opened this. This is the updated diff.'));
+            if (s.hasRemoves) rows.push(banner('rgba(220,38,38,0.10)', 'rgba(220,38,38,0.35)', 'var(--text-danger)', `${s.totalRemoves} track${s.totalRemoves === 1 ? '' : 's'} would be removed. Review the removals before you accept.`));
             if (!s.hasChanges && !s.protected.length) {
               rows.push(React.createElement('p', { key: 'noop', style: { fontSize: '13px', color: 'var(--text-secondary)', padding: '4px 0 14px' } }, 'No changes needed — your playlists are already in sync. Safe to switch.'));
             } else if (s.hasChanges) {
@@ -54284,8 +54284,8 @@ useEffect(() => {
                   React.createElement('span', { style: { fontSize: '11px', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em' } }, p.providerId),
                   React.createElement('span', { style: { fontSize: '11px', color: 'var(--text-tertiary)' } }, `${p.adds.length ? '+' + p.adds.length : ''}${p.adds.length && p.removes.length ? ' · ' : ''}${p.removes.length ? '−' + p.removes.length : ''}`)
                 ));
-                p.removes.forEach((t, ti) => provNodes.push(React.createElement('div', { key: `r${ppi}-${ti}`, style: { fontSize: '13px', color: '#dc2626', padding: '2px 0' } }, `−  ${t.artist}${t.artist && t.title ? ' — ' : ''}${t.title}`)));
-                p.adds.forEach((t, ti) => provNodes.push(React.createElement('div', { key: `a${ppi}-${ti}`, style: { fontSize: '13px', color: '#16a34a', padding: '2px 0' } }, `+  ${t.artist}${t.artist && t.title ? ' — ' : ''}${t.title}`)));
+                p.removes.forEach((t, ti) => provNodes.push(React.createElement('div', { key: `r${ppi}-${ti}`, style: { fontSize: '13px', color: 'var(--text-danger)', padding: '2px 0' } }, `−  ${t.artist}${t.artist && t.title ? ' — ' : ''}${t.title}`)));
+                p.adds.forEach((t, ti) => provNodes.push(React.createElement('div', { key: `a${ppi}-${ti}`, style: { fontSize: '13px', color: 'var(--text-success)', padding: '2px 0' } }, `+  ${t.artist}${t.artist && t.title ? ' — ' : ''}${t.title}`)));
               });
               rows.push(React.createElement('div', { key: `pl${pi}`, style: { padding: '10px 12px', marginBottom: '8px', borderRadius: '10px', backgroundColor: hasRem ? 'rgba(220,38,38,0.06)' : 'rgba(127,127,127,0.06)', borderLeft: hasRem ? '3px solid #dc2626' : '3px solid transparent' } },
                 React.createElement('div', { style: { fontSize: '14px', fontWeight: '500', color: 'var(--text-primary)' } }, pl.displayName),
@@ -54372,7 +54372,7 @@ useEffect(() => {
               React.createElement('button', {
                 onClick: () => applyDisable(true),
                 className: 'w-full transition-colors',
-                style: { padding: '12px 16px', fontSize: '13px', fontWeight: '500', color: '#ffffff', backgroundColor: '#dc2626', border: 'none', borderRadius: '10px', cursor: 'pointer' }
+                style: { padding: '12px 16px', fontSize: '13px', fontWeight: '500', color: '#ffffff', backgroundColor: 'var(--fill-error)', border: 'none', borderRadius: '10px', cursor: 'pointer' }
               }, `Delete from ${syncChannelDisableDialog.providerLabel} too`),
               React.createElement('button', {
                 onClick: () => setSyncChannelDisableDialog({ show: false }),
@@ -54462,7 +54462,7 @@ useEffect(() => {
               border: '1px solid rgba(239, 68, 68, 0.2)',
               borderRadius: '10px',
               fontSize: '13px',
-              color: '#dc2626'
+              color: 'var(--text-danger)'
             }
           }, syncSetupModal.error),
 
@@ -55046,7 +55046,7 @@ useEffect(() => {
                         width: '10px',
                         height: '10px',
                         borderRadius: '50%',
-                        backgroundColor: isInProgress ? '#3b82f6' : '#22c55e',
+                        backgroundColor: isInProgress ? 'var(--info)' : 'var(--success)',
                         boxShadow: isInProgress ? '0 0 8px rgba(59, 130, 246, 0.5)' : 'none'
                       }
                     }),
@@ -55181,14 +55181,14 @@ useEffect(() => {
               fontSize: '13px',
               fontWeight: '500',
               color: Object.values(syncStatus).some(s => s?.inProgress) ? 'var(--text-tertiary)' : '#ffffff',
-              backgroundColor: Object.values(syncStatus).some(s => s?.inProgress) ? 'var(--hover-bg-default)' : '#22c55e',
+              backgroundColor: Object.values(syncStatus).some(s => s?.inProgress) ? 'var(--hover-bg-default)' : 'var(--fill-success)',
               border: 'none',
               borderRadius: '8px',
               cursor: Object.values(syncStatus).some(s => s?.inProgress) ? 'not-allowed' : 'pointer',
               transition: 'background-color 150ms ease'
             },
-            onMouseEnter: (e) => { if (!Object.values(syncStatus).some(s => s?.inProgress)) e.currentTarget.style.backgroundColor = '#16a34a'; },
-            onMouseLeave: (e) => { if (!Object.values(syncStatus).some(s => s?.inProgress)) e.currentTarget.style.backgroundColor = '#22c55e'; }
+            onMouseEnter: (e) => { if (!Object.values(syncStatus).some(s => s?.inProgress)) e.currentTarget.style.backgroundColor = 'var(--fill-success)'; },
+            onMouseLeave: (e) => { if (!Object.values(syncStatus).some(s => s?.inProgress)) e.currentTarget.style.backgroundColor = 'var(--fill-success)'; }
           }, Object.values(syncStatus).some(s => s?.inProgress) ? 'Syncing...' : 'Sync Now')
         )
       )
@@ -55267,7 +55267,7 @@ useEffect(() => {
               onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.04)'; e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.15)'; }
             },
               React.createElement('div', {
-                style: { fontSize: '14px', fontWeight: '500', color: '#dc2626' }
+                style: { fontSize: '14px', fontWeight: '500', color: 'var(--text-danger)' }
               }, 'Remove synced items'),
               React.createElement('div', {
                 style: { fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px' }
@@ -55571,7 +55571,7 @@ useEffect(() => {
         firstRunTutorial.step === 'complete' && React.createElement(React.Fragment, null,
           // Accent bar
           React.createElement('div', {
-            style: { height: '4px', backgroundColor: '#10b981' }
+            style: { height: '4px', backgroundColor: 'var(--success)' }
           }),
           // Header
           React.createElement('div', {
@@ -55598,7 +55598,7 @@ useEffect(() => {
                 height: 28,
                 viewBox: '0 0 24 24',
                 fill: 'none',
-                stroke: '#10b981',
+                stroke: 'var(--success)',
                 strokeWidth: 2.5,
                 strokeLinecap: 'round',
                 strokeLinejoin: 'round'

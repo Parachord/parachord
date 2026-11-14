@@ -135,3 +135,15 @@ test('page scrollbars read the --scrollbar-* tokens', () => {
   expect(rules).toMatch(/background: var\(--scrollbar-thumb-hover\)/);
   expect(rules).not.toMatch(/rgba\(0, 0, 0/);
 });
+
+// #1383: status colours outside the always-dark surfaces read the status
+// tokens. The remaining reds are Last.fm's and YouTube's brand colours.
+test('no hard-coded success / warning / error hex in the page modules', () => {
+  const fs5 = require('fs');
+  const path5 = require('path');
+  const dir = path5.join(__dirname, '../../src/renderer/components');
+  const status = /'#(22c55e|16a34a|15803d|10b981|059669|ef4444|f87171|b91c1c|fbbf24)'/i;
+  for (const f of ['artist-page.js', 'cards.js', 'collection-page.js', 'playlist-view-page.js', 'settings-cards.js']) {
+    expect([f, fs5.readFileSync(path5.join(dir, f), 'utf8').match(status)]).toEqual([f, null]);
+  }
+});

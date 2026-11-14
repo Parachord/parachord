@@ -1357,7 +1357,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                       style: {
                         fontSize: '13px',
                         fontWeight: '500',
-                        color: artistExtendedInfo.isActive ? '#16a34a' : 'var(--text-secondary)',
+                        color: artistExtendedInfo.isActive ? 'var(--text-success)' : 'var(--text-secondary)',
                         lineHeight: '1.4'
                       }
                     }, artistExtendedInfo.isActive ? 'Active' : `Disbanded${artistExtendedInfo.endedDate ? ` (${artistExtendedInfo.endedDate.split('-')[0]})` : ''}`)

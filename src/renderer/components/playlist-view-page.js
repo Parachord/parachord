@@ -1032,9 +1032,9 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                     }
                   },
                   className: 'mt-2 flex items-center gap-2 px-3 py-2 text-sm rounded transition-colors no-drag w-full justify-center',
-                  style: { color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.3)' },
-                  onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'; e.currentTarget.style.color = '#f87171'; },
-                  onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = '#ef4444'; }
+                  style: { color: 'var(--text-danger)', border: '1px solid rgba(239, 68, 68, 0.3)' },
+                  onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'; e.currentTarget.style.color = 'var(--text-danger)'; },
+                  onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-danger)'; }
                 }, 'Delete Playlist')
               ),
               // Share button (outside space-y-1 metadata div for independent spacing)

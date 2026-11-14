@@ -113,7 +113,7 @@ const PlayTop10Icon = ({ size = 24, className = '' }) => {
       cx: 19,
       cy: 17,
       r: 6,
-      fill: '#10b981'
+      fill: 'var(--success)'
     }),
     // "10" text in badge
     React.createElement('text', {
@@ -154,7 +154,7 @@ const QueueTop10Icon = ({ size = 24, className = '' }) => {
       cx: 19,
       cy: 17,
       r: 5.5,
-      fill: '#10b981',
+      fill: 'var(--success)',
       stroke: 'none'
     }),
     // "10" text in badge

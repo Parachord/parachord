@@ -471,7 +471,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                         marginLeft: 'auto',
                         width: '8px', height: '8px',
                         borderRadius: '50%',
-                        backgroundColor: '#22c55e'
+                        backgroundColor: 'var(--success)'
                       }
                     })
                   )
@@ -1276,7 +1276,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                             right: '8px',
                             width: '14px',
                             height: '14px',
-                            backgroundColor: '#22c55e',
+                            backgroundColor: 'var(--success)',
                             borderRadius: '9999px',
                             border: '2.5px solid #ffffff'
                           }
@@ -1338,7 +1338,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                           maxWidth: '100%'
                         }
                       },
-                        React.createElement('span', { style: { color: '#22c55e' } }, '\u266A '),
+                        React.createElement('span', { style: { color: 'var(--text-success)' } }, '\u266A '),
                         `${friend.cachedRecentTrack.name}`
                       ),
                       // A Last.fm profile that hides its recent listening is never
