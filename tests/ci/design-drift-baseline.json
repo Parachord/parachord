@@ -2,7 +2,7 @@
   "_readme": "Counts from scripts/design-drift.js. Lower is better; rewrite with `npm run design-drift -- --write` only when a count falls, or rises for a reason the PR explains.",
   "metrics": {
     "hexColors": 453,
-    "paletteClasses": 181,
+    "paletteClasses": 168,
     "themeTernaries": 0,
     "clickableNonInteractive": 9,
     "inlineOutlineNone": 8,
@@ -11,7 +11,7 @@
     "svgPaths": 173,
     "offScaleFontSizes": 54,
     "offScaleRadii": 10,
-    "jsHover": 90,
+    "jsHover": 86,
     "roleButtonDivs": 0
   },
   "undefinedCssVars": []

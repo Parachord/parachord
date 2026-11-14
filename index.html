@@ -808,6 +808,23 @@
     /* Tooltip (src/renderer/components/ui-atoms.js). The trigger wrapper is
        .tooltip-container; the tip is portalled to <body> as .tooltip-panel and
        placed by placeTooltip, so no overflow:hidden parent clips it. */
+    /* HeaderControl (components/header-control.js): a page header's small
+       uppercase controls. */
+    .header-control {
+      display: inline-flex; align-items: center; gap: 4px; padding: 4px 12px;
+      font-size: 12px; line-height: 16px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.02em;
+      color: var(--text-tertiary); background: transparent;
+      border: 1px solid var(--border-strong); border-radius: 4px; cursor: pointer;
+      transition: color 150ms ease, background-color 150ms ease;
+    }
+    .header-control:hover { color: var(--text-secondary); background-color: var(--hover-bg-default); }
+    .header-control:disabled { opacity: 0.5; cursor: not-allowed; }
+    .header-control .header-control-x { opacity: 0.8; }
+    .header-control-primary { color: var(--on-accent); background-color: var(--accent-fill); border-color: transparent; }
+    .header-control-primary:hover { color: var(--on-accent); background-color: var(--accent-fill-hover); }
+    .header-control-dark { color: var(--on-dark-secondary); border-color: rgba(255, 255, 255, 0.2); }
+    .header-control-dark:hover { color: #fff; background-color: rgba(255, 255, 255, 0.1); }
+
     /* CardButton (components/card-button.js): the card's main action is a
        button stretched over it; its own actions (.card-actions) sit above
        and show on hover or keyboard focus, passing clicks through when

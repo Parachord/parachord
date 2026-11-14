@@ -17,6 +17,7 @@
 // from props under their old names.
 
 const Icons = require('./icons');
+const { HeaderControl } = require('./header-control');
 const { Button } = require('./button');
 const { CardButton } = require('./card-button');
 const { ResolverIcon, ShareButton } = require('./ui-atoms');
@@ -238,8 +239,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
             ),
             React.createElement('div', { className: 'flex items-center gap-2' },
               // SAVE button for ephemeral playlists
-              selectedPlaylist?.isEphemeral && !playlistEditMode && React.createElement('button', {
-                onClick: async () => {
+              selectedPlaylist?.isEphemeral && !playlistEditMode && React.createElement(HeaderControl, { tone: 'primary', onClick: async () => {
                   // A provider playlist (a recommended playlist opened from the
                   // Recommendations page): SAVE is the Import path — the same
                   // canonical record the card's Import hover button produces
@@ -270,46 +270,28 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                   showToast('Playlist saved to library', 'success');
                   // Switch to viewing the saved playlist
                   setSelectedPlaylist({ ...newPlaylist, isEphemeral: false });
-                },
-                className: 'flex items-center gap-1 px-3 py-1 text-xs text-white bg-orange-500 hover:bg-orange-600 rounded transition-colors no-drag'
-              },
-                React.createElement(Icons.Check, { className: 'w-3.5 h-3.5' }),
-                'SAVE'
-              ),
+                } }, React.createElement(Icons.Check, { className: 'w-3.5 h-3.5' }), 'Save'),
               // Manual refresh. Provider URL imports are snapshots — they are not
               // re-fetched at launch (that path parsed the provider page as XSPF
               // and dialoged). Hosted XSPF still auto-updates; this is the
               // on-demand path for both.
               !selectedPlaylist?.isEphemeral && !playlistEditMode && selectedPlaylist?.sourceUrl
                 && (selectedPlaylist.source === 'hosted-xspf' || window.isProviderImportedPlaylist(selectedPlaylist, resolverLoaderRef.current))
-                && React.createElement('button', {
-                  onClick: async () => {
+                && React.createElement(HeaderControl, { onClick: async () => {
                     if (refreshingPlaylist === selectedPlaylist.id) return;
                     setRefreshingPlaylist(selectedPlaylist.id);
                     try { await refreshHostedPlaylist(selectedPlaylist.id); }
                     finally { setRefreshingPlaylist(null); }
-                  },
-                  className: 'flex items-center gap-1 px-3 py-1 text-xs rounded transition-colors no-drag',
-                  style: { color: 'var(--text-tertiary)', border: '1px solid var(--border-default)' },
-                  'data-tooltip': 'Re-import from the source URL. This does not run at launch.',
-                  onMouseEnter: (e) => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.backgroundColor = 'var(--hover-bg-default)'; },
-                  onMouseLeave: (e) => { e.currentTarget.style.color = 'var(--text-tertiary)'; e.currentTarget.style.backgroundColor = 'transparent'; }
-                }, refreshingPlaylist === selectedPlaylist.id ? 'REFRESHING' : 'REFRESH'),
+                  }, 'data-tooltip': 'Re-import from the source URL. This does not run at launch.' }, refreshingPlaylist === selectedPlaylist.id ? 'Refreshing…' : 'Refresh'),
               // Edit / Cancel+Done buttons (only for non-ephemeral playlists)
               !selectedPlaylist?.isEphemeral && (playlistEditMode ? React.createElement(React.Fragment, null,
                 // Cancel button
-                React.createElement('button', {
-                  onClick: () => {
+                React.createElement(HeaderControl, { onClick: () => {
                     setPlaylistEditMode(false);
                     setEditedPlaylistData(null);
-                  },
-                  className: 'flex items-center gap-1 px-3 py-1 text-xs rounded transition-colors no-drag',
-                  style: { color: 'var(--text-tertiary)', border: '1px solid var(--border-default)' },
-                  onMouseEnter: (e) => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.backgroundColor = 'var(--hover-bg-default)'; },
-                  onMouseLeave: (e) => { e.currentTarget.style.color = 'var(--text-tertiary)'; e.currentTarget.style.backgroundColor = 'transparent'; }
-                }, 'CANCEL'),
+                  } }, 'Cancel'),
                 // Done button
-                React.createElement(Button, { variant: 'primary', size: 'sm', onClick: async () => {
+                React.createElement(HeaderControl, { tone: 'primary', onClick: async () => {
                     if (editedPlaylistData) {
                       const updated = {
                         ...selectedPlaylist,
@@ -328,24 +310,17 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                     }
                     setPlaylistEditMode(false);
                     setEditedPlaylistData(null);
-                  }, className: 'no-drag' }, 'Done')
-              ) : React.createElement('button', {
-                onClick: () => {
+                  } }, 'Done')
+              ) : React.createElement(HeaderControl, { onClick: () => {
                   setPlaylistEditMode(true);
                   setEditedPlaylistData({
                     title: selectedPlaylist.title,
                     creator: selectedPlaylist.creator || '',
                     tracks: [...playlistTracks]
                   });
-                },
-                className: 'flex items-center gap-1 px-3 py-1 text-xs rounded transition-colors no-drag',
-                style: { color: 'var(--text-tertiary)', border: '1px solid var(--border-default)' },
-                onMouseEnter: (e) => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.backgroundColor = 'var(--hover-bg-default)'; },
-                onMouseLeave: (e) => { e.currentTarget.style.color = 'var(--text-tertiary)'; e.currentTarget.style.backgroundColor = 'transparent'; }
-              }, 'EDIT')),
+                } }, 'Edit')),
               // Close button (hidden in edit mode since Cancel serves that purpose)
-              !playlistEditMode && React.createElement('button', {
-                onClick: () => {
+              !playlistEditMode && React.createElement(HeaderControl, { close: true, onClick: () => {
                   setSelectedPlaylist(null);
                   setPlaylistTracks([]);
                   setPlaylistCoverArt([]);
@@ -357,15 +332,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                   } else {
                     navigateTo('playlists');
                   }
-                },
-                className: 'flex items-center gap-1 px-3 py-1 text-xs rounded transition-colors no-drag',
-                style: { color: 'var(--text-tertiary)', border: '1px solid var(--border-default)' },
-                onMouseEnter: (e) => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.backgroundColor = 'var(--hover-bg-default)'; },
-                onMouseLeave: (e) => { e.currentTarget.style.color = 'var(--text-tertiary)'; e.currentTarget.style.backgroundColor = 'transparent'; }
-              },
-                'CLOSE',
-                React.createElement('span', { style: { color: 'var(--text-tertiary)' } }, React.createElement(Icons.X, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }))
-              )
+                } }, 'Close')
             )
           ),
 

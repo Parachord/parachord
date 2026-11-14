@@ -19,6 +19,7 @@
 // from props under their old names.
 
 const Icons = require('./icons');
+const { HeaderControl } = require('./header-control');
 const { CardButton } = require('./card-button');
 const { EmptyState, ErrorState } = require('./states');
 const { SortMenu } = require('./sort-menu');
@@ -1085,23 +1086,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                 textTransform: 'uppercase'
               }
             }, 'Search'),
-            React.createElement('button', {
-              onClick: () => navigateBack(),
-              className: 'flex items-center gap-2 no-drag transition-all',
-              style: {
-                padding: '6px 12px',
-                fontSize: '12px',
-                fontWeight: '500',
-                color: 'var(--text-secondary)',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: '6px',
-                backgroundColor: 'transparent',
-                cursor: 'pointer'
-              }
-            },
-              'CLOSE',
-              React.createElement('span', { style: { color: 'var(--text-tertiary)' } }, React.createElement(Icons.X, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }))
-            )
+            React.createElement(HeaderControl, { close: true, onClick: () => navigateBack() }, 'Close')
           ),
 
           // Content area

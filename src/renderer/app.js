@@ -1984,6 +1984,7 @@ const { statusBadgeStyle } = require('./lib/status-badge');
 const { PAGE_COLORS, pageTint } = require('./lib/page-colors');
 const { Modal, ConfirmModal, DontShowAgain } = require('./components/modal');
 const { Button } = require('./components/button');
+const { HeaderControl } = require('./components/header-control');
 const { ToastRegion, NowPlayingAnnouncer } = require('./components/toast');
 const { SortMenu } = require('./components/sort-menu');
 const { Menu } = require('./components/menu');
@@ -37036,17 +37037,11 @@ useEffect(() => {
               )
             ),
             // Close button
-            React.createElement('button', {
-              onClick: () => {
+            React.createElement(HeaderControl, { close: true, onClick: () => {
                 setPendingPlaylistLoad(null);
                 setActiveView('playlists');
                 setViewHistory(['library', 'playlists']);
-              },
-              className: 'flex items-center gap-1 px-3 py-1 text-xs text-ink-tertiary hover:text-ink-secondary border border-line-strong rounded hover:bg-surface-hover transition-colors no-drag'
-            },
-              'CLOSE',
-              React.createElement('span', { className: 'text-ink-tertiary' }, React.createElement(Icons.X, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }))
-            )
+              } }, 'Close')
           ),
           // Loading content placeholder
           React.createElement('div', { className: 'flex gap-0 p-6' },
@@ -42866,23 +42861,7 @@ useEffect(() => {
               },
               onContextMenu: copyParachordLink
             }, 'Settings'),
-            React.createElement('button', {
-              onClick: () => navigateBack(),
-              className: 'flex items-center gap-2 no-drag transition-all',
-              style: {
-                padding: '6px 12px',
-                fontSize: '12px',
-                fontWeight: '500',
-                color: 'var(--text-secondary)',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: '6px',
-                backgroundColor: 'transparent',
-                cursor: 'pointer'
-              }
-            },
-              'CLOSE',
-              React.createElement('span', { style: { color: 'var(--text-tertiary)' } }, React.createElement(Icons.X, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }))
-            )
+            React.createElement(HeaderControl, { close: true, onClick: () => navigateBack() }, 'Close')
           ),
           // Wrapper for sidebar and content
           React.createElement('div', { className: 'flex flex-1 overflow-hidden' },
@@ -46703,20 +46682,7 @@ React.createElement('div', {
                 )
               ),
               spotifyConnected
-                ? React.createElement('button', {
-                    onClick: disconnectSpotify,
-                    className: 'transition-colors',
-                    style: {
-                      padding: '8px 14px',
-                      fontSize: '13px',
-                      fontWeight: '500',
-                      color: 'var(--text-danger)',
-                      backgroundColor: 'rgba(220, 38, 38, 0.08)',
-                      border: 'none',
-                      borderRadius: '8px',
-                      cursor: 'pointer'
-                    }
-                  }, 'Disconnect')
+                ? React.createElement(Button, { variant: 'secondary', onClick: disconnectSpotify }, 'Disconnect')
                 : React.createElement('button', {
                     onClick: connectSpotify,
                     className: 'transition-colors',
@@ -47040,20 +47006,7 @@ React.createElement('div', {
                   )
                 ),
                 soundcloudConnected
-                  ? React.createElement('button', {
-                      onClick: disconnectSoundcloud,
-                      className: 'transition-colors',
-                      style: {
-                        padding: '8px 14px',
-                        fontSize: '13px',
-                        fontWeight: '500',
-                        color: 'var(--text-danger)',
-                        backgroundColor: 'rgba(220, 38, 38, 0.08)',
-                        border: 'none',
-                        borderRadius: '8px',
-                        cursor: 'pointer'
-                      }
-                    }, 'Disconnect')
+                  ? React.createElement(Button, { variant: 'secondary', onClick: disconnectSoundcloud }, 'Disconnect')
                   : hasCredentials && React.createElement('button', {
                       onClick: connectSoundcloud,
                       className: 'transition-colors',
@@ -47310,20 +47263,7 @@ React.createElement('div', {
               // issue #834.
               (appleMusicNativeAvailable || !!window.electron?.musicKit?.openAuthWindow) && (
                 appleMusicConnected
-                  ? React.createElement('button', {
-                      onClick: disconnectAppleMusic,
-                      className: 'transition-colors',
-                      style: {
-                        padding: '8px 14px',
-                        fontSize: '13px',
-                        fontWeight: '500',
-                        color: 'var(--text-danger)',
-                        backgroundColor: 'rgba(220, 38, 38, 0.08)',
-                        border: 'none',
-                        borderRadius: '8px',
-                        cursor: 'pointer'
-                      }
-                    }, 'Disconnect')
+                  ? React.createElement(Button, { variant: 'secondary', onClick: disconnectAppleMusic }, 'Disconnect')
                   : React.createElement('button', {
                       onClick: connectAppleMusic,
                       className: 'transition-colors',
@@ -47456,20 +47396,7 @@ React.createElement('div', {
                         `Connected as ${metaServiceConfigs.lastfm.username}`
                       )
                     ),
-                    React.createElement('button', {
-                      onClick: disconnectLastfm,
-                      className: 'transition-colors',
-                      style: {
-                        padding: '8px 14px',
-                        fontSize: '13px',
-                        fontWeight: '500',
-                        color: 'var(--text-danger)',
-                        backgroundColor: 'rgba(220, 38, 38, 0.08)',
-                        border: 'none',
-                        borderRadius: '8px',
-                        cursor: 'pointer'
-                      }
-                    }, 'Disconnect')
+                    React.createElement(Button, { variant: 'secondary', onClick: disconnectLastfm }, 'Disconnect')
                   ),
                   React.createElement('div', {
                     className: 'flex items-center gap-2',
@@ -47776,20 +47703,7 @@ React.createElement('div', {
                         `Connected as ${metaServiceConfigs.listenbrainz.username}`
                       )
                     ),
-                    React.createElement('button', {
-                      onClick: disconnectListenbrainz,
-                      className: 'transition-colors',
-                      style: {
-                        padding: '8px 14px',
-                        fontSize: '13px',
-                        fontWeight: '500',
-                        color: 'var(--text-danger)',
-                        backgroundColor: 'rgba(220, 38, 38, 0.08)',
-                        border: 'none',
-                        borderRadius: '8px',
-                        cursor: 'pointer'
-                      }
-                    }, 'Disconnect')
+                    React.createElement(Button, { variant: 'secondary', onClick: disconnectListenbrainz }, 'Disconnect')
                   ),
                   React.createElement('div', {
                     className: 'flex items-center gap-2',
@@ -52120,29 +52034,13 @@ firstRunTutorial.step === 'complete' && React.createElement(React.Fragment, null
           className: 'flex items-center gap-2'
         },
           // Save as Playlist button - shows when there's a current track or queue
-          (currentTrack || currentQueue.length > 0) && React.createElement('button', {
-            onClick: (e) => { e.stopPropagation(); handleSaveQueueAsPlaylist(); },
-            className: 'px-3 py-1 text-xs text-gray-400 hover:text-white border border-gray-600 rounded hover:bg-white/10 transition-colors'
-          }, 'SAVE'),
+          (currentTrack || currentQueue.length > 0) && React.createElement(HeaderControl, { tone: 'dark', onClick: (e) => { e.stopPropagation(); handleSaveQueueAsPlaylist(); } }, 'Save'),
           // Unshuffle button - shows when shuffle is active
-          shuffleMode && originalQueueRef.current && React.createElement('button', {
-            onClick: (e) => { e.stopPropagation(); restoreOriginalOrder(); },
-            className: 'px-3 py-1 text-xs text-purple-400 hover:text-purple-300 border border-purple-500/50 rounded hover:bg-purple-500/10 transition-colors',
-            'data-tooltip': 'Restore original queue order'
-          }, 'UNSHUFFLE'),
+          shuffleMode && originalQueueRef.current && React.createElement(HeaderControl, { tone: 'dark', onClick: (e) => { e.stopPropagation(); restoreOriginalOrder(); }, 'data-tooltip': 'Restore original queue order' }, 'Unshuffle'),
           // Clear button
-          currentQueue.length > 0 && React.createElement('button', {
-            onClick: (e) => { e.stopPropagation(); clearQueue(); },
-            className: 'px-3 py-1 text-xs text-gray-400 hover:text-white border border-gray-600 rounded hover:bg-white/10 transition-colors'
-          }, 'CLEAR'),
+          currentQueue.length > 0 && React.createElement(HeaderControl, { tone: 'dark', onClick: (e) => { e.stopPropagation(); clearQueue(); } }, 'Clear'),
           // Close button
-          React.createElement('button', {
-            onClick: () => setQueueDrawerOpen(false),
-            className: 'flex items-center gap-1 px-3 py-1 text-xs text-gray-400 hover:text-white border border-gray-600 rounded hover:bg-white/10 transition-colors'
-          },
-            'CLOSE',
-            React.createElement('span', { className: 'text-gray-500' }, React.createElement(Icons.X, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }))
-          )
+          React.createElement(HeaderControl, { tone: 'dark', close: true, onClick: () => setQueueDrawerOpen(false) }, 'Close')
         )
       ),
 
