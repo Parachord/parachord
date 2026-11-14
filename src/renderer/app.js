@@ -24847,11 +24847,7 @@ ${trackListXml}
             r.id === resolverId ? newResolverInstance : r
           ));
           console.log(`🔄 Updated resolver: ${resolverName}`);
-          showConfirmDialog({
-            type: 'success',
-            title: 'Resolver Updated',
-            message: resolverName
-          });
+          showToast(`${resolverName} updated`, 'success');
         } else {
           // Add new resolver
           setLoadedResolvers(prev => [...prev, newResolverInstance]);
@@ -24863,11 +24859,7 @@ ${trackListXml}
           setActiveResolvers(prev => [...prev, resolverId]);
 
           console.log(`➕ Added resolver: ${resolverName}`);
-          showConfirmDialog({
-            type: 'success',
-            title: 'Resolver Installed',
-            message: resolverName
-          });
+          showToast(`${resolverName} installed`, 'success');
         }
       } catch (error) {
         console.error('Failed to hot-load resolver:', error);
@@ -25173,11 +25165,7 @@ ${trackListXml}
           setLoadedResolvers(prev => prev.map(r =>
             r.id === resolverId ? newResolverInstance : r
           ));
-          showConfirmDialog({
-            type: 'success',
-            title: 'Resolver Updated',
-            message: resolverName
-          });
+          showToast(`${resolverName} updated`, 'success');
         } else {
           setLoadedResolvers(prev => [...prev, newResolverInstance]);
           setResolverOrder(prev => [...prev, resolverId]);
@@ -47770,7 +47758,7 @@ React.createElement('div', {
                   fontWeight: '500',
                   color: 'var(--text-primary)'
                 }
-              }, 'Enable Resolver'),
+              }, `Use ${selectedResolver.name}`),
               React.createElement('p', {
                 style: {
                   fontSize: '12px',
@@ -47989,9 +47977,9 @@ React.createElement('div', {
                 padding: '0'
               }
             },
-              React.createElement('span', {
-                className: `transform transition-transform ${spotifyAdvancedOpen ? 'rotate-90' : ''}`
-              }, '▶'),
+              React.createElement(Icons.ChevronRight, {
+                className: `w-3.5 h-3.5 transform transition-transform ${spotifyAdvancedOpen ? 'rotate-90' : ''}`
+              }),
               'Change Client ID'
             ),
             spotifyConnected && spotifyAdvancedOpen && React.createElement('div', {
@@ -48269,9 +48257,9 @@ React.createElement('div', {
                     padding: '0'
                   }
                 },
-                  React.createElement('span', {
-                    className: `transform transition-transform ${soundcloudAdvancedOpen ? 'rotate-90' : ''}`
-                  }, '▶'),
+                  React.createElement(Icons.ChevronRight, {
+                    className: `w-3.5 h-3.5 transform transition-transform ${soundcloudAdvancedOpen ? 'rotate-90' : ''}`
+                  }),
                   'Advanced'
                 ),
                 soundcloudAdvancedOpen && React.createElement('div', {
@@ -48540,9 +48528,9 @@ React.createElement('div', {
                   padding: '0'
                 }
               },
-                React.createElement('span', {
-                  className: `transform transition-transform ${appleMusicAdvancedOpen ? 'rotate-90' : ''}`
-                }, '▶'),
+                React.createElement(Icons.ChevronRight, {
+                  className: `w-3.5 h-3.5 transform transition-transform ${appleMusicAdvancedOpen ? 'rotate-90' : ''}`
+                }),
                 'Advanced'
               ),
               appleMusicAdvancedOpen && React.createElement('div', {
@@ -48670,9 +48658,9 @@ React.createElement('div', {
                         padding: '0'
                       }
                     },
-                      React.createElement('span', {
-                        className: `transform transition-transform ${lastfmAdvancedOpen ? 'rotate-90' : ''}`
-                      }, '▶'),
+                      React.createElement(Icons.ChevronRight, {
+                        className: `w-3.5 h-3.5 transform transition-transform ${lastfmAdvancedOpen ? 'rotate-90' : ''}`
+                      }),
                       'Advanced'
                     ),
                     lastfmAdvancedOpen && React.createElement('div', {
@@ -48863,9 +48851,9 @@ React.createElement('div', {
                         padding: '0'
                       }
                     },
-                      React.createElement('span', {
-                        className: `transform transition-transform ${lastfmAdvancedOpen ? 'rotate-90' : ''}`
-                      }, '▶'),
+                      React.createElement(Icons.ChevronRight, {
+                        className: `w-3.5 h-3.5 transform transition-transform ${lastfmAdvancedOpen ? 'rotate-90' : ''}`
+                      }),
                       'Advanced'
                     ),
                     lastfmAdvancedOpen && React.createElement('div', {
@@ -49098,9 +49086,9 @@ React.createElement('div', {
                         padding: '0'
                       }
                     },
-                      React.createElement('span', {
-                        className: `transform transition-transform ${listenbrainzAdvancedOpen ? 'rotate-90' : ''}`
-                      }, '▶'),
+                      React.createElement(Icons.ChevronRight, {
+                        className: `w-3.5 h-3.5 transform transition-transform ${listenbrainzAdvancedOpen ? 'rotate-90' : ''}`
+                      }),
                       'Advanced'
                     ),
                     listenbrainzAdvancedOpen && React.createElement('div', {

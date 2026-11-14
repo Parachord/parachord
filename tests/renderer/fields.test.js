@@ -63,3 +63,12 @@ test('Settings > General uses the field set', () => {
   expect(general).toContain("React.createElement('form', {");
   expect(general).not.toMatch(/React\.createElement\('select', \{/);
 });
+
+test('plugin panels say "Use <service>", toggles use the chevron icon, installs are toasts', () => {
+  const app = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  expect(app).not.toContain("'Enable Resolver'");
+  expect(app).toContain('}, `Use ${selectedResolver.name}`),');
+  expect(app).not.toMatch(/\? 'rotate-90' : ''\}`\n\s*\}, '▶'\)/);
+  expect(app).not.toMatch(/title: 'Resolver (Updated|Installed)'/);
+  expect(app).toContain("showToast(`${resolverName} installed`, 'success');");
+});
