@@ -25,3 +25,10 @@ test('the AI results skeleton widths are fixed per row, not random per render (b
 test('the compact artist header can actually trigger (bug 22)', () => {
   expect(app).toMatch(/const isCompactHeader = mainContentWidth < 900;/);
 });
+
+test('counts in item menus and the repair toast pluralise (bug 38)', () => {
+  const main = fs.readFileSync(path.join(root, 'main.js'), 'utf8');
+  expect(main).not.toMatch(/\$\{data\.tracks(\?)?\.length( \|\| 0)?\} tracks\)/);
+  expect(main).toMatch(/const trackCount = \(n\) => `\$\{n\} \$\{n === 1 \? 'track' : 'tracks'\}`;/);
+  expect(app).not.toMatch(/copy\$\{[^}]*'ies'/);
+});

@@ -3978,7 +3978,7 @@ const Parachord = () => {
           parts.push(`removed ${reimportDupes} re-import duplicate${reimportDupes > 1 ? 's' : ''} of followed playlists and their owned streaming copies`);
         }
         if (reimportManual.length > 0) {
-          parts.push(`${reimportManual.length} re-export copy${reimportManual.length > 1 ? 'ies' : ''} (${reimportManual.join(', ')}) must be removed manually in the provider's app`);
+          parts.push(`${reimportManual.length} re-export ${reimportManual.length > 1 ? 'copies' : 'copy'} (${reimportManual.join(', ')}) must be removed manually in the provider's app`);
         }
 
         if (parts.length === 0) {

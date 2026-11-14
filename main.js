@@ -3084,6 +3084,9 @@ ipcMain.handle('updater-get-version', () => {
   return app.getVersion();
 });
 
+// "1 track", "2 tracks": the item menus printed "(1 tracks)" (audit bug 38).
+const trackCount = (n) => `${n} ${n === 1 ? 'track' : 'tracks'}`;
+
 // Theme IPC handlers
 ipcMain.handle('theme-get-system', () => {
   return nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
@@ -4511,12 +4514,12 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
       menuLabel = 'Add to Queue';
       break;
     case 'playlist':
-      menuLabel = `Add All to Queue (${data.tracks?.length || 0} tracks)`;
+      menuLabel = `Add All to Queue (${trackCount(data.tracks?.length || 0)})`;
       enabled = data.tracks?.length > 0;
       break;
     case 'release':
       if (data.tracks?.length > 0) {
-        menuLabel = `Add All to Queue (${data.tracks.length} tracks)`;
+        menuLabel = `Add All to Queue (${trackCount(data.tracks.length)})`;
       } else if (data.loading) {
         menuLabel = 'Add All to Queue (loading...)';
         enabled = false;
@@ -4536,11 +4539,11 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
       addToPlaylistLabel = 'Add to Playlist...';
       break;
     case 'playlist':
-      addToPlaylistLabel = `Add All to Playlist... (${data.tracks?.length || 0} tracks)`;
+      addToPlaylistLabel = `Add All to Playlist... (${trackCount(data.tracks?.length || 0)})`;
       break;
     case 'release':
       if (data.tracks?.length > 0) {
-        addToPlaylistLabel = `Add All to Playlist... (${data.tracks.length} tracks)`;
+        addToPlaylistLabel = `Add All to Playlist... (${trackCount(data.tracks.length)})`;
       } else if (data.loading) {
         addToPlaylistLabel = 'Add All to Playlist... (loading...)';
       } else {
@@ -4603,7 +4606,7 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
   // (Collection's songs, newest loved first).
   if (data.type === 'loves') {
     menuItems.push({
-      label: `Add to Queue (${data.tracks?.length || 0} tracks)`,
+      label: `Add to Queue (${trackCount(data.tracks?.length || 0)})`,
       enabled: data.tracks?.length > 0,
       click: () => {
         safeSendToRenderer('track-context-menu-action', {
