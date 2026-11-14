@@ -264,7 +264,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                     className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none',
                     style: { width: '150px' }, 'aria-label': 'Filter'
                   }),
-                  collectionSearch && React.createElement('button', {
+                  collectionSearch && React.createElement('button', { type: 'button', 'aria-label': 'Clear filter', 'data-tooltip': 'Clear filter',
                     onClick: () => {
                       setCollectionSearch('');
                       setCollectionSearchOpen(false);
@@ -275,7 +275,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                   )
                 )
               :
-                React.createElement('button', {
+                React.createElement('button', { type: 'button', 'aria-label': 'Filter', 'data-tooltip': 'Filter',
                   onClick: () => setCollectionSearchOpen(true),
                   className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors'
                 },

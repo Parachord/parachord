@@ -37738,7 +37738,7 @@ useEffect(() => {
                   className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none',
                   style: { width: '150px' }, 'aria-label': 'Filter'
                 }),
-                playlistsSearch && React.createElement('button', {
+                playlistsSearch && React.createElement('button', { type: 'button', 'aria-label': 'Clear filter', 'data-tooltip': 'Clear filter',
                   onClick: () => { setPlaylistsSearch(''); setPlaylistsSearchOpen(false); },
                   className: 'ml-2 text-ink-tertiary hover:text-ink-secondary'
                 },
@@ -37746,7 +37746,7 @@ useEffect(() => {
                 )
               )
             :
-              React.createElement('button', {
+              React.createElement('button', { type: 'button', 'aria-label': 'Filter', 'data-tooltip': 'Filter',
                 onClick: () => setPlaylistsSearchOpen(true),
                 className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors'
               },
@@ -38080,7 +38080,7 @@ useEffect(() => {
                         className: 'shared-playlist-badge',
                         'data-tooltip': "You're a collaborator on this playlist — your edits sync to other collaborators",
                         style: {
-                          fontSize: '10px',
+                          fontSize: '11px',
                           padding: '2px 6px',
                           borderRadius: '4px',
                           backgroundColor: 'var(--accent-secondary, #6366f1)',
@@ -38089,9 +38089,10 @@ useEffect(() => {
                           marginLeft: '6px',
                           display: 'inline-block',
                           verticalAlign: 'middle',
-                          letterSpacing: '0.05em'
+                          letterSpacing: '0.05em',
+                textTransform: 'uppercase'
                         }
-                      }, 'SHARED')
+                      }, 'Shared')
                     ),
                     React.createElement('div', {
                       className: 'truncate',
@@ -38235,7 +38236,7 @@ useEffect(() => {
                         className: 'shared-playlist-badge',
                         'data-tooltip': "You're a collaborator on this playlist — your edits sync to other collaborators",
                         style: {
-                          fontSize: '10px',
+                          fontSize: '11px',
                           padding: '2px 6px',
                           borderRadius: '4px',
                           backgroundColor: 'var(--accent-secondary, #6366f1)',
@@ -38244,9 +38245,10 @@ useEffect(() => {
                           marginLeft: '6px',
                           display: 'inline-block',
                           verticalAlign: 'middle',
-                          letterSpacing: '0.05em'
+                          letterSpacing: '0.05em',
+                textTransform: 'uppercase'
                         }
-                      }, 'SHARED')
+                      }, 'Shared')
                     ),
                     playlist.creator && React.createElement('div', { className: 'text-sm text-ink-tertiary truncate' }, playlist.creator)
                   ),
@@ -38537,7 +38539,7 @@ useEffect(() => {
                       className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none',
                       style: { width: '150px' }, 'aria-label': 'Filter'
                     }),
-                    chartsSearch && React.createElement('button', {
+                    chartsSearch && React.createElement('button', { type: 'button', 'aria-label': 'Clear filter', 'data-tooltip': 'Clear filter',
                       onClick: () => { setChartsSearch(''); setChartsSearchOpen(false); },
                       className: 'ml-2 text-ink-tertiary hover:text-ink-secondary'
                     },
@@ -38545,7 +38547,7 @@ useEffect(() => {
                     )
                   )
                 :
-                  React.createElement('button', {
+                  React.createElement('button', { type: 'button', 'aria-label': 'Filter', 'data-tooltip': 'Filter',
                     onClick: () => setChartsSearchOpen(true),
                     className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors'
                   },
@@ -39185,7 +39187,7 @@ useEffect(() => {
                     className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none',
                     style: { width: '150px' }, 'aria-label': 'Filter'
                   }),
-                  newReleasesSearch && React.createElement('button', {
+                  newReleasesSearch && React.createElement('button', { type: 'button', 'aria-label': 'Clear filter', 'data-tooltip': 'Clear filter',
                     onClick: () => { setNewReleasesSearch(''); setNewReleasesSearchOpen(false); },
                     className: 'ml-2 text-ink-tertiary hover:text-ink-secondary'
                   },
@@ -39193,7 +39195,7 @@ useEffect(() => {
                   )
                 )
               :
-                React.createElement('button', {
+                React.createElement('button', { type: 'button', 'aria-label': 'Filter', 'data-tooltip': 'Filter',
                   onClick: () => setNewReleasesSearchOpen(true),
                   className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors'
                 },
@@ -39596,7 +39598,7 @@ useEffect(() => {
                       className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none',
                       style: { width: '150px' }, 'aria-label': 'Filter'
                     }),
-                    criticsSearch && React.createElement('button', {
+                    criticsSearch && React.createElement('button', { type: 'button', 'aria-label': 'Clear filter', 'data-tooltip': 'Clear filter',
                       onClick: () => { setCriticsSearch(''); setCriticsSearchOpen(false); },
                       className: 'ml-2 text-ink-tertiary hover:text-ink-secondary'
                     },
@@ -39604,7 +39606,7 @@ useEffect(() => {
                     )
                   )
                 :
-                  React.createElement('button', {
+                  React.createElement('button', { type: 'button', 'aria-label': 'Filter', 'data-tooltip': 'Filter',
                     onClick: () => setCriticsSearchOpen(true),
                     className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors'
                   },
@@ -40283,7 +40285,7 @@ useEffect(() => {
                     className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none',
                     style: { width: '150px' }, 'aria-label': 'Filter'
                   }),
-                  concertsSearch && React.createElement('button', {
+                  concertsSearch && React.createElement('button', { type: 'button', 'aria-label': 'Clear filter', 'data-tooltip': 'Clear filter',
                     onClick: () => { setConcertsSearch(''); setConcertsSearchOpen(false); },
                     className: 'ml-2 text-ink-tertiary hover:text-ink-secondary'
                   },
@@ -40291,7 +40293,7 @@ useEffect(() => {
                   )
                 )
               :
-                React.createElement('button', {
+                React.createElement('button', { type: 'button', 'aria-label': 'Filter', 'data-tooltip': 'Filter',
                   onClick: () => setConcertsSearchOpen(true),
                   className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors'
                 },
@@ -41896,7 +41898,7 @@ useEffect(() => {
                     className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none',
                     style: { width: '150px' }, 'aria-label': 'Filter'
                   }),
-                  historySearch && React.createElement('button', {
+                  historySearch && React.createElement('button', { type: 'button', 'aria-label': 'Clear filter', 'data-tooltip': 'Clear filter',
                     onClick: () => { setHistorySearch(''); setHistorySearchOpen(false); },
                     className: 'ml-2 text-ink-tertiary hover:text-ink-secondary'
                   },
@@ -41904,7 +41906,7 @@ useEffect(() => {
                   )
                 )
               :
-                React.createElement('button', {
+                React.createElement('button', { type: 'button', 'aria-label': 'Filter', 'data-tooltip': 'Filter',
                   onClick: () => setHistorySearchOpen(true),
                   className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors'
                 },
@@ -46145,7 +46147,6 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
             padding: '12px 48px 12px 16px',
             fontSize: '14px',
             color: '#f3f4f6',
-            outline: 'none',
             opacity: aiLoading ? '0.5' : '1'
           },
           onFocus: (e) => { e.target.style.borderColor = 'rgba(167, 139, 250, 0.5)'; e.target.style.boxShadow = '0 0 0 3px rgba(167, 139, 250, 0.1)'; },
@@ -46193,8 +46194,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
               borderRadius: '6px',
               padding: '4px 8px',
               fontSize: '12px',
-              color: '#d1d5db',
-              outline: 'none'
+              color: '#d1d5db'
             }
           },
             aiResolvers.map(r =>
@@ -46591,8 +46591,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                       borderRadius: '16px',
                       padding: '10px 16px',
                       fontSize: '14px',
-                      color: '#f3f4f6',
-                      outline: 'none'
+                      color: '#f3f4f6'
                     },
                     onFocus: (e) => { e.target.style.borderColor = 'var(--accent-primary-alpha-50)'; },
                     onBlur: (e) => { e.target.style.borderColor = 'rgba(255, 255, 255, 0.1)'; }, 'aria-label': 'Ask Shuffleupagus'
@@ -47401,7 +47400,7 @@ React.createElement('div', {
                     style: { display: 'flex', gap: '8px', marginTop: '4px' }
                   },
                     React.createElement(Button, { variant: 'secondary', onClick: () => openSyncSetupModal(selectedResolver.id) }, 'Manage sync'),
-                    React.createElement(Button, { variant: 'text', onClick: () => setStopSyncDialog({ open: true, providerId: selectedResolver.id }) }, 'Stop syncing')
+                    React.createElement(Button, { variant: 'destructive', onClick: () => setStopSyncDialog({ open: true, providerId: selectedResolver.id }) }, 'Stop syncing')
                   )
                 )
               : React.createElement('button', {
@@ -48399,8 +48398,7 @@ React.createElement('div', {
               color: 'var(--text-primary)',
               backgroundColor: 'var(--card-bg)',
               border: '1px solid var(--border-subtle)',
-              borderRadius: '8px',
-              outline: 'none'
+              borderRadius: '8px'
             };
             const labelStyle = {
               display: 'block',
@@ -48615,8 +48613,7 @@ React.createElement('div', {
                   color: 'var(--text-primary)',
                   backgroundColor: 'var(--card-bg)',
                   border: '1px solid var(--border-subtle)',
-                  borderRadius: '8px',
-                  outline: 'none'
+                  borderRadius: '8px'
                 };
 
                 // Free-form model id — for endpoints whose model names aren't a fixed list
@@ -48683,7 +48680,6 @@ React.createElement('div', {
                     backgroundColor: 'var(--card-bg)',
                     border: '1px solid var(--border-subtle)',
                     borderRadius: '8px',
-                    outline: 'none',
                     cursor: isLoading ? 'wait' : 'pointer',
                     opacity: isLoading ? 0.6 : 1
                   }
@@ -48712,8 +48708,7 @@ React.createElement('div', {
                   color: 'var(--text-primary)',
                   backgroundColor: 'var(--card-bg)',
                   border: '1px solid var(--border-subtle)',
-                  borderRadius: '8px',
-                  outline: 'none'
+                  borderRadius: '8px'
                 };
                 // Changing the endpoint or dialect can change the model list — refresh it
                 const refetchModels = (fieldKey === 'baseUrl' || fieldKey === 'endpoint' || fieldKey === 'api')
@@ -48975,7 +48970,6 @@ React.createElement('div', {
                     backgroundColor: 'var(--card-bg)',
                     border: '1px solid var(--border-subtle)',
                     borderRadius: '8px',
-                    outline: 'none',
                     cursor: isLoading ? 'wait' : 'pointer',
                     opacity: isLoading ? 0.6 : 1
                   }
@@ -50499,7 +50493,7 @@ React.createElement('div', {
                 )
               )
             :
-              React.createElement('button', {
+              React.createElement('button', { type: 'button', 'aria-label': 'Filter', 'data-tooltip': 'Filter',
                 onClick: () => setAddToPlaylistSearchOpen(true),
                 className: 'p-1 text-ink-tertiary hover:text-ink-secondary transition-colors'
               },

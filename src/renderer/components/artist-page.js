@@ -844,7 +844,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                     className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none',
                     style: { width: '150px' }, 'aria-label': 'Filter'
                   }),
-                  artistSearch && React.createElement('button', {
+                  artistSearch && React.createElement('button', { type: 'button', 'aria-label': 'Clear filter', 'data-tooltip': 'Clear filter',
                     onClick: () => {
                       setArtistSearch('');
                       setArtistSearchOpen(false);
@@ -855,7 +855,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                   )
                 )
               :
-                React.createElement('button', {
+                React.createElement('button', { type: 'button', 'aria-label': 'Filter', 'data-tooltip': 'Filter',
                   onClick: () => setArtistSearchOpen(true),
                   className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors'
                 },

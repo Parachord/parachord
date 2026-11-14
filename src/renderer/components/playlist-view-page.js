@@ -167,9 +167,9 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
             // synced playlist (currently only LB exposes this).
             selectedPlaylist.syncedFrom?.isCollaborator === true && React.createElement('span', {
               className: 'shared-playlist-badge',
-              title: "You're a collaborator on this playlist — your edits sync to other collaborators",
+              'data-tooltip': "You're a collaborator on this playlist — your edits sync to other collaborators",
               style: {
-                fontSize: '10px',
+                fontSize: '11px',
                 padding: '2px 6px',
                 borderRadius: '4px',
                 backgroundColor: 'var(--accent-secondary, #6366f1)',
@@ -178,9 +178,10 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                 marginLeft: '6px',
                 display: 'inline-block',
                 verticalAlign: 'middle',
-                letterSpacing: '0.05em'
+                letterSpacing: '0.05em',
+                textTransform: 'uppercase'
               }
-            }, 'SHARED')
+            }, 'Shared')
           )
         ),
 

@@ -5,11 +5,11 @@
     "paletteClasses": 168,
     "themeTernaries": 0,
     "clickableNonInteractive": 9,
-    "inlineOutlineNone": 8,
+    "inlineOutlineNone": 0,
     "nativeDialogs": 0,
     "asciiEllipsis": 103,
     "svgPaths": 173,
-    "offScaleFontSizes": 54,
+    "offScaleFontSizes": 51,
     "offScaleRadii": 10,
     "jsHover": 86,
     "roleButtonDivs": 0

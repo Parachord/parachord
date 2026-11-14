@@ -213,7 +213,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none no-drag',
                       style: { width: '150px' }, 'aria-label': 'Filter'
                     }),
-                    searchResultsFilter && React.createElement('button', {
+                    searchResultsFilter && React.createElement('button', { type: 'button', 'aria-label': 'Clear filter', 'data-tooltip': 'Clear filter',
                       onClick: () => { setSearchResultsFilter(''); setSearchResultsFilterOpen(false); },
                       className: 'ml-2 text-ink-tertiary hover:text-ink-secondary no-drag'
                     },
@@ -221,7 +221,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                     )
                   )
                 :
-                  React.createElement('button', {
+                  React.createElement('button', { type: 'button', 'aria-label': 'Filter', 'data-tooltip': 'Filter',
                     onClick: () => setSearchResultsFilterOpen(true),
                     className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors no-drag'
                   },
@@ -258,7 +258,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none no-drag',
                       style: { width: '150px' }, 'aria-label': 'Filter'
                     }),
-                    searchResultsFilter && React.createElement('button', {
+                    searchResultsFilter && React.createElement('button', { type: 'button', 'aria-label': 'Clear filter', 'data-tooltip': 'Clear filter',
                       onClick: () => { setSearchResultsFilter(''); setSearchResultsFilterOpen(false); },
                       className: 'ml-2 text-ink-tertiary hover:text-ink-secondary no-drag'
                     },
@@ -266,7 +266,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                     )
                   )
                 :
-                  React.createElement('button', {
+                  React.createElement('button', { type: 'button', 'aria-label': 'Filter', 'data-tooltip': 'Filter',
                     onClick: () => setSearchResultsFilterOpen(true),
                     className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors no-drag'
                   },
@@ -303,7 +303,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none no-drag',
                       style: { width: '150px' }, 'aria-label': 'Filter'
                     }),
-                    searchResultsFilter && React.createElement('button', {
+                    searchResultsFilter && React.createElement('button', { type: 'button', 'aria-label': 'Clear filter', 'data-tooltip': 'Clear filter',
                       onClick: () => { setSearchResultsFilter(''); setSearchResultsFilterOpen(false); },
                       className: 'ml-2 text-ink-tertiary hover:text-ink-secondary no-drag'
                     },
@@ -311,7 +311,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                     )
                   )
                 :
-                  React.createElement('button', {
+                  React.createElement('button', { type: 'button', 'aria-label': 'Filter', 'data-tooltip': 'Filter',
                     onClick: () => setSearchResultsFilterOpen(true),
                     className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors no-drag'
                   },
