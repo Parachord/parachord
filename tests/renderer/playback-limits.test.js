@@ -137,7 +137,12 @@ describe('app wiring', () => {
     expect(app).toMatch(/activeResolversRef: playbackResolversRef,/);
     // Source icons: every badge filter in app.js, the playbar picker and the pages.
     expect(app).not.toMatch(/\.filter\(\(\[resolverId\]\) => activeResolvers\.includes\(resolverId\)\)/);
-    expect(app.match(/\.filter\(\(\[resolverId\]\) => playbackResolvers\.includes\(resolverId\)\)/g)).toHaveLength(6);
+    // The six badge lists go through the shared rule (lib/visible-sources),
+    // which keeps only playbackResolvers; none filters on its own any more.
+    expect(app.match(/visibleSources\(track, \{ trackSources, playbackResolvers, resolverOrder \}\)/g)).toHaveLength(6);
+    expect(app).not.toMatch(/\.filter\(\(\[resolverId\]\) => playbackResolvers\.includes\(resolverId\)\)/);
+    // The queue drawer gets playbackResolvers too.
+    expect(between(app, 'React.createElement(VirtualizedQueueList, {', '})')).toMatch(/^\s+playbackResolvers,$/m);
     expect(app).toMatch(/if \(!playbackResolvers\.includes\(resId\)\) return false;/);
     expect(app.match(/^\s+activeResolvers: playbackResolvers, /gm)).toHaveLength(4);
     // Settings: numbered first, then blocked with no number (display only;

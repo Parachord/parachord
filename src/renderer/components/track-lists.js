@@ -6,9 +6,7 @@
 // are the windowed lists (ReactVirtual is the vendor global). Which source
 // icons a row shows, their order and dimming come from lib/visible-sources.js
 // (one rule for the queue and the page lists, see docs/architecture/playback.md
-// "Playback limits" and "Match Confidence + Selection Floor");
-// getBestSourceConfidence lives there too and is re-exported here, where
-// app.js's list-view badge sites keep calling it via the destructured binding.
+// "Playback limits" and "Match Confidence + Selection Floor").
 //
 // All props-driven, no app state; memoized exactly as before. React via the
 // vendor global; ResolverIcon via the ui-atoms module; icons via the icons
@@ -17,10 +15,9 @@ const { ResolverIcon } = require('./ui-atoms');
 const Icons = require('./icons');
 const { Music, Pause, Play, X } = Icons;
 
-// getBestSourceConfidence (the absolute 0.95 dim threshold) and the shared
-// source-icon rule live in lib/visible-sources.js; re-exported below so
-// app.js's badge sites keep their binding.
-const { getBestSourceConfidence, visibleSources, hasResolutionResult } = require('../lib/visible-sources');
+// The shared source-icon rule (and the 0.95 dim threshold) lives in
+// lib/visible-sources.js.
+const { visibleSources, hasResolutionResult } = require('../lib/visible-sources');
 
 // TrackRow component - defined outside to prevent recreation on every render
 const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick, onContextMenu, allResolvers, resolverOrder, activeResolvers }) => {
@@ -642,7 +639,6 @@ const VirtualizedTrackList = React.memo(({
 });
 
 module.exports = {
-  getBestSourceConfidence,
   TrackRow,
   VirtualizedQueueList,
   VirtualizedTrackList,
