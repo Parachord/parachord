@@ -12,14 +12,15 @@
 //   - closes on an outside click
 //
 // Props: value, options [{ value, label }], onChange(value), label (the
-// aria-label, e.g. "Sort playlists"), placeholder (shown when nothing
+// aria-label, e.g. "Sort playlists"), prefix (a quiet label before the
+// value, e.g. "Source:"), placeholder (shown when nothing
 // matches; default "Sort"), align 'left' | 'right', className (the
 // trigger's extra classes). Props-driven; hooks are qualified; loads under
 // plain Node.
 
 const Icons = require('./icons');
 
-function SortMenu({ value, options, onChange, label, placeholder = 'Sort', align = 'left', className }) {
+function SortMenu({ value, options, onChange, label, placeholder = 'Sort', align = 'left', className, prefix }) {
   const e = React.createElement;
   const [open, setOpen] = React.useState(false);
   const [active, setActive] = React.useState(0);
@@ -69,6 +70,7 @@ function SortMenu({ value, options, onChange, label, placeholder = 'Sort', align
       className: ['no-drag flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg text-ink-tertiary hover:text-ink-secondary transition-colors',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent', className].filter(Boolean).join(' '),
     },
+    prefix && e('span', { className: 'text-ink-tertiary mr-1' }, prefix),
     e('span', null, current ? current.label : placeholder),
     e(Icons.ChevronDown, { className: 'w-4 h-4' })),
     open && e('ul', {

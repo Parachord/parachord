@@ -38434,112 +38434,39 @@ React.createElement('div', {
             className: 'flex items-center px-6 py-3',
             style: { flexShrink: 0, backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
           },
-              // Source dropdown (for Songs tab)
-              chartsTab === 'songs' && React.createElement('div', { className: 'relative' },
-                React.createElement('button', {
-                  onClick: (e) => { e.stopPropagation(); setChartsSongsSourceDropdownOpen(!chartsSongsSourceDropdownOpen); },
-                  className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-ink-tertiary hover:text-ink-secondary transition-colors'
+              // Source (components/sort-menu.js); a pick loads that source's chart
+              chartsTab === 'songs' && React.createElement(SortMenu, {
+                value: chartsSongsSource,
+                options: [{ value: 'apple', label: 'Apple Music' }, { value: 'lastfm', label: 'Last.fm' }],
+                label: 'Chart source',
+                prefix: 'Source:',
+                onChange: (v) => {
+                  setChartsSongsSource(v);
+                  if (v === 'apple' && cacheLoaded && !appleMusicSongsChartsLoaded && !appleMusicSongsChartsLoading) {
+                    loadAppleMusicSongsCharts({ country: chartsCountry });
+                  }
+                  if (v === 'lastfm' && !lastfmChartsLoaded && !lastfmChartsLoading) {
+                    loadLastfmCharts({ country: chartsCountry });
+                  }
                 },
-                  React.createElement('span', { className: 'text-ink-tertiary mr-1' }, 'Source:'),
-                  React.createElement('span', null, chartsSongsSource === 'apple' ? 'Apple Music' : 'Last.fm'),
-                  React.createElement(Icons.ChevronDown, { className: 'w-4 h-4' })
-                ),
-                chartsSongsSourceDropdownOpen && React.createElement('div', {
-                  className: 'absolute left-0 top-full mt-1 bg-surface-card rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-line'
-                },
-                  React.createElement('button', {
-                    onClick: (e) => {
-                      e.stopPropagation();
-                      setChartsSongsSource('apple');
-                      setChartsSongsSourceDropdownOpen(false);
-                      if (cacheLoaded && !appleMusicSongsChartsLoaded && !appleMusicSongsChartsLoading) {
-                        loadAppleMusicSongsCharts({ country: chartsCountry });
-                      }
-                    },
-                    className: `w-full px-4 py-2 text-left text-sm hover:bg-surface-hover flex items-center justify-between ${
-                      chartsSongsSource === 'apple' ? 'text-ink-primary font-medium' : 'text-ink-secondary'
-                    }`
+              }),
+              // Region (components/sort-menu.js). Apple Music has no global
+              // chart, so an empty region means the US there; Last.fm offers Global.
+              chartsTab === 'songs' && React.createElement('div', { className: 'ml-2' },
+                React.createElement(SortMenu, {
+                  value: chartsSongsSource === 'apple' && !chartsCountry ? 'us' : chartsCountry,
+                  options: (chartsSongsSource === 'lastfm' ? [{ value: '', label: 'Global' }] : [])
+                    .concat(CHARTS_COUNTRIES.map(c => ({ value: c.code, label: c.name }))),
+                  label: 'Chart region',
+                  prefix: 'Region:',
+                  placeholder: 'United States',
+                  onChange: (v) => {
+                    setChartsCountry(v);
+                    if (!v) loadLastfmCharts({ forceReload: true });
+                    else if (chartsSongsSource === 'apple') loadAppleMusicSongsCharts({ country: v, forceReload: true });
+                    else loadLastfmCharts({ country: v, forceReload: true });
                   },
-                    'Apple Music',
-                    chartsSongsSource === 'apple' && React.createElement(Icons.Check, { className: 'w-4 h-4' })
-                  ),
-                  React.createElement('button', {
-                    onClick: (e) => {
-                      e.stopPropagation();
-                      setChartsSongsSource('lastfm');
-                      setChartsSongsSourceDropdownOpen(false);
-                      if (!lastfmChartsLoaded && !lastfmChartsLoading) {
-                        loadLastfmCharts({ country: chartsCountry });
-                      }
-                    },
-                    className: `w-full px-4 py-2 text-left text-sm hover:bg-surface-hover flex items-center justify-between ${
-                      chartsSongsSource === 'lastfm' ? 'text-ink-primary font-medium' : 'text-ink-secondary'
-                    }`
-                  },
-                    'Last.fm',
-                    chartsSongsSource === 'lastfm' && React.createElement(Icons.Check, { className: 'w-4 h-4' })
-                  )
-                )
-              ),
-              // Country dropdown (for Songs tab - both Apple Music and Last.fm)
-              chartsTab === 'songs' && React.createElement('div', { className: 'relative ml-2' },
-                React.createElement('button', {
-                  onClick: (e) => { e.stopPropagation(); setChartsCountryDropdownOpen(!chartsCountryDropdownOpen); },
-                  className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-ink-tertiary hover:text-ink-secondary transition-colors'
-                },
-                  React.createElement('span', { className: 'text-ink-tertiary mr-1' }, 'Region:'),
-                  // Apple Music doesn't have "Global", so show "United States" when empty; Last.fm shows "Global"
-                  React.createElement('span', null, chartsCountry
-                    ? (CHARTS_COUNTRIES.find(c => c.code === chartsCountry)?.name || 'United States')
-                    : (chartsSongsSource === 'lastfm' ? 'Global' : 'United States')),
-                  React.createElement(Icons.ChevronDown, { className: 'w-4 h-4' })
-                ),
-                chartsCountryDropdownOpen && React.createElement('div', {
-                  className: 'absolute left-0 top-full mt-1 bg-surface-card rounded-lg shadow-lg py-1 min-w-[160px] max-h-64 overflow-y-auto z-30 border border-line'
-                },
-                  // Global option (Last.fm only - Apple Music doesn't have a global chart)
-                  chartsSongsSource === 'lastfm' && React.createElement('button', {
-                    key: 'global',
-                    onClick: (e) => {
-                      e.stopPropagation();
-                      setChartsCountry('');
-                      setChartsCountryDropdownOpen(false);
-                      loadLastfmCharts({ forceReload: true });
-                    },
-                    className: `w-full px-4 py-2 text-left text-sm hover:bg-surface-hover flex items-center justify-between ${
-                      !chartsCountry ? 'text-ink-primary font-medium' : 'text-ink-secondary'
-                    }`
-                  },
-                    'Global',
-                    !chartsCountry && React.createElement(Icons.Check, { className: 'w-4 h-4' })
-                  ),
-                  // Country options
-                  CHARTS_COUNTRIES.map(country =>
-                    React.createElement('button', {
-                      key: country.code,
-                      onClick: (e) => {
-                        e.stopPropagation();
-                        setChartsCountry(country.code);
-                        setChartsCountryDropdownOpen(false);
-                        // Load appropriate charts based on source
-                        if (chartsSongsSource === 'apple') {
-                          loadAppleMusicSongsCharts({ country: country.code, forceReload: true });
-                        } else {
-                          loadLastfmCharts({ country: country.code, forceReload: true });
-                        }
-                      },
-                      className: `w-full px-4 py-2 text-left text-sm hover:bg-surface-hover flex items-center justify-between ${
-                        // For Apple Music, empty chartsCountry means 'us' (first country)
-                        (chartsSongsSource === 'apple' && !chartsCountry && country.code === 'us')
-                          ? 'text-ink-primary font-medium'
-                          : chartsCountry === country.code ? 'text-ink-primary font-medium' : 'text-ink-secondary'
-                      }`
-                    },
-                      country.name,
-                      ((chartsSongsSource === 'apple' && !chartsCountry && country.code === 'us') || chartsCountry === country.code) && React.createElement(Icons.Check, { className: 'w-4 h-4' })
-                    )
-                  )
-                )
+                })
               ),
               React.createElement('div', { className: 'flex-1' }),
               // Search

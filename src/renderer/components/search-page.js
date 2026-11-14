@@ -19,6 +19,7 @@
 // from props under their old names.
 
 const Icons = require('./icons');
+const { SortMenu } = require('./sort-menu');
 const { activateOnKey } = require('../lib/activate-on-key');
 const { ResolverIcon } = require('./ui-atoms');
 const { SectionHeader, SECTION_HEADER_GAP } = require('./section-header');
@@ -191,41 +192,10 @@ const SearchPage = React.memo(function SearchPage(props) {
               style: { backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
             },
               // Sort dropdown
-              React.createElement('div', { className: 'relative' },
-                React.createElement('button', {
-                  onClick: (e) => { e.stopPropagation(); setSearchResultsSortDropdownOpen(!searchResultsSortDropdownOpen); },
-                  className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-ink-tertiary hover:text-ink-secondary transition-colors no-drag'
-                },
-                  React.createElement('span', null,
-                    searchResultsSort === 'relevance' ? 'Relevance' :
-                    searchResultsSort === 'name' ? 'Name' : 'Sort'
-                  ),
-                  React.createElement(Icons.ChevronDown, { className: 'w-4 h-4' })
-                ),
-                searchResultsSortDropdownOpen && React.createElement('div', {
-                  className: 'absolute left-0 top-full mt-1 bg-surface-card rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-line'
-                },
-                  [
+              React.createElement(SortMenu, { value: searchResultsSort, options: [
                     { value: 'relevance', label: 'Relevance' },
                     { value: 'name', label: 'Name' }
-                  ].map(option =>
-                    React.createElement('button', {
-                      key: option.value,
-                      onClick: (e) => {
-                        e.stopPropagation();
-                        setSearchResultsSort(option.value);
-                        setSearchResultsSortDropdownOpen(false);
-                      },
-                      className: `w-full px-4 py-2 text-left text-sm hover:bg-surface-hover flex items-center justify-between no-drag ${
-                        searchResultsSort === option.value ? 'text-ink-primary font-medium' : 'text-ink-secondary'
-                      }`
-                    },
-                      option.label,
-                      searchResultsSort === option.value && React.createElement(Icons.Check, { className: 'w-4 h-4' })
-                    )
-                  )
-                )
-              ),
+                  ], onChange: setSearchResultsSort, label: "Sort" }),
               React.createElement('div', { className: 'flex-1' }),
               // Search/filter on right
               React.createElement('div', { className: 'flex items-center' },
@@ -264,47 +234,13 @@ const SearchPage = React.memo(function SearchPage(props) {
               style: { backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
             },
               // Sort dropdown
-              React.createElement('div', { className: 'relative' },
-                React.createElement('button', {
-                  onClick: (e) => { e.stopPropagation(); setSearchResultsSortDropdownOpen(!searchResultsSortDropdownOpen); },
-                  className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-ink-tertiary hover:text-ink-secondary transition-colors no-drag'
-                },
-                  React.createElement('span', null,
-                    searchResultsSort === 'relevance' ? 'Relevance' :
-                    searchResultsSort === 'title' ? 'Title' :
-                    searchResultsSort === 'artist' ? 'Artist' :
-                    searchResultsSort === 'year-desc' ? 'Year (Newest)' :
-                    searchResultsSort === 'year-asc' ? 'Year (Oldest)' : 'Sort'
-                  ),
-                  React.createElement(Icons.ChevronDown, { className: 'w-4 h-4' })
-                ),
-                searchResultsSortDropdownOpen && React.createElement('div', {
-                  className: 'absolute left-0 top-full mt-1 bg-surface-card rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-line'
-                },
-                  [
+              React.createElement(SortMenu, { value: searchResultsSort, options: [
                     { value: 'relevance', label: 'Relevance' },
                     { value: 'title', label: 'Title' },
                     { value: 'artist', label: 'Artist' },
                     { value: 'year-desc', label: 'Year (Newest)' },
                     { value: 'year-asc', label: 'Year (Oldest)' }
-                  ].map(option =>
-                    React.createElement('button', {
-                      key: option.value,
-                      onClick: (e) => {
-                        e.stopPropagation();
-                        setSearchResultsSort(option.value);
-                        setSearchResultsSortDropdownOpen(false);
-                      },
-                      className: `w-full px-4 py-2 text-left text-sm hover:bg-surface-hover flex items-center justify-between no-drag ${
-                        searchResultsSort === option.value ? 'text-ink-primary font-medium' : 'text-ink-secondary'
-                      }`
-                    },
-                      option.label,
-                      searchResultsSort === option.value && React.createElement(Icons.Check, { className: 'w-4 h-4' })
-                    )
-                  )
-                )
-              ),
+                  ], onChange: setSearchResultsSort, label: "Sort" }),
               React.createElement('div', { className: 'flex-1' }),
               // Search/filter
               React.createElement('div', { className: 'flex items-center' },
@@ -343,47 +279,13 @@ const SearchPage = React.memo(function SearchPage(props) {
               style: { backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
             },
               // Sort dropdown
-              React.createElement('div', { className: 'relative' },
-                React.createElement('button', {
-                  onClick: (e) => { e.stopPropagation(); setSearchResultsSortDropdownOpen(!searchResultsSortDropdownOpen); },
-                  className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-ink-tertiary hover:text-ink-secondary transition-colors no-drag'
-                },
-                  React.createElement('span', null,
-                    searchResultsSort === 'relevance' ? 'Relevance' :
-                    searchResultsSort === 'title' ? 'Title' :
-                    searchResultsSort === 'artist' ? 'Artist' :
-                    searchResultsSort === 'duration-asc' ? 'Duration (Short)' :
-                    searchResultsSort === 'duration-desc' ? 'Duration (Long)' : 'Sort'
-                  ),
-                  React.createElement(Icons.ChevronDown, { className: 'w-4 h-4' })
-                ),
-                searchResultsSortDropdownOpen && React.createElement('div', {
-                  className: 'absolute left-0 top-full mt-1 bg-surface-card rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-line'
-                },
-                  [
+              React.createElement(SortMenu, { value: searchResultsSort, options: [
                     { value: 'relevance', label: 'Relevance' },
                     { value: 'title', label: 'Title' },
                     { value: 'artist', label: 'Artist' },
                     { value: 'duration-asc', label: 'Duration (Short)' },
                     { value: 'duration-desc', label: 'Duration (Long)' }
-                  ].map(option =>
-                    React.createElement('button', {
-                      key: option.value,
-                      onClick: (e) => {
-                        e.stopPropagation();
-                        setSearchResultsSort(option.value);
-                        setSearchResultsSortDropdownOpen(false);
-                      },
-                      className: `w-full px-4 py-2 text-left text-sm hover:bg-surface-hover flex items-center justify-between no-drag ${
-                        searchResultsSort === option.value ? 'text-ink-primary font-medium' : 'text-ink-secondary'
-                      }`
-                    },
-                      option.label,
-                      searchResultsSort === option.value && React.createElement(Icons.Check, { className: 'w-4 h-4' })
-                    )
-                  )
-                )
-              ),
+                  ], onChange: setSearchResultsSort, label: "Sort" }),
               React.createElement('div', { className: 'flex-1' }),
               // Search/filter
               React.createElement('div', { className: 'flex items-center' },

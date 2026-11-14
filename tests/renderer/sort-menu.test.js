@@ -23,3 +23,20 @@ test('the hand-built sort dropdowns in app.js are SortMenus, carrying their relo
   expect((app.match(/React\.createElement\(SortMenu, \{/g) || []).length).toBeGreaterThanOrEqual(7);
   expect(app).toMatch(/React\.createElement\(SortMenu, \{ value: historyPeriod, options: historyPeriodOptions, onChange: \(option\) => \{ setHistoryPeriod\(option\); [^}]*loadTopTracks\(option\)/);
 });
+
+test('Collection, Search, the artist page and Charts use SortMenu too', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const read = (f) => fs.readFileSync(path.join(__dirname, '../../src/renderer', f), 'utf8');
+  expect(read('components/collection-page.js')).toContain('React.createElement(SortMenu, {');
+  expect((read('components/search-page.js').match(/React\.createElement\(SortMenu, \{/g) || []).length).toBe(3);
+  expect(read('components/artist-page.js')).toContain("label: 'Sort releases', align: 'right'");
+  const app = read('app.js');
+  expect(app).toContain("label: 'Chart source',");
+  expect(app).toContain("label: 'Chart region',");
+  expect(app).not.toMatch(/set(?:Collection|SearchResults|Artist|ChartsSongsSource|ChartsCountry|Playlists|History|FriendHistory|Critics|AddToPlaylist)Sort\w*DropdownOpen\(!/);
+});
+
+test('a prefix shows before the value', () => {
+  expect(renderToStaticMarkup(h(SortMenu, { value: 'az', options: opts, onChange() {}, prefix: 'Source:' }))).toMatch(/Source:<\/span><span>A–Z/);
+});

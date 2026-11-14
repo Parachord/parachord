@@ -23,6 +23,7 @@ const { sellerColor, sellerTextColor, sellerBadgeBg, sellerShortName, sellerName
 const { activateOnKey } = require('../lib/activate-on-key');
 const { Tooltip } = require('./ui-atoms');
 const Icons = require('./icons');
+const { SortMenu } = require('./sort-menu');
 const { SectionHeader } = require('./section-header');
 const { FilterChips } = require('./filter-chips');
 const { ReleasePage, ReleaseCard, generateArtistPattern, PlayTop10Icon, QueueTop10Icon } = require('./cards');
@@ -841,36 +842,9 @@ const ArtistPage = React.memo(function ArtistPage(props) {
             })(),
             // Spacer
             React.createElement('div', { className: 'flex-1' }),
-            // Sort dropdown
-            React.createElement('div', { className: 'relative mr-3' },
-              React.createElement('button', {
-                onClick: (e) => { e.stopPropagation(); setArtistSortDropdownOpen(!artistSortDropdownOpen); },
-                className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-ink-tertiary hover:text-ink-secondary transition-colors'
-              },
-                React.createElement('span', null, artistSortOptions.find(o => o.value === artistSort)?.label || 'Sort'),
-                React.createElement(Icons.ChevronDown, { className: 'w-4 h-4' })
-              ),
-              // Dropdown menu
-              artistSortDropdownOpen && React.createElement('div', {
-                className: 'absolute right-0 top-full mt-1 bg-surface-card rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-line'
-              },
-                artistSortOptions.map(option =>
-                  React.createElement('button', {
-                    key: option.value,
-                    onClick: (e) => {
-                      e.stopPropagation();
-                      setArtistSort(option.value);
-                      setArtistSortDropdownOpen(false);
-                    },
-                    className: `w-full px-4 py-2 text-left text-sm hover:bg-surface-hover flex items-center justify-between ${
-                      artistSort === option.value ? 'text-ink-primary font-medium' : 'text-ink-secondary'
-                    }`
-                  },
-                    option.label,
-                    artistSort === option.value && React.createElement(Icons.Check, { className: 'w-4 h-4' })
-                  )
-                )
-              )
+            // Sort (components/sort-menu.js)
+            React.createElement('div', { className: 'mr-3' },
+              React.createElement(SortMenu, { value: artistSort, options: artistSortOptions, onChange: setArtistSort, label: 'Sort releases', align: 'right' })
             ),
             // Search toggle/field
             React.createElement('div', { className: 'flex items-center' },
