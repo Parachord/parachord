@@ -398,13 +398,13 @@ const VirtualizedQueueList = React.memo(({
         track.title
       ),
       // Artist name
-      React.createElement('span', {
-        className: 'truncate hover:text-purple-400 hover:underline cursor-pointer transition-colors',
+      React.createElement('button', { type: 'button',
+        className: 'text-left truncate hover:text-purple-400 hover:underline cursor-pointer transition-colors',
         style: { flex: '0.7 1 0', minWidth: 0, fontSize: '12px', color: 'rgba(156, 163, 175, 0.7)' },
         onClick: (e) => {
           e.stopPropagation();
           if (!isLoading && !isError && track.artist) fetchArtistData(track.artist);
-        }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey
+        }
       },
         isLoading ? `from ${track.sourceDomain || 'unknown'}` :
         isError ? (track.errorMessage || 'Unknown error') :

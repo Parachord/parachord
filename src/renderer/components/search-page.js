@@ -639,8 +639,8 @@ const SearchPage = React.memo(function SearchPage(props) {
                         }
                       }, album.title),
                       // Artist name - clickable
-                      React.createElement('div', {
-                        className: 'truncate hover:text-accent hover:underline cursor-pointer transition-colors',
+                      React.createElement('button', { type: 'button',
+                        className: 'block max-w-full text-left truncate hover:text-accent hover:underline cursor-pointer transition-colors',
                         style: {
                           fontSize: '11px',
                           color: 'var(--text-secondary)',
@@ -649,7 +649,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                         onClick: (e) => {
                           e.stopPropagation();
                           fetchArtistData(album['artist-credit']?.[0]?.name, creditOpenOptions(album['artist-credit']));
-                        }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey
+                        }
                       }, album['artist-credit']?.[0]?.name || 'Unknown Artist')
                     );
                   })
@@ -783,8 +783,8 @@ const SearchPage = React.memo(function SearchPage(props) {
                     }, track.title),
 
                     // Artist name - flexible column, clickable
-                    React.createElement('span', {
-                      className: 'truncate hover:text-accent hover:underline cursor-pointer transition-colors',
+                    React.createElement('button', { type: 'button',
+                      className: 'text-left truncate hover:text-accent hover:underline cursor-pointer transition-colors',
                       style: {
                         flex: '0.7 1 0',
                         minWidth: 0,
@@ -794,12 +794,12 @@ const SearchPage = React.memo(function SearchPage(props) {
                       onClick: (e) => {
                         e.stopPropagation();
                         fetchArtistData(track.artist, trackArtistOpenOptions(track));
-                      }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey
+                      }
                     }, track.artist),
 
                     // Album name - flexible column, clickable
-                    track.album ? React.createElement('span', {
-                      className: 'truncate hover:text-accent hover:underline cursor-pointer transition-colors',
+                    track.album ? React.createElement('button', { type: 'button',
+                      className: 'text-left truncate hover:text-accent hover:underline cursor-pointer transition-colors',
                       style: {
                         flex: '0.5 1 0',
                         minWidth: 0,
@@ -809,7 +809,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       onClick: (e) => {
                         e.stopPropagation();
                         openChartsAlbum({ artist: track.artist, title: track.album, albumArt: track.albumArt });
-                      }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey
+                      }
                     }, track.album) : React.createElement('span', {
                       className: 'truncate',
                       style: {
@@ -1831,7 +1831,7 @@ const SearchPage = React.memo(function SearchPage(props) {
             },
               ...searchResults.playlists.slice(0, 20).map((playlist, index) => {
                 const animationDelay = Math.min(index * 40, 300);
-                return React.createElement('div', {
+                return React.createElement('button', { type: 'button',
                   key: playlist.title,
                   onClick: () => {
                     saveSearchHistory(searchQuery, {
@@ -1841,8 +1841,8 @@ const SearchPage = React.memo(function SearchPage(props) {
                       imageUrl: null
                     });
                     handlePlaylistClick(playlist);
-                  }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
-                  className: 'flex-shrink-0 cursor-pointer group release-card card-fade-up',
+                  },
+                  className: 'text-left flex-shrink-0 cursor-pointer group release-card card-fade-up',
                   style: {
                     width: '160px',
                     padding: '12px',

@@ -163,12 +163,10 @@ const ArtistPage = React.memo(function ArtistPage(props) {
           },
         },
           // Clickable overlay to expand collapsed header (sits behind content)
-          isHeaderCollapsed && React.createElement('div', {
+          isHeaderCollapsed && React.createElement('button', { type: 'button', 'aria-label': 'Expand header',
             className: 'absolute inset-0 z-0',
             style: { cursor: 'pointer' },
-            onClick: () => setIsHeaderCollapsed(false), role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
-            title: 'Click to expand'
-          }),
+            onClick: () => setIsHeaderCollapsed(false),           }),
           // Background image with gradient overlay
           artistImage && React.createElement('div', {
             className: 'absolute inset-0',

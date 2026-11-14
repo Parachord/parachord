@@ -11,7 +11,8 @@
     "svgPaths": 175,
     "offScaleFontSizes": 59,
     "offScaleRadii": 10,
-    "jsHover": 116
+    "jsHover": 116,
+    "roleButtonDivs": 36
   },
   "undefinedCssVars": []
 }

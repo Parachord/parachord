@@ -593,8 +593,8 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                     }, track.title),
 
                     // Artist name - flexible column, clickable
-                    React.createElement('span', {
-                      className: 'truncate hover:text-accent hover:underline cursor-pointer transition-colors',
+                    React.createElement('button', { type: 'button',
+                      className: 'text-left truncate hover:text-accent hover:underline cursor-pointer transition-colors',
                       style: {
                         flex: '0.7 1 0',
                         minWidth: 0,
@@ -604,12 +604,12 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                       onClick: (e) => {
                         e.stopPropagation();
                         fetchArtistData(track.artist);
-                      }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey
+                      }
                     }, track.artist || 'Unknown Artist'),
 
                     // Album name - flexible column, clickable
-                    track.album ? React.createElement('span', {
-                      className: 'truncate hover:text-accent hover:underline cursor-pointer transition-colors',
+                    track.album ? React.createElement('button', { type: 'button',
+                      className: 'text-left truncate hover:text-accent hover:underline cursor-pointer transition-colors',
                       style: {
                         flex: '0.5 1 0',
                         minWidth: 0,
@@ -619,7 +619,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                       onClick: (e) => {
                         e.stopPropagation();
                         openChartsAlbum({ artist: track.artist, title: track.album, albumArt: track.albumArt });
-                      }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey
+                      }
                     }, track.album) : React.createElement('span', {
                       className: 'truncate',
                       style: {
@@ -996,9 +996,9 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                     const onAir = isOnAir(friend);
                     const isPinned = pinnedFriendIds.includes(friend.id);
 
-                    return React.createElement('div', {
+                    return React.createElement('button', { type: 'button',
                       key: friend.id,
-                      className: 'flex flex-col items-center cursor-pointer group release-card card-fade-up',
+                      className: 'w-full flex flex-col items-center cursor-pointer group release-card card-fade-up',
                       style: {
                         padding: '14px 12px',
                         borderRadius: '10px',
@@ -1011,7 +1011,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                         e.dataTransfer.setData('friendId', friend.id);
                         e.dataTransfer.effectAllowed = 'copy';
                       },
-                      onClick: () => navigateToFriend(friend), role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
+                      onClick: () => navigateToFriend(friend),
                       onContextMenu: (e) => {
                         e.preventDefault();
                         if (window.electron?.contextMenu?.showTrackMenu) {

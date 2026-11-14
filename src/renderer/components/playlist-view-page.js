@@ -1227,8 +1227,8 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                       }, track.title),
 
                       // Artist name - flexible column, clickable
-                      React.createElement('span', {
-                        className: 'truncate hover:text-accent hover:underline cursor-pointer transition-colors',
+                      React.createElement('button', { type: 'button',
+                        className: 'text-left truncate hover:text-accent hover:underline cursor-pointer transition-colors',
                         style: {
                           flex: '0.7 1 0',
                           minWidth: 0,
@@ -1238,7 +1238,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                         onClick: (e) => {
                           e.stopPropagation();
                           fetchArtistData(track.artist);
-                        }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey
+                        }
                       }, track.artist),
 
                       // Duration - fixed width column (before resolver icons)

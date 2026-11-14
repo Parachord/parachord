@@ -47,6 +47,7 @@ const METRICS = {
   offScaleFontSizes: 'Inline font sizes off the type scale (11, 12, 13, 14, 16, 20, 24, 28, 48px).',
   offScaleRadii: 'Inline border radii off the radius scale (4, 6, 8, 10, 12, 16px, full).',
   jsHover: 'onMouseEnter handlers that change style (hover styling done in JS). Use CSS :hover / Tailwind hover: classes.',
+  roleButtonDivs: 'div/span/li… with role="button" (lib/activate-on-key.js, a stopgap). Use a <button>, or CardButton for a card or row that holds buttons.',
 };
 
 function rendererFiles(dir = RENDERER, out = []) {
@@ -120,6 +121,8 @@ function scanSource(src) {
         const keys = props.map(propKey);
         if (tag === 'path') counts.svgPaths += 1;
         if (NON_INTERACTIVE.has(tag) && keys.includes('onClick') && !keys.includes('role')) counts.clickableNonInteractive += 1;
+        const roleProp = props.find((p) => propKey(p) === 'role');
+        if (NON_INTERACTIVE.has(tag) && roleProp && roleProp.value && roleProp.value.value === 'button') counts.roleButtonDivs += 1;
         // Hover styling only: a handler that prefetches or shows a tooltip
         // on enter is behaviour, not drift.
         const enter = props.find((p) => propKey(p) === 'onMouseEnter');

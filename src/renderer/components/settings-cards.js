@@ -70,7 +70,7 @@ const ResolverCard = React.memo(({
       }
     }),
     // Card
-    React.createElement('div', {
+    React.createElement('button', { type: 'button', 'aria-label': resolver.name,
       className: `relative flex items-center justify-center cursor-pointer transition-all ${isGrayed ? 'grayscale' : ''}`,
       style: {
         width: '120px',
@@ -82,7 +82,7 @@ const ResolverCard = React.memo(({
           ? '0 0 0 3px var(--accent-primary), 0 4px 12px rgba(0, 0, 0, 0.15)'
           : '0 2px 8px rgba(0, 0, 0, 0.1), 0 4px 16px rgba(0, 0, 0, 0.05)'
       },
-      onClick: onClick, role: 'button', tabIndex: 0, onKeyDown: activateOnKey
+      onClick: onClick
     },
       // Priority number badge (top-left) - only for enabled resolvers
       priorityNumber && React.createElement('div', {
@@ -569,10 +569,10 @@ const FriendMiniPlaybar = ({ track, getAlbumArt, onPlay, onContextMenu }) => {
     return () => cancelAnimationFrame(rafId);
   }, [track.name, track.artist]);
 
-  return React.createElement('div', {
-    className: 'mt-1 flex items-center rounded cursor-pointer transition-colors pr-2',
+  return React.createElement('button', { type: 'button',
+    className: 'text-left mt-1 flex items-center rounded cursor-pointer transition-colors pr-2',
     style: { maxWidth: '180px', height: '20px', backgroundColor: 'var(--surface-dark)', color: '#d1d5db' },
-    onClick: onPlay, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
+    onClick: onPlay,
     onContextMenu: onContextMenu
   },
     // Mini album art

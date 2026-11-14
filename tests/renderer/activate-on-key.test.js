@@ -17,11 +17,12 @@ test('other keys, and keys from a control inside it, pass through', () => {
   const b = evt('Enter', false); activateOnKey(b); expect(b.el.click).not.toHaveBeenCalled();
 });
 
-test('clickable divs in the renderer are keyboard buttons', () => {
+// The role="button" divs are a stopgap: they move to <button> and
+// CardButton, and design-drift's roleButtonDivs count only falls. While any
+// remain, they keep the focus ring.
+test('the remaining role=button divs keep a focus ring', () => {
   const fs = require('fs');
   const path = require('path');
-  const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
-  expect((app.match(/role: 'button', tabIndex: 0, onKeyDown: activateOnKey/g) || []).length).toBeGreaterThanOrEqual(50);
   const html = fs.readFileSync(path.join(__dirname, '../../index.html'), 'utf8');
   expect(html).toMatch(/\[role="button"\]:focus-visible \{ outline: 2px solid var\(--accent-primary\)/);
 });
