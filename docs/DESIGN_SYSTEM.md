@@ -233,7 +233,7 @@ Components use `React.createElement()` (no JSX). The reusable ones live in `src/
 
 | Module | Exports |
 |--------|---------|
-| `ui-atoms.js` | `Tooltip`, `FixedTooltip`, `ResolverIcon`, `SERVICE_LOGO_PATHS`, `SERVICE_LOGO_IMAGES`, `SERVICE_LOGOS`, `ParachordWordmark`, `PlaybackProgress` |
+| `ui-atoms.js` | `Tooltip`, `FixedTooltip`, `TooltipLayer`, `ResolverIcon`, `SERVICE_LOGO_PATHS`, `SERVICE_LOGO_IMAGES`, `SERVICE_LOGOS`, `ParachordWordmark`, `PlaybackProgress` |
 | `icons.js` | `Icons` (the fallback icon set) |
 | `track-lists.js` | `TrackRow`, `VirtualizedQueueList`, `VirtualizedTrackList`, `getBestSourceConfidence` |
 | `cards.js` | `ReleaseCard`, `ReleasePage`, `RelatedArtistCard`, `SearchArtistCard`, `SearchHistoryItem`, `CollectionArtistCard`, `CollectionAlbumCard`, `PlayTop10Icon`, `QueueTop10Icon`, `generateArtistPattern` |
@@ -245,12 +245,17 @@ Everything else still renders inline in `src/renderer/app.js`. Key reusable comp
 ### Tooltip
 
 ```
-Tooltip({ children, content, position, variant, className })
+Tooltip({ children, content, position, variant, className, id, delay })
+data-tooltip="…"   (any control, through TooltipLayer)
 ```
 
-- **Props:** `position` = `'top'` | `'bottom'` | `'left'` | `'right'` | `'top-end'`; `variant` = `'light'` | `'dark'`
-- **Behavior:** CSS-only hover reveal with fade + translate animation (150ms ease)
-- **Bio variant:** `.tooltip-bio` allows text wrapping with `max-width: 480px`
+One tooltip, two ways in (#1385 step 9):
+
+- **`Tooltip`** wraps a trigger. **`data-tooltip`** goes on a control with no wrapper; `TooltipLayer`, mounted once at the app root, shows it. Controls never use a native `title` (it shows late, never on focus, and in the OS's look); `tests/renderer/tooltip-layer.test.js` fails on one.
+- **Panel:** `.tooltip-panel` in `index.html`, portalled to `<body>` and `position: fixed`, so no `overflow: hidden` clips it. `variant: 'dark'` / `data-tooltip-variant="dark"` is the light tip for the always-dark surfaces; `.tooltip-bio` wraps long text.
+- **Placement:** `position` = `'top'` (default) | `'top-end'` | `'bottom'` | `'bottom-start'` | `'left'` | `'right'` (`data-tooltip-position`). `placeTooltip` (pure) keeps it inside the window and flips it when its side has no room.
+- **Behaviour:** shows on hover and on keyboard focus (focus-visible only for `data-tooltip`) after 400ms (`TOOLTIP_DELAY_MS`), stays while either lasts, and Escape or a scroll dismisses it (WCAG 1.4.13). A click hides a `data-tooltip` one.
+- **Names:** a tooltip is a description, not a name. An icon-only control needs an `aria-label` too, usually the same words. A wrapped single element gets `aria-describedby` pointing at the tip while it shows.
 
 ### FixedTooltip
 
@@ -258,10 +263,7 @@ Tooltip({ children, content, position, variant, className })
 FixedTooltip({ children, content, id })
 ```
 
-- Uses `position: fixed` + `ReactDOM.createPortal` to escape `overflow: hidden` containers (e.g., sidebar)
-- Positioned below the trigger, left-aligned; shifted left to stay inside the window and flipped above the trigger near the bottom (`placeFixedTooltip`, pure). Coordinates are set only after the tip is measured, so showing it again (focus after hover) keeps the clamp
-- Shows on hover or on keyboard focus inside the trigger and stays while either lasts; Escape dismisses it until the pointer or focus comes back (WCAG 1.4.13)
-- The tip is `role="tooltip"`, with `id` when given. A tooltip is not an accessible name or description by itself: give the trigger an `aria-describedby` (Home's badges point it at a visually hidden copy of the text)
+`Tooltip` preset for a card's explanation (Fresh Drops' "why", Recommendations' reason): `bottom-start`, wrapping (`.tooltip-note`), with a block trigger. `placeFixedTooltip` is `placeTooltip(…, 'bottom-start')`.
 
 ### TrackRow
 
@@ -556,9 +558,7 @@ Context menus are handled natively via Electron's `contextMenu` API (`window.ele
 
 ### Tooltips
 
-Two tooltip systems coexist:
-1. **CSS tooltips** (`Tooltip` component) — Pure CSS hover-triggered, positioned relative to parent
-2. **Portal tooltips** (`FixedTooltip` component) — `position: fixed` via React portal, escapes `overflow: hidden`
+One system: `Tooltip`, its `FixedTooltip` preset, and `data-tooltip` through `TooltipLayer` (see Tooltip above).
 
 ---
 

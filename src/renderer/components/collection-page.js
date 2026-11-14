@@ -297,7 +297,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                   border: 'none',
                   cursor: 'pointer'
                 },
-                title: 'Sync your music library'
+                'data-tooltip': 'Sync your music library'
               },
                 React.createElement(Icons.RefreshCw, { className: 'w-4 h-4' }),
                 Object.values(resolverSyncSettings).some(s => s?.enabled) ? 'Synced' : 'Sync',
@@ -429,7 +429,9 @@ const CollectionPage = React.memo(function CollectionPage(props) {
               return React.createElement('button', {
                 onClick: () => syncFriendsFromServices({ silent: false }),
                 disabled: friendSyncInProgress || !hasCreds,
-                title: hasCreds
+                'aria-label': hasCreds
+                  ? 'Sync friends from Last.fm and ListenBrainz'
+                  : 'Connect Last.fm or ListenBrainz in Settings to sync friends', 'data-tooltip': hasCreds
                   ? 'Sync friends from Last.fm and ListenBrainz'
                   : 'Connect Last.fm or ListenBrainz in Settings to sync friends',
                 className: 'ml-3 p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors',
@@ -756,7 +758,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                                 },
                                 onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                                 onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
-                                title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
+                                'aria-label': `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`, 'data-tooltip': `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
                               }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
                             });
                         } else if (isResolving) {
@@ -789,7 +791,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                               },
                               onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                               onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
-                              title: 'Play from Local Files'
+                              'aria-label': 'Play from Local Files', 'data-tooltip': 'Play from Local Files'
                             }, React.createElement(ResolverIcon, { resolverId: 'localfiles', size: 12 })),
                             // Shimmer skeletons
                             React.createElement('div', {
@@ -830,7 +832,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                             },
                             onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                             onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
-                            title: 'Play from Local Files'
+                            'aria-label': 'Play from Local Files', 'data-tooltip': 'Play from Local Files'
                           }, React.createElement(ResolverIcon, { resolverId: 'localfiles', size: 12 }));
                         }
                         return null;

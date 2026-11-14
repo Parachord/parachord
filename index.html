@@ -140,6 +140,8 @@
       --tooltip-text: #ffffff;
       --tooltip-hover: #374151;
       --tooltip-border: transparent;
+      --tooltip-on-dark-bg: rgba(255, 255, 255, 0.95);
+      --tooltip-on-dark-text: #1f2937;
 
       /* Typography */
       --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
@@ -797,138 +799,13 @@
       to { transform: translateX(100%); }
     }
 
-    /* Tooltip styling */
+    /* Tooltip (src/renderer/components/ui-atoms.js). The trigger wrapper is
+       .tooltip-container; the tip is portalled to <body> as .tooltip-panel and
+       placed by placeTooltip, so no overflow:hidden parent clips it. */
     .tooltip-container {
       position: relative;
       display: inline-flex;
     }
-
-    .tooltip-content {
-      position: absolute;
-      z-index: 9999;
-      padding: 8px 12px;
-      font-size: 12px;
-      font-weight: 500;
-      color: var(--tooltip-text);
-      background-color: var(--tooltip-bg);
-      border: 1px solid var(--tooltip-border);
-      border-radius: 8px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15), 0 2px 4px rgba(0, 0, 0, 0.1);
-      white-space: nowrap;
-      pointer-events: none;
-      opacity: 0;
-      transform: translateY(4px);
-      transition: opacity 150ms ease, transform 150ms ease;
-    }
-
-    .tooltip-container:hover .tooltip-content {
-      opacity: 1;
-      transform: translateY(0);
-    }
-
-    /* Tooltip arrow */
-    .tooltip-content::before {
-      content: '';
-      position: absolute;
-      width: 8px;
-      height: 8px;
-      background-color: var(--tooltip-bg);
-      transform: rotate(45deg);
-    }
-
-    /* Tooltip positions */
-    .tooltip-top {
-      bottom: calc(100% + 8px);
-      left: 50%;
-      transform: translateX(-50%) translateY(4px);
-    }
-
-    .tooltip-top::before {
-      bottom: -4px;
-      left: 50%;
-      transform: translateX(-50%) rotate(45deg);
-    }
-
-    .tooltip-container:hover .tooltip-top {
-      transform: translateX(-50%) translateY(0);
-    }
-
-    /* Top-end: right-aligned to prevent overflow at right edge of window */
-    .tooltip-top-end {
-      bottom: calc(100% + 8px);
-      right: 0;
-      transform: translateY(4px);
-    }
-
-    .tooltip-top-end::before {
-      bottom: -4px;
-      right: 12px;
-      transform: rotate(45deg);
-    }
-
-    .tooltip-container:hover .tooltip-top-end {
-      transform: translateY(0);
-    }
-
-    .tooltip-bottom {
-      top: calc(100% + 8px);
-      left: 50%;
-      transform: translateX(-50%) translateY(-4px);
-    }
-
-    .tooltip-bottom::before {
-      top: -4px;
-      left: 50%;
-      transform: translateX(-50%) rotate(45deg);
-    }
-
-    .tooltip-container:hover .tooltip-bottom {
-      transform: translateX(-50%) translateY(0);
-    }
-
-    .tooltip-left {
-      right: calc(100% + 8px);
-      top: 50%;
-      transform: translateY(-50%) translateX(4px);
-    }
-
-    .tooltip-left::before {
-      right: -4px;
-      top: 50%;
-      transform: translateY(-50%) rotate(45deg);
-    }
-
-    .tooltip-container:hover .tooltip-left {
-      transform: translateY(-50%) translateX(0);
-    }
-
-    .tooltip-right {
-      left: calc(100% + 8px);
-      top: 50%;
-      transform: translateY(-50%) translateX(-4px);
-    }
-
-    .tooltip-right::before {
-      left: -4px;
-      top: 50%;
-      transform: translateY(-50%) rotate(45deg);
-    }
-
-    .tooltip-container:hover .tooltip-right {
-      transform: translateY(-50%) translateX(0);
-    }
-
-    /* Dark theme tooltip variant */
-    .tooltip-dark .tooltip-content {
-      background-color: rgba(255, 255, 255, 0.95);
-      color: #1f2937;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
-    }
-
-    .tooltip-dark .tooltip-content::before {
-      background-color: rgba(255, 255, 255, 0.95);
-    }
-
 
     /* Tooltip around text that must still truncate (playbar title). The
        container is inline-flex, which sizes to its content, so without a
@@ -938,15 +815,54 @@
       min-width: 0;
     }
 
-    /* Bio tooltip - allows text wrapping for longer content */
-    .tooltip-bio .tooltip-content {
-      white-space: normal;
-      max-width: 480px;
+    .tooltip-panel {
+      position: fixed;
+      z-index: 99999;
+      max-width: 320px;
+      padding: 8px 12px;
+      font-size: 12px;
+      font-weight: 500;
+      line-height: 1.4;
+      color: var(--tooltip-text);
+      background-color: var(--tooltip-bg);
+      border: 1px solid var(--tooltip-border);
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15), 0 2px 4px rgba(0, 0, 0, 0.1);
+      pointer-events: none;
+      animation: tooltip-in 150ms ease-out;
+    }
+    @keyframes tooltip-in {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    @media (prefers-reduced-motion: reduce) { .tooltip-panel { animation: none; } }
+
+    /* On the always-dark surfaces (playbar, queue) the tip is light. */
+    .tooltip-panel.tooltip-on-dark {
+      background-color: var(--tooltip-on-dark-bg);
+      color: var(--tooltip-on-dark-text);
+      border-color: transparent;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+    }
+
+    /* A card's explanation (FixedTooltip): wraps, a little roomier. */
+    .tooltip-panel.tooltip-note {
+      min-width: 180px;
+      max-width: 280px;
+      padding: 10px 14px;
+      font-weight: 400;
+      line-height: 1.5;
+    }
+
+    /* Bio tooltip: long text that wraps. */
+    .tooltip-panel.tooltip-wrap {
       min-width: 300px;
-      text-align: left;
-      line-height: 1.6;
+      max-width: 480px;
       padding: 12px 16px;
       font-size: 13px;
+      font-weight: 400;
+      line-height: 1.6;
+      text-align: left;
     }
 
     /* Progress slider styling */

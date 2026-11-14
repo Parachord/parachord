@@ -11,7 +11,7 @@
 global.React = require('react');
 global.ReactDOM = require('react-dom');
 const { renderToStaticMarkup } = require('react-dom/server');
-const { FixedTooltip, placeFixedTooltip } = require('../../src/renderer/components/ui-atoms');
+const { Tooltip, FixedTooltip, placeFixedTooltip, placeTooltip, TOOLTIP_DELAY_MS } = require('../../src/renderer/components/ui-atoms');
 
 const view = { width: 1000, height: 800 };
 const tip = { width: 200, height: 60 };
@@ -64,7 +64,9 @@ function harness() {
     useEffect: (fn) => { effects.push(fn); },
   };
   const triggerRect = { left: 900, top: 100, bottom: 120 };
-  let props = { content: 'Because you love slowcore', id: 'tip-1', children: 'x' };
+  // FixedTooltip's props as it passes them to Tooltip; delay 0 so a show is
+  // immediate (the delay has its own test).
+  let props = { content: 'Because you love slowcore', id: 'tip-1', children: 'x', position: 'bottom-start', block: true, note: true, delay: 0 };
   const render = () => {
     global.React = fake;
     global.ReactDOM = { createPortal: (el) => el };
@@ -73,7 +75,7 @@ function harness() {
     layout = []; effects = [];
     try {
       i = 0;
-      const tree = FixedTooltip(props);
+      const tree = Tooltip(props);
       // Attach the refs the DOM would.
       slots[4].current = { getBoundingClientRect: () => triggerRect };
       const tipEl = [].concat(tree.props.children).find((c) => c && c.props && c.props.role === 'tooltip');
@@ -167,6 +169,52 @@ describe('FixedTooltip behaviour', () => {
       tree.props.onBlur({ currentTarget: { contains: () => false }, relatedTarget: null });
       expect(t.tipOf(t.settle())).toBeNull();
     } finally { t.cleanup(); }
+  });
+});
+
+describe('placeTooltip', () => {
+  const r = { left: 400, right: 440, top: 300, bottom: 320 };
+  test('top: centred above', () => {
+    expect(placeTooltip(r, tip, view, 'top')).toEqual({ left: 320, top: 300 - 6 - 60 });
+  });
+  test('top flips below when there is no room above', () => {
+    expect(placeTooltip({ ...r, top: 10, bottom: 30 }, tip, view, 'top').top).toBe(36);
+  });
+  test('top-end: right-aligned with the trigger', () => {
+    expect(placeTooltip(r, tip, view, 'top-end').left).toBe(440 - 200);
+  });
+  test('bottom: centred below, flipped above at the bottom edge', () => {
+    expect(placeTooltip(r, tip, view, 'bottom')).toEqual({ left: 320, top: 326 });
+    expect(placeTooltip({ ...r, top: 760, bottom: 780 }, tip, view, 'bottom').top).toBe(760 - 6 - 60);
+  });
+  test('a centred tip near the right edge is clamped inside it', () => {
+    expect(placeTooltip({ left: 960, right: 990, top: 300, bottom: 320 }, tip, view, 'top').left).toBe(1000 - 200 - 8);
+  });
+  test('left and right flip to the other side when they would leave the window', () => {
+    expect(placeTooltip({ left: 20, right: 60, top: 300, bottom: 320 }, tip, view, 'left').left).toBe(66);
+    expect(placeTooltip({ left: 900, right: 940, top: 300, bottom: 320 }, tip, view, 'right').left).toBe(900 - 6 - 200);
+  });
+});
+
+describe('Tooltip delay', () => {
+  test('waits TOOLTIP_DELAY_MS (400) before showing', () => {
+    expect(TOOLTIP_DELAY_MS).toBe(400);
+    const src = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/components/ui-atoms.js'), 'utf8');
+    expect(src).toMatch(/setTimeout\(\(\) => setWaited\(true\), delay\)/);
+    expect(src).toMatch(/const visible = wanted && \(delay <= 0 \|\| waited\)/);
+  });
+});
+
+describe('Tooltip markup', () => {
+  test('wraps its trigger in .tooltip-container with no tip until shown', () => {
+    const html = renderToStaticMarkup(React.createElement(Tooltip, { content: 'Next', variant: 'dark', className: 'tooltip-fill' },
+      React.createElement('button', null, 'n')));
+    expect(html).toBe('<div class="tooltip-container tooltip-fill"><button>n</button></div>');
+  });
+  test('the CSS-only hover rules are gone; the tip is a portalled panel', () => {
+    const html = require('fs').readFileSync(require('path').join(__dirname, '../../index.html'), 'utf8');
+    expect(html).not.toMatch(/\.tooltip-container:hover/);
+    expect(html).toMatch(/\.tooltip-panel \{\s*position: fixed;/);
   });
 });
 

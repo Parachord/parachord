@@ -427,7 +427,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                             },
                             className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
                             style: { border: 'none', cursor: 'pointer' },
-                            title: 'Play top 10 tracks'
+                            'aria-label': 'Play top 10 tracks', 'data-tooltip': 'Play top 10 tracks'
                           },
                             React.createElement(PlayTop10Icon, { size: 26, className: 'text-ink-primary' })
                           ),
@@ -447,7 +447,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                             style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
                             onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
                             onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                            title: 'Add top 10 to queue'
+                            'aria-label': 'Add top 10 to queue', 'data-tooltip': 'Add top 10 to queue'
                           },
                             React.createElement(QueueTop10Icon, { size: 20 })
                           )
@@ -599,7 +599,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                             style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff' },
                             onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
                             onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                            title: 'Add to Playlist'
+                            'aria-label': 'Add to playlist', 'data-tooltip': 'Add to playlist'
                           },
                             React.createElement(Icons.Plus, { className: 'w-5 h-5' })
                           ),
@@ -621,7 +621,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                               }
                             },
                             className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
-                            title: 'Play'
+                            'aria-label': 'Play', 'data-tooltip': 'Play'
                           },
                             React.createElement(Play, { size: 22, className: 'text-ink-primary ml-0.5' })
                           ),
@@ -639,7 +639,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                             style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff' },
                             onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
                             onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                            title: 'Add to Queue'
+                            'aria-label': 'Add to queue', 'data-tooltip': 'Add to queue'
                           },
                             React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
                               React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
@@ -909,7 +909,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                                 },
                                 onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                                 onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
-                                title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
+                                'aria-label': `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`, 'data-tooltip': `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
                               }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
                             });
                         })()
@@ -1001,7 +1001,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                           style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff' },
                           onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
                           onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                          title: 'Add to Playlist'
+                          'aria-label': 'Add to playlist', 'data-tooltip': 'Add to playlist'
                         },
                           React.createElement(Icons.Plus, { className: 'w-5 h-5' })
                         ),
@@ -1027,7 +1027,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                             }
                           },
                           className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
-                          title: 'Play'
+                          'aria-label': 'Play', 'data-tooltip': 'Play'
                         },
                           React.createElement(Play, { size: 22, className: 'text-ink-primary ml-0.5' })
                         ),
@@ -1049,7 +1049,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                           style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff' },
                           onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
                           onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                          title: 'Add to Queue'
+                          'aria-label': 'Add to queue', 'data-tooltip': 'Add to queue'
                         },
                           React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
                             React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
@@ -1538,7 +1538,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                         style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
                         onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
                         onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                        title: 'Add to Playlist'
+                        'aria-label': 'Add to playlist', 'data-tooltip': 'Add to playlist'
                       },
                         React.createElement(Icons.Plus, { className: 'w-3.5 h-3.5' })
                       ),
@@ -1558,7 +1558,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                         },
                         className: 'w-9 h-9 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
                         style: { border: 'none', cursor: 'pointer' },
-                        title: 'Play'
+                        'aria-label': 'Play', 'data-tooltip': 'Play'
                       },
                         React.createElement(Play, { size: 16, className: 'text-ink-primary ml-0.5' })
                       ),
@@ -1573,7 +1573,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                         style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
                         onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
                         onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                        title: 'Add to Queue'
+                        'aria-label': 'Add to queue', 'data-tooltip': 'Add to queue'
                       },
                         React.createElement('svg', { className: 'w-3.5 h-3.5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
                           React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
@@ -1757,7 +1757,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                         style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
                         onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
                         onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                        title: 'Add to Playlist'
+                        'aria-label': 'Add to playlist', 'data-tooltip': 'Add to playlist'
                       },
                         React.createElement(Icons.Plus, { className: 'w-4 h-4' })
                       ),
@@ -1791,7 +1791,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                         },
                         className: 'w-10 h-10 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
                         style: { border: 'none', cursor: 'pointer' },
-                        title: 'Play album'
+                        'aria-label': 'Play album', 'data-tooltip': 'Play album'
                       },
                         React.createElement(Play, { size: 18, className: 'text-ink-primary ml-0.5' })
                       ),
@@ -1817,7 +1817,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                         style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
                         onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
                         onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                        title: 'Add to Queue'
+                        'aria-label': 'Add to queue', 'data-tooltip': 'Add to queue'
                       },
                         React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
                           React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })

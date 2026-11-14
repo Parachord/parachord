@@ -1932,7 +1932,7 @@ const CHARTS_COUNTRIES = [
 // (Track 2b, presentational slice 1). Behavior-identical: props-driven,
 // memoized as before, React via the vendor global.
 const {
-  Tooltip, FixedTooltip, ResolverIcon,
+  Tooltip, FixedTooltip, TooltipLayer, ResolverIcon,
   SERVICE_LOGOS, ParachordWordmark, PlaybackProgress,
 } = require('./components/ui-atoms');
 
@@ -36351,6 +36351,7 @@ useEffect(() => {
         },
           React.createElement(Tooltip, { content: 'Back', position: 'bottom' },
             React.createElement('button', {
+              'aria-label': 'Back',
               onClick: navigateBack,
               disabled: viewHistory.length <= 1,
               className: 'p-1.5 rounded transition-colors no-drag',
@@ -36366,6 +36367,7 @@ useEffect(() => {
           ),
           React.createElement(Tooltip, { content: 'Forward', position: 'bottom' },
             React.createElement('button', {
+              'aria-label': 'Forward',
               onClick: navigateForward,
               disabled: forwardHistory.length === 0,
               className: 'p-1.5 rounded transition-colors no-drag',
@@ -36691,7 +36693,7 @@ useEffect(() => {
             React.createElement('button', {
               onClick: (e) => { e.stopPropagation(); setAddFriendModalOpen(true); },
               className: 'w-4 h-4 flex items-center justify-center text-ink-tertiary hover:text-ink-secondary transition-colors rounded hover:bg-surface-hover',
-              title: 'Add friend'
+              'aria-label': 'Add friend', 'data-tooltip': 'Add friend'
             },
               React.createElement(Icons.Plus, { className: 'w-3 h-3' })
             )
@@ -36829,6 +36831,7 @@ useEffect(() => {
                       variant: 'light'
                     },
                       React.createElement('button', {
+                        'aria-label': listenAlongFriend?.id === friend.id ? 'Stop listening along' : 'Listen along',
                         onClick: (e) => {
                           e.stopPropagation();
                           if (listenAlongFriend?.id === friend.id) {
@@ -36961,6 +36964,9 @@ useEffect(() => {
         )
       ),
 
+      // Every control's data-tooltip (ui-atoms.js TooltipLayer).
+      React.createElement(TooltipLayer, null),
+
       // Toasts (components/toast.js): an always-mounted live region, so a
       // screen reader hears each one; and the track that started.
       React.createElement(ToastRegion, {
@@ -37035,7 +37041,7 @@ React.createElement('button', {
             borderRadius: '8px',
             cursor: 'pointer'
           },
-          title: 'Dismiss and pause'
+          'aria-label': 'Dismiss and pause', 'data-tooltip': 'Dismiss and pause'
         }, React.createElement(X, { size: 18 })),
 React.createElement('div', {
           className: 'flex flex-col items-center text-center',
@@ -37585,7 +37591,7 @@ React.createElement('div', {
             React.createElement('button', {
               onClick: () => setPlaylistsViewMode('grid'),
               className: `p-1.5 rounded transition-colors ${playlistsViewMode === 'grid' ? 'bg-line text-ink-secondary' : 'text-ink-tertiary hover:text-ink-secondary'}`,
-              title: 'Grid view'
+              'aria-label': 'Grid view', 'data-tooltip': 'Grid view'
             },
               React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
                 React.createElement('rect', { x: 3, y: 3, width: 7, height: 7, rx: 1 }),
@@ -37597,7 +37603,7 @@ React.createElement('div', {
             React.createElement('button', {
               onClick: () => setPlaylistsViewMode('table'),
               className: `p-1.5 rounded transition-colors ${playlistsViewMode === 'table' ? 'bg-line text-ink-secondary' : 'text-ink-tertiary hover:text-ink-secondary'}`,
-              title: 'Table view'
+              'aria-label': 'Table view', 'data-tooltip': 'Table view'
             },
               React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
                 React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h16' })
@@ -37872,7 +37878,7 @@ React.createElement('div', {
                             finally { setRefreshingPlaylist(null); }
                           },
                           className: `p-1 bg-white/90 backdrop-blur-sm rounded-full hover:bg-white transition-colors ${refreshingPlaylist === playlist.id ? 'animate-spin' : ''}`,
-                          title: 'Refresh from source'
+                          'aria-label': 'Refresh from source', 'data-tooltip': 'Refresh from source'
                         },
                           React.createElement(Icons.RefreshCw, { className: 'w-3 h-3 text-ink-secondary' })
                         )
@@ -37914,7 +37920,7 @@ React.createElement('div', {
                           style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff' },
                           onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
                           onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                          title: 'Add to Playlist'
+                          'aria-label': 'Add to playlist', 'data-tooltip': 'Add to playlist'
                         },
                           React.createElement(Icons.Plus, { className: 'w-5 h-5' })
                         ),
@@ -37940,7 +37946,7 @@ React.createElement('div', {
                             }
                           },
                           className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
-                          title: 'Play'
+                          'aria-label': 'Play', 'data-tooltip': 'Play'
                         },
                           React.createElement(Play, { size: 22, className: 'text-ink-primary ml-0.5' })
                         ),
@@ -37962,7 +37968,7 @@ React.createElement('div', {
                           style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff' },
                           onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
                           onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                          title: 'Add to Queue'
+                          'aria-label': 'Add to queue', 'data-tooltip': 'Add to queue'
                         },
                           React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
                             React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
@@ -38186,7 +38192,7 @@ React.createElement('div', {
                       finally { setRefreshingPlaylist(null); }
                     },
                     className: 'w-8 h-8 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0',
-                    title: 'Refresh from source',
+                    'aria-label': 'Refresh from source', 'data-tooltip': 'Refresh from source',
                   },
                     React.createElement(Icons.RefreshCw, { className: `w-4 h-4 text-ink-tertiary ${refreshingPlaylist === playlist.id ? 'animate-spin' : ''}` })
                   ),
@@ -38661,7 +38667,7 @@ React.createElement('div', {
                         style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
                         onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
                         onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                        title: 'Add to Playlist'
+                        'aria-label': 'Add to playlist', 'data-tooltip': 'Add to playlist'
                       },
                         React.createElement(Icons.Plus, { className: 'w-5 h-5' })
                       ),
@@ -38687,7 +38693,7 @@ React.createElement('div', {
                         },
                         className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
                         style: { border: 'none', cursor: 'pointer' },
-                        title: 'Play'
+                        'aria-label': 'Play', 'data-tooltip': 'Play'
                       },
                         React.createElement(Play, { size: 22, className: 'text-ink-primary ml-0.5' })
                       ),
@@ -38701,7 +38707,7 @@ React.createElement('div', {
                         style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
                         onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
                         onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                        title: 'Add to Queue'
+                        'aria-label': 'Add to queue', 'data-tooltip': 'Add to queue'
                       },
                         React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
                           React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
@@ -38967,7 +38973,7 @@ React.createElement('div', {
                                 },
                                 onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                                 onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
-                                title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
+                                'aria-label': `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`, 'data-tooltip': `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
                               }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
                             });
                         })()
@@ -39089,7 +39095,7 @@ React.createElement('div', {
               onClick: () => loadNewReleases(true),
               disabled: newReleasesLoading,
               className: `ml-2 p-1.5 transition-colors ${newReleasesLoading ? 'text-emerald-500' : 'text-ink-tertiary hover:text-ink-secondary'}`,
-              title: newReleasesLoading ? 'Loading...' : 'Refresh'
+              'aria-label': newReleasesLoading ? 'Loading…' : 'Refresh', 'data-tooltip': newReleasesLoading ? 'Loading…' : 'Refresh'
             },
               React.createElement(Icons.RefreshCw, { className: `w-4 h-4 ${newReleasesLoading ? 'animate-spin' : ''}` })
             ),
@@ -39324,7 +39330,7 @@ React.createElement('div', {
                             style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
                             onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
                             onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                            title: 'Add to Playlist'
+                            'aria-label': 'Add to playlist', 'data-tooltip': 'Add to playlist'
                           },
                             React.createElement(Icons.Plus, { className: 'w-5 h-5' })
                           ),
@@ -39345,7 +39351,7 @@ React.createElement('div', {
                             },
                             className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
                             style: { border: 'none', cursor: 'pointer' },
-                            title: 'Play album'
+                            'aria-label': 'Play album', 'data-tooltip': 'Play album'
                           },
                             React.createElement(Play, { size: 22, className: 'text-ink-primary ml-0.5' })
                           ),
@@ -39369,7 +39375,7 @@ React.createElement('div', {
                             style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
                             onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
                             onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                            title: 'Add album to queue'
+                            'aria-label': 'Add album to queue', 'data-tooltip': 'Add album to queue'
                           },
                             React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
                               React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
@@ -39760,7 +39766,7 @@ React.createElement('div', {
                       style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
                       onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
                       onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                      title: 'Add to Playlist'
+                      'aria-label': 'Add to playlist', 'data-tooltip': 'Add to playlist'
                     },
                       React.createElement(Icons.Plus, { className: 'w-5 h-5' })
                     ),
@@ -39787,7 +39793,7 @@ React.createElement('div', {
                       },
                       className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
                       style: { border: 'none', cursor: 'pointer' },
-                      title: 'Play'
+                      'aria-label': 'Play', 'data-tooltip': 'Play'
                     },
                       React.createElement(Play, { size: 22, className: 'text-ink-primary ml-0.5' })
                     ),
@@ -39801,7 +39807,7 @@ React.createElement('div', {
                       style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
                       onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
                       onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                      title: 'Add to Queue'
+                      'aria-label': 'Add to queue', 'data-tooltip': 'Add to queue'
                     },
                       React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
                         React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
@@ -40037,7 +40043,7 @@ React.createElement('div', {
               onClick: () => loadConcerts(true),
               disabled: concertsLoading,
               className: `ml-2 p-1.5 transition-colors ${concertsLoading ? 'text-teal-500' : 'text-ink-tertiary hover:text-ink-secondary'}`,
-              title: concertsLoading ? 'Loading...' : 'Refresh'
+              'aria-label': concertsLoading ? 'Loading…' : 'Refresh', 'data-tooltip': concertsLoading ? 'Loading…' : 'Refresh'
             },
               React.createElement(Icons.RefreshCw, { className: `w-4 h-4 ${concertsLoading ? 'animate-spin' : ''}` })
             ),
@@ -40048,7 +40054,7 @@ React.createElement('div', {
                 onClick: (e) => { e.stopPropagation(); setConcertsLocationOpen(!concertsLocationOpen); },
                 className: 'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors',
                 style: { backgroundColor: pageTint('concerts'), color: PAGE_COLORS.concerts.color },
-                title: `${concertsLocation} (${concertsLocationRadius} mi radius)`
+                'data-tooltip': `${concertsLocation} (${concertsLocationRadius} mi radius)`
               },
                 React.createElement('svg', { className: 'w-3.5 h-3.5 flex-shrink-0', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                   React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2.5, d: 'M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z' })
@@ -40069,7 +40075,7 @@ React.createElement('div', {
                 onClick: (e) => { e.stopPropagation(); setConcertsLocationOpen(!concertsLocationOpen); },
                 className: 'p-1.5 transition-colors',
                 style: { color: concertsLocation ? PAGE_COLORS.concerts.color : 'var(--text-tertiary)' },
-                title: concertsLocation ? `Filtered: ${concertsLocation}` : 'Filter by location'
+                'aria-label': concertsLocation ? `Filtered: ${concertsLocation}` : 'Filter by location', 'data-tooltip': concertsLocation ? `Filtered: ${concertsLocation}` : 'Filter by location'
               },
                 React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                   React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z' }),
@@ -40145,7 +40151,7 @@ React.createElement('div', {
                     style: { padding: '8px', borderRadius: '10px', backgroundColor: 'var(--bg-inset)', border: '1px solid var(--border-default)', color: 'var(--text-tertiary)' },
                     onMouseEnter: (e) => { e.currentTarget.style.color = PAGE_COLORS.concerts.color; e.currentTarget.style.borderColor = PAGE_COLORS.concerts.color; },
                     onMouseLeave: (e) => { e.currentTarget.style.color = 'var(--text-tertiary)'; e.currentTarget.style.borderColor = 'var(--border-default)'; },
-                    title: 'Use my location'
+                    'aria-label': 'Use my location', 'data-tooltip': 'Use my location'
                   },
                     concertsGeocodingLoading
                       ? React.createElement(Icons.RefreshCw, { className: 'w-4 h-4 animate-spin' })
@@ -40886,7 +40892,7 @@ React.createElement('div', {
                       },
                       className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
                       style: { border: 'none', cursor: 'pointer' },
-                      title: 'Play top 10 tracks'
+                      'aria-label': 'Play top 10 tracks', 'data-tooltip': 'Play top 10 tracks'
                     }, React.createElement(PlayTop10Icon, { size: 26, className: 'text-ink-primary' })),
                     React.createElement('button', {
                       onClick: async (e) => {
@@ -40901,7 +40907,7 @@ React.createElement('div', {
                       },
                       className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
                       style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-                      title: 'Add top 10 to queue'
+                      'aria-label': 'Add top 10 to queue', 'data-tooltip': 'Add top 10 to queue'
                     }, React.createElement(QueueTop10Icon, { size: 20 }))
                   )
                 ),
@@ -41033,7 +41039,7 @@ React.createElement('div', {
                       },
                       className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
                       style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-                      title: 'Add to Playlist'
+                      'aria-label': 'Add to playlist', 'data-tooltip': 'Add to playlist'
                     },
                       React.createElement(Icons.Plus, { className: 'w-5 h-5' })
                     ),
@@ -41049,7 +41055,7 @@ React.createElement('div', {
                       },
                       className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
                       style: { border: 'none', cursor: 'pointer' },
-                      title: 'Play album'
+                      'aria-label': 'Play album', 'data-tooltip': 'Play album'
                     }, React.createElement(Play, { size: 22, className: 'text-ink-primary ml-0.5' })),
                     React.createElement('button', {
                       onClick: async (e) => {
@@ -41064,7 +41070,7 @@ React.createElement('div', {
                       },
                       className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
                       style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-                      title: 'Add album to queue'
+                      'aria-label': 'Add album to queue', 'data-tooltip': 'Add album to queue'
                     },
                       React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
                         React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
@@ -41127,7 +41133,7 @@ React.createElement('div', {
                       },
                       className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
                       style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-                      title: 'Add to Playlist'
+                      'aria-label': 'Add to playlist', 'data-tooltip': 'Add to playlist'
                     },
                       React.createElement(Icons.Plus, { className: 'w-5 h-5' })
                     ),
@@ -41138,7 +41144,7 @@ React.createElement('div', {
                       },
                       className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
                       style: { border: 'none', cursor: 'pointer' },
-                      title: 'Play'
+                      'aria-label': 'Play', 'data-tooltip': 'Play'
                     }, React.createElement(Play, { size: 22, className: 'text-ink-primary ml-0.5' })),
                     React.createElement('button', {
                       onClick: (e) => {
@@ -41147,7 +41153,7 @@ React.createElement('div', {
                       },
                       className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
                       style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-                      title: 'Add to Queue'
+                      'aria-label': 'Add to queue', 'data-tooltip': 'Add to queue'
                     },
                       React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
                         React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
@@ -41267,7 +41273,7 @@ React.createElement('div', {
                       },
                       className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
                       style: { border: 'none', cursor: 'pointer' },
-                      title: 'Play'
+                      'aria-label': 'Play', 'data-tooltip': 'Play'
                     }, React.createElement(Play, { size: 22, className: 'text-ink-primary ml-0.5' }))
                   )
                 ),
@@ -41417,7 +41423,7 @@ React.createElement('div', {
                               },
                               onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                               onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
-                              title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
+                              'aria-label': `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`, 'data-tooltip': `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
                             }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
                           });
                       })()
@@ -42091,7 +42097,7 @@ React.createElement('div', {
                                   style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', opacity: (source.confidence || 0) < bestConf ? 0.6 : 1, transition: 'transform 0.1s' },
                                   onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                                   onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
-                                  title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
+                                  'aria-label': `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`, 'data-tooltip': `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
                                 }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
                               });
                             })()
@@ -42191,7 +42197,7 @@ React.createElement('div', {
                                   style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: (source.confidence || 0) < bestConf ? 0.6 : 1, transition: 'transform 0.1s' },
                                   onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                                   onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
-                                  title: `Play from ${resolver.name}`
+                                  'aria-label': `Play from ${resolver.name}`, 'data-tooltip': `Play from ${resolver.name}`
                                 }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
                               });
                             })()
@@ -42340,7 +42346,7 @@ React.createElement('div', {
                             },
                             className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
                             style: { border: 'none', cursor: 'pointer' },
-                            title: 'Play top 10 tracks'
+                            'aria-label': 'Play top 10 tracks', 'data-tooltip': 'Play top 10 tracks'
                           },
                             React.createElement(PlayTop10Icon, { size: 26, className: 'text-ink-primary' })
                           ),
@@ -42360,7 +42366,7 @@ React.createElement('div', {
                             style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
                             onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
                             onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                            title: 'Add top 10 to queue'
+                            'aria-label': 'Add top 10 to queue', 'data-tooltip': 'Add top 10 to queue'
                           },
                             React.createElement(QueueTop10Icon, { size: 20 })
                           )
@@ -42557,7 +42563,7 @@ React.createElement('div', {
                             style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
                             onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
                             onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                            title: 'Add to Playlist'
+                            'aria-label': 'Add to playlist', 'data-tooltip': 'Add to playlist'
                           },
                             React.createElement(Icons.Plus, { className: 'w-5 h-5' })
                           ),
@@ -42584,7 +42590,7 @@ React.createElement('div', {
                             },
                             className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
                             style: { border: 'none', cursor: 'pointer' },
-                            title: 'Play album'
+                            'aria-label': 'Play album', 'data-tooltip': 'Play album'
                           },
                             React.createElement(Play, { size: 22, className: 'text-ink-primary ml-0.5' })
                           ),
@@ -42608,7 +42614,7 @@ React.createElement('div', {
                             style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
                             onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
                             onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                            title: 'Add album to queue'
+                            'aria-label': 'Add album to queue', 'data-tooltip': 'Add album to queue'
                           },
                             React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
             React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
@@ -42991,7 +42997,7 @@ React.createElement('div', {
                                     style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', opacity: (source.confidence || 0) < bestConf ? 0.6 : 1, transition: 'transform 0.1s' },
                                     onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                                     onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
-                                    title: `Play from ${resolver.name}`
+                                    'aria-label': `Play from ${resolver.name}`, 'data-tooltip': `Play from ${resolver.name}`
                                   }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
                                 });
                               })()
@@ -43094,7 +43100,7 @@ React.createElement('div', {
                                     style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', opacity: (source.confidence || 0) < bestConf ? 0.6 : 1, transition: 'transform 0.1s' },
                                     onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                                     onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
-                                    title: `Play from ${resolver.name}`
+                                    'aria-label': `Play from ${resolver.name}`, 'data-tooltip': `Play from ${resolver.name}`
                                   }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
                                 });
                               })()
@@ -43208,7 +43214,7 @@ React.createElement('div', {
                                 style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
                                 onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
                                 onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                                title: 'Add to Playlist'
+                                'aria-label': 'Add to playlist', 'data-tooltip': 'Add to playlist'
                               },
                                 React.createElement(Icons.Plus, { className: 'w-5 h-5' })
                               ),
@@ -43235,7 +43241,7 @@ React.createElement('div', {
                                 },
                                 className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
                                 style: { border: 'none', cursor: 'pointer' },
-                                title: 'Play album'
+                                'aria-label': 'Play album', 'data-tooltip': 'Play album'
                               },
                                 React.createElement(Play, { size: 22, className: 'text-ink-primary ml-0.5' })
                               ),
@@ -43259,7 +43265,7 @@ React.createElement('div', {
                                 style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
                                 onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
                                 onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                                title: 'Add album to queue'
+                                'aria-label': 'Add album to queue', 'data-tooltip': 'Add album to queue'
                               },
                                 React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
             React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
@@ -43343,7 +43349,7 @@ React.createElement('div', {
                                 },
                                 className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
                                 style: { border: 'none', cursor: 'pointer' },
-                                title: 'Play top 10 tracks'
+                                'aria-label': 'Play top 10 tracks', 'data-tooltip': 'Play top 10 tracks'
                               },
                                 React.createElement(PlayTop10Icon, { size: 26, className: 'text-ink-primary' })
                               ),
@@ -43363,7 +43369,7 @@ React.createElement('div', {
                                 style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
                                 onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
                                 onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                                title: 'Add top 10 to queue'
+                                'aria-label': 'Add top 10 to queue', 'data-tooltip': 'Add top 10 to queue'
                               },
                                 React.createElement(QueueTop10Icon, { size: 20 })
                               )
@@ -44423,7 +44429,7 @@ React.createElement(Select, { value: playbackAbr ? 'on' : 'off', onChange: (v) =
                             onChange: (e) => setResolverVolumeOffsets(prev => ({ ...prev, [resolver.id]: Number(e.target.value) })),
                             className: `flex-1 h-2 bg-control-off rounded-full appearance-none ${isVolumeDisabled ? 'cursor-not-allowed' : 'cursor-pointer accent-purple-600'}`,
                             disabled: isVolumeDisabled,
-                            title: isVolumeDisabled ? (resolver.id === 'applemusic' ? 'Use system volume to control Apple Music' : 'Browser playback - volume control not available') : undefined
+                            'aria-label': isVolumeDisabled ? (resolver.id === 'applemusic' ? 'Use system volume to control Apple Music' : 'Browser playback - volume control not available') : undefined, 'data-tooltip': isVolumeDisabled ? (resolver.id === 'applemusic' ? 'Use system volume to control Apple Music' : 'Browser playback - volume control not available') : undefined
                           }),
                           React.createElement('span', {
                             style: {
@@ -45378,6 +45384,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
             // (#1319). The ref read is current here: handleNext pushes to the
             // history before the setCurrentTrack(null) that re-renders this.
             React.createElement('button', {
+              'aria-label': 'Previous',
               onClick: handlePrevious,
               disabled: !currentTrack && playHistoryRef.current.length === 0,
               className: 'p-2 rounded hover:bg-white/10 transition-colors',
@@ -45386,6 +45393,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
           ),
           React.createElement(Tooltip, { content: isPlaying ? 'Pause' : (playStartPending({ currentTrack, isPlaying, trackLoading, loadingTrack, resumePending }) ? 'Starting…' : 'Play'), position: 'top', variant: 'dark' },
             React.createElement('button', {
+              'aria-label': isPlaying ? 'Pause' : 'Play',
               onClick: handlePlayPause,
               disabled: !currentTrack,
               className: 'p-2 rounded hover:bg-white/10 transition-colors',
@@ -45394,6 +45402,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
           ),
           React.createElement(Tooltip, { content: 'Next', position: 'top', variant: 'dark' },
             React.createElement('button', {
+              'aria-label': 'Next',
               onClick: () => handleNext(true),
               disabled: !currentTrack,
               className: 'p-2 rounded hover:bg-white/10 transition-colors',
@@ -45403,6 +45412,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
           // Queue button (hamburger style)
           React.createElement(Tooltip, { content: 'Queue', position: 'top', variant: 'dark' },
             React.createElement('button', {
+              'aria-label': 'Queue',
               onClick: () => setQueueDrawerOpen(!queueDrawerOpen),
               className: `relative p-2 ml-1 rounded hover:bg-white/10 transition-colors ${queueDrawerOpen ? 'bg-white/20 text-white' : 'text-gray-400'} ${queueAnimating ? 'queue-pulse' : ''}`,
               style: { display: 'flex', alignItems: 'center', justifyContent: 'center' }
@@ -45453,6 +45463,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
               variant: 'dark'
             },
               React.createElement('button', {
+                'aria-label': hasEnabledChat ? 'Shuffleupagus' : hasEnabledGenerate ? 'AI Playlist' : 'Enable AI in Settings',
                 onClick: handleClick,
                 disabled: !hasAnyAi,
                 className: 'p-2 ml-1 rounded transition-colors',
@@ -45671,6 +45682,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                     variant: 'dark'
                   },
                     React.createElement('button', {
+                      'aria-label': 'On tour near you',
                       onClick: (e) => {
                         e.stopPropagation();
                         pendingProtocolTabRef.current = 'on-tour';
@@ -45746,7 +45758,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                         style: {
                           background: playbarSourceDropdownOpen ? 'rgba(255,255,255,0.1)' : 'transparent'
                         },
-                        title: hasMultipleSources ? 'Switch playback source' : resolver.name
+                        'data-tooltip': hasMultipleSources ? 'Switch playback source' : resolver.name
                       },
                         // Resolver icon
                         React.createElement(ResolverIcon, {
@@ -45984,11 +45996,12 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
           React.createElement(Tooltip, {
             content: spinoffMode ? 'Exit spinoff mode' :
               spinoffAvailable === false ? 'No related songs available' :
-              spinoffAvailable === null ? 'Checking for related songs...' : 'Spinoff',
+              spinoffAvailable === null ? 'Checking for related songs…' : 'Spinoff',
             position: 'top',
             variant: 'dark'
           },
             React.createElement('button', {
+              'aria-label': spinoffMode ? 'Exit spinoff mode' : 'Spinoff',
               onClick: () => {
                 if (spinoffMode) {
                   exitSpinoff();
@@ -46030,6 +46043,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
               variant: 'dark'
             },
               React.createElement('button', {
+                'aria-label': isInCollection ? 'Remove from collection' : 'Save to collection',
                 onClick: () => {
                   if (!isInCollection) {
                     // Get sources from trackSources state as fallback (keyed by track.id)
@@ -46096,6 +46110,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
               variant: 'dark'
             },
               React.createElement('button', {
+                'aria-label': tooltipContent,
                 onClick: shuffleDisabled ? undefined : () => requestShuffle('toggle'),
                 disabled: shuffleDisabled,
                 className: 'p-2 rounded transition-colors',
@@ -46222,6 +46237,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                 variant: 'dark'
               },
                 React.createElement('button', {
+                  'aria-label': isMuted || effectiveVolume === 0 ? 'Unmute' : 'Mute',
                   className: 'transition-colors',
                   style: { color: isDisabled ? '#4b5563' : '#9ca3af', cursor: isDisabled ? 'not-allowed' : 'pointer' },
                   onClick: handleMuteToggle,
@@ -46245,6 +46261,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                 variant: 'dark'
               },
                 React.createElement('input', {
+                  'aria-label': 'Volume',
                   type: 'range',
                   min: '0',
                   max: '100',
@@ -46719,7 +46736,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                       // Copy as Parachord link button (user messages only, before the bubble)
                       msg.role === 'user' && React.createElement('button', {
                         className: 'chat-copy-link-btn',
-                        title: 'Share prompt',
+                        'aria-label': 'Share prompt', 'data-tooltip': 'Share prompt',
                         onClick: () => {
                           const text = typeof msg.content === 'string' ? msg.content : '';
                           const truncated = text.slice(0, 500);
@@ -47033,7 +47050,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                   },
                   onMouseEnter: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks && resultsSidebar.tracks.length > 0) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)'; },
                   onMouseLeave: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks && resultsSidebar.tracks.length > 0) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'; },
-                  title: 'Add to Playlist'
+                  'aria-label': 'Add to playlist', 'data-tooltip': 'Add to playlist'
                 },
                   React.createElement(Icons.Plus, { className: 'w-5 h-5' })
                 ),
@@ -47050,7 +47067,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                   },
                   onMouseEnter: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks && resultsSidebar.tracks.length > 0) e.currentTarget.style.transform = 'scale(1.1)'; },
                   onMouseLeave: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks && resultsSidebar.tracks.length > 0) e.currentTarget.style.transform = 'scale(1)'; },
-                  title: 'Play Now'
+                  'aria-label': 'Play now', 'data-tooltip': 'Play now'
                 },
                   React.createElement(Play, { size: 24, className: 'text-gray-800 ml-0.5' })
                 ),
@@ -47068,7 +47085,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                   },
                   onMouseEnter: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks && resultsSidebar.tracks.length > 0) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)'; },
                   onMouseLeave: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks && resultsSidebar.tracks.length > 0) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'; },
-                  title: 'Add to Queue'
+                  'aria-label': 'Add to queue', 'data-tooltip': 'Add to queue'
                 },
                   React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
                     React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
@@ -47215,7 +47232,7 @@ React.createElement('div', { className: 'flex gap-3' },
           React.createElement('button', {
             onClick: handleSaveQueueToFile,
             disabled: !queueSavePlaylistName.trim(),
-            title: 'Write an .xspf file instead of adding to your playlists',
+            'data-tooltip': 'Write an .xspf file instead of adding to your playlists',
             className: 'flex-1 py-2.5 px-4 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-700 disabled:text-gray-500 text-white font-medium rounded-lg transition-colors disabled:cursor-not-allowed'
           }, 'Save to file'),
           React.createElement('button', {
@@ -49261,7 +49278,7 @@ React.createElement('div', {
                     const resolver = metaServices.find(s => s.id === selectedResolver.id) || selectedResolver;
                     fetchDynamicModels(resolver, metaServiceConfigs[selectedResolver.id]);
                   },
-                  title: 'Refresh models',
+                  'data-tooltip': 'Refresh models',
                   style: {
                     background: 'none',
                     border: 'none',
@@ -49588,7 +49605,7 @@ React.createElement('div', {
                     onClick: () => {
                       fetchDynamicModels(resolver, metaServiceConfigs[selectedResolver.id]);
                     },
-                    title: 'Refresh models',
+                    'data-tooltip': 'Refresh models',
                     style: {
                       background: 'none',
                       border: 'none',
@@ -49907,7 +49924,7 @@ React.createElement('div', {
                             cursor: isScanning ? 'not-allowed' : 'pointer',
                             opacity: isScanning ? 0.5 : 1
                           },
-                          title: 'Rescan folder'
+                          'data-tooltip': 'Rescan folder'
                         }, '\u21BB'),
                         React.createElement('button', {
                           onClick: () => handleRemoveWatchFolder(folder.path),
@@ -49921,7 +49938,7 @@ React.createElement('div', {
                             borderRadius: '6px',
                             cursor: 'pointer'
                           },
-                          title: 'Remove folder'
+                          'data-tooltip': 'Remove folder'
                         }, '\u2715')
                       )
                     )
@@ -50064,7 +50081,7 @@ React.createElement('div', {
               React.createElement('button', {
                 onClick: handleRemoveMissingFiles,
                 disabled: isScanning || watchFolders.length === 0,
-                title: 'Remove library entries for files that are no longer on disk',
+                'data-tooltip': 'Remove library entries for files that are no longer on disk',
                 className: 'mt-4 ml-2 px-4 py-2 text-sm text-accent hover:bg-accent-tint rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
               }, 'Remove Missing Files')
             )
@@ -50452,7 +50469,7 @@ React.createElement('div', {
                     cursor: ['spotify', 'localfiles'].includes(selectedMarketplaceItem.id) ? 'not-allowed' : 'pointer',
                     opacity: ['spotify', 'localfiles'].includes(selectedMarketplaceItem.id) ? 0.5 : 1
                   },
-                  title: ['spotify', 'localfiles'].includes(selectedMarketplaceItem.id)
+                  'data-tooltip': ['spotify', 'localfiles'].includes(selectedMarketplaceItem.id)
                     ? 'Core plug-ins cannot be removed'
                     : 'Remove this plug-in'
                 }, 'Remove'),
@@ -51944,7 +51961,7 @@ React.createElement('div', {
                     padding: '0',
                     cursor: 'pointer'
                   },
-                  title: `${art.releaseName} by ${art.artistName}${art.year ? ` (${art.year})` : ''}`
+                  'data-tooltip': `${art.releaseName} by ${art.artistName}${art.year ? ` (${art.year})` : ''}`
                 },
                   React.createElement('img', {
                     src: art.thumbnailUrl,
@@ -53795,7 +53812,7 @@ firstRunTutorial.step === 'complete' && React.createElement(React.Fragment, null
           shuffleMode && originalQueueRef.current && React.createElement('button', {
             onClick: (e) => { e.stopPropagation(); restoreOriginalOrder(); },
             className: 'px-3 py-1 text-xs text-purple-400 hover:text-purple-300 border border-purple-500/50 rounded hover:bg-purple-500/10 transition-colors',
-            title: 'Restore original queue order'
+            'data-tooltip': 'Restore original queue order'
           }, 'UNSHUFFLE'),
           // Clear button
           currentQueue.length > 0 && React.createElement('button', {

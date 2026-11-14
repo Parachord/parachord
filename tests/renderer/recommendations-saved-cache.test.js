@@ -162,9 +162,9 @@ describe('each provider applies as it lands', () => {
 describe('recommended playlist cards', () => {
   const card = app.slice(app.indexOf('const playlistCard = (item, index, section) => {'), app.indexOf('// ── Weekly playlists (moved from Home)'));
 
-  test('carry the standard playlist hover set: Add to Playlist, Play, Add to Queue', () => {
-    const titles = [...card.matchAll(/title: '([^']+)'/g)].map(m => m[1]);
-    expect(titles).toEqual(['Add to Playlist', 'Play', 'Add to Queue']);
+  test('carry the standard playlist hover set: Add to playlist, Play, Add to queue', () => {
+    const titles = [...card.matchAll(/'data-tooltip': '([^']+)'/g)].map(m => m[1]);
+    expect(titles).toEqual(['Add to playlist', 'Play', 'Add to queue']);
     expect(card).toMatch(/addRecommendationPlaylistToPlaylist\(item\)/);
     expect(card).toMatch(/playRecommendationPlaylist\(item\)/);
     expect(card).toMatch(/queueRecommendationPlaylist\(item\)/);

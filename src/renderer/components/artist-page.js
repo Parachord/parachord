@@ -230,6 +230,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                     variant: 'dark'
                   },
                     React.createElement('button', {
+                      'aria-label': isInCollection ? 'Remove from collection' : 'Add to collection',
                       onClick: (e) => {
                         e.stopPropagation();
                         if (!isInCollection) {
@@ -377,6 +378,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                   variant: 'dark'
                 },
                   React.createElement('button', {
+                    'aria-label': isInCollection ? 'Remove from collection' : 'Add to collection',
                     onClick: (e) => {
                       e.stopPropagation();
                       if (!isInCollection) {
@@ -1335,7 +1337,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                         whiteSpace: 'nowrap',
                         textDecoration: 'none'
                       },
-                      title: artistExtendedInfo.urls.officialHomepage,
+                      'data-tooltip': artistExtendedInfo.urls.officialHomepage,
                       onMouseEnter: (e) => e.currentTarget.style.color = '#7e22ce',
                       onMouseLeave: (e) => e.currentTarget.style.color = '#9333ea'
                     }, new URL(artistExtendedInfo.urls.officialHomepage).hostname.replace(/^www\./, ''))
@@ -1369,7 +1371,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                           justifyContent: 'center',
                           transition: 'background-color 150ms ease'
                         },
-                        title: 'Twitter/X',
+                        'aria-label': 'Twitter/X', 'data-tooltip': 'Twitter/X',
                         onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'var(--placeholder-bg)',
                         onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'var(--placeholder-bg-light)'
                       },
@@ -1392,7 +1394,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                           justifyContent: 'center',
                           transition: 'background-color 150ms ease'
                         },
-                        title: 'Instagram',
+                        'aria-label': 'Instagram', 'data-tooltip': 'Instagram',
                         onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'var(--placeholder-bg)',
                         onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'var(--placeholder-bg-light)'
                       },
@@ -1415,7 +1417,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                           justifyContent: 'center',
                           transition: 'background-color 150ms ease'
                         },
-                        title: 'Facebook',
+                        'aria-label': 'Facebook', 'data-tooltip': 'Facebook',
                         onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'var(--placeholder-bg)',
                         onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'var(--placeholder-bg-light)'
                       },
@@ -1438,7 +1440,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                           justifyContent: 'center',
                           transition: 'background-color 150ms ease'
                         },
-                        title: 'YouTube',
+                        'aria-label': 'YouTube', 'data-tooltip': 'YouTube',
                         onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'var(--placeholder-bg)',
                         onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'var(--placeholder-bg-light)'
                       },
@@ -1742,7 +1744,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                             },
                             className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
                             style: { border: 'none', cursor: 'pointer' },
-                            title: 'Play top 10 tracks'
+                            'aria-label': 'Play top 10 tracks', 'data-tooltip': 'Play top 10 tracks'
                           },
                             React.createElement(PlayTop10Icon, { size: 26, className: 'text-ink-primary' })
                           ),
@@ -1762,7 +1764,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                             style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
                             onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
                             onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                            title: 'Add top 10 to queue'
+                            'aria-label': 'Add top 10 to queue', 'data-tooltip': 'Add top 10 to queue'
                           },
                             React.createElement(QueueTop10Icon, { size: 20 })
                           )
@@ -1818,7 +1820,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                   onClick: () => currentArtist && loadArtistConcerts(currentArtist.name, true),
                   disabled: artistConcertsLoading,
                   className: `p-1.5 transition-colors ${artistConcertsLoading ? 'text-teal-500' : 'text-ink-tertiary hover:text-ink-secondary'}`,
-                  title: artistConcertsLoading ? 'Loading...' : 'Refresh'
+                  'aria-label': artistConcertsLoading ? 'Loading…' : 'Refresh', 'data-tooltip': artistConcertsLoading ? 'Loading…' : 'Refresh'
                 },
                   React.createElement(Icons.RefreshCw, { className: `w-4 h-4 ${artistConcertsLoading ? 'animate-spin' : ''}` })
                 )

@@ -66,7 +66,7 @@ function HomeBanner({ items, onDismiss, onCta }) {
     React.createElement('button', {
       onClick: () => onDismiss && onDismiss(item),
       'aria-label': 'Dismiss announcement',
-      title: 'Dismiss',
+      'data-tooltip': 'Dismiss',
       style: {
         background: 'transparent',
         border: 'none',

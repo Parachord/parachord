@@ -121,7 +121,7 @@ const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick, onCo
             }
           },
           className: 'text-xs text-gray-500 truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
-          title: `View ${track.artist}'s discography`
+          'data-tooltip': `View ${track.artist}'s discography`
         }, track.artist),
         // Resolver badges - clickable for manual override
         ...availableSources.map(resolverId => {
@@ -136,7 +136,7 @@ const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick, onCo
               handlePlay(track.sources[resolverId]);
             },
             className: `text-xs px-2 py-0.5 ${meta.bgColor} ${meta.textColor} rounded-full hover:opacity-80 transition-opacity cursor-pointer`,
-            title: `Play from ${meta.label} (manual override)`
+            'data-tooltip': `Play from ${meta.label} (manual override)`
           }, meta.label);
         }),
       ),
@@ -430,7 +430,7 @@ const VirtualizedQueueList = React.memo(({
               }
             },
             className: 'px-2 py-0.5 text-xs text-gray-400 hover:text-white hover:bg-white/10 rounded transition-colors',
-            title: 'Retry'
+            'data-tooltip': 'Retry'
           }, '↻')
         : isLoading ?
           React.createElement('div', { className: 'flex items-center gap-1' },
@@ -476,7 +476,7 @@ const VirtualizedQueueList = React.memo(({
                 },
                 onMouseEnter: (e) => { e.currentTarget.style.transform = 'scale(1.1)'; e.currentTarget.style.opacity = '1'; e.currentTarget.style.filter = 'saturate(1)'; },
                 onMouseLeave: (e) => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.opacity = String(restingOpacity); e.currentTarget.style.filter = 'saturate(0.7)'; },
-                title: `Play via ${resolver.name}${confidence ? ` (${Math.round(confidence * 100)}% match)` : ''}`
+                'aria-label': `Play via ${resolver.name}${confidence ? ` (${Math.round(confidence * 100)}% match)` : ''}`, 'data-tooltip': `Play via ${resolver.name}${confidence ? ` (${Math.round(confidence * 100)}% match)` : ''}`
               }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
             });
           })()
@@ -501,7 +501,7 @@ const VirtualizedQueueList = React.memo(({
           removeFromQueue(track.id, index);
         },
         className: 'flex-shrink-0 p-1 text-gray-500 hover:text-red-400 hover:bg-white/10 rounded transition-colors opacity-0 group-hover:opacity-100',
-        title: isLoading ? 'Cancel' : 'Remove from queue'
+        'aria-label': isLoading ? 'Cancel' : 'Remove from queue', 'data-tooltip': isLoading ? 'Cancel' : 'Remove from queue'
       }, React.createElement(X, { size: 14 }))
     );
   };

@@ -8,49 +8,84 @@
 // ParachordWordmark the splash/about wordmark; PlaybackProgress the playbar's
 // isolated progress leaf (parachord#768 — progress ticks re-render only it).
 
-// Tooltip component - reusable tooltip with Cinematic Light styling
-// position: 'top' | 'bottom' | 'left' | 'right'
-// variant: 'light' | 'dark' (dark variant for dark backgrounds)
-// className: additional CSS classes (e.g., 'tooltip-bio' for bio tooltips)
-const Tooltip = ({ children, content, position = 'top', variant = 'light', className = '' }) => {
-  return React.createElement('div', {
-    className: `tooltip-container ${variant === 'dark' ? 'tooltip-dark' : ''} ${className}`.trim()
-  },
-    children,
-    React.createElement('span', {
-      className: `tooltip-content tooltip-${position}`
-    }, content)
-  );
-};
+// Tooltip (#1385 step 9): the one tooltip. There used to be two: a
+// CSS-only Tooltip (hover only, clipped by any overflow:hidden parent, shown
+// at once) and FixedTooltip (portal-positioned, shown on focus too). This is
+// FixedTooltip's behaviour with Tooltip's look:
+//   - the tip is portalled to <body> and position:fixed, so no overflow
+//     clips it; placeTooltip keeps it inside the window and flips it when
+//     its side has no room
+//   - it shows on hover and on keyboard focus inside the trigger, after
+//     `delay` ms (400), and stays while either lasts
+//   - Escape (WCAG 1.4.13) or a scroll dismisses it until the pointer or
+//     focus comes back
+//   - role="tooltip"; a single element child gets aria-describedby while it
+//     shows
+// Props: content, position ('top' | 'top-end' | 'bottom' | 'bottom-start' |
+// 'left' | 'right'), variant ('light' | 'dark', for the always-dark
+// surfaces), className ('tooltip-fill' caps the trigger at its column so a
+// truncating child still ellipsizes; 'tooltip-bio' wraps long text), id,
+// delay. The look is the .tooltip-panel classes in index.html.
 
-// Where a fixed tooltip goes: below the trigger and left-aligned with it,
-// shifted left so it stays inside the right edge (a trigger in a window's
-// right-hand column), and flipped above the trigger when it would pass the
-// bottom. Pure, so the clamp and the flip are tested without a DOM.
-const placeFixedTooltip = (rect, tip, view, margin = 8, gap = 6) => {
-  const left = Math.max(margin, Math.min(rect.left, view.width - tip.width - margin));
+// Where the tip goes for a position. Pure, so the clamp and the flips are
+// tested without a DOM.
+const placeTooltip = (rect, tip, view, position = 'top', margin = 8, gap = 6) => {
+  const clampX = (x) => Math.max(margin, Math.min(x, view.width - tip.width - margin));
+  const clampY = (y) => Math.max(margin, Math.min(y, view.height - tip.height - margin));
+  const width = rect.right != null ? rect.right - rect.left : 0;
+  const height = rect.bottom - rect.top;
+  const above = rect.top - gap - tip.height;
   const below = rect.bottom + gap;
-  const top = below + tip.height > view.height - margin
-    ? Math.max(margin, rect.top - gap - tip.height)
-    : below;
-  return { top, left };
+  const fitsAbove = above >= margin;
+  const fitsBelow = below + tip.height <= view.height - margin;
+  switch (position) {
+    case 'bottom-start':
+      return { left: clampX(rect.left), top: fitsBelow ? below : Math.max(margin, above) };
+    case 'bottom':
+      return { left: clampX(rect.left + width / 2 - tip.width / 2), top: fitsBelow || !fitsAbove ? below : above };
+    case 'top-end':
+      return { left: clampX(rect.right - tip.width), top: fitsAbove || !fitsBelow ? Math.max(margin, above) : below };
+    case 'left': {
+      const x = rect.left - gap - tip.width;
+      return { left: x >= margin ? x : clampX(rect.right + gap), top: clampY(rect.top + height / 2 - tip.height / 2) };
+    }
+    case 'right': {
+      const x = rect.right + gap;
+      return { left: x + tip.width <= view.width - margin ? x : clampX(rect.left - gap - tip.width), top: clampY(rect.top + height / 2 - tip.height / 2) };
+    }
+    case 'top':
+    default:
+      return { left: clampX(rect.left + width / 2 - tip.width / 2), top: fitsAbove || !fitsBelow ? Math.max(margin, above) : below };
+  }
 };
 
-// FixedTooltip - uses position:fixed to escape overflow:hidden containers.
-// Shows on hover or on keyboard focus inside the trigger, and stays while
-// either lasts (a blur with the pointer still over it keeps it). Escape
-// dismisses it (WCAG 1.4.13) until the pointer or focus comes back.
-// Coordinates are set only by the layout effect, which measures the tip
-// before paint, so a second show (focus after hover) can't undo the clamp.
-// `id` names the tip (role="tooltip") for a trigger's aria-describedby.
-const FixedTooltip = ({ children, content, id }) => {
+// The old FixedTooltip placement: below the trigger, left-aligned, flipped
+// above at the bottom edge.
+const placeFixedTooltip = (rect, tip, view, margin = 8, gap = 6) => placeTooltip(rect, tip, view, 'bottom-start', margin, gap);
+
+let tooltipSeq = 0;
+const TOOLTIP_DELAY_MS = 400;
+
+const Tooltip = ({ children, content, position = 'top', variant = 'light', className = '', id, delay = TOOLTIP_DELAY_MS, block = false, note = false }) => {
   const [hover, setHover] = React.useState(false);
   const [focus, setFocus] = React.useState(false);
   const [dismissed, setDismissed] = React.useState(false);
   const [coords, setCoords] = React.useState(null);
   const triggerRef = React.useRef(null);
   const tipRef = React.useRef(null);
-  const visible = (hover || focus) && !dismissed && !!content;
+  const [waited, setWaited] = React.useState(false);
+  const autoId = React.useRef(null);
+  if (!autoId.current) autoId.current = `tooltip-${++tooltipSeq}`;
+  const tipId = id || autoId.current;
+  const wanted = (hover || focus) && !dismissed && !!content;
+  const visible = wanted && (delay <= 0 || waited);
+
+  React.useEffect(() => {
+    if (!wanted) { setWaited(false); return undefined; }
+    if (delay <= 0 || waited) return undefined;
+    const t = setTimeout(() => setWaited(true), delay);
+    return () => clearTimeout(t);
+  }, [wanted, delay, waited]);
 
   React.useLayoutEffect(() => {
     if (!visible) {
@@ -58,22 +93,43 @@ const FixedTooltip = ({ children, content, id }) => {
       return;
     }
     if (!tipRef.current || !triggerRef.current) return;
-    const next = placeFixedTooltip(
+    const next = placeTooltip(
       triggerRef.current.getBoundingClientRect(),
       tipRef.current.getBoundingClientRect(),
-      { width: window.innerWidth, height: window.innerHeight }
+      { width: window.innerWidth, height: window.innerHeight },
+      position
     );
     setCoords((c) => (c && c.left === next.left && c.top === next.top ? c : next));
-  }, [visible, content]);
+  }, [visible, content, position]);
 
   React.useEffect(() => {
     if (!visible) return undefined;
     const onKey = (ev) => { if (ev.key === 'Escape') setDismissed(true); };
+    // A fixed tip would stay put while its trigger scrolls away.
+    const onScroll = () => setDismissed(true);
     document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
+    document.addEventListener('scroll', onScroll, true);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('scroll', onScroll, true);
+    };
   }, [visible]);
 
-  return React.createElement('div', {
+  const single = React.isValidElement(children) && !Array.isArray(children);
+  const trigger = visible && single
+    ? React.cloneElement(children, {
+      'aria-describedby': [children.props['aria-describedby'], tipId].filter(Boolean).join(' '),
+    })
+    : children;
+
+  const panelClass = [
+    'tooltip-panel',
+    variant === 'dark' ? 'tooltip-on-dark' : '',
+    note ? 'tooltip-note' : '',
+    /\btooltip-bio\b/.test(className) ? 'tooltip-wrap' : '',
+  ].filter(Boolean).join(' ');
+
+  return React.createElement('div', Object.assign({
     ref: triggerRef,
     onMouseEnter: () => { setHover(true); setDismissed(false); },
     onMouseLeave: () => setHover(false),
@@ -82,36 +138,123 @@ const FixedTooltip = ({ children, content, id }) => {
     onBlur: (ev) => {
       if (!ev.currentTarget.contains(ev.relatedTarget)) setFocus(false);
     },
-    style: { position: 'relative' }
-  },
-    children,
+  }, block
+    ? { style: { position: 'relative' } }
+    : { className: `tooltip-container ${className}`.trim() }),
+    trigger,
     visible && ReactDOM.createPortal(
       React.createElement('div', {
         ref: tipRef,
-        id,
+        id: tipId,
         role: 'tooltip',
+        className: panelClass,
         style: {
-          position: 'fixed',
           top: coords ? coords.top : 0,
           left: coords ? coords.left : 0,
           // Unplaced (the first, measuring render) it stays hidden.
           visibility: coords ? 'visible' : 'hidden',
-          zIndex: 99999,
-          maxWidth: 280,
-          minWidth: 180,
-          backgroundColor: 'var(--tooltip-bg)',
-          color: 'var(--tooltip-text)',
-          border: '1px solid var(--tooltip-border)',
-          borderRadius: 8,
-          padding: '10px 14px',
-          fontSize: 12,
-          lineHeight: 1.5,
-          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15), 0 2px 4px rgba(0, 0, 0, 0.1)',
-          pointerEvents: 'none'
         }
       }, content),
       document.body
     )
+  );
+};
+
+// FixedTooltip: the Tooltip for a card's explanation (Fresh Drops' "why",
+// Recommendations' reason): below and left-aligned, wrapping, block trigger.
+const FixedTooltip = ({ children, content, id, delay }) => React.createElement(Tooltip, {
+  content, id, delay, position: 'bottom-start', block: true, note: true,
+}, children);
+
+// TooltipLayer: the Tooltip for a control that has no wrapper. Mounted once
+// at the app root; any element with data-tooltip="…" gets the same panel,
+// the same 400ms delay, keyboard focus (focus-visible only, so a click
+// doesn't leave one up), Escape and scroll dismissal. This is what replaced
+// the native `title` on controls (#1385 step 9): a title showed late, never
+// on focus, and in the OS's look. data-tooltip-position picks a side (top by
+// default); data-tooltip-variant="dark" is for the always-dark surfaces.
+const tooltipTarget = (node) => (node && node.closest ? node.closest('[data-tooltip]') : null);
+
+const TooltipLayer = ({ delay = TOOLTIP_DELAY_MS }) => {
+  const [tip, setTip] = React.useState(null);
+  const [coords, setCoords] = React.useState(null);
+  const tipRef = React.useRef(null);
+  const timer = React.useRef(null);
+  const current = React.useRef(null);
+
+  React.useEffect(() => {
+    const hide = () => {
+      clearTimeout(timer.current);
+      current.current = null;
+      setTip(null);
+    };
+    const arm = (el) => {
+      if (current.current === el) return;
+      clearTimeout(timer.current);
+      current.current = el;
+      setTip(null);
+      const text = el.getAttribute('data-tooltip');
+      if (!text) return;
+      timer.current = setTimeout(() => {
+        if (current.current !== el || !el.isConnected) return;
+        setTip({
+          el,
+          text: el.getAttribute('data-tooltip'),
+          position: el.getAttribute('data-tooltip-position') || 'top',
+          dark: el.getAttribute('data-tooltip-variant') === 'dark',
+        });
+      }, delay);
+    };
+    const onOver = (ev) => {
+      const el = tooltipTarget(ev.target);
+      if (el) arm(el);
+      else if (current.current) hide();
+    };
+    const onFocusIn = (ev) => {
+      const el = tooltipTarget(ev.target);
+      if (el && ev.target.matches && ev.target.matches(':focus-visible')) arm(el);
+    };
+    const onFocusOut = (ev) => { if (current.current && current.current.contains(ev.target)) hide(); };
+    const onKey = (ev) => { if (ev.key === 'Escape' && current.current) hide(); };
+    document.addEventListener('pointerover', onOver);
+    document.addEventListener('pointerdown', hide, true);
+    document.addEventListener('focusin', onFocusIn);
+    document.addEventListener('focusout', onFocusOut);
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('scroll', hide, true);
+    window.addEventListener('blur', hide);
+    return () => {
+      clearTimeout(timer.current);
+      document.removeEventListener('pointerover', onOver);
+      document.removeEventListener('pointerdown', hide, true);
+      document.removeEventListener('focusin', onFocusIn);
+      document.removeEventListener('focusout', onFocusOut);
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('scroll', hide, true);
+      window.removeEventListener('blur', hide);
+    };
+  }, [delay]);
+
+  React.useLayoutEffect(() => {
+    if (!tip) { setCoords(null); return; }
+    if (!tipRef.current) return;
+    setCoords(placeTooltip(
+      tip.el.getBoundingClientRect(),
+      tipRef.current.getBoundingClientRect(),
+      { width: window.innerWidth, height: window.innerHeight },
+      tip.position
+    ));
+  }, [tip]);
+
+  if (!tip) return null;
+  return ReactDOM.createPortal(
+    React.createElement('div', {
+      ref: tipRef,
+      role: 'tooltip',
+      className: `tooltip-panel${tip.dark ? ' tooltip-on-dark' : ''}`,
+      style: { top: coords ? coords.top : 0, left: coords ? coords.left : 0, visibility: coords ? 'visible' : 'hidden' },
+    }, tip.text),
+    document.body
   );
 };
 
@@ -387,7 +530,7 @@ const ShareButton = ({ open = false, onClick }) => {
 };
 
 module.exports = {
-  Tooltip, FixedTooltip, placeFixedTooltip, SERVICE_LOGO_PATHS, SERVICE_LOGO_IMAGES,
+  Tooltip, FixedTooltip, TooltipLayer, placeFixedTooltip, placeTooltip, TOOLTIP_DELAY_MS, SERVICE_LOGO_PATHS, SERVICE_LOGO_IMAGES,
   ResolverIcon, SERVICE_LOGOS,
   ParachordWordmark, PlaybackProgress, ShareButton,
 };
