@@ -624,14 +624,7 @@ const CollectionAlbumCard = ({ album, getAlbumArt, onNavigate, onAddToPlaylist, 
       imageUrl === null && React.createElement('div', {
         style: { width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }
       },
-        React.createElement('svg', {
-          style: { width: '36px', height: '36px', color: 'rgba(255, 255, 255, 0.2)' },
-          fill: 'none',
-          viewBox: '0 0 24 24',
-          stroke: 'currentColor'
-        },
-          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
-        )
+        React.createElement(Icons.Music, { style: { width: '36px', height: '36px', color: 'rgba(255, 255, 255, 0.2)' }, strokeWidth: 1.5 })
       ),
       // Hover overlay with action buttons
       React.createElement('div', {

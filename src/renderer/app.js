@@ -17127,23 +17127,11 @@ ${trackListXml}
           }
         },
           // Music note placeholder when no image
-          !loading && !hasImage && React.createElement('svg', {
-            style: {
+          !loading && !hasImage && React.createElement(Icons.Music, { style: {
               width: '20px',
               height: '20px',
               color: 'rgba(255, 255, 255, 0.3)'
-            },
-            fill: 'none',
-            viewBox: '0 0 24 24',
-            stroke: 'currentColor',
-            strokeWidth: 1.5
-          },
-            React.createElement('path', {
-              strokeLinecap: 'round',
-              strokeLinejoin: 'round',
-              d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3'
-            })
-          )
+            }, strokeWidth: 1.5 })
         ),
         // Hover overlay with play button (only for tracks and albums)
         // Styled to match app's standard hover play buttons (bg-black/50, white button, shadow-lg)
@@ -37256,19 +37244,7 @@ useEffect(() => {
               marginBottom: '16px'
             }
           },
-            React.createElement('svg', {
-              style: { width: '24px', height: '24px', color: 'var(--warning)' },
-              fill: 'none',
-              viewBox: '0 0 24 24',
-              stroke: 'currentColor'
-            },
-              React.createElement('path', {
-                strokeLinecap: 'round',
-                strokeLinejoin: 'round',
-                strokeWidth: 2,
-                d: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z'
-              })
-            )
+            React.createElement(Icons.AlertTriangle, { style: { width: '24px', height: '24px', color: 'var(--warning)' } })
           ),
           React.createElement('h3', {
             style: {
@@ -37970,9 +37946,7 @@ useEffect(() => {
                           className: `p-1 bg-white/90 backdrop-blur-sm rounded-full hover:bg-white transition-colors ${refreshingPlaylist === playlist.id ? 'animate-spin' : ''}`,
                           title: 'Refresh from source'
                         },
-                          React.createElement('svg', { className: 'w-3 h-3 text-ink-secondary', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                            React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M20 4v5h-.582m-15.356 2A8.001 8.001 0 0119.418 9m0 0H15m-11 11v-5h.581m0 0a8.003 8.003 0 0015.357-2m-15.357 2H9' })
-                          )
+                          React.createElement(Icons.RefreshCw, { className: 'w-3 h-3 text-ink-secondary' })
                         )
                       ),
 
@@ -38286,12 +38260,7 @@ useEffect(() => {
                     className: 'w-8 h-8 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0',
                     title: 'Refresh from source',
                   },
-                    React.createElement('svg', {
-                      className: `w-4 h-4 text-ink-tertiary ${refreshingPlaylist === playlist.id ? 'animate-spin' : ''}`,
-                      fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor'
-                    },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M20 4v5h-.582m-15.356 2A8.001 8.001 0 0119.418 9m0 0H15m-11 11v-5h.581m0 0a8.003 8.003 0 0015.357-2m-15.357 2H9' })
-                    )
+                    React.createElement(Icons.RefreshCw, { className: `w-4 h-4 text-ink-tertiary ${refreshingPlaylist === playlist.id ? 'animate-spin' : ''}` })
                   ),
                   // Play icon on hover
                   React.createElement('div', {
@@ -38687,9 +38656,7 @@ useEffect(() => {
             chartsTab === 'albums' && chartsError && !chartsLoading && React.createElement('div', {
               className: 'text-center py-12'
             },
-              React.createElement('svg', { className: 'w-12 h-12 mx-auto mb-4 text-ink-faint', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z' })
-              ),
+              React.createElement(Icons.AlertTriangle, { className: 'w-12 h-12 mx-auto mb-4 text-ink-faint', strokeWidth: 1.5 }),
               React.createElement('div', { className: 'text-ink-tertiary mb-4' }, chartsError),
               React.createElement('button', {
                 onClick: () => { setChartsError(null); loadCharts(); },
@@ -39304,12 +39271,7 @@ useEffect(() => {
               className: `ml-2 p-1.5 transition-colors ${newReleasesLoading ? 'text-emerald-500' : 'text-ink-tertiary hover:text-ink-secondary'}`,
               title: newReleasesLoading ? 'Loading...' : 'Refresh'
             },
-              React.createElement('svg', {
-                className: `w-4 h-4 ${newReleasesLoading ? 'animate-spin' : ''}`,
-                fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor'
-              },
-                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M20 4v5h-.582m-15.356 2A8.001 8.001 0 0119.418 9m0 0H15m-11 11v-5h.581m0 0a8.003 8.003 0 0015.357-2m-15.357 2H9' })
-              )
+              React.createElement(Icons.RefreshCw, { className: `w-4 h-4 ${newReleasesLoading ? 'animate-spin' : ''}` })
             ),
             React.createElement('div', { className: 'flex-1' }),
             // Search
@@ -39357,9 +39319,7 @@ useEffect(() => {
             newReleasesError && !newReleasesLoading && React.createElement('div', {
               className: 'text-center py-12'
             },
-              React.createElement('svg', { className: 'w-12 h-12 mx-auto mb-4 text-ink-faint', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z' })
-              ),
+              React.createElement(Icons.AlertTriangle, { className: 'w-12 h-12 mx-auto mb-4 text-ink-faint', strokeWidth: 1.5 }),
               React.createElement('div', { className: 'text-ink-tertiary mb-4' }, newReleasesError),
               React.createElement('button', {
                 onClick: () => { setNewReleasesError(null); setNewReleasesLoaded(false); loadNewReleases(true); },
@@ -39490,14 +39450,7 @@ useEffect(() => {
                         React.createElement('div', {
                           style: { position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }
                         },
-                          React.createElement('svg', {
-                            style: { width: '36px', height: '36px', color: 'rgba(255, 255, 255, 0.2)' },
-                            fill: 'none',
-                            viewBox: '0 0 24 24',
-                            stroke: 'currentColor'
-                          },
-                            React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
-                          )
+                          React.createElement(Icons.Music, { style: { width: '36px', height: '36px', color: 'rgba(255, 255, 255, 0.2)' }, strokeWidth: 1.5 })
                         ),
                         // Overlay image on top of placeholder (hides itself on error, revealing placeholder)
                         release.albumArt && React.createElement('img', {
@@ -39835,9 +39788,7 @@ useEffect(() => {
             criticsPicksError && !criticsPicksLoading && React.createElement('div', {
               className: 'text-center py-12'
             },
-              React.createElement('svg', { className: 'w-12 h-12 mx-auto mb-4 text-ink-faint', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z' })
-              ),
+              React.createElement(Icons.AlertTriangle, { className: 'w-12 h-12 mx-auto mb-4 text-ink-faint', strokeWidth: 1.5 }),
               React.createElement('div', { className: 'text-ink-tertiary mb-4' }, criticsPicksError),
               React.createElement('button', {
                 onClick: () => { setCriticsPicksError(null); loadCriticsPicks(); },
@@ -40323,12 +40274,7 @@ useEffect(() => {
               className: `ml-2 p-1.5 transition-colors ${concertsLoading ? 'text-teal-500' : 'text-ink-tertiary hover:text-ink-secondary'}`,
               title: concertsLoading ? 'Loading...' : 'Refresh'
             },
-              React.createElement('svg', {
-                className: `w-4 h-4 ${concertsLoading ? 'animate-spin' : ''}`,
-                fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor'
-              },
-                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M20 4v5h-.582m-15.356 2A8.001 8.001 0 0119.418 9m0 0H15m-11 11v-5h.581m0 0a8.003 8.003 0 0015.357-2m-15.357 2H9' })
-              )
+              React.createElement(Icons.RefreshCw, { className: `w-4 h-4 ${concertsLoading ? 'animate-spin' : ''}` })
             ),
             // Location filter
             React.createElement('div', { className: 'relative ml-2 flex items-center gap-1.5' },
@@ -40437,9 +40383,7 @@ useEffect(() => {
                     title: 'Use my location'
                   },
                     concertsGeocodingLoading
-                      ? React.createElement('svg', { className: 'w-4 h-4 animate-spin', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M20 4v5h-.582m-15.356 2A8.001 8.001 0 0119.418 9m0 0H15m-11 11v-5h.581m0 0a8.003 8.003 0 0015.357-2m-15.357 2H9' })
-                        )
+                      ? React.createElement(Icons.RefreshCw, { className: 'w-4 h-4 animate-spin' })
                       : React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                           React.createElement('circle', { cx: 12, cy: 12, r: 3, strokeWidth: 2 }),
                           React.createElement('path', { strokeLinecap: 'round', strokeWidth: 2, d: 'M12 2v4m0 12v4m10-10h-4M6 12H2' })
@@ -40938,13 +40882,7 @@ useEffect(() => {
                 concertsLoading && concerts.length > 0 && React.createElement('div', {
                   className: 'flex items-center justify-center py-4'
                 },
-                  React.createElement('svg', {
-                    className: 'w-5 h-5 animate-spin text-teal-500 mr-2',
-                    fill: 'none', viewBox: '0 0 24 24'
-                  },
-                    React.createElement('circle', { className: 'opacity-25', cx: 12, cy: 12, r: 10, stroke: 'currentColor', strokeWidth: 4 }),
-                    React.createElement('path', { className: 'opacity-75', fill: 'currentColor', d: 'M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z' })
-                  ),
+                  React.createElement(Icons.Spinner, { className: 'w-5 h-5 text-teal-500 mr-2' }),
                   React.createElement('span', { className: 'text-sm text-ink-tertiary' }, 'Refreshing concerts...')
                 )
               );
@@ -44083,9 +44021,7 @@ useEffect(() => {
                     React.createElement('div', { className: 'grid grid-cols-1 sm:grid-cols-3 gap-3' },
                       // Feature 1
                       React.createElement('div', { className: 'flex items-start gap-2' },
-                        React.createElement('svg', { className: 'w-4 h-4 text-accent mt-0.5 flex-shrink-0', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
-                        ),
+                        React.createElement(Icons.Music, { className: 'w-4 h-4 text-accent mt-0.5 flex-shrink-0' }),
                         React.createElement('span', { className: 'text-xs text-ink-secondary' }, 'Stream from multiple services in one unified library')
                       ),
                       // Feature 2
@@ -45058,9 +44994,7 @@ useEffect(() => {
                         cursor: 'pointer'
                       }
                     },
-                      React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M20 4v5h-.582m-15.356 2A8.001 8.001 0 0119.418 9m0 0H15m-11 11v-5h.581m0 0a8.003 8.003 0 0015.357-2m-15.357 2H9' })
-                      ),
+                      React.createElement(Icons.RefreshCw, { className: 'w-4 h-4' }),
                       'Reset to Defaults'
                     )
                   )
@@ -45530,9 +45464,7 @@ useEffect(() => {
                     },
                     className: 'inline-flex items-center gap-2 px-4 py-2 bg-accent-fill text-white text-sm font-medium rounded-lg hover:bg-accent-fill-hover transition-colors'
                   },
-                    React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M20 4v5h-.582m-15.356 2A8.001 8.001 0 0119.418 9m0 0H15m-11 11v-5h.581m0 0a8.003 8.003 0 0015.357-2m-15.357 2H9' })
-                    ),
+                    React.createElement(Icons.RefreshCw, { className: 'w-4 h-4' }),
                     'Reset All Dialogs'
                   ),
                   // All dialogs showing message
@@ -45659,19 +45591,7 @@ useEffect(() => {
                       className: 'text-sm font-semibold text-ink-secondary uppercase tracking-wider flex items-center gap-2'
                     },
                       // Music note icon
-                      React.createElement('svg', {
-                        className: 'w-4 h-4',
-                        fill: 'none',
-                        stroke: 'currentColor',
-                        viewBox: '0 0 24 24'
-                      },
-                        React.createElement('path', {
-                          strokeLinecap: 'round',
-                          strokeLinejoin: 'round',
-                          strokeWidth: 2,
-                          d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3'
-                        })
-                      ),
+                      React.createElement(Icons.Music, { className: 'w-4 h-4' }),
                       'Scrobbling'
                     ),
                     React.createElement('p', {
@@ -45983,9 +45903,7 @@ useEffect(() => {
                     },
                     className: 'inline-flex items-center gap-2 px-4 py-2 bg-status-error text-white text-sm font-medium rounded-lg hover:bg-status-error-hover transition-colors'
                   },
-                    React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z' })
-                    ),
+                    React.createElement(Icons.AlertTriangle, { className: 'w-4 h-4' }),
                     'Reset Application'
                   )
                 )
@@ -48258,14 +48176,7 @@ useEffect(() => {
                 onMouseEnter: (e) => { if (!urlImportLoading && urlImportValue.trim()) e.currentTarget.style.backgroundColor = '#6d28d9'; },
                 onMouseLeave: (e) => { if (!urlImportLoading && urlImportValue.trim()) e.currentTarget.style.backgroundColor = 'var(--accent-fill)'; }
               },
-                urlImportLoading ? React.createElement('svg', {
-                  className: 'w-4 h-4 animate-spin',
-                  fill: 'none',
-                  viewBox: '0 0 24 24'
-                },
-                  React.createElement('circle', { className: 'opacity-25', cx: '12', cy: '12', r: '10', stroke: 'currentColor', strokeWidth: '4' }),
-                  React.createElement('path', { className: 'opacity-75', fill: 'currentColor', d: 'M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z' })
-                ) : 'Import'
+                urlImportLoading ? React.createElement(Icons.Spinner, { className: 'w-4 h-4' }) : 'Import'
               )
             )
           ),
@@ -48458,14 +48369,7 @@ useEffect(() => {
             onMouseEnter: (e) => { if (!addFriendLoading && addFriendInput.trim()) e.currentTarget.style.backgroundColor = '#6d28d9'; },
             onMouseLeave: (e) => { if (!addFriendLoading && addFriendInput.trim()) e.currentTarget.style.backgroundColor = 'var(--accent-fill)'; }
           },
-            addFriendLoading && React.createElement('svg', {
-              className: 'w-4 h-4 animate-spin',
-              fill: 'none',
-              viewBox: '0 0 24 24'
-            },
-              React.createElement('circle', { className: 'opacity-25', cx: '12', cy: '12', r: '10', stroke: 'currentColor', strokeWidth: '4' }),
-              React.createElement('path', { className: 'opacity-75', fill: 'currentColor', d: 'M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z' })
-            ),
+            addFriendLoading && React.createElement(Icons.Spinner, { className: 'w-4 h-4' }),
             addFriendLoading ? 'Adding...' : 'Add Friend'
           )
         )
@@ -54045,10 +53949,7 @@ useEffect(() => {
           (() => {
             const d = nwayMigrationDialog;
             if (d.loading) return React.createElement('div', { style: { padding: '30px 0 26px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' } },
-              React.createElement('svg', { className: 'animate-spin', width: '28', height: '28', viewBox: '0 0 24 24', fill: 'none', style: { color: 'var(--accent-primary)' } },
-                React.createElement('circle', { className: 'opacity-25', cx: '12', cy: '12', r: '10', stroke: 'currentColor', strokeWidth: '4' }),
-                React.createElement('path', { className: 'opacity-75', fill: 'currentColor', d: 'M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z' })
-              ),
+              React.createElement(Icons.Spinner, { style: { color: 'var(--accent-primary)' } }),
               React.createElement('p', { style: { fontSize: '13px', color: 'var(--text-secondary)', margin: 0 } }, 'Checking your playlists…')
             );
             if (d.error) return React.createElement('p', { style: { padding: '8px 0 16px', fontSize: '13px', color: 'var(--text-danger)' } }, `Couldn't run the preview: ${d.error}`);
@@ -54534,15 +54435,7 @@ useEffect(() => {
                 justifyContent: 'center'
               }
             },
-              React.createElement('svg', {
-                className: 'animate-spin',
-                style: { width: '24px', height: '24px', color: syncProviderConfig[syncSetupModal.providerId]?.color || '#1DB954' },
-                fill: 'none',
-                viewBox: '0 0 24 24'
-              },
-                React.createElement('circle', { cx: '12', cy: '12', r: '10', stroke: 'currentColor', strokeWidth: '3', opacity: 0.2 }),
-                React.createElement('path', { fill: 'currentColor', d: 'M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z' })
-              )
+              React.createElement(Icons.Spinner, { style: { width: '24px', height: '24px', color: syncProviderConfig[syncSetupModal.providerId]?.color || '#1DB954' } })
             ),
             React.createElement('div', {
               style: { fontSize: '15px', fontWeight: '500', color: 'var(--text-primary)' }

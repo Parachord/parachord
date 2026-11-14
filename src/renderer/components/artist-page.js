@@ -1854,14 +1854,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
               React.createElement(SectionHeader, {
                 title: React.createElement(React.Fragment, null,
                   `${events.length} Upcoming Concert${events.length !== 1 ? 's' : ''}`,
-                  artistConcertsLoading && React.createElement('svg', {
-                    className: 'w-4 h-4 animate-spin text-teal-500',
-                    style: { display: 'inline-block', verticalAlign: 'middle', marginLeft: '12px' },
-                    fill: 'none', viewBox: '0 0 24 24'
-                  },
-                    React.createElement('circle', { className: 'opacity-25', cx: 12, cy: 12, r: 10, stroke: 'currentColor', strokeWidth: 4 }),
-                    React.createElement('path', { className: 'opacity-75', fill: 'currentColor', d: 'M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z' })
-                  )),
+                  artistConcertsLoading && React.createElement(Icons.Spinner, { className: 'w-4 h-4 text-teal-500', style: { display: 'inline-block', verticalAlign: 'middle', marginLeft: '12px' } })),
                 style: { marginBottom: '24px', alignItems: 'center' },
                 extra: React.createElement('button', {
                   onClick: () => currentArtist && loadArtistConcerts(currentArtist.name, true),
@@ -1869,12 +1862,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                   className: `p-1.5 transition-colors ${artistConcertsLoading ? 'text-teal-500' : 'text-ink-tertiary hover:text-ink-secondary'}`,
                   title: artistConcertsLoading ? 'Loading...' : 'Refresh'
                 },
-                  React.createElement('svg', {
-                    className: `w-4 h-4 ${artistConcertsLoading ? 'animate-spin' : ''}`,
-                    fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor'
-                  },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M20 4v5h-.582m-15.356 2A8.001 8.001 0 0119.418 9m0 0H15m-11 11v-5h.581m0 0a8.003 8.003 0 0015.357-2m-15.357 2H9' })
-                  )
+                  React.createElement(Icons.RefreshCw, { className: `w-4 h-4 ${artistConcertsLoading ? 'animate-spin' : ''}` })
                 )
               }),
 
@@ -1889,13 +1877,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
               events.length === 0 && artistConcertsLoading && React.createElement('div', {
                 className: 'flex flex-col items-center justify-center py-12'
               },
-                React.createElement('svg', {
-                  className: 'w-8 h-8 animate-spin text-teal-500 mb-3',
-                  fill: 'none', viewBox: '0 0 24 24'
-                },
-                  React.createElement('circle', { className: 'opacity-25', cx: 12, cy: 12, r: 10, stroke: 'currentColor', strokeWidth: 4 }),
-                  React.createElement('path', { className: 'opacity-75', fill: 'currentColor', d: 'M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z' })
-                ),
+                React.createElement(Icons.Spinner, { className: 'w-8 h-8 text-teal-500 mb-3' }),
                 React.createElement('p', { className: `text-sm text-ink-tertiary` }, 'Loading concerts...')
               ),
 
