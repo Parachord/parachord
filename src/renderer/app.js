@@ -4854,7 +4854,6 @@ const Parachord = () => {
   const [concertsSearchOpen, setConcertsSearchOpen] = useState(false);
   const [concertsSearch, setConcertsSearch] = useState('');
   const [concertsSourceFilter, setConcertsSourceFilter] = useState('all'); // 'all' | 'bandsintown' | 'songkick' | 'seatgeek' | 'ticketmaster' | 'ai'
-  const [concertsSourceFilterDropdownOpen, setConcertsSourceFilterDropdownOpen] = useState(false);
   const [concertsLocation, setConcertsLocation] = useState(''); // User's location display text (e.g. "New York", "London, UK")
   const [concertsLocationCoords, setConcertsLocationCoords] = useState(null); // { lat, lng } resolved coordinates
   const [concertsLocationRadius, setConcertsLocationRadius] = useState(50); // radius in miles
@@ -5116,15 +5115,6 @@ const Parachord = () => {
       return () => document.removeEventListener('click', handleClickOutside);
     }
   }, [artistConcertsTicketFlyout]);
-
-  // Close concerts source filter dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = () => setConcertsSourceFilterDropdownOpen(false);
-    if (concertsSourceFilterDropdownOpen) {
-      document.addEventListener('click', handleClickOutside);
-      return () => document.removeEventListener('click', handleClickOutside);
-    }
-  }, [concertsSourceFilterDropdownOpen]);
 
   // Close history sort dropdown when clicking outside
   useEffect(() => {
@@ -39985,61 +39975,33 @@ React.createElement('div', {
             className: 'flex items-center px-6 py-3',
             style: { flexShrink: 0, backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
           },
-            // Source filter dropdown
-            React.createElement('div', { className: 'relative' },
-              (() => {
-                // Build options from sources that actually returned results
-                const sourceOptions = [{ value: 'all', label: 'All Sources' }];
-                const seenSources = new Set();
-                for (const event of concerts) {
-                  if (event.source === 'ai' && event.aiProvider) {
-                    const key = `ai:${event.aiProvider}`;
-                    if (!seenSources.has(key)) {
-                      seenSources.add(key);
-                      sourceOptions.push({ value: key, label: event.aiProviderName || event.aiProvider });
-                    }
-                  } else if (event.source && !seenSources.has(event.source)) {
-                    seenSources.add(event.source);
-                    const allResolvers = resolverLoaderRef.current ? resolverLoaderRef.current.getAllResolvers() : [];
-                    const resolver = allResolvers.find(r => r.id === event.source);
-                    sourceOptions.push({ value: event.source, label: resolver?.name || event.source });
-                  }
-                }
-                const selectedLabel = sourceOptions.find(o => o.value === concertsSourceFilter)?.label || 'All Sources';
-
-                return [
-                  React.createElement('button', {
-                    key: 'source-btn',
-                    onClick: (e) => { e.stopPropagation(); setConcertsSourceFilterDropdownOpen(!concertsSourceFilterDropdownOpen); },
-                    className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-ink-tertiary hover:text-ink-secondary transition-colors'
-                  },
-                    React.createElement('span', null, selectedLabel),
-                    React.createElement(Icons.ChevronDown, { className: 'w-4 h-4' })
-                  ),
-                  concertsSourceFilterDropdownOpen && React.createElement('div', {
-                    key: 'source-dropdown',
-                    className: 'absolute left-0 top-full mt-1 bg-surface-card rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-line'
-                  },
-                    sourceOptions.map(option =>
-                      React.createElement('button', {
-                        key: option.value,
-                        onClick: (e) => {
-                          e.stopPropagation();
-                          setConcertsSourceFilter(option.value);
-                          setConcertsSourceFilterDropdownOpen(false);
-                        },
-                        className: `w-full px-4 py-2 text-left text-sm hover:bg-surface-hover flex items-center justify-between ${
-                          concertsSourceFilter === option.value ? 'text-ink-primary font-medium' : 'text-ink-secondary'
-                        }`
-                      },
-                        option.label,
-                        concertsSourceFilter === option.value && React.createElement(Icons.Check, { className: 'w-4 h-4' })
-                      )
-                    )
-                  )
-                ];
-              })()
-            ),
+            // Source filter: the app's filter chips (FilterChips), as on Home
+            // and Recommendations. All neutral; each source that returned
+            // shows in its plugin's colour (resolver.color).
+            (() => {
+              const allResolvers = resolverLoaderRef.current ? resolverLoaderRef.current.getAllResolvers() : [];
+              const chips = [{ id: 'all', label: 'All' }];
+              const seen = new Set();
+              for (const event of concerts) {
+                const id = event.source === 'ai' && event.aiProvider ? `ai:${event.aiProvider}` : event.source;
+                if (!id || seen.has(id)) continue;
+                seen.add(id);
+                const resolverId = id.startsWith('ai:') ? id.slice(3) : id;
+                const resolver = allResolvers.find(r => r.id === resolverId);
+                chips.push({
+                  id,
+                  label: id.startsWith('ai:') ? (event.aiProviderName || resolver?.name || resolverId) : (resolver?.name || resolverId),
+                  color: resolver?.color || undefined,
+                });
+              }
+              // One source, or none yet: nothing to pick between.
+              if (chips.length < 3) return null;
+              const value = chips.some(c => c.id === concertsSourceFilter) ? concertsSourceFilter : 'all';
+              return React.createElement(FilterChips, {
+                chips, value, onChange: setConcertsSourceFilter,
+                pageColor: PAGE_COLORS.concerts.fill, label: 'Filter concerts by source',
+              });
+            })(),
             // Refresh button
             React.createElement('button', {
               onClick: () => loadConcerts(true),
