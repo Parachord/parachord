@@ -1977,6 +1977,7 @@ const {
 const { useStableHandlers } = require('./lib/stable-handlers');
 const { homeBannerItems, bannerViewId } = require('./lib/home-banners');
 const { toastBackground } = require('./lib/toast-style');
+const { statusBadgeStyle } = require('./lib/status-badge');
 const { withCollectionState } = require('./lib/menu-collection-state');
 const { runPlaybackControl } = require('../../tools/playback-control');
 const { runQueueAdd } = require('../../tools/queue-add');
@@ -45655,7 +45656,8 @@ useEffect(() => {
                         React.createElement('p', { className: 'text-xs text-gray-500' }, 'Confirmation before opening external tracks')
                       ),
                       React.createElement('div', {
-                        className: `px-2 py-0.5 rounded text-xs font-medium ${skipExternalPrompt ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`
+                        className: 'px-2 py-0.5 rounded text-xs font-medium',
+                        style: statusBadgeStyle(!skipExternalPrompt)
                       }, skipExternalPrompt ? 'Hidden' : 'Showing')
                     ),
                     // Unsaved friend unpin warning
@@ -45665,7 +45667,8 @@ useEffect(() => {
                         React.createElement('p', { className: 'text-xs text-gray-500' }, 'Warning when unpinning friends not saved to collection')
                       ),
                       React.createElement('div', {
-                        className: `px-2 py-0.5 rounded text-xs font-medium ${skipUnsavedFriendWarning ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`
+                        className: 'px-2 py-0.5 rounded text-xs font-medium',
+                        style: statusBadgeStyle(!skipUnsavedFriendWarning)
                       }, skipUnsavedFriendWarning ? 'Hidden' : 'Showing')
                     ),
                     // Items dismissed from Home's setup checklist: the reset
