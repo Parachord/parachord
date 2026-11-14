@@ -45538,7 +45538,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                       const triggerBody = (open) => [
                         React.createElement(ResolverIcon, { key: 'icon', resolverId: currentResolverId, size: 14, fill: currentIconColor }),
                         React.createElement('span', { key: 'name', className: 'text-xs font-medium', style: { color: currentIconColor } }, resolver.name),
-                        hasMultipleSources && React.createElement(Icons.ChevronDown, { key: 'chev', className: `w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`, style: { color: 'var(--text-tertiary)' } })
+                        hasMultipleSources && React.createElement(Icons.ChevronDown, { key: 'chev', className: `w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`, style: { color: 'var(--on-dark-tertiary)' } })
                       ];
                       if (!hasMultipleSources) {
                         return React.createElement('span', {
@@ -46044,9 +46044,9 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
             setAiError(null);
           },
           className: 'transition-colors',
-          style: { padding: '6px', color: 'var(--text-secondary)', borderRadius: '8px' },
+          style: { padding: '6px', color: 'var(--on-dark-secondary)', borderRadius: '8px' },
           onMouseEnter: (e) => { e.currentTarget.style.color = '#d1d5db'; e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)'; },
-          onMouseLeave: (e) => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.backgroundColor = 'transparent'; }
+          onMouseLeave: (e) => { e.currentTarget.style.color = 'var(--on-dark-secondary)'; e.currentTarget.style.backgroundColor = 'transparent'; }
         },
           React.createElement(Icons.X, { className: 'w-4 h-4' })
         )
@@ -46118,7 +46118,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
         const aiResolvers = getAiServices();
         if (aiResolvers.length <= 1) return null;
         return React.createElement('div', { className: 'mt-3 flex items-center justify-end gap-2' },
-          React.createElement('span', { style: { fontSize: '12px', color: 'var(--text-secondary)' } }, 'Provider:'),
+          React.createElement('span', { style: { fontSize: '12px', color: 'var(--on-dark-secondary)' } }, 'Provider:'),
           React.createElement('select', {
             'aria-label': 'AI provider',
             value: selectedAiResolver || aiResolvers[0]?.id || '',
@@ -46154,7 +46154,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
             fontSize: '14px',
             fontWeight: '500',
             background: aiLoading ? 'rgba(255, 255, 255, 0.05)' : 'linear-gradient(135deg, var(--accent-fill) 0%, #a855f7 50%, #c026d3 100%)',
-            color: aiLoading ? 'var(--text-secondary)' : '#ffffff',
+            color: aiLoading ? 'var(--on-dark-secondary)' : '#ffffff',
             cursor: aiLoading ? 'not-allowed' : 'pointer',
             opacity: aiLoading ? '0.6' : '1'
           },
@@ -46182,7 +46182,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
       !hasScrobblerConnected() && React.createElement('div', {
         className: 'mt-3 flex items-center justify-between'
       },
-        React.createElement('span', { style: { fontSize: '12px', color: 'var(--text-secondary)' } },
+        React.createElement('span', { style: { fontSize: '12px', color: 'var(--on-dark-secondary)' } },
           'Connect a scrobbler for personalized recommendations'
         ),
         React.createElement('button', {
@@ -46213,7 +46213,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
       ),
 
       // Hint
-      !aiError && React.createElement('p', { style: { marginTop: '12px', fontSize: '12px', color: 'var(--text-secondary)' } },
+      !aiError && React.createElement('p', { style: { marginTop: '12px', fontSize: '12px', color: 'var(--on-dark-secondary)' } },
         'Try: "upbeat 90s hip hop" or "relaxing jazz for studying"'
       )
     ),
@@ -46264,9 +46264,9 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                 }
               },
               className: 'transition-colors',
-              style: { padding: '6px', color: 'var(--text-secondary)', borderRadius: '8px' },
+              style: { padding: '6px', color: 'var(--on-dark-secondary)', borderRadius: '8px' },
               onMouseEnter: (e) => { e.currentTarget.style.color = '#d1d5db'; e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)'; },
-              onMouseLeave: (e) => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.backgroundColor = 'transparent'; }
+              onMouseLeave: (e) => { e.currentTarget.style.color = 'var(--on-dark-secondary)'; e.currentTarget.style.backgroundColor = 'transparent'; }
             },
               React.createElement(Icons.X, { className: 'w-5 h-5' })
             )
@@ -46275,7 +46275,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
           resultsSidebar.mode === 'chat'
             ? React.createElement('div', { style: { marginTop: '8px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' } },
                 // "powered by:" label
-                React.createElement('span', { style: { fontSize: '12px', color: 'var(--text-secondary)' } }, 'powered by:'),
+                React.createElement('span', { style: { fontSize: '12px', color: 'var(--on-dark-secondary)' } }, 'powered by:'),
                 // Custom dropdown button
                 (() => {
                   const enabledServices = getChatServices().filter(isServiceEnabled);
@@ -46346,7 +46346,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                 })()
               )
             : (resultsSidebar.subtitle && React.createElement('p', {
-                style: { fontSize: '13px', color: 'var(--text-tertiary)', marginTop: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
+                style: { fontSize: '13px', color: 'var(--on-dark-tertiary)', marginTop: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
               }, resultsSidebar.subtitle))
         ),
 
@@ -46362,7 +46362,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
               },
                 // Welcome message if no messages
                 (!resultsSidebar.messages || resultsSidebar.messages.length === 0) && React.createElement('div', {
-                  style: { textAlign: 'center', padding: '24px 16px', color: 'var(--text-secondary)' }
+                  style: { textAlign: 'center', padding: '24px 16px', color: 'var(--on-dark-secondary)' }
                 },
                   React.createElement('div', { style: { marginBottom: '12px', display: 'flex', justifyContent: 'center' } },
                     React.createElement('svg', { viewBox: '0 0 122.88 89.38', style: { width: '48px', height: '48px' }, fill: '#9ca3af' },
@@ -46486,7 +46486,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                     // Show progress status text if available, otherwise show bouncing dots
                     resultsSidebar.progressStatus
                       ? React.createElement('span', {
-                          style: { fontSize: '13px', color: 'var(--text-tertiary)' }
+                          style: { fontSize: '13px', color: 'var(--on-dark-tertiary)' }
                         }, resultsSidebar.progressStatus)
                       : React.createElement(React.Fragment, null,
                           React.createElement('span', { className: 'animate-bounce', style: { animationDelay: '0ms', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#9ca3af' } }),
@@ -46571,14 +46571,14 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                         onClick: clearAiChatHistory,
                         style: {
                           fontSize: '12px',
-                          color: 'var(--text-secondary)',
+                          color: 'var(--on-dark-secondary)',
                           background: 'none',
                           border: 'none',
                           cursor: 'pointer',
                           padding: '4px 8px'
                         },
-                        onMouseEnter: (e) => e.currentTarget.style.color = 'var(--text-tertiary)',
-                        onMouseLeave: (e) => e.currentTarget.style.color = 'var(--text-secondary)'
+                        onMouseEnter: (e) => e.currentTarget.style.color = 'var(--on-dark-tertiary)',
+                        onMouseLeave: (e) => e.currentTarget.style.color = 'var(--on-dark-secondary)'
                       }, 'Clear conversation')
                     : React.createElement('div'),
                   // Share my data toggle (right)
@@ -46587,7 +46587,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                     title: aiIncludeHistory ? 'Sharing your data with AI' : 'Not sharing your data with AI'
                   },
                     React.createElement('span', {
-                      style: { fontSize: '12px', color: aiIncludeHistory ? '#c4b5fd' : 'var(--text-secondary)', whiteSpace: 'nowrap' }
+                      style: { fontSize: '12px', color: aiIncludeHistory ? '#c4b5fd' : 'var(--on-dark-secondary)', whiteSpace: 'nowrap' }
                     }, 'Share my data'),
                     React.createElement('input', {
                       type: 'checkbox',
@@ -46666,12 +46666,12 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                         onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'transparent'
                       },
                         // Track number
-                        React.createElement('span', { style: { width: '24px', textAlign: 'center', fontSize: '12px', color: 'var(--text-secondary)' } }, index + 1),
+                        React.createElement('span', { style: { width: '24px', textAlign: 'center', fontSize: '12px', color: 'var(--on-dark-secondary)' } }, index + 1),
 
                         // Track info
                         React.createElement('div', { className: 'flex-1 min-w-0' },
                           React.createElement('div', { style: { fontSize: '14px', color: '#f3f4f6', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, track.title),
-                          React.createElement('div', { style: { fontSize: '12px', color: 'var(--text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, track.artist)
+                          React.createElement('div', { style: { fontSize: '12px', color: 'var(--on-dark-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, track.artist)
                         ),
 
                         // Remove button
@@ -46683,9 +46683,9 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                             }));
                           },
                           className: 'opacity-0 group-hover:opacity-100 transition-all',
-                          style: { padding: '4px', borderRadius: '6px', color: 'var(--text-secondary)' },
+                          style: { padding: '4px', borderRadius: '6px', color: 'var(--on-dark-secondary)' },
                           onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.15)'; e.currentTarget.style.color = '#f87171'; },
-                          onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary)'; }
+                          onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--on-dark-secondary)'; }
                         },
                           React.createElement(Icons.X, { className: 'w-4 h-4' })
                         )
@@ -46698,7 +46698,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                 className: 'flex-1 flex items-center justify-center',
                 style: { padding: '16px' }
               },
-                React.createElement('p', { style: { fontSize: '14px', color: 'var(--text-secondary)' } }, 'No tracks remaining')
+                React.createElement('p', { style: { fontSize: '14px', color: 'var(--on-dark-secondary)' } }, 'No tracks remaining')
               ),
 
               // Actions - Three circular buttons
@@ -53448,7 +53448,7 @@ firstRunTutorial.step === 'complete' && React.createElement(React.Fragment, null
           React.createElement('span', {
             style: {
               fontSize: '11px',
-              color: 'var(--text-tertiary)',
+              color: 'var(--on-dark-tertiary)',
               marginLeft: '8px'
             }
           }, `${currentQueue.length} track${currentQueue.length !== 1 ? 's' : ''}`),

@@ -587,9 +587,10 @@ const FriendMiniPlaybar = ({ track, getAlbumArt, onPlay, onContextMenu }) => {
             className: 'w-full h-full object-cover rounded-l'
           })
         : React.createElement('div', {
-            className: 'w-full h-full bg-gray-600 rounded-l flex items-center justify-center'
+            className: 'w-full h-full rounded-l flex items-center justify-center',
+            style: { backgroundColor: 'rgba(255, 255, 255, 0.1)' } // on-dark
           },
-            React.createElement('span', { className: 'text-ink-tertiary', style: { fontSize: '8px' } }, '\u266A')
+            React.createElement('span', { 'aria-hidden': 'true', style: { fontSize: '11px', color: 'var(--on-dark-tertiary)' } }, '\u266A')
           )
     ),
     // Track info - only scrolls if overflowing
@@ -601,10 +602,12 @@ const FriendMiniPlaybar = ({ track, getAlbumArt, onPlay, onContextMenu }) => {
       React.createElement('span', {
         ref: textRef,
         className: `whitespace-nowrap inline-block ${isOverflowing ? 'animate-marquee' : ''}`,
-        style: { fontSize: '10px', lineHeight: '20px' }
+        style: { fontSize: '11px', lineHeight: '20px' }
       },
         React.createElement('span', { className: 'text-white font-medium' }, track.name),
-        React.createElement('span', { className: 'text-ink-tertiary' }, ` - ${track.artist}`)
+        // The pill is always dark (--surface-dark): a fixed on-dark colour,
+        // never the theme's ink (text-ink-tertiary was 2.6:1 in light mode).
+        React.createElement('span', { style: { color: 'var(--on-dark-secondary)' } }, ` - ${track.artist}`)
       )
     )
   );
