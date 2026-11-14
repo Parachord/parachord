@@ -107,12 +107,13 @@ Each rule below exists because the audit found its absence. Read the audit's are
   - If you'd otherwise write a second copy of something that already exists elsewhere (a button, dialog shell, menu, empty or error state, input, switch, spinner, icon), first extract it into a shared component under `src/renderer/components/`, then point both places at it. That's how `SectionHeader` (#1370) and `FilterChips` (#1371) were made.
   - Never restyle a shared component's output from a page; change the component.
   - A new shared component gets a "comes from X" line in the Renderer patterns list above and in `renderer-patterns.md`.
-- **Colours come from the CSS variables** in `index.html`, so both themes work.
-  - Don't add hex values, Tailwind palette classes (`text-gray-500`, `bg-red-50`, `purple-600`, ...), or `isDark` / `effectiveTheme` ternaries. Most palette classes have no `.dark` remap, and Tailwind's `purple-600` isn't the accent.
-  - If no token fits, add one to `:root` and `.dark` together.
-  - White text never sits on `var(--accent-primary)` (it's `#a78bfa` in dark mode). Use the fixed fill accent `#7c3aed` behind a named constant, the "fill-accent" convention in `home-sections.js` / `filter-chips.js`.
-  - Success, warning and error use the `--success` / `--warning` / `--error` tokens, never their own hex values.
-  - A service's colour is its plugin's `resolver.color`, never a hard-coded copy.
+- **Colours come from the theme tokens** in `index.html`, so both themes work. The token list is in `docs/DESIGN_SYSTEM.md` "Colors".
+  - Use the theme-token Tailwind classes (`text-ink-secondary`, `bg-surface-card`, `border-line`, `bg-accent-fill`, `bg-tint-danger`, ...; `tailwind.config.js`) or `var(--…)` in inline styles. Don't add hex values, Tailwind palette classes (`text-gray-500`, `bg-red-50`, `purple-600`, ...), or `isDark` / `effectiveTheme` ternaries (the count is 0; keep it there).
+  - If no token fits, add one to `:root` and `.dark` together (and to `tailwind.config.js` if classes will use it).
+  - White text never sits on `var(--accent-primary)` (it's `#a78bfa` in dark mode): fills with white text use `--accent-fill` / `--on-accent` (`bg-accent-fill text-ink-on-accent`).
+  - Status text uses `--text-success/-warning/-danger/-info`; white-text status fills use `--fill-*`. Never their own hex values.
+  - A page's colour comes from `PAGE_COLORS` (`src/renderer/lib/page-colors.js`); a service's from its plugin's `resolver.color`. Never a hard-coded copy.
+  - The playbar, queue drawer and AI panels are dark in both themes: they use `--surface-dark*`, never page tokens.
 - **Stay on the scales.**
   - Type: 11 · 12 · 13 · 14 · 16 · 20 · 24 · 28 · 48px. Weights as numbers.
   - Spacing: the 4px scale. 10px is only for card padding.

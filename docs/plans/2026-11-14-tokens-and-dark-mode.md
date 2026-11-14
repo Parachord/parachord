@@ -42,28 +42,28 @@ Each step is one commit. Each runs `npm test`, rewrites the drift baseline when 
 **Check:** `hexColors` falls. Every toast type and banner severity looks right in both themes.
 
 ### 4. Remap what's left, then shrink the remap block
-- [ ] Extend the `.dark` remap block to the palette classes actually used that have no remap: `text-gray-200/300`, the 16 tint backgrounds, the 7 hover tints, `border-red-200`, `border-teal-300`, `bg-gray-900` and others. Delete the unused `violet` rules.
+- [x] Extend the `.dark` remap block to the palette classes actually used that have no remap: `text-gray-200/300`, the 16 tint backgrounds, the 7 hover tints, `border-red-200`, `border-teal-300`, `bg-gray-900` and others. Delete the unused `violet` rules. (Done differently: pages moved to token colours, and the dead remap rules were deleted.)
 - [x] (Settings, Concerts, Charts, Fresh Drops, Critical Darlings, Recommendations, History, Search, Collection and the artist page done, through the token colours in `tailwind.config.js`; the playlist view, dialogs and the rest of app.js remain.) Then, page by page, replace palette classes with variables (inline style, or a small set of utility classes added to `index.html` that read variables). As each page is converted, delete the remap rules nothing uses any more.
 
 **Check:** `paletteClasses` falls with each page. Pages convert in this order, highest count first: Settings, Concerts, Charts, Recommendations, History, Search, Collection, the artist page.
 
 ### 5. Page colours and service colours
-- [ ] One `PAGE_COLOR` map for all nine pages, extending `section-header.js`, used by the sidebar, heroes, links and chips.
-- [ ] Fix the mismatches the audit lists:
+- [x] One `PAGE_COLOR` map for all nine pages, extending `section-header.js`, used by the sidebar, heroes, links and chips.
+- [x] Fix the mismatches the audit lists:
   - Critical Darlings' hero starts in Recommendations' amber.
   - Fresh Drops and Concerts are near-identical teals.
   - Friend history's gradient doesn't match History's.
   - Concerts uses purple controls.
-- [ ] Service colours only from `resolver.color`. Remove the hard-coded Bandcamp, Apple Music and Local Files copies in the playbar and Search.
+- [x] Service colours only from `resolver.color`. Remove the hard-coded Bandcamp, Apple Music and Local Files copies in the playbar and Search.
 
 ### 6. Retire the theme ternaries
-- [ ] Replace the 38 `isDark` / `effectiveTheme === 'dark'` ternaries (artist page On Tour, Concerts rows and ticket menus, sync setup) with variables.
+- [x] Replace the 38 `isDark` / `effectiveTheme === 'dark'` ternaries (artist page On Tour, Concerts rows and ticket menus, sync setup) with variables.
 
 **Check:** `themeTernaries` is 0.
 
 ### 7. Docs
-- [ ] Rewrite the colour and dark-mode parts of `docs/DESIGN_SYSTEM.md` (#1390): the token list, how to add a colour (both themes), the fill-accent convention, `PAGE_COLOR`.
-- [ ] Update CLAUDE.md "Design system" if a rule changes.
+- [x] Rewrite the colour and dark-mode parts of `docs/DESIGN_SYSTEM.md` (#1390): the token list, how to add a colour (both themes), the fill-accent convention, `PAGE_COLOR`.
+- [x] Update CLAUDE.md "Design system" if a rule changes.
 
 ## Risks
 - **Step 1's `--text-tertiary` change** moves a lot of text at once. Review it on the densest pages (Settings, track lists, card meta) in both themes before moving on.
