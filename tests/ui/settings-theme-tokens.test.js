@@ -78,3 +78,15 @@ test.each(['search-page.js', 'artist-page.js', 'collection-page.js', 'playlist-v
   expect(hits).toEqual([]);
   expect(src).not.toMatch(/isDark \? '(?:text|bg|hover:bg)-/);
 });
+
+// #1385 step 7 / #1386: every switch says it's a switch, whether it's on,
+// and what it switches.
+test('every switch has role="switch", its state and a name', () => {
+  const files = ['src/renderer/app.js', 'src/renderer/components/settings-cards.js']
+    .map((f) => fs.readFileSync(path.join(root, f), 'utf8')).join('\n');
+  const knobs = (files.match(/bg-control-knob/g) || []).length;
+  const switches = (files.match(/role: 'switch',/g) || []).length;
+  expect(switches).toBeGreaterThanOrEqual(knobs);
+  expect(files).toMatch(/role: 'switch',\n\s*'aria-checked': skipExternalPrompt \? 'true' : 'false',\n\s*'aria-label': 'Skip the open-in-browser prompt',/);
+  expect(files).toMatch(/checked: playbackSpatial === true,\n\s*role: 'switch',\n\s*'aria-label': 'Prefer Dolby Atmos mixes',/);
+});

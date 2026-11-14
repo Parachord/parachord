@@ -403,6 +403,9 @@ const ScrobblerSettingsCard = React.memo(({
       ),
       // Enabled toggle (only when connected)
       isConnected && React.createElement('button', {
+        role: 'switch',
+        'aria-checked': config?.enabled ? 'true' : 'false',
+        'aria-label': `Scrobble to ${scrobbler.name}`,
         onClick: handleToggleEnabled,
         className: `relative w-11 h-6 rounded-full transition-colors ${config?.enabled ? 'bg-accent-fill' : 'bg-control-off'}`
       },

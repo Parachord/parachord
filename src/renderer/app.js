@@ -44519,11 +44519,13 @@ React.createElement('div', {
                       React.createElement('input', {
                         type: 'checkbox',
                         checked: playbackSpatial === true,
+                        role: 'switch',
+                        'aria-label': 'Prefer Dolby Atmos mixes',
                         onChange: (e) => setPlaybackSpatial(e.target.checked),
                         className: 'sr-only peer'
                       }),
                       React.createElement('div', {
-                        className: 'w-full h-full rounded-full transition-colors',
+                        className: 'w-full h-full rounded-full transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-accent peer-focus-visible:ring-offset-2',
                         style: { backgroundColor: playbackSpatial === true ? 'var(--accent-fill)' : 'var(--control-off)' }
                       }),
                       React.createElement('div', {
@@ -44698,6 +44700,9 @@ React.createElement('div', {
                       )
                     ),
                     React.createElement('button', {
+                      role: 'switch',
+                      'aria-checked': skipExternalPrompt ? 'true' : 'false',
+                      'aria-label': 'Skip the open-in-browser prompt',
                       onClick: async () => {
                         const newValue = !skipExternalPrompt;
                         setSkipExternalPrompt(newValue);
@@ -44903,6 +44908,9 @@ React.createElement('div', {
                       )
                     ),
                     React.createElement('button', {
+                      role: 'switch',
+                      'aria-checked': discordPresenceEnabled ? 'true' : 'false',
+                      'aria-label': 'Share my now playing on Discord',
                       type: 'button',
                       role: 'switch',
                       'aria-checked': discordPresenceEnabled,
@@ -45155,6 +45163,9 @@ React.createElement('div', {
                       )
                     ),
                     React.createElement('button', {
+                      role: 'switch',
+                      'aria-checked': rememberQueue ? 'true' : 'false',
+                      'aria-label': 'Remember the queue',
                       onClick: async () => {
                         const newValue = !rememberQueue;
                         setRememberQueue(newValue);
@@ -45199,6 +45210,9 @@ React.createElement('div', {
                       )
                     ),
                     React.createElement('button', {
+                      role: 'switch',
+                      'aria-checked': showDiscoveryBadges ? 'true' : 'false',
+                      'aria-label': 'Show discovery badges',
                       onClick: async () => {
                         const newValue = !showDiscoveryBadges;
                         setShowDiscoveryBadges(newValue);
@@ -45224,6 +45238,9 @@ React.createElement('div', {
                       )
                     ),
                     React.createElement('button', {
+                      role: 'switch',
+                      'aria-checked': homeSuggestionsAutoRefresh ? 'true' : 'false',
+                      'aria-label': 'Refresh Home suggestions automatically',
                       onClick: async () => {
                         const newValue = !homeSuggestionsAutoRefresh;
                         homeSuggestionsAutoRefreshRef.current = newValue;
@@ -45269,6 +45286,9 @@ React.createElement('div', {
                       )
                     ),
                     React.createElement('button', {
+                      role: 'switch',
+                      'aria-checked': scrobblingEnabled ? 'true' : 'false',
+                      'aria-label': 'Scrobbling',
                       onClick: async () => {
                         const newValue = !scrobblingEnabled;
                         setScrobblingEnabled(newValue);
@@ -48114,7 +48134,7 @@ React.createElement('div', {
             ),
             React.createElement('div', {
               className: 'relative w-11 h-6 cursor-pointer',
-              onClick: () => toggleResolver(selectedResolver.id), role: 'button', tabIndex: 0, onKeyDown: activateOnKey
+              onClick: () => toggleResolver(selectedResolver.id), role: 'switch', 'aria-checked': activeResolvers.includes(selectedResolver.id) ? 'true' : 'false', 'aria-label': `Use ${selectedResolver.name}`, tabIndex: 0, onKeyDown: activateOnKey
             },
               React.createElement('div', {
                 className: `w-full h-full rounded-full transition-colors ${activeResolvers.includes(selectedResolver.id) ? 'bg-accent-fill' : 'bg-control-off'}`
@@ -48575,6 +48595,9 @@ React.createElement('div', {
                 )
               ),
               React.createElement('button', {
+                role: 'switch',
+                'aria-checked': autoLaunchSpotify ? 'true' : 'false',
+                'aria-label': 'Open Spotify in the background at startup',
                 onClick: async () => {
                   const newValue = !autoLaunchSpotify;
                   setAutoLaunchSpotify(newValue);
@@ -50230,6 +50253,8 @@ React.createElement('div', {
                 React.createElement('input', {
                   type: 'checkbox',
                   checked: metaServiceConfigs[selectedResolver.id]?.enabled === true,
+                  role: 'switch',
+                  'aria-label': `Use ${selectedResolver.name}`,
                   onChange: async (e) => {
                     saveMetaServiceConfig(selectedResolver.id, {
                       ...metaServiceConfigs[selectedResolver.id],
@@ -50254,7 +50279,7 @@ React.createElement('div', {
                   className: 'sr-only peer'
                 }),
                 React.createElement('div', {
-                  className: 'w-full h-full rounded-full transition-colors',
+                  className: 'w-full h-full rounded-full transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-accent peer-focus-visible:ring-offset-2',
                   style: { backgroundColor: metaServiceConfigs[selectedResolver.id]?.enabled === true ? 'var(--accent-fill)' : 'var(--control-off)' }
                 }),
                 React.createElement('div', {
@@ -50466,6 +50491,8 @@ React.createElement('div', {
                 React.createElement('input', {
                   type: 'checkbox',
                   checked: metaServiceConfigs[selectedResolver.id]?.enabled === true,
+                  role: 'switch',
+                  'aria-label': `Use ${selectedResolver.name}`,
                   onChange: async (e) => {
                     saveMetaServiceConfig(selectedResolver.id, {
                       ...metaServiceConfigs[selectedResolver.id],
@@ -50491,7 +50518,7 @@ React.createElement('div', {
                   className: 'sr-only peer'
                 }),
                 React.createElement('div', {
-                  className: 'w-full h-full rounded-full transition-colors',
+                  className: 'w-full h-full rounded-full transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-accent peer-focus-visible:ring-offset-2',
                   style: { backgroundColor: metaServiceConfigs[selectedResolver.id]?.enabled === true ? 'var(--accent-fill)' : 'var(--control-off)' }
                 }),
                 React.createElement('div', {
