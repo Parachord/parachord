@@ -1983,6 +1983,7 @@ const { Modal, ConfirmModal } = require('./components/modal');
 const { Button } = require('./components/button');
 const { activateOnKey } = require('./lib/activate-on-key');
 const { ToastRegion, NowPlayingAnnouncer } = require('./components/toast');
+const { SortMenu } = require('./components/sort-menu');
 // Room the queue drawer leaves above it: the title bar and a little air.
 const QUEUE_DRAWER_TOP_GAP = 48;
 const { sellerColor, sellerTextColor, sellerBadgeBg, sellerShortName, sellerName } = require('./lib/ticket-sellers');
@@ -37586,35 +37587,7 @@ React.createElement('div', {
           style: { flexShrink: 0, backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
         },
           // Sort dropdown
-          React.createElement('div', { className: 'relative' },
-            React.createElement('button', {
-              onClick: (e) => { e.stopPropagation(); setPlaylistsSortDropdownOpen(!playlistsSortDropdownOpen); },
-              className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-ink-tertiary hover:text-ink-secondary transition-colors'
-            },
-              React.createElement('span', null, playlistsSortOptions.find(o => o.value === playlistsSort)?.label || 'Sort'),
-              React.createElement(Icons.ChevronDown, { className: 'w-4 h-4' })
-            ),
-            playlistsSortDropdownOpen && React.createElement('div', {
-              className: 'absolute left-0 top-full mt-1 bg-surface-card rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-line'
-            },
-              playlistsSortOptions.map(option =>
-                React.createElement('button', {
-                  key: option.value,
-                  onClick: (e) => {
-                    e.stopPropagation();
-                    setPlaylistsSort(option.value);
-                    setPlaylistsSortDropdownOpen(false);
-                  },
-                  className: `w-full px-4 py-2 text-left text-sm hover:bg-surface-hover flex items-center justify-between ${
-                    playlistsSort === option.value ? 'text-ink-primary font-medium' : 'text-ink-secondary'
-                  }`
-                },
-                  option.label,
-                  playlistsSort === option.value && React.createElement(Icons.Check, { className: 'w-4 h-4' })
-                )
-              )
-            )
-          ),
+          React.createElement(SortMenu, { value: playlistsSort, options: playlistsSortOptions, onChange: setPlaylistsSort, label: "Sort playlists" }),
           React.createElement('div', { className: 'flex-1' }),
           // View mode toggle (grid/table)
           React.createElement('div', { className: 'flex items-center gap-1 mr-4' },
@@ -39677,35 +39650,7 @@ React.createElement('div', {
             style: { flexShrink: 0, backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
           },
             // Sort dropdown
-              React.createElement('div', { className: 'relative' },
-                React.createElement('button', {
-                  onClick: (e) => { e.stopPropagation(); setCriticsSortDropdownOpen(!criticsSortDropdownOpen); },
-                  className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-ink-tertiary hover:text-ink-secondary transition-colors'
-                },
-                  React.createElement('span', null, criticsSortOptions.find(o => o.value === criticsSort)?.label || 'Sort'),
-                  React.createElement(Icons.ChevronDown, { className: 'w-4 h-4' })
-                ),
-                criticsSortDropdownOpen && React.createElement('div', {
-                  className: 'absolute left-0 top-full mt-1 bg-surface-card rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-line'
-                },
-                  criticsSortOptions.map(option =>
-                    React.createElement('button', {
-                      key: option.value,
-                      onClick: (e) => {
-                        e.stopPropagation();
-                        setCriticsSort(option.value);
-                        setCriticsSortDropdownOpen(false);
-                      },
-                      className: `w-full px-4 py-2 text-left text-sm hover:bg-surface-hover flex items-center justify-between ${
-                        criticsSort === option.value ? 'text-ink-primary font-medium' : 'text-ink-secondary'
-                      }`
-                    },
-                      option.label,
-                      criticsSort === option.value && React.createElement(Icons.Check, { className: 'w-4 h-4' })
-                    )
-                  )
-                )
-              ),
+              React.createElement(SortMenu, { value: criticsSort, options: criticsSortOptions, onChange: setCriticsSort, label: "Sort" }),
               React.createElement('div', { className: 'flex-1' }),
               // Search
               React.createElement('div', { className: 'flex items-center' },
@@ -42176,70 +42121,12 @@ React.createElement('div', {
           },
             // Period dropdown for top charts OR sort dropdown for recent
             historyTab === 'recent' ?
-              React.createElement('div', { className: 'relative' },
-                React.createElement('button', {
-                  onClick: (e) => { e.stopPropagation(); setHistorySortDropdownOpen(!historySortDropdownOpen); },
-                  className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-ink-tertiary hover:text-ink-secondary transition-colors'
-                },
-                  React.createElement('span', null, historySortOptions.find(o => o.value === historySort)?.label || 'Sort'),
-                  React.createElement(Icons.ChevronDown, { className: 'w-4 h-4' })
-                ),
-                historySortDropdownOpen && React.createElement('div', {
-                  className: 'absolute left-0 top-full mt-1 bg-surface-card rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-line'
-                },
-                  historySortOptions.map(option =>
-                    React.createElement('button', {
-                      key: option.value,
-                      onClick: (e) => {
-                        e.stopPropagation();
-                        setHistorySort(option.value);
-                        setHistorySortDropdownOpen(false);
-                      },
-                      className: `w-full px-4 py-2 text-left text-sm hover:bg-surface-hover flex items-center justify-between ${
-                        historySort === option.value ? 'text-ink-primary font-medium' : 'text-ink-secondary'
-                      }`
-                    },
-                      option.label,
-                      historySort === option.value && React.createElement(Icons.Check, { className: 'w-4 h-4' })
-                    )
-                  )
-                )
-              )
+              React.createElement(SortMenu, { value: historySort, options: historySortOptions, onChange: setHistorySort, label: "Sort" })
             :
               // Period dropdown for top charts
-              React.createElement('div', { className: 'relative' },
-                React.createElement('button', {
-                  onClick: (e) => { e.stopPropagation(); setHistoryPeriodDropdownOpen(!historyPeriodDropdownOpen); },
-                  className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-ink-tertiary hover:text-ink-secondary transition-colors'
-                },
-                  React.createElement('span', null, historyPeriodOptions.find(o => o.value === historyPeriod)?.label || 'Period'),
-                  React.createElement(Icons.ChevronDown, { className: 'w-4 h-4' })
-                ),
-                historyPeriodDropdownOpen && React.createElement('div', {
-                  className: 'absolute left-0 top-full mt-1 bg-surface-card rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-line'
-                },
-                  historyPeriodOptions.map(option =>
-                    React.createElement('button', {
-                      key: option.value,
-                      onClick: (e) => {
-                        e.stopPropagation();
-                        setHistoryPeriod(option.value);
-                        setHistoryPeriodDropdownOpen(false);
-                        // Reload current tab with new period
-                        if (historyTab === 'topTracks') loadTopTracks(option.value);
-                        else if (historyTab === 'topArtists') loadTopArtists(option.value);
-                        else if (historyTab === 'topAlbums') loadTopAlbums(option.value);
-                      },
-                      className: `w-full px-4 py-2 text-left text-sm hover:bg-surface-hover flex items-center justify-between ${
-                        historyPeriod === option.value ? 'text-ink-primary font-medium' : 'text-ink-secondary'
-                      }`
-                    },
-                      option.label,
-                      historyPeriod === option.value && React.createElement(Icons.Check, { className: 'w-4 h-4' })
-                    )
-                  )
-                )
-              ),
+              React.createElement(SortMenu, { value: historyPeriod, options: historyPeriodOptions, onChange: (option) => { setHistoryPeriod(option); if (historyTab === 'topTracks') loadTopTracks(option);
+                        else if (historyTab === 'topArtists') loadTopArtists(option);
+                        else if (historyTab === 'topAlbums') loadTopAlbums(option); }, label: "Time period" }),
             React.createElement('div', { className: 'flex-1' }),
             // Search (only for recent and top tracks)
             (historyTab === 'recent' || historyTab === 'topTracks') && React.createElement('div', { className: 'flex items-center' },
@@ -43176,68 +43063,11 @@ React.createElement('div', {
             },
               // Sort dropdown for recent, period dropdown for top charts
               friendHistoryTab === 'recent' ?
-                React.createElement('div', { className: 'relative' },
-                  React.createElement('button', {
-                    onClick: (e) => { e.stopPropagation(); setFriendHistorySortDropdownOpen(!friendHistorySortDropdownOpen); },
-                    className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-ink-tertiary hover:text-ink-secondary transition-colors'
-                  },
-                    React.createElement('span', null, historySortOptions.find(o => o.value === friendHistorySort)?.label || 'Sort'),
-                    React.createElement(Icons.ChevronDown, { className: 'w-4 h-4' })
-                  ),
-                  friendHistorySortDropdownOpen && React.createElement('div', {
-                    className: 'absolute left-0 top-full mt-1 bg-surface-card rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-line'
-                  },
-                    historySortOptions.map(option =>
-                      React.createElement('button', {
-                        key: option.value,
-                        onClick: (e) => {
-                          e.stopPropagation();
-                          setFriendHistorySort(option.value);
-                          setFriendHistorySortDropdownOpen(false);
-                        },
-                        className: `w-full px-4 py-2 text-left text-sm hover:bg-surface-hover flex items-center justify-between ${
-                          friendHistorySort === option.value ? 'text-ink-primary font-medium' : 'text-ink-secondary'
-                        }`
-                      },
-                        option.label,
-                        friendHistorySort === option.value && React.createElement(Icons.Check, { className: 'w-4 h-4' })
-                      )
-                    )
-                  )
-                )
+                React.createElement(SortMenu, { value: friendHistorySort, options: historySortOptions, onChange: setFriendHistorySort, label: "Sort" })
               :
-                React.createElement('div', { className: 'relative' },
-                  React.createElement('button', {
-                    onClick: (e) => { e.stopPropagation(); setHistoryPeriodDropdownOpen(!historyPeriodDropdownOpen); },
-                    className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-ink-tertiary hover:text-ink-secondary transition-colors'
-                  },
-                    React.createElement('span', null, historyPeriodOptions.find(o => o.value === friendHistoryPeriod)?.label || 'Period'),
-                    React.createElement(Icons.ChevronDown, { className: 'w-4 h-4' })
-                  ),
-                  historyPeriodDropdownOpen && React.createElement('div', {
-                    className: 'absolute left-0 top-full mt-1 bg-surface-card rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-line'
-                  },
-                    historyPeriodOptions.map(option =>
-                      React.createElement('button', {
-                        key: option.value,
-                        onClick: (e) => {
-                          e.stopPropagation();
-                          setFriendHistoryPeriod(option.value);
-                          setHistoryPeriodDropdownOpen(false);
-                          if (friendHistoryTab === 'topTracks') loadFriendTopTracks(currentFriend, option.value);
-                          else if (friendHistoryTab === 'topAlbums') loadFriendTopAlbums(currentFriend, option.value);
-                          else if (friendHistoryTab === 'topArtists') loadFriendTopArtists(currentFriend, option.value);
-                        },
-                        className: `w-full px-4 py-2 text-left text-sm hover:bg-surface-hover flex items-center justify-between ${
-                          friendHistoryPeriod === option.value ? 'text-ink-primary font-medium' : 'text-ink-secondary'
-                        }`
-                      },
-                        option.label,
-                        friendHistoryPeriod === option.value && React.createElement(Icons.Check, { className: 'w-4 h-4' })
-                      )
-                    )
-                  )
-                ),
+                React.createElement(SortMenu, { value: friendHistoryPeriod, options: historyPeriodOptions, onChange: (option) => { setFriendHistoryPeriod(option); if (friendHistoryTab === 'topTracks') loadFriendTopTracks(currentFriend, option);
+                          else if (friendHistoryTab === 'topAlbums') loadFriendTopAlbums(currentFriend, option);
+                          else if (friendHistoryTab === 'topArtists') loadFriendTopArtists(currentFriend, option); }, label: "Time period" }),
               React.createElement('div', { className: 'flex-1' }),
               // A person opened from Recommendations isn't a friend yet: Follow
               // adds them (and pins them); pinning a non-friend would pin nothing.
@@ -52463,36 +52293,7 @@ React.createElement('div', {
           style: { flexShrink: 0, borderBottom: '1px solid var(--border-subtle)' }
         },
           // Sort dropdown
-          React.createElement('div', { className: 'relative' },
-            React.createElement('button', {
-              onClick: (e) => { e.stopPropagation(); setAddToPlaylistSortDropdownOpen(!addToPlaylistSortDropdownOpen); },
-              className: 'flex items-center gap-1 px-2 py-1 text-xs text-ink-tertiary hover:text-ink-secondary transition-colors'
-            },
-              React.createElement('span', null, playlistsSortOptions.find(o => o.value === addToPlaylistSort)?.label || 'Sort'),
-              React.createElement(Icons.ChevronDown, { className: 'w-3 h-3' })
-            ),
-            addToPlaylistSortDropdownOpen && React.createElement('div', {
-              className: 'absolute left-0 top-full mt-1 bg-surface-card py-1 min-w-[140px] z-30',
-              style: { borderRadius: '8px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)', border: '1px solid var(--border-subtle)' }
-            },
-              playlistsSortOptions.map(option =>
-                React.createElement('button', {
-                  key: option.value,
-                  onClick: (e) => {
-                    e.stopPropagation();
-                    setAddToPlaylistSort(option.value);
-                    setAddToPlaylistSortDropdownOpen(false);
-                  },
-                  className: `w-full px-3 py-1.5 text-left text-xs hover:bg-surface-hover flex items-center justify-between ${
-                    addToPlaylistSort === option.value ? 'text-ink-primary font-medium' : 'text-ink-secondary'
-                  }`
-                },
-                  option.label,
-                  addToPlaylistSort === option.value && React.createElement(Icons.Check, { className: 'w-3 h-3' })
-                )
-              )
-            )
-          ),
+          React.createElement(SortMenu, { value: addToPlaylistSort, options: playlistsSortOptions, onChange: setAddToPlaylistSort, label: "Sort playlists" }),
           React.createElement('div', { className: 'flex-1' }),
           // Search
           React.createElement('div', { className: 'flex items-center' },
