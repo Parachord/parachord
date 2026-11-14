@@ -121,7 +121,7 @@ const SearchPage = React.memo(function SearchPage(props) {
   return searchDetailCategory ?
         // DETAIL VIEW - Similar structure to artist page with collapsible header
         React.createElement('div', {
-          className: 'flex-1 flex flex-col bg-white',
+          className: 'flex-1 flex flex-col page-bg',
           style: { overflow: 'hidden' }
         },
           // Header section (outside scrollable area)
@@ -183,7 +183,7 @@ const SearchPage = React.memo(function SearchPage(props) {
           // Scrollable content area - single column layout with grids/lists
           React.createElement('div', {
             ref: handleSearchScrollContainerRef,
-            className: 'flex-1 overflow-y-auto bg-white scrollable-content',
+            className: 'flex-1 overflow-y-auto page-bg scrollable-content',
             onScroll: handleSearchDetailScroll
           },
             // Sticky filter bar for Artists (sort dropdown + search on right like other pages)
@@ -1226,7 +1226,7 @@ const SearchPage = React.memo(function SearchPage(props) {
       :
         // MAIN VIEW - clean white layout matching reference
         React.createElement('div', {
-          className: 'h-full overflow-y-auto bg-white'
+          className: 'h-full overflow-y-auto page-bg'
         },
           // Header bar with SEARCH title and CLOSE button
           React.createElement('div', {

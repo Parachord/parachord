@@ -580,7 +580,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
         // Release page content - new layout with album details header
         // Show immediately with partial data (tracks may still be loading)
         currentRelease && React.createElement('div', {
-          className: 'bg-white',
+          className: 'page-bg',
           style: {
             flex: 1,
             overflow: 'hidden',

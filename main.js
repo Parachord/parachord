@@ -930,11 +930,29 @@ function getSavedWindowBounds() {
   }
 }
 
+// The window's backdrop per theme: what shows before the page paints and
+// behind it while it resizes. Dark matches --bg-primary.
+const WINDOW_BACKGROUND = { light: '#f3f4f6', dark: '#161616' };
+function initialThemeFor(pref, systemDark) {
+  return pref === 'dark' || (pref !== 'light' && systemDark) ? 'dark' : 'light';
+}
+function applyWindowBackground() {
+  const bg = WINDOW_BACKGROUND[nativeTheme.shouldUseDarkColors ? 'dark' : 'light'];
+  BrowserWindow.getAllWindows().forEach((win) => {
+    try { win.setBackgroundColor(bg); } catch (_) { /* window closing */ }
+  });
+}
+
 function createWindow() {
   console.log('Creating main window...');
   console.log('Preload path:', path.join(__dirname, 'preload.js'));
 
   const savedBounds = getSavedWindowBounds();
+  // The window opens in the saved theme: its backdrop, and the renderer's
+  // <html class="dark"> set by index.html before anything paints (via
+  // --parachord-theme, read in preload.js). Without it a dark-mode launch
+  // flashed light until React applied the class.
+  const initialTheme = initialThemeFor(store.get('theme_preference'), nativeTheme.shouldUseDarkColors);
 
   mainWindow = new BrowserWindow({
     width: savedBounds?.width || 1400,
@@ -949,7 +967,7 @@ function createWindow() {
     // of the window frame, so we use the default title bar to keep menus accessible.
     ...(process.platform === 'darwin' ? { titleBarStyle: 'hidden' } : {}),
     frame: true,
-    backgroundColor: '#f3f4f6',
+    backgroundColor: WINDOW_BACKGROUND[initialTheme],
     icon: path.join(__dirname, 'assets/icons/icon512.png'),
     webPreferences: {
       nodeIntegration: false,
@@ -970,7 +988,7 @@ function createWindow() {
       // wrapper forwards log/info to the real console (dev) or only to the
       // diagnostic ring buffer (prod). __dirname is not available in
       // sandboxed preloads, hence this argv-based path.
-      additionalArguments: [`--parachord-is-dev=${!app.isPackaged}`]
+      additionalArguments: [`--parachord-is-dev=${!app.isPackaged}`, `--parachord-theme=${initialTheme}`]
     },
     show: false
   });
@@ -3074,12 +3092,14 @@ ipcMain.handle('theme-get-system', () => {
 ipcMain.handle('theme-set-native', (event, mode) => {
   // mode: 'light', 'dark', or 'system'
   nativeTheme.themeSource = mode;
+  applyWindowBackground();
   return nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
 });
 
 // Notify renderer when system theme changes
 nativeTheme.on('updated', () => {
   const effectiveTheme = nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
+  applyWindowBackground();
   BrowserWindow.getAllWindows().forEach(win => {
     win.webContents.send('theme-changed', effectiveTheme);
   });

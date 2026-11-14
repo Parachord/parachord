@@ -26,10 +26,10 @@ Each step is one commit. Each runs `npm test`, rewrites the drift baseline when 
 **Check:** the drift test's undefined-variable list is empty. Settings fields, sliders and checkboxes look right in dark mode.
 
 ### 2. Launch and backdrop
-- [ ] Seed `effectiveTheme` from `document.documentElement.classList.contains('dark')` instead of `'light'` (app.js `useState`), so the first render never strips `.dark`.
-- [ ] The window's `backgroundColor` (main.js `BrowserWindow`) follows `theme_preference` / `nativeTheme`, and updates on `theme-changed`.
-- [ ] In `handleThemeChange`, use `setNative()`'s result instead of calling `getSystem()` first.
-- [ ] Page bodies `bg-white` → `var(--bg-primary)`: the main content area and the 6 page bodies the audit lists. No change in light mode; in dark mode pages sit on `#161616` and cards on `#252525` stand out again.
+- [x] Seed `effectiveTheme` from `document.documentElement.classList.contains('dark')` instead of `'light'` (app.js `useState`), so the first render never strips `.dark`.
+- [x] The window's `backgroundColor` (main.js `BrowserWindow`) follows `theme_preference` / `nativeTheme`, and updates on `theme-changed`.
+- [x] In `handleThemeChange`, use `setNative()`'s result instead of calling `getSystem()` first.
+- [x] Page bodies `bg-white` → `var(--bg-primary)`: the main content area and the 6 page bodies the audit lists. No change in light mode; in dark mode pages sit on `#161616` and cards on `#252525` stand out again.
 
 **Check:** launch in dark mode twice, once with the 5s fallback path forced. No light flash. Every page in dark mode has visible card edges.
 

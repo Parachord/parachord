@@ -188,7 +188,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
               setPlaylistScrollContainerReady(true);
             }
           },
-          className: 'bg-white',
+          className: 'page-bg',
           style: {
             flex: 1,
             overflow: 'hidden',

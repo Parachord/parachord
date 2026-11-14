@@ -3720,7 +3720,11 @@ const Parachord = () => {
   const waitingForBrowserPlaybackRef = useRef(false); // True when we're waiting for browser to connect after opening external track
   const [settingsTab, setSettingsTab] = useState('plugins'); // 'plugins' | 'general' | 'about'
   const [themePref, setThemePref] = useState('system'); // 'light' | 'dark' | 'system'
-  const [effectiveTheme, setEffectiveTheme] = useState('light'); // resolved 'light' | 'dark'
+  // Resolved 'light' | 'dark'. Seeded from the class index.html set before the
+  // first paint, so the first render never strips .dark (a light flash).
+  const [effectiveTheme, setEffectiveTheme] = useState(() => (
+    typeof document !== 'undefined' && document.documentElement.classList.contains('dark') ? 'dark' : 'light'
+  ));
   const [pluginsFilter, setPluginsFilter] = useState('all'); // 'all' | 'installed' | 'available'
   const [marketplaceManifest, setMarketplaceManifest] = useState(null);
   const [marketplaceLoading, setMarketplaceLoading] = useState(false);
@@ -4993,16 +4997,10 @@ const Parachord = () => {
       const pref = saved || 'system';
       setThemePref(pref);
 
-      // Get effective theme from main process
-      if (pref === 'system') {
-        const systemTheme = await window.electron?.theme?.getSystem();
-        setEffectiveTheme(systemTheme || 'light');
-      } else {
-        setEffectiveTheme(pref);
-      }
-
-      // Set native theme source
-      await window.electron?.theme?.setNative(pref);
+      // Setting the native theme source answers with the theme it resolves
+      // to, which is the effective theme for every preference.
+      const resolved = await window.electron?.theme?.setNative(pref);
+      setEffectiveTheme(resolved || (pref === 'dark' ? 'dark' : 'light'));
     };
 
     initTheme();
@@ -5655,15 +5653,10 @@ const Parachord = () => {
   const handleThemeChange = async (newPref) => {
     setThemePref(newPref);
     await window.electron?.store?.set('theme_preference', newPref);
-
-    if (newPref === 'system') {
-      const systemTheme = await window.electron?.theme?.getSystem();
-      setEffectiveTheme(systemTheme || 'light');
-    } else {
-      setEffectiveTheme(newPref);
-    }
-
-    await window.electron?.theme?.setNative(newPref);
+    // setNative answers with the resolved theme: one round trip, and the
+    // class can't disagree with the native theme source.
+    const resolved = await window.electron?.theme?.setNative(newPref);
+    setEffectiveTheme(resolved || (newPref === 'dark' ? 'dark' : 'light'));
   };
 
   const [collectionDropHighlight, setCollectionDropHighlight] = useState(false);
@@ -36995,7 +36988,7 @@ useEffect(() => {
       // Main content area
       React.createElement('div', {
         ref: mainContentRef,
-        className: 'flex-1 flex flex-col overflow-hidden bg-white relative'
+        className: 'flex-1 flex flex-col overflow-hidden page-bg relative'
       },
         // Title bar spacer (macOS only — draggable area for traffic lights)
         isMac && React.createElement('div', {
@@ -37462,7 +37455,7 @@ useEffect(() => {
         ),
         // Content area with sticky bar and loading skeletons
         React.createElement('div', {
-          className: 'scrollable-content bg-white',
+          className: 'scrollable-content page-bg',
           style: {
             flex: 1,
             overflowY: 'scroll',

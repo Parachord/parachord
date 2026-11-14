@@ -11,6 +11,8 @@
        compiles plugins and calls their init(). Android sets the same global
        to 'android' from its scrobbler-plugin bridge. -->
   <script>window.__parachordClient = 'desktop';</script>
+  <!-- Open in the saved theme: no light flash before React applies it. -->
+  <script>try { if (window.electron && window.electron.theme && window.electron.theme.initial === 'dark') document.documentElement.classList.add('dark'); } catch (e) {}</script>
   <title>Parachord Desktop</title>
   <link rel="stylesheet" href="vendor/tailwind.css">
   <style>
@@ -281,6 +283,10 @@
     .dark .text-gray-500 { color: var(--text-tertiary) !important; }
     .dark .text-gray-400 { color: var(--text-tertiary) !important; }
     .dark .bg-white { background-color: var(--bg-elevated) !important; }
+    /* A page's body: the page colour in both themes (white / #161616), so
+       cards (bg-white → --bg-elevated in dark) keep their edges. Page bodies
+       used bg-white, which put every page but Home on the card colour. */
+    .page-bg { background-color: var(--bg-primary); }
     .dark .bg-gray-50 { background-color: var(--bg-secondary) !important; }
     .dark .bg-gray-100 { background-color: var(--bg-inset) !important; }
     .dark .bg-gray-200 { background-color: #383838 !important; }
