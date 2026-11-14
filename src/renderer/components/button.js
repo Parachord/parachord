@@ -24,7 +24,7 @@ const BASE = 'inline-flex items-center justify-center gap-2 font-medium rounded-
 
 const VARIANTS = {
   primary: 'bg-accent-fill text-ink-on-accent hover:bg-accent-fill-hover',
-  secondary: 'bg-surface-card text-ink-primary border border-line hover:bg-surface-hover hover:border-line-strong',
+  secondary: 'bg-surface-card text-ink-primary border border-line-strong hover:bg-surface-hover',
   destructive: 'bg-status-error text-ink-on-accent hover:bg-status-error-hover',
   text: 'text-accent hover:bg-accent-tint',
   icon: 'text-ink-secondary hover:text-ink-primary hover:bg-surface-hover',

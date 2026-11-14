@@ -147,7 +147,19 @@ const TYPE_ICON = {
 function ConfirmModal({ dialog, onClose }) {
   const e = React.createElement;
   if (!dialog || !dialog.show) return null;
-  const { type = 'info', title, message, onConfirm, onCancel, confirmLabel, cancelLabel, destructive, actionButton } = dialog;
+  return e(ConfirmModalBody, { dialog, onClose });
+}
+
+// dontShowAgain: { label, onChange(on) } adds a checkbox under the message;
+// its state is reported once, when the dialog closes by any way out.
+function ConfirmModalBody({ dialog, onClose: close }) {
+  const e = React.createElement;
+  const { type = 'info', title, message, onConfirm, onCancel, confirmLabel, cancelLabel, destructive, actionButton, dontShowAgain } = dialog;
+  const [suppress, setSuppress] = React.useState(false);
+  const onClose = () => {
+    if (dontShowAgain && suppress && dontShowAgain.onChange) dontShowAgain.onChange(true);
+    close();
+  };
   const [iconName, color] = TYPE_ICON[type] || TYPE_ICON.info;
   // Any way out that isn't the confirm button is a cancel (onCancel lets
   // confirmAsync resolve false).
@@ -173,7 +185,18 @@ function ConfirmModal({ dialog, onClose }) {
     role: destructive || type === 'error' ? 'alertdialog' : 'dialog',
     icon: e(Icons[iconName], { className: 'w-6 h-6', style: { color } }),
     footer,
-  });
+  },
+  dontShowAgain && e('label', {
+    className: 'flex items-start gap-2 cursor-pointer text-ink-secondary',
+    style: { marginTop: '14px', fontSize: '13px', lineHeight: 1.4 },
+  },
+  e('input', {
+    type: 'checkbox',
+    checked: suppress,
+    onChange: (ev) => setSuppress(ev.target.checked),
+    style: { marginTop: '2px', accentColor: 'var(--accent-primary)' },
+  }),
+  dontShowAgain.label || 'Don’t show this again'));
 }
 
-module.exports = { Modal, ConfirmModal, useDialogFocus, MODAL_WIDTHS: WIDTHS };
+module.exports = { Modal, ConfirmModal, ConfirmModalBody, useDialogFocus, MODAL_WIDTHS: WIDTHS };

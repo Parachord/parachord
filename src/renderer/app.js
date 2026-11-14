@@ -3713,6 +3713,11 @@ const Parachord = () => {
   // (external-flow session states moved into use-playback-engine — slice 3)
   const [externalTrackCountdown, setExternalTrackCountdown] = useState(15);
   const [skipExternalPrompt, setSkipExternalPrompt] = useState(false); // "Don't show again" preference
+  // "Don't show again" on the No source found / No enabled source dialog:
+  // tracks with no playable source are skipped with a toast instead.
+  const [skipUnplayablePrompt, setSkipUnplayablePrompt] = useState(false);
+  const skipUnplayablePromptRef = useRef(false);
+  skipUnplayablePromptRef.current = skipUnplayablePrompt;
   const [autoLaunchSpotify, setAutoLaunchSpotify] = useState(false); // Auto-launch Spotify on app startup
   const [skipUnsavedFriendWarning, setSkipUnsavedFriendWarning] = useState(false); // "Don't show again" for unsaved friend unpin warning
   const [unsavedFriendWarningOpen, setUnsavedFriendWarningOpen] = useState(false); // Warning dialog state
@@ -5711,6 +5716,7 @@ const Parachord = () => {
       cancelLabel: options.cancelLabel || null,
       destructive: !!options.destructive,
       onCancel: options.onCancel || null,
+      dontShowAgain: options.dontShowAgain || null,
       actionButton: options.actionButton || null,
     });
   };
@@ -8194,6 +8200,8 @@ const Parachord = () => {
     ui: {
       showToastRef,
       showConfirmDialog,
+      skipUnplayablePromptRef,
+      setSkipUnplayablePrompt,
       setActiveView,
       setSettingsTab,
       setProgress,
@@ -18635,7 +18643,7 @@ ${trackListXml}
         'active_resolvers', 'resolver_order', 'meta_service_configs',
         'applemusic_developer_token', 'friends', 'pinnedFriendIds',
         'autoPinnedFriendIds', 'hidden_friend_keys', 'resolver_volume_offsets', 'saved_volume',
-        'skip_external_prompt',
+        'skip_external_prompt', 'skip_unplayable_prompt',
         'auto_launch_spotify', 'skip_unsaved_friend_warning', 'remember_queue',
         'show_discovery_badges', 'home_suggestions_auto_refresh', 'playlists_view_mode', 'ai_include_history',
         'recommendation_blocklist', 'resolver_blocklist', 'ai_chat_histories',
@@ -19183,6 +19191,7 @@ ${trackListXml}
       const savedVolumeOffsets = d['resolver_volume_offsets'];
       const savedVolume = d['saved_volume'];
       const savedSkipExternalPrompt = d['skip_external_prompt'];
+      const savedSkipUnplayablePrompt = d['skip_unplayable_prompt'];
       const savedAutoLaunchSpotify = d['auto_launch_spotify'];
       const savedSkipUnsavedFriendWarning = d['skip_unsaved_friend_warning'];
       const savedRememberQueue = d['remember_queue'];
@@ -19347,6 +19356,7 @@ ${trackListXml}
       }
 
       // Load skip external prompt preference
+      if (savedSkipUnplayablePrompt !== undefined) setSkipUnplayablePrompt(savedSkipUnplayablePrompt === true);
       if (savedSkipExternalPrompt !== undefined) {
         setSkipExternalPrompt(savedSkipExternalPrompt);
         console.log('📦 Loaded skip external prompt preference:', savedSkipExternalPrompt);
@@ -44857,6 +44867,17 @@ React.createElement(Switch, { checked: skipExternalPrompt, onToggle: async () =>
                         style: statusBadgeStyle(!skipUnsavedFriendWarning)
                       }, skipUnsavedFriendWarning ? 'Hidden' : 'Showing')
                     ),
+                    // No playable source: shown, or skipped silently
+                    React.createElement('div', { className: 'flex items-center justify-between py-2 px-3 rounded-lg bg-surface-subtle' },
+                      React.createElement('div', null,
+                        React.createElement('p', { className: 'text-sm text-ink-primary' }, 'No playable source'),
+                        React.createElement('p', { className: 'text-xs text-ink-tertiary' }, 'When hidden, tracks with no source are skipped')
+                      ),
+                      React.createElement('div', {
+                        className: 'px-2 py-0.5 rounded text-xs font-medium',
+                        style: statusBadgeStyle(!skipUnplayablePrompt)
+                      }, skipUnplayablePrompt ? 'Hidden' : 'Showing')
+                    ),
                     // Items dismissed from Home's setup checklist: the reset
                     // below is the only way to bring them back.
                     homeSetupDismissed.length > 0 && React.createElement('div', {
@@ -44868,14 +44889,16 @@ React.createElement(Switch, { checked: skipExternalPrompt, onToggle: async () =>
                     )
                   ),
                   // Reset all button
-                  (skipExternalPrompt || skipUnsavedFriendWarning || homeSetupDismissed.length > 0) && React.createElement('button', {
+                  (skipExternalPrompt || skipUnsavedFriendWarning || skipUnplayablePrompt || homeSetupDismissed.length > 0) && React.createElement('button', {
                     onClick: async () => {
                       setSkipExternalPrompt(false);
                       setSkipUnsavedFriendWarning(false);
+                      setSkipUnplayablePrompt(false);
                       setHomeSetupDismissed([]);
                       if (window.electron?.store) {
                         await window.electron.store.set('skip_external_prompt', false);
                         await window.electron.store.set('skip_unsaved_friend_warning', false);
+                        await window.electron.store.set('skip_unplayable_prompt', false);
                         await window.electron.store.set('home_setup_dismissed', []);
                       }
                       showToast('All dialog preferences reset');

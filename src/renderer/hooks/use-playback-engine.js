@@ -210,6 +210,8 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
   const {
     showToastRef,
     showConfirmDialog,
+    skipUnplayablePromptRef,
+    setSkipUnplayablePrompt,
     setActiveView,
     setSettingsTab,
     setProgress,
@@ -827,6 +829,38 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       return true;
     };
 
+    // A track with no playable source. Normally a dialog; with its "Don't
+    // show this again" ticked (skip_unplayable_prompt), a toast and on to the
+    // next track, the way an auto-advance skips it.
+    const reportUnplayable = (title, message) => {
+      if (skipUnplayablePromptRef && skipUnplayablePromptRef.current) {
+        console.log(`⏭️ Skip "${trackOrSource?.title || 'track'}" — ${title} (prompt turned off)`);
+        setTrackLoading(false);
+        if (trackOrSource?.id) {
+          setCurrentQueue(prev => prev.map(t => t.id === trackOrSource.id ? { ...t, status: 'error' } : t));
+        }
+        if (showToastRef?.current) showToastRef.current(`Skipped “${trackOrSource?.title || 'track'}”: no playable source`, 'info');
+        setTimeout(() => { if (handleNextRef.current) handleNextRef.current(false, { trigger: 'unplayable' }); }, 600);
+        return;
+      }
+      showConfirmDialog({
+        type: 'error',
+        title,
+        message,
+        actionButton: {
+          label: 'Open Plug-Ins',
+          onClick: () => { setActiveView('settings'); setSettingsTab('plugins'); },
+        },
+        dontShowAgain: {
+          label: 'Don’t show this again. Skip tracks with no source.',
+          onChange: (on) => {
+            if (setSkipUnplayablePrompt) setSkipUnplayablePrompt(on);
+            window.electron?.store?.set('skip_unplayable_prompt', on);
+          },
+        },
+      });
+    };
+
     // The account's plan doesn't cover playback on this service
     // (reason 'plan-ineligible': Amazon off Music Unlimited, #1220, or a
     // plugin's play() on a plan its service can't play on demand). The app
@@ -1179,15 +1213,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
           setTrackLoading(false); // Clear loading state
           setCurrentTrack(prev => prev?.id === placeholderTrack.id ? { ...prev, status: 'error' } : prev);
           if (autoSkipIfAdvancing('no playable source')) return;
-          showConfirmDialog({
-            type: 'error',
-            title: 'No Source Found',
-            message: 'Could not find a playable source for this track. Try turning on more plug-ins.',
-            actionButton: {
-              label: 'Open Plug-Ins',
-              onClick: () => { setActiveView('settings'); setSettingsTab('plugins'); },
-            },
-          });
+          reportUnplayable('No source found', 'Could not find a playable source for this track. Try turning on more plug-ins.');
           return;
         }
 
@@ -1266,15 +1292,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         }));
         if (autoSkipIfAdvancing('no enabled source matches')) return;
         setTrackLoading(false); // Clear loading state
-        showConfirmDialog({
-          type: 'error',
-          title: 'No Enabled Source',
-          message: 'This track has sources, but none from the plug-ins you have turned on.',
-          actionButton: {
-            label: 'Open Plug-Ins',
-            onClick: () => { setActiveView('settings'); setSettingsTab('plugins'); },
-          },
-        });
+        reportUnplayable('No enabled source', 'This track has sources, but none from the plug-ins you have turned on.');
         return;
       }
 

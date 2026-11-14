@@ -123,7 +123,13 @@ test('bare mode keeps the panel and adds the dialog semantics', () => {
 test('confirmAsync resolves false on any way out but the confirm button', () => {
   const calls = [];
   const dialog = { show: true, title: 'Delete?', destructive: true, confirmLabel: 'Delete', onConfirm: () => calls.push('yes'), onCancel: () => calls.push('no') };
-  const tree = ConfirmModal({ dialog, onClose: () => calls.push('close') });
+  // ConfirmModal renders ConfirmModalBody, which holds the checkbox state;
+  // call it directly with a stand-in useState.
+  const { ConfirmModalBody } = require('../../src/renderer/components/modal');
+  const realUseState = React.useState;
+  React.useState = (v) => [v, () => {}];
+  const tree = ConfirmModalBody({ dialog, onClose: () => calls.push('close') });
+  React.useState = realUseState;
   // Modal element's onClose is the cancel path (X, Escape, backdrop)
   tree.props.onClose();
   expect(calls).toEqual(['no', 'close']);
@@ -132,4 +138,16 @@ test('confirmAsync resolves false on any way out but the confirm button', () => 
   const confirmBtn = tree.props.footer.find((b) => b.key === 'confirm');
   confirmBtn.props.onClick();
   expect(calls).toEqual(['no', 'close', 'no', 'close', 'yes', 'close']);
+});
+
+test('the no-source dialog offers "Don\u2019t show this again"', () => {
+  const out = html(h(ConfirmModal, { dialog: { show: true, type: 'error', title: 'No source found', dontShowAgain: { label: 'Don’t show this again. Skip tracks with no source.', onChange() {} } }, onClose() {} }));
+  expect(out).toContain('type="checkbox"');
+  expect(out).toContain('Don’t show this again. Skip tracks with no source.');
+  const engine = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/hooks/use-playback-engine.js'), 'utf8');
+  expect(engine).toMatch(/if \(skipUnplayablePromptRef && skipUnplayablePromptRef\.current\) \{/);
+  expect(engine).toContain("reportUnplayable('No source found',");
+  expect(engine).toContain("reportUnplayable('No enabled source',");
+  const store = require('fs').readFileSync(require('path').join(__dirname, '../../main-process/ipc/store.js'), 'utf8');
+  expect(store).toContain("'skip_unplayable_prompt'");
 });

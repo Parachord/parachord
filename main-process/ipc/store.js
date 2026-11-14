@@ -36,7 +36,7 @@ const ALLOWED_STORE_KEYS = new Set([
   'scrobbler-config-listenbrainz', 'scrobbler_love_push_enabled', 'scrobbling-enabled',
   'love_pushed_keys', 'search_history',
   'selected_chat_provider', 'show_discovery_badges',
-  'skip_external_prompt', 'skip_unsaved_friend_warning',
+  'skip_external_prompt', 'skip_unsaved_friend_warning', 'skip_unplayable_prompt',
   'suppressed_sync_playlists',
   'theme_preference',
   'tutorial_completed', 'uninstalled_resolvers', 'whats_new_dismissed_version', 'home_setup_dismissed',
