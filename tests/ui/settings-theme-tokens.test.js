@@ -52,3 +52,17 @@ test('every switch has a white knob on the control tokens', () => {
   const dark = html.slice(html.indexOf('.dark {'));
   expect(dark).toMatch(/--control-off: #707070;/);
 });
+
+// Pages converted after Settings. Their own page colour (Concerts' teal)
+// waits for step 5's PAGE_COLOR, and skeleton bars keep bg-gray-200 for now.
+const PAGES = [
+  ['Concerts', "activeView === 'concerts' && (() => {", "activeView === 'recommendations' && React.createElement('div', {"],
+];
+test.each(PAGES)('%s uses no grey/purple text, border or fill classes, and no theme ternaries for them', (_name, from, to) => {
+  const i = app.indexOf(from);
+  const seg = app.slice(i, app.indexOf(to, i));
+  expect(seg.length).toBeGreaterThan(5000);
+  const hits = seg.match(/(?<![\w-])(?:hover:|focus:)?(?:text|border|ring|placeholder|divide)-(?:gray|purple|indigo)-\d{2,3}(?![\w-])|(?<![\w-])(?:hover:)?bg-(?:purple|indigo|gray-(?:50|100|700|800))(?:-\d{2,3})?(?![\w-])/g) || [];
+  expect(hits).toEqual([]);
+  expect(seg).not.toMatch(/isD(?:ark|kFlyout) \? '(?:text|bg|hover:bg)-/);
+});

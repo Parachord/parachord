@@ -40370,7 +40370,7 @@ useEffect(() => {
                   React.createElement('button', {
                     key: 'source-btn',
                     onClick: (e) => { e.stopPropagation(); setConcertsSourceFilterDropdownOpen(!concertsSourceFilterDropdownOpen); },
-                    className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors'
+                    className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-ink-tertiary hover:text-ink-secondary transition-colors'
                   },
                     React.createElement('span', null, selectedLabel),
                     React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
@@ -40379,7 +40379,7 @@ useEffect(() => {
                   ),
                   concertsSourceFilterDropdownOpen && React.createElement('div', {
                     key: 'source-dropdown',
-                    className: 'absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-gray-200'
+                    className: 'absolute left-0 top-full mt-1 bg-surface-card rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-line'
                   },
                     sourceOptions.map(option =>
                       React.createElement('button', {
@@ -40389,8 +40389,8 @@ useEffect(() => {
                           setConcertsSourceFilter(option.value);
                           setConcertsSourceFilterDropdownOpen(false);
                         },
-                        className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between ${
-                          concertsSourceFilter === option.value ? 'text-gray-900 font-medium' : 'text-gray-600'
+                        className: `w-full px-4 py-2 text-left text-sm hover:bg-surface-hover flex items-center justify-between ${
+                          concertsSourceFilter === option.value ? 'text-ink-primary font-medium' : 'text-ink-secondary'
                         }`
                       },
                         option.label,
@@ -40412,7 +40412,7 @@ useEffect(() => {
             React.createElement('button', {
               onClick: () => loadConcerts(true),
               disabled: concertsLoading,
-              className: `ml-2 p-1.5 transition-colors ${concertsLoading ? 'text-teal-500' : 'text-gray-400 hover:text-gray-600'}`,
+              className: `ml-2 p-1.5 transition-colors ${concertsLoading ? 'text-teal-500' : 'text-ink-tertiary hover:text-ink-secondary'}`,
               title: concertsLoading ? 'Loading...' : 'Refresh'
             },
               React.createElement('svg', {
@@ -40633,7 +40633,7 @@ useEffect(() => {
             // Search
             React.createElement('div', { className: 'flex items-center' },
               concertsSearchOpen ?
-                React.createElement('div', { className: 'flex items-center border border-gray-300 rounded-full px-3 py-[5px] filter-pill' },
+                React.createElement('div', { className: 'flex items-center border border-line-strong rounded-full px-3 py-[5px] filter-pill' },
                   React.createElement('input', {
                     type: 'text',
                     value: concertsSearch,
@@ -40641,12 +40641,12 @@ useEffect(() => {
                     onBlur: () => { if (!concertsSearch.trim()) setConcertsSearchOpen(false); },
                     autoFocus: true,
                     placeholder: 'Filter...',
-                    className: 'bg-transparent text-gray-700 text-sm placeholder-gray-400 outline-none',
+                    className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none',
                     style: { width: '150px' }
                   }),
                   concertsSearch && React.createElement('button', {
                     onClick: () => { setConcertsSearch(''); setConcertsSearchOpen(false); },
-                    className: 'ml-2 text-gray-400 hover:text-gray-600'
+                    className: 'ml-2 text-ink-tertiary hover:text-ink-secondary'
                   },
                     React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                       React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
@@ -40656,7 +40656,7 @@ useEffect(() => {
               :
                 React.createElement('button', {
                   onClick: () => setConcertsSearchOpen(true),
-                  className: 'p-1.5 text-gray-400 hover:text-gray-600 transition-colors'
+                  className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors'
                 },
                   React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                     React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
@@ -40683,10 +40683,10 @@ useEffect(() => {
                 )
               ),
               React.createElement('h3', {
-                className: 'text-lg font-medium text-gray-900 mb-2'
+                className: 'text-lg font-medium text-ink-primary mb-2'
               }, 'No Concert Services Configured'),
               React.createElement('p', {
-                className: 'text-sm text-gray-500 text-center max-w-md mb-4'
+                className: 'text-sm text-ink-tertiary text-center max-w-md mb-4'
               }, 'Enable a concert service plugin (Bandsintown, Songkick, SeatGeek, or Ticketmaster) in Settings to see upcoming shows for artists you love.'),
               React.createElement('button', {
                 onClick: () => { navigateTo('settings'); },
@@ -40698,7 +40698,7 @@ useEffect(() => {
             concertsError && concertsError !== 'no_services' && !concertsLoading && React.createElement('div', {
               className: 'flex flex-col items-center justify-center py-20 px-6'
             },
-              React.createElement('p', { className: 'text-sm text-red-500 mb-3' }, concertsError),
+              React.createElement('p', { className: 'text-sm text-ink-danger mb-3' }, concertsError),
               React.createElement('button', {
                 onClick: () => loadConcerts(true),
                 className: 'px-4 py-2 bg-teal-500 text-white rounded-lg text-sm hover:bg-teal-600 transition-colors'
@@ -40712,7 +40712,7 @@ useEffect(() => {
               Array.from({ length: 8 }).map((_, i) =>
                 React.createElement('div', {
                   key: `concert-skeleton-${i}`,
-                  className: 'flex items-center gap-4 p-4 bg-white rounded-xl border border-gray-100',
+                  className: 'flex items-center gap-4 p-4 bg-surface-card rounded-xl border border-line-light',
                   style: { animation: `pulse 1.5s ease-in-out infinite`, animationDelay: `${i * 100}ms` }
                 },
                   // Date placeholder
@@ -40744,10 +40744,10 @@ useEffect(() => {
                 )
               ),
               React.createElement('h3', {
-                className: 'text-lg font-medium text-gray-900 mb-2'
+                className: 'text-lg font-medium text-ink-primary mb-2'
               }, 'No Upcoming Concerts Found'),
               React.createElement('p', {
-                className: 'text-sm text-gray-500 text-center max-w-md'
+                className: 'text-sm text-ink-tertiary text-center max-w-md'
               }, 'Add artists to your collection or listen to more music. We\'ll check for upcoming shows from artists you love.'),
               React.createElement('button', {
                 onClick: () => loadConcerts(true),
@@ -40825,20 +40825,20 @@ useEffect(() => {
                 filtered.length === 0 && searchLower && React.createElement('div', {
                   className: 'flex flex-col items-center justify-center py-12'
                 },
-                  React.createElement('p', { className: 'text-sm text-gray-500' }, `No concerts matching "${concertsSearch}"`)
+                  React.createElement('p', { className: 'text-sm text-ink-tertiary' }, `No concerts matching "${concertsSearch}"`)
                 ),
 
                 filtered.length === 0 && locationLower && !searchLower && React.createElement('div', {
                   className: 'flex flex-col items-center justify-center py-12'
                 },
-                  React.createElement('p', { className: 'text-sm text-gray-500' }, `No concerts found near "${concertsLocation}"`)
+                  React.createElement('p', { className: 'text-sm text-ink-tertiary' }, `No concerts found near "${concertsLocation}"`)
                 ),
 
                 sortedMonths.map(monthKey =>
                   React.createElement('div', { key: monthKey, className: 'mb-8' },
                     // Month header
                     React.createElement('h2', {
-                      className: 'text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3 px-1'
+                      className: 'text-sm font-semibold text-ink-tertiary uppercase tracking-wider mb-3 px-1'
                     }, grouped[monthKey].label),
 
                     // Events in this month
@@ -40863,7 +40863,7 @@ useEffect(() => {
 
                         return React.createElement('div', {
                           key: event.id || `${monthKey}-${eventIdx}`,
-                          className: 'flex items-center rounded-xl border cursor-default bg-white border-gray-100',
+                          className: 'flex items-center rounded-xl border cursor-default bg-surface-card border-line-light',
                           style: {
                             animation: 'fadeIn 300ms ease-out both',
                             animationDelay: `${eventIdx * 30}ms`,
@@ -40880,16 +40880,16 @@ useEffect(() => {
                               className: 'text-xs font-medium text-teal-500 uppercase'
                             }, monthShort),
                             React.createElement('span', {
-                              className: `text-2xl font-bold leading-tight ${isDark ? 'text-white' : 'text-gray-900'}`
+                              className: 'text-2xl font-bold leading-tight text-ink-primary'
                             }, dayNum),
                             React.createElement('span', {
-                              className: 'text-xs text-gray-400 uppercase'
+                              className: 'text-xs text-ink-tertiary uppercase'
                             }, dayOfWeek)
                           ),
 
                           // Artist image — full-bleed rectangle
                           React.createElement('div', {
-                            className: `flex-shrink-0 overflow-hidden cursor-pointer ${isDark ? 'bg-gray-700' : 'bg-gray-100'}`,
+                            className: 'flex-shrink-0 overflow-hidden cursor-pointer bg-surface-inset',
                             style: { width: '100px', height: '100px', alignSelf: 'stretch' },
                             onClick: () => { if (event.artist) { pendingProtocolTabRef.current = 'on-tour'; fetchArtistData(event.artist); } }
                           },
@@ -40902,7 +40902,7 @@ useEffect(() => {
                                   loading: 'lazy'
                                 })
                               : React.createElement('div', {
-                                  className: `w-full h-full flex items-center justify-center ${isDark ? 'text-gray-500' : 'text-gray-300'}`
+                                  className: 'w-full h-full flex items-center justify-center text-ink-tertiary'
                                 },
                                   React.createElement('svg', { className: 'w-8 h-8', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                                     React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' })
@@ -40915,7 +40915,7 @@ useEffect(() => {
                             React.createElement('div', { className: 'flex-1 min-w-0' },
                               React.createElement('div', { className: 'flex items-center gap-2 mb-0.5' },
                                 React.createElement('span', {
-                                  className: `font-semibold truncate cursor-pointer hover:text-teal-500 transition-colors ${isDark ? 'text-white' : 'text-gray-900'}`,
+                                  className: 'font-semibold truncate cursor-pointer hover:text-teal-500 transition-colors text-ink-primary',
                                   onClick: () => {
                                     if (event.artist) { pendingProtocolTabRef.current = 'on-tour'; fetchArtistData(event.artist); }
                                   }
@@ -40953,14 +40953,14 @@ useEffect(() => {
                                 })()
                               ),
                               React.createElement('div', {
-                                className: `text-sm truncate ${isDark ? 'text-gray-300' : 'text-gray-600'}`
+                                className: 'text-sm truncate text-ink-secondary'
                               }, event.venue?.name || 'Venue TBA'),
                               location && React.createElement('div', {
-                                className: `text-xs truncate mt-0.5 ${isDark ? 'text-gray-500' : 'text-gray-400'}`
+                                className: 'text-xs truncate mt-0.5 text-ink-tertiary'
                               }, location),
                               // Lineup
                               event.lineup && event.lineup.length > 1 && React.createElement('div', {
-                                className: `text-xs mt-0.5 ${isDark ? 'text-gray-500' : 'text-gray-400'}`
+                                className: 'text-xs mt-0.5 text-ink-tertiary'
                               }, 'with ' + event.lineup.filter(a => a.toLowerCase() !== event.artist.toLowerCase()).join(', '))
                             )
                           ),
@@ -41017,7 +41017,7 @@ useEffect(() => {
                               isOpen && (() => {
                                 const isDkFlyout = effectiveTheme === 'dark';
                                 return React.createElement('div', {
-                                className: `absolute right-0 top-full mt-1 rounded-lg shadow-lg border py-1 z-30 ${isDkFlyout ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-200'}`,
+                                className: 'absolute right-0 top-full mt-1 rounded-lg shadow-lg border py-1 z-30 bg-surface-card border-line',
                                 style: { minWidth: '180px' },
                                 onClick: (e) => e.stopPropagation()
                               },
@@ -41034,16 +41034,16 @@ useEffect(() => {
                                     href: src.ticketUrl,
                                     target: '_blank',
                                     rel: 'noopener noreferrer',
-                                    className: `flex items-center gap-2 px-4 py-2 text-sm transition-colors ${isDkFlyout ? 'hover:bg-gray-700' : 'hover:bg-gray-50'}`,
+                                    className: 'flex items-center gap-2 px-4 py-2 text-sm transition-colors hover:bg-surface-hover',
                                     onClick: () => setConcertsTicketFlyout(null)
                                   },
                                     React.createElement('span', {
                                       className: 'w-2 h-2 rounded-full flex-shrink-0',
                                       style: { backgroundColor: color }
                                     }),
-                                    React.createElement('span', { className: isDkFlyout ? 'text-gray-200' : 'text-gray-700' }, src.label),
+                                    React.createElement('span', { className: 'text-ink-secondary' }, src.label),
                                     React.createElement('svg', {
-                                      className: 'w-3 h-3 text-gray-400 ml-auto',
+                                      className: 'w-3 h-3 text-ink-tertiary ml-auto',
                                       fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor'
                                     },
                                       React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14' })
@@ -41072,7 +41072,7 @@ useEffect(() => {
                     React.createElement('circle', { className: 'opacity-25', cx: 12, cy: 12, r: 10, stroke: 'currentColor', strokeWidth: 4 }),
                     React.createElement('path', { className: 'opacity-75', fill: 'currentColor', d: 'M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z' })
                   ),
-                  React.createElement('span', { className: 'text-sm text-gray-500' }, 'Refreshing concerts...')
+                  React.createElement('span', { className: 'text-sm text-ink-tertiary' }, 'Refreshing concerts...')
                 )
               );
             })()

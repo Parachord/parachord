@@ -2,8 +2,8 @@
   "_readme": "Counts from scripts/design-drift.js. Lower is better; rewrite with `npm run design-drift -- --write` only when a count falls, or rises for a reason the PR explains.",
   "metrics": {
     "hexColors": 609,
-    "paletteClasses": 833,
-    "themeTernaries": 38,
+    "paletteClasses": 786,
+    "themeTernaries": 31,
     "clickableNonInteractive": 131,
     "inlineOutlineNone": 36,
     "nativeDialogs": 21,
