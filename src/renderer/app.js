@@ -4988,8 +4988,11 @@ const Parachord = () => {
     return () => resizeObserver.disconnect();
   }, []);
 
-  // Responsive breakpoints
-  const isCompactHeader = mainContentWidth < 700;
+  // Responsive breakpoints. The content area is at least ~744px (the 1000px
+  // window minimum less the sidebar), so a < 700 threshold never fired
+  // (audit bug 22); below 900 the artist header's full "Play Top Tracks"
+  // crowds the collapsed header's tabs.
+  const isCompactHeader = mainContentWidth < 900;
 
   // Theme initialization and system theme change listener
   useEffect(() => {
@@ -46003,7 +46006,7 @@ useEffect(() => {
                     React.createElement('button', {
                       onClick: async () => {
                         await window.electron.store.delete('tutorial_completed');
-                        alert('Tutorial reset! The welcome tutorial will appear the next time you open Parachord.');
+                        showToast('The welcome tutorial will show the next time you open Parachord');
                       },
                       className: 'px-3 py-1.5 text-xs font-medium text-accent bg-accent-tint rounded-lg hover:bg-accent-tint-hover transition-colors'
                     }, 'Reset')
@@ -46116,7 +46119,7 @@ useEffect(() => {
                           window.location.reload();
                         } catch (error) {
                           console.error('Failed to reset application:', error);
-                          alert('Failed to reset application. Please try again.');
+                          showToast('Couldn\'t reset Parachord. Try again.', 'error');
                         }
                       }
                     },
@@ -47960,11 +47963,11 @@ useEffect(() => {
                         React.createElement('div', { className: 'flex-1 min-w-0 space-y-2' },
                           React.createElement('div', {
                             className: 'animate-pulse',
-                            style: { height: '16px', backgroundColor: 'rgba(255, 255, 255, 0.08)', borderRadius: '4px', width: `${60 + Math.random() * 30}%`, animationDelay: `${index * 0.05}s` }
+                            style: { height: '16px', backgroundColor: 'rgba(255, 255, 255, 0.08)', borderRadius: '4px', width: `${60 + ((index * 37) % 30)}%`, animationDelay: `${index * 0.05}s` }
                           }),
                           React.createElement('div', {
                             className: 'animate-pulse',
-                            style: { height: '12px', backgroundColor: 'rgba(255, 255, 255, 0.05)', borderRadius: '4px', width: `${40 + Math.random() * 25}%`, animationDelay: `${index * 0.05 + 0.1}s` }
+                            style: { height: '12px', backgroundColor: 'rgba(255, 255, 255, 0.05)', borderRadius: '4px', width: `${40 + ((index * 23) % 25)}%`, animationDelay: `${index * 0.05 + 0.1}s` }
                           })
                         )
                       )
@@ -53796,11 +53799,11 @@ useEffect(() => {
                   setId3SelectedArt(null);
                   setId3ArtSuggestions([]);
                 } else {
-                  alert('Failed to save ID3 tags: ' + result.error);
+                  showToast(`Couldn't save the tags: ${result.error}`, 'error');
                 }
               } catch (error) {
                 console.error('Error saving ID3 tags:', error);
-                alert('Failed to save ID3 tags: ' + error.message);
+                showToast(`Couldn't save the tags: ${error.message}`, 'error');
               } finally {
                 setId3EditorSaving(false);
               }

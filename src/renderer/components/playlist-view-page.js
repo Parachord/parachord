@@ -314,7 +314,8 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                     if (editedPlaylistData) {
                       const updated = {
                         ...selectedPlaylist,
-                        title: editedPlaylistData.title,
+                        // An emptied title keeps the old one (audit bug 26).
+                        title: (editedPlaylistData.title || '').trim() || selectedPlaylist.title,
                         creator: editedPlaylistData.creator,
                         tracks: editedPlaylistData.tracks,
                         lastModified: Date.now()
@@ -543,11 +544,11 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                   await savePlaylistToStore(applyPush(playlist));
                 } else {
                   console.error('Failed to push playlist:', result?.error);
-                  window.alert(`Failed to push changes: ${result?.error || 'Unknown error'}`);
+                  showToast(`Failed to push changes: ${result?.error || 'Unknown error'}`, 'error');
                 }
               } catch (err) {
                 console.error('Failed to push playlist:', err);
-                window.alert(`Failed to push changes: ${err.message}`);
+                showToast(`Failed to push changes: ${err.message}`, 'error');
               }
             };
 
