@@ -103,9 +103,13 @@ test('app.js renders the confirm dialog through ConfirmModal', () => {
   expect(app).not.toMatch(/actionButton: \{ label: 'Cancel' \}/);
 });
 
-test('every dialog shell in app.js is a Modal (bare until it is redone)', () => {
+test('every dialog shell in app.js is a Modal; the plain ones use its title, close and footer', () => {
   const app = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/app.js'), 'utf8');
-  expect((app.match(/React\.createElement\(Modal, \{ bare: true, label: "/g) || []).length).toBeGreaterThanOrEqual(20);
+  expect((app.match(/React\.createElement\(Modal, \{/g) || []).length).toBeGreaterThanOrEqual(20);
+  // Redone on the standard parts (no longer bare).
+  for (const label of ['Unsaved friend', 'Delete synced playlist', 'Stop syncing', 'Switch sync engine', 'Open in browser', 'Save AI playlist', 'Save queue as playlist', 'Import playlist', 'Add friend', 'Amazon Music sign-in', 'Edit tags']) {
+    expect([label, app.includes(`bare: true, label: "${label}"`)]).toEqual([label, false]);
+  }
   // What's left with "fixed inset-0" is the Add-to-Playlist side panel and the
   // parachord-link menu's click catcher, which aren't dialogs.
   expect((app.match(/className: 'fixed inset-0/g) || []).length).toBeLessThanOrEqual(2);

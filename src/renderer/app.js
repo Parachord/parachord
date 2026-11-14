@@ -1982,7 +1982,7 @@ const { homeBannerItems, bannerViewId } = require('./lib/home-banners');
 const { toastBackground } = require('./lib/toast-style');
 const { statusBadgeStyle } = require('./lib/status-badge');
 const { PAGE_COLORS, pageTint } = require('./lib/page-colors');
-const { Modal, ConfirmModal } = require('./components/modal');
+const { Modal, ConfirmModal, DontShowAgain } = require('./components/modal');
 const { Button } = require('./components/button');
 const { ToastRegion, NowPlayingAnnouncer } = require('./components/toast');
 const { SortMenu } = require('./components/sort-menu');
@@ -36827,314 +36827,97 @@ useEffect(() => {
         }),
 
     // External Track Prompt Modal - refined styling
-    showExternalPrompt && pendingExternalTrack && React.createElement(Modal, { bare: true, label: "Open in browser", scrimClassName: 'z-50', onClose: () => {
-          // Clear the auto-skip timeout and interval
-          if (externalTrackTimeoutRef.current) {
-            clearTimeout(externalTrackTimeoutRef.current);
-            externalTrackTimeoutRef.current = null;
-          }
-          if (externalTrackIntervalRef.current) {
-            clearInterval(externalTrackIntervalRef.current);
-            externalTrackIntervalRef.current = null;
-          }
-          setIsPlaying(false);
-          setShowExternalPrompt(false);
-          setPendingExternalTrack(null);
-          setPendingExternalResolverId(null);
-        }, panelProps: { style: {
-          backgroundColor: 'var(--card-bg)',
-          borderRadius: '16px',
-          boxShadow: '0 4px 24px rgba(0, 0, 0, 0.15), 0 12px 48px rgba(0, 0, 0, 0.1)',
-          maxWidth: '380px',
-          width: '100%',
-          margin: '0 16px',
-          overflow: 'hidden',
-          position: 'relative'
-        } } },
-React.createElement('button', {
-          onClick: () => {
-            // Clear the auto-skip timeout and interval
-            if (externalTrackTimeoutRef.current) {
-              clearTimeout(externalTrackTimeoutRef.current);
-              externalTrackTimeoutRef.current = null;
-            }
-            if (externalTrackIntervalRef.current) {
-              clearInterval(externalTrackIntervalRef.current);
-              externalTrackIntervalRef.current = null;
-            }
-            // Pause playback and dismiss the prompt
-            setIsPlaying(false);
-            setShowExternalPrompt(false);
-            setPendingExternalTrack(null);
-            setPendingExternalResolverId(null);
-            console.log('⏸️ User dismissed external track prompt, pausing playback');
-          },
-          className: 'absolute transition-colors',
-          style: {
-            top: '16px',
-            right: '16px',
-            padding: '6px',
-            color: 'var(--text-tertiary)',
-            backgroundColor: 'transparent',
-            border: 'none',
-            borderRadius: '8px',
-            cursor: 'pointer'
-          },
-          'aria-label': 'Dismiss and pause', 'data-tooltip': 'Dismiss and pause'
-        }, React.createElement(X, { size: 18 })),
-React.createElement('div', {
-          className: 'flex flex-col items-center text-center',
-          style: { padding: '32px 24px 20px' }
-        },
-          // Icon circle
-          React.createElement('div', {
-            className: 'flex items-center justify-center',
-            style: {
-              width: '56px',
-              height: '56px',
-              borderRadius: '50%',
-              backgroundColor: 'var(--accent-primary-alpha-10)',
-              marginBottom: '16px'
-            }
-          },
-            React.createElement(Icons.ExternalLink, { style: { width: '28px', height: '28px', color: 'var(--accent-primary)' } })
-          ),
-          // Title
-          React.createElement('h3', {
-            style: {
-              fontSize: '16px',
-              fontWeight: '600',
-              color: 'var(--text-primary)',
-              marginBottom: '12px'
-            }
-          },
-            'Open in Browser'
-          ),
-          // Track info
-          React.createElement('div', { style: { marginBottom: '8px' } },
-            React.createElement('div', {
-              style: {
-                fontSize: '14px',
-                fontWeight: '500',
-                color: 'var(--text-primary)'
-              }
-            }, pendingExternalTrack.title),
-            React.createElement('div', {
-              style: {
-                fontSize: '13px',
-                color: 'var(--text-secondary)',
-                marginTop: '4px'
-              }
-            }, pendingExternalTrack.artist)
-          ),
-          // Source badge
-          React.createElement('div', {
-            className: 'inline-flex items-center gap-1.5',
-            style: {
-              padding: '6px 12px',
-              borderRadius: '16px',
-              fontSize: '12px',
-              fontWeight: '500',
-              marginTop: '8px',
-              backgroundColor: pendingExternalTrack.bandcampUrl ? 'rgba(6, 182, 212, 0.1)' :
-                pendingExternalTrack.youtubeUrl || pendingExternalTrack.youtubeId ? 'rgba(239, 68, 68, 0.1)' :
-                'var(--accent-primary-alpha-10)',
-              color: pendingExternalTrack.bandcampUrl ? '#0891b2' :
-                pendingExternalTrack.youtubeUrl || pendingExternalTrack.youtubeId ? '#dc2626' :
-                'var(--accent-primary)'
-            }
-          },
-            (allResolvers.find(r =>
-              r.id === (pendingExternalTrack.bandcampUrl ? 'bandcamp' :
-                       pendingExternalTrack.youtubeUrl || pendingExternalTrack.youtubeId ? 'youtube' : 'unknown')
-            )?.name || 'External')
-          )
+    // The standard dialog (components/modal.js). Closing it (the X, Escape,
+    // the scrim) dismisses the track and pauses, as the old X did.
+    showExternalPrompt && pendingExternalTrack && (() => {
+      const dismiss = () => {
+        // Clear the auto-skip timeout and interval
+        if (externalTrackTimeoutRef.current) {
+          clearTimeout(externalTrackTimeoutRef.current);
+          externalTrackTimeoutRef.current = null;
+        }
+        if (externalTrackIntervalRef.current) {
+          clearInterval(externalTrackIntervalRef.current);
+          externalTrackIntervalRef.current = null;
+        }
+        // Pause playback and dismiss the prompt
+        setIsPlaying(false);
+        setShowExternalPrompt(false);
+        setPendingExternalTrack(null);
+        setPendingExternalResolverId(null);
+        console.log('⏸️ User dismissed external track prompt, pausing playback');
+      };
+      const sourceId = pendingExternalTrack.bandcampUrl ? 'bandcamp'
+        : (pendingExternalTrack.youtubeUrl || pendingExternalTrack.youtubeId ? 'youtube' : null);
+      const source = sourceId ? allResolvers.find(r => r.id === sourceId) : null;
+      return React.createElement(Modal, {
+        size: 'sm',
+        title: 'Open in browser',
+        icon: React.createElement(Icons.ExternalLink, { className: 'w-6 h-6', style: { color: 'var(--accent-primary)' } }),
+        onClose: dismiss,
+        footer: [
+          React.createElement(Button, { key: 'skip', variant: 'secondary', onClick: handleSkipExternalTrack }, 'Skip'),
+          React.createElement(Button, { key: 'open', variant: 'primary', onClick: () => handleOpenExternalTrack(pendingExternalTrack) }, 'Open in browser')
+        ]
+      },
+        // The track, and where it plays (the plug-in's own colour).
+        React.createElement('div', { style: { marginTop: '4px' } },
+          React.createElement('div', { className: 'text-ink-primary', style: { fontSize: '14px', fontWeight: 500 } }, pendingExternalTrack.title),
+          React.createElement('div', { className: 'text-ink-secondary', style: { fontSize: '13px', marginTop: '4px' } }, pendingExternalTrack.artist),
+          React.createElement('div', { className: 'inline-flex items-center gap-1.5 text-ink-secondary', style: { fontSize: '12px', fontWeight: 500, marginTop: '12px' } },
+            React.createElement('span', { 'aria-hidden': 'true', style: { width: '8px', height: '8px', borderRadius: '50%', backgroundColor: source?.color || 'var(--accent-primary)' } }),
+            source?.name || 'External')
         ),
-React.createElement('div', {
-          style: {
-            textAlign: 'center',
-            fontSize: '12px',
-            color: 'var(--text-tertiary)',
-            paddingBottom: '12px'
+        React.createElement('p', { className: 'text-ink-tertiary', role: 'status', style: { fontSize: '12px', marginTop: '12px' } },
+          `Auto-skipping in ${externalTrackCountdown} second${externalTrackCountdown !== 1 ? 's' : ''}…`),
+        React.createElement(DontShowAgain, {
+          onChange: async (checked) => {
+            setSkipExternalPrompt(checked);
+            if (window.electron?.store) {
+              await window.electron.store.set('skip_external_prompt', checked);
+            }
           }
-        },
-          `Auto-skipping in ${externalTrackCountdown} second${externalTrackCountdown !== 1 ? 's' : ''}...`
-        ),
-React.createElement('label', {
-          className: 'flex items-center justify-center gap-2 cursor-pointer select-none',
-          style: { padding: '0 24px 20px' }
-        },
-          React.createElement('input', {
-            type: 'checkbox',
-            id: 'skip-external-prompt-checkbox',
-            style: {
-              width: '16px',
-              height: '16px',
-              accentColor: 'var(--accent-primary)',
-              cursor: 'pointer'
-            },
-            onChange: async (e) => {
-              const checked = e.target.checked;
-              setSkipExternalPrompt(checked);
-              if (window.electron?.store) {
-                await window.electron.store.set('skip_external_prompt', checked);
-              }
-            }
-          }),
-          React.createElement('span', {
-            style: {
-              fontSize: '12px',
-              color: 'var(--text-secondary)'
-            }
-          }, "Don't show this again")
-        ),
-React.createElement('div', {
-          className: 'flex gap-3',
-          style: { padding: '0 24px 24px' }
-        },
-          React.createElement('button', {
-            onClick: () => handleOpenExternalTrack(pendingExternalTrack),
-            className: 'flex-1 transition-colors',
-            style: {
-              padding: '12px 16px',
-              fontSize: '13px',
-              fontWeight: '500',
-              color: 'var(--on-accent)',
-              backgroundColor: 'var(--accent-fill)',
-              border: 'none',
-              borderRadius: '10px',
-              cursor: 'pointer'
-            }
-          }, 'Open in Browser'),
-          React.createElement('button', {
-            onClick: handleSkipExternalTrack,
-            className: 'flex-1 transition-colors',
-            style: {
-              padding: '12px 16px',
-              fontSize: '13px',
-              fontWeight: '500',
-              color: 'var(--text-primary)',
-              backgroundColor: 'var(--hover-bg-default)',
-              border: 'none',
-              borderRadius: '10px',
-              cursor: 'pointer'
-            }
-          }, 'Skip')
-        )),
+        })
+      );
+    })(),
 
     // Unsaved friend unpin warning dialog - refined styling
-    unsavedFriendWarningOpen && pendingUnpinFriend && React.createElement(Modal, { bare: true, label: "Unsaved friend", scrimClassName: 'z-50', onClose: () => {
-          setUnsavedFriendWarningOpen(false);
-          setPendingUnpinFriend(null);
-        }, panelProps: { style: {
-          backgroundColor: 'var(--card-bg)',
-          borderRadius: '16px',
-          boxShadow: '0 4px 24px rgba(0, 0, 0, 0.15), 0 12px 48px rgba(0, 0, 0, 0.1)',
-          maxWidth: '380px',
-          width: '100%',
-          margin: '0 16px',
-          overflow: 'hidden'
-        } } },
-React.createElement('div', {
-          className: 'text-center',
-          style: { padding: '32px 24px 20px' }
-        },
-          React.createElement('div', {
-            className: 'mx-auto flex items-center justify-center',
-            style: {
-              width: '48px',
-              height: '48px',
-              borderRadius: '50%',
-              backgroundColor: 'rgba(245, 158, 11, 0.1)',
-              marginBottom: '16px'
-            }
-          },
-            React.createElement(Icons.AlertTriangle, { style: { width: '24px', height: '24px', color: 'var(--warning)' } })
-          ),
-          React.createElement('h3', {
-            style: {
-              fontSize: '16px',
-              fontWeight: '600',
-              color: 'var(--text-primary)',
-              marginBottom: '8px'
-            }
-          }, 'Friend Not Saved'),
-          React.createElement('p', {
-            style: {
-              fontSize: '13px',
-              color: 'var(--text-secondary)',
-              lineHeight: '1.5'
-            }
-          }, `${pendingUnpinFriend.displayName} isn't saved to your collection. If you unpin them, you'll need to add them again to pin them later.`)
-        ),
-React.createElement('label', {
-          className: 'flex items-center justify-center gap-2 cursor-pointer select-none',
-          style: { padding: '0 24px 20px' }
-        },
-          React.createElement('input', {
-            type: 'checkbox',
-            style: {
-              width: '16px',
-              height: '16px',
-              accentColor: 'var(--accent-primary)',
-              cursor: 'pointer'
-            },
-            onChange: async (e) => {
-              const checked = e.target.checked;
-              setSkipUnsavedFriendWarning(checked);
-              if (window.electron?.store) {
-                await window.electron.store.set('skip_unsaved_friend_warning', checked);
-              }
-            }
-          }),
-          React.createElement('span', {
-            style: {
-              fontSize: '12px',
-              color: 'var(--text-secondary)'
-            }
-          }, "Don't show this again")
-        ),
-React.createElement('div', {
-          className: 'flex gap-3',
-          style: { padding: '0 24px 24px' }
-        },
-          React.createElement('button', {
-            onClick: () => {
-              // Save to collection, then unpin
-              saveFriendToCollection(pendingUnpinFriend.id);
-              setPinnedFriendIds(prev => prev.filter(id => id !== pendingUnpinFriend.id));
-              setAutoPinnedFriendIds(prev => prev.filter(id => id !== pendingUnpinFriend.id));
-              showToast(`${pendingUnpinFriend.displayName} saved and unpinned`);
-              setUnsavedFriendWarningOpen(false);
-              setPendingUnpinFriend(null);
-            },
-            className: 'flex-1 transition-colors',
-            style: {
-              padding: '12px 16px',
-              fontSize: '13px',
-              fontWeight: '500',
-              color: 'var(--on-accent)',
-              backgroundColor: 'var(--accent-fill)',
-              border: 'none',
-              borderRadius: '10px',
-              cursor: 'pointer'
-            }
-          }, 'Save & Unpin'),
-          React.createElement('button', {
-            onClick: confirmUnpinFriend,
-            className: 'flex-1 transition-colors',
-            style: {
-              padding: '12px 16px',
-              fontSize: '13px',
-              fontWeight: '500',
-              color: 'var(--text-primary)',
-              backgroundColor: 'var(--hover-bg-default)',
-              border: 'none',
-              borderRadius: '10px',
-              cursor: 'pointer'
-            }
-          }, 'Just Unpin')
-        )),
+    // The standard dialog (components/modal.js): title, close, footer.
+    unsavedFriendWarningOpen && pendingUnpinFriend && React.createElement(Modal, {
+      size: 'sm',
+      title: 'Friend not saved',
+      description: `${pendingUnpinFriend.displayName} isn’t saved to your collection. If you unpin them, you’ll need to add them again to pin them later.`,
+      icon: React.createElement(Icons.AlertTriangle, { className: 'w-6 h-6', style: { color: 'var(--warning)' } }),
+      onClose: () => {
+        setUnsavedFriendWarningOpen(false);
+        setPendingUnpinFriend(null);
+      },
+      footer: [
+        React.createElement(Button, { key: 'unpin', variant: 'secondary', onClick: confirmUnpinFriend }, 'Just unpin'),
+        React.createElement(Button, {
+          key: 'save',
+          variant: 'primary',
+          onClick: () => {
+            // Save to collection, then unpin
+            saveFriendToCollection(pendingUnpinFriend.id);
+            setPinnedFriendIds(prev => prev.filter(id => id !== pendingUnpinFriend.id));
+            setAutoPinnedFriendIds(prev => prev.filter(id => id !== pendingUnpinFriend.id));
+            showToast(`${pendingUnpinFriend.displayName} saved and unpinned`);
+            setUnsavedFriendWarningOpen(false);
+            setPendingUnpinFriend(null);
+          }
+        }, 'Save and unpin')
+      ]
+    },
+      React.createElement(DontShowAgain, {
+        onChange: async (checked) => {
+          setSkipUnsavedFriendWarning(checked);
+          if (window.electron?.store) {
+            await window.electron.store.set('skip_unsaved_friend_warning', checked);
+          }
+        }
+      })
+    ),
 
     // While the bulk-cache IPC is in flight, render nothing in the main
     // content slot. The body-level #parachord-splash overlay in index.html
@@ -46687,452 +46470,168 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
     ),
 
     // AI Save Playlist Dialog - Refined dark theme
-    aiSaveDialogOpen && React.createElement(Modal, { bare: true, label: "Save AI playlist", scrimClassName: 'z-50', onClose: () => {
-          setAiSaveDialogOpen(false);
-        }, panelProps: { className: 'max-w-md w-full mx-4', style: {
-          backgroundColor: 'var(--surface-dark-solid)',
-          borderRadius: '16px',
-          padding: '24px',
-          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
-          border: '1px solid var(--surface-dark-border)'
-        } } },
-React.createElement('div', { className: 'flex items-center justify-between', style: { marginBottom: '16px' } },
-          React.createElement('h2', { style: { fontSize: '17px', fontWeight: '600', color: '#f3f4f6' } }, 'Save Playlist'),
-          React.createElement('button', {
-            onClick: () => setAiSaveDialogOpen(false),
-            className: 'transition-colors',
-            style: { padding: '6px', color: 'var(--text-secondary)', borderRadius: '8px' },
-            onMouseEnter: (e) => { e.currentTarget.style.color = '#d1d5db'; e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)'; },
-            onMouseLeave: (e) => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.backgroundColor = 'transparent'; }
-          },
-            React.createElement(Icons.X, { className: 'w-5 h-5' })
-          )
-        ),
-resultsSidebar?.provider && React.createElement('p', {
-          style: { fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '16px' }
-        }, `Generated by ${resultsSidebar.provider.name}`),
-React.createElement('div', { style: { marginBottom: '20px' } },
-          React.createElement('label', {
-            htmlFor: 'playlist-name',
-            style: { display: 'block', fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px' }
-          }, 'Playlist Name'),
-          React.createElement('input', {
-            id: 'playlist-name',
-            type: 'text',
-            value: aiSavePlaylistName,
-            onChange: (e) => setAiSavePlaylistName(e.target.value),
-            onKeyDown: (e) => {
-              // Prevent global shortcuts from interfering while typing
-              e.stopPropagation();
-              if (e.key === 'Enter' && aiSavePlaylistName.trim()) {
-                handleAiSavePlaylistConfirm();
-              }
-            },
-            autoFocus: true,
-            style: {
-              width: '100%',
-              backgroundColor: 'rgba(255, 255, 255, 0.05)',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
-              borderRadius: '10px',
-              padding: '12px 16px',
-              fontSize: '14px',
-              color: '#f3f4f6',
-              outline: 'none'
-            },
-            onFocus: (e) => { e.target.style.borderColor = 'rgba(167, 139, 250, 0.5)'; e.target.style.boxShadow = '0 0 0 3px rgba(167, 139, 250, 0.1)'; },
-            onBlur: (e) => { e.target.style.borderColor = 'rgba(255, 255, 255, 0.1)'; e.target.style.boxShadow = 'none'; }
-          })
-        ),
-React.createElement('div', { className: 'flex gap-3' },
-          React.createElement('button', {
-            onClick: () => setAiSaveDialogOpen(false),
-            className: 'flex-1 transition-colors',
-            style: {
-              padding: '12px 16px',
-              fontSize: '14px',
-              fontWeight: '500',
-              color: '#d1d5db',
-              backgroundColor: 'rgba(255, 255, 255, 0.05)',
-              borderRadius: '10px'
-            },
-            onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)',
-            onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)'
-          }, 'Cancel'),
-          React.createElement('button', {
-            onClick: handleAiSavePlaylistConfirm,
-            disabled: !aiSavePlaylistName.trim(),
-            className: 'flex-1 transition-colors',
-            style: {
-              padding: '12px 16px',
-              fontSize: '14px',
-              fontWeight: '500',
-              color: '#ffffff',
-              backgroundColor: !aiSavePlaylistName.trim() ? 'var(--accent-primary-alpha-30)' : 'var(--accent-primary)',
-              borderRadius: '10px',
-              cursor: !aiSavePlaylistName.trim() ? 'not-allowed' : 'pointer',
-              opacity: !aiSavePlaylistName.trim() ? '0.5' : '1'
-            },
-            onMouseEnter: (e) => { if (aiSavePlaylistName.trim()) e.currentTarget.style.backgroundColor = 'var(--accent-primary-hover)'; },
-            onMouseLeave: (e) => { if (aiSavePlaylistName.trim()) e.currentTarget.style.backgroundColor = 'var(--accent-primary)'; }
-          }, 'Save')
-        )),
+    // The standard dialog (components/modal.js), a real form: Enter saves.
+    aiSaveDialogOpen && React.createElement(Modal, {
+      size: 'sm',
+      title: 'Save playlist',
+      description: resultsSidebar?.provider ? `Generated by ${resultsSidebar.provider.name}` : undefined,
+      onClose: () => setAiSaveDialogOpen(false),
+      footer: [
+        React.createElement(Button, { key: 'cancel', variant: 'secondary', onClick: () => setAiSaveDialogOpen(false) }, 'Cancel'),
+        React.createElement(Button, { key: 'save', variant: 'primary', type: 'submit', form: 'ai-save-form', disabled: !aiSavePlaylistName.trim() }, 'Save')
+      ]
+    },
+      React.createElement('form', {
+        id: 'ai-save-form',
+        style: { marginTop: '12px' },
+        onSubmit: (e) => { e.preventDefault(); if (aiSavePlaylistName.trim()) handleAiSavePlaylistConfirm(); }
+      },
+        React.createElement('label', { htmlFor: 'playlist-name', className: 'block text-ink-secondary', style: { fontSize: '13px', marginBottom: '8px' } }, 'Playlist name'),
+        React.createElement(TextField, {
+          id: 'playlist-name',
+          value: aiSavePlaylistName,
+          onChange: (v) => setAiSavePlaylistName(v),
+          // Global shortcuts stay out of the way while typing.
+          onKeyDown: (e) => e.stopPropagation(),
+          autoFocus: true
+        })
+      )
+    ),
 
     // Queue Save Playlist Dialog
-    queueSaveDialogOpen && React.createElement(Modal, { bare: true, label: "Save queue as playlist", scrimClassName: 'z-50', onClose: () => {
-          setQueueSaveDialogOpen(false);
-        }, panelProps: { className: 'rounded-xl p-6 max-w-md w-full mx-4 shadow-xl', style: { backgroundColor: 'var(--surface-dark-solid)', border: '1px solid var(--surface-dark-border)' } } },
-React.createElement('div', { className: 'flex items-center justify-between mb-4' },
-          React.createElement('h2', { className: 'text-lg font-semibold text-white' }, 'Save Queue as Playlist'),
-          React.createElement('button', {
-            onClick: () => setQueueSaveDialogOpen(false),
-            className: 'p-1 rounded hover:bg-white/10 text-gray-400 hover:text-white transition-colors'
-          },
-            React.createElement(Icons.X, { className: 'w-5 h-5' })
-          )
-        ),
-React.createElement('p', {
-          className: 'text-xs text-gray-500 mb-4'
-        }, `${(currentTrack ? 1 : 0) + currentQueue.length} track${((currentTrack ? 1 : 0) + currentQueue.length) !== 1 ? 's' : ''} will be saved`),
-React.createElement('div', { className: 'mb-4' },
-          React.createElement('label', {
-            htmlFor: 'queue-playlist-name',
-            className: 'block text-sm text-gray-400 mb-2'
-          }, 'Playlist Name'),
-          React.createElement('input', {
-            id: 'queue-playlist-name',
-            type: 'text',
-            value: queueSavePlaylistName,
-            onChange: (e) => setQueueSavePlaylistName(e.target.value),
-            onKeyDown: (e) => {
-              // Prevent global shortcuts from interfering while typing
-              e.stopPropagation();
-              if (e.key === 'Enter' && queueSavePlaylistName.trim()) {
-                handleSaveQueueConfirm();
-              }
-            },
-            autoFocus: true,
-            className: 'w-full bg-gray-800 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500'
-          })
-        ),
-React.createElement('div', { className: 'flex gap-3' },
-          React.createElement('button', {
-            onClick: () => setQueueSaveDialogOpen(false),
-            className: 'flex-1 py-2.5 px-4 bg-gray-700 hover:bg-gray-600 text-white font-medium rounded-lg transition-colors'
-          }, 'Cancel'),
-          React.createElement('button', {
-            onClick: handleSaveQueueToFile,
-            disabled: !queueSavePlaylistName.trim(),
-            'data-tooltip': 'Write an .xspf file instead of adding to your playlists',
-            className: 'flex-1 py-2.5 px-4 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-700 disabled:text-gray-500 text-white font-medium rounded-lg transition-colors disabled:cursor-not-allowed'
-          }, 'Save to file'),
-          React.createElement('button', {
-            onClick: handleSaveQueueConfirm,
-            disabled: !queueSavePlaylistName.trim(),
-            className: 'flex-1 py-2.5 px-4 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-700 disabled:text-gray-500 text-white font-medium rounded-lg transition-colors disabled:cursor-not-allowed'
-          }, 'Save')
-        )),
+    // The standard dialog (components/modal.js), a real form: Enter saves.
+    queueSaveDialogOpen && React.createElement(Modal, {
+      size: 'sm',
+      title: 'Save queue as playlist',
+      description: `${(currentTrack ? 1 : 0) + currentQueue.length} track${((currentTrack ? 1 : 0) + currentQueue.length) !== 1 ? 's' : ''} will be saved`,
+      onClose: () => setQueueSaveDialogOpen(false),
+      footer: [
+        React.createElement(Button, { key: 'cancel', variant: 'secondary', onClick: () => setQueueSaveDialogOpen(false) }, 'Cancel'),
+        React.createElement(Button, {
+          key: 'file', variant: 'secondary', onClick: handleSaveQueueToFile, disabled: !queueSavePlaylistName.trim(),
+          'data-tooltip': 'Write an .xspf file instead of adding to your playlists'
+        }, 'Save to file'),
+        React.createElement(Button, { key: 'save', variant: 'primary', type: 'submit', form: 'queue-save-form', disabled: !queueSavePlaylistName.trim() }, 'Save')
+      ]
+    },
+      React.createElement('form', {
+        id: 'queue-save-form',
+        style: { marginTop: '12px' },
+        onSubmit: (e) => { e.preventDefault(); if (queueSavePlaylistName.trim()) handleSaveQueueConfirm(); }
+      },
+        React.createElement('label', { htmlFor: 'queue-playlist-name', className: 'block text-ink-secondary', style: { fontSize: '13px', marginBottom: '8px' } }, 'Playlist name'),
+        React.createElement(TextField, {
+          id: 'queue-playlist-name',
+          value: queueSavePlaylistName,
+          onChange: (v) => setQueueSavePlaylistName(v),
+          // Global shortcuts stay out of the way while typing.
+          onKeyDown: (e) => e.stopPropagation(),
+          autoFocus: true
+        })
+      )
+    ),
 
     // Import Playlist Dialog Modal
-    showUrlImportDialog && React.createElement(Modal, { bare: true, label: "Import playlist", scrimClassName: 'z-50', onClose: () => {
-          setShowUrlImportDialog(false);
-          setUrlImportValue('');
-        }, panelProps: { className: 'max-w-md w-full mx-4 overflow-hidden', style: {
-          backgroundColor: 'var(--card-bg)',
-          borderRadius: '16px',
-          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
-        } } },
-React.createElement('div', {
-          className: 'flex items-center justify-between',
-          style: { padding: '20px 24px 16px', borderBottom: '1px solid var(--border-subtle)' }
+    // The standard dialog (components/modal.js): two ways in, each with its
+    // own action, so no footer. The URL is a real form: Enter imports.
+    showUrlImportDialog && (() => {
+      const close = () => { setShowUrlImportDialog(false); setUrlImportValue(''); };
+      const importUrl = async () => {
+        if (!urlImportValue.trim() || urlImportLoading) return;
+        setUrlImportLoading(true);
+        try {
+          const result = await handleImportPlaylistFromUrl(urlImportValue.trim());
+          close();
+          showToast(`${result.updated ? 'Updated' : 'Imported'} “${result.playlist.title}”`, 'success');
+        } catch (error) {
+          showConfirmDialog({ type: 'error', title: 'Couldn’t import the playlist', message: error.message });
+        } finally {
+          setUrlImportLoading(false);
+        }
+      };
+      return React.createElement(Modal, { size: 'md', title: 'Import playlist', onClose: close },
+        // From a URL
+        React.createElement('form', {
+          className: 'rounded-xl border border-line bg-surface-inset',
+          style: { padding: '16px', marginTop: '12px', marginBottom: '16px' },
+          onSubmit: (e) => { e.preventDefault(); importUrl(); }
         },
-          React.createElement('h3', {
-            style: { fontSize: '17px', fontWeight: '600', color: 'var(--text-primary)' }
-          }, 'Import Playlist'),
-          React.createElement('button', {
-            onClick: () => {
-              setShowUrlImportDialog(false);
-              setUrlImportValue('');
-            },
-            className: 'transition-colors',
-            style: {
-              padding: '6px',
-              color: 'var(--text-tertiary)',
-              borderRadius: '8px'
-            },
-            onMouseEnter: (e) => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.backgroundColor = 'var(--hover-bg-default)'; },
-            onMouseLeave: (e) => { e.currentTarget.style.color = 'var(--text-tertiary)'; e.currentTarget.style.backgroundColor = 'transparent'; }
-          },
-            React.createElement(Icons.X, { className: 'w-5 h-5' })
-          )
+          React.createElement('div', { className: 'flex items-start gap-3', style: { marginBottom: '12px' } },
+            React.createElement('div', { className: 'flex items-center justify-center flex-shrink-0 bg-accent-fill text-ink-on-accent', style: { width: '36px', height: '36px', borderRadius: '10px' } },
+              React.createElement(Icons.Link, { size: 20 })),
+            React.createElement('div', { className: 'flex-1' },
+              React.createElement('label', { htmlFor: 'import-playlist-url', className: 'block text-ink-primary', style: { fontSize: '14px', fontWeight: 600, marginBottom: '4px' } }, 'Import from URL'),
+              React.createElement('p', { className: 'text-ink-secondary', style: { fontSize: '13px', lineHeight: 1.4 } }, 'Spotify, Apple Music, Amazon Music, or hosted .xspf'))
+          ),
+          React.createElement('div', { className: 'flex gap-2' },
+            React.createElement(TextField, {
+              id: 'import-playlist-url', type: 'url', value: urlImportValue, onChange: (v) => setUrlImportValue(v),
+              // Global shortcuts stay out of the way while typing.
+              onKeyDown: (e) => e.stopPropagation(),
+              placeholder: 'Paste playlist URL…', disabled: urlImportLoading, autoFocus: true, className: 'flex-1'
+            }),
+            React.createElement(Button, { type: 'submit', variant: 'primary', busy: urlImportLoading, disabled: !urlImportValue.trim() }, 'Import'))
         ),
-React.createElement('div', { style: { padding: '20px 24px 24px' } },
-          // Option 1: Import from URL - Card style
-          React.createElement('div', {
-            style: {
-              padding: '16px',
-              backgroundColor: 'var(--bg-inset)',
-              borderRadius: '12px',
-              border: '1px solid var(--border-default)',
-              marginBottom: '16px'
-            }
-          },
-            React.createElement('div', { className: 'flex items-start gap-3', style: { marginBottom: '12px' } },
-              // Icon
-              React.createElement('div', {
-                style: {
-                  width: '36px',
-                  height: '36px',
-                  borderRadius: '10px',
-                  backgroundColor: 'var(--accent-fill)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0
-                }
-              },
-                React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: '#ffffff', strokeWidth: 2 },
-                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1' })
-                )
-              ),
-              // Text
-              React.createElement('div', { style: { flex: 1 } },
-                React.createElement('h4', {
-                  style: { fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '4px' }
-                }, 'Import from URL'),
-                React.createElement('p', {
-                  style: { fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.4' }
-                }, 'Spotify, Apple Music, Amazon Music, or hosted .xspf')
-              )
-            ),
-            // Input with inline button
-            React.createElement('div', { className: 'flex gap-2' },
-              React.createElement(TextField, { type: 'url', value: urlImportValue, onChange: (_v, e) => setUrlImportValue(e.target.value), onKeyDown: (e) => {
-                  // Prevent global shortcuts from interfering while typing
-                  e.stopPropagation();
-                  if (e.key === 'Enter' && urlImportValue.trim() && !urlImportLoading) {
-                    (async () => {
-                      setUrlImportLoading(true);
-                      try {
-                        const result = await handleImportPlaylistFromUrl(urlImportValue.trim());
-                        setShowUrlImportDialog(false);
-                        setUrlImportValue('');
-                        showConfirmDialog({
-                          type: 'success',
-                          title: result.updated ? 'Playlist Updated' : 'Playlist Imported',
-                          message: result.playlist.title
-                        });
-                      } catch (error) {
-                        showConfirmDialog({
-                          type: 'error',
-                          title: 'Import Failed',
-                          message: error.message
-                        });
-                      } finally {
-                        setUrlImportLoading(false);
-                      }
-                    })();
-                  }
-                }, placeholder: 'Paste playlist URL...', disabled: urlImportLoading, autoFocus: true, 'aria-label': 'Paste playlist URL', className: 'flex-1' }),
-              React.createElement('button', {
-                onClick: async () => {
-                  if (!urlImportValue.trim()) return;
-                  setUrlImportLoading(true);
-                  try {
-                    const result = await handleImportPlaylistFromUrl(urlImportValue.trim());
-                    setShowUrlImportDialog(false);
-                    setUrlImportValue('');
-                    showConfirmDialog({
-                      type: 'success',
-                      title: result.updated ? 'Playlist Updated' : 'Playlist Imported',
-                      message: result.playlist.title
-                    });
-                  } catch (error) {
-                    showConfirmDialog({
-                      type: 'error',
-                      title: 'Import Failed',
-                      message: error.message
-                    });
-                  } finally {
-                    setUrlImportLoading(false);
-                  }
-                },
-                disabled: urlImportLoading || !urlImportValue.trim(),
-                className: 'flex items-center justify-center gap-2 transition-all',
-                style: {
-                  padding: '10px 16px',
-                  fontSize: '14px',
-                  fontWeight: '500',
-                  color: '#ffffff',
-                  backgroundColor: 'var(--accent-fill)',
-                  borderRadius: '8px',
-                  cursor: urlImportLoading || !urlImportValue.trim() ? 'not-allowed' : 'pointer',
-                  opacity: urlImportLoading || !urlImportValue.trim() ? '0.6' : '1',
-                  minWidth: '80px'
-                },
-                onMouseEnter: (e) => { if (!urlImportLoading && urlImportValue.trim()) e.currentTarget.style.backgroundColor = '#6d28d9'; },
-                onMouseLeave: (e) => { if (!urlImportLoading && urlImportValue.trim()) e.currentTarget.style.backgroundColor = 'var(--accent-fill)'; }
-              },
-                urlImportLoading ? React.createElement(Icons.Spinner, { className: 'w-4 h-4' }) : 'Import'
-              )
-            )
-          ),
-
-          // Divider
-          React.createElement('div', { className: 'flex items-center gap-3', style: { marginBottom: '16px' } },
-            React.createElement('div', { style: { flex: 1, height: '1px', backgroundColor: 'var(--border-subtle)' } }),
-            React.createElement('span', { style: { fontSize: '12px', color: 'var(--text-tertiary)', fontWeight: '500' } }, 'or'),
-            React.createElement('div', { style: { flex: 1, height: '1px', backgroundColor: 'var(--border-subtle)' } })
-          ),
-
-          // Option 2: Load from file - Card style with dashed border
-          React.createElement('button', {
-            onClick: async () => {
-              setShowUrlImportDialog(false);
-              await handleImportPlaylist();
-            },
-            className: 'w-full transition-all',
-            style: {
-              padding: '20px',
-              backgroundColor: 'var(--bg-tertiary)',
-              borderRadius: '12px',
-              border: '2px dashed var(--border-default)',
-              cursor: 'pointer',
-              textAlign: 'center'
-            },
-            onMouseEnter: (e) => {
-              e.currentTarget.style.backgroundColor = 'var(--hover-bg-default)';
-              e.currentTarget.style.borderColor = 'var(--text-tertiary)';
-            },
-            onMouseLeave: (e) => {
-              e.currentTarget.style.backgroundColor = 'var(--bg-tertiary)';
-              e.currentTarget.style.borderColor = 'var(--border-default)';
-            },
-            disabled: urlImportLoading
-          },
-            React.createElement('div', { className: 'flex flex-col items-center gap-2' },
-              // Folder icon
-              React.createElement('div', {
-                style: {
-                  width: '40px',
-                  height: '40px',
-                  borderRadius: '10px',
-                  backgroundColor: 'var(--placeholder-bg)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }
-              },
-                React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'var(--text-secondary)', strokeWidth: 2 },
-                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z' })
-                )
-              ),
-              React.createElement('div', null,
-                React.createElement('p', {
-                  style: { fontSize: '14px', fontWeight: '500', color: 'var(--text-primary)', marginBottom: '2px' }
-                }, 'Load from File'),
-                React.createElement('p', {
-                  style: { fontSize: '12px', color: 'var(--text-tertiary)' }
-                }, 'Choose an .xspf file from your computer')
-              )
-            )
+        // Divider
+        React.createElement('div', { className: 'flex items-center gap-3', style: { marginBottom: '16px' }, 'aria-hidden': 'true' },
+          React.createElement('div', { className: 'flex-1 bg-line', style: { height: '1px' } }),
+          React.createElement('span', { className: 'text-ink-tertiary', style: { fontSize: '12px', fontWeight: 500 } }, 'or'),
+          React.createElement('div', { className: 'flex-1 bg-line', style: { height: '1px' } })
+        ),
+        // From a file
+        React.createElement('button', {
+          type: 'button',
+          onClick: async () => { setShowUrlImportDialog(false); await handleImportPlaylist(); },
+          disabled: urlImportLoading,
+          className: 'w-full rounded-xl border-2 border-dashed border-line bg-surface-inset hover:bg-surface-hover hover:border-line-strong transition-colors text-center',
+          style: { padding: '20px' }
+        },
+          React.createElement('div', { className: 'flex flex-col items-center gap-2' },
+            React.createElement('div', { className: 'flex items-center justify-center bg-surface-placeholder text-ink-secondary', style: { width: '40px', height: '40px', borderRadius: '10px' } },
+              React.createElement(Icons.Folder, { size: 20 })),
+            React.createElement('div', null,
+              React.createElement('p', { className: 'text-ink-primary', style: { fontSize: '14px', fontWeight: 500, marginBottom: '2px' } }, 'Load from file'),
+              React.createElement('p', { className: 'text-ink-tertiary', style: { fontSize: '12px' } }, 'Choose an .xspf file from your computer'))
           )
-        )),
+        )
+      );
+    })(),
 
     // Add Friend Modal - Cinematic Light styling
-    addFriendModalOpen && React.createElement(Modal, { bare: true, label: "Add friend", scrimClassName: 'z-50', onClose: () => {
-          setAddFriendModalOpen(false);
-          setAddFriendInput('');
-        }, panelProps: { className: 'max-w-md w-full mx-4 overflow-hidden', style: {
-          backgroundColor: 'var(--card-bg)',
-          borderRadius: '16px',
-          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
-        } } },
-React.createElement('div', {
-          className: 'flex items-center justify-between',
-          style: { padding: '20px 24px 16px', borderBottom: '1px solid var(--border-subtle)' }
+    // The standard dialog (components/modal.js), a real form: Enter adds.
+    addFriendModalOpen && (() => {
+      const close = () => { setAddFriendModalOpen(false); setAddFriendInput(''); };
+      return React.createElement(Modal, {
+        size: 'md',
+        title: 'Add friend',
+        description: 'Enter a Last.fm or ListenBrainz username, or paste a profile URL.',
+        onClose: close,
+        footer: [
+          React.createElement(Button, { key: 'cancel', variant: 'secondary', onClick: close }, 'Cancel'),
+          React.createElement(Button, { key: 'add', variant: 'primary', type: 'submit', form: 'add-friend-form', busy: addFriendLoading, disabled: !addFriendInput.trim() }, 'Add friend')
+        ]
+      },
+        React.createElement('form', {
+          id: 'add-friend-form',
+          style: { marginTop: '12px' },
+          onSubmit: (e) => { e.preventDefault(); if (addFriendInput.trim() && !addFriendLoading) addFriend(addFriendInput); }
         },
-          React.createElement('h3', {
-            style: { fontSize: '17px', fontWeight: '600', color: 'var(--text-primary)' }
-          }, 'Add Friend'),
-          React.createElement('button', {
-            onClick: () => {
-              setAddFriendModalOpen(false);
-              setAddFriendInput('');
-            },
-            className: 'transition-colors',
-            style: {
-              padding: '6px',
-              color: 'var(--text-tertiary)',
-              borderRadius: '8px'
-            },
-            onMouseEnter: (e) => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.backgroundColor = 'var(--hover-bg-default)'; },
-            onMouseLeave: (e) => { e.currentTarget.style.color = 'var(--text-tertiary)'; e.currentTarget.style.backgroundColor = 'transparent'; }
-          },
-            React.createElement(Icons.X, { className: 'w-5 h-5' })
-          )
+          React.createElement(TextField, {
+            value: addFriendInput, onChange: (v) => setAddFriendInput(v),
+            // Global shortcuts stay out of the way while typing.
+            onKeyDown: (e) => e.stopPropagation(),
+            placeholder: 'Username or profile URL', autoFocus: true, 'aria-label': 'Username or profile URL', className: 'w-full'
+          })
         ),
-React.createElement('div', { style: { padding: '20px 24px' } },
-          React.createElement('p', {
-            style: { fontSize: '14px', color: 'var(--nav-inactive)', marginBottom: '16px', lineHeight: '1.5' }
-          },
-            'Enter a Last.fm or ListenBrainz username, or paste a profile URL.'
-          ),
-          React.createElement(TextField, { value: addFriendInput, onChange: (_v, e) => setAddFriendInput(e.target.value), onKeyDown: (e) => {
-              // Prevent global shortcuts from interfering while typing
-              e.stopPropagation();
-              if (e.key === 'Enter' && addFriendInput.trim()) {
-                addFriend(addFriendInput);
-              }
-            }, placeholder: 'Username or profile URL', autoFocus: true, 'aria-label': 'Username or profile URL', className: 'w-full' }),
-          // Example hints
-          React.createElement('div', { style: { marginTop: '12px', fontSize: '12px', color: 'var(--text-tertiary)' } },
-            React.createElement('p', null, 'Examples:'),
-            React.createElement('p', { style: { marginTop: '4px' } }, '• username'),
-            React.createElement('p', null, '• https://www.last.fm/user/username'),
-            React.createElement('p', null, '• https://listenbrainz.org/user/username')
-          )
-        ),
-React.createElement('div', {
-          className: 'flex justify-end gap-3',
-          style: { padding: '16px 24px 20px', borderTop: '1px solid var(--border-subtle)' }
-        },
-          React.createElement('button', {
-            onClick: () => {
-              setAddFriendModalOpen(false);
-              setAddFriendInput('');
-            },
-            className: 'transition-colors',
-            style: {
-              padding: '10px 18px',
-              fontSize: '14px',
-              fontWeight: '500',
-              color: 'var(--text-secondary)',
-              borderRadius: '10px'
-            },
-            onMouseEnter: (e) => { e.currentTarget.style.color = 'var(--text-primary)'; e.currentTarget.style.backgroundColor = 'var(--hover-bg-default)'; },
-            onMouseLeave: (e) => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.backgroundColor = 'transparent'; }
-          }, 'Cancel'),
-          React.createElement('button', {
-            onClick: () => addFriend(addFriendInput),
-            disabled: addFriendLoading || !addFriendInput.trim(),
-            className: 'flex items-center gap-2 transition-colors',
-            style: {
-              padding: '10px 18px',
-              fontSize: '14px',
-              fontWeight: '500',
-              color: '#ffffff',
-              backgroundColor: 'var(--accent-fill)',
-              borderRadius: '10px',
-              cursor: addFriendLoading || !addFriendInput.trim() ? 'not-allowed' : 'pointer',
-              opacity: addFriendLoading || !addFriendInput.trim() ? '0.35' : '1'
-            },
-            onMouseEnter: (e) => { if (!addFriendLoading && addFriendInput.trim()) e.currentTarget.style.backgroundColor = '#6d28d9'; },
-            onMouseLeave: (e) => { if (!addFriendLoading && addFriendInput.trim()) e.currentTarget.style.backgroundColor = 'var(--accent-fill)'; }
-          },
-            addFriendLoading && React.createElement(Icons.Spinner, { className: 'w-4 h-4' }),
-            addFriendLoading ? 'Adding...' : 'Add Friend'
-          )
-        )),
+        // Examples
+        React.createElement('div', { className: 'text-ink-tertiary', style: { marginTop: '12px', fontSize: '12px' } },
+          React.createElement('p', null, 'Examples:'),
+          React.createElement('p', { style: { marginTop: '4px' } }, '• username'),
+          React.createElement('p', null, '• https://www.last.fm/user/username'),
+          React.createElement('p', null, '• https://listenbrainz.org/user/username')
+        )
+      );
+    })(),
 
     // Resolver Detail Modal
     selectedResolver && React.createElement(Modal, { bare: true, label: "Plugin settings", scrimClassName: 'z-50', onClose: () => { setSelectedResolver(null); }, panelProps: { style: {
@@ -51337,50 +50836,72 @@ React.createElement('div', {
     ),
 
     // ID3 Tag Editor Modal
-    id3EditorOpen && React.createElement(Modal, { bare: true, label: "Edit tags", scrimClassName: 'z-[60]', onClose: () => { if (!id3EditorSaving) {
-          setId3EditorOpen(false);
-          setId3EditorTrack(null);
-        } }, panelProps: { style: {
-          backgroundColor: 'var(--card-bg)',
-          borderRadius: '16px',
-          boxShadow: '0 4px 24px rgba(0, 0, 0, 0.15), 0 12px 48px rgba(0, 0, 0, 0.1)',
-          maxWidth: '440px',
-          width: '100%',
-          margin: '0 16px',
-          overflow: 'hidden'
-        } } },
-React.createElement('div', {
-          style: {
-            padding: '20px 24px',
-            background: 'linear-gradient(135deg, var(--accent-primary) 0%, #6366f1 100%)'
-          }
-        },
-          React.createElement('h2', {
-            style: {
-              fontSize: '16px',
-              fontWeight: '600',
-              color: '#ffffff'
-            }
-          }, 'Edit ID3 Tags'),
-          React.createElement('p', {
-            className: 'truncate',
-            style: {
-              fontSize: '13px',
-              color: 'rgba(255, 255, 255, 0.8)',
-              marginTop: '4px'
-            }
-          },
-            id3EditorTrack?.filePath?.split('/').pop() || 'Unknown file'
-          )
-        ),
-React.createElement('div', {
-          className: 'scrollable-content',
-          style: {
-            padding: '24px',
-            maxHeight: '60vh',
-            overflowY: 'auto'
-          }
-        },
+    // The standard dialog (components/modal.js): the fields are the body.
+    id3EditorOpen && (() => {
+      const close = () => { if (!id3EditorSaving) { setId3EditorOpen(false); setId3EditorTrack(null); } };
+      const save = async () => {
+              if (!id3EditorTrack?.filePath) return;
+
+              setId3EditorSaving(true);
+              try {
+                const tagsToSave = {
+                  title: id3EditorValues.title,
+                  artist: id3EditorValues.artist,
+                  album: id3EditorValues.album,
+                  trackNumber: id3EditorValues.trackNumber ? parseInt(id3EditorValues.trackNumber, 10) : null,
+                  year: id3EditorValues.year ? parseInt(id3EditorValues.year, 10) : null
+                };
+
+                // If album art was selected, include it
+                if (id3SelectedArt?.fullUrl) {
+                  tagsToSave.albumArtUrl = id3SelectedArt.fullUrl;
+                }
+
+                const result = await window.electron.localFiles.saveId3Tags(
+                  id3EditorTrack.filePath,
+                  tagsToSave
+                );
+
+                if (result.success) {
+                  console.log('🏷️ ID3 tags saved successfully');
+                  // Update track in library
+                  setLibrary(prev => prev.map(t =>
+                    t.filePath === id3EditorTrack.filePath
+                      ? {
+                          ...t,
+                          ...id3EditorValues,
+                          trackNumber: id3EditorValues.trackNumber ? parseInt(id3EditorValues.trackNumber, 10) : t.trackNumber,
+                          year: id3EditorValues.year ? parseInt(id3EditorValues.year, 10) : t.year,
+                          albumArt: id3SelectedArt?.fullUrl || t.albumArt
+                        }
+                      : t
+                  ));
+                  setId3EditorOpen(false);
+                  setId3EditorTrack(null);
+                  setId3SelectedArt(null);
+                  setId3ArtSuggestions([]);
+                } else {
+                  showToast(`Couldn't save the tags: ${result.error}`, 'error');
+                }
+              } catch (error) {
+                console.error('Error saving ID3 tags:', error);
+                showToast(`Couldn't save the tags: ${error.message}`, 'error');
+              } finally {
+                setId3EditorSaving(false);
+              }
+            };
+      return React.createElement(Modal, {
+        size: 'md',
+        title: 'Edit tags',
+        description: id3EditorTrack?.filePath?.split('/').pop() || 'Unknown file',
+        dismissible: !id3EditorSaving,
+        onClose: close,
+        footer: [
+          React.createElement(Button, { key: 'cancel', variant: 'secondary', onClick: close, disabled: id3EditorSaving }, 'Cancel'),
+          React.createElement(Button, { key: 'save', variant: 'primary', onClick: save, busy: id3EditorSaving }, 'Save')
+        ]
+      },
+React.createElement('div', { style: { marginTop: '12px' } },
           // Title field
           React.createElement('div', { style: { marginBottom: '16px' } },
             React.createElement('label', {
@@ -51587,104 +51108,9 @@ React.createElement('div', {
                 : 'No artwork found for this album'
             )
           )
-        ),
-React.createElement('div', {
-          className: 'flex justify-end gap-3',
-          style: {
-            padding: '16px 24px',
-            backgroundColor: 'var(--hover-bg-default)',
-            borderTop: '1px solid var(--border-subtle)'
-          }
-        },
-          React.createElement('button', {
-            onClick: () => {
-              setId3EditorOpen(false);
-              setId3EditorTrack(null);
-            },
-            disabled: id3EditorSaving,
-            className: 'transition-colors',
-            style: {
-              padding: '10px 16px',
-              fontSize: '13px',
-              fontWeight: '500',
-              color: 'var(--text-primary)',
-              backgroundColor: 'var(--card-bg)',
-              border: '1px solid var(--border-subtle)',
-              borderRadius: '8px',
-              cursor: id3EditorSaving ? 'not-allowed' : 'pointer',
-              opacity: id3EditorSaving ? 0.5 : 1
-            }
-          }, 'Cancel'),
-          React.createElement('button', {
-            onClick: async () => {
-              if (!id3EditorTrack?.filePath) return;
-
-              setId3EditorSaving(true);
-              try {
-                const tagsToSave = {
-                  title: id3EditorValues.title,
-                  artist: id3EditorValues.artist,
-                  album: id3EditorValues.album,
-                  trackNumber: id3EditorValues.trackNumber ? parseInt(id3EditorValues.trackNumber, 10) : null,
-                  year: id3EditorValues.year ? parseInt(id3EditorValues.year, 10) : null
-                };
-
-                // If album art was selected, include it
-                if (id3SelectedArt?.fullUrl) {
-                  tagsToSave.albumArtUrl = id3SelectedArt.fullUrl;
-                }
-
-                const result = await window.electron.localFiles.saveId3Tags(
-                  id3EditorTrack.filePath,
-                  tagsToSave
-                );
-
-                if (result.success) {
-                  console.log('🏷️ ID3 tags saved successfully');
-                  // Update track in library
-                  setLibrary(prev => prev.map(t =>
-                    t.filePath === id3EditorTrack.filePath
-                      ? {
-                          ...t,
-                          ...id3EditorValues,
-                          trackNumber: id3EditorValues.trackNumber ? parseInt(id3EditorValues.trackNumber, 10) : t.trackNumber,
-                          year: id3EditorValues.year ? parseInt(id3EditorValues.year, 10) : t.year,
-                          albumArt: id3SelectedArt?.fullUrl || t.albumArt
-                        }
-                      : t
-                  ));
-                  setId3EditorOpen(false);
-                  setId3EditorTrack(null);
-                  setId3SelectedArt(null);
-                  setId3ArtSuggestions([]);
-                } else {
-                  showToast(`Couldn't save the tags: ${result.error}`, 'error');
-                }
-              } catch (error) {
-                console.error('Error saving ID3 tags:', error);
-                showToast(`Couldn't save the tags: ${error.message}`, 'error');
-              } finally {
-                setId3EditorSaving(false);
-              }
-            },
-            disabled: id3EditorSaving,
-            className: 'flex items-center gap-2 transition-colors',
-            style: {
-              padding: '10px 16px',
-              fontSize: '13px',
-              fontWeight: '500',
-              color: '#ffffff',
-              backgroundColor: id3EditorSaving ? '#9ca3af' : 'var(--accent-primary)',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: id3EditorSaving ? 'not-allowed' : 'pointer',
-              opacity: id3EditorSaving ? 0.6 : 1
-            }
-          },
-            id3EditorSaving && React.createElement(Icons.Spinner, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }),
-            id3EditorSaving ? 'Saving...' : 'Save'
-          )
-        )),
+        )
+      );
+    })(),
 
     // Page-header context menu (power-user feature, tooltip-styled).
     // Always offers "Copy parachord:// link"; when the current view maps to
@@ -51795,166 +51221,89 @@ React.createElement('div', {
     confirmDialog.show && React.createElement(ConfirmModal, { dialog: confirmDialog, onClose: closeConfirmDialog }),
 
     // Amazon Music sign-in dialog. Opens music.amazon.com inside Parachord.
-    amazonManageDialog.show && React.createElement(Modal, { bare: true, label: "Amazon Music sign-in", scrimClassName: 'z-[60]', onClose: () => { if (!amazonManageDialog.relaunching && amazonManageDialog.onResolve) {
-          amazonManageDialog.onResolve(false);
-          setAmazonManageDialog({ show: false, onResolve: null, relaunching: false });
-        } }, panelProps: { style: {
-          backgroundColor: 'var(--card-bg)',
-          borderRadius: '16px',
-          boxShadow: '0 4px 24px rgba(0, 0, 0, 0.15), 0 12px 48px rgba(0, 0, 0, 0.1)',
-          maxWidth: '420px',
-          width: '100%',
-          margin: '0 16px',
-          overflow: 'hidden'
-        } } },
-React.createElement('div', { style: { padding: '20px 24px' } },
-          React.createElement('h3', {
-            style: { fontSize: '16px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '8px' }
-          }, 'Play Amazon Music in Parachord?'),
-          React.createElement('p', {
-            style: { fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5', marginBottom: '8px' }
-          },
-            'Sign in, and if Amazon asks, choose a profile. The Amazon Music desktop app is not used.'
-          ),
-          React.createElement('p', {
-            style: { fontSize: '12px', color: 'var(--text-tertiary)', lineHeight: '1.5', marginBottom: '16px' }
-          },
-            'You can close the sign-in window to cancel. If the account has more than one profile, pick one before closing — search and play wait for that selection.'
-          ),
-          React.createElement('div', { className: 'flex gap-2 justify-end' },
-            !amazonManageDialog.relaunching && React.createElement('button', {
-              onClick: () => {
-                if (amazonManageDialog.onResolve) amazonManageDialog.onResolve(false);
-                setAmazonManageDialog({ show: false, onResolve: null, relaunching: false });
-              },
-              style: {
-                padding: '8px 16px', fontSize: '13px', fontWeight: '500',
-                color: 'var(--text-primary)', backgroundColor: 'var(--hover-bg-default)',
-                borderRadius: '8px', border: '1px solid var(--border-subtle)'
-              }
-            }, 'Not now'),
-            React.createElement('button', {
-              onClick: () => {
-                if (amazonManageDialog.relaunching) return;
-                if (amazonManageDialog.onResolve) amazonManageDialog.onResolve(true);
-                else setAmazonManageDialog({ show: true, onResolve: null, relaunching: true });
-              },
-              disabled: amazonManageDialog.relaunching,
-              style: {
-                padding: '8px 16px', fontSize: '13px', fontWeight: '500',
-                color: 'var(--on-accent)', backgroundColor: 'var(--accent-fill)',
-                borderRadius: '8px', opacity: amazonManageDialog.relaunching ? 0.7 : 1
-              }
-            }, amazonManageDialog.relaunching ? 'Opening Amazon Music…' : 'Sign in')
-          )
-        )),
+    // The standard dialog (components/modal.js). While the sign-in window
+    // opens it can't be dismissed.
+    amazonManageDialog.show && (() => {
+      const notNow = () => {
+        if (amazonManageDialog.onResolve) amazonManageDialog.onResolve(false);
+        setAmazonManageDialog({ show: false, onResolve: null, relaunching: false });
+      };
+      return React.createElement(Modal, {
+        size: 'sm',
+        title: 'Play Amazon Music in Parachord?',
+        description: 'Sign in, and if Amazon asks, choose a profile. The Amazon Music desktop app is not used.',
+        dismissible: !amazonManageDialog.relaunching,
+        hideClose: amazonManageDialog.relaunching,
+        onClose: () => { if (!amazonManageDialog.relaunching) notNow(); },
+        footer: [
+          !amazonManageDialog.relaunching && React.createElement(Button, { key: 'later', variant: 'secondary', onClick: notNow }, 'Not now'),
+          React.createElement(Button, {
+            key: 'signin', variant: 'primary', busy: amazonManageDialog.relaunching,
+            onClick: () => {
+              if (amazonManageDialog.relaunching) return;
+              if (amazonManageDialog.onResolve) amazonManageDialog.onResolve(true);
+              else setAmazonManageDialog({ show: true, onResolve: null, relaunching: true });
+            }
+          }, amazonManageDialog.relaunching ? 'Opening Amazon Music…' : 'Sign in')
+        ].filter(Boolean)
+      },
+        React.createElement('p', { className: 'text-ink-tertiary', style: { fontSize: '12px', lineHeight: 1.5, marginTop: '8px' } },
+          'You can close the sign-in window to cancel. If the account has more than one profile, pick one before closing — search and play wait for that selection.')
+      );
+    })(),
 
     // Synced Playlist Delete Dialog
-    syncDeleteDialog.show && React.createElement(Modal, { bare: true, label: "Delete synced playlist", scrimClassName: 'z-[60]', onClose: () => setSyncDeleteDialog({ show: false, playlist: null }), panelProps: { style: {
-          backgroundColor: 'var(--card-bg)',
-          borderRadius: '16px',
-          boxShadow: '0 4px 24px rgba(0, 0, 0, 0.15), 0 12px 48px rgba(0, 0, 0, 0.1)',
-          maxWidth: '400px',
-          width: '100%',
-          margin: '0 16px',
-          overflow: 'hidden'
-        } } },
-React.createElement('div', {
-          className: 'flex flex-col items-center text-center',
-          style: { padding: '32px 24px 20px' }
-        },
-          React.createElement('div', {
-            className: 'flex items-center justify-center',
-            style: {
-              width: '56px',
-              height: '56px',
-              borderRadius: '50%',
-              backgroundColor: 'rgba(220, 38, 38, 0.1)',
-              marginBottom: '16px'
-            }
-          },
-            React.createElement('span', {
-              style: { fontSize: '24px', color: 'var(--text-danger)' }
-            }, React.createElement(Icons.X, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }))
-          ),
-          React.createElement('h3', {
-            style: { fontSize: '16px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '8px' }
-          }, `Delete "${syncDeleteDialog.playlist?.title}"?`),
-          React.createElement('p', {
-            style: { fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5' }
-          }, (() => {
-            const svcs = [...new Set(getPlaylistMirrorTargets(syncDeleteDialog.playlist).map(t => PROVIDER_LABEL[t.providerId] || t.providerId))];
-            const list = svcs.length ? svcs.join(', ') : 'a sync service';
-            return `This playlist is synced with ${list}. What would you like to do?`;
-          })())
-        ),
-React.createElement('div', { style: { padding: '4px 24px 24px', display: 'flex', flexDirection: 'column', gap: '8px' } },
-          // Stop syncing (keep on source)
-          React.createElement('button', {
-            onClick: () => handleDeleteSyncedPlaylist('stop-syncing'),
-            className: 'w-full transition-colors',
-            style: {
-              padding: '12px 16px',
-              fontSize: '13px',
-              fontWeight: '500',
-              color: '#ffffff',
-              backgroundColor: 'var(--accent-fill)',
-              border: 'none',
-              borderRadius: '10px',
-              cursor: 'pointer'
-            }
-          }, 'Stop Syncing'),
-          // Delete from source too
-          React.createElement('button', {
-            onClick: () => handleDeleteSyncedPlaylist('delete-from-source'),
-            className: 'w-full transition-colors',
-            style: {
-              padding: '12px 16px',
-              fontSize: '13px',
-              fontWeight: '500',
-              color: '#ffffff',
-              backgroundColor: 'var(--fill-error)',
-              border: 'none',
-              borderRadius: '10px',
-              cursor: 'pointer'
-            }
-          }, (() => {
-            const svcs = [...new Set(getPlaylistMirrorTargets(syncDeleteDialog.playlist).map(t => PROVIDER_LABEL[t.providerId] || t.providerId))];
-            return `Delete from ${svcs.length ? svcs.join(', ') : 'the service'} too`;
-          })()),
-          // Cancel
-          React.createElement('button', {
-            onClick: () => setSyncDeleteDialog({ show: false, playlist: null }),
-            className: 'w-full transition-colors',
-            style: {
-              padding: '12px 16px',
-              fontSize: '13px',
-              fontWeight: '500',
-              color: 'var(--text-secondary)',
-              backgroundColor: 'transparent',
-              border: '1px solid #e5e7eb',
-              borderRadius: '10px',
-              cursor: 'pointer'
-            }
-          }, 'Cancel')
-        )),
+    // The standard dialog (components/modal.js). Three choices: the
+    // destructive one is red, the safe one primary, Cancel secondary.
+    syncDeleteDialog.show && (() => {
+      const svcs = [...new Set(getPlaylistMirrorTargets(syncDeleteDialog.playlist).map(t => PROVIDER_LABEL[t.providerId] || t.providerId))];
+      const close = () => setSyncDeleteDialog({ show: false, playlist: null });
+      return React.createElement(Modal, {
+        size: 'sm',
+        role: 'alertdialog',
+        title: `Delete “${syncDeleteDialog.playlist?.title}”?`,
+        description: `This playlist is synced with ${svcs.length ? svcs.join(', ') : 'a sync service'}. What would you like to do?`,
+        icon: React.createElement(Icons.Trash2, { className: 'w-6 h-6', style: { color: 'var(--text-danger)' } }),
+        onClose: close,
+        footer: [
+          React.createElement(Button, { key: 'cancel', variant: 'secondary', onClick: close }, 'Cancel'),
+          React.createElement(Button, { key: 'source', variant: 'destructive', onClick: () => handleDeleteSyncedPlaylist('delete-from-source') },
+            `Delete from ${svcs.length ? svcs.join(', ') : 'the service'} too`),
+          React.createElement(Button, { key: 'stop', variant: 'primary', onClick: () => handleDeleteSyncedPlaylist('stop-syncing') }, 'Stop syncing')
+        ]
+      });
+    })(),
 
     // N-way migration preview (parachord#911): "switch to new sync?" with the
     // exact dry-run diff and Accept / Report / Cancel.
-    nwayMigrationDialog.show && React.createElement(Modal, { bare: true, label: "Switch sync engine", scrimClassName: 'z-[60]', onClose: () => { if (!nwayMigrationDialog.loading) setNwayMigrationDialog({ show: false }); }, panelProps: { style: { backgroundColor: 'var(--card-bg)', borderRadius: '16px', boxShadow: '0 4px 24px rgba(0,0,0,0.15), 0 12px 48px rgba(0,0,0,0.1)', maxWidth: '560px', width: '100%', margin: '0 16px', maxHeight: '82vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' } } },
-React.createElement('div', { style: { padding: '22px 24px 12px', flexShrink: 0 } },
-          React.createElement('h3', { style: { fontSize: '17px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '6px' } }, 'Switch to new sync on this device?'),
-          React.createElement('p', { style: { fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5' } },
-            'We ran the ',
-            React.createElement('a', {
-              href: '#',
-              onClick: (e) => { e.preventDefault(); if (window.electron?.shell?.openExternal) window.electron.shell.openExternal('https://parachord.com/blog/2026/06/25/keeping-playlists-in-sync/'); },
-              style: { color: 'var(--accent-primary)', textDecoration: 'none', fontWeight: '500' }
-            }, 'new sync'),
-            " against your library without writing anything. Here's exactly what it would change."
-          )
-        ),
-React.createElement('div', { style: { overflowY: 'auto', padding: '0 24px', flex: '1 1 auto' } },
+    // The standard dialog (components/modal.js): title, description,
+    // close and footer; the dry-run diff is the body.
+    nwayMigrationDialog.show && React.createElement(Modal, {
+      size: 'lg',
+      title: 'Switch to new sync on this device?',
+      description: React.createElement(React.Fragment, null,
+        'We ran the ',
+        React.createElement('a', {
+          href: '#',
+          onClick: (e) => { e.preventDefault(); if (window.electron?.shell?.openExternal) window.electron.shell.openExternal('https://parachord.com/blog/2026/06/25/keeping-playlists-in-sync/'); },
+          className: 'text-accent font-medium hover:underline'
+        }, 'new sync'),
+        ' against your library without writing anything. Here’s exactly what it would change.'
+      ),
+      dismissible: !nwayMigrationDialog.loading,
+      onClose: () => { if (!nwayMigrationDialog.loading) setNwayMigrationDialog({ show: false }); },
+      footer: [
+        React.createElement('span', { key: 'note', className: 'text-ink-tertiary', style: { fontSize: '11px', marginRight: 'auto' } }, 'Disables the old sync here. Reversible anytime.'),
+        React.createElement(Button, { key: 'cancel', variant: 'secondary', onClick: () => setNwayMigrationDialog({ show: false }) }, 'Cancel'),
+        (nwayMigrationDialog.summary && (nwayMigrationDialog.summary.hasChanges || nwayMigrationDialog.summary.protected.length)) &&
+          React.createElement(Button, { key: 'report', variant: 'secondary', onClick: () => reportNwayMigration() }, 'Report a problem'),
+        React.createElement(Button, {
+          key: 'accept', variant: 'primary', onClick: () => acceptNwayMigration(),
+          disabled: nwayMigrationDialog.loading || !nwayMigrationDialog.summary
+        }, (nwayMigrationDialog.summary && !nwayMigrationDialog.summary.hasChanges) ? 'Switch' : 'Accept changes and switch')
+      ].filter(Boolean)
+    },
+React.createElement('div', { style: { marginTop: '12px' } },
           (() => {
             const d = nwayMigrationDialog;
             if (d.loading) return React.createElement('div', { style: { padding: '30px 0 26px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' } },
@@ -52006,69 +51355,45 @@ React.createElement('div', { style: { overflowY: 'auto', padding: '0 24px', flex
             ));
             return React.createElement('div', { style: { paddingBottom: '8px' } }, ...rows);
           })()
-        ),
-React.createElement('div', { style: { padding: '14px 24px 18px', borderTop: '1px solid var(--border-subtle)', display: 'flex', gap: '8px', alignItems: 'center', flexShrink: 0 } },
-          React.createElement('span', { style: { fontSize: '11px', color: 'var(--text-tertiary)', marginRight: 'auto' } }, 'Disables the old sync here. Reversible anytime.'),
-          React.createElement('button', { onClick: () => setNwayMigrationDialog({ show: false }), style: { padding: '8px 14px', fontSize: '13px', fontWeight: '500', color: 'var(--text-secondary)', backgroundColor: 'transparent', border: '1px solid var(--border-subtle)', borderRadius: '8px', cursor: 'pointer' } }, 'Cancel'),
-          (nwayMigrationDialog.summary && (nwayMigrationDialog.summary.hasChanges || nwayMigrationDialog.summary.protected.length)) && React.createElement('button', { onClick: () => reportNwayMigration(), style: { padding: '8px 14px', fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)', backgroundColor: 'transparent', border: '1px solid var(--border-subtle)', borderRadius: '8px', cursor: 'pointer' } }, 'Report a problem'),
-          React.createElement('button', { onClick: () => acceptNwayMigration(), disabled: nwayMigrationDialog.loading || !nwayMigrationDialog.summary, style: { padding: '8px 14px', fontSize: '13px', fontWeight: '500', color: '#ffffff', backgroundColor: (nwayMigrationDialog.loading || !nwayMigrationDialog.summary) ? '#9ca3af' : 'var(--accent-fill)', border: 'none', borderRadius: '8px', cursor: (nwayMigrationDialog.loading || !nwayMigrationDialog.summary) ? 'default' : 'pointer' } }, (nwayMigrationDialog.summary && !nwayMigrationDialog.summary.hasChanges) ? 'Switch' : 'Accept changes and switch')
-        )),
+        )
+    ),
 
     // Sync Channel Disable Dialog — "stop syncing to <service>?" with the
     // optional "delete from that service too" choice (parachord#911).
-    syncChannelDisableDialog.show && React.createElement(Modal, { bare: true, label: "Stop syncing", scrimClassName: 'z-[60]', onClose: () => setSyncChannelDisableDialog({ show: false }), panelProps: { style: {
-          backgroundColor: 'var(--card-bg)', borderRadius: '16px',
-          boxShadow: '0 4px 24px rgba(0,0,0,0.15), 0 12px 48px rgba(0,0,0,0.1)',
-          maxWidth: '400px', width: '100%', margin: '0 16px', overflow: 'hidden'
-        } } },
-React.createElement('div', { className: 'flex flex-col items-center text-center', style: { padding: '32px 24px 20px' } },
-          React.createElement('h3', {
-            style: { fontSize: '16px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '8px' }
-          }, `Stop syncing to ${syncChannelDisableDialog.providerLabel}?`),
-          React.createElement('p', {
-            style: { fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5' }
-          }, `Keep "${syncChannelDisableDialog.playlistName}" on ${syncChannelDisableDialog.providerLabel} and just stop syncing it, or delete it from ${syncChannelDisableDialog.providerLabel} too?`)
-        ),
-React.createElement('div', { style: { padding: '4px 24px 24px', display: 'flex', flexDirection: 'column', gap: '8px' } },
-          (() => {
-            const applyDisable = async (deleteRemote) => {
-              const d = syncChannelDisableDialog;
-              setSyncChannelDisableDialog({ show: false });
-              let res = null;
-              try { res = await window.electron.sync.setChannel(d.playlistId, d.providerId, false, { deleteRemote }); } catch {}
-              try {
-                const fresh = await window.electron.playlists.load();
-                setPlaylists(fresh);
-                if (selectedPlaylist?.id === d.playlistId) { const u = fresh.find(p => p.id === d.playlistId); if (u) setSelectedPlaylist(u); }
-              } catch {}
-              const rd = res && res.remoteDelete;
-              if (deleteRemote && rd && rd.deleted === false && rd.reason === 'unsupported') {
-                showToast(`Stopped syncing — remove it from ${d.providerLabel} manually (the app can't delete library playlists there).`, 'info');
-              } else if (deleteRemote && rd && rd.deleted) {
-                showToast(`Stopped syncing and deleted from ${d.providerLabel}`);
-              } else {
-                showToast(`Stopped syncing this playlist to ${d.providerLabel}`);
-              }
-            };
-            return React.createElement(React.Fragment, null,
-              React.createElement('button', {
-                onClick: () => applyDisable(false),
-                className: 'w-full transition-colors',
-                style: { padding: '12px 16px', fontSize: '13px', fontWeight: '500', color: '#ffffff', backgroundColor: 'var(--accent-fill)', border: 'none', borderRadius: '10px', cursor: 'pointer' }
-              }, 'Stop Syncing'),
-              React.createElement('button', {
-                onClick: () => applyDisable(true),
-                className: 'w-full transition-colors',
-                style: { padding: '12px 16px', fontSize: '13px', fontWeight: '500', color: '#ffffff', backgroundColor: 'var(--fill-error)', border: 'none', borderRadius: '10px', cursor: 'pointer' }
-              }, `Delete from ${syncChannelDisableDialog.providerLabel} too`),
-              React.createElement('button', {
-                onClick: () => setSyncChannelDisableDialog({ show: false }),
-                className: 'w-full transition-colors',
-                style: { padding: '12px 16px', fontSize: '13px', fontWeight: '500', color: 'var(--text-secondary)', backgroundColor: 'transparent', border: '1px solid #e5e7eb', borderRadius: '10px', cursor: 'pointer' }
-              }, 'Cancel')
-            );
-          })()
-        )),
+    // The standard dialog (components/modal.js).
+    syncChannelDisableDialog.show && (() => {
+      const d = syncChannelDisableDialog;
+      const close = () => setSyncChannelDisableDialog({ show: false });
+      const applyDisable = async (deleteRemote) => {
+        setSyncChannelDisableDialog({ show: false });
+        let res = null;
+        try { res = await window.electron.sync.setChannel(d.playlistId, d.providerId, false, { deleteRemote }); } catch {}
+        try {
+          const fresh = await window.electron.playlists.load();
+          setPlaylists(fresh);
+          if (selectedPlaylist?.id === d.playlistId) { const u = fresh.find(p => p.id === d.playlistId); if (u) setSelectedPlaylist(u); }
+        } catch {}
+        const rd = res && res.remoteDelete;
+        if (deleteRemote && rd && rd.deleted === false && rd.reason === 'unsupported') {
+          showToast(`Stopped syncing — remove it from ${d.providerLabel} manually (the app can't delete library playlists there).`, 'info');
+        } else if (deleteRemote && rd && rd.deleted) {
+          showToast(`Stopped syncing and deleted from ${d.providerLabel}`);
+        } else {
+          showToast(`Stopped syncing this playlist to ${d.providerLabel}`);
+        }
+      };
+      return React.createElement(Modal, {
+        size: 'sm',
+        title: `Stop syncing to ${d.providerLabel}?`,
+        description: `Keep “${d.playlistName}” on ${d.providerLabel} and just stop syncing it, or delete it from ${d.providerLabel} too?`,
+        onClose: close,
+        footer: [
+          React.createElement(Button, { key: 'cancel', variant: 'secondary', onClick: close }, 'Cancel'),
+          React.createElement(Button, { key: 'delete', variant: 'destructive', onClick: () => applyDisable(true) }, `Delete from ${d.providerLabel} too`),
+          React.createElement(Button, { key: 'stop', variant: 'primary', onClick: () => applyDisable(false) }, 'Stop syncing')
+        ]
+      });
+    })(),
 
     // Sync Setup Modal - Cinematic Light design
     syncSetupModal.open && React.createElement(Modal, { bare: true, label: "Set up sync", scrimClassName: 'z-50', onClose: () => !syncSetupModal.progress && setSyncSetupModal(prev => ({ ...prev, open: false })), panelProps: { className: 'relative w-full max-w-lg mx-4 overflow-hidden', style: {
@@ -52827,93 +52152,31 @@ React.createElement('div', {
         )),
 
     // Stop Sync Confirmation Dialog - Cinematic Light design
-    stopSyncDialog.open && React.createElement(Modal, { bare: true, label: "Stop syncing", scrimClassName: 'z-50', onClose: () => setStopSyncDialog({ open: false, providerId: null }), panelProps: { className: 'relative w-full max-w-sm mx-4 overflow-hidden', style: {
-          backgroundColor: 'var(--card-bg)',
-          borderRadius: '16px',
-          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
-        } } },
-React.createElement('div', {
-          style: { padding: '24px' }
-        },
-          React.createElement('h2', {
-            style: { fontSize: '17px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '8px' }
-          }, 'Stop Syncing?'),
-          React.createElement('p', {
-            style: { fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '20px', lineHeight: '1.5' }
-          }, 'What would you like to do with your synced items?'),
-
-          // Options
-          React.createElement('div', {
-            style: { display: 'flex', flexDirection: 'column', gap: '10px' }
-          },
-            // Keep items option
-            React.createElement('button', {
-              onClick: () => stopSyncing(stopSyncDialog.providerId, false),
-              style: {
-                width: '100%',
-                padding: '14px 16px',
-                textAlign: 'left',
-                backgroundColor: 'var(--hover-bg-default)',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: '12px',
-                cursor: 'pointer',
-                transition: 'background-color 150ms ease, border-color 150ms ease'
-              },
-              // Hover deepens the fill; leaving restores it (it used to clear
-              // to transparent, so the option lost its box after one hover).
-              onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = 'var(--hover-bg-subtle)'; },
-              onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'var(--hover-bg-default)'; }
-            },
-              React.createElement('div', {
-                style: { fontSize: '14px', fontWeight: '500', color: 'var(--text-primary)' }
-              }, 'Keep imported items'),
-              React.createElement('div', {
-                style: { fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px' }
-              }, 'Items stay in your Collection as local items')
-            ),
-            // Remove items option
-            React.createElement('button', {
-              onClick: () => stopSyncing(stopSyncDialog.providerId, true),
-              style: {
-                width: '100%',
-                padding: '14px 16px',
-                textAlign: 'left',
-                backgroundColor: 'rgba(239, 68, 68, 0.04)',
-                border: '1px solid rgba(239, 68, 68, 0.15)',
-                borderRadius: '12px',
-                cursor: 'pointer',
-                transition: 'background-color 150ms ease, border-color 150ms ease'
-              },
-              onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.08)'; e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.25)'; },
-              onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.04)'; e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.15)'; }
-            },
-              React.createElement('div', {
-                style: { fontSize: '14px', fontWeight: '500', color: 'var(--text-danger)' }
-              }, 'Remove synced items'),
-              React.createElement('div', {
-                style: { fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px' }
-              }, 'Remove everything synced from this provider')
-            )
-          )
-        ),
-React.createElement('div', {
-          style: { padding: '16px 24px 20px', borderTop: '1px solid var(--border-subtle)', textAlign: 'center' }
-        },
-          React.createElement('button', {
-            onClick: () => setStopSyncDialog({ open: false, providerId: null }),
-            style: {
-              fontSize: '14px',
-              fontWeight: '500',
-              color: 'var(--text-secondary)',
-              backgroundColor: 'transparent',
-              border: 'none',
-              cursor: 'pointer',
-              padding: '8px 16px'
-            },
-            onMouseEnter: (e) => e.currentTarget.style.color = 'var(--text-primary)',
-            onMouseLeave: (e) => e.currentTarget.style.color = 'var(--text-secondary)'
-          }, 'Cancel')
-        )),
+    // The standard dialog (components/modal.js): the two choices are
+    // option tiles in the body (hover in CSS), Cancel in the footer.
+    stopSyncDialog.open && (() => {
+      const close = () => setStopSyncDialog({ open: false, providerId: null });
+      const option = (key, onClick, title, sub, danger) => React.createElement('button', {
+        key, type: 'button', onClick,
+        className: `w-full text-left rounded-xl border px-4 py-3.5 transition-colors ${danger
+          ? 'bg-tint-danger border-line-danger hover:bg-tint-danger-hover'
+          : 'bg-surface-inset border-line hover:bg-surface-hover'}`
+      },
+        React.createElement('div', { className: danger ? 'text-ink-danger' : 'text-ink-primary', style: { fontSize: '14px', fontWeight: 500 } }, title),
+        React.createElement('div', { className: 'text-ink-secondary', style: { fontSize: '12px', marginTop: '4px' } }, sub));
+      return React.createElement(Modal, {
+        size: 'sm',
+        title: 'Stop syncing?',
+        description: 'What would you like to do with your synced items?',
+        onClose: close,
+        footer: React.createElement(Button, { variant: 'secondary', onClick: close }, 'Cancel')
+      },
+        React.createElement('div', { className: 'flex flex-col gap-2.5', style: { marginTop: '16px' } },
+          option('keep', () => stopSyncing(stopSyncDialog.providerId, false), 'Keep imported items', 'Items stay in your Collection as local items'),
+          option('remove', () => stopSyncing(stopSyncDialog.providerId, true), 'Remove synced items', 'Remove everything synced from this provider', true)
+        )
+      );
+    })(),
 
     // First-Run Tutorial Modal - Cinematic Light design
     firstRunTutorial.open && React.createElement(Modal, { bare: true, label: "Welcome to Parachord", scrimClassName: 'z-50', dismissible: false, panelProps: { className: 'relative w-full max-w-xl mx-4 overflow-hidden', style: {

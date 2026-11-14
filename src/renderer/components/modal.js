@@ -186,17 +186,24 @@ function ConfirmModalBody({ dialog, onClose: close }) {
     icon: e(Icons[iconName], { className: 'w-6 h-6', style: { color } }),
     footer,
   },
-  dontShowAgain && e('label', {
+  dontShowAgain && e(DontShowAgain, { checked: suppress, onChange: setSuppress, label: dontShowAgain.label }));
+}
+
+// The "Don’t show this again" checkbox under a dialog's message (the
+// confirm dialog's, the unsaved-friend warning's). onChange(on).
+function DontShowAgain({ checked, onChange, label }) {
+  const e = React.createElement;
+  return e('label', {
     className: 'flex items-start gap-2 cursor-pointer text-ink-secondary',
     style: { marginTop: '14px', fontSize: '13px', lineHeight: 1.4 },
   },
   e('input', {
     type: 'checkbox',
-    checked: suppress,
-    onChange: (ev) => setSuppress(ev.target.checked),
+    checked: checked === undefined ? undefined : !!checked,
+    onChange: (ev) => onChange && onChange(ev.target.checked),
     style: { marginTop: '2px', accentColor: 'var(--accent-primary)' },
   }),
-  dontShowAgain.label || 'Don’t show this again'));
+  label || 'Don’t show this again');
 }
 
-module.exports = { Modal, ConfirmModal, ConfirmModalBody, useDialogFocus, MODAL_WIDTHS: WIDTHS };
+module.exports = { Modal, ConfirmModal, ConfirmModalBody, DontShowAgain, useDialogFocus, MODAL_WIDTHS: WIDTHS };
