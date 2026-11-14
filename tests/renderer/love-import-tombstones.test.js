@@ -33,17 +33,30 @@ describe('loveTombstoneEntries', () => {
 });
 
 describe('isOrphanedLovePush (pre-ship removals)', () => {
-  test('an exact id matches, and so does the album-bearing form of the same song', () => {
+  test('exact id matching only: a "Creep (Acoustic)" orphan does not block "Creep"', () => {
     const { isOrphanedLovePush } = require('../../src/renderer/lib/love-import');
-    const orphanIds = new Set(['radiohead-creep-pablohoney', 'wire-map-ref-41n-93-w-noalbum']);
-    // The import candidate computes the album-less id; the heart was marked
-    // under the album-bearing one. Same song.
-    expect(isOrphanedLovePush(orphanIds, { id: 'radiohead-creep-noalbum', artist: 'Radiohead', title: 'Creep', album: '' })).toBe(true);
-    expect(isOrphanedLovePush(orphanIds, { id: 'wire-map-ref-41n-93-w-noalbum', artist: 'Wire', title: 'Map Ref. 41°N 93°W', album: '' })).toBe(true);
-    // A different song by the same artist does not match the prefix.
-    expect(isOrphanedLovePush(orphanIds, { id: 'radiohead-karma-police-noalbum', artist: 'Radiohead', title: 'Karma Police', album: '' })).toBe(false);
-    // trackSlug ids (non-Latin) keep exact matching only.
-    expect(isOrphanedLovePush(orphanIds, { id: '宇多田ヒカル-光-', artist: '宇多田ヒカル', title: '光', album: '' })).toBe(false);
+    const orphanIds = new Set([
+      'radiohead-creep-acoustic-noalbum', // "Creep (Acoustic)" — starts with "radiohead-creep-"
+      'radiohead-creep-pablohoney',       // an album-bearing mark from a heart on an album page
+    ]);
+    // The exact id matches.
+    expect(isOrphanedLovePush(orphanIds, { id: 'radiohead-creep-acoustic-noalbum', artist: 'Radiohead', title: 'Creep (Acoustic)' })).toBe(true);
+    expect(isOrphanedLovePush(orphanIds, { id: 'radiohead-creep-pablohoney', artist: 'Radiohead', title: 'Creep' })).toBe(true);
+    // A DIFFERENT song whose id merely shares the prefix does not: the
+    // album part is free text, so a prefix form would keep "Creep" out
+    // forever (the round-4 blocker).
+    expect(isOrphanedLovePush(orphanIds, { id: 'radiohead-creep-noalbum', artist: 'Radiohead', title: 'Creep' })).toBe(false);
+    expect(isOrphanedLovePush(orphanIds, { id: 'radiohead-karma-police-noalbum', artist: 'Radiohead', title: 'Karma Police' })).toBe(false);
+  });
+
+  test('an album-bearing pre-ship mark is the documented miss (exact ids cannot see it)', () => {
+    const { isOrphanedLovePush } = require('../../src/renderer/lib/love-import');
+    const orphanIds = new Set(['radiohead-creep-pablohoney']);
+    // A heart from an album page, removed before this feature shipped, was
+    // marked under the album-bearing id; the album-less candidate never
+    // matches it exactly. Documented gap; removals after this ship delete
+    // their marks and write their own name tombstone.
+    expect(isOrphanedLovePush(orphanIds, { id: 'radiohead-creep-noalbum', artist: 'Radiohead', title: 'Creep' })).toBe(false);
   });
 });
 

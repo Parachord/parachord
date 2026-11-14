@@ -174,11 +174,12 @@ describe('planLoveImport', () => {
   test('a re-love only minutes after the removal stays blocked (the grace window)', () => {
     const key = loveNameKey({ artist: 'Portishead', title: 'Roads' });
     const tombstones = { 'love-import': { [key]: { removedAt: 2000000 } } };
-    // 2000s = 2,000,000ms: newer than the removal, but inside the 5-minute
-    // grace that covers clock skew and a push in flight when the removal
-    // happened. A minute past the grace is a fresh decision.
+    // 2100s = 2,100,000ms: STRICTLY newer than the removal but inside the
+    // 5-minute grace that covers clock skew and a push in flight when the
+    // removal happened (at a zero window, `<= removedAt` alone would still
+    // block this — the pin is the window, not the equality).
     const within = planLoveImport(
-      [{ service: 'lastfm', artist: 'Portishead', title: 'Roads', album: '', mbid: null, lovedAt: 2000 }],
+      [{ service: 'lastfm', artist: 'Portishead', title: 'Roads', album: '', mbid: null, lovedAt: 2100 }],
       tracks, tombstones);
     expect(within.tombstoned).toBe(1);
     expect(within.add).toEqual([]);

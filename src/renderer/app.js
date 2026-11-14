@@ -14251,226 +14251,236 @@ ${trackListXml}
     setLoveImportRunning(prev => ({ ...prev, [service]: true }));
     setLoveImportProgress(prev => ({ ...prev, [service]: { done: 0, total: 0 } }));
     try {
-        let connected = false;
-        try { connected = await scrobbler.isEnabled(); } catch (e) { connected = false; }
-        if (!connected) { showToast(`${label} is not connected`, 'error'); return; }
+      let connected = false;
+      try { connected = await scrobbler.isEnabled(); } catch (e) { connected = false; }
+      if (!connected) { showToast(`${label} is not connected`, 'error'); return; }
 
-        // Cross-service propagation, confirmed up front (issue #1071 rule 2).
-        // Connected, not just toggled — the dialog must not promise pushes a
-        // disconnected service can't make. Cancel (the button or the backdrop)
-        // stops the run.
-        let crossConfirm = false;
-        const otherScrobbler = otherService === 'lastfm' ? window.lastfmScrobbler : window.listenbrainzScrobbler;
-        if (scrobblerLovePushEnabledRef.current?.[otherService] && otherScrobbler) {
-          let otherConnected = false;
-          try { otherConnected = await otherScrobbler.isEnabled(); } catch (e) { otherConnected = false; }
-          if (otherConnected) {
-            crossConfirm = await new Promise((resolve) => {
-              showConfirmDialog({
-                type: 'info',
-                title: 'Import loved tracks',
-                message: `Tracks you import from ${label} will also be loved on ${otherLabel}, because "Push newly loved tracks to ${otherLabel}" is on. This can't be undone from Parachord.`,
-                confirmLabel: 'Import',
-                onConfirm: () => resolve(true),
-                onCancel: () => resolve(false),
-              });
+      // Cross-service propagation, confirmed up front (issue #1071 rule 2).
+      // Connected, not just toggled — the dialog must not promise pushes a
+      // disconnected service can't make. Cancel (the button or the backdrop)
+      // stops the run.
+      let crossConfirm = false;
+      const otherScrobbler = otherService === 'lastfm' ? window.lastfmScrobbler : window.listenbrainzScrobbler;
+      if (scrobblerLovePushEnabledRef.current?.[otherService] && otherScrobbler) {
+        let otherConnected = false;
+        try { otherConnected = await otherScrobbler.isEnabled(); } catch (e) { otherConnected = false; }
+        if (otherConnected) {
+          setLoveImportProgress(prev => ({ ...prev, [service]: { done: 0, total: 0, phase: 'confirm' } }));
+          crossConfirm = await new Promise((resolve) => {
+            showConfirmDialog({
+              type: 'info',
+              title: 'Import loved tracks',
+              message: `Tracks you import from ${label} will also be loved on ${otherLabel}, because "Push newly loved tracks to ${otherLabel}" is on. This can't be undone from Parachord.`,
+              confirmLabel: 'Import',
+              onConfirm: () => resolve(true),
+              onCancel: () => resolve(false),
             });
-            if (!crossConfirm) return;
-          }
-        }
-
-        const cursor = loveImportCursorRef.current?.[service] || 0; // loved-at seconds
-        const setProgress = (done, total, phase) =>
-          setLoveImportProgress(prev => ({ ...prev, [service]: { done, total, ...(phase ? { phase } : {}) } }));
-
-        // 1. Fetch: only loves newer than the cursor (collectLoves owns the
-        //    paging, the per-page retries and the stop rules).
-        const fetchPage = service === 'lastfm'
-          ? async ({ page, count }) => window.lastfmScrobbler.getLovedTracksPage({ page, count })
-          : null; // the ListenBrainz fetcher lands with its slice
-        if (!fetchPage) return;
-        const { loves, skipped, complete, error, capped } = await LoveImport.collectLoves({
-          fetchPage,
-          parse: LoveImport.parseLastfmLovedPage,
-          cursor,
-          pageSize: 200,
-          onProgress: (done, total) => setProgress(done, total),
-        });
-        if (error && loves.length === 0 && skipped === 0) {
-          if (error === 'Not connected') showToast(`Reconnect ${label} to import your loved tracks`, 'error');
-          else showToast(`Couldn't import from ${label}: ${error}`, 'error');
-          return;
-        }
-        if (loves.length === 0 && !error) {
-          showToast(cursor > 0 ? `No new loved tracks on ${label}` : `No loved tracks found on ${label}`);
-          return;
-        }
-
-        // 2. The tombstone list is load-bearing: importing without it could
-        //    bring removed tracks back, so a failed read stops the run.
-        let tombstones = {};
-        try { tombstones = await window.electron.tombstones.list(); }
-        catch (e) {
-          showToast(`Couldn't read your removed-tracks list, so nothing was imported: ${e?.message || e}`, 'error');
-          return;
-        }
-
-        const collectionTracks = collectionDataRef.current?.tracks || [];
-        // Removals from before this feature shipped have no tombstone. A mark
-        // in love_pushed_keys whose id is no longer in the collection was a
-        // Parachord love the user later removed, so it counts as removed.
-        const collectionIds = new Set(collectionTracks.map((t) => t && t.id).filter(Boolean));
-        const orphanPushedIds = new Set(
-          Object.keys(lovePushedKeysRef.current || {}).filter((id) => !collectionIds.has(id)));
-
-        const dropRemoved = async (plan) => {
-          // A removal during the run (the LB name-lookup tail can run for
-          // minutes) must not be undone by this write — re-read and re-check.
-          // A mid-run re-read failure falls back to the start-of-run snapshot;
-          // the gating read in step 2 already stopped the run when the list
-          // couldn't be read at all.
-          let now = tombstones;
-          try { now = await window.electron.tombstones.list(); } catch (e) { /* keep the snapshot */ }
-          // One predicate drives both the count and the filter, so the summary
-          // can't drift from what was dropped. The pre-ship heuristic ONLY
-          // applies where no tombstone entry exists at all: a removed-then-
-          // re-loved track HAS one, and the date rule governs it.
-          const removed = (row) => {
-            const love = { service, artist: row.artist, title: row.title, mbid: row.mbid, lovedAt: row.addedAt / 1000 };
-            if (LoveImport.isLoveTombstoned(now, love)) return true;
-            return LoveImport.isOrphanedLovePush(orphanPushedIds, row) && LoveImport.loveTombstoneAt(now, love) == null;
-          };
-          plan.tombstoned += plan.add.filter(removed).length;
-          plan.add = plan.add.filter((row) => !removed(row));
-          return plan;
-        };
-
-        // 3. Plan and commit: rows with names land immediately; the
-        //    metadata-less lookup tail commits as a second batch, so quitting
-        //    during a long tail keeps the loves that never needed a lookup.
-        const writeBox = { savePromises: [], addedIds: [], updaterRan: false };
-        const commitRows = (rows) => {
-          if (rows.length === 0) return;
-          setCollectionData(prev => {
-            writeBox.updaterRan = true;
-            const prevIds = new Set(prev.tracks.map((t) => t && t.id).filter(Boolean));
-            const fresh = rows.filter((r) => !prevIds.has(r.id));
-            if (fresh.length === 0) return prev; // everything appeared concurrently; nothing to save
-            const newData = { ...prev, tracks: [...prev.tracks, ...fresh] };
-            writeBox.savePromises.push(saveCollection(newData));
-            writeBox.addedIds.push(...fresh.map((r) => r.id));
-            return newData;
           });
+          if (!crossConfirm) return;
+        }
+      }
+
+      const cursor = loveImportCursorRef.current?.[service] || 0; // loved-at seconds
+      const setProgress = (done, total, phase) =>
+        setLoveImportProgress(prev => ({ ...prev, [service]: { done, total, ...(phase ? { phase } : {}) } }));
+
+      // 1. Fetch: only loves newer than the cursor (collectLoves owns the
+      //    paging, the per-page retries and the stop rules).
+      const fetchPage = service === 'lastfm'
+        ? async ({ page, count }) => window.lastfmScrobbler.getLovedTracksPage({ page, count })
+        : null; // the ListenBrainz fetcher lands with its slice
+      if (!fetchPage) return;
+      const { loves, skipped, complete, error, capped } = await LoveImport.collectLoves({
+        fetchPage,
+        parse: LoveImport.parseLastfmLovedPage,
+        cursor,
+        pageSize: 200,
+        onProgress: (done, total) => setProgress(done, total),
+      });
+      if (error && loves.length === 0 && skipped === 0) {
+        if (error === 'Not connected') showToast(`Reconnect ${label} to import your loved tracks`, 'error');
+        else showToast(`Couldn't import from ${label}: ${error}`, 'error');
+        return;
+      }
+      if (loves.length === 0 && !error) {
+        showToast(cursor > 0 ? `No new loved tracks on ${label}` : `No loved tracks found on ${label}`);
+        return;
+      }
+
+      // 2. The tombstone list is load-bearing: importing without it could
+      //    bring removed tracks back, so a failed read stops the run.
+      let tombstones = {};
+      try { tombstones = await window.electron.tombstones.list(); }
+      catch (e) {
+        showToast(`Couldn't read your removed-tracks list, so nothing was imported: ${e?.message || e}`, 'error');
+        return;
+      }
+
+      const collectionTracks = collectionDataRef.current?.tracks || [];
+      // Removals from before this feature shipped have no tombstone. A mark
+      // in love_pushed_keys whose id is no longer in the collection was a
+      // Parachord love the user later removed, so it counts as removed.
+      const collectionIds = new Set(collectionTracks.map((t) => t && t.id).filter(Boolean));
+      const orphanPushedIds = new Set(
+        Object.keys(lovePushedKeysRef.current || {}).filter((id) => !collectionIds.has(id)));
+
+      const dropRemoved = async (plan) => {
+        // A removal during the run (the LB name-lookup tail can run for
+        // minutes) must not be undone by this write — re-read and re-check.
+        // A mid-run re-read failure falls back to the start-of-run snapshot;
+        // the gating read in step 2 already stopped the run when the list
+        // couldn't be read at all.
+        let now = tombstones;
+        try { now = await window.electron.tombstones.list(); } catch (e) { /* keep the snapshot */ }
+        // One predicate drives both the count and the filter, so the summary
+        // can't drift from what was dropped. The pre-ship heuristic ONLY
+        // applies where no tombstone entry exists at all: a removed-then-
+        // re-loved track HAS one, and the date rule governs it.
+        const removed = (row) => {
+          const love = { service, artist: row.artist, title: row.title, mbid: row.mbid, lovedAt: row.addedAt / 1000 };
+          if (LoveImport.isLoveTombstoned(now, love)) return true;
+          return LoveImport.isOrphanedLovePush(orphanPushedIds, row) && LoveImport.loveTombstoneAt(now, love) == null;
         };
+        plan.tombstoned += plan.add.filter(removed).length;
+        plan.add = plan.add.filter((row) => !removed(row));
+        return plan;
+      };
 
-        const namedLoves = loves.filter((l) => !l.needsLookup);
-        const needsLookupLoves = loves.filter((l) => l.needsLookup);
-        const plan1 = await dropRemoved(LoveImport.planLoveImport(namedLoves, collectionTracks, tombstones));
-        commitRows(plan1.add);
+      // 3. Plan and commit: rows with names land immediately; the
+      //    metadata-less lookup tail commits as a second batch, so quitting
+      //    during a long tail keeps the loves that never needed a lookup.
+      const writeBox = { savePromises: [], addedIds: [], updaterRan: false };
+      const commitRows = (rows) => {
+        if (rows.length === 0) return;
+        setCollectionData(prev => {
+          writeBox.updaterRan = true;
+          const prevIds = new Set(prev.tracks.map((t) => t && t.id).filter(Boolean));
+          const fresh = rows.filter((r) => !prevIds.has(r.id));
+          if (fresh.length === 0) return prev; // everything appeared concurrently; nothing to save
+          const newData = { ...prev, tracks: [...prev.tracks, ...fresh] };
+          writeBox.savePromises.push(saveCollection(newData));
+          writeBox.addedIds.push(...fresh.map((r) => r.id));
+          return newData;
+        });
+      };
 
-        // 4. The lookup tail (ListenBrainz's metadata-less loves; none for
-        //    Last.fm). window.lookupRecordingTitle lands with the ListenBrainz
-        //    slice (#1364): until then the guard skips these as unresolvable.
-        //    One MB request each, on the background lane; a row already in the
-        //    collection by MBID matches without the request; a transient
-        //    MusicBrainz failure holds the cursor (the love isn't lost, just
-        //    not this run) while a real miss is skipped.
-        let lookupTransient = 0, lookupSkipped = 0;
-        const lookupMatchedIds = [];
-        const resolvedLoves = [];
-        if (needsLookupLoves.length > 0 && typeof window.lookupRecordingTitle === 'function') {
-          const mbidIndex = LoveImport.rowMbidIndex([...collectionTracks, ...plan1.add]);
-          setProgress(0, needsLookupLoves.length, 'lookup');
-          for (let i = 0; i < needsLookupLoves.length; i++) {
-            const cand = needsLookupLoves[i];
-            const existing = mbidIndex.get(cand.mbid);
-            if (existing) { lookupMatchedIds.push(existing.id); }
-            else {
-              const result = await window.lookupRecordingTitle(cand.mbid);
-              if (result?.status === 'ok') {
-                resolvedLoves.push({ ...cand, artist: result.artist, title: result.title, album: result.album || '', mbid: result.mbid || cand.mbid, needsLookup: undefined });
-              } else if (result?.status === 'transient') { lookupTransient++; }
-              else { lookupSkipped++; }
-            }
-            setProgress(i + 1, needsLookupLoves.length, 'lookup');
+      const namedLoves = loves.filter((l) => !l.needsLookup);
+      const needsLookupLoves = loves.filter((l) => l.needsLookup);
+      const plan1 = await dropRemoved(LoveImport.planLoveImport(namedLoves, collectionTracks, tombstones));
+      commitRows(plan1.add);
+
+      // 4. The lookup tail (ListenBrainz's metadata-less loves; none for
+      //    Last.fm). window.lookupRecordingTitle lands with the ListenBrainz
+      //    slice (#1364): until then the guard skips these as unresolvable.
+      //    One MB request each, on the background lane; a row already in the
+      //    collection by MBID matches without the request; a transient
+      //    MusicBrainz failure holds the cursor (the love isn't lost, just
+      //    not this run) while a real miss is skipped.
+      let lookupTransient = 0, lookupSkipped = 0;
+      const lookupMatchedIds = [];
+      const resolvedLoves = [];
+      if (needsLookupLoves.length > 0 && typeof window.lookupRecordingTitle === 'function') {
+        const mbidIndex = LoveImport.rowMbidIndex([...collectionTracks, ...plan1.add]);
+        setProgress(0, needsLookupLoves.length, 'lookup');
+        for (let i = 0; i < needsLookupLoves.length; i++) {
+          const cand = needsLookupLoves[i];
+          const existing = mbidIndex.get(cand.mbid);
+          if (existing) { lookupMatchedIds.push(existing.id); }
+          else {
+            const result = await window.lookupRecordingTitle(cand.mbid);
+            if (result?.status === 'ok') {
+              resolvedLoves.push({ ...cand, artist: result.artist, title: result.title, album: result.album || '', mbid: result.mbid || cand.mbid, needsLookup: undefined });
+            } else if (result?.status === 'transient') { lookupTransient++; }
+            else { lookupSkipped++; }
           }
-        } else if (needsLookupLoves.length > 0) {
-          lookupSkipped += needsLookupLoves.length;
+          setProgress(i + 1, needsLookupLoves.length, 'lookup');
         }
-        const plan2 = await dropRemoved(LoveImport.planLoveImport(resolvedLoves, [...collectionTracks, ...plan1.add], tombstones));
-        commitRows(plan2.add);
+      } else if (needsLookupLoves.length > 0) {
+        lookupSkipped += needsLookupLoves.length;
+      }
+      const plan2 = await dropRemoved(LoveImport.planLoveImport(resolvedLoves, [...collectionTracks, ...plan1.add], tombstones));
+      commitRows(plan2.add);
 
-        // 5. The functional updaters have run by the time the fetch's last IPC
-        //    round-trip resolved (React commits before it returns). If one
-        //    somehow didn't, the write is UNCONFIRMED — hold the cursor rather
-        //    than trust a timing assumption with lost-import consequences.
-        const plannedRows = plan1.add.length + plan2.add.length;
-        let saveOk = true;
-        if (plannedRows > 0) {
-          if (!writeBox.updaterRan) saveOk = false;
-          else if (writeBox.savePromises.length > 0) saveOk = (await Promise.all(writeBox.savePromises)).every(Boolean);
-        }
-        const added = writeBox.addedIds.length > 0 || plannedRows === 0 ? writeBox.addedIds.length : plannedRows;
-        if (added > 0) showSidebarBadge('collection');
+      // 5. The functional updaters have run by the time the fetch's last IPC
+      //    round-trip resolved (React commits before it returns). If one
+      //    somehow didn't, the write is UNCONFIRMED — hold the cursor rather
+      //    than trust a timing assumption with lost-import consequences.
+      const plannedRows = plan1.add.length + plan2.add.length;
+      let saveOk = true;
+      if (plannedRows > 0) {
+        if (!writeBox.updaterRan) saveOk = false;
+        else if (writeBox.savePromises.length > 0) saveOk = (await Promise.all(writeBox.savePromises)).every(Boolean);
+      }
+      const added = writeBox.addedIds.length > 0 || plannedRows === 0 ? writeBox.addedIds.length : plannedRows;
+      if (added > 0) showSidebarBadge('collection');
 
-        // 6. The no-loop marks: every CONFIRMED-added row and every matched row
-        //    is marked as pushed for the service the loves came FROM (one map
-        //    write — markLovePushed writes the whole map per call). Only the
-        //    confirmed adds wait on the save: a mark on a row a failed save
-        //    never wrote would, after a restart, read as "you removed this"
-        //    through the pre-ship heuristic and lose the love for good.
-        //    Matched rows are already in the collection, so their marks are
-        //    safe whatever the save did. One row matched in both batches
-        //    counts once.
-        const matchedIds = [...new Set([...plan1.matchedIds, ...plan2.matchedIds, ...lookupMatchedIds])];
-        const markedKeys = LoveImport.withLovesPushed(
-          lovePushedKeysRef.current,
-          [...matchedIds, ...(saveOk ? writeBox.addedIds : [])],
-          service);
-        lovePushedKeysRef.current = markedKeys;
-        try { await window.electron.store.set('love_pushed_keys', markedKeys); }
-        catch (e) { console.warn(`[love-import ${service}] could not persist no-loop marks:`, e?.message || e); }
+      // 6. The no-loop marks: every CONFIRMED-added row and every matched row
+      //    is marked as pushed for the service the loves came FROM (one map
+      //    write — markLovePushed writes the whole map per call). Only the
+      //    confirmed adds wait on the save: a mark on a row a failed save
+      //    never wrote would, after a restart, read as "you removed this"
+      //    through the pre-ship heuristic and lose the love for good.
+      //    Matched rows are already in the collection, so their marks are
+      //    safe whatever the save did. One row matched in both batches
+      //    counts once.
+      const matchedIds = [...new Set([...plan1.matchedIds, ...plan2.matchedIds, ...lookupMatchedIds])];
+      // Two loves that match the same collection row are ONE mark but TWO
+      // loves: the summary counts loves, so it adds up to what the service
+      // returned.
+      const matchedLoves = plan1.matchedIds.length + plan2.matchedIds.length + lookupMatchedIds.length;
+      const markedKeys = LoveImport.withLovesPushed(
+        lovePushedKeysRef.current,
+        [...matchedIds, ...(saveOk ? writeBox.addedIds : [])],
+        service);
+      lovePushedKeysRef.current = markedKeys;
+      try { await window.electron.store.set('love_pushed_keys', markedKeys); }
+      catch (e) { console.warn(`[love-import ${service}] could not persist no-loop marks:`, e?.message || e); }
 
-        // 7. The cursor advances only when the whole window was read, nothing
-        //    transient failed, and the save landed — otherwise the next run
-        //    re-walks and self-heals instead of losing those loves forever.
-        const nextCursor = (complete && saveOk && lookupTransient === 0)
-          ? LoveImport.nextLoveCursor(cursor, loves, true)
-          : cursor;
-        if (nextCursor > cursor) {
-          loveImportCursorRef.current = { ...(loveImportCursorRef.current || {}), [service]: nextCursor };
-          window.electron.store.set('love_import_cursor', loveImportCursorRef.current).catch(() => {});
-        }
+      // 7. The cursor advances only when the whole window was read, nothing
+      //    transient failed, and the save landed — otherwise the next run
+      //    re-walks and self-heals instead of losing those loves forever.
+      const nextCursor = (complete && saveOk && lookupTransient === 0)
+        ? LoveImport.nextLoveCursor(cursor, loves, true)
+        : cursor;
+      if (nextCursor > cursor) {
+        loveImportCursorRef.current = { ...(loveImportCursorRef.current || {}), [service]: nextCursor };
+        window.electron.store.set('love_import_cursor', loveImportCursorRef.current).catch(() => {});
+      }
 
-        // 8. The summary. Rows the plan merged into one count as
-        //    "already in your collection" — the summary must add up to what
-        //    the service shows.
-        const matched = matchedIds.length + plan1.merged + plan2.merged;
-        const tombstoned = plan1.tombstoned + plan2.tombstoned;
-        const allSkipped = skipped + lookupSkipped;
-        let msg = `Imported ${added} from ${label}. ${matched} already in your collection, ${allSkipped} skipped`;
-        if (tombstoned > 0) msg += `, ${tombstoned} you removed`;
-        if (capped) msg += '. Stopped at the import page cap, so older loves were left out';
-        if (lookupTransient > 0) msg += `. Couldn't reach MusicBrainz for ${lookupTransient} of them; run the import again`;
-        if (!saveOk) msg += '. Saving the library failed; run the import again';
-        if (!complete && error) {
-          showToast(`Imported ${added} from ${label}, then stopped: ${error}. Run it again to pick up the rest.`, 'error', null, { duration: 8000 });
+      // 8. The summary. Rows the plan merged into one count as
+      //    "already in your collection" — the summary must add up to what
+      //    the service shows.
+      const matched = matchedLoves + plan1.merged + plan2.merged;
+      const tombstoned = plan1.tombstoned + plan2.tombstoned;
+      const allSkipped = skipped + lookupSkipped;
+      let msg = `Imported ${added} from ${label}. ${matched} already in your collection, ${allSkipped} skipped`;
+      if (tombstoned > 0) msg += `, ${tombstoned} you removed`;
+      if (capped) msg += '. Stopped at the import page cap, so older loves were left out';
+      if (lookupTransient > 0) msg += `. Couldn't reach MusicBrainz for ${lookupTransient} of them; run the import again`;
+      if (!saveOk) {
+        // Without a restart the rows are already in memory, so a re-run
+        // matches them and the confirmed cross-service push never fires —
+        // say how to push them anyway.
+        msg += `. Saving the library failed; run the import again after a restart${crossConfirm ? `, or push the imported loves with Backfill on the ${otherLabel} card` : ''}`;
+      }
+      if (!complete && error) {
+        showToast(`Imported ${added} from ${label}, then stopped: ${error}. Run it again to pick up the rest.`, 'error', null, { duration: 8000 });
+      } else {
+        showToast(msg, saveOk ? 'success' : 'error', null, { duration: 8000 });
+      }
+
+      // 9. Cross-service propagation, confirmed in the pre-run dialog: just
+      //    the imported ids, through the restricted backfill (its own
+      //    progress on the other card), never a per-track live push.
+      if (crossConfirm && saveOk && writeBox.addedIds.length > 0) {
+        // The restricted backfill is a no-op while that service's own backfill
+        // is running — say so instead of silently skipping the confirmed push.
+        if (loveBackfillRunningRef.current[otherService]) {
+          showToast(`A ${otherLabel} backfill is still running. Once it finishes, run Backfill on the ${otherLabel} card to push the ${writeBox.addedIds.length} imported loves.`, 'info');
         } else {
-          showToast(msg, saveOk ? 'success' : 'error', null, { duration: 8000 });
+          runLoveBackfill(otherService, { onlyIds: new Set(writeBox.addedIds) });
         }
-
-        // 9. Cross-service propagation, confirmed in the pre-run dialog: just
-        //    the imported ids, through the restricted backfill (its own
-        //    progress on the other card), never a per-track live push.
-        if (crossConfirm && saveOk && writeBox.addedIds.length > 0) {
-          // The restricted backfill is a no-op while that service's own backfill
-          // is running — say so instead of silently skipping the confirmed push.
-          if (loveBackfillRunningRef.current[otherService]) {
-            showToast(`A ${otherLabel} backfill is still running. Once it finishes, run Backfill on the ${otherLabel} card to push the ${writeBox.addedIds.length} imported loves.`, 'info');
-          } else {
-            runLoveBackfill(otherService, { onlyIds: new Set(writeBox.addedIds) });
-          }
-        }
+      }
     } catch (err) {
       console.warn(`[love-import ${service}] failed:`, err?.message || err);
       showToast(`Couldn't import from ${label}: ${err?.message || err}`, 'error');
@@ -14533,6 +14543,19 @@ ${trackListXml}
       // on the next import, parachord#1071 review).
       if (loveRetryQueueRef.current.size > 0 && matchId) {
         loveRetryQueueRef.current.delete(matchId);
+      }
+      // Delete the removed row's love-push mark: this removal writes its own
+      // `love-import` name tombstone, so the mark isn't needed — and left
+      // behind it would read as a pre-ship removal through the orphan
+      // heuristic on the next import (parachord#1071 review). If that
+      // tombstone write itself fails, neither protection holds and the next
+      // import re-adds the track — same blast radius a failed tombstone write
+      // already has for sync (#864).
+      if (matchId && lovePushedKeysRef.current && lovePushedKeysRef.current[matchId]) {
+        const without = { ...lovePushedKeysRef.current };
+        delete without[matchId];
+        lovePushedKeysRef.current = without;
+        window.electron.store.set('love_pushed_keys', without).catch(() => {});
       }
 
       // Remove from connected sync providers

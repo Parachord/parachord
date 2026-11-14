@@ -544,7 +544,8 @@ const ScrobblerSettingsCard = React.memo(({
               }
             },
               loveImportRunning && loveImportProgress
-                ? (loveImportProgress.phase === 'lookup'
+                ? (loveImportProgress.phase === 'confirm' ? 'Waiting for confirmation…'
+                  : loveImportProgress.phase === 'lookup'
                     ? `Looking up names… ${loveImportProgress.done}/${loveImportProgress.total}`
                     : `Importing… ${loveImportProgress.done}/${loveImportProgress.total}`)
                 : hasImportedLoves ? 'Import new loves' : 'Import loved tracks'

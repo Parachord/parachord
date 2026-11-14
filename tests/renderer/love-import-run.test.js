@@ -154,7 +154,7 @@ describe('collectLoves', () => {
     let call = 0;
     const fetchPage = async () => {
       call++;
-      return { lovedtracks: { '@attr': { total: '2', totalPages: '1' }, track: [
+      return { lovedtracks: { '@attr': { total: '50', totalPages: '1' }, track: [
         { name: 'A', artist: { name: 'X' }, date: { uts: '2000' } },
         { name: 'B', artist: { name: 'X' }, date: { uts: '1000' } },
       ] } };
@@ -164,8 +164,26 @@ describe('collectLoves', () => {
     });
     expect(complete).toBe(true);
     expect(call).toBe(1); // totalPages: 1 — the walk never asks for page 2
-    expect(capped).toBe(false);
+    expect(capped).toBe(false); // total 50 > seen: only totalPages ended it
     expect(loves).toHaveLength(2);
+  });
+
+  test('an account that ends exactly at the page cap finished naturally, so capped is false', async () => {
+    // total 2, pageSize 1, maxPages 2: page 2 reads the last love, the total
+    // is reached, nothing remained — no cap note in the summary.
+    let call = 0;
+    const fetchPage = async ({ page }) => {
+      call++;
+      return { lovedtracks: { '@attr': { total: '2', totalPages: '50' }, track: [
+        { name: 'A', artist: { name: 'X' }, date: { uts: String(2000 - page) } },
+      ] } };
+    };
+    const { capped, complete } = await collectLoves({
+      fetchPage, parse: parseLastfmLovedPage, cursor: 0, pageSize: 1, onProgress: noProgress, maxPages: 2, ...fast,
+    });
+    expect(complete).toBe(true);
+    expect(call).toBe(2);
+    expect(capped).toBe(false);
   });
 
   test('the page cap ends the walk with capped: true (the toast says so)', async () => {
@@ -277,10 +295,31 @@ describe('wiring (source markers)', () => {
     expect(flagAt).toBeLessThan(tryAt);
   });
 
+  test('the live heart push opts out of the collection re-check (the row is being added as the push starts)', () => {
+    expect(app).toContain("pushLoveToScrobblers({ ...track, id: trackId }, { justAdded: true })");
+  });
+
+  test('the love-push re-check drops gone tracks from the retry queue (unique to pushLoveToScrobblers, not the backfill walk)', () => {
+    const pushStart = app.indexOf('const pushLoveToScrobblers = useCallback');
+    const pushEnd = app.indexOf('const markLovePushed = useCallback', pushStart);
+    const pushBody = app.slice(pushStart, pushEnd);
+    expect(pushBody).toContain("pushLoveToScrobblers = useCallback(async (track, { justAdded = false } = {}) => {");
+    expect(pushBody).toContain('removed from the collection since the love was queued');
+    expect(pushBody).toContain('loveRetryQueueRef.current.delete(track.id);');
+  });
+
   test('a removal mid-run drops queued love-pushes (the push must not land after the removal)', () => {
     expect(app).toContain('loveRetryQueueRef.current.delete(matchId);');
     expect(app).toContain('if (!stillThere) { removedMidRun++; continue; }');
     expect(app).toContain('const stillThere = (collectionDataRef.current?.tracks || []).some((t) => t && t.id === track.id);');
+  });
+
+  test('a removal deletes the removed row\'s love-push mark (a post-ship removal has its own name tombstone)', () => {
+    expect(app).toContain('delete without[matchId];');
+  });
+
+  test('the cross-service push is gated on the confirmed save', () => {
+    expect(app).toContain('if (crossConfirm && saveOk &&');
   });
 
   test('love_import_cursor is in the bulk-load list', () => {

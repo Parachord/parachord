@@ -207,27 +207,20 @@ function blockedByDate(tombstones, love) {
 
 // ── Pre-ship removals ───────────────────────────────────────────────────────
 
-// A removal from before this feature shipped has no tombstone — but its
-// `love_pushed_keys` mark is still there. The mark usually sits under an
-// album-bearing id (`artist-title-album` — a heart from an album page),
-// while the import candidate computes `artist-title-noalbum`; the song is
-// still the same, so match the exact id first, then the
-// `normalizeForId(artist)-normalizeForId(title)-` prefix form. trackSlug ids
-// (non-Latin names) keep exact matching only: their fold shares no prefix
-// shape. Run this ONLY where no tombstone entry exists at all (see
-// loveTombstoneAt) — a removed-then-re-loved track has one and is governed
-// by the date rule instead.
+// A removal from BEFORE this feature shipped has no tombstone — but its
+// `love_pushed_keys` mark is still there, and the id is gone from the
+// collection, so the mark reads as "loved from Parachord and later removed".
+// EXACT id matching only: the id's album part is free text, and a prefix form
+// would block other songs ("Creep (Acoustic)" starts with "radiohead-creep-",
+// so a prefix match would keep "Creep" out forever — parachord#1071 review).
+// That exactness is also the gap: a heart saved from an album page was marked
+// under `artist-title-album`, so a pre-ship removal of it is missed here and
+// comes back on the first import. Removals after this ships write their own
+// name tombstone AND delete their mark, so they never reach this heuristic.
+// Run this ONLY where no tombstone entry exists at all (see loveTombstoneAt)
+// — a removed-then-re-loved track has one and is governed by the date rule.
 function isOrphanedLovePush(orphanIds, row) {
-  if (!orphanIds || orphanIds.size === 0 || !row || !row.id) return false;
-  if (orphanIds.has(row.id)) return true;
-  const artist = normalizeForId(row.artist);
-  const title = normalizeForId(row.title);
-  if (!artist || !title) return false; // a trackSlug id has no prefix form
-  const prefix = `${artist}-${title}-`;
-  for (const id of orphanIds) {
-    if (id.startsWith(prefix)) return true;
-  }
-  return false;
+  return !!(orphanIds && row && row.id && orphanIds.has(row.id));
 }
 
 // ── The plan: what a love import adds ──────────────────────────────────────
