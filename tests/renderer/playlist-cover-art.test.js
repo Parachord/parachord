@@ -67,13 +67,16 @@ describe('PlaylistCoverImage (the shared cover layer)', () => {
 });
 
 describe('opening a recommended playlist keeps the card\'s cover', () => {
-  test('openRecommendationPlaylist carries the card image as coverArt', () => {
-    const open = sliceFrom(app, 'const openRecommendationPlaylist = (item, section) => {', 'const artistCard = (item, index)');
-    expect(open).toContain('...(imageFor(item) ? { coverArt: imageFor(item) } : {})');
+  test('openServicePlaylist carries the card image as coverArt', () => {
+    // The Recommendations page and Home share openServicePlaylist; the card's
+    // image (recommendationImageFor: the provider's own imageUrl, else the
+    // art pipeline's answer) rides on the ephemeral playlist as coverArt.
+    const open = sliceFrom(app, 'const openServicePlaylist = (item, sourceName) => {', "// Home's recommendations load:");
+    expect(open).toContain('...(recommendationImageFor(item) ? { coverArt: recommendationImageFor(item) } : {})');
   });
 
   test('the playlist cover is never stamped on a track (the 4x-tiled mosaic bug)', () => {
-    const tracks = sliceFrom(app, 'const recommendationPlaylistTracks = async (item) => {', 'const playRecommendationPlaylist = async');
+    const tracks = sliceFrom(app, 'const recommendationPlaylistTracks = async (item) => {', '// Play, or add to the queue, a service playlist');
     expect(tracks).not.toContain('resolved.albumArt');
     // Only the lookup's own PER-TRACK art (the track's album cover) rides on a track.
     expect(tracks).toContain("...(t.albumArt ? { albumArt: t.albumArt } : {})");
@@ -104,8 +107,10 @@ describe('importing (SAVE, dropped link, URL import) keeps the provider cover', 
 
   test('new and updated records carry coverArt, and the SAVE override wins', () => {
     expect(imp).toContain('const playlistCover = (typeof metadataOverrides?.coverArt');
-    expect(imp).toMatch(/const newPlaylist = \{[\s\S]*?\.\.\.\(playlistCover \? \{ coverArt: playlistCover \} : \{\}\)/);
-    expect(imp).toMatch(/updatedPlaylist = \{[\s\S]*?\.\.\.\(playlistCover \? \{ coverArt: playlistCover \} : \{\}\)/);
+    // Both record paths go through stampPlaylist; the coverArt spread rides
+    // inside the record object either way.
+    expect(imp).toMatch(/const newPlaylist = stampPlaylist\(null, \{[\s\S]*?\.\.\.\(playlistCover \? \{ coverArt: playlistCover \} : \{\}\)/);
+    expect(imp).toMatch(/updatedPlaylist = stampPlaylist\(existing, \{[\s\S]*?\.\.\.\(playlistCover \? \{ coverArt: playlistCover \} : \{\}\)/);
   });
 
   test('the on-screen playlist takes a refreshed cover (a hosted refresh keeps the old one)', () => {
@@ -198,12 +203,15 @@ describe('every playlist-cover surface renders the record\'s cover over the mosa
     orderAfter(app, '// Playlist thumbnail (gray square)', '// Playlist name', 'allPlaylistCovers[playlist.id]?.[0]');
   });
 
-  test('the Home page playlist row: the cover comes after the grid in DOM order', () => {
-    const start = home.indexOf('// 2x2 album art grid or placeholder with hover play');
-    expect(start).toBeGreaterThan(-1);
-    const block = home.slice(start, home.indexOf('// Hover play button overlay', start));
-    const cover = block.indexOf('playlist.coverArt && React.createElement(PlaylistCoverImage');
-    expect(cover).toBeGreaterThan(block.indexOf('animate-shimmer'));
+  test('the Home page feeds the record cover into the playlist cards (ArtBox prefers imageUrl over the mosaic)', () => {
+    // Home's cards are home-sections' ArtBox: either the playlist's own
+    // cover (imageUrl) or the track mosaic — so the record's coverArt feeds
+    // the two playlist-card memos, not a layered element.
+    const tiles = home.slice(home.indexOf('const tiles = React.useMemo'));
+    expect(tiles.slice(0, tiles.indexOf('const lovesAlbums'))).toContain('imageUrl: tile.item.coverArt || null');
+    const feeds = home.slice(home.indexOf('const homePlaylists = React.useMemo'), home.indexOf('const changeLine = React.useMemo'));
+    expect(feeds).toContain('imageUrl: p.coverArt || null');
+    expect(feeds).toContain('mosaic: allPlaylistCovers[p.id] || null');
   });
 
   test('a pre-dedupe tiled cache entry self-heals at load (the same URL four times)', () => {
