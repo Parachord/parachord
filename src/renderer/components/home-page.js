@@ -208,7 +208,9 @@ const HomePage = React.memo(function HomePage(props) {
     const run = () => {
       loadHomeRecommendations();
       loadHomeHistoryMixes();
-      if (!newReleasesLoaded && !newReleasesLoading) loadNewReleases();
+      // Not before the collection loads: the scan would find no artists.
+      // app.js's background effect starts it once the collection is in.
+      if (!collectionLoading && !newReleasesLoaded && !newReleasesLoading) loadNewReleases();
       if (!criticsPicksLoaded && !criticsPicksLoading) loadCriticsPicks();
       if (concertsLocation && !concertsLoaded && !concertsLoading && !concertsError) loadConcerts();
     };
