@@ -62,9 +62,11 @@ describe('status fills and the accent (#1383 step 3)', () => {
   const html2 = fs2.readFileSync(path2.join(__dirname, '../../index.html'), 'utf8');
 
   test('the confirm dialog uses the status tokens, one red', () => {
-    const dlg = app.slice(app.indexOf("confirmDialog.type === 'success' ? 'var(--text-success)'"));
-    expect(dlg.slice(0, 5000)).toMatch(/'var\(--fill-error\)'/);
-    expect(dlg.slice(0, 5000)).not.toMatch(/#dc2626|#22c55e/);
+    // It's ConfirmModal on the shared Modal now (#1385): status text tokens
+    // for its icon, Button's token fills for its buttons.
+    const m = fs2.readFileSync(path2.join(__dirname, '../../src/renderer/components/modal.js'), 'utf8');
+    expect(m).toMatch(/error: \['AlertTriangle', 'var\(--text-danger\)'\]/);
+    expect(m).not.toMatch(/#[0-9a-f]{6}/i);
   });
 
   test('white text never sits on --accent-primary (light purple in dark mode)', () => {

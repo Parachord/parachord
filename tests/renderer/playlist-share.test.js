@@ -116,7 +116,7 @@ describe('playlistShareTarget', () => {
     const onConfirm = prompt.indexOf('onConfirm:');
     expect(onConfirm).toBeGreaterThan(-1);
     expect(prompt.indexOf('setPlaylistPublic')).toBeGreaterThan(onConfirm);
-    expect(prompt).toContain("actionButton: { label: 'Cancel' }");
+    expect(prompt).toContain("cancelLabel: 'Cancel'");
     // Clicking outside the dialog must not count as saying yes.
     const dialog = app.indexOf('confirmDialog.show && React.createElement');
     const backdrop = app.slice(dialog, app.indexOf('e.stopPropagation()', dialog));

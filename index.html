@@ -319,6 +319,12 @@
        cards (bg-white → --bg-elevated in dark) keep their edges. Page bodies
        used bg-white, which put every page but Home on the card colour. */
     .page-bg { background-color: var(--bg-primary); }
+    /* The shared Modal (components/modal.js): one scrim, one entrance. */
+    .modal-scrim { background-color: rgba(0, 0, 0, 0.45); backdrop-filter: blur(4px); animation: modalScrimIn 150ms ease-out; }
+    .modal-panel { animation: modalPanelIn 150ms cubic-bezier(0, 0, 0.2, 1); }
+    @keyframes modalScrimIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes modalPanelIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+    @media (prefers-reduced-motion: reduce) { .modal-scrim, .modal-panel { animation: none; } }
     .dark .bg-gray-100 { background-color: var(--bg-inset) !important; }
     .dark .bg-gray-800 { background-color: #252525 !important; }
     .dark .shadow-sm { box-shadow: var(--shadow-sm) !important; }

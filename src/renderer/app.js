@@ -1979,6 +1979,8 @@ const { homeBannerItems, bannerViewId } = require('./lib/home-banners');
 const { toastBackground } = require('./lib/toast-style');
 const { statusBadgeStyle } = require('./lib/status-badge');
 const { PAGE_COLORS, pageTint } = require('./lib/page-colors');
+const { Modal, ConfirmModal } = require('./components/modal');
+const { Button } = require('./components/button');
 // Room the queue drawer leaves above it: the title bar and a little air.
 const QUEUE_DRAWER_TOP_GAP = 48;
 const { sellerColor, sellerTextColor, sellerBadgeBg, sellerShortName, sellerName } = require('./lib/ticket-sellers');
@@ -5699,6 +5701,10 @@ const Parachord = () => {
       message: options.message || '',
       onConfirm: options.onConfirm || null,
       confirmLabel: options.confirmLabel || null,
+      // Shows a Cancel button; destructive shows one too and makes the
+      // confirm button red (components/modal.js ConfirmModal).
+      cancelLabel: options.cancelLabel || null,
+      destructive: !!options.destructive,
       actionButton: options.actionButton || null,
     });
   };
@@ -13498,7 +13504,7 @@ ${trackListXml}
             }
             publishCollectionSmartLink(collection, { visibilityConfirmed: true });
           },
-          actionButton: { label: 'Cancel' }
+          cancelLabel: 'Cancel'
         });
         return;
       }
@@ -53622,130 +53628,8 @@ useEffect(() => {
     })(),
 
     // Confirmation Dialog Modal - refined styling
-    confirmDialog.show && React.createElement('div', {
-      className: 'fixed inset-0 flex items-center justify-center z-[60]',
-      style: {
-        backgroundColor: 'rgba(0, 0, 0, 0.4)',
-        backdropFilter: 'blur(4px)'
-      },
-      onClick: (e) => {
-        if (e.target === e.currentTarget) closeConfirmDialog();
-      }
-    },
-      React.createElement('div', {
-        style: {
-          backgroundColor: 'var(--card-bg)',
-          borderRadius: '16px',
-          boxShadow: '0 4px 24px rgba(0, 0, 0, 0.15), 0 12px 48px rgba(0, 0, 0, 0.1)',
-          maxWidth: '360px',
-          width: '100%',
-          margin: '0 16px',
-          overflow: 'hidden'
-        },
-        onClick: (e) => e.stopPropagation()
-      },
-        // Header with colored indicator
-        React.createElement('div', {
-          className: 'flex flex-col items-center text-center',
-          style: { padding: '32px 24px 20px' }
-        },
-          // Icon based on type
-          React.createElement('div', {
-            className: 'flex items-center justify-center',
-            style: {
-              width: '56px',
-              height: '56px',
-              borderRadius: '50%',
-              backgroundColor: confirmDialog.type === 'success' ? 'rgba(34, 197, 94, 0.1)' :
-                confirmDialog.type === 'error' ? 'rgba(220, 38, 38, 0.1)' :
-                'rgba(124, 58, 237, 0.12)',
-              marginBottom: '16px'
-            }
-          },
-            React.createElement('span', {
-              style: {
-                fontSize: '24px',
-                color: confirmDialog.type === 'success' ? 'var(--text-success)' :
-                  confirmDialog.type === 'error' ? 'var(--text-danger)' :
-                  'var(--accent-primary)'
-              }
-            }, confirmDialog.type === 'success' ? React.createElement(Icons.Check, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }) :
-               confirmDialog.type === 'error' ? React.createElement(Icons.X, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }) : React.createElement(Icons.Info, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }))
-          ),
-          // Title
-          confirmDialog.title && React.createElement('h3', {
-            style: {
-              fontSize: '16px',
-              fontWeight: '600',
-              color: confirmDialog.type === 'success' ? 'var(--success)' :
-                confirmDialog.type === 'error' ? 'var(--error)' :
-                'var(--text-primary)',
-              marginBottom: '8px'
-            }
-          }, confirmDialog.title),
-          // Message
-          confirmDialog.message && React.createElement('p', {
-            style: {
-              fontSize: '13px',
-              color: 'var(--text-secondary)',
-              lineHeight: '1.5'
-            }
-          }, confirmDialog.message)
-        ),
-        // Footer with button(s) — when actionButton is provided, renders it
-        // alongside OK as a secondary CTA. Used by "No Enabled Source"
-        // / "No Source Found" to surface a one-click jump to resolver
-        // settings (issue #762).
-        React.createElement('div', {
-          style: {
-            padding: '4px 24px 24px',
-            display: 'flex',
-            gap: '8px',
-            flexDirection: confirmDialog.actionButton ? 'row' : 'column',
-          }
-        },
-          confirmDialog.actionButton && React.createElement('button', {
-            onClick: () => {
-              const fn = confirmDialog.actionButton?.onClick;
-              closeConfirmDialog();
-              if (fn) fn();
-            },
-            className: 'transition-colors',
-            style: {
-              flex: 1,
-              padding: '12px 16px',
-              fontSize: '13px',
-              fontWeight: '500',
-              color: 'var(--text-primary)',
-              backgroundColor: 'var(--hover-bg-default)',
-              border: '1px solid var(--border-default)',
-              borderRadius: '10px',
-              cursor: 'pointer'
-            }
-          }, confirmDialog.actionButton.label || 'Action'),
-          React.createElement('button', {
-            onClick: () => {
-              if (confirmDialog.onConfirm) confirmDialog.onConfirm();
-              closeConfirmDialog();
-            },
-            className: 'transition-colors',
-            style: {
-              flex: 1,
-              padding: '12px 16px',
-              fontSize: '13px',
-              fontWeight: '500',
-              color: 'var(--on-accent)',
-              backgroundColor: confirmDialog.type === 'success' ? 'var(--fill-success)' :
-                confirmDialog.type === 'error' ? 'var(--fill-error)' :
-                'var(--accent-fill)',
-              border: 'none',
-              borderRadius: '10px',
-              cursor: 'pointer'
-            }
-          }, confirmDialog.confirmLabel || 'OK')
-        )
-      )
-    ),
+    // The confirm dialog (showConfirmDialog), on the shared Modal (#1385).
+    confirmDialog.show && React.createElement(ConfirmModal, { dialog: confirmDialog, onClose: closeConfirmDialog }),
 
     // Amazon Music sign-in dialog. Opens music.amazon.com inside Parachord.
     amazonManageDialog.show && React.createElement('div', {
