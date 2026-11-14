@@ -15,6 +15,7 @@
 // vendor global; ResolverIcon via the ui-atoms module; icons via the icons
 // module's own destructure below.
 const { ResolverIcon } = require('./ui-atoms');
+const { activateOnKey } = require('../lib/activate-on-key');
 const Icons = require('./icons');
 const { Music, Pause, Play, X } = Icons;
 
@@ -316,7 +317,7 @@ const VirtualizedQueueList = React.memo(({
       onContextMenu: (e) => {
         e.preventDefault();
         if (!isLoading && !isError && window.electron?.contextMenu?.showTrackMenu) {
-          window.electron.contextMenu.showTrackMenu({ type: 'track', track });
+          window.showItemMenu({ type: 'track', track, inQueue: true, queueIndex: index });
         }
       },
       onClick: () => {
@@ -330,7 +331,7 @@ const VirtualizedQueueList = React.memo(({
           handlePlay(track, { fromQueue: true });
           setDroppingFromIndex(null);
         }, 300);
-      },
+      }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
       onMouseEnter: () => {
         if (onTrackHover) onTrackHover(track.id);
       },
@@ -373,8 +374,8 @@ const VirtualizedQueueList = React.memo(({
         }
       },
         listenAlongFriend ? '–' :
-        isLoading ? React.createElement('span', { className: 'animate-spin inline-block' }, '◌') :
-        isError ? '⚠' :
+        isLoading ? React.createElement(Icons.Spinner, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }) :
+        isError ? React.createElement(Icons.AlertTriangle, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }) :
         isCurrentTrack ? '▶' :
         (spinoffMode || playbackContext?.type === 'spinoff' || playbackContext?.type === 'friend')
           ? '··' : String(index + 1).padStart(2, '0')
@@ -403,7 +404,7 @@ const VirtualizedQueueList = React.memo(({
         onClick: (e) => {
           e.stopPropagation();
           if (!isLoading && !isError && track.artist) fetchArtistData(track.artist);
-        }
+        }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey
       },
         isLoading ? `from ${track.sourceDomain || 'unknown'}` :
         isError ? (track.errorMessage || 'Unknown error') :
@@ -496,7 +497,8 @@ const VirtualizedQueueList = React.memo(({
       React.createElement('button', {
         onClick: (e) => {
           e.stopPropagation();
-          removeFromQueue(track.id);
+          // This row only: the same song may be queued more than once.
+          removeFromQueue(track.id, index);
         },
         className: 'flex-shrink-0 p-1 text-gray-500 hover:text-red-400 hover:bg-white/10 rounded transition-colors opacity-0 group-hover:opacity-100',
         title: isLoading ? 'Cancel' : 'Remove from queue'

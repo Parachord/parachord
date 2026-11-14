@@ -123,7 +123,7 @@ describe('wiring', () => {
   test('Settings asks before deleting anything', () => {
     const start = app.indexOf('const handleRemoveMissingFiles = async () => {');
     const body = app.slice(start, app.indexOf('\n  };', start));
-    expect(body.indexOf('window.confirm(')).toBeGreaterThan(-1);
-    expect(body.indexOf('window.confirm(')).toBeLessThan(body.indexOf('bridge.removeMissing('));
+    expect(body.indexOf('await confirmAsync(')).toBeGreaterThan(-1);
+    expect(body.indexOf('await confirmAsync(')).toBeLessThan(body.indexOf('bridge.removeMissing('));
   });
 });

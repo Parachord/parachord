@@ -11,11 +11,18 @@
        compiles plugins and calls their init(). Android sets the same global
        to 'android' from its scrobbler-plugin bridge. -->
   <script>window.__parachordClient = 'desktop';</script>
+  <!-- Open in the saved theme: no light flash before React applies it. -->
+  <script>try { if (window.electron && window.electron.theme && window.electron.theme.initial === 'dark') document.documentElement.classList.add('dark'); } catch (e) {}</script>
   <title>Parachord Desktop</title>
   <link rel="stylesheet" href="vendor/tailwind.css">
   <style>
     /* ========== Design Tokens (CSS Custom Properties) ========== */
     :root {
+      /* Native controls (checkboxes, ranges, selects, scrollbars) and inputs
+         with no background follow the theme. Without it they stayed light in
+         dark mode: white Settings fields with near-white text. */
+      color-scheme: light;
+
       /* Backgrounds */
       --bg-primary: #ffffff;
       --bg-secondary: #f9fafb;
@@ -24,8 +31,10 @@
 
       /* Text */
       --text-primary: #111827;
-      --text-secondary: #6b7280;
-      --text-tertiary: #9ca3af;
+      /* Secondary and tertiary both pass 4.5:1 on white and stay two
+         distinct levels (#1383; tertiary was #9ca3af, 2.5:1). */
+      --text-secondary: #4b5563;
+      --text-tertiary: #6b7280;
 
       /* Borders */
       --border-default: #e5e7eb;
@@ -47,10 +56,48 @@
       --accent-primary-alpha-50: rgba(124, 58, 237, 0.50);
       --accent-primary-alpha-60: rgba(124, 58, 237, 0.60);
 
-      /* Semantic */
+      /* Semantic: fills and icons. Each has a dark value under .dark. */
       --success: #10b981;
       --warning: #f59e0b;
       --error: #ef4444;
+      --info: #2563eb;
+      /* Status text on the page background, at least 4.5:1 in each theme. */
+      --text-success: #15803d;
+      --text-warning: #b45309;
+      --text-danger: #b91c1c;
+      --text-info: #1d4ed8;
+      /* A fill that stays the deep accent in both themes, with white text on
+         it (the "fill-accent" convention in home-sections.js and
+         filter-chips.js). --accent-primary turns light purple in dark mode,
+         where white text on it is 2.72:1. */
+      --accent-fill: #7c3aed;
+      --on-accent: #ffffff;
+      /* Text on --accent-secondary (the SHARED badge). */
+      --accent-secondary-fg: #ffffff;
+      /* Status fills with white text on them (toasts, the Home banner, the
+         confirm dialog's button). The same in both themes, each at least
+         4.5:1 with white; not redefined under .dark. */
+      --fill-info: #2563eb;
+      --fill-success: #15803d;
+      --fill-warning: #b45309;
+      --fill-error: #b91c1c;
+      /* The playbar's sliders. The playbar is dark in both themes, so the
+         accent there is the dark-mode accent in both. */
+      --playbar-accent: #a78bfa;
+      --playbar-accent-hover: #c4b5fd;
+      --accent-fill-hover: #6d28d9;
+      --fill-error-hover: #991b1b;
+      /* Controls and lines with a value per theme (redefined under .dark). */
+      --control-off: #d1d5db;
+      /* A switch's knob: white on both the off track and the accent. */
+      --control-knob: #ffffff;
+      /* Large decorative icons in empty states. */
+      --icon-faint: #d1d5db;
+      /* Image placeholders and skeleton bars. */
+      --placeholder-bg: #e5e7eb;
+      --border-strong: #d1d5db;
+      --border-danger: #fecaca;
+      --border-danger-hover: #fca5a5;
 
       /* Shadows */
       --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
@@ -149,6 +196,8 @@
 
     /* Dark theme overrides */
     .dark {
+      color-scheme: dark;
+
       --bg-primary: #161616;
       --bg-secondary: #1e1e1e;
       --bg-elevated: #252525;
@@ -156,7 +205,8 @@
 
       --text-primary: #f3f4f6;
       --text-secondary: #9ca3af;
-      --text-tertiary: #6b7280;
+      /* 5.6:1 on the page, 4.7:1 on cards (was #6b7280, 3.2:1 on cards). */
+      --text-tertiary: #8b8f97;
 
       --border-default: #2e2e2e;
       --border-light: #252525;
@@ -176,6 +226,24 @@
       --accent-primary-alpha-50: rgba(167, 139, 250, 0.50);
       --accent-primary-alpha-60: rgba(167, 139, 250, 0.60);
 
+      --success: #34d399;
+      --warning: #fbbf24;
+      --error: #f87171;
+      --info: #60a5fa;
+      --text-success: #4ade80;
+      --text-warning: #fbbf24;
+      --text-danger: #f87171;
+      --text-info: #93c5fd;
+      /* --accent-fill and --on-accent stay as in :root. */
+      /* 3.1:1 against cards, and the white knob is 5:1 on it. */
+      --control-off: #707070;
+      --icon-faint: #4b5563;
+      --placeholder-bg: #383838;
+      --border-strong: #404040;
+      --border-danger: rgba(248, 113, 113, 0.35);
+      --border-danger-hover: rgba(248, 113, 113, 0.55);
+      --accent-secondary-fg: #1e1b4b;
+
       --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
       --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.4);
       --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.5);
@@ -184,9 +252,9 @@
       --card-border: #2e2e2e;
       --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.2), 0 4px 12px rgba(0, 0, 0, 0.15);
 
-      --scrollbar-track: rgba(255, 255, 255, 0.05);
-      --scrollbar-thumb: rgba(255, 255, 255, 0.15);
-      --scrollbar-thumb-hover: rgba(255, 255, 255, 0.25);
+      --scrollbar-track: rgba(255, 255, 255, 0.04);
+      --scrollbar-thumb: rgba(255, 255, 255, 0.22);
+      --scrollbar-thumb-hover: rgba(255, 255, 255, 0.35);
 
       --shimmer-from: #252525;
       --shimmer-via: #2e2e2e;
@@ -244,48 +312,34 @@
     /* Tailwind dark mode overrides */
     .dark .text-gray-900 { color: var(--text-primary) !important; }
     .dark .text-gray-800 { color: var(--text-primary) !important; }
-    .dark .text-gray-700 { color: var(--text-secondary) !important; }
-    .dark .text-gray-600 { color: var(--text-secondary) !important; }
     .dark .text-gray-500 { color: var(--text-tertiary) !important; }
     .dark .text-gray-400 { color: var(--text-tertiary) !important; }
     .dark .bg-white { background-color: var(--bg-elevated) !important; }
-    .dark .bg-gray-50 { background-color: var(--bg-secondary) !important; }
+    /* A page's body: the page colour in both themes (white / #161616), so
+       cards (bg-white → --bg-elevated in dark) keep their edges. Page bodies
+       used bg-white, which put every page but Home on the card colour. */
+    .page-bg { background-color: var(--bg-primary); }
+    /* Elements that act as buttons without being one (lib/activate-on-key.js)
+       show where keyboard focus is. */
+    [role="button"]:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
+    /* The shared Modal (components/modal.js): one scrim, one entrance. */
+    .modal-scrim { background-color: rgba(0, 0, 0, 0.45); backdrop-filter: blur(4px); animation: modalScrimIn 150ms ease-out; }
+    .modal-panel { animation: modalPanelIn 150ms cubic-bezier(0, 0, 0.2, 1); }
+    @keyframes modalScrimIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes modalPanelIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+    @media (prefers-reduced-motion: reduce) { .modal-scrim, .modal-panel { animation: none; } }
+    /* Toasts (components/toast.js) rise in. */
+    .toast-enter { animation: toastIn 150ms cubic-bezier(0, 0, 0.2, 1); }
+    @keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+    @media (prefers-reduced-motion: reduce) { .toast-enter { animation: none; } }
     .dark .bg-gray-100 { background-color: var(--bg-inset) !important; }
-    .dark .bg-gray-200 { background-color: #383838 !important; }
-    .dark .bg-gray-300 { background-color: #444444 !important; }
     .dark .bg-gray-800 { background-color: #252525 !important; }
-    .dark .border-gray-200 { border-color: var(--border-default) !important; }
-    .dark .border-gray-300 { border-color: var(--border-default) !important; }
-    .dark .border-gray-100 { border-color: var(--border-light) !important; }
     .dark .shadow-sm { box-shadow: var(--shadow-sm) !important; }
     .dark .shadow-md { box-shadow: var(--shadow-md) !important; }
     .dark .shadow-lg { box-shadow: var(--shadow-lg) !important; }
-    .dark .hover\:bg-gray-200:hover { background-color: rgba(255, 255, 255, 0.1) !important; }
-    .dark .hover\:bg-gray-50\/80:hover { background-color: rgba(255, 255, 255, 0.06) !important; }
     .dark .hover\:bg-gray-100:hover { background-color: rgba(255, 255, 255, 0.08) !important; }
     .dark .hover\:bg-gray-50:hover { background-color: rgba(255, 255, 255, 0.05) !important; }
-    .dark .divide-gray-100 > :not(:last-child) { border-color: var(--border-light) !important; }
-    .dark .bg-purple-50 { background-color: rgba(139, 92, 246, 0.1) !important; }
-    .dark .bg-purple-100 { background-color: rgba(139, 92, 246, 0.15) !important; }
     .dark .text-purple-600 { color: #a78bfa !important; }
-    .dark .text-purple-700 { color: #c4b5fd !important; }
-    .dark .hover\:bg-purple-50:hover { background-color: rgba(139, 92, 246, 0.12) !important; }
-    .dark .hover\:bg-purple-50\/80:hover { background-color: rgba(139, 92, 246, 0.1) !important; }
-    .dark .hover\:bg-purple-100:hover { background-color: rgba(139, 92, 246, 0.2) !important; }
-    .dark .divide-gray-200 > :not(:last-child) { border-color: var(--border-default) !important; }
-    .dark .placeholder-gray-400::placeholder { color: var(--text-tertiary) !important; }
-    .dark .bg-violet-50 { background-color: rgba(139, 92, 246, 0.1) !important; }
-    .dark .bg-violet-100 { background-color: rgba(139, 92, 246, 0.15) !important; }
-    .dark .text-violet-500 { color: #a78bfa !important; }
-    .dark .text-violet-600 { color: #a78bfa !important; }
-    .dark .border-violet-100 { border-color: rgba(139, 92, 246, 0.2) !important; }
-    .dark .border-violet-200 { border-color: rgba(139, 92, 246, 0.25) !important; }
-    .dark .border-violet-300 { border-color: rgba(139, 92, 246, 0.3) !important; }
-    .dark .hover\:border-violet-200:hover { border-color: rgba(139, 92, 246, 0.3) !important; }
-    .dark .hover\:bg-violet-50:hover { background-color: rgba(139, 92, 246, 0.12) !important; }
-    .dark .hover\:text-violet-600:hover { color: #a78bfa !important; }
-    .dark .hover\:text-gray-700:hover { color: var(--text-primary) !important; }
-    .dark .hover\:text-gray-600:hover { color: var(--text-secondary) !important; }
 
     /* ========== End Design Tokens ========== */
 
@@ -351,23 +405,24 @@
       -webkit-app-region: no-drag;
     }
 
-    /* Scrollbar styling - light theme */
+    /* Page scrollbars follow the theme (--scrollbar-*). They were black at
+       15% in both themes, nearly invisible on dark pages. */
     .scrollable-content::-webkit-scrollbar {
       width: 12px;
     }
 
     .scrollable-content::-webkit-scrollbar-track {
-      background: rgba(0, 0, 0, 0.03);
+      background: var(--scrollbar-track);
       border-radius: 10px;
     }
 
     .scrollable-content::-webkit-scrollbar-thumb {
-      background: rgba(0, 0, 0, 0.15);
+      background: var(--scrollbar-thumb);
       border-radius: 10px;
     }
 
     .scrollable-content::-webkit-scrollbar-thumb:hover {
-      background: rgba(0, 0, 0, 0.25);
+      background: var(--scrollbar-thumb-hover);
     }
 
     /* Scrollbar styling - dark theme (for queue drawer) */
@@ -683,14 +738,18 @@
       animation-play-state: paused;
     }
 
-    /* Queue track drop animation - track slides down into player */
+    /* Queue track drop animation - track slides down into player.
+       Both queue keyframes animate `translate`, not `transform`: a virtual
+       row is positioned with an inline transform: translateY(start), and an
+       animated transform replaced it, so the row jumped to the top of the
+       list while it animated (audit bug 13). `translate` stacks on top. */
     @keyframes queue-track-drop {
       0% {
-        transform: translateY(0);
+        translate: 0 0;
         opacity: 1;
       }
       100% {
-        transform: translateY(40px);
+        translate: 0 40px;
         opacity: 0;
       }
     }
@@ -703,19 +762,19 @@
     /* Queue track insert animation - track slides in from top with glow */
     @keyframes queue-track-insert {
       0% {
-        transform: translateY(-20px);
+        translate: 0 -20px;
         opacity: 0;
         background-color: rgba(168, 85, 247, 0.6);
         box-shadow: 0 0 20px rgba(168, 85, 247, 0.8), inset 0 0 20px rgba(168, 85, 247, 0.3);
       }
       50% {
-        transform: translateY(0);
+        translate: 0 0;
         opacity: 1;
         background-color: rgba(168, 85, 247, 0.5);
         box-shadow: 0 0 15px rgba(168, 85, 247, 0.6), inset 0 0 15px rgba(168, 85, 247, 0.2);
       }
       100% {
-        transform: translateY(0);
+        translate: 0 0;
         opacity: 1;
         background-color: transparent;
         box-shadow: none;
@@ -909,14 +968,14 @@
       width: 12px;
       height: 12px;
       border-radius: 50%;
-      background: #3b82f6;
+      background: var(--playbar-accent);
       margin-top: -4px;
       cursor: pointer;
       transition: background-color 0.15s ease;
     }
 
     .progress-slider:hover::-webkit-slider-thumb {
-      background: #60a5fa;
+      background: var(--playbar-accent-hover);
     }
 
     .progress-slider:disabled::-webkit-slider-thumb {
@@ -947,13 +1006,13 @@
       width: 12px;
       height: 12px;
       border-radius: 50%;
-      background: #3b82f6;
+      background: var(--playbar-accent);
       margin-top: -4px;
       cursor: pointer;
     }
 
     .volume-slider:hover::-webkit-slider-thumb {
-      background: #60a5fa;
+      background: var(--playbar-accent-hover);
     }
 
     .volume-slider.disabled::-webkit-slider-thumb {
@@ -965,7 +1024,9 @@
       background: #374151;
     }
 
-    /* Release card hover lift animation */
+    /* Release card hover lift animation. The hover shadow is !important
+       because cards set their resting shadow inline (var(--card-shadow)),
+       which otherwise wins. */
     .release-card {
       transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1),
                   box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1);
@@ -974,7 +1035,7 @@
     .release-card:hover {
       transform: translateY(-6px);
       box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.15),
-                  0 8px 16px -8px rgba(0, 0, 0, 0.1);
+                  0 8px 16px -8px rgba(0, 0, 0, 0.1) !important;
     }
 
     .release-card:active {
@@ -1019,9 +1080,20 @@
       }
     }
 
+    /* `backwards`, not `forwards`: the from-state (hidden, 12px down) covers
+       the stagger delay, and the card is released when the animation ends.
+       With `forwards` the finished animation kept holding `transform`, which
+       beats every normal rule, so .release-card:hover could never lift the
+       card (design audit bug 12). */
     .card-fade-up {
-      animation: cardFadeUp 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-      opacity: 0;
+      animation: cardFadeUp 0.4s cubic-bezier(0.4, 0, 0.2, 1) backwards;
+    }
+
+    /* Concert rows (Concerts page, artist On Tour) stagger in with this. It
+       was referenced but never defined, so they appeared all at once. */
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
     }
 
     /* Release type badge styling */
@@ -1147,7 +1219,26 @@
           <path d="M1039.72 33.8887C1042.39 35.348 1042.43 39.1612 1039.8 40.6846L984.893 72.4893C982.313 73.9831 979.08 72.1478 979.039 69.167L978.192 6.85254C978.152 3.86673 981.345 1.94449 983.965 3.37793L1039.72 33.8887Z" fill="#E12949" stroke="white" stroke-width="0.2"/>
         </g>
     </svg>
+    <!-- Shown by the watchdog below if the app never finishes loading. -->
+    <div id="parachord-splash-stuck" role="alert" style="position:absolute;left:0;right:0;bottom:15%;display:none;flex-direction:column;align-items:center;gap:12px;font-size:13px;color:var(--text-secondary);">
+      <span>Parachord is taking longer than usual to start.</span>
+      <button type="button" onclick="location.reload()" style="font:inherit;font-weight:500;padding:8px 16px;border-radius:8px;border:1px solid var(--border-default);background:var(--card-bg);color:var(--text-primary);cursor:pointer;">Reload</button>
+    </div>
   </div>
+  <!--
+    Splash watchdog. The app removes the splash once its saved data has
+    loaded; if the renderer script fails before that, nothing ever did, and
+    the wordmark pulsed forever. After 20 seconds with the splash still up,
+    say so and offer Reload. Plain script, so it runs even when the app
+    bundle does not.
+  -->
+  <script>
+    setTimeout(function () {
+      var splash = document.getElementById('parachord-splash');
+      var stuck = document.getElementById('parachord-splash-stuck');
+      if (splash && stuck && !splash.classList.contains('fade-out')) stuck.style.display = 'flex';
+    }, 20000);
+  </script>
 
   <!-- React mount point. Splash overlay above (#parachord-splash) covers
        any partial paint until the Parachord component removes it. -->

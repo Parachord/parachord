@@ -19,6 +19,8 @@
 // from props under their old names.
 
 const Icons = require('./icons');
+const { SortMenu } = require('./sort-menu');
+const { activateOnKey } = require('../lib/activate-on-key');
 const { ResolverIcon } = require('./ui-atoms');
 const { SectionHeader, SECTION_HEADER_GAP } = require('./section-header');
 const { artistOpenOptions, creditOpenOptions, trackArtistOpenOptions } = require('../lib/artist-open');
@@ -121,7 +123,7 @@ const SearchPage = React.memo(function SearchPage(props) {
   return searchDetailCategory ?
         // DETAIL VIEW - Similar structure to artist page with collapsible header
         React.createElement('div', {
-          className: 'flex-1 flex flex-col bg-white',
+          className: 'flex-1 flex flex-col page-bg',
           style: { overflow: 'hidden' }
         },
           // Header section (outside scrollable area)
@@ -147,9 +149,7 @@ const SearchPage = React.memo(function SearchPage(props) {
             },
               // Left: Search icon + query in quotes
               React.createElement('div', { className: 'flex items-center gap-3 flex-shrink-0 mr-6' },
-                React.createElement('svg', { className: 'w-5 h-5 text-white/70', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
-                ),
+                React.createElement(Icons.Search, { className: 'w-5 h-5 text-white/70' }),
                 React.createElement('span', {
                   className: 'text-2xl font-light text-white uppercase',
                   style: { textShadow: '0 2px 10px rgba(0,0,0,0.3)', letterSpacing: '0.2em' }
@@ -183,7 +183,7 @@ const SearchPage = React.memo(function SearchPage(props) {
           // Scrollable content area - single column layout with grids/lists
           React.createElement('div', {
             ref: handleSearchScrollContainerRef,
-            className: 'flex-1 overflow-y-auto bg-white scrollable-content',
+            className: 'flex-1 overflow-y-auto page-bg scrollable-content',
             onScroll: handleSearchDetailScroll
           },
             // Sticky filter bar for Artists (sort dropdown + search on right like other pages)
@@ -192,55 +192,15 @@ const SearchPage = React.memo(function SearchPage(props) {
               style: { backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
             },
               // Sort dropdown
-              React.createElement('div', { className: 'relative' },
-                React.createElement('button', {
-                  onClick: (e) => { e.stopPropagation(); setSearchResultsSortDropdownOpen(!searchResultsSortDropdownOpen); },
-                  className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors no-drag'
-                },
-                  React.createElement('span', null,
-                    searchResultsSort === 'relevance' ? 'Relevance' :
-                    searchResultsSort === 'name' ? 'Name' : 'Sort'
-                  ),
-                  React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
-                  )
-                ),
-                searchResultsSortDropdownOpen && React.createElement('div', {
-                  className: 'absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-gray-200'
-                },
-                  [
+              React.createElement(SortMenu, { value: searchResultsSort, options: [
                     { value: 'relevance', label: 'Relevance' },
                     { value: 'name', label: 'Name' }
-                  ].map(option =>
-                    React.createElement('button', {
-                      key: option.value,
-                      onClick: (e) => {
-                        e.stopPropagation();
-                        setSearchResultsSort(option.value);
-                        setSearchResultsSortDropdownOpen(false);
-                      },
-                      className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between no-drag ${
-                        searchResultsSort === option.value ? 'text-gray-900 font-medium' : 'text-gray-600'
-                      }`
-                    },
-                      option.label,
-                      searchResultsSort === option.value && React.createElement('svg', {
-                        className: 'w-4 h-4',
-                        fill: 'none',
-                        viewBox: '0 0 24 24',
-                        stroke: 'currentColor'
-                      },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
-                      )
-                    )
-                  )
-                )
-              ),
+                  ], onChange: setSearchResultsSort, label: "Sort" }),
               React.createElement('div', { className: 'flex-1' }),
               // Search/filter on right
               React.createElement('div', { className: 'flex items-center' },
                 searchResultsFilterOpen ?
-                  React.createElement('div', { className: 'flex items-center border border-gray-300 rounded-full px-3 py-[5px] filter-pill' },
+                  React.createElement('div', { className: 'flex items-center border border-line-strong rounded-full px-3 py-[5px] filter-pill' },
                     React.createElement('input', {
                       type: 'text',
                       value: searchResultsFilter,
@@ -248,26 +208,22 @@ const SearchPage = React.memo(function SearchPage(props) {
                       onBlur: () => { if (!searchResultsFilter.trim()) setSearchResultsFilterOpen(false); },
                       autoFocus: true,
                       placeholder: 'Filter...',
-                      className: 'bg-transparent text-gray-700 text-sm placeholder-gray-400 outline-none no-drag',
+                      className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none no-drag',
                       style: { width: '150px' }
                     }),
                     searchResultsFilter && React.createElement('button', {
                       onClick: () => { setSearchResultsFilter(''); setSearchResultsFilterOpen(false); },
-                      className: 'ml-2 text-gray-400 hover:text-gray-600 no-drag'
+                      className: 'ml-2 text-ink-tertiary hover:text-ink-secondary no-drag'
                     },
-                      React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
-                      )
+                      React.createElement(Icons.X, { className: 'w-4 h-4' })
                     )
                   )
                 :
                   React.createElement('button', {
                     onClick: () => setSearchResultsFilterOpen(true),
-                    className: 'p-1.5 text-gray-400 hover:text-gray-600 transition-colors no-drag'
+                    className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors no-drag'
                   },
-                    React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
-                    )
+                    React.createElement(Icons.Search, { className: 'w-5 h-5' })
                   )
               )
             ),
@@ -278,61 +234,18 @@ const SearchPage = React.memo(function SearchPage(props) {
               style: { backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
             },
               // Sort dropdown
-              React.createElement('div', { className: 'relative' },
-                React.createElement('button', {
-                  onClick: (e) => { e.stopPropagation(); setSearchResultsSortDropdownOpen(!searchResultsSortDropdownOpen); },
-                  className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors no-drag'
-                },
-                  React.createElement('span', null,
-                    searchResultsSort === 'relevance' ? 'Relevance' :
-                    searchResultsSort === 'title' ? 'Title' :
-                    searchResultsSort === 'artist' ? 'Artist' :
-                    searchResultsSort === 'year-desc' ? 'Year (Newest)' :
-                    searchResultsSort === 'year-asc' ? 'Year (Oldest)' : 'Sort'
-                  ),
-                  React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
-                  )
-                ),
-                searchResultsSortDropdownOpen && React.createElement('div', {
-                  className: 'absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-gray-200'
-                },
-                  [
+              React.createElement(SortMenu, { value: searchResultsSort, options: [
                     { value: 'relevance', label: 'Relevance' },
                     { value: 'title', label: 'Title' },
                     { value: 'artist', label: 'Artist' },
                     { value: 'year-desc', label: 'Year (Newest)' },
                     { value: 'year-asc', label: 'Year (Oldest)' }
-                  ].map(option =>
-                    React.createElement('button', {
-                      key: option.value,
-                      onClick: (e) => {
-                        e.stopPropagation();
-                        setSearchResultsSort(option.value);
-                        setSearchResultsSortDropdownOpen(false);
-                      },
-                      className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between no-drag ${
-                        searchResultsSort === option.value ? 'text-gray-900 font-medium' : 'text-gray-600'
-                      }`
-                    },
-                      option.label,
-                      searchResultsSort === option.value && React.createElement('svg', {
-                        className: 'w-4 h-4',
-                        fill: 'none',
-                        viewBox: '0 0 24 24',
-                        stroke: 'currentColor'
-                      },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
-                      )
-                    )
-                  )
-                )
-              ),
+                  ], onChange: setSearchResultsSort, label: "Sort" }),
               React.createElement('div', { className: 'flex-1' }),
               // Search/filter
               React.createElement('div', { className: 'flex items-center' },
                 searchResultsFilterOpen ?
-                  React.createElement('div', { className: 'flex items-center border border-gray-300 rounded-full px-3 py-[5px] filter-pill' },
+                  React.createElement('div', { className: 'flex items-center border border-line-strong rounded-full px-3 py-[5px] filter-pill' },
                     React.createElement('input', {
                       type: 'text',
                       value: searchResultsFilter,
@@ -340,26 +253,22 @@ const SearchPage = React.memo(function SearchPage(props) {
                       onBlur: () => { if (!searchResultsFilter.trim()) setSearchResultsFilterOpen(false); },
                       autoFocus: true,
                       placeholder: 'Filter...',
-                      className: 'bg-transparent text-gray-700 text-sm placeholder-gray-400 outline-none no-drag',
+                      className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none no-drag',
                       style: { width: '150px' }
                     }),
                     searchResultsFilter && React.createElement('button', {
                       onClick: () => { setSearchResultsFilter(''); setSearchResultsFilterOpen(false); },
-                      className: 'ml-2 text-gray-400 hover:text-gray-600 no-drag'
+                      className: 'ml-2 text-ink-tertiary hover:text-ink-secondary no-drag'
                     },
-                      React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
-                      )
+                      React.createElement(Icons.X, { className: 'w-4 h-4' })
                     )
                   )
                 :
                   React.createElement('button', {
                     onClick: () => setSearchResultsFilterOpen(true),
-                    className: 'p-1.5 text-gray-400 hover:text-gray-600 transition-colors no-drag'
+                    className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors no-drag'
                   },
-                    React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
-                    )
+                    React.createElement(Icons.Search, { className: 'w-5 h-5' })
                   )
               )
             ),
@@ -370,61 +279,18 @@ const SearchPage = React.memo(function SearchPage(props) {
               style: { backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
             },
               // Sort dropdown
-              React.createElement('div', { className: 'relative' },
-                React.createElement('button', {
-                  onClick: (e) => { e.stopPropagation(); setSearchResultsSortDropdownOpen(!searchResultsSortDropdownOpen); },
-                  className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors no-drag'
-                },
-                  React.createElement('span', null,
-                    searchResultsSort === 'relevance' ? 'Relevance' :
-                    searchResultsSort === 'title' ? 'Title' :
-                    searchResultsSort === 'artist' ? 'Artist' :
-                    searchResultsSort === 'duration-asc' ? 'Duration (Short)' :
-                    searchResultsSort === 'duration-desc' ? 'Duration (Long)' : 'Sort'
-                  ),
-                  React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
-                  )
-                ),
-                searchResultsSortDropdownOpen && React.createElement('div', {
-                  className: 'absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-gray-200'
-                },
-                  [
+              React.createElement(SortMenu, { value: searchResultsSort, options: [
                     { value: 'relevance', label: 'Relevance' },
                     { value: 'title', label: 'Title' },
                     { value: 'artist', label: 'Artist' },
                     { value: 'duration-asc', label: 'Duration (Short)' },
                     { value: 'duration-desc', label: 'Duration (Long)' }
-                  ].map(option =>
-                    React.createElement('button', {
-                      key: option.value,
-                      onClick: (e) => {
-                        e.stopPropagation();
-                        setSearchResultsSort(option.value);
-                        setSearchResultsSortDropdownOpen(false);
-                      },
-                      className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between no-drag ${
-                        searchResultsSort === option.value ? 'text-gray-900 font-medium' : 'text-gray-600'
-                      }`
-                    },
-                      option.label,
-                      searchResultsSort === option.value && React.createElement('svg', {
-                        className: 'w-4 h-4',
-                        fill: 'none',
-                        viewBox: '0 0 24 24',
-                        stroke: 'currentColor'
-                      },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
-                      )
-                    )
-                  )
-                )
-              ),
+                  ], onChange: setSearchResultsSort, label: "Sort" }),
               React.createElement('div', { className: 'flex-1' }),
               // Search/filter
               React.createElement('div', { className: 'flex items-center' },
                 searchResultsFilterOpen ?
-                  React.createElement('div', { className: 'flex items-center border border-gray-300 rounded-full px-3 py-[5px] filter-pill' },
+                  React.createElement('div', { className: 'flex items-center border border-line-strong rounded-full px-3 py-[5px] filter-pill' },
                     React.createElement('input', {
                       type: 'text',
                       value: searchResultsFilter,
@@ -432,26 +298,22 @@ const SearchPage = React.memo(function SearchPage(props) {
                       onBlur: () => { if (!searchResultsFilter.trim()) setSearchResultsFilterOpen(false); },
                       autoFocus: true,
                       placeholder: 'Filter...',
-                      className: 'bg-transparent text-gray-700 text-sm placeholder-gray-400 outline-none no-drag',
+                      className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none no-drag',
                       style: { width: '150px' }
                     }),
                     searchResultsFilter && React.createElement('button', {
                       onClick: () => { setSearchResultsFilter(''); setSearchResultsFilterOpen(false); },
-                      className: 'ml-2 text-gray-400 hover:text-gray-600 no-drag'
+                      className: 'ml-2 text-ink-tertiary hover:text-ink-secondary no-drag'
                     },
-                      React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
-                      )
+                      React.createElement(Icons.X, { className: 'w-4 h-4' })
                     )
                   )
                 :
                   React.createElement('button', {
                     onClick: () => setSearchResultsFilterOpen(true),
-                    className: 'p-1.5 text-gray-400 hover:text-gray-600 transition-colors no-drag'
+                    className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors no-drag'
                   },
-                    React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
-                    )
+                    React.createElement(Icons.Search, { className: 'w-5 h-5' })
                   )
               )
             ),
@@ -494,12 +356,12 @@ const SearchPage = React.memo(function SearchPage(props) {
                           }
                         }));
                       },
-                      onClick: () => fetchArtistData(artist.name, artistOpenOptions(artist)),
+                      onClick: () => fetchArtistData(artist.name, artistOpenOptions(artist)), role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
                       onContextMenu: (e) => {
                         e.preventDefault();
                         e.stopPropagation();
                         if (window.electron?.contextMenu?.showTrackMenu) {
-                          window.electron.contextMenu.showTrackMenu({
+                          window.showItemMenu({
                             type: 'artist',
                             artist: {
                               id: slug(artist.name || 'unknown'),
@@ -562,11 +424,11 @@ const SearchPage = React.memo(function SearchPage(props) {
                                 showToast(`No top tracks found for ${artist.name}`, 'error');
                               }
                             },
-                            className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
+                            className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
                             style: { border: 'none', cursor: 'pointer' },
                             title: 'Play top 10 tracks'
                           },
-                            React.createElement(PlayTop10Icon, { size: 26, className: 'text-gray-800' })
+                            React.createElement(PlayTop10Icon, { size: 26, className: 'text-ink-primary' })
                           ),
                           // Add top 10 to Queue button
                           React.createElement('button', {
@@ -593,7 +455,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       // Artist name section
                       React.createElement('div', { className: 'p-3' },
                         React.createElement('p', {
-                          className: 'font-medium text-gray-900 truncate text-sm transition-colors'
+                          className: 'font-medium text-ink-primary truncate text-sm transition-colors'
                         }, artist.name)
                       )
                     );
@@ -606,7 +468,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                 ? searchResults.artists.filter(a => a.name?.toLowerCase().includes(searchResultsFilter.toLowerCase())).length === 0
                 : searchResults.artists.length === 0
               ) && React.createElement('div', {
-                className: 'text-center py-12 text-gray-400'
+                className: 'text-center py-12 text-ink-tertiary'
               }, searchResultsFilter ? 'No artists match your filter.' : 'No artists found.'),
 
               // Albums grid (like Critical Darlings)
@@ -672,7 +534,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                         }));
                       },
                       onMouseEnter: () => prefetchSearchAlbumTracks(album),
-                      onClick: () => handleAlbumClick(album),
+                      onClick: () => handleAlbumClick(album), role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
                       onContextMenu: (e) => {
                         e.preventDefault();
                         e.stopPropagation();
@@ -685,7 +547,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                         };
                         const prefetched = prefetchedReleasesRef.current[album.id];
                         const isLoading = prefetchInProgress.has(album.id);
-                        window.electron.contextMenu.showTrackMenu({
+                        window.showItemMenu({
                           type: 'release',
                           name: album.title,
                           album: albumData,
@@ -738,9 +600,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                             onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
                             title: 'Add to Playlist'
                           },
-                            React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
-                            )
+                            React.createElement(Icons.Plus, { className: 'w-5 h-5' })
                           ),
                           // Play button (center, larger)
                           React.createElement('button', {
@@ -759,10 +619,10 @@ const SearchPage = React.memo(function SearchPage(props) {
                                 setTrackLoading(false);
                               }
                             },
-                            className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
+                            className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
                             title: 'Play'
                           },
-                            React.createElement(Play, { size: 22, className: 'text-gray-800 ml-0.5' })
+                            React.createElement(Play, { size: 22, className: 'text-ink-primary ml-0.5' })
                           ),
                           // Add to Queue button
                           React.createElement('button', {
@@ -798,7 +658,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       }, album.title),
                       // Artist name - clickable
                       React.createElement('div', {
-                        className: 'truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
+                        className: 'truncate hover:text-accent hover:underline cursor-pointer transition-colors',
                         style: {
                           fontSize: '11px',
                           color: 'var(--text-secondary)',
@@ -807,7 +667,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                         onClick: (e) => {
                           e.stopPropagation();
                           fetchArtistData(album['artist-credit']?.[0]?.name, creditOpenOptions(album['artist-credit']));
-                        }
+                        }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey
                       }, album['artist-credit']?.[0]?.name || 'Unknown Artist')
                     );
                   })
@@ -824,7 +684,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                   : searchResults.albums;
                 return filteredAlbums.length === 0;
               })() && React.createElement('div', {
-                className: 'text-center py-12 text-gray-400'
+                className: 'text-center py-12 text-ink-tertiary'
               }, searchResultsFilter ? 'No albums match your filter.' : 'No albums found.'),
 
               // Tracks list (like Recommended Songs)
@@ -894,7 +754,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                     },
                     className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${
                       isResolving ? 'opacity-60' : ''
-                    } ${isNowPlaying && isPlaying ? 'bg-purple-50' : 'hover:bg-gray-50/80'}`,
+                    } ${isNowPlaying && isPlaying ? 'bg-accent-tint' : 'hover:bg-surface-hover'}`,
                     style: {
                       borderRadius: '8px',
                       marginBottom: '2px'
@@ -904,11 +764,11 @@ const SearchPage = React.memo(function SearchPage(props) {
                       const context = { type: 'search', name: searchQuery };
                       setQueueWithContext(tracksAfter, context);
                       handlePlay(track);
-                    },
+                    }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
                     onContextMenu: (e) => {
                       e.preventDefault();
                       if (window.electron?.contextMenu?.showTrackMenu) {
-                        window.electron.contextMenu.showTrackMenu({
+                        window.showItemMenu({
                           type: 'track',
                           track: track
                         });
@@ -942,7 +802,7 @@ const SearchPage = React.memo(function SearchPage(props) {
 
                     // Artist name - flexible column, clickable
                     React.createElement('span', {
-                      className: 'truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
+                      className: 'truncate hover:text-accent hover:underline cursor-pointer transition-colors',
                       style: {
                         flex: '0.7 1 0',
                         minWidth: 0,
@@ -952,12 +812,12 @@ const SearchPage = React.memo(function SearchPage(props) {
                       onClick: (e) => {
                         e.stopPropagation();
                         fetchArtistData(track.artist, trackArtistOpenOptions(track));
-                      }
+                      }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey
                     }, track.artist),
 
                     // Album name - flexible column, clickable
                     track.album ? React.createElement('span', {
-                      className: 'truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
+                      className: 'truncate hover:text-accent hover:underline cursor-pointer transition-colors',
                       style: {
                         flex: '0.5 1 0',
                         minWidth: 0,
@@ -967,7 +827,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       onClick: (e) => {
                         e.stopPropagation();
                         openChartsAlbum({ artist: track.artist, title: track.album, albumArt: track.albumArt });
-                      }
+                      }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey
                     }, track.album) : React.createElement('span', {
                       className: 'truncate',
                       style: {
@@ -1070,7 +930,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                   : searchResults.tracks;
                 return filteredTracks.length === 0;
               })() && React.createElement('div', {
-                className: 'text-center py-12 text-gray-400'
+                className: 'text-center py-12 text-ink-tertiary'
               }, searchResultsFilter ? 'No songs match your filter.' : 'No songs found.'),
 
               // Playlists grid with cards
@@ -1089,7 +949,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       boxShadow: 'var(--card-shadow)',
                       animationDelay: `${animationDelay}ms`
                     },
-                    onClick: () => handlePlaylistClick(playlist)
+                    onClick: () => handlePlaylistClick(playlist), role: 'button', tabIndex: 0, onKeyDown: activateOnKey
                   },
                     // Playlist icon square with hover overlay
                     React.createElement('div', {
@@ -1101,7 +961,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                         className: 'absolute inset-0 flex items-center justify-center'
                       },
                         React.createElement('svg', {
-                          className: 'w-12 h-12 text-gray-500',
+                          className: 'w-12 h-12 text-ink-tertiary',
                           fill: 'none',
                           viewBox: '0 0 24 24',
                           stroke: 'currentColor',
@@ -1142,9 +1002,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                           onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
                           title: 'Add to Playlist'
                         },
-                          React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                            React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
-                          )
+                          React.createElement(Icons.Plus, { className: 'w-5 h-5' })
                         ),
                         // Play button (center, larger)
                         React.createElement('button', {
@@ -1167,10 +1025,10 @@ const SearchPage = React.memo(function SearchPage(props) {
                               setTrackLoading(false);
                             }
                           },
-                          className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
+                          className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
                           title: 'Play'
                         },
-                          React.createElement(Play, { size: 22, className: 'text-gray-800 ml-0.5' })
+                          React.createElement(Play, { size: 22, className: 'text-ink-primary ml-0.5' })
                         ),
                         // Add to Queue button
                         React.createElement('button', {
@@ -1226,7 +1084,7 @@ const SearchPage = React.memo(function SearchPage(props) {
       :
         // MAIN VIEW - clean white layout matching reference
         React.createElement('div', {
-          className: 'h-full overflow-y-auto bg-white'
+          className: 'h-full overflow-y-auto page-bg'
         },
           // Header bar with SEARCH title and CLOSE button
           React.createElement('div', {
@@ -1260,7 +1118,7 @@ const SearchPage = React.memo(function SearchPage(props) {
               }
             },
               'CLOSE',
-              React.createElement('span', { style: { color: 'var(--text-tertiary)' } }, '×')
+              React.createElement('span', { style: { color: 'var(--text-tertiary)' } }, React.createElement(Icons.X, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }))
             )
           ),
 
@@ -1286,7 +1144,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                 }
               },
               placeholder: '',
-              className: 'w-full text-6xl font-extralight text-gray-900 bg-transparent border-none outline-none tracking-tight',
+              className: 'w-full text-6xl font-extralight text-ink-primary bg-transparent border-none outline-none tracking-tight',
               style: {
                 caretColor: 'var(--text-tertiary)',
                 fontFamily: 'var(--font-sans)'
@@ -1303,11 +1161,11 @@ const SearchPage = React.memo(function SearchPage(props) {
               // Header with clear all button
               React.createElement('div', { className: 'flex items-center justify-between' },
                 React.createElement('h3', {
-                  className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider'
+                  className: 'text-xs font-semibold text-ink-tertiary uppercase tracking-wider'
                 }, 'Recent Searches'),
                 React.createElement('button', {
                   onClick: () => clearSearchHistory(),
-                  className: 'text-xs text-gray-400 hover:text-red-500 transition-colors'
+                  className: 'text-xs text-ink-tertiary hover:text-ink-danger transition-colors'
                 }, 'Clear All')
               ),
               // History list
@@ -1347,20 +1205,8 @@ const SearchPage = React.memo(function SearchPage(props) {
             ) :
             // No history yet - show placeholder
             React.createElement('div', { className: 'text-center py-12' },
-              React.createElement('svg', {
-                className: 'w-12 h-12 mx-auto text-gray-300 mb-4',
-                fill: 'none',
-                stroke: 'currentColor',
-                viewBox: '0 0 24 24'
-              },
-                React.createElement('path', {
-                  strokeLinecap: 'round',
-                  strokeLinejoin: 'round',
-                  strokeWidth: 1.5,
-                  d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z'
-                })
-              ),
-              React.createElement('p', { className: 'text-gray-400 text-sm' }, 'Start typing to search')
+              React.createElement(Icons.Search, { className: 'w-12 h-12 mx-auto text-ink-faint mb-4', strokeWidth: 1.5 }),
+              React.createElement('p', { className: 'text-ink-tertiary text-sm' }, 'Start typing to search')
             )
           ) :
         // Skeletons only until the first results land: each category shows as
@@ -1384,7 +1230,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                 ...Array(getItemsPerRow(160)).fill(null).map((_, i) =>
                   React.createElement('div', {
                     key: `artist-skeleton-${i}`,
-                    className: 'bg-white rounded-lg overflow-hidden'
+                    className: 'bg-surface-card rounded-lg overflow-hidden'
                   },
                     React.createElement('div', {
                       className: 'aspect-square shimmer-light animate-shimmer',
@@ -1466,7 +1312,7 @@ const SearchPage = React.memo(function SearchPage(props) {
         searchResults.tracks.length === 0 &&
         searchResults.playlists.length === 0 &&
         filteredHistoryMatches.length === 0 ?
-          React.createElement('div', { className: 'text-center py-12 text-gray-400' },
+          React.createElement('div', { className: 'text-center py-12 text-ink-tertiary' },
             `No results found for "${searchQuery}"`
           )
         :
@@ -1474,12 +1320,12 @@ const SearchPage = React.memo(function SearchPage(props) {
         React.createElement('div', { className: 'space-y-10' },
           // Quick suggestions from search history (shown instantly while loading)
           filteredHistoryMatches.length > 0 && React.createElement('div', { className: 'mb-6' },
-            React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3' }, 'SUGGESTIONS'),
+            React.createElement('h3', { className: 'text-xs font-semibold text-ink-tertiary uppercase tracking-wider mb-3' }, 'SUGGESTIONS'),
             React.createElement('div', { className: 'flex flex-wrap gap-2' },
               ...filteredHistoryMatches.map((entry, i) =>
                 React.createElement('button', {
                   key: `suggestion-${i}-${entry.query}`,
-                  className: 'flex items-center gap-2 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-full text-sm text-gray-700 transition-colors',
+                  className: 'flex items-center gap-2 px-3 py-1.5 bg-surface-inset hover:bg-surface-hover rounded-full text-sm text-ink-secondary transition-colors',
                   onClick: () => {
                     if (entry.selectedResult) {
                       // Navigate directly to the result
@@ -1563,7 +1409,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                   },
                   onContextMenu: (artist) => {
                     if (window.electron?.contextMenu?.showTrackMenu) {
-                      window.electron.contextMenu.showTrackMenu({
+                      window.showItemMenu({
                         type: 'artist',
                         artist: {
                           id: slug(artist.name || 'unknown'),
@@ -1618,7 +1464,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       imageUrl: track.albumArt || cachedArt
                     });
                     handlePlay(track);
-                  },
+                  }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
                   onDragStart: (e) => {
                     e.dataTransfer.effectAllowed = 'copy';
                     e.dataTransfer.setData('text/plain', JSON.stringify({
@@ -1638,7 +1484,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                     e.preventDefault();
                     e.stopPropagation();
                     if (window.electron?.contextMenu?.showTrackMenu) {
-                      window.electron.contextMenu.showTrackMenu({
+                      window.showItemMenu({
                         type: 'track',
                         track: {
                           id: track.id,
@@ -1696,9 +1542,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                         onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
                         title: 'Add to Playlist'
                       },
-                        React.createElement('svg', { className: 'w-3.5 h-3.5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
-                        )
+                        React.createElement(Icons.Plus, { className: 'w-3.5 h-3.5' })
                       ),
                       // Play button (center, larger)
                       React.createElement('button', {
@@ -1714,11 +1558,11 @@ const SearchPage = React.memo(function SearchPage(props) {
                           });
                           handlePlay(track);
                         },
-                        className: 'w-9 h-9 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
+                        className: 'w-9 h-9 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
                         style: { border: 'none', cursor: 'pointer' },
                         title: 'Play'
                       },
-                        React.createElement(Play, { size: 16, className: 'text-gray-800 ml-0.5' })
+                        React.createElement(Play, { size: 16, className: 'text-ink-primary ml-0.5' })
                       ),
                       // Add to Queue button
                       React.createElement('button', {
@@ -1743,20 +1587,14 @@ const SearchPage = React.memo(function SearchPage(props) {
                       className: 'absolute bottom-1.5 right-1.5 flex gap-1 transition-opacity group-hover/art:opacity-0'
                     },
                       ...Object.keys(track.sources).filter(id => !track.sources[id]?.noMatch).slice(0, 4).map(source => {
-                        const colors = {
-                          spotify: '#1DB954',
-                          youtube: '#FF0000',
-                          bandcamp: '#1DA0C3',
-                          applemusic: '#FA243C',
-                          localfiles: '#6B7280'
-                        };
+                        const sourceResolver = (allResolvers || []).find(r => r.id === source);
                         return React.createElement('div', {
                           key: source,
                           style: {
                             width: '7px',
                             height: '7px',
                             borderRadius: '50%',
-                            backgroundColor: colors[source] || '#9CA3AF',
+                            backgroundColor: (sourceResolver && sourceResolver.color) || 'var(--text-tertiary)',
                             boxShadow: '0 1px 2px rgba(0,0,0,0.3)'
                           }
                         });
@@ -1816,7 +1654,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       imageUrl: album.albumArt || null
                     });
                     handleAlbumClick(album);
-                  },
+                  }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
                   onMouseEnter: () => {
                     // Prefetch album tracks on hover for context menu
                     prefetchSearchAlbumTracks(album);
@@ -1860,7 +1698,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       // Check prefetched cache (use ref) and loading state (use module-level Set)
                       const prefetched = prefetchedReleasesRef.current[album.id];
                       const isLoading = prefetchInProgress.has(album.id);
-                      window.electron.contextMenu.showTrackMenu({
+                      window.showItemMenu({
                         type: 'release',
                         name: album.title,
                         album: albumData,
@@ -1923,9 +1761,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                         onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
                         title: 'Add to Playlist'
                       },
-                        React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
-                        )
+                        React.createElement(Icons.Plus, { className: 'w-4 h-4' })
                       ),
                       // Play button (center, larger - plays album)
                       React.createElement('button', {
@@ -1955,11 +1791,11 @@ const SearchPage = React.memo(function SearchPage(props) {
                             showToast('Could not load album tracks', 'error');
                           }
                         },
-                        className: 'w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
+                        className: 'w-10 h-10 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
                         style: { border: 'none', cursor: 'pointer' },
                         title: 'Play album'
                       },
-                        React.createElement(Play, { size: 18, className: 'text-gray-800 ml-0.5' })
+                        React.createElement(Play, { size: 18, className: 'text-ink-primary ml-0.5' })
                       ),
                       // Add to Queue button
                       React.createElement('button', {
@@ -2044,7 +1880,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       imageUrl: null
                     });
                     handlePlaylistClick(playlist);
-                  },
+                  }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
                   className: 'flex-shrink-0 cursor-pointer group release-card card-fade-up',
                   style: {
                     width: '160px',
@@ -2061,7 +1897,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                     style: { background: 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)' }
                   },
                     React.createElement('svg', {
-                      className: 'w-10 h-10 text-gray-500',
+                      className: 'w-10 h-10 text-ink-tertiary',
                       fill: 'none',
                       viewBox: '0 0 24 24',
                       stroke: 'currentColor',

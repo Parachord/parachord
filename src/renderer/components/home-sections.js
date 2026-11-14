@@ -14,6 +14,7 @@ const { filterBySource } = require('../lib/home-model');
 const { FixedTooltip, SERVICE_LOGOS } = require('./ui-atoms');
 const { Play } = require('./icons');
 const { FilterChips } = require('./filter-chips');
+const { PAGE_COLORS } = require('../lib/page-colors');
 const { SectionHeader, PAGE_COLOR, SECTION_TITLE_STYLE: H2_STYLE, SECTION_SUB_STYLE: SUB_STYLE } = require('./section-header');
 const {
   HOME_TILE_HEIGHT, HOME_ROW_CARDS, HOME_HALF_ROW_CARDS, HOME_CONCERT_CARDS, HOME_ROW_GAP, HOME_CARD_TEXT_GAP,
@@ -26,14 +27,14 @@ const e = React.createElement;
 // Drawn over album art or on a filled accent: the same in both themes.
 const CHIP_BG = 'rgba(255,255,255,.94)'; // on-art
 const CHIP_FG = '#111827'; // on-art
-const PLAY_FILL = '#7c3aed'; // fill-accent
+const PLAY_FILL = 'var(--accent-fill)'; // fill-accent
 const ON_FILL = '#fff'; // on-color
-const SHUFFLE_COLOR = '#7c3aed'; // fill-accent: the accent var turns light purple in dark mode
+const SHUFFLE_COLOR = 'var(--accent-fill)'; // fill-accent: the accent var turns light purple in dark mode
 
 // The Fresh Drops and Critical Darlings pages' hero gradients (app.js) and
 // the collapsed hero title's shadow, which the halves' bands copy.
-const FRESH_HERO = 'bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-600';
-const CRITICAL_HERO = 'bg-gradient-to-br from-amber-500 via-orange-500 to-red-500';
+const FRESH_HERO = PAGE_COLORS['new-releases'].hero;
+const CRITICAL_HERO = PAGE_COLORS['critics-picks'].hero;
 const HERO_TEXT_SHADOW = '0 2px 10px rgba(0,0,0,0.5)';
 // Inner padding of the Fresh Drops / Critical Darlings panels.
 const HOME_HALF_PANEL_PAD = 20;

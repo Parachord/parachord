@@ -115,13 +115,31 @@ function usePlaybackQueue({
   }, [currentTrack?.id, currentQueue, rememberQueue, playbackContext, shuffleMode]);
 
   // Queue management functions
-  const removeFromQueue = React.useCallback((trackId) => {
-    setCurrentQueue(prev => prev.filter(t => t.id !== trackId));
-    // Also remove from original queue if shuffle is active
+  // With `index` (the row's position in the queue), removes that one entry:
+  // the same song can be queued more than once, and every copy has the same
+  // id, so removing by id alone took out all of them. Without an index (or if
+  // the queue moved and the row no longer holds that track), removes every
+  // entry with the id, as before.
+  const removeFromQueue = React.useCallback((trackId, index) => {
+    const oneRow = Number.isInteger(index);
+    setCurrentQueue(prev => {
+      if (oneRow && prev[index] && prev[index].id === trackId) {
+        const next = [...prev];
+        next.splice(index, 1);
+        return next;
+      }
+      return prev.filter(t => t.id !== trackId);
+    });
+    // Also remove from original queue if shuffle is active: one copy for a
+    // single row (its position differs there), every copy otherwise.
     if (shuffleMode && originalQueueRef.current) {
-      originalQueueRef.current = originalQueueRef.current.filter(t => t.id !== trackId);
+      const original = originalQueueRef.current;
+      const at = oneRow ? original.findIndex(t => t.id === trackId) : -1;
+      originalQueueRef.current = at !== -1
+        ? [...original.slice(0, at), ...original.slice(at + 1)]
+        : original.filter(t => t.id !== trackId);
     }
-    console.log(`🗑️ Removed track ${trackId} from queue`);
+    console.log(`🗑️ Removed track ${trackId} from queue${oneRow ? ` (row ${index})` : ''}`);
   }, [shuffleMode]);
 
   const moveInQueue = React.useCallback((fromIndex, toIndex) => {

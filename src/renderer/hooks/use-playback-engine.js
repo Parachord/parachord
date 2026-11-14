@@ -2023,12 +2023,12 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
 
       if (!streamUrl) {
         console.error(`❌ No ${streamLabel} stream URL available`);
-        if (autoSkipIfAdvancing(`${streamLabel}: no stream URL (check its settings in Settings > Resolvers)`)) return;
+        if (autoSkipIfAdvancing(`${streamLabel}: no stream URL (check its settings in Settings › Plug-Ins)`)) return;
         setTrackLoading(false);
         showConfirmDialog({
           type: 'error',
           title: `${streamLabel} Not Configured`,
-          message: `Could not get a stream URL from ${streamLabel}. Check its settings in Settings > Resolvers (server reachable, signed in, library selected) and try again.`
+          message: `Could not get a stream URL from ${streamLabel}. Check its settings in Settings › Plug-Ins (server reachable, signed in, library selected) and try again.`
         });
         return;
       }
@@ -2486,7 +2486,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
           showConfirmDialog({
             type: 'info',
             title: 'Track Re-resolved',
-            message: `Playback via ${resolver.name} failed, so the track has been re-resolved with fresh sources. Try playing it again.\n\nIf it keeps failing, the developer console (View > Toggle Developer Tools) shows what ${resolver.name} reported.`
+            message: `Playback via ${resolver.name} failed, so the track has been re-resolved with fresh sources. Try playing it again.\n\nIf it keeps failing, use Help › Copy Diagnostic Log and include it when you report the problem.`
           });
         } else {
           // The last source of a fallback chain failed too: stop on the track.
@@ -3868,7 +3868,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         title: track.title
       });
       if (pool.failed) {
-        showToast('Failed to fetch similar tracks');
+        showToast('Failed to fetch similar tracks', 'error');
         return false;
       }
       const similarTracks = pool.tracks;
@@ -3951,7 +3951,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       return true;
     } catch (error) {
       console.error('Failed to start spinoff:', error);
-      showToast('Failed to fetch similar tracks');
+      showToast('Failed to fetch similar tracks', 'error');
       return false;
     } finally {
       setSpinoffLoading(false);

@@ -12,7 +12,7 @@ const { readableTextOn } = require('../lib/readable-text');
 // The selected fill of a chip with no colour of its own (All, a category):
 // the sidebar's accent. Fixed, because the accent variable turns light purple
 // in dark mode. Its text is white.
-const CHIP_NEUTRAL_FILL = '#7c3aed'; // fill-accent
+const CHIP_NEUTRAL_FILL = 'var(--accent-fill)'; // fill-accent
 const CHIP_NEUTRAL_TEXT = '#fff'; // on-color
 
 const FILTER_CHIPS_ROW_STYLE = { display: 'flex', flexWrap: 'wrap', gap: '8px' };
@@ -28,12 +28,13 @@ const FILTER_CHIP_DOT_STYLE = { width: '8px', height: '8px', borderRadius: '50%'
  * fills with it when picked, its text whichever of white or near-black reads
  * better on it; `gradient` (a CSS gradient) paints over that fill and the dot.
  * A chip without one (All, a category) stays neutral: the page's grey when
- * idle, the accent when picked.
+ * idle, and when picked the accent, or `pageColor` (a page's white-text fill
+ * from lib/page-colors.js) on a page with its own colour.
  *
  * `value` is the picked chip's id; `onChange(id)` picks one. `label` names
  * the group for screen readers.
  */
-function FilterChips({ chips, value, onChange, label, style }) {
+function FilterChips({ chips, value, onChange, label, style, pageColor }) {
   const e = React.createElement;
   return e('div', { role: 'group', 'aria-label': label || 'Filter', style: Object.assign({}, FILTER_CHIPS_ROW_STYLE, style) },
     (chips || []).map((c) => {
@@ -42,7 +43,7 @@ function FilterChips({ chips, value, onChange, label, style }) {
       return e('button', {
         key: c.id, type: 'button', 'aria-pressed': on, className: 'no-drag', onClick: () => onChange && onChange(c.id),
         style: Object.assign({}, FILTER_CHIP_STYLE, {
-          backgroundColor: on ? (brand || CHIP_NEUTRAL_FILL) : 'var(--bg-secondary)',
+          backgroundColor: on ? (brand || pageColor || CHIP_NEUTRAL_FILL) : 'var(--bg-secondary)',
           backgroundImage: on && c.gradient ? c.gradient : undefined,
           color: on ? (brand ? readableTextOn(brand) : CHIP_NEUTRAL_TEXT) : 'var(--text-primary)',
         }),

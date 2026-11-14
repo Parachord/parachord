@@ -60,9 +60,32 @@ describe('source', () => {
     expect(fn).toMatch(/saveRecommendationsCache\(\);\s*stampFullLoad\(toFetch\.length, failed\);/);
   });
 
-  test('the import card leads to Library Sync in Settings', () => {
+  test('the import card leads to Library Sync in Settings, which offers each service\'s sync setup', () => {
     expect(page).toContain("onImport: () => { navigateTo('settings'); setSettingsTab('general'); },");
     expect(page).not.toContain("navigateTo('search')");
+    // With nothing synced, the card is a way forward, not a dead-end sentence.
+    const card = app.slice(app.indexOf('// Nothing synced yet: offer each service'), app.indexOf('// Nothing synced yet: offer each service') + 1800);
+    expect(card).toContain('onClick: () => openSyncSetupModal(pid),');
+    expect(card).toContain('`Set up ${config.name} sync`');
+    expect(app).not.toContain('No sync providers connected.');
+  });
+
+  test('the checklist\'s services and scrobbling items open Plug-Ins, where both are connected', () => {
+    expect(page).toContain("if (id === 'resolvers' || id === 'scrobbling') { navigateTo('settings'); setSettingsTab('plugins'); }");
+    expect(page).not.toContain("openSyncSetupModal('spotify')");
+    // Scrobbling is connected once any plugin has an account name saved.
+    expect(page).toContain('Object.values(metaServiceConfigs || {}).some((c) => c && c.username)');
+    // Services: something beyond the two that ship switched on.
+    expect(app).toMatch(/const homeServicesConnected = useMemo\(\s*\(\) => activeResolvers\.some\(id => id !== 'bandcamp' && id !== 'localfiles'\),/);
+  });
+
+  test('Spotify sync setup with no Client ID opens the Spotify plugin and says why', () => {
+    const i = app.indexOf("pendingSyncSetupRef.current = 'spotify';");
+    const block = app.slice(i, i + 1100);
+    expect(block).toContain('const result = await window.electron.spotify.authenticate();');
+    expect(block).toMatch(/if \(result\.error === 'no_client_id'\) \{\s*openPluginSettings\('spotify'\);\s*showToast\(/);
+    // A refused login is not left pending.
+    expect(block).toContain('pendingSyncSetupRef.current = null;');
   });
 
   test('the Ask box is not re-keyed on the example (that wiped typed text)', () => {
@@ -110,7 +133,7 @@ describe('source', () => {
     const i = main.indexOf("if (data.type === 'loves') {");
     expect(i).toBeGreaterThan(-1);
     const block = main.slice(i, i + 1200);
-    expect(block).toContain("label: `Add to Queue (${data.tracks?.length || 0} tracks)`");
+    expect(block).toContain("label: `Add to Queue (${trackCount(data.tracks?.length || 0)})`");
     expect(block).toContain("label: 'Open in Collection'");
     expect(app).toContain("data.action === 'open-collection-loves'");
   });
@@ -131,7 +154,7 @@ describe('render', () => {
     library: [], metaServiceConfigs: {}, mixes: [], newReleases: [], newReleasesLoaded: true, newReleasesLoading: false,
     playlists: [], playlistsLoading: false, recommendationAlbums: [], recommendations: { sections: [], loading: false },
     setAddToPlaylistPanel: noop, setConcertsTicketFlyout: noop, setExtensionInfoOpen: noop, setHomeData: noop,
-    setRaycastInfoOpen: noop, setSettingsTab: noop, showToast: noop, spotifyConnected: false, whatsNewUnread: false,
+    setRaycastInfoOpen: noop, setSettingsTab: noop, showToast: noop, servicesConnected: false, whatsNewUnread: false,
   };
   const render = (props) => renderToStaticMarkup(React.createElement(HomePage, { ...base, ...props }));
 
@@ -299,5 +322,133 @@ describe("Home's recommended albums (app.js recommendationAlbums)", () => {
     }));
     expect(recommendationAlbumsFor({ sections: old }).map(a => a.title)).toEqual(
       ['AZ0', 'SH0', 'AZ1', 'SH1', 'SH2', 'AZ2', 'AZ3', 'AP0', 'AP1', 'AP2']);
+  });
+});
+
+describe('setup checklist housekeeping', () => {
+  test('opening the Raycast instructions completes its item (it has no way to detect an install)', () => {
+    expect(page).toContain("else if (id === 'raycast') { setRaycastInfoOpen(true); dismissHomeSetupItem('raycast'); }");
+  });
+
+  test('Settings › Dialogs can bring dismissed checklist items back', () => {
+    const i = app.indexOf('// Items dismissed from Home\'s setup checklist');
+    const card = app.slice(i, i + 1800);
+    expect(card).toContain('homeSetupDismissed.length > 0 && React.createElement');
+    expect(card).toContain('setHomeSetupDismissed([]);');
+    expect(card).toContain("await window.electron.store.set('home_setup_dismissed', []);");
+  });
+});
+
+describe('first launch', () => {
+  const html = read('index.html');
+  test('a splash that never clears says so and offers Reload', () => {
+    // Outside the app bundle, so it runs even when the bundle fails.
+    expect(html).toMatch(/<div id="parachord-splash-stuck" role="alert" style="[^"]*display:none;/);
+    expect(html).toContain('<button type="button" onclick="location.reload()"');
+    expect(html).toMatch(/setTimeout\(function \(\) \{[\s\S]*?!splash\.classList\.contains\('fade-out'\)\) stuck\.style\.display = 'flex';\s*\}, 20000\);/);
+  });
+
+  test('a first run records the installed version as seen, so What\'s New is not unread', () => {
+    expect(app).toMatch(/if \(!tutorialCompleted && !dismissedVersion && version\) \{\s*setWhatsNewDismissedVersion\(version\);\s*window\.electron\.store\?\.set\('whats_new_dismissed_version', version\);/);
+  });
+});
+
+describe('design-audit bug fixes (#1382)', () => {
+  const pv = read('src/renderer/components/playlist-view-page.js');
+
+  test('a loaded, empty playlist says so instead of loading rows forever', () => {
+    expect(pv).toMatch(/if \(displayTracks\.length === 0 && !playlistEditMode && emptyPlaylistId === selectedPlaylist\.id\) \{/);
+    expect(pv).toContain("'This playlist is empty'");
+    // Each "no tracks" path marks the playlist.
+    expect(app.match(/setEmptyPlaylistId\(playlist\.id\);/g) || []).toHaveLength(3);
+  });
+
+  test('the confirm dialog\'s secondary button uses defined variables', () => {
+    expect(app).not.toContain("var(--card-secondary-bg");
+    expect(app).not.toContain("'1px solid var(--border)'");
+  });
+
+  test('Spotify "Clear" saves the cleared value, not the stale input', () => {
+    expect(app).toContain("saveSpotifyCredentials('');");
+    expect(app).toContain("const clientId = (typeof clientIdOverride === 'string' ? clientIdOverride : spotifyClientIdInput).trim();");
+  });
+
+  test('Add-to-Playlist "Done" is readable, and the stop-sync option keeps its box after a hover', () => {
+    expect(app).toContain("color: selectedPlaylistsForAdd.length > 0 ? '#ffffff' : 'var(--text-primary)',");
+    expect(app).toContain("onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'var(--hover-bg-default)'; }");
+  });
+});
+
+describe('design-audit copy and motion fixes (#1382)', () => {
+  const engine = read('src/renderer/hooks/use-playback-engine.js');
+  const html = read('index.html');
+
+  test('no message names a Settings path that does not exist', () => {
+    for (const src of [app, engine, read('src/renderer/lib/playback-limits.js'), read('main.js')]) {
+      expect(src).not.toMatch(/Settings (→|>) (Resolvers|Installed|Apple Music)/);
+    }
+    expect(engine).not.toContain('Toggle Developer Tools');
+  });
+
+  test('Settings does not claim plug-ins are sandboxed (README: they are not)', () => {
+    expect(app).not.toMatch(/secure sandbox|Sandboxed execution/);
+  });
+
+  test('card-fade-up releases the card when it ends, so the hover lift applies', () => {
+    expect(html).toMatch(/\.card-fade-up \{\s*animation: cardFadeUp 0\.4s cubic-bezier\(0\.4, 0, 0\.2, 1\) backwards;\s*\}/);
+    expect(html).toMatch(/\.release-card:hover \{[^}]*!important;/);
+  });
+
+  test('the fadeIn animation the concert rows use is defined', () => {
+    expect(html).toMatch(/@keyframes fadeIn \{/);
+  });
+});
+
+describe('design-audit keyboard fixes (#1382)', () => {
+  test('Escape in the Search box goes back; other typing is left alone', () => {
+    expect(app).toContain("const searchBoxEscape = e.key === 'Escape' && activeElement === searchInputRef.current;");
+    expect(app).toContain('if (isTyping && !searchBoxEscape) return;');
+  });
+
+  test('Find (Cmd/Ctrl+F) opens Search from any page, then focuses its box', () => {
+    expect(app).toMatch(/case 'focus-search':[\s\S]{0,200}openSearchRef\.current\(\);/);
+    expect(app).toContain("if (activeView !== 'search') navigateTo('search');");
+  });
+
+  test('the Buy button has one tooltip', () => {
+    const i = app.indexOf('content: `Buy on ${purchaseSource.resolverName}`');
+    expect(app.slice(i, i + 1400)).not.toContain('title: `Buy on');
+  });
+});
+
+describe('design-audit layout fixes (#1382)', () => {
+  test('the playbar centre and progress shrink in a narrow window', () => {
+    expect(app).toContain("style: { flex: '0 1 340px', minWidth: '200px' },");
+    expect(app).not.toContain("style: { width: '340px', flexShrink: 0 },");
+    const atoms = read('src/renderer/components/ui-atoms.js');
+    expect(atoms).toContain("className: 'flex items-center gap-2', style: { minWidth: '120px' }");
+    expect(atoms).not.toContain('min-w-[200px]');
+  });
+
+  test('Search re-measures its width after a detail view', () => {
+    expect(app).toMatch(/return \(\) => resizeObserver\.disconnect\(\);[\s\S]{0,400}?\}, \[activeView, searchDetailCategory\]\);/);
+  });
+});
+
+describe('design-audit small fixes (#1382)', () => {
+  test('History offers to connect a missing service instead of "Try Again"', () => {
+    expect(app).toContain("const notConnected = /^No (listening history service|Last\\.fm account) connected/.test(error || '');");
+    expect(app).toContain("? services.map(s => button(`Connect ${s.name}`, () => openPluginSettings(s.id)))");
+    expect((app.match(/historyErrorState\((listeningHistory|topTracks|topArtists|topAlbums)\.error,/g) || []).length).toBe(4);
+  });
+
+  test('saving an empty key or URL does not switch a plugin on', () => {
+    expect((app.match(/enabled: !!e\.target\.value\.trim\(\)/g) || []).length).toBe(2);
+  });
+
+  test('text fields and selections get a native Cut / Copy / Paste menu', () => {
+    const main = read('main.js');
+    expect(main).toContain("mainWindow.webContents.on('context-menu', (_event, params) => {");
+    expect(main).toContain("{ role: 'paste', enabled: !!flags.canPaste },");
   });
 });

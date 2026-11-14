@@ -88,6 +88,9 @@ Summary; the full text, with the incidents behind each rule, is in [renderer-pat
 - **`showToast(message, type, action, options)`**: `options.persistent`, `options.duration` (ms), and `action: { label, onClick }`.
 - **Section titles come from `SectionHeader`** (`src/renderer/components/section-header.js`, Home's style): a heading over a row or grid of content never carries its own font or link styles. Heroes, dialog titles and the small uppercase group labels are different elements.
 - **Filter buttons come from `FilterChips`** (`src/renderer/components/filter-chips.js`, Home's source filter style): a row of pick-one chips never carries its own pill classes.
+- **Buttons come from `Button`** (`src/renderer/components/button.js`): primary, secondary, destructive, text and icon variants with focus, active, disabled and busy states. An icon button needs an `aria-label`.
+- **Dialogs come from `Modal`** (`src/renderer/components/modal.js`): role, labelling, focus trap and return, Escape, one scrim, close X and title size. `showConfirmDialog` renders `ConfirmModal`; name the confirm button for its action (`confirmLabel`), and pass `destructive` or `cancelLabel` to offer Cancel.
+- **Pick-one dropdowns come from `SortMenu`** (`src/renderer/components/sort-menu.js`): it owns its open state and keyboard handling; never hand-build a sort or filter dropdown.
 - **Colors come from CSS variables** (`var(--accent-primary)`, `var(--card-bg)`, ...) so both themes work.
 - **A layout change ships with its loading skeleton.** A new page, a new section, or a change to a card's or row's box updates the skeleton that stands in for it in the same PR, with the same grid, card box, row columns and item counts, so content replaces it without the page jumping. A view that can be waiting on data with nothing to show gets a skeleton in its layout's shape, never a blank area or a lone spinner. Keep skeletons in a components module next to the page (the Recommendations ones are `src/renderer/components/recommendation-skeletons.js`), and pin the shared dimensions in `tests/ui/loading-skeletons.test.js`.
 - **After adding a Tailwind class, run `npm run build:css` and commit `vendor/tailwind.css`.** `npm start` loads the committed file as is (only release builds regenerate it), and `tests/ci/tailwind-css-fresh.test.js` fails when it's stale.
@@ -107,12 +110,13 @@ Each rule below exists because the audit found its absence. Read the audit's are
   - If you'd otherwise write a second copy of something that already exists elsewhere (a button, dialog shell, menu, empty or error state, input, switch, spinner, icon), first extract it into a shared component under `src/renderer/components/`, then point both places at it. That's how `SectionHeader` (#1370) and `FilterChips` (#1371) were made.
   - Never restyle a shared component's output from a page; change the component.
   - A new shared component gets a "comes from X" line in the Renderer patterns list above and in `renderer-patterns.md`.
-- **Colours come from the CSS variables** in `index.html`, so both themes work.
-  - Don't add hex values, Tailwind palette classes (`text-gray-500`, `bg-red-50`, `purple-600`, ...), or `isDark` / `effectiveTheme` ternaries. Most palette classes have no `.dark` remap, and Tailwind's `purple-600` isn't the accent.
-  - If no token fits, add one to `:root` and `.dark` together.
-  - White text never sits on `var(--accent-primary)` (it's `#a78bfa` in dark mode). Use the fixed fill accent `#7c3aed` behind a named constant, the "fill-accent" convention in `home-sections.js` / `filter-chips.js`.
-  - Success, warning and error use the `--success` / `--warning` / `--error` tokens, never their own hex values.
-  - A service's colour is its plugin's `resolver.color`, never a hard-coded copy.
+- **Colours come from the theme tokens** in `index.html`, so both themes work. The token list is in `docs/DESIGN_SYSTEM.md` "Colors".
+  - Use the theme-token Tailwind classes (`text-ink-secondary`, `bg-surface-card`, `border-line`, `bg-accent-fill`, `bg-tint-danger`, ...; `tailwind.config.js`) or `var(--…)` in inline styles. Don't add hex values, Tailwind palette classes (`text-gray-500`, `bg-red-50`, `purple-600`, ...), or `isDark` / `effectiveTheme` ternaries (the count is 0; keep it there).
+  - If no token fits, add one to `:root` and `.dark` together (and to `tailwind.config.js` if classes will use it).
+  - White text never sits on `var(--accent-primary)` (it's `#a78bfa` in dark mode): fills with white text use `--accent-fill` / `--on-accent` (`bg-accent-fill text-ink-on-accent`).
+  - Status text uses `--text-success/-warning/-danger/-info`; white-text status fills use `--fill-*`. Never their own hex values.
+  - A page's colour comes from `PAGE_COLORS` (`src/renderer/lib/page-colors.js`); a service's from its plugin's `resolver.color`. Never a hard-coded copy.
+  - The playbar, queue drawer and AI panels are dark in both themes: they use `--surface-dark*`, never page tokens.
 - **Stay on the scales.**
   - Type: 11 · 12 · 13 · 14 · 16 · 20 · 24 · 28 · 48px. Weights as numbers.
   - Spacing: the 4px scale. 10px is only for card padding.
@@ -140,7 +144,7 @@ Each rule below exists because the audit found its absence. Read the audit's are
   - Plurals go through one helper, never a hard-coded "tracks".
   - An error says what happened and what to do. A confirm button is named for its action and sits next to Cancel. Success is a toast, not a dialog.
 - **The ratchet enforces this.** `tests/ci/design-drift.test.js` runs `scripts/design-drift.js` over `src/renderer/` and compares against `tests/ci/design-drift-baseline.json`.
-  - It counts hex colours, palette classes, theme ternaries, clickable non-buttons, `outline: 'none'`, native dialogs, "...", pasted SVG paths, off-scale font sizes and radii, and JS hover handlers. It also flags CSS variables the renderer uses but `index.html` doesn't define.
+  - It counts hex colours, palette classes, theme ternaries, clickable non-buttons, `outline: 'none'`, native dialogs, "...", pasted SVG paths, off-scale font sizes and radii, and JS hover handlers that change style. It also flags CSS variables the renderer uses but `index.html` doesn't define.
   - A count that rises fails: fix it with the shared component or token.
   - A count that falls fails until you lock it in with `npm run design-drift -- --write` and commit the baseline.
   - Raising the baseline is a last resort. The PR must say why no shared way existed.

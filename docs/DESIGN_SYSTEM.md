@@ -32,71 +32,97 @@ All design tokens are defined as CSS custom properties on `:root` (light) and `.
 
 ### Colors
 
+Every colour has a light and a dark value, so both themes work by construction. In code, reach for them in this order:
+
+1. **A theme-token Tailwind class** (`tailwind.config.js`, below): `text-ink-secondary`, `bg-surface-card`, `border-line`, `bg-accent-fill`.
+2. **The CSS variable** in an inline style: `color: 'var(--text-secondary)'`.
+3. **A new token** when nothing fits: add it to `:root` and `.dark` together in `index.html`, and to `tailwind.config.js` if classes will use it.
+
+Never a hex value, a Tailwind palette class (`text-gray-500`, `bg-purple-600`, ...) or an `isDark` / `effectiveTheme` ternary. `tests/ci/design-drift.test.js` counts all three, and `themeTernaries` is 0. `:root` and `.dark` also set `color-scheme`, so native controls, scrollbars and background-less inputs follow the theme.
+
 #### Backgrounds
 
-| Token | Light | Dark | Usage |
-|-------|-------|------|-------|
-| `--bg-primary` | `#ffffff` | `#161616` | Main content area |
-| `--bg-secondary` | `#f9fafb` | `#1e1e1e` | Secondary surfaces |
-| `--bg-elevated` | `#ffffff` | `#252525` | Elevated cards, modals |
-| `--bg-inset` | `#f3f4f6` | `#1a1a1a` | Recessed/inset areas |
-| `--bg-tertiary` | `#fafafa` | `#1e1e1e` | Tertiary backgrounds |
+| Token | Tailwind | Light | Dark | Usage |
+|-------|----------|-------|------|-------|
+| `--bg-primary` | `bg-surface-page`, `.page-bg` | `#ffffff` | `#161616` | A page's body |
+| `--bg-elevated` | `bg-surface-card` | `#ffffff` | `#252525` | Cards, menus, modals |
+| `--bg-secondary` | `bg-surface-subtle` | `#f9fafb` | `#1e1e1e` | Secondary surfaces |
+| `--bg-inset` | `bg-surface-inset` | `#f3f4f6` | `#1a1a1a` | Recessed areas, neutral chips |
+| `--hover-bg-default` | `bg-surface-hover` | `#f3f4f6` | `rgba(255,255,255,0.05)` | Row and item hover |
+| `--placeholder-bg` | `bg-surface-placeholder` | `#e5e7eb` | `#383838` | Image placeholders, skeleton bars |
+
+A page body is `--bg-primary` and the cards on it `--bg-elevated`, so in dark mode cards keep their edges. Never put a page body on `bg-white` (dark mode maps it to the card colour).
 
 #### Text
 
-| Token | Light | Dark | Usage |
-|-------|-------|------|-------|
-| `--text-primary` | `#111827` | `#f3f4f6` | Headings, primary content |
-| `--text-secondary` | `#6b7280` | `#9ca3af` | Secondary labels, metadata |
-| `--text-tertiary` | `#9ca3af` | `#6b7280` | Placeholders, hints |
+| Token | Tailwind | Light | Dark | Usage |
+|-------|----------|-------|------|-------|
+| `--text-primary` | `text-ink-primary` | `#111827` | `#f3f4f6` | Headings, primary content |
+| `--text-secondary` | `text-ink-secondary` | `#4b5563` | `#9ca3af` | Secondary labels, metadata |
+| `--text-tertiary` | `text-ink-tertiary` | `#6b7280` | `#8b8f97` | Hints, counts, timestamps |
+| `--icon-faint` | `text-ink-faint` | `#d1d5db` | `#4b5563` | Large decorative empty-state icons only |
+
+Secondary and tertiary both pass 4.5:1 on the page and on cards in both themes, and stay distinct (`tests/ui/theme-tokens.test.js`). Map Tailwind greys as: gray-900/800 → primary, 700/600 → secondary, 500/400 → tertiary.
 
 #### Accent (Purple)
 
-The primary accent color is **purple**, shifting slightly between themes for contrast.
+| Token | Tailwind | Light | Dark | Usage |
+|-------|----------|-------|------|-------|
+| `--accent-primary` | `text-accent`, `ring-accent` | `#7c3aed` | `#a78bfa` | Accent text, icons, focus rings, slider `accent-color` |
+| `--accent-fill` | `bg-accent-fill` | `#7c3aed` | `#7c3aed` | **Fills with white text on them** |
+| `--accent-fill-hover` | `hover:bg-accent-fill-hover` | `#6d28d9` | `#6d28d9` | Their hover |
+| `--on-accent` | `text-ink-on-accent` | `#ffffff` | `#ffffff` | Text on a fill |
+| `--accent-primary-alpha-10` | `bg-accent-tint` | 10% | 10% | Selected and now-playing rows, accent chips |
+| `--accent-primary-alpha-15` | `bg-accent-tint-hover` | 15% | 15% | Their hover |
 
-| Token | Light | Dark | Usage |
-|-------|-------|------|-------|
-| `--accent-primary` | `#7c3aed` | `#a78bfa` | Primary actions, links |
-| `--accent-primary-hover` | `#6d28d9` | `#8b5cf6` | Hover state |
-| `--accent-secondary` | `#8b5cf6` | `#c4b5fd` | Secondary accent |
-| `--accent-tertiary` | `#a855f7` | `#a855f7` | Tertiary accent |
-| `--accent-soft` | `#a78bfa` | `#c4b5fd` | Soft/muted accent |
-| `--accent-surface` | `#ede9fe` | `rgba(139,92,246,0.15)` | Accent-tinted surface |
+**The fill-accent convention.** `--accent-primary` turns light purple in dark mode, where white text on it is 2.72:1. So a button, badge or switch track with white text uses `--accent-fill` / `--on-accent`, and `--accent-primary` is for accent-coloured text, icons and outlines. Other accent tokens (`--accent-secondary`, `--accent-soft`, `--accent-surface`, alpha variants at 6–60%) are in `index.html`.
 
-Alpha variants exist at 6%, 8%, 10%, 15%, 20%, 30%, 50%, and 60% opacity as `--accent-primary-alpha-{N}`.
+#### Status
 
-#### Semantic Colors
+| Purpose | Tokens | Tailwind |
+|---------|--------|----------|
+| Status text on a page or card (≥ 4.5:1 in both themes) | `--text-success`, `--text-warning`, `--text-danger`, `--text-info` | `text-ink-success`, `text-ink-warning`, `text-ink-danger`, `text-ink-info` |
+| A faint background behind status text (the colour at 12%) | — | `bg-tint-success`, `bg-tint-warning`, `bg-tint-danger`, `bg-tint-info` |
+| Fills with white text: toasts, the Home banner, the confirm dialog's button | `--fill-success`, `--fill-warning`, `--fill-error`, `--fill-info` (the same in both themes, each ≥ 4.5:1 with white) | `bg-status-error`, `hover:bg-status-error-hover` |
+| Dots, icons and indicators | `--success`, `--warning`, `--error`, `--info` | — |
 
-| Token | Value | Usage |
-|-------|-------|-------|
-| `--success` | `#10b981` | Resolved states, positive indicators |
-| `--warning` | `#f59e0b` | Warnings, unresolved states |
-| `--error` | `#ef4444` | Errors, destructive actions |
+`lib/home-banners.js` (`BANNER_SEVERITY_COLORS`) and `lib/toast-style.js` read the fill tokens; a severity is one colour wherever it shows.
 
-#### Borders
+#### Borders and controls
 
-| Token | Light | Dark |
-|-------|-------|------|
-| `--border-default` | `#e5e7eb` | `#2e2e2e` |
-| `--border-light` | `#f3f4f6` | `#252525` |
-| `--border-subtle` | `rgba(0,0,0,0.06)` | `rgba(255,255,255,0.06)` |
+| Token | Tailwind | Light | Dark |
+|-------|----------|-------|------|
+| `--border-default` | `border-line` | `#e5e7eb` | `#2e2e2e` |
+| `--border-light` | `border-line-light` | `#f3f4f6` | `#252525` |
+| `--border-strong` | `border-line-strong` | `#d1d5db` | `#404040` |
+| `--border-danger` | `border-line-danger` | `#fecaca` | red at 35% |
+| `--border-subtle` | — | `rgba(0,0,0,0.06)` | `rgba(255,255,255,0.06)` |
+| `--control-off` | `bg-control-off` | `#d1d5db` | `#707070` |
+| `--control-knob` | `bg-control-knob` | `#ffffff` | `#ffffff` |
 
-#### Resolver / Service Colors
+A switch is an `--accent-fill` track when on, `--control-off` when off, and always a white `--control-knob`.
 
-Each music service has a branded color used in badges and icons:
+#### Page colours
 
-| Service | Text Class | Badge Color | Icon Hex |
-|---------|-----------|-------------|----------|
-| Spotify | `text-green-400` | `bg-green-600/20` | `#1DB954` |
-| Apple Music | - | - | `#FA243C` |
-| Amazon Music | - | - | `#25D1DA` |
-| YouTube | `text-red-400` | `bg-red-600/20` | `#FF0000` |
-| Bandcamp | `text-cyan-400` | `bg-cyan-600/20` | `#629AA9` |
-| SoundCloud | `text-orange-400` | `bg-orange-600/20` | `#FF5500` |
-| Subsonic | `text-teal-400` | `bg-teal-600/20` | `#14b8a6` |
-| Local Files | - | - | `#6366f1` |
+Each page has one colour, in `src/renderer/lib/page-colors.js` (`PAGE_COLORS`): the sidebar item's active text and 10% tint (`pageTint(view)`), the hero gradient, links to the page (`SectionHeader`'s `pageColor`), Home's panels that preview it, and the page's own controls (Concerts' location and radius). Each entry has `color`, `rgb`, `fill` (a darker shade for white-text buttons, ≥ 4.5:1) and `hero` (full Tailwind gradient classes, so Tailwind's scan generates them).
 
-The icon hex is each plug-in's `manifest.color` (`plugins-src/<id>/manifest.json`); the resolver badges in the track lists use it as their background (`backgroundColor: resolver.color` in `track-lists.js`). The text and badge classes are `TrackRow`'s `resolverMeta` map in `src/renderer/components/track-lists.js`, which covers only the services listed with classes here.
+| Page | Colour | Hero |
+|------|--------|------|
+| Home | the accent | purple → violet → indigo |
+| Playlists | `#ec4899` | rose → pink → fuchsia |
+| Collection | `#06b6d4` | cyan → blue |
+| History (and a friend's history) | `#3b82f6` | sky → blue → indigo |
+| Fresh Drops | `#22c55e` | lime → green → emerald |
+| Recommendations | `#f59e0b` | amber → orange |
+| Charts | `#f97316` | orange → pink → purple |
+| Critical Darlings | `#ef4444` | red → rose |
+| Concerts | `#10c9b4` | teal → cyan |
+
+No two heroes start in the same colour family (`tests/renderer/page-colors.test.js`). Never copy a page colour into a component; read the map.
+
+#### Service colours
+
+A music service's colour is its plug-in's `manifest.color` (`plugins-src/<id>/manifest.json`), exposed as `resolver.color` (`#888888` when a manifest has none). The track-list badges, the playbar's source button and "Play from" menu, Search's source dots and Home's source chips all read it. (`TrackRow` in `track-lists.js` still has its own `resolverMeta` table, but nothing renders `TrackRow` any more.) Concert ticket sellers' colours are in `src/renderer/lib/ticket-sellers.js`, equal to their plug-ins' manifest colours (tested); their text is the brand colour mixed 70% with `--text-primary`, so one value reads on both themes.
 
 ### Shadows
 
@@ -191,22 +217,11 @@ In dark mode these surfaces are lifted slightly above `--bg-primary` so they sti
 
 ## Tailwind Configuration
 
-Defined in `tailwind.config.js`. The config extends the default Tailwind palette with custom teal shades:
+Defined in `tailwind.config.js`; the generated CSS is `vendor/tailwind.css` (rebuild with `npm run build:css` and commit it). Dark mode is `darkMode: 'class'`.
 
-```js
-colors: {
-  teal: {
-    100: '#d1fcf4',
-    400: '#36dcc8',
-    500: '#10c9b4',
-    600: '#0eb3a0',
-  }
-}
-```
+The config adds **theme-token colours**: each reads a CSS variable from `index.html`, so a class like `text-ink-secondary` is right in both themes with no dark override. The groups are `ink-*` (text), `surface-*` (backgrounds), `line-*` (borders), `accent-*`, `control-*`, `status-*` and `tint-*`; the tables above list them. It also extends `teal` with the Concerts shades.
 
-Dark mode is applied via `darkMode: 'class'`. The generated CSS is output to `vendor/tailwind.css`.
-
-Additionally, `index.html` contains overrides that map standard Tailwind classes (e.g., `.dark .text-gray-900`, `.dark .bg-white`) to CSS custom property values, ensuring dark mode consistency even when components use hardcoded Tailwind classes.
+`index.html` still has a few `.dark` overrides that remap Tailwind palette classes (`.dark .text-gray-500`, `.dark .bg-white`, ...) for code not yet converted, mostly the always-dark surfaces. Don't rely on them in new code. `tests/ui/theme-tokens.test.js` fails when a remap rule outlives its last user, so delete the rule with the last class.
 
 ---
 
@@ -342,24 +357,20 @@ ParachordWordmark({ fill, height })
 
 ### Primary Icon Set
 
-`src/renderer/components/icons.js` exports `Icons`: the `lucideReact` global if one is loaded, otherwise a fallback set. Nothing loads Lucide (there is no script for it in `index.html` and no copy in `vendor/`), so the fallbacks below are what actually renders wherever `Icons` is used: mostly single glyphs or emoji, and an SVG for `List`. Most other icons in the app are inline SVG paths written where they are used.
+`src/renderer/components/icons.js` is the app's icon set: each icon is a component drawn with Lucide's paths (ISC licence), inlined so nothing has to load at runtime. Use it for every interface icon; don't paste an SVG `<path>` or use a text glyph (✕ × ✓ ⚠ ◌ …) as an icon. `tests/renderer/icons.test.js` fails on a glyph icon, and the design-drift `svgPaths` count tracks the pasted SVGs still to move.
 
-| Icon | Lucide name (unused) | What renders |
-|------|--------|----------|
-| Play | `lucideReact.Play` | `▶` |
-| Pause | `lucideReact.Pause` | `⏸` |
-| SkipForward | `lucideReact.SkipForward` | `⏭` |
-| SkipBack | `lucideReact.SkipBack` | `⏮` |
-| Volume2 | `lucideReact.Volume2` | `🔊` |
-| Music | `lucideReact.Music` | `♫` |
-| List | `lucideReact.List` | SVG (3 horizontal lines) |
-| Users | `lucideReact.Users` | `👥` |
-| Radio | `lucideReact.Radio` | `📻` |
-| Heart | `lucideReact.Heart` | `♥` |
-| Search | `lucideReact.Search` | `🔍` |
-| Settings | `lucideReact.Settings` | `⚙` |
-| Plus | `lucideReact.Plus` | `+` |
-| X | `lucideReact.X` | `✕` |
+```js
+const Icons = require('./icons');            // in a component module
+React.createElement(Icons.X, { className: 'w-4 h-4' })
+React.createElement(Icons.Check, { size: 16, strokeWidth: 2.5 })
+React.createElement(Icons.Spinner, { className: 'w-5 h-5', label: 'Loading' })
+```
+
+Props: `size` (default 24; a `w-*`/`h-*` class or `style` overrides it), `className`, `style`, `strokeWidth` (default 2), `fill`, and `title`. An icon is `aria-hidden` unless it has a `title`; an icon-only button carries the `aria-label`. The transport icons (Play, Pause, SkipBack, SkipForward) are solid; the rest are outlines. Inside text, size an icon to the text with `style: { width: '1em', height: '1em' }`.
+
+**Sizes:** 16px (`w-4 h-4`) in rows, chips and inline with text; 20px (`w-5 h-5`) in buttons and dialogs; stroke 2.
+
+**The set:** Play, Pause, SkipForward, SkipBack, Volume2, Music, List, Users, Radio, Heart, Search, Settings, Plus, X, Check, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Info, AlertTriangle, RefreshCw, ExternalLink, Trash2, and **Spinner** (the one loading spinner). To add an icon, copy its shapes from lucide.dev into `SHAPES` in `icons.js`.
 
 ### Service Logos
 

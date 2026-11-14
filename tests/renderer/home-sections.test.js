@@ -153,7 +153,7 @@ describe('SourceFilter colours', () => {
   });
   test('All stays neutral and has no dot', () => {
     const html = h(S.SourceFilter, { sources, value: 'All' });
-    expect(html).toMatch(/aria-pressed="true"[^>]*background-color:#7c3aed/);
+    expect(html).toMatch(/aria-pressed="true"[^>]*background-color:var\(--accent-fill\)/);
   });
 });
 
@@ -300,9 +300,14 @@ describe('Rows', () => {
   test('each See all takes its page\'s sidebar colour', () => {
     const app = fs.readFileSync(path.join(COMP, '..', 'app.js'), 'utf8');
     // The sidebar's colours for those pages, which the links copy.
-    expect(app).toContain("color: playlistsNavActive ? '#ec4899' : 'var(--nav-inactive)',");
-    expect(app).toContain("color: recommendationsNavActive ? '#f59e0b' : 'var(--nav-inactive)',");
-    expect(app).toContain("color: activeView === 'concerts' ? '#10c9b4' : 'var(--nav-inactive)',");
+    // The sidebar and the links read the same map (lib/page-colors.js).
+    const { PAGE_COLORS } = require('../../src/renderer/lib/page-colors');
+    expect(PAGE_COLORS.playlists.color).toBe('#ec4899');
+    expect(PAGE_COLORS.recommendations.color).toBe('#f59e0b');
+    expect(PAGE_COLORS.concerts.color).toBe('#10c9b4');
+    expect(app).toContain("color: playlistsNavActive ? PAGE_COLORS.playlists.color : 'var(--nav-inactive)',");
+    expect(app).toContain("color: recommendationsNavActive ? PAGE_COLORS.recommendations.color : 'var(--nav-inactive)',");
+    expect(app).toContain("color: activeView === 'concerts' ? PAGE_COLORS['concerts'].color : 'var(--nav-inactive)',");
     const link = (html, page) => (html.match(new RegExp(`aria-label="See all in ${page}"[^>]*style="[^"]*color:(#[0-9a-f]{6})`)) || [])[1];
     expect(link(h(S.PlaylistsRow, { playlists: [{ id: 'a', title: 'A' }], navigateTo: () => {} }), 'Playlists')).toBe('#ec4899');
     expect(link(h(S.AlbumsRow, { albums: [{ title: 'T', artist: 'A', resolverId: 'lastfm' }], navigateTo: () => {} }), 'Recommendations')).toBe('#f59e0b');
@@ -339,15 +344,16 @@ describe('Rows', () => {
   test('each half opens with a hero band copied from its page\'s hero', () => {
     const app = fs.readFileSync(path.join(COMP, '..', 'app.js'), 'utf8');
     // The pages' own hero gradients and collapsed-title style, which the bands copy.
-    expect(app).toContain("className: 'absolute inset-0 bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-600'");
-    expect(app).toContain("className: 'absolute inset-0 bg-gradient-to-br from-amber-500 via-orange-500 to-red-500'");
+    expect(app).toContain("className: `absolute inset-0 ${PAGE_COLORS['new-releases'].hero}`");
+    expect(app).toContain("className: `absolute inset-0 ${PAGE_COLORS['critics-picks'].hero}`");
     expect(app).toMatch(/className: 'text-2xl font-light text-white',\s*style: \{\s*textShadow: '0 2px 10px rgba\(0,0,0,0\.5\)',\s*letterSpacing: '0\.2em',/);
     const html = h(S.FreshCriticalRow, { fresh: [{ title: 'T', artist: 'A' }], critical: [{ title: 'U', artist: 'B' }], navigateTo: () => {} });
     const sections = html.split('<section').slice(1);
     expect(sections).toHaveLength(2);
     const band = (sec) => (sec.match(/<div data-home-hero="" class="([^"]*)"/) || [])[1];
-    expect(band(sections[0])).toBe('bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-600');
-    expect(band(sections[1])).toBe('bg-gradient-to-br from-amber-500 via-orange-500 to-red-500');
+    const { PAGE_COLORS: PC } = require('../../src/renderer/lib/page-colors');
+    expect(band(sections[0])).toBe(PC['new-releases'].hero);
+    expect(band(sections[1])).toBe(PC['critics-picks'].hero);
     for (const sec of sections) {
       // A bordered card on the page background; the cards sit below the band.
       expect(sec).toMatch(/^[^>]*border-radius:16px;overflow:hidden;border:1px solid var\(--border-default\);background-color:var\(--bg-primary\)/);

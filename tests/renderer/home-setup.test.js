@@ -4,14 +4,14 @@ const path = require('path');
 global.React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
 
-const { homeSetupItems, missingPopularResolverCount } = require('../../src/renderer/lib/home-setup');
+const { homeSetupItems } = require('../../src/renderer/lib/home-setup');
 const { HomeSetupButton } = require('../../src/renderer/components/home-setup');
 
 const read = (p) => fs.readFileSync(path.join(__dirname, '../..', p), 'utf8');
 
 const allDone = {
-  missingPopularResolvers: 0, lastfmConnected: true, listenbrainzConnected: true,
-  spotifyConnected: true, extensionConnected: true, isMac: false, dismissed: [],
+  servicesConnected: true, scrobblingConnected: true,
+  extensionConnected: true, isMac: false, dismissed: [],
 };
 
 describe('homeSetupItems', () => {
@@ -19,8 +19,8 @@ describe('homeSetupItems', () => {
     const s = homeSetupItems(allDone);
     expect(s.mode).toBe('whats-new');
     expect(s.visible).toBeUndefined();
-    expect(s.done).toBe(5);
-    expect(s.total).toBe(5);
+    expect(s.done).toBe(3);
+    expect(s.total).toBe(3);
   });
 
   test('extensionConnected null counts as done', () => {
@@ -31,40 +31,46 @@ describe('homeSetupItems', () => {
 
   test('a dismissed id leaves items and total', () => {
     const s = homeSetupItems({ ...allDone, isMac: true, dismissed: ['raycast'] });
-    expect(s.total).toBe(5);
+    expect(s.total).toBe(3);
     expect(s.items.find((i) => i.id === 'raycast')).toBeUndefined();
-    expect(homeSetupItems({ ...allDone, isMac: true }).total).toBe(6);
+    expect(homeSetupItems({ ...allDone, isMac: true }).total).toBe(4);
   });
 
-  test('missing popular resolvers give one open resolvers item', () => {
-    const s = homeSetupItems({ ...allDone, missingPopularResolvers: 2 });
+  test('no service connected yet gives one open services item', () => {
+    const s = homeSetupItems({ ...allDone, servicesConnected: false });
     const r = s.items.filter((i) => i.id === 'resolvers');
     expect(r).toHaveLength(1);
-    expect(r[0].done).toBe(false);
-    expect(r[0].action).toBe('resolvers');
+    expect(r[0]).toMatchObject({ label: 'Connect your music services', done: false, action: 'resolvers' });
     expect(s.mode).toBe('setup');
+    // A fresh profile starts with it open (it used to be ticked on day one).
+    expect(homeSetupItems().items.find((i) => i.id === 'resolvers').done).toBe(false);
   });
 
   test('whatsNew is reported but never counted or listed', () => {
-    const s = homeSetupItems({ ...allDone, missingPopularResolvers: 1, appVersion: '0.9.14', whatsNewUnread: true });
+    const s = homeSetupItems({ ...allDone, servicesConnected: false, appVersion: '0.9.14', whatsNewUnread: true });
     expect(s.whatsNew).toEqual({ version: '0.9.14', unread: true });
-    expect(s.total).toBe(5);
-    expect(s.done).toBe(4);
+    expect(s.total).toBe(3);
+    expect(s.done).toBe(2);
     expect(s.items.some((i) => /new/i.test(i.id))).toBe(false);
     expect(homeSetupItems(allDone).whatsNew.unread).toBe(false);
   });
 
-  test('order and labels', () => {
-    const s = homeSetupItems({ ...allDone, isMac: true });
-    expect(s.items.map((i) => i.label)).toEqual([
-      'Add more music sources', 'Connect Last.fm', 'Connect ListenBrainz',
-      'Connect Spotify', 'Install the browser extension', 'Add the Raycast extension',
+  test('scrobbling is one item; dismissing both old per-service items dismissed it', () => {
+    const open = homeSetupItems({ ...allDone, scrobblingConnected: false });
+    expect(open.items.filter((i) => i.id === 'scrobbling')).toEqual([
+      expect.objectContaining({ label: 'Connect a scrobbling service', done: false }),
     ]);
+    expect(homeSetupItems({ ...allDone, dismissed: ['lastfm'] }).items.some((i) => i.id === 'scrobbling')).toBe(true);
+    expect(homeSetupItems({ ...allDone, dismissed: ['lastfm', 'listenbrainz'] }).items.some((i) => i.id === 'scrobbling')).toBe(false);
   });
 
-  test('counts missing popular resolvers against installed ones', () => {
-    expect(missingPopularResolverCount([{ id: 'youtube' }, { id: 'spotify' }])).toBe(2);
-    expect(missingPopularResolverCount([{ id: 'youtube' }, { id: 'soundcloud' }, { id: 'bandcamp' }])).toBe(0);
+  test('order and labels: no item names a service', () => {
+    const s = homeSetupItems({ ...allDone, isMac: true });
+    expect(s.items.map((i) => i.label)).toEqual([
+      'Connect your music services', 'Connect a scrobbling service',
+      'Install the browser extension', 'Add the Raycast extension',
+    ]);
+    expect(s.items.map((i) => i.label).join(' ')).not.toMatch(/Spotify|Last\.fm|ListenBrainz/);
   });
 });
 

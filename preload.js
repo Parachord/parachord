@@ -18,6 +18,18 @@ const __isDevBuild = (() => {
   }
 })();
 
+// The theme the window opened in ('light' | 'dark'), from main.js's
+// --parachord-theme. index.html sets <html class="dark"> from it before the
+// first paint, and the renderer seeds its theme state from that class.
+const __initialTheme = (() => {
+  try {
+    const flag = (process.argv || []).find(a => a.startsWith('--parachord-theme='));
+    return flag && flag.split('=')[1] === 'dark' ? 'dark' : 'light';
+  } catch (e) {
+    return 'light';
+  }
+})();
+
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electron', {
@@ -674,6 +686,7 @@ contextBridge.exposeInMainWorld('electron', {
 
   // Theme management
   theme: {
+    initial: __initialTheme,
     getSystem: () => ipcRenderer.invoke('theme-get-system'),
     setNative: (mode) => ipcRenderer.invoke('theme-set-native', mode),
     onChanged: (callback) => {

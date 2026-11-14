@@ -9,6 +9,7 @@
 // app.js for the in-component call sites; PlayTop10Icon / QueueTop10Icon are
 // cards-only (the playtop-10 / queue-top-10 affordances).
 const { ResolverIcon, PlaybackProgress, ShareButton } = require('./ui-atoms');
+const { activateOnKey } = require('../lib/activate-on-key');
 const { getBestSourceConfidence } = require('./track-lists');
 const Icons = require('./icons');
 const { Play } = Icons;
@@ -24,6 +25,17 @@ const { regionName } = require('../lib/mb-region');
 
 // Generate a unique pattern/gradient for an artist based on their name
 // Returns an object with CSS gradient and optional SVG pattern
+// Release-type badge colours, shared by the release cards and the release
+// page (the filter chips use the same colours). The release page had EP and
+// Single swapped (audit bug 4).
+const RELEASE_BADGE_STYLES = {
+  album: { bg: 'rgba(99, 102, 241, 0.08)', color: 'rgb(99, 102, 241)' },
+  ep: { bg: 'rgba(168, 85, 247, 0.08)', color: '#a855f7' },
+  single: { bg: 'rgba(236, 72, 153, 0.08)', color: '#db2777' },
+  live: { bg: 'rgba(245, 158, 11, 0.08)', color: '#d97706' },
+  compilation: { bg: 'rgba(16, 201, 180, 0.08)', color: '#0eb3a0' },
+};
+
 const generateArtistPattern = (artistName) => {
   const hash = hashString(artistName.toLowerCase());
 
@@ -113,7 +125,7 @@ const PlayTop10Icon = ({ size = 24, className = '' }) => {
       cx: 19,
       cy: 17,
       r: 6,
-      fill: '#10b981'
+      fill: 'var(--success)'
     }),
     // "10" text in badge
     React.createElement('text', {
@@ -154,7 +166,7 @@ const QueueTop10Icon = ({ size = 24, className = '' }) => {
       cx: 19,
       cy: 17,
       r: 5.5,
-      fill: '#10b981',
+      fill: 'var(--success)',
       stroke: 'none'
     }),
     // "10" text in badge
@@ -213,7 +225,7 @@ const RelatedArtistCard = ({ artist, getArtistImage, onNavigate }) => {
       e.preventDefault();
       e.stopPropagation();
       if (window.electron?.contextMenu?.showTrackMenu) {
-        window.electron.contextMenu.showTrackMenu({
+        window.showItemMenu({
           type: 'artist',
           artist: {
             id: slug(artist.name || 'unknown'),
@@ -281,7 +293,7 @@ const SearchArtistCard = ({ artist, getArtistImage, onClick, onContextMenu, onPl
   }, [artist.name]);
 
   return React.createElement('div', {
-    onClick: onClick,
+    onClick: onClick, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
     className: 'rounded-lg overflow-hidden cursor-pointer group release-card card-fade-up flex-shrink-0',
     style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)', animationDelay: `${animationDelay}ms`, width: itemWidth || 160 },
     draggable: true,
@@ -391,7 +403,7 @@ const SearchHistoryItem = ({ entry, onQueryClick, onResultClick, onRemove }) => 
 
   return React.createElement('div', {
     className: 'flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 group transition-colors cursor-pointer',
-    onClick: handleRowClick
+    onClick: handleRowClick, role: 'button', tabIndex: 0, onKeyDown: activateOnKey
   },
     // Result thumbnail or search icon
     selectedResult?.imageUrl ?
@@ -403,19 +415,7 @@ const SearchHistoryItem = ({ entry, onQueryClick, onResultClick, onRemove }) => 
       React.createElement('div', {
         className: 'w-12 h-12 rounded bg-gray-100 flex items-center justify-center'
       },
-        React.createElement('svg', {
-          className: 'w-5 h-5 text-gray-400',
-          fill: 'none',
-          stroke: 'currentColor',
-          viewBox: '0 0 24 24'
-        },
-          React.createElement('path', {
-            strokeLinecap: 'round',
-            strokeLinejoin: 'round',
-            strokeWidth: 2,
-            d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z'
-          })
-        )
+        React.createElement(Icons.Search, { className: 'w-5 h-5 text-gray-400' })
       ),
 
     // Query and result info
@@ -437,19 +437,7 @@ const SearchHistoryItem = ({ entry, onQueryClick, onResultClick, onRemove }) => 
       onClick: (e) => { e.stopPropagation(); onRemove(query); },
       className: 'opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-red-500 transition-opacity'
     },
-      React.createElement('svg', {
-        className: 'w-4 h-4',
-        fill: 'none',
-        stroke: 'currentColor',
-        viewBox: '0 0 24 24'
-      },
-        React.createElement('path', {
-          strokeLinecap: 'round',
-          strokeLinejoin: 'round',
-          strokeWidth: 2,
-          d: 'M6 18L18 6M6 6l12 12'
-        })
-      )
+      React.createElement(Icons.X, { className: 'w-4 h-4' })
     )
   );
 };
@@ -476,7 +464,7 @@ const CollectionArtistCard = ({ artist, getArtistImage, onNavigate, onPlayTopTra
   }, [artist.name]);
 
   return React.createElement('div', {
-    onClick: onNavigate,
+    onClick: onNavigate, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
     className: 'rounded-lg overflow-hidden cursor-pointer group release-card card-fade-up',
     style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)', animationDelay: `${animationDelay}ms` }
   },
@@ -637,14 +625,7 @@ const CollectionAlbumCard = ({ album, getAlbumArt, onNavigate, onAddToPlaylist, 
       imageUrl === null && React.createElement('div', {
         style: { width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }
       },
-        React.createElement('svg', {
-          style: { width: '36px', height: '36px', color: 'rgba(255, 255, 255, 0.2)' },
-          fill: 'none',
-          viewBox: '0 0 24 24',
-          stroke: 'currentColor'
-        },
-          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
-        )
+        React.createElement(Icons.Music, { style: { width: '36px', height: '36px', color: 'rgba(255, 255, 255, 0.2)' }, strokeWidth: 1.5 })
       ),
       // Hover overlay with action buttons
       React.createElement('div', {
@@ -663,9 +644,7 @@ const CollectionAlbumCard = ({ album, getAlbumArt, onNavigate, onAddToPlaylist, 
           onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
           title: 'Add to Playlist'
         },
-          React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-            React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
-          )
+          React.createElement(Icons.Plus, { className: 'w-5 h-5' })
         ),
         // Play album button
         onPlay && React.createElement('button', {
@@ -779,14 +758,7 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, 
     fetchReleaseData(release, currentArtist);
   };
 
-  // Badge colors - refined palette matching app aesthetic
-  const badgeStyles = {
-    album: { bg: 'rgba(99, 102, 241, 0.08)', color: 'rgb(99, 102, 241)' },
-    ep: { bg: 'rgba(168, 85, 247, 0.08)', color: '#a855f7' },
-    single: { bg: 'rgba(236, 72, 153, 0.08)', color: '#db2777' },
-    live: { bg: 'rgba(245, 158, 11, 0.08)', color: '#d97706' },
-    compilation: { bg: 'rgba(16, 201, 180, 0.08)', color: '#0eb3a0' }
-  };
+  const badgeStyles = RELEASE_BADGE_STYLES;
   const badge = badgeStyles[release.releaseType] || badgeStyles.album;
 
   return React.createElement('button', {
@@ -903,9 +875,7 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, 
           onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
           title: 'Add to Playlist'
         },
-          React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-            React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
-          )
+          React.createElement(Icons.Plus, { className: 'w-5 h-5' })
         ),
         // Play button (center, larger)
         onPlay && React.createElement('button', {
@@ -1093,7 +1063,7 @@ const AlbumVersionsMenu = ({ release, versions, resolvers = [], onSelect, onClos
     ),
     current && React.createElement('span', {
       style: { flexShrink: 0, fontSize: '11px', color: 'var(--accent-soft)' }
-    }, '✓')
+    }, React.createElement(Icons.Check, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }))
   );
   const sectionHeader = (title, key) => React.createElement('div', {
     key,
@@ -1418,14 +1388,7 @@ const ReleasePage = ({
     // LEFT COLUMN: Album card - matching ReleaseCard styling
     (() => {
       const year = release.date ? release.date.split('-')[0] : '';
-      // Badge colors - matching ReleaseCard palette
-      const badgeStyles = {
-        album: { bg: 'rgba(99, 102, 241, 0.08)', color: 'rgb(99, 102, 241)' },
-        ep: { bg: 'rgba(233, 30, 99, 0.08)', color: '#db2777' },
-        single: { bg: 'rgba(168, 85, 247, 0.08)', color: '#a855f7' },
-        live: { bg: 'rgba(245, 158, 11, 0.08)', color: '#d97706' },
-        compilation: { bg: 'rgba(16, 201, 180, 0.08)', color: '#0eb3a0' }
-      };
+      const badgeStyles = RELEASE_BADGE_STYLES;
       const releaseType = release.releaseType || 'album';
       const badge = badgeStyles[releaseType] || badgeStyles.album;
 
@@ -1549,9 +1512,7 @@ const ReleasePage = ({
                 onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
                 title: 'Add to Playlist'
               },
-                React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
-                )
+                React.createElement(Icons.Plus, { className: 'w-5 h-5' })
               ),
               // Play button (center, larger)
               onAlbumPlay && React.createElement('button', {
@@ -1661,7 +1622,7 @@ const ReleasePage = ({
                 }, sourceLine),
                 React.createElement('span', {
                   style: { fontSize: '9px', color: 'var(--text-tertiary)', flexShrink: 0 }
-                }, sourceOpen ? '▲' : '▼')
+                }, sourceOpen ? React.createElement(Icons.ChevronUp, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }) : React.createElement(Icons.ChevronDown, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }))
               ),
               // Then one line per detail, aligned under the name
               ...editionLines.map((line, i) => React.createElement('span', {
@@ -1753,7 +1714,7 @@ const ReleasePage = ({
         onRetryLoad && React.createElement('button', {
           onClick: (e) => { e.stopPropagation(); onRetryLoad(); },
           className: 'px-4 py-2 text-white rounded-lg text-sm transition-opacity hover:opacity-90',
-          style: { backgroundColor: 'var(--accent-primary)' }
+          style: { backgroundColor: 'var(--accent-fill)' }
         }, 'Try Again')
       ) :
       // Show skeleton while tracks are loading
@@ -1838,7 +1799,7 @@ const ReleasePage = ({
                   onDragEnd();
                 }
               },
-              className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all no-drag group ${isNowPlaying ? 'bg-purple-50' : 'hover:bg-gray-50/80'}`,
+              className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all no-drag group ${isNowPlaying ? 'bg-accent-tint' : 'hover:bg-surface-hover'}`,
               style: {
                 borderRadius: '8px',
                 marginBottom: '2px'
@@ -1870,7 +1831,7 @@ const ReleasePage = ({
                 } else {
                   handlePlay(trackForDrag);
                 }
-              },
+              }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
               onContextMenu: (e) => {
                 e.preventDefault();
                 if (onTrackContextMenu) {
@@ -2037,6 +1998,7 @@ const ReleasePage = ({
 };
 
 module.exports = {
+  RELEASE_BADGE_STYLES,
   generateArtistPattern,
   PlayTop10Icon,
   QueueTop10Icon,
