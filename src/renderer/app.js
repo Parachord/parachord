@@ -556,6 +556,7 @@ const {
 const { carriedReleaseArt, withArchiveCover, createReleaseGroupPicks } = require('./lib/release-open');
 const { firstNonEmptyList, entriesFromMusicBrainzRelease, entriesFromCatalogRelease, pickReleaseGroup } = require('./lib/album-track-list');
 const { pickRelease } = require('./lib/release-pick');
+const { uniqueReleases } = require('./lib/fresh-drops-releases');
 const { createReleaseLookup, releaseFormats, hasCurrentAlias } = require('./lib/release-lookup');
 const { artistLookupPlan, loadArtistReleaseGroups, musicBrainzHttpError, discographyOutcome } = require('./lib/artist-discography');
 const { searchMusicBrainzArtists, searchMusicBrainzAlbums, searchMusicBrainzTracks, createPopularityLookup } = require('./lib/search-requests');
@@ -18716,10 +18717,12 @@ ${trackListXml}
         const upperFuture = new Date();
         upperFuture.setDate(upperFuture.getDate() + 14);
         const upperCutoffDate = upperFuture.toISOString().split('T')[0];
-        const filteredReleases = newReleasesData.releases.filter(r =>
+        // uniqueReleases also heals a cache saved with a collaboration twice
+        // (lib/fresh-drops-releases.js).
+        const filteredReleases = uniqueReleases(newReleasesData.releases.filter(r =>
           r.releaseType !== 'broadcast' && !(r.secondaryTypes || []).includes('broadcast')
           && (!r.date || r.date <= upperCutoffDate)
-        );
+        ));
         const now = Date.now();
         if (now - newReleasesData.timestamp < CACHE_TTL.newReleases) {
           newReleasesCache.current = { releases: filteredReleases, timestamp: newReleasesData.timestamp, lastFullScan: newReleasesData.lastFullScan || 0 };
@@ -26494,7 +26497,7 @@ ${tracks}
         if (brandNew.length > 0) {
           console.log(`✨ Found ${brandNew.length} new releases to add`);
           // Prepend new releases and re-sort
-          const merged = [...brandNew, ...newReleases].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+          const merged = uniqueReleases([...brandNew, ...newReleases]).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
           setNewReleases(merged);
           newReleasesCache.current = { releases: merged, timestamp: Date.now(), lastFullScan: newReleasesCache.current.lastFullScan || 0 };
 
@@ -26559,13 +26562,7 @@ ${tracks}
           const withArt = results.map(r => window.hydrateReleaseArt(r, albumArtCache.current));
           // Merge in-progress results with prior cache so user sees all releases during loading
           const progressMerged = [...withArt, ...priorCachedReleases];
-          const seen = new Set();
-          const deduped = progressMerged.filter(r => {
-            const key = `${r.artist.toLowerCase()}-${r.title.toLowerCase()}`;
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-          }).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+          const deduped = uniqueReleases(progressMerged).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
           setNewReleases(deduped);
           // Keep cache ref in sync so periodic saveCacheToStore captures
           // in-progress results (prevents data loss on rebuild/crash)
@@ -26578,28 +26575,22 @@ ${tracks}
       // full fetch only covers a subset of the user's library).
       const merged = [...allNewReleases, ...priorCachedReleases];
 
-      // Sort and deduplicate (fresh results take priority since they come first)
-      const seenReleases = new Set();
-      const uniqueReleases = merged
-        .filter(r => {
-          const key = `${r.artist.toLowerCase()}-${r.title.toLowerCase()}`;
-          if (seenReleases.has(key)) return false;
-          seenReleases.add(key);
-          return true;
-        })
+      // Sort and deduplicate by release id, then artist + title (fresh
+      // results take priority since they come first).
+      const uniqueList = uniqueReleases(merged)
         .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
 
-      console.log(`✨ Found ${allNewReleases.length} fresh + ${priorCachedReleases.length} cached → ${uniqueReleases.length} unique releases from ${artistsProcessed} artists`);
+      console.log(`✨ Found ${allNewReleases.length} fresh + ${priorCachedReleases.length} cached → ${uniqueList.length} unique releases from ${artistsProcessed} artists`);
 
-      setNewReleases(uniqueReleases);
+      setNewReleases(uniqueList);
       setNewReleasesLoaded(true);
 
-      newReleasesCache.current = { releases: uniqueReleases, timestamp: Date.now(), lastFullScan: Date.now() };
+      newReleasesCache.current = { releases: uniqueList, timestamp: Date.now(), lastFullScan: Date.now() };
 
-      const hash = generateDiscoveryHash(uniqueReleases);
+      const hash = generateDiscoveryHash(uniqueList);
       checkDiscoveryUnread('newReleases', hash);
 
-      fetchNewReleasesAlbumArt(uniqueReleases);
+      fetchNewReleasesAlbumArt(uniqueList);
 
       // Persist immediately so data isn't lost if app is rebuilt/killed
       saveCacheToStore();
