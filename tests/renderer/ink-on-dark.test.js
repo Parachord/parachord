@@ -59,3 +59,13 @@ test('both themes define the on-dark text tokens', () => {
   expect(html.match(/--on-dark-secondary:/g)).toHaveLength(2);
   expect(html.match(/--on-dark-tertiary:/g)).toHaveLength(2);
 });
+
+// The playing row in a track list is the accent tint everywhere (a token
+// with a dark value). Collection's was bg-cyan-50, a light-only palette
+// class: a pale cyan bar with light text on it in dark mode.
+test('no track list marks the playing row with a light-only palette class', () => {
+  for (const file of files) {
+    const src = fs.readFileSync(path.join(ROOT, file), 'utf8');
+    expect(src.match(/(isNowPlaying|isCurrentTrack)[^?\n]*\? 'bg-(?!accent-tint|purple-900)[a-z]+-\d{2,3}'/g)).toBeNull();
+  }
+});

@@ -538,7 +538,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                       handlePlaylistDragEnd();
                     },
                     className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all no-drag group ${
-                      isNowPlaying && isPlaying ? 'bg-cyan-50' : 'hover:bg-surface-hover'
+                      isNowPlaying && isPlaying ? 'bg-accent-tint' : 'hover:bg-surface-hover'
                     }`,
                     style: {
                       borderRadius: '8px',
