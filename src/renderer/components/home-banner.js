@@ -5,6 +5,7 @@
 //
 // Props-driven; loads under plain Node (no window at module scope).
 
+const Icons = require('./icons');
 const { BANNER_SEVERITY_COLORS } = require('../lib/home-banners');
 
 function HomeBanner({ items, onDismiss, onCta }) {
@@ -77,7 +78,7 @@ function HomeBanner({ items, onDismiss, onCta }) {
         lineHeight: 1,
         flexShrink: 0
       }
-    }, '×')
+    }, React.createElement(Icons.X, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }))
   );
 }
 

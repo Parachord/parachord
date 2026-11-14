@@ -37485,7 +37485,7 @@ useEffect(() => {
               className: 'flex items-center gap-1 px-3 py-1 text-xs text-ink-tertiary hover:text-ink-secondary border border-line-strong rounded hover:bg-surface-hover transition-colors no-drag'
             },
               'CLOSE',
-              React.createElement('span', { className: 'text-ink-tertiary' }, '×')
+              React.createElement('span', { className: 'text-ink-tertiary' }, React.createElement(Icons.X, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }))
             )
           ),
           // Loading content placeholder
@@ -43935,7 +43935,7 @@ useEffect(() => {
               }
             },
               'CLOSE',
-              React.createElement('span', { style: { color: 'var(--text-tertiary)' } }, '×')
+              React.createElement('span', { style: { color: 'var(--text-tertiary)' } }, React.createElement(Icons.X, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }))
             )
           ),
           // Wrapper for sidebar and content
@@ -46829,7 +46829,7 @@ useEffect(() => {
               }
             },
               spinoffLoading
-                ? React.createElement('span', { className: 'animate-spin inline-block w-5 h-5' }, '◌')
+                ? React.createElement(Icons.Spinner, { className: 'w-5 h-5' })
                 : React.createElement('svg', {
                     className: 'w-5 h-5',
                     viewBox: '0 0 32 32',
@@ -48547,7 +48547,7 @@ useEffect(() => {
               cursor: 'pointer',
               fontSize: '14px'
             }
-          }, '✕')
+          }, React.createElement(Icons.X, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }))
         ),
         // Modal body
         React.createElement('div', {
@@ -48712,7 +48712,7 @@ useEffect(() => {
                 color: 'var(--text-success)'
               }
             },
-              React.createElement('span', null, '✓'),
+              React.createElement('span', null, React.createElement(Icons.Check, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } })),
               React.createElement('span', null, 'Spotify Premium connected')
             ),
             // Spotify API credentials — BYOK required
@@ -49188,7 +49188,7 @@ useEffect(() => {
                   color: '#FF5500'
                 }
               },
-                React.createElement('span', null, '✓'),
+                React.createElement('span', null, React.createElement(Icons.Check, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } })),
                 React.createElement('span', null, 'SoundCloud connected')
               ),
               soundcloudConnected && React.createElement('p', {
@@ -49526,7 +49526,7 @@ useEffect(() => {
                 color: 'var(--text-success)'
               }
             },
-              React.createElement('span', null, '✓'),
+              React.createElement('span', null, React.createElement(Icons.Check, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } })),
               React.createElement('span', null, 'Apple Music authorized for playback')
             ),
 
@@ -49672,7 +49672,7 @@ useEffect(() => {
                       color: 'var(--text-success)'
                     }
                   },
-                    React.createElement('span', null, '✓'),
+                    React.createElement('span', null, React.createElement(Icons.Check, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } })),
                     React.createElement('span', null, 'Connected to Last.fm')
                   ),
                   // Advanced accordion for API credentials (also shown when connected)
@@ -50079,7 +50079,7 @@ useEffect(() => {
                       color: 'var(--text-success)'
                     }
                   },
-                    React.createElement('span', null, '✓'),
+                    React.createElement('span', null, React.createElement(Icons.Check, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } })),
                     React.createElement('span', null, 'Connected to ListenBrainz')
                   ),
                   // Show token status if configured - masked like AI service API keys
@@ -50790,7 +50790,7 @@ useEffect(() => {
             metaServiceConfigs[selectedResolver.id]?.[authFieldKey] && React.createElement('div', {
               className: 'flex items-center gap-2 text-ink-success text-sm'
             },
-              React.createElement('span', null, '✓'),
+              React.createElement('span', null, React.createElement(Icons.Check, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } })),
               React.createElement('span', null, (authFieldSettings.label || 'API key') + ' configured')
             )
           );
@@ -51632,7 +51632,7 @@ useEffect(() => {
               cursor: 'pointer',
               fontSize: '14px'
             }
-          }, '✕')
+          }, React.createElement(Icons.X, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }))
         ),
         // Modal body
         React.createElement('div', {
@@ -53396,7 +53396,7 @@ useEffect(() => {
                   color: 'var(--accent-primary)'
                 }
               },
-                React.createElement('span', { className: 'animate-spin' }, '⟳'),
+                React.createElement(Icons.Spinner, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }),
                 'Searching...'
               )
             ),
@@ -53455,7 +53455,7 @@ useEffect(() => {
                   border: 'none',
                   cursor: 'pointer'
                 }
-              }, '✕')
+              }, React.createElement(Icons.X, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }))
             ),
 
             // Art suggestions grid - refined
@@ -53606,7 +53606,7 @@ useEffect(() => {
               opacity: id3EditorSaving ? 0.6 : 1
             }
           },
-            id3EditorSaving && React.createElement('span', { className: 'animate-spin' }, '⟳'),
+            id3EditorSaving && React.createElement(Icons.Spinner, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }),
             id3EditorSaving ? 'Saving...' : 'Save'
           )
         )
@@ -53765,8 +53765,8 @@ useEffect(() => {
                   confirmDialog.type === 'error' ? 'var(--text-danger)' :
                   'var(--accent-primary)'
               }
-            }, confirmDialog.type === 'success' ? '✓' :
-               confirmDialog.type === 'error' ? '✕' : 'ℹ')
+            }, confirmDialog.type === 'success' ? React.createElement(Icons.Check, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }) :
+               confirmDialog.type === 'error' ? React.createElement(Icons.X, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }) : React.createElement(Icons.Info, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }))
           ),
           // Title
           confirmDialog.title && React.createElement('h3', {
@@ -53951,7 +53951,7 @@ useEffect(() => {
           },
             React.createElement('span', {
               style: { fontSize: '24px', color: 'var(--text-danger)' }
-            }, '✕')
+            }, React.createElement(Icons.X, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }))
           ),
           React.createElement('h3', {
             style: { fontSize: '16px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '8px' }
@@ -55590,7 +55590,7 @@ useEffect(() => {
             className: 'flex items-center gap-1 px-3 py-1 text-xs text-gray-400 hover:text-white border border-gray-600 rounded hover:bg-white/10 transition-colors'
           },
             'CLOSE',
-            React.createElement('span', { className: 'text-gray-500' }, '×')
+            React.createElement('span', { className: 'text-gray-500' }, React.createElement(Icons.X, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }))
           )
         )
       ),

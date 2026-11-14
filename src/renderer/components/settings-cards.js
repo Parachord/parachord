@@ -6,6 +6,7 @@
 // ScrobblerSettingsCard the MCP + scrobbler settings surfaces; FriendMiniPlaybar
 // the friends' now-playing mini bar. All props-driven (config, callbacks and
 // the app's config-mutation functions arrive via props); no app state.
+const Icons = require('./icons');
 const { Tooltip, SERVICE_LOGOS } = require('./ui-atoms');
 
 // ResolverCard component - Tomahawk-style colored card with centered logo
@@ -116,7 +117,7 @@ const ResolverCard = React.memo(({
           color: hasUpdate ? '#ffffff' : 'var(--text-success)'
         },
         title: hasUpdate ? 'Update available' : 'Enabled'
-      }, hasUpdate ? '↑' : '✓'),
+      }, hasUpdate ? '↑' : React.createElement(Icons.Check, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } })),
       // Installing spinner
       isInstalling && React.createElement('div', {
         className: 'absolute inset-0 flex items-center justify-center',
@@ -125,7 +126,7 @@ const ResolverCard = React.memo(({
           borderRadius: '16px'
         }
       },
-        React.createElement('span', { className: 'text-white text-2xl animate-spin' }, '⏳')
+        React.createElement(Icons.Spinner, { className: 'text-white w-6 h-6' })
       ),
       // Needs configuration warning badge (bottom-right) - only for enabled resolvers
       needsConfiguration && isEnabled && !isInstalling && React.createElement('div', {

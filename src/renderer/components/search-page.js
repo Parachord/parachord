@@ -1215,7 +1215,7 @@ const SearchPage = React.memo(function SearchPage(props) {
               }
             },
               'CLOSE',
-              React.createElement('span', { style: { color: 'var(--text-tertiary)' } }, '×')
+              React.createElement('span', { style: { color: 'var(--text-tertiary)' } }, React.createElement(Icons.X, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }))
             )
           ),
 

@@ -1069,7 +1069,7 @@ const AlbumVersionsMenu = ({ release, versions, resolvers = [], onSelect, onClos
     ),
     current && React.createElement('span', {
       style: { flexShrink: 0, fontSize: '11px', color: 'var(--accent-soft)' }
-    }, '✓')
+    }, React.createElement(Icons.Check, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }))
   );
   const sectionHeader = (title, key) => React.createElement('div', {
     key,
@@ -1628,7 +1628,7 @@ const ReleasePage = ({
                 }, sourceLine),
                 React.createElement('span', {
                   style: { fontSize: '9px', color: 'var(--text-tertiary)', flexShrink: 0 }
-                }, sourceOpen ? '▲' : '▼')
+                }, sourceOpen ? React.createElement(Icons.ChevronUp, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }) : React.createElement(Icons.ChevronDown, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }))
               ),
               // Then one line per detail, aligned under the name
               ...editionLines.map((line, i) => React.createElement('span', {

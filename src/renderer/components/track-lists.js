@@ -373,8 +373,8 @@ const VirtualizedQueueList = React.memo(({
         }
       },
         listenAlongFriend ? '–' :
-        isLoading ? React.createElement('span', { className: 'animate-spin inline-block' }, '◌') :
-        isError ? '⚠' :
+        isLoading ? React.createElement(Icons.Spinner, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }) :
+        isError ? React.createElement(Icons.AlertTriangle, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }) :
         isCurrentTrack ? '▶' :
         (spinoffMode || playbackContext?.type === 'spinoff' || playbackContext?.type === 'friend')
           ? '··' : String(index + 1).padStart(2, '0')

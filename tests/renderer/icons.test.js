@@ -31,3 +31,20 @@ test('an icon with a title is announced', () => {
   expect(html).toContain('<title>About this</title>');
   expect(html).not.toContain('aria-hidden');
 });
+
+// #1384: text glyphs standing in for icons (✕ × ✓ ℹ ⚠ ◌ ⟳ ⏳ ▲ ▼) are the
+// icon set now. ▶ stays where it's text (drag labels, track numbers).
+test('no text glyph is used as an icon in the renderer', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (
+    e.isDirectory() ? walk(path.join(d, e.name)) : e.name.endsWith('.js') ? [path.join(d, e.name)] : []));
+  const hits = [];
+  for (const f of walk(path.join(__dirname, '../../src/renderer'))) {
+    if (f.endsWith('icons.js')) continue;
+    const src = fs.readFileSync(f, 'utf8');
+    const m = src.match(/'(✕|×|✓|ℹ|⚠|◌|⟳|⏳|▼|▲)'/g);
+    if (m) hits.push([path.basename(f), m]);
+  }
+  expect(hits).toEqual([]);
+});

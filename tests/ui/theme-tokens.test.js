@@ -63,8 +63,8 @@ describe('status fills and the accent (#1383 step 3)', () => {
 
   test('the confirm dialog uses the status tokens, one red', () => {
     const dlg = app.slice(app.indexOf("confirmDialog.type === 'success' ? 'var(--text-success)'"));
-    expect(dlg.slice(0, 3000)).toMatch(/'var\(--fill-error\)'/);
-    expect(dlg.slice(0, 3000)).not.toMatch(/#dc2626|#22c55e/);
+    expect(dlg.slice(0, 5000)).toMatch(/'var\(--fill-error\)'/);
+    expect(dlg.slice(0, 5000)).not.toMatch(/#dc2626|#22c55e/);
   });
 
   test('white text never sits on --accent-primary (light purple in dark mode)', () => {

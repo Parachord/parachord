@@ -314,7 +314,7 @@ describe('ReleasePage: the source card', () => {
     // one line per detail: the date, then the song count ("1 song")
     expect(detailLines(html)).toEqual(['Oct 4, 2024', '1 song']);
     // the chevron for the picker
-    expect(html).toContain('>▼</span>');
+    expect(html).toContain('data-icon="ChevronDown"');
     // the old lines it replaced are gone: standalone year, "NN Songs"
     expect(html).not.toContain('>2024</span>');
     expect(html).not.toContain(' Songs');
@@ -395,7 +395,7 @@ describe('AlbumVersionsMenu', () => {
     expect(html).toContain('MusicBrainz editions');
     expect(html.indexOf('Your services')).toBeLessThan(html.indexOf('MusicBrainz editions'));
     // the MB row on screen is marked current: accent background + check at the right
-    expect(html).toContain('✓');
+    expect(html).toContain('data-icon="Check"');
     expect(html).toContain('var(--accent-primary-alpha-10)');
     // MB row: the disambiguation is the main line, then date · region · count
     expect(html).toContain('limited earbook');
@@ -429,7 +429,7 @@ describe('AlbumVersionsMenu', () => {
     // exactly one current marker: the Spotify edition that is on screen, not
     // an MB row (the list came from the catalog) — the current row's main
     // line is the accent-coloured one
-    expect(html.match(/✓/g)).toHaveLength(1);
+    expect(html.match(/data-icon="Check"/g)).toHaveLength(1);
     expect(html).toContain('color:var(--accent-soft)">Absolute Elsewhere</span>');
   });
 
@@ -541,7 +541,7 @@ describe('AlbumVersionsMenu', () => {
     const html = render({ release, versions: many, resolvers: [] });
     // the accent row (the current release) is visible despite sitting beyond the fold
     expect(html).toContain('the current one');
-    expect(html).toContain('✓');
+    expect(html).toContain('data-icon="Check"');
     // and one filler edition stays hidden behind the fold row
     expect(html).not.toContain('edition 6');
     // one hidden edition reads in the singular

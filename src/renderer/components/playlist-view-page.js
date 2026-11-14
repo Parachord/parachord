@@ -368,7 +368,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                 onMouseLeave: (e) => { e.currentTarget.style.color = 'var(--text-tertiary)'; e.currentTarget.style.backgroundColor = 'transparent'; }
               },
                 'CLOSE',
-                React.createElement('span', { style: { color: 'var(--text-tertiary)' } }, '×')
+                React.createElement('span', { style: { color: 'var(--text-tertiary)' } }, React.createElement(Icons.X, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }))
               )
             )
           ),
