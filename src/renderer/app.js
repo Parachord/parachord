@@ -452,6 +452,56 @@ window.resolveMbidForLove = async (track) => {
   return null;
 };
 
+// Resolve a recording MBID to names for the loved-tracks import
+// (parachord#1071): ListenBrainz feedback whose MBID the mapping cache
+// doesn't know carries no track_metadata, so the import resolves names from
+// the recording itself. `/ws/2/recording/{mbid}?inc=artist-credits+releases`
+// through the app's wrapped fetch on the background lane (the ~1.1s MusicBrainz
+// spacing — a big library of metadata-less loves takes minutes, which #1071
+// accepts; the button shows a "Looking up names…" phase). Artist-credit
+// joinphrases are kept so "Simon & Garfunkel" doesn't come back as
+// "SimonGarfunkel", and the FIRST release's title is the album. On a merged
+// MBID MusicBrainz answers with the target recording, so `data.id` replaces
+// the stale MBID the candidate carried. No User-Agent header: Chromium strips
+// it from renderer fetches anyway, and the main process stamps the canonical
+// `Parachord/<version>` on every MetaBrainz request.
+//
+// Returns { status: 'ok', artist, title, album, mbid } | { status: 'missing' }
+// (the recording is gone: a real 404 or 400, or no usable names) | { status:
+// 'transient' } (throttled or unreachable after the fetch layer's retries —
+// the caller counts that differently and holds the cursor, because a missed
+// recording and an unreachable server must not read the same). Never throws.
+window.lookupRecordingTitle = async (mbid) => {
+  if (!mbid || !/^[a-f0-9-]{36}$/i.test(mbid)) return { status: 'missing' };
+  try {
+    const url = `https://musicbrainz.org/ws/2/recording/${encodeURIComponent(mbid)}?fmt=json&inc=artist-credits+releases`;
+    const resp = await fetch(url, {
+      mbBackground: true,
+      headers: {
+        'Accept': 'application/json',
+      },
+    });
+    if (resp.status === 404 || resp.status === 400) return { status: 'missing' };
+    if (!resp.ok) return { status: 'transient' };
+    const data = await resp.json();
+    const title = typeof data?.title === 'string' ? data.title.trim() : '';
+    const credit = Array.isArray(data?.['artist-credit']) ? data['artist-credit'] : [];
+    let artist = '';
+    for (const c of credit) {
+      if (c?.name) artist += c.name;
+      if (c?.joinphrase) artist += c.joinphrase;
+    }
+    artist = artist.trim();
+    const releases = Array.isArray(data?.releases) ? data.releases : [];
+    const album = typeof releases[0]?.title === 'string' ? releases[0].title.trim() : '';
+    const resolvedMbid = /^[a-f0-9-]{36}$/i.test(data?.id || '') ? data.id : mbid;
+    if (!title || !artist) return { status: 'missing' };
+    return { status: 'ok', artist, title, album, mbid: resolvedMbid };
+  } catch (e) {
+    return { status: 'transient' };
+  }
+};
+
 // Resolve an album to a release MBID via the MBID Mapper, given the artist
 // and any recording from the album. Achordion's entity-link endpoint
 // accepts release MBIDs and maps them to the canonical release-group page
@@ -1186,6 +1236,7 @@ const { loveTombstoneEntries } = LoveImport;
 // Unicode-aware track/album id slugs — replaces the ASCII-only strip formula
 // that collapsed every non-Latin track to the same id (lib/track-slug.js).
 const { trackSlug, slug } = require('./lib/track-slug');
+const { interpolatedProgress } = require('./lib/progress-interpolation');
 const { createDebouncedSaver } = require('./lib/debounced-saver');
 // The track-sources cache is saved this long after the last resolution, and
 // no later than the max after the first unsaved one (debounced-saver.js;
@@ -1253,16 +1304,15 @@ const prefetchInProgress = window._prefetchInProgress;
 
 // ─── Icons + track lists (src/renderer/components/) ────────────────────────
 // The lucide-react icon kit moves to components/icons.js (app.js keeps its
-// own icon destructure below, unchanged); TrackRow + the windowed lists +
-// getBestSourceConfidence (badge dimming) move to components/track-lists.js
-// (Track 2b, presentational slice 2). getBestSourceConfidence is exported
-// back — the 10 in-component badge call sites keep the same binding.
-// Behavior-identical, memoized as before.
+// own icon destructure below, unchanged); TrackRow + the windowed lists move
+// to components/track-lists.js (Track 2b, presentational slice 2). The
+// in-component badge lists get their icons, order and dimming from
+// lib/visible-sources.js, the same rule as the queue and the pages.
 const Icons = require('./components/icons');
 const {
-  getBestSourceConfidence,
   VirtualizedQueueList, VirtualizedTrackList,
 } = require('./components/track-lists');
+const { sourceRowState } = require('./lib/visible-sources');
 const { Play, Pause, SkipForward, SkipBack, Volume2, Search, List, Settings, Plus, Music, Radio, Users, Heart, X } = Icons;
 
 
@@ -3830,7 +3880,7 @@ const Parachord = () => {
   // docs/plans/2026-05-03-loved-tracks-scrobbler-push-design.md.
   const [scrobblerLovePushEnabled, setScrobblerLovePushEnabled] = useState({});
   const scrobblerLovePushEnabledRef = useRef({});
-  const lovePushedKeysRef = useRef({}); // { [trackId]: { lastfm?: ts, listenbrainz?: ts } }
+  const lovePushedKeysRef = useRef({}); // { [trackId]: { lastfm?: ts, listenbrainz?: ts | { at, mbid } } }
   const [loveBackfillRunning, setLoveBackfillRunning] = useState({}); // { [service]: boolean }
   const loveBackfillRunningRef = useRef({});
   const [loveBackfillProgress, setLoveBackfillProgress] = useState({}); // { [service]: { done, total } }
@@ -12702,23 +12752,22 @@ ${trackListXml}
         // 1. We have a valid baseline from native polling (timestamp > 0)
         // 2. Preview audio is NOT actively playing (it has its own timeupdate)
         // 3. Baseline indicates playback is happening
+        // A loading track holds its position: the old one is already paused
+        // (lib/progress-interpolation.js).
         const previewPlaying = window._appleMusicPreviewAudio && !window._appleMusicPreviewAudio.paused;
-        if (baseline.timestamp > 0 && baseline.isPlaying && !previewPlaying && !seekingRef.current) {
-          const elapsed = (Date.now() - baseline.timestamp) / 1000;
-          const interpolatedProgress = baseline.progress + elapsed;
-
-          if (interpolatedProgress < currentTrack.duration && interpolatedProgress >= 0) {
-            setProgress(interpolatedProgress);
-            if (window.scrobbleManager) {
-              window.scrobbleManager.onProgressUpdate(interpolatedProgress);
-            }
+        if (previewPlaying) return;
+        const position = interpolatedProgress({ baseline, now: Date.now(), duration: currentTrack.duration, seeking: seekingRef.current, loading: trackLoading });
+        if (position !== null) {
+          setProgress(position);
+          if (window.scrobbleManager) {
+            window.scrobbleManager.onProgressUpdate(position);
           }
         }
       }, 1000);
 
       return () => clearInterval(interval);
     }
-  }, [isPlaying, currentTrack]);
+  }, [isPlaying, trackLoading, currentTrack]);
 
 
   // Listen for context menu actions (only set up once)
@@ -13280,27 +13329,22 @@ ${trackListXml}
       const interval = setInterval(() => {
         const baseline = spotifyProgressBaselineRef.current;
 
-        // Only interpolate if:
-        // 1. We have a valid baseline (timestamp > 0 means API has set it)
-        // 2. Spotify reports that playback is actually happening (isPlaying from API)
-        if (baseline.timestamp > 0 && baseline.isPlaying && !seekingRef.current) {
-          const elapsed = (Date.now() - baseline.timestamp) / 1000;
-          const interpolatedProgress = baseline.progress + elapsed;
-
-          // Don't exceed track duration and don't go backwards
-          if (interpolatedProgress < currentTrack.duration && interpolatedProgress >= 0) {
-            setProgress(interpolatedProgress);
-            // Notify scrobble manager of progress for scrobble threshold checking
-            if (window.scrobbleManager) {
-              window.scrobbleManager.onProgressUpdate(interpolatedProgress);
-            }
+        // Counts forward from the last poll while Spotify reports playing;
+        // holds while seeking, and while a new track is loading (the old one
+        // is already paused) — lib/progress-interpolation.js.
+        const position = interpolatedProgress({ baseline, now: Date.now(), duration: currentTrack.duration, seeking: seekingRef.current, loading: trackLoading });
+        if (position !== null) {
+          setProgress(position);
+          // Notify scrobble manager of progress for scrobble threshold checking
+          if (window.scrobbleManager) {
+            window.scrobbleManager.onProgressUpdate(position);
           }
         }
       }, 1000); // Update every second for smooth progress bar
 
       return () => clearInterval(interval);
     }
-  }, [isPlaying, currentTrack, browserPlaybackActive]);
+  }, [isPlaying, trackLoading, currentTrack, browserPlaybackActive]);
 
   // Auto-dismiss toast after a default of 3 seconds (6 if it has an action
   // button, never if persistent). Callers can override with `duration` to
@@ -13975,6 +14019,14 @@ ${trackListXml}
     // src/renderer/lib/love-import.js), so a track loved on both services
     // and removed once stays removed from both imports.
     entries.push(...loveTombstoneEntries(track));
+    // A heart-added track's ListenBrainz push resolved a recording MBID it
+    // never wrote on the row; the mark kept it, so the removal tombstones the
+    // exact recording the service holds (the name key can miss when
+    // Parachord's names differ from MusicBrainz's).
+    const pushedMbid = lovePushedKeysRef.current?.[track.id]?.listenbrainz;
+    if (pushedMbid && typeof pushedMbid === 'object' && /^[a-f0-9-]{36}$/i.test(pushedMbid.mbid || '')) {
+      push('listenbrainz', pushedMbid.mbid);
+    }
     return entries;
   }, []);
 
@@ -14098,7 +14150,8 @@ ${trackListXml}
             return;
           }
           await window.listenbrainzScrobbler.loveTrack({ ...track, mbid });
-          await markLovePushed(track.id, 'listenbrainz');
+          await markLovePushed(track.id, 'listenbrainz', mbid);
+          clearListenbrainzLoveTombstone(mbid);
           console.log(`[love-push] LB ✓ ${track.artist} – ${track.title}`);
         } catch (err) {
           console.warn(`[love-push] LB failed for "${track.title}":`, err?.message || err);
@@ -14169,10 +14222,27 @@ ${trackListXml}
   // Persist a single love-pushed checkpoint. Keeps the ref hot and
   // writes through to electron-store so a backfill mid-run survives
   // a crash.
-  const markLovePushed = useCallback(async (trackId, service) => {
+  // A successful ListenBrainz push clears the tombstone its own MBID may
+  // have written on an earlier removal: a re-add after a removal must import
+  // again, and the mark's MBID is the tombstone key (parachord#1071 review).
+  const clearListenbrainzLoveTombstone = (mbid) => {
+    if (!mbid || !/^[a-f0-9-]{36}$/i.test(mbid) || !window.electron?.tombstones) return;
+    window.electron.tombstones.clearBatch([{ providerId: 'listenbrainz', externalId: mbid }])
+      .catch((err) => console.warn('[love-push] could not clear the ListenBrainz tombstone:', err?.message || err));
+  };
+
+  // markLovePushed(trackId, service, mbid): the entry is the push timestamp,
+  // or { at, mbid } when the push resolved a recording MBID (ListenBrainz) —
+  // storing it means a later removal can tombstone the exact recording the
+  // service holds, even though the collection row itself never carries it.
+  // Both shapes are truthy, so every "already pushed" check keeps working.
+  const markLovePushed = useCallback(async (trackId, service, mbid) => {
+    const stamped = (typeof mbid === 'string' && /^[a-f0-9-]{36}$/i.test(mbid))
+      ? { at: Date.now(), mbid }
+      : Date.now();
     const next = {
       ...lovePushedKeysRef.current,
-      [trackId]: { ...(lovePushedKeysRef.current[trackId] || {}), [service]: Date.now() },
+      [trackId]: { ...(lovePushedKeysRef.current[trackId] || {}), [service]: stamped },
     };
     lovePushedKeysRef.current = next;
     try { await window.electron.store.set('love_pushed_keys', next); }
@@ -14189,9 +14259,6 @@ ${trackListXml}
     });
   }, []);
 
-  // Manual backfill: walks the collection, pushes any track not yet
-  // marked as pushed for this service. Soft rate-limit ~1 req/sec.
-  // Idempotency cache means re-clicks are cheap.
   // Manual backfill: walks the collection, pushes any track not yet
   // marked as pushed for this service. Soft rate-limit ~1 req/sec.
   // Idempotency cache means re-clicks are cheap.
@@ -14238,7 +14305,8 @@ ${trackListXml}
           const mbid = await window.resolveMbidForLove(track);
           if (!mbid) { skipped++; continue; }
           await window.listenbrainzScrobbler.loveTrack({ ...track, mbid });
-          await markLovePushed(track.id, 'listenbrainz');
+          await markLovePushed(track.id, 'listenbrainz', mbid);
+          clearListenbrainzLoveTombstone(mbid);
           pushed++;
         }
       } catch (err) {
@@ -14345,13 +14413,12 @@ ${trackListXml}
       //    paging, the per-page retries and the stop rules).
       const fetchPage = service === 'lastfm'
         ? async ({ page, count }) => window.lastfmScrobbler.getLovedTracksPage({ page, count })
-        : null; // the ListenBrainz fetcher lands with its slice
-      if (!fetchPage) return;
+        : async ({ offset, count }) => window.listenbrainzScrobbler.getLovedTracksPage({ offset, count });
       const { loves, skipped, complete, error, capped } = await LoveImport.collectLoves({
         fetchPage,
-        parse: LoveImport.parseLastfmLovedPage,
+        parse: service === 'lastfm' ? LoveImport.parseLastfmLovedPage : LoveImport.parseListenbrainzFeedbackPage,
         cursor,
-        pageSize: 200,
+        pageSize: service === 'lastfm' ? 200 : 100,
         onProgress: (done, total) => setProgress(done, total),
       });
       if (error && loves.length === 0 && skipped === 0) {
@@ -14406,41 +14473,99 @@ ${trackListXml}
       // 3. Plan and commit: rows with names land immediately; the
       //    metadata-less lookup tail commits as a second batch, so quitting
       //    during a long tail keeps the loves that never needed a lookup.
-      const writeBox = { savePromises: [], addedIds: [], updaterRan: false };
-      const commitRows = (rows) => {
-        if (rows.length === 0) return;
+      // One batch per commit, each with its own updater flag and saves, so
+      // a later batch can't read as confirmed off an earlier one's updater
+      // run. A batch's marks are written when IT confirms (a quit during
+      // the LB lookup tail must not leave batch 1 unmarked — Backfill would
+      // re-offer those loves to the service they came from).
+      const batches = [];
+      const commitBatch = (plan) => {
+        const batch = { planned: plan.add.length, updaterRan: false, savePromises: [], addedIds: [], saveOk: true };
+        batches.push(batch);
+        if (plan.add.length === 0) return batch;
         setCollectionData(prev => {
-          writeBox.updaterRan = true;
+          batch.updaterRan = true;
           const prevIds = new Set(prev.tracks.map((t) => t && t.id).filter(Boolean));
-          const fresh = rows.filter((r) => !prevIds.has(r.id));
+          const fresh = plan.add.filter((r) => !prevIds.has(r.id));
           if (fresh.length === 0) return prev; // everything appeared concurrently; nothing to save
           const newData = { ...prev, tracks: [...prev.tracks, ...fresh] };
-          writeBox.savePromises.push(saveCollection(newData));
-          writeBox.addedIds.push(...fresh.map((r) => r.id));
+          batch.savePromises.push(saveCollection(newData));
+          batch.addedIds.push(...fresh.map((r) => r.id));
           return newData;
         });
+        return batch;
       };
+      const writeMarks = async (ids) => {
+        if (ids.length === 0) return;
+        const marked = LoveImport.withLovesPushed(lovePushedKeysRef.current, ids, service);
+        lovePushedKeysRef.current = marked;
+        try { await window.electron.store.set('love_pushed_keys', marked); }
+        catch (e) { console.warn(`[love-import ${service}] could not persist no-loop marks:`, e?.message || e); }
+      };
+      // Confirm a batch and mark its rows. Matched ids are already in the
+      // collection, so their marks are safe whatever the save did; added ids
+      // wait for THIS batch's confirmed save — a mark on a row a failed save
+      // never wrote would, after a restart, read as "you removed this"
+      // through the pre-ship heuristic and lose the love for good. A matched
+      // id can name an earlier batch's planned-but-unsaved row (plan2 matches
+      // plan1.add): marking that would orphan it the same way, so only ids
+      // that were in the collection when the run started, or that an earlier
+      // batch CONFIRMED, are marked. The setTimeout yield lets React commit
+      // the updater before its save promises are read (MessageChannel
+      // flushes ahead of timers).
+      const confirmBatch = async (batch, matchedIds) => {
+        const markableIds = new Set(collectionIds);
+        for (const b of batches) {
+          if (b === batch) break;
+          if (b.saveOk) for (const id of b.addedIds) markableIds.add(id);
+        }
+        await writeMarks(matchedIds.filter((id) => markableIds.has(id)));
+        await new Promise((r) => setTimeout(r, 0));
+        if (batch.planned > 0) {
+          if (!batch.updaterRan) batch.saveOk = false;
+          else if (batch.savePromises.length > 0) batch.saveOk = (await Promise.all(batch.savePromises)).every(Boolean);
+        }
+        if (batch.saveOk) await writeMarks(batch.addedIds);
+        return batch.saveOk;
+      };
+
+      // The MBIDs a heart's ListenBrainz push resolved and stored on its
+      // mark: indexed alongside the rows' own MBIDs so a love for that MBID
+      // matches the hearted row instead of duplicating it. Marks from before
+      // this shipped are plain timestamps and contribute nothing.
+      const markMbids = {};
+      for (const [id, entry] of Object.entries(lovePushedKeysRef.current || {})) {
+        const stamped = entry && entry.listenbrainz;
+        if (stamped && typeof stamped === 'object' && /^[a-f0-9-]{36}$/i.test(stamped.mbid || '')) {
+          markMbids[id] = stamped.mbid;
+        }
+      }
 
       const namedLoves = loves.filter((l) => !l.needsLookup);
       const needsLookupLoves = loves.filter((l) => l.needsLookup);
-      const plan1 = await dropRemoved(LoveImport.planLoveImport(namedLoves, collectionTracks, tombstones));
-      commitRows(plan1.add);
+      const plan1 = await dropRemoved(LoveImport.planLoveImport(namedLoves, collectionTracks, tombstones, markMbids));
+      const batch1 = commitBatch(plan1);
+      await confirmBatch(batch1, plan1.matchedIds);
 
       // 4. The lookup tail (ListenBrainz's metadata-less loves; none for
-      //    Last.fm). window.lookupRecordingTitle lands with the ListenBrainz
-      //    slice (#1364): until then the guard skips these as unresolvable.
-      //    One MB request each, on the background lane; a row already in the
-      //    collection by MBID matches without the request; a transient
-      //    MusicBrainz failure holds the cursor (the love isn't lost, just
-      //    not this run) while a real miss is skipped.
-      let lookupTransient = 0, lookupSkipped = 0;
+      //    Last.fm). One MB request each, on the background lane; a removed
+      //    love is checked FIRST against the start-of-run snapshot (its MBID
+      //    is all the tombstone key needs, so no 1.1s request is spent on a
+      //    love that will drop, and a transient lookup failure can't hold
+      //    the cursor for it; a removal DURING the run still costs one
+      //    lookup before dropRemoved's re-read drops it at the write); a row
+      //    already in the collection by MBID matches without the request; a
+      //    transient MusicBrainz failure holds the cursor (the love isn't
+      //    lost, just not this run) while a real miss is skipped.
+      let lookupTransient = 0, lookupSkipped = 0, lookupRemoved = 0;
       const lookupMatchedIds = [];
       const resolvedLoves = [];
       if (needsLookupLoves.length > 0 && typeof window.lookupRecordingTitle === 'function') {
-        const mbidIndex = LoveImport.rowMbidIndex([...collectionTracks, ...plan1.add]);
+        const mbidIndex = LoveImport.rowMbidIndex([...collectionTracks, ...plan1.add], markMbids);
         setProgress(0, needsLookupLoves.length, 'lookup');
         for (let i = 0; i < needsLookupLoves.length; i++) {
           const cand = needsLookupLoves[i];
+          if (LoveImport.isLoveTombstoned(tombstones, cand)) { lookupRemoved++; continue; }
           const existing = mbidIndex.get(cand.mbid);
           if (existing) { lookupMatchedIds.push(existing.id); }
           else {
@@ -14455,43 +14580,25 @@ ${trackListXml}
       } else if (needsLookupLoves.length > 0) {
         lookupSkipped += needsLookupLoves.length;
       }
-      const plan2 = await dropRemoved(LoveImport.planLoveImport(resolvedLoves, [...collectionTracks, ...plan1.add], tombstones));
-      commitRows(plan2.add);
+      const plan2 = await dropRemoved(LoveImport.planLoveImport(resolvedLoves, [...collectionTracks, ...plan1.add], tombstones, markMbids));
+      const batch2 = commitBatch(plan2);
+      await confirmBatch(batch2, [...plan2.matchedIds, ...lookupMatchedIds]);
 
-      // 5. The functional updaters have run by the time the fetch's last IPC
-      //    round-trip resolved (React commits before it returns). If one
-      //    somehow didn't, the write is UNCONFIRMED — hold the cursor rather
-      //    than trust a timing assumption with lost-import consequences.
-      const plannedRows = plan1.add.length + plan2.add.length;
-      let saveOk = true;
-      if (plannedRows > 0) {
-        if (!writeBox.updaterRan) saveOk = false;
-        else if (writeBox.savePromises.length > 0) saveOk = (await Promise.all(writeBox.savePromises)).every(Boolean);
-      }
-      const added = writeBox.addedIds.length > 0 || plannedRows === 0 ? writeBox.addedIds.length : plannedRows;
+      // 5. Roll up the batches (each already confirmed and marked in
+      //    confirmBatch above): the cursor moves only when every batch
+      //    confirmed its write; the summary counts what actually landed; the
+      //    cross-service push carries only the confirmed ids.
+      const saveOk = batches.every((b) => b.saveOk);
+      const plannedRows = batches.reduce((n, b) => n + b.planned, 0);
+      const addedIds = batches.reduce((acc, b) => acc.concat(b.addedIds), []);
+      const confirmedIds = batches.reduce((acc, b) => (b.saveOk ? acc.concat(b.addedIds) : acc), []);
+      const anyUpdaterRan = batches.some((b) => b.updaterRan);
+      const added = addedIds.length > 0 || plannedRows === 0 ? addedIds.length : (anyUpdaterRan ? addedIds.length : plannedRows);
       if (added > 0) showSidebarBadge('collection');
-
-      // 6. The no-loop marks: every CONFIRMED-added row and every matched row
-      //    is marked as pushed for the service the loves came FROM (one map
-      //    write — markLovePushed writes the whole map per call). Only the
-      //    confirmed adds wait on the save: a mark on a row a failed save
-      //    never wrote would, after a restart, read as "you removed this"
-      //    through the pre-ship heuristic and lose the love for good.
-      //    Matched rows are already in the collection, so their marks are
-      //    safe whatever the save did. One row matched in both batches
-      //    counts once.
-      const matchedIds = [...new Set([...plan1.matchedIds, ...plan2.matchedIds, ...lookupMatchedIds])];
       // Two loves that match the same collection row are ONE mark but TWO
       // loves: the summary counts loves, so it adds up to what the service
       // returned.
       const matchedLoves = plan1.matchedIds.length + plan2.matchedIds.length + lookupMatchedIds.length;
-      const markedKeys = LoveImport.withLovesPushed(
-        lovePushedKeysRef.current,
-        [...matchedIds, ...(saveOk ? writeBox.addedIds : [])],
-        service);
-      lovePushedKeysRef.current = markedKeys;
-      try { await window.electron.store.set('love_pushed_keys', markedKeys); }
-      catch (e) { console.warn(`[love-import ${service}] could not persist no-loop marks:`, e?.message || e); }
 
       // 7. The cursor advances only when the whole window was read, nothing
       //    transient failed, and the save landed — otherwise the next run
@@ -14508,7 +14615,7 @@ ${trackListXml}
       //    "already in your collection" — the summary must add up to what
       //    the service shows.
       const matched = matchedLoves + plan1.merged + plan2.merged;
-      const tombstoned = plan1.tombstoned + plan2.tombstoned;
+      const tombstoned = plan1.tombstoned + plan2.tombstoned + lookupRemoved;
       const allSkipped = skipped + lookupSkipped;
       let msg = `Imported ${added} from ${label}. ${matched} already in your collection, ${allSkipped} skipped`;
       if (tombstoned > 0) msg += `, ${tombstoned} you removed`;
@@ -14529,13 +14636,15 @@ ${trackListXml}
       // 9. Cross-service propagation, confirmed in the pre-run dialog: just
       //    the imported ids, through the restricted backfill (its own
       //    progress on the other card), never a per-track live push.
-      if (crossConfirm && saveOk && writeBox.addedIds.length > 0) {
+      if (crossConfirm && confirmedIds.length > 0) {
         // The restricted backfill is a no-op while that service's own backfill
         // is running — say so instead of silently skipping the confirmed push.
         if (loveBackfillRunningRef.current[otherService]) {
-          showToast(`A ${otherLabel} backfill is still running. Once it finishes, run Backfill on the ${otherLabel} card to push the ${writeBox.addedIds.length} imported loves.`, 'info');
+          showToast(`A ${otherLabel} backfill is still running. Once it finishes, run Backfill on the ${otherLabel} card to push the ${confirmedIds.length} imported loves.`, 'info');
         } else {
-          runLoveBackfill(otherService, { onlyIds: new Set(writeBox.addedIds) });
+          runLoveBackfill(otherService, { onlyIds: new Set(confirmedIds) }).catch((err) => {
+            console.warn(`[love-import ${service}] cross-service push failed:`, err?.message || err);
+          });
         }
       }
     } catch (err) {
@@ -22231,6 +22340,9 @@ ${trackListXml}
   const showReleasePlaceholder = ({ id, artist, title, albumArt, date, releaseType }) => {
     const placeholderArtist = { id: null, name: artist };
     openingReleaseRef.current = true;
+    // Back from the album fetches this artist's releases only when none are
+    // loaded; the previous artist's would show as this one's discography.
+    setArtistReleases([]);
     setCurrentArtist(placeholderArtist);
     setCurrentRelease({
       id,
@@ -22498,6 +22610,10 @@ ${trackListXml}
 
       // Clear artist history so back button returns to Collection, not previous artist
       setArtistHistory([]);
+      // And the previous artist's releases: Back from the album fetches this
+      // artist's only when none are loaded, so stale ones showed the wrong
+      // discography (as handleAlbumClick does).
+      setArtistReleases([]);
 
       openingReleaseRef.current = true;
       setCurrentArtist(artist);
@@ -39430,9 +39546,12 @@ useEffect(() => {
               return React.createElement('div', { className: 'space-y-0' },
                 filtered.map((track, index) => {
                   // Look up resolved sources from trackSources state
-                  const resolvedSources = trackSources[track.id] || {};
-                  const hasResolved = Object.keys(resolvedSources).length > 0;
-                  const isResolving = !hasResolved;
+                  // The row's sources, one rule for every list (lib/visible-sources):
+                  // resolving (shimmer), unplayable (dimmed, no icons) or playable.
+                  const { shown: shownSources, state: sourceState } = sourceRowState(track, { trackSources, playbackResolvers, resolverOrder });
+                  const hasResolved = sourceState === 'playable';
+                  const isResolving = sourceState === 'resolving';
+                  const isUnplayable = sourceState === 'unplayable';
                   const isCurrentTrack = currentTrack?.title === track.title && currentTrack?.artist === track.artist;
                   const isNowPlaying = isCurrentTrack && isPlaying;
 
@@ -39453,7 +39572,7 @@ useEffect(() => {
                       }
                     },
                     className: `flex items-center gap-4 py-3 px-4 cursor-pointer transition-all group ${
-                      isResolving ? 'opacity-60' : ''
+                      isResolving || isUnplayable ? 'opacity-60' : ''
                     } ${isNowPlaying ? 'bg-purple-50' : 'hover:bg-gray-50/80'}`,
                     style: { borderRadius: '8px', marginBottom: '2px' },
                     onClick: () => {
@@ -39548,15 +39667,8 @@ useEffect(() => {
                           })
                         )
                       : hasResolved ? (() => {
-                          const bestConf = getBestSourceConfidence(resolvedSources);
-                          return Object.entries(resolvedSources)
-                            .filter(([resolverId]) => playbackResolvers.includes(resolverId))
-                            .sort(([aId], [bId]) => {
-                              const aIndex = resolverOrder.indexOf(aId);
-                              const bIndex = resolverOrder.indexOf(bId);
-                              return aIndex - bIndex;
-                            })
-                            .map(([resolverId, source]) => {
+                          // The shared source-icon rule (lib/visible-sources).
+                          return shownSources.map(({ resolverId, source, dim }) => {
                               const resolver = allResolvers.find(r => r.id === resolverId);
                               if (!resolver || !resolver.play) return null;
                               return React.createElement('button', {
@@ -39580,7 +39692,7 @@ useEffect(() => {
                                   alignItems: 'center',
                                   justifyContent: 'center',
                                   pointerEvents: 'auto',
-                                  opacity: (source.confidence || 0) < bestConf ? 0.6 : 1,
+                                  opacity: dim ? 0.6 : 1,
                                   transition: 'transform 0.1s'
                                 },
                                 onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
@@ -42072,9 +42184,12 @@ useEffect(() => {
             // the whole remainder, like the flat page, not just the visible tail.
             const songRow = (item, index, allSongs, section) => {
               const track = item.track;
-              const resolvedSources = trackSources[track.id] || track.sources || {};
-              const hasResolved = Object.keys(resolvedSources).length > 0;
-              const isResolving = Object.keys(resolvedSources).length === 0;
+              // The row's sources, one rule for every list (lib/visible-sources):
+              // resolving (shimmer), unplayable (dimmed, no icons) or playable.
+              const { shown: shownSources, state: sourceState } = sourceRowState(track, { trackSources, playbackResolvers, resolverOrder });
+              const hasResolved = sourceState === 'playable';
+              const isResolving = sourceState === 'resolving';
+              const isUnplayable = sourceState === 'unplayable';
               // The row playing now: this track, played from THIS row (the
               // context a row click sets), the playlist view's rule with the
               // row's key standing in for the playlist id. The key, not the
@@ -42115,7 +42230,7 @@ useEffect(() => {
                 },
                 onDragEnd: () => handlePlaylistDragEnd(),
                 className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group no-drag ${
-                  isResolving ? 'opacity-60' : ''
+                  isResolving || isUnplayable ? 'opacity-60' : ''
                 } ${isNowPlaying ? 'bg-purple-50' : (isResolving ? '' : 'hover:bg-gray-50/80')}`,
                 style: { borderRadius: '8px', marginBottom: '2px' },
                 onClick: () => queueTail(),
@@ -42161,15 +42276,8 @@ useEffect(() => {
                         React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: '0.1s' } })
                       )
                     : hasResolved ? (() => {
-                        const bestConf = getBestSourceConfidence(resolvedSources);
-                        return Object.entries(resolvedSources)
-                          .filter(([resolverId]) => playbackResolvers.includes(resolverId))
-                          .sort(([aId], [bId]) => {
-                            const aIndex = resolverOrder.indexOf(aId);
-                            const bIndex = resolverOrder.indexOf(bId);
-                            return aIndex - bIndex;
-                          })
-                          .map(([resolverId, source]) => {
+                        // The shared source-icon rule (lib/visible-sources).
+                        return shownSources.map(({ resolverId, source, dim }) => {
                             const resolver = allResolvers.find(r => r.id === resolverId);
                             if (!resolver || !resolver.play) return null;
                             return React.createElement('button', {
@@ -42190,7 +42298,7 @@ useEffect(() => {
                                 alignItems: 'center',
                                 justifyContent: 'center',
                                 pointerEvents: 'auto',
-                                opacity: (source.confidence || 0) < bestConf ? 0.6 : 1,
+                                opacity: dim ? 0.6 : 1,
                                 transition: 'transform 0.1s'
                               },
                               onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
@@ -42199,10 +42307,7 @@ useEffect(() => {
                             }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
                           });
                       })()
-                    : React.createElement('div', { className: 'flex items-center gap-1' },
-                        React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', title: 'Resolving track...' }),
-                        React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: '0.1s' } })
-                      )
+                    : null
                 )
               );
             };
@@ -42901,9 +43006,12 @@ useEffect(() => {
                   return React.createElement('div', { className: 'space-y-0' },
                     ...sorted.map((track, index) => {
                       // Use track.id to look up resolved sources from trackSources state
-                      const resolvedSources = trackSources[track.id] || track.sources || {};
-                      const hasResolved = Object.keys(resolvedSources).length > 0;
-                      const isResolving = Object.keys(resolvedSources).length === 0;
+                      // The row's sources, one rule for every list (lib/visible-sources):
+                      // resolving (shimmer), unplayable (dimmed, no icons) or playable.
+                      const { shown: shownSources, state: sourceState } = sourceRowState(track, { trackSources, playbackResolvers, resolverOrder });
+                      const hasResolved = sourceState === 'playable';
+                      const isResolving = sourceState === 'resolving';
+                      const isUnplayable = sourceState === 'unplayable';
 
                       return React.createElement('div', {
                         // One song listened to twice is two rows with one
@@ -42934,7 +43042,7 @@ useEffect(() => {
                         onDragEnd: () => {
                           handlePlaylistDragEnd();
                         },
-                        className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${isResolving ? 'opacity-60' : 'hover:bg-gray-50/80'}`,
+                        className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${isResolving || isUnplayable ? 'opacity-60' : 'hover:bg-gray-50/80'}`,
                         style: {
                           borderRadius: '8px',
                           marginBottom: '2px'
@@ -42983,15 +43091,15 @@ useEffect(() => {
                               React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: '0.1s' } })
                             )
                           : hasResolved ? (() => {
-                              const bestConf = getBestSourceConfidence(resolvedSources);
-                              return Object.entries(resolvedSources).filter(([resolverId]) => playbackResolvers.includes(resolverId)).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
+                              // The shared source-icon rule (lib/visible-sources).
+                              return shownSources.map(({ resolverId, source, dim }) => {
                                 const resolver = allResolvers.find(r => r.id === resolverId);
                                 if (!resolver || !resolver.play) return null;
                                 return React.createElement('button', {
                                   key: resolverId,
                                   className: 'no-drag',
                                   onClick: (e) => { e.stopPropagation(); const tracksAfter = sorted.slice(index + 1); const context = { type: 'history', name: 'History' }; setQueueWithContext(tracksAfter, context); handlePlay({ ...track, preferredResolver: resolverId }); },
-                                  style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', opacity: (source.confidence || 0) < bestConf ? 0.6 : 1, transition: 'transform 0.1s' },
+                                  style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', opacity: dim ? 0.6 : 1, transition: 'transform 0.1s' },
                                   onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                                   onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
                                   title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
@@ -42999,10 +43107,7 @@ useEffect(() => {
                               });
                             })()
                           :
-                            React.createElement('div', { className: 'flex items-center gap-1' },
-                              React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', title: 'Resolving track...' }),
-                              React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: '0.1s' } })
-                            )
+                            null
                         )
                       );
                     })
@@ -43048,8 +43153,12 @@ useEffect(() => {
                   return React.createElement('div', { className: 'space-y-0' },
                     ...filtered.map((track, index) => {
                       // Use track.id to look up resolved sources from trackSources state
-                      const resolvedSources = trackSources[track.id] || track.sources || {};
-                      const hasResolved = Object.keys(resolvedSources).length > 0;
+                      // The row's sources, one rule for every list (lib/visible-sources):
+                      // resolving (shimmer), unplayable (dimmed, no icons) or playable.
+                      const { shown: shownSources, state: sourceState } = sourceRowState(track, { trackSources, playbackResolvers, resolverOrder });
+                      const hasResolved = sourceState === 'playable';
+                      const isResolving = sourceState === 'resolving';
+                      const isUnplayable = sourceState === 'unplayable';
                       return React.createElement('div', {
                         key: track.id,
                         'data-track-id': track.id,
@@ -43089,15 +43198,15 @@ useEffect(() => {
                         React.createElement('span', { className: 'text-right tabular-nums flex-shrink-0', style: { width: '80px', fontSize: '12px', color: 'var(--text-tertiary)' } }, `${track.playCount} plays`),
                         React.createElement('div', { className: 'flex items-center gap-1 justify-end', style: { width: '140px', flexShrink: 0, minHeight: '24px' } },
                           hasResolved ? (() => {
-                              const bestConf = getBestSourceConfidence(resolvedSources);
-                              return Object.entries(resolvedSources).filter(([resolverId]) => playbackResolvers.includes(resolverId)).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
+                              // The shared source-icon rule (lib/visible-sources).
+                              return shownSources.map(({ resolverId, source, dim }) => {
                                 const resolver = allResolvers.find(r => r.id === resolverId);
                                 if (!resolver || !resolver.play) return null;
                                 return React.createElement('button', {
                                   key: resolverId,
                                   className: 'no-drag',
                                   onClick: (e) => { e.stopPropagation(); const tracksAfter = filtered.slice(index + 1); const context = { type: 'history', name: 'Top Tracks' }; setQueueWithContext(tracksAfter, context); handlePlay({ ...track, preferredResolver: resolverId }); },
-                                  style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: (source.confidence || 0) < bestConf ? 0.6 : 1, transition: 'transform 0.1s' },
+                                  style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: dim ? 0.6 : 1, transition: 'transform 0.1s' },
                                   onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                                   onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
                                   title: `Play from ${resolver.name}`
@@ -43105,10 +43214,7 @@ useEffect(() => {
                               });
                             })()
                           :
-                            React.createElement('div', { className: 'flex items-center gap-1' },
-                              React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer' }),
-                              React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: '0.1s' } })
-                            )
+                            null
                         )
                       );
                     })
@@ -43928,9 +44034,12 @@ useEffect(() => {
                   return React.createElement('div', { className: 'space-y-0' },
                     ...sorted.map((track, index) => {
                       // Use track.id to look up resolved sources from trackSources state
-                      const resolvedSources = trackSources[track.id] || track.sources || {};
-                      const hasResolved = Object.keys(resolvedSources).length > 0;
-                      const isResolving = Object.keys(resolvedSources).length === 0;
+                      // The row's sources, one rule for every list (lib/visible-sources):
+                      // resolving (shimmer), unplayable (dimmed, no icons) or playable.
+                      const { shown: shownSources, state: sourceState } = sourceRowState(track, { trackSources, playbackResolvers, resolverOrder });
+                      const hasResolved = sourceState === 'playable';
+                      const isResolving = sourceState === 'resolving';
+                      const isUnplayable = sourceState === 'unplayable';
                       const tracksAfterRecent = sorted.slice(index + 1);
 
                       return React.createElement('div', {
@@ -43955,7 +44064,7 @@ useEffect(() => {
                         onDragEnd: () => {
                           handlePlaylistDragEnd();
                         },
-                        className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${isResolving ? 'opacity-60' : 'hover:bg-gray-50/80'}`,
+                        className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${isResolving || isUnplayable ? 'opacity-60' : 'hover:bg-gray-50/80'}`,
                         style: { borderRadius: '8px', marginBottom: '2px' },
                         onClick: () => {
                           const tracksAfter = sorted.slice(index + 1);
@@ -44001,15 +44110,15 @@ useEffect(() => {
                                 React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: '0.1s' } })
                               )
                             : hasResolved ? (() => {
-                                const bestConf = getBestSourceConfidence(resolvedSources);
-                                return Object.entries(resolvedSources).filter(([resolverId]) => playbackResolvers.includes(resolverId)).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
+                                // The shared source-icon rule (lib/visible-sources).
+                                return shownSources.map(({ resolverId, source, dim }) => {
                                   const resolver = allResolvers.find(r => r.id === resolverId);
                                   if (!resolver || !resolver.play) return null;
                                   return React.createElement('button', {
                                     key: resolverId,
                                     className: 'no-drag',
                                     onClick: (e) => { e.stopPropagation(); const context = { type: 'friend', name: currentFriend?.name || 'Friend', tab: 'recent' }; setQueueWithContext(tracksAfterRecent, context); handlePlay({ ...track, preferredResolver: resolverId }); },
-                                    style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', opacity: (source.confidence || 0) < bestConf ? 0.6 : 1, transition: 'transform 0.1s' },
+                                    style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', opacity: dim ? 0.6 : 1, transition: 'transform 0.1s' },
                                     onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                                     onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
                                     title: `Play from ${resolver.name}`
@@ -44017,10 +44126,7 @@ useEffect(() => {
                                 });
                               })()
                             :
-                              React.createElement('div', { className: 'flex items-center gap-1' },
-                                React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', title: 'Resolving track...' }),
-                                React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: '0.1s' } })
-                              )
+                              null
                           )
                       );
                     })
@@ -44032,9 +44138,12 @@ useEffect(() => {
                     ? React.createElement('p', { className: 'text-center text-gray-400 py-8' }, 'No top tracks data')
                     : friendHistoryData.topTracks.map((track, index) => {
                         // Use track.id to look up resolved sources from trackSources state
-                        const resolvedSources = trackSources[track.id] || track.sources || {};
-                        const hasResolved = Object.keys(resolvedSources).length > 0;
-                        const isResolving = Object.keys(resolvedSources).length === 0;
+                        // The row's sources, one rule for every list (lib/visible-sources):
+                        // resolving (shimmer), unplayable (dimmed, no icons) or playable.
+                        const { shown: shownSources, state: sourceState } = sourceRowState(track, { trackSources, playbackResolvers, resolverOrder });
+                        const hasResolved = sourceState === 'playable';
+                        const isResolving = sourceState === 'resolving';
+                        const isUnplayable = sourceState === 'unplayable';
 
                         return React.createElement('div', {
                           key: track.id || index,
@@ -44058,7 +44167,7 @@ useEffect(() => {
                           onDragEnd: () => {
                             handlePlaylistDragEnd();
                           },
-                          className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${isResolving ? 'opacity-60' : 'hover:bg-gray-50/80'}`,
+                          className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${isResolving || isUnplayable ? 'opacity-60' : 'hover:bg-gray-50/80'}`,
                           style: { borderRadius: '8px', marginBottom: '2px' },
                           onClick: () => {
                             const tracksAfter = friendHistoryData.topTracks.slice(index + 1);
@@ -44104,15 +44213,15 @@ useEffect(() => {
                                 React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: '0.1s' } })
                               )
                             : hasResolved ? (() => {
-                                const bestConf = getBestSourceConfidence(resolvedSources);
-                                return Object.entries(resolvedSources).filter(([resolverId]) => playbackResolvers.includes(resolverId)).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
+                                // The shared source-icon rule (lib/visible-sources).
+                                return shownSources.map(({ resolverId, source, dim }) => {
                                   const resolver = allResolvers.find(r => r.id === resolverId);
                                   if (!resolver || !resolver.play) return null;
                                   return React.createElement('button', {
                                     key: resolverId,
                                     className: 'no-drag',
                                     onClick: (e) => { e.stopPropagation(); const context = { type: 'friend', name: currentFriend?.name || 'Friend', tab: 'topTracks' }; setQueueWithContext(friendHistoryData.topTracks.slice(index + 1), context); handlePlay({ ...track, preferredResolver: resolverId }); },
-                                    style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', opacity: (source.confidence || 0) < bestConf ? 0.6 : 1, transition: 'transform 0.1s' },
+                                    style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', opacity: dim ? 0.6 : 1, transition: 'transform 0.1s' },
                                     onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                                     onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
                                     title: `Play from ${resolver.name}`
@@ -44120,10 +44229,7 @@ useEffect(() => {
                                 });
                               })()
                             :
-                              React.createElement('div', { className: 'flex items-center gap-1' },
-                                React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', title: 'Resolving track...' }),
-                                React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: '0.1s' } })
-                              )
+                              null
                           )
                         );
                       })
@@ -50696,6 +50802,10 @@ useEffect(() => {
                         backfillRunning: !!loveBackfillRunning.listenbrainz,
                         backfillProgress: loveBackfillProgress.listenbrainz,
                         unpushedCount: (collectionDataRef.current?.tracks || collectionData.tracks).filter(t => !lovePushedKeysRef.current[t.id]?.listenbrainz).length,
+                        onRunLoveImport: () => runLoveImport('listenbrainz'),
+                        loveImportRunning: !!loveImportRunning.listenbrainz,
+                        loveImportProgress: loveImportProgress.listenbrainz,
+                        hasImportedLoves: !!loveImportCursorRef.current?.listenbrainz,
                       })
                   )
                 )
@@ -56221,6 +56331,8 @@ useEffect(() => {
             currentTrack,
             resolverOrder,
             allResolvers,
+            playbackResolvers,
+            trackSources,
             queueDropTarget,
             draggedQueueTrack,
             insertedTrackId,

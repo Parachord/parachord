@@ -23,7 +23,7 @@ const render = (props) => renderToStaticMarkup(
 );
 
 const importButton = (markup) => {
-  const m = markup.match(/<button[^>]*>(?:<[^>]*>)*\s*((?:Import|Looking)[^<]*(?:<[^>]*>[^<]*)*)/);
+  const m = markup.match(/<button[^>]*>(?:<[^>]*>)*\s*((?:Import|Looking|Waiting)[^<]*(?:<[^>]*>[^<]*)*)/);
   return m ? m[0] : null;
 };
 
@@ -39,10 +39,22 @@ describe('the import button on the scrobbler card', () => {
     expect(importButton(markup)).toContain('disabled');
     const lookup = render({ onRunLoveImport: () => {}, loveImportRunning: true, loveImportProgress: { done: 3, total: 41, phase: 'lookup' } });
     expect(importButton(lookup)).toContain('Looking up names… 3/41');
+    const confirm = render({ onRunLoveImport: () => {}, loveImportRunning: true, loveImportProgress: { done: 0, total: 0, phase: 'confirm' } });
+    expect(importButton(confirm)).toContain('Waiting for confirmation…');
   });
 
-  test('no button without the handler (Libre.fm, and ListenBrainz before its slice)', () => {
+  test('no button without the handler (Libre.fm)', () => {
     expect(importButton(render())).toBeNull();
+  });
+
+  test('both cards are wired (a reverted card wiring fails this)', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const app = fs.readFileSync(path.join(__dirname, '../..', 'src/renderer/app.js'), 'utf8');
+    expect(app).toContain("onRunLoveImport: () => runLoveImport('lastfm')");
+    expect(app).toContain("onRunLoveImport: () => runLoveImport('listenbrainz')");
+    expect(app).toContain('loveImportRunning: !!loveImportRunning.listenbrainz');
+    expect(app).toContain('hasImportedLoves: !!loveImportCursorRef.current?.listenbrainz');
   });
 
   test('the tint token, not a palette class (design-drift ratchet #1380)', () => {

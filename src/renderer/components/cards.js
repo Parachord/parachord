@@ -9,7 +9,7 @@
 // app.js for the in-component call sites; PlayTop10Icon / QueueTop10Icon are
 // cards-only (the playtop-10 / queue-top-10 affordances).
 const { ResolverIcon, PlaybackProgress, ShareButton } = require('./ui-atoms');
-const { getBestSourceConfidence } = require('./track-lists');
+const { sourceRowState } = require('../lib/visible-sources');
 const Icons = require('./icons');
 const { Play } = Icons;
 // hashString (module scope in app.js) is used by generateArtistPattern;
@@ -1805,11 +1805,15 @@ const ReleasePage = ({
             // Build track ID first, then use it to look up resolved sources
             const trackId = trackSlug(release.artist.name || 'unknown', track.title || 'untitled', release.title || 'noalbum');
             const sources = trackSources[trackId] || {};
-            const availableResolvers = Object.keys(sources).filter(id => activeResolvers.includes(id) && !sources[id]?.noMatch);
-            // Tri-state for badge area: still-loading vs resolved-with-no-matches vs playable.
-            // Set to true ONLY when resolution definitively completed across all enabled
-            // resolvers and none returned a real match. Drives gray-out + skip-shimmer below.
-            const hasNoMatches = sources.__noMatchAll === true;
+            // The shared source-icon rule (lib/visible-sources), with
+            // activeResolvers = playbackResolvers from app.js and `resolvers`
+            // already in the user's resolver order.
+            const { shown: shownSources, state: sourceState } = sourceRowState({ id: trackId }, { trackSources, playbackResolvers: activeResolvers, resolverOrder: resolvers.map(r => r.id) });
+            const availableResolvers = shownSources.map(s => s.resolverId);
+            // Tri-state for badge area: still-loading vs resolved-with-nothing-playable
+            // (no match anywhere, or only on services the plan can't play) vs
+            // playable. Drives gray-out + skip-shimmer below.
+            const hasNoMatches = sourceState === 'unplayable';
 
             // Build track object for drag/drop and playback
             const trackForDrag = {
@@ -1973,20 +1977,11 @@ const ReleasePage = ({
                     );
                   }
 
-                  // Sort resolvers by priority order (left to right = highest to lowest priority)
-                  const sortedResolverIds = [...availableResolverIds].sort((a, b) => {
-                    const aIndex = resolvers.findIndex(r => r.id === a);
-                    const bIndex = resolvers.findIndex(r => r.id === b);
-                    return aIndex - bIndex;
-                  });
-
                   // Show resolver icons for available sources (only if they support playback)
-                  const bestConf = getBestSourceConfidence(sources);
-                  return sortedResolverIds.map(resolverId => {
+                  return shownSources.map(({ resolverId, source, dim }) => {
                     const resolver = resolvers.find(r => r.id === resolverId);
                     if (!resolver || !resolver.play) return null;
 
-                    const source = sources[resolverId];
                     const confidence = source.confidence || 0;
 
                     return React.createElement('button', {
@@ -2030,7 +2025,7 @@ const ReleasePage = ({
                         alignItems: 'center',
                         justifyContent: 'center',
                         pointerEvents: 'auto',
-                        opacity: confidence < bestConf ? 0.6 : 1,
+                        opacity: dim ? 0.6 : 1,
                         transition: 'transform 0.1s'
                       },
                       onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',

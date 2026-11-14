@@ -602,6 +602,32 @@ class ListenBrainzScrobbler extends BaseScrobbler {
     return true;
   }
 
+  // Fetch one page of the user's loved-recording feedback (parachord#1071,
+  // the import half of the loved-tracks sync). Public endpoint: no token
+  // needed and none sent. The caller maps the page via
+  // parseListenbrainzFeedbackPage (src/renderer/lib/love-import.js) and
+  // walks offset pages newest-first (feedback is ORDER BY created DESC) until
+  // the import cursor's stop marker. A user the server doesn't know answers
+  // 404.
+  async getLovedTracksPage({ offset = 0, count = 100 } = {}) {
+    const config = await this.getConfig();
+    if (!config.username) {
+      throw new Error('Not connected');
+    }
+    const url = `${this.apiBase}/feedback/user/${encodeURIComponent(config.username)}/get-feedback`
+      + `?score=1&count=${count}&offset=${offset}&metadata=true`;
+    const response = await window.electron.proxyFetch(url);
+    if (!response.success) {
+      if (response.status === 404) throw new Error('ListenBrainz user not found');
+      throw new Error(`ListenBrainz loved-feedback fetch failed: ${response.status || 'unknown'} - ${response.error || response.text}`);
+    }
+    try {
+      return JSON.parse(response.text);
+    } catch (parseErr) {
+      throw new Error(`Failed to parse API response as JSON: ${(response.text || '').substring(0, 200)}`);
+    }
+  }
+
   // Validate token by fetching user info
   async validateToken(token) {
     const response = await window.electron.proxyFetch(`${this.apiBase}/validate-token`, {

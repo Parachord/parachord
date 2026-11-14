@@ -5,8 +5,8 @@
   "main": "main.js",
   "desktopName": "parachord-desktop.desktop",
   "scripts": {
-    "start": "electron .",
-    "dev": "electron . --dev",
+    "start": "node scripts/start-electron.js",
+    "dev": "node scripts/start-electron.js --dev",
     "build:css": "npx tailwindcss build -i tailwind-input.css -o vendor/tailwind.css --minify",
     "prebuild": "npm run build:css && node scripts/build-native.js && node scripts/build-axes.js && node scripts/build-amazon-preload.js && node scripts/build-renderer.js",
     "prebuild:mac": "npm run build:css && node scripts/build-native.js && node scripts/build-axes.js && node scripts/build-amazon-preload.js && node scripts/build-renderer.js",

@@ -15,7 +15,8 @@
 // The body is the original render expression, unchanged: it reads its inputs
 // from props under their old names.
 
-const { VirtualizedTrackList, getBestSourceConfidence } = require('./track-lists');
+const { VirtualizedTrackList } = require('./track-lists');
+const { sourceRowState } = require('../lib/visible-sources');
 const { ResolverIcon } = require('./ui-atoms');
 const { CollectionArtistCard, CollectionAlbumCard } = require('./cards');
 
@@ -647,7 +648,12 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                   );
                   const isCurrentTrack = currentTrack?.id === track.id || (currentTrack?.filePath && track.filePath && currentTrack.filePath === track.filePath);
                   const isNowPlaying = isCurrentTrack && playbackContext?.type === 'library';
-                  const isResolving = Object.keys(effectiveSources).length === 0;
+                  // The row's sources, one rule for every list (lib/visible-sources):
+                  // resolving (shimmer), unplayable (dimmed, no icons) or playable.
+                  // A local file always plays, so it is never unplayable.
+                  const { shown: shownSources, state: sourceState } = sourceRowState(track, { trackSources, playbackResolvers: activeResolvers, resolverOrder });
+                  const isResolving = sourceState === 'resolving';
+                  const isUnplayable = sourceState === 'unplayable' && !track.filePath;
 
                   return React.createElement('div', {
                     ref: (el) => {
@@ -685,7 +691,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                     },
                     className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all no-drag group ${
                       isNowPlaying && isPlaying ? 'bg-cyan-50' : 'hover:bg-gray-50/80'
-                    }`,
+                    } ${isUnplayable ? 'opacity-60' : ''}`,
                     style: {
                       borderRadius: '8px',
                       marginBottom: '2px'
@@ -796,21 +802,11 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                       style: { pointerEvents: 'none', minHeight: '20px', width: '140px', justifyContent: 'flex-end' }
                     },
                       (() => {
-                        const sources = effectiveSources;
-                        const sourceIds = Object.keys(sources).filter(id => !sources[id]?.noMatch);
-                        const hasExternalSources = sourceIds.some(id => id !== 'localfiles');
+                        const hasExternalSources = shownSources.some(s => s.resolverId !== 'localfiles');
 
                         if (hasExternalSources) {
-                          // Show resolver icons only for enabled resolvers
-                          const bestConf = getBestSourceConfidence(sources);
-                          return Object.entries(sources)
-                            .filter(([resolverId, v]) => activeResolvers.includes(resolverId) && !v?.noMatch)
-                            .sort(([aId], [bId]) => {
-                              const aIndex = resolverOrder.indexOf(aId);
-                              const bIndex = resolverOrder.indexOf(bId);
-                              return aIndex - bIndex;
-                            })
-                            .map(([resolverId, source]) => {
+                          return shownSources
+                            .map(({ resolverId, source, dim }) => {
                               const resolver = allResolvers.find(r => r.id === resolverId);
                               if (!resolver) return null;
                               return React.createElement('button', {
@@ -834,7 +830,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                                   alignItems: 'center',
                                   justifyContent: 'center',
                                   pointerEvents: 'auto',
-                                  opacity: (source.confidence || 1) < bestConf ? 0.6 : 1,
+                                  opacity: dim ? 0.6 : 1,
                                   transition: 'transform 0.1s'
                                 },
                                 onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
