@@ -107,3 +107,22 @@ describe('secondary and tertiary text pass contrast in both themes', () => {
     expect(tok('text-secondary', dark)).not.toBe(tok('text-tertiary', dark));
   });
 });
+
+// #1383 step 4: converted pages leave remap rules behind. A .dark override
+// for a palette class nothing uses is dead weight, and it hides which
+// classes still depend on the remap.
+test('every .dark palette remap is for a class the renderer still uses', () => {
+  const fs4 = require('fs');
+  const path4 = require('path');
+  const glob = (dir) => fs4.readdirSync(dir, { withFileTypes: true }).flatMap((d) => (
+    d.isDirectory() ? glob(path4.join(dir, d.name)) : d.name.endsWith('.js') ? [path4.join(dir, d.name)] : []));
+  const root4 = path4.join(__dirname, '../..');
+  const src = glob(path4.join(root4, 'src/renderer')).map((f) => fs4.readFileSync(f, 'utf8')).join('\n');
+  const html4 = fs4.readFileSync(path4.join(root4, 'index.html'), 'utf8');
+  const rules = [...html4.matchAll(/^\s*\.dark \.((?:hover\\:)?(?:text|bg|border|divide|placeholder)-(?:gray|purple|violet)-[\w\\/]+)/gm)].map((m) => m[1]);
+  expect(rules.length).toBeGreaterThan(0);
+  const unused = rules
+    .map((r) => r.replace(/\\/g, '').replace(/:(hover|placeholder)$/, ''))
+    .filter((cls) => !new RegExp(`(?<![\\w:/-])${cls.replace(/[/:]/g, (c) => `\\${c}`)}(?![\\w/-])`).test(src));
+  expect(unused).toEqual([]);
+});

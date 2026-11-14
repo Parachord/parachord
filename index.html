@@ -312,8 +312,6 @@
     /* Tailwind dark mode overrides */
     .dark .text-gray-900 { color: var(--text-primary) !important; }
     .dark .text-gray-800 { color: var(--text-primary) !important; }
-    .dark .text-gray-700 { color: var(--text-secondary) !important; }
-    .dark .text-gray-600 { color: var(--text-secondary) !important; }
     .dark .text-gray-500 { color: var(--text-tertiary) !important; }
     .dark .text-gray-400 { color: var(--text-tertiary) !important; }
     .dark .bg-white { background-color: var(--bg-elevated) !important; }
@@ -321,33 +319,14 @@
        cards (bg-white → --bg-elevated in dark) keep their edges. Page bodies
        used bg-white, which put every page but Home on the card colour. */
     .page-bg { background-color: var(--bg-primary); }
-    .dark .bg-gray-50 { background-color: var(--bg-secondary) !important; }
     .dark .bg-gray-100 { background-color: var(--bg-inset) !important; }
-    .dark .bg-gray-200 { background-color: #383838 !important; }
-    .dark .bg-gray-300 { background-color: #444444 !important; }
     .dark .bg-gray-800 { background-color: #252525 !important; }
-    .dark .border-gray-200 { border-color: var(--border-default) !important; }
-    .dark .border-gray-300 { border-color: var(--border-default) !important; }
-    .dark .border-gray-100 { border-color: var(--border-light) !important; }
     .dark .shadow-sm { box-shadow: var(--shadow-sm) !important; }
     .dark .shadow-md { box-shadow: var(--shadow-md) !important; }
     .dark .shadow-lg { box-shadow: var(--shadow-lg) !important; }
-    .dark .hover\:bg-gray-200:hover { background-color: rgba(255, 255, 255, 0.1) !important; }
-    .dark .hover\:bg-gray-50\/80:hover { background-color: rgba(255, 255, 255, 0.06) !important; }
     .dark .hover\:bg-gray-100:hover { background-color: rgba(255, 255, 255, 0.08) !important; }
     .dark .hover\:bg-gray-50:hover { background-color: rgba(255, 255, 255, 0.05) !important; }
-    .dark .divide-gray-100 > :not(:last-child) { border-color: var(--border-light) !important; }
-    .dark .bg-purple-50 { background-color: rgba(139, 92, 246, 0.1) !important; }
-    .dark .bg-purple-100 { background-color: rgba(139, 92, 246, 0.15) !important; }
     .dark .text-purple-600 { color: #a78bfa !important; }
-    .dark .text-purple-700 { color: #c4b5fd !important; }
-    .dark .hover\:bg-purple-50:hover { background-color: rgba(139, 92, 246, 0.12) !important; }
-    .dark .hover\:bg-purple-50\/80:hover { background-color: rgba(139, 92, 246, 0.1) !important; }
-    .dark .hover\:bg-purple-100:hover { background-color: rgba(139, 92, 246, 0.2) !important; }
-    .dark .divide-gray-200 > :not(:last-child) { border-color: var(--border-default) !important; }
-    .dark .placeholder-gray-400::placeholder { color: var(--text-tertiary) !important; }
-    .dark .hover\:text-gray-700:hover { color: var(--text-primary) !important; }
-    .dark .hover\:text-gray-600:hover { color: var(--text-secondary) !important; }
 
     /* ========== End Design Tokens ========== */
 
