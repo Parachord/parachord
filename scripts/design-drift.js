@@ -161,6 +161,8 @@ function scan() {
   for (const file of rendererFiles()) {
     const rel = path.relative(ROOT, file);
     const { counts, cssVars } = scanSource(fs.readFileSync(file, 'utf8'));
+    // The shared icon set is where paths belong; svgPaths counts the copies.
+    if (rel === path.join('src', 'renderer', 'components', 'icons.js')) counts.svgPaths = 0;
     byFile[rel] = counts;
     for (const k of Object.keys(totals)) totals[k] += counts[k];
     for (const v of cssVars) used.add(v);
