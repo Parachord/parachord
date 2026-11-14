@@ -248,7 +248,7 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
       };
       store.set('resolver_sync_settings', partialSyncSettings);
       const hasChanges = Object.values(resultsState).some(r =>
-        r && ((r.added || 0) > 0 || (r.removed || 0) > 0 || (r.updated || 0) > 0)
+        r && ((r.added || 0) > 0 || (r.removed || 0) > 0 || (r.updated || 0) > 0 || (r.merged || 0) > 0)
       );
       console.log(`[Sync] ${providerId} cancelled — partial progress saved`);
       return {
@@ -843,7 +843,7 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
     // everything is unchanged, skip the expensive IPC serialisation of
     // the entire collection — the data is already saved to disk above.
     const hasChanges = Object.values(results).some(r =>
-      r && ((r.added || 0) > 0 || (r.removed || 0) > 0 || (r.updated || 0) > 0)
+      r && ((r.added || 0) > 0 || (r.removed || 0) > 0 || (r.updated || 0) > 0 || (r.merged || 0) > 0)
     );
 
     return { success: true, results, collection: hasChanges ? collection : null };

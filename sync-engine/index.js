@@ -7,6 +7,7 @@
 const SpotifySyncProvider = require('../sync-providers/spotify');
 const AppleMusicSyncProvider = require('../sync-providers/applemusic');
 const ListenBrainzSyncProvider = require('../sync-providers/listenbrainz');
+const { matchTracks } = require('./track-identity');
 
 // Registry of available sync providers
 const providers = {
@@ -31,37 +32,84 @@ const getAllProviders = () => {
 
 /**
  * Calculate diff between remote items and local items
- * Returns { toAdd, toRemove, toUpdate, unchanged }
+ * Returns { toAdd, toRemove, toUpdate, unchanged, merged }
+ *
+ * Albums and artists match by id. Tracks also match by the provider's native
+ * id and by name when an album is a placeholder (sync-engine/track-identity.js),
+ * because a heart, a love import and a provider's sync build different ids for
+ * one song (parachord#1397). A row matched that way keeps its own id, so every
+ * id-keyed map (love_pushed_keys, tombstones, the caches) stays valid. Rows
+ * already in the collection for one recording are merged into one keeper; the
+ * others are listed in `merged`, which applyDiff drops without counting them
+ * as removals.
+ *
+ * options: { dataType, nativeIdOf } — tracks get the tiers when dataType is
+ * 'tracks'; nativeIdOf is the provider's (a row → its native id, or null).
  */
-const calculateDiff = (remoteItems, localItems, providerId) => {
-  const remoteMap = new Map(remoteItems.map(item => [item.id, item]));
-  const localMap = new Map(localItems.map(item => [item.id, item]));
-
+const calculateDiff = (remoteItems, localItems, providerId, options = {}) => {
   const toAdd = [];
   const toRemove = [];
   const toUpdate = [];
   const unchanged = [];
+  let merged = [];
 
-  // Find items to add or update
-  for (const [id, remoteItem] of remoteMap) {
-    const localItem = localMap.get(id);
-    if (!localItem) {
-      // New item - add with this provider as source
-      toAdd.push({
-        ...remoteItem,
-        syncSources: {
-          [providerId]: {
-            addedAt: remoteItem.addedAt,
-            syncedAt: Date.now()
-          }
+  let pairs;
+  let unmatched;
+  let claimed;
+  if (options.dataType === 'tracks') {
+    ({ pairs, unmatched, claimed, merged } = matchTracks(remoteItems, localItems, {
+      providerId,
+      nativeIdOf: options.nativeIdOf
+    }));
+  } else {
+    const remoteMap = new Map(remoteItems.map(item => [item.id, item]));
+    const localMap = new Map(localItems.map(item => [item.id, item]));
+    pairs = [];
+    unmatched = [];
+    claimed = new Set();
+    for (const [id, remoteItem] of remoteMap) {
+      const localItem = localMap.get(id);
+      if (localItem) {
+        pairs.push({ remote: remoteItem, local: localItem, viaId: true });
+        claimed.add(id);
+      } else {
+        unmatched.push(remoteItem);
+      }
+    }
+  }
+
+  // New items - add with this provider as source
+  for (const remoteItem of unmatched) {
+    toAdd.push({
+      ...remoteItem,
+      syncSources: {
+        [providerId]: {
+          addedAt: remoteItem.addedAt,
+          syncedAt: Date.now()
         }
-      });
-    } else if (!localItem.syncSources?.[providerId]) {
+      }
+    });
+  }
+
+  for (const { remote: remoteItem, local: localItem, viaId } of pairs) {
+    // Merge remote sources (e.g., sources.spotify from sync) with local
+    // sources. A row matched by its own id refreshes them from the remote; a
+    // row matched another way keeps its own on a conflict (the heart's
+    // resolved record, say).
+    const sources = viaId
+      ? { ...localItem.sources, ...remoteItem.sources }
+      : { ...remoteItem.sources, ...localItem.sources };
+    // fetchTracks' incremental check compares the newest synced row's
+    // externalId with the remote's: a matched row without one would force a
+    // full fetch on every sync.
+    const externalId = localItem.externalId || remoteItem.externalId;
+    const extra = externalId ? { externalId } : {};
+    if (!localItem.syncSources?.[providerId]) {
       // Item exists but doesn't have this provider as source - add source
-      // Merge remote sources (e.g., sources.spotify from sync) with local sources
       toUpdate.push({
         ...localItem,
-        sources: { ...localItem.sources, ...remoteItem.sources },
+        ...extra,
+        sources,
         syncSources: {
           ...localItem.syncSources,
           [providerId]: {
@@ -72,11 +120,10 @@ const calculateDiff = (remoteItems, localItems, providerId) => {
       });
     } else {
       // Item exists with this provider - update syncedAt
-      // Merge remote sources into local to ensure pre-populated resolution data
-      // (e.g., sources.spotify) is present even for previously synced tracks
       unchanged.push({
         ...localItem,
-        sources: { ...localItem.sources, ...remoteItem.sources },
+        ...extra,
+        sources,
         syncSources: {
           ...localItem.syncSources,
           [providerId]: {
@@ -88,9 +135,12 @@ const calculateDiff = (remoteItems, localItems, providerId) => {
     }
   }
 
-  // Find items to remove (in local with this provider source, but not in remote)
-  for (const [id, localItem] of localMap) {
-    if (localItem.syncSources?.[providerId] && !remoteMap.has(id)) {
+  // Find items to remove (in local with this provider source, but matched by
+  // no remote item). Keyed on the rows matched, not on remote ids: a row
+  // matched by native id or name keeps its own id.
+  for (const localItem of localItems) {
+    if (!localItem || claimed.has(localItem.id)) continue;
+    if (localItem.syncSources?.[providerId]) {
       // Remove this provider's source
       const newSyncSources = { ...localItem.syncSources };
       delete newSyncSources[providerId];
@@ -108,7 +158,7 @@ const calculateDiff = (remoteItems, localItems, providerId) => {
     }
   }
 
-  return { toAdd, toRemove, toUpdate, unchanged };
+  return { toAdd, toRemove, toUpdate, unchanged, merged };
 };
 
 /**
@@ -116,12 +166,14 @@ const calculateDiff = (remoteItems, localItems, providerId) => {
  */
 const applyDiff = (collectionItems, diff) => {
   const { toAdd, toRemove, toUpdate, unchanged } = diff;
+  const merged = diff.merged || [];
 
   console.log(`[SyncEngine] applyDiff input: ${collectionItems.length} items`);
-  console.log(`[SyncEngine] diff: +${toAdd.length} add, -${toRemove.length} remove, ~${toUpdate.length} update, =${unchanged.length} unchanged`);
+  console.log(`[SyncEngine] diff: +${toAdd.length} add, -${toRemove.length} remove, ~${toUpdate.length} update, =${unchanged.length} unchanged, ${merged.length} merged`);
 
   // Create map of items to remove
-  const removeIds = new Set(toRemove.map(item => item.id));
+  // Rows folded into a keeper (calculateDiff's track matching) leave too.
+  const removeIds = new Set([...toRemove.map(item => item.id), ...merged.map(item => item.id)]);
 
   // Create map of items to update
   const updateMap = new Map(toUpdate.map(item => [item.id, item]));
@@ -133,6 +185,7 @@ const applyDiff = (collectionItems, diff) => {
   const diffItemIds = new Set([
     ...toAdd.map(i => i.id),
     ...toRemove.map(i => i.id),
+    ...merged.map(i => i.id),
     ...toUpdate.map(i => i.id),
     ...unchanged.map(i => i.id)
   ]);
@@ -202,7 +255,7 @@ const syncDataType = async (provider, token, dataType, localData, onProgress, re
   if (remoteData === null) {
     return {
       data: localData,
-      stats: { added: 0, removed: 0, updated: 0, unchanged: localSyncedCount }
+      stats: { added: 0, removed: 0, updated: 0, unchanged: localSyncedCount, merged: 0 }
     };
   }
 
@@ -217,7 +270,10 @@ const syncDataType = async (provider, token, dataType, localData, onProgress, re
   }
 
   // Calculate diff
-  const diff = calculateDiff(remoteData, localData, provider.id);
+  const diff = calculateDiff(remoteData, localData, provider.id, {
+    dataType,
+    nativeIdOf: typeof provider.nativeIdOf === 'function' ? (t) => provider.nativeIdOf(t) : null
+  });
 
   // Safety check: if we'd remove a large fraction of the synced items,
   // the remote provider likely returned incomplete results (API pagination
@@ -251,7 +307,8 @@ const syncDataType = async (provider, token, dataType, localData, onProgress, re
       added: diff.toAdd.length,
       removed: diff.toRemove.length,
       updated: diff.toUpdate.length,
-      unchanged: diff.unchanged.length
+      unchanged: diff.unchanged.length,
+      merged: diff.merged.length
     }
   };
 };

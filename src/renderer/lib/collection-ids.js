@@ -31,17 +31,10 @@ const generateArtistId = (name) => {
 };
 
 // An album that isn't one: nothing, "Single", or the name of one of the track's
-// own sources (a plugin with no album naming its service). A service name with
-// no such source could be a real title, so it stays. Never compare through
-// normalizeForId here: it strips non-Latin text to nothing.
-const isPlaceholderAlbum = (album, sources) => {
-  const name = typeof album === 'string' ? album.trim().toLowerCase() : '';
-  if (!name || name === 'single') return true;
-  const compact = name.replace(/[^a-z0-9]/g, '');
-  if (!compact || compact !== name.replace(/[\s\p{P}]/gu, '')) return false;
-  const ids = Array.isArray(sources) ? sources : Object.keys(sources || {});
-  return ids.some((id) => String(id).toLowerCase() === compact);
-};
+// own sources. The rule lives in sync-engine/track-identity.js, which library
+// sync (main process) also uses to match tracks; packaging excludes src/, so
+// it can't live here. One rule for both.
+const { isPlaceholderAlbum } = require('../../../sync-engine/track-identity');
 
 const sameName = (a, b) => {
   const x = typeof a === 'string' ? a.trim().toLowerCase() : '';

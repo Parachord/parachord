@@ -1428,7 +1428,7 @@ describe('syncDataType isCancelled propagation (parachord#820)', () => {
     );
 
     expect(result.data).toBe(local); // same reference — no diff applied
-    expect(result.stats).toEqual({ added: 0, removed: 0, updated: 0, unchanged: 3 });
+    expect(result.stats).toEqual({ added: 0, removed: 0, updated: 0, unchanged: 3, merged: 0 });
   });
 
   test('passes isCancelled through fetchOptions to the provider', async () => {
