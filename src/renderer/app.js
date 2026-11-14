@@ -5489,8 +5489,31 @@ const Parachord = () => {
     { value: 'alpha-desc', label: 'Z-A' }
   ], []);
 
-  // Set default release type filter to 'all' to show complete discography
+  // The release-type filter belongs to one artist. Its default ('all', the
+  // complete discography) is set once, when an artist's page starts loading
+  // (startReleaseTypeFilterFor, from fetchArtistData and the back button);
+  // data arriving afterwards (the services' discography, MusicBrainz's first
+  // batch, the end of the load) calls setSmartReleaseTypeFilter, which never
+  // overwrites a type the user picked for this artist. It used to reset the
+  // filter on every batch, so Singles clicked during a load jumped back to
+  // All when the albums landed. Leaving the artist view resets it.
+  const releaseTypeFilterOwnerRef = useRef({ artist: null, picked: false });
+  const startReleaseTypeFilterFor = useCallback((artistName) => {
+    const artist = String(artistName || '').trim().toLowerCase();
+    if (releaseTypeFilterOwnerRef.current.artist === artist) return;
+    releaseTypeFilterOwnerRef.current = { artist, picked: false };
+    setReleaseTypeFilter('all');
+  }, []);
+  const pickReleaseTypeFilter = useCallback((value) => {
+    releaseTypeFilterOwnerRef.current.picked = true;
+    setReleaseTypeFilter(value);
+  }, []);
+  const resetReleaseTypeFilter = useCallback(() => {
+    releaseTypeFilterOwnerRef.current = { artist: null, picked: false };
+    setReleaseTypeFilter('all');
+  }, []);
   const setSmartReleaseTypeFilter = useCallback((releases) => {
+    if (releaseTypeFilterOwnerRef.current.picked) return;
     setReleaseTypeFilter('all');
   }, []);
 
@@ -20131,6 +20154,9 @@ ${trackListXml}
 
     // Clear any current release view when navigating to a new artist
     setCurrentRelease(null);
+    // A new artist's release-type filter starts on its default; a refetch of
+    // the same artist keeps the user's pick.
+    startReleaseTypeFilterFor(artistName);
 
     // Only add to artist history if we're already on the artist view
     // This prevents search results from building up history
@@ -33446,7 +33472,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       setArtistImage(null);
       setArtistImagePosition('center 25%');
       setArtistReleases([]);
-      setReleaseTypeFilter('all');
+      resetReleaseTypeFilter();
       albumArtQueue.current = [];
       visibleAlbumIds.current.clear();
       return;
@@ -33463,6 +33489,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       const newArtistHistory = [...artistHistory];
       const previousArtist = newArtistHistory.pop();
       setArtistHistory(newArtistHistory);
+      startReleaseTypeFilterFor(previousArtist);
 
       // Fetch the previous artist's data
       const loadPreviousArtist = async () => {
@@ -33582,7 +33609,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         setArtistImage(null);
         setArtistImagePosition('center 25%');
         setArtistReleases([]);
-        setReleaseTypeFilter('all');
+        resetReleaseTypeFilter();
         setArtistHistory([]); // Clear artist history when leaving artist view
         // Clear album art loading queue
         albumArtQueue.current = [];
@@ -37236,7 +37263,7 @@ useEffect(() => {
 
       // Main content area - Artist Page (completely separate layout)
       activeView === 'artist' ? React.createElement(ArtistPage, {
-          activeResolvers: playbackResolvers, addArtistToCollection, albumArtObserver, albumArtQueue, albumVersions, artistBio, artistConcerts, artistConcertsLoaded, artistConcertsLoading, artistConcertsTicketFlyout, artistExtendedInfo, artistImage, artistImagePosition, artistPageScrollRef, artistPageTab, artistReleases, artistSearch, artistSearchOpen, artistSort, artistSortDropdownOpen, artistSortOptions, collectionData, copyCollectionEmbedCode, currentArtist, currentRelease, currentTrack, effectiveTheme, filterArtistReleases, handleArtistPageScroll, isCompactHeader, isHeaderCollapsed, isPlaying, artistLoadError, loadingArtist, loadingBio, loadingExtendedInfo, loadingRelated, loadingRelease, playbackContext, prefetchedReleasesRef, publishCollectionSmartLink, relatedArtists, relatedArtistsSourceFilter, releaseObserverRef, releaseTrackRowRefs, releaseTypeFilter, removeArtistFromCollection, resolvers, setAddToPlaylistPanel, setArtistBio, setArtistConcertsTicketFlyout, setArtistPageTab, setArtistSearch, setArtistSearchOpen, setArtistSort, setArtistSortDropdownOpen, setCurrentRelease, setDraggingTrackForPlaylist, setIsHeaderCollapsed, setLoadingBio, setRelatedArtists, setRelatedArtistsSourceFilter, setReleaseTypeFilter, setSelectedPlaylistsForAdd, setShareDropdownOpen, setTrackLoading, shareDropdownOpen, showToast, sortArtistReleases, trackSources, visibleAlbumIds,
+          activeResolvers: playbackResolvers, addArtistToCollection, albumArtObserver, albumArtQueue, albumVersions, artistBio, artistConcerts, artistConcertsLoaded, artistConcertsLoading, artistConcertsTicketFlyout, artistExtendedInfo, artistImage, artistImagePosition, artistPageScrollRef, artistPageTab, artistReleases, artistSearch, artistSearchOpen, artistSort, artistSortDropdownOpen, artistSortOptions, collectionData, copyCollectionEmbedCode, currentArtist, currentRelease, currentTrack, effectiveTheme, filterArtistReleases, handleArtistPageScroll, isCompactHeader, isHeaderCollapsed, isPlaying, artistLoadError, loadingArtist, loadingBio, loadingExtendedInfo, loadingRelated, loadingRelease, playbackContext, prefetchedReleasesRef, publishCollectionSmartLink, relatedArtists, relatedArtistsSourceFilter, releaseObserverRef, releaseTrackRowRefs, releaseTypeFilter, removeArtistFromCollection, resolvers, setAddToPlaylistPanel, setArtistBio, setArtistConcertsTicketFlyout, setArtistPageTab, setArtistSearch, setArtistSearchOpen, setArtistSort, setArtistSortDropdownOpen, setCurrentRelease, setDraggingTrackForPlaylist, setIsHeaderCollapsed, setLoadingBio, setRelatedArtists, setRelatedArtistsSourceFilter, setReleaseTypeFilter: pickReleaseTypeFilter, setSelectedPlaylistsForAdd, setShareDropdownOpen, setTrackLoading, shareDropdownOpen, showToast, sortArtistReleases, trackSources, visibleAlbumIds,
           // Not read by the page directly; read during its render through a
           // stable handler, so it must invalidate the memo.
           _metaServiceConfigs: metaServiceConfigs,

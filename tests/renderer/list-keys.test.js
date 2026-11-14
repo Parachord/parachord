@@ -75,3 +75,54 @@ describe('Plugin marketplace: install and reinstall', () => {
     expect(appendUniqueId(undefined, 'x')).toEqual(['x']);
   });
 });
+
+describe('Artist page: the release-type filter', () => {
+  // Open an uncached artist, click Singles while it loads: MusicBrainz's
+  // first batch used to put the filter back on All.
+  const block = (() => {
+    const start = app.indexOf('const releaseTypeFilterOwnerRef = useRef(');
+    const end = app.indexOf('// Filter and sort charts', start);
+    return start > -1 && end > start ? app.slice(start, end) : '';
+  })();
+  const harness = () => {
+    let filter = 'all';
+    const api = new Function('useRef', 'useCallback', 'setReleaseTypeFilter',
+      `${block}\nreturn { startReleaseTypeFilterFor, pickReleaseTypeFilter, resetReleaseTypeFilter, setSmartReleaseTypeFilter };`
+    )((init) => ({ current: init }), (fn) => fn, (v) => { filter = v; });
+    return { ...api, get filter() { return filter; } };
+  };
+
+  test('a pick survives data arriving for the same artist', () => {
+    const h = harness();
+    h.startReleaseTypeFilterFor('Waxahatchee');
+    h.pickReleaseTypeFilter('single');
+    h.setSmartReleaseTypeFilter([{ releaseType: 'album' }]); // the albums batch lands
+    expect(h.filter).toBe('single');
+    h.startReleaseTypeFilterFor('waxahatchee'); // a refetch of the same artist
+    expect(h.filter).toBe('single');
+  });
+
+  test('a new artist starts on the default, and leaving the page resets it', () => {
+    const h = harness();
+    h.startReleaseTypeFilterFor('Waxahatchee');
+    h.pickReleaseTypeFilter('ep');
+    h.startReleaseTypeFilterFor('MJ Lenderman');
+    expect(h.filter).toBe('all');
+    h.pickReleaseTypeFilter('live');
+    h.resetReleaseTypeFilter();
+    expect(h.filter).toBe('all');
+    h.startReleaseTypeFilterFor('MJ Lenderman');
+    h.setSmartReleaseTypeFilter([]);
+    expect(h.filter).toBe('all');
+  });
+
+  test('every artist visit starts the filter, the page picks through pickReleaseTypeFilter, and leaving resets it', () => {
+    const fetchArtistData = app.slice(app.indexOf('const fetchArtistData = async (artistName, options = {}) => {'), app.indexOf('const fetchReleaseData = async (release, artist) => {'));
+    const startAt = fetchArtistData.indexOf('startReleaseTypeFilterFor(artistName);');
+    expect(startAt).toBeGreaterThan(-1);
+    expect(startAt).toBeLessThan(fetchArtistData.indexOf('if (cacheValid) {'));
+    expect(app).toMatch(/React\.createElement\(ArtistPage, \{[^}]*setReleaseTypeFilter: pickReleaseTypeFilter,/);
+    expect(app).not.toMatch(/setReleaseTypeFilter\('all'\);\n\s*albumArtQueue\.current = \[\];/);
+    expect(app).toMatch(/startReleaseTypeFilterFor\(previousArtist\);/);
+  });
+});
