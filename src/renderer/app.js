@@ -42451,7 +42451,11 @@ useEffect(() => {
                       const isResolving = Object.keys(resolvedSources).length === 0;
 
                       return React.createElement('div', {
-                        key: track.id,
+                        // One song listened to twice is two rows with one
+                        // track.id (ListenBrainz's recording_msid); the listen
+                        // time tells them apart. track.id itself stays the
+                        // trackSources key.
+                        key: `${track.id}|${track.playedAt ?? index}`,
                         'data-track-id': track.id,
                         ref: (el) => {
                           if (el) {

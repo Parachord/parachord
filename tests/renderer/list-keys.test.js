@@ -22,3 +22,13 @@ describe('Search: Playlists', () => {
     expect(keys).toHaveLength(2); // the preview row and the Show more grid
   });
 });
+
+describe('History: Recent', () => {
+  test('each listen row is keyed by track id plus when it was played', () => {
+    // Two listens of one song share the ListenBrainz recording_msid.
+    const at = app.indexOf("'data-track-id': track.id,\n                        ref: (el) => {\n                          if (el) {\n                            historyTrackRowRefs");
+    expect(at).toBeGreaterThan(-1);
+    const block = app.slice(at - 200, at);
+    expect(block).toMatch(/key: `\$\{track\.id\}\|\$\{track\.playedAt \?\? index\}`,/);
+  });
+});
