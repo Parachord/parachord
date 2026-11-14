@@ -26,7 +26,7 @@
 
 ## Tracks with no album
 
-A track with no album has `album: ''`, never a stand-in. `isPlaceholderAlbum(album, sources)` in `src/renderer/lib/collection-ids.js` is the one rule: nothing, "Single", or the name of one of the track's own sources. It never lists service names, so a new plugin is covered, and it doesn't go through `normalizeForId`, which strips non-Latin text to nothing.
+A track with no album has `album: ''`, never a stand-in. `isPlaceholderAlbum(album, sources)` is the one rule. It lives in `sync-engine/track-identity.js`, because library sync in the main process uses it too and packaging leaves out `src/`; `src/renderer/lib/collection-ids.js` re-exports it. The rule: nothing, "Single", or the name of one of the track's own sources. It never lists service names, so a new plugin is covered, and it doesn't go through `normalizeForId`, which strips non-Latin text to nothing.
 
 A saved track's id includes the album it was saved with, so a changed album stops the id matching. **Ask whether a track is saved through `findSavedTrack`**, never by comparing ids: it tries the track's id, then the generated id, then artist and title against rows whose album is a placeholder. Two real albums stay two tracks. `clearPlaceholderAlbums` clears old placeholders when the collection loads and keeps the ids. It leaves rows a provider synced alone, since "Single" from a provider is that release's real name.
 
