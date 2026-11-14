@@ -655,9 +655,13 @@ function AskShuffleupagus({ initialPrompt, chatAvailable, onAsk, onSetup }) {
     id: 'home-ask',
     style: Object.assign({}, H2_STYLE, { fontSize: '16px', display: 'flex', alignItems: 'center', gap: '8px' }),
   }, e(ReasonMark, null), 'Ask Shuffleupagus');
+  // What Shuffleupagus is (#1387): the box never said.
+  const explain = e('p', { id: 'home-ask-what', style: { margin: 0, fontSize: '13px', lineHeight: 1.5, color: 'var(--text-secondary)' } },
+    'Shuffleupagus is Parachord’s AI DJ. Ask for a playlist, a mood or a question about music, and it answers with songs you can play, using the AI plug-in you choose.');
   if (chatAvailable === false) {
-    return e('section', { 'aria-labelledby': 'home-ask', style: box },
+    return e('section', { 'aria-labelledby': 'home-ask', 'aria-describedby': 'home-ask-what', style: box },
       heading,
+      explain,
       e('div', null,
         e('button', {
           type: 'button', onClick: () => onSetup && onSetup(),
@@ -670,8 +674,9 @@ function AskShuffleupagus({ initialPrompt, chatAvailable, onAsk, onSetup }) {
     const text = value.trim().slice(0, PROMPT_CAP);
     if (text && onAsk) onAsk(text);
   };
-  return e('section', { 'aria-labelledby': 'home-ask', style: box },
+  return e('section', { 'aria-labelledby': 'home-ask', 'aria-describedby': 'home-ask-what', style: box },
     heading,
+    explain,
     e('form', { onSubmit: submit, style: { display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center', margin: 0 } },
       e('label', {
         htmlFor: 'home-ask-prompt',

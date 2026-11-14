@@ -32,3 +32,14 @@ test('an empty Playlists page offers Import', () => {
   expect(app).not.toContain('No playlists yet. Import a playlist to get started!');
   expect(app).toContain("actions: [{ label: 'Import playlist', variant: 'primary', onClick: () => setShowUrlImportDialog(true) }]");
 });
+
+test("Home's Ask box says what Shuffleupagus is, in both layouts", () => {
+  global.React = require('react');
+  const { renderToStaticMarkup } = require('react-dom/server');
+  const S = require('../../src/renderer/components/home-sections');
+  for (const chatAvailable of [true, false]) {
+    const html = renderToStaticMarkup(React.createElement(S.AskShuffleupagus, { initialPrompt: 'x', chatAvailable }));
+    expect(html).toContain('aria-describedby="home-ask-what"');
+    expect(html).toContain('Shuffleupagus is Parachord’s AI DJ.');
+  }
+});
