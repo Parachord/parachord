@@ -285,7 +285,7 @@ describe('Critical Darlings skeleton matches the album cards', () => {
   const coverStyle = cards.slice(cards.indexOf('album-art-container'), cards.indexOf('background: album.albumArt === null'));
 
   test('same list spacing and card gap', () => {
-    expect(cards).toMatch(/return React\.createElement\('div', \{\s*className: 'space-y-3 pb-6'/);
+    expect(cards).toMatch(/return React\.createElement\('div', \{(\s*role: 'list',)?\s*className: 'space-y-3 pb-6'/);
     expect(skeleton).toMatch(/className: 'space-y-3 pb-6'/);
     expect(cardStyle).toMatch(/flex gap-4/);
     expect(skeleton).toMatch(/className: 'flex gap-4',/);

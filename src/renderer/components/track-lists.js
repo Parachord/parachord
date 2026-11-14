@@ -605,14 +605,18 @@ const VirtualizedTrackList = React.memo(({
   // windowed path on the next render. Never blank.
   if (!virtualizer || tracks.length < virtualizationThreshold || virtualItems.length === 0) {
     return React.createElement('div', {
+      role: 'list',
       className: 'space-y-0',
       style: { minHeight: 'calc(100vh - 160px)' }
     },
-      tracks.map((track, index) => renderRow(track, index, null))
+      // Each row is a list item (#1386): the page's renderRow stays as it was.
+      tracks.map((track, index) => React.createElement('div', { key: track.id || track.filePath || index, role: 'listitem' },
+        renderRow(track, index, null)))
     );
   }
 
   return React.createElement('div', {
+    role: 'list',
     style: {
       height: `${virtualizer.getTotalSize()}px`,
       width: '100%',
@@ -629,6 +633,7 @@ const VirtualizedTrackList = React.memo(({
       return React.createElement('div', {
         key: track.id || track.filePath || virtualRow.index,
         'data-index': virtualRow.index,
+        role: 'listitem',
         ref: virtualizer.measureElement,
         style: {
           position: 'absolute',

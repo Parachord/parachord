@@ -1619,13 +1619,13 @@ const ArtistPage = React.memo(function ArtistPage(props) {
               React.createElement('div', { className: 'p-6' },
                 // Related artists grid (sorted by match, highest first) - Square card design
                 // Cards handle their own image loading shimmer, no need for full skeleton grid
-                filteredArtists.length > 0 && React.createElement('div', {
+                filteredArtists.length > 0 && React.createElement('div', { role: 'list',
                   className: 'grid gap-4',
                   style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
                 },
                   [...filteredArtists].sort((a, b) => b.match - a.match).map((artist, index) => {
                     const relatedPattern = generateArtistPattern(artist.name);
-                    return React.createElement(CardButton, { label: artist.name,
+                    return React.createElement(CardButton, { role: 'listitem', label: artist.name,
                       key: artist.name,
                       className: 'rounded-lg overflow-hidden cursor-pointer group release-card card-fade-up',
                       style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)', animationDelay: `${Math.min(index * 30, 300)}ms` },

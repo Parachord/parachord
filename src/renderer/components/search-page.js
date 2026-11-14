@@ -335,14 +335,14 @@ const SearchPage = React.memo(function SearchPage(props) {
                 }
                 // 'relevance' keeps original order from search results
 
-                return filteredArtists.length > 0 && React.createElement('div', {
+                return filteredArtists.length > 0 && React.createElement('div', { role: 'list',
                   className: 'grid gap-4',
                   style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
                 },
                   ...filteredArtists.map((artist, index) => {
                     const animationDelay = Math.min(index * 30, 300);
                     const searchArtistPattern = generateArtistPattern(artist.name);
-                    return React.createElement(CardButton, { label: artist.name,
+                    return React.createElement(CardButton, { role: 'listitem', label: artist.name,
                       key: artist._rowKey || artist.id,
                       className: 'rounded-lg overflow-hidden cursor-pointer group release-card card-fade-up',
                       style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)', animationDelay: `${animationDelay}ms` },
@@ -497,12 +497,12 @@ const SearchPage = React.memo(function SearchPage(props) {
                   });
                 }
 
-                return filteredAlbums.length > 0 && React.createElement('div', {
+                return filteredAlbums.length > 0 && React.createElement('div', { role: 'list',
                   className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-5 pb-6'
                 },
                   filteredAlbums.map((album, index) => {
                     const animationDelay = Math.min(index * 30, 300);
-                    return React.createElement(CardButton, { label: album.title,
+                    return React.createElement(CardButton, { role: 'listitem', label: album.title,
                       key: album._rowKey || album.id,
                       className: 'group cursor-pointer release-card card-fade-up',
                       style: {
@@ -915,12 +915,12 @@ const SearchPage = React.memo(function SearchPage(props) {
               }, searchResultsFilter ? 'No songs match your filter.' : 'No songs found.'),
 
               // Playlists grid with cards
-              searchDetailCategory === 'playlists' && searchResults.playlists.length > 0 && React.createElement('div', {
+              searchDetailCategory === 'playlists' && searchResults.playlists.length > 0 && React.createElement('div', { role: 'list',
                 className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-5 pb-6'
               },
                 searchResults.playlists.map((playlist, index) => {
                   const animationDelay = Math.min(index * 30, 300);
-                  return React.createElement(CardButton, { label: playlist.title,
+                  return React.createElement(CardButton, { role: 'listitem', label: playlist.title,
                     key: playlist.id || `${playlist.title}-${index}`,
                     className: 'cursor-pointer group release-card card-fade-up',
                     style: {
@@ -1393,13 +1393,13 @@ const SearchPage = React.memo(function SearchPage(props) {
                 }
               } : null
             }),
-            React.createElement('div', {
+            React.createElement('div', { role: 'list',
               className: 'flex gap-4'
             },
               ...searchResults.tracks.slice(0, getItemsPerRow(140)).map((track, index) => {
                 const trackItemWidth = Math.floor((searchContainerWidth - (getItemsPerRow(140) - 1) * 16) / getItemsPerRow(140));
                 const animationDelay = Math.min(index * 40, 300);
-                return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`,
+                return React.createElement(CardButton, { role: 'listitem', label: `${track.title} by ${track.artist}`,
                   key: track._rowKey || track.id,
                   className: 'group cursor-grab active:cursor-grabbing release-card card-fade-up',
                   style: {
@@ -1598,13 +1598,13 @@ const SearchPage = React.memo(function SearchPage(props) {
                 }
               } : null
             }),
-            React.createElement('div', {
+            React.createElement('div', { role: 'list',
               className: 'flex gap-x-4 gap-y-5'
             },
               ...searchResults.albums.slice(0, getItemsPerRow(160)).map((album, index) => {
                 const albumItemWidth = Math.floor((searchContainerWidth - (getItemsPerRow(160) - 1) * 16) / getItemsPerRow(160));
                 const animationDelay = Math.min(index * 40, 300);
-                return React.createElement(CardButton, { label: album.title,
+                return React.createElement(CardButton, { role: 'listitem', label: album.title,
                   key: album._rowKey || album.id,
                   onActivate: () => {
                     saveSearchHistory(searchQuery, {

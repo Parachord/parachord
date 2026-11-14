@@ -1738,7 +1738,7 @@ const ReleasePage = ({
         )
       ) :
       release.tracks.length > 0 ?
-        React.createElement('div', { className: 'space-y-0' },
+        React.createElement('div', { role: 'list', className: 'space-y-0' },
           release.tracks.map((track, index) => {
             // Build track ID first, then use it to look up resolved sources
             const trackId = trackSlug(release.artist.name || 'unknown', track.title || 'untitled', release.title || 'noalbum');
@@ -1767,7 +1767,7 @@ const ReleasePage = ({
             const isCurrentTrack = currentTrack?.id === trackId;
             const isNowPlaying = isCurrentTrack && playbackContext?.type === 'album' && playbackContext?.id === release.id;
 
-            return React.createElement(CardButton, { label: track.title,
+            return React.createElement(CardButton, { role: 'listitem', label: track.title,
             current: isNowPlaying,
               key: index,
               'data-track-id': trackId,

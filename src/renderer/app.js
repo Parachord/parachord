@@ -2045,7 +2045,6 @@ const {
 const { useStableHandlers } = require('./lib/stable-handlers');
 const { homeBannerItems, bannerViewId } = require('./lib/home-banners');
 const { toastBackground } = require('./lib/toast-style');
-const { statusBadgeStyle } = require('./lib/status-badge');
 const { PAGE_COLORS, pageTint } = require('./lib/page-colors');
 const { Modal, ConfirmModal, DontShowAgain } = require('./components/modal');
 const { Button } = require('./components/button');
@@ -37856,7 +37855,7 @@ useEffect(() => {
 
             // Grid view
             if (playlistsViewMode === 'grid') {
-              return React.createElement('div', {
+              return React.createElement('div', { role: 'list',
                 key: `playlist-grid-${sorted.length}-${playlistsSearch}`,
                 className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-5'
               },
@@ -37865,7 +37864,7 @@ useEffect(() => {
                   const hasCachedCovers = covers.length > 0;
                   const animationDelay = Math.min(index * 30, 300);
 
-                  return React.createElement(CardButton, { label: playlist.title,
+                  return React.createElement(CardButton, { role: 'listitem', label: playlist.title,
                     key: playlist.id,
                     // The card is the drag source: under CardButton's stretched
                     // button an inner draggable can't start a drag.
@@ -38108,7 +38107,7 @@ useEffect(() => {
                 }),
                 // Trailing skeletons while hosted playlists are still loading
                 ...(playlistsLoading ? Array.from({ length: 4 }).map((_, i) =>
-                  React.createElement('div', { key: `trailing-skeleton-${i}` },
+                  React.createElement('div', { key: `trailing-skeleton-${i}`, 'aria-hidden': 'true' },
                     // Skeleton 2x2 album art grid
                     React.createElement('div', {
                       className: 'aspect-square rounded-lg overflow-hidden mb-3 shadow-md'
@@ -38139,13 +38138,13 @@ useEffect(() => {
             }
 
             // Table view
-            return React.createElement('div', { className: 'space-y-0' },
+            return React.createElement('div', { role: 'list', className: 'space-y-0' },
               sorted.map((playlist, index) => {
                 const covers = allPlaylistCovers[playlist.id] || [];
                 const hasCachedCovers = covers.length > 0;
                 const trackCount = playlist.tracks?.length || 0;
 
-                return React.createElement(CardButton, { label: playlist.title,
+                return React.createElement(CardButton, { role: 'listitem', label: playlist.title,
                   key: playlist.id,
                   draggable: true,
                   onDragStart: (e) => {
@@ -38310,7 +38309,7 @@ useEffect(() => {
               // Trailing skeletons while hosted playlists are still loading (table view)
               ...(playlistsLoading ? Array.from({ length: 4 }).map((_, i) =>
                 React.createElement('div', {
-                  key: `trailing-table-skeleton-${i}`,
+                  key: `trailing-table-skeleton-${i}`, 'aria-hidden': 'true',
                   className: `flex items-center gap-4 py-3 px-4 border-t border-line-light`
                 },
                   // Skeleton thumbnail
@@ -38616,11 +38615,11 @@ useEffect(() => {
                 );
               }
 
-              return React.createElement('div', {
+              return React.createElement('div', { role: 'list',
                 className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-5 pb-6'
               },
                 filtered.map((item, index) =>
-                React.createElement(CardButton, { label: `${item.title} by ${item.artist}`,
+                React.createElement(CardButton, { role: 'listitem', label: `${item.title} by ${item.artist}`,
                   key: item.id,
                   className: 'group cursor-pointer release-card card-fade-up',
                   style: {
@@ -38891,7 +38890,7 @@ useEffect(() => {
                 );
               }
 
-              return React.createElement('div', { className: 'space-y-0' },
+              return React.createElement('div', { role: 'list', className: 'space-y-0' },
                 filtered.map((track, index) => {
                   // Look up resolved sources from trackSources state
                   // The row's sources, one rule for every list (lib/visible-sources):
@@ -38903,7 +38902,7 @@ useEffect(() => {
                   const isCurrentTrack = currentTrack?.title === track.title && currentTrack?.artist === track.artist;
                   const isNowPlaying = isCurrentTrack && isPlaying;
 
-                  return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`,
+                  return React.createElement(CardButton, { role: 'listitem', label: `${track.title} by ${track.artist}`,
                   current: isNowPlaying,
                     key: track.id,
                     'data-track-id': track.id,
@@ -39276,11 +39275,11 @@ useEffect(() => {
 
               return React.createElement('div', null,
                 // Grid
-                React.createElement('div', {
+                React.createElement('div', { role: 'list',
                   className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4'
                 },
                   filtered.map((release, index) =>
-                    React.createElement(CardButton, { label: `${release.title} by ${release.artist}`,
+                    React.createElement(CardButton, { role: 'listitem', label: `${release.title} by ${release.artist}`,
                       // Why it is in Fresh Drops: the card's tooltip (it was on the title,
                       // which the stretched button now covers).
                       tooltip: release.artistSource === 'collection' ? `${release.artist} is in your collection` : release.artistSource === 'history' ? `Based on your listening history of ${release.artist}` : `${release.artist} is in your library`,
@@ -39688,11 +39687,11 @@ useEffect(() => {
               );
             }
 
-            return React.createElement('div', {
+            return React.createElement('div', { role: 'list',
               className: 'space-y-3 pb-6'
             },
               sorted.map((album, index) =>
-              React.createElement(CardButton, { label: `${album.title} by ${album.artist}`,
+              React.createElement(CardButton, { role: 'listitem', label: `${album.title} by ${album.artist}`,
                 key: album.id,
                 className: 'group flex gap-4 cursor-grab active:cursor-grabbing release-card card-fade-up',
                 style: {
@@ -41980,7 +41979,7 @@ useEffect(() => {
                     }, historySearch ? 'No tracks match your search.' : 'No recent tracks found.');
                   }
 
-                  return React.createElement('div', { className: 'space-y-0' },
+                  return React.createElement('div', { role: 'list', className: 'space-y-0' },
                     ...sorted.map((track, index) => {
                       // Use track.id to look up resolved sources from trackSources state
                       // The row's sources, one rule for every list (lib/visible-sources):
@@ -41990,7 +41989,7 @@ useEffect(() => {
                       const isResolving = sourceState === 'resolving';
                       const isUnplayable = sourceState === 'unplayable';
 
-                      return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`,
+                      return React.createElement(CardButton, { role: 'listitem', label: `${track.title} by ${track.artist}`,
                         // One song listened to twice is two rows with one
                         // track.id (ListenBrainz's recording_msid); the listen
                         // time tells them apart. track.id itself stays the
@@ -42121,7 +42120,7 @@ useEffect(() => {
                       historySearch ? 'No tracks match your search.' : 'No top tracks found for this period.');
                   }
 
-                  return React.createElement('div', { className: 'space-y-0' },
+                  return React.createElement('div', { role: 'list', className: 'space-y-0' },
                     ...filtered.map((track, index) => {
                       // Use track.id to look up resolved sources from trackSources state
                       // The row's sources, one rule for every list (lib/visible-sources):
@@ -42130,7 +42129,7 @@ useEffect(() => {
                       const hasResolved = sourceState === 'playable';
                       const isResolving = sourceState === 'resolving';
                       const isUnplayable = sourceState === 'unplayable';
-                      return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`,
+                      return React.createElement(CardButton, { role: 'listitem', label: `${track.title} by ${track.artist}`,
                         key: track.id,
                         'data-track-id': track.id,
                         ref: (el) => {
@@ -42229,13 +42228,13 @@ useEffect(() => {
                 React.createElement('div', { className: 'text-center py-12 text-ink-tertiary' }, 'No top artists found for this period.')
               :
                 // Top Artists grid - Square card design
-                React.createElement('div', {
+                React.createElement('div', { role: 'list',
                   className: 'grid gap-4',
                   style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
                 },
                   ...topArtists.artists.map((artist, index) => {
                     const topArtistPattern = generateArtistPattern(artist.name);
-                    return React.createElement(CardButton, { label: artist.name,
+                    return React.createElement(CardButton, { role: 'listitem', label: artist.name,
                       key: artist.id,
                       className: 'rounded-lg overflow-hidden cursor-pointer group release-card card-fade-up',
                       style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)', animationDelay: `${Math.min(index * 30, 300)}ms` },
@@ -42407,11 +42406,11 @@ useEffect(() => {
                 React.createElement('div', { className: 'text-center py-12 text-ink-tertiary' }, 'No top albums found for this period.')
               :
                 // Top Albums grid - Cinematic Light design
-                React.createElement('div', {
+                React.createElement('div', { role: 'list',
                   className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-5 pb-6'
                 },
                   ...topAlbums.albums.map((album, index) =>
-                    React.createElement(CardButton, { label: `${album.name} by ${album.artist}`,
+                    React.createElement(CardButton, { role: 'listitem', label: `${album.name} by ${album.artist}`,
                       key: album.id,
                       className: 'group cursor-pointer release-card card-fade-up',
                       style: {
@@ -42863,7 +42862,7 @@ useEffect(() => {
                   if (sorted.length === 0) {
                     return React.createElement('p', { className: 'text-center text-ink-tertiary py-8' }, 'No recent listens');
                   }
-                  return React.createElement('div', { className: 'space-y-0' },
+                  return React.createElement('div', { role: 'list', className: 'space-y-0' },
                     ...sorted.map((track, index) => {
                       // Use track.id to look up resolved sources from trackSources state
                       // The row's sources, one rule for every list (lib/visible-sources):
@@ -42874,7 +42873,7 @@ useEffect(() => {
                       const isUnplayable = sourceState === 'unplayable';
                       const tracksAfterRecent = sorted.slice(index + 1);
 
-                      return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`,
+                      return React.createElement(CardButton, { role: 'listitem', label: `${track.title} by ${track.artist}`,
                         key: track.id || index,
                         'data-track-id': track.id,
                         ref: (el) => {
@@ -44619,69 +44618,39 @@ React.createElement(Switch, { checked: skipExternalPrompt, onToggle: async () =>
                       className: 'text-xs text-ink-tertiary mt-1'
                     }, 'Manage confirmation dialogs and prompts')
                   ),
-                  // List of dismissed dialogs
-                  React.createElement('div', { className: 'space-y-3 mb-5' },
-                    // External track prompt
-                    React.createElement('div', { className: 'flex items-center justify-between py-2 px-3 rounded-lg bg-surface-subtle' },
-                      React.createElement('div', null,
-                        React.createElement('p', { className: 'text-sm text-ink-primary' }, 'Open in Browser prompt'),
-                        React.createElement('p', { className: 'text-xs text-ink-tertiary' }, 'Confirmation before opening external tracks')
-                      ),
-                      React.createElement('div', {
-                        className: 'px-2 py-0.5 rounded text-xs font-medium',
-                        style: statusBadgeStyle(!skipExternalPrompt)
-                      }, skipExternalPrompt ? 'Hidden' : 'Showing')
-                    ),
-                    // Unsaved friend unpin warning
-                    React.createElement('div', { className: 'flex items-center justify-between py-2 px-3 rounded-lg bg-surface-subtle' },
-                      React.createElement('div', null,
-                        React.createElement('p', { className: 'text-sm text-ink-primary' }, 'Unsaved friend warning'),
-                        React.createElement('p', { className: 'text-xs text-ink-tertiary' }, 'Warning when unpinning friends not saved to collection')
-                      ),
-                      React.createElement('div', {
-                        className: 'px-2 py-0.5 rounded text-xs font-medium',
-                        style: statusBadgeStyle(!skipUnsavedFriendWarning)
-                      }, skipUnsavedFriendWarning ? 'Hidden' : 'Showing')
-                    ),
-                    // No playable source: shown, or skipped silently
-                    React.createElement('div', { className: 'flex items-center justify-between py-2 px-3 rounded-lg bg-surface-subtle' },
-                      React.createElement('div', null,
-                        React.createElement('p', { className: 'text-sm text-ink-primary' }, 'No playable source'),
-                        React.createElement('p', { className: 'text-xs text-ink-tertiary' }, 'When hidden, tracks with no source are skipped')
-                      ),
-                      React.createElement('div', {
-                        className: 'px-2 py-0.5 rounded text-xs font-medium',
-                        style: statusBadgeStyle(!skipUnplayablePrompt)
-                      }, skipUnplayablePrompt ? 'Hidden' : 'Showing')
-                    ),
-                    // Items dismissed from Home's setup checklist: the reset
-                    // below is the only way to bring them back.
-                    homeSetupDismissed.length > 0 && React.createElement('div', {
-                      style: { padding: '8px 12px', borderRadius: '8px', backgroundColor: 'var(--hover-bg-default)' }
-                    },
-                      React.createElement('p', { style: { fontSize: '14px', color: 'var(--text-primary)' } }, 'Home setup checklist'),
-                      React.createElement('p', { style: { fontSize: '12px', color: 'var(--text-secondary)' } },
-                        `${homeSetupDismissed.length} dismissed ${homeSetupDismissed.length === 1 ? 'item' : 'items'}. Resetting brings ${homeSetupDismissed.length === 1 ? 'it' : 'them'} back.`)
-                    )
-                  ),
-                  // Reset all button
-                  (skipExternalPrompt || skipUnsavedFriendWarning || skipUnplayablePrompt || homeSetupDismissed.length > 0) && React.createElement(Button, { variant: 'primary', size: 'sm', onClick: async () => {
-                      setSkipExternalPrompt(false);
-                      setSkipUnsavedFriendWarning(false);
-                      setSkipUnplayablePrompt(false);
-                      setHomeSetupDismissed([]);
-                      if (window.electron?.store) {
-                        await window.electron.store.set('skip_external_prompt', false);
-                        await window.electron.store.set('skip_unsaved_friend_warning', false);
-                        await window.electron.store.set('skip_unplayable_prompt', false);
-                        await window.electron.store.set('home_setup_dismissed', []);
-                      }
-                      showToast('All dialog preferences reset');
-                    } }, React.createElement(Icons.RefreshCw, { className: 'w-4 h-4' }), 'Reset all dialogs'),
-                  // All dialogs showing message
-                  (!skipExternalPrompt && !skipUnsavedFriendWarning && homeSetupDismissed.length === 0) && React.createElement('p', {
-                    className: 'text-sm text-ink-tertiary italic'
-                  }, 'All confirmation dialogs are currently enabled.')
+                  // Each prompt is a setting with a switch (fields.js), like
+                  // every other row in Settings: on shows it, off is its
+                  // "Don't show this again".
+                  (() => {
+                    const promptRow = (label, hint, skipped, setSkipped, storeKey) => React.createElement(SettingRow, { label, hint },
+                      React.createElement(Switch, {
+                        checked: !skipped,
+                        onToggle: async () => {
+                          const nextSkipped = !skipped;
+                          setSkipped(nextSkipped);
+                          if (window.electron?.store) await window.electron.store.set(storeKey, nextSkipped);
+                        }
+                      }));
+                    return React.createElement(React.Fragment, null,
+                      promptRow('Open in browser prompt', 'Ask before opening a track in the browser', skipExternalPrompt, setSkipExternalPrompt, 'skip_external_prompt'),
+                      promptRow('Unsaved friend warning', 'Warn when unpinning a friend who isn’t saved to your collection', skipUnsavedFriendWarning, setSkipUnsavedFriendWarning, 'skip_unsaved_friend_warning'),
+                      promptRow('No playable source', 'Say when a track has no source; off, those tracks are skipped', skipUnplayablePrompt, setSkipUnplayablePrompt, 'skip_unplayable_prompt'),
+                      // Items dismissed from Home's setup checklist come back
+                      // only through this reset.
+                      homeSetupDismissed.length > 0 && React.createElement(SettingRow, {
+                        label: 'Home setup checklist',
+                        hint: `${homeSetupDismissed.length} dismissed ${homeSetupDismissed.length === 1 ? 'item' : 'items'}. Reset to bring ${homeSetupDismissed.length === 1 ? 'it' : 'them'} back.`
+                      },
+                        React.createElement(Button, {
+                          variant: 'secondary', size: 'sm',
+                          onClick: async () => {
+                            setHomeSetupDismissed([]);
+                            if (window.electron?.store) await window.electron.store.set('home_setup_dismissed', []);
+                            showToast('Home setup checklist reset');
+                          }
+                        }, 'Reset'))
+                    );
+                  })()
                 ),
 
                 // Queue Settings Section
