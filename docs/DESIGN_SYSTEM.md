@@ -124,6 +124,8 @@ No two heroes start in the same colour family (`tests/renderer/page-colors.test.
 
 A music service's colour is its plug-in's `manifest.color` (`plugins-src/<id>/manifest.json`), exposed as `resolver.color` (`#888888` when a manifest has none). The track-list badges, the playbar's source button and "Play from" menu, Search's source dots and Home's source chips all read it. (`TrackRow` in `track-lists.js` still has its own `resolverMeta` table, but nothing renders `TrackRow` any more.) Concert ticket sellers' colours are in `src/renderer/lib/ticket-sellers.js`, equal to their plug-ins' manifest colours (tested); their text is the brand colour mixed 70% with `--text-primary`, so one value reads on both themes.
 
+Inside a service's own plugin panel (its header, Connect, Save and sync buttons), the service's brand colour is used on purpose instead of the accent: a decision of 2026-11-14. Everywhere else, buttons are `Button`'s variants.
+
 ### Shadows
 
 | Token | Light | Dark |
