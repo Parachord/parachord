@@ -3,8 +3,9 @@
  * estimates their position between polls from a baseline (the last poll's
  * position and time). Clicking another track used to leave that estimate
  * running while the new one loaded: the old track was already paused, but the
- * bar kept moving under the loading shimmer (2026-11-14). A loading track
- * holds its position.
+ * bar kept moving under the loading shimmer (2026-11-14). The bar now
+ * resets to 0:00 when a new track starts loading (to the resume position for
+ * a resume), and the estimate holds until the new track starts.
  */
 const fs = require('fs');
 const path = require('path');
@@ -49,5 +50,18 @@ describe('the Spotify and Apple Music estimates use it, and hold while loading',
   test('both effects re-run when loading changes', () => {
     expect(app).toContain('}, [isPlaying, trackLoading, currentTrack, browserPlaybackActive]);');
     expect(app).toContain('}, [isPlaying, trackLoading, currentTrack]);');
+  });
+});
+
+describe('a new track starts the bar at 0:00 as soon as it loads', () => {
+  const hook = fs.readFileSync(path.join(__dirname, '../../src/renderer/hooks/use-playback-engine.js'), 'utf8');
+
+  test('handlePlay resets the bar right after it sets the loading state, keeping a resume position', () => {
+    const at = hook.indexOf('setTrackLoading(true); // Show loading state in playbar');
+    expect(at).toBeGreaterThan(-1);
+    const after = hook.slice(at, at + 800);
+    expect(after).toContain('setProgress(startAt > 0 ? startAt : 0);');
+    // startAt (the resume position) is worked out before the loading state.
+    expect(hook.indexOf('const startAt = pendingStartAt(')).toBeLessThan(at);
   });
 });
