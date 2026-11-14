@@ -421,6 +421,17 @@ describe('Concert cards', () => {
     const html = h(S.ConcertsRow, { concerts: [{ ...base, ticketSources: [sellers2[0]] }] });
     expect(count(html, /<button/g)).toBe(1); // the See all button only
   });
+  test("the artist's photo, face-centred, with the date as a badge on it", () => {
+    const images = { hovvdy: { url: 'https://img/h.jpg', facePosition: 'center 30%' } };
+    const html = h(S.ConcertsRow, { concerts: [{ ...base, artist: 'Hovvdy ' }], artistImages: images });
+    expect(html).toMatch(/<img src="https:\/\/img\/h.jpg" alt=""[^>]*object-position:center 30%/);
+    expect(html).toMatch(/<span style="position:absolute;left:4px;bottom:4px[^"]*">Dec 5<\/span>/);
+  });
+  test('no photo yet: a placeholder, the badge still there', () => {
+    const html = h(S.ConcertsRow, { concerts: [base] });
+    expect(html).not.toContain('<img');
+    expect(html).toContain('>Dec 5</span>');
+  });
   test('one seller is a direct link', () => {
     const html = h(S.ConcertsRow, { concerts: [{ ...base, ticketSources: [sellers2[0]] }] });
     expect(html).toMatch(/<a href="https:\/\/s"[^>]*>Tickets<\/a>/);

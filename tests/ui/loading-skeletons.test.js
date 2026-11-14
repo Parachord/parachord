@@ -411,5 +411,7 @@ describe('Home skeletons match the Home rows', () => {
     expect((renderToStaticMarkup(React.createElement(sk.CardRowSkeleton, { count: 6 })).match(/aspect-square/g) || []).length).toBe(6);
     expect((renderToStaticMarkup(React.createElement(sk.CardRowSkeleton, { count: 3, columns: 3 })).match(/aspect-square/g) || []).length).toBe(3);
     expect(renderToStaticMarkup(React.createElement(sk.ConcertRowSkeleton))).toContain('shimmer');
+    // The card's 72px photo box, padding 10 (home-sections.js ConcertCard).
+    expect(renderToStaticMarkup(React.createElement(sk.ConcertRowSkeleton))).toContain('flex:0 0 72px;height:72px');
   });
 });

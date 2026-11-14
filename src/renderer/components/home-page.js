@@ -106,6 +106,7 @@ const HomePage = React.memo(function HomePage(props) {
     collectionData,
     collectionLoading,
     concerts,
+    concertsArtistImages,
     concertsError,
     concertsLoaded,
     concertsLoading,
@@ -598,7 +599,7 @@ const HomePage = React.memo(function HomePage(props) {
           }),
 
         show.concerts
-          ? React.createElement(ConcertsRow, { concerts, navigateTo })
+          ? React.createElement(ConcertsRow, { concerts, navigateTo, artistImages: concertsArtistImages })
           : concertsSkeleton && skeletonSection('concerts', 'Concerts near you', React.createElement(ConcertRowSkeleton)),
 
         React.createElement(AskShuffleupagus, {

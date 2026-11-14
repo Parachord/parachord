@@ -88,7 +88,7 @@ function CardRowSkeleton({ count = HOME_ROW_CARDS, columns, lines = 2 } = {}) {
     lines > 1 && bar('h-3', { width: '35%', animationDelay: stagger(i) }))));
 }
 
-/** Concerts: four cards, a date block beside four text lines (artist, venue, city, tickets). */
+/** Concerts: four cards, a 72px photo (with its date badge) beside four text lines (artist, venue, city, tickets). */
 function ConcertRowSkeleton() {
   return React.createElement('div', {
     'aria-hidden': 'true',
@@ -96,13 +96,13 @@ function ConcertRowSkeleton() {
   }, Array.from({ length: HOME_CONCERT_CARDS }, (_, i) => React.createElement('div', {
     key: i,
     style: {
-      display: 'flex', alignItems: 'center', gap: '14px', padding: '12px', borderRadius: '14px',
+      display: 'flex', alignItems: 'center', gap: '12px', padding: '10px', borderRadius: '14px',
       border: '1px solid var(--border-default)'
     }
   },
     React.createElement('div', {
       className: 'shimmer-strong animate-shimmer',
-      style: { flex: '0 0 56px', height: '64px', borderRadius: '10px', backgroundSize: '200% 100%', animationDelay: stagger(i) }
+      style: { flex: '0 0 72px', height: '72px', borderRadius: '10px', backgroundSize: '200% 100%', animationDelay: stagger(i) }
     }),
     React.createElement('div', { style: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '6px' } },
       bar('h-3.5', { width: '70%', animationDelay: stagger(i) }),

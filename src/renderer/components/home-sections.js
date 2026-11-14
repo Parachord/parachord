@@ -565,30 +565,47 @@ function TicketsLink({ sellers, artist }) {
     }, s.label || s.source || 'Tickets'))));
 }
 
-function ConcertCard({ concert }) {
+// The concert card's photo and its date badge. The photo is the artist's
+// (the Concerts page's images, face-centred); with none yet, the page's
+// grey with a note. The date sits on it as a badge in Concerts' fill.
+const CONCERT_ART = 72;
+const CONCERT_BADGE_STYLE = {
+  position: 'absolute', left: '4px', bottom: '4px', padding: '2px 6px', borderRadius: '4px',
+  fontSize: '11px', fontWeight: 700, lineHeight: '16px', letterSpacing: '.04em', textTransform: 'uppercase',
+  backgroundColor: PAGE_COLORS.concerts.fill, color: ON_FILL,
+  whiteSpace: 'nowrap',
+};
+
+function ConcertCard({ concert, image }) {
   const d = concert.date ? new Date(`${concert.date}T00:00:00`) : null;
   const valid = d && !Number.isNaN(d.getTime());
   const mon = valid ? d.toLocaleDateString('en-US', { month: 'short' }) : '';
-  const day = valid ? d.getDate() : '?';
+  const day = valid ? d.getDate() : '';
   const venue = concert.venue || {};
   // The venue, then its city and state on a line of their own.
   const city = [venue.city, venue.region, venue.country].filter(Boolean).join(', ');
   const sellers = (concert.ticketSources || []).filter((s) => s && isHttpUrl(s.ticketUrl));
+  const photo = image && isHttpUrl(image.url) ? image : null;
   return e('div', {
     style: {
-      display: 'flex', alignItems: 'center', gap: '14px', padding: '12px', borderRadius: '14px', minWidth: 0,
+      display: 'flex', alignItems: 'center', gap: '12px', padding: '10px', borderRadius: '14px', minWidth: 0,
       border: '1px solid var(--border-default)',
     },
   },
     e('div', {
-      'aria-hidden': 'true',
       style: {
-        flex: '0 0 56px', height: '64px', borderRadius: '10px', backgroundColor: 'var(--bg-secondary)',
-        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        position: 'relative', flex: `0 0 ${CONCERT_ART}px`, height: `${CONCERT_ART}px`, borderRadius: '10px',
+        overflow: 'hidden', backgroundColor: 'var(--bg-secondary)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
       },
     },
-      e('span', { style: { fontSize: '11px', fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--accent-primary)' } }, mon),
-      e('span', { style: { fontSize: '22px', fontWeight: 700, lineHeight: 1, color: 'var(--text-primary)' } }, day)),
+      photo
+        ? e('img', {
+          src: photo.url, alt: '', loading: 'lazy',
+          style: { width: '100%', height: '100%', objectFit: 'cover', objectPosition: photo.facePosition || 'center 25%' },
+        })
+        : e('span', { 'aria-hidden': 'true', style: { fontSize: '24px', color: 'var(--text-tertiary)' } }, '\u266A'),
+      valid && e('span', { style: CONCERT_BADGE_STYLE }, `${mon} ${day}`)),
     e('div', { style: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' } },
       e('span', { style: Object.assign({ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }, ELLIPSIS) }, concert.artist),
       e('span', { style: Object.assign({ fontSize: '12px', color: 'var(--text-secondary)' }, ELLIPSIS) }, venue.name || 'Venue TBA'),
@@ -596,7 +613,9 @@ function ConcertCard({ concert }) {
       e(TicketsLink, { sellers, artist: concert.artist })));
 }
 
-function ConcertsRow({ concerts, navigateTo }) {
+// artistImages: the Concerts page's photos, keyed by lower-cased artist name
+// ({ url, facePosition }).
+function ConcertsRow({ concerts, navigateTo, artistImages }) {
   const list = Array.isArray(concerts) ? concerts.slice(0, HOME_CONCERT_CARDS) : [];
   if (list.length === 0) return null;
   return e('section', { 'aria-labelledby': 'home-concerts', style: SECTION_STYLE },
@@ -605,7 +624,10 @@ function ConcertsRow({ concerts, navigateTo }) {
       page: 'Concerts', view: 'concerts', navigateTo, pageColor: PAGE_COLOR.concerts,
     }),
     e('div', { style: grid(`repeat(${HOME_CONCERT_CARDS}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
-      list.map((c, i) => e(ConcertCard, { key: c.id || i, concert: c }))));
+      list.map((c, i) => e(ConcertCard, {
+        key: c.id || i, concert: c,
+        image: artistImages && c.artist ? artistImages[c.artist.trim().toLowerCase()] : null,
+      }))));
 }
 
 // ------------------------------------------------------------------------- Ask
