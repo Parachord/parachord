@@ -15,7 +15,8 @@
 // The body is the original render expression, unchanged: it reads its inputs
 // from props under their old names.
 
-const { VirtualizedTrackList, getBestSourceConfidence } = require('./track-lists');
+const { VirtualizedTrackList } = require('./track-lists');
+const { visibleSources } = require('../lib/visible-sources');
 const { ResolverIcon } = require('./ui-atoms');
 const { CollectionArtistCard, CollectionAlbumCard } = require('./cards');
 
@@ -801,16 +802,10 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                         const hasExternalSources = sourceIds.some(id => id !== 'localfiles');
 
                         if (hasExternalSources) {
-                          // Show resolver icons only for enabled resolvers
-                          const bestConf = getBestSourceConfidence(sources);
-                          return Object.entries(sources)
-                            .filter(([resolverId, v]) => activeResolvers.includes(resolverId) && !v?.noMatch)
-                            .sort(([aId], [bId]) => {
-                              const aIndex = resolverOrder.indexOf(aId);
-                              const bIndex = resolverOrder.indexOf(bId);
-                              return aIndex - bIndex;
-                            })
-                            .map(([resolverId, source]) => {
+                          // The shared source-icon rule (lib/visible-sources), with
+                          // activeResolvers = playbackResolvers from app.js.
+                          return visibleSources({ id: track.id, sources }, { playbackResolvers: activeResolvers, resolverOrder })
+                            .map(({ resolverId, source, dim }) => {
                               const resolver = allResolvers.find(r => r.id === resolverId);
                               if (!resolver) return null;
                               return React.createElement('button', {
@@ -834,7 +829,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                                   alignItems: 'center',
                                   justifyContent: 'center',
                                   pointerEvents: 'auto',
-                                  opacity: (source.confidence || 1) < bestConf ? 0.6 : 1,
+                                  opacity: dim ? 0.6 : 1,
                                   transition: 'transform 0.1s'
                                 },
                                 onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',

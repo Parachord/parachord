@@ -18,7 +18,8 @@
 
 const Icons = require('./icons');
 const { ResolverIcon, ShareButton } = require('./ui-atoms');
-const { VirtualizedTrackList, getBestSourceConfidence } = require('./track-lists');
+const { VirtualizedTrackList } = require('./track-lists');
+const { visibleSources } = require('../lib/visible-sources');
 const { trackSlug } = require('../lib/track-slug');
 
 const { Play, Music } = Icons;
@@ -1287,15 +1288,10 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                             })
                           )
                         : hasResolved ? (() => {
-                            const bestConf = getBestSourceConfidence(resolvedSources);
-                            return Object.entries(resolvedSources)
-                              .filter(([resolverId]) => activeResolvers.includes(resolverId))
-                              .sort(([aId], [bId]) => {
-                                const aIndex = resolverOrder.indexOf(aId);
-                                const bIndex = resolverOrder.indexOf(bId);
-                                return aIndex - bIndex;
-                              })
-                              .map(([resolverId, source]) => {
+                            // The shared source-icon rule (lib/visible-sources), with
+                            // activeResolvers = playbackResolvers from app.js.
+                            return visibleSources(track, { trackSources, playbackResolvers: activeResolvers, resolverOrder })
+                              .map(({ resolverId, source, dim }) => {
                                 const resolver = allResolvers.find(r => r.id === resolverId);
                                 if (!resolver || !resolver.play) return null;
                                 return React.createElement('button', {
@@ -1319,7 +1315,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                                     alignItems: 'center',
                                     justifyContent: 'center',
                                     pointerEvents: 'auto',
-                                    opacity: (source.confidence || 0) < bestConf ? 0.6 : 1,
+                                    opacity: dim ? 0.6 : 1,
                                     transition: 'transform 0.1s'
                                   },
                                   onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
