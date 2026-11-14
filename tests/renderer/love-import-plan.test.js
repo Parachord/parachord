@@ -212,6 +212,25 @@ describe('planLoveImport', () => {
     expect(mergedPlan.merged).toBe(1);
   });
 
+  test('a love for the MBID a heart\'s ListenBrainz push stored on its mark MATCHES the hearted row (no duplicate)', () => {
+    // A hearted "Here Comes the Sun - Remastered 2009" was pushed to
+    // ListenBrainz as recording MBID; the row never carried it, the mark did.
+    // The import returns that MBID as plain "Here Comes the Sun" — it must
+    // match the hearted row, not add a second one.
+    const heartedRow = { id: 'the-beatles-here-comes-the-sun-remastered-2009', artist: 'The Beatles', title: 'Here Comes the Sun - Remastered 2009', album: '', sources: {} };
+    const markMbids = { [heartedRow.id]: MBID };
+    const plan = planLoveImport(
+      [{ service: 'listenbrainz', artist: 'The Beatles', title: 'Here Comes the Sun', album: '1', mbid: MBID, lovedAt: 100 }],
+      [heartedRow], {}, markMbids);
+    expect(plan.add).toEqual([]);
+    expect(plan.matchedIds).toEqual([heartedRow.id]);
+    // Without the marks map, the same love would duplicate the row.
+    const withoutMarks = planLoveImport(
+      [{ service: 'listenbrainz', artist: 'The Beatles', title: 'Here Comes the Sun', album: '1', mbid: MBID, lovedAt: 100 }],
+      [heartedRow], {});
+    expect(withoutMarks.add).toHaveLength(1);
+  });
+
   test('20,000 loves against 20,000 rows plans in under a second (an index, not a scan per love)', () => {
     const rows = [];
     const loves = [];
