@@ -10,10 +10,51 @@
  * never run on require).
  */
 
-const { validateImplementationEntries } = require('../../scripts/build-axes');
+const { validateImplementationEntries, checkEntriesForFreeVariables } = require('../../scripts/build-axes');
 
 // Serialize real functions the way build-axes does.
 const entries = (fns) => Object.fromEntries(Object.entries(fns).map(([k, fn]) => [k, String(fn)]));
+
+describe('build-axes checkEntriesForFreeVariables (the no-undef gate)', () => {
+  test("the maintainer's example: a helper the factory RETURNS closes over module scope", () => {
+    // validateImplementationEntries does not catch this (calling the factory
+    // once never calls the returned helper) — no-undef does, without calling
+    // anything. Review on #1402.
+    const THRESHOLD = 0.6;
+    const problems = checkEntriesForFreeVariables({
+      _lib: String(function () { return { passes(c) { return c >= THRESHOLD; } }; })
+    });
+    expect(problems).toEqual([expect.stringContaining('references "THRESHOLD"')]);
+  });
+
+  test('a free variable in a METHOD is caught too (same gap, same gate)', () => {
+    const API_BASE = 'https://example.com';
+    const problems = checkEntriesForFreeVariables({
+      search: String(async function () { return fetch(API_BASE + '/search'); })
+    });
+    expect(problems).toEqual([expect.stringContaining('references "API_BASE"')]);
+  });
+
+  test('browser and ES globals are NOT flagged — the plugin runtime', () => {
+    expect(checkEntriesForFreeVariables({
+      search: String(async function () {
+        console.log(window.electron, JSON.stringify({}), fetch('/x'), globalThis.location.href, Promise.resolve(1), Intl.NumberFormat);
+      }),
+      _lib: String(function () { return { now: () => Date.now() }; })
+    })).toEqual([]);
+  });
+
+  test('every real plugins-src entry passes the no-undef gate', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const SRC = path.join(__dirname, '../../plugins-src');
+    for (const id of fs.readdirSync(SRC).filter((d) => fs.existsSync(path.join(SRC, d, 'implementation.js')))) {
+      const exportsBy = require(path.join(SRC, id, 'implementation.js'));
+      const impl = Object.fromEntries(Object.entries(exportsBy).map(([k, fn]) => [k, String(fn)]));
+      expect(`${id}: ${checkEntriesForFreeVariables(impl).join('; ')}`).toBe(`${id}: `);
+    }
+  });
+});
 
 describe('build-axes validateImplementationEntries', () => {
   test('a self-contained library and methods pass', () => {

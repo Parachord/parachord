@@ -182,7 +182,7 @@ function buildAxe(id) {
     impl[key] = String(value);
   }
 
-  const problems = validateImplementationEntries(impl);
+  const problems = [...validateImplementationEntries(impl), ...checkEntriesForFreeVariables(impl)];
   for (const problem of problems) {
     fail(`plugins-src/${id}/implementation.js: ${problem}`);
   }
@@ -419,6 +419,46 @@ function runCheck() {
   console.log(`✅ all ${plans.length} plugins-src plugins match plugins/, ${path.relative(ROOT, GENERATED_FALLBACK_PATH)} and marketplace-manifest.json`);
 }
 
+// Free-variable check (review on #1402): materializing and calling an entry
+// only catches a closure reference the entry touches WHILE IT RUNS — the
+// usual mistake is a reference inside a HELPER the factory returns, which
+// nothing calls until runtime, on a user's machine. ESLint's no-undef over
+// each serialized entry catches every free variable without calling anything:
+// a serialized function loses its closure, so anything no-undef flags is a
+// name that will not exist at runtime. Runs over methods and _lib helpers
+// alike. (Browser + ES globals are the plugin runtime: plugins run in the
+// renderer with window, fetch, console, JSON, ... — but NOT module scope.)
+function checkEntriesForFreeVariables(impl) {
+  let linter = null;
+  let config = null;
+  const problems = [];
+  for (const [key, src] of Object.entries(impl || {})) {
+    try {
+      if (!linter) {
+        const { Linter } = require('eslint');
+        const globals = require('globals');
+        linter = new Linter();
+        config = [{
+          languageOptions: {
+            ecmaVersion: 2024,
+            sourceType: 'script',
+            globals: { ...globals.browser, ...globals.es2021 }
+          },
+          rules: { 'no-undef': 'error' }
+        }];
+      }
+      const messages = linter.verify(`(${src});`, config);
+      for (const message of messages) {
+        problems.push(`entry "${key}" references "${message.message.replace(/^'/, '').replace(/' is not defined\.$/, '')}" — a serialized function loses its closure, so a module-scope name will not exist at runtime`);
+      }
+    } catch (error) {
+      // The linter failing to run must not block the build silently.
+      problems.push(`entry "${key}" could not be checked for free variables: ${(error && error.message) || error}`);
+    }
+  }
+  return problems;
+}
+
 // Self-containment check (review on the #1356 plugin library): serialized
 // functions lose their closure, so an implementation entry that reaches for
 // module scope only fails at RUNTIME, on a user's machine, with a
@@ -467,5 +507,5 @@ if (require.main === module) {
 } else {
   // Test surface only (tests/scripts/build-axes-validation.test.js); the
   // writer must never run on require.
-  module.exports = { validateImplementationEntries };
+  module.exports = { validateImplementationEntries, checkEntriesForFreeVariables };
 }
