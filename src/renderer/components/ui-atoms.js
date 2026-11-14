@@ -496,17 +496,17 @@ const PlaybackProgress = React.memo(function PlaybackProgress({
 // outlined button in the theme variables, drawn like the album source card
 // above it (same border, radius and hover), so it reads as part of the page
 // rather than a lone accent-colored pill. `open` keeps the hover look while
-// its menu is showing; the caller owns the menu.
-const ShareButton = ({ open = false, onClick }) => {
+// its menu is showing. It is Menu's trigger (components/menu.js):
+// renderTrigger passes its props straight through.
+const ShareButton = ({ open = false, ...triggerProps }) => {
   const [hover, setHover] = React.useState(false);
   const lit = open || hover;
   return React.createElement('button', {
     type: 'button',
-    onClick,
+    // Menu's trigger props: onClick, onKeyDown, aria-haspopup/expanded/controls.
+    ...triggerProps,
     onMouseEnter: () => setHover(true),
     onMouseLeave: () => setHover(false),
-    'aria-haspopup': 'true',
-    'aria-expanded': open,
     className: 'flex items-center no-drag',
     style: {
       gap: '6px',

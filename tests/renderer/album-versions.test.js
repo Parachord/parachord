@@ -296,7 +296,6 @@ describe('ReleasePage: the source card', () => {
 
   const render = (rel, extra = {}) => renderToStaticMarkup(React.createElement(ReleasePage, {
     release: rel,
-    setShareDropdownOpen: () => {},
     ...extra,
   }));
 

@@ -25,6 +25,7 @@ const { Tooltip } = require('./ui-atoms');
 const Icons = require('./icons');
 const { EmptyState, ErrorState } = require('./states');
 const { SortMenu } = require('./sort-menu');
+const { Menu } = require('./menu');
 const { HeroTabs } = require('./hero-tabs');
 const { SectionHeader } = require('./section-header');
 const { FilterChips } = require('./filter-chips');
@@ -69,7 +70,6 @@ const ArtistPage = React.memo(function ArtistPage(props) {
     artistConcerts,
     artistConcertsLoaded,
     artistConcertsLoading,
-    artistConcertsTicketFlyout,
     artistExtendedInfo,
     artistImage,
     artistImagePosition,
@@ -126,7 +126,6 @@ const ArtistPage = React.memo(function ArtistPage(props) {
     selectAlbumVersion,
     setAddToPlaylistPanel,
     setArtistBio,
-    setArtistConcertsTicketFlyout,
     setArtistPageTab,
     setArtistSearch,
     setArtistSearchOpen,
@@ -140,9 +139,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
     setRelatedArtistsSourceFilter,
     setReleaseTypeFilter,
     setSelectedPlaylistsForAdd,
-    setShareDropdownOpen,
     setTrackLoading,
-    shareDropdownOpen,
     showToast,
     sortArtistReleases,
     trackSources,
@@ -742,8 +739,6 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                 });
               }
             },
-            shareDropdownOpen: shareDropdownOpen,
-            setShareDropdownOpen: setShareDropdownOpen,
             publishCollectionSmartLink: publishCollectionSmartLink,
             copyCollectionEmbedCode: copyCollectionEmbedCode
           })
@@ -1937,46 +1932,22 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                               onClick: (e) => e.stopPropagation()
                             }, 'Tickets');
                           }
-                          const isOpen = artistConcertsTicketFlyout === eventId;
-                          return React.createElement('div', { className: 'relative flex-shrink-0' },
-                            React.createElement('button', {
-                              onClick: (e) => {
-                                e.stopPropagation();
-                                setArtistConcertsTicketFlyout(isOpen ? null : eventId);
-                              },
-                              className: 'px-4 py-2 text-sm font-medium rounded-lg transition-colors flex items-center gap-1.5',
-                                style: { backgroundColor: '#10c9b4', color: '#fff' },
-                                onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = '#0eb3a0'; },
-                                onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = '#10c9b4'; }
-                            },
+                          // The sellers' menu (components/menu.js): one link per seller.
+                          return React.createElement(Menu, {
+                            label: 'Tickets',
+                            align: 'right',
+                            items: sources.map((src, si) => ({ key: si, label: src.label, dot: sellerColor(src.source), href: src.ticketUrl })),
+                            renderTrigger: (t) => React.createElement('button', Object.assign({}, t, {
+                              type: 'button',
+                              className: 'flex-shrink-0 px-4 py-2 text-sm font-medium rounded-lg transition-colors flex items-center gap-1.5',
+                              style: { backgroundColor: '#10c9b4', color: '#fff' },
+                              onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = '#0eb3a0'; },
+                              onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = '#10c9b4'; }
+                            }),
                               'Tickets',
-                              React.createElement(Icons.ChevronDown, { className: `w-3 h-3 transition-transform ${isOpen ? 'rotate-180' : ''}`, strokeWidth: 2.5 })
+                              React.createElement(Icons.ChevronDown, { className: `w-3 h-3 transition-transform ${t.open ? 'rotate-180' : ''}`, strokeWidth: 2.5 })
                             ),
-                            isOpen && React.createElement('div', {
-                              className: `absolute right-0 top-full mt-1 rounded-lg shadow-lg border py-1 z-30 bg-surface-card border-line`,
-                              style: { minWidth: '180px' },
-                              onClick: (e) => e.stopPropagation()
-                            },
-                              sources.map((src, si) => {
-                                const color = sellerColor(src.source);
-                                return React.createElement('a', {
-                                  key: si,
-                                  href: src.ticketUrl,
-                                  target: '_blank',
-                                  rel: 'noopener noreferrer',
-                                  className: `flex items-center gap-2 px-4 py-2 text-sm transition-colors hover:bg-surface-hover`,
-                                  onClick: () => setArtistConcertsTicketFlyout(null)
-                                },
-                                  React.createElement('span', {
-                                    className: 'w-2 h-2 rounded-full flex-shrink-0',
-                                    style: { backgroundColor: color }
-                                  }),
-                                  React.createElement('span', { className: 'text-ink-secondary' }, src.label),
-                                  React.createElement(Icons.ExternalLink, { className: 'w-3 h-3 text-ink-tertiary ml-auto' })
-                                );
-                              })
-                            )
-                          );
+                          });
                         })()
                       );
                     })

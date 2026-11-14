@@ -4,14 +4,14 @@
     "hexColors": 486,
     "paletteClasses": 204,
     "themeTernaries": 0,
-    "clickableNonInteractive": 13,
+    "clickableNonInteractive": 9,
     "inlineOutlineNone": 10,
     "nativeDialogs": 0,
     "asciiEllipsis": 114,
-    "svgPaths": 181,
+    "svgPaths": 177,
     "offScaleFontSizes": 62,
     "offScaleRadii": 10,
-    "jsHover": 121
+    "jsHover": 117
   },
   "undefinedCssVars": []
 }

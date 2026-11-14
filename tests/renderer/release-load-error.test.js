@@ -23,7 +23,6 @@ const base = {
 
 const render = (release, extra = {}) => renderToStaticMarkup(React.createElement(ReleasePage, {
   release,
-  setShareDropdownOpen: () => {},
   ...extra,
 }));
 

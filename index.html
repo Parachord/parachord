@@ -800,6 +800,11 @@
     /* Tooltip (src/renderer/components/ui-atoms.js). The trigger wrapper is
        .tooltip-container; the tip is portalled to <body> as .tooltip-panel and
        placed by placeTooltip, so no overflow:hidden parent clips it. */
+    /* Menu items (components/menu.js): the dark menu panel's rows. */
+    .menu-item { background: transparent; color: var(--tooltip-text); }
+    .menu-item:hover, .menu-item:focus { background: var(--tooltip-hover); outline: none; }
+    .menu-item:focus-visible { box-shadow: inset 0 0 0 2px var(--accent-primary); }
+
     .tooltip-container {
       position: relative;
       display: inline-flex;

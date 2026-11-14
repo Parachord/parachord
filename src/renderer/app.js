@@ -1986,6 +1986,7 @@ const { Button } = require('./components/button');
 const { activateOnKey } = require('./lib/activate-on-key');
 const { ToastRegion, NowPlayingAnnouncer } = require('./components/toast');
 const { SortMenu } = require('./components/sort-menu');
+const { Menu } = require('./components/menu');
 const { HeroTabs } = require('./components/hero-tabs');
 const { SettingRow, Select, TextField, SecretField, Switch, RadioGroup } = require('./components/fields');
 const { EmptyState, ErrorState } = require('./components/states');
@@ -3516,7 +3517,6 @@ const Parachord = () => {
   const [playlistDropTarget, setPlaylistDropTarget] = useState(null); // Index where track will be dropped
   const [playlistEditMode, setPlaylistEditMode] = useState(false); // Edit mode for playlist detail view
   const [editedPlaylistData, setEditedPlaylistData] = useState(null); // Buffered changes: { title, creator, tracks }
-  const [shareDropdownOpen, setShareDropdownOpen] = useState(false); // Share dropdown on album/playlist detail pages
   const [parachordLinkMenu, setParachordLinkMenu] = useState(null); // { x, y, link } — right-click "Copy link" menu
   useEffect(() => {
     if (!parachordLinkMenu) return;
@@ -3552,7 +3552,6 @@ const Parachord = () => {
   const [artistConcertsLoading, setArtistConcertsLoading] = useState(false);
   const [artistConcertsLoaded, setArtistConcertsLoaded] = useState(false);
   const artistConcertsCache = useRef({}); // { normalizedArtistName: { events: [], timestamp } }
-  const [artistConcertsTicketFlyout, setArtistConcertsTicketFlyout] = useState(null);
   const [currentRelease, setCurrentRelease] = useState(null); // Release/Album page data
   // The release on screen now, for timers and async callbacks (the album
   // catalog race) that must not act on a stale closure.
@@ -3873,7 +3872,6 @@ const Parachord = () => {
   // Resolver sync settings
   const [resolverSyncSettings, setResolverSyncSettings] = useState({});
   const [syncStatus, setSyncStatus] = useState({});
-  const [syncMenuOpen, setSyncMenuOpen] = useState(false);
   const pendingSyncSetupRef = useRef(null); // Track pending sync setup after Spotify auth redirect
   const spotifyAuthSucceededAtRef = useRef(0); // Last Spotify auth success; guards the sync flow against re-auth loops (parachord#986)
   const openListenBrainzSettingsRef = useRef(null); // Settings → Plugins, on ListenBrainz (read from stale closures)
@@ -4884,7 +4882,6 @@ const Parachord = () => {
   ]);
   const concertsLoadInFlightRef = useRef(false);
   const newReleasesLoadInFlightRef = useRef(false);
-  const [concertsTicketFlyout, setConcertsTicketFlyout] = useState(null); // event ID of open flyout
   const [concertsArtistImages, setConcertsArtistImages] = useState({}); // { normalizedArtistName: { url, facePosition } }
 
   // Recommendations page state
@@ -4963,15 +4960,6 @@ const Parachord = () => {
     setDiscoveryUnread(prev => ({ ...prev, [feature]: hasNewContent }));
   }, []);
 
-  // Close share dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = () => setShareDropdownOpen(false);
-    if (shareDropdownOpen) {
-      document.addEventListener('click', handleClickOutside);
-      return () => document.removeEventListener('click', handleClickOutside);
-    }
-  }, [shareDropdownOpen]);
-
   // Track main content width for responsive header buttons
   useEffect(() => {
     if (!mainContentRef.current) return;
@@ -5033,23 +5021,7 @@ const Parachord = () => {
     }
   }, [concertsLocationOpen]);
 
-  // Close concerts ticket flyout when clicking outside
-  useEffect(() => {
-    const handleClickOutside = () => setConcertsTicketFlyout(null);
-    if (concertsTicketFlyout) {
-      document.addEventListener('click', handleClickOutside);
-      return () => document.removeEventListener('click', handleClickOutside);
-    }
-  }, [concertsTicketFlyout]);
 
-  // Close artist concerts ticket flyout when clicking outside
-  useEffect(() => {
-    const handleClickOutside = () => setArtistConcertsTicketFlyout(null);
-    if (artistConcertsTicketFlyout) {
-      document.addEventListener('click', handleClickOutside);
-      return () => document.removeEventListener('click', handleClickOutside);
-    }
-  }, [artistConcertsTicketFlyout]);
 
   // Reset search results filter/sort when changing categories
   useEffect(() => {
@@ -6357,7 +6329,6 @@ const Parachord = () => {
     // Reset and proactively load artist concerts for the On Tour tab
     setArtistConcerts([]);
     setArtistConcertsLoaded(false);
-    setArtistConcertsTicketFlyout(null);
     if (currentArtist?.name) {
       loadArtistConcerts(currentArtist.name);
     }
@@ -37199,7 +37170,7 @@ React.createElement('div', {
 
       // Main content area - Artist Page (completely separate layout)
       activeView === 'artist' ? React.createElement(ArtistPage, {
-          activeResolvers: playbackResolvers, addArtistToCollection, albumArtObserver, albumArtQueue, albumVersions, artistBio, artistConcerts, artistConcertsLoaded, artistConcertsLoading, artistConcertsTicketFlyout, artistExtendedInfo, artistImage, artistImagePosition, artistPageScrollRef, artistPageTab, artistReleases, artistSearch, artistSearchOpen, artistSort, artistSortOptions, collectionData, copyCollectionEmbedCode, currentArtist, currentRelease, currentTrack, effectiveTheme, filterArtistReleases, handleArtistPageScroll, isCompactHeader, isHeaderCollapsed, isPlaying, artistLoadError, loadingArtist, loadingBio, loadingExtendedInfo, loadingRelated, loadingRelease, playbackContext, prefetchedReleasesRef, publishCollectionSmartLink, relatedArtists, relatedArtistsSourceFilter, releaseObserverRef, releaseTrackRowRefs, releaseTypeFilter, removeArtistFromCollection, resolvers, setAddToPlaylistPanel, setArtistBio, setArtistConcertsTicketFlyout, setArtistPageTab, setArtistSearch, setArtistSearchOpen, setArtistSort, setCurrentRelease, setDraggingTrackForPlaylist, setIsHeaderCollapsed, setLoadingBio, setRelatedArtists, setRelatedArtistsSourceFilter, setReleaseTypeFilter, setSelectedPlaylistsForAdd, setShareDropdownOpen, setTrackLoading, shareDropdownOpen, showToast, sortArtistReleases, trackSources, visibleAlbumIds,
+          activeResolvers: playbackResolvers, addArtistToCollection, albumArtObserver, albumArtQueue, albumVersions, artistBio, artistConcerts, artistConcertsLoaded, artistConcertsLoading, artistExtendedInfo, artistImage, artistImagePosition, artistPageScrollRef, artistPageTab, artistReleases, artistSearch, artistSearchOpen, artistSort, artistSortOptions, collectionData, copyCollectionEmbedCode, currentArtist, currentRelease, currentTrack, effectiveTheme, filterArtistReleases, handleArtistPageScroll, isCompactHeader, isHeaderCollapsed, isPlaying, artistLoadError, loadingArtist, loadingBio, loadingExtendedInfo, loadingRelated, loadingRelease, playbackContext, prefetchedReleasesRef, publishCollectionSmartLink, relatedArtists, relatedArtistsSourceFilter, releaseObserverRef, releaseTrackRowRefs, releaseTypeFilter, removeArtistFromCollection, resolvers, setAddToPlaylistPanel, setArtistBio, setArtistPageTab, setArtistSearch, setArtistSearchOpen, setArtistSort, setCurrentRelease, setDraggingTrackForPlaylist, setIsHeaderCollapsed, setLoadingBio, setRelatedArtists, setRelatedArtistsSourceFilter, setReleaseTypeFilter, setSelectedPlaylistsForAdd, setTrackLoading, showToast, sortArtistReleases, trackSources, visibleAlbumIds,
           // Not read by the page directly; read during its render through a
           // stable handler, so it must invalidate the memo.
           _metaServiceConfigs: metaServiceConfigs,
@@ -37374,7 +37345,7 @@ React.createElement('div', {
 
       // Main content area - Playlist Page (new design matching album page layout)
       : activeView === 'playlist-view' && selectedPlaylist ? React.createElement(PlaylistViewPage, {
-          activeResolvers: playbackResolvers, allPlaylistCovers, allResolvers, currentTrack, draggedPlaylistTrack, editedPlaylistData, emptyPlaylistId, formatTime, handlePlaylistTracksScrollRef, isPlaying, playbackContext, playlistCoverArt, playlistDropTarget, playlistEditMode, playlistObserverRef, playlistScrollContainerReady, playlistScrollContainerRef, playlistTrackRowRefs, playlistTracks, playlistTracksScrollRef, publishCollectionSmartLink, refreshingPlaylist, resolverLoaderRef, resolverOrder, selectedPlaylist, setAddToPlaylistPanel, setDraggedPlaylistTrack, setDraggingTrackForPlaylist, setEditedPlaylistData, setPlaylistCoverArt, setPlaylistDropTarget, setPlaylistEditMode, setPlaylistScrollContainerReady, setPlaylistTracks, setPlaylists, setRefreshingPlaylist, setSelectedPlaylist, setSelectedPlaylistsForAdd, setShareDropdownOpen, setSyncDeleteDialog, setTrackLoading, shareDropdownOpen, showToast, trackSources,
+          activeResolvers: playbackResolvers, allPlaylistCovers, allResolvers, currentTrack, draggedPlaylistTrack, editedPlaylistData, emptyPlaylistId, formatTime, handlePlaylistTracksScrollRef, isPlaying, playbackContext, playlistCoverArt, playlistDropTarget, playlistEditMode, playlistObserverRef, playlistScrollContainerReady, playlistScrollContainerRef, playlistTrackRowRefs, playlistTracks, playlistTracksScrollRef, publishCollectionSmartLink, refreshingPlaylist, resolverLoaderRef, resolverOrder, selectedPlaylist, setAddToPlaylistPanel, setDraggedPlaylistTrack, setDraggingTrackForPlaylist, setEditedPlaylistData, setPlaylistCoverArt, setPlaylistDropTarget, setPlaylistEditMode, setPlaylistScrollContainerReady, setPlaylistTracks, setPlaylists, setRefreshingPlaylist, setSelectedPlaylist, setSelectedPlaylistsForAdd, setSyncDeleteDialog, setTrackLoading, showToast, trackSources,
           ...playlistViewPageHandlers
         })
 
@@ -38166,7 +38137,7 @@ React.createElement('div', {
 
         // Library view with collapsible hero header (matching Recommendations pattern)
         activeView === 'library' && React.createElement(CollectionPage, {
-          activeResolvers: playbackResolvers, allResolvers, autoPinnedFriendIds, collectionData, collectionHeaderCollapsed, collectionLoading, collectionObserverRef, collectionScrollContainerRef, collectionSearch, collectionSearchOpen, collectionSongsSorted, collectionSort, collectionTab, collectionTrackRowRefs, currentTrack, filterCollectionItems, formatTime, friendSyncInProgress, friends, handleCollectionScrollContainerRef, isPlaying, library, libraryLoading, metaServiceConfigs, pinnedFriendIds, playbackContext, resolverOrder, resolverSyncSettings, setAddFriendModalOpen, setAddToPlaylistPanel, setCollectionHeaderCollapsed, setCollectionSearch, setCollectionSearchOpen, setCollectionSort, setCollectionTab, setDraggingTrackForPlaylist, setSyncMenuOpen, setSyncStatusModal, setTrackLoading, showToast, sortCollectionItems, syncMenuOpen, syncProviderConfig, syncStatus, trackSources,
+          activeResolvers: playbackResolvers, allResolvers, autoPinnedFriendIds, collectionData, collectionHeaderCollapsed, collectionLoading, collectionObserverRef, collectionScrollContainerRef, collectionSearch, collectionSearchOpen, collectionSongsSorted, collectionSort, collectionTab, collectionTrackRowRefs, currentTrack, filterCollectionItems, formatTime, friendSyncInProgress, friends, handleCollectionScrollContainerRef, isPlaying, library, libraryLoading, metaServiceConfigs, pinnedFriendIds, playbackContext, resolverOrder, resolverSyncSettings, setAddFriendModalOpen, setAddToPlaylistPanel, setCollectionHeaderCollapsed, setCollectionSearch, setCollectionSearchOpen, setCollectionSort, setCollectionTab, setDraggingTrackForPlaylist, setSyncStatusModal, setTrackLoading, showToast, sortCollectionItems, syncProviderConfig, syncStatus, trackSources,
           ...collectionPageHandlers
         }),
 
@@ -40307,7 +40278,7 @@ React.createElement('div', {
                             animation: 'fadeIn 300ms ease-out both',
                             animationDelay: `${eventIdx * 30}ms`,
                             position: 'relative',
-                            zIndex: concertsTicketFlyout === (event.id || `${monthKey}-${eventIdx}`) ? 20 : 1
+                            zIndex: 1
                           }
                         },
                           // Date column
@@ -40426,48 +40397,22 @@ React.createElement('div', {
                               }, 'Tickets');
                             }
                             // Multiple sources — flyout
-                            const isOpen = concertsTicketFlyout === eventId;
-                            return React.createElement('div', { className: 'relative' },
-                              React.createElement('button', {
-                                onClick: (e) => {
-                                  e.stopPropagation();
-                                  setConcertsTicketFlyout(isOpen ? null : eventId);
-                                },
-                                className: 'px-4 py-2 text-sm font-medium rounded-lg transition-colors flex items-center gap-1.5',
+                            // The sellers' menu (components/menu.js): one link per seller.
+                            return React.createElement(Menu, {
+                              label: 'Tickets',
+                              align: 'right',
+                              items: sources.map((src, si) => ({ key: si, label: src.label, dot: sellerColor(src.source), href: src.ticketUrl })),
+                              renderTrigger: (t) => React.createElement('button', Object.assign({}, t, {
+                                type: 'button',
+                                className: 'flex-shrink-0 px-4 py-2 text-sm font-medium rounded-lg transition-colors flex items-center gap-1.5',
                                 style: { backgroundColor: '#10c9b4', color: '#fff' },
                                 onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = '#0eb3a0'; },
                                 onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = '#10c9b4'; }
-                              },
+                              }),
                                 'Tickets',
-                                React.createElement(Icons.ChevronDown, { className: `w-3 h-3 transition-transform ${isOpen ? 'rotate-180' : ''}`, strokeWidth: 2.5 })
+                                React.createElement(Icons.ChevronDown, { className: `w-3 h-3 transition-transform ${t.open ? 'rotate-180' : ''}`, strokeWidth: 2.5 })
                               ),
-                              isOpen && (() => {
-                                return React.createElement('div', {
-                                className: 'absolute right-0 top-full mt-1 rounded-lg shadow-lg border py-1 z-30 bg-surface-card border-line',
-                                style: { minWidth: '180px' },
-                                onClick: (e) => e.stopPropagation()
-                              },
-                                sources.map((src, si) => {
-                                  const color = sellerColor(src.source);
-                                  return React.createElement('a', {
-                                    key: si,
-                                    href: src.ticketUrl,
-                                    target: '_blank',
-                                    rel: 'noopener noreferrer',
-                                    className: 'flex items-center gap-2 px-4 py-2 text-sm transition-colors hover:bg-surface-hover',
-                                    onClick: () => setConcertsTicketFlyout(null)
-                                  },
-                                    React.createElement('span', {
-                                      className: 'w-2 h-2 rounded-full flex-shrink-0',
-                                      style: { backgroundColor: color }
-                                    }),
-                                    React.createElement('span', { className: 'text-ink-secondary' }, src.label),
-                                    React.createElement(Icons.ExternalLink, { className: 'w-3 h-3 text-ink-tertiary ml-auto' })
-                                  );
-                                })
-                              );
-                              })()
-                            );
+                            });
                           })()
                           )
                         );

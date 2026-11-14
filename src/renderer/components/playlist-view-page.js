@@ -19,6 +19,7 @@
 const Icons = require('./icons');
 const { activateOnKey } = require('../lib/activate-on-key');
 const { ResolverIcon, ShareButton } = require('./ui-atoms');
+const { Menu } = require('./menu');
 const { VirtualizedTrackList, getBestSourceConfidence } = require('./track-lists');
 const { trackSlug } = require('../lib/track-slug');
 
@@ -98,10 +99,8 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
     setRefreshingPlaylist,
     setSelectedPlaylist,
     setSelectedPlaylistsForAdd,
-    setShareDropdownOpen,
     setSyncDeleteDialog,
     setTrackLoading,
-    shareDropdownOpen,
     showToast,
     trackSources,
   } = props;
@@ -1037,19 +1036,16 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
               ),
               // Share button (outside space-y-1 metadata div for independent spacing)
               React.createElement('div', { className: 'relative mt-5 flex justify-start', style: { width: '212px' } },
-                React.createElement(ShareButton, {
-                  open: shareDropdownOpen === 'playlist',
-                  onClick: (e) => { e.stopPropagation(); setShareDropdownOpen(shareDropdownOpen === 'playlist' ? false : 'playlist'); }
-                }),
-                shareDropdownOpen === 'playlist' && React.createElement('div', {
-                  className: 'absolute left-0 top-full mt-1 rounded-lg py-1 min-w-[160px] z-30',
-                  style: { backgroundColor: 'var(--tooltip-bg)', boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)' },
-                  onClick: (e) => e.stopPropagation()
-                },
-                  React.createElement('button', {
-                    onClick: () => {
-                      setShareDropdownOpen(false);
-                      const collectionData = {
+                // Share menu (components/menu.js).
+                React.createElement(Menu, {
+                  label: 'Share',
+                  renderTrigger: (t) => React.createElement(ShareButton, t),
+                  items: [
+                    {
+                      key: 'copy-link',
+                      label: 'Copy link',
+                      icon: React.createElement(Icons.Link, { size: 16 }),
+                      onSelect: () => publishCollectionSmartLink({
                         playlistId: selectedPlaylist.id,
                         title: selectedPlaylist.title,
                         artist: null,
@@ -1062,36 +1058,21 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                           duration: t.duration || null,
                           trackNumber: t.trackNumber || (i + 1)
                         }))
-                      };
-                      publishCollectionSmartLink(collectionData);
+                      }),
                     },
-                    className: 'w-full px-3 py-2 text-left text-white hover:bg-white/10 flex items-center gap-2 no-drag',
-                    style: { fontSize: '12px', fontWeight: 500 }
-                  },
-                    React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1' })
-                    ),
-                    'Copy Link'
-                  ),
-                  React.createElement('button', {
-                    onClick: () => {
-                      setShareDropdownOpen(false);
+                    {
+                      key: 'export-xspf',
+                      label: 'Export as XSPF…',
+                      icon: React.createElement(Icons.Download, { size: 16 }),
                       // Prefer the loaded tracklist (it may be richer than the
                       // stored one); fall back to the stored tracks.
-                      handleExportPlaylist({
+                      onSelect: () => handleExportPlaylist({
                         ...selectedPlaylist,
                         tracks: (playlistTracks && playlistTracks.length) ? playlistTracks : (selectedPlaylist.tracks || [])
-                      });
+                      }),
                     },
-                    className: 'w-full px-3 py-2 text-left text-white hover:bg-white/10 flex items-center gap-2 no-drag',
-                    style: { fontSize: '12px', fontWeight: 500 }
-                  },
-                    React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4' })
-                    ),
-                    'Export as XSPF…'
-                  )
-                )
+                  ],
+                })
               )
             ),
 

@@ -18,6 +18,7 @@
 const Icons = require('./icons');
 const { EmptyState, ErrorState } = require('./states');
 const { SortMenu } = require('./sort-menu');
+const { Menu } = require('./menu');
 const { HeroTabs } = require('./hero-tabs');
 const { activateOnKey } = require('../lib/activate-on-key');
 const { VirtualizedTrackList, getBestSourceConfidence } = require('./track-lists');
@@ -99,13 +100,11 @@ const CollectionPage = React.memo(function CollectionPage(props) {
     setCollectionTab,
     setDraggingTrackForPlaylist,
     setQueueWithContext,
-    setSyncMenuOpen,
     setSyncStatusModal,
     setTrackLoading,
     showToast,
     sortCollectionItems,
     syncFriendsFromServices,
-    syncMenuOpen,
     syncProviderConfig,
     syncStatus,
     trackSources,
@@ -282,108 +281,34 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                   React.createElement(Icons.Search, { className: 'w-5 h-5' })
                 )
             ),
-            // Sync Collection button with provider dropdown (hide on friends tab)
-            collectionTab !== 'friends' && React.createElement('div', {
-              style: { position: 'relative', marginLeft: '12px' }
-            },
-              React.createElement('button', {
-                onClick: () => setSyncMenuOpen(!syncMenuOpen),
-                className: 'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5',
-                style: {
-                  backgroundColor: Object.values(resolverSyncSettings).some(s => s?.enabled) ? '#06b6d4' : 'var(--nav-inactive)',
-                  color: '#ffffff',
-                  border: 'none',
-                  cursor: 'pointer'
-                },
-                'data-tooltip': 'Sync your music library'
-              },
-                React.createElement(Icons.RefreshCw, { className: 'w-4 h-4' }),
-                Object.values(resolverSyncSettings).some(s => s?.enabled) ? 'Synced' : 'Sync',
-                React.createElement(Icons.ChevronDown, { className: 'w-3 h-3', style: { marginLeft: '2px', opacity: 0.8 }, strokeWidth: 2.5 })
-              ),
-              // Provider dropdown menu
-              syncMenuOpen && React.createElement('div', {
-                style: {
-                  position: 'absolute',
-                  top: '100%',
-                  right: 0,
-                  marginTop: '4px',
-                  width: '200px',
-                  backgroundColor: 'var(--card-bg)',
-                  borderRadius: '12px',
-                  boxShadow: '0 10px 25px rgba(0, 0, 0, 0.15)',
-                  border: '1px solid var(--border-subtle)',
-                  zIndex: 50,
-                  overflow: 'hidden'
-                }
-              },
-                // Sync status + "Sync Now" (parachord#1009). The Library Sync
-                // modal has existed since 2026-01 but nothing opened it, so the
-                // only full sync a user could trigger was the wizard's Start Sync.
-                Object.values(resolverSyncSettings).some(s => s?.enabled) && React.createElement('button', {
-                  key: 'sync-status',
-                  onClick: () => { setSyncMenuOpen(false); setSyncStatusModal({ open: true }); },
+            // Sync Collection button and its menu (components/menu.js): the
+            // sync status and Sync Now (parachord#1009: the Library Sync modal
+            // existed since 2026-01 but nothing opened it), then one item per
+            // provider, with a dot on the ones syncing.
+            collectionTab !== 'friends' && React.createElement('div', { style: { marginLeft: '12px' } },
+              (() => {
+                const syncOn = Object.values(resolverSyncSettings).some(s => s?.enabled);
+                const tile = (color, svg) => React.createElement('span', {
                   style: {
-                    width: '100%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '10px',
-                    padding: '10px 14px',
-                    fontSize: '13px',
-                    fontWeight: '500',
-                    color: 'var(--text-primary)',
-                    backgroundColor: 'transparent',
-                    border: 'none',
-                    borderBottom: '1px solid var(--border-subtle)',
-                    cursor: 'pointer',
-                    transition: 'background-color 100ms ease'
-                  },
-                  onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'var(--hover-bg-default)',
-                  onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'transparent'
-                },
-                  React.createElement('div', {
-                    style: {
-                      width: '28px', height: '28px', borderRadius: '8px',
-                      backgroundColor: '#06b6d4',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      flexShrink: 0
-                    }
-                  },
-                    React.createElement('svg', { style: { width: '16px', height: '16px' }, fill: 'none', viewBox: '0 0 24 24', stroke: '#ffffff' },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15' })
-                    )
-                  ),
-                  Object.values(syncStatus).some(s => s?.inProgress) ? 'Syncing…' : 'Sync status & Sync Now'
-                ),
-                Object.entries(syncProviderConfig).map(([pid, config]) =>
-                  React.createElement('button', {
+                    width: '28px', height: '28px', borderRadius: '8px', backgroundColor: color,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                  }
+                }, svg);
+                const items = [];
+                if (syncOn) {
+                  items.push({
+                    key: 'sync-status',
+                    label: Object.values(syncStatus).some(s => s?.inProgress) ? 'Syncing…' : 'Sync status & Sync Now',
+                    icon: tile('#06b6d4', React.createElement(Icons.RefreshCw, { size: 16, style: { color: '#ffffff' } })),
+                    onSelect: () => setSyncStatusModal({ open: true }),
+                  });
+                  items.push({ separator: true, key: 'sep' });
+                }
+                for (const [pid, config] of Object.entries(syncProviderConfig)) {
+                  items.push({
                     key: pid,
-                    onClick: () => { setSyncMenuOpen(false); openSyncSetupModal(pid); },
-                    style: {
-                      width: '100%',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '10px',
-                      padding: '10px 14px',
-                      fontSize: '13px',
-                      fontWeight: '500',
-                      color: 'var(--text-primary)',
-                      backgroundColor: 'transparent',
-                      border: 'none',
-                      cursor: 'pointer',
-                      transition: 'background-color 100ms ease'
-                    },
-                    onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'var(--hover-bg-default)',
-                    onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'transparent'
-                  },
-                    React.createElement('div', {
-                      style: {
-                        width: '28px', height: '28px', borderRadius: '8px',
-                        backgroundColor: config.color,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        flexShrink: 0
-                      }
-                    },
+                    label: config.name,
+                    icon: tile(config.color,
                       React.createElement('svg', {
                         style: { width: '16px', height: '16px' },
                         viewBox: pid === 'spotify' ? '0 0 24 24' : pid === 'listenbrainz' ? '0 0 146 160' : '0 0 122.88 122.88',
@@ -399,23 +324,35 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                           : React.createElement('path', { d: 'M47.76,86.16v-38.4c0-1.44,0.8-2.32,2.4-2.64l33.12-6.72c1.76-0.32,2.72,0.48,2.88,2.4v29.28c0,2.4-3.6,4-10.8,4.8c-13.68,2.16-11.52,25.2,7.2,18.96c7.2-2.64,8.4-9.6,8.4-16.56V21.12c0,0,0-4.8-4.08-3.6l-40.8,8.4c0,0-3.12,0.48-3.12,4.32v48.72c0,2.4-3.6,4-10.8,4.8c-13.68,2.16-11.52,25.2,7.2,18.96C46.56,100.08,47.76,93.12,47.76,86.16z' })
                       )
                     ),
-                    config.name,
-                    resolverSyncSettings[pid]?.enabled && React.createElement('span', {
-                      style: {
-                        marginLeft: 'auto',
-                        width: '8px', height: '8px',
-                        borderRadius: '50%',
-                        backgroundColor: 'var(--success)'
-                      }
-                    })
-                  )
-                )
-              ),
-              // Click-away to close dropdown
-              syncMenuOpen && React.createElement('div', {
-                style: { position: 'fixed', inset: 0, zIndex: 49 },
-                onClick: () => setSyncMenuOpen(false), role: 'button', tabIndex: 0, onKeyDown: activateOnKey
-              })
+                    trailing: resolverSyncSettings[pid]?.enabled && React.createElement('span', {
+                      'aria-label': 'Sync on', role: 'img',
+                      style: { width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--success)' }
+                    }),
+                    onSelect: () => openSyncSetupModal(pid),
+                  });
+                }
+                return React.createElement(Menu, {
+                  label: 'Sync',
+                  align: 'right',
+                  minWidth: 220,
+                  items,
+                  renderTrigger: (t) => React.createElement('button', Object.assign({}, t, {
+                    type: 'button',
+                    className: 'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5',
+                    style: {
+                      backgroundColor: syncOn ? '#06b6d4' : 'var(--nav-inactive)',
+                      color: '#ffffff',
+                      border: 'none',
+                      cursor: 'pointer'
+                    },
+                    'data-tooltip': 'Sync your music library'
+                  }),
+                    React.createElement(Icons.RefreshCw, { className: 'w-4 h-4' }),
+                    syncOn ? 'Synced' : 'Sync',
+                    React.createElement(Icons.ChevronDown, { className: 'w-3 h-3', style: { marginLeft: '2px', opacity: 0.8 }, strokeWidth: 2.5 })
+                  ),
+                });
+              })()
             ),
             // Sync friends button in header (only on friends tab).
             // Manually triggers inbound pull from Last.fm + ListenBrainz.
