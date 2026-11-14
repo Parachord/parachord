@@ -15,7 +15,47 @@ module.exports = {
   ],
   theme: {
     extend: {
+      // Theme tokens as Tailwind colours (#1383 step 4). Each reads a CSS
+      // variable from index.html with a light and a dark value, so a page
+      // written with these needs no .dark remap. Prefer them to palette
+      // classes (text-gray-500, bg-purple-600, ...) in new code.
       colors: {
+        ink: {
+          primary: 'var(--text-primary)',
+          secondary: 'var(--text-secondary)',
+          tertiary: 'var(--text-tertiary)',
+          success: 'var(--text-success)',
+          warning: 'var(--text-warning)',
+          danger: 'var(--text-danger)',
+          info: 'var(--text-info)',
+          'on-accent': 'var(--on-accent)',
+        },
+        surface: {
+          page: 'var(--bg-primary)',
+          card: 'var(--bg-elevated)',
+          subtle: 'var(--bg-secondary)',
+          inset: 'var(--bg-inset)',
+          hover: 'var(--hover-bg-default)',
+        },
+        line: {
+          DEFAULT: 'var(--border-default)',
+          light: 'var(--border-light)',
+          strong: 'var(--border-strong)',
+          danger: 'var(--border-danger)',
+          'danger-hover': 'var(--border-danger-hover)',
+        },
+        accent: {
+          DEFAULT: 'var(--accent-primary)',
+          fill: 'var(--accent-fill)',
+          'fill-hover': 'var(--accent-fill-hover)',
+          tint: 'var(--accent-primary-alpha-10)',
+          'tint-hover': 'var(--accent-primary-alpha-15)',
+        },
+        control: { off: 'var(--control-off)' },
+        status: {
+          error: 'var(--fill-error)',
+          'error-hover': 'var(--fill-error-hover)',
+        },
         teal: {
           100: '#d1fcf4',
           400: '#36dcc8',

@@ -85,6 +85,13 @@
          accent there is the dark-mode accent in both. */
       --playbar-accent: #a78bfa;
       --playbar-accent-hover: #c4b5fd;
+      --accent-fill-hover: #6d28d9;
+      --fill-error-hover: #991b1b;
+      /* Controls and lines with a value per theme (redefined under .dark). */
+      --control-off: #d1d5db;
+      --border-strong: #d1d5db;
+      --border-danger: #fecaca;
+      --border-danger-hover: #fca5a5;
 
       /* Shadows */
       --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
@@ -222,6 +229,10 @@
       --text-danger: #f87171;
       --text-info: #93c5fd;
       /* --accent-fill and --on-accent stay as in :root. */
+      --control-off: #444444;
+      --border-strong: #404040;
+      --border-danger: rgba(248, 113, 113, 0.35);
+      --border-danger-hover: rgba(248, 113, 113, 0.55);
       --accent-secondary-fg: #1e1b4b;
 
       --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
@@ -326,16 +337,6 @@
     .dark .hover\:bg-purple-100:hover { background-color: rgba(139, 92, 246, 0.2) !important; }
     .dark .divide-gray-200 > :not(:last-child) { border-color: var(--border-default) !important; }
     .dark .placeholder-gray-400::placeholder { color: var(--text-tertiary) !important; }
-    .dark .bg-violet-50 { background-color: rgba(139, 92, 246, 0.1) !important; }
-    .dark .bg-violet-100 { background-color: rgba(139, 92, 246, 0.15) !important; }
-    .dark .text-violet-500 { color: #a78bfa !important; }
-    .dark .text-violet-600 { color: #a78bfa !important; }
-    .dark .border-violet-100 { border-color: rgba(139, 92, 246, 0.2) !important; }
-    .dark .border-violet-200 { border-color: rgba(139, 92, 246, 0.25) !important; }
-    .dark .border-violet-300 { border-color: rgba(139, 92, 246, 0.3) !important; }
-    .dark .hover\:border-violet-200:hover { border-color: rgba(139, 92, 246, 0.3) !important; }
-    .dark .hover\:bg-violet-50:hover { background-color: rgba(139, 92, 246, 0.12) !important; }
-    .dark .hover\:text-violet-600:hover { color: #a78bfa !important; }
     .dark .hover\:text-gray-700:hover { color: var(--text-primary) !important; }
     .dark .hover\:text-gray-600:hover { color: var(--text-secondary) !important; }
 

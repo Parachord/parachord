@@ -44219,38 +44219,38 @@ useEffect(() => {
               },
                 React.createElement('div', { className: 'flex gap-4' },
                   // Icon
-                  React.createElement('div', { className: 'flex-shrink-0 w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center' },
-                    React.createElement('svg', { className: 'w-5 h-5 text-purple-600', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                  React.createElement('div', { className: 'flex-shrink-0 w-10 h-10 bg-accent-tint rounded-lg flex items-center justify-center' },
+                    React.createElement('svg', { className: 'w-5 h-5 text-accent', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                       React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z' })
                     )
                   ),
                   // Content
                   React.createElement('div', { className: 'flex-1' },
-                    React.createElement('h3', { className: 'text-sm font-semibold text-gray-900 mb-2' }, 'Extensible Plug-in Architecture'),
-                    React.createElement('p', { className: 'text-sm text-gray-600 leading-relaxed mb-3' },
+                    React.createElement('h3', { className: 'text-sm font-semibold text-ink-primary mb-2' }, 'Extensible Plug-in Architecture'),
+                    React.createElement('p', { className: 'text-sm text-ink-secondary leading-relaxed mb-3' },
                       'Parachord\'s plug-in system lets you connect to your favorite music services and customize your listening experience. Plug-ins run with the same access as Parachord itself, so install only ones you trust.'
                     ),
                     React.createElement('div', { className: 'grid grid-cols-1 sm:grid-cols-3 gap-3' },
                       // Feature 1
                       React.createElement('div', { className: 'flex items-start gap-2' },
-                        React.createElement('svg', { className: 'w-4 h-4 text-purple-500 mt-0.5 flex-shrink-0', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                        React.createElement('svg', { className: 'w-4 h-4 text-accent mt-0.5 flex-shrink-0', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                           React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
                         ),
-                        React.createElement('span', { className: 'text-xs text-gray-600' }, 'Stream from multiple services in one unified library')
+                        React.createElement('span', { className: 'text-xs text-ink-secondary' }, 'Stream from multiple services in one unified library')
                       ),
                       // Feature 2
                       React.createElement('div', { className: 'flex items-start gap-2' },
-                        React.createElement('svg', { className: 'w-4 h-4 text-purple-500 mt-0.5 flex-shrink-0', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                        React.createElement('svg', { className: 'w-4 h-4 text-accent mt-0.5 flex-shrink-0', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                           React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4' })
                         ),
-                        React.createElement('span', { className: 'text-xs text-gray-600' }, 'Enrich metadata with artist bios, lyrics, and recommendations')
+                        React.createElement('span', { className: 'text-xs text-ink-secondary' }, 'Enrich metadata with artist bios, lyrics, and recommendations')
                       ),
                       // Feature 3
                       React.createElement('div', { className: 'flex items-start gap-2' },
-                        React.createElement('svg', { className: 'w-4 h-4 text-purple-500 mt-0.5 flex-shrink-0', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                        React.createElement('svg', { className: 'w-4 h-4 text-accent mt-0.5 flex-shrink-0', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                           React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z' })
                         ),
-                        React.createElement('span', { className: 'text-xs text-gray-600' }, 'Install only plug-ins you trust: they are not sandboxed')
+                        React.createElement('span', { className: 'text-xs text-ink-secondary' }, 'Install only plug-ins you trust: they are not sandboxed')
                       )
                     )
                   )
@@ -44262,7 +44262,7 @@ useEffect(() => {
                 // Top row: Search input
                 React.createElement('div', { className: 'relative', style: { width: 'fit-content' } },
                   React.createElement('svg', {
-                    className: 'absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400',
+                    className: 'absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-tertiary',
                     fill: 'none',
                     viewBox: '0 0 24 24',
                     stroke: 'currentColor'
@@ -44274,7 +44274,7 @@ useEffect(() => {
                     placeholder: 'Search plug-ins...',
                     value: marketplaceSearchQuery,
                     onChange: (e) => setMarketplaceSearchQuery(e.target.value),
-                    className: 'w-64 pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-full text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent'
+                    className: 'w-64 pl-9 pr-4 py-2 bg-surface-subtle border border-line rounded-full text-sm text-ink-primary placeholder-ink-tertiary focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent'
                   })
                 ),
                 // Bottom row: Dropdown + Category pills together
@@ -44283,7 +44283,7 @@ useEffect(() => {
                   React.createElement('select', {
                     value: pluginsFilter,
                     onChange: (e) => setPluginsFilter(e.target.value),
-                    className: 'px-3 py-1.5 rounded-lg text-sm border border-gray-200 bg-white text-gray-700 cursor-pointer focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent',
+                    className: 'px-3 py-1.5 rounded-lg text-sm border border-line bg-surface-card text-ink-secondary cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent',
                     style: { minWidth: '100px' }
                   },
                     React.createElement('option', { value: 'all' }, 'All'),
@@ -44986,14 +44986,12 @@ useEffect(() => {
                         await window.electron.store.set('cache_release_details', {});
                       }
 
-                      // Show confirmation (using a simple alert for now)
-                      alert('Cache cleared successfully!');
+                      showToast('Cache cleared');
                     },
-                    className: 'inline-flex items-center gap-2 transition-all',
+                    className: 'inline-flex items-center gap-2 transition-colors bg-status-error hover:bg-status-error-hover',
                     style: {
                       padding: '10px 16px',
-                      backgroundColor: '#ef4444',
-                      color: '#ffffff',
+                      color: 'var(--on-accent)',
                       fontSize: '13px',
                       fontWeight: '500',
                       borderRadius: '8px',
@@ -45091,7 +45089,7 @@ useEffect(() => {
                         style: { backgroundColor: playbackSpatial === true ? 'var(--accent-primary)' : 'rgba(0, 0, 0, 0.15)' }
                       }),
                       React.createElement('div', {
-                        className: 'absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform',
+                        className: 'absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-surface-card shadow transition-transform',
                         style: { transform: playbackSpatial === true ? 'translateX(20px)' : 'translateX(0)' }
                       })
                     )
@@ -45171,7 +45169,7 @@ useEffect(() => {
                             step: '1',
                             value: offset,
                             onChange: (e) => setResolverVolumeOffsets(prev => ({ ...prev, [resolver.id]: Number(e.target.value) })),
-                            className: `flex-1 h-2 bg-gray-200 rounded-full appearance-none ${isVolumeDisabled ? 'cursor-not-allowed' : 'cursor-pointer accent-purple-600'}`,
+                            className: `flex-1 h-2 bg-control-off rounded-full appearance-none ${isVolumeDisabled ? 'cursor-not-allowed' : 'cursor-pointer accent-purple-600'}`,
                             disabled: isVolumeDisabled,
                             title: isVolumeDisabled ? (resolver.id === 'applemusic' ? 'Use system volume to control Apple Music' : 'Browser playback - volume control not available') : undefined
                           }),
@@ -45271,10 +45269,10 @@ useEffect(() => {
                           await window.electron.store.set('skip_external_prompt', newValue);
                         }
                       },
-                      className: `relative w-11 h-6 rounded-full transition-colors ${skipExternalPrompt ? 'bg-purple-600' : 'bg-gray-300'}`
+                      className: `relative w-11 h-6 rounded-full transition-colors ${skipExternalPrompt ? 'bg-accent-fill' : 'bg-control-off'}`
                     },
                       React.createElement('span', {
-                        className: `absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${skipExternalPrompt ? 'translate-x-5' : 'translate-x-0'}`
+                        className: `absolute top-0.5 left-0.5 w-5 h-5 bg-surface-card rounded-full shadow transition-transform ${skipExternalPrompt ? 'translate-x-5' : 'translate-x-0'}`
                       })
                     )
                   ),
@@ -45482,10 +45480,10 @@ useEffect(() => {
                         if (status) setDiscordPresenceState(status);
                         showToast(next ? 'Discord presence turned on' : 'Discord presence turned off');
                       },
-                      className: `relative w-11 h-6 rounded-full transition-colors ${discordPresenceEnabled ? 'bg-purple-600' : 'bg-gray-300'}`
+                      className: `relative w-11 h-6 rounded-full transition-colors ${discordPresenceEnabled ? 'bg-accent-fill' : 'bg-control-off'}`
                     },
                       React.createElement('span', {
-                        className: `absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${discordPresenceEnabled ? 'translate-x-5' : 'translate-x-0'}`
+                        className: `absolute top-0.5 left-0.5 w-5 h-5 bg-surface-card rounded-full shadow transition-transform ${discordPresenceEnabled ? 'translate-x-5' : 'translate-x-0'}`
                       })
                     )
                   ),
@@ -45505,7 +45503,7 @@ useEffect(() => {
                           fontSize: '11px',
                           fontWeight: '600',
                           backgroundColor: tone === 'good' ? 'rgba(34,197,94,0.16)' : tone === 'warn' ? 'rgba(245,158,11,0.16)' : 'var(--hover-bg-default)',
-                          color: tone === 'good' ? '#16a34a' : tone === 'warn' ? '#b45309' : 'var(--text-tertiary)'
+                          color: tone === 'good' ? 'var(--text-success)' : tone === 'warn' ? 'var(--text-warning)' : 'var(--text-tertiary)'
                         }
                       }, DISCORD_PRESENCE_STATUS_LABELS[statusKey] || statusKey),
                       statusKey === 'not-configured' && React.createElement('span', {
@@ -45605,7 +45603,7 @@ useEffect(() => {
                             ? `Using port ${result.port}`
                             : `Saved. Restart Parachord to switch to port ${result.configuredPort}.`, 'success');
                         },
-                        className: 'px-3 py-1.5 text-sm font-medium rounded-lg bg-purple-600 text-white hover:bg-purple-700 transition-colors'
+                        className: 'px-3 py-1.5 text-sm font-medium rounded-lg bg-accent-fill text-white hover:bg-accent-fill-hover transition-colors'
                       }, 'Save'),
                       React.createElement('button', {
                         type: 'button',
@@ -45616,7 +45614,7 @@ useEffect(() => {
                     )
                   ),
                   authServerStatus && authServerStatus.configuredPort !== authServerStatus.port && React.createElement('p', {
-                    style: { fontSize: '12px', color: '#b45309', marginTop: '12px' }
+                    style: { fontSize: '12px', color: 'var(--text-warning)', marginTop: '12px' }
                   }, `Restart Parachord to switch to port ${authServerStatus.configuredPort}.`),
                   React.createElement('p', {
                     style: {
@@ -45630,23 +45628,23 @@ useEffect(() => {
 
                 // Dialogs Section - Reset "Don't show again" preferences
                 React.createElement('div', {
-                  className: 'bg-white border border-gray-200 rounded-xl p-6 hover:shadow-sm hover:border-gray-300 transition-all'
+                  className: 'bg-surface-card border border-line rounded-xl p-6 hover:shadow-sm hover:border-line-strong transition-all'
                 },
                   React.createElement('div', { className: 'mb-5' },
                     React.createElement('h3', {
-                      className: 'text-sm font-semibold text-gray-700 uppercase tracking-wider'
+                      className: 'text-sm font-semibold text-ink-secondary uppercase tracking-wider'
                     }, 'Dialogs'),
                     React.createElement('p', {
-                      className: 'text-xs text-gray-500 mt-1'
+                      className: 'text-xs text-ink-tertiary mt-1'
                     }, 'Manage confirmation dialogs and prompts')
                   ),
                   // List of dismissed dialogs
                   React.createElement('div', { className: 'space-y-3 mb-5' },
                     // External track prompt
-                    React.createElement('div', { className: 'flex items-center justify-between py-2 px-3 rounded-lg bg-gray-50' },
+                    React.createElement('div', { className: 'flex items-center justify-between py-2 px-3 rounded-lg bg-surface-subtle' },
                       React.createElement('div', null,
-                        React.createElement('p', { className: 'text-sm text-gray-900' }, 'Open in Browser prompt'),
-                        React.createElement('p', { className: 'text-xs text-gray-500' }, 'Confirmation before opening external tracks')
+                        React.createElement('p', { className: 'text-sm text-ink-primary' }, 'Open in Browser prompt'),
+                        React.createElement('p', { className: 'text-xs text-ink-tertiary' }, 'Confirmation before opening external tracks')
                       ),
                       React.createElement('div', {
                         className: 'px-2 py-0.5 rounded text-xs font-medium',
@@ -45654,10 +45652,10 @@ useEffect(() => {
                       }, skipExternalPrompt ? 'Hidden' : 'Showing')
                     ),
                     // Unsaved friend unpin warning
-                    React.createElement('div', { className: 'flex items-center justify-between py-2 px-3 rounded-lg bg-gray-50' },
+                    React.createElement('div', { className: 'flex items-center justify-between py-2 px-3 rounded-lg bg-surface-subtle' },
                       React.createElement('div', null,
-                        React.createElement('p', { className: 'text-sm text-gray-900' }, 'Unsaved friend warning'),
-                        React.createElement('p', { className: 'text-xs text-gray-500' }, 'Warning when unpinning friends not saved to collection')
+                        React.createElement('p', { className: 'text-sm text-ink-primary' }, 'Unsaved friend warning'),
+                        React.createElement('p', { className: 'text-xs text-ink-tertiary' }, 'Warning when unpinning friends not saved to collection')
                       ),
                       React.createElement('div', {
                         className: 'px-2 py-0.5 rounded text-xs font-medium',
@@ -45687,7 +45685,7 @@ useEffect(() => {
                       }
                       showToast('All dialog preferences reset');
                     },
-                    className: 'inline-flex items-center gap-2 px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 transition-colors'
+                    className: 'inline-flex items-center gap-2 px-4 py-2 bg-accent-fill text-white text-sm font-medium rounded-lg hover:bg-accent-fill-hover transition-colors'
                   },
                     React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                       React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M20 4v5h-.582m-15.356 2A8.001 8.001 0 0119.418 9m0 0H15m-11 11v-5h.581m0 0a8.003 8.003 0 0015.357-2m-15.357 2H9' })
@@ -45696,29 +45694,29 @@ useEffect(() => {
                   ),
                   // All dialogs showing message
                   (!skipExternalPrompt && !skipUnsavedFriendWarning && homeSetupDismissed.length === 0) && React.createElement('p', {
-                    className: 'text-sm text-gray-500 italic'
+                    className: 'text-sm text-ink-tertiary italic'
                   }, 'All confirmation dialogs are currently enabled.')
                 ),
 
                 // Queue Settings Section
                 React.createElement('div', {
-                  className: 'bg-white border border-gray-200 rounded-xl p-6 hover:shadow-sm hover:border-gray-300 transition-all'
+                  className: 'bg-surface-card border border-line rounded-xl p-6 hover:shadow-sm hover:border-line-strong transition-all'
                 },
                   React.createElement('div', { className: 'mb-5' },
                     React.createElement('h3', {
-                      className: 'text-sm font-semibold text-gray-700 uppercase tracking-wider'
+                      className: 'text-sm font-semibold text-ink-secondary uppercase tracking-wider'
                     }, 'Queue Settings'),
                     React.createElement('p', {
-                      className: 'text-xs text-gray-500 mt-1'
+                      className: 'text-xs text-ink-tertiary mt-1'
                     }, 'Configure queue persistence')
                   ),
                   // Remember queue toggle
                   React.createElement('div', { className: 'flex items-center justify-between py-3' },
                     React.createElement('div', null,
-                      React.createElement('p', { className: 'text-sm text-gray-900 font-medium' },
+                      React.createElement('p', { className: 'text-sm text-ink-primary font-medium' },
                         'Remember queue'
                       ),
-                      React.createElement('p', { className: 'text-xs text-gray-500 mt-0.5' },
+                      React.createElement('p', { className: 'text-xs text-ink-tertiary mt-0.5' },
                         'Restore your queue when you reopen the app'
                       )
                     ),
@@ -45735,10 +45733,10 @@ useEffect(() => {
                           }
                         }
                       },
-                      className: `relative w-11 h-6 rounded-full transition-colors ${rememberQueue ? 'bg-purple-600' : 'bg-gray-300'}`
+                      className: `relative w-11 h-6 rounded-full transition-colors ${rememberQueue ? 'bg-accent-fill' : 'bg-control-off'}`
                     },
                       React.createElement('span', {
-                        className: `absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${rememberQueue ? 'translate-x-5' : 'translate-x-0'}`
+                        className: `absolute top-0.5 left-0.5 w-5 h-5 bg-surface-card rounded-full shadow transition-transform ${rememberQueue ? 'translate-x-5' : 'translate-x-0'}`
                       })
                     )
                   )
@@ -45746,23 +45744,23 @@ useEffect(() => {
 
                 // Discover Settings Section
                 React.createElement('div', {
-                  className: 'bg-white border border-gray-200 rounded-xl p-6 hover:shadow-sm hover:border-gray-300 transition-all'
+                  className: 'bg-surface-card border border-line rounded-xl p-6 hover:shadow-sm hover:border-line-strong transition-all'
                 },
                   React.createElement('div', { className: 'mb-5' },
                     React.createElement('h3', {
-                      className: 'text-sm font-semibold text-gray-700 uppercase tracking-wider'
+                      className: 'text-sm font-semibold text-ink-secondary uppercase tracking-wider'
                     }, 'Discover'),
                     React.createElement('p', {
-                      className: 'text-xs text-gray-500 mt-1'
+                      className: 'text-xs text-ink-tertiary mt-1'
                     }, 'Configure discovery feature settings')
                   ),
                   // Show unread badges toggle
                   React.createElement('div', { className: 'flex items-center justify-between py-3' },
                     React.createElement('div', { className: 'flex-1 min-w-0 pr-12' },
-                      React.createElement('p', { className: 'text-sm text-gray-900 font-medium' },
+                      React.createElement('p', { className: 'text-sm text-ink-primary font-medium' },
                         'Show unread badges'
                       ),
-                      React.createElement('p', { className: 'text-xs text-gray-500 mt-0.5' },
+                      React.createElement('p', { className: 'text-xs text-ink-tertiary mt-0.5' },
                         'Display badges when Recommendations, Critical Darlings, Pop of the Tops, or Concerts have new content'
                       )
                     ),
@@ -45774,20 +45772,20 @@ useEffect(() => {
                           await window.electron.store.set('show_discovery_badges', newValue);
                         }
                       },
-                      className: `relative w-11 h-6 flex-shrink-0 rounded-full transition-colors ${showDiscoveryBadges ? 'bg-purple-600' : 'bg-gray-300'}`
+                      className: `relative w-11 h-6 flex-shrink-0 rounded-full transition-colors ${showDiscoveryBadges ? 'bg-accent-fill' : 'bg-control-off'}`
                     },
                       React.createElement('span', {
-                        className: `absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${showDiscoveryBadges ? 'translate-x-5' : 'translate-x-0'}`
+                        className: `absolute top-0.5 left-0.5 w-5 h-5 bg-surface-card rounded-full shadow transition-transform ${showDiscoveryBadges ? 'translate-x-5' : 'translate-x-0'}`
                       })
                     )
                   ),
                   // Refresh Shuffleupagus suggestions on every visit toggle
                   React.createElement('div', { className: 'flex items-center justify-between py-3' },
                     React.createElement('div', { className: 'flex-1 min-w-0 pr-12' },
-                      React.createElement('p', { className: 'text-sm text-gray-900 font-medium' },
+                      React.createElement('p', { className: 'text-sm text-ink-primary font-medium' },
                         'Refresh Shuffleupagus suggestions on every visit'
                       ),
-                      React.createElement('p', { className: 'text-xs text-gray-500 mt-0.5' },
+                      React.createElement('p', { className: 'text-xs text-ink-tertiary mt-0.5' },
                         'Ask Shuffleupagus for new album and artist suggestions each time you open Home or the Recommendations page. When off, they stay until you press Refresh'
                       )
                     ),
@@ -45800,10 +45798,10 @@ useEffect(() => {
                           await window.electron.store.set('home_suggestions_auto_refresh', newValue);
                         }
                       },
-                      className: `relative w-11 h-6 flex-shrink-0 rounded-full transition-colors ${homeSuggestionsAutoRefresh ? 'bg-purple-600' : 'bg-gray-300'}`
+                      className: `relative w-11 h-6 flex-shrink-0 rounded-full transition-colors ${homeSuggestionsAutoRefresh ? 'bg-accent-fill' : 'bg-control-off'}`
                     },
                       React.createElement('span', {
-                        className: `absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${homeSuggestionsAutoRefresh ? 'translate-x-5' : 'translate-x-0'}`
+                        className: `absolute top-0.5 left-0.5 w-5 h-5 bg-surface-card rounded-full shadow transition-transform ${homeSuggestionsAutoRefresh ? 'translate-x-5' : 'translate-x-0'}`
                       })
                     )
                   )
@@ -45811,11 +45809,11 @@ useEffect(() => {
 
                 // Scrobbling Section
                 React.createElement('div', {
-                  className: 'bg-white border border-gray-200 rounded-xl p-6 hover:shadow-sm hover:border-gray-300 transition-all'
+                  className: 'bg-surface-card border border-line rounded-xl p-6 hover:shadow-sm hover:border-line-strong transition-all'
                 },
                   React.createElement('div', { className: 'mb-5' },
                     React.createElement('h3', {
-                      className: 'text-sm font-semibold text-gray-700 uppercase tracking-wider flex items-center gap-2'
+                      className: 'text-sm font-semibold text-ink-secondary uppercase tracking-wider flex items-center gap-2'
                     },
                       // Music note icon
                       React.createElement('svg', {
@@ -45834,17 +45832,17 @@ useEffect(() => {
                       'Scrobbling'
                     ),
                     React.createElement('p', {
-                      className: 'text-xs text-gray-500 mt-1'
+                      className: 'text-xs text-ink-tertiary mt-1'
                     }, 'Report your listening history to scrobbling services')
                   ),
 
                   // Global enable/disable toggle
-                  React.createElement('div', { className: 'flex items-center justify-between py-3 px-3 bg-gray-50 rounded-lg' },
+                  React.createElement('div', { className: 'flex items-center justify-between py-3 px-3 bg-surface-subtle rounded-lg' },
                     React.createElement('div', null,
-                      React.createElement('p', { className: 'text-sm text-gray-900 font-medium' },
+                      React.createElement('p', { className: 'text-sm text-ink-primary font-medium' },
                         'Enable Scrobbling'
                       ),
-                      React.createElement('p', { className: 'text-xs text-gray-500 mt-0.5' },
+                      React.createElement('p', { className: 'text-xs text-ink-tertiary mt-0.5' },
                         'Send your listening activity to connected services'
                       )
                     ),
@@ -45856,17 +45854,17 @@ useEffect(() => {
                           await window.electron.store.set('scrobbling-enabled', newValue);
                         }
                       },
-                      className: `relative w-11 h-6 rounded-full transition-colors ${scrobblingEnabled ? 'bg-purple-600' : 'bg-gray-300'}`
+                      className: `relative w-11 h-6 rounded-full transition-colors ${scrobblingEnabled ? 'bg-accent-fill' : 'bg-control-off'}`
                     },
                       React.createElement('span', {
-                        className: `absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${scrobblingEnabled ? 'translate-x-5' : 'translate-x-0'}`
+                        className: `absolute top-0.5 left-0.5 w-5 h-5 bg-surface-card rounded-full shadow transition-transform ${scrobblingEnabled ? 'translate-x-5' : 'translate-x-0'}`
                       })
                     )
                   ),
 
                   // Note about configuring scrobblers
                   React.createElement('p', {
-                    className: 'text-xs text-gray-500 mt-4'
+                    className: 'text-xs text-ink-tertiary mt-4'
                   }, 'Configure scrobbling services in their respective settings: Last.fm, ListenBrainz, and Libre.fm.')
                 ),
 
@@ -45998,26 +45996,26 @@ useEffect(() => {
 
                 // Developer Settings Section
                 React.createElement('div', {
-                  className: 'bg-white border border-gray-200 rounded-xl p-6 hover:shadow-sm hover:border-gray-300 transition-all'
+                  className: 'bg-surface-card border border-line rounded-xl p-6 hover:shadow-sm hover:border-line-strong transition-all'
                 },
                   React.createElement('div', { className: 'mb-5' },
                     React.createElement('h3', {
-                      className: 'text-sm font-semibold text-gray-700 uppercase tracking-wider'
+                      className: 'text-sm font-semibold text-ink-secondary uppercase tracking-wider'
                     }, 'Developer Settings'),
                     React.createElement('p', {
-                      className: 'text-xs text-gray-500 mt-1'
+                      className: 'text-xs text-ink-tertiary mt-1'
                     }, 'Options for testing and development')
                   ),
                   // Reset Tutorial button
                   React.createElement('div', {
-                    className: 'flex items-center justify-between py-3 border-b border-gray-100'
+                    className: 'flex items-center justify-between py-3 border-b border-line-light'
                   },
                     React.createElement('div', null,
                       React.createElement('div', {
-                        className: 'text-sm font-medium text-gray-900'
+                        className: 'text-sm font-medium text-ink-primary'
                       }, 'Reset Tutorial'),
                       React.createElement('div', {
-                        className: 'text-xs text-gray-500 mt-0.5'
+                        className: 'text-xs text-ink-tertiary mt-0.5'
                       }, 'Show the first-run tutorial again on next app launch')
                     ),
                     React.createElement('button', {
@@ -46025,26 +46023,26 @@ useEffect(() => {
                         await window.electron.store.delete('tutorial_completed');
                         alert('Tutorial reset! The welcome tutorial will appear the next time you open Parachord.');
                       },
-                      className: 'px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors'
+                      className: 'px-3 py-1.5 text-xs font-medium text-accent bg-accent-tint rounded-lg hover:bg-accent-tint-hover transition-colors'
                     }, 'Reset')
                   ),
                   // Show Tutorial Now button
                   React.createElement('div', {
-                    className: 'flex items-center justify-between py-3 border-b border-gray-100'
+                    className: 'flex items-center justify-between py-3 border-b border-line-light'
                   },
                     React.createElement('div', null,
                       React.createElement('div', {
-                        className: 'text-sm font-medium text-gray-900'
+                        className: 'text-sm font-medium text-ink-primary'
                       }, 'Show Tutorial Now'),
                       React.createElement('div', {
-                        className: 'text-xs text-gray-500 mt-0.5'
+                        className: 'text-xs text-ink-tertiary mt-0.5'
                       }, 'Open the first-run tutorial immediately')
                     ),
                     React.createElement('button', {
                       onClick: () => {
                         setFirstRunTutorial(prev => ({ ...prev, open: true, step: 'welcome' }));
                       },
-                      className: 'px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors'
+                      className: 'px-3 py-1.5 text-xs font-medium text-accent bg-accent-tint rounded-lg hover:bg-accent-tint-hover transition-colors'
                     }, 'Show')
                   ),
                   // Use new sync — N-way migration preview / armed state (parachord#911)
@@ -46053,10 +46051,10 @@ useEffect(() => {
                   },
                     React.createElement('div', null,
                       React.createElement('div', {
-                        className: 'text-sm font-medium text-gray-900'
+                        className: 'text-sm font-medium text-ink-primary'
                       }, nwayEngineMode === 'new' ? 'New sync is on' : 'Use new sync'),
                       React.createElement('div', {
-                        className: 'text-xs text-gray-500 mt-0.5'
+                        className: 'text-xs text-ink-tertiary mt-0.5'
                       }, nwayEngineMode === 'new'
                         ? 'This device is on the new sync engine. You can switch back anytime.'
                         : 'Preview the new sync engine and switch this device over')
@@ -46064,29 +46062,29 @@ useEffect(() => {
                     nwayEngineMode === 'new'
                       ? React.createElement('button', {
                           onClick: () => revertNwayMigration(),
-                          className: 'px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors'
+                          className: 'px-3 py-1.5 text-xs font-medium text-ink-secondary bg-surface-inset rounded-lg hover:bg-surface-hover transition-colors'
                         }, 'Switch back to classic')
                       : React.createElement('button', {
                           onClick: () => startNwayMigration(),
-                          className: 'px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors'
+                          className: 'px-3 py-1.5 text-xs font-medium text-accent bg-accent-tint rounded-lg hover:bg-accent-tint-hover transition-colors'
                         }, 'Preview')
                   )
                 ),
 
                 // Reset Application Section
                 React.createElement('div', {
-                  className: 'bg-white border border-red-200 rounded-xl p-6 hover:shadow-sm hover:border-red-300 transition-all'
+                  className: 'bg-surface-card border border-line-danger rounded-xl p-6 hover:shadow-sm hover:border-line-danger-hover transition-all'
                 },
                   React.createElement('div', { className: 'mb-5' },
                     React.createElement('h3', {
-                      className: 'text-sm font-semibold text-red-700 uppercase tracking-wider'
+                      className: 'text-sm font-semibold text-ink-danger uppercase tracking-wider'
                     }, 'Reset Application'),
                     React.createElement('p', {
-                      className: 'text-xs text-gray-500 mt-1'
+                      className: 'text-xs text-ink-tertiary mt-1'
                     }, 'Clear all data and start fresh')
                   ),
                   React.createElement('p', {
-                    className: 'text-sm text-gray-600 mb-5 leading-relaxed'
+                    className: 'text-sm text-ink-secondary mb-5 leading-relaxed'
                   }, 'This will permanently delete all your data including your collection, playlists, friends, listening history, connected accounts, and all settings. The app will restart as if it was freshly installed.'),
                   React.createElement('button', {
                     onClick: async () => {
@@ -46140,7 +46138,7 @@ useEffect(() => {
                         }
                       }
                     },
-                    className: 'inline-flex items-center gap-2 px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition-colors'
+                    className: 'inline-flex items-center gap-2 px-4 py-2 bg-status-error text-white text-sm font-medium rounded-lg hover:bg-status-error-hover transition-colors'
                   },
                     React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                       React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z' })
