@@ -46999,6 +46999,8 @@ React.createElement('div', {
           ),
           // Close button
           React.createElement('button', {
+            type: 'button',
+            'aria-label': 'Close',
             onClick: () => setSelectedResolver(null),
             className: 'flex items-center justify-center transition-colors',
             style: {
@@ -49477,6 +49479,8 @@ React.createElement('div', {
           ),
           // Close button
           React.createElement('button', {
+            type: 'button',
+            'aria-label': 'Close',
             onClick: () => setSelectedMarketplaceItem(null),
             className: 'flex items-center justify-center transition-colors',
             style: {
