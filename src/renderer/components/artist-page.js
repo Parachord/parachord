@@ -1665,14 +1665,29 @@ const ArtistPage = React.memo(function ArtistPage(props) {
             const bothCount = relatedArtists.filter(a => a.source === 'both').length;
             // Show filter bar when both services have data OR when configured (MBID available for ListenBrainz, API key for Last.fm)
             const hasBothServicesConfigured = !!currentArtist?.mbid && !!getLastfmApiKey();
+            // The chips shown: All, and each source with artists.
+            const sourceChips = [
+              { value: 'all', label: 'All', count: relatedArtists.length },
+              { value: 'listenbrainz', label: 'ListenBrainz', count: listenbrainzCount + bothCount, color: '#f97316' },
+              { value: 'lastfm', label: 'Last.fm', count: lastfmCount + bothCount, color: '#dc2626' },
+              { value: 'both', label: 'Both', count: bothCount, color: '#dc2626', gradient: 'linear-gradient(to right, #f97316, #dc2626)' }
+            ].filter(({ value, count }) => value === 'all' || count > 0).map(({ value, label, count, color, gradient }) => (
+              { id: value, label: loadingRelated ? label : `${label} (${count})`, color, gradient }
+            ));
+            // A picked chip that isn't shown (the bar hidden, or its count 0)
+            // filters as All, so the page never shows an empty source with no
+            // chip to switch back.
+            const sourceFilter = hasBothServicesConfigured && sourceChips.some(c => c.id === relatedArtistsSourceFilter)
+              ? relatedArtistsSourceFilter
+              : 'all';
 
             // Filter artists based on source filter
-            const filteredArtists = relatedArtistsSourceFilter === 'all'
+            const filteredArtists = sourceFilter === 'all'
               ? relatedArtists
               : relatedArtists.filter(a =>
-                  relatedArtistsSourceFilter === 'both'
+                  sourceFilter === 'both'
                     ? a.source === 'both'
-                    : a.source === relatedArtistsSourceFilter || a.source === 'both'
+                    : a.source === sourceFilter || a.source === 'both'
                 );
 
             return React.createElement(React.Fragment, null,
@@ -1685,15 +1700,8 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                 // in the colour it had (orange-500, red-600, and Both the two
                 // as a gradient).
                 React.createElement(FilterChips, {
-                  chips: [
-                    { value: 'all', label: 'All', count: relatedArtists.length },
-                    { value: 'listenbrainz', label: 'ListenBrainz', count: listenbrainzCount + bothCount, color: '#f97316' },
-                    { value: 'lastfm', label: 'Last.fm', count: lastfmCount + bothCount, color: '#dc2626' },
-                    { value: 'both', label: 'Both', count: bothCount, color: '#dc2626', gradient: 'linear-gradient(to right, #f97316, #dc2626)' }
-                  ].filter(({ value, count }) => value === 'all' || count > 0).map(({ value, label, count, color, gradient }) => (
-                    { id: value, label: loadingRelated ? label : `${label} (${count})`, color, gradient }
-                  )),
-                  value: relatedArtistsSourceFilter,
+                  chips: sourceChips,
+                  value: sourceFilter,
                   onChange: setRelatedArtistsSourceFilter,
                   label: 'Filter related artists by source'
                 })
@@ -1836,7 +1844,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                   className: 'text-center py-12 text-gray-400'
                 }, relatedArtists.length === 0
                   ? 'No related artists found.'
-                  : `No artists from ${relatedArtistsSourceFilter === 'listenbrainz' ? 'ListenBrainz' : relatedArtistsSourceFilter === 'lastfm' ? 'Last.fm' : 'both sources'}.`
+                  : `No artists from ${sourceFilter === 'listenbrainz' ? 'ListenBrainz' : sourceFilter === 'lastfm' ? 'Last.fm' : 'both sources'}.`
                 )
               )
             );

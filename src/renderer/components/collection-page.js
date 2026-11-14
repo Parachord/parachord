@@ -1017,13 +1017,26 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                 );
               }
 
+              // Each card is keyed by its album id, so after a search or sort a
+              // card stays with its album (an index key handed a card, and its
+              // cover, to whichever album moved into its place). Ids are
+              // unique by construction (add and sync both refuse a repeat);
+              // a repeat from older data still gets its own key.
+              const albumKeyCounts = new Map();
+              const albumKey = (album) => {
+                const base = album.id || `${album.artist}|${album.title}`;
+                const n = (albumKeyCounts.get(base) || 0) + 1;
+                albumKeyCounts.set(base, n);
+                return n === 1 ? base : `${base}#${n}`;
+              };
+
               return React.createElement('div', {
                 className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-5',
                 style: { minHeight: 'calc(100vh - 160px)', alignContent: 'start' }  // Ensure enough scroll area to prevent header bounce
               },
                 sorted.map((album, index) =>
                   React.createElement(CollectionAlbumCard, {
-                    key: `${album.title}-${album.artist}-${index}`,
+                    key: albumKey(album),
                     album: { ...album, trackCount: album.trackCount ?? collectionData.tracks.filter(t => t.artist === album.artist && t.album === album.title).length },
                     getAlbumArt: getAlbumArt,
                     onNavigate: () => handleCollectionAlbumClick(album),

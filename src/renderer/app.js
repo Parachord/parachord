@@ -557,6 +557,7 @@ const { carriedReleaseArt, withArchiveCover, createReleaseGroupPicks } = require
 const { firstNonEmptyList, entriesFromMusicBrainzRelease, entriesFromCatalogRelease, pickReleaseGroup } = require('./lib/album-track-list');
 const { pickRelease } = require('./lib/release-pick');
 const { uniqueReleases } = require('./lib/fresh-drops-releases');
+const { uniqueConcerts, concertSourceKeys, concertMatchesSource } = require('./lib/concert-events');
 const { createReleaseLookup, releaseFormats, hasCurrentAlias } = require('./lib/release-lookup');
 const { artistLookupPlan, loadArtistReleaseGroups, musicBrainzHttpError, discographyOutcome } = require('./lib/artist-discography');
 const { searchMusicBrainzArtists, searchMusicBrainzAlbums, searchMusicBrainzTracks, createPopularityLookup } = require('./lib/search-requests');
@@ -1202,7 +1203,7 @@ const { discogsRefIds, normalizeDiscogsProfile, REF_PATH: DISCOGS_REF_PATH, MAX_
 const { playlistShareTarget, notSyncedSharePrompt } = require('./lib/playlist-share');
 const { emptyRecommendationsMessage } = require('./lib/recommendations-empty');
 const {
-  blockedItemPick, normalizeRecommendationSections, buildRecommendationPage, buildRecommendationViews, flattenRecommendationItems,
+  blockedItemPick, normalizeRecommendationSections, buildRecommendationPage, buildRecommendationViews, flattenRecommendationItems, homeRecommendationAlbums,
   filterRowBySource, pageSources, weeklyHomeEntries, shuffleupagusSection, FRIEND_SERVICES, categoryFor
 } = require('./lib/recommendation-model');
 const { releaseDateKey, releaseGroupSearchUrl, pickReleaseGroupDate, upcomingLabel, RELEASE_DATE_TTL_MS } = require('./lib/release-date');
@@ -1885,6 +1886,14 @@ const discordPresenceStatusTone = (status) => {
 };
 
 const CANONICAL_RESOLVER_ORDER = ['spotify', 'applemusic', 'amazonmusic', 'bandcamp', 'soundcloud', 'localfiles', 'subsonic', 'youtube'];
+
+// Append an id to a resolver list unless it is already there. The plugin
+// order and the active list are rendered keyed by id, and a reinstall used to
+// append an id the order still held, listing the plugin twice until restart.
+function appendUniqueId(list, id) {
+  const prev = Array.isArray(list) ? list : [];
+  return prev.includes(id) ? prev : [...prev, id];
+}
 
 // Insert a resolver ID into an order array at its canonical position
 function insertInCanonicalOrder(order, newId) {
@@ -3523,6 +3532,9 @@ const Parachord = () => {
   const [loadingExtendedInfo, setLoadingExtendedInfo] = useState(false);
   const [relatedArtists, setRelatedArtists] = useState([]); // Related artists from Last.fm and ListenBrainz
   const [relatedArtistsSourceFilter, setRelatedArtistsSourceFilter] = useState('all'); // 'all' | 'lastfm' | 'listenbrainz' | 'both'
+  // The artist the related-artists source filter was picked for (lowercased
+  // name): a new artist puts the filter back on All.
+  const relatedFilterArtistRef = useRef(null);
   const [loadingBio, setLoadingBio] = useState(false);
   const [loadingRelated, setLoadingRelated] = useState(false);
   const [loadingArtist, setLoadingArtist] = useState(false);
@@ -5480,8 +5492,31 @@ const Parachord = () => {
     { value: 'alpha-desc', label: 'Z-A' }
   ], []);
 
-  // Set default release type filter to 'all' to show complete discography
+  // The release-type filter belongs to one artist. Its default ('all', the
+  // complete discography) is set once, when an artist's page starts loading
+  // (startReleaseTypeFilterFor, from fetchArtistData and the back button);
+  // data arriving afterwards (the services' discography, MusicBrainz's first
+  // batch, the end of the load) calls setSmartReleaseTypeFilter, which never
+  // overwrites a type the user picked for this artist. It used to reset the
+  // filter on every batch, so Singles clicked during a load jumped back to
+  // All when the albums landed. Leaving the artist view resets it.
+  const releaseTypeFilterOwnerRef = useRef({ artist: null, picked: false });
+  const startReleaseTypeFilterFor = useCallback((artistName) => {
+    const artist = String(artistName || '').trim().toLowerCase();
+    if (releaseTypeFilterOwnerRef.current.artist === artist) return;
+    releaseTypeFilterOwnerRef.current = { artist, picked: false };
+    setReleaseTypeFilter('all');
+  }, []);
+  const pickReleaseTypeFilter = useCallback((value) => {
+    releaseTypeFilterOwnerRef.current.picked = true;
+    setReleaseTypeFilter(value);
+  }, []);
+  const resetReleaseTypeFilter = useCallback(() => {
+    releaseTypeFilterOwnerRef.current = { artist: null, picked: false };
+    setReleaseTypeFilter('all');
+  }, []);
   const setSmartReleaseTypeFilter = useCallback((releases) => {
+    if (releaseTypeFilterOwnerRef.current.picked) return;
     setReleaseTypeFilter('all');
   }, []);
 
@@ -6397,6 +6432,16 @@ const Parachord = () => {
 
   // Reset header collapse and tab when navigating to a new artist (but not when opening a release or restoring state)
   useEffect(() => {
+    // The related-artists source filter belongs to one artist. It used to
+    // carry over: ListenBrainz picked on an artist with an MBID, then an
+    // artist without one (no chips to switch back) showed "No artists from
+    // ListenBrainz." A second update of the same artist (its full data
+    // arriving) keeps the pick.
+    const relatedFilterArtist = (currentArtist?.name || '').trim().toLowerCase();
+    if (relatedFilterArtistRef.current !== relatedFilterArtist) {
+      relatedFilterArtistRef.current = relatedFilterArtist;
+      setRelatedArtistsSourceFilter('all');
+    }
     // Don't reset header if we're opening a release - it should stay collapsed
     if (openingReleaseRef.current) {
       openingReleaseRef.current = false;
@@ -18766,17 +18811,20 @@ ${trackListXml}
       const concertsData = dCaches['cache_concerts'];
       if (concertsData && concertsData.events && concertsData.events.length > 0) {
         const now2 = Date.now();
+        // One row per show: a cache written before uniqueConcerts holds a
+        // shared bill once per artist under one event id (lib/concert-events.js).
+        const restoredEvents = uniqueConcerts(concertsData.events);
         if (concertsData.timestamp && (now2 - concertsData.timestamp) < CACHE_TTL.concerts) {
-          concertsCache.current = { events: concertsData.events, timestamp: concertsData.timestamp };
-          setConcerts(concertsData.events);
+          concertsCache.current = { events: restoredEvents, timestamp: concertsData.timestamp };
+          setConcerts(restoredEvents);
           setConcertsLoaded(true);
-          console.log(`📦 Loaded ${concertsData.events.length} concerts from cache`);
+          console.log(`📦 Loaded ${restoredEvents.length} concerts from cache`);
         } else {
           // Stale but still useful to display immediately
-          concertsCache.current = { events: concertsData.events, timestamp: concertsData.timestamp };
-          setConcerts(concertsData.events);
+          concertsCache.current = { events: restoredEvents, timestamp: concertsData.timestamp };
+          setConcerts(restoredEvents);
           setConcertsLoaded(true);
-          console.log(`📦 Loaded ${concertsData.events.length} stale concerts from cache (will refresh)`);
+          console.log(`📦 Loaded ${restoredEvents.length} stale concerts from cache (will refresh)`);
         }
       }
 
@@ -20119,6 +20167,9 @@ ${trackListXml}
 
     // Clear any current release view when navigating to a new artist
     setCurrentRelease(null);
+    // A new artist's release-type filter starts on its default; a refetch of
+    // the same artist keeps the user's pick.
+    startReleaseTypeFilterFor(artistName);
 
     // Only add to artist history if we're already on the artist view
     // This prevents search results from building up history
@@ -24758,10 +24809,10 @@ ${trackListXml}
           setLoadedResolvers(prev => [...prev, newResolverInstance]);
 
           // Add to resolver order
-          setResolverOrder(prev => [...prev, resolverId]);
+          setResolverOrder(prev => appendUniqueId(prev, resolverId));
 
           // Enable by default
-          setActiveResolvers(prev => [...prev, resolverId]);
+          setActiveResolvers(prev => appendUniqueId(prev, resolverId));
 
           console.log(`➕ Added resolver: ${resolverName}`);
           showConfirmDialog({
@@ -24928,9 +24979,9 @@ ${trackListXml}
         if (existing) {
           // Already loaded - just enable it
           if (!activeResolvers.includes(id)) {
-            setActiveResolvers(prev => [...prev, id]);
+            setActiveResolvers(prev => appendUniqueId(prev, id));
             if (!resolverOrder.includes(id)) {
-              setResolverOrder(prev => [...prev, id]);
+              setResolverOrder(prev => appendUniqueId(prev, id));
             }
             showToast(`${name} enabled`, 'success');
           } else {
@@ -24956,8 +25007,8 @@ ${trackListXml}
           // Wrap through the global limiter (parachord#797) before mounting.
           window.wrapResolverSearchesWithLimiter([instance]);
           setLoadedResolvers(prev => [...prev, { ...instance, weight: prev.length }]);
-          setResolverOrder(prev => [...prev, id]);
-          setActiveResolvers(prev => [...prev, id]);
+          setResolverOrder(prev => appendUniqueId(prev, id));
+          setActiveResolvers(prev => appendUniqueId(prev, id));
           showToast(`${name} enabled`, 'success');
           return;
         }
@@ -25082,8 +25133,8 @@ ${trackListXml}
           });
         } else {
           setLoadedResolvers(prev => [...prev, newResolverInstance]);
-          setResolverOrder(prev => [...prev, resolverId]);
-          setActiveResolvers(prev => [...prev, resolverId]);
+          setResolverOrder(prev => appendUniqueId(prev, resolverId));
+          setActiveResolvers(prev => appendUniqueId(prev, resolverId));
           showConfirmDialog({
             type: 'success',
             title: 'Installed',
@@ -27274,32 +27325,16 @@ Return ONLY the JSON array, no other text.`;
       // Merge fresh results with prior cached events (so we don't lose results
       // from artists that weren't in this run's selection)
       const merged = [...allEvents, ...priorCachedEvents];
-      const seenMergeKeys = new Map(); // key -> index in uniqueEvents
       const today = new Date().toISOString().split('T')[0];
-      const uniqueEvents = [];
-      for (const e of merged) {
-        if (e.date && e.date < today) continue; // Drop past events
-        const key = `${e.date || ''}-${normalizeForDedup(e.artist)}-${normalizeForDedup(e.venue?.name).slice(0, 20)}`;
-        if (seenMergeKeys.has(key)) {
-          // Merge ticketSources from duplicate into existing
-          const idx = seenMergeKeys.get(key);
-          const existing = uniqueEvents[idx];
-          if (e.ticketSources) {
-            for (const src of e.ticketSources) {
-              if (src.ticketUrl && !existing.ticketSources?.some(s => s.source === src.source && s.aiProvider === src.aiProvider)) {
-                (existing.ticketSources = existing.ticketSources || []).push(src);
-              }
-            }
-          }
-          continue;
-        }
+      // One row per show (lib/concert-events.js): a show with two of the
+      // user's artists on the bill comes back once per artist under one
+      // event id, and the list keys its rows by that id. Fresh copies come
+      // first, so they win over a stale cached copy; ticket sources and the
+      // artists each copy was found under are merged into the kept row.
+      const uniqueEvents = uniqueConcerts(merged
+        .filter(e => !(e.date && e.date < today)) // Drop past events
         // Ensure ticketSources exists (for legacy cached events)
-        if (!e.ticketSources) {
-          e.ticketSources = [makeTicketSource(e)];
-        }
-        seenMergeKeys.set(key, uniqueEvents.length);
-        uniqueEvents.push(e);
-      }
+        .map(e => (e.ticketSources ? e : { ...e, ticketSources: [makeTicketSource(e)] })));
       uniqueEvents.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
 
       console.log(`🎤 Found ${allEvents.length} fresh + ${priorCachedEvents.length} cached → ${uniqueEvents.length} unique concerts for ${artistList.length} artists`);
@@ -33450,7 +33485,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       setArtistImage(null);
       setArtistImagePosition('center 25%');
       setArtistReleases([]);
-      setReleaseTypeFilter('all');
+      resetReleaseTypeFilter();
       albumArtQueue.current = [];
       visibleAlbumIds.current.clear();
       return;
@@ -33467,6 +33502,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       const newArtistHistory = [...artistHistory];
       const previousArtist = newArtistHistory.pop();
       setArtistHistory(newArtistHistory);
+      startReleaseTypeFilterFor(previousArtist);
 
       // Fetch the previous artist's data
       const loadPreviousArtist = async () => {
@@ -33586,7 +33622,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         setArtistImage(null);
         setArtistImagePosition('center 25%');
         setArtistReleases([]);
-        setReleaseTypeFilter('all');
+        resetReleaseTypeFilter();
         setArtistHistory([]); // Clear artist history when leaving artist view
         // Clear album art loading queue
         albumArtQueue.current = [];
@@ -36115,59 +36151,13 @@ useEffect(() => {
   // why it was picked. The provider albums keep the page's provider blend
   // across the Albums category rows (each item's `blendIndex`, from
   // recommendation-model.js), so the leading row can't fill Home's row by
-  // itself.
-  const recommendationAlbums = useMemo(() => {
-    const out = [];
-    const seen = new Set();
-    const keyOf = (artist, title) => `${(artist || '').trim().toLowerCase()}|${(title || '').trim().toLowerCase()}`;
-    const why = (label, reason) => (reason ? `${label} · ${reason}` : label);
-    // Collect first, then sort by blend position, then dedupe, so the
-    // earliest copy in the blend wins. An item with no blendIndex (a page
-    // cached before the field) sorts by its collection position.
-    const picked = [];
-    for (const section of recommendations.sections || []) {
-      for (const sub of section.subsections || []) {
-        for (const item of sub.items || []) {
-          if (item.type !== 'album' || !item.name) continue;
-          const at = picked.length;
-          picked.push({ item, sub, at, rank: Number.isFinite(item.blendIndex) ? item.blendIndex : at });
-        }
-      }
-    }
-    picked.sort((a, b) => (a.rank - b.rank) || (a.at - b.at));
-    for (const { item, sub } of picked) {
-      const key = keyOf(item.artist, item.name);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const source = (sub.sources || []).find(src => src.id === item.resolverId);
-      const sourceLabel = item.resolverId === 'shuffleupagus'
-        ? 'Shuffleupagus'
-        : ((source && source.name) || item.resolverId || '');
-      out.push({
-        ...item,
-        title: item.name,
-        sourceLabel,
-        imageUrl: recommendationImageFor(item),
-        why: why(sourceLabel, item.reason)
-      });
-    }
-    for (const album of homeData.aiRecommendations?.albums || []) {
-      if (!album || !album.title) continue;
-      const key = keyOf(album.artist, album.title);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push({
-        ...album,
-        id: `shuffleupagus:album:${trackSlug(album.artist || '', album.title)}`,
-        resolverId: 'shuffleupagus',
-        reason: album.reason || null,
-        sourceLabel: 'Shuffleupagus',
-        imageUrl: album.art || null,
-        why: why('Shuffleupagus', album.reason)
-      });
-    }
-    return out;
-  }, [recommendations.sections, homeData.aiRecommendations, recommendationImages]);
+  // itself. An album whose id was already kept is skipped too: the card is
+  // keyed by id (homeRecommendationAlbums, recommendation-model.js).
+  const recommendationAlbums = useMemo(() => homeRecommendationAlbums({
+    sections: recommendations.sections,
+    aiAlbums: homeData.aiRecommendations?.albums,
+    imageFor: recommendationImageFor
+  }), [recommendations.sections, homeData.aiRecommendations, recommendationImages]);
 
   // Stable function props for the memo'd HomePage (keys must match
   // HOME_PAGE_HANDLERS in home-page.js).
@@ -37286,7 +37276,7 @@ useEffect(() => {
 
       // Main content area - Artist Page (completely separate layout)
       activeView === 'artist' ? React.createElement(ArtistPage, {
-          activeResolvers: playbackResolvers, addArtistToCollection, albumArtObserver, albumArtQueue, albumVersions, artistBio, artistConcerts, artistConcertsLoaded, artistConcertsLoading, artistConcertsTicketFlyout, artistExtendedInfo, artistImage, artistImagePosition, artistPageScrollRef, artistPageTab, artistReleases, artistSearch, artistSearchOpen, artistSort, artistSortDropdownOpen, artistSortOptions, collectionData, copyCollectionEmbedCode, currentArtist, currentRelease, currentTrack, effectiveTheme, filterArtistReleases, handleArtistPageScroll, isCompactHeader, isHeaderCollapsed, isPlaying, artistLoadError, loadingArtist, loadingBio, loadingExtendedInfo, loadingRelated, loadingRelease, playbackContext, prefetchedReleasesRef, publishCollectionSmartLink, relatedArtists, relatedArtistsSourceFilter, releaseObserverRef, releaseTrackRowRefs, releaseTypeFilter, removeArtistFromCollection, resolvers, setAddToPlaylistPanel, setArtistBio, setArtistConcertsTicketFlyout, setArtistPageTab, setArtistSearch, setArtistSearchOpen, setArtistSort, setArtistSortDropdownOpen, setCurrentRelease, setDraggingTrackForPlaylist, setIsHeaderCollapsed, setLoadingBio, setRelatedArtists, setRelatedArtistsSourceFilter, setReleaseTypeFilter, setSelectedPlaylistsForAdd, setShareDropdownOpen, setTrackLoading, shareDropdownOpen, showToast, sortArtistReleases, trackSources, visibleAlbumIds,
+          activeResolvers: playbackResolvers, addArtistToCollection, albumArtObserver, albumArtQueue, albumVersions, artistBio, artistConcerts, artistConcertsLoaded, artistConcertsLoading, artistConcertsTicketFlyout, artistExtendedInfo, artistImage, artistImagePosition, artistPageScrollRef, artistPageTab, artistReleases, artistSearch, artistSearchOpen, artistSort, artistSortDropdownOpen, artistSortOptions, collectionData, copyCollectionEmbedCode, currentArtist, currentRelease, currentTrack, effectiveTheme, filterArtistReleases, handleArtistPageScroll, isCompactHeader, isHeaderCollapsed, isPlaying, artistLoadError, loadingArtist, loadingBio, loadingExtendedInfo, loadingRelated, loadingRelease, playbackContext, prefetchedReleasesRef, publishCollectionSmartLink, relatedArtists, relatedArtistsSourceFilter, releaseObserverRef, releaseTrackRowRefs, releaseTypeFilter, removeArtistFromCollection, resolvers, setAddToPlaylistPanel, setArtistBio, setArtistConcertsTicketFlyout, setArtistPageTab, setArtistSearch, setArtistSearchOpen, setArtistSort, setArtistSortDropdownOpen, setCurrentRelease, setDraggingTrackForPlaylist, setIsHeaderCollapsed, setLoadingBio, setRelatedArtists, setRelatedArtistsSourceFilter, setReleaseTypeFilter: pickReleaseTypeFilter, setSelectedPlaylistsForAdd, setShareDropdownOpen, setTrackLoading, shareDropdownOpen, showToast, sortArtistReleases, trackSources, visibleAlbumIds,
           // Not read by the page directly; read during its render through a
           // stable handler, so it must invalidate the memo.
           _metaServiceConfigs: metaServiceConfigs,
@@ -40126,11 +40116,7 @@ useEffect(() => {
           const _searchL = concertsSearch.toLowerCase().trim();
           const _locL = concertsLocation.toLowerCase().trim();
           const filteredConcertsCount = concerts.filter(event => {
-            if (concertsSourceFilter !== 'all') {
-              if (concertsSourceFilter.startsWith('ai:')) {
-                if (event.source !== 'ai' || event.aiProvider !== concertsSourceFilter.slice(3)) return false;
-              } else if (event.source !== concertsSourceFilter) return false;
-            }
+            if (!concertMatchesSource(event, concertsSourceFilter)) return false;
             if (concertsLocationCoords) {
               const vLat = event.venue?.latitude, vLng = event.venue?.longitude;
               if (vLat != null && vLng != null) {
@@ -40245,18 +40231,21 @@ useEffect(() => {
                 // Build options from sources that actually returned results
                 const sourceOptions = [{ value: 'all', label: 'All Sources' }];
                 const seenSources = new Set();
+                // Every service that lists a show, including those merged into
+                // another service's row (its ticketSources).
+                const allResolvers = resolverLoaderRef.current ? resolverLoaderRef.current.getAllResolvers() : [];
                 for (const event of concerts) {
-                  if (event.source === 'ai' && event.aiProvider) {
-                    const key = `ai:${event.aiProvider}`;
-                    if (!seenSources.has(key)) {
-                      seenSources.add(key);
-                      sourceOptions.push({ value: key, label: event.aiProviderName || event.aiProvider });
+                  for (const key of concertSourceKeys(event)) {
+                    if (seenSources.has(key)) continue;
+                    seenSources.add(key);
+                    if (key.startsWith('ai:')) {
+                      const aiId = key.slice(3);
+                      const named = [event, ...(event.ticketSources || [])].find(s => s && s.source === 'ai' && s.aiProvider === aiId);
+                      sourceOptions.push({ value: key, label: (named && named.aiProviderName) || aiId });
+                    } else {
+                      const resolver = allResolvers.find(r => r.id === key);
+                      sourceOptions.push({ value: key, label: resolver?.name || key });
                     }
-                  } else if (event.source && !seenSources.has(event.source)) {
-                    seenSources.add(event.source);
-                    const allResolvers = resolverLoaderRef.current ? resolverLoaderRef.current.getAllResolvers() : [];
-                    const resolver = allResolvers.find(r => r.id === event.source);
-                    sourceOptions.push({ value: event.source, label: resolver?.name || event.source });
                   }
                 }
                 const selectedLabel = sourceOptions.find(o => o.value === concertsSourceFilter)?.label || 'All Sources';
@@ -40655,15 +40644,10 @@ useEffect(() => {
               const searchLower = concertsSearch.toLowerCase().trim();
               const locationLower = concertsLocation.toLowerCase().trim();
               const filtered = concerts.filter(event => {
-                // Source filter (supports 'all', dedicated service IDs, and 'ai:providerId')
-                if (concertsSourceFilter !== 'all') {
-                  if (concertsSourceFilter.startsWith('ai:')) {
-                    const aiProviderId = concertsSourceFilter.slice(3);
-                    if (event.source !== 'ai' || event.aiProvider !== aiProviderId) return false;
-                  } else if (event.source !== concertsSourceFilter) {
-                    return false;
-                  }
-                }
+                // Source filter ('all', a service id, or 'ai:providerId'). A
+                // show several services list matches each of them
+                // (lib/concert-events.js concertSourceKeys).
+                if (!concertMatchesSource(event, concertsSourceFilter)) return false;
                 // Location filter — coordinate-based distance when available, text fallback
                 if (concertsLocationCoords) {
                   const vLat = event.venue?.latitude;
@@ -42463,7 +42447,11 @@ useEffect(() => {
                       const isResolving = Object.keys(resolvedSources).length === 0;
 
                       return React.createElement('div', {
-                        key: track.id,
+                        // One song listened to twice is two rows with one
+                        // track.id (ListenBrainz's recording_msid); the listen
+                        // time tells them apart. track.id itself stays the
+                        // trackSources key.
+                        key: `${track.id}|${track.playedAt ?? index}`,
                         'data-track-id': track.id,
                         ref: (el) => {
                           if (el) {
@@ -51610,7 +51598,7 @@ useEffect(() => {
                     }
 
                     if (isContentResolver) {
-                      setActiveResolvers(prev => [...prev, selectedResolver.id]);
+                      setActiveResolvers(prev => appendUniqueId(prev, selectedResolver.id));
                       setResolverOrder(prev => insertInCanonicalOrder(prev, selectedResolver.id));
                     } else if (isMetaService) {
                       saveMetaServiceConfig(selectedResolver.id, {
@@ -55371,7 +55359,7 @@ useEffect(() => {
                         savedActiveResolversRef.current = savedActiveResolversRef.current.filter(id => id !== resolver.id);
                       }
                     } else {
-                      setActiveResolvers(prev => [...prev, resolver.id]);
+                      setActiveResolvers(prev => appendUniqueId(prev, resolver.id));
                       setResolverOrder(prev => insertInCanonicalOrder(prev, resolver.id));
                       // Mark as explicitly enabled so reEnableResolver can restore it after auth failures
                       if (savedActiveResolversRef.current && !savedActiveResolversRef.current.includes(resolver.id)) {
