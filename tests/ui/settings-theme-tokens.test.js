@@ -37,3 +37,18 @@ test('Clear Cache confirms with a toast, not alert()', () => {
   expect(settings).not.toMatch(/alert\('Cache cleared successfully!'\)/);
   expect(settings).toMatch(/showToast\('Cache cleared'\)/);
 });
+
+// A switch's knob was bg-white, which dark mode remaps to the card colour,
+// on an off track of rgba(0,0,0,.15): in dark mode the whole switch nearly
+// vanished (2026-11, Settings > Playback's Atmos toggle).
+test('every switch has a white knob on the control tokens', () => {
+  const files = ['src/renderer/app.js', 'src/renderer/components/settings-cards.js']
+    .map((f) => fs.readFileSync(path.join(root, f), 'utf8')).join('\n');
+  const knobs = files.match(/absolute top-0\.5 left-0\.5 w-[45] h-[45][^'`]*/g) || [];
+  expect(knobs.length).toBeGreaterThanOrEqual(12);
+  for (const k of knobs) expect(k).toMatch(/bg-control-knob/);
+  expect(files).not.toMatch(/'var\(--accent-primary\)' : 'rgba\(0, 0, 0, 0\.15\)'/);
+  expect(html).toMatch(/--control-knob: #ffffff;/);
+  const dark = html.slice(html.indexOf('.dark {'));
+  expect(dark).toMatch(/--control-off: #707070;/);
+});

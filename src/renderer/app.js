@@ -45086,10 +45086,10 @@ useEffect(() => {
                       }),
                       React.createElement('div', {
                         className: 'w-full h-full rounded-full transition-colors',
-                        style: { backgroundColor: playbackSpatial === true ? 'var(--accent-primary)' : 'rgba(0, 0, 0, 0.15)' }
+                        style: { backgroundColor: playbackSpatial === true ? 'var(--accent-fill)' : 'var(--control-off)' }
                       }),
                       React.createElement('div', {
-                        className: 'absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-surface-card shadow transition-transform',
+                        className: 'absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-control-knob shadow transition-transform',
                         style: { transform: playbackSpatial === true ? 'translateX(20px)' : 'translateX(0)' }
                       })
                     )
@@ -45272,7 +45272,7 @@ useEffect(() => {
                       className: `relative w-11 h-6 rounded-full transition-colors ${skipExternalPrompt ? 'bg-accent-fill' : 'bg-control-off'}`
                     },
                       React.createElement('span', {
-                        className: `absolute top-0.5 left-0.5 w-5 h-5 bg-surface-card rounded-full shadow transition-transform ${skipExternalPrompt ? 'translate-x-5' : 'translate-x-0'}`
+                        className: `absolute top-0.5 left-0.5 w-5 h-5 bg-control-knob rounded-full shadow transition-transform ${skipExternalPrompt ? 'translate-x-5' : 'translate-x-0'}`
                       })
                     )
                   ),
@@ -45483,7 +45483,7 @@ useEffect(() => {
                       className: `relative w-11 h-6 rounded-full transition-colors ${discordPresenceEnabled ? 'bg-accent-fill' : 'bg-control-off'}`
                     },
                       React.createElement('span', {
-                        className: `absolute top-0.5 left-0.5 w-5 h-5 bg-surface-card rounded-full shadow transition-transform ${discordPresenceEnabled ? 'translate-x-5' : 'translate-x-0'}`
+                        className: `absolute top-0.5 left-0.5 w-5 h-5 bg-control-knob rounded-full shadow transition-transform ${discordPresenceEnabled ? 'translate-x-5' : 'translate-x-0'}`
                       })
                     )
                   ),
@@ -45736,7 +45736,7 @@ useEffect(() => {
                       className: `relative w-11 h-6 rounded-full transition-colors ${rememberQueue ? 'bg-accent-fill' : 'bg-control-off'}`
                     },
                       React.createElement('span', {
-                        className: `absolute top-0.5 left-0.5 w-5 h-5 bg-surface-card rounded-full shadow transition-transform ${rememberQueue ? 'translate-x-5' : 'translate-x-0'}`
+                        className: `absolute top-0.5 left-0.5 w-5 h-5 bg-control-knob rounded-full shadow transition-transform ${rememberQueue ? 'translate-x-5' : 'translate-x-0'}`
                       })
                     )
                   )
@@ -45775,7 +45775,7 @@ useEffect(() => {
                       className: `relative w-11 h-6 flex-shrink-0 rounded-full transition-colors ${showDiscoveryBadges ? 'bg-accent-fill' : 'bg-control-off'}`
                     },
                       React.createElement('span', {
-                        className: `absolute top-0.5 left-0.5 w-5 h-5 bg-surface-card rounded-full shadow transition-transform ${showDiscoveryBadges ? 'translate-x-5' : 'translate-x-0'}`
+                        className: `absolute top-0.5 left-0.5 w-5 h-5 bg-control-knob rounded-full shadow transition-transform ${showDiscoveryBadges ? 'translate-x-5' : 'translate-x-0'}`
                       })
                     )
                   ),
@@ -45801,7 +45801,7 @@ useEffect(() => {
                       className: `relative w-11 h-6 flex-shrink-0 rounded-full transition-colors ${homeSuggestionsAutoRefresh ? 'bg-accent-fill' : 'bg-control-off'}`
                     },
                       React.createElement('span', {
-                        className: `absolute top-0.5 left-0.5 w-5 h-5 bg-surface-card rounded-full shadow transition-transform ${homeSuggestionsAutoRefresh ? 'translate-x-5' : 'translate-x-0'}`
+                        className: `absolute top-0.5 left-0.5 w-5 h-5 bg-control-knob rounded-full shadow transition-transform ${homeSuggestionsAutoRefresh ? 'translate-x-5' : 'translate-x-0'}`
                       })
                     )
                   )
@@ -45857,7 +45857,7 @@ useEffect(() => {
                       className: `relative w-11 h-6 rounded-full transition-colors ${scrobblingEnabled ? 'bg-accent-fill' : 'bg-control-off'}`
                     },
                       React.createElement('span', {
-                        className: `absolute top-0.5 left-0.5 w-5 h-5 bg-surface-card rounded-full shadow transition-transform ${scrobblingEnabled ? 'translate-x-5' : 'translate-x-0'}`
+                        className: `absolute top-0.5 left-0.5 w-5 h-5 bg-control-knob rounded-full shadow transition-transform ${scrobblingEnabled ? 'translate-x-5' : 'translate-x-0'}`
                       })
                     )
                   ),
@@ -48863,10 +48863,10 @@ useEffect(() => {
               onClick: () => toggleResolver(selectedResolver.id)
             },
               React.createElement('div', {
-                className: `w-full h-full rounded-full transition-colors ${activeResolvers.includes(selectedResolver.id) ? 'bg-purple-600' : 'bg-gray-300'}`
+                className: `w-full h-full rounded-full transition-colors ${activeResolvers.includes(selectedResolver.id) ? 'bg-accent-fill' : 'bg-control-off'}`
               }),
               React.createElement('div', {
-                className: `absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${activeResolvers.includes(selectedResolver.id) ? 'translate-x-5' : 'translate-x-0'}`
+                className: `absolute top-0.5 left-0.5 w-5 h-5 bg-control-knob rounded-full shadow transition-transform ${activeResolvers.includes(selectedResolver.id) ? 'translate-x-5' : 'translate-x-0'}`
               })
             )
           ),
@@ -49333,11 +49333,11 @@ useEffect(() => {
                     showToast('Spotify launched in background', 'success');
                   }
                 },
-                className: `relative w-11 h-6 rounded-full transition-colors ${autoLaunchSpotify ? 'bg-green-500' : 'bg-gray-300'}`,
+                className: `relative w-11 h-6 rounded-full transition-colors ${autoLaunchSpotify ? 'bg-accent-fill' : 'bg-control-off'}`,
                 style: { flexShrink: 0, marginLeft: '16px' }
               },
                 React.createElement('span', {
-                  className: `absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${autoLaunchSpotify ? 'translate-x-5' : 'translate-x-0'}`
+                  className: `absolute top-0.5 left-0.5 w-5 h-5 bg-control-knob rounded-full shadow transition-transform ${autoLaunchSpotify ? 'translate-x-5' : 'translate-x-0'}`
                 })
               )
             )
@@ -51001,10 +51001,10 @@ useEffect(() => {
                 }),
                 React.createElement('div', {
                   className: 'w-full h-full rounded-full transition-colors',
-                  style: { backgroundColor: metaServiceConfigs[selectedResolver.id]?.enabled === true ? 'var(--accent-primary)' : 'rgba(0, 0, 0, 0.15)' }
+                  style: { backgroundColor: metaServiceConfigs[selectedResolver.id]?.enabled === true ? 'var(--accent-fill)' : 'var(--control-off)' }
                 }),
                 React.createElement('div', {
-                  className: 'absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform',
+                  className: 'absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-control-knob shadow transition-transform',
                   style: { transform: metaServiceConfigs[selectedResolver.id]?.enabled === true ? 'translateX(20px)' : 'translateX(0)' }
                 })
               )
@@ -51238,10 +51238,10 @@ useEffect(() => {
                 }),
                 React.createElement('div', {
                   className: 'w-full h-full rounded-full transition-colors',
-                  style: { backgroundColor: metaServiceConfigs[selectedResolver.id]?.enabled === true ? 'var(--accent-primary)' : 'rgba(0, 0, 0, 0.15)' }
+                  style: { backgroundColor: metaServiceConfigs[selectedResolver.id]?.enabled === true ? 'var(--accent-fill)' : 'var(--control-off)' }
                 }),
                 React.createElement('div', {
-                  className: 'absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform',
+                  className: 'absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-control-knob shadow transition-transform',
                   style: { transform: metaServiceConfigs[selectedResolver.id]?.enabled === true ? 'translateX(20px)' : 'translateX(0)' }
                 })
               )

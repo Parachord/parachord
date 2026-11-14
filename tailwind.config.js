@@ -51,7 +51,7 @@ module.exports = {
           tint: 'var(--accent-primary-alpha-10)',
           'tint-hover': 'var(--accent-primary-alpha-15)',
         },
-        control: { off: 'var(--control-off)' },
+        control: { off: 'var(--control-off)', knob: 'var(--control-knob)' },
         status: {
           error: 'var(--fill-error)',
           'error-hover': 'var(--fill-error-hover)',
