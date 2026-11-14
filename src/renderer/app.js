@@ -594,6 +594,7 @@ window.musicbrainzLimiter = window.createLimiter({
 });
 const { mbFetchWithRetries, describeMusicBrainzError } = require('./lib/musicbrainz-fetch');
 const { createIpv4Fallback } = require('./lib/metabrainz-ipv4');
+const { pluginMatchesQuery } = require('./lib/plugin-search');
 const {
   isMusicBrainzId, resolverIdFromReleaseId, pickCatalogAlbum, orderCatalogResolvers,
   catalogAlbumToRelease, catalogAlbumToSearchResult, sameAlbumIdentity,
@@ -44815,10 +44816,7 @@ useEffect(() => {
                       .filter(resolver => {
                         // Search filter
                         if (marketplaceSearchQuery) {
-                          const query = marketplaceSearchQuery.toLowerCase();
-                          const matchesName = resolver.name.toLowerCase().includes(query);
-                          const matchesDesc = (resolver.description || '').toLowerCase().includes(query);
-                          if (!matchesName && !matchesDesc) return false;
+                          if (!pluginMatchesQuery(resolver, marketplaceSearchQuery)) return false;
                         }
                         // Install status filter
                         const isEnabled = activeResolvers.includes(resolver.id);
@@ -44974,10 +44972,7 @@ useEffect(() => {
                       .filter(service => {
                         // Search filter
                         if (marketplaceSearchQuery) {
-                          const query = marketplaceSearchQuery.toLowerCase();
-                          const matchesName = service.name.toLowerCase().includes(query);
-                          const matchesDesc = (service.description || '').toLowerCase().includes(query);
-                          if (!matchesName && !matchesDesc) return false;
+                          if (!pluginMatchesQuery(service, marketplaceSearchQuery)) return false;
                         }
                         // Install status filter - based on active state, not loaded state
                         const config = metaServiceConfigs[service.id];
