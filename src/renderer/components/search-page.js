@@ -1080,7 +1080,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                 searchResults.playlists.map((playlist, index) => {
                   const animationDelay = Math.min(index * 30, 300);
                   return React.createElement('div', {
-                    key: playlist.title,
+                    key: playlist.id || `${playlist.title}-${index}`,
                     className: 'cursor-pointer group release-card card-fade-up',
                     style: {
                       padding: '10px',
@@ -2035,7 +2035,7 @@ const SearchPage = React.memo(function SearchPage(props) {
               ...searchResults.playlists.slice(0, 20).map((playlist, index) => {
                 const animationDelay = Math.min(index * 40, 300);
                 return React.createElement('div', {
-                  key: playlist.title,
+                  key: playlist.id || `${playlist.title}-${index}`,
                   onClick: () => {
                     saveSearchHistory(searchQuery, {
                       type: 'playlist',
