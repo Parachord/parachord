@@ -1203,7 +1203,7 @@ const { discogsRefIds, normalizeDiscogsProfile, REF_PATH: DISCOGS_REF_PATH, MAX_
 const { playlistShareTarget, notSyncedSharePrompt } = require('./lib/playlist-share');
 const { emptyRecommendationsMessage } = require('./lib/recommendations-empty');
 const {
-  blockedItemPick, normalizeRecommendationSections, buildRecommendationPage, buildRecommendationViews, flattenRecommendationItems,
+  blockedItemPick, normalizeRecommendationSections, buildRecommendationPage, buildRecommendationViews, flattenRecommendationItems, homeRecommendationAlbums,
   filterRowBySource, pageSources, weeklyHomeEntries, shuffleupagusSection, FRIEND_SERVICES, categoryFor
 } = require('./lib/recommendation-model');
 const { releaseDateKey, releaseGroupSearchUrl, pickReleaseGroupDate, upcomingLabel, RELEASE_DATE_TTL_MS } = require('./lib/release-date');
@@ -36103,59 +36103,13 @@ useEffect(() => {
   // why it was picked. The provider albums keep the page's provider blend
   // across the Albums category rows (each item's `blendIndex`, from
   // recommendation-model.js), so the leading row can't fill Home's row by
-  // itself.
-  const recommendationAlbums = useMemo(() => {
-    const out = [];
-    const seen = new Set();
-    const keyOf = (artist, title) => `${(artist || '').trim().toLowerCase()}|${(title || '').trim().toLowerCase()}`;
-    const why = (label, reason) => (reason ? `${label} · ${reason}` : label);
-    // Collect first, then sort by blend position, then dedupe, so the
-    // earliest copy in the blend wins. An item with no blendIndex (a page
-    // cached before the field) sorts by its collection position.
-    const picked = [];
-    for (const section of recommendations.sections || []) {
-      for (const sub of section.subsections || []) {
-        for (const item of sub.items || []) {
-          if (item.type !== 'album' || !item.name) continue;
-          const at = picked.length;
-          picked.push({ item, sub, at, rank: Number.isFinite(item.blendIndex) ? item.blendIndex : at });
-        }
-      }
-    }
-    picked.sort((a, b) => (a.rank - b.rank) || (a.at - b.at));
-    for (const { item, sub } of picked) {
-      const key = keyOf(item.artist, item.name);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const source = (sub.sources || []).find(src => src.id === item.resolverId);
-      const sourceLabel = item.resolverId === 'shuffleupagus'
-        ? 'Shuffleupagus'
-        : ((source && source.name) || item.resolverId || '');
-      out.push({
-        ...item,
-        title: item.name,
-        sourceLabel,
-        imageUrl: recommendationImageFor(item),
-        why: why(sourceLabel, item.reason)
-      });
-    }
-    for (const album of homeData.aiRecommendations?.albums || []) {
-      if (!album || !album.title) continue;
-      const key = keyOf(album.artist, album.title);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push({
-        ...album,
-        id: `shuffleupagus:album:${trackSlug(album.artist || '', album.title)}`,
-        resolverId: 'shuffleupagus',
-        reason: album.reason || null,
-        sourceLabel: 'Shuffleupagus',
-        imageUrl: album.art || null,
-        why: why('Shuffleupagus', album.reason)
-      });
-    }
-    return out;
-  }, [recommendations.sections, homeData.aiRecommendations, recommendationImages]);
+  // itself. An album whose id was already kept is skipped too: the card is
+  // keyed by id (homeRecommendationAlbums, recommendation-model.js).
+  const recommendationAlbums = useMemo(() => homeRecommendationAlbums({
+    sections: recommendations.sections,
+    aiAlbums: homeData.aiRecommendations?.albums,
+    imageFor: recommendationImageFor
+  }), [recommendations.sections, homeData.aiRecommendations, recommendationImages]);
 
   // Stable function props for the memo'd HomePage (keys must match
   // HOME_PAGE_HANDLERS in home-page.js).

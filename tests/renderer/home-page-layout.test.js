@@ -232,20 +232,21 @@ describe('render', () => {
 
 describe("Home's recommended albums (app.js recommendationAlbums)", () => {
   // Albums split into category rows (#1377): Home's row must still take
-  // albums from every row of the Albums section, not only the first. Run the
-  // real useMemo body against a page the real model built.
+  // albums from every row of the Albums section, not only the first. The
+  // useMemo body is homeRecommendationAlbums (recommendation-model.js); run
+  // it against a page the real model built.
   const model = require('../../src/renderer/lib/recommendation-model');
-  const { trackSlug } = require('../../src/renderer/lib/track-slug');
-  const start = app.indexOf('const recommendationAlbums = useMemo(() => {');
-  const end = app.indexOf('}, [recommendations.sections, homeData.aiRecommendations, recommendationImages]);', start);
-  const recommendationAlbumsFor = (recommendations, homeData = {}) => new Function(
-    'useMemo', 'recommendations', 'homeData', 'recommendationImageFor', 'trackSlug',
-    `${app.slice(start, end)}}, []);\nreturn recommendationAlbums;`
-  )((fn) => fn(), recommendations, homeData, (item) => item.imageUrl || null, trackSlug);
+  const recommendationAlbumsFor = (recommendations, homeData = {}) => model.homeRecommendationAlbums({
+    sections: recommendations.sections,
+    aiAlbums: homeData.aiRecommendations && homeData.aiRecommendations.albums,
+    imageFor: (item) => item.imageUrl || null,
+  });
+
+  test('app.js builds the row with homeRecommendationAlbums', () => {
+    expect(app).toMatch(/const recommendationAlbums = useMemo\(\(\) => homeRecommendationAlbums\(\{\s*sections: recommendations\.sections,\s*aiAlbums: homeData\.aiRecommendations\?\.albums,\s*imageFor: recommendationImageFor\s*\}\), \[recommendations\.sections, homeData\.aiRecommendations, recommendationImages\]\);/);
+  });
 
   test('takes albums from every category row of the Albums section', () => {
-    expect(start).toBeGreaterThan(-1);
-    expect(end).toBeGreaterThan(start);
     const providers = [model.normalizeRecommendationSections({ sections: [
       { id: 'fresh', title: 'Fresh', category: 'new', items: [{ type: 'album', name: 'N1', artist: 'A' }] },
       { id: 'ed', title: 'Ed', category: 'editorial', items: [{ type: 'album', name: 'E1', artist: 'B' }] },
