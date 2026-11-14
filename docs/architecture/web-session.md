@@ -28,7 +28,7 @@ The primitive signatures don't show the half that makes them safe; these rules a
 4. **Captures flag our own traffic.** The capture listener is session-wide, so a pageFetch racing a load's capture window shows up in that load's captures. Any capture observed while a pageFetch was in flight is flagged `echo: true`; the plugin's matchers use that to skip template re-mints and degrade fast-fail graces (the #1152 class: an echoed replay once poisoned a template and left the search breaker open for a day).
 5. **The capture window is quiet-bounded.** `load` returns its captures when the page's request burst goes quiet (`quietMs` with no new captured request after the load finishes), never later than `budgetMs`. The host cannot know which request matters — the matcher is plugin-side, pure, over the returned captures — so it must not stop early on a match it can't see.
 
-Error convention: `load` throws `Error`s with `.reason` (`'load-failed'`, `'not-ready'`) — the same shape `amazon-web-player`'s flows throw today; `pageFetch` never throws.
+Error convention: `load` throws `Error`s with `.reason` (`'load-failed'`, `'not-ready'`, `'invalid'`) — the same shape `amazon-web-player`'s flows throw today; `pageFetch` never throws.
 
 ## The rest of the #1356 plan
 
