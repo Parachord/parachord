@@ -18,6 +18,7 @@
 
 const Icons = require('./icons');
 const { ResolverIcon, ShareButton } = require('./ui-atoms');
+const { PlaylistCoverImage } = require('./playlist-cover');
 const { VirtualizedTrackList, getBestSourceConfidence } = require('./track-lists');
 const { trackSlug } = require('../lib/track-slug');
 
@@ -103,6 +104,12 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
     showToast,
     trackSources,
   } = props;
+  // The playlist's own cover, when its provider gave it one (a recommended
+  // playlist's image — the same one the Recommendations page's card showed —
+  // or a provider import's coverArt on a saved record). Shown instead of the
+  // 2x2 mosaic everywhere this view renders a cover: the blurred hero
+  // background, the 192px card and the share link.
+  const playlistCover = (typeof selectedPlaylist?.coverArt === 'string' && selectedPlaylist.coverArt.trim()) || null;
   return React.createElement('div', {
         className: 'flex-1 flex flex-col',
         style: { overflow: 'hidden' }
@@ -116,7 +123,10 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
             overflow: 'hidden'
           }
         },
-          // Background with first album art or gradient
+          // Background with the first mosaic tile or the gradient, and the
+          // playlist's own cover layered over it — the img reports its own
+          // death (a CSS background cannot), so a dead cover degrades to the
+          // tile/gradient, never to a flat header.
           React.createElement('div', {
             className: 'absolute inset-0',
             style: {
@@ -128,7 +138,9 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
               filter: 'blur(20px) brightness(0.7)',
               transform: 'scale(1.2)'
             }
-          }),
+          },
+            playlistCover && React.createElement(PlaylistCoverImage, { url: playlistCover })
+          ),
           // Gradient overlay
           React.createElement('div', {
             className: 'absolute inset-0',
@@ -243,7 +255,16 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                   // (hosted-<url-hash> id, the provider snapshot shape), so the
                   // two buttons can never disagree.
                   if (selectedPlaylist.sourceUrl) {
-                    await handleImportPlaylistFromUrl(selectedPlaylist.sourceUrl);
+                    // coverArt rides along as a metadata override so the saved
+                    // record keeps the exact cover this view is showing (the
+                    // lookup's own cover can be a different crop of the same
+                    // playlist's image; the override wins).
+                    await handleImportPlaylistFromUrl(
+                      selectedPlaylist.sourceUrl,
+                      false,
+                      null,
+                      selectedPlaylist.coverArt ? { coverArt: selectedPlaylist.coverArt } : null
+                    );
                     return;
                   }
                   // Weekly Jams from Home: save to library. Built by spreading
@@ -731,7 +752,17 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                     }
                   }
                 },
-                  // Album art mosaic with hover overlay
+                  // Album art mosaic with hover overlay. The playlist's own
+                  // cover (playlistCover) renders AFTER the mosaic/placeholder
+                  // in DOM order: the cover img and the mosaic tiles are both
+                  // positioned, and positioned siblings paint in DOM order —
+                  // placed before the mosaic, the tiles painted OVER the cover
+                  // the moment the tracks landed (the static placeholder was
+                  // the only thing the cover could sit above while loading).
+                  // After it, the exact image the provider gave — what the
+                  // Recommendations page's card showed — sits above the tiles,
+                  // and a dead URL removes itself so the mosaic shows again.
+                  // The hover overlay after it stays on top.
                   React.createElement('div', {
                     className: 'rounded-lg overflow-hidden album-art-container group/art relative',
                     style: {
@@ -772,6 +803,9 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                           React.createElement('path', { d: 'M15 13.5v6l5.5-3-5.5-3z' })
                         )
                       ),
+                    // The playlist's own cover, over the mosaic/placeholder
+                    // (DOM order = paint order here; see the comment above).
+                    playlistCover && React.createElement(PlaylistCoverImage, { url: playlistCover }),
                     // Hover overlay with action buttons
                     React.createElement('div', {
                       className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-3',
@@ -1055,7 +1089,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                         title: selectedPlaylist.title,
                         artist: null,
                         creator: selectedPlaylist.creator || null,
-                        albumArt: playlistCoverArt?.[0] || null,
+                        albumArt: playlistCover || playlistCoverArt?.[0] || null,
                         type: 'playlist',
                         tracks: (playlistTracks || []).map((t, i) => ({
                           title: t.title || 'Unknown',
