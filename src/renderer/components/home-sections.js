@@ -11,7 +11,7 @@
 // home-skeletons.js; change one, change the other.
 
 const { filterBySource } = require('../lib/home-model');
-const { FixedTooltip, SERVICE_LOGOS } = require('./ui-atoms');
+const { ReasonBadge, shuffleupagusIcon } = require('./reason-badge');
 const { Play } = require('./icons');
 const { FilterChips } = require('./filter-chips');
 const { PAGE_COLORS } = require('../lib/page-colors');
@@ -25,8 +25,6 @@ const {
 const e = React.createElement;
 
 // Drawn over album art or on a filled accent: the same in both themes.
-const CHIP_BG = 'rgba(255,255,255,.94)'; // on-art
-const CHIP_FG = '#111827'; // on-art
 const PLAY_FILL = 'var(--accent-fill)'; // fill-accent
 const ON_FILL = '#fff'; // on-color
 const SHUFFLE_COLOR = 'var(--accent-fill)'; // fill-accent: the accent var turns light purple in dark mode
@@ -41,11 +39,6 @@ const HOME_HALF_PANEL_PAD = 20;
 const SECTION_STYLE = { display: 'flex', flexDirection: 'column', gap: '14px' };
 const CLAMP2 = { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' };
 const ELLIPSIS = { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
-// Read by screen readers, not drawn.
-const VISUALLY_HIDDEN = {
-  position: 'absolute', width: '1px', height: '1px', padding: 0, margin: '-1px',
-  overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap', border: 0,
-};
 
 // Only http(s) ticket links reach an href.
 const isHttpUrl = (u) => typeof u === 'string' && /^https?:\/\//i.test(u.trim());
@@ -261,11 +254,6 @@ function JumpBackIn({ tiles, onOpenTile, onPlayTile, onContextMenu, onImport, on
 const DropletGlyph = () => svg(16, e('path', { d: 'M12 22a7 7 0 0 0 7-7c0-5-7-13-7-13S5 10 5 15a7 7 0 0 0 7 7z' }));
 const TrophyGlyph = () => svg(16, e('path', { d: 'M6 2h12v6a6 6 0 01-12 0V2zM9 21h6M12 14v7M6 4H3v2a3 3 0 003 3M18 4h3v2a3 3 0 01-3 3' }));
 
-// Shuffleupagus's icon from the shared icon set, sized to 18px.
-const shuffleupagusIcon = () => (SERVICE_LOGOS && SERVICE_LOGOS.shuffleupagus
-  ? React.cloneElement(SERVICE_LOGOS.shuffleupagus, { className: undefined, width: 18, height: 18, 'aria-hidden': 'true' })
-  : null);
-
 // The round badge in the art's lower right corner: Shuffleupagus's reason, or a
 // Critical Darlings pick's review summary. A critics pick with no summary
 // (the feed item had no description) gets no badge.
@@ -296,7 +284,6 @@ function releaseBadge(type) {
 function AlbumCard({ album, onOpen, onPlay, onQueue, onAddToPlaylist, onContextMenu, onHoverPrefetch, onArtError }) {
   const reveal = useReveal();
   const timer = React.useRef(null);
-  const badgeId = React.useId();
   React.useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
   if (!album) return null;
   const title = album.title;
@@ -327,19 +314,8 @@ function AlbumCard({ album, onOpen, onPlay, onQueue, onAddToPlaylist, onContextM
         onPlay: () => onPlay && onPlay(album),
         onQueue: () => onQueue && onQueue(album),
       }),
-      // The reason is the button's description: a hidden copy is always in
-      // the tree for screen readers, and the tooltip draws it on hover/focus.
-      badge && e('div', { style: { position: 'absolute', bottom: '8px', right: '8px', zIndex: 2 } },
-        e('span', { id: `${badgeId}-why`, style: VISUALLY_HIDDEN }, badge.text),
-        e(FixedTooltip, { content: badge.text, id: `${badgeId}-tip` },
-          e('button', {
-            type: 'button', 'aria-label': badge.label, 'aria-describedby': `${badgeId}-why`,
-            style: {
-              width: '26px', height: '26px', borderRadius: '50%', border: 'none', padding: 0, cursor: 'help',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              backgroundColor: CHIP_BG, color: CHIP_FG,
-            },
-          }, badge.icon)))),
+      // Why it's here (components/reason-badge.js).
+      badge && e(ReasonBadge, badge)),
     e('button', {
       type: 'button', onClick: open, 'aria-label': `Open ${title}`,
       style: Object.assign({ font: 'inherit', textAlign: 'left', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 500, fontSize: '13px', color: 'var(--text-primary)' }, ELLIPSIS),

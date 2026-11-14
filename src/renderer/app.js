@@ -1935,6 +1935,8 @@ const {
   Tooltip, FixedTooltip, TooltipLayer, ResolverIcon,
   SERVICE_LOGOS, ParachordWordmark, PlaybackProgress,
 } = require('./components/ui-atoms');
+// Why a pick is there: the round badge on its cover (Home and Recommendations).
+const { ReasonBadge, shuffleupagusBadgeProps } = require('./components/reason-badge');
 
 
 
@@ -40861,6 +40863,8 @@ React.createElement('div', {
                   className: 'aspect-square relative group/art',
                   style: { background: imgLoaded && !img ? recsArtistPattern.gradient : 'var(--placeholder-bg)' }
                 },
+                  // Shuffleupagus's pick says why, as on Home (components/reason-badge.js).
+                  shuffleupagusBadgeProps(item) && React.createElement(ReasonBadge, shuffleupagusBadgeProps(item)),
                   !imgLoaded && React.createElement('div', {
                     className: 'absolute inset-0 shimmer-strong animate-shimmer',
                     style: { backgroundSize: '200% 100%', animationDelay: `${Math.min(index * 30, 300)}ms` }
@@ -40912,7 +40916,7 @@ React.createElement('div', {
                   )
                 ),
                 React.createElement('div', { className: 'p-3' },
-                  item.reason
+                  item.reason && !shuffleupagusBadgeProps(item)
                     ? React.createElement(FixedTooltip, { content: item.reason },
                         React.createElement('p', { className: 'font-medium text-ink-primary truncate text-sm transition-colors' }, item.name))
                     : React.createElement('p', { className: 'font-medium text-ink-primary truncate text-sm transition-colors' }, item.name)
@@ -40973,6 +40977,8 @@ React.createElement('div', {
                   className: 'aspect-square relative group/art',
                   style: { background: 'var(--placeholder-bg)' }
                 },
+                  // Shuffleupagus's pick says why, as on Home (components/reason-badge.js).
+                  shuffleupagusBadgeProps(item) && React.createElement(ReasonBadge, shuffleupagusBadgeProps(item)),
                   // Not out yet: "Coming <date>" over the cover, from the
                   // album's MusicBrainz release date. Fresh Drops' cover badge
                   // (the release-badge class, top-right, a fixed semi-opaque
@@ -41079,7 +41085,7 @@ React.createElement('div', {
                   )
                 ),
                 React.createElement('div', { className: 'p-3' },
-                  item.reason
+                  item.reason && !shuffleupagusBadgeProps(item)
                     ? React.createElement(FixedTooltip, { content: item.reason },
                         React.createElement('p', { className: 'font-medium text-ink-primary truncate text-sm transition-colors' }, item.name))
                     : React.createElement('p', { className: 'font-medium text-ink-primary truncate text-sm transition-colors' }, item.name),
