@@ -10,6 +10,7 @@
 // cards-only (the playtop-10 / queue-top-10 affordances).
 const { ResolverIcon, PlaybackProgress, ShareButton } = require('./ui-atoms');
 const { sourceRowState } = require('../lib/visible-sources');
+const { trackDurationLabel } = require('../lib/track-duration');
 const Icons = require('./icons');
 const { Play } = Icons;
 // hashString (module scope in app.js) is used by generateArtistPattern;
@@ -1345,14 +1346,6 @@ const ReleasePage = ({
   React.useEffect(() => { setReplacementArt(null); }, [release.albumArt]);
   const headerArt = replacementArt || release.albumArt;
 
-  const formatDuration = (ms) => {
-    if (!ms) return '';
-    const totalSeconds = Math.floor(ms / 1000);
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-  };
-
   // Use a ref to track container width for responsive layout
   const [containerWidth, setContainerWidth] = React.useState(800);
   const containerRef = React.useRef(null);
@@ -1814,6 +1807,10 @@ const ReleasePage = ({
             // (no match anywhere, or only on services the plan can't play) vs
             // playable. Drives gray-out + skip-shimmer below.
             const hasNoMatches = sourceState === 'unplayable';
+            const durationText = trackDurationLabel(
+              { id: trackId, duration: track.length ? track.length / 1000 : null },
+              { trackSources, resolverOrder: resolvers.map(r => r.id) }
+            );
 
             // Build track object for drag/drop and playback
             const trackForDrag = {
@@ -1927,8 +1924,10 @@ const ReleasePage = ({
               }, track.title),
 
               // Duration — also dims for unavailable rows so the whole row
-              // reads as "not playable" at a glance.
-              track.length && React.createElement('span', {
+              // reads as "not playable" at a glance. MusicBrainz's length (ms)
+              // first, then the resolved sources' (lib/track-duration); blank
+              // when nothing knows it.
+              durationText && React.createElement('span', {
                 className: 'flex-shrink-0 tabular-nums',
                 style: {
                   pointerEvents: 'none',
@@ -1936,7 +1935,7 @@ const ReleasePage = ({
                   color: 'var(--text-tertiary)',
                   opacity: hasNoMatches ? 0.6 : 1
                 }
-              }, formatDuration(track.length)),
+              }, durationText),
               
               // Resolver icons (sources available for this track)
               React.createElement('div', {
