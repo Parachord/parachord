@@ -102,3 +102,20 @@ test('app.js renders the confirm dialog through ConfirmModal', () => {
   expect(app).toContain('confirmDialog.show && React.createElement(ConfirmModal, { dialog: confirmDialog, onClose: closeConfirmDialog })');
   expect(app).not.toMatch(/actionButton: \{ label: 'Cancel' \}/);
 });
+
+test('every dialog shell in app.js is a Modal (bare until it is redone)', () => {
+  const app = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  expect((app.match(/React\.createElement\(Modal, \{ bare: true, label: "/g) || []).length).toBeGreaterThanOrEqual(20);
+  // What's left with "fixed inset-0" is the Add-to-Playlist side panel and the
+  // parachord-link menu's click catcher, which aren't dialogs.
+  expect((app.match(/className: 'fixed inset-0/g) || []).length).toBeLessThanOrEqual(2);
+});
+
+test('bare mode keeps the panel and adds the dialog semantics', () => {
+  const out = html(h(Modal, { bare: true, label: 'Add friend', onClose: () => {}, panelProps: { className: 'max-w-md', style: { borderRadius: '16px' } } }, 'x'));
+  expect(out).toContain('role="dialog"');
+  expect(out).toContain('aria-modal="true"');
+  expect(out).toContain('aria-label="Add friend"');
+  expect(out).toContain('class="modal-panel max-w-md"');
+  expect(out).not.toContain('aria-label="Close"');
+});

@@ -19,7 +19,7 @@ describe('Sync Now is reachable', () => {
   });
 
   test('the modal\'s Sync Now runs a full (unstaggered) sync', () => {
-    const start = app.indexOf("syncStatusModal.open && React.createElement('div', {");
+    const start = app.indexOf('syncStatusModal.open && React.createElement(Modal, {');
     expect(start).toBeGreaterThan(-1);
     const src = app.slice(start, start + 12000);
     expect(src).toMatch(/window\.electron\.sync\.start\(providerId, \{ settings, fullSync: true \}\)/);

@@ -17,6 +17,13 @@
 //   role 'dialog' | 'alertdialog', initialFocus (a ref to focus first),
 //   hideClose (no X; a footer button must close it), className.
 //
+// Bare mode (bare: true) is for a dialog that keeps its own layout while it
+// moves over: Modal supplies the scrim, role, labelling (label: an
+// aria-label), focus handling and Escape, and renders children straight
+// into a panel built from panelProps (its own className and style). The
+// title, close button and footer stay the dialog's own until it's redone.
+// scrimClassName replaces the scrim's z-index class (default z-[60]).
+//
 // ConfirmModal is the confirm dialog on top of it. Props-driven; hooks are
 // qualified; loads under plain Node.
 
@@ -73,18 +80,28 @@ function Modal(props) {
   const {
     open = true, onClose, title, description, children, footer, icon, size = 'md',
     dismissible = true, role = 'dialog', initialFocus, hideClose = false, className,
+    bare = false, label, panelProps, scrimClassName,
   } = props;
   const panelRef = React.useRef(null);
   const id = React.useId();
   useDialogFocus(open, panelRef, { onClose, dismissible, initialFocus });
   if (!open) return null;
   const e = React.createElement;
+  const scrim = (panel) => e('div', {
+    className: `modal-scrim fixed inset-0 ${scrimClassName || 'z-[60]'} flex items-center justify-center p-4`,
+    onMouseDown: (ev) => { if (dismissible && ev.target === ev.currentTarget && onClose) onClose(); },
+  }, panel);
+  if (bare) {
+    const pp = panelProps || {};
+    return scrim(e('div', Object.assign({}, pp, {
+      ref: panelRef, role, 'aria-modal': 'true', 'aria-label': label, tabIndex: -1,
+      className: ['modal-panel', pp.className].filter(Boolean).join(' '),
+      style: Object.assign({ outline: 'none' }, pp.style),
+    }), children));
+  }
   const titleId = `${id}-title`;
   const descId = description ? `${id}-desc` : undefined;
-  return e('div', {
-    className: 'modal-scrim fixed inset-0 z-[60] flex items-center justify-center p-4',
-    onMouseDown: (ev) => { if (dismissible && ev.target === ev.currentTarget && onClose) onClose(); },
-  },
+  return scrim(
   e('div', {
     ref: panelRef,
     role,

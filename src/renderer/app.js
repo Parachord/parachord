@@ -36994,14 +36994,7 @@ useEffect(() => {
         }),
 
     // External Track Prompt Modal - refined styling
-    showExternalPrompt && pendingExternalTrack && React.createElement('div', {
-      className: 'fixed inset-0 flex items-center justify-center z-50',
-      style: {
-        backgroundColor: 'rgba(0, 0, 0, 0.4)',
-        backdropFilter: 'blur(4px)'
-      },
-      onClick: (e) => {
-        if (e.target === e.currentTarget) {
+    showExternalPrompt && pendingExternalTrack && React.createElement(Modal, { bare: true, label: "Open in browser", scrimClassName: 'z-50', onClose: () => {
           // Clear the auto-skip timeout and interval
           if (externalTrackTimeoutRef.current) {
             clearTimeout(externalTrackTimeoutRef.current);
@@ -37015,11 +37008,7 @@ useEffect(() => {
           setShowExternalPrompt(false);
           setPendingExternalTrack(null);
           setPendingExternalResolverId(null);
-        }
-      }
-    },
-      React.createElement('div', {
-        style: {
+        }, panelProps: { style: {
           backgroundColor: 'var(--card-bg)',
           borderRadius: '16px',
           boxShadow: '0 4px 24px rgba(0, 0, 0, 0.15), 0 12px 48px rgba(0, 0, 0, 0.1)',
@@ -37028,11 +37017,8 @@ useEffect(() => {
           margin: '0 16px',
           overflow: 'hidden',
           position: 'relative'
-        },
-        onClick: (e) => e.stopPropagation()
-      },
-        // Close button
-        React.createElement('button', {
+        } } },
+React.createElement('button', {
           onClick: () => {
             // Clear the auto-skip timeout and interval
             if (externalTrackTimeoutRef.current) {
@@ -37063,8 +37049,7 @@ useEffect(() => {
           },
           title: 'Dismiss and pause'
         }, React.createElement(X, { size: 18 })),
-        // Header with icon
-        React.createElement('div', {
+React.createElement('div', {
           className: 'flex flex-col items-center text-center',
           style: { padding: '32px 24px 20px' }
         },
@@ -37132,8 +37117,7 @@ useEffect(() => {
             )?.name || 'External')
           )
         ),
-        // Auto-skip notice with countdown
-        React.createElement('div', {
+React.createElement('div', {
           style: {
             textAlign: 'center',
             fontSize: '12px',
@@ -37143,8 +37127,7 @@ useEffect(() => {
         },
           `Auto-skipping in ${externalTrackCountdown} second${externalTrackCountdown !== 1 ? 's' : ''}...`
         ),
-        // "Don't show again" checkbox
-        React.createElement('label', {
+React.createElement('label', {
           className: 'flex items-center justify-center gap-2 cursor-pointer select-none',
           style: { padding: '0 24px 20px' }
         },
@@ -37172,8 +37155,7 @@ useEffect(() => {
             }
           }, "Don't show this again")
         ),
-        // Buttons
-        React.createElement('div', {
+React.createElement('div', {
           className: 'flex gap-3',
           style: { padding: '0 24px 24px' }
         },
@@ -37205,26 +37187,13 @@ useEffect(() => {
               cursor: 'pointer'
             }
           }, 'Skip')
-        )
-      )
-    ),
+        )),
 
     // Unsaved friend unpin warning dialog - refined styling
-    unsavedFriendWarningOpen && pendingUnpinFriend && React.createElement('div', {
-      className: 'fixed inset-0 flex items-center justify-center z-50',
-      style: {
-        backgroundColor: 'rgba(0, 0, 0, 0.4)',
-        backdropFilter: 'blur(4px)'
-      },
-      onClick: (e) => {
-        if (e.target === e.currentTarget) {
+    unsavedFriendWarningOpen && pendingUnpinFriend && React.createElement(Modal, { bare: true, label: "Unsaved friend", scrimClassName: 'z-50', onClose: () => {
           setUnsavedFriendWarningOpen(false);
           setPendingUnpinFriend(null);
-        }
-      }
-    },
-      React.createElement('div', {
-        style: {
+        }, panelProps: { style: {
           backgroundColor: 'var(--card-bg)',
           borderRadius: '16px',
           boxShadow: '0 4px 24px rgba(0, 0, 0, 0.15), 0 12px 48px rgba(0, 0, 0, 0.1)',
@@ -37232,11 +37201,8 @@ useEffect(() => {
           width: '100%',
           margin: '0 16px',
           overflow: 'hidden'
-        },
-        onClick: (e) => e.stopPropagation()
-      },
-        // Header
-        React.createElement('div', {
+        } } },
+React.createElement('div', {
           className: 'text-center',
           style: { padding: '32px 24px 20px' }
         },
@@ -37268,8 +37234,7 @@ useEffect(() => {
             }
           }, `${pendingUnpinFriend.displayName} isn't saved to your collection. If you unpin them, you'll need to add them again to pin them later.`)
         ),
-        // "Don't show again" checkbox
-        React.createElement('label', {
+React.createElement('label', {
           className: 'flex items-center justify-center gap-2 cursor-pointer select-none',
           style: { padding: '0 24px 20px' }
         },
@@ -37296,8 +37261,7 @@ useEffect(() => {
             }
           }, "Don't show this again")
         ),
-        // Buttons
-        React.createElement('div', {
+React.createElement('div', {
           className: 'flex gap-3',
           style: { padding: '0 24px 24px' }
         },
@@ -37337,9 +37301,7 @@ useEffect(() => {
               cursor: 'pointer'
             }
           }, 'Just Unpin')
-        )
-      )
-    ),
+        )),
 
     // While the bulk-cache IPC is in flight, render nothing in the main
     // content slot. The body-level #parachord-splash overlay in index.html
@@ -47825,27 +47787,16 @@ useEffect(() => {
     ),
 
     // AI Save Playlist Dialog - Refined dark theme
-    aiSaveDialogOpen && React.createElement('div', {
-      className: 'fixed inset-0 flex items-center justify-center z-50',
-      style: { backgroundColor: 'rgba(0, 0, 0, 0.5)', backdropFilter: 'blur(8px)' },
-      onClick: (e) => {
-        if (e.target === e.currentTarget) {
+    aiSaveDialogOpen && React.createElement(Modal, { bare: true, label: "Save AI playlist", scrimClassName: 'z-50', onClose: () => {
           setAiSaveDialogOpen(false);
-        }
-      }
-    },
-      React.createElement('div', {
-        className: 'max-w-md w-full mx-4',
-        style: {
+        }, panelProps: { className: 'max-w-md w-full mx-4', style: {
           backgroundColor: 'var(--surface-dark-solid)',
           borderRadius: '16px',
           padding: '24px',
           boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
           border: '1px solid var(--surface-dark-border)'
-        }
-      },
-        // Header
-        React.createElement('div', { className: 'flex items-center justify-between', style: { marginBottom: '16px' } },
+        } } },
+React.createElement('div', { className: 'flex items-center justify-between', style: { marginBottom: '16px' } },
           React.createElement('h2', { style: { fontSize: '17px', fontWeight: '600', color: '#f3f4f6' } }, 'Save Playlist'),
           React.createElement('button', {
             onClick: () => setAiSaveDialogOpen(false),
@@ -47857,14 +47808,10 @@ useEffect(() => {
             React.createElement(Icons.X, { className: 'w-5 h-5' })
           )
         ),
-
-        // Provider info
-        resultsSidebar?.provider && React.createElement('p', {
+resultsSidebar?.provider && React.createElement('p', {
           style: { fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '16px' }
         }, `Generated by ${resultsSidebar.provider.name}`),
-
-        // Name input
-        React.createElement('div', { style: { marginBottom: '20px' } },
+React.createElement('div', { style: { marginBottom: '20px' } },
           React.createElement('label', {
             htmlFor: 'playlist-name',
             style: { display: 'block', fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px' }
@@ -47896,9 +47843,7 @@ useEffect(() => {
             onBlur: (e) => { e.target.style.borderColor = 'rgba(255, 255, 255, 0.1)'; e.target.style.boxShadow = 'none'; }
           })
         ),
-
-        // Actions
-        React.createElement('div', { className: 'flex gap-3' },
+React.createElement('div', { className: 'flex gap-3' },
           React.createElement('button', {
             onClick: () => setAiSaveDialogOpen(false),
             className: 'flex-1 transition-colors',
@@ -47930,25 +47875,13 @@ useEffect(() => {
             onMouseEnter: (e) => { if (aiSavePlaylistName.trim()) e.currentTarget.style.backgroundColor = 'var(--accent-primary-hover)'; },
             onMouseLeave: (e) => { if (aiSavePlaylistName.trim()) e.currentTarget.style.backgroundColor = 'var(--accent-primary)'; }
           }, 'Save')
-        )
-      )
-    ),
+        )),
 
     // Queue Save Playlist Dialog
-    queueSaveDialogOpen && React.createElement('div', {
-      className: 'fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50',
-      onClick: (e) => {
-        if (e.target === e.currentTarget) {
+    queueSaveDialogOpen && React.createElement(Modal, { bare: true, label: "Save queue as playlist", scrimClassName: 'z-50', onClose: () => {
           setQueueSaveDialogOpen(false);
-        }
-      }
-    },
-      React.createElement('div', {
-        className: 'rounded-xl p-6 max-w-md w-full mx-4 shadow-xl',
-        style: { backgroundColor: 'var(--surface-dark-solid)', border: '1px solid var(--surface-dark-border)' }
-      },
-        // Header
-        React.createElement('div', { className: 'flex items-center justify-between mb-4' },
+        }, panelProps: { className: 'rounded-xl p-6 max-w-md w-full mx-4 shadow-xl', style: { backgroundColor: 'var(--surface-dark-solid)', border: '1px solid var(--surface-dark-border)' } } },
+React.createElement('div', { className: 'flex items-center justify-between mb-4' },
           React.createElement('h2', { className: 'text-lg font-semibold text-white' }, 'Save Queue as Playlist'),
           React.createElement('button', {
             onClick: () => setQueueSaveDialogOpen(false),
@@ -47957,14 +47890,10 @@ useEffect(() => {
             React.createElement(Icons.X, { className: 'w-5 h-5' })
           )
         ),
-
-        // Track count info
-        React.createElement('p', {
+React.createElement('p', {
           className: 'text-xs text-gray-500 mb-4'
         }, `${(currentTrack ? 1 : 0) + currentQueue.length} track${((currentTrack ? 1 : 0) + currentQueue.length) !== 1 ? 's' : ''} will be saved`),
-
-        // Name input
-        React.createElement('div', { className: 'mb-4' },
+React.createElement('div', { className: 'mb-4' },
           React.createElement('label', {
             htmlFor: 'queue-playlist-name',
             className: 'block text-sm text-gray-400 mb-2'
@@ -47985,9 +47914,7 @@ useEffect(() => {
             className: 'w-full bg-gray-800 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500'
           })
         ),
-
-        // Actions
-        React.createElement('div', { className: 'flex gap-3' },
+React.createElement('div', { className: 'flex gap-3' },
           React.createElement('button', {
             onClick: () => setQueueSaveDialogOpen(false),
             className: 'flex-1 py-2.5 px-4 bg-gray-700 hover:bg-gray-600 text-white font-medium rounded-lg transition-colors'
@@ -48003,32 +47930,18 @@ useEffect(() => {
             disabled: !queueSavePlaylistName.trim(),
             className: 'flex-1 py-2.5 px-4 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-700 disabled:text-gray-500 text-white font-medium rounded-lg transition-colors disabled:cursor-not-allowed'
           }, 'Save')
-        )
-      )
-    ),
+        )),
 
     // Import Playlist Dialog Modal
-    showUrlImportDialog && React.createElement('div', {
-      className: 'fixed inset-0 flex items-center justify-center z-50',
-      style: { backgroundColor: 'rgba(0, 0, 0, 0.4)', backdropFilter: 'blur(8px)' },
-      onClick: (e) => {
-        if (e.target === e.currentTarget) {
+    showUrlImportDialog && React.createElement(Modal, { bare: true, label: "Import playlist", scrimClassName: 'z-50', onClose: () => {
           setShowUrlImportDialog(false);
           setUrlImportValue('');
-        }
-      }
-    },
-      React.createElement('div', {
-        className: 'max-w-md w-full mx-4 overflow-hidden',
-        style: {
+        }, panelProps: { className: 'max-w-md w-full mx-4 overflow-hidden', style: {
           backgroundColor: 'var(--card-bg)',
           borderRadius: '16px',
           boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
-        },
-        onClick: (e) => e.stopPropagation()
-      },
-        // Header
-        React.createElement('div', {
+        } } },
+React.createElement('div', {
           className: 'flex items-center justify-between',
           style: { padding: '20px 24px 16px', borderBottom: '1px solid var(--border-subtle)' }
         },
@@ -48052,9 +47965,7 @@ useEffect(() => {
             React.createElement(Icons.X, { className: 'w-5 h-5' })
           )
         ),
-
-        // Body
-        React.createElement('div', { style: { padding: '20px 24px 24px' } },
+React.createElement('div', { style: { padding: '20px 24px 24px' } },
           // Option 1: Import from URL - Card style
           React.createElement('div', {
             style: {
@@ -48246,32 +48157,18 @@ useEffect(() => {
               )
             )
           )
-        )
-      )
-    ),
+        )),
 
     // Add Friend Modal - Cinematic Light styling
-    addFriendModalOpen && React.createElement('div', {
-      className: 'fixed inset-0 flex items-center justify-center z-50',
-      style: { backgroundColor: 'rgba(0, 0, 0, 0.4)', backdropFilter: 'blur(8px)' },
-      onClick: (e) => {
-        if (e.target === e.currentTarget) {
+    addFriendModalOpen && React.createElement(Modal, { bare: true, label: "Add friend", scrimClassName: 'z-50', onClose: () => {
           setAddFriendModalOpen(false);
           setAddFriendInput('');
-        }
-      }
-    },
-      React.createElement('div', {
-        className: 'max-w-md w-full mx-4 overflow-hidden',
-        style: {
+        }, panelProps: { className: 'max-w-md w-full mx-4 overflow-hidden', style: {
           backgroundColor: 'var(--card-bg)',
           borderRadius: '16px',
           boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
-        },
-        onClick: (e) => e.stopPropagation()
-      },
-        // Header
-        React.createElement('div', {
+        } } },
+React.createElement('div', {
           className: 'flex items-center justify-between',
           style: { padding: '20px 24px 16px', borderBottom: '1px solid var(--border-subtle)' }
         },
@@ -48295,8 +48192,7 @@ useEffect(() => {
             React.createElement(Icons.X, { className: 'w-5 h-5' })
           )
         ),
-        // Body
-        React.createElement('div', { style: { padding: '20px 24px' } },
+React.createElement('div', { style: { padding: '20px 24px' } },
           React.createElement('p', {
             style: { fontSize: '14px', color: 'var(--nav-inactive)', marginBottom: '16px', lineHeight: '1.5' }
           },
@@ -48337,8 +48233,7 @@ useEffect(() => {
             React.createElement('p', null, '• https://listenbrainz.org/user/username')
           )
         ),
-        // Footer
-        React.createElement('div', {
+React.createElement('div', {
           className: 'flex justify-end gap-3',
           style: { padding: '16px 24px 20px', borderTop: '1px solid var(--border-subtle)' }
         },
@@ -48378,21 +48273,10 @@ useEffect(() => {
             addFriendLoading && React.createElement(Icons.Spinner, { className: 'w-4 h-4' }),
             addFriendLoading ? 'Adding...' : 'Add Friend'
           )
-        )
-      )
-    ),
+        )),
 
     // Resolver Detail Modal
-    selectedResolver && React.createElement('div', {
-      className: 'fixed inset-0 flex items-center justify-center z-50',
-      style: {
-        backgroundColor: 'rgba(0, 0, 0, 0.4)',
-        backdropFilter: 'blur(4px)'
-      },
-      onClick: (e) => { if (e.target === e.currentTarget) setSelectedResolver(null); }
-    },
-      React.createElement('div', {
-        style: {
+    selectedResolver && React.createElement(Modal, { bare: true, label: "Plugin settings", scrimClassName: 'z-50', onClose: () => { setSelectedResolver(null); }, panelProps: { style: {
           backgroundColor: 'var(--card-bg)',
           borderRadius: '16px',
           boxShadow: '0 4px 24px rgba(0, 0, 0, 0.15), 0 12px 48px rgba(0, 0, 0, 0.1)',
@@ -48400,10 +48284,8 @@ useEffect(() => {
           width: '100%',
           margin: '0 16px',
           overflow: 'hidden'
-        }
-      },
-        // Modal header with colored background
-        React.createElement('div', {
+        } } },
+React.createElement('div', {
           className: 'flex items-center gap-4',
           style: {
             padding: '24px',
@@ -48459,8 +48341,7 @@ useEffect(() => {
             }
           }, React.createElement(Icons.X, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }))
         ),
-        // Modal body
-        React.createElement('div', {
+React.createElement('div', {
           className: 'scrollable-content',
           style: {
             padding: '24px',
@@ -51318,9 +51199,7 @@ useEffect(() => {
             )
           )
         ),
-
-        // Modal footer with action buttons
-        React.createElement('div', {
+React.createElement('div', {
           className: 'flex items-center justify-between',
           style: {
             padding: '16px 24px',
@@ -51463,21 +51342,10 @@ useEffect(() => {
               }, showEnable ? 'Enable' : 'Done');
             })()
           )
-        )
-      )
-    ),
+        )),
 
     // Marketplace Item Detail Modal
-    selectedMarketplaceItem && React.createElement('div', {
-      className: 'fixed inset-0 flex items-center justify-center z-50',
-      style: {
-        backgroundColor: 'rgba(0, 0, 0, 0.4)',
-        backdropFilter: 'blur(4px)'
-      },
-      onClick: (e) => { if (e.target === e.currentTarget) setSelectedMarketplaceItem(null); }
-    },
-      React.createElement('div', {
-        style: {
+    selectedMarketplaceItem && React.createElement(Modal, { bare: true, label: "Plugin details", scrimClassName: 'z-50', onClose: () => { setSelectedMarketplaceItem(null); }, panelProps: { style: {
           backgroundColor: 'var(--card-bg)',
           borderRadius: '16px',
           boxShadow: '0 4px 24px rgba(0, 0, 0, 0.15), 0 12px 48px rgba(0, 0, 0, 0.1)',
@@ -51485,10 +51353,8 @@ useEffect(() => {
           width: '100%',
           margin: '0 16px',
           overflow: 'hidden'
-        }
-      },
-        // Modal header with colored background
-        React.createElement('div', {
+        } } },
+React.createElement('div', {
           className: 'flex items-center gap-4',
           style: {
             padding: '24px',
@@ -51544,8 +51410,7 @@ useEffect(() => {
             }
           }, React.createElement(Icons.X, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }))
         ),
-        // Modal body
-        React.createElement('div', {
+React.createElement('div', {
           style: { padding: '24px' }
         },
           // Description
@@ -51692,8 +51557,7 @@ useEffect(() => {
               React.createElement('span', null, `Update available: v${selectedMarketplaceItem.version}`)
             )
         ),
-        // Modal footer with action buttons
-        React.createElement('div', {
+React.createElement('div', {
           className: 'flex items-center justify-between',
           style: {
             padding: '16px 24px',
@@ -51806,23 +51670,11 @@ useEffect(() => {
                   }, 'Done')
                 )
               )
-        )
-      )
-    ),
+        )),
 
     // Browser Extension Info Modal
-    extensionInfoOpen && React.createElement('div', {
-      className: 'fixed inset-0 z-50 flex items-center justify-center',
-      style: { backgroundColor: 'rgba(0, 0, 0, 0.4)', backdropFilter: 'blur(4px)' },
-      onClick: (e) => { if (e.target === e.currentTarget) setExtensionInfoOpen(false); }
-    },
-      React.createElement('div', {
-        className: 'bg-surface-card rounded-2xl shadow-2xl overflow-hidden',
-        style: { width: '440px', maxHeight: '80vh' },
-        onClick: (e) => e.stopPropagation()
-      },
-        // Header with gradient
-        React.createElement('div', {
+    extensionInfoOpen && React.createElement(Modal, { bare: true, label: "Browser extension", scrimClassName: 'z-50', onClose: () => { setExtensionInfoOpen(false); }, panelProps: { className: 'bg-surface-card rounded-2xl shadow-2xl overflow-hidden', style: { width: '440px', maxHeight: '80vh' } } },
+React.createElement('div', {
           style: {
             padding: '24px',
             background: 'linear-gradient(135deg, var(--accent-primary) 0%, #a78bfa 100%)',
@@ -51884,8 +51736,7 @@ useEffect(() => {
             React.createElement(Icons.X, { className: 'w-5 h-5 text-white' })
           )
         ),
-        // Content
-        React.createElement('div', {
+React.createElement('div', {
           style: { padding: '24px', maxHeight: '50vh', overflowY: 'auto' }
         },
           React.createElement('p', {
@@ -52011,8 +51862,7 @@ useEffect(() => {
             )
           )
         ),
-        // Footer
-        React.createElement('div', {
+React.createElement('div', {
           style: {
             padding: '16px 24px',
             backgroundColor: 'var(--hover-bg-default)',
@@ -52036,23 +51886,11 @@ useEffect(() => {
               cursor: 'pointer'
             }
           }, 'Done')
-        )
-      )
-    ),
+        )),
 
     // Raycast Extension Info Modal
-    raycastInfoOpen && React.createElement('div', {
-      className: 'fixed inset-0 z-50 flex items-center justify-center',
-      style: { backgroundColor: 'rgba(0, 0, 0, 0.4)', backdropFilter: 'blur(4px)' },
-      onClick: (e) => { if (e.target === e.currentTarget) setRaycastInfoOpen(false); }
-    },
-      React.createElement('div', {
-        className: 'bg-surface-card rounded-2xl shadow-2xl overflow-hidden',
-        style: { width: '440px', maxHeight: '80vh' },
-        onClick: (e) => e.stopPropagation()
-      },
-        // Header with gradient
-        React.createElement('div', {
+    raycastInfoOpen && React.createElement(Modal, { bare: true, label: "Raycast", scrimClassName: 'z-50', onClose: () => { setRaycastInfoOpen(false); }, panelProps: { className: 'bg-surface-card rounded-2xl shadow-2xl overflow-hidden', style: { width: '440px', maxHeight: '80vh' } } },
+React.createElement('div', {
           style: {
             padding: '24px',
             background: 'linear-gradient(135deg, #FF6363 0%, #FF8E53 100%)',
@@ -52110,8 +51948,7 @@ useEffect(() => {
             React.createElement(Icons.X, { className: 'w-5 h-5 text-white' })
           )
         ),
-        // Content
-        React.createElement('div', {
+React.createElement('div', {
           style: { padding: '24px', maxHeight: '50vh', overflowY: 'auto' }
         },
           React.createElement('p', {
@@ -52209,8 +52046,7 @@ useEffect(() => {
             }, 'Requires Raycast to be installed on your Mac.')
           )
         ),
-        // Footer
-        React.createElement('div', {
+React.createElement('div', {
           style: {
             padding: '16px 24px',
             backgroundColor: 'var(--hover-bg-default)',
@@ -52254,23 +52090,11 @@ useEffect(() => {
               cursor: 'pointer'
             }
           }, 'Done')
-        )
-      )
-    ),
+        )),
 
     // What's New Modal - shows release notes after app update
-    whatsNewOpen && React.createElement('div', {
-      className: 'fixed inset-0 z-50 flex items-center justify-center',
-      style: { backgroundColor: 'rgba(0, 0, 0, 0.4)', backdropFilter: 'blur(4px)' },
-      onClick: (e) => { if (e.target === e.currentTarget) setWhatsNewOpen(false); }
-    },
-      React.createElement('div', {
-        className: 'bg-surface-card rounded-2xl shadow-2xl overflow-hidden',
-        style: { width: '500px', maxHeight: '80vh' },
-        onClick: (e) => e.stopPropagation()
-      },
-        // Header with gradient
-        React.createElement('div', {
+    whatsNewOpen && React.createElement(Modal, { bare: true, label: "What’s new", scrimClassName: 'z-50', onClose: () => { setWhatsNewOpen(false); }, panelProps: { className: 'bg-surface-card rounded-2xl shadow-2xl overflow-hidden', style: { width: '500px', maxHeight: '80vh' } } },
+React.createElement('div', {
           style: {
             padding: '24px',
             background: 'linear-gradient(135deg, #f59e0b 0%, #f97316 100%)',
@@ -52328,8 +52152,7 @@ useEffect(() => {
             React.createElement(Icons.X, { className: 'w-5 h-5 text-white' })
           )
         ),
-        // Content - release notes highlights
-        React.createElement('div', {
+React.createElement('div', {
           style: { padding: '24px', maxHeight: '50vh', overflowY: 'auto' }
         },
           // Release highlights — parsed from RELEASE_NOTES.md (GitHub or bundled fallback)
@@ -52383,8 +52206,7 @@ useEffect(() => {
             )
           )
         ),
-        // Footer
-        React.createElement('div', {
+React.createElement('div', {
           style: {
             padding: '16px 24px',
             backgroundColor: 'var(--hover-bg-default)',
@@ -52431,9 +52253,7 @@ useEffect(() => {
               cursor: 'pointer'
             }
           }, 'Dismiss')
-        )
-      )
-    ),
+        )),
 
     // Add to Playlist Slide-out Panel - refined styling
     addToPlaylistPanel.open && React.createElement('div', {
@@ -53081,21 +52901,10 @@ useEffect(() => {
     ),
 
     // ID3 Tag Editor Modal
-    id3EditorOpen && React.createElement('div', {
-      className: 'fixed inset-0 flex items-center justify-center z-[60]',
-      style: {
-        backgroundColor: 'rgba(0, 0, 0, 0.4)',
-        backdropFilter: 'blur(4px)'
-      },
-      onClick: (e) => {
-        if (e.target === e.currentTarget && !id3EditorSaving) {
+    id3EditorOpen && React.createElement(Modal, { bare: true, label: "Edit tags", scrimClassName: 'z-[60]', onClose: () => { if (!id3EditorSaving) {
           setId3EditorOpen(false);
           setId3EditorTrack(null);
-        }
-      }
-    },
-      React.createElement('div', {
-        style: {
+        } }, panelProps: { style: {
           backgroundColor: 'var(--card-bg)',
           borderRadius: '16px',
           boxShadow: '0 4px 24px rgba(0, 0, 0, 0.15), 0 12px 48px rgba(0, 0, 0, 0.1)',
@@ -53103,11 +52912,8 @@ useEffect(() => {
           width: '100%',
           margin: '0 16px',
           overflow: 'hidden'
-        },
-        onClick: (e) => e.stopPropagation()
-      },
-        // Header - refined with purple gradient
-        React.createElement('div', {
+        } } },
+React.createElement('div', {
           style: {
             padding: '20px 24px',
             background: 'linear-gradient(135deg, var(--accent-primary) 0%, #6366f1 100%)'
@@ -53131,8 +52937,7 @@ useEffect(() => {
             id3EditorTrack?.filePath?.split('/').pop() || 'Unknown file'
           )
         ),
-        // Body - refined styling
-        React.createElement('div', {
+React.createElement('div', {
           className: 'scrollable-content',
           style: {
             padding: '24px',
@@ -53422,8 +53227,7 @@ useEffect(() => {
             )
           )
         ),
-        // Footer with buttons - refined
-        React.createElement('div', {
+React.createElement('div', {
           className: 'flex justify-end gap-3',
           style: {
             padding: '16px 24px',
@@ -53519,9 +53323,7 @@ useEffect(() => {
             id3EditorSaving && React.createElement(Icons.Spinner, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }),
             id3EditorSaving ? 'Saving...' : 'Save'
           )
-        )
-      )
-    ),
+        )),
 
     // Page-header context menu (power-user feature, tooltip-styled).
     // Always offers "Copy parachord:// link"; when the current view maps to
@@ -53632,21 +53434,10 @@ useEffect(() => {
     confirmDialog.show && React.createElement(ConfirmModal, { dialog: confirmDialog, onClose: closeConfirmDialog }),
 
     // Amazon Music sign-in dialog. Opens music.amazon.com inside Parachord.
-    amazonManageDialog.show && React.createElement('div', {
-      className: 'fixed inset-0 flex items-center justify-center z-[60]',
-      style: {
-        backgroundColor: 'rgba(0, 0, 0, 0.4)',
-        backdropFilter: 'blur(4px)'
-      },
-      onClick: (e) => {
-        if (e.target === e.currentTarget && !amazonManageDialog.relaunching && amazonManageDialog.onResolve) {
+    amazonManageDialog.show && React.createElement(Modal, { bare: true, label: "Amazon Music sign-in", scrimClassName: 'z-[60]', onClose: () => { if (!amazonManageDialog.relaunching && amazonManageDialog.onResolve) {
           amazonManageDialog.onResolve(false);
           setAmazonManageDialog({ show: false, onResolve: null, relaunching: false });
-        }
-      }
-    },
-      React.createElement('div', {
-        style: {
+        } }, panelProps: { style: {
           backgroundColor: 'var(--card-bg)',
           borderRadius: '16px',
           boxShadow: '0 4px 24px rgba(0, 0, 0, 0.15), 0 12px 48px rgba(0, 0, 0, 0.1)',
@@ -53654,10 +53445,8 @@ useEffect(() => {
           width: '100%',
           margin: '0 16px',
           overflow: 'hidden'
-        },
-        onClick: (e) => e.stopPropagation()
-      },
-        React.createElement('div', { style: { padding: '20px 24px' } },
+        } } },
+React.createElement('div', { style: { padding: '20px 24px' } },
           React.createElement('h3', {
             style: { fontSize: '16px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '8px' }
           }, 'Play Amazon Music in Parachord?'),
@@ -53697,21 +53486,10 @@ useEffect(() => {
               }
             }, amazonManageDialog.relaunching ? 'Opening Amazon Music…' : 'Sign in')
           )
-        )
-      )
-    ),
+        )),
 
     // Synced Playlist Delete Dialog
-    syncDeleteDialog.show && React.createElement('div', {
-      className: 'fixed inset-0 flex items-center justify-center z-[60]',
-      style: {
-        backgroundColor: 'rgba(0, 0, 0, 0.4)',
-        backdropFilter: 'blur(4px)'
-      },
-      onClick: () => setSyncDeleteDialog({ show: false, playlist: null })
-    },
-      React.createElement('div', {
-        style: {
+    syncDeleteDialog.show && React.createElement(Modal, { bare: true, label: "Delete synced playlist", scrimClassName: 'z-[60]', onClose: () => setSyncDeleteDialog({ show: false, playlist: null }), panelProps: { style: {
           backgroundColor: 'var(--card-bg)',
           borderRadius: '16px',
           boxShadow: '0 4px 24px rgba(0, 0, 0, 0.15), 0 12px 48px rgba(0, 0, 0, 0.1)',
@@ -53719,11 +53497,8 @@ useEffect(() => {
           width: '100%',
           margin: '0 16px',
           overflow: 'hidden'
-        },
-        onClick: (e) => e.stopPropagation()
-      },
-        // Header
-        React.createElement('div', {
+        } } },
+React.createElement('div', {
           className: 'flex flex-col items-center text-center',
           style: { padding: '32px 24px 20px' }
         },
@@ -53752,8 +53527,7 @@ useEffect(() => {
             return `This playlist is synced with ${list}. What would you like to do?`;
           })())
         ),
-        // Actions
-        React.createElement('div', { style: { padding: '4px 24px 24px', display: 'flex', flexDirection: 'column', gap: '8px' } },
+React.createElement('div', { style: { padding: '4px 24px 24px', display: 'flex', flexDirection: 'column', gap: '8px' } },
           // Stop syncing (keep on source)
           React.createElement('button', {
             onClick: () => handleDeleteSyncedPlaylist('stop-syncing'),
@@ -53802,22 +53576,12 @@ useEffect(() => {
               cursor: 'pointer'
             }
           }, 'Cancel')
-        )
-      )
-    ),
+        )),
 
     // N-way migration preview (parachord#911): "switch to new sync?" with the
     // exact dry-run diff and Accept / Report / Cancel.
-    nwayMigrationDialog.show && React.createElement('div', {
-      className: 'fixed inset-0 flex items-center justify-center z-[60]',
-      style: { backgroundColor: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(4px)' },
-      onClick: () => { if (!nwayMigrationDialog.loading) setNwayMigrationDialog({ show: false }); }
-    },
-      React.createElement('div', {
-        style: { backgroundColor: 'var(--card-bg)', borderRadius: '16px', boxShadow: '0 4px 24px rgba(0,0,0,0.15), 0 12px 48px rgba(0,0,0,0.1)', maxWidth: '560px', width: '100%', margin: '0 16px', maxHeight: '82vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' },
-        onClick: (e) => e.stopPropagation()
-      },
-        React.createElement('div', { style: { padding: '22px 24px 12px', flexShrink: 0 } },
+    nwayMigrationDialog.show && React.createElement(Modal, { bare: true, label: "Switch sync engine", scrimClassName: 'z-[60]', onClose: () => { if (!nwayMigrationDialog.loading) setNwayMigrationDialog({ show: false }); }, panelProps: { style: { backgroundColor: 'var(--card-bg)', borderRadius: '16px', boxShadow: '0 4px 24px rgba(0,0,0,0.15), 0 12px 48px rgba(0,0,0,0.1)', maxWidth: '560px', width: '100%', margin: '0 16px', maxHeight: '82vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' } } },
+React.createElement('div', { style: { padding: '22px 24px 12px', flexShrink: 0 } },
           React.createElement('h3', { style: { fontSize: '17px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '6px' } }, 'Switch to new sync on this device?'),
           React.createElement('p', { style: { fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5' } },
             'We ran the ',
@@ -53829,7 +53593,7 @@ useEffect(() => {
             " against your library without writing anything. Here's exactly what it would change."
           )
         ),
-        React.createElement('div', { style: { overflowY: 'auto', padding: '0 24px', flex: '1 1 auto' } },
+React.createElement('div', { style: { overflowY: 'auto', padding: '0 24px', flex: '1 1 auto' } },
           (() => {
             const d = nwayMigrationDialog;
             if (d.loading) return React.createElement('div', { style: { padding: '30px 0 26px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' } },
@@ -53882,31 +53646,21 @@ useEffect(() => {
             return React.createElement('div', { style: { paddingBottom: '8px' } }, ...rows);
           })()
         ),
-        React.createElement('div', { style: { padding: '14px 24px 18px', borderTop: '1px solid var(--border-subtle)', display: 'flex', gap: '8px', alignItems: 'center', flexShrink: 0 } },
+React.createElement('div', { style: { padding: '14px 24px 18px', borderTop: '1px solid var(--border-subtle)', display: 'flex', gap: '8px', alignItems: 'center', flexShrink: 0 } },
           React.createElement('span', { style: { fontSize: '11px', color: 'var(--text-tertiary)', marginRight: 'auto' } }, 'Disables the old sync here. Reversible anytime.'),
           React.createElement('button', { onClick: () => setNwayMigrationDialog({ show: false }), style: { padding: '8px 14px', fontSize: '13px', fontWeight: '500', color: 'var(--text-secondary)', backgroundColor: 'transparent', border: '1px solid var(--border-subtle)', borderRadius: '8px', cursor: 'pointer' } }, 'Cancel'),
           (nwayMigrationDialog.summary && (nwayMigrationDialog.summary.hasChanges || nwayMigrationDialog.summary.protected.length)) && React.createElement('button', { onClick: () => reportNwayMigration(), style: { padding: '8px 14px', fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)', backgroundColor: 'transparent', border: '1px solid var(--border-subtle)', borderRadius: '8px', cursor: 'pointer' } }, 'Report a problem'),
           React.createElement('button', { onClick: () => acceptNwayMigration(), disabled: nwayMigrationDialog.loading || !nwayMigrationDialog.summary, style: { padding: '8px 14px', fontSize: '13px', fontWeight: '500', color: '#ffffff', backgroundColor: (nwayMigrationDialog.loading || !nwayMigrationDialog.summary) ? '#9ca3af' : 'var(--accent-fill)', border: 'none', borderRadius: '8px', cursor: (nwayMigrationDialog.loading || !nwayMigrationDialog.summary) ? 'default' : 'pointer' } }, (nwayMigrationDialog.summary && !nwayMigrationDialog.summary.hasChanges) ? 'Switch' : 'Accept changes and switch')
-        )
-      )
-    ),
+        )),
 
     // Sync Channel Disable Dialog — "stop syncing to <service>?" with the
     // optional "delete from that service too" choice (parachord#911).
-    syncChannelDisableDialog.show && React.createElement('div', {
-      className: 'fixed inset-0 flex items-center justify-center z-[60]',
-      style: { backgroundColor: 'rgba(0, 0, 0, 0.4)', backdropFilter: 'blur(4px)' },
-      onClick: () => setSyncChannelDisableDialog({ show: false })
-    },
-      React.createElement('div', {
-        style: {
+    syncChannelDisableDialog.show && React.createElement(Modal, { bare: true, label: "Stop syncing", scrimClassName: 'z-[60]', onClose: () => setSyncChannelDisableDialog({ show: false }), panelProps: { style: {
           backgroundColor: 'var(--card-bg)', borderRadius: '16px',
           boxShadow: '0 4px 24px rgba(0,0,0,0.15), 0 12px 48px rgba(0,0,0,0.1)',
           maxWidth: '400px', width: '100%', margin: '0 16px', overflow: 'hidden'
-        },
-        onClick: (e) => e.stopPropagation()
-      },
-        React.createElement('div', { className: 'flex flex-col items-center text-center', style: { padding: '32px 24px 20px' } },
+        } } },
+React.createElement('div', { className: 'flex flex-col items-center text-center', style: { padding: '32px 24px 20px' } },
           React.createElement('h3', {
             style: { fontSize: '16px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '8px' }
           }, `Stop syncing to ${syncChannelDisableDialog.providerLabel}?`),
@@ -53914,7 +53668,7 @@ useEffect(() => {
             style: { fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5' }
           }, `Keep "${syncChannelDisableDialog.playlistName}" on ${syncChannelDisableDialog.providerLabel} and just stop syncing it, or delete it from ${syncChannelDisableDialog.providerLabel} too?`)
         ),
-        React.createElement('div', { style: { padding: '4px 24px 24px', display: 'flex', flexDirection: 'column', gap: '8px' } },
+React.createElement('div', { style: { padding: '4px 24px 24px', display: 'flex', flexDirection: 'column', gap: '8px' } },
           (() => {
             const applyDisable = async (deleteRemote) => {
               const d = syncChannelDisableDialog;
@@ -53953,34 +53707,21 @@ useEffect(() => {
               }, 'Cancel')
             );
           })()
-        )
-      )
-    ),
+        )),
 
     // Sync Setup Modal - Cinematic Light design
-    syncSetupModal.open && React.createElement('div', {
-      className: 'fixed inset-0 z-50 flex items-center justify-center',
-      style: { backgroundColor: 'rgba(0, 0, 0, 0.4)', backdropFilter: 'blur(8px)' },
-      onClick: () => !syncSetupModal.progress && setSyncSetupModal(prev => ({ ...prev, open: false }))
-    },
-      // Modal
-      React.createElement('div', {
-        className: 'relative w-full max-w-lg mx-4 overflow-hidden',
-        style: {
+    syncSetupModal.open && React.createElement(Modal, { bare: true, label: "Set up sync", scrimClassName: 'z-50', onClose: () => !syncSetupModal.progress && setSyncSetupModal(prev => ({ ...prev, open: false })), panelProps: { className: 'relative w-full max-w-lg mx-4 overflow-hidden', style: {
           backgroundColor: 'var(--card-bg)',
           borderRadius: '16px',
           boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
-        },
-        onClick: (e) => e.stopPropagation()
-      },
-        // Header with provider accent bar
-        React.createElement('div', {
+        } } },
+React.createElement('div', {
           style: {
             height: '4px',
             background: `linear-gradient(90deg, ${syncProviderConfig[syncSetupModal.providerId]?.color || '#1DB954'} 0%, ${syncProviderConfig[syncSetupModal.providerId]?.colorHover || '#1ed760'} 100%)`
           }
         }),
-        React.createElement('div', {
+React.createElement('div', {
           className: 'flex items-center justify-between',
           style: { padding: '20px 24px 16px', borderBottom: '1px solid var(--border-subtle)' }
         },
@@ -54017,9 +53758,7 @@ useEffect(() => {
             React.createElement(Icons.X, { className: 'w-5 h-5' })
           )
         ),
-
-        // Content
-        React.createElement('div', {
+React.createElement('div', {
           className: 'scrollable-content',
           style: { padding: '20px 24px', maxHeight: '400px', overflowY: 'auto' }
         },
@@ -54399,9 +54138,7 @@ useEffect(() => {
             )
           )
         ),
-
-        // Footer
-        React.createElement('div', {
+React.createElement('div', {
           className: 'flex justify-end gap-3',
           style: { padding: '16px 24px 20px', borderTop: '1px solid var(--border-subtle)' }
         },
@@ -54528,28 +54265,15 @@ useEffect(() => {
             onMouseEnter: (e) => e.currentTarget.style.backgroundColor = syncProviderConfig[syncSetupModal.providerId]?.colorHover || '#1ed760',
             onMouseLeave: (e) => e.currentTarget.style.backgroundColor = syncProviderConfig[syncSetupModal.providerId]?.color || '#1DB954'
           }, 'Done')
-        )
-      )
-    ),
+        )),
 
     // Sync Status Modal (Quick View from Collection) - Cinematic Light design
-    syncStatusModal.open && React.createElement('div', {
-      className: 'fixed inset-0 z-50 flex items-center justify-center',
-      style: { backgroundColor: 'rgba(0, 0, 0, 0.4)', backdropFilter: 'blur(8px)' },
-      onClick: () => setSyncStatusModal({ open: false })
-    },
-      // Modal
-      React.createElement('div', {
-        className: 'relative w-full max-w-md mx-4 overflow-hidden',
-        style: {
+    syncStatusModal.open && React.createElement(Modal, { bare: true, label: "Sync status", scrimClassName: 'z-50', onClose: () => setSyncStatusModal({ open: false }), panelProps: { className: 'relative w-full max-w-md mx-4 overflow-hidden', style: {
           backgroundColor: 'var(--card-bg)',
           borderRadius: '16px',
           boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
-        },
-        onClick: (e) => e.stopPropagation()
-      },
-        // Header with close button
-        React.createElement('div', {
+        } } },
+React.createElement('div', {
           className: 'flex items-center justify-between',
           style: { padding: '20px 24px 16px', borderBottom: '1px solid var(--border-subtle)' }
         },
@@ -54566,9 +54290,7 @@ useEffect(() => {
             React.createElement(Icons.X, { className: 'w-5 h-5' })
           )
         ),
-
-        // Content
-        React.createElement('div', {
+React.createElement('div', {
           style: { padding: '20px 24px' }
         },
           // List enabled sync providers with progress
@@ -54657,9 +54379,7 @@ useEffect(() => {
               style: { fontSize: '12px', color: 'var(--text-tertiary)', textAlign: 'center', marginTop: '16px' }
             }, 'Sync continues in the background. Safe to close this window.')
         ),
-
-        // Footer
-        React.createElement('div', {
+React.createElement('div', {
           className: 'flex justify-between',
           style: { padding: '16px 24px 20px', borderTop: '1px solid var(--border-subtle)' }
         },
@@ -54743,28 +54463,15 @@ useEffect(() => {
             onMouseEnter: (e) => { if (!Object.values(syncStatus).some(s => s?.inProgress)) e.currentTarget.style.backgroundColor = 'var(--fill-success)'; },
             onMouseLeave: (e) => { if (!Object.values(syncStatus).some(s => s?.inProgress)) e.currentTarget.style.backgroundColor = 'var(--fill-success)'; }
           }, Object.values(syncStatus).some(s => s?.inProgress) ? 'Syncing...' : 'Sync Now')
-        )
-      )
-    ),
+        )),
 
     // Stop Sync Confirmation Dialog - Cinematic Light design
-    stopSyncDialog.open && React.createElement('div', {
-      className: 'fixed inset-0 z-50 flex items-center justify-center',
-      style: { backgroundColor: 'rgba(0, 0, 0, 0.4)', backdropFilter: 'blur(8px)' },
-      onClick: () => setStopSyncDialog({ open: false, providerId: null })
-    },
-      // Dialog
-      React.createElement('div', {
-        className: 'relative w-full max-w-sm mx-4 overflow-hidden',
-        style: {
+    stopSyncDialog.open && React.createElement(Modal, { bare: true, label: "Stop syncing", scrimClassName: 'z-50', onClose: () => setStopSyncDialog({ open: false, providerId: null }), panelProps: { className: 'relative w-full max-w-sm mx-4 overflow-hidden', style: {
           backgroundColor: 'var(--card-bg)',
           borderRadius: '16px',
           boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
-        },
-        onClick: (e) => e.stopPropagation()
-      },
-        // Content
-        React.createElement('div', {
+        } } },
+React.createElement('div', {
           style: { padding: '24px' }
         },
           React.createElement('h2', {
@@ -54828,9 +54535,7 @@ useEffect(() => {
             )
           )
         ),
-
-        // Footer
-        React.createElement('div', {
+React.createElement('div', {
           style: { padding: '16px 24px 20px', borderTop: '1px solid var(--border-subtle)', textAlign: 'center' }
         },
           React.createElement('button', {
@@ -54847,27 +54552,15 @@ useEffect(() => {
             onMouseEnter: (e) => e.currentTarget.style.color = 'var(--text-primary)',
             onMouseLeave: (e) => e.currentTarget.style.color = 'var(--text-secondary)'
           }, 'Cancel')
-        )
-      )
-    ),
+        )),
 
     // First-Run Tutorial Modal - Cinematic Light design
-    firstRunTutorial.open && React.createElement('div', {
-      className: 'fixed inset-0 z-50 flex items-center justify-center',
-      style: { backgroundColor: 'rgba(0, 0, 0, 0.4)', backdropFilter: 'blur(8px)' }
-    },
-      // Modal
-      React.createElement('div', {
-        className: 'relative w-full max-w-xl mx-4 overflow-hidden',
-        style: {
+    firstRunTutorial.open && React.createElement(Modal, { bare: true, label: "Welcome to Parachord", scrimClassName: 'z-50', dismissible: false, panelProps: { className: 'relative w-full max-w-xl mx-4 overflow-hidden', style: {
           backgroundColor: 'var(--card-bg)',
           borderRadius: '16px',
           boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
-        },
-        onClick: (e) => e.stopPropagation()
-      },
-        // Welcome Step
-        firstRunTutorial.step === 'welcome' && React.createElement(React.Fragment, null,
+        } } },
+firstRunTutorial.step === 'welcome' && React.createElement(React.Fragment, null,
           // Accent bar
           React.createElement('div', {
             style: {
@@ -54987,9 +54680,7 @@ useEffect(() => {
             }, 'Get Started')
           )
         ),
-
-        // Sources Step - Uses actual loadedResolvers and activeResolvers
-        firstRunTutorial.step === 'sources' && React.createElement(React.Fragment, null,
+firstRunTutorial.step === 'sources' && React.createElement(React.Fragment, null,
           // Accent bar
           React.createElement('div', {
             style: { height: '4px', backgroundColor: 'var(--accent-primary)' }
@@ -55119,9 +54810,7 @@ useEffect(() => {
             }, 'Continue')
           )
         ),
-
-        // Complete Step
-        firstRunTutorial.step === 'complete' && React.createElement(React.Fragment, null,
+firstRunTutorial.step === 'complete' && React.createElement(React.Fragment, null,
           // Accent bar
           React.createElement('div', {
             style: { height: '4px', backgroundColor: 'var(--success)' }
@@ -55254,9 +54943,7 @@ useEffect(() => {
               onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'var(--accent-primary)'
             }, 'Go to Settings')
           )
-        )
-      )
-    ),
+        )),
 
     // Queue Drawer - slides up above the playbar with matching dark theme
     // Gradient transparency: more opaque near playbar, more transparent at top
