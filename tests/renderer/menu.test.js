@@ -57,7 +57,7 @@ function harness(props, { open = false } = {}) {
   // Fake menu items, one per rendered item, that record focus.
   const menu = tree.props.children[1];
   if (menu) {
-    for (const child of menu.props.children.filter((c) => c.props.role === 'menuitem')) {
+    for (const child of [].concat(...menu.props.children).filter((c) => c && /^menuitem/.test(c.props.role))) {
       const el = { label: child.props.children[2].props.children, focus() { doc.activeElement = el; focusLog.push(el.label); } };
       el.textContent = el.label;
       els.push(el);
@@ -106,6 +106,15 @@ describe('behaviour', () => {
     expect(h.focusLog).toContain('trigger');
   });
 
+  test('checked items are menuitemradio with a check; the heading is a label, not an item', () => {
+    const pick = [{ key: 's', label: 'Spotify', checked: true }, { key: 'y', label: 'YouTube', checked: false }];
+    const h = harness({ label: 'Play from', heading: 'Play from', items: pick, renderTrigger: trigger }, { open: true });
+    const html = renderToStaticMarkup(h.menu);
+    expect(html).toMatch(/role="menuitemradio" aria-checked="true"[^>]*>.*Spotify.*data-icon="Check"/);
+    expect(html).toMatch(/role="menuitemradio" aria-checked="false"/);
+    expect(html).toMatch(/aria-hidden="true" class="uppercase"[^>]*>Play from</);
+  });
+
   test('a separator is a rule, not an item', () => {
     const h = harness({ label: 'Sync', items: [items[0], { separator: true }, items[1]], renderTrigger: trigger }, { open: true });
     const html = renderToStaticMarkup(h.menu);
@@ -115,7 +124,7 @@ describe('behaviour', () => {
 
   test('picking an action closes the menu and runs it', () => {
     const h = harness({ label: 'Share', items, renderTrigger: trigger }, { open: true });
-    h.menu.props.children[0].props.onClick({ preventDefault() {} });
+    [].concat(...h.menu.props.children).filter(Boolean)[0].props.onClick({ preventDefault() {} });
     expect(h.state.open).toBe(false);
     expect(items[0].onSelect).toHaveBeenCalled();
   });
@@ -136,8 +145,18 @@ describe('callers', () => {
     expect(page).toMatch(/return React\.createElement\(Menu, \{\n\s*label: 'Sync'/);
     expect(page).toContain("items.push({ separator: true, key: 'sep' });");
   });
+  test("the playbar's Play from and the chat provider picker use it, as choices", () => {
+    const app = read('src/renderer/app.js');
+    expect(app).toMatch(/React\.createElement\(Menu, \{\n\s*label: 'Play from',\n\s*heading: 'Play from',/);
+    expect(app).toContain('checked: resId === currentResolverId,');
+    expect(app).toMatch(/return React\.createElement\(Menu, \{\n\s*label: 'Chat provider',/);
+    expect(app).toContain('checked: service.id === selectedChatProvider,');
+  });
+  test('the chat panel is no longer a button that closes the picker', () => {
+    expect(read('src/renderer/app.js')).not.toContain("data-provider-dropdown");
+  });
   test('their hand-built open state is gone', () => {
     const app = read('src/renderer/app.js');
-    for (const v of ['shareDropdownOpen', 'concertsTicketFlyout', 'artistConcertsTicketFlyout', 'syncMenuOpen']) expect(app).not.toContain(v);
+    for (const v of ['shareDropdownOpen', 'concertsTicketFlyout', 'artistConcertsTicketFlyout', 'syncMenuOpen', 'playbarSourceDropdownOpen', 'chatProviderDropdownOpen']) expect(app).not.toContain(v);
   });
 });

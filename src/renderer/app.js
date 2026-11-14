@@ -3265,7 +3265,6 @@ const Parachord = () => {
   const [playbarAlbumArt, setPlaybarAlbumArt] = useState({ current: null, previous: null, isLoaded: false });
   const playbarAlbumArtRef = useRef(null); // Track previous art for comparison
   const [playbarArtMissKey, setPlaybarArtMissKey] = useState(null); // trackArtKey of the last album with no cover
-  const [playbarSourceDropdownOpen, setPlaybarSourceDropdownOpen] = useState(false); // Source selector dropdown
   // Track if currentTrack was restored from saved queue and needs explicit playback start
   const trackNeedsExplicitStart = useRef(false);
   // Where the next start of a track should begin (#1319): { trackKey, position }
@@ -3335,7 +3334,6 @@ const Parachord = () => {
   const [aiChatLoading, setAiChatLoading] = useState(false);
   const [aiChatProgress, setAiChatProgress] = useState(null); // Tool execution progress message
   const [selectedChatProvider, setSelectedChatProvider] = useState(null);
-  const [chatProviderDropdownOpen, setChatProviderDropdownOpen] = useState(false);
   const aiChatServiceRef = useRef(null);
   const chatMessagesRef = useRef(null); // Ref for auto-scrolling chat messages
   const lastAssistantMessageRef = useRef(null); // Ref for scrolling to top of latest response
@@ -6018,15 +6016,6 @@ const Parachord = () => {
     return () => { cancelled = true; };
   }, [selectedResolver]);
   const [dynamicModelOptions, setDynamicModelOptions] = useState({}); // { [resolverId]: { loading, options: [{value,label}], error } }
-
-  // Close playbar source dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = () => setPlaybarSourceDropdownOpen(false);
-    if (playbarSourceDropdownOpen) {
-      document.addEventListener('click', handleClickOutside);
-      return () => document.removeEventListener('click', handleClickOutside);
-    }
-  }, [playbarSourceDropdownOpen]);
 
   // Keep refs in sync with state
 
@@ -12664,7 +12653,6 @@ ${trackListXml}
 
           const resolverName = allResolvers.find(r => r.id === data.resolverId)?.name || data.resolverId;
           showToast(`Reported bad match from ${resolverName}`, 'success');
-          setPlaybarSourceDropdownOpen(false);
         }
       });
       return cleanup;
@@ -45527,140 +45515,69 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                   const currentIconColor = (resolver.color && resolver.color !== '#888888') ? resolver.color : 'var(--playbar-accent)';
 
                   return React.createElement('div', { className: 'flex items-center gap-1.5' },
-                    // Custom resolver selector with icon
-                    React.createElement('div', { className: 'relative no-drag' },
-                      // Current resolver button (icon + dropdown chevron if multiple sources)
-                      React.createElement('button', {
-                        onClick: (e) => {
-                          e.stopPropagation();
-                          if (hasMultipleSources) {
-                            setPlaybarSourceDropdownOpen(!playbarSourceDropdownOpen);
-                          }
-                        },
-                        onContextMenu: (e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          if (window.electron?.playbarSourceMenu?.show) {
-                            window.electron.playbarSourceMenu.show({
-                              resolverId: currentResolverId,
-                              track: {
-                                id: currentTrack.id,
-                                artist: currentTrack.artist,
-                                title: currentTrack.title,
-                                sourceId: sourceBlockId((currentTrack.sources || {})[currentResolverId] || (trackSources[currentTrack.id] || {})[currentResolverId])
-                              }
-                            });
-                          }
-                        },
-                        className: `flex items-center gap-1.5 pl-0 pr-2 py-0.5 rounded transition-all ${
-                          hasMultipleSources
-                            ? 'hover:bg-white/10 cursor-pointer'
-                            : 'cursor-default'
-                        }`,
-                        style: {
-                          background: playbarSourceDropdownOpen ? 'rgba(255,255,255,0.1)' : 'transparent'
-                        },
-                        'data-tooltip': hasMultipleSources ? 'Switch playback source' : resolver.name
-                      },
-                        // Resolver icon
-                        React.createElement(ResolverIcon, {
-                          resolverId: currentResolverId,
-                          size: 14,
-                          fill: currentIconColor
-                        }),
-                        // Resolver name
-                        React.createElement('span', {
-                          className: 'text-xs font-medium',
-                          style: { color: currentIconColor }
-                        }, resolver.name),
-                        // Dropdown chevron (only if multiple sources)
-                        hasMultipleSources && React.createElement(Icons.ChevronDown, { className: `w-3 h-3 transition-transform ${playbarSourceDropdownOpen ? 'rotate-180' : ''}`, style: { color: 'var(--text-tertiary)' } })
-                      ),
-                      // Dropdown menu
-                      playbarSourceDropdownOpen && hasMultipleSources && React.createElement('div', {
-                        className: 'absolute left-0 bottom-full mb-1 rounded-lg overflow-hidden z-50',
-                        style: {
-                          background: 'linear-gradient(180deg, rgba(30, 30, 35, 0.98) 0%, rgba(20, 20, 25, 0.98) 100%)',
-                          border: '1px solid rgba(255,255,255,0.1)',
-                          boxShadow: '0 -4px 20px rgba(0,0,0,0.4), 0 0 1px rgba(255,255,255,0.1)',
-                          backdropFilter: 'blur(12px)',
-                          minWidth: '160px'
-                        }
-                      },
-                        // Header
-                        React.createElement('div', {
-                          className: 'px-3 py-2 text-[10px] font-semibold uppercase tracking-wider',
-                          style: {
-                            color: 'rgba(255,255,255,0.4)',
-                            borderBottom: '1px solid rgba(255,255,255,0.06)'
-                          }
-                        }, 'Play from'),
-                        // Source options
-                        availableSources.map(resId => {
-                          const r = allResolvers.find(res => res.id === resId);
-                          const iconColor = (r && r.color && r.color !== '#888888') ? r.color : 'var(--playbar-accent)';
-                          const isActive = resId === currentResolverId;
-                          return React.createElement('button', {
-                            key: resId,
-                            onClick: (e) => {
-                              e.stopPropagation();
-                              if (resId !== currentResolverId && currentTrack.sources[resId]) {
-                                handlePlay({ ...currentTrack, preferredResolver: resId });
-                              }
-                              setPlaybarSourceDropdownOpen(false);
-                            },
-                            onContextMenu: (e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              if (window.electron?.playbarSourceMenu?.show) {
-                                window.electron.playbarSourceMenu.show({
-                                  resolverId: resId,
-                                  track: {
-                                    id: currentTrack.id,
-                                    artist: currentTrack.artist,
-                                    title: currentTrack.title,
-                                    sourceId: sourceBlockId((currentTrack.sources || {})[resId] || (trackSources[currentTrack.id] || {})[resId])
-                                  }
-                                });
-                              }
-                            },
-                            className: 'w-full flex items-center gap-2.5 px-3 py-2 transition-colors hover:bg-white/5',
-                            style: {
-                              background: isActive ? 'rgba(255,255,255,0.08)' : 'transparent'
+                    // The source picker: "Play from" (components/menu.js), a
+                    // choice among the sources this track resolved on. One
+                    // source: just its name, no menu. Right-click on the
+                    // button or an item opens that source's native menu.
+                    (() => {
+                      const sourceMenuFor = (resId) => (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (window.electron?.playbarSourceMenu?.show) {
+                          window.electron.playbarSourceMenu.show({
+                            resolverId: resId,
+                            track: {
+                              id: currentTrack.id,
+                              artist: currentTrack.artist,
+                              title: currentTrack.title,
+                              sourceId: sourceBlockId((currentTrack.sources || {})[resId] || (trackSources[currentTrack.id] || {})[resId])
                             }
-                          },
-                            // Resolver icon
-                            React.createElement(ResolverIcon, {
-                              resolverId: resId,
-                              size: 16,
-                              fill: iconColor
-                            }),
-                            // Resolver name
-                            React.createElement('span', {
-                              className: 'text-xs',
-                              style: {
-                                color: isActive ? '#fff' : 'rgba(255,255,255,0.7)',
-                                fontWeight: isActive ? '500' : '400'
-                              }
-                            }, r ? r.name : resId),
-                            // Active indicator
-                            isActive && React.createElement('svg', {
-                              className: 'w-3.5 h-3.5 ml-auto',
-                              fill: 'none',
-                              viewBox: '0 0 24 24',
-                              stroke: iconColor,
-                              strokeWidth: 2.5
-                            },
-                              React.createElement('path', {
-                                strokeLinecap: 'round',
-                                strokeLinejoin: 'round',
-                                d: 'M5 13l4 4L19 7'
-                              })
-                            )
-                          );
+                          });
+                        }
+                      };
+                      const triggerBody = (open) => [
+                        React.createElement(ResolverIcon, { key: 'icon', resolverId: currentResolverId, size: 14, fill: currentIconColor }),
+                        React.createElement('span', { key: 'name', className: 'text-xs font-medium', style: { color: currentIconColor } }, resolver.name),
+                        hasMultipleSources && React.createElement(Icons.ChevronDown, { key: 'chev', className: `w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`, style: { color: 'var(--text-tertiary)' } })
+                      ];
+                      if (!hasMultipleSources) {
+                        return React.createElement('span', {
+                          className: 'no-drag flex items-center gap-1.5 pl-0 pr-2 py-0.5',
+                          onContextMenu: sourceMenuFor(currentResolverId)
+                        }, triggerBody(false));
+                      }
+                      return React.createElement('div', { className: 'no-drag' },
+                        React.createElement(Menu, {
+                          label: 'Play from',
+                          heading: 'Play from',
+                          items: availableSources.map(resId => {
+                            const r = allResolvers.find(res => res.id === resId);
+                            const iconColor = (r && r.color && r.color !== '#888888') ? r.color : 'var(--playbar-accent)';
+                            return {
+                              key: resId,
+                              label: r ? r.name : resId,
+                              icon: React.createElement(ResolverIcon, { resolverId: resId, size: 16, fill: iconColor }),
+                              checked: resId === currentResolverId,
+                              onSelect: () => {
+                                if (resId !== currentResolverId && currentTrack.sources[resId]) {
+                                  handlePlay({ ...currentTrack, preferredResolver: resId });
+                                }
+                              },
+                              onContextMenu: sourceMenuFor(resId)
+                            };
+                          }),
+                          renderTrigger: (t) => React.createElement('button', Object.assign({}, t, {
+                            type: 'button',
+                            onContextMenu: sourceMenuFor(currentResolverId),
+                            className: 'flex items-center gap-1.5 pl-0 pr-2 py-0.5 rounded transition-all hover:bg-white/10 cursor-pointer',
+                            style: { background: t.open ? 'rgba(255,255,255,0.1)' : 'transparent' },
+                            'aria-label': `Playing from ${resolver.name}. Switch source`,
+                            'data-tooltip': 'Switch playback source',
+                            'data-tooltip-variant': 'dark'
+                          }), triggerBody(t.open))
                         })
-                      )
-                    ),
+                      );
+                    })(),
                     // Browser indicator pill for external playback
                     isExternalPlayback && React.createElement('span', {
                       className: 'inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium tracking-wide uppercase',
@@ -46316,12 +46233,6 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
       // Sidebar panel
       React.createElement('div', {
         className: 'w-80 flex flex-col',
-        onClick: (e) => {
-          // Close dropdown when clicking outside of it
-          if (chatProviderDropdownOpen && !e.target.closest('[data-provider-dropdown]')) {
-            setChatProviderDropdownOpen(false);
-          }
-        }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
         style: {
           backgroundColor: 'var(--surface-dark-solid)',
           borderLeft: '1px solid var(--surface-dark-border)',
@@ -46362,19 +46273,55 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
           ),
           // Provider selector for chat mode, subtitle for other modes
           resultsSidebar.mode === 'chat'
-            ? React.createElement('div', { 'data-provider-dropdown': true, style: { marginTop: '8px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' } },
+            ? React.createElement('div', { style: { marginTop: '8px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' } },
                 // "powered by:" label
                 React.createElement('span', { style: { fontSize: '12px', color: 'var(--text-secondary)' } }, 'powered by:'),
                 // Custom dropdown button
                 (() => {
                   const enabledServices = getChatServices().filter(isServiceEnabled);
                   const currentService = enabledServices.find(s => s.id === selectedChatProvider);
-                  const currentLogo = currentService ? SERVICE_LOGOS[currentService.id] : null;
 
-                  return React.createElement('div', { style: { position: 'relative' } },
-                    // Dropdown trigger button
-                    React.createElement('button', {
-                      onClick: () => setChatProviderDropdownOpen(!chatProviderDropdownOpen),
+                  // The chat provider picker (components/menu.js): a choice
+                  // among the enabled chat plug-ins, with a check on the
+                  // current one.
+                  return React.createElement(Menu, {
+                    label: 'Chat provider',
+                    align: 'right',
+                    minWidth: 140,
+                    items: enabledServices.map(service => ({
+                      key: service.id,
+                      label: service.name || service.manifest?.name,
+                      icon: (SERVICE_LOGOS[service.id]
+                        ? React.createElement('span', { style: { width: '14px', height: '14px', display: 'inline-flex', flexShrink: 0 } },
+                            React.cloneElement(SERVICE_LOGOS[service.id], { className: '', style: { width: '14px', height: '14px' } }))
+                        : React.createElement('span', { style: { fontSize: '12px' } }, service.icon || service.manifest?.icon || '🤖')),
+                      checked: service.id === selectedChatProvider,
+                      onSelect: () => {
+                        const newProvider = service.id;
+                        // Picking the current one changes nothing.
+                        if (newProvider === selectedChatProvider) return;
+                        // Save current provider's history before switching
+                        if (selectedChatProvider && selectedChatProvider !== newProvider && aiChatMessages.length > 0) {
+                          aiChatHistoriesRef.current[selectedChatProvider] = aiChatMessages;
+                        }
+                        setSelectedChatProvider(newProvider);
+                        // Clear current chat service so it recreates with new provider
+                        aiChatServiceRef.current = null;
+                        // Load saved chat history for this provider (or empty if none)
+                        const savedHistory = aiChatHistoriesRef.current[newProvider] || [];
+                        setAiChatMessages(savedHistory);
+                        // Update sidebar with new provider and loaded messages
+                        setResultsSidebar(prev => ({
+                          ...prev,
+                          subtitle: service.name || service.manifest?.name,
+                          provider: { id: service.id, name: service.name || service.manifest?.name, icon: service.icon || service.manifest?.icon },
+                          messages: savedHistory
+                        }));
+                      },
+                    })),
+                    renderTrigger: (t) => React.createElement('button', Object.assign({}, t, {
+                      type: 'button',
+                      'aria-label': `Chat provider: ${currentService?.name || currentService?.manifest?.name || 'none'}`,
                       style: {
                         backgroundColor: 'rgba(255, 255, 255, 0.05)',
                         border: '1px solid rgba(255, 255, 255, 0.1)',
@@ -46383,99 +46330,19 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                         fontSize: '12px',
                         color: '#e5e7eb',
                         cursor: 'pointer',
-                        outline: 'none',
                         display: 'flex',
                         alignItems: 'center',
                         gap: '6px'
                       }
-                    },
-                      currentLogo
+                    }),
+                      currentService ? (SERVICE_LOGOS[currentService.id]
                         ? React.createElement('span', { style: { width: '14px', height: '14px', display: 'inline-flex', flexShrink: 0 } },
-                            React.cloneElement(currentLogo, { className: '', style: { width: '14px', height: '14px' } })
-                          )
-                        : React.createElement('span', { style: { fontSize: '12px' } }, currentService?.icon || currentService?.manifest?.icon || '🤖'),
+                            React.cloneElement(SERVICE_LOGOS[currentService.id], { className: '', style: { width: '14px', height: '14px' } }))
+                        : React.createElement('span', { style: { fontSize: '12px' } }, currentService.icon || currentService.manifest?.icon || '🤖')) : null,
                       currentService?.name || currentService?.manifest?.name || 'Select',
-                      // Chevron icon
-                      React.createElement('svg', {
-                        style: { width: '10px', height: '10px', transform: chatProviderDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' },
-                        viewBox: '0 0 24 24',
-                        fill: 'none',
-                        stroke: 'currentColor',
-                        strokeWidth: 2
-                      },
-                        React.createElement('path', { d: 'M6 9l6 6 6-6' })
-                      )
-                    ),
-                    // Dropdown menu
-                    chatProviderDropdownOpen && React.createElement('div', {
-                      style: {
-                        position: 'absolute',
-                        top: '100%',
-                        right: 0,
-                        marginTop: '4px',
-                        backgroundColor: 'var(--tooltip-bg)',
-                        border: '1px solid rgba(255, 255, 255, 0.1)',
-                        borderRadius: '6px',
-                        overflow: 'hidden',
-                        zIndex: 50,
-                        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
-                        minWidth: '140px'
-                      }
-                    },
-                      enabledServices.map(service => {
-                        const logo = SERVICE_LOGOS[service.id];
-                        const isSelected = service.id === selectedChatProvider;
-                        return React.createElement('button', {
-                          key: service.id,
-                          onClick: () => {
-                            const newProvider = service.id;
-                            // Save current provider's history before switching
-                            if (selectedChatProvider && selectedChatProvider !== newProvider && aiChatMessages.length > 0) {
-                              aiChatHistoriesRef.current[selectedChatProvider] = aiChatMessages;
-                            }
-                            setSelectedChatProvider(newProvider);
-                            setChatProviderDropdownOpen(false);
-                            // Clear current chat service so it recreates with new provider
-                            aiChatServiceRef.current = null;
-                            // Load saved chat history for this provider (or empty if none)
-                            const savedHistory = aiChatHistoriesRef.current[newProvider] || [];
-                            setAiChatMessages(savedHistory);
-                            // Update sidebar with new provider and loaded messages
-                            setResultsSidebar(prev => ({
-                              ...prev,
-                              subtitle: service.name || service.manifest?.name,
-                              provider: { id: service.id, name: service.name || service.manifest?.name, icon: service.icon || service.manifest?.icon },
-                              messages: savedHistory
-                            }));
-                          },
-                          style: {
-                            width: '100%',
-                            padding: '6px 10px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                            backgroundColor: isSelected ? 'var(--accent-primary-alpha-20)' : 'transparent',
-                            border: 'none',
-                            color: '#e5e7eb',
-                            fontSize: '12px',
-                            cursor: 'pointer',
-                            textAlign: 'left',
-                            whiteSpace: 'nowrap'
-                          },
-                          onMouseEnter: (e) => { if (!isSelected) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)'; },
-                          onMouseLeave: (e) => { if (!isSelected) e.currentTarget.style.backgroundColor = 'transparent'; }
-                        },
-                          logo
-                            ? React.createElement('span', { style: { width: '14px', height: '14px', display: 'inline-flex', flexShrink: 0 } },
-                                React.cloneElement(logo, { className: '', style: { width: '14px', height: '14px' } })
-                              )
-                            : React.createElement('span', { style: { fontSize: '12px' } }, service.icon || service.manifest?.icon || '🤖'),
-                          service.name || service.manifest?.name,
-                          isSelected && React.createElement(Icons.Check, { style: { width: '12px', height: '12px', marginLeft: 'auto', color: 'var(--accent-soft)' } })
-                        );
-                      })
+                      React.createElement(Icons.ChevronDown, { size: 10, style: { transform: t.open ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' } })
                     )
-                  );
+                  });
                 })()
               )
             : (resultsSidebar.subtitle && React.createElement('p', {

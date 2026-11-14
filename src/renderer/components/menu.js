@@ -19,12 +19,18 @@
 //
 // Props:
 //   label         names the menu for screen readers ("Share", "Tickets for X")
-//   items         [{ key, label, icon?, dot?, trailing?, href?, onSelect?, disabled? }]
+//   items         [{ key, label, icon?, dot?, trailing?, href?, onSelect?, disabled?,
+//                    checked?, onContextMenu? }]
 //                 An item with `href` is a link that opens in the browser
 //                 (target _blank) and shows the external-link mark; `dot` is
 //                 a colour for a small swatch (a ticket seller's brand);
 //                 `trailing` is an element at the item's end (a status mark).
-//                 `{ separator: true }` draws a rule between groups.
+//                 `{ separator: true }` draws a rule between groups. An item
+//                 with `checked` (true or false) is a menuitemradio: a choice
+//                 among the others (the playbar's "Play from"), with a check
+//                 on the current one. `onContextMenu` is passed through (a
+//                 right-click menu for that item).
+//   heading       a small label over the items ("Play from")
 //   renderTrigger (props) => element. Spread `props` onto the trigger
 //                 button; `props.open` says whether the menu is showing (for
 //                 a chevron or a pressed look). Clicks on it don't reach a
@@ -47,7 +53,7 @@ const MENU_STYLE = {
 const ITEM_CLASS = 'menu-item no-drag w-full flex items-center gap-2 px-3 py-2 text-left rounded-md';
 const ITEM_STYLE = { border: 'none', cursor: 'pointer', textDecoration: 'none', font: 'inherit', fontSize: '12px', fontWeight: 500 };
 
-function Menu({ label, items, renderTrigger, align = 'left', minWidth = 160 }) {
+function Menu({ label, items, renderTrigger, align = 'left', minWidth = 160, heading }) {
   const e = React.createElement;
   const [open, setOpen] = React.useState(false);
   const [pos, setPos] = React.useState(null); // { left, top } once measured
@@ -57,7 +63,7 @@ function Menu({ label, items, renderTrigger, align = 'left', minWidth = 160 }) {
   const id = React.useId();
   const list = (items || []).filter(Boolean);
 
-  const itemEls = () => (menuRef.current ? Array.from(menuRef.current.querySelectorAll('[role="menuitem"]:not([aria-disabled="true"])')) : []);
+  const itemEls = () => (menuRef.current ? Array.from(menuRef.current.querySelectorAll('[role^="menuitem"]:not([aria-disabled="true"])')) : []);
   const triggerEl = () => (rootRef.current ? rootRef.current.querySelector('[aria-haspopup="menu"]') : null);
   const close = (refocus) => {
     setOpen(false);
@@ -105,7 +111,8 @@ function Menu({ label, items, renderTrigger, align = 'left', minWidth = 160 }) {
       setPos({ left, top });
     }
     const els = itemEls();
-    const target = startAt.current === 'last' ? els[els.length - 1] : els[0];
+    const checked = els.find((el) => el.getAttribute && el.getAttribute('aria-checked') === 'true');
+    const target = startAt.current === 'last' ? els[els.length - 1] : (checked || els[0]);
     if (target) target.focus({ preventScroll: true });
   }, [open]);
 
@@ -160,6 +167,10 @@ function Menu({ label, items, renderTrigger, align = 'left', minWidth = 160 }) {
         // Measured before paint (useLayoutEffect); hidden until then.
         pos ? { left: `${pos.left}px`, top: `${pos.top}px` } : { left: 0, top: 0, visibility: 'hidden' }),
     },
+    heading && e('div', {
+      key: 'heading', 'aria-hidden': 'true', className: 'uppercase',
+      style: { padding: '6px 12px 4px', fontSize: '11px', fontWeight: 600, letterSpacing: '0.05em', opacity: 0.6 },
+    }, heading),
     list.map((item, i) => {
       if (item.separator) {
         return e('div', { key: item.key || `sep-${i}`, role: 'separator', style: { height: '1px', margin: '4px 0', backgroundColor: 'rgba(255, 255, 255, 0.12)' } });
@@ -169,12 +180,18 @@ function Menu({ label, items, renderTrigger, align = 'left', minWidth = 160 }) {
         item.icon && e('span', { key: 'icon', 'aria-hidden': 'true', className: 'flex-shrink-0 flex items-center' }, item.icon),
         e('span', { key: 'label', className: 'flex-1 min-w-0 truncate' }, item.label),
         item.trailing && e('span', { key: 'trailing', className: 'flex-shrink-0 flex items-center' }, item.trailing),
+        item.checked && e(Icons.Check, { key: 'check', size: 14, className: 'flex-shrink-0' }),
         item.href && e(Icons.ExternalLink, { key: 'ext', size: 12, className: 'flex-shrink-0', style: { opacity: 0.6 } }),
       ];
       const common = {
-        key: item.key || i, role: 'menuitem', tabIndex: -1, className: ITEM_CLASS, style: ITEM_STYLE,
+        key: item.key || i,
+        role: item.checked === undefined ? 'menuitem' : 'menuitemradio',
+        'aria-checked': item.checked === undefined ? undefined : (item.checked ? 'true' : 'false'),
+        tabIndex: -1, className: ITEM_CLASS,
+        style: item.checked ? Object.assign({}, ITEM_STYLE, { fontWeight: 600 }) : ITEM_STYLE,
         'aria-disabled': item.disabled ? 'true' : undefined,
         onClick: (ev) => run(item, ev),
+        onContextMenu: item.onContextMenu,
       };
       return item.href
         ? e('a', Object.assign(common, { href: item.href, target: '_blank', rel: 'noopener noreferrer' }), body)
