@@ -809,6 +809,25 @@
     /* Tooltip (src/renderer/components/ui-atoms.js). The trigger wrapper is
        .tooltip-container; the tip is portalled to <body> as .tooltip-panel and
        placed by placeTooltip, so no overflow:hidden parent clips it. */
+    /* CardButton (components/card-button.js): the card's main action is a
+       button stretched over it; its own actions (.card-actions) sit above
+       and show on hover or keyboard focus, passing clicks through when
+       hidden; .card-zoom is the cover's hover zoom. */
+    .card-button-hit {
+      position: absolute; inset: 0; z-index: 1; margin: 0; padding: 0;
+      border: 0; background: transparent; cursor: pointer; border-radius: inherit;
+    }
+    .card-button-hit:focus { outline: none; }
+    .card-button-hit:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: -2px; }
+    .card-button .card-actions { z-index: 2; opacity: 0; pointer-events: none; transition: opacity 200ms ease; }
+    .card-button .card-actions button { pointer-events: none; }
+    .card-button:hover .card-actions,
+    .card-button:has(:focus-visible) .card-actions { opacity: 1; }
+    .card-button:hover .card-actions button,
+    .card-button:has(:focus-visible) .card-actions button { pointer-events: auto; }
+    .card-button .card-zoom { transition: transform 300ms ease, opacity 300ms ease; }
+    .card-button:hover .card-zoom { transform: scale(1.05); }
+
     /* Menu items (components/menu.js): the dark menu panel's rows. */
     .menu-item { background: transparent; color: var(--tooltip-text); }
     .menu-item:hover, .menu-item:focus { background: var(--tooltip-hover); outline: none; }

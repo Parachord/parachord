@@ -14,6 +14,7 @@ const { getBestSourceConfidence } = require('./track-lists');
 const Icons = require('./icons');
 const { EmptyState, ErrorState } = require('./states');
 const { Menu } = require('./menu');
+const { CardButton } = require('./card-button');
 const { artistMenu } = require('../lib/item-menus');
 const { Play } = Icons;
 // hashString (module scope in app.js) is used by generateArtistPattern;
@@ -209,9 +210,10 @@ const RelatedArtistCard = ({ artist, getArtistImage, onNavigate }) => {
     // Note: getArtistImage excluded from deps - function identity changes but behavior doesn't
   }, [artist.name]);
 
-  return React.createElement('button', {
-    onClick: onNavigate,
-    className: 'text-left group cursor-grab active:cursor-grabbing',
+  return React.createElement(CardButton, {
+    label: artist.name,
+    onActivate: onNavigate,
+    className: 'text-left group',
     draggable: true,
     onDragStart: (e) => {
       e.dataTransfer.effectAllowed = 'copy';
@@ -288,9 +290,10 @@ const SearchArtistCard = ({ artist, getArtistImage, onClick, onContextMenu, onPl
     return () => { cancelled = true; };
   }, [artist.name]);
 
-  return React.createElement('div', {
-    onClick: onClick, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
-    className: 'rounded-lg overflow-hidden cursor-pointer group release-card card-fade-up flex-shrink-0',
+  return React.createElement(CardButton, {
+    label: artist.name,
+    onActivate: onClick,
+    className: 'rounded-lg overflow-hidden group release-card card-fade-up flex-shrink-0',
     style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)', animationDelay: `${animationDelay}ms`, width: itemWidth || 160 },
     draggable: true,
     onDragStart: (e) => {
@@ -331,7 +334,7 @@ const SearchArtistCard = ({ artist, getArtistImage, onClick, onContextMenu, onPl
       typeof imageUrl === 'string' && React.createElement('img', {
         src: imageUrl,
         alt: artist.name,
-        className: 'absolute inset-0 w-full h-full object-cover transition-all duration-300 group-hover/art:scale-105',
+        className: 'card-zoom absolute inset-0 w-full h-full object-cover',
         style: { opacity: 0 },
         ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
         onLoad: (e) => { e.target.style.opacity = '1'; },
@@ -344,8 +347,8 @@ const SearchArtistCard = ({ artist, getArtistImage, onClick, onContextMenu, onPl
       }),
       // Hover overlay with action buttons (Play, Queue)
       React.createElement('div', {
-        className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-3',
-        style: { pointerEvents: 'auto' }
+        // CardButton's actions: shown on hover or keyboard focus.
+        className: 'card-actions absolute inset-0 bg-black/50 flex items-center justify-center gap-3'
       },
         // Play top 10 button (center, larger)
         onPlayTopTracks && React.createElement('button', {
@@ -459,9 +462,10 @@ const CollectionArtistCard = ({ artist, getArtistImage, onNavigate, onPlayTopTra
     return () => { cancelled = true; };
   }, [artist.name]);
 
-  return React.createElement('div', {
-    onClick: onNavigate, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
-    className: 'rounded-lg overflow-hidden cursor-pointer group release-card card-fade-up',
+  return React.createElement(CardButton, {
+    label: artist.name,
+    onActivate: onNavigate,
+    className: 'rounded-lg overflow-hidden group release-card card-fade-up',
     style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)', animationDelay: `${animationDelay}ms` }
   },
     // Square image container - gray bg while loading, pattern only when no image found
@@ -483,7 +487,7 @@ const CollectionArtistCard = ({ artist, getArtistImage, onNavigate, onPlayTopTra
       imageUrl && typeof imageUrl === 'string' && React.createElement('img', {
         src: imageUrl,
         alt: artist.name,
-        className: 'absolute inset-0 w-full h-full object-cover transition-all duration-300 group-hover/art:scale-105',
+        className: 'card-zoom absolute inset-0 w-full h-full object-cover',
         style: { opacity: 0 },
         ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
         onLoad: (e) => { e.target.style.opacity = '1'; },
@@ -496,8 +500,8 @@ const CollectionArtistCard = ({ artist, getArtistImage, onNavigate, onPlayTopTra
       }),
       // Hover overlay with action buttons (Play, Queue)
       React.createElement('div', {
-        className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-3',
-        style: { pointerEvents: 'auto' }
+        // CardButton's actions: shown on hover or keyboard focus.
+        className: 'card-actions absolute inset-0 bg-black/50 flex items-center justify-center gap-3'
       },
         // Play top 10 button (center, larger)
         onPlayTopTracks && React.createElement('button', {
@@ -564,8 +568,10 @@ const CollectionAlbumCard = ({ album, getAlbumArt, onNavigate, onAddToPlaylist, 
     return () => { cancelled = true; };
   }, [album.artist, album.title, album.art]);
 
-  return React.createElement('button', {
-    onClick: onNavigate,
+  // A CardButton: it used to be a <button> holding three more buttons.
+  return React.createElement(CardButton, {
+    label: album.artist ? `${album.title} by ${album.artist}` : album.title,
+    onActivate: onNavigate,
     onContextMenu: onContextMenu ? (e) => { e.preventDefault(); onContextMenu(e, album); } : undefined,
     className: 'group text-left release-card card-fade-up',
     style: {
@@ -599,7 +605,7 @@ const CollectionAlbumCard = ({ album, getAlbumArt, onNavigate, onAddToPlaylist, 
       imageUrl && typeof imageUrl === 'string' && React.createElement('img', {
         src: imageUrl,
         alt: album.title,
-        className: 'group-hover/art:scale-105',
+        className: 'card-zoom',
         style: {
           width: '100%',
           height: '100%',
@@ -625,7 +631,7 @@ const CollectionAlbumCard = ({ album, getAlbumArt, onNavigate, onAddToPlaylist, 
       ),
       // Hover overlay with action buttons
       React.createElement('div', {
-        className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 pointer-events-none group-hover/art:pointer-events-auto transition-opacity duration-200 flex items-center justify-center gap-3',
+        className: 'card-actions absolute inset-0 bg-black/50 flex items-center justify-center gap-3',
         style: { borderRadius: '6px', zIndex: 20 }
       },
         // Add to Playlist button
