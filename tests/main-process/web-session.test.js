@@ -367,6 +367,45 @@ describe('the gate — rule 2: navigations and pageFetches', () => {
     await expect(loadRun).rejects.toMatchObject({ reason: 'load-failed' });
   });
 
+  test('a pageFetch arriving DURING a load reader drain is refused (the flag flips before the drain)', async () => {
+    const { host, view } = await warmSession();
+    let releaseFetch;
+    view.webContents.executeJavaScript.mockImplementation(() => new Promise((resolve) => { releaseFetch = resolve; }));
+    const first = host.pageFetch({ url: 'https://gql.testsvc.com/' });
+    await jest.advanceTimersByTimeAsync(0);
+
+    const loadRun = host.load('https://music.testsvc.com/next'); // beginNavigation: flag up, draining
+    await jest.advanceTimersByTimeAsync(0);
+    // A reader arriving mid-drain must be refused — if the flag flipped only
+    // AFTER the drain, this would enter and the navigation would starve.
+    await expect(host.pageFetch({ url: 'https://gql.testsvc.com/' })).resolves.toEqual({ error: 'busy' });
+    releaseFetch({ status: 200, text: '{}' });
+    await first;
+    await jest.advanceTimersByTimeAsync(300);
+    await loadRun;
+    expect(view.webContents.loadURL).toHaveBeenCalledWith('https://music.testsvc.com/next');
+  });
+
+  test('an idle park and a load exclude each other (two writers never abort each others navigation)', async () => {
+    const { host, view } = await warmSession({ warmMs: 1000 });
+    let releasePark;
+    view.webContents.loadURL.mockImplementation(async (url) => {
+      if (url === 'about:blank') await new Promise((resolve) => { releasePark = resolve; });
+    });
+    host.cancelPark();
+    host.schedulePark();
+    await jest.advanceTimersByTimeAsync(1100); // the fuse fires; park holds the writer gate
+    expect(view.webContents.loadURL).toHaveBeenCalledWith('about:blank');
+
+    const loadRun = host.load('https://music.testsvc.com/next'); // a second writer: waits
+    await jest.advanceTimersByTimeAsync(300);
+    expect(view.webContents.loadURL).not.toHaveBeenCalledWith('https://music.testsvc.com/next');
+    releasePark();
+    await jest.advanceTimersByTimeAsync(500);
+    expect(view.webContents.loadURL).toHaveBeenCalledWith('https://music.testsvc.com/next');
+    await loadRun;
+  });
+
   test('the idle park waits out an in-flight pageFetch (a blank is a navigation too)', async () => {
     const { host, view } = await warmSession({ warmMs: 1000 });
     let releaseFetch;
@@ -615,6 +654,26 @@ describe('clear — sign out', () => {
     // The view's destruction aborts the hung navigation (a raw rejection, the
     // same shape loadURLBudgeted propagates today) — and the chain moved on.
     await expect(hung).rejects.toThrow(/ERR_ABORTED/);
+  });
+});
+
+describe('construction and argument validation', () => {
+  test('cookieDomains is required', () => {
+    expect(() => createWebSessionHost({ id: 'x', partition: 'persist:x' }))
+      .toThrow(/cookieDomains is required/);
+    expect(() => createWebSessionHost({ id: 'x' })).toThrow(/partition is required/);
+    expect(() => createWebSessionHost({})).toThrow(/config.id is required/);
+  });
+
+  test('an invalid capture rejects before any state is touched (the fuse stays armed)', async () => {
+    const { host, view } = await warmSession({ warmMs: 1000 });
+    await expect(host.load('https://music.testsvc.com/x', { capture: {} }))
+      .rejects.toMatchObject({ reason: 'invalid' });
+    await expect(host.load('https://music.testsvc.com/x', { capture: { urlPrefixes: 'nope' } }))
+      .rejects.toMatchObject({ reason: 'invalid' });
+    // The invalid argument disarmed nothing: the fuse still parks the view.
+    await jest.advanceTimersByTimeAsync(1200);
+    expect(view.webContents.loadURL).toHaveBeenCalledWith('about:blank');
   });
 });
 
