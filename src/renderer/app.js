@@ -3875,7 +3875,7 @@ const Parachord = () => {
   // docs/plans/2026-05-03-loved-tracks-scrobbler-push-design.md.
   const [scrobblerLovePushEnabled, setScrobblerLovePushEnabled] = useState({});
   const scrobblerLovePushEnabledRef = useRef({});
-  const lovePushedKeysRef = useRef({}); // { [trackId]: { lastfm?: ts, listenbrainz?: ts } }
+  const lovePushedKeysRef = useRef({}); // { [trackId]: { lastfm?: ts, listenbrainz?: ts | { at, mbid } } }
   const [loveBackfillRunning, setLoveBackfillRunning] = useState({}); // { [service]: boolean }
   const loveBackfillRunningRef = useRef({});
   const [loveBackfillProgress, setLoveBackfillProgress] = useState({}); // { [service]: { done, total } }
@@ -14146,6 +14146,7 @@ ${trackListXml}
           }
           await window.listenbrainzScrobbler.loveTrack({ ...track, mbid });
           await markLovePushed(track.id, 'listenbrainz', mbid);
+          clearListenbrainzLoveTombstone(mbid);
           console.log(`[love-push] LB ✓ ${track.artist} – ${track.title}`);
         } catch (err) {
           console.warn(`[love-push] LB failed for "${track.title}":`, err?.message || err);
@@ -14216,6 +14217,15 @@ ${trackListXml}
   // Persist a single love-pushed checkpoint. Keeps the ref hot and
   // writes through to electron-store so a backfill mid-run survives
   // a crash.
+  // A successful ListenBrainz push clears the tombstone its own MBID may
+  // have written on an earlier removal: a re-add after a removal must import
+  // again, and the mark's MBID is the tombstone key (parachord#1071 review).
+  const clearListenbrainzLoveTombstone = (mbid) => {
+    if (!mbid || !/^[a-f0-9-]{36}$/i.test(mbid) || !window.electron?.tombstones) return;
+    window.electron.tombstones.clearBatch([{ providerId: 'listenbrainz', externalId: mbid }])
+      .catch((err) => console.warn('[love-push] could not clear the ListenBrainz tombstone:', err?.message || err));
+  };
+
   // markLovePushed(trackId, service, mbid): the entry is the push timestamp,
   // or { at, mbid } when the push resolved a recording MBID (ListenBrainz) —
   // storing it means a later removal can tombstone the exact recording the
@@ -14291,6 +14301,7 @@ ${trackListXml}
           if (!mbid) { skipped++; continue; }
           await window.listenbrainzScrobbler.loveTrack({ ...track, mbid });
           await markLovePushed(track.id, 'listenbrainz', mbid);
+          clearListenbrainzLoveTombstone(mbid);
           pushed++;
         }
       } catch (err) {
@@ -14513,9 +14524,21 @@ ${trackListXml}
         return batch.saveOk;
       };
 
+      // The MBIDs a heart's ListenBrainz push resolved and stored on its
+      // mark: indexed alongside the rows' own MBIDs so a love for that MBID
+      // matches the hearted row instead of duplicating it. Marks from before
+      // this shipped are plain timestamps and contribute nothing.
+      const markMbids = {};
+      for (const [id, entry] of Object.entries(lovePushedKeysRef.current || {})) {
+        const stamped = entry && entry.listenbrainz;
+        if (stamped && typeof stamped === 'object' && /^[a-f0-9-]{36}$/i.test(stamped.mbid || '')) {
+          markMbids[id] = stamped.mbid;
+        }
+      }
+
       const namedLoves = loves.filter((l) => !l.needsLookup);
       const needsLookupLoves = loves.filter((l) => l.needsLookup);
-      const plan1 = await dropRemoved(LoveImport.planLoveImport(namedLoves, collectionTracks, tombstones));
+      const plan1 = await dropRemoved(LoveImport.planLoveImport(namedLoves, collectionTracks, tombstones, markMbids));
       const batch1 = commitBatch(plan1);
       await confirmBatch(batch1, plan1.matchedIds);
 
@@ -14533,7 +14556,7 @@ ${trackListXml}
       const lookupMatchedIds = [];
       const resolvedLoves = [];
       if (needsLookupLoves.length > 0 && typeof window.lookupRecordingTitle === 'function') {
-        const mbidIndex = LoveImport.rowMbidIndex([...collectionTracks, ...plan1.add]);
+        const mbidIndex = LoveImport.rowMbidIndex([...collectionTracks, ...plan1.add], markMbids);
         setProgress(0, needsLookupLoves.length, 'lookup');
         for (let i = 0; i < needsLookupLoves.length; i++) {
           const cand = needsLookupLoves[i];
@@ -14552,7 +14575,7 @@ ${trackListXml}
       } else if (needsLookupLoves.length > 0) {
         lookupSkipped += needsLookupLoves.length;
       }
-      const plan2 = await dropRemoved(LoveImport.planLoveImport(resolvedLoves, [...collectionTracks, ...plan1.add], tombstones));
+      const plan2 = await dropRemoved(LoveImport.planLoveImport(resolvedLoves, [...collectionTracks, ...plan1.add], tombstones, markMbids));
       const batch2 = commitBatch(plan2);
       await confirmBatch(batch2, [...plan2.matchedIds, ...lookupMatchedIds]);
 

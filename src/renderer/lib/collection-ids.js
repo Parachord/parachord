@@ -57,14 +57,35 @@ const sameName = (a, b) => {
 const findSavedTrack = (tracks, track) => {
   if (!Array.isArray(tracks) || !track) return null;
   const generatedId = generateTrackId(track.artist, track.title, track.album);
+  // The trackSlug tier, hoisted out of the finds and gated on the ASCII strip
+  // collapsing the artist or title — the same gate loveRowId uses
+  // (parachord#1071 review). trackSlug is NFKD plus two Unicode regexes and
+  // this runs under every render of an unsaved heart, so computing it inside
+  // the find callback cost a recomputation per row (10k rows ≈ 5ms a miss).
+  // Ungated it also changes Latin matching a little ("Every Day" would match
+  // a saved "Everyday"), so the gate keeps Latin hearts on the id tiers.
+  const slugId = (!normalizeForId(track.artist) || !normalizeForId(track.title))
+    ? trackSlug(track.artist, track.title, track.album)
+    : null;
+  // A heart's own album: search, the queue and now-playing carry none, so an
+  // empty album on the CANDIDATE is a placeholder too — the same rule the
+  // row-side tier below applies to saved rows. This is what lets a heart on
+  // an imported row (whose album-bearing trackSlug id no id tier matches)
+  // find it by name.
+  const candidateAlbumIsPlaceholder = isPlaceholderAlbum(track.album, track.sources);
   return tracks.find((t) => t.id === track.id && track.id)
     || tracks.find((t) => t.id === generatedId)
     // A row the love-import saved with a trackSlug id (a non-Latin
     // ListenBrainz love keeps its album, so `generateTrackId` collapses the
-    // artist/title and never matches): a heart from search, the queue or
-    // now-playing carries no album, so the slug is the only shared id
-    // (parachord#1071 review).
-    || tracks.find((t) => t.id === trackSlug(track.artist, track.title, track.album))
+    // artist/title and never matches): the slug is the only shared id when
+    // the heart carries the same album.
+    || (slugId ? tracks.find((t) => t.id === slugId) : undefined)
+    // A heart with no album of its own matches a saved row with a real album
+    // on artist and title (parachord#1071 review).
+    || (candidateAlbumIsPlaceholder
+      ? tracks.find((t) => sameName(t.artist, track.artist) && sameName(t.title, track.title))
+      : undefined)
+    // A row saved with a placeholder album matches on artist and title.
     || tracks.find((t) => sameName(t.artist, track.artist) && sameName(t.title, track.title)
       && isPlaceholderAlbum(t.album, t.sources))
     || null;

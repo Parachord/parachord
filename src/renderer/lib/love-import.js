@@ -235,10 +235,15 @@ function isOrphanedLovePush(orphanIds, row) {
 //                 pushed, so Backfill doesn't re-offer them)
 //     tombstoned — how many loves a tombstone (or a fresh-enough re-love
 //                 rule) blocked
+// markMbids: { [trackId]: mbid } — the recording MBIDs a heart's ListenBrainz
+// push resolved and stored on its love_pushed_keys mark (the row itself never
+// carries one). Indexed alongside row.mbid/sources so a love for that MBID
+// MATCHES the hearted row instead of duplicating it. Marks from before this
+// ships are plain timestamps and contribute nothing.
 // needsLookup loves are ignored here; the runner resolves their names first.
 // Two loves for the same track in one batch add one row with the EARLIER
 // lovedAt. Index-built, so 20k loves against 20k rows stays fast.
-function planLoveImport(loves, tracks, tombstones, nowMs = Date.now()) {
+function planLoveImport(loves, tracks, tombstones, markMbids = null, nowMs = Date.now()) {
   const byMbid = new Map();
   const byName = new Map();
   const byId = new Map();
@@ -249,6 +254,7 @@ function planLoveImport(loves, tracks, tombstones, nowMs = Date.now()) {
     for (const id of Object.keys(sources)) {
       if (sources[id] && sources[id].mbid) mbids.push(sources[id].mbid);
     }
+    if (markMbids && isMbid(markMbids[row.id])) mbids.push(markMbids[row.id]);
     for (const m of mbids) {
       if (isMbid(m) && !byMbid.has(m)) byMbid.set(m, row);
     }
@@ -315,7 +321,7 @@ function planLoveImport(loves, tracks, tombstones, nowMs = Date.now()) {
 // recording MBID → row, over a track list (for the runner's lookup tail: a
 // metadata-less love whose MBID is already in the collection matches without
 // spending a 1.1s MusicBrainz request).
-function rowMbidIndex(tracks) {
+function rowMbidIndex(tracks, markMbids = null) {
   const byMbid = new Map();
   for (const row of Array.isArray(tracks) ? tracks : []) {
     if (!row || typeof row !== 'object') continue;
@@ -324,6 +330,7 @@ function rowMbidIndex(tracks) {
     for (const id of Object.keys(sources)) {
       if (sources[id] && sources[id].mbid) mbids.push(sources[id].mbid);
     }
+    if (markMbids && isMbid(markMbids[row.id])) mbids.push(markMbids[row.id]);
     for (const m of mbids) {
       if (isMbid(m) && !byMbid.has(m)) byMbid.set(m, row);
     }

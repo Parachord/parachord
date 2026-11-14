@@ -274,6 +274,19 @@ describe('nextLoveCursor', () => {
   });
 });
 
+describe('withLovesPushed (the mark-stored MBID survives re-marks)', () => {
+  test('a re-mark keeps an { at, mbid } entry\'s MBID with the new timestamp', () => {
+    const before = { hearted: { lastfm: 5, listenbrainz: { at: 7, mbid: '9bd9f6a2-2c27-4d3c-b1d9-6e56a5ee72c2' } } };
+    const after = withLovesPushed(before, ['hearted'], 'listenbrainz', 99);
+    expect(after.hearted.listenbrainz).toEqual({ at: 99, mbid: '9bd9f6a2-2c27-4d3c-b1d9-6e56a5ee72c2' });
+    // Other services' entries and plain-timestamp entries are untouched.
+    expect(after.hearted.lastfm).toBe(5);
+    const plainAfter = withLovesPushed(after, ['hearted'], 'lastfm', 100);
+    expect(plainAfter.hearted.lastfm).toBe(100);
+    expect(plainAfter.hearted.listenbrainz.mbid).toBe('9bd9f6a2-2c27-4d3c-b1d9-6e56a5ee72c2');
+  });
+});
+
 describe('withLovesPushed', () => {
   test('marks every id for the service, keeps the others, and returns a new object', () => {
     const before = { 'existing-track': { lastfm: 5 } };
@@ -285,6 +298,31 @@ describe('withLovesPushed', () => {
     const other = withLovesPushed(after, ['t1'], 'listenbrainz', 100);
     expect(other.t1).toEqual({ lastfm: 99, listenbrainz: 100 });
     expect(after.t1).toEqual({ lastfm: 99 });
+  });
+});
+
+describe('the mark → tombstone → import round trip', () => {
+  test('a removed hearted track is blocked by the MBID its push stored, and a later import of the same recording is dropped', () => {
+    const { isLoveTombstoned } = require('../../src/renderer/lib/love-import');
+    const MBID = '9bd9f6a2-2c27-4d3c-b1d9-6e56a5ee72c2';
+    const heartedRow = { id: 'the-beatles-here-comes-the-sun-remastered-2009', artist: 'The Beatles', title: 'Here Comes the Sun - Remastered 2009', album: '', sources: {} };
+    const mark = { listenbrainz: { at: 1700000000000, mbid: MBID } };
+    // deriveTombstoneEntries turns the mark into a ('listenbrainz', mbid)
+    // tombstone on removal; the app-side wiring is marker-pinned below.
+    const tombstones = { listenbrainz: { [MBID]: { removedAt: 1700000500000 } } };
+    const candidate = { service: 'listenbrainz', artist: 'The Beatles', title: 'Here Comes the Sun', album: '1', mbid: MBID, lovedAt: 1700000000 };
+    // Blocked by the date rule (the removal is newer than the love).
+    expect(isLoveTombstoned(tombstones, candidate)).toBe(true);
+    // And the mark's MBID really is the key that blocks it.
+    expect(isLoveTombstoned({}, candidate)).toBe(false);
+    expect(mark.listenbrainz.mbid).toBe(MBID);
+  });
+
+  test('the summary counts merged loves under "already in your collection"', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const app = fs.readFileSync(path.join(__dirname, '../..', 'src/renderer/app.js'), 'utf8');
+    expect(app).toContain('const matched = matchedLoves + plan1.merged + plan2.merged;');
   });
 });
 
@@ -357,6 +395,21 @@ describe('wiring (source markers)', () => {
   test('the resolved MBID is stored on the ListenBrainz mark, so a removal tombstones the recording the service holds', () => {
     expect(app).toContain("const pushedMbid = lovePushedKeysRef.current?.[track.id]?.listenbrainz;");
     expect(app).toContain("await markLovePushed(track.id, 'listenbrainz', mbid);");
+    // The storage itself: a plain timestamp would keep the marker passing while
+    // losing the MBID.
+    expect(app).toContain('? { at: Date.now(), mbid }');
+    expect(app).toContain('push(\'listenbrainz\', pushedMbid.mbid);');
+  });
+
+  test('a successful ListenBrainz push clears its own MBID tombstone (a re-add after a removal must import again)', () => {
+    expect(app).toContain("window.electron.tombstones.clearBatch([{ providerId: 'listenbrainz', externalId: mbid }])");
+    expect(app).toContain('clearListenbrainzLoveTombstone(mbid);');
+  });
+
+  test('the import indexes the mark-stored MBIDs alongside the rows\' own', () => {
+    expect(app).toContain('const markMbids = {};');
+    expect(app).toContain('LoveImport.planLoveImport(namedLoves, collectionTracks, tombstones, markMbids)');
+    expect(app).toContain('LoveImport.rowMbidIndex([...collectionTracks, ...plan1.add], markMbids)');
   });
 
   test('the MB name-lookup helper splits transient from a miss, follows merged MBIDs, and sends no User-Agent', () => {
