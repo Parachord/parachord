@@ -125,4 +125,30 @@ function uniqueConcerts(events) {
   return out;
 }
 
-module.exports = { uniqueConcerts, normalizeForDedup };
+// The Concerts source filter. A show two services both list is one row whose
+// ticketSources name both, so the filter and its dropdown read every ticket
+// source, not only event.source (the service that found it first). An AI
+// provider's key is `ai:<providerId>`, as the dropdown's values are.
+function sellerKey(s) {
+  if (!s || !s.source) return null;
+  return s.source === 'ai' ? (s.aiProvider ? `ai:${s.aiProvider}` : null) : s.source;
+}
+
+function concertSourceKeys(event) {
+  if (!event || typeof event !== 'object') return [];
+  const keys = [];
+  for (const s of [event, ...(Array.isArray(event.ticketSources) ? event.ticketSources : [])]) {
+    const key = sellerKey(s);
+    if (key && !keys.includes(key)) keys.push(key);
+  }
+  return keys;
+}
+
+function concertMatchesSource(event, filter) {
+  // Not a bare negation of `filter`: Tailwind scans this folder and would
+  // read that as the important variant of its filter class.
+  if (typeof filter !== 'string' || filter === '' || filter === 'all') return true;
+  return concertSourceKeys(event).includes(filter);
+}
+
+module.exports = { uniqueConcerts, normalizeForDedup, concertSourceKeys, concertMatchesSource };

@@ -7,7 +7,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { uniqueConcerts } = require('../../src/renderer/lib/concert-events');
+const { uniqueConcerts, concertSourceKeys, concertMatchesSource } = require('../../src/renderer/lib/concert-events');
 
 const ROOT = path.join(__dirname, '..', '..');
 const app = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'app.js'), 'utf8');
@@ -157,5 +157,43 @@ describe('the concerts loader uses it', () => {
     const at = app.indexOf("const concertsData = dCaches['cache_concerts'];");
     expect(at).toBeGreaterThan(-1);
     expect(app.slice(at, at + 1200)).toMatch(/uniqueConcerts\(concertsData\.events\)/);
+  });
+});
+
+// A show two services both list is one row whose ticketSources name both.
+// The source filter used to read only event.source (whichever service found
+// it first), so picking the other service hid the show, and a service whose
+// shows had all merged into another's never appeared in the dropdown.
+describe('the source filter sees every service that lists a show', () => {
+  const merged = {
+    id: 'tm-1', source: 'ticketmaster', artist: 'Interpol',
+    ticketSources: [
+      { source: 'ticketmaster', ticketUrl: 'https://tm.example/1' },
+      { source: 'seatgeek', ticketUrl: 'https://sg.example/1' },
+    ],
+  };
+  const ai = { id: 'ai-1', source: 'ai', aiProvider: 'claude', ticketSources: [{ source: 'ai', aiProvider: 'claude' }] };
+
+  test('concertSourceKeys lists the event source and every ticket source, once each', () => {
+    expect(concertSourceKeys(merged)).toEqual(['ticketmaster', 'seatgeek']);
+    expect(concertSourceKeys(ai)).toEqual(['ai:claude']);
+    expect(concertSourceKeys({ source: 'songkick' })).toEqual(['songkick']);
+    expect(concertSourceKeys(null)).toEqual([]);
+  });
+
+  test('a merged show matches either service', () => {
+    expect(concertMatchesSource(merged, 'all')).toBe(true);
+    expect(concertMatchesSource(merged, 'ticketmaster')).toBe(true);
+    expect(concertMatchesSource(merged, 'seatgeek')).toBe(true);
+    expect(concertMatchesSource(merged, 'songkick')).toBe(false);
+    expect(concertMatchesSource(ai, 'ai:claude')).toBe(true);
+    expect(concertMatchesSource(ai, 'ai:gemini')).toBe(false);
+  });
+
+  test('the Concerts page filters and lists sources through them', () => {
+    const src = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+    expect((src.match(/concertMatchesSource\(event, concertsSourceFilter\)/g) || []).length).toBe(2);
+    expect(src).toMatch(/for \(const key of concertSourceKeys\(event\)\)/);
+    expect(src).not.toMatch(/\} else if \(event\.source !== concertsSourceFilter\)/);
   });
 });

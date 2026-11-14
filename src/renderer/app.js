@@ -557,7 +557,7 @@ const { carriedReleaseArt, withArchiveCover, createReleaseGroupPicks } = require
 const { firstNonEmptyList, entriesFromMusicBrainzRelease, entriesFromCatalogRelease, pickReleaseGroup } = require('./lib/album-track-list');
 const { pickRelease } = require('./lib/release-pick');
 const { uniqueReleases } = require('./lib/fresh-drops-releases');
-const { uniqueConcerts } = require('./lib/concert-events');
+const { uniqueConcerts, concertSourceKeys, concertMatchesSource } = require('./lib/concert-events');
 const { createReleaseLookup, releaseFormats, hasCurrentAlias } = require('./lib/release-lookup');
 const { artistLookupPlan, loadArtistReleaseGroups, musicBrainzHttpError, discographyOutcome } = require('./lib/artist-discography');
 const { searchMusicBrainzArtists, searchMusicBrainzAlbums, searchMusicBrainzTracks, createPopularityLookup } = require('./lib/search-requests');
@@ -40116,11 +40116,7 @@ useEffect(() => {
           const _searchL = concertsSearch.toLowerCase().trim();
           const _locL = concertsLocation.toLowerCase().trim();
           const filteredConcertsCount = concerts.filter(event => {
-            if (concertsSourceFilter !== 'all') {
-              if (concertsSourceFilter.startsWith('ai:')) {
-                if (event.source !== 'ai' || event.aiProvider !== concertsSourceFilter.slice(3)) return false;
-              } else if (event.source !== concertsSourceFilter) return false;
-            }
+            if (!concertMatchesSource(event, concertsSourceFilter)) return false;
             if (concertsLocationCoords) {
               const vLat = event.venue?.latitude, vLng = event.venue?.longitude;
               if (vLat != null && vLng != null) {
@@ -40235,18 +40231,21 @@ useEffect(() => {
                 // Build options from sources that actually returned results
                 const sourceOptions = [{ value: 'all', label: 'All Sources' }];
                 const seenSources = new Set();
+                // Every service that lists a show, including those merged into
+                // another service's row (its ticketSources).
+                const allResolvers = resolverLoaderRef.current ? resolverLoaderRef.current.getAllResolvers() : [];
                 for (const event of concerts) {
-                  if (event.source === 'ai' && event.aiProvider) {
-                    const key = `ai:${event.aiProvider}`;
-                    if (!seenSources.has(key)) {
-                      seenSources.add(key);
-                      sourceOptions.push({ value: key, label: event.aiProviderName || event.aiProvider });
+                  for (const key of concertSourceKeys(event)) {
+                    if (seenSources.has(key)) continue;
+                    seenSources.add(key);
+                    if (key.startsWith('ai:')) {
+                      const aiId = key.slice(3);
+                      const named = [event, ...(event.ticketSources || [])].find(s => s && s.source === 'ai' && s.aiProvider === aiId);
+                      sourceOptions.push({ value: key, label: (named && named.aiProviderName) || aiId });
+                    } else {
+                      const resolver = allResolvers.find(r => r.id === key);
+                      sourceOptions.push({ value: key, label: resolver?.name || key });
                     }
-                  } else if (event.source && !seenSources.has(event.source)) {
-                    seenSources.add(event.source);
-                    const allResolvers = resolverLoaderRef.current ? resolverLoaderRef.current.getAllResolvers() : [];
-                    const resolver = allResolvers.find(r => r.id === event.source);
-                    sourceOptions.push({ value: event.source, label: resolver?.name || event.source });
                   }
                 }
                 const selectedLabel = sourceOptions.find(o => o.value === concertsSourceFilter)?.label || 'All Sources';
@@ -40645,15 +40644,10 @@ useEffect(() => {
               const searchLower = concertsSearch.toLowerCase().trim();
               const locationLower = concertsLocation.toLowerCase().trim();
               const filtered = concerts.filter(event => {
-                // Source filter (supports 'all', dedicated service IDs, and 'ai:providerId')
-                if (concertsSourceFilter !== 'all') {
-                  if (concertsSourceFilter.startsWith('ai:')) {
-                    const aiProviderId = concertsSourceFilter.slice(3);
-                    if (event.source !== 'ai' || event.aiProvider !== aiProviderId) return false;
-                  } else if (event.source !== concertsSourceFilter) {
-                    return false;
-                  }
-                }
+                // Source filter ('all', a service id, or 'ai:providerId'). A
+                // show several services list matches each of them
+                // (lib/concert-events.js concertSourceKeys).
+                if (!concertMatchesSource(event, concertsSourceFilter)) return false;
                 // Location filter — coordinate-based distance when available, text fallback
                 if (concertsLocationCoords) {
                   const vLat = event.venue?.latitude;
