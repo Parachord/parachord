@@ -53,3 +53,33 @@ describe('theme tokens', () => {
     expect(contrast(value(dark, '--accent-secondary-fg'), value(dark, '--accent-secondary'))).toBeGreaterThanOrEqual(4.5);
   });
 });
+
+// #1383 step 3: semantic colours and the accent.
+describe('status fills and the accent (#1383 step 3)', () => {
+  const fs2 = require('fs');
+  const path2 = require('path');
+  const app = fs2.readFileSync(path2.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  const html2 = fs2.readFileSync(path2.join(__dirname, '../../index.html'), 'utf8');
+
+  test('the confirm dialog uses the status tokens, one red', () => {
+    const dlg = app.slice(app.indexOf("confirmDialog.type === 'success' ? 'var(--text-success)'"));
+    expect(dlg.slice(0, 3000)).toMatch(/'var\(--fill-error\)'/);
+    expect(dlg.slice(0, 3000)).not.toMatch(/#dc2626|#22c55e/);
+  });
+
+  test('white text never sits on --accent-primary (light purple in dark mode)', () => {
+    expect(app).not.toMatch(/color: '#ffffff', backgroundColor: 'var\(--accent-primary\)'/);
+    expect(app).not.toMatch(/backgroundColor: 'var\(--accent-primary\)', color: 'var\(--bg-primary\)'/);
+  });
+
+  test('no hard-coded accent hex outside the source-colour map', () => {
+    const hits = app.match(/'#7c3aed'/g) || [];
+    expect(hits.length).toBeLessThanOrEqual(1); // shuffleupagus's source colour
+  });
+
+  test('the playbar sliders use the accent, not blue', () => {
+    const sliders = html2.slice(html2.indexOf('.progress-slider::-webkit-slider-thumb'), html2.indexOf('.volume-slider.disabled::-webkit-slider-thumb'));
+    expect(sliders).not.toMatch(/#3b82f6|#60a5fa/);
+    expect(sliders).toMatch(/var\(--playbar-accent\)/);
+  });
+});

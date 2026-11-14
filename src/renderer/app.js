@@ -9364,7 +9364,7 @@ const Parachord = () => {
       type: 'button',
       onClick,
       className: 'px-4 py-2 rounded-lg text-sm hover:opacity-90',
-      style: { backgroundColor: 'var(--accent-primary)', color: 'var(--bg-primary)', border: 'none', cursor: 'pointer' }
+      style: { backgroundColor: 'var(--accent-fill)', color: 'var(--on-accent)', border: 'none', cursor: 'pointer' }
     }, label);
     return React.createElement('div', {
       role: 'alert',
@@ -36451,8 +36451,8 @@ useEffect(() => {
                 className: 'ml-auto sidebar-badge',
                 style: {
                   fontSize: '11px',
-                  backgroundColor: 'var(--accent-primary)',
-                  color: '#ffffff',
+                  backgroundColor: 'var(--accent-fill)',
+                  color: 'var(--on-accent)',
                   padding: '2px 6px',
                   borderRadius: '10px'
                 }
@@ -37199,8 +37199,8 @@ useEffect(() => {
               padding: '12px 16px',
               fontSize: '13px',
               fontWeight: '500',
-              color: '#ffffff',
-              backgroundColor: 'var(--accent-primary)',
+              color: 'var(--on-accent)',
+              backgroundColor: 'var(--accent-fill)',
               border: 'none',
               borderRadius: '10px',
               cursor: 'pointer'
@@ -37343,8 +37343,8 @@ useEffect(() => {
               padding: '12px 16px',
               fontSize: '13px',
               fontWeight: '500',
-              color: '#ffffff',
-              backgroundColor: 'var(--accent-primary)',
+              color: 'var(--on-accent)',
+              backgroundColor: 'var(--accent-fill)',
               border: 'none',
               borderRadius: '10px',
               cursor: 'pointer'
@@ -40504,7 +40504,7 @@ useEffect(() => {
                     placeholder: 'City or region...',
                     className: 'flex-1 text-sm outline-none transition-colors',
                     style: { backgroundColor: 'var(--bg-inset)', color: 'var(--text-primary)', border: '1px solid var(--border-default)', borderRadius: '10px', padding: '8px 14px' },
-                    onFocus: (e) => { e.currentTarget.style.borderColor = '#7c3aed'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(124, 58, 237, 0.15)'; },
+                    onFocus: (e) => { e.currentTarget.style.borderColor = 'var(--accent-primary)'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(124, 58, 237, 0.15)'; },
                     onBlur: (e) => { e.currentTarget.style.borderColor = 'var(--border-default)'; e.currentTarget.style.boxShadow = 'none'; }
                   }),
                   // "Use my location" button
@@ -40589,7 +40589,7 @@ useEffect(() => {
                     value: concertsLocationRadius,
                     onChange: (e) => setConcertsLocationRadius(parseInt(e.target.value)),
                     className: 'w-full',
-                    style: { accentColor: '#7c3aed', height: '4px' }
+                    style: { accentColor: 'var(--accent-primary)', height: '4px' }
                   })
                 ),
                 // Action buttons row
@@ -40622,9 +40622,9 @@ useEffect(() => {
                       setConcertsLocationOpen(false);
                     },
                     disabled: concertsGeocodingLoading,
-                    style: { fontSize: '13px', fontWeight: '500', padding: '6px 16px', borderRadius: '8px', backgroundColor: '#7c3aed', color: '#fff' },
+                    style: { fontSize: '13px', fontWeight: '500', padding: '6px 16px', borderRadius: '8px', backgroundColor: 'var(--accent-fill)', color: '#fff' },
                     onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = '#6d28d9'; },
-                    onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = '#7c3aed'; }
+                    onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'var(--accent-fill)'; }
                   }, concertsGeocodingLoading ? 'Looking up...' : 'Apply')
                 )
               )
@@ -43493,8 +43493,8 @@ useEffect(() => {
                 onClick: () => followRecommendedFriend(currentFriend),
                 className: 'flex items-center gap-2 px-3 py-1.5 text-sm rounded-full transition-colors',
                 style: {
-                  backgroundColor: 'var(--accent-primary)',
-                  color: '#ffffff',
+                  backgroundColor: 'var(--accent-fill)',
+                  color: 'var(--on-accent)',
                   opacity: followingRecommended ? 0.6 : 1,
                   cursor: followingRecommended ? 'default' : 'pointer'
                 }
@@ -46392,7 +46392,7 @@ useEffect(() => {
               // Show queue badge (gray when in spinoff or listen-along mode)
               currentQueue.length > 0 && React.createElement('span', {
                 className: `absolute -top-1 -right-1 text-white rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1 font-medium ${queueAnimating ? 'badge-flash' : ''}`,
-                style: { fontSize: '10px', backgroundColor: (spinoffMode || listenAlongFriend) ? '#6b7280' : '#7c3aed' }
+                style: { fontSize: '10px', backgroundColor: (spinoffMode || listenAlongFriend) ? '#6b7280' : 'var(--accent-fill)' }
               }, currentQueue.length > 99 ? '99+' : currentQueue.length)
             )
           ),
@@ -47441,7 +47441,7 @@ useEffect(() => {
             borderRadius: '10px',
             fontSize: '14px',
             fontWeight: '500',
-            background: aiLoading ? 'rgba(255, 255, 255, 0.05)' : 'linear-gradient(135deg, var(--accent-primary) 0%, #a855f7 50%, #c026d3 100%)',
+            background: aiLoading ? 'rgba(255, 255, 255, 0.05)' : 'linear-gradient(135deg, var(--accent-fill) 0%, #a855f7 50%, #c026d3 100%)',
             color: aiLoading ? 'var(--text-secondary)' : '#ffffff',
             cursor: aiLoading ? 'not-allowed' : 'pointer',
             opacity: aiLoading ? '0.6' : '1'
@@ -48371,7 +48371,7 @@ useEffect(() => {
                   width: '36px',
                   height: '36px',
                   borderRadius: '10px',
-                  backgroundColor: '#7c3aed',
+                  backgroundColor: 'var(--accent-fill)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -48437,7 +48437,7 @@ useEffect(() => {
                   outline: 'none',
                   transition: 'border-color 150ms ease, box-shadow 150ms ease'
                 },
-                onFocus: (e) => { e.target.style.borderColor = '#7c3aed'; e.target.style.boxShadow = '0 0 0 3px rgba(124, 58, 237, 0.25)'; },
+                onFocus: (e) => { e.target.style.borderColor = 'var(--accent-primary)'; e.target.style.boxShadow = '0 0 0 3px rgba(124, 58, 237, 0.25)'; },
                 onBlur: (e) => { e.target.style.borderColor = 'var(--border-default)'; e.target.style.boxShadow = 'none'; },
                 disabled: urlImportLoading,
                 autoFocus: true
@@ -48472,14 +48472,14 @@ useEffect(() => {
                   fontSize: '14px',
                   fontWeight: '500',
                   color: '#ffffff',
-                  backgroundColor: '#7c3aed',
+                  backgroundColor: 'var(--accent-fill)',
                   borderRadius: '8px',
                   cursor: urlImportLoading || !urlImportValue.trim() ? 'not-allowed' : 'pointer',
                   opacity: urlImportLoading || !urlImportValue.trim() ? '0.6' : '1',
                   minWidth: '80px'
                 },
                 onMouseEnter: (e) => { if (!urlImportLoading && urlImportValue.trim()) e.currentTarget.style.backgroundColor = '#6d28d9'; },
-                onMouseLeave: (e) => { if (!urlImportLoading && urlImportValue.trim()) e.currentTarget.style.backgroundColor = '#7c3aed'; }
+                onMouseLeave: (e) => { if (!urlImportLoading && urlImportValue.trim()) e.currentTarget.style.backgroundColor = 'var(--accent-fill)'; }
               },
                 urlImportLoading ? React.createElement('svg', {
                   className: 'w-4 h-4 animate-spin',
@@ -48633,7 +48633,7 @@ useEffect(() => {
               outline: 'none',
               transition: 'border-color 150ms ease, box-shadow 150ms ease'
             },
-            onFocus: (e) => { e.target.style.borderColor = '#7c3aed'; e.target.style.boxShadow = '0 0 0 3px rgba(124, 58, 237, 0.25)'; },
+            onFocus: (e) => { e.target.style.borderColor = 'var(--accent-primary)'; e.target.style.boxShadow = '0 0 0 3px rgba(124, 58, 237, 0.25)'; },
             onBlur: (e) => { e.target.style.borderColor = 'var(--border-default)'; e.target.style.boxShadow = 'none'; },
             autoFocus: true
           }),
@@ -48675,13 +48675,13 @@ useEffect(() => {
               fontSize: '14px',
               fontWeight: '500',
               color: '#ffffff',
-              backgroundColor: '#7c3aed',
+              backgroundColor: 'var(--accent-fill)',
               borderRadius: '10px',
               cursor: addFriendLoading || !addFriendInput.trim() ? 'not-allowed' : 'pointer',
               opacity: addFriendLoading || !addFriendInput.trim() ? '0.35' : '1'
             },
             onMouseEnter: (e) => { if (!addFriendLoading && addFriendInput.trim()) e.currentTarget.style.backgroundColor = '#6d28d9'; },
-            onMouseLeave: (e) => { if (!addFriendLoading && addFriendInput.trim()) e.currentTarget.style.backgroundColor = '#7c3aed'; }
+            onMouseLeave: (e) => { if (!addFriendLoading && addFriendInput.trim()) e.currentTarget.style.backgroundColor = 'var(--accent-fill)'; }
           },
             addFriendLoading && React.createElement('svg', {
               className: 'w-4 h-4 animate-spin',
@@ -51382,7 +51382,7 @@ useEffect(() => {
                     },
                     style: {
                       padding: '6px 12px', fontSize: '12px', fontWeight: '500',
-                      color: '#ffffff', backgroundColor: 'var(--accent-primary)',
+                      color: 'var(--on-accent)', backgroundColor: 'var(--accent-fill)',
                       borderRadius: '8px'
                     }
                   }, 'Sign in')
@@ -54010,9 +54010,9 @@ useEffect(() => {
             React.createElement('span', {
               style: {
                 fontSize: '24px',
-                color: confirmDialog.type === 'success' ? '#22c55e' :
-                  confirmDialog.type === 'error' ? '#dc2626' :
-                  '#7c3aed'
+                color: confirmDialog.type === 'success' ? 'var(--text-success)' :
+                  confirmDialog.type === 'error' ? 'var(--text-danger)' :
+                  'var(--accent-primary)'
               }
             }, confirmDialog.type === 'success' ? '✓' :
                confirmDialog.type === 'error' ? '✕' : 'ℹ')
@@ -54079,10 +54079,10 @@ useEffect(() => {
               padding: '12px 16px',
               fontSize: '13px',
               fontWeight: '500',
-              color: '#ffffff',
-              backgroundColor: confirmDialog.type === 'success' ? '#22c55e' :
-                confirmDialog.type === 'error' ? '#dc2626' :
-                '#7c3aed',
+              color: 'var(--on-accent)',
+              backgroundColor: confirmDialog.type === 'success' ? 'var(--fill-success)' :
+                confirmDialog.type === 'error' ? 'var(--fill-error)' :
+                'var(--accent-fill)',
               border: 'none',
               borderRadius: '10px',
               cursor: 'pointer'
@@ -54153,7 +54153,7 @@ useEffect(() => {
               disabled: amazonManageDialog.relaunching,
               style: {
                 padding: '8px 16px', fontSize: '13px', fontWeight: '500',
-                color: '#ffffff', backgroundColor: 'var(--accent-primary)',
+                color: 'var(--on-accent)', backgroundColor: 'var(--accent-fill)',
                 borderRadius: '8px', opacity: amazonManageDialog.relaunching ? 0.7 : 1
               }
             }, amazonManageDialog.relaunching ? 'Opening Amazon Music…' : 'Sign in')
@@ -54224,7 +54224,7 @@ useEffect(() => {
               fontSize: '13px',
               fontWeight: '500',
               color: '#ffffff',
-              backgroundColor: '#7c3aed',
+              backgroundColor: 'var(--accent-fill)',
               border: 'none',
               borderRadius: '10px',
               cursor: 'pointer'
@@ -54350,7 +54350,7 @@ useEffect(() => {
           React.createElement('span', { style: { fontSize: '11px', color: 'var(--text-tertiary)', marginRight: 'auto' } }, 'Disables the old sync here. Reversible anytime.'),
           React.createElement('button', { onClick: () => setNwayMigrationDialog({ show: false }), style: { padding: '8px 14px', fontSize: '13px', fontWeight: '500', color: 'var(--text-secondary)', backgroundColor: 'transparent', border: '1px solid var(--border-subtle)', borderRadius: '8px', cursor: 'pointer' } }, 'Cancel'),
           (nwayMigrationDialog.summary && (nwayMigrationDialog.summary.hasChanges || nwayMigrationDialog.summary.protected.length)) && React.createElement('button', { onClick: () => reportNwayMigration(), style: { padding: '8px 14px', fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)', backgroundColor: 'transparent', border: '1px solid var(--border-subtle)', borderRadius: '8px', cursor: 'pointer' } }, 'Report a problem'),
-          React.createElement('button', { onClick: () => acceptNwayMigration(), disabled: nwayMigrationDialog.loading || !nwayMigrationDialog.summary, style: { padding: '8px 14px', fontSize: '13px', fontWeight: '500', color: '#ffffff', backgroundColor: (nwayMigrationDialog.loading || !nwayMigrationDialog.summary) ? '#9ca3af' : '#7c3aed', border: 'none', borderRadius: '8px', cursor: (nwayMigrationDialog.loading || !nwayMigrationDialog.summary) ? 'default' : 'pointer' } }, (nwayMigrationDialog.summary && !nwayMigrationDialog.summary.hasChanges) ? 'Switch' : 'Accept changes and switch')
+          React.createElement('button', { onClick: () => acceptNwayMigration(), disabled: nwayMigrationDialog.loading || !nwayMigrationDialog.summary, style: { padding: '8px 14px', fontSize: '13px', fontWeight: '500', color: '#ffffff', backgroundColor: (nwayMigrationDialog.loading || !nwayMigrationDialog.summary) ? '#9ca3af' : 'var(--accent-fill)', border: 'none', borderRadius: '8px', cursor: (nwayMigrationDialog.loading || !nwayMigrationDialog.summary) ? 'default' : 'pointer' } }, (nwayMigrationDialog.summary && !nwayMigrationDialog.summary.hasChanges) ? 'Switch' : 'Accept changes and switch')
         )
       )
     ),
@@ -54403,7 +54403,7 @@ useEffect(() => {
               React.createElement('button', {
                 onClick: () => applyDisable(false),
                 className: 'w-full transition-colors',
-                style: { padding: '12px 16px', fontSize: '13px', fontWeight: '500', color: '#ffffff', backgroundColor: '#7c3aed', border: 'none', borderRadius: '10px', cursor: 'pointer' }
+                style: { padding: '12px 16px', fontSize: '13px', fontWeight: '500', color: '#ffffff', backgroundColor: 'var(--accent-fill)', border: 'none', borderRadius: '10px', cursor: 'pointer' }
               }, 'Stop Syncing'),
               React.createElement('button', {
                 onClick: () => applyDisable(true),
@@ -55458,8 +55458,8 @@ useEffect(() => {
                 padding: '10px 24px',
                 fontSize: '14px',
                 fontWeight: '500',
-                color: '#ffffff',
-                backgroundColor: 'var(--accent-primary)',
+                color: 'var(--on-accent)',
+                backgroundColor: 'var(--accent-fill)',
                 border: 'none',
                 borderRadius: '10px',
                 cursor: 'pointer',
@@ -55590,8 +55590,8 @@ useEffect(() => {
                 padding: '10px 24px',
                 fontSize: '14px',
                 fontWeight: '500',
-                color: '#ffffff',
-                backgroundColor: 'var(--accent-primary)',
+                color: 'var(--on-accent)',
+                backgroundColor: 'var(--accent-fill)',
                 border: 'none',
                 borderRadius: '10px',
                 cursor: 'pointer',
@@ -55726,8 +55726,8 @@ useEffect(() => {
                 padding: '10px 24px',
                 fontSize: '14px',
                 fontWeight: '500',
-                color: '#ffffff',
-                backgroundColor: 'var(--accent-primary)',
+                color: 'var(--on-accent)',
+                backgroundColor: 'var(--accent-fill)',
                 border: 'none',
                 borderRadius: '10px',
                 cursor: 'pointer',

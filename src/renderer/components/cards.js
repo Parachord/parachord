@@ -1753,7 +1753,7 @@ const ReleasePage = ({
         onRetryLoad && React.createElement('button', {
           onClick: (e) => { e.stopPropagation(); onRetryLoad(); },
           className: 'px-4 py-2 text-white rounded-lg text-sm transition-opacity hover:opacity-90',
-          style: { backgroundColor: 'var(--accent-primary)' }
+          style: { backgroundColor: 'var(--accent-fill)' }
         }, 'Try Again')
       ) :
       // Show skeleton while tracks are loading

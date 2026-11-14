@@ -12,7 +12,7 @@ const { readableTextOn } = require('../lib/readable-text');
 // The selected fill of a chip with no colour of its own (All, a category):
 // the sidebar's accent. Fixed, because the accent variable turns light purple
 // in dark mode. Its text is white.
-const CHIP_NEUTRAL_FILL = '#7c3aed'; // fill-accent
+const CHIP_NEUTRAL_FILL = 'var(--accent-fill)'; // fill-accent
 const CHIP_NEUTRAL_TEXT = '#fff'; // on-color
 
 const FILTER_CHIPS_ROW_STYLE = { display: 'flex', flexWrap: 'wrap', gap: '8px' };

@@ -153,7 +153,7 @@ describe('SourceFilter colours', () => {
   });
   test('All stays neutral and has no dot', () => {
     const html = h(S.SourceFilter, { sources, value: 'All' });
-    expect(html).toMatch(/aria-pressed="true"[^>]*background-color:#7c3aed/);
+    expect(html).toMatch(/aria-pressed="true"[^>]*background-color:var\(--accent-fill\)/);
   });
 });
 

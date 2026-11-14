@@ -63,7 +63,7 @@ const HOME_PAGE_HANDLERS = [
 // Playing recent loves from Home: the context isActiveContext matches.
 const LOVES_CONTEXT = { type: 'loves', name: 'Recent Loves' };
 
-const PLAY_FILL = '#7c3aed'; // fill-accent
+const PLAY_FILL = 'var(--accent-fill)'; // fill-accent
 const ON_FILL = '#fff'; // on-color
 
 const artKey = (artist, album) => `${artist || ''}\u0000${album || ''}`.toLowerCase();

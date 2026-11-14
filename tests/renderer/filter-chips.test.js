@@ -23,7 +23,7 @@ describe('filter chip style', () => {
       padding: '8px 12px', minHeight: '36px', display: 'inline-flex', alignItems: 'center', gap: '8px',
     });
     expect(F.FILTER_CHIP_DOT_STYLE).toEqual({ width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0 });
-    expect(F.CHIP_NEUTRAL_FILL).toBe('#7c3aed');
+    expect(F.CHIP_NEUTRAL_FILL).toBe('var(--accent-fill)');
   });
 });
 
@@ -42,7 +42,7 @@ describe('FilterChips', () => {
     const idle = h({ chips, value: 'ep' });
     expect(idle).toMatch(/aria-pressed="false"[^>]*background-color:var\(--bg-secondary\);color:var\(--text-primary\)"[^>]*>All</);
     const picked = h({ chips, value: 'all' });
-    expect(picked).toMatch(/aria-pressed="true"[^>]*background-color:#7c3aed;color:#fff"[^>]*>All</);
+    expect(picked).toMatch(/aria-pressed="true"[^>]*background-color:var\(--accent-fill\);color:#fff"[^>]*>All</);
     expect(picked.match(/data-chip-dot/g)).toHaveLength(1); // the idle EPs chip's
   });
 

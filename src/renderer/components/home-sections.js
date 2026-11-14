@@ -26,9 +26,9 @@ const e = React.createElement;
 // Drawn over album art or on a filled accent: the same in both themes.
 const CHIP_BG = 'rgba(255,255,255,.94)'; // on-art
 const CHIP_FG = '#111827'; // on-art
-const PLAY_FILL = '#7c3aed'; // fill-accent
+const PLAY_FILL = 'var(--accent-fill)'; // fill-accent
 const ON_FILL = '#fff'; // on-color
-const SHUFFLE_COLOR = '#7c3aed'; // fill-accent: the accent var turns light purple in dark mode
+const SHUFFLE_COLOR = 'var(--accent-fill)'; // fill-accent: the accent var turns light purple in dark mode
 
 // The Fresh Drops and Critical Darlings pages' hero gradients (app.js) and
 // the collapsed hero title's shadow, which the halves' bands copy.

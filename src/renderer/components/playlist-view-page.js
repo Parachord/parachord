@@ -330,9 +330,9 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                     setEditedPlaylistData(null);
                   },
                   className: 'flex items-center gap-1 px-3 py-1 text-xs text-white rounded transition-colors no-drag',
-                  style: { backgroundColor: '#7c3aed' },
+                  style: { backgroundColor: 'var(--accent-fill)' },
                   onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = '#6d28d9'; },
-                  onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = '#7c3aed'; }
+                  onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'var(--accent-fill)'; }
                 }, 'DONE')
               ) : React.createElement('button', {
                 onClick: () => {
@@ -898,7 +898,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                       onChange: (e) => setEditedPlaylistData(prev => ({ ...prev, creator: e.target.value })),
                       className: 'text-sm rounded px-2 py-1 w-full focus:outline-none',
                       style: { backgroundColor: 'var(--bg-inset)', color: 'var(--text-secondary)', border: '1px solid var(--border-default)' },
-                      onFocus: (e) => { e.currentTarget.style.borderColor = '#7c3aed'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(124, 58, 237, 0.15)'; },
+                      onFocus: (e) => { e.currentTarget.style.borderColor = 'var(--accent-primary)'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(124, 58, 237, 0.15)'; },
                       onBlur: (e) => { e.currentTarget.style.borderColor = 'var(--border-default)'; e.currentTarget.style.boxShadow = 'none'; },
                       placeholder: 'Creator name'
                     })
@@ -995,7 +995,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                   onChange: (e) => setEditedPlaylistData(prev => ({ ...prev, title: e.target.value })),
                   className: 'font-bold text-sm leading-tight rounded px-2 py-1 w-full focus:outline-none',
                   style: { backgroundColor: 'var(--bg-inset)', color: 'var(--text-primary)', border: '1px solid var(--border-default)' },
-                  onFocus: (e) => { e.currentTarget.style.borderColor = '#7c3aed'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(124, 58, 237, 0.15)'; },
+                  onFocus: (e) => { e.currentTarget.style.borderColor = 'var(--accent-primary)'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(124, 58, 237, 0.15)'; },
                   onBlur: (e) => { e.currentTarget.style.borderColor = 'var(--border-default)'; e.currentTarget.style.boxShadow = 'none'; },
                   placeholder: 'Playlist name'
                 }),
