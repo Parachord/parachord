@@ -703,6 +703,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                     const isNowPlaying = isCurrentTrack && playbackContext?.type === 'search';
 
                     return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`,
+                    current: isNowPlaying,
                       key: track._rowKey || track.id,
                       'data-track-id': track.id,
                       ref: (el) => {
@@ -1077,8 +1078,10 @@ const SearchPage = React.memo(function SearchPage(props) {
               backgroundColor: 'var(--bg-secondary)'
             }
           },
-            React.createElement('span', {
+            React.createElement('h1', {
+              // The page's heading (#1386), drawn as the small header label.
               style: {
+                margin: 0,
                 fontSize: '11px',
                 fontWeight: '600',
                 letterSpacing: '0.08em',

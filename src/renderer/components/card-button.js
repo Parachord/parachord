@@ -19,12 +19,15 @@
 //   - Shift+F10 or the Menu key on the card opens the same menu as a
 //     right-click (onContextMenu gets the keyboard event).
 //
-// Props: label (the card's name, read by screen readers), onActivate,
+// Props: label (the card's name, read by screen readers), current (the
+// playing row: aria-current on its button, so a screen reader says so),
+// tooltip (a note for the whole card, on the stretched button), onActivate,
 // onContextMenu, className, style, children, and anything else for the root
-// (draggable, onDragStart, onMouseEnter, ...). Props-driven; no hooks;
-// loads under plain Node.
+// (draggable, onDragStart, onMouseEnter, ...), and a ref, which lands on the
+// root. Props-driven; no hooks. React must be global when it loads (as for
+// ui-atoms' React.memo).
 
-function CardButton({ label, onActivate, onContextMenu, className, style, children, ...rest }) {
+function renderCardButton({ label, current, tooltip, onActivate, onContextMenu, className, style, children, ...rest }, ref) {
   const e = React.createElement;
   const openMenu = (ev) => {
     if (!onContextMenu) return;
@@ -34,6 +37,7 @@ function CardButton({ label, onActivate, onContextMenu, className, style, childr
     }
   };
   return e('div', Object.assign({}, rest, {
+    ref,
     className: ['card-button', className].filter(Boolean).join(' '),
     style: Object.assign({ position: 'relative' }, style),
     onContextMenu,
@@ -41,11 +45,27 @@ function CardButton({ label, onActivate, onContextMenu, className, style, childr
   children,
   e('button', {
     type: 'button',
+    // A draggable card (a track, an album) drags from its button too: the
+    // drag starts on the button and bubbles to the card's onDragStart, so it
+    // never depends on the engine starting a drag from a button child.
+    draggable: rest.draggable ? true : undefined,
     className: 'card-button-hit no-drag',
     'aria-label': label,
+    'aria-current': current ? 'true' : undefined,
+    // A note about the whole card (why it was recommended), shown by the
+    // shared tooltip on hover or keyboard focus.
+    'data-tooltip': tooltip || undefined,
+    'data-tooltip-position': tooltip ? 'bottom' : undefined,
     onClick: onActivate,
     onKeyDown: openMenu,
   }));
 }
+
+// forwardRef: rows hand CardButton a ref (the resolution scheduler's
+// visibility observer, the queue's virtualizer measuring rows). A plain
+// function component drops a ref, which left every track row unobserved, so
+// playlists, Collection, Search, albums and History stopped resolving.
+const CardButton = React.forwardRef(renderCardButton);
+CardButton.displayName = 'CardButton';
 
 module.exports = { CardButton };

@@ -381,6 +381,11 @@
     :focus:not(:focus-visible) {
       outline: none;
     }
+    /* On the always-dark surfaces (.on-dark: the playbar, the queue drawer,
+       the AI prompt and chat panel) the accent ring is hard to see in light
+       mode (#7c3aed on #1f2937); they get a light ring instead. */
+    .on-dark :focus-visible,
+    .on-dark .card-button-hit:focus-visible { outline-color: rgba(255, 255, 255, 0.85); }
 
     input:focus-visible,
     textarea:focus-visible,
@@ -843,7 +848,10 @@
     .card-button:has(:focus-visible) .card-actions button { pointer-events: auto; }
     /* The card's own buttons and links sit above the stretched one. Zero
        specificity, so an element's own position (absolute) still wins. */
-    :where(.card-button) :where(button, a):not(:where(.card-button-hit)) { position: relative; z-index: 2; }
+    /* Also form fields (a row's inline text field), small icons that carry
+       their own tooltip, and handles marked .card-above (the queue drawer's
+       resize grip): under the stretched button they'd get no clicks or hover. */
+    :where(.card-button) :where(button, a, input, select, textarea, label, [data-tooltip], .card-above):not(:where(.card-button-hit)) { position: relative; z-index: 2; }
     /* A part shown on hover (group-hover:opacity-100) also shows on keyboard focus. */
     .card-button:has(:focus-visible) .card-reveal { opacity: 1; }
     .card-button .card-zoom { transition: transform 300ms ease, opacity 300ms ease; }
@@ -1127,6 +1135,30 @@
 
     .friend-status-change {
       animation: friendStatusChange 0.3s ease-in-out forwards;
+    }
+
+    /* Reduced motion (#1386), one block for the whole app. With the system
+       setting on, animations and transitions finish at once: no shimmer
+       sweep, pulse, marquee, fade-up or hero transition, and no hover zoom.
+       Spinners keep turning (they say something is loading); entrance
+       animations end at their final, visible state. */
+    @media (prefers-reduced-motion: reduce) {
+      *:not(.animate-spin):not([data-icon="Spinner"]),
+      *:not(.animate-spin)::before,
+      *:not(.animate-spin)::after {
+        animation-duration: 0.01ms !important;
+        animation-delay: 0ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        transition-delay: 0ms !important;
+        scroll-behavior: auto !important;
+      }
+      .card-fade-up, .now-playing-pending { opacity: 1 !important; transform: none !important; }
+      .animate-shimmer, .animate-marquee { animation: none !important; }
+      .card-button:hover .card-zoom,
+      [class*="hover:scale-"]:hover,
+      [class*="group-hover:scale-"],
+      [class*="group-hover/art:scale-"] { transform: none !important; }
     }
   </style>
 </head>

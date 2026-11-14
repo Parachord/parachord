@@ -44,8 +44,8 @@ describe('Recommendations cards carry it', () => {
   test('album and artist cards render the badge on the cover', () => {
     expect(app.match(/shuffleupagusBadgeProps\(item\) && React\.createElement\(ReasonBadge, shuffleupagusBadgeProps\(item\)\)/g)).toHaveLength(2);
   });
-  test("a Shuffleupagus pick's reason is on the badge, not also on the name", () => {
-    expect(app.match(/item\.reason && !shuffleupagusBadgeProps\(item\)\n\s*\? React\.createElement\(FixedTooltip/g)).toHaveLength(2);
+  test("a Shuffleupagus pick's reason is on the badge; any other pick's reason is the card's tooltip", () => {
+    expect(app.match(/tooltip: item\.reason && !shuffleupagusBadgeProps\(item\) \? item\.reason : undefined,/g)).toHaveLength(2);
   });
   test('Home uses the same component', () => {
     const home = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/home-sections.js'), 'utf8');

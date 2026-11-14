@@ -1749,6 +1749,7 @@ const ReleasePage = ({
             const isNowPlaying = isCurrentTrack && playbackContext?.type === 'album' && playbackContext?.id === release.id;
 
             return React.createElement(CardButton, { label: track.title,
+            current: isNowPlaying,
               key: index,
               'data-track-id': trackId,
               ref: (el) => {

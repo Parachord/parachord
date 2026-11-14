@@ -279,6 +279,7 @@ const VirtualizedQueueList = React.memo(({
     const isFallingDown = droppingFromIndex !== null && index <= droppingFromIndex;
 
     return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`,
+    current: isCurrentTrack,
       key: track.id,
       'data-index': index,
       ref: virtualRow ? virtualizer.measureElement : undefined,

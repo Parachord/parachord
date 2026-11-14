@@ -504,6 +504,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                   const isResolving = Object.keys(effectiveSources).length === 0;
 
                   return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`,
+                  current: isNowPlaying,
                     ref: (el) => {
                       if (el) {
                         collectionTrackRowRefs.current.set(track.id, el);

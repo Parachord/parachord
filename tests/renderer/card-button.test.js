@@ -15,12 +15,12 @@ test('a container with a labelled button, its content before the button', () => 
   const html = renderToStaticMarkup(React.createElement(CardButton, { label: 'Far In by Helado Negro', draggable: true },
     React.createElement('div', { className: 'card-actions' }, React.createElement('button', { type: 'button' }, 'Play'))));
   expect(html).toMatch(/^<div draggable="true" class="card-button" style="position:relative">/);
-  expect(html).toMatch(/<\/div><button type="button" class="card-button-hit no-drag" aria-label="Far In by Helado Negro"><\/button><\/div>$/);
+  expect(html).toMatch(/<\/div><button type="button" draggable="true" class="card-button-hit no-drag" aria-label="Far In by Helado Negro"><\/button><\/div>$/);
 });
 
 test('Shift+F10 and the Menu key open the right-click menu; other keys do not', () => {
   const onContextMenu = jest.fn();
-  const el = CardButton({ label: 'x', onContextMenu });
+  const el = CardButton.render({ label: 'x', onContextMenu }, null);
   const hit = el.props.children[1];
   const key = (k, shiftKey = false) => hit.props.onKeyDown({ key: k, shiftKey, preventDefault() {} });
   key('Enter'); key('F10');
@@ -45,3 +45,69 @@ test('the card family uses it, and no card is a button holding buttons', () => {
     expect([name, /return React\.createElement\('button'/.test(body)]).toEqual([name, false]);
   }
 });
+
+// A row hands CardButton a ref (the resolution scheduler's visibility
+// observer, the queue's virtualizer). Dropping it left every track row
+// unobserved, so nothing resolved.
+test('a ref reaches the root element', () => {
+  const ref = () => {};
+  const el = CardButton.render({ label: 'x' }, ref);
+  expect(el.type).toBe('div');
+  expect(el.ref).toBe(ref);
+});
+
+test('every row that passes a ref passes it to CardButton, which forwards it', () => {
+  const src = read('src/renderer/components/card-button.js');
+  expect(src).toContain('const CardButton = React.forwardRef(renderCardButton);');
+});
+
+
+// Under the stretched button nothing inside a card gets the pointer unless
+// index.html lifts it (buttons, links, form fields, [data-tooltip],
+// .card-above). An inner drag source, mouse-down handler or a Tooltip around
+// plain text there is dead: the playlists grid couldn't be dragged, the
+// queue drawer couldn't be resized, and reason tooltips never showed.
+describe('nothing inside a card depends on the pointer unless it is lifted', () => {
+  const { parse } = require('@babel/parser');
+  const LIFTED = new Set(['button', 'a', 'input', 'select', 'textarea', 'label']);
+  const files = ['src/renderer/app.js', ...fs.readdirSync(path.join(root, 'src/renderer/components')).filter((f) => f.endsWith('.js')).map((f) => `src/renderer/components/${f}`)];
+  test.each(files)('%s', (file) => {
+    const src = read(file);
+    const ast = parse(src, { sourceType: 'script', errorRecovery: true });
+    const bad = [];
+    (function walk(n, inCard) {
+      if (!n || typeof n.type !== 'string') return;
+      let card = inCard;
+      const isCE = n.type === 'CallExpression' && n.callee.type === 'MemberExpression' && n.callee.property.name === 'createElement' && n.arguments[0];
+      if (isCE && n.arguments[0].type === 'Identifier' && n.arguments[0].name === 'CardButton') card = true;
+      else if (isCE && inCard) {
+        const tag = n.arguments[0].type === 'StringLiteral' ? n.arguments[0].value : n.arguments[0].name;
+        const props = n.arguments[1] && n.arguments[1].type === 'ObjectExpression' ? n.arguments[1].properties.filter((p) => p.key) : [];
+        const keys = props.map((p) => p.key.name || p.key.value);
+        const cls = (props.find((p) => (p.key.name || p.key.value) === 'className') || {}).value;
+        const lifted = LIFTED.has(tag) || keys.includes('data-tooltip') || (cls && /card-above|card-actions/.test(src.slice(cls.start, cls.end)));
+        if (!lifted && keys.some((k) => /^(draggable|onDragStart|onMouseDown|onPointerDown)$/.test(k))) bad.push(`${n.loc.start.line} ${tag} ${keys.join(',')}`);
+        if ((tag === 'Tooltip' || tag === 'FixedTooltip') && n.arguments[2]) {
+          const child = n.arguments[2];
+          const childTag = child.type === 'CallExpression' && child.arguments[0] ? (child.arguments[0].value || child.arguments[0].name) : '';
+          if (!LIFTED.has(childTag)) bad.push(`${n.loc.start.line} ${tag} around ${childTag || child.type}`);
+        }
+      }
+      for (const k in n) {
+        if (k === 'loc') continue;
+        const v = n[k];
+        if (Array.isArray(v)) v.forEach((c) => walk(c, card));
+        else if (v && typeof v.type === 'string') walk(v, card);
+      }
+    })(ast, false);
+    expect(bad).toEqual([]);
+  });
+});
+
+test('a draggable card drags from its stretched button too', () => {
+  const el = CardButton.render({ label: 'x', draggable: true, onDragStart: () => {} }, null);
+  expect(el.props.draggable).toBe(true);
+  expect(el.props.children[1].props.draggable).toBe(true);
+  expect(CardButton.render({ label: 'x' }, null).props.children[1].props.draggable).toBeUndefined();
+});
+

@@ -610,8 +610,9 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                 onMouseLeave: (e) => e.currentTarget.style.color = 'var(--text-tertiary)'
               }, currentArtist?.name || currentRelease?.artist?.name || 'Artist'),
               React.createElement('span', { style: { color: 'var(--border-default)' } }, '/'),
-              React.createElement('span', { style: { color: 'var(--text-secondary)' }, className: 'uppercase' },
-                currentRelease?.title || 'Album Details'
+              // The album's heading (#1386), drawn as the breadcrumb's last part.
+              React.createElement('h2', { style: { color: 'var(--text-secondary)', margin: 0, font: 'inherit', display: 'inline' }, className: 'uppercase' },
+                currentRelease?.title || 'Album details'
               )
             ),
             // Empty div to maintain layout (no close button needed with breadcrumb)

@@ -470,6 +470,10 @@ const PlaybackProgress = React.memo(function PlaybackProgress({
     max: duration || 100,
     value: shown,
     disabled: seekDisabled,
+    // A screen reader hears "Seek, 1:23 of 4:56", not a raw number.
+    'aria-label': 'Seek',
+    'aria-valuetext': hasTrack && !browserPlaybackActive && duration
+      ? `${formatTime(shown)} of ${formatTime(duration)}` : 'Nothing playing',
     onChange: (e) => onSeek(Number(e.target.value)),
     className: `progress-slider w-full h-1 rounded-full ${seekDisabled ? 'bg-gray-600 opacity-50' : 'bg-gray-600'}`
   });

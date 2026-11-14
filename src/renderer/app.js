@@ -15384,6 +15384,20 @@ ${trackListXml}
       if (e.key === 'Escape' && activeView === 'search') {
         navigateBack();
       }
+
+      // Space plays and pauses (#1386), unless focus is on something Space
+      // already operates (a button, link, checkbox, slider, select) or a
+      // dialog or menu is open, so it never fights a control.
+      if ((e.key === ' ' || e.code === 'Space') && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        const el = activeElement;
+        const operates = el && el !== document.body && el.closest &&
+          el.closest('button, a[href], input, select, textarea, summary, [role="button"], [role="slider"], [role="switch"], [role="checkbox"], [role="menuitem"], [role="menuitemradio"], [role="option"], [role="tab"], [contenteditable="true"]');
+        const overlay = document.querySelector('[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]');
+        if (!operates && !overlay && handlePlayPauseRef.current) {
+          e.preventDefault();
+          handlePlayPauseRef.current();
+        }
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
@@ -36164,8 +36178,9 @@ useEffect(() => {
     React.createElement('div', {
       className: 'flex-1 flex overflow-hidden'
     },
-      // Sidebar
-      React.createElement('div', {
+      // Sidebar: the app's navigation landmark (#1386)
+      React.createElement('nav', {
+        'aria-label': 'Main',
         className: 'w-64 bg-surface-subtle border-r border-line flex flex-col no-drag',
         onDragOver: (e) => {
           // Show Add to Playlist panel when dragging a track over sidebar
@@ -36816,8 +36831,8 @@ useEffect(() => {
       }),
       React.createElement(NowPlayingAnnouncer, { track: currentTrack }),
 
-      // Main content area
-      React.createElement('div', {
+      // Main content area: the main landmark (#1386)
+      React.createElement('main', {
         ref: mainContentRef,
         className: 'flex-1 flex flex-col overflow-hidden page-bg relative'
       },
@@ -37370,6 +37385,25 @@ useEffect(() => {
 
                   return React.createElement(CardButton, { label: playlist.title,
                     key: playlist.id,
+                    // The card is the drag source: under CardButton's stretched
+                    // button an inner draggable can't start a drag.
+                    draggable: true,
+                    onDragStart: (e) => {
+                      const tracksWithIds = (playlist.tracks || []).map(track => {
+                        const trackId = trackSlug(track.artist || 'unknown', track.title || 'untitled', track.album || 'noalbum');
+                        return { ...track, id: trackId, sources: {} };
+                      });
+                      e.dataTransfer.effectAllowed = 'copy';
+                      e.dataTransfer.setData('text/plain', JSON.stringify({
+                        type: 'playlist',
+                        playlist: {
+                          id: playlist.id,
+                          title: playlist.title,
+                          creator: playlist.creator,
+                          tracks: tracksWithIds
+                        }
+                      }));
+                    },
                     onActivate: (e) => {
                       e.preventDefault();
                       e.stopPropagation();
@@ -37394,26 +37428,9 @@ useEffect(() => {
                       animationDelay: `${animationDelay}ms`
                     }
                   },
-                    // Album art mosaic or placeholder (draggable)
+                    // Album art mosaic or placeholder (the card is the drag source)
                     React.createElement('div', {
-                      className: 'relative aspect-square rounded-lg overflow-hidden mb-2 cursor-grab active:cursor-grabbing album-art-container',
-                      draggable: true,
-                      onDragStart: (e) => {
-                        const tracksWithIds = (playlist.tracks || []).map(track => {
-                          const trackId = trackSlug(track.artist || 'unknown', track.title || 'untitled', track.album || 'noalbum');
-                          return { ...track, id: trackId, sources: {} };
-                        });
-                        e.dataTransfer.effectAllowed = 'copy';
-                        e.dataTransfer.setData('text/plain', JSON.stringify({
-                          type: 'playlist',
-                          playlist: {
-                            id: playlist.id,
-                            title: playlist.title,
-                            creator: playlist.creator,
-                            tracks: tracksWithIds
-                          }
-                        }));
-                      }
+                      className: 'relative aspect-square rounded-lg overflow-hidden mb-2 album-art-container',
                     },
                       hasCachedCovers ?
                         React.createElement('div', { className: 'grid grid-cols-2 grid-rows-2 w-full h-full' },
@@ -37457,7 +37474,7 @@ useEffect(() => {
                       },
                         playlist.source === 'hosted-xspf' && React.createElement('span', {
                           className: 'bg-white/90 backdrop-blur-sm text-blue-500 text-xs px-2 py-0.5 rounded-full font-medium',
-                          title: 'Hosted playlist'
+                          'data-tooltip': 'Hosted playlist'
                         }, '🌐 Hosted'),
                         React.createElement('button', {
                           onClick: async (e) => {
@@ -37480,7 +37497,7 @@ useEffect(() => {
                       },
                         React.createElement('span', {
                           className: 'bg-white/90 backdrop-blur-sm text-accent text-xs px-2 py-0.5 rounded-full font-medium',
-                          title: `Generated by ${playlist.creator || 'AI'}`
+                          'data-tooltip': `Generated by ${playlist.creator || 'AI'}`
                         }, '✨ AI')
                       ),
 
@@ -37579,7 +37596,7 @@ useEffect(() => {
                       playlist.title,
                       playlist.syncedFrom?.isCollaborator === true && React.createElement('span', {
                         className: 'shared-playlist-badge',
-                        title: "You're a collaborator on this playlist — your edits sync to other collaborators",
+                        'data-tooltip': "You're a collaborator on this playlist — your edits sync to other collaborators",
                         style: {
                           fontSize: '10px',
                           padding: '2px 6px',
@@ -37734,7 +37751,7 @@ useEffect(() => {
                       playlist.title,
                       playlist.syncedFrom?.isCollaborator === true && React.createElement('span', {
                         className: 'shared-playlist-badge',
-                        title: "You're a collaborator on this playlist — your edits sync to other collaborators",
+                        'data-tooltip': "You're a collaborator on this playlist — your edits sync to other collaborators",
                         style: {
                           fontSize: '10px',
                           padding: '2px 6px',
@@ -37754,12 +37771,12 @@ useEffect(() => {
                   // Hosted badge (only for actual hosted XSPF, not Spotify/Apple Music imports)
                   playlist.sourceUrl && playlist.source === 'hosted-xspf' && React.createElement('span', {
                     className: 'text-xs text-ink-info bg-tint-info px-2 py-1 rounded-full font-medium flex-shrink-0',
-                    title: 'Hosted playlist'
+                    'data-tooltip': 'Hosted playlist'
                   }, '🌐 Hosted'),
                   // AI badge
                   playlist.isAiPlaylist && !playlist.sourceUrl && React.createElement('span', {
                     className: 'text-xs text-accent bg-accent-tint px-2 py-1 rounded-full font-medium flex-shrink-0',
-                    title: `Generated by ${playlist.creator || 'AI'}`
+                    'data-tooltip': `Generated by ${playlist.creator || 'AI'}`
                   }, '✨ AI'),
                   // Track count
                   React.createElement('div', { className: 'text-sm text-ink-tertiary flex-shrink-0 w-20 text-right' },
@@ -38400,6 +38417,7 @@ useEffect(() => {
                   const isNowPlaying = isCurrentTrack && isPlaying;
 
                   return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`,
+                  current: isNowPlaying,
                     key: track.id,
                     'data-track-id': track.id,
                     ref: (el) => {
@@ -38783,6 +38801,9 @@ useEffect(() => {
                 },
                   filtered.map((release, index) =>
                     React.createElement(CardButton, { label: `${release.title} by ${release.artist}`,
+                      // Why it is in Fresh Drops: the card's tooltip (it was on the title,
+                      // which the stretched button now covers).
+                      tooltip: release.artistSource === 'collection' ? `${release.artist} is in your collection` : release.artistSource === 'history' ? `Based on your listening history of ${release.artist}` : `${release.artist} is in your library`,
                       key: release.id,
                       className: 'group text-left release-card card-fade-up',
                       style: {
@@ -38949,13 +38970,8 @@ useEffect(() => {
                           )
                         )
                       ),
-                      // Album title + artist with reason tooltip
-                      React.createElement(FixedTooltip, {
-                        content: release.artistSource === 'collection' ? `${release.artist} is in your collection`
-                          : release.artistSource === 'history' ? `Based on your listening history of ${release.artist}`
-                          : `${release.artist} is in your library`
-                      },
-                        React.createElement('div', null,
+                      // Album title + artist (the reason is the card's tooltip)
+                      React.createElement('div', null,
                           React.createElement('h3', {
                             style: {
                               fontWeight: '500',
@@ -38993,7 +39009,6 @@ useEffect(() => {
                             }, isFuture ? `Coming ${formatted}` : formatted);
                           })()
                         )
-                      )
                     )
                   )
                 )
@@ -40334,6 +40349,7 @@ useEffect(() => {
               const img = imageFor(item);
               const imgLoaded = imageLoadedFor(item);
               return React.createElement(CardButton, { label: item.name,
+                tooltip: item.reason && !shuffleupagusBadgeProps(item) ? item.reason : undefined,
                 key: item.id,
                 className: 'rounded-lg overflow-hidden cursor-pointer group release-card card-fade-up',
                 style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)', animationDelay: `${Math.min(index * 30, 300)}ms` },
@@ -40411,10 +40427,9 @@ useEffect(() => {
                   )
                 ),
                 React.createElement('div', { className: 'p-3' },
-                  item.reason && !shuffleupagusBadgeProps(item)
-                    ? React.createElement(FixedTooltip, { content: item.reason },
-                        React.createElement('p', { className: 'font-medium text-ink-primary truncate text-sm transition-colors' }, item.name))
-                    : React.createElement('p', { className: 'font-medium text-ink-primary truncate text-sm transition-colors' }, item.name)
+                  // The reason is the card's tooltip (CardButton tooltip), since
+                  // the stretched button takes the hover from the name.
+                  React.createElement('p', { className: 'font-medium text-ink-primary truncate text-sm transition-colors' }, item.name)
                 )
               );
             };
@@ -40433,6 +40448,7 @@ useEffect(() => {
                 return albumTracks;
               };
               return React.createElement(CardButton, { label: `${item.name} by ${item.artist}`,
+                tooltip: item.reason && !shuffleupagusBadgeProps(item) ? item.reason : undefined,
                 key: item.id,
                 className: 'rounded-lg overflow-hidden cursor-pointer group release-card card-fade-up',
                 style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)', animationDelay: `${Math.min(index * 30, 300)}ms` },
@@ -40515,9 +40531,10 @@ useEffect(() => {
                   }),
                   React.createElement('div', {
                     className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 card-reveal pointer-events-none group-hover:pointer-events-auto transition-opacity duration-200 flex items-center justify-center gap-3',
-                    // Over the cover and the "Coming" badge (same layer, later), under
-                    // the reason badge (zIndex 2), which stays hoverable.
-                    style: { borderRadius: '6px', zIndex: 1 }
+                    // Over the cover, the "Coming" badge (1) and CardButton's
+                    // stretched button (1), so its Play / Queue take clicks;
+                    // under the reason badge (3), which stays hoverable.
+                    style: { borderRadius: '6px', zIndex: 2 }
                   },
                     React.createElement('button', {
                       onClick: async (e) => {
@@ -40576,10 +40593,9 @@ useEffect(() => {
                   )
                 ),
                 React.createElement('div', { className: 'p-3' },
-                  item.reason && !shuffleupagusBadgeProps(item)
-                    ? React.createElement(FixedTooltip, { content: item.reason },
-                        React.createElement('p', { className: 'font-medium text-ink-primary truncate text-sm transition-colors' }, item.name))
-                    : React.createElement('p', { className: 'font-medium text-ink-primary truncate text-sm transition-colors' }, item.name),
+                  // The reason is the card's tooltip (CardButton tooltip), since
+                  // the stretched button takes the hover from the name.
+                  React.createElement('p', { className: 'font-medium text-ink-primary truncate text-sm transition-colors' }, item.name),
                   React.createElement('p', { className: 'text-xs text-ink-tertiary truncate mt-0.5' }, item.artist || '')
                 )
               );
@@ -40810,6 +40826,7 @@ useEffect(() => {
                 handlePlay(playResolverId ? { ...track, preferredResolver: playResolverId } : track);
               };
               return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`,
+              current: isNowPlaying,
                 key: track.id,
                 'data-track-id': track.id,
                 ref: (el) => {
@@ -42851,8 +42868,10 @@ useEffect(() => {
               backgroundColor: 'var(--bg-secondary)'
             }
           },
-            React.createElement('span', {
+            React.createElement('h1', {
+              // The page's heading (#1386), drawn as the small header label.
               style: {
+                margin: 0,
                 fontSize: '11px',
                 fontWeight: '600',
                 letterSpacing: '0.08em',
@@ -44730,7 +44749,8 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
     // Layout: [Left: transport + queue] [Center: track info] [Right: progress + shuffle + repeat + volume]
     // z-50 to stay above queue drawer
     React.createElement('div', {
-      className: 'backdrop-blur-xl py-3 no-drag flex-shrink-0 relative z-50',
+      role: 'region', 'aria-label': 'Player',
+      className: 'on-dark backdrop-blur-xl py-3 no-drag flex-shrink-0 relative z-50',
       style: { minHeight: '85px', paddingLeft: '26px', paddingRight: '26px', backgroundColor: 'var(--surface-dark)', borderTop: '1px solid var(--surface-dark-border)' },
       onDragEnter: (e) => handleDragEnter(e, 'now-playing'),
       onDragOver: (e) => handleDragOver(e, 'now-playing'),
@@ -45553,6 +45573,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
               },
                 React.createElement('input', {
                   'aria-label': 'Volume',
+                  'aria-valuetext': isMuted ? 'Muted' : `${Math.round(effectiveVolume)}%`,
                   type: 'range',
                   min: '0',
                   max: '100',
@@ -45592,7 +45613,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
 
     // AI Prompt Input Panel (floating above playbar, aligned with AI button on left) - Refined dark theme
     aiPromptOpen && React.createElement('div', {
-      className: 'fixed bottom-24 left-4 z-50',
+      className: 'on-dark fixed bottom-24 left-4 z-50',
       style: {
         width: '380px',
         backgroundColor: 'var(--surface-dark-solid)',
@@ -45804,7 +45825,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
 
       // Sidebar panel
       React.createElement('div', {
-        className: 'w-80 flex flex-col',
+        className: 'on-dark w-80 flex flex-col',
         style: {
           backgroundColor: 'var(--surface-dark-solid)',
           borderLeft: '1px solid var(--surface-dark-border)',
@@ -51949,7 +51970,7 @@ firstRunTutorial.step === 'complete' && React.createElement(React.Fragment, null
     // Queue Drawer - slides up above the playbar with matching dark theme
     // Gradient transparency: more opaque near playbar, more transparent at top
     React.createElement('div', {
-      className: 'fixed left-0 right-0 backdrop-blur-md shadow-2xl transition-all duration-300 ease-in-out z-40',
+      className: 'on-dark fixed left-0 right-0 backdrop-blur-md shadow-2xl transition-all duration-300 ease-in-out z-40',
       // Closed, it's off-screen but was still in the Tab order (audit bug 24).
       inert: queueDrawerOpen ? undefined : '',
       'aria-hidden': queueDrawerOpen ? undefined : 'true',
@@ -51974,7 +51995,7 @@ firstRunTutorial.step === 'complete' && React.createElement(React.Fragment, null
         },
           // Drag handle for resizing - stops click propagation
           React.createElement('div', {
-            className: 'w-8 h-1 bg-gray-600 rounded-full cursor-ns-resize',
+            className: 'card-above w-8 h-1 bg-gray-600 rounded-full cursor-ns-resize',
             onClick: (e) => e.stopPropagation(),
             onMouseDown: (e) => {
               e.stopPropagation();

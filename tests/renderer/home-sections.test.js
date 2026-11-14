@@ -55,7 +55,7 @@ describe('AlbumCard', () => {
   });
   test('the badge sits in the art\'s lower right corner, clear of the top-left tag', () => {
     const html = h(S.AlbumCard, { album: { ...album, tag: 'New', resolverId: 'shuffleupagus', reason: 'r' } });
-    expect(html).toMatch(/bottom:8px;right:8px;z-index:2/);
+    expect(html).toMatch(/bottom:8px;right:8px;z-index:3/);
     expect(html).not.toMatch(/top:8px;left:8px;z-index:2/);
   });
   test('the badge reason reaches screen readers: aria-describedby names a hidden copy', () => {

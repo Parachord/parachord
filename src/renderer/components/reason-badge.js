@@ -47,7 +47,8 @@ function ReasonBadge({ label, text, icon }) {
   const id = React.useId();
   if (!text) return null;
   return e('div', {
-    style: { position: 'absolute', bottom: '8px', right: '8px', zIndex: 2 },
+    // Above a card's hover overlay (2) and CardButton's stretched button (1).
+    style: { position: 'absolute', bottom: '8px', right: '8px', zIndex: 3 },
   },
   e('span', { id: `${id}-why`, style: VISUALLY_HIDDEN }, text),
   e(FixedTooltip, { content: text, id: `${id}-tip` },
