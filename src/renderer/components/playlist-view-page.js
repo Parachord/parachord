@@ -17,6 +17,7 @@
 // from props under their old names.
 
 const Icons = require('./icons');
+const { activateOnKey } = require('../lib/activate-on-key');
 const { ResolverIcon, ShareButton } = require('./ui-atoms');
 const { VirtualizedTrackList, getBestSourceConfidence } = require('./track-lists');
 const { trackSlug } = require('../lib/track-slug');
@@ -1188,7 +1189,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                         const context = { type: 'playlist', id: selectedPlaylist?.id, name: selectedPlaylist?.title };
                         setQueueWithContext(tracksAfter, context);
                         handlePlay(track);
-                      },
+                      }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
                       onContextMenu: (e) => {
                         e.preventDefault();
                         if (window.electron?.contextMenu?.showTrackMenu) {
@@ -1261,7 +1262,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                         onClick: (e) => {
                           e.stopPropagation();
                           fetchArtistData(track.artist);
-                        }
+                        }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey
                       }, track.artist),
 
                       // Duration - fixed width column (before resolver icons)

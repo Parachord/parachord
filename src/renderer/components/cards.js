@@ -9,6 +9,7 @@
 // app.js for the in-component call sites; PlayTop10Icon / QueueTop10Icon are
 // cards-only (the playtop-10 / queue-top-10 affordances).
 const { ResolverIcon, PlaybackProgress, ShareButton } = require('./ui-atoms');
+const { activateOnKey } = require('../lib/activate-on-key');
 const { getBestSourceConfidence } = require('./track-lists');
 const Icons = require('./icons');
 const { Play } = Icons;
@@ -292,7 +293,7 @@ const SearchArtistCard = ({ artist, getArtistImage, onClick, onContextMenu, onPl
   }, [artist.name]);
 
   return React.createElement('div', {
-    onClick: onClick,
+    onClick: onClick, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
     className: 'rounded-lg overflow-hidden cursor-pointer group release-card card-fade-up flex-shrink-0',
     style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)', animationDelay: `${animationDelay}ms`, width: itemWidth || 160 },
     draggable: true,
@@ -402,7 +403,7 @@ const SearchHistoryItem = ({ entry, onQueryClick, onResultClick, onRemove }) => 
 
   return React.createElement('div', {
     className: 'flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 group transition-colors cursor-pointer',
-    onClick: handleRowClick
+    onClick: handleRowClick, role: 'button', tabIndex: 0, onKeyDown: activateOnKey
   },
     // Result thumbnail or search icon
     selectedResult?.imageUrl ?
@@ -463,7 +464,7 @@ const CollectionArtistCard = ({ artist, getArtistImage, onNavigate, onPlayTopTra
   }, [artist.name]);
 
   return React.createElement('div', {
-    onClick: onNavigate,
+    onClick: onNavigate, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
     className: 'rounded-lg overflow-hidden cursor-pointer group release-card card-fade-up',
     style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)', animationDelay: `${animationDelay}ms` }
   },
@@ -1830,7 +1831,7 @@ const ReleasePage = ({
                 } else {
                   handlePlay(trackForDrag);
                 }
-              },
+              }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
               onContextMenu: (e) => {
                 e.preventDefault();
                 if (onTrackContextMenu) {

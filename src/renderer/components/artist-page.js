@@ -20,6 +20,7 @@
 // from props under their old names.
 
 const { sellerColor, sellerTextColor, sellerBadgeBg, sellerShortName, sellerName } = require('../lib/ticket-sellers');
+const { activateOnKey } = require('../lib/activate-on-key');
 const { Tooltip } = require('./ui-atoms');
 const Icons = require('./icons');
 const { SectionHeader } = require('./section-header');
@@ -166,7 +167,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
           isHeaderCollapsed && React.createElement('div', {
             className: 'absolute inset-0 z-0',
             style: { cursor: 'pointer' },
-            onClick: () => setIsHeaderCollapsed(false),
+            onClick: () => setIsHeaderCollapsed(false), role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
             title: 'Click to expand'
           }),
           // Background image with gradient overlay
@@ -1713,7 +1714,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                           }
                         }));
                       },
-                      onClick: () => fetchArtistData(artist.name),
+                      onClick: () => fetchArtistData(artist.name), role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
                       onContextMenu: (e) => {
                         e.preventDefault();
                         e.stopPropagation();

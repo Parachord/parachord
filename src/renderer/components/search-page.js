@@ -19,6 +19,7 @@
 // from props under their old names.
 
 const Icons = require('./icons');
+const { activateOnKey } = require('../lib/activate-on-key');
 const { ResolverIcon } = require('./ui-atoms');
 const { SectionHeader, SECTION_HEADER_GAP } = require('./section-header');
 const { artistOpenOptions, creditOpenOptions, trackArtistOpenOptions } = require('../lib/artist-open');
@@ -453,7 +454,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                           }
                         }));
                       },
-                      onClick: () => fetchArtistData(artist.name, artistOpenOptions(artist)),
+                      onClick: () => fetchArtistData(artist.name, artistOpenOptions(artist)), role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
                       onContextMenu: (e) => {
                         e.preventDefault();
                         e.stopPropagation();
@@ -631,7 +632,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                         }));
                       },
                       onMouseEnter: () => prefetchSearchAlbumTracks(album),
-                      onClick: () => handleAlbumClick(album),
+                      onClick: () => handleAlbumClick(album), role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
                       onContextMenu: (e) => {
                         e.preventDefault();
                         e.stopPropagation();
@@ -764,7 +765,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                         onClick: (e) => {
                           e.stopPropagation();
                           fetchArtistData(album['artist-credit']?.[0]?.name, creditOpenOptions(album['artist-credit']));
-                        }
+                        }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey
                       }, album['artist-credit']?.[0]?.name || 'Unknown Artist')
                     );
                   })
@@ -861,7 +862,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       const context = { type: 'search', name: searchQuery };
                       setQueueWithContext(tracksAfter, context);
                       handlePlay(track);
-                    },
+                    }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
                     onContextMenu: (e) => {
                       e.preventDefault();
                       if (window.electron?.contextMenu?.showTrackMenu) {
@@ -909,7 +910,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       onClick: (e) => {
                         e.stopPropagation();
                         fetchArtistData(track.artist, trackArtistOpenOptions(track));
-                      }
+                      }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey
                     }, track.artist),
 
                     // Album name - flexible column, clickable
@@ -924,7 +925,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       onClick: (e) => {
                         e.stopPropagation();
                         openChartsAlbum({ artist: track.artist, title: track.album, albumArt: track.albumArt });
-                      }
+                      }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey
                     }, track.album) : React.createElement('span', {
                       className: 'truncate',
                       style: {
@@ -1046,7 +1047,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       boxShadow: 'var(--card-shadow)',
                       animationDelay: `${animationDelay}ms`
                     },
-                    onClick: () => handlePlaylistClick(playlist)
+                    onClick: () => handlePlaylistClick(playlist), role: 'button', tabIndex: 0, onKeyDown: activateOnKey
                   },
                     // Playlist icon square with hover overlay
                     React.createElement('div', {
@@ -1561,7 +1562,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       imageUrl: track.albumArt || cachedArt
                     });
                     handlePlay(track);
-                  },
+                  }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
                   onDragStart: (e) => {
                     e.dataTransfer.effectAllowed = 'copy';
                     e.dataTransfer.setData('text/plain', JSON.stringify({
@@ -1751,7 +1752,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       imageUrl: album.albumArt || null
                     });
                     handleAlbumClick(album);
-                  },
+                  }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
                   onMouseEnter: () => {
                     // Prefetch album tracks on hover for context menu
                     prefetchSearchAlbumTracks(album);
@@ -1977,7 +1978,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       imageUrl: null
                     });
                     handlePlaylistClick(playlist);
-                  },
+                  }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
                   className: 'flex-shrink-0 cursor-pointer group release-card card-fade-up',
                   style: {
                     width: '160px',

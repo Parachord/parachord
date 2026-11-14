@@ -16,6 +16,7 @@
 // from props under their old names.
 
 const Icons = require('./icons');
+const { activateOnKey } = require('../lib/activate-on-key');
 const { VirtualizedTrackList, getBestSourceConfidence } = require('./track-lists');
 const { ResolverIcon } = require('./ui-atoms');
 const { CollectionArtistCard, CollectionAlbumCard } = require('./cards');
@@ -464,7 +465,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
               // Click-away to close dropdown
               syncMenuOpen && React.createElement('div', {
                 style: { position: 'fixed', inset: 0, zIndex: 49 },
-                onClick: () => setSyncMenuOpen(false)
+                onClick: () => setSyncMenuOpen(false), role: 'button', tabIndex: 0, onKeyDown: activateOnKey
               })
             ),
             // Sync friends button in header (only on friends tab).
@@ -668,7 +669,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                       setQueueWithContext(tracksAfter, context);
                       // Pass track with merged sources (original + resolved) so handlePlay can use all available resolvers
                       handlePlay({ ...track, sources: effectiveSources });
-                    },
+                    }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
                     onContextMenu: (e) => {
                       e.preventDefault();
                       if (window.electron?.contextMenu?.showTrackMenu) {
@@ -722,7 +723,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                       onClick: (e) => {
                         e.stopPropagation();
                         fetchArtistData(track.artist);
-                      }
+                      }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey
                     }, track.artist || 'Unknown Artist'),
 
                     // Album name - flexible column, clickable
@@ -737,7 +738,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                       onClick: (e) => {
                         e.stopPropagation();
                         openChartsAlbum({ artist: track.artist, title: track.album, albumArt: track.albumArt });
-                      }
+                      }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey
                     }, track.album) : React.createElement('span', {
                       className: 'truncate',
                       style: {
@@ -1167,7 +1168,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                         e.dataTransfer.setData('friendId', friend.id);
                         e.dataTransfer.effectAllowed = 'copy';
                       },
-                      onClick: () => navigateToFriend(friend),
+                      onClick: () => navigateToFriend(friend), role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
                       onContextMenu: (e) => {
                         e.preventDefault();
                         if (window.electron?.contextMenu?.showTrackMenu) {

@@ -15,6 +15,7 @@
 // vendor global; ResolverIcon via the ui-atoms module; icons via the icons
 // module's own destructure below.
 const { ResolverIcon } = require('./ui-atoms');
+const { activateOnKey } = require('../lib/activate-on-key');
 const Icons = require('./icons');
 const { Music, Pause, Play, X } = Icons;
 
@@ -330,7 +331,7 @@ const VirtualizedQueueList = React.memo(({
           handlePlay(track, { fromQueue: true });
           setDroppingFromIndex(null);
         }, 300);
-      },
+      }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
       onMouseEnter: () => {
         if (onTrackHover) onTrackHover(track.id);
       },
@@ -403,7 +404,7 @@ const VirtualizedQueueList = React.memo(({
         onClick: (e) => {
           e.stopPropagation();
           if (!isLoading && !isError && track.artist) fetchArtistData(track.artist);
-        }
+        }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey
       },
         isLoading ? `from ${track.sourceDomain || 'unknown'}` :
         isError ? (track.errorMessage || 'Unknown error') :

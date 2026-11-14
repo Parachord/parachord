@@ -1981,6 +1981,7 @@ const { statusBadgeStyle } = require('./lib/status-badge');
 const { PAGE_COLORS, pageTint } = require('./lib/page-colors');
 const { Modal, ConfirmModal } = require('./components/modal');
 const { Button } = require('./components/button');
+const { activateOnKey } = require('./lib/activate-on-key');
 // Room the queue drawer leaves above it: the title bar and a little air.
 const QUEUE_DRAWER_TOP_GAP = 48;
 const { sellerColor, sellerTextColor, sellerBadgeBg, sellerShortName, sellerName } = require('./lib/ticket-sellers');
@@ -17099,7 +17100,7 @@ ${trackListXml}
     const [isHovered, setIsHovered] = useState(false);
 
     return React.createElement('div', {
-      onClick: handleClick,
+      onClick: handleClick, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
       style: {
         display: 'flex',
         alignItems: 'center',
@@ -17161,7 +17162,7 @@ ${trackListXml}
         // Styled to match app's standard hover play buttons (bg-black/50, white button, shadow-lg)
         // For albums: clicking play button plays the album, clicking elsewhere opens album page
         (type === 'track' || type === 'album') && React.createElement('div', {
-          onClick: handlePlayButtonClick,
+          onClick: handlePlayButtonClick, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
           style: {
             position: 'absolute',
             inset: 0,
@@ -17511,7 +17512,7 @@ ${trackListXml}
         };
         return React.createElement('div', {
           key,
-          onClick: handlePlaylistCardClick,
+          onClick: handlePlaylistCardClick, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
           style: {
             display: 'flex',
             alignItems: 'center',
@@ -36759,7 +36760,7 @@ useEffect(() => {
                 color: isSelected ? 'var(--text-primary)' : 'inherit'
               },
               draggable: true,
-              onClick: () => navigateToFriend(friend),
+              onClick: () => navigateToFriend(friend), role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
               onDragStart: (e) => {
                 e.dataTransfer.setData('draggedFriendId', friend.id);
                 e.dataTransfer.effectAllowed = 'move';
@@ -36796,7 +36797,7 @@ useEffect(() => {
                   onClick: (e) => {
                     e.stopPropagation();
                     navigateToFriend(friend);
-                  }
+                  }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey
                 },
                   React.createElement('div', {
                     className: 'w-8 h-8 bg-surface-placeholder overflow-hidden',
@@ -37830,7 +37831,7 @@ React.createElement('div', {
                       e.preventDefault();
                       e.stopPropagation();
                       loadPlaylist(playlist);
-                    },
+                    }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
                     onContextMenu: (e) => {
                       e.preventDefault();
                       if (window.electron?.contextMenu?.showTrackMenu) {
@@ -38130,7 +38131,7 @@ React.createElement('div', {
                     e.preventDefault();
                     e.stopPropagation();
                     loadPlaylist(playlist);
-                  },
+                  }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
                   onContextMenu: (e) => {
                     e.preventDefault();
                     if (window.electron?.contextMenu?.showTrackMenu) {
@@ -38268,7 +38269,7 @@ React.createElement('div', {
                         setQueueWithContext(remainingTracks, context, true);
                         handlePlay(taggedFirstTrack);
                       }
-                    }
+                    }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey
                   },
                     React.createElement(Play, { size: 20, className: 'text-accent fill-purple-600' })
                   )
@@ -38708,7 +38709,7 @@ React.createElement('div', {
                   },
                   onMouseEnter: () => scheduleHoverPrefetch(item),
                   onMouseLeave: cancelHoverPrefetch,
-                  onClick: () => { cancelHoverPrefetch(); openChartsAlbum(item); },
+                  onClick: () => { cancelHoverPrefetch(); openChartsAlbum(item); }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
                   onContextMenu: (e) => {
                     e.preventDefault();
                     if (window.electron?.contextMenu?.showTrackMenu) {
@@ -38904,7 +38905,7 @@ React.createElement('div', {
                       onClick: (e) => {
                         e.stopPropagation();
                         fetchArtistData(item.artist);
-                      }
+                      }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey
                     }, item.artist)
                   )
                 )
@@ -39017,7 +39018,7 @@ React.createElement('div', {
                         id: track.id, title: track.title, artist: track.artist, album: '',
                         sources: trackSources[track.id] || {}
                       });
-                    },
+                    }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
                     onContextMenu: (e) => {
                       e.preventDefault();
                       if (window.electron?.contextMenu?.showTrackMenu) {
@@ -39065,7 +39066,7 @@ React.createElement('div', {
                       onClick: (e) => {
                         e.stopPropagation();
                         fetchArtistData(track.artist);
-                      }
+                      }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey
                     }, track.artist),
 
                     // Listeners count (in place of duration)
@@ -39402,7 +39403,7 @@ React.createElement('div', {
                       onClick: () => {
                         cancelHoverPrefetch();
                         openChartsAlbum({ artist: release.artist, title: release.title, albumArt: release.albumArt, releaseGroupId: release.id, date: release.date, releaseType: release.releaseType });
-                      },
+                      }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
                       onContextMenu: (e) => {
                         e.preventDefault();
                         if (window.electron?.contextMenu?.showTrackMenu) {
@@ -39593,7 +39594,7 @@ React.createElement('div', {
                             onClick: (e) => {
                               e.stopPropagation();
                               fetchArtistData(release.artist);
-                            }
+                            }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey
                           }, release.artist),
                           release.date && (() => {
                             const d = new Date(release.date + 'T00:00:00');
@@ -39875,7 +39876,7 @@ React.createElement('div', {
                   e.dataTransfer.setData('text/plain', JSON.stringify(albumData));
                 },
                 onMouseEnter: () => prefetchCriticsPicksTracks(album),
-                onClick: () => openCriticsPicksAlbum(album),
+                onClick: () => openCriticsPicksAlbum(album), role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
                 onContextMenu: (e) => {
                   e.preventDefault();
                   if (window.electron?.contextMenu?.showTrackMenu) {
@@ -40061,7 +40062,7 @@ React.createElement('div', {
                     onClick: (e) => {
                       e.stopPropagation();
                       fetchArtistData(album.artist);
-                    }
+                    }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey
                   }, album.artist),
                   // Synopsis
                   album.description && React.createElement('p', {
@@ -40278,7 +40279,7 @@ React.createElement('div', {
                 React.createElement('span', { style: { opacity: 0.7 } }, `${concertsLocationRadius}mi`),
                 // X to clear
                 React.createElement('span', {
-                  onClick: (e) => { e.stopPropagation(); setConcertsLocation(''); setConcertsLocationCoords(null); setConcertsLocationRadius(50); },
+                  onClick: (e) => { e.stopPropagation(); setConcertsLocation(''); setConcertsLocationCoords(null); setConcertsLocationRadius(50); }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
                   className: 'ml-0.5 rounded-full p-0.5 transition-colors cursor-pointer',
                   style: { color: PAGE_COLORS.concerts.color }
                 },
@@ -40718,7 +40719,7 @@ React.createElement('div', {
                           React.createElement('div', {
                             className: 'flex-shrink-0 overflow-hidden cursor-pointer bg-surface-inset',
                             style: { width: '100px', height: '100px', alignSelf: 'stretch' },
-                            onClick: () => { if (event.artist) { pendingProtocolTabRef.current = 'on-tour'; fetchArtistData(event.artist); } }
+                            onClick: () => { if (event.artist) { pendingProtocolTabRef.current = 'on-tour'; fetchArtistData(event.artist); } }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey
                           },
                             artistImg?.url
                               ? React.createElement('img', {
@@ -40745,7 +40746,7 @@ React.createElement('div', {
                                   className: 'font-semibold truncate cursor-pointer hover:text-teal-500 transition-colors text-ink-primary',
                                   onClick: () => {
                                     if (event.artist) { pendingProtocolTabRef.current = 'on-tour'; fetchArtistData(event.artist); }
-                                  }
+                                  }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey
                                 }, event.artist),
                                 // Source badges
                                 ...(() => {
@@ -41084,7 +41085,7 @@ React.createElement('div', {
                     artist: { id: item.id, name: item.name, image: img }
                   }));
                 },
-                onClick: () => fetchArtistData(item.name),
+                onClick: () => fetchArtistData(item.name), role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
                 onContextMenu: (e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -41184,7 +41185,7 @@ React.createElement('div', {
                     album: { title: item.name, artist: item.artist, art }
                   }));
                 },
-                onClick: () => handleCollectionAlbumClick({ title: item.name, artist: item.artist }),
+                onClick: () => handleCollectionAlbumClick({ title: item.name, artist: item.artist }), role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
                 // Fetch the tracks after a short hover, so the menu can queue
                 // them. It sent none, so its queue and playlist items were
                 // always disabled ("click album first", design audit bug 18).
@@ -41334,7 +41335,7 @@ React.createElement('div', {
                 key: item.id,
                 className: 'rounded-lg overflow-hidden cursor-pointer group release-card card-fade-up',
                 style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)', animationDelay: `${Math.min(index * 30, 300)}ms` },
-                onClick: () => openRecommendationPlaylist(item, section),
+                onClick: () => openRecommendationPlaylist(item, section), role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
                 onMouseEnter: () => prefetchRecommendationPlaylist(item),
                 onMouseLeave: () => cancelRecommendationPlaylistPrefetch(item),
                 onContextMenu: (e) => {
@@ -41470,7 +41471,7 @@ React.createElement('div', {
                   isEphemeral: true,
                   source: record.source,
                   creator: record.creator
-                }),
+                }), role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
                 onContextMenu: (e) => {
                   e.preventDefault();
                   if (window.electron?.contextMenu?.showTrackMenu) {
@@ -41585,7 +41586,7 @@ React.createElement('div', {
                   isResolving ? 'opacity-60' : ''
                 } ${isNowPlaying ? 'bg-accent-tint' : (isResolving ? '' : 'hover:bg-surface-hover')}`,
                 style: { borderRadius: '8px', marginBottom: '2px' },
-                onClick: () => queueTail(),
+                onClick: () => queueTail(), role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
                 onContextMenu: (e) => {
                   e.preventDefault();
                   if (window.electron?.contextMenu?.showTrackMenu) {
@@ -41612,7 +41613,7 @@ React.createElement('div', {
                   onClick: (e) => {
                     e.stopPropagation();
                     fetchArtistData(track.artist);
-                  }
+                  }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey
                 }, track.artist),
                 React.createElement('span', {
                   className: 'text-right tabular-nums flex-shrink-0',
@@ -41710,7 +41711,7 @@ React.createElement('div', {
                   service: item.service,
                   displayName: item.name,
                   avatarUrl: item.avatarUrl || null
-                })
+                }), role: 'button', tabIndex: 0, onKeyDown: activateOnKey
               },
                 React.createElement('div', { className: 'relative', style: { width: '100px', height: '100px' } },
                   // Outer hexagon ring
@@ -42401,7 +42402,7 @@ React.createElement('div', {
                           const context = { type: 'history', name: 'History' };
                           setQueueWithContext(tracksAfter, context);
                           handlePlay(track);
-                        },
+                        }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
                         onContextMenu: (e) => {
                           e.preventDefault();
                           if (window.electron?.contextMenu?.showTrackMenu) {
@@ -42420,7 +42421,7 @@ React.createElement('div', {
                         React.createElement('span', {
                           className: 'truncate hover:text-accent hover:underline cursor-pointer transition-colors',
                           style: { flex: '0.7 1 0', minWidth: 0, fontSize: '12px', color: 'var(--text-secondary)' },
-                          onClick: (e) => { e.stopPropagation(); fetchArtistData(track.artist); }
+                          onClick: (e) => { e.stopPropagation(); fetchArtistData(track.artist); }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey
                         }, track.artist),
                         React.createElement('span', {
                           className: 'truncate',
@@ -42523,7 +42524,7 @@ React.createElement('div', {
                         onDragEnd: () => { handlePlaylistDragEnd(); },
                         className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${!hasResolved ? 'opacity-60' : 'hover:bg-surface-hover'}`,
                         style: { borderRadius: '8px', marginBottom: '2px' },
-                        onClick: () => { const tracksAfter = filtered.slice(index + 1); const context = { type: 'history', name: 'Top Tracks' }; setQueueWithContext(tracksAfter, context); handlePlay(track); },
+                        onClick: () => { const tracksAfter = filtered.slice(index + 1); const context = { type: 'history', name: 'Top Tracks' }; setQueueWithContext(tracksAfter, context); handlePlay(track); }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
                         onContextMenu: (e) => { e.preventDefault(); if (window.electron?.contextMenu?.showTrackMenu) window.showItemMenu({ type: 'track', track }); }
                       },
                         React.createElement('span', { className: 'flex-shrink-0 text-right', style: { width: '32px', fontSize: '12px', fontWeight: '500', color: 'var(--text-tertiary)' } }, `#${track.rank}`),
@@ -42531,7 +42532,7 @@ React.createElement('div', {
                         React.createElement('span', {
                           className: 'truncate hover:text-accent hover:underline cursor-pointer transition-colors',
                           style: { flex: '0.7 1 0', minWidth: 0, fontSize: '12px', color: 'var(--text-secondary)' },
-                          onClick: (e) => { e.stopPropagation(); fetchArtistData(track.artist); }
+                          onClick: (e) => { e.stopPropagation(); fetchArtistData(track.artist); }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey
                         }, track.artist),
                         React.createElement('span', {
                           className: 'truncate',
@@ -42625,7 +42626,7 @@ React.createElement('div', {
                           }
                         }));
                       },
-                      onClick: () => fetchArtistData(artist.name),
+                      onClick: () => fetchArtistData(artist.name), role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
                       onContextMenu: (e) => {
                         e.preventDefault();
                         e.stopPropagation();
@@ -42802,7 +42803,7 @@ React.createElement('div', {
                         boxShadow: 'var(--card-shadow)',
                         animationDelay: `${Math.min(index * 30, 300)}ms`
                       },
-                      onClick: () => openTopAlbum(album),
+                      onClick: () => openTopAlbum(album), role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
                       onMouseEnter: () => prefetchTopAlbumTracks(album.artist, album.name, album.image),
                       onContextMenu: (e) => {
                         e.preventDefault();
@@ -43005,7 +43006,7 @@ React.createElement('div', {
                           onClick: (e) => {
                             e.stopPropagation();
                             fetchArtistData(album.artist);
-                          }
+                          }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey
                         }, album.artist),
                         React.createElement('div', {
                           style: { fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '3px' }
@@ -43384,7 +43385,7 @@ React.createElement('div', {
                           const context = { type: 'friend', name: currentFriend?.name || 'Friend', tab: 'recent' };
                           setQueueWithContext(tracksAfter, context);
                           handlePlay(track);
-                        },
+                        }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
                           onContextMenu: (e) => {
                             e.preventDefault();
                             if (window.electron?.contextMenu?.showTrackMenu) {
@@ -43403,7 +43404,7 @@ React.createElement('div', {
                           React.createElement('span', {
                             className: 'truncate hover:text-accent hover:underline cursor-pointer transition-colors',
                             style: { flex: '0.7 1 0', minWidth: 0, fontSize: '12px', color: 'var(--text-secondary)' },
-                            onClick: (e) => { e.stopPropagation(); fetchArtistData(track.artist); }
+                            onClick: (e) => { e.stopPropagation(); fetchArtistData(track.artist); }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey
                           }, track.artist),
                           React.createElement('span', {
                             className: 'truncate',
@@ -43487,7 +43488,7 @@ React.createElement('div', {
                             const context = { type: 'friend', name: currentFriend?.name || 'Friend', tab: 'topTracks' };
                             setQueueWithContext(tracksAfter, context);
                             handlePlay(track);
-                          },
+                          }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
                           onContextMenu: (e) => {
                             e.preventDefault();
                             if (window.electron?.contextMenu?.showTrackMenu) {
@@ -43506,7 +43507,7 @@ React.createElement('div', {
                           React.createElement('span', {
                             className: 'truncate hover:text-accent hover:underline cursor-pointer transition-colors',
                             style: { flex: '0.7 1 0', minWidth: 0, fontSize: '12px', color: 'var(--text-secondary)' },
-                            onClick: (e) => { e.stopPropagation(); fetchArtistData(track.artist); }
+                            onClick: (e) => { e.stopPropagation(); fetchArtistData(track.artist); }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey
                           }, track.artist),
                           React.createElement('span', {
                             className: 'truncate',
@@ -43562,7 +43563,7 @@ React.createElement('div', {
                           key: album.id || index,
                           className: 'rounded-lg overflow-hidden cursor-pointer group release-card',
                           style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)' },
-                          onClick: () => openTopAlbum(album),
+                          onClick: () => openTopAlbum(album), role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
                           onMouseEnter: () => prefetchTopAlbumTracks(album.artist, album.name, album.image),
                           onContextMenu: (e) => {
                             e.preventDefault();
@@ -43730,7 +43731,7 @@ React.createElement('div', {
                           key: artist.id || index,
                           className: 'rounded-lg overflow-hidden cursor-pointer group release-card',
                           style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)' },
-                          onClick: () => fetchArtistData(artist.name)
+                          onClick: () => fetchArtistData(artist.name), role: 'button', tabIndex: 0, onKeyDown: activateOnKey
                         },
                           React.createElement('div', {
                             className: 'aspect-square relative group/art',
@@ -44475,7 +44476,7 @@ React.createElement('div', {
                         background: 'linear-gradient(135deg, var(--accent-primary) 0%, #a78bfa 100%)',
                         boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1), 0 4px 16px rgba(0, 0, 0, 0.05)'
                       },
-                      onClick: () => setExtensionInfoOpen(true)
+                      onClick: () => setExtensionInfoOpen(true), role: 'button', tabIndex: 0, onKeyDown: activateOnKey
                     },
                       // Browser icon
                       React.createElement('svg', {
@@ -44532,7 +44533,7 @@ React.createElement('div', {
                         background: 'linear-gradient(135deg, #FF6363 0%, #FF8E53 100%)',
                         boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1), 0 4px 16px rgba(0, 0, 0, 0.05)'
                       },
-                      onClick: () => setRaycastInfoOpen(true)
+                      onClick: () => setRaycastInfoOpen(true), role: 'button', tabIndex: 0, onKeyDown: activateOnKey
                     },
                       // Raycast icon (simplified lightning bolt)
                       React.createElement('svg', {
@@ -46259,7 +46260,7 @@ React.createElement('div', {
                   // Always opens the album page, whatever context the track was
                   // played from (derives the album when the track has none).
                   openAlbumForTrack(currentTrack);
-                },
+                }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
                 className: 'flex-shrink-0 hover:opacity-80 transition-opacity cursor-pointer no-drag',
                 style: { position: 'relative' }
               },
@@ -47211,7 +47212,7 @@ React.createElement('div', {
       React.createElement('div', {
         className: 'flex-1',
         style: { backgroundColor: 'rgba(0, 0, 0, 0.3)', backdropFilter: 'blur(4px)' },
-        onClick: closeSidebarAnimated
+        onClick: closeSidebarAnimated, role: 'button', tabIndex: 0, onKeyDown: activateOnKey
       }),
 
       // Sidebar panel
@@ -47222,7 +47223,7 @@ React.createElement('div', {
           if (chatProviderDropdownOpen && !e.target.closest('[data-provider-dropdown]')) {
             setChatProviderDropdownOpen(false);
           }
-        },
+        }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
         style: {
           backgroundColor: 'var(--surface-dark-solid)',
           borderLeft: '1px solid var(--surface-dark-border)',
@@ -48441,7 +48442,7 @@ React.createElement('div', {
             ),
             React.createElement('div', {
               className: 'relative w-11 h-6 cursor-pointer',
-              onClick: () => toggleResolver(selectedResolver.id)
+              onClick: () => toggleResolver(selectedResolver.id), role: 'button', tabIndex: 0, onKeyDown: activateOnKey
             },
               React.createElement('div', {
                 className: `w-full h-full rounded-full transition-colors ${activeResolvers.includes(selectedResolver.id) ? 'bg-accent-fill' : 'bg-control-off'}`
@@ -52288,7 +52289,7 @@ React.createElement('div', {
           setNewPlaylistName('');
           setAddToPlaylistSearch('');
           setAddToPlaylistSearchOpen(false);
-        },
+        }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
         onDragOver: (e) => {
           e.preventDefault();
         },
@@ -52563,7 +52564,7 @@ React.createElement('div', {
                 setNewPlaylistName('');
                 setDroppedTrackForNewPlaylist(null);
               }
-            },
+            }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
             onMouseUp: () => {
               // Fallback for drop - if we're hovering while a track is being dragged
               if (dropTargetNewPlaylist && draggingTrackForPlaylist) {
@@ -52826,7 +52827,7 @@ React.createElement('div', {
                       ? prev.filter(id => id !== playlist.id)
                       : [...prev, playlist.id]
                   );
-                },
+                }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
                 onDragEnter: (e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -53371,7 +53372,7 @@ React.createElement('div', {
               e.stopPropagation();
               try { parachordLinkMenu.achordionShare.run(); } catch (err) { console.warn('[CopyLink] menu run failed:', err); }
               setParachordLinkMenu(null);
-            },
+            }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
             style: itemStyle,
             onMouseEnter: (e) => { e.currentTarget.style.opacity = '0.85'; },
             onMouseLeave: (e) => { e.currentTarget.style.opacity = '1'; }
@@ -53385,7 +53386,7 @@ React.createElement('div', {
                 e.stopPropagation();
                 try { parachordLinkMenu.achordionShare.runView(); } catch (err) { console.warn('[ViewAchordion] menu run failed:', err); }
                 setParachordLinkMenu(null);
-              },
+              }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
               style: itemStyle,
               onMouseEnter: (e) => { e.currentTarget.style.opacity = '0.85'; },
               onMouseLeave: (e) => { e.currentTarget.style.opacity = '1'; }
@@ -53415,7 +53416,7 @@ React.createElement('div', {
               showToast('Failed to copy link', 'error');
             });
             setParachordLinkMenu(null);
-          },
+          }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
           style: itemStyle,
           onMouseEnter: (e) => { e.currentTarget.style.opacity = '0.85'; },
           onMouseLeave: (e) => { e.currentTarget.style.opacity = '1'; }
@@ -54742,7 +54743,7 @@ firstRunTutorial.step === 'sources' && React.createElement(React.Fragment, null,
                         savedActiveResolversRef.current = [...savedActiveResolversRef.current, resolver.id];
                       }
                     }
-                  }
+                  }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey
                 },
                   // Card with colored background
                   React.createElement('div', {
@@ -54979,7 +54980,7 @@ firstRunTutorial.step === 'complete' && React.createElement(React.Fragment, null
       React.createElement('div', {
         className: 'flex items-center justify-between px-4 py-2 cursor-pointer transition-colors',
         style: { backgroundColor: 'var(--surface-dark-header)', borderBottom: '1px solid var(--surface-dark-border)' },
-        onClick: () => setQueueDrawerOpen(false)
+        onClick: () => setQueueDrawerOpen(false), role: 'button', tabIndex: 0, onKeyDown: activateOnKey
       },
         React.createElement('div', {
           className: 'flex items-center gap-3'
@@ -55206,7 +55207,7 @@ firstRunTutorial.step === 'complete' && React.createElement(React.Fragment, null
             navigateTo('recommendations');
           }
           setQueueDrawerOpen(false);
-        },
+        }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
         title: playbackContext.type === 'url' ? 'Open source page' : 'Go to source'
       },
         React.createElement('div', { className: 'flex items-center gap-2' },
