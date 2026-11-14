@@ -362,8 +362,7 @@ const VirtualizedQueueList = React.memo(({
           flexShrink: 0,
           fontSize: '12px',
           fontWeight: '500',
-          color: (spinoffMode || playbackContext?.type === 'spinoff' || playbackContext?.type === 'friend')
-            ? 'rgba(156, 163, 175, 0.5)' : 'rgba(156, 163, 175, 0.7)'
+          color: 'var(--on-dark-tertiary)'
         }
       },
         listenAlongFriend ? '–' :
@@ -381,19 +380,20 @@ const VirtualizedQueueList = React.memo(({
           minWidth: 0,
           fontSize: '13px',
           fontWeight: index === 0 ? '500' : '400',
-          color: isLoading ? 'rgba(156, 163, 175, 0.6)' :
+          color: isLoading ? 'var(--on-dark-tertiary)' :
                  isError ? '#f87171' :
                  isCurrentTrack ? 'var(--accent-soft)' : 'rgba(229, 231, 235, 0.9)'
         }
       },
-        isLoading ? 'Loading...' :
+        isLoading ? 'Loading…' :
         isError ? 'Could not load track' :
         track.title
       ),
       // Artist name
       React.createElement('button', { type: 'button',
         className: 'text-left truncate hover:text-purple-400 hover:underline cursor-pointer transition-colors',
-        style: { flex: '0.7 1 0', minWidth: 0, fontSize: '12px', color: 'rgba(156, 163, 175, 0.7)' },
+        // On the always-dark drawer: the fixed on-dark colour (#1386 contrast).
+        style: { flex: '0.7 1 0', minWidth: 0, fontSize: '12px', color: 'var(--on-dark-secondary)' },
         onClick: (e) => {
           e.stopPropagation();
           if (!isLoading && !isError && track.artist) fetchArtistData(track.artist);
@@ -406,7 +406,7 @@ const VirtualizedQueueList = React.memo(({
       // Duration
       React.createElement('span', {
         className: 'text-right tabular-nums',
-        style: { width: '50px', flexShrink: 0, fontSize: '12px', color: 'rgba(156, 163, 175, 0.5)' }
+        style: { width: '50px', flexShrink: 0, fontSize: '12px', color: 'var(--on-dark-tertiary)' }
       }, !isLoading && !isError ? formatTime(track.duration || 0) : ''),
       // Resolver icons
       React.createElement('div', {

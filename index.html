@@ -196,7 +196,9 @@
       --on-dark-secondary: rgba(255, 255, 255, 0.7);
       --on-dark-tertiary: rgba(255, 255, 255, 0.55);
       --surface-dark-gradient-from: rgba(17, 24, 39, 0.9);
-      --surface-dark-gradient-to: rgba(17, 24, 39, 0.5);
+      /* 0.85, not 0.5: over a light page the drawer's top was too clear for
+         its text (white at 0.7 fell to 2.5:1). */
+      --surface-dark-gradient-to: rgba(17, 24, 39, 0.85);
       --surface-dark-header: rgba(17, 24, 39, 0.6);
       --surface-dark-border: #374151;
     }
