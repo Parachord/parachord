@@ -535,7 +535,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
               ['music', 'biography', 'related', ...((artistConcertsLoaded && artistConcerts.length > 0) || artistPageTab === 'on-tour' ? ['on-tour'] : [])].map((tab, index) => [
                 index > 0 && React.createElement('span', {
                   key: `sep-release-${tab}`,
-                  className: 'text-gray-400 mx-2'
+                  className: 'text-white/60 mx-2'
                 }, '|'),
                 React.createElement('button', {
                   key: `release-${tab}`,
@@ -569,7 +569,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                   className: `px-2 py-1 text-sm font-medium uppercase tracking-wider transition-colors no-drag ${
                     tab === 'music'
                       ? 'text-white'
-                      : 'text-gray-400 hover:text-white'
+                      : 'text-white/60 hover:text-white'
                   }`
                 }, tab === 'related' ? 'Related Artists' : tab === 'on-tour' ? 'On Tour' : tab.charAt(0).toUpperCase() + tab.slice(1))
               ]).flat().filter(Boolean)
@@ -609,7 +609,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                   }
                 },
                 style: { color: 'var(--text-tertiary)', transition: 'color 0.15s' },
-                className: 'hover:text-gray-600 transition-colors uppercase',
+                className: 'hover:text-ink-secondary transition-colors uppercase',
                 onMouseEnter: (e) => e.currentTarget.style.color = 'var(--text-secondary)',
                 onMouseLeave: (e) => e.currentTarget.style.color = 'var(--text-tertiary)'
               }, currentArtist?.name || currentRelease?.artist?.name || 'Artist'),
@@ -842,7 +842,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
             React.createElement('div', { className: 'relative mr-3' },
               React.createElement('button', {
                 onClick: (e) => { e.stopPropagation(); setArtistSortDropdownOpen(!artistSortDropdownOpen); },
-                className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors'
+                className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-ink-tertiary hover:text-ink-secondary transition-colors'
               },
                 React.createElement('span', null, artistSortOptions.find(o => o.value === artistSort)?.label || 'Sort'),
                 React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
@@ -851,7 +851,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
               ),
               // Dropdown menu
               artistSortDropdownOpen && React.createElement('div', {
-                className: 'absolute right-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-gray-200'
+                className: 'absolute right-0 top-full mt-1 bg-surface-card rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-line'
               },
                 artistSortOptions.map(option =>
                   React.createElement('button', {
@@ -861,8 +861,8 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                       setArtistSort(option.value);
                       setArtistSortDropdownOpen(false);
                     },
-                    className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between ${
-                      artistSort === option.value ? 'text-gray-900 font-medium' : 'text-gray-600'
+                    className: `w-full px-4 py-2 text-left text-sm hover:bg-surface-hover flex items-center justify-between ${
+                      artistSort === option.value ? 'text-ink-primary font-medium' : 'text-ink-secondary'
                     }`
                   },
                     option.label,
@@ -881,7 +881,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
             // Search toggle/field
             React.createElement('div', { className: 'flex items-center' },
               artistSearchOpen ?
-                React.createElement('div', { className: 'flex items-center border border-gray-300 rounded-full px-3 py-[5px] filter-pill' },
+                React.createElement('div', { className: 'flex items-center border border-line-strong rounded-full px-3 py-[5px] filter-pill' },
                   React.createElement('input', {
                     type: 'text',
                     value: artistSearch,
@@ -893,7 +893,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                     },
                     autoFocus: true,
                     placeholder: 'Filter...',
-                    className: 'bg-transparent text-gray-700 text-sm placeholder-gray-400 outline-none',
+                    className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none',
                     style: { width: '150px' }
                   }),
                   artistSearch && React.createElement('button', {
@@ -901,7 +901,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                       setArtistSearch('');
                       setArtistSearchOpen(false);
                     },
-                    className: 'ml-2 text-gray-400 hover:text-gray-600'
+                    className: 'ml-2 text-ink-tertiary hover:text-ink-secondary'
                   },
                     React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                       React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
@@ -911,7 +911,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
               :
                 React.createElement('button', {
                   onClick: () => setArtistSearchOpen(true),
-                  className: 'p-1.5 text-gray-400 hover:text-gray-600 transition-colors'
+                  className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors'
                 },
                   React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                     React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
@@ -1241,7 +1241,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                   ep: 'EPs',
                   single: 'singles'
                 };
-                return React.createElement('div', { className: 'text-center py-12 text-gray-400' },
+                return React.createElement('div', { className: 'text-center py-12 text-ink-tertiary' },
                   artistSearch.trim()
                     ? `No releases matching "${artistSearch}"`
                     : `No ${typeLabels[releaseTypeFilter] || releaseTypeFilter} found`
@@ -1623,7 +1623,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
               // Bio content (artistBio is an object when bio exists)
               !loadingBio && artistBio && artistBio !== false && React.createElement('div', { className: 'space-y-4' },
                 React.createElement('div', {
-                  className: 'text-sm text-gray-700 leading-relaxed whitespace-pre-wrap'
+                  className: 'text-sm text-ink-secondary leading-relaxed whitespace-pre-wrap'
                 }, artistBio.source === 'discogs'
                   // Discogs keeps its [b]/[i]/[u]/[url=] formatting tags.
                   ? parseBioMarkup(artistBio.bio).map((seg, i) => {
@@ -1633,26 +1633,26 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                         textDecoration: seg.underline ? 'underline' : undefined,
                       };
                       return seg.href
-                        ? React.createElement('a', { key: i, href: seg.href, target: '_blank', rel: 'noopener noreferrer', className: 'text-purple-600 hover:text-purple-700', style }, seg.text)
+                        ? React.createElement('a', { key: i, href: seg.href, target: '_blank', rel: 'noopener noreferrer', className: 'text-accent hover:text-accent', style }, seg.text)
                         : React.createElement('span', { key: i, style }, seg.text);
                     })
                   : artistBio.bio),
                 // Source attribution and link
                 React.createElement('div', { className: 'flex items-center gap-2 mt-4' },
                   React.createElement('span', {
-                    className: 'text-xs text-gray-400'
+                    className: 'text-xs text-ink-tertiary'
                   }, `From ${artistBio.source === 'wikipedia' ? 'Wikipedia' : artistBio.source === 'discogs' ? 'Discogs' : 'Last.fm'}`),
                   artistBio.url && React.createElement('a', {
                     href: artistBio.url,
                     target: '_blank',
                     rel: 'noopener noreferrer',
-                    className: 'text-purple-600 hover:text-purple-700 text-sm'
+                    className: 'text-accent hover:text-accent text-sm'
                   }, 'Read more →')
                 )
               ),
               // No bio found (artistBio === false means we fetched but found nothing)
               !loadingBio && artistBio === false && React.createElement('div', {
-                className: 'text-center py-12 text-gray-400'
+                className: 'text-center py-12 text-ink-tertiary'
               }, 'No biography available for this artist.')
             )
           ),
@@ -1793,11 +1793,11 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                                 showToast(`No top tracks found for ${artist.name}`, 'error');
                               }
                             },
-                            className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
+                            className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
                             style: { border: 'none', cursor: 'pointer' },
                             title: 'Play top 10 tracks'
                           },
-                            React.createElement(PlayTop10Icon, { size: 26, className: 'text-gray-800' })
+                            React.createElement(PlayTop10Icon, { size: 26, className: 'text-ink-primary' })
                           ),
                           // Add top 10 to Queue button
                           React.createElement('button', {
@@ -1824,7 +1824,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                       // Artist name section
                       React.createElement('div', { className: 'p-3' },
                         React.createElement('p', {
-                          className: 'font-medium text-gray-900 truncate text-sm transition-colors'
+                          className: 'font-medium text-ink-primary truncate text-sm transition-colors'
                         }, artist.name)
                       )
                     );
@@ -1833,7 +1833,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                 // Cards will appear with their own shimmer animations when data is ready
                 // No related artists found (or filtered to none)
                 !loadingRelated && filteredArtists.length === 0 && React.createElement('div', {
-                  className: 'text-center py-12 text-gray-400'
+                  className: 'text-center py-12 text-ink-tertiary'
                 }, relatedArtists.length === 0
                   ? 'No related artists found.'
                   : `No artists from ${relatedArtistsSourceFilter === 'listenbrainz' ? 'ListenBrainz' : relatedArtistsSourceFilter === 'lastfm' ? 'Last.fm' : 'both sources'}.`
@@ -1878,7 +1878,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                 extra: React.createElement('button', {
                   onClick: () => currentArtist && loadArtistConcerts(currentArtist.name, true),
                   disabled: artistConcertsLoading,
-                  className: `p-1.5 transition-colors ${artistConcertsLoading ? 'text-teal-500' : (isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600')}`,
+                  className: `p-1.5 transition-colors ${artistConcertsLoading ? 'text-teal-500' : 'text-ink-tertiary hover:text-ink-secondary'}`,
                   title: artistConcertsLoading ? 'Loading...' : 'Refresh'
                 },
                   React.createElement('svg', {
@@ -1894,7 +1894,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
               events.length === 0 && !artistConcertsLoading && React.createElement('div', {
                 className: 'flex flex-col items-center justify-center py-12'
               },
-                React.createElement('p', { className: `text-sm ${isDark ? 'text-gray-500' : 'text-gray-400'}` }, 'No upcoming concerts found.')
+                React.createElement('p', { className: `text-sm text-ink-tertiary` }, 'No upcoming concerts found.')
               ),
 
               // Loading state
@@ -1908,14 +1908,14 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                   React.createElement('circle', { className: 'opacity-25', cx: 12, cy: 12, r: 10, stroke: 'currentColor', strokeWidth: 4 }),
                   React.createElement('path', { className: 'opacity-75', fill: 'currentColor', d: 'M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z' })
                 ),
-                React.createElement('p', { className: `text-sm ${isDark ? 'text-gray-500' : 'text-gray-400'}` }, 'Loading concerts...')
+                React.createElement('p', { className: `text-sm text-ink-tertiary` }, 'Loading concerts...')
               ),
 
               // Month-grouped event list
               sortedMonths.map(monthKey =>
                 React.createElement('div', { key: monthKey, className: 'mb-8' },
                   React.createElement('h3', {
-                    className: `text-sm font-semibold uppercase tracking-wider mb-3 px-1 ${isDark ? 'text-gray-400' : 'text-gray-400'}`
+                    className: `text-sm font-semibold uppercase tracking-wider mb-3 px-1 text-ink-tertiary`
                   }, grouped[monthKey].label),
 
                   React.createElement('div', { className: 'space-y-3' },
@@ -1928,7 +1928,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
 
                       return React.createElement('div', {
                         key: event.id || `${monthKey}-${eventIdx}`,
-                        className: 'flex items-center gap-4 p-4 rounded-xl border cursor-default group bg-white border-gray-100',
+                        className: 'flex items-center gap-4 p-4 rounded-xl border cursor-default group bg-surface-card border-line-light',
                         style: {
                           animation: 'fadeIn 300ms ease-out both',
                           animationDelay: `${eventIdx * 30}ms`
@@ -1943,10 +1943,10 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                             className: 'text-xs font-medium text-teal-500 uppercase'
                           }, monthShort),
                           React.createElement('span', {
-                            className: `text-2xl font-bold leading-tight ${isDark ? 'text-white' : 'text-gray-900'}`
+                            className: `text-2xl font-bold leading-tight text-ink-primary`
                           }, dayNum),
                           React.createElement('span', {
-                            className: 'text-xs text-gray-400 uppercase'
+                            className: 'text-xs text-ink-tertiary uppercase'
                           }, dayOfWeek)
                         ),
 
@@ -1954,7 +1954,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                         React.createElement('div', { className: 'flex-1 min-w-0' },
                           React.createElement('div', { className: 'flex items-center gap-2 mb-0.5' },
                             React.createElement('span', {
-                              className: `font-semibold truncate ${isDark ? 'text-white' : 'text-gray-900'}`
+                              className: `font-semibold truncate text-ink-primary`
                             }, event.title || `${currentArtist?.name || event.artist} live`),
                             // Source badges
                             ...(() => {
@@ -1989,13 +1989,13 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                             })()
                           ),
                           React.createElement('div', {
-                            className: `text-sm truncate ${isDark ? 'text-gray-300' : 'text-gray-600'}`
+                            className: `text-sm truncate text-ink-secondary`
                           }, event.venue?.name || 'Venue TBA'),
                           location && React.createElement('div', {
-                            className: `text-xs truncate mt-0.5 ${isDark ? 'text-gray-500' : 'text-gray-400'}`
+                            className: `text-xs truncate mt-0.5 text-ink-tertiary`
                           }, location),
                           event.lineup && event.lineup.length > 1 && React.createElement('div', {
-                            className: `text-xs mt-0.5 ${isDark ? 'text-gray-500' : 'text-gray-400'}`
+                            className: `text-xs mt-0.5 text-ink-tertiary`
                           }, 'with ' + event.lineup.filter(a => a.toLowerCase() !== (currentArtist?.name || '').toLowerCase()).join(', '))
                         ),
 
@@ -2037,7 +2037,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                               )
                             ),
                             isOpen && React.createElement('div', {
-                              className: `absolute right-0 top-full mt-1 rounded-lg shadow-lg border py-1 z-30 ${isDark ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-200'}`,
+                              className: `absolute right-0 top-full mt-1 rounded-lg shadow-lg border py-1 z-30 bg-surface-card border-line`,
                               style: { minWidth: '180px' },
                               onClick: (e) => e.stopPropagation()
                             },
@@ -2048,22 +2048,22 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                                   seatgeek: isDark ? '#fb923c' : '#FC4C02',
                                   ticketmaster: isDark ? '#60a5fa' : '#026CDF'
                                 };
-                                const color = srcColors[src.source] || (isDark ? '#66f0da' : '#10c9b4');
+                                const color = srcColors[src.source] || '#10c9b4';
                                 return React.createElement('a', {
                                   key: si,
                                   href: src.ticketUrl,
                                   target: '_blank',
                                   rel: 'noopener noreferrer',
-                                  className: `flex items-center gap-2 px-4 py-2 text-sm transition-colors ${isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-50'}`,
+                                  className: `flex items-center gap-2 px-4 py-2 text-sm transition-colors hover:bg-surface-hover`,
                                   onClick: () => setArtistConcertsTicketFlyout(null)
                                 },
                                   React.createElement('span', {
                                     className: 'w-2 h-2 rounded-full flex-shrink-0',
                                     style: { backgroundColor: color }
                                   }),
-                                  React.createElement('span', { className: isDark ? 'text-gray-200' : 'text-gray-700' }, src.label),
+                                  React.createElement('span', { className: 'text-ink-secondary' }, src.label),
                                   React.createElement('svg', {
-                                    className: 'w-3 h-3 text-gray-400 ml-auto',
+                                    className: 'w-3 h-3 text-ink-tertiary ml-auto',
                                     fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor'
                                   },
                                     React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14' })

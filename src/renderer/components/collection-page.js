@@ -266,7 +266,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
             React.createElement('div', { className: 'relative' },
               React.createElement('button', {
                 onClick: (e) => { e.stopPropagation(); setCollectionSortDropdownOpen(!collectionSortDropdownOpen); },
-                className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors'
+                className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-ink-tertiary hover:text-ink-secondary transition-colors'
               },
                 React.createElement('span', null, getCollectionSortOptions(collectionTab).find(o => o.value === collectionSort[collectionTab])?.label || 'Sort'),
                 React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
@@ -275,7 +275,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
               ),
               // Dropdown menu
               collectionSortDropdownOpen && React.createElement('div', {
-                className: 'absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-gray-200'
+                className: 'absolute left-0 top-full mt-1 bg-surface-card rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-line'
               },
                 getCollectionSortOptions(collectionTab).map(option =>
                   React.createElement('button', {
@@ -285,8 +285,8 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                       setCollectionSort(prev => ({ ...prev, [collectionTab]: option.value }));
                       setCollectionSortDropdownOpen(false);
                     },
-                    className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between ${
-                      collectionSort[collectionTab] === option.value ? 'text-gray-900 font-medium' : 'text-gray-600'
+                    className: `w-full px-4 py-2 text-left text-sm hover:bg-surface-hover flex items-center justify-between ${
+                      collectionSort[collectionTab] === option.value ? 'text-ink-primary font-medium' : 'text-ink-secondary'
                     }`
                   },
                     option.label,
@@ -307,7 +307,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
             // Search toggle/field
             React.createElement('div', { className: 'flex items-center' },
               collectionSearchOpen ?
-                React.createElement('div', { className: 'flex items-center border border-gray-300 rounded-full px-3 py-[5px] filter-pill' },
+                React.createElement('div', { className: 'flex items-center border border-line-strong rounded-full px-3 py-[5px] filter-pill' },
                   React.createElement('input', {
                     type: 'text',
                     value: collectionSearch,
@@ -319,7 +319,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                     },
                     autoFocus: true,
                     placeholder: 'Filter...',
-                    className: 'bg-transparent text-gray-700 text-sm placeholder-gray-400 outline-none',
+                    className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none',
                     style: { width: '150px' }
                   }),
                   collectionSearch && React.createElement('button', {
@@ -327,7 +327,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                       setCollectionSearch('');
                       setCollectionSearchOpen(false);
                     },
-                    className: 'ml-2 text-gray-400 hover:text-gray-600'
+                    className: 'ml-2 text-ink-tertiary hover:text-ink-secondary'
                   },
                     React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                       React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
@@ -337,7 +337,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
               :
                 React.createElement('button', {
                   onClick: () => setCollectionSearchOpen(true),
-                  className: 'p-1.5 text-gray-400 hover:text-gray-600 transition-colors'
+                  className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors'
                 },
                   React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                     React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
@@ -496,7 +496,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                 title: hasCreds
                   ? 'Sync friends from Last.fm and ListenBrainz'
                   : 'Connect Last.fm or ListenBrainz in Settings to sync friends',
-                className: 'ml-3 p-1.5 text-gray-500 hover:text-gray-700 transition-colors',
+                className: 'ml-3 p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors',
                 style: { opacity: friendSyncInProgress || !hasCreds ? 0.4 : 1, cursor: hasCreds ? 'pointer' : 'not-allowed' }
               },
                 friendSyncInProgress
@@ -616,8 +616,8 @@ const CollectionPage = React.memo(function CollectionPage(props) {
               const sorted = collectionSongsSorted;
 
               if (sorted.length === 0 && collectionSearch) {
-                return React.createElement('div', { className: 'text-center py-12 text-gray-400' },
-                  React.createElement('svg', { className: 'w-12 h-12 mx-auto mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                return React.createElement('div', { className: 'text-center py-12 text-ink-tertiary' },
+                  React.createElement('svg', { className: 'w-12 h-12 mx-auto mb-4 text-ink-faint', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                     React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
                   ),
                   React.createElement('div', { className: 'text-sm' }, 'No tracks match your search')
@@ -625,12 +625,12 @@ const CollectionPage = React.memo(function CollectionPage(props) {
               }
 
               if (sorted.length === 0) {
-                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-gray-400 py-20' },
-                  React.createElement('svg', { className: 'w-16 h-16 mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-ink-tertiary py-20' },
+                  React.createElement('svg', { className: 'w-16 h-16 mb-4 text-ink-faint', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                     React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
                   ),
-                  React.createElement('p', { className: 'text-lg font-medium text-gray-500 mb-2' }, 'No tracks yet'),
-                  React.createElement('p', { className: 'text-sm text-gray-400' }, 'Drag tracks here or add local music folders in Settings')
+                  React.createElement('p', { className: 'text-lg font-medium text-ink-tertiary mb-2' }, 'No tracks yet'),
+                  React.createElement('p', { className: 'text-sm text-ink-tertiary' }, 'Drag tracks here or add local music folders in Settings')
                 );
               }
 
@@ -684,7 +684,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                       handlePlaylistDragEnd();
                     },
                     className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all no-drag group ${
-                      isNowPlaying && isPlaying ? 'bg-cyan-50' : 'hover:bg-gray-50/80'
+                      isNowPlaying && isPlaying ? 'bg-cyan-50' : 'hover:bg-surface-hover'
                     }`,
                     style: {
                       borderRadius: '8px',
@@ -740,7 +740,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
 
                     // Artist name - flexible column, clickable
                     React.createElement('span', {
-                      className: 'truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
+                      className: 'truncate hover:text-accent hover:underline cursor-pointer transition-colors',
                       style: {
                         flex: '0.7 1 0',
                         minWidth: 0,
@@ -755,7 +755,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
 
                     // Album name - flexible column, clickable
                     track.album ? React.createElement('span', {
-                      className: 'truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
+                      className: 'truncate hover:text-accent hover:underline cursor-pointer transition-colors',
                       style: {
                         flex: '0.5 1 0',
                         minWidth: 0,
@@ -936,18 +936,18 @@ const CollectionPage = React.memo(function CollectionPage(props) {
               const sorted = sortCollectionItems(filtered, 'artists');
 
               if (sorted.length === 0 && collectionSearch) {
-                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-gray-400 py-20' },
-                  React.createElement('p', { className: 'text-lg font-medium text-gray-500' }, 'No artists match your search')
+                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-ink-tertiary py-20' },
+                  React.createElement('p', { className: 'text-lg font-medium text-ink-tertiary' }, 'No artists match your search')
                 );
               }
 
               if (sorted.length === 0) {
-                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-gray-400 py-20' },
-                  React.createElement('svg', { className: 'w-16 h-16 mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-ink-tertiary py-20' },
+                  React.createElement('svg', { className: 'w-16 h-16 mb-4 text-ink-faint', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                     React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' })
                   ),
-                  React.createElement('p', { className: 'text-lg font-medium text-gray-500 mb-2' }, 'No artists yet'),
-                  React.createElement('p', { className: 'text-sm text-gray-400' }, 'Drag artists here to add them to your collection')
+                  React.createElement('p', { className: 'text-lg font-medium text-ink-tertiary mb-2' }, 'No artists yet'),
+                  React.createElement('p', { className: 'text-sm text-ink-tertiary' }, 'Drag artists here to add them to your collection')
                 );
               }
 
@@ -1002,18 +1002,18 @@ const CollectionPage = React.memo(function CollectionPage(props) {
               const sorted = sortCollectionItems(filtered, 'albums');
 
               if (sorted.length === 0 && collectionSearch) {
-                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-gray-400 py-20' },
-                  React.createElement('p', { className: 'text-lg font-medium text-gray-500' }, 'No albums match your search')
+                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-ink-tertiary py-20' },
+                  React.createElement('p', { className: 'text-lg font-medium text-ink-tertiary' }, 'No albums match your search')
                 );
               }
 
               if (sorted.length === 0) {
-                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-gray-400 py-20' },
-                  React.createElement('svg', { className: 'w-16 h-16 mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-ink-tertiary py-20' },
+                  React.createElement('svg', { className: 'w-16 h-16 mb-4 text-ink-faint', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                     React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
                   ),
-                  React.createElement('p', { className: 'text-lg font-medium text-gray-500 mb-2' }, 'No albums yet'),
-                  React.createElement('p', { className: 'text-sm text-gray-400' }, 'Drag albums here to add them to your collection')
+                  React.createElement('p', { className: 'text-lg font-medium text-ink-tertiary mb-2' }, 'No albums yet'),
+                  React.createElement('p', { className: 'text-sm text-ink-tertiary' }, 'Drag albums here to add them to your collection')
                 );
               }
 
@@ -1131,41 +1131,41 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                     : filtered;
 
               if (displayFriends.length === 0 && collectionSearch) {
-                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-gray-400 py-20' },
-                  React.createElement('p', { className: 'text-lg font-medium text-gray-500' }, 'No friends match your search')
+                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-ink-tertiary py-20' },
+                  React.createElement('p', { className: 'text-lg font-medium text-ink-tertiary' }, 'No friends match your search')
                 );
               }
 
               if (displayFriends.length === 0 && collectionSort.friends === 'on-air') {
-                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-gray-400 py-20' },
-                  React.createElement('svg', { className: 'w-16 h-16 mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-ink-tertiary py-20' },
+                  React.createElement('svg', { className: 'w-16 h-16 mb-4 text-ink-faint', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                     React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M5.636 18.364a9 9 0 010-12.728m12.728 0a9 9 0 010 12.728m-9.9-2.829a5 5 0 010-7.07m7.072 0a5 5 0 010 7.07M13 12a1 1 0 11-2 0 1 1 0 012 0z' })
                   ),
-                  React.createElement('p', { className: 'text-lg font-medium text-gray-500 mb-2' }, 'No friends on air right now'),
-                  React.createElement('p', { className: 'text-sm text-gray-400' }, 'Check back later to see who\'s listening')
+                  React.createElement('p', { className: 'text-lg font-medium text-ink-tertiary mb-2' }, 'No friends on air right now'),
+                  React.createElement('p', { className: 'text-sm text-ink-tertiary' }, 'Check back later to see who\'s listening')
                 );
               }
 
               if (displayFriends.length === 0 && collectionSort.friends === 'active') {
-                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-gray-400 py-20' },
-                  React.createElement('svg', { className: 'w-16 h-16 mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-ink-tertiary py-20' },
+                  React.createElement('svg', { className: 'w-16 h-16 mb-4 text-ink-faint', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                     React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' })
                   ),
-                  React.createElement('p', { className: 'text-lg font-medium text-gray-500 mb-2' }, 'No friends active in the last 14 days'),
-                  React.createElement('p', { className: 'text-sm text-gray-400' }, 'Try a different sort to see all your friends')
+                  React.createElement('p', { className: 'text-lg font-medium text-ink-tertiary mb-2' }, 'No friends active in the last 14 days'),
+                  React.createElement('p', { className: 'text-sm text-ink-tertiary' }, 'Try a different sort to see all your friends')
                 );
               }
 
               if (savedFriends.length === 0) {
-                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-gray-400 py-20' },
-                  React.createElement('svg', { className: 'w-16 h-16 mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-ink-tertiary py-20' },
+                  React.createElement('svg', { className: 'w-16 h-16 mb-4 text-ink-faint', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                     React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z' })
                   ),
-                  React.createElement('p', { className: 'text-lg font-medium text-gray-500 mb-2' }, 'No friends in collection'),
-                  React.createElement('p', { className: 'text-sm text-gray-400 mb-4' }, 'Add friends to your collection to see them here'),
+                  React.createElement('p', { className: 'text-lg font-medium text-ink-tertiary mb-2' }, 'No friends in collection'),
+                  React.createElement('p', { className: 'text-sm text-ink-tertiary mb-4' }, 'Add friends to your collection to see them here'),
                   React.createElement('button', {
                     onClick: () => setAddFriendModalOpen(true),
-                    className: 'px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors'
+                    className: 'px-4 py-2 bg-accent-fill hover:bg-accent-fill-hover text-white rounded-lg text-sm font-medium transition-colors'
                   }, 'Add Friend')
                 );
               }
