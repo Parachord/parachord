@@ -43,7 +43,7 @@ Each step is one commit. Each runs `npm test`, rewrites the drift baseline when 
 
 ### 4. Remap what's left, then shrink the remap block
 - [ ] Extend the `.dark` remap block to the palette classes actually used that have no remap: `text-gray-200/300`, the 16 tint backgrounds, the 7 hover tints, `border-red-200`, `border-teal-300`, `bg-gray-900` and others. Delete the unused `violet` rules.
-- [ ] Then, page by page, replace palette classes with variables (inline style, or a small set of utility classes added to `index.html` that read variables). As each page is converted, delete the remap rules nothing uses any more.
+- [x] (Settings, Concerts, Charts, Fresh Drops, Critical Darlings, Recommendations, History, Search, Collection and the artist page done, through the token colours in `tailwind.config.js`; the playlist view, dialogs and the rest of app.js remain.) Then, page by page, replace palette classes with variables (inline style, or a small set of utility classes added to `index.html` that read variables). As each page is converted, delete the remap rules nothing uses any more.
 
 **Check:** `paletteClasses` falls with each page. Pages convert in this order, highest count first: Settings, Concerts, Charts, Recommendations, History, Search, Collection, the artist page.
 
