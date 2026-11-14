@@ -139,6 +139,18 @@ describe('parseListenbrainzFeedbackPage', () => {
     expect(skipped).toBe(1);
   });
 
+  test('without a recording MBID, BOTH names are required: an artist-only item is skipped, not a nameless row', () => {
+    const { loves, skipped, returned } = parseListenbrainzFeedbackPage({
+      feedback: [
+        { created: 1704067200, recording_mbid: null, recording_msid: 'a', track_metadata: { artist_name: 'Only Artist' } },
+        { created: 1704067201, recording_mbid: null, recording_msid: 'b', track_metadata: { track_name: 'Only Title' } },
+      ],
+    });
+    expect(returned).toBe(2);
+    expect(loves).toEqual([]);
+    expect(skipped).toBe(2);
+  });
+
   test('non-Latin metadata survives intact, and an invalid MBID reads as no MBID, not as a failure', () => {
     const { loves } = parseListenbrainzFeedbackPage({
       feedback: [

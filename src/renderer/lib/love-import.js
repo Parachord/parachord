@@ -104,7 +104,9 @@ function parseListenbrainzFeedbackPage(json) {
     const artist = typeof md.artist_name === 'string' ? md.artist_name.trim() : '';
     const title = typeof md.track_name === 'string' ? md.track_name.trim() : '';
     const album = typeof md.release_name === 'string' ? md.release_name.trim() : '';
-    if (!mbid && !artist && !title) { skipped++; continue; }
+    // Without a recording MBID, BOTH names are required: an artist-only item
+    // must not become a nameless row with id `a--` (parachord#1071 review).
+    if (!mbid && (!artist || !title)) { skipped++; continue; }
     const love = {
       artist,
       title,
@@ -446,7 +448,15 @@ function withLovesPushed(pushedKeys, trackIds, service, now = Date.now()) {
   const next = { ...(pushedKeys || {}) };
   for (const id of Array.isArray(trackIds) ? trackIds : []) {
     if (!id) continue;
-    next[id] = { ...(next[id] || {}), [service]: now };
+    // A re-mark keeps an entry's stored MBID (markLovePushed's { at, mbid }
+    // shape): the import re-marks rows the live push already stamped, and
+    // losing the MBID would leave a later removal without the recording
+    // tombstone (parachord#1071 review).
+    const prev = (next[id] || {})[service];
+    const stamped = (prev && typeof prev === 'object' && isMbid(prev.mbid))
+      ? { at: now, mbid: prev.mbid }
+      : now;
+    next[id] = { ...(next[id] || {}), [service]: stamped };
   }
   return next;
 }

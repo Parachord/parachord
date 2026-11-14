@@ -186,6 +186,55 @@ describe('collectLoves', () => {
     expect(capped).toBe(false);
   });
 
+  test('advances ListenBrainz-style by returned rows, so a short page still walks on', async () => {
+    const pages = [
+      { count: 2, offset: 0, total_count: 3, feedback: [
+        { created: 3000, recording_mbid: '9bd9f6a2-2c27-4d3c-b1d9-6e56a5ee72c2', track_metadata: { artist_name: 'A', track_name: 'T3' } },
+        { created: 2000, recording_mbid: '1e7b2ec1-6fab-4846-b25e-3dcb4a9f61a9', track_metadata: { artist_name: 'A', track_name: 'T2' } },
+      ] },
+      { count: 1, offset: 2, total_count: 3, feedback: [
+        { created: 1000, recording_mbid: 'b6d7ec1f-62f6-43dc-a67c-8367f4047d0e', track_metadata: { artist_name: 'A', track_name: 'T1' } },
+      ] },
+    ];
+    let call = 0;
+    const offsets = [];
+    const fetchPage = async ({ offset }) => { offsets.push(offset); return pages[call++]; };
+    const { parseListenbrainzFeedbackPage } = require('../../src/renderer/lib/love-import');
+    const { loves, complete } = await collectLoves({
+      fetchPage, parse: parseListenbrainzFeedbackPage, cursor: 0, pageSize: 3, onProgress: noProgress, ...fast,
+    });
+    expect(offsets).toEqual([0, 2]);
+    expect(complete).toBe(true);
+    expect(loves.map((l) => l.lovedAt)).toEqual([3000, 2000, 1000]);
+  });
+
+  test('a page the mapper emptied entirely does not end the walk (LB: all-unnameable rows)', async () => {
+    const pages = [
+      { count: 2, offset: 0, total_count: 3, feedback: [
+        { created: 3000, recording_mbid: null, recording_msid: 'a' },
+        { created: 2000, recording_mbid: null, recording_msid: 'b' },
+      ] },
+      { count: 1, offset: 2, total_count: 3, feedback: [
+        { created: 1000, recording_mbid: '9bd9f6a2-2c27-4d3c-b1d9-6e56a5ee72c2', track_metadata: { artist_name: 'A', track_name: 'T1' } },
+      ] },
+    ];
+    let call = 0;
+    const fetchPage = async ({ offset }) => {
+      const page = pages[call];
+      call++;
+      expect(offset).toBe(call === 1 ? 0 : 2);
+      return page;
+    };
+    const { parseListenbrainzFeedbackPage } = require('../../src/renderer/lib/love-import');
+    const { loves, skipped, complete } = await collectLoves({
+      fetchPage, parse: parseListenbrainzFeedbackPage, cursor: 0, pageSize: 3, onProgress: noProgress, ...fast,
+    });
+    expect(call).toBe(2);
+    expect(skipped).toBe(2);
+    expect(complete).toBe(true);
+    expect(loves.map((l) => l.lovedAt)).toEqual([1000]);
+  });
+
   test('the page cap ends the walk with capped: true (the toast says so)', async () => {
     const fetchPage = makeFetchPage([[2000], [1500]]);
     const { capped, complete } = await collectLoves({
@@ -250,11 +299,11 @@ describe('wiring (source markers)', () => {
     expect(body).not.toContain('pushLoveToScrobblers(');
   });
 
-  test('the cross-service push goes through the restricted backfill, not the toggle path', () => {
+  test('the cross-service push goes through the restricted backfill, confirmed adds only, never unhandled', () => {
     const start = app.indexOf('const runLoveImport = useCallback');
     const end = app.indexOf('// Remove track from collection', start);
     const body = app.slice(start, end);
-    expect(body).toContain('runLoveBackfill(otherService, { onlyIds: new Set(writeBox.addedIds) })');
+    expect(body).toContain('runLoveBackfill(otherService, { onlyIds: new Set(confirmedIds) }).catch(');
   });
 
   test('runLoveBackfill filters by onlyIds when given', () => {
@@ -283,7 +332,59 @@ describe('wiring (source markers)', () => {
   });
 
   test('only confirmed adds are marked pushed (a failed save must not leave orphan marks)', () => {
-    expect(app).toContain("...(saveOk ? writeBox.addedIds : [])");
+    // Per batch: matched ids mark immediately — but only ids that were in the
+    // collection at the start or that an earlier batch CONFIRMED (plan2 can
+    // match plan1's planned-but-unsaved rows); added ids only once THAT
+    // batch's save confirmed.
+    expect(app).toContain('if (batch.saveOk) await writeMarks(batch.addedIds);');
+    expect(app).toContain('await writeMarks(matchedIds.filter((id) => markableIds.has(id)));');
+  });
+
+  test('one batch per commit, each with its own updater flag (a later batch cannot read as confirmed off an earlier one)', () => {
+    expect(app).toContain('const batch = { planned: plan.add.length, updaterRan: false, savePromises: [], addedIds: [], saveOk: true };');
+    expect(app).toContain('const saveOk = batches.every((b) => b.saveOk);');
+    // The first batch commits — and is marked — before the lookup tail runs.
+    const commit1 = app.indexOf('const batch1 = commitBatch(plan1);');
+    const tail = app.indexOf('for (let i = 0; i < needsLookupLoves.length; i++) {');
+    expect(commit1).toBeGreaterThan(-1);
+    expect(tail).toBeGreaterThan(commit1);
+  });
+
+  test('a tombstoned metadata-less love is dropped before its MusicBrainz lookup', () => {
+    expect(app).toContain('if (LoveImport.isLoveTombstoned(tombstones, cand)) { lookupRemoved++; continue; }');
+  });
+
+  test('the resolved MBID is stored on the ListenBrainz mark, so a removal tombstones the recording the service holds', () => {
+    expect(app).toContain("const pushedMbid = lovePushedKeysRef.current?.[track.id]?.listenbrainz;");
+    expect(app).toContain("await markLovePushed(track.id, 'listenbrainz', mbid);");
+  });
+
+  test('the MB name-lookup helper splits transient from a miss, follows merged MBIDs, and sends no User-Agent', () => {
+    expect(app).toContain('window.lookupRecordingTitle = async (mbid) => {');
+    expect(app).toContain('inc=artist-credits+releases');
+    // The exact condition→status mapping, not just that the strings exist:
+    // a real 404/400 is a miss (skip; the recording is gone), while anything
+    // the fetch layer gave up on is transient (hold the cursor). A swap of
+    // the two is exactly the #1364 review's lost-love bug class.
+    expect(app).toContain("if (resp.status === 404 || resp.status === 400) return { status: 'missing' };");
+    expect(app).toContain("if (!resp.ok) return { status: 'transient' };");
+    const lookupAt = app.indexOf('window.lookupRecordingTitle = async (mbid) => {');
+    const lookupEnd = app.indexOf('window.resolveAlbumMbidViaMapper', lookupAt);
+    const helper = app.slice(lookupAt, lookupEnd);
+    expect(helper).toContain("const resolvedMbid = /^[a-f0-9-]{36}$/i.test(data?.id || \'\') ? data.id : mbid;");
+    expect(helper).toContain('} catch (e) {');
+    expect(helper).toContain("return { status: 'transient' };");
+    expect(helper).not.toContain('User-Agent');
+    expect(helper).toContain('mbBackground: true');
+  });
+
+  test('the cursor holds on a transient lookup failure (a missed recording and an unreachable server read differently)', () => {
+    expect(app).toContain('(complete && saveOk && lookupTransient === 0)');
+  });
+
+  test('a metadata-less love already in the collection by MBID matches without the MusicBrainz request', () => {
+    expect(app).toContain('const mbidIndex = LoveImport.rowMbidIndex(');
+    expect(app).toContain('const existing = mbidIndex.get(cand.mbid);');
   });
 
   test('the running flag is taken synchronously, before the first await (a fast double click)', () => {
@@ -318,8 +419,9 @@ describe('wiring (source markers)', () => {
     expect(app).toContain('delete without[matchId];');
   });
 
-  test('the cross-service push is gated on the confirmed save', () => {
-    expect(app).toContain('if (crossConfirm && saveOk &&');
+  test('the cross-service push is gated on the confirmed save (confirmedIds carries only saveOk batches)', () => {
+    expect(app).toContain('if (crossConfirm && confirmedIds.length > 0) {');
+    expect(app).toContain('(b.saveOk ? acc.concat(b.addedIds) : acc)');
   });
 
   test('love_import_cursor is in the bulk-load list', () => {

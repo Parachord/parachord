@@ -10,6 +10,8 @@
 
 'use strict';
 
+const { trackSlug } = require('./track-slug');
+
 // Normalize a string for ID generation (must match sync-providers/spotify.js)
 const normalizeForId = (str) => {
   return (str || '').toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
@@ -57,6 +59,12 @@ const findSavedTrack = (tracks, track) => {
   const generatedId = generateTrackId(track.artist, track.title, track.album);
   return tracks.find((t) => t.id === track.id && track.id)
     || tracks.find((t) => t.id === generatedId)
+    // A row the love-import saved with a trackSlug id (a non-Latin
+    // ListenBrainz love keeps its album, so `generateTrackId` collapses the
+    // artist/title and never matches): a heart from search, the queue or
+    // now-playing carries no album, so the slug is the only shared id
+    // (parachord#1071 review).
+    || tracks.find((t) => t.id === trackSlug(track.artist, track.title, track.album))
     || tracks.find((t) => sameName(t.artist, track.artist) && sameName(t.title, track.title)
       && isPlaceholderAlbum(t.album, t.sources))
     || null;
