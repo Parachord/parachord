@@ -261,8 +261,29 @@ A meta-service that can name listeners with taste close to the user's declares `
 Each entry in `implementation` is materialized with `new Function('return ' + src)()` in the renderer, then bound so `this` is the resolver object (a `resolve` can call `this.search(...)`). Consequences:
 
 - **Plugins are not sandboxed.** The code runs in the renderer with the same privileges as the app's own renderer code: `fetch`, `window` (including `window.electron.*` bridges such as `proxyFetch`), the DOM, and globals the app sets up. Install only plugins you trust.
-- **Each function is isolated from the others.** There is no shared module scope, so a helper used by two functions must be defined inside each.
-- Implementation keys that collide with resolver fields (`id`, `name`, `capabilities`, `config`, `__proto__` and similar) are skipped with a warning.
+- **Each function is isolated from the others — except through the plugin library.** There is no shared module scope, so a helper two functions need lives in `implementation._lib` (below) or is defined inside each.
+- Implementation keys that collide with resolver fields (`id`, `name`, `capabilities`, `config`, `__proto__` and similar) are skipped with a warning; `lib` and `_lib` are reserved (the library and its factory). `_lib` is the **only** underscore-prefixed key with a meaning — nothing interprets `_init`, `_helpers` or any other underscore name, so nobody should invent one expecting the same treatment.
+
+**`implementation._lib` — the plugin library (#1356).** An optional entry that is not a method: a factory function, materialized with the same `new Function('return ' + src)()` as every entry and then **invoked exactly once per resolver instance**, whose return value every implementation function sees as `this.lib`. It is the one shared scope a plugin gets: helpers live in it once instead of copy-pasted into each function (the confidence gate is duplicated across four shipped plugins today). The whole-module format (`implementationModule` — one module source string, real lexical scope) is the intended end state; `_lib` is written so that migration is mechanical.
+
+- **The library is pure: helpers and constants only.** The factory returns functions and immutable values — no I/O, no timers, no `window`/`globalThis` access, no mutable state — and the loader enforces it: the returned library is **frozen** (`Object.freeze`), so an assignment to `this.lib.x` does not stick (silently, in sloppy mode). It takes its inputs (config, a host bridge) as arguments, so the same helpers run on every host. It runs at load, takes no arguments, must return an object, and can close over nothing but itself (a serialized function loses its closure — `build-axes` materializes every entry in a clean scope and calls `_lib` once, so a factory that reaches for module scope fails the **build**, not a user's machine).
+- **State lives on `this`, not on the library.** Per-instance state (a request-template cache, a breaker) goes on the resolver instance — `_bindContext` already shares it across every method. Nothing is shared across two loaded instances of the same plugin: the app builds a resolver instance per load, so a marketplace hot reload or a plugin loaded in more than one list gets a **fresh instance and a fresh library**. State that must outlive a reload or span instances belongs host-side.
+- **A library that fails fails the plugin.** If `_lib` is malformed, throws, or returns a non-object, the load fails with that error — the same treatment as a malformed manifest, never a null `this.lib` plugin that looks enabled and throws on every call. (The loader evaluates the factory for every instance, including disabled plugins and hot reloads — another reason it must be pure.)
+- **Old apps get a readable error, not a TypeError.** An app whose loader predates `_lib` materializes the entry as an inert method — and then every `this.lib.x` call throws `TypeError: Cannot read properties of null`. A plugin that adopts `_lib` therefore declares `manifest.minAppVersion` on **every platform**, set to the first release whose loader has it. Apps from before floors existed (desktop 0.9.11 and earlier, Android 0.9.9 and earlier) ignore floors, so until those are rare each library-using method opens with a guard; ship the guard ONCE as a `requireLib` implementation entry (a normal entry — old loaders materialize it like any method, which is exactly why the guard cannot be loader-side) and open every library-using method with `const lib = this.requireLib();`:
+
+```js
+// implementation.js — one entry, works on every app version
+requireLib: function () {
+  if (!this.lib) {
+    throw new Error('Amazon Music needs a newer Parachord — please update the app.');
+  }
+  return this.lib;
+},
+search: async function (query, config) {
+  const lib = this.requireLib();
+  // ...
+}
+```
 
 Common signatures, taken from the shipped plugins: `search(query, config)` returns an array of tracks; `resolve(artist, track, album, config)` returns one track or `null`; `play(track, config)` returns a truthy value on success (falsy makes `handlePlay` try the next source). When the host wants the track to start mid-way (a restored queue's resume), the track carries `_startAt` (seconds). A plugin that can start there does, and sets `track._startedAt = track._startAt` on the same object once playback started there. One that doesn't starts at 0:00 and the host seeks; see "A restored queue resumes where it was" in [playback.md](playback.md). Spotify and Apple Music do this. `init(config)` and `cleanup()` run on load and unload. A track carries `id`, `title`, `artist`, `album`, `duration` (seconds), `sources: ['<resolverId>']`, the resolver's own identifier (`spotifyId`, `bandcampUrl`, `youtubeId`, `soundcloudId`, `appleMusicId`, ...) and any cross-cutting metadata such as `isrc` (see "Resolver Result Shape" in [playback.md](playback.md)). Meta-services implement the functions their capability names: `generate(prompt, config, listeningContext)`, `chat(messages, tools, config)`, `listModels(config)`, `searchArtistEvents(artistName, config)` and `searchArtist(artistName, config)`.
 

@@ -63,8 +63,13 @@
 //
 // Why functions are serialized with String(fn): the .axe materializes each
 // implementation entry with `new Function('return ' + src)()` in
-// resolver-loader.js, so functions are fully isolated — no shared scope. That
-// is also why implementation.js exports plain functions and nothing else.
+// resolver-loader.js, so functions are fully isolated — no shared scope.
+// The one exception is `implementation._lib` (#1356): a factory entry the
+// loader evaluates and invokes exactly once per resolver instance, exposing
+// its return value to every method as `this.lib` — a plugin's shared helpers
+// and cross-call state live there instead of being copy-pasted into each
+// function. That is also why implementation.js exports plain functions and
+// nothing else.
 
 const fs = require('fs');
 const path = require('path');
@@ -177,6 +182,11 @@ function buildAxe(id) {
     impl[key] = String(value);
   }
 
+  const problems = [...validateImplementationEntries(impl), ...checkEntriesForFreeVariables(impl)];
+  for (const problem of problems) {
+    fail(`plugins-src/${id}/implementation.js: ${problem}`);
+  }
+
   const axe = { ...manifestJson };
   if (Object.keys(impl).length > 0) axe.implementation = impl;
   return axe;
@@ -249,7 +259,10 @@ async function runImport() {
       '// Imported from the .axe by `node scripts/build-axes.js --import`.',
       '// Edit here, bump manifest.version in manifest.json, then run `node scripts/build-axes.js`.',
       '// The functions materialize fully isolated (resolver-loader.js uses',
-      '// new Function) — no shared scope between them; helpers must be embedded per function.',
+      '// new Function) — no shared scope between them; shared helpers live in',
+      '// an exported _lib factory (resolver-loader.js evaluates it once and',
+      '// exposes it to every method as this.lib), anything else must be',
+      '// embedded per function.',
       'module.exports = {',
     ];
     for (const [key, fnText] of entries) parts.push(`  ${key}: ${fnText},`);
@@ -406,8 +419,93 @@ function runCheck() {
   console.log(`✅ all ${plans.length} plugins-src plugins match plugins/, ${path.relative(ROOT, GENERATED_FALLBACK_PATH)} and marketplace-manifest.json`);
 }
 
-(async () => {
-  if (MODE === 'import') await runImport();
-  else if (MODE === 'check') runCheck();
-  else runWrite();
-})();
+// Self-containment check (review on the #1356 plugin library): serialized
+// functions lose their closure, so an implementation entry that reaches for
+// module scope only fails at RUNTIME, on a user's machine, with a
+// ReferenceError. Materialize every entry the way resolver-loader does — in
+// a clean scope with nothing closed over — and CALL the _lib factory once
+// (it must be pure, so calling it is safe at build time). A method that
+// closes over module scope can only be caught by calling it, which is not
+// safe here — its self-containment is the author's to keep and the runtime's
+// to fail loudly. Returns the problems (empty = valid).
+// Free-variable check (review on #1402): materializing and calling an entry
+// only catches a closure reference the entry touches WHILE IT RUNS — the
+// usual mistake is a reference inside a HELPER the factory returns, which
+// nothing calls until runtime, on a user's machine. ESLint's no-undef over
+// each serialized entry catches every free variable without calling anything:
+// a serialized function loses its closure, so anything no-undef flags is a
+// name that will not exist at runtime. Runs over methods and _lib helpers
+// alike. (Browser + ES globals are the plugin runtime: plugins run in the
+// renderer with window, fetch, console, JSON, ... — but NOT module scope.)
+function checkEntriesForFreeVariables(impl) {
+  let linter = null;
+  let config = null;
+  const problems = [];
+  for (const [key, src] of Object.entries(impl || {})) {
+    try {
+      if (!linter) {
+        const { Linter } = require('eslint');
+        const globals = require('globals');
+        linter = new Linter();
+        config = [{
+          languageOptions: {
+            ecmaVersion: 2024,
+            sourceType: 'script',
+            globals: { ...globals.browser, ...globals.es2021 }
+          },
+          rules: { 'no-undef': 'error' }
+        }];
+      }
+      const messages = linter.verify(`(${src});`, config);
+      for (const message of messages) {
+        problems.push(`entry "${key}" references "${message.message.replace(/^'/, '').replace(/' is not defined\.$/, '')}" — a serialized function loses its closure, so a module-scope name will not exist at runtime`);
+      }
+    } catch (error) {
+      // The linter failing to run must not block the build silently.
+      problems.push(`entry "${key}" could not be checked for free variables: ${(error && error.message) || error}`);
+    }
+  }
+  return problems;
+}
+
+function validateImplementationEntries(impl) {
+  const problems = [];
+  for (const [key, src] of Object.entries(impl || {})) {
+    let materialized;
+    try {
+      materialized = new Function('return ' + src)();
+    } catch (error) {
+      problems.push(`entry "${key}" does not materialize (new Function): ${(error && error.message) || error}`);
+      continue;
+    }
+    if (typeof materialized !== 'function') {
+      problems.push(`entry "${key}" materializes to a ${typeof materialized}, not a function`);
+      continue;
+    }
+    if (key === '_lib') {
+      let lib = null;
+      try {
+        lib = materialized();
+      } catch (error) {
+        problems.push(`_lib closes over module scope or throws when called in a clean scope: ${(error && error.message) || error}`);
+        continue;
+      }
+      if (!lib || typeof lib !== 'object') {
+        problems.push(`_lib must return the library (an object); got ${lib === null ? 'null' : typeof lib}`);
+      }
+    }
+  }
+  return problems;
+}
+
+if (require.main === module) {
+  (async () => {
+    if (MODE === 'import') await runImport();
+    else if (MODE === 'check') runCheck();
+    else runWrite();
+  })();
+} else {
+  // Test surface only (tests/scripts/build-axes-validation.test.js); the
+  // writer must never run on require.
+  module.exports = { validateImplementationEntries, checkEntriesForFreeVariables };
+}
