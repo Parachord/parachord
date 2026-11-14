@@ -21,3 +21,14 @@ test('the tour opens from About, and Developer Settings no longer has it', () =>
   expect(app).not.toContain("'Show Tutorial Now'");
   expect(app).not.toContain("'Reset Tutorial'");
 });
+
+test('the AI chat toast names every AI plug-in and opens Plug-Ins', () => {
+  expect(app).not.toContain('Enable Ollama or Claude in Settings');
+  expect(app).toContain("new Intl.ListFormat('en', { type: 'disjunction' }).format(names)");
+  expect(app).toMatch(/showToast\(`Shuffleupagus needs an AI plug-in\. Enable \$\{list\} in Plug-Ins\.`, 'error', \{\s*label: 'Open Plug-Ins',/);
+});
+
+test('an empty Playlists page offers Import', () => {
+  expect(app).not.toContain('No playlists yet. Import a playlist to get started!');
+  expect(app).toContain("actions: [{ label: 'Import playlist', variant: 'primary', onClick: () => setShowUrlImportDialog(true) }]");
+});

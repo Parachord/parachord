@@ -18040,7 +18040,14 @@ ${trackListXml}
     const enabledServices = chatServices.filter(isServiceEnabled);
 
     if (enabledServices.length === 0) {
-      showToast('No AI chat plugins configured. Enable Ollama or Claude in Settings.', 'error');
+      // Name every AI plug-in there is (it used to name 2 of 5) and take the
+      // user to them (#1387).
+      const names = chatServices.map(sv => sv.name || sv.manifest?.name).filter(Boolean);
+      const list = names.length ? new Intl.ListFormat('en', { type: 'disjunction' }).format(names) : 'an AI plug-in';
+      showToast(`Shuffleupagus needs an AI plug-in. Enable ${list} in Plug-Ins.`, 'error', {
+        label: 'Open Plug-Ins',
+        onClick: () => { setSettingsTab('plugins'); navigateTo('settings'); }
+      });
       return false;
     }
 
@@ -37848,9 +37855,12 @@ useEffect(() => {
             }
 
             if (sorted.length === 0) {
-              return React.createElement('div', {
-                className: 'text-center py-12 text-ink-tertiary'
-              }, 'No playlists yet. Import a playlist to get started!');
+              // The shared empty state, with the way in (#1387).
+              return React.createElement(EmptyState, {
+                title: 'No playlists yet',
+                body: 'Import one from Spotify, Apple Music, Amazon Music, a link or an .xspf file.',
+                actions: [{ label: 'Import playlist', variant: 'primary', onClick: () => setShowUrlImportDialog(true) }]
+              });
             }
 
             // Grid view
