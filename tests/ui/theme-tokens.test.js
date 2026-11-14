@@ -126,3 +126,12 @@ test('every .dark palette remap is for a class the renderer still uses', () => {
     .filter((cls) => !new RegExp(`(?<![\\w:/-])${cls.replace(/[/:]/g, (c) => `\\${c}`)}(?![\\w/-])`).test(src));
   expect(unused).toEqual([]);
 });
+
+test('page scrollbars read the --scrollbar-* tokens', () => {
+  const h = require('fs').readFileSync(require('path').join(__dirname, '../../index.html'), 'utf8');
+  const rules = h.slice(h.indexOf('.scrollable-content::-webkit-scrollbar-track'), h.indexOf('.scrollable-content-dark::-webkit-scrollbar {'));
+  expect(rules).toMatch(/background: var\(--scrollbar-track\)/);
+  expect(rules).toMatch(/background: var\(--scrollbar-thumb\)/);
+  expect(rules).toMatch(/background: var\(--scrollbar-thumb-hover\)/);
+  expect(rules).not.toMatch(/rgba\(0, 0, 0/);
+});

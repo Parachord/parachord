@@ -462,7 +462,7 @@ describe('the five-section page render', () => {
     // its name and no count.
     expect(bar).toContain("const chips = [{ id: 'all', label: 'All' }, ...sources.map(src => ({ id: src.id, label: src.name, color: colorFor(src.id) }))];");
     expect(bar).not.toMatch(/\$\{(name|src\.name)\} \(/);
-    expect(bar).toContain("React.createElement(FilterChips, { chips, value: active, onChange: setRecommendationSourceFilter, label: 'Filter recommendations by source' })");
+    expect(bar).toContain("React.createElement(FilterChips, { chips, value: active, onChange: setRecommendationSourceFilter, pageColor: PAGE_COLORS.recommendations.fill, label: 'Filter recommendations by source' })");
     // A source's colour is Home's (the plugins' manifest colours), Shuffleupagus
     // the fixed accent, a source with none the grey.
     expect(bar).toContain("const colorFor = (id) => (id === 'shuffleupagus' ? '#7c3aed' : (homeSourceColors && homeSourceColors[id]) || 'var(--text-secondary)');");

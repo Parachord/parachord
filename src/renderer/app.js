@@ -39342,6 +39342,7 @@ useEffect(() => {
             // Type filters: the app's filter chips (FilterChips), All
             // neutral, each type in its colour.
             React.createElement(FilterChips, {
+              pageColor: PAGE_COLORS['new-releases'].fill,
               chips: [
                 { value: 'all', label: 'All' },
                 { value: 'album', label: 'Albums', color: 'rgb(99, 102, 241)' },
@@ -41176,7 +41177,7 @@ useEffect(() => {
               className: 'flex items-center px-6 py-3',
               style: { flexShrink: 0, backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
             },
-              React.createElement(FilterChips, { chips, value: active, onChange: setRecommendationSourceFilter, label: 'Filter recommendations by source' })
+              React.createElement(FilterChips, { chips, value: active, onChange: setRecommendationSourceFilter, pageColor: PAGE_COLORS.recommendations.fill, label: 'Filter recommendations by source' })
             );
           })(),
           // Scrollable content area: the grouped page

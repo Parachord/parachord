@@ -252,9 +252,9 @@
       --card-border: #2e2e2e;
       --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.2), 0 4px 12px rgba(0, 0, 0, 0.15);
 
-      --scrollbar-track: rgba(255, 255, 255, 0.05);
-      --scrollbar-thumb: rgba(255, 255, 255, 0.15);
-      --scrollbar-thumb-hover: rgba(255, 255, 255, 0.25);
+      --scrollbar-track: rgba(255, 255, 255, 0.04);
+      --scrollbar-thumb: rgba(255, 255, 255, 0.22);
+      --scrollbar-thumb-hover: rgba(255, 255, 255, 0.35);
 
       --shimmer-from: #252525;
       --shimmer-via: #2e2e2e;
@@ -392,23 +392,24 @@
       -webkit-app-region: no-drag;
     }
 
-    /* Scrollbar styling - light theme */
+    /* Page scrollbars follow the theme (--scrollbar-*). They were black at
+       15% in both themes, nearly invisible on dark pages. */
     .scrollable-content::-webkit-scrollbar {
       width: 12px;
     }
 
     .scrollable-content::-webkit-scrollbar-track {
-      background: rgba(0, 0, 0, 0.03);
+      background: var(--scrollbar-track);
       border-radius: 10px;
     }
 
     .scrollable-content::-webkit-scrollbar-thumb {
-      background: rgba(0, 0, 0, 0.15);
+      background: var(--scrollbar-thumb);
       border-radius: 10px;
     }
 
     .scrollable-content::-webkit-scrollbar-thumb:hover {
-      background: rgba(0, 0, 0, 0.25);
+      background: var(--scrollbar-thumb-hover);
     }
 
     /* Scrollbar styling - dark theme (for queue drawer) */

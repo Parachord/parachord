@@ -92,3 +92,20 @@ describe('every page draws the shared chips', () => {
     expect(read('components/artist-page.js')).not.toMatch(pill);
   });
 });
+
+test('a picked neutral chip takes the page colour when one is given', () => {
+  const F = require('../../src/renderer/components/filter-chips');
+  const React = require('react');
+  const { renderToStaticMarkup } = require('react-dom/server');
+  global.React = React;
+  const html = renderToStaticMarkup(React.createElement(F.FilterChips, {
+    chips: [{ id: 'all', label: 'All' }], value: 'all', pageColor: '#15803d',
+  }));
+  expect(html).toMatch(/aria-pressed="true"[^>]*background-color:#15803d/);
+});
+
+test('Fresh Drops and Recommendations pass their page colour', () => {
+  const app = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  expect(app).toContain("pageColor: PAGE_COLORS['new-releases'].fill,");
+  expect(app).toContain('pageColor: PAGE_COLORS.recommendations.fill,');
+});
