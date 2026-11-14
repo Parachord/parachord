@@ -190,6 +190,7 @@ let localFilesServiceReady = null; // Promise that resolves when service is read
 // long. A request on a dead connection otherwise hangs for minutes instead of
 // failing: a hung poll never counts as an error (so recovery never starts),
 // and a hung pause on quit holds the app open (parachord#1300 follow-up).
+const { pauseSpotifyOnQuit } = require('./main-process/quit-cleanup');
 const SPOTIFY_API_TIMEOUT_MS = 5000;
 // Quitting waits on the pause, so it gets less.
 const SPOTIFY_QUIT_PAUSE_TIMEOUT_MS = 3000;
@@ -2368,28 +2369,22 @@ app.whenReady().then(async () => {
   });
 });
 
-// Helper function to pause Spotify playback
+// Pause Spotify on quit: it plays in the Spotify app, so it would play on
+// with nothing in control. The token goes through ensureValidSpotifyToken
+// (an expired one is refreshed first, and a 401 forces one refresh), and the
+// whole step is bounded (main-process/quit-cleanup.js).
 const pauseSpotifyPlayback = async () => {
-  const token = store.get('spotify_token');
-  if (!token) return;
-
-  try {
-    const response = await fetch('https://api.spotify.com/v1/me/player/pause', {
+  const outcome = await pauseSpotifyOnQuit({
+    getToken: ensureValidSpotifyToken,
+    sendPause: (token) => fetch('https://api.spotify.com/v1/me/player/pause', {
       method: 'PUT',
       headers: { 'Authorization': `Bearer ${token}` },
       signal: AbortSignal.timeout(SPOTIFY_QUIT_PAUSE_TIMEOUT_MS)
-    });
-    if (response.ok || response.status === 204) {
-      console.log('✅ Spotify playback paused on quit');
-    } else if (response.status === 403) {
-      // 403 often means no active device or already paused - that's fine
-      console.log('ℹ️ Spotify: no active playback to pause');
-    } else {
-      console.log('⚠️ Spotify pause response:', response.status);
-    }
-  } catch (err) {
-    console.error('Failed to pause Spotify on quit:', err.message);
-  }
+    })
+  });
+  if (outcome === 'paused') console.log('✅ Spotify playback paused on quit');
+  else if (outcome === 'nothing-playing') console.log('ℹ️ Spotify: no active playback to pause');
+  else if (outcome !== 'no-token') console.log(`⚠️ Spotify pause on quit: ${outcome}`);
 };
 
 let isQuitting = false;
