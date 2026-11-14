@@ -34,10 +34,10 @@ Each step is one commit. Each runs `npm test`, rewrites the drift baseline when 
 **Check:** launch in dark mode twice, once with the 5s fallback path forced. No light flash. Every page in dark mode has visible card edges.
 
 ### 3. Semantic colours and the accent
-- [ ] Toasts, the Home banner, inline errors and success lines use the status tokens. `lib/toast-style.js` and `lib/home-banners.js` read from them, not hex.
-- [ ] The 20 or so white-on-`var(--accent-primary)` buttons and gradients use `--accent-fill` / `--on-accent`.
-- [ ] The confirm dialog uses one red: the status token, not three different reds.
-- [ ] Hard-coded `#7c3aed` focus borders and slider accents use the accent variable. The playbar slider thumbs, blue today, move to the accent.
+- [x] Toasts and the Home banner use the status fill tokens (`--fill-*`). Inline errors and success lines move with step 4's page conversions. `lib/toast-style.js` and `lib/home-banners.js` read from them, not hex.
+- [x] The 20 or so white-on-`var(--accent-primary)` buttons and gradients use `--accent-fill` / `--on-accent`.
+- [x] The confirm dialog uses one red: the status token, not three different reds.
+- [x] Hard-coded `#7c3aed` focus borders and slider accents use the accent variable. The playbar slider thumbs, blue today, move to the accent.
 
 **Check:** `hexColors` falls. Every toast type and banner severity looks right in both themes.
 
