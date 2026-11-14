@@ -37,6 +37,7 @@ module.exports = {
           subtle: 'var(--bg-secondary)',
           inset: 'var(--bg-inset)',
           hover: 'var(--hover-bg-default)',
+          placeholder: 'var(--placeholder-bg)',
         },
         line: {
           DEFAULT: 'var(--border-default)',
@@ -53,6 +54,15 @@ module.exports = {
           'tint-hover': 'var(--accent-primary-alpha-15)',
         },
         control: { off: 'var(--control-off)', knob: 'var(--control-knob)' },
+        // Faint status backgrounds behind status text (bg-tint-danger with
+        // text-ink-danger): the status colour at 12%, or 20% for hover.
+        tint: {
+          danger: 'color-mix(in srgb, var(--text-danger) 12%, transparent)',
+          'danger-hover': 'color-mix(in srgb, var(--text-danger) 20%, transparent)',
+          success: 'color-mix(in srgb, var(--text-success) 12%, transparent)',
+          warning: 'color-mix(in srgb, var(--text-warning) 12%, transparent)',
+          info: 'color-mix(in srgb, var(--text-info) 12%, transparent)',
+        },
         status: {
           error: 'var(--fill-error)',
           'error-hover': 'var(--fill-error-hover)',

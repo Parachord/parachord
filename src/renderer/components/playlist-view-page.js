@@ -389,12 +389,12 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                 className: `mx-4 mt-3 p-3 rounded-lg border`,
                 style: { background: 'rgba(234, 179, 8, 0.12)', borderColor: 'rgba(234, 179, 8, 0.25)' }
               },
-                React.createElement('div', { className: 'text-sm font-medium text-yellow-700 mb-2' },
+                React.createElement('div', { className: 'text-sm font-medium text-ink-warning mb-2' },
                   `"${playlist.title}" was deleted on ${providerName}`
                 ),
                 React.createElement('div', { className: 'flex gap-2' },
                   React.createElement('button', {
-                    className: 'text-xs px-3 py-1.5 rounded-md bg-red-100 text-red-700 hover:bg-red-200 transition-colors',
+                    className: 'text-xs px-3 py-1.5 rounded-md bg-tint-danger text-ink-danger hover:bg-tint-danger-hover transition-colors',
                     onClick: async () => {
                       // Delete locally too (remote already gone) — via the helper
                       // so a hosted XSPF is cleared from BOTH stores.
@@ -403,7 +403,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                     }
                   }, 'Delete locally too'),
                   React.createElement('button', {
-                    className: 'text-xs px-3 py-1.5 rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors',
+                    className: 'text-xs px-3 py-1.5 rounded-md bg-surface-inset text-ink-secondary hover:bg-surface-hover transition-colors',
                     onClick: async () => {
                       // Keep local, stop syncing to this provider. Through the
                       // Sync menu's path, not by editing syncedTo here: with no
@@ -421,7 +421,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                     }
                   }, 'Stop syncing'),
                   React.createElement('button', {
-                    className: 'text-xs px-3 py-1.5 rounded-md bg-purple-100 text-purple-700 hover:bg-purple-200 transition-colors',
+                    className: 'text-xs px-3 py-1.5 rounded-md bg-accent-tint text-accent hover:bg-accent-tint-hover transition-colors',
                     onClick: async () => {
                       // Re-create on service — clear syncedTo for this provider
                       const updatedSyncedTo = { ...playlist.syncedTo };
@@ -506,9 +506,9 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
 
             // Colors based on state
             const colors = {
-              push: { bg: 'rgba(34, 197, 94, 0.12)', border: 'rgba(34, 197, 94, 0.25)', text: 'text-green-600', iconBg: 'rgba(34, 197, 94, 0.2)' },
-              pull: { bg: 'rgba(147, 51, 234, 0.12)', border: 'rgba(147, 51, 234, 0.25)', text: 'text-purple-600', iconBg: 'rgba(147, 51, 234, 0.2)' },
-              conflict: { bg: 'rgba(234, 179, 8, 0.12)', border: 'rgba(234, 179, 8, 0.25)', text: 'text-yellow-600', iconBg: 'rgba(234, 179, 8, 0.2)' }
+              push: { bg: 'rgba(34, 197, 94, 0.12)', border: 'rgba(34, 197, 94, 0.25)', text: 'text-ink-success', iconBg: 'rgba(34, 197, 94, 0.2)' },
+              pull: { bg: 'rgba(147, 51, 234, 0.12)', border: 'rgba(147, 51, 234, 0.25)', text: 'text-accent', iconBg: 'rgba(147, 51, 234, 0.2)' },
+              conflict: { bg: 'rgba(234, 179, 8, 0.12)', border: 'rgba(234, 179, 8, 0.25)', text: 'text-ink-warning', iconBg: 'rgba(234, 179, 8, 0.2)' }
             };
             const c = colors[syncState];
 
@@ -647,7 +647,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                       className: `text-xs font-medium tracking-widest uppercase ${c.text}`
                     }, syncState === 'push' ? 'Local Changes' : syncState === 'pull' ? 'Remote Changes' : 'Sync Conflict'),
                     React.createElement('span', {
-                      className: 'text-sm text-gray-600'
+                      className: 'text-sm text-ink-secondary'
                     }, syncState === 'push'
                       ? `Push your changes to ${providerName}`
                       : syncState === 'pull'
@@ -661,13 +661,13 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                 React.createElement('div', { className: 'flex items-center gap-2' },
                   React.createElement('button', {
                     onClick: handleDismiss,
-                    className: 'px-3 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-700 transition-colors'
+                    className: 'px-3 py-1.5 text-xs font-medium text-ink-tertiary hover:text-ink-secondary transition-colors'
                   }, 'Dismiss'),
 
                   // For conflict state, show both options
                   syncState === 'conflict' && React.createElement('button', {
                     onClick: handlePull,
-                    className: 'flex items-center gap-1.5 px-3 py-1.5 bg-gray-200 text-gray-700 text-xs font-medium rounded-full hover:bg-gray-300 transition-colors'
+                    className: 'flex items-center gap-1.5 px-3 py-1.5 bg-surface-inset text-ink-secondary text-xs font-medium rounded-full hover:bg-surface-hover transition-colors'
                   },
                     React.createElement('svg', { className: 'w-3.5 h-3.5', fill: 'none', stroke: 'currentColor', viewBox: '0 0 24 24' },
                       React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4' })
@@ -680,8 +680,8 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                     onClick: syncState === 'push' || (syncState === 'conflict' && localIsNewer) ? handlePush : handlePull,
                     className: `flex items-center gap-1.5 px-4 py-1.5 text-white text-xs font-medium rounded-full transition-colors ${
                       syncState === 'push' ? 'bg-green-600 hover:bg-green-700' :
-                      syncState === 'pull' ? 'bg-purple-600 hover:bg-purple-700' :
-                      localIsNewer ? 'bg-green-600 hover:bg-green-700' : 'bg-purple-600 hover:bg-purple-700'
+                      syncState === 'pull' ? 'bg-accent-fill hover:bg-accent-fill-hover' :
+                      localIsNewer ? 'bg-green-600 hover:bg-green-700' : 'bg-accent-fill hover:bg-accent-fill-hover'
                     }`,
                     style: { boxShadow: `0 2px 8px ${syncState === 'push' || (syncState === 'conflict' && localIsNewer) ? 'rgba(34, 197, 94, 0.3)' : 'rgba(147, 51, 234, 0.3)'}` }
                   },
@@ -748,7 +748,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                             className: 'relative w-full h-full flex items-center justify-center',
                             style: { background: 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)' }
                           },
-                            !covers[idx] && React.createElement(Music, { size: 20, className: 'text-gray-600' }),
+                            !covers[idx] && React.createElement(Music, { size: 20, className: 'text-ink-secondary' }),
                             covers[idx] && React.createElement('img', {
                               src: covers[idx],
                               alt: '',
@@ -766,7 +766,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                         style: { background: 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)' }
                       },
                         // Playlist icon (three lines with play triangle)
-                        React.createElement('svg', { className: 'w-12 h-12 text-gray-500', viewBox: '0 0 24 24', fill: 'currentColor' },
+                        React.createElement('svg', { className: 'w-12 h-12 text-ink-tertiary', viewBox: '0 0 24 24', fill: 'currentColor' },
                           React.createElement('rect', { x: 3, y: 5, width: 18, height: 2, rx: 1 }),
                           React.createElement('rect', { x: 3, y: 11, width: 10, height: 2, rx: 1 }),
                           React.createElement('rect', { x: 3, y: 17, width: 7, height: 2, rx: 1 }),
@@ -827,11 +827,11 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                             setTrackLoading(false);
                           }
                         },
-                        className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
+                        className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
                         style: { border: 'none', cursor: 'pointer' },
                         title: 'Play'
                       },
-                        React.createElement(Play, { size: 22, className: 'text-gray-800 ml-0.5' })
+                        React.createElement(Play, { size: 22, className: 'text-ink-primary ml-0.5' })
                       ),
                       // Add to Queue button
                       React.createElement('button', {
@@ -967,7 +967,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                     React.createElement('span', {
                       key: pid,
                       className: `text-xs px-2 py-0.5 rounded-full ${
-                        pid === 'spotify' ? 'bg-green-100 text-green-700' : 'bg-pink-100 text-pink-700'
+                        pid === 'spotify' ? 'bg-green-100 text-ink-success' : 'bg-pink-100 text-pink-700'
                       }`,
                       title: `Synced to ${pid === 'spotify' ? 'Spotify' : 'Apple Music'}`
                     }, pid === 'spotify' ? 'Spotify' : 'Apple Music')
@@ -976,8 +976,8 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                   React.createElement('button', {
                     className: `text-xs px-2 py-0.5 rounded-full transition-colors ${
                       selectedPlaylist.localOnly
-                        ? 'bg-gray-200 text-gray-600'
-                        : 'bg-gray-100 text-gray-400 hover:bg-gray-200'
+                        ? 'bg-surface-inset text-ink-secondary'
+                        : 'bg-surface-inset text-ink-tertiary hover:bg-surface-hover'
                     }`,
                     onClick: async () => {
                       const updatedPlaylist = { ...selectedPlaylist, localOnly: !selectedPlaylist.localOnly };
@@ -1180,7 +1180,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                       } : undefined,
                       className: `flex items-center gap-4 py-3 px-4 transition-all no-drag group ${
                         playlistEditMode ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
-                      } ${isResolving ? 'opacity-60' : ''} ${isDragging ? 'opacity-50 bg-gray-100' : ''} ${isDraggedOver ? 'border-t-2 border-t-purple-500' : ''} ${isNowPlaying && isPlaying ? 'bg-accent-tint' : 'hover:bg-surface-hover'}`,
+                      } ${isResolving ? 'opacity-60' : ''} ${isDragging ? 'opacity-50 bg-surface-inset' : ''} ${isDraggedOver ? 'border-t-2 border-t-purple-500' : ''} ${isNowPlaying && isPlaying ? 'bg-accent-tint' : 'hover:bg-surface-hover'}`,
                       style: {
                         borderRadius: '8px',
                         marginBottom: '2px'
@@ -1209,7 +1209,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                       // Track number or drag handle in edit mode
                       playlistEditMode
                         ? React.createElement('span', {
-                            className: 'text-gray-400 flex-shrink-0 flex items-center justify-center',
+                            className: 'text-ink-tertiary flex-shrink-0 flex items-center justify-center',
                             style: { pointerEvents: 'none', width: '32px' },
                             title: 'Drag to reorder'
                           },
@@ -1254,7 +1254,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
 
                       // Artist name - flexible column, clickable
                       React.createElement('span', {
-                        className: 'truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
+                        className: 'truncate hover:text-accent hover:underline cursor-pointer transition-colors',
                         style: {
                           flex: '0.7 1 0',
                           minWidth: 0,

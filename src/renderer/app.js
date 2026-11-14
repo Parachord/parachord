@@ -36304,7 +36304,7 @@ useEffect(() => {
   const recommendationsNavActive = activeView === 'recommendations' || viewingRecommendedPlaylist;
 
   return React.createElement('div', {
-    className: 'h-screen bg-gray-100 text-gray-900 flex flex-col'
+    className: 'h-screen bg-surface-inset text-ink-primary flex flex-col'
   },
 
     // Main content with sidebar (no separate header - search is in sidebar)
@@ -36313,7 +36313,7 @@ useEffect(() => {
     },
       // Sidebar
       React.createElement('div', {
-        className: 'w-64 bg-gray-50 border-r border-gray-200 flex flex-col no-drag',
+        className: 'w-64 bg-surface-subtle border-r border-line flex flex-col no-drag',
         onDragOver: (e) => {
           // Show Add to Playlist panel when dragging a track over sidebar
           if (draggingTrackForPlaylist && !addToPlaylistPanel.open) {
@@ -36679,7 +36679,7 @@ useEffect(() => {
             }, 'Friends'),
             React.createElement('button', {
               onClick: (e) => { e.stopPropagation(); setAddFriendModalOpen(true); },
-              className: 'w-4 h-4 flex items-center justify-center text-gray-400 hover:text-gray-600 transition-colors rounded hover:bg-gray-200',
+              className: 'w-4 h-4 flex items-center justify-center text-ink-tertiary hover:text-ink-secondary transition-colors rounded hover:bg-surface-hover',
               title: 'Add friend'
             },
               React.createElement('svg', { className: 'w-3 h-3', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
@@ -36689,7 +36689,7 @@ useEffect(() => {
           ),
           // Show drop hint when dragging but no friends pinned yet
           friendDragOverSidebar && pinnedFriendIds.length === 0 && React.createElement('div', {
-            className: 'px-3 py-4 text-sm text-purple-600 text-center'
+            className: 'px-3 py-4 text-sm text-accent text-center'
           }, 'Drop to pin'),
           // Sort pinned friends: active (on-air) friends first, then by original order
           // Use stable sort cache so sidebar only reorders when a friend starts a new song
@@ -36784,7 +36784,7 @@ useEffect(() => {
                   }
                 },
                   React.createElement('div', {
-                    className: 'w-8 h-8 bg-gray-200 overflow-hidden',
+                    className: 'w-8 h-8 bg-surface-placeholder overflow-hidden',
                     style: {
                       clipPath: 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)'
                     }
@@ -36796,7 +36796,7 @@ useEffect(() => {
                           className: 'w-full h-full object-cover'
                         })
                       : React.createElement('div', {
-                          className: 'w-full h-full flex items-center justify-center text-gray-500 text-xs font-medium bg-gradient-to-br from-purple-400 to-pink-400 text-white'
+                          className: 'w-full h-full flex items-center justify-center text-ink-tertiary text-xs font-medium bg-gradient-to-br from-purple-400 to-pink-400 text-white'
                         }, friend.displayName.charAt(0).toUpperCase())
                   ),
                   // On-air indicator dot
@@ -36810,7 +36810,7 @@ useEffect(() => {
                   // Friend name with listen-along toggle
                   React.createElement('div', { className: 'flex items-center gap-1' },
                     React.createElement('span', {
-                      className: 'text-sm text-gray-600 truncate'
+                      className: 'text-sm text-ink-secondary truncate'
                     }, friend.displayName),
                     // Listen along toggle - only show when friend is on-air
                     // Hidden by default, show on hover OR when actively listening along
@@ -36830,8 +36830,8 @@ useEffect(() => {
                         },
                         className: `flex-shrink-0 transition-all p-1 rounded ${
                           listenAlongFriend?.id === friend.id
-                            ? 'text-purple-500 hover:text-purple-400 hover:bg-purple-50 opacity-100'
-                            : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100 opacity-0 group-hover:opacity-100'
+                            ? 'text-accent hover:bg-accent-tint opacity-100'
+                            : 'text-ink-tertiary hover:text-ink-secondary hover:bg-surface-hover opacity-0 group-hover:opacity-100'
                         }`
                       },
                       React.createElement('svg', {
@@ -36916,8 +36916,8 @@ useEffect(() => {
               }
             }
           },
-            React.createElement('div', { className: 'px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider' }, 'Friends'),
-            React.createElement('div', { className: 'px-3 py-2 text-xs text-gray-400 italic' }, 'Drag friends here to pin')
+            React.createElement('div', { className: 'px-3 py-2 text-xs font-semibold text-ink-tertiary uppercase tracking-wider' }, 'Friends'),
+            React.createElement('div', { className: 'px-3 py-2 text-xs text-ink-tertiary italic' }, 'Drag friends here to pin')
           )
         ),
 
@@ -37477,10 +37477,10 @@ useEffect(() => {
                   setActiveView('playlists');
                   setViewHistory(['library', 'playlists']);
                 },
-                className: 'text-gray-400 hover:text-gray-600 transition-colors uppercase'
+                className: 'text-ink-tertiary hover:text-ink-secondary transition-colors uppercase'
               }, 'Playlists'),
-              React.createElement('span', { className: 'text-gray-300' }, '/'),
-              React.createElement('span', { className: 'text-gray-600 uppercase' },
+              React.createElement('span', { className: 'text-ink-faint' }, '/'),
+              React.createElement('span', { className: 'text-ink-secondary uppercase' },
                 pendingPlaylistLoad?.title || 'Loading'
               )
             ),
@@ -37491,10 +37491,10 @@ useEffect(() => {
                 setActiveView('playlists');
                 setViewHistory(['library', 'playlists']);
               },
-              className: 'flex items-center gap-1 px-3 py-1 text-xs text-gray-500 hover:text-gray-700 border border-gray-300 rounded hover:bg-gray-50 transition-colors no-drag'
+              className: 'flex items-center gap-1 px-3 py-1 text-xs text-ink-tertiary hover:text-ink-secondary border border-line-strong rounded hover:bg-surface-hover transition-colors no-drag'
             },
               'CLOSE',
-              React.createElement('span', { className: 'text-gray-400' }, '×')
+              React.createElement('span', { className: 'text-ink-tertiary' }, '×')
             )
           ),
           // Loading content placeholder
@@ -37658,7 +37658,7 @@ useEffect(() => {
           React.createElement('div', { className: 'relative' },
             React.createElement('button', {
               onClick: (e) => { e.stopPropagation(); setPlaylistsSortDropdownOpen(!playlistsSortDropdownOpen); },
-              className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors'
+              className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-ink-tertiary hover:text-ink-secondary transition-colors'
             },
               React.createElement('span', null, playlistsSortOptions.find(o => o.value === playlistsSort)?.label || 'Sort'),
               React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
@@ -37666,7 +37666,7 @@ useEffect(() => {
               )
             ),
             playlistsSortDropdownOpen && React.createElement('div', {
-              className: 'absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-gray-200'
+              className: 'absolute left-0 top-full mt-1 bg-surface-card rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-line'
             },
               playlistsSortOptions.map(option =>
                 React.createElement('button', {
@@ -37676,8 +37676,8 @@ useEffect(() => {
                     setPlaylistsSort(option.value);
                     setPlaylistsSortDropdownOpen(false);
                   },
-                  className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between ${
-                    playlistsSort === option.value ? 'text-gray-900 font-medium' : 'text-gray-600'
+                  className: `w-full px-4 py-2 text-left text-sm hover:bg-surface-hover flex items-center justify-between ${
+                    playlistsSort === option.value ? 'text-ink-primary font-medium' : 'text-ink-secondary'
                   }`
                 },
                   option.label,
@@ -37698,7 +37698,7 @@ useEffect(() => {
           React.createElement('div', { className: 'flex items-center gap-1 mr-4' },
             React.createElement('button', {
               onClick: () => setPlaylistsViewMode('grid'),
-              className: `p-1.5 rounded transition-colors ${playlistsViewMode === 'grid' ? 'bg-gray-200 text-gray-700' : 'text-gray-400 hover:text-gray-600'}`,
+              className: `p-1.5 rounded transition-colors ${playlistsViewMode === 'grid' ? 'bg-line text-ink-secondary' : 'text-ink-tertiary hover:text-ink-secondary'}`,
               title: 'Grid view'
             },
               React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
@@ -37710,7 +37710,7 @@ useEffect(() => {
             ),
             React.createElement('button', {
               onClick: () => setPlaylistsViewMode('table'),
-              className: `p-1.5 rounded transition-colors ${playlistsViewMode === 'table' ? 'bg-gray-200 text-gray-700' : 'text-gray-400 hover:text-gray-600'}`,
+              className: `p-1.5 rounded transition-colors ${playlistsViewMode === 'table' ? 'bg-line text-ink-secondary' : 'text-ink-tertiary hover:text-ink-secondary'}`,
               title: 'Table view'
             },
               React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
@@ -37721,7 +37721,7 @@ useEffect(() => {
           // Search
           React.createElement('div', { className: 'flex items-center' },
             playlistsSearchOpen ?
-              React.createElement('div', { className: 'flex items-center border border-gray-300 rounded-full px-3 py-[5px] filter-pill' },
+              React.createElement('div', { className: 'flex items-center border border-line-strong rounded-full px-3 py-[5px] filter-pill' },
                 React.createElement('input', {
                   type: 'text',
                   value: playlistsSearch,
@@ -37729,12 +37729,12 @@ useEffect(() => {
                   onBlur: () => { if (!playlistsSearch.trim()) setPlaylistsSearchOpen(false); },
                   autoFocus: true,
                   placeholder: 'Filter...',
-                  className: 'bg-transparent text-gray-700 text-sm placeholder-gray-400 outline-none',
+                  className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none',
                   style: { width: '150px' }
                 }),
                 playlistsSearch && React.createElement('button', {
                   onClick: () => { setPlaylistsSearch(''); setPlaylistsSearchOpen(false); },
-                  className: 'ml-2 text-gray-400 hover:text-gray-600'
+                  className: 'ml-2 text-ink-tertiary hover:text-ink-secondary'
                 },
                   React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                     React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
@@ -37744,7 +37744,7 @@ useEffect(() => {
             :
               React.createElement('button', {
                 onClick: () => setPlaylistsSearchOpen(true),
-                className: 'p-1.5 text-gray-400 hover:text-gray-600 transition-colors'
+                className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors'
               },
                 React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                   React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
@@ -37863,8 +37863,8 @@ useEffect(() => {
             }
 
             if (sorted.length === 0 && playlistsSearch) {
-              return React.createElement('div', { className: 'text-center py-12 text-gray-400' },
-                React.createElement('svg', { className: 'w-12 h-12 mx-auto mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+              return React.createElement('div', { className: 'text-center py-12 text-ink-tertiary' },
+                React.createElement('svg', { className: 'w-12 h-12 mx-auto mb-4 text-ink-faint', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                   React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
                 ),
                 React.createElement('div', { className: 'text-sm' }, 'No playlists match your search')
@@ -37873,7 +37873,7 @@ useEffect(() => {
 
             if (sorted.length === 0) {
               return React.createElement('div', {
-                className: 'text-center py-12 text-gray-400'
+                className: 'text-center py-12 text-ink-tertiary'
               }, 'No playlists yet. Import a playlist to get started!');
             }
 
@@ -37949,7 +37949,7 @@ useEffect(() => {
                               className: 'relative w-full h-full flex items-center justify-center',
                               style: { background: 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)' }
                             },
-                              !covers[idx] && React.createElement(Music, { size: 20, className: 'text-gray-600' }),
+                              !covers[idx] && React.createElement(Music, { size: 20, className: 'text-ink-secondary' }),
                               covers[idx] && React.createElement('img', {
                                 src: covers[idx],
                                 alt: '',
@@ -37967,7 +37967,7 @@ useEffect(() => {
                           style: { background: 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)' }
                         },
                           // Playlist icon (three lines with play triangle)
-                          React.createElement('svg', { className: 'w-12 h-12 text-gray-500', viewBox: '0 0 24 24', fill: 'currentColor' },
+                          React.createElement('svg', { className: 'w-12 h-12 text-ink-tertiary', viewBox: '0 0 24 24', fill: 'currentColor' },
                             React.createElement('rect', { x: 3, y: 5, width: 18, height: 2, rx: 1 }),
                             React.createElement('rect', { x: 3, y: 11, width: 10, height: 2, rx: 1 }),
                             React.createElement('rect', { x: 3, y: 17, width: 7, height: 2, rx: 1 }),
@@ -37996,7 +37996,7 @@ useEffect(() => {
                           className: `p-1 bg-white/90 backdrop-blur-sm rounded-full hover:bg-white transition-colors ${refreshingPlaylist === playlist.id ? 'animate-spin' : ''}`,
                           title: 'Refresh from source'
                         },
-                          React.createElement('svg', { className: 'w-3 h-3 text-gray-600', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                          React.createElement('svg', { className: 'w-3 h-3 text-ink-secondary', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                             React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M20 4v5h-.582m-15.356 2A8.001 8.001 0 0119.418 9m0 0H15m-11 11v-5h.581m0 0a8.003 8.003 0 0015.357-2m-15.357 2H9' })
                           )
                         )
@@ -38007,7 +38007,7 @@ useEffect(() => {
                         className: 'absolute top-2 right-2'
                       },
                         React.createElement('span', {
-                          className: 'bg-white/90 backdrop-blur-sm text-purple-600 text-xs px-2 py-0.5 rounded-full font-medium',
+                          className: 'bg-white/90 backdrop-blur-sm text-accent text-xs px-2 py-0.5 rounded-full font-medium',
                           title: `Generated by ${playlist.creator || 'AI'}`
                         }, '✨ AI')
                       ),
@@ -38065,10 +38065,10 @@ useEffect(() => {
                               setTrackLoading(false);
                             }
                           },
-                          className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
+                          className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
                           title: 'Play'
                         },
-                          React.createElement(Play, { size: 22, className: 'text-gray-800 ml-0.5' })
+                          React.createElement(Play, { size: 22, className: 'text-ink-primary ml-0.5' })
                         ),
                         // Add to Queue button
                         React.createElement('button', {
@@ -38215,7 +38215,7 @@ useEffect(() => {
                       });
                     }
                   },
-                  className: `group flex items-center gap-4 py-3 px-4 cursor-pointer hover:bg-gray-50 transition-colors ${index > 0 ? 'border-t border-gray-100' : ''}`
+                  className: `group flex items-center gap-4 py-3 px-4 cursor-pointer hover:bg-surface-hover transition-colors ${index > 0 ? 'border-t border-line-light' : ''}`
                 },
                   // Thumbnail (small mosaic or placeholder)
                   React.createElement('div', {
@@ -38266,7 +38266,7 @@ useEffect(() => {
                   ),
                   // Playlist name
                   React.createElement('div', { className: 'flex-1 min-w-0' },
-                    React.createElement('div', { className: 'font-medium text-gray-900 truncate group-hover:text-green-600 transition-colors' },
+                    React.createElement('div', { className: 'font-medium text-ink-primary truncate group-hover:text-ink-success transition-colors' },
                       playlist.title,
                       playlist.syncedFrom?.isCollaborator === true && React.createElement('span', {
                         className: 'shared-playlist-badge',
@@ -38285,20 +38285,20 @@ useEffect(() => {
                         }
                       }, 'SHARED')
                     ),
-                    playlist.creator && React.createElement('div', { className: 'text-sm text-gray-500 truncate' }, playlist.creator)
+                    playlist.creator && React.createElement('div', { className: 'text-sm text-ink-tertiary truncate' }, playlist.creator)
                   ),
                   // Hosted badge (only for actual hosted XSPF, not Spotify/Apple Music imports)
                   playlist.sourceUrl && playlist.source === 'hosted-xspf' && React.createElement('span', {
-                    className: 'text-xs text-blue-500 bg-blue-50 px-2 py-1 rounded-full font-medium flex-shrink-0',
+                    className: 'text-xs text-ink-info bg-tint-info px-2 py-1 rounded-full font-medium flex-shrink-0',
                     title: 'Hosted playlist'
                   }, '🌐 Hosted'),
                   // AI badge
                   playlist.isAiPlaylist && !playlist.sourceUrl && React.createElement('span', {
-                    className: 'text-xs text-purple-600 bg-purple-50 px-2 py-1 rounded-full font-medium flex-shrink-0',
+                    className: 'text-xs text-accent bg-accent-tint px-2 py-1 rounded-full font-medium flex-shrink-0',
                     title: `Generated by ${playlist.creator || 'AI'}`
                   }, '✨ AI'),
                   // Track count
-                  React.createElement('div', { className: 'text-sm text-gray-500 flex-shrink-0 w-20 text-right' },
+                  React.createElement('div', { className: 'text-sm text-ink-tertiary flex-shrink-0 w-20 text-right' },
                     `${trackCount} song${trackCount !== 1 ? 's' : ''}`
                   ),
                   // Refresh — provider snapshots are not reloaded at launch
@@ -38315,7 +38315,7 @@ useEffect(() => {
                     title: 'Refresh from source',
                   },
                     React.createElement('svg', {
-                      className: `w-4 h-4 text-gray-500 ${refreshingPlaylist === playlist.id ? 'animate-spin' : ''}`,
+                      className: `w-4 h-4 text-ink-tertiary ${refreshingPlaylist === playlist.id ? 'animate-spin' : ''}`,
                       fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor'
                     },
                       React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M20 4v5h-.582m-15.356 2A8.001 8.001 0 0119.418 9m0 0H15m-11 11v-5h.581m0 0a8.003 8.003 0 0015.357-2m-15.357 2H9' })
@@ -38343,7 +38343,7 @@ useEffect(() => {
                       }
                     }
                   },
-                    React.createElement(Play, { size: 20, className: 'text-purple-600 fill-purple-600' })
+                    React.createElement(Play, { size: 20, className: 'text-accent fill-purple-600' })
                   )
                 );
               }),
@@ -38351,7 +38351,7 @@ useEffect(() => {
               ...(playlistsLoading ? Array.from({ length: 4 }).map((_, i) =>
                 React.createElement('div', {
                   key: `trailing-table-skeleton-${i}`,
-                  className: `flex items-center gap-4 py-3 px-4 border-t border-gray-100`
+                  className: `flex items-center gap-4 py-3 px-4 border-t border-line-light`
                 },
                   // Skeleton thumbnail
                   React.createElement('div', {
@@ -40717,17 +40717,17 @@ useEffect(() => {
                 },
                   // Date placeholder
                   React.createElement('div', { className: 'flex flex-col items-center', style: { minWidth: '56px' } },
-                    React.createElement('div', { className: 'w-10 h-4 bg-gray-200 rounded mb-1' }),
-                    React.createElement('div', { className: 'w-8 h-6 bg-gray-200 rounded' })
+                    React.createElement('div', { className: 'w-10 h-4 bg-surface-placeholder rounded mb-1' }),
+                    React.createElement('div', { className: 'w-8 h-6 bg-surface-placeholder rounded' })
                   ),
                   // Content placeholder
                   React.createElement('div', { className: 'flex-1' },
-                    React.createElement('div', { className: 'w-48 h-4 bg-gray-200 rounded mb-2' }),
-                    React.createElement('div', { className: 'w-32 h-3 bg-gray-200 rounded mb-1' }),
-                    React.createElement('div', { className: 'w-24 h-3 bg-gray-200 rounded' })
+                    React.createElement('div', { className: 'w-48 h-4 bg-surface-placeholder rounded mb-2' }),
+                    React.createElement('div', { className: 'w-32 h-3 bg-surface-placeholder rounded mb-1' }),
+                    React.createElement('div', { className: 'w-24 h-3 bg-surface-placeholder rounded' })
                   ),
                   // Button placeholder
-                  React.createElement('div', { className: 'w-20 h-8 bg-gray-200 rounded-lg' })
+                  React.createElement('div', { className: 'w-20 h-8 bg-surface-placeholder rounded-lg' })
                 )
               )
             ),
@@ -51011,7 +51011,7 @@ useEffect(() => {
             ),
             // Connection status
             metaServiceConfigs[selectedResolver.id]?.[authFieldKey] && React.createElement('div', {
-              className: 'flex items-center gap-2 text-green-600 text-sm'
+              className: 'flex items-center gap-2 text-ink-success text-sm'
             },
               React.createElement('span', null, '✓'),
               React.createElement('span', null, (authFieldSettings.label || 'API key') + ' configured')
@@ -51250,11 +51250,11 @@ useEffect(() => {
 
           // Libre.fm scrobbling section
           selectedResolver.id === 'librefm' && React.createElement('div', {
-            className: 'py-3 border-t border-gray-100'
+            className: 'py-3 border-t border-line-light'
           },
             React.createElement('div', { className: 'mb-4' },
-              React.createElement('span', { className: 'font-medium text-gray-900' }, 'Libre.fm Scrobbling'),
-              React.createElement('p', { className: 'text-xs text-gray-500 mt-1' },
+              React.createElement('span', { className: 'font-medium text-ink-primary' }, 'Libre.fm Scrobbling'),
+              React.createElement('p', { className: 'text-xs text-ink-tertiary mt-1' },
                 'Open-source scrobbling service - an alternative to Last.fm. Report your listening history to Libre.fm.'
               )
             ),
@@ -51620,13 +51620,13 @@ useEffect(() => {
               React.createElement('button', {
                 onClick: handleRescanAll,
                 disabled: isScanning || watchFolders.length === 0,
-                className: 'mt-4 px-4 py-2 text-sm text-purple-600 hover:bg-purple-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
+                className: 'mt-4 px-4 py-2 text-sm text-accent hover:bg-accent-tint rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
               }, 'Rescan All Folders'),
               React.createElement('button', {
                 onClick: handleRemoveMissingFiles,
                 disabled: isScanning || watchFolders.length === 0,
                 title: 'Remove library entries for files that are no longer on disk',
-                className: 'mt-4 ml-2 px-4 py-2 text-sm text-purple-600 hover:bg-purple-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
+                className: 'mt-4 ml-2 px-4 py-2 text-sm text-accent hover:bg-accent-tint rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
               }, 'Remove Missing Files')
             )
           )
@@ -51916,20 +51916,20 @@ useEffect(() => {
 
           // Category
           selectedMarketplaceItem.category && React.createElement('div', null,
-            React.createElement('h3', { className: 'text-sm font-semibold text-gray-900 mb-2' }, 'Category'),
+            React.createElement('h3', { className: 'text-sm font-semibold text-ink-primary mb-2' }, 'Category'),
             React.createElement('span', {
-              className: 'px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-xs capitalize'
+              className: 'px-3 py-1 bg-accent-tint text-accent rounded-full text-xs capitalize'
             }, selectedMarketplaceItem.category)
           ),
 
           // API Key Configuration (for AI services with generate capability)
           selectedMarketplaceItem.capabilities?.generate && React.createElement('div', {
-            className: 'border-t border-gray-100 pt-4'
+            className: 'border-t border-line-light pt-4'
           },
-            React.createElement('h3', { className: 'text-sm font-semibold text-gray-900 mb-3' }, 'Configuration'),
+            React.createElement('h3', { className: 'text-sm font-semibold text-ink-primary mb-3' }, 'Configuration'),
             // API Key input
             React.createElement('div', { className: 'space-y-2' },
-              React.createElement('label', { className: 'block text-sm text-gray-600' }, 'API Key'),
+              React.createElement('label', { className: 'block text-sm text-ink-secondary' }, 'API Key'),
               React.createElement('input', {
                 type: 'password',
                 defaultValue: metaServiceConfigs[selectedMarketplaceItem.id]?.apiKey || '',
@@ -51943,7 +51943,7 @@ useEffect(() => {
                   });
                 },
                 placeholder: selectedMarketplaceItem.id === 'chatgpt' ? 'sk-...' : 'AIza...',
-                className: 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent'
+                className: 'w-full px-3 py-2 border border-line-strong rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent'
               }),
               React.createElement('a', {
                 href: '#',
@@ -51954,12 +51954,12 @@ useEffect(() => {
                     : 'https://aistudio.google.com/app/apikey';
                   window.electron?.shell?.openExternal?.(url);
                 },
-                className: 'text-xs text-purple-600 hover:text-purple-700 inline-block'
+                className: 'text-xs text-accent hover:text-accent inline-block'
               }, 'Get your API key →')
             ),
             // Model selector
             React.createElement('div', { className: 'mt-4 space-y-2' },
-              React.createElement('label', { className: 'block text-sm text-gray-600' }, 'Model'),
+              React.createElement('label', { className: 'block text-sm text-ink-secondary' }, 'Model'),
               React.createElement('select', {
                 defaultValue: metaServiceConfigs[selectedMarketplaceItem.id]?.model || (selectedMarketplaceItem.id === 'chatgpt' ? 'gpt-4o-mini' : 'gemini-2.5-flash'),
                 onChange: (e) => {
@@ -51968,7 +51968,7 @@ useEffect(() => {
                     model: e.target.value
                   });
                 },
-                className: 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white'
+                className: 'w-full px-3 py-2 border border-line-strong rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent bg-surface-card'
               },
                 selectedMarketplaceItem.id === 'chatgpt' ? [
                   React.createElement('option', { key: 'gpt-4o-mini', value: 'gpt-4o-mini' }, 'GPT-4o Mini (Recommended)'),
@@ -52123,7 +52123,7 @@ useEffect(() => {
       onClick: (e) => { if (e.target === e.currentTarget) setExtensionInfoOpen(false); }
     },
       React.createElement('div', {
-        className: 'bg-white rounded-2xl shadow-2xl overflow-hidden',
+        className: 'bg-surface-card rounded-2xl shadow-2xl overflow-hidden',
         style: { width: '440px', maxHeight: '80vh' },
         onClick: (e) => e.stopPropagation()
       },
@@ -52355,7 +52355,7 @@ useEffect(() => {
       onClick: (e) => { if (e.target === e.currentTarget) setRaycastInfoOpen(false); }
     },
       React.createElement('div', {
-        className: 'bg-white rounded-2xl shadow-2xl overflow-hidden',
+        className: 'bg-surface-card rounded-2xl shadow-2xl overflow-hidden',
         style: { width: '440px', maxHeight: '80vh' },
         onClick: (e) => e.stopPropagation()
       },
@@ -52575,7 +52575,7 @@ useEffect(() => {
       onClick: (e) => { if (e.target === e.currentTarget) setWhatsNewOpen(false); }
     },
       React.createElement('div', {
-        className: 'bg-white rounded-2xl shadow-2xl overflow-hidden',
+        className: 'bg-surface-card rounded-2xl shadow-2xl overflow-hidden',
         style: { width: '500px', maxHeight: '80vh' },
         onClick: (e) => e.stopPropagation()
       },
@@ -52960,14 +52960,14 @@ useEffect(() => {
 
         // Filter bar (sticky) - sort dropdown and search
         React.createElement('div', {
-          className: 'flex items-center px-5 py-2 bg-white',
+          className: 'flex items-center px-5 py-2 bg-surface-card',
           style: { flexShrink: 0, borderBottom: '1px solid var(--border-subtle)' }
         },
           // Sort dropdown
           React.createElement('div', { className: 'relative' },
             React.createElement('button', {
               onClick: (e) => { e.stopPropagation(); setAddToPlaylistSortDropdownOpen(!addToPlaylistSortDropdownOpen); },
-              className: 'flex items-center gap-1 px-2 py-1 text-xs text-gray-500 hover:text-gray-700 transition-colors'
+              className: 'flex items-center gap-1 px-2 py-1 text-xs text-ink-tertiary hover:text-ink-secondary transition-colors'
             },
               React.createElement('span', null, playlistsSortOptions.find(o => o.value === addToPlaylistSort)?.label || 'Sort'),
               React.createElement('svg', { className: 'w-3 h-3', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
@@ -52975,7 +52975,7 @@ useEffect(() => {
               )
             ),
             addToPlaylistSortDropdownOpen && React.createElement('div', {
-              className: 'absolute left-0 top-full mt-1 bg-white py-1 min-w-[140px] z-30',
+              className: 'absolute left-0 top-full mt-1 bg-surface-card py-1 min-w-[140px] z-30',
               style: { borderRadius: '8px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)', border: '1px solid var(--border-subtle)' }
             },
               playlistsSortOptions.map(option =>
@@ -52986,8 +52986,8 @@ useEffect(() => {
                     setAddToPlaylistSort(option.value);
                     setAddToPlaylistSortDropdownOpen(false);
                   },
-                  className: `w-full px-3 py-1.5 text-left text-xs hover:bg-gray-100 flex items-center justify-between ${
-                    addToPlaylistSort === option.value ? 'text-gray-900 font-medium' : 'text-gray-600'
+                  className: `w-full px-3 py-1.5 text-left text-xs hover:bg-surface-hover flex items-center justify-between ${
+                    addToPlaylistSort === option.value ? 'text-ink-primary font-medium' : 'text-ink-secondary'
                   }`
                 },
                   option.label,
@@ -53015,12 +53015,12 @@ useEffect(() => {
                   onBlur: () => { if (!addToPlaylistSearch.trim()) setAddToPlaylistSearchOpen(false); },
                   autoFocus: true,
                   placeholder: 'Filter...',
-                  className: 'bg-transparent text-gray-700 text-xs placeholder-gray-400 outline-none',
+                  className: 'bg-transparent text-ink-secondary text-xs placeholder-ink-tertiary outline-none',
                   style: { width: '120px' }
                 }),
                 addToPlaylistSearch && React.createElement('button', {
                   onClick: () => { setAddToPlaylistSearch(''); setAddToPlaylistSearchOpen(false); },
-                  className: 'ml-1 text-gray-400 hover:text-gray-600'
+                  className: 'ml-1 text-ink-tertiary hover:text-ink-secondary'
                 },
                   React.createElement('svg', { className: 'w-3 h-3', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                     React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
@@ -53030,7 +53030,7 @@ useEffect(() => {
             :
               React.createElement('button', {
                 onClick: () => setAddToPlaylistSearchOpen(true),
-                className: 'p-1 text-gray-400 hover:text-gray-600 transition-colors'
+                className: 'p-1 text-ink-tertiary hover:text-ink-secondary transition-colors'
               },
                 React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                   React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
@@ -53110,20 +53110,20 @@ useEffect(() => {
                 setDropTargetNewPlaylist(false);
               }
             },
-            className: `flex items-center gap-3 px-5 py-2.5 cursor-pointer transition-all border-b border-gray-100 ${
+            className: `flex items-center gap-3 px-5 py-2.5 cursor-pointer transition-all border-b border-line-light ${
               dropTargetNewPlaylist
-                ? 'bg-purple-100 border-l-4 border-l-purple-500 pl-4'
+                ? 'bg-accent-tint border-l-4 border-l-purple-500 pl-4'
                 : newPlaylistFormOpen
-                  ? 'bg-gray-100'
-                  : 'hover:bg-gray-50'
+                  ? 'bg-surface-inset'
+                  : 'hover:bg-surface-hover'
             }`
           },
             // Plus icon in square (like playlist thumbnail)
             React.createElement('div', {
-              className: 'w-10 h-10 rounded bg-gray-200 flex-shrink-0 flex items-center justify-center',
+              className: 'w-10 h-10 rounded bg-surface-placeholder flex-shrink-0 flex items-center justify-center',
               style: { pointerEvents: 'none' } // Let parent handle all events
             },
-              React.createElement('span', { className: 'text-gray-500 text-xl font-light' }, '+')
+              React.createElement('span', { className: 'text-ink-tertiary text-xl font-light' }, '+')
             ),
             // "New Playlist" text or input form
             newPlaylistFormOpen ?
@@ -53177,7 +53177,7 @@ useEffect(() => {
                   },
                   placeholder: 'Playlist name...',
                   autoFocus: true,
-                  className: 'flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500'
+                  className: 'flex-1 px-3 py-1.5 text-sm border border-line-strong rounded focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent'
                 }),
                 React.createElement('button', {
                   onClick: () => {
@@ -53216,13 +53216,13 @@ useEffect(() => {
                   className: `px-3 py-1.5 text-sm font-medium rounded transition-colors ${
                     newPlaylistName.trim()
                       ? 'bg-green-500 hover:bg-green-600 text-white'
-                      : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                      : 'bg-surface-inset text-ink-tertiary cursor-not-allowed'
                   }`
                 }, 'Create')
               )
             :
               React.createElement('span', {
-                className: 'flex-1 text-sm text-gray-600',
+                className: 'flex-1 text-sm text-ink-secondary',
                 style: { pointerEvents: 'none' } // Let parent handle all events
               }, 'New Playlist')
           ),
@@ -53261,7 +53261,7 @@ useEffect(() => {
 
             if (sortedPlaylists.length === 0) {
               return React.createElement('div', {
-                className: 'px-5 py-8 text-center text-gray-400 text-sm'
+                className: 'px-5 py-8 text-center text-ink-tertiary text-sm'
               }, addToPlaylistSearch ? 'No matching playlists' : 'No playlists yet');
             }
 
@@ -53367,17 +53367,17 @@ useEffect(() => {
                   setDraggingTrackForPlaylist(null);
                   setDropTargetPlaylistId(null);
                 },
-                className: `flex items-center gap-3 px-5 py-2.5 cursor-pointer transition-all border-b border-gray-100 ${
+                className: `flex items-center gap-3 px-5 py-2.5 cursor-pointer transition-all border-b border-line-light ${
                   isAdded
-                    ? 'bg-green-50'
+                    ? 'bg-tint-success'
                     : isDropTarget
-                      ? 'bg-purple-100 border-l-4 border-l-purple-500 pl-4'
-                      : 'hover:bg-gray-50'
+                      ? 'bg-accent-tint border-l-4 border-l-purple-500 pl-4'
+                      : 'hover:bg-surface-hover'
                 }`
               },
                 // Playlist thumbnail (gray square)
                 React.createElement('div', {
-                  className: 'w-10 h-10 rounded bg-gray-200 flex-shrink-0 flex items-center justify-center overflow-hidden'
+                  className: 'w-10 h-10 rounded bg-surface-placeholder flex-shrink-0 flex items-center justify-center overflow-hidden'
                 },
                   // Could show playlist cover here if available
                   allPlaylistCovers[playlist.id]?.[0] ?
@@ -53386,19 +53386,19 @@ useEffect(() => {
                       className: 'w-full h-full object-cover'
                     })
                   :
-                    React.createElement(Music, { size: 16, className: 'text-gray-400' })
+                    React.createElement(Music, { size: 16, className: 'text-ink-tertiary' })
                 ),
                 // Playlist name
                 React.createElement('span', {
-                  className: 'flex-1 text-sm text-gray-900 truncate'
+                  className: 'flex-1 text-sm text-ink-primary truncate'
                 }, playlist.title),
                 // Song count - shows updated count from playlists state
                 React.createElement('span', {
-                  className: `text-sm flex-shrink-0 ${isAdded ? 'text-green-600 font-medium' : 'text-gray-400'}`
+                  className: `text-sm flex-shrink-0 ${isAdded ? 'text-ink-success font-medium' : 'text-ink-tertiary'}`
                 }, `${playlist.tracks?.length || 0} songs`),
                 // Checkmark if added
                 isAdded && React.createElement('svg', {
-                  className: 'w-5 h-5 text-green-500 flex-shrink-0',
+                  className: 'w-5 h-5 text-ink-success flex-shrink-0',
                   fill: 'none',
                   viewBox: '0 0 24 24',
                   stroke: 'currentColor'

@@ -203,18 +203,18 @@ const McpSettingsSection = () => {
   };
 
   return React.createElement('div', {
-    className: 'bg-white border border-gray-200 rounded-xl p-6 hover:shadow-sm hover:border-gray-300 transition-all'
+    className: 'bg-surface-card border border-line rounded-xl p-6 hover:shadow-sm hover:border-line-strong transition-all'
   },
     React.createElement('div', { className: 'mb-5' },
       React.createElement('h3', {
-        className: 'text-sm font-semibold text-gray-700 uppercase tracking-wider'
+        className: 'text-sm font-semibold text-ink-secondary uppercase tracking-wider'
       }, 'Claude Desktop'),
       React.createElement('p', {
-        className: 'text-xs text-gray-500 mt-1'
+        className: 'text-xs text-ink-tertiary mt-1'
       }, 'Control Parachord from Claude Desktop using MCP')
     ),
     React.createElement('p', {
-      className: 'text-sm text-gray-600 mb-4 leading-relaxed'
+      className: 'text-sm text-ink-secondary mb-4 leading-relaxed'
     }, 'Parachord runs an MCP server that lets Claude Desktop play music, search tracks, manage your queue, and control playback. Add the following to your Claude Desktop config:'),
     mcpInfo && React.createElement('div', { className: 'relative' },
       React.createElement('pre', {
@@ -251,7 +251,7 @@ const McpSettingsSection = () => {
       }, copied ? 'Copied!' : 'Copy')
     ),
     React.createElement('p', {
-      className: 'text-xs text-gray-500 mt-3',
+      className: 'text-xs text-ink-tertiary mt-3',
       style: { lineHeight: '1.5' }
     }, 'Parachord must be running for Claude Desktop to connect. The config file is typically located at ~/Library/Application Support/Claude/claude_desktop_config.json on macOS.')
   );
@@ -378,7 +378,7 @@ const ScrobblerSettingsCard = React.memo(({
   };
 
   return React.createElement('div', {
-    className: 'bg-white rounded-xl p-4 shadow-sm border border-gray-200 hover:shadow-md hover:border-gray-300 transition-all'
+    className: 'bg-surface-card rounded-xl p-4 shadow-sm border border-line hover:shadow-md hover:border-line-strong transition-all'
   },
     // Header row with icon, name, and toggle
     React.createElement('div', { className: 'flex items-center justify-between mb-3' },
@@ -393,9 +393,9 @@ const ScrobblerSettingsCard = React.memo(({
         ),
         // Service name and connection status
         React.createElement('div', null,
-          React.createElement('h3', { className: 'font-medium text-gray-900' }, scrobbler.name),
+          React.createElement('h3', { className: 'font-medium text-ink-primary' }, scrobbler.name),
           isConnected && config?.username && React.createElement('p', {
-            className: 'text-sm text-gray-500'
+            className: 'text-sm text-ink-tertiary'
           }, `Connected as ${config.username}`)
         )
       ),
@@ -412,14 +412,14 @@ const ScrobblerSettingsCard = React.memo(({
 
     // Error message
     error && React.createElement('div', {
-      className: 'mb-3 p-2 bg-red-50 text-red-600 text-sm rounded-lg'
+      className: 'mb-3 p-2 bg-tint-danger text-ink-danger text-sm rounded-lg'
     }, error),
 
     // Connection UI
     !isConnected ? React.createElement('div', { className: 'space-y-3' },
       // ListenBrainz token input
       scrobbler.id === 'listenbrainz' && React.createElement('div', null,
-        React.createElement('label', { className: 'block text-sm text-gray-600 mb-1' },
+        React.createElement('label', { className: 'block text-sm text-ink-secondary mb-1' },
           'User Token',
           React.createElement('a', {
             href: '#',
@@ -427,7 +427,7 @@ const ScrobblerSettingsCard = React.memo(({
               e.preventDefault();
               window.electron.shell.openExternal('https://listenbrainz.org/settings/');
             },
-            className: 'ml-2 text-purple-600 hover:underline'
+            className: 'ml-2 text-accent hover:underline'
           }, 'Get token')
         ),
         React.createElement('input', {
@@ -435,13 +435,13 @@ const ScrobblerSettingsCard = React.memo(({
           value: tokenInput,
           onChange: (e) => setTokenInput(e.target.value),
           placeholder: 'Enter your ListenBrainz token',
-          className: 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent'
+          className: 'w-full px-3 py-2 border border-line-strong rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent'
         })
       ),
 
       // Libre.fm username/password inputs
       scrobbler.id === 'librefm' && React.createElement('div', { className: 'space-y-2' },
-        React.createElement('label', { className: 'block text-sm text-gray-600 mb-1' },
+        React.createElement('label', { className: 'block text-sm text-ink-secondary mb-1' },
           'Username',
           React.createElement('a', {
             href: '#',
@@ -449,7 +449,7 @@ const ScrobblerSettingsCard = React.memo(({
               e.preventDefault();
               window.electron.shell.openExternal('https://libre.fm/');
             },
-            className: 'ml-2 text-purple-600 hover:underline'
+            className: 'ml-2 text-accent hover:underline'
           }, 'Create account')
         ),
         React.createElement('input', {
@@ -457,15 +457,15 @@ const ScrobblerSettingsCard = React.memo(({
           value: usernameInput,
           onChange: (e) => setUsernameInput(e.target.value),
           placeholder: 'Your Libre.fm username',
-          className: 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent'
+          className: 'w-full px-3 py-2 border border-line-strong rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent'
         }),
-        React.createElement('label', { className: 'block text-sm text-gray-600 mb-1' }, 'Password'),
+        React.createElement('label', { className: 'block text-sm text-ink-secondary mb-1' }, 'Password'),
         React.createElement('input', {
           type: 'password',
           value: passwordInput,
           onChange: (e) => setPasswordInput(e.target.value),
           placeholder: 'Your Libre.fm password',
-          className: 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent'
+          className: 'w-full px-3 py-2 border border-line-strong rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent'
         })
       ),
 
@@ -473,14 +473,14 @@ const ScrobblerSettingsCard = React.memo(({
       React.createElement('button', {
         onClick: handleConnect,
         disabled: connecting || isPolling || (scrobbler.id === 'listenbrainz' && !tokenInput) || (scrobbler.id === 'librefm' && (!usernameInput || !passwordInput)),
-        className: 'w-full py-2 px-4 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors'
+        className: 'w-full py-2 px-4 bg-accent-fill text-white rounded-lg font-medium hover:bg-accent-fill-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors'
       }, connecting ? 'Authenticating...' : scrobbler.id === 'lastfm' ? 'Authenticate Scrobbling' : 'Connect'),
 
       // Waiting for authorization (auto-polling active)
       isPolling && React.createElement('div', {
         className: 'text-center py-3'
       },
-        React.createElement('div', { className: 'flex items-center justify-center gap-2 text-gray-600 mb-2' },
+        React.createElement('div', { className: 'flex items-center justify-center gap-2 text-ink-secondary mb-2' },
           // Spinning indicator
           React.createElement('svg', {
             className: 'animate-spin h-4 w-4',
@@ -501,13 +501,13 @@ const ScrobblerSettingsCard = React.memo(({
           ),
           React.createElement('span', { className: 'text-sm' }, 'Waiting for authorization...')
         ),
-        React.createElement('p', { className: 'text-xs text-gray-500 mb-2' },
+        React.createElement('p', { className: 'text-xs text-ink-tertiary mb-2' },
           'Complete authorization in your browser. This will auto-detect when done.'
         ),
         React.createElement('button', {
           onClick: handleCompleteAuth,
           disabled: connecting,
-          className: 'text-xs text-purple-600 hover:underline'
+          className: 'text-xs text-accent hover:underline'
         }, 'Complete manually')
       ),
 
@@ -522,22 +522,22 @@ const ScrobblerSettingsCard = React.memo(({
       React.createElement('div', { className: 'space-y-3' },
         // Love-push toggle + backfill button (only for services that support it)
         (scrobbler.id === 'lastfm' || scrobbler.id === 'listenbrainz') && onSetLovePushEnabled &&
-          React.createElement('div', { className: 'border-t border-gray-200 pt-3 space-y-2' },
+          React.createElement('div', { className: 'border-t border-line pt-3 space-y-2' },
             React.createElement('label', { className: 'flex items-center gap-2 text-sm cursor-pointer' },
               React.createElement('input', {
                 type: 'checkbox',
                 checked: lovePushEnabled,
                 onChange: (e) => onSetLovePushEnabled(e.target.checked),
-                className: 'rounded text-purple-600 focus:ring-purple-500'
+                className: 'rounded text-accent focus:ring-accent'
               }),
-              React.createElement('span', { className: 'text-gray-700' },
+              React.createElement('span', { className: 'text-ink-secondary' },
                 `Push newly loved tracks to ${scrobbler.id === 'lastfm' ? 'Last.fm' : 'ListenBrainz'}`
               )
             ),
             React.createElement('button', {
               onClick: onRunBackfill,
               disabled: backfillRunning || unpushedCount === 0,
-              className: 'w-full py-1.5 px-3 text-sm bg-purple-50 text-purple-700 rounded-lg font-medium hover:bg-purple-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors'
+              className: 'w-full py-1.5 px-3 text-sm bg-accent-tint text-accent rounded-lg font-medium hover:bg-accent-tint-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors'
             },
               backfillRunning && backfillProgress
                 ? `Pushing… ${backfillProgress.done}/${backfillProgress.total}`
@@ -545,14 +545,14 @@ const ScrobblerSettingsCard = React.memo(({
                   ? `Backfill ${unpushedCount} loved track${unpushedCount === 1 ? '' : 's'} → ${scrobbler.id === 'lastfm' ? 'Last.fm' : 'ListenBrainz'}`
                   : 'All loves already pushed'
             ),
-            React.createElement('p', { className: 'text-xs text-gray-500' },
+            React.createElement('p', { className: 'text-xs text-ink-tertiary' },
               'Backfilled loves are stamped at the time of push (the remote service has no backdate API).'
             )
           ),
         // Disconnect
         React.createElement('button', {
           onClick: handleDisconnect,
-          className: 'w-full py-2 px-4 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors'
+          className: 'w-full py-2 px-4 bg-surface-inset text-ink-secondary rounded-lg font-medium hover:bg-surface-hover transition-colors'
         }, 'Disconnect')
       )
     )
@@ -627,7 +627,7 @@ const FriendMiniPlaybar = ({ track, getAlbumArt, onPlay, onContextMenu }) => {
         : React.createElement('div', {
             className: 'w-full h-full bg-gray-600 rounded-l flex items-center justify-center'
           },
-            React.createElement('span', { className: 'text-gray-400', style: { fontSize: '8px' } }, '\u266A')
+            React.createElement('span', { className: 'text-ink-tertiary', style: { fontSize: '8px' } }, '\u266A')
           )
     ),
     // Track info - only scrolls if overflowing
@@ -642,7 +642,7 @@ const FriendMiniPlaybar = ({ track, getAlbumArt, onPlay, onContextMenu }) => {
         style: { fontSize: '10px', lineHeight: '20px' }
       },
         React.createElement('span', { className: 'text-white font-medium' }, track.name),
-        React.createElement('span', { className: 'text-gray-400' }, ` - ${track.artist}`)
+        React.createElement('span', { className: 'text-ink-tertiary' }, ` - ${track.artist}`)
       )
     )
   );

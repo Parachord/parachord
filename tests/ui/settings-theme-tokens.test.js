@@ -72,7 +72,7 @@ test.each(PAGES)('%s uses no grey/purple text, border or fill classes, and no th
   expect(seg).not.toMatch(/isD(?:ark|kFlyout) \? '(?:text|bg|hover:bg)-/);
 });
 
-test.each(['search-page.js', 'artist-page.js', 'collection-page.js'])('%s uses no grey/purple text, border or surface classes', (file) => {
+test.each(['search-page.js', 'artist-page.js', 'collection-page.js', 'playlist-view-page.js', 'settings-cards.js'])('%s uses no grey/purple text, border or surface classes', (file) => {
   const src = fs.readFileSync(path.join(root, 'src/renderer/components', file), 'utf8');
   const hits = src.match(/(?<![\w-])(?:hover:|focus:)?(?:text|border|placeholder|divide)-gray-\d{2,3}(?![\w-])|(?<![\w-])(?:hover:)?bg-(?:purple-(?:50|100|600)|gray-(?:50|100|700|800|900))(?![\w-])/g) || [];
   expect(hits).toEqual([]);
