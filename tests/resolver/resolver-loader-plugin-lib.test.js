@@ -177,6 +177,23 @@ describe('implementation._lib — the plugin library', () => {
     await expect(resolver.search()).rejects.toThrow('needs a newer Parachord');
   });
 
+  test('the library is FROZEN — state belongs on this, not on this.lib', async () => {
+    // The purity contract is mechanical: an assignment to this.lib.x does not
+    // stick (silently, in sloppy mode — a plugin that tries finds its state
+    // missing, which is the point). State lives on this (the resolver
+    // instance), per docs/architecture/plugins.md.
+    const resolver = loadPlugin({
+      _lib: function () { return { helper: () => 1 }; },
+      stashOnLib: async function (k, v) { this.lib[k] = v; return this.lib[k]; },
+      stashOnThis: async function (k, v) { this[k] = v; return this[k]; },
+    });
+
+    expect(Object.isFrozen(resolver.lib)).toBe(true);
+    expect(await resolver.stashOnLib('counter', 1)).toBeUndefined(); // silently dropped
+    expect(resolver.lib.counter).toBeUndefined();
+    expect(await resolver.stashOnThis('counter', 1)).toBe(1); // state on this works
+  });
+
   test('the requireLib guard returns the library on a loader that has _lib', async () => {
     const resolver = loadPlugin({
       _lib: function () { return { answer: 42 }; },
@@ -225,22 +242,21 @@ describe('the wire path — a real plugin through scripts/build-axes serializati
     // Exactly what build-axes writes: every export is a function, serialized
     // with String(fn); the loader materializes each with new Function. A
     // plugin author writes implementation.js normally and never sees strings.
+    // The library is pure helpers; the call counter (per-instance state)
+    // lives on `this`, not on the frozen library.
     const implementationModule = {
       _lib: function () {
-        const helpers = {
-          shout: (s) => String(s || '').toUpperCase(),
-        };
-        return { helpers, seen: 0 };
+        return { shout: (s) => String(s || '').toUpperCase() };
       },
       search: async function (query) {
-        this.lib.seen += 1;
-        return [{ id: this.lib.helpers.shout(query), title: query }];
+        this._seen = (this._seen || 0) + 1;
+        return [{ id: this.lib.shout(query), title: query }];
       },
     };
     const resolver = loadPlugin(implementationModule);
 
     expect(await resolver.search('quiet')).toEqual([{ id: 'QUIET', title: 'quiet' }]);
     expect(await resolver.search('again')).toEqual([{ id: 'AGAIN', title: 'again' }]);
-    expect(resolver.lib.seen).toBe(2);
+    expect(resolver._seen).toBe(2);
   });
 });

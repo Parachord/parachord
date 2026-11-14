@@ -104,22 +104,21 @@ class ResolverLoader {
       }
     }
 
-    // Create implementation functions
+    // Create implementation functions (methods is always at least {} here —
+    // the destructured rest of a defaulted object).
     const implFunctions = {};
 
-    if (methods) {
-      // Convert string implementations to actual functions
-      for (const [key, fnString] of Object.entries(methods)) {
-        try {
-          // Create function from string
-          const fn = new Function('return ' + fnString)();
-          implFunctions[key] = fn;
-        } catch (error) {
-          console.error(`Failed to create function ${key} for ${manifest.id}:`, error);
-          implFunctions[key] = async () => {
-            throw new Error(`Function ${key} not implemented`);
-          };
-        }
+    // Convert string implementations to actual functions
+    for (const [key, fnString] of Object.entries(methods)) {
+      try {
+        // Create function from string
+        const fn = new Function('return ' + fnString)();
+        implFunctions[key] = fn;
+      } catch (error) {
+        console.error(`Failed to create function ${key} for ${manifest.id}:`, error);
+        implFunctions[key] = async () => {
+          throw new Error(`Function ${key} not implemented`);
+        };
       }
     }
 
@@ -178,8 +177,12 @@ class ResolverLoader {
 
       // The plugin library (#1356): implementation._lib's factory result,
       // evaluated once above. Methods reach it as this.lib; null when the
-      // plugin ships no _lib (or its factory failed — see above).
-      lib: pluginLib,
+      // plugin ships no _lib (a factory that fails fails the load above).
+      // FROZEN, which enforces the purity contract: the library is helpers
+      // and constants, and state belongs on `this` — an assignment to
+      // this.lib.x does not stick (silently, in sloppy mode — a plugin that
+      // tries will find its state missing, which the tests document).
+      lib: pluginLib ? Object.freeze(pluginLib) : null,
 
       // Implementation (filtered for safety)
       ...safeImplFunctions,
