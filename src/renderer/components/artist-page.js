@@ -24,6 +24,7 @@ const { activateOnKey } = require('../lib/activate-on-key');
 const { Tooltip } = require('./ui-atoms');
 const Icons = require('./icons');
 const { SortMenu } = require('./sort-menu');
+const { HeroTabs } = require('./hero-tabs');
 const { SectionHeader } = require('./section-header');
 const { FilterChips } = require('./filter-chips');
 const { ReleasePage, ReleaseCard, generateArtistPattern, PlayTop10Icon, QueueTop10Icon } = require('./cards');
@@ -259,6 +260,8 @@ const ArtistPage = React.memo(function ArtistPage(props) {
             ),
             // Navigation tabs (centered)
             React.createElement('div', {
+              role: 'tablist',
+              'aria-label': 'Artist',
               className: 'flex items-center gap-1 mt-6',
               style: { textShadow: '0 2px 12px rgba(0,0,0,0.8), 0 0 20px rgba(0,0,0,0.4)' }
             },
@@ -280,6 +283,8 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                     }, '|'),
                     React.createElement('button', {
                       key: tab,
+                      role: 'tab',
+                      'aria-selected': artistPageTab === tab ? 'true' : 'false',
                       onClick: async () => {
                         if (hidden) return;
                         setArtistPageTab(tab);
@@ -297,7 +302,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                       className: `py-1 text-sm font-medium uppercase tracking-wider transition-colors no-drag ${
                         artistPageTab === tab
                           ? 'text-white'
-                          : 'text-white/60 hover:text-white'
+                          : 'text-white/80 hover:text-white'
                       }`,
                       style: isOnTour ? {
                         opacity: showOnTour ? 1 : 0,
@@ -401,6 +406,8 @@ const ArtistPage = React.memo(function ArtistPage(props) {
             ),
             // Center: Navigation tabs
             React.createElement('div', {
+              role: 'tablist',
+              'aria-label': 'Artist',
               className: 'flex items-center gap-1',
               style: { textShadow: '0 2px 12px rgba(0,0,0,0.8), 0 0 20px rgba(0,0,0,0.4)' }
             },
@@ -422,6 +429,8 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                     }, '|'),
                     React.createElement('button', {
                       key: `collapsed-${tab}`,
+                      role: 'tab',
+                      'aria-selected': artistPageTab === tab ? 'true' : 'false',
                       onClick: async () => {
                         if (hidden) return;
                         setArtistPageTab(tab);
@@ -438,7 +447,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                       className: `py-1 text-sm font-medium uppercase tracking-wider transition-colors no-drag ${
                         artistPageTab === tab
                           ? 'text-white'
-                          : 'text-white/60 hover:text-white'
+                          : 'text-white/80 hover:text-white'
                       }`,
                       style: isOnTour ? {
                         opacity: showOnTour ? 1 : 0,
@@ -536,14 +545,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
               className: 'flex items-center gap-1',
               style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
             },
-              ['music', 'biography', 'related', ...((artistConcertsLoaded && artistConcerts.length > 0) || artistPageTab === 'on-tour' ? ['on-tour'] : [])].map((tab, index) => [
-                index > 0 && React.createElement('span', {
-                  key: `sep-release-${tab}`,
-                  className: 'text-white/60 mx-2'
-                }, '|'),
-                React.createElement('button', {
-                  key: `release-${tab}`,
-                  onClick: async () => {
+              React.createElement(HeroTabs, { items: ['music', 'biography', 'related', ...((artistConcertsLoaded && artistConcerts.length > 0) || artistPageTab === 'on-tour' ? ['on-tour'] : [])], isSelected: (tab) => tab === 'music', onSelect: async (tab) => {
                     // Go back to artist page and switch to the selected tab
                     const artistName = currentRelease?.artist?.name || currentArtist?.name;
                     setCurrentRelease(null);
@@ -569,14 +571,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                       const related = await getRelatedArtists(artistName, currentArtist?.mbid);
                       if (related.length > 0) { setRelatedArtists(related); resolveRelatedArtistImages(related); }
                     }
-                  },
-                  className: `px-2 py-1 text-sm font-medium uppercase tracking-wider transition-colors no-drag ${
-                    tab === 'music'
-                      ? 'text-white'
-                      : 'text-white/60 hover:text-white'
-                  }`
-                }, tab === 'related' ? 'Related Artists' : tab === 'on-tour' ? 'On Tour' : tab.charAt(0).toUpperCase() + tab.slice(1))
-              ]).flat().filter(Boolean)
+                  }, renderLabel: (tab) => tab === 'related' ? 'Related Artists' : tab === 'on-tour' ? 'On Tour' : tab.charAt(0).toUpperCase() + tab.slice(1), label: 'Artist' })
             )
           )
         ),

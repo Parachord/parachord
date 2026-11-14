@@ -1984,6 +1984,7 @@ const { Button } = require('./components/button');
 const { activateOnKey } = require('./lib/activate-on-key');
 const { ToastRegion, NowPlayingAnnouncer } = require('./components/toast');
 const { SortMenu } = require('./components/sort-menu');
+const { HeroTabs } = require('./components/hero-tabs');
 // Room the queue drawer leaves above it: the title bar and a little air.
 const QUEUE_DRAWER_TOP_GAP = 48;
 const { sellerColor, sellerTextColor, sellerBadgeBg, sellerShortName, sellerName } = require('./lib/ticket-sellers');
@@ -38343,14 +38344,7 @@ React.createElement('div', {
                   className: 'flex items-center gap-1 mt-4',
                   style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
                 },
-                  ['albums', 'songs'].map((tab, index) => [
-                    index > 0 && React.createElement('span', {
-                      key: `sep-${tab}`,
-                      className: 'text-white/50 mx-3'
-                    }, '|'),
-                    React.createElement('button', {
-                      key: tab,
-                      onClick: () => {
+                  React.createElement(HeroTabs, { items: ['albums', 'songs'], isSelected: (tab) => chartsTab === tab, onSelect: (tab) => {
                         setChartsTab(tab);
                         // Load charts based on selected source when switching to songs tab
                         if (tab === 'songs' && cacheLoaded) {
@@ -38360,14 +38354,7 @@ React.createElement('div', {
                             loadLastfmCharts({ country: chartsCountry });
                           }
                         }
-                      },
-                      className: `px-2 py-1 text-sm font-medium uppercase tracking-wider transition-colors no-drag ${
-                        chartsTab === tab
-                          ? 'text-white'
-                          : 'text-white/60 hover:text-white'
-                      }`
-                    }, tab.charAt(0).toUpperCase() + tab.slice(1))
-                  ]).flat().filter(Boolean)
+                      }, renderLabel: (tab) => tab.charAt(0).toUpperCase() + tab.slice(1), label: 'Charts' })
                 ),
                 React.createElement('p', {
                   className: 'mt-3 text-white/80 text-sm'
@@ -38398,14 +38385,7 @@ React.createElement('div', {
                 React.createElement('div', {
                   className: 'flex items-center gap-1 ml-6'
                 },
-                  ['albums', 'songs'].map((tab, index) => [
-                    index > 0 && React.createElement('span', {
-                      key: `sep-${tab}`,
-                      className: 'text-white/50 mx-2'
-                    }, '|'),
-                    React.createElement('button', {
-                      key: tab,
-                      onClick: () => {
+                  React.createElement(HeroTabs, { items: ['albums', 'songs'], isSelected: (tab) => chartsTab === tab, onSelect: (tab) => {
                         setChartsTab(tab);
                         if (tab === 'songs' && cacheLoaded) {
                           if (chartsSongsSource === 'apple' && !appleMusicSongsChartsLoaded && !appleMusicSongsChartsLoading) {
@@ -38414,12 +38394,7 @@ React.createElement('div', {
                             loadLastfmCharts({ country: chartsCountry });
                           }
                         }
-                      },
-                      className: `px-2 py-1 text-sm font-medium uppercase tracking-wider transition-colors no-drag ${
-                        chartsTab === tab ? 'text-white' : 'text-white/60 hover:text-white'
-                      }`
-                    }, tab.charAt(0).toUpperCase() + tab.slice(1))
-                  ]).flat().filter(Boolean)
+                      }, renderLabel: (tab) => tab.charAt(0).toUpperCase() + tab.slice(1), label: 'Charts' })
                 ),
                 React.createElement('div', { className: 'flex-1' }),
                 React.createElement('span', {
@@ -41963,28 +41938,18 @@ React.createElement('div', {
                 className: 'flex items-center gap-1 mt-6',
                 style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
               },
-                [
+                React.createElement(HeroTabs, { items: [
                   { key: 'topTracks', label: 'Top Songs' },
                   { key: 'topAlbums', label: 'Top Albums' },
                   { key: 'topArtists', label: 'Top Artists' },
                   { key: 'recent', label: 'Recently Played' }
-                ].map((tab, i, arr) => React.createElement(React.Fragment, { key: tab.key },
-                  i > 0 && React.createElement('span', {
-                    className: 'text-white/50 mx-2'
-                  }, '|'),
-                  React.createElement('button', {
-                    onClick: () => {
+                ], isSelected: (tab) => historyTab === tab.key, onSelect: (tab) => {
                       setHistoryTab(tab.key);
                       if (tab.key === 'recent') loadListeningHistory();
                       else if (tab.key === 'topTracks') loadTopTracks();
                       else if (tab.key === 'topArtists') loadTopArtists();
                       else if (tab.key === 'topAlbums') loadTopAlbums();
-                    },
-                    className: `px-2 py-1 text-sm font-medium uppercase tracking-wider transition-colors no-drag ${
-                      historyTab === tab.key ? 'text-white' : 'text-white/60 hover:text-white'
-                    }`
-                  }, tab.label)
-                ))
+                    }, renderLabel: (tab) => tab.label, label: 'History' })
               ),
               React.createElement('p', {
                 className: 'mt-2 text-white/80 text-sm'
@@ -42016,28 +41981,18 @@ React.createElement('div', {
                 className: 'flex items-center gap-1',
                 style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
               },
-                [
+                React.createElement(HeroTabs, { items: [
                   { key: 'topTracks', label: 'Top Songs' },
                   { key: 'topAlbums', label: 'Top Albums' },
                   { key: 'topArtists', label: 'Top Artists' },
                   { key: 'recent', label: 'Recent' }
-                ].map((tab, i) => React.createElement(React.Fragment, { key: tab.key },
-                  i > 0 && React.createElement('span', {
-                    className: 'text-white/50 mx-2'
-                  }, '|'),
-                  React.createElement('button', {
-                    onClick: () => {
+                ], isSelected: (tab) => historyTab === tab.key, onSelect: (tab) => {
                       setHistoryTab(tab.key);
                       if (tab.key === 'recent') loadListeningHistory();
                       else if (tab.key === 'topTracks') loadTopTracks();
                       else if (tab.key === 'topArtists') loadTopArtists();
                       else if (tab.key === 'topAlbums') loadTopAlbums();
-                    },
-                    className: `px-2 py-1 text-sm font-medium uppercase tracking-wider transition-colors no-drag ${
-                      historyTab === tab.key ? 'text-white' : 'text-white/60 hover:text-white'
-                    }`
-                  }, tab.label)
-                ))
+                    }, renderLabel: (tab) => tab.label, label: 'History' })
               )
             )
           ),
@@ -42887,28 +42842,18 @@ React.createElement('div', {
                   className: 'flex items-center gap-1 mt-4',
                   style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
                 },
-                  [
+                  React.createElement(HeroTabs, { items: [
                     { key: 'recent', label: 'Recently Played' },
                     { key: 'topTracks', label: 'Top Tracks' },
                     { key: 'topAlbums', label: 'Top Albums' },
                     { key: 'topArtists', label: 'Top Artists' }
-                  ].map((tab, i) => React.createElement(React.Fragment, { key: tab.key },
-                    i > 0 && React.createElement('span', {
-                      className: 'text-white/50 mx-2'
-                    }, '|'),
-                    React.createElement('button', {
-                      onClick: () => {
+                  ], isSelected: (tab) => friendHistoryTab === tab.key, onSelect: (tab) => {
                         setFriendHistoryTab(tab.key);
                         if (tab.key === 'recent') loadFriendRecentTracks(currentFriend);
                         else if (tab.key === 'topTracks') loadFriendTopTracks(currentFriend);
                         else if (tab.key === 'topAlbums') loadFriendTopAlbums(currentFriend);
                         else if (tab.key === 'topArtists') loadFriendTopArtists(currentFriend);
-                      },
-                      className: `px-2 py-1 text-sm font-medium uppercase tracking-wider transition-colors no-drag ${
-                        friendHistoryTab === tab.key ? 'text-white' : 'text-white/60 hover:text-white'
-                      }`
-                    }, tab.label)
-                  ))
+                      }, renderLabel: (tab) => tab.label, label: 'Friend history' })
                 ),
                 // Service subtitle
                 React.createElement('p', {
@@ -42958,28 +42903,18 @@ React.createElement('div', {
                   className: 'flex items-center gap-1',
                   style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
                 },
-                  [
+                  React.createElement(HeroTabs, { items: [
                     { key: 'recent', label: 'Recent' },
                     { key: 'topTracks', label: 'Top Tracks' },
                     { key: 'topAlbums', label: 'Top Albums' },
                     { key: 'topArtists', label: 'Top Artists' }
-                  ].map((tab, i) => React.createElement(React.Fragment, { key: `c-${tab.key}` },
-                    i > 0 && React.createElement('span', {
-                      className: 'text-white/50 mx-2'
-                    }, '|'),
-                    React.createElement('button', {
-                      onClick: () => {
+                  ], isSelected: (tab) => friendHistoryTab === tab.key, onSelect: (tab) => {
                         setFriendHistoryTab(tab.key);
                         if (tab.key === 'recent') loadFriendRecentTracks(currentFriend);
                         else if (tab.key === 'topTracks') loadFriendTopTracks(currentFriend);
                         else if (tab.key === 'topAlbums') loadFriendTopAlbums(currentFriend);
                         else if (tab.key === 'topArtists') loadFriendTopArtists(currentFriend);
-                      },
-                      className: `px-2 py-1 text-sm font-medium uppercase tracking-wider transition-colors no-drag ${
-                        friendHistoryTab === tab.key ? 'text-white' : 'text-white/60 hover:text-white'
-                      }`
-                    }, tab.label)
-                  ))
+                      }, renderLabel: (tab) => tab.label, label: 'Friend history' })
                 )
               )
             ),
@@ -43609,10 +43544,11 @@ React.createElement('div', {
                 backgroundColor: 'var(--bg-secondary)'
               }
             },
-              React.createElement('nav', { style: { padding: '0 12px' } },
+              React.createElement('nav', { 'aria-label': 'Settings sections', style: { padding: '0 12px' } },
               // Plug-Ins tab (unified marketplace and installed)
               React.createElement('button', {
                 onClick: () => setSettingsTab('plugins'),
+                'aria-current': settingsTab === 'plugins' ? 'page' : undefined,
                 className: 'w-full text-left transition-all',
                 style: {
                   padding: '12px 16px',
@@ -43630,6 +43566,7 @@ React.createElement('div', {
               // General tab
               React.createElement('button', {
                 onClick: () => setSettingsTab('general'),
+                'aria-current': settingsTab === 'general' ? 'page' : undefined,
                 className: 'w-full text-left transition-all',
                 style: {
                   padding: '12px 16px',
@@ -43647,6 +43584,7 @@ React.createElement('div', {
               // About tab
               React.createElement('button', {
                 onClick: () => setSettingsTab('about'),
+                'aria-current': settingsTab === 'about' ? 'page' : undefined,
                 className: 'w-full text-left transition-all',
                 style: {
                   padding: '12px 16px',

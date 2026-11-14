@@ -17,6 +17,7 @@
 
 const Icons = require('./icons');
 const { SortMenu } = require('./sort-menu');
+const { HeroTabs } = require('./hero-tabs');
 const { activateOnKey } = require('../lib/activate-on-key');
 const { VirtualizedTrackList, getBestSourceConfidence } = require('./track-lists');
 const { ResolverIcon } = require('./ui-atoms');
@@ -161,29 +162,15 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                   className: 'flex items-center gap-1 mt-6',
                   style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
                 },
-                  [
+                  React.createElement(HeroTabs, { items: [
                     { key: 'artists', label: collectionLoading ? null : `${collectionData.artists.length} Artists`, staticLabel: 'Artists' },
                     { key: 'albums', label: collectionLoading ? null : `${collectionData.albums.length} Albums`, staticLabel: 'Albums' },
                     { key: 'tracks', label: collectionLoading ? null : `${library.length + collectionData.tracks.length} Songs`, staticLabel: 'Songs' },
                     { key: 'friends', label: `${friends.length} Friends`, staticLabel: 'Friends' }
-                  ].map((tab, index) => [
-                    index > 0 && React.createElement('span', {
-                      key: `sep-expanded-${tab.key}`,
-                      className: 'text-white/50 mx-2'
-                    }, '|'),
-                    React.createElement('button', {
-                      key: `expanded-${tab.key}`,
-                      onClick: () => setCollectionTab(tab.key),
-                      className: `px-2 py-1 text-sm font-medium uppercase tracking-wider transition-colors no-drag ${
-                        collectionTab === tab.key
-                          ? 'text-white'
-                          : 'text-white/60 hover:text-white'
-                      }`
-                    }, tab.label !== null ? tab.label : React.createElement('span', { className: 'flex items-center gap-1' },
+                  ], isSelected: (tab) => collectionTab === tab.key, onSelect: (tab) => { setCollectionTab(tab.key); }, renderLabel: (tab) => tab.label !== null ? tab.label : React.createElement('span', { className: 'flex items-center gap-1' },
                       React.createElement('span', { className: 'inline-block w-6 h-4 bg-white/30 rounded animate-pulse' }),
                       tab.staticLabel
-                    ))
-                  ]).flat().filter(Boolean)
+                    ), label: 'Collection' })
                 ),
                 // Buttons row
                 React.createElement('div', {
@@ -223,29 +210,15 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                   className: 'flex items-center gap-1',
                   style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
                 },
-                  [
+                  React.createElement(HeroTabs, { items: [
                     { key: 'artists', label: collectionLoading ? null : `${collectionData.artists.length} Artists`, staticLabel: 'Artists' },
                     { key: 'albums', label: collectionLoading ? null : `${collectionData.albums.length} Albums`, staticLabel: 'Albums' },
                     { key: 'tracks', label: collectionLoading ? null : `${library.length + collectionData.tracks.length} Songs`, staticLabel: 'Songs' },
                     { key: 'friends', label: `${friends.length} Friends`, staticLabel: 'Friends' }
-                  ].map((tab, index) => [
-                    index > 0 && React.createElement('span', {
-                      key: `sep-collapsed-${tab.key}`,
-                      className: 'text-white/50 mx-2'
-                    }, '|'),
-                    React.createElement('button', {
-                      key: `collapsed-${tab.key}`,
-                      onClick: () => setCollectionTab(tab.key),
-                      className: `px-2 py-1 text-sm font-medium uppercase tracking-wider transition-colors no-drag ${
-                        collectionTab === tab.key
-                          ? 'text-white'
-                          : 'text-white/60 hover:text-white'
-                      }`
-                    }, tab.label !== null ? tab.label : React.createElement('span', { className: 'flex items-center gap-1' },
+                  ], isSelected: (tab) => collectionTab === tab.key, onSelect: (tab) => { setCollectionTab(tab.key); }, renderLabel: (tab) => tab.label !== null ? tab.label : React.createElement('span', { className: 'flex items-center gap-1' },
                       React.createElement('span', { className: 'inline-block w-6 h-4 bg-white/30 rounded animate-pulse' }),
                       tab.staticLabel
-                    ))
-                  ]).flat().filter(Boolean)
+                    ), label: 'Collection' })
                 ),
                 // Right: Start Collection Station button
                 React.createElement('button', {
