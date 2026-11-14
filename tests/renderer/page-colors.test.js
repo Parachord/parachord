@@ -34,3 +34,12 @@ test('the sidebar, heroes and section links read the map, not their own copies',
   expect(app).not.toMatch(/'#10b981' : 'var\(--nav-inactive\)'/);
   expect(app).not.toMatch(/linear-gradient\(135deg, #9333ea 0%, #c026d3 50%, #e11d48 100%\)/);
 });
+
+test('the playbar and Search take service colours from the plugin, not their own copies', () => {
+  const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  const search = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/search-page.js'), 'utf8');
+  expect(app).not.toMatch(/const resolverIconColors = \{/);
+  expect(app).toMatch(/const currentIconColor = \(resolver\.color && resolver\.color !== '#888888'\) \? resolver\.color/);
+  expect(search).toMatch(/backgroundColor: \(sourceResolver && sourceResolver\.color\) \|\| 'var\(--text-tertiary\)'/);
+  expect(search).not.toMatch(/bandcamp: '#1DA0C3'/);
+});

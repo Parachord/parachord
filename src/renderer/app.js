@@ -46661,12 +46661,6 @@ useEffect(() => {
               (() => {
                 const currentResolverId = determineResolverIdFromTrack(currentTrack);
                 const resolver = allResolvers.find(r => r.id === currentResolverId);
-                const resolverColors = {
-                  spotify: { color: 'text-green-400', bg: 'bg-green-400' },
-                  bandcamp: { color: 'text-cyan-400', bg: 'bg-cyan-400' },
-                  youtube: { color: 'text-red-400', bg: 'bg-red-400' },
-                  localfiles: { color: 'text-purple-400', bg: 'bg-purple-400' }
-                };
 
                 // Get available sources for this track
                 const playbarTrackArtistNorm = (currentTrack.artist || '').toLowerCase().trim();
@@ -46686,22 +46680,12 @@ useEffect(() => {
                     })
                   : [];
 
-                const meta = resolverColors[currentResolverId] || { color: 'text-purple-400', bg: 'bg-purple-400' };
                 const hasMultipleSources = availableSources.length > 1;
 
                 if (resolver) {
-                  // Color mapping for resolver icons
-                  const resolverIconColors = {
-                    spotify: '#1DB954',
-                    bandcamp: '#1DA0C3',
-                    youtube: '#FF0000',
-                    localfiles: '#A855F7',
-                    soundcloud: '#FF5500',
-                    applemusic: '#FA2D48',
-                    amazonmusic: '#25D1DA',
-                    subsonic: '#14b8a6'
-                  };
-                  const currentIconColor = resolverIconColors[currentResolverId] || '#A855F7';
+                  // The plugin's own colour (manifest.color), like every other
+                  // service mark; the playbar used to keep its own copies.
+                  const currentIconColor = (resolver.color && resolver.color !== '#888888') ? resolver.color : 'var(--playbar-accent)';
 
                   return React.createElement('div', { className: 'flex items-center gap-1.5' },
                     // Custom resolver selector with icon
@@ -46788,7 +46772,7 @@ useEffect(() => {
                         // Source options
                         availableSources.map(resId => {
                           const r = allResolvers.find(res => res.id === resId);
-                          const iconColor = resolverIconColors[resId] || '#A855F7';
+                          const iconColor = (r && r.color && r.color !== '#888888') ? r.color : 'var(--playbar-accent)';
                           const isActive = resId === currentResolverId;
                           return React.createElement('button', {
                             key: resId,

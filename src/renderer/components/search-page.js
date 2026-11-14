@@ -1743,20 +1743,14 @@ const SearchPage = React.memo(function SearchPage(props) {
                       className: 'absolute bottom-1.5 right-1.5 flex gap-1 transition-opacity group-hover/art:opacity-0'
                     },
                       ...Object.keys(track.sources).filter(id => !track.sources[id]?.noMatch).slice(0, 4).map(source => {
-                        const colors = {
-                          spotify: '#1DB954',
-                          youtube: '#FF0000',
-                          bandcamp: '#1DA0C3',
-                          applemusic: '#FA243C',
-                          localfiles: '#6B7280'
-                        };
+                        const sourceResolver = (allResolvers || []).find(r => r.id === source);
                         return React.createElement('div', {
                           key: source,
                           style: {
                             width: '7px',
                             height: '7px',
                             borderRadius: '50%',
-                            backgroundColor: colors[source] || '#9CA3AF',
+                            backgroundColor: (sourceResolver && sourceResolver.color) || 'var(--text-tertiary)',
                             boxShadow: '0 1px 2px rgba(0,0,0,0.3)'
                           }
                         });
