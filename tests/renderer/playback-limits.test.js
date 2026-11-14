@@ -139,7 +139,7 @@ describe('app wiring', () => {
     expect(app).not.toMatch(/\.filter\(\(\[resolverId\]\) => activeResolvers\.includes\(resolverId\)\)/);
     // The six badge lists go through the shared rule (lib/visible-sources),
     // which keeps only playbackResolvers; none filters on its own any more.
-    expect(app.match(/visibleSources\(track, \{ trackSources, playbackResolvers, resolverOrder \}\)/g)).toHaveLength(6);
+    expect(app.match(/sourceRowState\(track, \{ trackSources, playbackResolvers, resolverOrder \}\)/g)).toHaveLength(6);
     expect(app).not.toMatch(/\.filter\(\(\[resolverId\]\) => playbackResolvers\.includes\(resolverId\)\)/);
     // The queue drawer gets playbackResolvers too.
     expect(between(app, 'React.createElement(VirtualizedQueueList, {', '})')).toMatch(/^\s+playbackResolvers,$/m);

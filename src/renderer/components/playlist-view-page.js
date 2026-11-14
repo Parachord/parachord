@@ -19,7 +19,7 @@
 const Icons = require('./icons');
 const { ResolverIcon, ShareButton } = require('./ui-atoms');
 const { VirtualizedTrackList } = require('./track-lists');
-const { visibleSources } = require('../lib/visible-sources');
+const { sourceRowState } = require('../lib/visible-sources');
 const { trackSlug } = require('../lib/track-slug');
 
 const { Play, Music } = Icons;
@@ -1112,9 +1112,12 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                   parentRef: playlistTracksScrollRef,
                   renderRow: (track, index) => {
                     // Use track.id to look up resolved sources from trackSources state
-                    const resolvedSources = trackSources[track.id] || track.sources || {};
-                    const hasResolved = Object.keys(resolvedSources).length > 0;
-                    const isResolving = Object.keys(resolvedSources).length === 0;
+                    // The row's sources, one rule for every list (lib/visible-sources):
+                    // resolving (shimmer), unplayable (dimmed, no icons) or playable.
+                    const { shown: shownSources, state: sourceState } = sourceRowState(track, { trackSources, playbackResolvers: activeResolvers, resolverOrder });
+                    const hasResolved = sourceState === 'playable';
+                    const isResolving = sourceState === 'resolving';
+                    const isUnplayable = sourceState === 'unplayable';
                     const isDraggedOver = playlistEditMode && playlistDropTarget === index;
                     const isDragging = playlistEditMode && draggedPlaylistTrack === index;
                     const isCurrentTrack = currentTrack?.id === track.id;
@@ -1171,7 +1174,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                       } : undefined,
                       className: `flex items-center gap-4 py-3 px-4 transition-all no-drag group ${
                         playlistEditMode ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
-                      } ${isResolving ? 'opacity-60' : ''} ${isDragging ? 'opacity-50 bg-gray-100' : ''} ${isDraggedOver ? 'border-t-2 border-t-purple-500' : ''} ${isNowPlaying && isPlaying ? 'bg-purple-50' : 'hover:bg-gray-50/80'}`,
+                      } ${isResolving || isUnplayable ? 'opacity-60' : ''} ${isDragging ? 'opacity-50 bg-gray-100' : ''} ${isDraggedOver ? 'border-t-2 border-t-purple-500' : ''} ${isNowPlaying && isPlaying ? 'bg-purple-50' : 'hover:bg-gray-50/80'}`,
                       style: {
                         borderRadius: '8px',
                         marginBottom: '2px'
@@ -1290,7 +1293,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                         : hasResolved ? (() => {
                             // The shared source-icon rule (lib/visible-sources), with
                             // activeResolvers = playbackResolvers from app.js.
-                            return visibleSources(track, { trackSources, playbackResolvers: activeResolvers, resolverOrder })
+                            return shownSources
                               .map(({ resolverId, source, dim }) => {
                                 const resolver = allResolvers.find(r => r.id === resolverId);
                                 if (!resolver || !resolver.play) return null;
@@ -1325,19 +1328,8 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                               });
                           })()
                         :
-                          // Show shimmer skeletons while resolving (match resolver icon size)
-                          React.createElement('div', {
-                            className: 'flex items-center gap-1'
-                          },
-                            React.createElement('div', {
-                              className: 'w-5 h-5 rounded shimmer-light animate-shimmer',
-                              title: 'Resolving track...'
-                            }),
-                            React.createElement('div', {
-                              className: 'w-5 h-5 rounded shimmer-light animate-shimmer',
-                              style: { animationDelay: '0.1s' }
-                            })
-                          )
+                          // Unplayable: no icons; the row is dimmed.
+                          null
                       )
                     );
                   }

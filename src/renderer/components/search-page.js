@@ -23,7 +23,7 @@ const { ResolverIcon } = require('./ui-atoms');
 const { SectionHeader, SECTION_HEADER_GAP } = require('./section-header');
 const { artistOpenOptions, creditOpenOptions, trackArtistOpenOptions } = require('../lib/artist-open');
 const { VirtualizedTrackList } = require('./track-lists');
-const { visibleSources } = require('../lib/visible-sources');
+const { visibleSources, sourceRowState } = require('../lib/visible-sources');
 const { generateArtistPattern, PlayTop10Icon, QueueTop10Icon, SearchArtistCard, SearchHistoryItem } = require('./cards');
 const { trackSlug, slug } = require('../lib/track-slug');
 
@@ -853,10 +853,13 @@ const SearchPage = React.memo(function SearchPage(props) {
                   tracks: filteredTracks,
                   parentRef: searchScrollContainerRef,
                   renderRow: (track, index) => {
-                    // Use track.id to look up resolved sources from trackSources state
-                    const resolvedSources = trackSources[track.id] || track.sources || {};
-                    const hasResolved = Object.keys(resolvedSources).length > 0;
-                    const isResolving = !hasResolved && track.resolving;
+                    // The row's sources, one rule for every list (lib/visible-sources):
+                    // resolving (shimmer, while Search is still resolving it),
+                    // unplayable (dimmed, no icons) or playable.
+                    const { shown: shownSources, state: sourceState } = sourceRowState(track, { trackSources, playbackResolvers: activeResolvers, resolverOrder });
+                    const hasResolved = sourceState === 'playable';
+                    const isResolving = sourceState === 'resolving' && track.resolving;
+                    const isUnplayable = sourceState === 'unplayable';
                     const isCurrentTrack = currentTrack?.id === track.id;
                     const isNowPlaying = isCurrentTrack && playbackContext?.type === 'search';
 
@@ -894,7 +897,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       handlePlaylistDragEnd();
                     },
                     className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${
-                      isResolving ? 'opacity-60' : ''
+                      isResolving || isUnplayable ? 'opacity-60' : ''
                     } ${isNowPlaying && isPlaying ? 'bg-purple-50' : 'hover:bg-gray-50/80'}`,
                     style: {
                       borderRadius: '8px',
@@ -1012,9 +1015,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                           })
                         )
                       : hasResolved ? (() => {
-                          // The shared source-icon rule (lib/visible-sources), with
-                          // activeResolvers = playbackResolvers from app.js.
-                          return visibleSources(track, { trackSources, playbackResolvers: activeResolvers, resolverOrder })
+                          return shownSources
                             .map(({ resolverId, source, dim }) => {
                               const resolver = allResolvers.find(r => r.id === resolverId);
                               if (!resolver || !resolver.play) return null;
@@ -1734,30 +1735,28 @@ const SearchPage = React.memo(function SearchPage(props) {
                         )
                       )
                     ),
-                    // Resolver dots - bottom right corner (hidden on hover)
-                    track.sources && Object.keys(track.sources).filter(id => !track.sources[id]?.noMatch).length > 0 && React.createElement('div', {
-                      className: 'absolute bottom-1.5 right-1.5 flex gap-1 transition-opacity group-hover/art:opacity-0'
-                    },
-                      ...Object.keys(track.sources).filter(id => !track.sources[id]?.noMatch).slice(0, 4).map(source => {
-                        const colors = {
-                          spotify: '#1DB954',
-                          youtube: '#FF0000',
-                          bandcamp: '#1DA0C3',
-                          applemusic: '#FA243C',
-                          localfiles: '#6B7280'
-                        };
-                        return React.createElement('div', {
-                          key: source,
+                    // Source dots - bottom right corner (hidden on hover): the
+                    // shared source-icon rule (lib/visible-sources), first four,
+                    // each in its plugin's colour, dimmed like the row icons.
+                    (() => {
+                      const dots = visibleSources(track, { trackSources, playbackResolvers: activeResolvers, resolverOrder }).slice(0, 4);
+                      if (dots.length === 0) return null;
+                      return React.createElement('div', {
+                        className: 'absolute bottom-1.5 right-1.5 flex gap-1 transition-opacity group-hover/art:opacity-0'
+                      },
+                        ...dots.map(({ resolverId, dim }) => React.createElement('div', {
+                          key: resolverId,
                           style: {
                             width: '7px',
                             height: '7px',
                             borderRadius: '50%',
-                            backgroundColor: colors[source] || '#9CA3AF',
+                            backgroundColor: allResolvers.find(r => r.id === resolverId)?.color || 'var(--text-tertiary)',
+                            opacity: dim ? 0.6 : 1,
                             boxShadow: '0 1px 2px rgba(0,0,0,0.3)'
                           }
-                        });
-                      })
-                    )
+                        }))
+                      );
+                    })()
                   ),
                   // Track title - refined typography
                   React.createElement('div', {

@@ -66,6 +66,7 @@ describe('queue drawer source icons', () => {
     expect(html).toContain('Play via YouTube');
     expect(html).not.toContain('Play via Amazon Music');
     expect(html).not.toContain('Play via Apple Music');
+    expect(html).not.toMatch(/data-index="0"[^>]*class="[^"]*opacity-50/);
   });
 
   test('a track whose only sources are unplayable shows no icons and no resolving shimmer', () => {
@@ -73,12 +74,15 @@ describe('queue drawer source icons', () => {
     const html = renderQueue([track], ['spotify', 'youtube']);
     expect(html).not.toContain('Play via');
     expect(html).not.toContain('Resolving track');
+    // Nothing playable: the row is dimmed.
+    expect(html).toMatch(/data-index="0"[^>]*class="[^"]*opacity-50/);
   });
 
   test('a track with no sources yet still shows the resolving shimmer', () => {
     const track = { id: 't3', title: 'Song', artist: 'Artist', duration: 180, sources: {} };
     const html = renderQueue([track], ['spotify', 'youtube']);
     expect(html).toContain('Resolving track');
+    expect(html).not.toMatch(/data-index="0"[^>]*class="[^"]*opacity-50/);
   });
 
   test('icons stay in resolverOrder', () => {
@@ -97,11 +101,12 @@ describe('queue drawer source icons', () => {
     expect(html).toContain('Play via YouTube');
   });
 
-  test('a track whose sources are all noMatch shows nothing, not the shimmer', () => {
+  test('a track whose sources are all noMatch shows nothing, not the shimmer, and is dimmed', () => {
     const track = { id: 't6', title: 'Song', artist: 'Artist', duration: 180, sources: { spotify: { noMatch: true } } };
     const html = renderQueue([track], ['spotify', 'youtube']);
     expect(html).not.toContain('Play via');
     expect(html).not.toContain('Resolving track');
+    expect(html).toMatch(/data-index="0"[^>]*class="[^"]*opacity-50/);
   });
 
   test('live trackSources count, as in a playlist row', () => {

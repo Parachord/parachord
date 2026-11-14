@@ -14,11 +14,13 @@
 //      (`playbackResolvers`, never `activeResolvers`);
 //   4. sort by the user's resolver order, leftmost plays first; a resolver
 //      not in the order goes last;
-//   5. dim a source whose confidence is below getBestSourceConfidence. A
-//      source with no confidence number isn't dimmed: those come from a
-//      service's own ids (a synced Collection track, an imported playlist),
-//      not a fuzzy match. Collection always read it that way; the playlist
-//      view and the queue used to dim it.
+//   5. dim a low-confidence match: a confidence below getBestSourceConfidence,
+//      or none at all (an unscored source is not a validated match). Collection
+//      used to read a missing confidence as 1 and not dim it; every other list
+//      dimmed it.
+//
+// sourceRowState adds the row's state (resolving / unplayable / playable),
+// so every list dims a track that came back with nothing it can play.
 //
 // Pure, no React, loads under plain Node.
 
@@ -69,12 +71,27 @@ function visibleSources(track, { trackSources, playbackResolvers, resolverOrder 
     .sort((a, b) => rank(a) - rank(b))
     .map((resolverId) => {
       const source = sources[resolverId];
-      const confidence = source.confidence;
-      return { resolverId, source, dim: typeof confidence === 'number' && confidence < bestConf };
+      return { resolverId, source, dim: (source.confidence || 0) < bestConf };
     });
 }
 
+// A row's source state, one rule for every list:
+//   'resolving'  — nothing has come back yet: the shimmer;
+//   'unplayable' — resolution came back and nothing is shown (no match
+//                  anywhere, or only services the plan can't play): the row is
+//                  dimmed, with no icons and no shimmer;
+//   'playable'   — at least one icon.
+// Returns { shown, state }, shown being visibleSources' list.
+function sourceRowState(track, opts = {}) {
+  const shown = visibleSources(track, opts);
+  const state = shown.length > 0
+    ? 'playable'
+    : (hasResolutionResult(track, opts.trackSources) ? 'unplayable' : 'resolving');
+  return { shown, state };
+}
+
 module.exports = {
+  sourceRowState,
   getBestSourceConfidence,
   mergedSources,
   hasResolutionResult,

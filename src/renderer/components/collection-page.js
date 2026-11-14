@@ -16,7 +16,7 @@
 // from props under their old names.
 
 const { VirtualizedTrackList } = require('./track-lists');
-const { visibleSources } = require('../lib/visible-sources');
+const { sourceRowState } = require('../lib/visible-sources');
 const { ResolverIcon } = require('./ui-atoms');
 const { CollectionArtistCard, CollectionAlbumCard } = require('./cards');
 
@@ -648,7 +648,12 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                   );
                   const isCurrentTrack = currentTrack?.id === track.id || (currentTrack?.filePath && track.filePath && currentTrack.filePath === track.filePath);
                   const isNowPlaying = isCurrentTrack && playbackContext?.type === 'library';
-                  const isResolving = Object.keys(effectiveSources).length === 0;
+                  // The row's sources, one rule for every list (lib/visible-sources):
+                  // resolving (shimmer), unplayable (dimmed, no icons) or playable.
+                  // A local file always plays, so it is never unplayable.
+                  const { shown: shownSources, state: sourceState } = sourceRowState(track, { trackSources, playbackResolvers: activeResolvers, resolverOrder });
+                  const isResolving = sourceState === 'resolving';
+                  const isUnplayable = sourceState === 'unplayable' && !track.filePath;
 
                   return React.createElement('div', {
                     ref: (el) => {
@@ -686,7 +691,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                     },
                     className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all no-drag group ${
                       isNowPlaying && isPlaying ? 'bg-cyan-50' : 'hover:bg-gray-50/80'
-                    }`,
+                    } ${isUnplayable ? 'opacity-60' : ''}`,
                     style: {
                       borderRadius: '8px',
                       marginBottom: '2px'
@@ -797,14 +802,10 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                       style: { pointerEvents: 'none', minHeight: '20px', width: '140px', justifyContent: 'flex-end' }
                     },
                       (() => {
-                        const sources = effectiveSources;
-                        const sourceIds = Object.keys(sources).filter(id => !sources[id]?.noMatch);
-                        const hasExternalSources = sourceIds.some(id => id !== 'localfiles');
+                        const hasExternalSources = shownSources.some(s => s.resolverId !== 'localfiles');
 
                         if (hasExternalSources) {
-                          // The shared source-icon rule (lib/visible-sources), with
-                          // activeResolvers = playbackResolvers from app.js.
-                          return visibleSources({ id: track.id, sources }, { playbackResolvers: activeResolvers, resolverOrder })
+                          return shownSources
                             .map(({ resolverId, source, dim }) => {
                               const resolver = allResolvers.find(r => r.id === resolverId);
                               if (!resolver) return null;

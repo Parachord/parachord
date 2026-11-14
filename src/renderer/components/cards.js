@@ -9,7 +9,7 @@
 // app.js for the in-component call sites; PlayTop10Icon / QueueTop10Icon are
 // cards-only (the playtop-10 / queue-top-10 affordances).
 const { ResolverIcon, PlaybackProgress, ShareButton } = require('./ui-atoms');
-const { visibleSources } = require('../lib/visible-sources');
+const { sourceRowState } = require('../lib/visible-sources');
 const Icons = require('./icons');
 const { Play } = Icons;
 // hashString (module scope in app.js) is used by generateArtistPattern;
@@ -1808,12 +1808,12 @@ const ReleasePage = ({
             // The shared source-icon rule (lib/visible-sources), with
             // activeResolvers = playbackResolvers from app.js and `resolvers`
             // already in the user's resolver order.
-            const shownSources = visibleSources({ id: trackId }, { trackSources, playbackResolvers: activeResolvers, resolverOrder: resolvers.map(r => r.id) });
+            const { shown: shownSources, state: sourceState } = sourceRowState({ id: trackId }, { trackSources, playbackResolvers: activeResolvers, resolverOrder: resolvers.map(r => r.id) });
             const availableResolvers = shownSources.map(s => s.resolverId);
-            // Tri-state for badge area: still-loading vs resolved-with-no-matches vs playable.
-            // Set to true ONLY when resolution definitively completed across all enabled
-            // resolvers and none returned a real match. Drives gray-out + skip-shimmer below.
-            const hasNoMatches = sources.__noMatchAll === true;
+            // Tri-state for badge area: still-loading vs resolved-with-nothing-playable
+            // (no match anywhere, or only on services the plan can't play) vs
+            // playable. Drives gray-out + skip-shimmer below.
+            const hasNoMatches = sourceState === 'unplayable';
 
             // Build track object for drag/drop and playback
             const trackForDrag = {

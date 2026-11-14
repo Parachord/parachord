@@ -17,7 +17,7 @@ const { Music, Pause, Play, X } = Icons;
 
 // The shared source-icon rule (and the 0.95 dim threshold) lives in
 // lib/visible-sources.js.
-const { visibleSources, hasResolutionResult } = require('../lib/visible-sources');
+const { sourceRowState } = require('../lib/visible-sources');
 
 // TrackRow component - defined outside to prevent recreation on every render
 const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick, onContextMenu, allResolvers, resolverOrder, activeResolvers }) => {
@@ -259,9 +259,10 @@ const VirtualizedQueueList = React.memo(({
     const isError = track.status === 'error';
     // The icons the page lists would show for this track (lib/visible-sources):
     // real sources only, playable on this account, in resolver order. Shimmer
-    // while nothing has come back yet; nothing once it has and none is shown.
-    const shownSources = visibleSources(track, { trackSources, playbackResolvers, resolverOrder });
-    const hasResult = hasResolutionResult(track, trackSources);
+    // while nothing has come back yet; once it has and nothing is playable, no
+    // icons and the row is dimmed, as in the page lists.
+    const { shown: shownSources, state: sourceState } = sourceRowState(track, { trackSources, playbackResolvers, resolverOrder });
+    const isUnplayable = !isLoading && !isError && sourceState === 'unplayable';
 
     const isDraggedOver = queueDropTarget === index;
     const isDragging = draggedQueueTrack === index;
@@ -331,7 +332,7 @@ const VirtualizedQueueList = React.memo(({
       className: `group flex items-center gap-3 py-1.5 px-3 hover:bg-white/10 transition-all duration-300 ${
         isCurrentTrack ? 'bg-purple-900/40' : ''
       } ${isDragging ? 'opacity-50 bg-gray-700/50' : ''} ${
-        isError ? 'opacity-50' : ''
+        isError || isUnplayable ? 'opacity-50' : ''
       } ${isDraggedOver ? 'border-t-2 border-t-purple-400' : ''} ${
         isLoading || isError ? 'cursor-default' : 'cursor-pointer'} ${
         isFallingDown ? 'queue-track-drop' : ''} ${
@@ -465,7 +466,7 @@ const VirtualizedQueueList = React.memo(({
                 title: `Play via ${resolver.name}${confidence ? ` (${Math.round(confidence * 100)}% match)` : ''}`
               }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
             })
-        : hasResult ? null
+        : sourceState === 'unplayable' ? null
         :
           React.createElement('div', { className: 'flex items-center gap-1' },
             React.createElement('div', {
