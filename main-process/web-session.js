@@ -73,9 +73,9 @@
 // requests with no body (preflights), so entries pair by id, never by order.
 //
 // Error convention: load() throws an Error with .reason ('load-failed',
-// 'not-ready') for host failures — the same shape amazon-web-player's flows
-// throw today; pageFetch() never throws — every failure is { error } so a
-// caller can treat it as a recoverable miss.
+// 'not-ready', 'invalid') for host failures — the same shape
+// amazon-web-player's flows throw today; pageFetch() never throws — every
+// failure is { error } so a caller can treat it as a recoverable miss.
 
 'use strict';
 
@@ -285,7 +285,9 @@ function createWebSessionHost(config = {}) {
     ensureView() {
       const { WebContentsView } = electron();
       if (this.alive(this._view)) {
-        this.collapse(this._view);
+        // An alive view keeps its layout (a 0×0 collapse here would
+        // transiently collapse a live SPA's widgets — the exact condition
+        // the offscreen layout exists to avoid; load lays it out anyway).
         return this._view;
       }
       if (!this._host || this._host.isDestroyed()) {
@@ -358,11 +360,19 @@ function createWebSessionHost(config = {}) {
     // park — is the writer (waits for all readers, excludes new ones).
 
     async beginNavigation() {
-      // The flag flips BEFORE the drain, not after: readers arriving while
-      // the drain is in progress must be refused, or a stream of parallel
-      // pageFetches (which the architecture deliberately allows off-chain)
-      // starves the navigation forever (createReplayGate's "sync flag flip
-      // first, then drain" rule).
+      // Writers exclude each other (an idle park and a load must not abort
+      // each other's navigation); every wait here is bounded (pageFetch by
+      // pageFetchTimeoutMs, a load by loadTimeoutMs). The check-then-claim
+      // below has no await between the two, so two writers cannot both
+      // claim.
+      while (this._navigating) {
+        await sleep(50);
+      }
+      // The flag flips BEFORE the reader drain, not after: readers arriving
+      // while the drain is in progress must be refused, or a stream of
+      // parallel pageFetches (which the architecture deliberately allows
+      // off-chain) starves the navigation forever (createReplayGate's "sync
+      // flag flip first, then drain" rule).
       this._navigating = true;
       while (this._replayReaders > 0) {
         await sleep(50);
@@ -492,6 +502,11 @@ function createWebSessionHost(config = {}) {
     // for. Serialized per session (rule 1); waits out in-flight pageFetches
     // (rule 2); captures flag echoes (rule 4) and end on quiet/budget (rule 5).
     async load(url, opts = {}) {
+      // Validate before ANY state is touched: a bad argument must not leave
+      // a created-but-never-laid-out view or a disarmed park fuse behind.
+      if (opts.capture && (!Array.isArray(opts.capture.urlPrefixes) || !opts.capture.urlPrefixes.every((p) => typeof p === 'string'))) {
+        throw notReady('invalid', `[web-session ${cfg.id}] capture needs urlPrefixes (an array of URL patterns)`);
+      }
       return this.enqueue(async () => {
         const view = this.ensureView();
         // The offscreen size, not the 0×0 collapse: SPAs collapse widgets to
@@ -500,9 +515,6 @@ function createWebSessionHost(config = {}) {
         // this — a load without it captures nothing).
         this.layoutOffscreen(view);
         this.cancelPark();
-        if (opts.capture && (!Array.isArray(opts.capture.urlPrefixes) || !opts.capture.urlPrefixes.every((p) => typeof p === 'string'))) {
-          throw notReady('invalid', `[web-session ${cfg.id}] capture needs urlPrefixes (an array of URL patterns)`);
-        }
         const captureState = opts.capture ? this.attachCapture(opts.capture.urlPrefixes) : null;
         try {
           await this.beginNavigation();
