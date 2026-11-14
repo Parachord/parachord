@@ -31,7 +31,9 @@ describe('toastBackground', () => {
 
 describe('toast call sites', () => {
   test('the toast draws its fill from toastBackground', () => {
-    expect(app).toContain('backgroundColor: toastBackground(toast.type),');
+    const t = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/components/toast.js'), 'utf8');
+    expect(t).toContain('backgroundColor: toastBackground(toast.type),');
+    expect(app).toContain('React.createElement(ToastRegion, {');
   });
 
   test('the updater passes a type and a duration, not a duration as the type', () => {

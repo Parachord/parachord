@@ -328,6 +328,10 @@
     @keyframes modalScrimIn { from { opacity: 0; } to { opacity: 1; } }
     @keyframes modalPanelIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
     @media (prefers-reduced-motion: reduce) { .modal-scrim, .modal-panel { animation: none; } }
+    /* Toasts (components/toast.js) rise in. */
+    .toast-enter { animation: toastIn 150ms cubic-bezier(0, 0, 0.2, 1); }
+    @keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+    @media (prefers-reduced-motion: reduce) { .toast-enter { animation: none; } }
     .dark .bg-gray-100 { background-color: var(--bg-inset) !important; }
     .dark .bg-gray-800 { background-color: #252525 !important; }
     .dark .shadow-sm { box-shadow: var(--shadow-sm) !important; }

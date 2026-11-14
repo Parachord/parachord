@@ -1982,6 +1982,7 @@ const { PAGE_COLORS, pageTint } = require('./lib/page-colors');
 const { Modal, ConfirmModal } = require('./components/modal');
 const { Button } = require('./components/button');
 const { activateOnKey } = require('./lib/activate-on-key');
+const { ToastRegion, NowPlayingAnnouncer } = require('./components/toast');
 // Room the queue drawer leaves above it: the title bar and a little air.
 const QUEUE_DRAWER_TOP_GAP = 48;
 const { sellerColor, sellerTextColor, sellerBadgeBg, sellerShortName, sellerName } = require('./lib/ticket-sellers');
@@ -36968,38 +36969,14 @@ useEffect(() => {
         )
       ),
 
-      // Toast notification - refined styling with optional action button
-      toast && React.createElement('div', {
-        className: 'fixed bottom-24 left-1/2 transform -translate-x-1/2 z-50 transition-all flex items-center gap-3',
-        style: {
-          padding: '12px 20px',
-          backgroundColor: toastBackground(toast.type),
-          color: '#ffffff',
-          fontSize: '13px',
-          fontWeight: '500',
-          borderRadius: '10px',
-          boxShadow: '0 4px 16px rgba(0, 0, 0, 0.2), 0 8px 32px rgba(0, 0, 0, 0.15)'
-        }
-      },
-        toast.message,
-        toast.action && React.createElement('button', {
-          onClick: () => {
-            toast.action.onClick();
-            setToast(null);
-          },
-          style: {
-            marginLeft: '8px',
-            padding: '4px 12px',
-            backgroundColor: 'rgba(255, 255, 255, 0.2)',
-            border: '1px solid rgba(255, 255, 255, 0.3)',
-            borderRadius: '6px',
-            color: '#ffffff',
-            fontSize: '12px',
-            fontWeight: '600',
-            cursor: 'pointer'
-          }
-        }, toast.action.label)
-      ),
+      // Toasts (components/toast.js): an always-mounted live region, so a
+      // screen reader hears each one; and the track that started.
+      React.createElement(ToastRegion, {
+        toast,
+        onAction: () => { if (toast && toast.action) toast.action.onClick(); setToast(null); },
+        onDismiss: () => setToast(null),
+      }),
+      React.createElement(NowPlayingAnnouncer, { track: currentTrack }),
 
       // Main content area
       React.createElement('div', {
