@@ -26,6 +26,22 @@ const shuffleupagusIcon = () => (SERVICE_LOGOS && SERVICE_LOGOS.shuffleupagus
   ? React.cloneElement(SERVICE_LOGOS.shuffleupagus, { className: undefined, width: 18, height: 18, 'aria-hidden': 'true' })
   : null);
 
+// The badge's disc on its own, for a heading or label that should read as
+// the same thing as the badges (Home's "Ask Shuffleupagus" box). Not a
+// control: decorative, hidden from screen readers, with an outline so the
+// white disc shows on a light surface.
+function ReasonMark({ icon, size = 26 }) {
+  return React.createElement('span', {
+    'aria-hidden': 'true',
+    style: {
+      width: `${size}px`, height: `${size}px`, borderRadius: '50%', flexShrink: 0,
+      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+      backgroundColor: BADGE_BG, color: BADGE_FG, border: '1px solid var(--border-default)',
+      boxSizing: 'border-box',
+    },
+  }, icon === undefined ? shuffleupagusIcon() : icon);
+}
+
 function ReasonBadge({ label, text, icon }) {
   const e = React.createElement;
   const id = React.useId();
@@ -58,4 +74,4 @@ function shuffleupagusBadgeProps(item) {
   return { label: 'Why Shuffleupagus picked this', text: item.reason || 'Picked by Shuffleupagus' };
 }
 
-module.exports = { ReasonBadge, shuffleupagusBadgeProps, shuffleupagusIcon, VISUALLY_HIDDEN };
+module.exports = { ReasonBadge, ReasonMark, shuffleupagusBadgeProps, shuffleupagusIcon, VISUALLY_HIDDEN };

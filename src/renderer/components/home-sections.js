@@ -11,7 +11,7 @@
 // home-skeletons.js; change one, change the other.
 
 const { filterBySource } = require('../lib/home-model');
-const { ReasonBadge, shuffleupagusIcon } = require('./reason-badge');
+const { ReasonBadge, ReasonMark, shuffleupagusIcon } = require('./reason-badge');
 const { Play } = require('./icons');
 const { FilterChips } = require('./filter-chips');
 const { PAGE_COLORS } = require('../lib/page-colors');
@@ -627,7 +627,12 @@ function AskShuffleupagus({ initialPrompt, chatAvailable, onAsk, onSetup }) {
     display: 'flex', flexDirection: 'column', gap: '12px', padding: '20px', borderRadius: '16px',
     border: '1px solid var(--border-default)', backgroundColor: 'var(--bg-secondary)',
   };
-  const heading = e('h2', { id: 'home-ask', style: Object.assign({}, H2_STYLE, { fontSize: '16px' }) }, 'Ask Shuffleupagus');
+  // Shuffleupagus's mark, the same disc as the badges on its picks, so the
+  // box and the badges read as one thing.
+  const heading = e('h2', {
+    id: 'home-ask',
+    style: Object.assign({}, H2_STYLE, { fontSize: '16px', display: 'flex', alignItems: 'center', gap: '8px' }),
+  }, e(ReasonMark, null), 'Ask Shuffleupagus');
   if (chatAvailable === false) {
     return e('section', { 'aria-labelledby': 'home-ask', style: box },
       heading,

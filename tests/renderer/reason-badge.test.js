@@ -7,7 +7,7 @@ global.ReactDOM = require('react-dom');
 const fs = require('fs');
 const path = require('path');
 const { renderToStaticMarkup } = require('react-dom/server');
-const { ReasonBadge, shuffleupagusBadgeProps } = require('../../src/renderer/components/reason-badge');
+const { ReasonBadge, ReasonMark, shuffleupagusBadgeProps } = require('../../src/renderer/components/reason-badge');
 
 const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
 
@@ -30,6 +30,11 @@ describe('ReasonBadge', () => {
     expect(html).toMatch(/-why"[^>]*>Because slowcore<\/span>/);
     expect(html).toMatch(/<svg/);
   });
+  test('the mark is the same disc, decorative', () => {
+    const html = renderToStaticMarkup(React.createElement(ReasonMark, null));
+    expect(html).toMatch(/^<span aria-hidden="true"[^>]*><svg/);
+    expect(html).not.toMatch(/<button/);
+  });
   test('no text, no badge', () => {
     expect(renderToStaticMarkup(React.createElement(ReasonBadge, { label: 'x', text: '' }))).toBe('');
   });
@@ -45,5 +50,9 @@ describe('Recommendations cards carry it', () => {
   test('Home uses the same component', () => {
     const home = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/home-sections.js'), 'utf8');
     expect(home).toMatch(/badge && e\(ReasonBadge, badge\)/);
+  });
+  test("Home's Ask Shuffleupagus heading carries the mark", () => {
+    const home = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/home-sections.js'), 'utf8');
+    expect(home).toMatch(/e\(ReasonMark, null\), 'Ask Shuffleupagus'\)/);
   });
 });
