@@ -22,7 +22,7 @@
 //   - role="tooltip"; a single element child gets aria-describedby while it
 //     shows
 // Props: content, position ('top' | 'top-end' | 'bottom' | 'bottom-start' |
-// 'left' | 'right'), variant ('light' | 'dark', for the always-dark
+// 'left' | 'right'), variant ('light' | 'dark': an outline on the always-dark
 // surfaces), className ('tooltip-fill' caps the trigger at its column so a
 // truncating child still ellipsizes; 'tooltip-bio' wraps long text), id,
 // delay. The look is the .tooltip-panel classes in index.html.

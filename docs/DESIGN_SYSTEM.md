@@ -252,7 +252,7 @@ data-tooltip="…"   (any control, through TooltipLayer)
 One tooltip, two ways in (#1385 step 9):
 
 - **`Tooltip`** wraps a trigger. **`data-tooltip`** goes on a control with no wrapper; `TooltipLayer`, mounted once at the app root, shows it. Controls never use a native `title` (it shows late, never on focus, and in the OS's look); `tests/renderer/tooltip-layer.test.js` fails on one.
-- **Panel:** `.tooltip-panel` in `index.html`, portalled to `<body>` and `position: fixed`, so no `overflow: hidden` clips it. `variant: 'dark'` / `data-tooltip-variant="dark"` is the light tip for the always-dark surfaces; `.tooltip-bio` wraps long text.
+- **Panel:** `.tooltip-panel` in `index.html`, portalled to `<body>` and `position: fixed`, so no `overflow: hidden` clips it. `variant: 'dark'` / `data-tooltip-variant="dark"` adds an outline on the always-dark surfaces (same dark tip); `.tooltip-bio` wraps long text.
 - **Placement:** `position` = `'top'` (default) | `'top-end'` | `'bottom'` | `'bottom-start'` | `'left'` | `'right'` (`data-tooltip-position`). `placeTooltip` (pure) keeps it inside the window and flips it when its side has no room.
 - **Behaviour:** shows on hover and on keyboard focus (focus-visible only for `data-tooltip`) after 400ms (`TOOLTIP_DELAY_MS`), stays while either lasts, and Escape or a scroll dismisses it (WCAG 1.4.13). A click hides a `data-tooltip` one.
 - **Names:** a tooltip is a description, not a name. An icon-only control needs an `aria-label` too, usually the same words. A wrapped single element gets `aria-describedby` pointing at the tip while it shows.

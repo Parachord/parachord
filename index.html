@@ -140,8 +140,6 @@
       --tooltip-text: #ffffff;
       --tooltip-hover: #374151;
       --tooltip-border: transparent;
-      --tooltip-on-dark-bg: rgba(255, 255, 255, 0.95);
-      --tooltip-on-dark-text: #1f2937;
 
       /* Typography */
       --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
@@ -837,12 +835,11 @@
     }
     @media (prefers-reduced-motion: reduce) { .tooltip-panel { animation: none; } }
 
-    /* On the always-dark surfaces (playbar, queue) the tip is light. */
+    /* On the always-dark surfaces (playbar, queue) the tip keeps the
+       standard dark look, with an outline so it doesn't merge into them. */
     .tooltip-panel.tooltip-on-dark {
-      background-color: var(--tooltip-on-dark-bg);
-      color: var(--tooltip-on-dark-text);
-      border-color: transparent;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+      border-color: rgba(255, 255, 255, 0.14);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
     }
 
     /* A card's explanation (FixedTooltip): wraps, a little roomier. */
