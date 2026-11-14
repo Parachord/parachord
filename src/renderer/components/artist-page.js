@@ -21,6 +21,7 @@
 
 const { sellerColor, sellerTextColor, sellerBadgeBg, sellerShortName, sellerName } = require('../lib/ticket-sellers');
 const { Tooltip } = require('./ui-atoms');
+const Icons = require('./icons');
 const { SectionHeader } = require('./section-header');
 const { FilterChips } = require('./filter-chips');
 const { ReleasePage, ReleaseCard, generateArtistPattern, PlayTop10Icon, QueueTop10Icon } = require('./cards');
@@ -846,9 +847,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                 className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-ink-tertiary hover:text-ink-secondary transition-colors'
               },
                 React.createElement('span', null, artistSortOptions.find(o => o.value === artistSort)?.label || 'Sort'),
-                React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
-                )
+                React.createElement(Icons.ChevronDown, { className: 'w-4 h-4' })
               ),
               // Dropdown menu
               artistSortDropdownOpen && React.createElement('div', {
@@ -867,14 +866,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                     }`
                   },
                     option.label,
-                    artistSort === option.value && React.createElement('svg', {
-                      className: 'w-4 h-4',
-                      fill: 'none',
-                      viewBox: '0 0 24 24',
-                      stroke: 'currentColor'
-                    },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
-                    )
+                    artistSort === option.value && React.createElement(Icons.Check, { className: 'w-4 h-4' })
                   )
                 )
               )
@@ -904,9 +896,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                     },
                     className: 'ml-2 text-ink-tertiary hover:text-ink-secondary'
                   },
-                    React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
-                    )
+                    React.createElement(Icons.X, { className: 'w-4 h-4' })
                   )
                 )
               :
@@ -914,9 +904,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                   onClick: () => setArtistSearchOpen(true),
                   className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors'
                 },
-                  React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
-                  )
+                  React.createElement(Icons.Search, { className: 'w-5 h-5' })
                 )
             )
           ),
@@ -2022,12 +2010,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                                 onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = '#10c9b4'; }
                             },
                               'Tickets',
-                              React.createElement('svg', {
-                                className: `w-3 h-3 transition-transform ${isOpen ? 'rotate-180' : ''}`,
-                                fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor'
-                              },
-                                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2.5, d: 'M19 9l-7 7-7-7' })
-                              )
+                              React.createElement(Icons.ChevronDown, { className: `w-3 h-3 transition-transform ${isOpen ? 'rotate-180' : ''}`, strokeWidth: 2.5 })
                             ),
                             isOpen && React.createElement('div', {
                               className: `absolute right-0 top-full mt-1 rounded-lg shadow-lg border py-1 z-30 bg-surface-card border-line`,
@@ -2049,12 +2032,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                                     style: { backgroundColor: color }
                                   }),
                                   React.createElement('span', { className: 'text-ink-secondary' }, src.label),
-                                  React.createElement('svg', {
-                                    className: 'w-3 h-3 text-ink-tertiary ml-auto',
-                                    fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor'
-                                  },
-                                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14' })
-                                  )
+                                  React.createElement(Icons.ExternalLink, { className: 'w-3 h-3 text-ink-tertiary ml-auto' })
                                 );
                               })
                             )

@@ -147,9 +147,7 @@ const SearchPage = React.memo(function SearchPage(props) {
             },
               // Left: Search icon + query in quotes
               React.createElement('div', { className: 'flex items-center gap-3 flex-shrink-0 mr-6' },
-                React.createElement('svg', { className: 'w-5 h-5 text-white/70', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
-                ),
+                React.createElement(Icons.Search, { className: 'w-5 h-5 text-white/70' }),
                 React.createElement('span', {
                   className: 'text-2xl font-light text-white uppercase',
                   style: { textShadow: '0 2px 10px rgba(0,0,0,0.3)', letterSpacing: '0.2em' }
@@ -201,9 +199,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                     searchResultsSort === 'relevance' ? 'Relevance' :
                     searchResultsSort === 'name' ? 'Name' : 'Sort'
                   ),
-                  React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
-                  )
+                  React.createElement(Icons.ChevronDown, { className: 'w-4 h-4' })
                 ),
                 searchResultsSortDropdownOpen && React.createElement('div', {
                   className: 'absolute left-0 top-full mt-1 bg-surface-card rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-line'
@@ -224,14 +220,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       }`
                     },
                       option.label,
-                      searchResultsSort === option.value && React.createElement('svg', {
-                        className: 'w-4 h-4',
-                        fill: 'none',
-                        viewBox: '0 0 24 24',
-                        stroke: 'currentColor'
-                      },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
-                      )
+                      searchResultsSort === option.value && React.createElement(Icons.Check, { className: 'w-4 h-4' })
                     )
                   )
                 )
@@ -255,9 +244,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       onClick: () => { setSearchResultsFilter(''); setSearchResultsFilterOpen(false); },
                       className: 'ml-2 text-ink-tertiary hover:text-ink-secondary no-drag'
                     },
-                      React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
-                      )
+                      React.createElement(Icons.X, { className: 'w-4 h-4' })
                     )
                   )
                 :
@@ -265,9 +252,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                     onClick: () => setSearchResultsFilterOpen(true),
                     className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors no-drag'
                   },
-                    React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
-                    )
+                    React.createElement(Icons.Search, { className: 'w-5 h-5' })
                   )
               )
             ),
@@ -290,9 +275,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                     searchResultsSort === 'year-desc' ? 'Year (Newest)' :
                     searchResultsSort === 'year-asc' ? 'Year (Oldest)' : 'Sort'
                   ),
-                  React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
-                  )
+                  React.createElement(Icons.ChevronDown, { className: 'w-4 h-4' })
                 ),
                 searchResultsSortDropdownOpen && React.createElement('div', {
                   className: 'absolute left-0 top-full mt-1 bg-surface-card rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-line'
@@ -316,14 +299,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       }`
                     },
                       option.label,
-                      searchResultsSort === option.value && React.createElement('svg', {
-                        className: 'w-4 h-4',
-                        fill: 'none',
-                        viewBox: '0 0 24 24',
-                        stroke: 'currentColor'
-                      },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
-                      )
+                      searchResultsSort === option.value && React.createElement(Icons.Check, { className: 'w-4 h-4' })
                     )
                   )
                 )
@@ -347,9 +323,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       onClick: () => { setSearchResultsFilter(''); setSearchResultsFilterOpen(false); },
                       className: 'ml-2 text-ink-tertiary hover:text-ink-secondary no-drag'
                     },
-                      React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
-                      )
+                      React.createElement(Icons.X, { className: 'w-4 h-4' })
                     )
                   )
                 :
@@ -357,9 +331,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                     onClick: () => setSearchResultsFilterOpen(true),
                     className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors no-drag'
                   },
-                    React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
-                    )
+                    React.createElement(Icons.Search, { className: 'w-5 h-5' })
                   )
               )
             ),
@@ -382,9 +354,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                     searchResultsSort === 'duration-asc' ? 'Duration (Short)' :
                     searchResultsSort === 'duration-desc' ? 'Duration (Long)' : 'Sort'
                   ),
-                  React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
-                  )
+                  React.createElement(Icons.ChevronDown, { className: 'w-4 h-4' })
                 ),
                 searchResultsSortDropdownOpen && React.createElement('div', {
                   className: 'absolute left-0 top-full mt-1 bg-surface-card rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-line'
@@ -408,14 +378,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       }`
                     },
                       option.label,
-                      searchResultsSort === option.value && React.createElement('svg', {
-                        className: 'w-4 h-4',
-                        fill: 'none',
-                        viewBox: '0 0 24 24',
-                        stroke: 'currentColor'
-                      },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
-                      )
+                      searchResultsSort === option.value && React.createElement(Icons.Check, { className: 'w-4 h-4' })
                     )
                   )
                 )
@@ -439,9 +402,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       onClick: () => { setSearchResultsFilter(''); setSearchResultsFilterOpen(false); },
                       className: 'ml-2 text-ink-tertiary hover:text-ink-secondary no-drag'
                     },
-                      React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
-                      )
+                      React.createElement(Icons.X, { className: 'w-4 h-4' })
                     )
                   )
                 :
@@ -449,9 +410,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                     onClick: () => setSearchResultsFilterOpen(true),
                     className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors no-drag'
                   },
-                    React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
-                    )
+                    React.createElement(Icons.Search, { className: 'w-5 h-5' })
                   )
               )
             ),
@@ -738,9 +697,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                             onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
                             title: 'Add to Playlist'
                           },
-                            React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
-                            )
+                            React.createElement(Icons.Plus, { className: 'w-5 h-5' })
                           ),
                           // Play button (center, larger)
                           React.createElement('button', {
@@ -1142,9 +1099,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                           onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
                           title: 'Add to Playlist'
                         },
-                          React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                            React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
-                          )
+                          React.createElement(Icons.Plus, { className: 'w-5 h-5' })
                         ),
                         // Play button (center, larger)
                         React.createElement('button', {
@@ -1347,19 +1302,7 @@ const SearchPage = React.memo(function SearchPage(props) {
             ) :
             // No history yet - show placeholder
             React.createElement('div', { className: 'text-center py-12' },
-              React.createElement('svg', {
-                className: 'w-12 h-12 mx-auto text-ink-faint mb-4',
-                fill: 'none',
-                stroke: 'currentColor',
-                viewBox: '0 0 24 24'
-              },
-                React.createElement('path', {
-                  strokeLinecap: 'round',
-                  strokeLinejoin: 'round',
-                  strokeWidth: 1.5,
-                  d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z'
-                })
-              ),
+              React.createElement(Icons.Search, { className: 'w-12 h-12 mx-auto text-ink-faint mb-4', strokeWidth: 1.5 }),
               React.createElement('p', { className: 'text-ink-tertiary text-sm' }, 'Start typing to search')
             )
           ) :
@@ -1696,9 +1639,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                         onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
                         title: 'Add to Playlist'
                       },
-                        React.createElement('svg', { className: 'w-3.5 h-3.5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
-                        )
+                        React.createElement(Icons.Plus, { className: 'w-3.5 h-3.5' })
                       ),
                       // Play button (center, larger)
                       React.createElement('button', {
@@ -1917,9 +1858,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                         onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
                         title: 'Add to Playlist'
                       },
-                        React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
-                        )
+                        React.createElement(Icons.Plus, { className: 'w-4 h-4' })
                       ),
                       // Play button (center, larger - plays album)
                       React.createElement('button', {

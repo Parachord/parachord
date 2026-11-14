@@ -36392,9 +36392,7 @@ useEffect(() => {
             },
             onClick: () => navigateTo('search')
           },
-            React.createElement('svg', { className: 'w-5 h-5 flex-shrink-0', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
-            ),
+            React.createElement(Icons.Search, { className: 'w-5 h-5 flex-shrink-0' }),
             'Search'
           )
         ),
@@ -36689,9 +36687,7 @@ useEffect(() => {
               className: 'w-4 h-4 flex items-center justify-center text-ink-tertiary hover:text-ink-secondary transition-colors rounded hover:bg-surface-hover',
               title: 'Add friend'
             },
-              React.createElement('svg', { className: 'w-3 h-3', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
-              )
+              React.createElement(Icons.Plus, { className: 'w-3 h-3' })
             )
           ),
           // Show drop hint when dragging but no friends pinned yet
@@ -37089,19 +37085,7 @@ useEffect(() => {
               marginBottom: '16px'
             }
           },
-            React.createElement('svg', {
-              style: { width: '28px', height: '28px', color: 'var(--accent-primary)' },
-              fill: 'none',
-              viewBox: '0 0 24 24',
-              stroke: 'currentColor',
-              strokeWidth: 2
-            },
-              React.createElement('path', {
-                strokeLinecap: 'round',
-                strokeLinejoin: 'round',
-                d: 'M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14'
-              })
-            )
+            React.createElement(Icons.ExternalLink, { style: { width: '28px', height: '28px', color: 'var(--accent-primary)' } })
           ),
           // Title
           React.createElement('h3', {
@@ -37668,9 +37652,7 @@ useEffect(() => {
               className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-ink-tertiary hover:text-ink-secondary transition-colors'
             },
               React.createElement('span', null, playlistsSortOptions.find(o => o.value === playlistsSort)?.label || 'Sort'),
-              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
-              )
+              React.createElement(Icons.ChevronDown, { className: 'w-4 h-4' })
             ),
             playlistsSortDropdownOpen && React.createElement('div', {
               className: 'absolute left-0 top-full mt-1 bg-surface-card rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-line'
@@ -37688,14 +37670,7 @@ useEffect(() => {
                   }`
                 },
                   option.label,
-                  playlistsSort === option.value && React.createElement('svg', {
-                    className: 'w-4 h-4',
-                    fill: 'none',
-                    viewBox: '0 0 24 24',
-                    stroke: 'currentColor'
-                  },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
-                  )
+                  playlistsSort === option.value && React.createElement(Icons.Check, { className: 'w-4 h-4' })
                 )
               )
             )
@@ -37743,9 +37718,7 @@ useEffect(() => {
                   onClick: () => { setPlaylistsSearch(''); setPlaylistsSearchOpen(false); },
                   className: 'ml-2 text-ink-tertiary hover:text-ink-secondary'
                 },
-                  React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
-                  )
+                  React.createElement(Icons.X, { className: 'w-4 h-4' })
                 )
               )
             :
@@ -37753,9 +37726,7 @@ useEffect(() => {
                 onClick: () => setPlaylistsSearchOpen(true),
                 className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors'
               },
-                React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
-                )
+                React.createElement(Icons.Search, { className: 'w-5 h-5' })
               )
           ),
           // Import Playlist button: the outlined secondary style of the album
@@ -37814,9 +37785,7 @@ useEffect(() => {
             },
             className: 'ml-2 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5'
           },
-            React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M12 4v16m8-8H4' })
-            ),
+            React.createElement(Icons.Plus, { className: 'w-4 h-4' }),
             'Create'
           )
         ),
@@ -37871,9 +37840,7 @@ useEffect(() => {
 
             if (sorted.length === 0 && playlistsSearch) {
               return React.createElement('div', { className: 'text-center py-12 text-ink-tertiary' },
-                React.createElement('svg', { className: 'w-12 h-12 mx-auto mb-4 text-ink-faint', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
-                ),
+                React.createElement(Icons.Search, { className: 'w-12 h-12 mx-auto mb-4 text-ink-faint', strokeWidth: 1.5 }),
                 React.createElement('div', { className: 'text-sm' }, 'No playlists match your search')
               );
             }
@@ -38047,9 +38014,7 @@ useEffect(() => {
                           onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
                           title: 'Add to Playlist'
                         },
-                          React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                            React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
-                          )
+                          React.createElement(Icons.Plus, { className: 'w-5 h-5' })
                         ),
                         // Play button (center, larger)
                         React.createElement('button', {
@@ -38571,9 +38536,7 @@ useEffect(() => {
                 },
                   React.createElement('span', { className: 'text-ink-tertiary mr-1' }, 'Source:'),
                   React.createElement('span', null, chartsSongsSource === 'apple' ? 'Apple Music' : 'Last.fm'),
-                  React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
-                  )
+                  React.createElement(Icons.ChevronDown, { className: 'w-4 h-4' })
                 ),
                 chartsSongsSourceDropdownOpen && React.createElement('div', {
                   className: 'absolute left-0 top-full mt-1 bg-surface-card rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-line'
@@ -38592,9 +38555,7 @@ useEffect(() => {
                     }`
                   },
                     'Apple Music',
-                    chartsSongsSource === 'apple' && React.createElement('svg', {
-                      className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor'
-                    }, React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' }))
+                    chartsSongsSource === 'apple' && React.createElement(Icons.Check, { className: 'w-4 h-4' })
                   ),
                   React.createElement('button', {
                     onClick: (e) => {
@@ -38610,9 +38571,7 @@ useEffect(() => {
                     }`
                   },
                     'Last.fm',
-                    chartsSongsSource === 'lastfm' && React.createElement('svg', {
-                      className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor'
-                    }, React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' }))
+                    chartsSongsSource === 'lastfm' && React.createElement(Icons.Check, { className: 'w-4 h-4' })
                   )
                 )
               ),
@@ -38627,9 +38586,7 @@ useEffect(() => {
                   React.createElement('span', null, chartsCountry
                     ? (CHARTS_COUNTRIES.find(c => c.code === chartsCountry)?.name || 'United States')
                     : (chartsSongsSource === 'lastfm' ? 'Global' : 'United States')),
-                  React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
-                  )
+                  React.createElement(Icons.ChevronDown, { className: 'w-4 h-4' })
                 ),
                 chartsCountryDropdownOpen && React.createElement('div', {
                   className: 'absolute left-0 top-full mt-1 bg-surface-card rounded-lg shadow-lg py-1 min-w-[160px] max-h-64 overflow-y-auto z-30 border border-line'
@@ -38648,14 +38605,7 @@ useEffect(() => {
                     }`
                   },
                     'Global',
-                    !chartsCountry && React.createElement('svg', {
-                      className: 'w-4 h-4',
-                      fill: 'none',
-                      viewBox: '0 0 24 24',
-                      stroke: 'currentColor'
-                    },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
-                    )
+                    !chartsCountry && React.createElement(Icons.Check, { className: 'w-4 h-4' })
                   ),
                   // Country options
                   CHARTS_COUNTRIES.map(country =>
@@ -38680,14 +38630,7 @@ useEffect(() => {
                       }`
                     },
                       country.name,
-                      ((chartsSongsSource === 'apple' && !chartsCountry && country.code === 'us') || chartsCountry === country.code) && React.createElement('svg', {
-                        className: 'w-4 h-4',
-                        fill: 'none',
-                        viewBox: '0 0 24 24',
-                        stroke: 'currentColor'
-                      },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
-                      )
+                      ((chartsSongsSource === 'apple' && !chartsCountry && country.code === 'us') || chartsCountry === country.code) && React.createElement(Icons.Check, { className: 'w-4 h-4' })
                     )
                   )
                 )
@@ -38711,9 +38654,7 @@ useEffect(() => {
                       onClick: () => { setChartsSearch(''); setChartsSearchOpen(false); },
                       className: 'ml-2 text-ink-tertiary hover:text-ink-secondary'
                     },
-                      React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
-                      )
+                      React.createElement(Icons.X, { className: 'w-4 h-4' })
                     )
                   )
                 :
@@ -38721,9 +38662,7 @@ useEffect(() => {
                     onClick: () => setChartsSearchOpen(true),
                     className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors'
                   },
-                    React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
-                    )
+                    React.createElement(Icons.Search, { className: 'w-5 h-5' })
                   )
               )
           ),
@@ -38788,9 +38727,7 @@ useEffect(() => {
 
               if (filtered.length === 0 && chartsSearch) {
                 return React.createElement('div', { className: 'text-center py-12 text-ink-tertiary' },
-                  React.createElement('svg', { className: 'w-12 h-12 mx-auto mb-4 text-ink-faint', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
-                  ),
+                  React.createElement(Icons.Search, { className: 'w-12 h-12 mx-auto mb-4 text-ink-faint', strokeWidth: 1.5 }),
                   React.createElement('div', { className: 'text-sm' }, 'No albums match your search')
                 );
               }
@@ -38939,9 +38876,7 @@ useEffect(() => {
                         onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
                         title: 'Add to Playlist'
                       },
-                        React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
-                        )
+                        React.createElement(Icons.Plus, { className: 'w-5 h-5' })
                       ),
                       // Play button (center, larger)
                       React.createElement('button', {
@@ -39076,9 +39011,7 @@ useEffect(() => {
 
               if (filtered.length === 0 && chartsSearch) {
                 return React.createElement('div', { className: 'text-center py-12 text-ink-tertiary' },
-                  React.createElement('svg', { className: 'w-12 h-12 mx-auto mb-4 text-ink-faint', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
-                  ),
+                  React.createElement(Icons.Search, { className: 'w-12 h-12 mx-auto mb-4 text-ink-faint', strokeWidth: 1.5 }),
                   React.createElement('div', { className: 'text-sm' }, 'No tracks match your search')
                 );
               }
@@ -39397,9 +39330,7 @@ useEffect(() => {
                     onClick: () => { setNewReleasesSearch(''); setNewReleasesSearchOpen(false); },
                     className: 'ml-2 text-ink-tertiary hover:text-ink-secondary'
                   },
-                    React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
-                    )
+                    React.createElement(Icons.X, { className: 'w-4 h-4' })
                   )
                 )
               :
@@ -39407,9 +39338,7 @@ useEffect(() => {
                   onClick: () => setNewReleasesSearchOpen(true),
                   className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors'
                 },
-                  React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
-                  )
+                  React.createElement(Icons.Search, { className: 'w-5 h-5' })
                 )
             )
           ),
@@ -39642,9 +39571,7 @@ useEffect(() => {
                             onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
                             title: 'Add to Playlist'
                           },
-                            React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
-                            )
+                            React.createElement(Icons.Plus, { className: 'w-5 h-5' })
                           ),
                           // Play album button
                           React.createElement('button', {
@@ -39839,9 +39766,7 @@ useEffect(() => {
                   className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-ink-tertiary hover:text-ink-secondary transition-colors'
                 },
                   React.createElement('span', null, criticsSortOptions.find(o => o.value === criticsSort)?.label || 'Sort'),
-                  React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
-                  )
+                  React.createElement(Icons.ChevronDown, { className: 'w-4 h-4' })
                 ),
                 criticsSortDropdownOpen && React.createElement('div', {
                   className: 'absolute left-0 top-full mt-1 bg-surface-card rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-line'
@@ -39859,14 +39784,7 @@ useEffect(() => {
                       }`
                     },
                       option.label,
-                      criticsSort === option.value && React.createElement('svg', {
-                        className: 'w-4 h-4',
-                        fill: 'none',
-                        viewBox: '0 0 24 24',
-                        stroke: 'currentColor'
-                      },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
-                      )
+                      criticsSort === option.value && React.createElement(Icons.Check, { className: 'w-4 h-4' })
                     )
                   )
                 )
@@ -39890,9 +39808,7 @@ useEffect(() => {
                       onClick: () => { setCriticsSearch(''); setCriticsSearchOpen(false); },
                       className: 'ml-2 text-ink-tertiary hover:text-ink-secondary'
                     },
-                      React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
-                      )
+                      React.createElement(Icons.X, { className: 'w-4 h-4' })
                     )
                   )
                 :
@@ -39900,9 +39816,7 @@ useEffect(() => {
                     onClick: () => setCriticsSearchOpen(true),
                     className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors'
                   },
-                    React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
-                    )
+                    React.createElement(Icons.Search, { className: 'w-5 h-5' })
                   )
               )
           ),
@@ -39980,9 +39894,7 @@ useEffect(() => {
 
             if (sorted.length === 0 && criticsSearch) {
               return React.createElement('div', { className: 'text-center py-12 text-ink-tertiary' },
-                React.createElement('svg', { className: 'w-12 h-12 mx-auto mb-4 text-ink-faint', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
-                ),
+                React.createElement(Icons.Search, { className: 'w-12 h-12 mx-auto mb-4 text-ink-faint', strokeWidth: 1.5 }),
                 React.createElement('div', { className: 'text-sm' }, 'No albums match your search')
               );
             }
@@ -40134,9 +40046,7 @@ useEffect(() => {
                       onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
                       title: 'Add to Playlist'
                     },
-                      React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
-                      )
+                      React.createElement(Icons.Plus, { className: 'w-5 h-5' })
                     ),
                     // Play button (center, larger)
                     React.createElement('button', {
@@ -40380,9 +40290,7 @@ useEffect(() => {
                     className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-ink-tertiary hover:text-ink-secondary transition-colors'
                   },
                     React.createElement('span', null, selectedLabel),
-                    React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
-                    )
+                    React.createElement(Icons.ChevronDown, { className: 'w-4 h-4' })
                   ),
                   concertsSourceFilterDropdownOpen && React.createElement('div', {
                     key: 'source-dropdown',
@@ -40401,14 +40309,7 @@ useEffect(() => {
                         }`
                       },
                         option.label,
-                        concertsSourceFilter === option.value && React.createElement('svg', {
-                          className: 'w-4 h-4',
-                          fill: 'none',
-                          viewBox: '0 0 24 24',
-                          stroke: 'currentColor'
-                        },
-                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
-                        )
+                        concertsSourceFilter === option.value && React.createElement(Icons.Check, { className: 'w-4 h-4' })
                       )
                     )
                   )
@@ -40449,9 +40350,7 @@ useEffect(() => {
                   className: 'ml-0.5 rounded-full p-0.5 transition-colors cursor-pointer',
                   style: { color: PAGE_COLORS.concerts.color }
                 },
-                  React.createElement('svg', { className: 'w-3.5 h-3.5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2.5, d: 'M6 18L18 6M6 6l12 12' })
-                  )
+                  React.createElement(Icons.X, { className: 'w-3.5 h-3.5', strokeWidth: 2.5 })
                 )
               ),
               // Location pin button (shown when no location is active)
@@ -40577,9 +40476,7 @@ useEffect(() => {
                   className: 'flex items-center gap-1.5 mb-3',
                   style: { fontSize: '13px', color: 'var(--text-success)' }
                 },
-                  React.createElement('svg', { className: 'w-3.5 h-3.5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2.5, d: 'M5 13l4 4L19 7' })
-                  ),
+                  React.createElement(Icons.Check, { className: 'w-3.5 h-3.5', strokeWidth: 2.5 }),
                   React.createElement('span', null, concertsLocation)
                 ),
                 // Radius slider
@@ -40653,9 +40550,7 @@ useEffect(() => {
                     onClick: () => { setConcertsSearch(''); setConcertsSearchOpen(false); },
                     className: 'ml-2 text-ink-tertiary hover:text-ink-secondary'
                   },
-                    React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
-                    )
+                    React.createElement(Icons.X, { className: 'w-4 h-4' })
                   )
                 )
               :
@@ -40663,9 +40558,7 @@ useEffect(() => {
                   onClick: () => setConcertsSearchOpen(true),
                   className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors'
                 },
-                  React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
-                  )
+                  React.createElement(Icons.Search, { className: 'w-5 h-5' })
                 )
             )
           );
@@ -41004,12 +40897,7 @@ useEffect(() => {
                                 onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = '#10c9b4'; }
                               },
                                 'Tickets',
-                                React.createElement('svg', {
-                                  className: `w-3 h-3 transition-transform ${isOpen ? 'rotate-180' : ''}`,
-                                  fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor'
-                                },
-                                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2.5, d: 'M19 9l-7 7-7-7' })
-                                )
+                                React.createElement(Icons.ChevronDown, { className: `w-3 h-3 transition-transform ${isOpen ? 'rotate-180' : ''}`, strokeWidth: 2.5 })
                               ),
                               isOpen && (() => {
                                 return React.createElement('div', {
@@ -41032,12 +40920,7 @@ useEffect(() => {
                                       style: { backgroundColor: color }
                                     }),
                                     React.createElement('span', { className: 'text-ink-secondary' }, src.label),
-                                    React.createElement('svg', {
-                                      className: 'w-3 h-3 text-ink-tertiary ml-auto',
-                                      fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor'
-                                    },
-                                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14' })
-                                    )
+                                    React.createElement(Icons.ExternalLink, { className: 'w-3 h-3 text-ink-tertiary ml-auto' })
                                   );
                                 })
                               );
@@ -41473,9 +41356,7 @@ useEffect(() => {
                       style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
                       title: 'Add to Playlist'
                     },
-                      React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
-                      )
+                      React.createElement(Icons.Plus, { className: 'w-5 h-5' })
                     ),
                     React.createElement('button', {
                       onClick: async (e) => {
@@ -41569,9 +41450,7 @@ useEffect(() => {
                       style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
                       title: 'Add to Playlist'
                     },
-                      React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
-                      )
+                      React.createElement(Icons.Plus, { className: 'w-5 h-5' })
                     ),
                     React.createElement('button', {
                       onClick: (e) => {
@@ -42401,9 +42280,7 @@ useEffect(() => {
                   className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-ink-tertiary hover:text-ink-secondary transition-colors'
                 },
                   React.createElement('span', null, historySortOptions.find(o => o.value === historySort)?.label || 'Sort'),
-                  React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
-                  )
+                  React.createElement(Icons.ChevronDown, { className: 'w-4 h-4' })
                 ),
                 historySortDropdownOpen && React.createElement('div', {
                   className: 'absolute left-0 top-full mt-1 bg-surface-card rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-line'
@@ -42421,11 +42298,7 @@ useEffect(() => {
                       }`
                     },
                       option.label,
-                      historySort === option.value && React.createElement('svg', {
-                        className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor'
-                      },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
-                      )
+                      historySort === option.value && React.createElement(Icons.Check, { className: 'w-4 h-4' })
                     )
                   )
                 )
@@ -42438,9 +42311,7 @@ useEffect(() => {
                   className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-ink-tertiary hover:text-ink-secondary transition-colors'
                 },
                   React.createElement('span', null, historyPeriodOptions.find(o => o.value === historyPeriod)?.label || 'Period'),
-                  React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
-                  )
+                  React.createElement(Icons.ChevronDown, { className: 'w-4 h-4' })
                 ),
                 historyPeriodDropdownOpen && React.createElement('div', {
                   className: 'absolute left-0 top-full mt-1 bg-surface-card rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-line'
@@ -42462,11 +42333,7 @@ useEffect(() => {
                       }`
                     },
                       option.label,
-                      historyPeriod === option.value && React.createElement('svg', {
-                        className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor'
-                      },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
-                      )
+                      historyPeriod === option.value && React.createElement(Icons.Check, { className: 'w-4 h-4' })
                     )
                   )
                 )
@@ -42490,9 +42357,7 @@ useEffect(() => {
                     onClick: () => { setHistorySearch(''); setHistorySearchOpen(false); },
                     className: 'ml-2 text-ink-tertiary hover:text-ink-secondary'
                   },
-                    React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
-                    )
+                    React.createElement(Icons.X, { className: 'w-4 h-4' })
                   )
                 )
               :
@@ -42500,9 +42365,7 @@ useEffect(() => {
                   onClick: () => setHistorySearchOpen(true),
                   className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors'
                 },
-                  React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
-                  )
+                  React.createElement(Icons.Search, { className: 'w-5 h-5' })
                 )
             )
           ),
@@ -43132,9 +42995,7 @@ useEffect(() => {
                             onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
                             title: 'Add to Playlist'
                           },
-                            React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
-                            )
+                            React.createElement(Icons.Plus, { className: 'w-5 h-5' })
                           ),
                           // Play album button
                           React.createElement('button', {
@@ -43419,9 +43280,7 @@ useEffect(() => {
                     className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-ink-tertiary hover:text-ink-secondary transition-colors'
                   },
                     React.createElement('span', null, historySortOptions.find(o => o.value === friendHistorySort)?.label || 'Sort'),
-                    React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
-                    )
+                    React.createElement(Icons.ChevronDown, { className: 'w-4 h-4' })
                   ),
                   friendHistorySortDropdownOpen && React.createElement('div', {
                     className: 'absolute left-0 top-full mt-1 bg-surface-card rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-line'
@@ -43439,11 +43298,7 @@ useEffect(() => {
                         }`
                       },
                         option.label,
-                        friendHistorySort === option.value && React.createElement('svg', {
-                          className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor'
-                        },
-                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
-                        )
+                        friendHistorySort === option.value && React.createElement(Icons.Check, { className: 'w-4 h-4' })
                       )
                     )
                   )
@@ -43455,9 +43310,7 @@ useEffect(() => {
                     className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-ink-tertiary hover:text-ink-secondary transition-colors'
                   },
                     React.createElement('span', null, historyPeriodOptions.find(o => o.value === friendHistoryPeriod)?.label || 'Period'),
-                    React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
-                    )
+                    React.createElement(Icons.ChevronDown, { className: 'w-4 h-4' })
                   ),
                   historyPeriodDropdownOpen && React.createElement('div', {
                     className: 'absolute left-0 top-full mt-1 bg-surface-card rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-line'
@@ -43478,11 +43331,7 @@ useEffect(() => {
                         }`
                       },
                         option.label,
-                        friendHistoryPeriod === option.value && React.createElement('svg', {
-                          className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor'
-                        },
-                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
-                        )
+                        friendHistoryPeriod === option.value && React.createElement(Icons.Check, { className: 'w-4 h-4' })
                       )
                     )
                   )
@@ -43880,9 +43729,7 @@ useEffect(() => {
                                 onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
                                 title: 'Add to Playlist'
                               },
-                                React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
-                                )
+                                React.createElement(Icons.Plus, { className: 'w-5 h-5' })
                               ),
                               // Play album button
                               React.createElement('button', {
@@ -44264,14 +44111,7 @@ useEffect(() => {
               React.createElement('div', { className: 'flex flex-col gap-3 mb-6' },
                 // Top row: Search input
                 React.createElement('div', { className: 'relative', style: { width: 'fit-content' } },
-                  React.createElement('svg', {
-                    className: 'absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-tertiary',
-                    fill: 'none',
-                    viewBox: '0 0 24 24',
-                    stroke: 'currentColor'
-                  },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
-                  ),
+                  React.createElement(Icons.Search, { className: 'absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-tertiary' }),
                   React.createElement('input', {
                     type: 'text',
                     placeholder: 'Search plug-ins...',
@@ -46742,20 +46582,7 @@ useEffect(() => {
                           style: { color: currentIconColor }
                         }, resolver.name),
                         // Dropdown chevron (only if multiple sources)
-                        hasMultipleSources && React.createElement('svg', {
-                          className: `w-3 h-3 transition-transform ${playbarSourceDropdownOpen ? 'rotate-180' : ''}`,
-                          fill: 'none',
-                          viewBox: '0 0 24 24',
-                          stroke: 'currentColor',
-                          strokeWidth: 2,
-                          style: { color: 'var(--text-tertiary)' }
-                        },
-                          React.createElement('path', {
-                            strokeLinecap: 'round',
-                            strokeLinejoin: 'round',
-                            d: 'M19 9l-7 7-7-7'
-                          })
-                        )
+                        hasMultipleSources && React.createElement(Icons.ChevronDown, { className: `w-3 h-3 transition-transform ${playbarSourceDropdownOpen ? 'rotate-180' : ''}`, style: { color: 'var(--text-tertiary)' } })
                       ),
                       // Dropdown menu
                       playbarSourceDropdownOpen && hasMultipleSources && React.createElement('div', {
@@ -46854,20 +46681,7 @@ useEffect(() => {
                       title: 'Playing in browser'
                     },
                       // External link / window icon
-                      React.createElement('svg', {
-                        className: 'w-2.5 h-2.5',
-                        fill: 'none',
-                        viewBox: '0 0 24 24',
-                        stroke: 'currentColor',
-                        strokeWidth: 2,
-                        style: { opacity: 0.9 }
-                      },
-                        React.createElement('path', {
-                          strokeLinecap: 'round',
-                          strokeLinejoin: 'round',
-                          d: 'M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14'
-                        })
-                      ),
+                      React.createElement(Icons.ExternalLink, { className: 'w-2.5 h-2.5', style: { opacity: 0.9 } }),
                       'external'
                     ),
                     // Buy button - shows when track has a purchasable source (Bandcamp)
@@ -47320,9 +47134,7 @@ useEffect(() => {
           onMouseEnter: (e) => { e.currentTarget.style.color = '#d1d5db'; e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)'; },
           onMouseLeave: (e) => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.backgroundColor = 'transparent'; }
         },
-          React.createElement('svg', { className: 'w-4 h-4', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
-            React.createElement('path', { d: 'M6 18L18 6M6 6l12 12' })
-          )
+          React.createElement(Icons.X, { className: 'w-4 h-4' })
         )
       ),
 
@@ -47547,9 +47359,7 @@ useEffect(() => {
               onMouseEnter: (e) => { e.currentTarget.style.color = '#d1d5db'; e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)'; },
               onMouseLeave: (e) => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.backgroundColor = 'transparent'; }
             },
-              React.createElement('svg', { className: 'w-5 h-5', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
-                React.createElement('path', { d: 'M6 18L18 6M6 6l12 12' })
-              )
+              React.createElement(Icons.X, { className: 'w-5 h-5' })
             )
           ),
           // Provider selector for chat mode, subtitle for other modes
@@ -47663,15 +47473,7 @@ useEffect(() => {
                               )
                             : React.createElement('span', { style: { fontSize: '12px' } }, service.icon || service.manifest?.icon || '🤖'),
                           service.name || service.manifest?.name,
-                          isSelected && React.createElement('svg', {
-                            style: { width: '12px', height: '12px', marginLeft: 'auto', color: 'var(--accent-soft)' },
-                            viewBox: '0 0 24 24',
-                            fill: 'none',
-                            stroke: 'currentColor',
-                            strokeWidth: 2
-                          },
-                            React.createElement('path', { d: 'M5 13l4 4L19 7' })
-                          )
+                          isSelected && React.createElement(Icons.Check, { style: { width: '12px', height: '12px', marginLeft: 'auto', color: 'var(--accent-soft)' } })
                         );
                       })
                     )
@@ -48020,9 +47822,7 @@ useEffect(() => {
                           onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.15)'; e.currentTarget.style.color = '#f87171'; },
                           onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary)'; }
                         },
-                          React.createElement('svg', { className: 'w-4 h-4', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
-                            React.createElement('path', { d: 'M6 18L18 6M6 6l12 12' })
-                          )
+                          React.createElement(Icons.X, { className: 'w-4 h-4' })
                         )
                       )
                     )
@@ -48056,9 +47856,7 @@ useEffect(() => {
                   onMouseLeave: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks && resultsSidebar.tracks.length > 0) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'; },
                   title: 'Add to Playlist'
                 },
-                  React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
-                  )
+                  React.createElement(Icons.Plus, { className: 'w-5 h-5' })
                 ),
                 // Play button (center, larger)
                 React.createElement('button', {
@@ -48132,9 +47930,7 @@ useEffect(() => {
             onMouseEnter: (e) => { e.currentTarget.style.color = '#d1d5db'; e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)'; },
             onMouseLeave: (e) => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.backgroundColor = 'transparent'; }
           },
-            React.createElement('svg', { className: 'w-5 h-5', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
-              React.createElement('path', { d: 'M6 18L18 6M6 6l12 12' })
-            )
+            React.createElement(Icons.X, { className: 'w-5 h-5' })
           )
         ),
 
@@ -48234,9 +48030,7 @@ useEffect(() => {
             onClick: () => setQueueSaveDialogOpen(false),
             className: 'p-1 rounded hover:bg-white/10 text-gray-400 hover:text-white transition-colors'
           },
-            React.createElement('svg', { className: 'w-5 h-5', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
-              React.createElement('path', { d: 'M6 18L18 6M6 6l12 12' })
-            )
+            React.createElement(Icons.X, { className: 'w-5 h-5' })
           )
         ),
 
@@ -48331,9 +48125,7 @@ useEffect(() => {
             onMouseEnter: (e) => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.backgroundColor = 'var(--hover-bg-default)'; },
             onMouseLeave: (e) => { e.currentTarget.style.color = 'var(--text-tertiary)'; e.currentTarget.style.backgroundColor = 'transparent'; }
           },
-            React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
-            )
+            React.createElement(Icons.X, { className: 'w-5 h-5' })
           )
         ),
 
@@ -48583,9 +48375,7 @@ useEffect(() => {
             onMouseEnter: (e) => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.backgroundColor = 'var(--hover-bg-default)'; },
             onMouseLeave: (e) => { e.currentTarget.style.color = 'var(--text-tertiary)'; e.currentTarget.style.backgroundColor = 'transparent'; }
           },
-            React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
-            )
+            React.createElement(Icons.X, { className: 'w-5 h-5' })
           )
         ),
         // Body
@@ -52181,9 +51971,7 @@ useEffect(() => {
               justifyContent: 'center'
             }
           },
-            React.createElement('svg', { className: 'w-5 h-5 text-white', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
-            )
+            React.createElement(Icons.X, { className: 'w-5 h-5 text-white' })
           )
         ),
         // Content
@@ -52409,9 +52197,7 @@ useEffect(() => {
               justifyContent: 'center'
             }
           },
-            React.createElement('svg', { className: 'w-5 h-5 text-white', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
-            )
+            React.createElement(Icons.X, { className: 'w-5 h-5 text-white' })
           )
         ),
         // Content
@@ -52629,9 +52415,7 @@ useEffect(() => {
               justifyContent: 'center'
             }
           },
-            React.createElement('svg', { className: 'w-5 h-5 text-white', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
-            )
+            React.createElement(Icons.X, { className: 'w-5 h-5 text-white' })
           )
         ),
         // Content - release notes highlights
@@ -52964,9 +52748,7 @@ useEffect(() => {
               className: 'flex items-center gap-1 px-2 py-1 text-xs text-ink-tertiary hover:text-ink-secondary transition-colors'
             },
               React.createElement('span', null, playlistsSortOptions.find(o => o.value === addToPlaylistSort)?.label || 'Sort'),
-              React.createElement('svg', { className: 'w-3 h-3', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
-              )
+              React.createElement(Icons.ChevronDown, { className: 'w-3 h-3' })
             ),
             addToPlaylistSortDropdownOpen && React.createElement('div', {
               className: 'absolute left-0 top-full mt-1 bg-surface-card py-1 min-w-[140px] z-30',
@@ -52985,14 +52767,7 @@ useEffect(() => {
                   }`
                 },
                   option.label,
-                  addToPlaylistSort === option.value && React.createElement('svg', {
-                    className: 'w-3 h-3',
-                    fill: 'none',
-                    viewBox: '0 0 24 24',
-                    stroke: 'currentColor'
-                  },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
-                  )
+                  addToPlaylistSort === option.value && React.createElement(Icons.Check, { className: 'w-3 h-3' })
                 )
               )
             )
@@ -53016,9 +52791,7 @@ useEffect(() => {
                   onClick: () => { setAddToPlaylistSearch(''); setAddToPlaylistSearchOpen(false); },
                   className: 'ml-1 text-ink-tertiary hover:text-ink-secondary'
                 },
-                  React.createElement('svg', { className: 'w-3 h-3', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
-                  )
+                  React.createElement(Icons.X, { className: 'w-3 h-3' })
                 )
               )
             :
@@ -53026,9 +52799,7 @@ useEffect(() => {
                 onClick: () => setAddToPlaylistSearchOpen(true),
                 className: 'p-1 text-ink-tertiary hover:text-ink-secondary transition-colors'
               },
-                React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
-                )
+                React.createElement(Icons.Search, { className: 'w-4 h-4' })
               )
           )
         ),
@@ -53391,19 +53162,7 @@ useEffect(() => {
                   className: `text-sm flex-shrink-0 ${isAdded ? 'text-ink-success font-medium' : 'text-ink-tertiary'}`
                 }, `${playlist.tracks?.length || 0} songs`),
                 // Checkmark if added
-                isAdded && React.createElement('svg', {
-                  className: 'w-5 h-5 text-ink-success flex-shrink-0',
-                  fill: 'none',
-                  viewBox: '0 0 24 24',
-                  stroke: 'currentColor'
-                },
-                  React.createElement('path', {
-                    strokeLinecap: 'round',
-                    strokeLinejoin: 'round',
-                    strokeWidth: 2,
-                    d: 'M5 13l4 4L19 7'
-                  })
-                )
+                isAdded && React.createElement(Icons.Check, { className: 'w-5 h-5 text-ink-success flex-shrink-0' })
               );
             });
           })()
@@ -54470,9 +54229,7 @@ useEffect(() => {
             onMouseEnter: (e) => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.backgroundColor = 'var(--hover-bg-default)'; },
             onMouseLeave: (e) => { e.currentTarget.style.color = 'var(--text-tertiary)'; e.currentTarget.style.backgroundColor = 'transparent'; }
           },
-            React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
-            )
+            React.createElement(Icons.X, { className: 'w-5 h-5' })
           )
         ),
 
@@ -54825,14 +54582,7 @@ useEffect(() => {
                 justifyContent: 'center'
               }
             },
-              React.createElement('svg', {
-                style: { width: '24px', height: '24px', color: syncProviderConfig[syncSetupModal.providerId]?.color || '#1DB954' },
-                fill: 'none',
-                viewBox: '0 0 24 24',
-                stroke: 'currentColor'
-              },
-                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2.5, d: 'M5 13l4 4L19 7' })
-              )
+              React.createElement(Icons.Check, { style: { width: '24px', height: '24px', color: syncProviderConfig[syncSetupModal.providerId]?.color || '#1DB954' }, strokeWidth: 2.5 })
             ),
             // Results
             React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '12px' } },
@@ -55036,9 +54786,7 @@ useEffect(() => {
             onMouseEnter: (e) => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.backgroundColor = 'var(--hover-bg-default)'; },
             onMouseLeave: (e) => { e.currentTarget.style.color = 'var(--text-tertiary)'; e.currentTarget.style.backgroundColor = 'transparent'; }
           },
-            React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
-            )
+            React.createElement(Icons.X, { className: 'w-5 h-5' })
           )
         ),
 

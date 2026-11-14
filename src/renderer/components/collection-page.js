@@ -15,6 +15,7 @@
 // The body is the original render expression, unchanged: it reads its inputs
 // from props under their old names.
 
+const Icons = require('./icons');
 const { VirtualizedTrackList, getBestSourceConfidence } = require('./track-lists');
 const { ResolverIcon } = require('./ui-atoms');
 const { CollectionArtistCard, CollectionAlbumCard } = require('./cards');
@@ -269,9 +270,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                 className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-ink-tertiary hover:text-ink-secondary transition-colors'
               },
                 React.createElement('span', null, getCollectionSortOptions(collectionTab).find(o => o.value === collectionSort[collectionTab])?.label || 'Sort'),
-                React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
-                )
+                React.createElement(Icons.ChevronDown, { className: 'w-4 h-4' })
               ),
               // Dropdown menu
               collectionSortDropdownOpen && React.createElement('div', {
@@ -290,14 +289,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                     }`
                   },
                     option.label,
-                    collectionSort[collectionTab] === option.value && React.createElement('svg', {
-                      className: 'w-4 h-4',
-                      fill: 'none',
-                      viewBox: '0 0 24 24',
-                      stroke: 'currentColor'
-                    },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
-                    )
+                    collectionSort[collectionTab] === option.value && React.createElement(Icons.Check, { className: 'w-4 h-4' })
                   )
                 )
               )
@@ -329,9 +321,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                     },
                     className: 'ml-2 text-ink-tertiary hover:text-ink-secondary'
                   },
-                    React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
-                    )
+                    React.createElement(Icons.X, { className: 'w-4 h-4' })
                   )
                 )
               :
@@ -339,9 +329,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                   onClick: () => setCollectionSearchOpen(true),
                   className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors'
                 },
-                  React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
-                  )
+                  React.createElement(Icons.Search, { className: 'w-5 h-5' })
                 )
             ),
             // Sync Collection button with provider dropdown (hide on friends tab)
@@ -363,9 +351,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                   React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M20 4v5h-.582m-15.356 2A8.001 8.001 0 0119.418 9m0 0H15m-11 11v-5h.581m0 0a8.003 8.003 0 0015.357-2m-15.357 2H9' })
                 ),
                 Object.values(resolverSyncSettings).some(s => s?.enabled) ? 'Synced' : 'Sync',
-                React.createElement('svg', { className: 'w-3 h-3', style: { marginLeft: '2px', opacity: 0.8 }, fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2.5, d: 'M19 9l-7 7-7-7' })
-                )
+                React.createElement(Icons.ChevronDown, { className: 'w-3 h-3', style: { marginLeft: '2px', opacity: 0.8 }, strokeWidth: 2.5 })
               ),
               // Provider dropdown menu
               syncMenuOpen && React.createElement('div', {
@@ -519,9 +505,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
               onClick: () => setAddFriendModalOpen(true),
               className: 'ml-3 px-3 py-1.5 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5'
             },
-              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M12 4v16m8-8H4' })
-              ),
+              React.createElement(Icons.Plus, { className: 'w-4 h-4' }),
               'Add Friend'
             )
           ),
@@ -617,9 +601,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
 
               if (sorted.length === 0 && collectionSearch) {
                 return React.createElement('div', { className: 'text-center py-12 text-ink-tertiary' },
-                  React.createElement('svg', { className: 'w-12 h-12 mx-auto mb-4 text-ink-faint', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
-                  ),
+                  React.createElement(Icons.Search, { className: 'w-12 h-12 mx-auto mb-4 text-ink-faint', strokeWidth: 1.5 }),
                   React.createElement('div', { className: 'text-sm' }, 'No tracks match your search')
                 );
               }

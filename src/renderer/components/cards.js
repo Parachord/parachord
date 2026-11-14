@@ -414,19 +414,7 @@ const SearchHistoryItem = ({ entry, onQueryClick, onResultClick, onRemove }) => 
       React.createElement('div', {
         className: 'w-12 h-12 rounded bg-gray-100 flex items-center justify-center'
       },
-        React.createElement('svg', {
-          className: 'w-5 h-5 text-gray-400',
-          fill: 'none',
-          stroke: 'currentColor',
-          viewBox: '0 0 24 24'
-        },
-          React.createElement('path', {
-            strokeLinecap: 'round',
-            strokeLinejoin: 'round',
-            strokeWidth: 2,
-            d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z'
-          })
-        )
+        React.createElement(Icons.Search, { className: 'w-5 h-5 text-gray-400' })
       ),
 
     // Query and result info
@@ -448,19 +436,7 @@ const SearchHistoryItem = ({ entry, onQueryClick, onResultClick, onRemove }) => 
       onClick: (e) => { e.stopPropagation(); onRemove(query); },
       className: 'opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-red-500 transition-opacity'
     },
-      React.createElement('svg', {
-        className: 'w-4 h-4',
-        fill: 'none',
-        stroke: 'currentColor',
-        viewBox: '0 0 24 24'
-      },
-        React.createElement('path', {
-          strokeLinecap: 'round',
-          strokeLinejoin: 'round',
-          strokeWidth: 2,
-          d: 'M6 18L18 6M6 6l12 12'
-        })
-      )
+      React.createElement(Icons.X, { className: 'w-4 h-4' })
     )
   );
 };
@@ -674,9 +650,7 @@ const CollectionAlbumCard = ({ album, getAlbumArt, onNavigate, onAddToPlaylist, 
           onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
           title: 'Add to Playlist'
         },
-          React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-            React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
-          )
+          React.createElement(Icons.Plus, { className: 'w-5 h-5' })
         ),
         // Play album button
         onPlay && React.createElement('button', {
@@ -907,9 +881,7 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, 
           onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
           title: 'Add to Playlist'
         },
-          React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-            React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
-          )
+          React.createElement(Icons.Plus, { className: 'w-5 h-5' })
         ),
         // Play button (center, larger)
         onPlay && React.createElement('button', {
@@ -1546,9 +1518,7 @@ const ReleasePage = ({
                 onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
                 title: 'Add to Playlist'
               },
-                React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
-                )
+                React.createElement(Icons.Plus, { className: 'w-5 h-5' })
               ),
               // Play button (center, larger)
               onAlbumPlay && React.createElement('button', {
