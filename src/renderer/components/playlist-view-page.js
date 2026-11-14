@@ -898,7 +898,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                       style: { backgroundColor: 'var(--bg-inset)', color: 'var(--text-secondary)', border: '1px solid var(--border-default)' },
                       onFocus: (e) => { e.currentTarget.style.borderColor = 'var(--accent-primary)'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(124, 58, 237, 0.15)'; },
                       onBlur: (e) => { e.currentTarget.style.borderColor = 'var(--border-default)'; e.currentTarget.style.boxShadow = 'none'; },
-                      placeholder: 'Creator name'
+                      placeholder: 'Creator name', 'aria-label': 'Creator name'
                     })
                   : React.createElement('p', {
                       className: 'text-sm',
@@ -995,7 +995,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                   style: { backgroundColor: 'var(--bg-inset)', color: 'var(--text-primary)', border: '1px solid var(--border-default)' },
                   onFocus: (e) => { e.currentTarget.style.borderColor = 'var(--accent-primary)'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(124, 58, 237, 0.15)'; },
                   onBlur: (e) => { e.currentTarget.style.borderColor = 'var(--border-default)'; e.currentTarget.style.boxShadow = 'none'; },
-                  placeholder: 'Playlist name'
+                  placeholder: 'Playlist name', 'aria-label': 'Playlist name'
                 }),
                 // Created date
                 selectedPlaylist.createdAt && React.createElement('p', {

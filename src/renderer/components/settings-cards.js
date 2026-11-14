@@ -440,7 +440,7 @@ const ScrobblerSettingsCard = React.memo(({
           value: tokenInput,
           onChange: (e) => setTokenInput(e.target.value),
           placeholder: 'Enter your ListenBrainz token',
-          className: 'w-full px-3 py-2 border border-line-strong rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent'
+          className: 'w-full px-3 py-2 border border-line-strong rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent', 'aria-label': 'Enter your ListenBrainz token'
         })
       ),
 
@@ -462,7 +462,7 @@ const ScrobblerSettingsCard = React.memo(({
           value: usernameInput,
           onChange: (e) => setUsernameInput(e.target.value),
           placeholder: 'Your Libre.fm username',
-          className: 'w-full px-3 py-2 border border-line-strong rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent'
+          className: 'w-full px-3 py-2 border border-line-strong rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent', 'aria-label': 'Your Libre.fm username'
         }),
         React.createElement('label', { className: 'block text-sm text-ink-secondary mb-1' }, 'Password'),
         React.createElement('input', {
@@ -470,7 +470,7 @@ const ScrobblerSettingsCard = React.memo(({
           value: passwordInput,
           onChange: (e) => setPasswordInput(e.target.value),
           placeholder: 'Your Libre.fm password',
-          className: 'w-full px-3 py-2 border border-line-strong rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent'
+          className: 'w-full px-3 py-2 border border-line-strong rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent', 'aria-label': 'Your Libre.fm password'
         })
       ),
 

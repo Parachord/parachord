@@ -209,7 +209,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       autoFocus: true,
                       placeholder: 'Filter...',
                       className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none no-drag',
-                      style: { width: '150px' }
+                      style: { width: '150px' }, 'aria-label': 'Filter'
                     }),
                     searchResultsFilter && React.createElement('button', {
                       onClick: () => { setSearchResultsFilter(''); setSearchResultsFilterOpen(false); },
@@ -254,7 +254,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       autoFocus: true,
                       placeholder: 'Filter...',
                       className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none no-drag',
-                      style: { width: '150px' }
+                      style: { width: '150px' }, 'aria-label': 'Filter'
                     }),
                     searchResultsFilter && React.createElement('button', {
                       onClick: () => { setSearchResultsFilter(''); setSearchResultsFilterOpen(false); },
@@ -299,7 +299,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       autoFocus: true,
                       placeholder: 'Filter...',
                       className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none no-drag',
-                      style: { width: '150px' }
+                      style: { width: '150px' }, 'aria-label': 'Filter'
                     }),
                     searchResultsFilter && React.createElement('button', {
                       onClick: () => { setSearchResultsFilter(''); setSearchResultsFilterOpen(false); },
@@ -1148,7 +1148,7 @@ const SearchPage = React.memo(function SearchPage(props) {
               style: {
                 caretColor: 'var(--text-tertiary)',
                 fontFamily: 'var(--font-sans)'
-              }
+              }, 'aria-label': ''
             })
           ),
 

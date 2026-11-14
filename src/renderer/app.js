@@ -37626,7 +37626,7 @@ React.createElement('div', {
                   autoFocus: true,
                   placeholder: 'Filter...',
                   className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none',
-                  style: { width: '150px' }
+                  style: { width: '150px' }, 'aria-label': 'Filter'
                 }),
                 playlistsSearch && React.createElement('button', {
                   onClick: () => { setPlaylistsSearch(''); setPlaylistsSearchOpen(false); },
@@ -38456,7 +38456,7 @@ React.createElement('div', {
                       autoFocus: true,
                       placeholder: 'Filter...',
                       className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none',
-                      style: { width: '150px' }
+                      style: { width: '150px' }, 'aria-label': 'Filter'
                     }),
                     chartsSearch && React.createElement('button', {
                       onClick: () => { setChartsSearch(''); setChartsSearchOpen(false); },
@@ -39125,7 +39125,7 @@ React.createElement('div', {
                     autoFocus: true,
                     placeholder: 'Filter...',
                     className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none',
-                    style: { width: '150px' }
+                    style: { width: '150px' }, 'aria-label': 'Filter'
                   }),
                   newReleasesSearch && React.createElement('button', {
                     onClick: () => { setNewReleasesSearch(''); setNewReleasesSearchOpen(false); },
@@ -39566,7 +39566,7 @@ React.createElement('div', {
                       autoFocus: true,
                       placeholder: 'Filter...',
                       className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none',
-                      style: { width: '150px' }
+                      style: { width: '150px' }, 'aria-label': 'Filter'
                     }),
                     criticsSearch && React.createElement('button', {
                       onClick: () => { setCriticsSearch(''); setCriticsSearchOpen(false); },
@@ -40168,7 +40168,7 @@ React.createElement('div', {
                     className: 'flex-1 text-sm outline-none transition-colors',
                     style: { backgroundColor: 'var(--bg-inset)', color: 'var(--text-primary)', border: '1px solid var(--border-default)', borderRadius: '10px', padding: '8px 14px' },
                     onFocus: (e) => { e.currentTarget.style.borderColor = PAGE_COLORS.concerts.color; e.currentTarget.style.boxShadow = `0 0 0 3px ${pageTint('concerts')}`; },
-                    onBlur: (e) => { e.currentTarget.style.borderColor = 'var(--border-default)'; e.currentTarget.style.boxShadow = 'none'; }
+                    onBlur: (e) => { e.currentTarget.style.borderColor = 'var(--border-default)'; e.currentTarget.style.boxShadow = 'none'; }, 'aria-label': 'City or region'
                   }),
                   // "Use my location" button
                   React.createElement('button', {
@@ -40299,7 +40299,7 @@ React.createElement('div', {
                     autoFocus: true,
                     placeholder: 'Filter...',
                     className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none',
-                    style: { width: '150px' }
+                    style: { width: '150px' }, 'aria-label': 'Filter'
                   }),
                   concertsSearch && React.createElement('button', {
                     onClick: () => { setConcertsSearch(''); setConcertsSearchOpen(false); },
@@ -42022,7 +42022,7 @@ React.createElement('div', {
                     autoFocus: true,
                     placeholder: 'Filter...',
                     className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none',
-                    style: { width: '150px' }
+                    style: { width: '150px' }, 'aria-label': 'Filter'
                   }),
                   historySearch && React.createElement('button', {
                     onClick: () => { setHistorySearch(''); setHistorySearchOpen(false); },
@@ -43712,13 +43712,14 @@ React.createElement('div', {
                     placeholder: 'Search plug-ins...',
                     value: marketplaceSearchQuery,
                     onChange: (e) => setMarketplaceSearchQuery(e.target.value),
-                    className: 'w-64 pl-9 pr-4 py-2 bg-surface-subtle border border-line rounded-full text-sm text-ink-primary placeholder-ink-tertiary focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent'
+                    className: 'w-64 pl-9 pr-4 py-2 bg-surface-subtle border border-line rounded-full text-sm text-ink-primary placeholder-ink-tertiary focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent', 'aria-label': 'Search plug-ins'
                   })
                 ),
                 // Bottom row: Dropdown + Category pills together
                 React.createElement('div', { className: 'flex items-center gap-3 flex-wrap' },
                   // Install status dropdown filter
                   React.createElement('select', {
+                    'aria-label': 'Filter plug-ins',
                     value: pluginsFilter,
                     onChange: (e) => setPluginsFilter(e.target.value),
                     className: 'px-3 py-1.5 rounded-lg text-sm border border-line bg-surface-card text-ink-secondary cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent',
@@ -44467,6 +44468,7 @@ React.createElement('div', {
                       React.createElement('p', { style: { fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' } }, 'Applies to the current stream immediately.')
                     ),
                     React.createElement('select', {
+                      'aria-label': 'Playback quality',
                       value: playbackQuality,
                       onChange: (e) => setPlaybackQuality(e.target.value),
                       style: {
@@ -44490,6 +44492,7 @@ React.createElement('div', {
                       React.createElement('p', { style: { fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' } }, 'Adapt to current network speed at or below the chosen tier.')
                     ),
                     React.createElement('select', {
+                      'aria-label': 'Auto adjust quality',
                       value: playbackAbr ? 'on' : 'off',
                       onChange: (e) => setPlaybackAbr(e.target.value === 'on'),
                       style: {
@@ -46763,7 +46766,7 @@ React.createElement('div', {
             opacity: aiLoading ? '0.5' : '1'
           },
           onFocus: (e) => { e.target.style.borderColor = 'rgba(167, 139, 250, 0.5)'; e.target.style.boxShadow = '0 0 0 3px rgba(167, 139, 250, 0.1)'; },
-          onBlur: (e) => { e.target.style.borderColor = 'rgba(255, 255, 255, 0.1)'; e.target.style.boxShadow = 'none'; }
+          onBlur: (e) => { e.target.style.borderColor = 'rgba(255, 255, 255, 0.1)'; e.target.style.boxShadow = 'none'; }, 'aria-label': 'What do you want to listen to?'
         }),
         React.createElement('button', {
           onClick: () => aiPrompt.trim() && !aiLoading && handleAiGenerate(aiPrompt.trim()),
@@ -46798,6 +46801,7 @@ React.createElement('div', {
         return React.createElement('div', { className: 'mt-3 flex items-center justify-end gap-2' },
           React.createElement('span', { style: { fontSize: '12px', color: 'var(--text-secondary)' } }, 'Provider:'),
           React.createElement('select', {
+            'aria-label': 'AI provider',
             value: selectedAiResolver || aiResolvers[0]?.id || '',
             onChange: (e) => setSelectedAiResolver(e.target.value),
             style: {
@@ -47258,7 +47262,7 @@ React.createElement('div', {
                       outline: 'none'
                     },
                     onFocus: (e) => { e.target.style.borderColor = 'var(--accent-primary-alpha-50)'; },
-                    onBlur: (e) => { e.target.style.borderColor = 'rgba(255, 255, 255, 0.1)'; }
+                    onBlur: (e) => { e.target.style.borderColor = 'rgba(255, 255, 255, 0.1)'; }, 'aria-label': 'Ask Shuffleupagus'
                   }),
                   React.createElement('button', {
                     onClick: () => aiChatInput.trim() && !aiChatLoading && handleAiChatSend(aiChatInput),
@@ -47758,7 +47762,7 @@ React.createElement('div', { style: { padding: '20px 24px 24px' } },
                 onFocus: (e) => { e.target.style.borderColor = 'var(--accent-primary)'; e.target.style.boxShadow = '0 0 0 3px rgba(124, 58, 237, 0.25)'; },
                 onBlur: (e) => { e.target.style.borderColor = 'var(--border-default)'; e.target.style.boxShadow = 'none'; },
                 disabled: urlImportLoading,
-                autoFocus: true
+                autoFocus: true, 'aria-label': 'Paste playlist URL'
               }),
               React.createElement('button', {
                 onClick: async () => {
@@ -47929,7 +47933,7 @@ React.createElement('div', { style: { padding: '20px 24px' } },
             },
             onFocus: (e) => { e.target.style.borderColor = 'var(--accent-primary)'; e.target.style.boxShadow = '0 0 0 3px rgba(124, 58, 237, 0.25)'; },
             onBlur: (e) => { e.target.style.borderColor = 'var(--border-default)'; e.target.style.boxShadow = 'none'; },
-            autoFocus: true
+            autoFocus: true, 'aria-label': 'Username or profile URL'
           }),
           // Example hints
           React.createElement('div', { style: { marginTop: '12px', fontSize: '12px', color: 'var(--text-tertiary)' } },
@@ -48288,7 +48292,7 @@ React.createElement('div', {
                     border: '1px solid var(--border-subtle)',
                     borderRadius: '6px',
                     outline: 'none'
-                  }
+                  }, 'aria-label': 'Paste your Spotify Client ID here'
                 })
               ),
               // Redirect URIs (always visible for reference)
@@ -48298,6 +48302,7 @@ React.createElement('div', {
                 }, 'Redirect URIs'),
                 React.createElement('div', { style: { display: 'flex', gap: '6px', marginBottom: '6px' } },
                   React.createElement('input', {
+                    'aria-label': 'Redirect URI (IPv4)',
                     type: 'text',
                     value: `http://127.0.0.1:${authPort}/callback`,
                     readOnly: true,
@@ -48331,6 +48336,7 @@ React.createElement('div', {
                 ),
                 React.createElement('div', { style: { display: 'flex', gap: '6px' } },
                   React.createElement('input', {
+                    'aria-label': 'Redirect URI (IPv6)',
                     type: 'text',
                     value: `http://[::1]:${authPort}/callback`,
                     readOnly: true,
@@ -48438,7 +48444,7 @@ React.createElement('div', {
                     width: '100%', padding: '8px 10px', fontSize: '12px', color: 'var(--text-primary)',
                     backgroundColor: 'var(--card-bg)', border: '1px solid var(--border-subtle)',
                     borderRadius: '6px', outline: 'none'
-                  }
+                  }, 'aria-label': 'Your Spotify Client ID'
                 })
               ),
               React.createElement('button', {
@@ -48769,7 +48775,7 @@ React.createElement('div', {
                         border: '1px solid var(--border-subtle)',
                         borderRadius: '6px',
                         outline: 'none'
-                      }
+                      }, 'aria-label': 'Your SoundCloud Client ID'
                     })
                   ),
                   React.createElement('div', { style: { marginBottom: '10px' } },
@@ -48796,7 +48802,7 @@ React.createElement('div', {
                         border: '1px solid var(--border-subtle)',
                         borderRadius: '6px',
                         outline: 'none'
-                      }
+                      }, 'aria-label': 'Your SoundCloud Client Secret'
                     })
                   ),
                   React.createElement('div', { style: { marginBottom: '12px' } },
@@ -48815,6 +48821,7 @@ React.createElement('div', {
                       }
                     },
                       React.createElement('input', {
+                        'aria-label': 'SoundCloud redirect URI',
                         type: 'text',
                         value: `http://127.0.0.1:${authPort}/callback/soundcloud`,
                         readOnly: true,
@@ -49092,7 +49099,7 @@ React.createElement('div', {
                       border: '1px solid var(--border-subtle)',
                       borderRadius: '6px',
                       outline: 'none'
-                    }
+                    }, 'aria-label': 'Apple Music developer token'
                   })
                 ),
                 React.createElement('p', {
@@ -49238,7 +49245,7 @@ React.createElement('div', {
                             border: '1px solid var(--border-subtle)',
                             borderRadius: '6px',
                             outline: 'none'
-                          }
+                          }, 'aria-label': 'Your Last.fm API key'
                         })
                       ),
                       React.createElement('div', { style: { marginBottom: '12px' } },
@@ -49265,7 +49272,7 @@ React.createElement('div', {
                             border: '1px solid var(--border-subtle)',
                             borderRadius: '6px',
                             outline: 'none'
-                          }
+                          }, 'aria-label': 'Your Last.fm API secret'
                         })
                       ),
                       React.createElement('div', { className: 'flex gap-2' },
@@ -49410,7 +49417,7 @@ React.createElement('div', {
                         border: '1px solid var(--border-subtle)',
                         borderRadius: '8px',
                         outline: 'none'
-                      }
+                      }, 'aria-label': 'Your Last.fm username'
                     })
                   ),
                   // Advanced accordion
@@ -49474,7 +49481,7 @@ React.createElement('div', {
                             border: '1px solid var(--border-subtle)',
                             borderRadius: '6px',
                             outline: 'none'
-                          }
+                          }, 'aria-label': 'Your Last.fm API key'
                         })
                       ),
                       React.createElement('div', null,
@@ -49501,7 +49508,7 @@ React.createElement('div', {
                             border: '1px solid var(--border-subtle)',
                             borderRadius: '6px',
                             outline: 'none'
-                          }
+                          }, 'aria-label': 'Your Last.fm API secret'
                         })
                       )
                     )
@@ -49598,6 +49605,7 @@ React.createElement('div', {
                       }
                     }, 'User Token'),
                     React.createElement('input', {
+                      'aria-label': 'ListenBrainz user token',
                       type: 'password',
                       defaultValue: metaServiceConfigs.listenbrainz.userToken,
                       readOnly: true,
@@ -49704,7 +49712,7 @@ React.createElement('div', {
                         border: '1px solid var(--border-subtle)',
                         borderRadius: '8px',
                         outline: 'none'
-                      }
+                      }, 'aria-label': 'Your ListenBrainz username'
                     })
                   ),
                   // Advanced accordion
@@ -49768,7 +49776,7 @@ React.createElement('div', {
                             border: '1px solid var(--border-subtle)',
                             borderRadius: '6px',
                             outline: 'none'
-                          }
+                          }, 'aria-label': 'Your ListenBrainz user token'
                         })
                       )
                     )
@@ -49857,7 +49865,7 @@ React.createElement('div', {
                     placeholder: fieldSetting.placeholder || '',
                     spellCheck: false,
                     onBlur: (e) => saveField(fieldKey, fieldSetting.type === 'password' ? e.target.value : e.target.value.trim()),
-                    style: inputStyle
+                    style: inputStyle, 'aria-label': fieldSetting.label || fieldKey
                   })
                 )
               ),
@@ -49880,7 +49888,7 @@ React.createElement('div', {
                     autoComplete: 'username',
                     spellCheck: false,
                     onBlur: (e) => saveField('username', e.target.value.trim()),
-                    style: inputStyle
+                    style: inputStyle, 'aria-label': usernameSetting.label || 'Username'
                   })
                 ),
                 passwordSetting && React.createElement('div', { style: { flex: '1 1 140px', minWidth: 0 } },
@@ -49892,7 +49900,7 @@ React.createElement('div', {
                     autoComplete: 'current-password',
                     spellCheck: false,
                     onBlur: (e) => saveField('password', e.target.value),
-                    style: inputStyle
+                    style: inputStyle, 'aria-label': passwordSetting.label || 'Password'
                   })
                 ),
                 credentialNote && React.createElement('p', {
@@ -49999,7 +50007,7 @@ React.createElement('div', {
                   border: '1px solid var(--border-subtle)',
                   borderRadius: '8px',
                   outline: 'none'
-                }
+                }, 'aria-label': `${selectedResolver.name} API key`
               }),
               selectedResolver.homepage && React.createElement('a', {
                 href: '#',
@@ -50079,7 +50087,7 @@ React.createElement('div', {
                         model: e.target.value.trim()
                       });
                     },
-                    style: modelInputStyle
+                    style: modelInputStyle, 'aria-label': 'Model'
                   });
                 }
 
@@ -50104,7 +50112,7 @@ React.createElement('div', {
                           model: e.target.value.trim()
                         });
                       },
-                      style: modelInputStyle
+                      style: modelInputStyle, 'aria-label': 'Model'
                     }),
                     React.createElement('datalist', { id: listId },
                       suggestions.map(opt =>
@@ -50127,6 +50135,7 @@ React.createElement('div', {
                 }
 
                 return React.createElement('select', {
+                  'aria-label': 'Model',
                   value: metaServiceConfigs[selectedResolver.id]?.model || modelSetting?.default || '',
                   onChange: (e) => {
                     saveMetaServiceConfig(selectedResolver.id, {
@@ -50208,6 +50217,7 @@ React.createElement('div', {
                   }, fieldSetting.description),
                   fieldSetting.type === 'select'
                     ? React.createElement('select', {
+                        'aria-label': fieldSetting.label || fieldKey,
                         value: savedValue || fieldSetting.default || (fieldSetting.options?.[0]?.value ?? ''),
                         onChange: (e) => {
                           saveMetaServiceConfig(selectedResolver.id, {
@@ -50233,7 +50243,7 @@ React.createElement('div', {
                           });
                           if (refetchModels) refetchModels(e.target.value.trim());
                         },
-                        style: fieldInputStyle
+                        style: fieldInputStyle, 'aria-label': fieldSetting.label || fieldKey
                       })
                 );
               }),
@@ -50393,7 +50403,7 @@ React.createElement('div', {
                   border: '1px solid var(--border-subtle)',
                   borderRadius: '8px',
                   outline: 'none'
-                }
+                }, 'aria-label': 'Ollama server URL'
               }),
             ),
             // Model selector for Ollama - supports dynamic-select
@@ -50455,6 +50465,7 @@ React.createElement('div', {
                 }
 
                 return React.createElement('select', {
+                  'aria-label': 'Model',
                   value: metaServiceConfigs[selectedResolver.id]?.model || modelSetting?.default || 'llama3.1',
                   onChange: (e) => {
                     saveMetaServiceConfig(selectedResolver.id, {
@@ -51208,7 +51219,7 @@ React.createElement('div', {
                   });
                 },
                 placeholder: selectedMarketplaceItem.id === 'chatgpt' ? 'sk-...' : 'AIza...',
-                className: 'w-full px-3 py-2 border border-line-strong rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent'
+                className: 'w-full px-3 py-2 border border-line-strong rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent', 'aria-label': `${selectedMarketplaceItem.name} API key`
               }),
               React.createElement('a', {
                 href: '#',
@@ -51227,6 +51238,7 @@ React.createElement('div', {
             metaServices.some(m => m.id === selectedMarketplaceItem.id) && React.createElement('div', { className: 'mt-4 space-y-2' },
               React.createElement('label', { className: 'block text-sm text-ink-secondary' }, 'Model'),
               React.createElement('select', {
+                'aria-label': 'Model',
                 defaultValue: metaServiceConfigs[selectedMarketplaceItem.id]?.model
                   || (metaServices.find(m => m.id === selectedMarketplaceItem.id) || selectedMarketplaceItem).settings?.configurable?.model?.default,
                 onChange: (e) => {
@@ -52199,7 +52211,7 @@ React.createElement('div', {
                   autoFocus: true,
                   placeholder: 'Filter...',
                   className: 'bg-transparent text-ink-secondary text-xs placeholder-ink-tertiary outline-none',
-                  style: { width: '120px' }
+                  style: { width: '120px' }, 'aria-label': 'Filter'
                 }),
                 addToPlaylistSearch && React.createElement('button', {
                   onClick: () => { setAddToPlaylistSearch(''); setAddToPlaylistSearchOpen(false); },
@@ -52356,7 +52368,7 @@ React.createElement('div', {
                   },
                   placeholder: 'Playlist name...',
                   autoFocus: true,
-                  className: 'flex-1 px-3 py-1.5 text-sm border border-line-strong rounded focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent'
+                  className: 'flex-1 px-3 py-1.5 text-sm border border-line-strong rounded focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent', 'aria-label': 'Playlist name'
                 }),
                 React.createElement('button', {
                   onClick: () => {
@@ -52654,7 +52666,7 @@ React.createElement('div', {
                 border: '1px solid var(--border-subtle)',
                 borderRadius: '8px',
                 outline: 'none'
-              }
+              }, 'aria-label': 'Track title'
             })
           ),
           // Artist field
@@ -52682,7 +52694,7 @@ React.createElement('div', {
                 border: '1px solid var(--border-subtle)',
                 borderRadius: '8px',
                 outline: 'none'
-              }
+              }, 'aria-label': 'Artist name'
             })
           ),
           // Album field
@@ -52710,7 +52722,7 @@ React.createElement('div', {
                 border: '1px solid var(--border-subtle)',
                 borderRadius: '8px',
                 outline: 'none'
-              }
+              }, 'aria-label': 'Album name'
             })
           ),
           // Track Number and Year row
@@ -52740,7 +52752,7 @@ React.createElement('div', {
                   border: '1px solid var(--border-subtle)',
                   borderRadius: '8px',
                   outline: 'none'
-                }
+                }, 'aria-label': '1'
               })
             ),
             // Year field
@@ -52768,7 +52780,7 @@ React.createElement('div', {
                   border: '1px solid var(--border-subtle)',
                   borderRadius: '8px',
                   outline: 'none'
-                }
+                }, 'aria-label': '2024'
               })
             )
           ),

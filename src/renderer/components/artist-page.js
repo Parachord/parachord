@@ -857,7 +857,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                     autoFocus: true,
                     placeholder: 'Filter...',
                     className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none',
-                    style: { width: '150px' }
+                    style: { width: '150px' }, 'aria-label': 'Filter'
                   }),
                   artistSearch && React.createElement('button', {
                     onClick: () => {
