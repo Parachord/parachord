@@ -22213,6 +22213,9 @@ ${trackListXml}
   const showReleasePlaceholder = ({ id, artist, title, albumArt, date, releaseType }) => {
     const placeholderArtist = { id: null, name: artist };
     openingReleaseRef.current = true;
+    // Back from the album fetches this artist's releases only when none are
+    // loaded; the previous artist's would show as this one's discography.
+    setArtistReleases([]);
     setCurrentArtist(placeholderArtist);
     setCurrentRelease({
       id,
@@ -22480,6 +22483,10 @@ ${trackListXml}
 
       // Clear artist history so back button returns to Collection, not previous artist
       setArtistHistory([]);
+      // And the previous artist's releases: Back from the album fetches this
+      // artist's only when none are loaded, so stale ones showed the wrong
+      // discography (as handleAlbumClick does).
+      setArtistReleases([]);
 
       openingReleaseRef.current = true;
       setCurrentArtist(artist);
