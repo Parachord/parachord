@@ -5705,12 +5705,32 @@ const Parachord = () => {
       // confirm button red (components/modal.js ConfirmModal).
       cancelLabel: options.cancelLabel || null,
       destructive: !!options.destructive,
+      onCancel: options.onCancel || null,
       actionButton: options.actionButton || null,
     });
   };
 
   const closeConfirmDialog = () => {
     setConfirmDialog(prev => ({ ...prev, show: false }));
+  };
+
+  // A confirm dialog as a promise: resolves true on the confirm button,
+  // false on Cancel, the close X, Escape or the backdrop. Replaces
+  // window.confirm (#1385): same question, the app's dialog.
+  const confirmAsync = (options) => new Promise((resolve) => {
+    showConfirmDialog({
+      cancelLabel: 'Cancel',
+      ...options,
+      onConfirm: () => resolve(true),
+      onCancel: () => resolve(false),
+    });
+  });
+  window.confirmAsync = confirmAsync;
+
+  // When copying to the clipboard fails: show the text to copy by hand
+  // (it replaced a window.prompt).
+  const showCopyFallback = (title, text) => {
+    showConfirmDialog({ type: 'info', title, message: text, confirmLabel: 'Done' });
   };
 
   // Synced playlist delete dialog state
@@ -12449,9 +12469,8 @@ ${trackListXml}
           case 'available':
             showToast(`Update available: v${status.version}`, 'info', null, { duration: 5000 });
             // Prompt user to download
-            if (window.confirm(`A new version (v${status.version}) is available. Download now?`)) {
-              window.electron.updater.download();
-            }
+            confirmAsync({ title: `Parachord ${status.version} is available`, message: 'Download it now? You can keep listening while it downloads.', confirmLabel: 'Download', cancelLabel: 'Later' })
+              .then((yes) => { if (yes) window.electron.updater.download(); });
             break;
           case 'not-available':
             showToast('You have the latest version');
@@ -12462,9 +12481,8 @@ ${trackListXml}
           case 'downloaded':
             showToast('Update downloaded. Restart to install.', 'success', null, { duration: 8000 });
             // Prompt user to install
-            if (window.confirm('Update downloaded. Restart now to install?')) {
-              window.electron.updater.install();
-            }
+            confirmAsync({ title: 'Update ready', message: 'Restart Parachord now to install it?', confirmLabel: 'Restart', cancelLabel: 'Later' })
+              .then((yes) => { if (yes) window.electron.updater.install(); });
             break;
           case 'error':
             showToast(`Update error: ${status.error}`, 'error', null, { duration: 5000 });
@@ -13396,7 +13414,7 @@ ${trackListXml}
       await navigator.clipboard.writeText(url);
       showToast('Link copied to clipboard!');
     } catch (e) {
-      window.prompt('Copy this link URL:', url);
+      showCopyFallback('Copy this link', url);
     }
   }, [showToast]);
 
@@ -13428,7 +13446,7 @@ ${trackListXml}
       await navigator.clipboard.writeText(result.html);
       showToast('Embed code copied to clipboard!');
     } catch (e) {
-      window.prompt('Copy this embed code:', result.html);
+      showCopyFallback('Copy this embed code', result.html);
     }
   }, [showToast]);
 
@@ -13597,7 +13615,7 @@ ${trackListXml}
       await navigator.clipboard.writeText(url);
       showToast('Link copied to clipboard!');
     } catch (e) {
-      window.prompt('Copy this link URL:', url);
+      showCopyFallback('Copy this link', url);
     }
   }, [showToast]);
 
@@ -13652,7 +13670,7 @@ ${trackListXml}
       await navigator.clipboard.writeText(url);
       showToast('Link copied to clipboard!');
     } catch (e) {
-      window.prompt('Copy this link URL:', url);
+      showCopyFallback('Copy this link', url);
     }
   }, [showToast]);
 
@@ -13717,7 +13735,7 @@ ${trackListXml}
       await navigator.clipboard.writeText(result.html);
       showToast('Embed code copied to clipboard!');
     } catch (e) {
-      window.prompt('Copy this embed code:', result.html);
+      showCopyFallback('Copy this embed code', result.html);
     }
   }, [showToast]);
 
@@ -14695,7 +14713,7 @@ ${trackListXml}
           if (hasMirrors) {
             setSyncDeleteDialog({ show: true, playlist: playlistToDelete });
           } else {
-            const confirmed = window.confirm(`Are you sure you want to delete "${data.name}"?`);
+            const confirmed = await confirmAsync({ title: `Delete “${data.name}”?`, message: 'This playlist will be deleted. This can’t be undone.', confirmLabel: 'Delete', destructive: true });
             if (confirmed) {
               // deletePlaylistLocally removes from BOTH hosted_playlists AND
               // local_playlists, so a hosted XSPF can't be re-imported by the
@@ -15397,7 +15415,7 @@ ${trackListXml}
         return;
       }
       const n = found.missing.length;
-      const ok = window.confirm(`${n} file${n === 1 ? '' : 's'} in your library ${n === 1 ? 'is' : 'are'} no longer on disk. Remove ${n === 1 ? 'it' : 'them'} from the library?\n\nThis only removes library entries; nothing on disk is touched.${skipped}`);
+      const ok = await confirmAsync({ title: `Remove missing ${n === 1 ? 'file' : 'files'}?`, message: `${n} file${n === 1 ? '' : 's'} in your library ${n === 1 ? 'is' : 'are'} no longer on disk. Remove ${n === 1 ? 'it' : 'them'} from the library?\n\nThis only removes library entries; nothing on disk is touched.${skipped}`, confirmLabel: 'Remove', destructive: true });
       if (!ok) return;
       const result = await bridge.removeMissing(found.missing);
       if (!result?.success) {
@@ -24784,10 +24802,11 @@ ${trackListXml}
       // Check if already installed
       const existing = allResolvers.find(r => r.id === resolverId);
       if (existing) {
-        const shouldOverwrite = confirm(
-          `Resolver "${resolverName}" (${resolverId}) is already installed.\n\n` +
-          `Do you want to overwrite it with the new version?`
-        );
+        const shouldOverwrite = await confirmAsync({
+          title: `Replace ${resolverName}?`,
+          message: `${resolverName} is already installed. Replace it with this file?`,
+          confirmLabel: 'Replace',
+        });
         if (!shouldOverwrite) {
           return;
         }
@@ -24887,7 +24906,7 @@ ${trackListXml}
       ? `Remove "${resolverName}"?`
       : `Are you sure you want to uninstall "${resolverName}"?\n\nThis will permanently remove the resolver from your system.`;
 
-    const shouldUninstall = confirm(confirmMessage);
+    const shouldUninstall = await confirmAsync({ title: `Remove ${resolverName}?`, message: confirmMessage, confirmLabel: 'Remove', destructive: true });
 
     if (!shouldUninstall) {
       return;
@@ -25069,12 +25088,11 @@ ${trackListXml}
       const existing = allResolvers.find(r => r.id === resolverId)
         || metaServices.find(s => s.id === resolverId);
       if (existing) {
-        const shouldOverwrite = confirm(
-          `Resolver "${resolverName}" is already installed.\n\n` +
-          `Installed version: ${existing.version}\n` +
-          `Marketplace version: ${axe.manifest.version}\n\n` +
-          `Do you want to update it?`
-        );
+        const shouldOverwrite = await confirmAsync({
+          title: `Update ${resolverName}?`,
+          message: `Installed: ${existing.version}\nMarketplace: ${axe.manifest.version}`,
+          confirmLabel: 'Update',
+        });
         if (!shouldOverwrite) {
           return;
         }
@@ -45820,17 +45838,12 @@ React.createElement('div', {
                   React.createElement('button', {
                     onClick: async () => {
                       // Show confirmation dialog
-                      const confirmed = window.confirm(
-                        'Are you sure you want to reset the application?\n\n' +
-                        'This will permanently delete:\n' +
-                        '• Your music collection\n' +
-                        '• All playlists\n' +
-                        '• Friends list\n' +
-                        '• Connected accounts (Spotify, Last.fm, etc.)\n' +
-                        '• All settings and preferences\n' +
-                        '• Cached data\n\n' +
-                        'This action cannot be undone.'
-                      );
+                      const confirmed = await confirmAsync({
+                        title: 'Reset Parachord?',
+                        message: 'This permanently deletes your collection, playlists, friends, connected accounts, settings and cached data. It can’t be undone.',
+                        confirmLabel: 'Reset everything',
+                        destructive: true,
+                      });
 
                       if (confirmed) {
                         try {
@@ -47435,7 +47448,7 @@ React.createElement('div', {
                           navigator.clipboard?.writeText(link).then(() => {
                             showToast('Copied shareable prompt link!', 'success');
                           }).catch(() => {
-                            window.prompt('Copy this link:', link);
+                            showCopyFallback('Copy this link', link);
                           });
                         },
                         style: {

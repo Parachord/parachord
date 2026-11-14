@@ -1017,7 +1017,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                     if (getPlaylistMirrorTargets(selectedPlaylist).length > 0) {
                       setSyncDeleteDialog({ show: true, playlist: selectedPlaylist });
                     } else {
-                      if (window.confirm(`Are you sure you want to delete "${selectedPlaylist.title}"? This cannot be undone.`)) {
+                      if (await window.confirmAsync({ title: `Delete “${selectedPlaylist.title}”?`, message: 'This playlist will be deleted. This can’t be undone.', confirmLabel: 'Delete', destructive: true })) {
                         await deletePlaylistLocally(selectedPlaylist);
                         setPlaylistEditMode(false);
                         setEditedPlaylistData(null);

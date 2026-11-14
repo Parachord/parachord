@@ -119,3 +119,17 @@ test('bare mode keeps the panel and adds the dialog semantics', () => {
   expect(out).toContain('class="modal-panel max-w-md"');
   expect(out).not.toContain('aria-label="Close"');
 });
+
+test('confirmAsync resolves false on any way out but the confirm button', () => {
+  const calls = [];
+  const dialog = { show: true, title: 'Delete?', destructive: true, confirmLabel: 'Delete', onConfirm: () => calls.push('yes'), onCancel: () => calls.push('no') };
+  const tree = ConfirmModal({ dialog, onClose: () => calls.push('close') });
+  // Modal element's onClose is the cancel path (X, Escape, backdrop)
+  tree.props.onClose();
+  expect(calls).toEqual(['no', 'close']);
+  const cancelBtn = tree.props.footer.find((b) => b.key === 'cancel');
+  cancelBtn.props.onClick();
+  const confirmBtn = tree.props.footer.find((b) => b.key === 'confirm');
+  confirmBtn.props.onClick();
+  expect(calls).toEqual(['no', 'close', 'no', 'close', 'yes', 'close']);
+});

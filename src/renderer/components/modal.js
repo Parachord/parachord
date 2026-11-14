@@ -118,7 +118,7 @@ function Modal(props) {
     !hideClose && e(Button, { variant: 'icon', size: 'sm', 'aria-label': 'Close', onClick: onClose, className: '-mt-1 -mr-1' },
       e(Icons.X, { className: 'w-5 h-5' }))),
   e('div', { className: 'flex-1 overflow-y-auto', style: { padding: '12px 24px 20px' } },
-    description && e('div', { id: descId, className: 'text-ink-secondary', style: { fontSize: '14px', lineHeight: 1.5 } }, description),
+    description && e('div', { id: descId, className: 'text-ink-secondary', style: { fontSize: '14px', lineHeight: 1.5, whiteSpace: 'pre-line', overflowWrap: 'anywhere', userSelect: 'text' } }, description),
     children),
   footer && e('div', { className: 'flex items-center justify-end gap-2 flex-wrap', style: { padding: '0 24px 24px' } }, footer)));
 }
@@ -147,13 +147,16 @@ const TYPE_ICON = {
 function ConfirmModal({ dialog, onClose }) {
   const e = React.createElement;
   if (!dialog || !dialog.show) return null;
-  const { type = 'info', title, message, onConfirm, confirmLabel, cancelLabel, destructive, actionButton } = dialog;
+  const { type = 'info', title, message, onConfirm, onCancel, confirmLabel, cancelLabel, destructive, actionButton } = dialog;
   const [iconName, color] = TYPE_ICON[type] || TYPE_ICON.info;
+  // Any way out that isn't the confirm button is a cancel (onCancel lets
+  // confirmAsync resolve false).
+  const cancel = () => { if (onCancel) onCancel(); onClose(); };
   const confirm = () => { if (onConfirm) onConfirm(); onClose(); };
-  const fix = actionButton && (() => { const fn = actionButton.onClick; onClose(); if (fn) fn(); });
+  const fix = actionButton && (() => { const fn = actionButton.onClick; cancel(); if (fn) fn(); });
   const showCancel = !!(cancelLabel || destructive);
   const footer = [
-    showCancel && e(Button, { key: 'cancel', variant: 'secondary', onClick: onClose }, cancelLabel || 'Cancel'),
+    showCancel && e(Button, { key: 'cancel', variant: 'secondary', onClick: cancel }, cancelLabel || 'Cancel'),
     e(Button, {
       key: 'confirm',
       variant: destructive ? 'destructive' : (actionButton ? 'secondary' : 'primary'),
@@ -163,7 +166,7 @@ function ConfirmModal({ dialog, onClose }) {
   ].filter(Boolean);
   return e(Modal, {
     open: true,
-    onClose,
+    onClose: cancel,
     title,
     description: message,
     size: 'sm',
