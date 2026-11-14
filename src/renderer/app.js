@@ -26528,8 +26528,15 @@ ${tracks}
       const artistList = await gatherNewReleasesArtists();
 
       if (artistList.length === 0) {
-        console.log('✨ No artists found in collection or history');
-        setNewReleases([]);
+        // No artists to check is not "no releases": the collection or the
+        // listening history may simply not have loaded yet. Keep the
+        // releases already on screen (the restored cache) rather than
+        // blanking Fresh Drops, and only show the empty state when there
+        // were none (2026-11: Home lost Fresh Drops after a stale-cache
+        // launch until something re-rendered it).
+        const kept = newReleasesCache.current.releases || [];
+        console.log(`✨ No artists found in collection or history${kept.length ? `; keeping ${kept.length} cached releases` : ''}`);
+        if (kept.length === 0) setNewReleases([]);
         setNewReleasesLoaded(true);
         setNewReleasesLoading(false);
         return;
@@ -29032,11 +29039,14 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
   // Load new releases lazily in background once cache is loaded (data updates at most daily)
   // This ensures Fresh Drops tab is ready when the user navigates to it
+  // It waits for the collection too: the scan reads collectionData from the
+  // render it starts in, so starting before the collection loaded found no
+  // artists.
   useEffect(() => {
-    if (cacheLoaded && !newReleasesLoaded && !newReleasesLoading) {
+    if (cacheLoaded && !collectionLoading && !newReleasesLoaded && !newReleasesLoading) {
       loadNewReleases();
     }
-  }, [cacheLoaded, newReleasesLoaded, newReleasesLoading]);
+  }, [cacheLoaded, collectionLoading, newReleasesLoaded, newReleasesLoading]);
 
   // Lazily pre-load concerts in the background after startup (lowest priority)
   // This ensures concert data is ready before the user navigates to the tab
