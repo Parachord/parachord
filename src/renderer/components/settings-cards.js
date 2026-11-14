@@ -266,6 +266,10 @@ const ScrobblerSettingsCard = React.memo(({
   backfillRunning = false,
   backfillProgress = null,
   unpushedCount = 0,
+  onRunLoveImport = null,
+  loveImportRunning = false,
+  loveImportProgress = null,
+  hasImportedLoves = false,
 }) => {
   const [connecting, setConnecting] = React.useState(false);
   const [error, setError] = React.useState(null);
@@ -518,8 +522,35 @@ const ScrobblerSettingsCard = React.memo(({
         className: 'w-full py-2 px-4 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 transition-colors'
       }, connecting ? 'Completing...' : 'Complete Authorization')
     ) : (
-      // Connected state: love-push controls (LB/LFM only) + Disconnect
+      // Connected state: the import action, love-push controls + Disconnect
       React.createElement('div', { className: 'space-y-3' },
+        // Loved-tracks import (issue #1071): pull the user's loves on this
+        // service into the collection. Opt-in per service; Libre.fm stays
+        // out (same scope as push — the card simply never passes
+        // onRunLoveImport).
+        onRunLoveImport && (scrobbler.id === 'lastfm' || scrobbler.id === 'listenbrainz') &&
+          React.createElement('div', { className: 'space-y-2' },
+            React.createElement('button', {
+              onClick: onRunLoveImport,
+              disabled: loveImportRunning,
+              className: 'w-full py-1.5 px-3 text-sm rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors',
+              style: {
+                // The tint token, not a palette class (design-drift ratchet
+                // #1380) and not --accent-soft (a text colour — it left the
+                // label at ~2:1 contrast; --accent-surface is the tint).
+                color: 'var(--accent-primary)',
+                backgroundColor: 'var(--accent-surface)',
+                border: '1px solid var(--border-default)'
+              }
+            },
+              loveImportRunning && loveImportProgress
+                ? (loveImportProgress.phase === 'confirm' ? 'Waiting for confirmation…'
+                  : loveImportProgress.phase === 'lookup'
+                    ? `Looking up names… ${loveImportProgress.done}/${loveImportProgress.total}`
+                    : `Importing… ${loveImportProgress.done}/${loveImportProgress.total}`)
+                : hasImportedLoves ? 'Import new loves' : 'Import loved tracks'
+            )
+          ),
         // Love-push toggle + backfill button (only for services that support it)
         (scrobbler.id === 'lastfm' || scrobbler.id === 'listenbrainz') && onSetLovePushEnabled &&
           React.createElement('div', { className: 'border-t border-gray-200 pt-3 space-y-2' },
