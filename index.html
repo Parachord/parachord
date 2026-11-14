@@ -725,14 +725,18 @@
       animation-play-state: paused;
     }
 
-    /* Queue track drop animation - track slides down into player */
+    /* Queue track drop animation - track slides down into player.
+       Both queue keyframes animate `translate`, not `transform`: a virtual
+       row is positioned with an inline transform: translateY(start), and an
+       animated transform replaced it, so the row jumped to the top of the
+       list while it animated (audit bug 13). `translate` stacks on top. */
     @keyframes queue-track-drop {
       0% {
-        transform: translateY(0);
+        translate: 0 0;
         opacity: 1;
       }
       100% {
-        transform: translateY(40px);
+        translate: 0 40px;
         opacity: 0;
       }
     }
@@ -745,19 +749,19 @@
     /* Queue track insert animation - track slides in from top with glow */
     @keyframes queue-track-insert {
       0% {
-        transform: translateY(-20px);
+        translate: 0 -20px;
         opacity: 0;
         background-color: rgba(168, 85, 247, 0.6);
         box-shadow: 0 0 20px rgba(168, 85, 247, 0.8), inset 0 0 20px rgba(168, 85, 247, 0.3);
       }
       50% {
-        transform: translateY(0);
+        translate: 0 0;
         opacity: 1;
         background-color: rgba(168, 85, 247, 0.5);
         box-shadow: 0 0 15px rgba(168, 85, 247, 0.6), inset 0 0 15px rgba(168, 85, 247, 0.2);
       }
       100% {
-        transform: translateY(0);
+        translate: 0 0;
         opacity: 1;
         background-color: transparent;
         box-shadow: none;

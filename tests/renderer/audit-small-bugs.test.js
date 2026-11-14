@@ -55,3 +55,17 @@ test('the closed queue drawer is inert, and it never grows past the window (bug 
   expect(app).toMatch(/inert: queueDrawerOpen \? undefined : '',/);
   expect(app).toMatch(/const maxHeight = Math\.min\(600, window\.innerHeight - 85 - QUEUE_DRAWER_TOP_GAP\);/);
 });
+
+test('the queue keyframes move rows with translate, not transform (bug 13)', () => {
+  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  const block = html.slice(html.indexOf('@keyframes queue-track-drop'), html.indexOf('.queue-track-insert {'));
+  expect(block).not.toMatch(/transform:/);
+  expect(block).toMatch(/translate: 0 40px;/);
+  expect(block).toMatch(/translate: 0 -20px;/);
+});
+
+test("the marketplace's model picker lists the plugin's models, not a hard-coded set (bug 30)", () => {
+  expect(app).not.toMatch(/'GPT-4o Mini \(Recommended\)'/);
+  expect(app).not.toMatch(/'Gemini 2\.5 Flash \(Recommended\)'/);
+  expect(app).toMatch(/modelSetting\?\.fallbackOptions \|\| modelSetting\?\.options \|\| \[\]/);
+});

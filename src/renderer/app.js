@@ -51944,11 +51944,13 @@ useEffect(() => {
                 className: 'text-xs text-accent hover:text-accent inline-block'
               }, 'Get your API key →')
             ),
-            // Model selector
-            React.createElement('div', { className: 'mt-4 space-y-2' },
+            // Model selector: only once the plugin is installed, since the
+            // model list is the plugin's (the marketplace entry has none).
+            metaServices.some(m => m.id === selectedMarketplaceItem.id) && React.createElement('div', { className: 'mt-4 space-y-2' },
               React.createElement('label', { className: 'block text-sm text-ink-secondary' }, 'Model'),
               React.createElement('select', {
-                defaultValue: metaServiceConfigs[selectedMarketplaceItem.id]?.model || (selectedMarketplaceItem.id === 'chatgpt' ? 'gpt-4o-mini' : 'gemini-2.5-flash'),
+                defaultValue: metaServiceConfigs[selectedMarketplaceItem.id]?.model
+                  || (metaServices.find(m => m.id === selectedMarketplaceItem.id) || selectedMarketplaceItem).settings?.configurable?.model?.default,
                 onChange: (e) => {
                   saveMetaServiceConfig(selectedMarketplaceItem.id, {
                     ...metaServiceConfigs[selectedMarketplaceItem.id],
@@ -51957,14 +51959,19 @@ useEffect(() => {
                 },
                 className: 'w-full px-3 py-2 border border-line-strong rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent bg-surface-card'
               },
-                selectedMarketplaceItem.id === 'chatgpt' ? [
-                  React.createElement('option', { key: 'gpt-4o-mini', value: 'gpt-4o-mini' }, 'GPT-4o Mini (Recommended)'),
-                  React.createElement('option', { key: 'gpt-4o', value: 'gpt-4o' }, 'GPT-4o'),
-                  React.createElement('option', { key: 'gpt-3.5-turbo', value: 'gpt-3.5-turbo' }, 'GPT-3.5 Turbo')
-                ] : [
-                  React.createElement('option', { key: 'gemini-2.5-flash', value: 'gemini-2.5-flash' }, 'Gemini 2.5 Flash (Recommended)'),
-                  React.createElement('option', { key: 'gemini-2.5-pro', value: 'gemini-2.5-pro' }, 'Gemini 2.5 Pro')
-                ]
+                // The plugin's own model list (audit bug 30): the models it
+                // fetched, else its manifest's fallbackOptions. This used to
+                // be a hard-coded list that drifted from the plugins.
+                (() => {
+                  const plugin = metaServices.find(m => m.id === selectedMarketplaceItem.id) || selectedMarketplaceItem;
+                  const modelSetting = plugin.settings?.configurable?.model || plugin.manifest?.settings?.configurable?.model;
+                  const fetched = dynamicModelOptions[selectedMarketplaceItem.id]?.options;
+                  const options = (fetched && fetched.length > 0 ? fetched : (modelSetting?.fallbackOptions || modelSetting?.options || []))
+                    .map(o => (typeof o === 'string' ? { value: o, label: o } : o));
+                  const current = metaServiceConfigs[selectedMarketplaceItem.id]?.model;
+                  if (current && !options.some(o => o.value === current)) options.unshift({ value: current, label: current });
+                  return options.map(o => React.createElement('option', { key: o.value, value: o.value }, o.label || o.value));
+                })()
               )
             )
           ),
