@@ -1,6 +1,9 @@
 /**
  * @jest-environment jsdom
  *
+ * The repo's only jsdom test (jest's default is the node environment; the
+ * environment is opt-in per file via the docblock above — see
+ * jest-environment-jsdom in devDependencies).
  * Home's playlist-card art (ArtBox, src/renderer/components/home-sections.js):
  * a playlist's own cover (the record's coverArt, fed to ArtBox as imageUrl)
  * that fails to load falls back to the track mosaic, and a playlist cover
