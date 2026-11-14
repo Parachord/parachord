@@ -2,14 +2,11 @@
 // extracted from app.js's module scope (maintainability plan Track 2b,
 // presentational slice 2).
 //
-// TrackRow is the single track row (resolver badges via the ui-atoms kit,
-// confidence-badge dimming via getBestSourceConfidence — the absolute
-// >= 0.95 = full-opacity model, see docs/architecture/playback.md "Match Confidence + Selection
-// Floor"); VirtualizedQueueList / VirtualizedTrackList are the windowed lists
-// (ReactVirtual is the vendor global). getBestSourceConfidence moves WITH its
-// primary pre-component consumer and is exported back to app.js, where the
-// 10 in-component list-view badge sites keep calling it via the destructured
-// binding — one definition, same behavior.
+// TrackRow is the single track row; VirtualizedQueueList / VirtualizedTrackList
+// are the windowed lists (ReactVirtual is the vendor global). Which source
+// icons a row shows, their order and dimming come from lib/visible-sources.js
+// (one rule for the queue and the page lists, see docs/architecture/playback.md
+// "Playback limits" and "Match Confidence + Selection Floor").
 //
 // All props-driven, no app state; memoized exactly as before. React via the
 // vendor global; ResolverIcon via the ui-atoms module; icons via the icons
@@ -18,21 +15,9 @@ const { ResolverIcon } = require('./ui-atoms');
 const Icons = require('./icons');
 const { Music, Pause, Play, X } = Icons;
 
-// Render-time helper: returns the absolute confidence threshold below which
-// a resolver source's badge renders dimmed. The historical implementation
-// returned per-track best (relative-dim model: a 0.95 fuzzy-validated match
-// rendered dimmed when a sibling resolver had a 1.0 direct-ID match), which
-// misled users into reading "dimmed" as "wrong" — the dimmed match was
-// nearly always correct, just lower-confidence than a sibling. Flipped to
-// the absolute model on 2026-05-08: dim only when strictly below 0.95.
-// Since the upstream MIN_CONFIDENCE_THRESHOLD = 0.6 floor drops sub-floor
-// results before they reach `track.sources`, in normal operation the only
-// values present are 0.95 (fuzzy validated) and 1.0 (direct-ID), so under
-// the new rule nothing dims unless a resolver explicitly returned a
-// non-standard sub-0.95 confidence. The function signature is preserved
-// (takes `sources`, returns a number) so the 11 badge call sites compare
-// against `bestConf` unchanged. The argument is now ignored.
-const getBestSourceConfidence = (_sources) => 0.95;
+// The shared source-icon rule (and the 0.95 dim threshold) lives in
+// lib/visible-sources.js.
+const { sourceRowState } = require('../lib/visible-sources');
 
 // TrackRow component - defined outside to prevent recreation on every render
 const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick, onContextMenu, allResolvers, resolverOrder, activeResolvers }) => {
@@ -155,6 +140,12 @@ const VirtualizedQueueList = React.memo(({
   currentTrack,
   resolverOrder,
   allResolvers,
+  // The resolvers that can play on this account (activeResolvers minus
+  // plan-blocked ones, e.g. Amazon on Prime, Apple Music signed out) and the
+  // live resolutions. A row's icons come from visibleSources, the same rule
+  // as the page lists (docs/architecture/playback.md "Playback limits").
+  playbackResolvers,
+  trackSources,
   queueDropTarget,
   draggedQueueTrack,
   insertedTrackId,
@@ -266,11 +257,12 @@ const VirtualizedQueueList = React.memo(({
     const isCurrentTrack = currentTrack?.id === track.id;
     const isLoading = track.status === 'loading';
     const isError = track.status === 'error';
-    const availableSources = Object.keys(track.sources || {}).sort((a, b) => {
-      const aIndex = resolverOrder.indexOf(a);
-      const bIndex = resolverOrder.indexOf(b);
-      return aIndex - bIndex;
-    });
+    // The icons the page lists would show for this track (lib/visible-sources):
+    // real sources only, playable on this account, in resolver order. Shimmer
+    // while nothing has come back yet; once it has and nothing is playable, no
+    // icons and the row is dimmed, as in the page lists.
+    const { shown: shownSources, state: sourceState } = sourceRowState(track, { trackSources, playbackResolvers, resolverOrder });
+    const isUnplayable = !isLoading && !isError && sourceState === 'unplayable';
 
     const isDraggedOver = queueDropTarget === index;
     const isDragging = draggedQueueTrack === index;
@@ -340,7 +332,7 @@ const VirtualizedQueueList = React.memo(({
       className: `group flex items-center gap-3 py-1.5 px-3 hover:bg-white/10 transition-all duration-300 ${
         isCurrentTrack ? 'bg-purple-900/40' : ''
       } ${isDragging ? 'opacity-50 bg-gray-700/50' : ''} ${
-        isError ? 'opacity-50' : ''
+        isError || isUnplayable ? 'opacity-50' : ''
       } ${isDraggedOver ? 'border-t-2 border-t-purple-400' : ''} ${
         isLoading || isError ? 'cursor-default' : 'cursor-pointer'} ${
         isFallingDown ? 'queue-track-drop' : ''} ${
@@ -442,16 +434,12 @@ const VirtualizedQueueList = React.memo(({
               style: { width: '20px', height: '20px', animationDelay: '0.1s' }
             })
           )
-        : availableSources.length > 0 ?
-          (() => {
-            const bestConf = getBestSourceConfidence(track.sources);
-            return availableSources.map(resolverId => {
+        : shownSources.length > 0 ?
+          shownSources.map(({ resolverId, source, dim }) => {
               const resolver = allResolvers.find(r => r.id === resolverId);
               if (!resolver) return null;
-              const source = track.sources?.[resolverId];
               const confidence = source?.confidence || 0;
-              const isDim = confidence < bestConf;
-              const restingOpacity = isDim ? 0.5 : 0.7;
+              const restingOpacity = dim ? 0.5 : 0.7;
               return React.createElement('button', {
                 key: resolverId,
                 onClick: (e) => {
@@ -477,8 +465,8 @@ const VirtualizedQueueList = React.memo(({
                 onMouseLeave: (e) => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.opacity = String(restingOpacity); e.currentTarget.style.filter = 'saturate(0.7)'; },
                 title: `Play via ${resolver.name}${confidence ? ` (${Math.round(confidence * 100)}% match)` : ''}`
               }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
-            });
-          })()
+            })
+        : sourceState === 'unplayable' ? null
         :
           React.createElement('div', { className: 'flex items-center gap-1' },
             React.createElement('div', {
@@ -652,7 +640,6 @@ const VirtualizedTrackList = React.memo(({
 });
 
 module.exports = {
-  getBestSourceConfidence,
   TrackRow,
   VirtualizedQueueList,
   VirtualizedTrackList,

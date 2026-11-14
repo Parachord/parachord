@@ -1300,16 +1300,15 @@ const prefetchInProgress = window._prefetchInProgress;
 
 // ─── Icons + track lists (src/renderer/components/) ────────────────────────
 // The lucide-react icon kit moves to components/icons.js (app.js keeps its
-// own icon destructure below, unchanged); TrackRow + the windowed lists +
-// getBestSourceConfidence (badge dimming) move to components/track-lists.js
-// (Track 2b, presentational slice 2). getBestSourceConfidence is exported
-// back — the 10 in-component badge call sites keep the same binding.
-// Behavior-identical, memoized as before.
+// own icon destructure below, unchanged); TrackRow + the windowed lists move
+// to components/track-lists.js (Track 2b, presentational slice 2). The
+// in-component badge lists get their icons, order and dimming from
+// lib/visible-sources.js, the same rule as the queue and the pages.
 const Icons = require('./components/icons');
 const {
-  getBestSourceConfidence,
   VirtualizedQueueList, VirtualizedTrackList,
 } = require('./components/track-lists');
+const { sourceRowState } = require('./lib/visible-sources');
 const { Play, Pause, SkipForward, SkipBack, Volume2, Search, List, Settings, Plus, Music, Radio, Users, Heart, X } = Icons;
 
 
@@ -39462,9 +39461,12 @@ useEffect(() => {
               return React.createElement('div', { className: 'space-y-0' },
                 filtered.map((track, index) => {
                   // Look up resolved sources from trackSources state
-                  const resolvedSources = trackSources[track.id] || {};
-                  const hasResolved = Object.keys(resolvedSources).length > 0;
-                  const isResolving = !hasResolved;
+                  // The row's sources, one rule for every list (lib/visible-sources):
+                  // resolving (shimmer), unplayable (dimmed, no icons) or playable.
+                  const { shown: shownSources, state: sourceState } = sourceRowState(track, { trackSources, playbackResolvers, resolverOrder });
+                  const hasResolved = sourceState === 'playable';
+                  const isResolving = sourceState === 'resolving';
+                  const isUnplayable = sourceState === 'unplayable';
                   const isCurrentTrack = currentTrack?.title === track.title && currentTrack?.artist === track.artist;
                   const isNowPlaying = isCurrentTrack && isPlaying;
 
@@ -39485,7 +39487,7 @@ useEffect(() => {
                       }
                     },
                     className: `flex items-center gap-4 py-3 px-4 cursor-pointer transition-all group ${
-                      isResolving ? 'opacity-60' : ''
+                      isResolving || isUnplayable ? 'opacity-60' : ''
                     } ${isNowPlaying ? 'bg-purple-50' : 'hover:bg-gray-50/80'}`,
                     style: { borderRadius: '8px', marginBottom: '2px' },
                     onClick: () => {
@@ -39580,15 +39582,8 @@ useEffect(() => {
                           })
                         )
                       : hasResolved ? (() => {
-                          const bestConf = getBestSourceConfidence(resolvedSources);
-                          return Object.entries(resolvedSources)
-                            .filter(([resolverId]) => playbackResolvers.includes(resolverId))
-                            .sort(([aId], [bId]) => {
-                              const aIndex = resolverOrder.indexOf(aId);
-                              const bIndex = resolverOrder.indexOf(bId);
-                              return aIndex - bIndex;
-                            })
-                            .map(([resolverId, source]) => {
+                          // The shared source-icon rule (lib/visible-sources).
+                          return shownSources.map(({ resolverId, source, dim }) => {
                               const resolver = allResolvers.find(r => r.id === resolverId);
                               if (!resolver || !resolver.play) return null;
                               return React.createElement('button', {
@@ -39612,7 +39607,7 @@ useEffect(() => {
                                   alignItems: 'center',
                                   justifyContent: 'center',
                                   pointerEvents: 'auto',
-                                  opacity: (source.confidence || 0) < bestConf ? 0.6 : 1,
+                                  opacity: dim ? 0.6 : 1,
                                   transition: 'transform 0.1s'
                                 },
                                 onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
@@ -42105,9 +42100,12 @@ useEffect(() => {
             // the whole remainder, like the flat page, not just the visible tail.
             const songRow = (item, index, allSongs, section) => {
               const track = item.track;
-              const resolvedSources = trackSources[track.id] || track.sources || {};
-              const hasResolved = Object.keys(resolvedSources).length > 0;
-              const isResolving = Object.keys(resolvedSources).length === 0;
+              // The row's sources, one rule for every list (lib/visible-sources):
+              // resolving (shimmer), unplayable (dimmed, no icons) or playable.
+              const { shown: shownSources, state: sourceState } = sourceRowState(track, { trackSources, playbackResolvers, resolverOrder });
+              const hasResolved = sourceState === 'playable';
+              const isResolving = sourceState === 'resolving';
+              const isUnplayable = sourceState === 'unplayable';
               // The row playing now: this track, played from THIS row (the
               // context a row click sets), the playlist view's rule with the
               // row's key standing in for the playlist id. The key, not the
@@ -42148,7 +42146,7 @@ useEffect(() => {
                 },
                 onDragEnd: () => handlePlaylistDragEnd(),
                 className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group no-drag ${
-                  isResolving ? 'opacity-60' : ''
+                  isResolving || isUnplayable ? 'opacity-60' : ''
                 } ${isNowPlaying ? 'bg-purple-50' : (isResolving ? '' : 'hover:bg-gray-50/80')}`,
                 style: { borderRadius: '8px', marginBottom: '2px' },
                 onClick: () => queueTail(),
@@ -42194,15 +42192,8 @@ useEffect(() => {
                         React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: '0.1s' } })
                       )
                     : hasResolved ? (() => {
-                        const bestConf = getBestSourceConfidence(resolvedSources);
-                        return Object.entries(resolvedSources)
-                          .filter(([resolverId]) => playbackResolvers.includes(resolverId))
-                          .sort(([aId], [bId]) => {
-                            const aIndex = resolverOrder.indexOf(aId);
-                            const bIndex = resolverOrder.indexOf(bId);
-                            return aIndex - bIndex;
-                          })
-                          .map(([resolverId, source]) => {
+                        // The shared source-icon rule (lib/visible-sources).
+                        return shownSources.map(({ resolverId, source, dim }) => {
                             const resolver = allResolvers.find(r => r.id === resolverId);
                             if (!resolver || !resolver.play) return null;
                             return React.createElement('button', {
@@ -42223,7 +42214,7 @@ useEffect(() => {
                                 alignItems: 'center',
                                 justifyContent: 'center',
                                 pointerEvents: 'auto',
-                                opacity: (source.confidence || 0) < bestConf ? 0.6 : 1,
+                                opacity: dim ? 0.6 : 1,
                                 transition: 'transform 0.1s'
                               },
                               onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
@@ -42232,10 +42223,7 @@ useEffect(() => {
                             }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
                           });
                       })()
-                    : React.createElement('div', { className: 'flex items-center gap-1' },
-                        React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', title: 'Resolving track...' }),
-                        React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: '0.1s' } })
-                      )
+                    : null
                 )
               );
             };
@@ -42934,9 +42922,12 @@ useEffect(() => {
                   return React.createElement('div', { className: 'space-y-0' },
                     ...sorted.map((track, index) => {
                       // Use track.id to look up resolved sources from trackSources state
-                      const resolvedSources = trackSources[track.id] || track.sources || {};
-                      const hasResolved = Object.keys(resolvedSources).length > 0;
-                      const isResolving = Object.keys(resolvedSources).length === 0;
+                      // The row's sources, one rule for every list (lib/visible-sources):
+                      // resolving (shimmer), unplayable (dimmed, no icons) or playable.
+                      const { shown: shownSources, state: sourceState } = sourceRowState(track, { trackSources, playbackResolvers, resolverOrder });
+                      const hasResolved = sourceState === 'playable';
+                      const isResolving = sourceState === 'resolving';
+                      const isUnplayable = sourceState === 'unplayable';
 
                       return React.createElement('div', {
                         // One song listened to twice is two rows with one
@@ -42967,7 +42958,7 @@ useEffect(() => {
                         onDragEnd: () => {
                           handlePlaylistDragEnd();
                         },
-                        className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${isResolving ? 'opacity-60' : 'hover:bg-gray-50/80'}`,
+                        className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${isResolving || isUnplayable ? 'opacity-60' : 'hover:bg-gray-50/80'}`,
                         style: {
                           borderRadius: '8px',
                           marginBottom: '2px'
@@ -43016,15 +43007,15 @@ useEffect(() => {
                               React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: '0.1s' } })
                             )
                           : hasResolved ? (() => {
-                              const bestConf = getBestSourceConfidence(resolvedSources);
-                              return Object.entries(resolvedSources).filter(([resolverId]) => playbackResolvers.includes(resolverId)).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
+                              // The shared source-icon rule (lib/visible-sources).
+                              return shownSources.map(({ resolverId, source, dim }) => {
                                 const resolver = allResolvers.find(r => r.id === resolverId);
                                 if (!resolver || !resolver.play) return null;
                                 return React.createElement('button', {
                                   key: resolverId,
                                   className: 'no-drag',
                                   onClick: (e) => { e.stopPropagation(); const tracksAfter = sorted.slice(index + 1); const context = { type: 'history', name: 'History' }; setQueueWithContext(tracksAfter, context); handlePlay({ ...track, preferredResolver: resolverId }); },
-                                  style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', opacity: (source.confidence || 0) < bestConf ? 0.6 : 1, transition: 'transform 0.1s' },
+                                  style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', opacity: dim ? 0.6 : 1, transition: 'transform 0.1s' },
                                   onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                                   onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
                                   title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
@@ -43032,10 +43023,7 @@ useEffect(() => {
                               });
                             })()
                           :
-                            React.createElement('div', { className: 'flex items-center gap-1' },
-                              React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', title: 'Resolving track...' }),
-                              React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: '0.1s' } })
-                            )
+                            null
                         )
                       );
                     })
@@ -43081,8 +43069,12 @@ useEffect(() => {
                   return React.createElement('div', { className: 'space-y-0' },
                     ...filtered.map((track, index) => {
                       // Use track.id to look up resolved sources from trackSources state
-                      const resolvedSources = trackSources[track.id] || track.sources || {};
-                      const hasResolved = Object.keys(resolvedSources).length > 0;
+                      // The row's sources, one rule for every list (lib/visible-sources):
+                      // resolving (shimmer), unplayable (dimmed, no icons) or playable.
+                      const { shown: shownSources, state: sourceState } = sourceRowState(track, { trackSources, playbackResolvers, resolverOrder });
+                      const hasResolved = sourceState === 'playable';
+                      const isResolving = sourceState === 'resolving';
+                      const isUnplayable = sourceState === 'unplayable';
                       return React.createElement('div', {
                         key: track.id,
                         'data-track-id': track.id,
@@ -43122,15 +43114,15 @@ useEffect(() => {
                         React.createElement('span', { className: 'text-right tabular-nums flex-shrink-0', style: { width: '80px', fontSize: '12px', color: 'var(--text-tertiary)' } }, `${track.playCount} plays`),
                         React.createElement('div', { className: 'flex items-center gap-1 justify-end', style: { width: '140px', flexShrink: 0, minHeight: '24px' } },
                           hasResolved ? (() => {
-                              const bestConf = getBestSourceConfidence(resolvedSources);
-                              return Object.entries(resolvedSources).filter(([resolverId]) => playbackResolvers.includes(resolverId)).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
+                              // The shared source-icon rule (lib/visible-sources).
+                              return shownSources.map(({ resolverId, source, dim }) => {
                                 const resolver = allResolvers.find(r => r.id === resolverId);
                                 if (!resolver || !resolver.play) return null;
                                 return React.createElement('button', {
                                   key: resolverId,
                                   className: 'no-drag',
                                   onClick: (e) => { e.stopPropagation(); const tracksAfter = filtered.slice(index + 1); const context = { type: 'history', name: 'Top Tracks' }; setQueueWithContext(tracksAfter, context); handlePlay({ ...track, preferredResolver: resolverId }); },
-                                  style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: (source.confidence || 0) < bestConf ? 0.6 : 1, transition: 'transform 0.1s' },
+                                  style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: dim ? 0.6 : 1, transition: 'transform 0.1s' },
                                   onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                                   onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
                                   title: `Play from ${resolver.name}`
@@ -43138,10 +43130,7 @@ useEffect(() => {
                               });
                             })()
                           :
-                            React.createElement('div', { className: 'flex items-center gap-1' },
-                              React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer' }),
-                              React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: '0.1s' } })
-                            )
+                            null
                         )
                       );
                     })
@@ -43961,9 +43950,12 @@ useEffect(() => {
                   return React.createElement('div', { className: 'space-y-0' },
                     ...sorted.map((track, index) => {
                       // Use track.id to look up resolved sources from trackSources state
-                      const resolvedSources = trackSources[track.id] || track.sources || {};
-                      const hasResolved = Object.keys(resolvedSources).length > 0;
-                      const isResolving = Object.keys(resolvedSources).length === 0;
+                      // The row's sources, one rule for every list (lib/visible-sources):
+                      // resolving (shimmer), unplayable (dimmed, no icons) or playable.
+                      const { shown: shownSources, state: sourceState } = sourceRowState(track, { trackSources, playbackResolvers, resolverOrder });
+                      const hasResolved = sourceState === 'playable';
+                      const isResolving = sourceState === 'resolving';
+                      const isUnplayable = sourceState === 'unplayable';
                       const tracksAfterRecent = sorted.slice(index + 1);
 
                       return React.createElement('div', {
@@ -43988,7 +43980,7 @@ useEffect(() => {
                         onDragEnd: () => {
                           handlePlaylistDragEnd();
                         },
-                        className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${isResolving ? 'opacity-60' : 'hover:bg-gray-50/80'}`,
+                        className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${isResolving || isUnplayable ? 'opacity-60' : 'hover:bg-gray-50/80'}`,
                         style: { borderRadius: '8px', marginBottom: '2px' },
                         onClick: () => {
                           const tracksAfter = sorted.slice(index + 1);
@@ -44034,15 +44026,15 @@ useEffect(() => {
                                 React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: '0.1s' } })
                               )
                             : hasResolved ? (() => {
-                                const bestConf = getBestSourceConfidence(resolvedSources);
-                                return Object.entries(resolvedSources).filter(([resolverId]) => playbackResolvers.includes(resolverId)).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
+                                // The shared source-icon rule (lib/visible-sources).
+                                return shownSources.map(({ resolverId, source, dim }) => {
                                   const resolver = allResolvers.find(r => r.id === resolverId);
                                   if (!resolver || !resolver.play) return null;
                                   return React.createElement('button', {
                                     key: resolverId,
                                     className: 'no-drag',
                                     onClick: (e) => { e.stopPropagation(); const context = { type: 'friend', name: currentFriend?.name || 'Friend', tab: 'recent' }; setQueueWithContext(tracksAfterRecent, context); handlePlay({ ...track, preferredResolver: resolverId }); },
-                                    style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', opacity: (source.confidence || 0) < bestConf ? 0.6 : 1, transition: 'transform 0.1s' },
+                                    style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', opacity: dim ? 0.6 : 1, transition: 'transform 0.1s' },
                                     onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                                     onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
                                     title: `Play from ${resolver.name}`
@@ -44050,10 +44042,7 @@ useEffect(() => {
                                 });
                               })()
                             :
-                              React.createElement('div', { className: 'flex items-center gap-1' },
-                                React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', title: 'Resolving track...' }),
-                                React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: '0.1s' } })
-                              )
+                              null
                           )
                       );
                     })
@@ -44065,9 +44054,12 @@ useEffect(() => {
                     ? React.createElement('p', { className: 'text-center text-gray-400 py-8' }, 'No top tracks data')
                     : friendHistoryData.topTracks.map((track, index) => {
                         // Use track.id to look up resolved sources from trackSources state
-                        const resolvedSources = trackSources[track.id] || track.sources || {};
-                        const hasResolved = Object.keys(resolvedSources).length > 0;
-                        const isResolving = Object.keys(resolvedSources).length === 0;
+                        // The row's sources, one rule for every list (lib/visible-sources):
+                        // resolving (shimmer), unplayable (dimmed, no icons) or playable.
+                        const { shown: shownSources, state: sourceState } = sourceRowState(track, { trackSources, playbackResolvers, resolverOrder });
+                        const hasResolved = sourceState === 'playable';
+                        const isResolving = sourceState === 'resolving';
+                        const isUnplayable = sourceState === 'unplayable';
 
                         return React.createElement('div', {
                           key: track.id || index,
@@ -44091,7 +44083,7 @@ useEffect(() => {
                           onDragEnd: () => {
                             handlePlaylistDragEnd();
                           },
-                          className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${isResolving ? 'opacity-60' : 'hover:bg-gray-50/80'}`,
+                          className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${isResolving || isUnplayable ? 'opacity-60' : 'hover:bg-gray-50/80'}`,
                           style: { borderRadius: '8px', marginBottom: '2px' },
                           onClick: () => {
                             const tracksAfter = friendHistoryData.topTracks.slice(index + 1);
@@ -44137,15 +44129,15 @@ useEffect(() => {
                                 React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: '0.1s' } })
                               )
                             : hasResolved ? (() => {
-                                const bestConf = getBestSourceConfidence(resolvedSources);
-                                return Object.entries(resolvedSources).filter(([resolverId]) => playbackResolvers.includes(resolverId)).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
+                                // The shared source-icon rule (lib/visible-sources).
+                                return shownSources.map(({ resolverId, source, dim }) => {
                                   const resolver = allResolvers.find(r => r.id === resolverId);
                                   if (!resolver || !resolver.play) return null;
                                   return React.createElement('button', {
                                     key: resolverId,
                                     className: 'no-drag',
                                     onClick: (e) => { e.stopPropagation(); const context = { type: 'friend', name: currentFriend?.name || 'Friend', tab: 'topTracks' }; setQueueWithContext(friendHistoryData.topTracks.slice(index + 1), context); handlePlay({ ...track, preferredResolver: resolverId }); },
-                                    style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', opacity: (source.confidence || 0) < bestConf ? 0.6 : 1, transition: 'transform 0.1s' },
+                                    style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', opacity: dim ? 0.6 : 1, transition: 'transform 0.1s' },
                                     onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                                     onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
                                     title: `Play from ${resolver.name}`
@@ -44153,10 +44145,7 @@ useEffect(() => {
                                 });
                               })()
                             :
-                              React.createElement('div', { className: 'flex items-center gap-1' },
-                                React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', title: 'Resolving track...' }),
-                                React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: '0.1s' } })
-                              )
+                              null
                           )
                         );
                       })
@@ -56257,6 +56246,8 @@ useEffect(() => {
             currentTrack,
             resolverOrder,
             allResolvers,
+            playbackResolvers,
+            trackSources,
             queueDropTarget,
             draggedQueueTrack,
             insertedTrackId,
