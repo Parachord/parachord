@@ -6726,7 +6726,8 @@ const Parachord = () => {
       title: trackMeta.title,
       artist: trackMeta.artist,
       album,
-      duration: trackMeta.duration || 180,
+      // Unknown is null, never a made-up length a track list would show.
+      duration: trackMeta.duration > 0 ? trackMeta.duration : null,
       albumArt: trackMeta.albumArt,
       sourceUrl: sourceUrl,
       sources: {}
@@ -9370,7 +9371,7 @@ const Parachord = () => {
       title: track.title,
       artist: track.artist,
       album: track.album || '',
-      duration: track.duration || 180, // Default to 3 minutes if duration not scraped
+      duration: track.duration > 0 ? track.duration : null, // unknown if not scraped
       // These will be resolved by the resolution system
       source: null,
       resolvedBy: null,
@@ -23211,7 +23212,7 @@ ${trackListXml}
               title: track.title,
               artist: artistName,
               album: track.album || '',
-              duration: track.duration || 210,
+              duration: track.duration > 0 ? track.duration : null,
               sources: ['bandcamp'],
               bandcampUrl: track.sourceUrl
             };
@@ -23353,7 +23354,7 @@ ${trackListXml}
             title: track.title,
             artist: artistName,
             album: track.album || '',
-            duration: track.duration || 210,
+            duration: track.duration > 0 ? track.duration : null,
             sources: ['bandcamp'],
             bandcampUrl: track.sourceUrl
           };
