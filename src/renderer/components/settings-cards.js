@@ -8,7 +8,6 @@
 // the app's config-mutation functions arrive via props); no app state.
 const Icons = require('./icons');
 const { TextField, SecretField, Switch } = require('./fields');
-const { activateOnKey } = require('../lib/activate-on-key');
 const { Tooltip, SERVICE_LOGOS } = require('./ui-atoms');
 
 // ResolverCard component - Tomahawk-style colored card with centered logo

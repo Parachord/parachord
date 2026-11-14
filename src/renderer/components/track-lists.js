@@ -15,7 +15,7 @@
 // vendor global; ResolverIcon via the ui-atoms module; icons via the icons
 // module's own destructure below.
 const { ResolverIcon } = require('./ui-atoms');
-const { activateOnKey } = require('../lib/activate-on-key');
+const { CardButton } = require('./card-button');
 const Icons = require('./icons');
 const { Music, Pause, Play, X } = Icons;
 
@@ -278,7 +278,7 @@ const VirtualizedQueueList = React.memo(({
     const isInserted = insertedTrackId === track.id;
     const isFallingDown = droppingFromIndex !== null && index <= droppingFromIndex;
 
-    return React.createElement('div', {
+    return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`,
       key: track.id,
       'data-index': index,
       ref: virtualRow ? virtualizer.measureElement : undefined,
@@ -320,7 +320,7 @@ const VirtualizedQueueList = React.memo(({
           window.showItemMenu({ type: 'track', track, inQueue: true, queueIndex: index });
         }
       },
-      onClick: () => {
+      onActivate: () => {
         if (isLoading || isError) return;
         if (spinoffMode) exitSpinoff();
         setDroppingFromIndex(index);
@@ -331,7 +331,7 @@ const VirtualizedQueueList = React.memo(({
           handlePlay(track, { fromQueue: true });
           setDroppingFromIndex(null);
         }, 300);
-      }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
+      },
       onMouseEnter: () => {
         if (onTrackHover) onTrackHover(track.id);
       },
@@ -500,7 +500,7 @@ const VirtualizedQueueList = React.memo(({
           // This row only: the same song may be queued more than once.
           removeFromQueue(track.id, index);
         },
-        className: 'flex-shrink-0 p-1 text-gray-500 hover:text-red-400 hover:bg-white/10 rounded transition-colors opacity-0 group-hover:opacity-100',
+        className: 'flex-shrink-0 p-1 text-gray-500 hover:text-red-400 hover:bg-white/10 rounded transition-colors opacity-0 group-hover:opacity-100 card-reveal',
         'aria-label': isLoading ? 'Cancel' : 'Remove from queue', 'data-tooltip': isLoading ? 'Cancel' : 'Remove from queue'
       }, React.createElement(X, { size: 14 }))
     );

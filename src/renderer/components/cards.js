@@ -9,7 +9,6 @@
 // app.js for the in-component call sites; PlayTop10Icon / QueueTop10Icon are
 // cards-only (the playtop-10 / queue-top-10 affordances).
 const { ResolverIcon, PlaybackProgress, ShareButton } = require('./ui-atoms');
-const { activateOnKey } = require('../lib/activate-on-key');
 const { getBestSourceConfidence } = require('./track-lists');
 const Icons = require('./icons');
 const { EmptyState, ErrorState } = require('./states');
@@ -400,9 +399,9 @@ const SearchHistoryItem = ({ entry, onQueryClick, onResultClick, onRemove }) => 
     }
   };
 
-  return React.createElement('div', {
+  return React.createElement(CardButton, { label: selectedResult ? selectedResult.name : `Search for ${query}`,
     className: 'flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 group transition-colors cursor-pointer',
-    onClick: handleRowClick, role: 'button', tabIndex: 0, onKeyDown: activateOnKey
+    onActivate: handleRowClick
   },
     // Result thumbnail or search icon
     selectedResult?.imageUrl ?
@@ -434,7 +433,7 @@ const SearchHistoryItem = ({ entry, onQueryClick, onResultClick, onRemove }) => 
     // Remove button
     React.createElement('button', {
       onClick: (e) => { e.stopPropagation(); onRemove(query); },
-      className: 'opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-red-500 transition-opacity'
+      className: 'opacity-0 group-hover:opacity-100 card-reveal p-1 text-gray-400 hover:text-red-500 transition-opacity'
     },
       React.createElement(Icons.X, { className: 'w-4 h-4' })
     )
@@ -1749,7 +1748,7 @@ const ReleasePage = ({
             const isCurrentTrack = currentTrack?.id === trackId;
             const isNowPlaying = isCurrentTrack && playbackContext?.type === 'album' && playbackContext?.id === release.id;
 
-            return React.createElement('div', {
+            return React.createElement(CardButton, { label: track.title,
               key: index,
               'data-track-id': trackId,
               ref: (el) => {
@@ -1782,7 +1781,7 @@ const ReleasePage = ({
                 borderRadius: '8px',
                 marginBottom: '2px'
               },
-              onClick: () => {
+              onActivate: () => {
                 console.log('Track row clicked:', track.title);
 
                 // Play it, resolved or not. A row the page hasn't resolved yet
@@ -1809,7 +1808,7 @@ const ReleasePage = ({
                 } else {
                   handlePlay(trackForDrag);
                 }
-              }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
+              },
               onContextMenu: (e) => {
                 e.preventDefault();
                 if (onTrackContextMenu) {

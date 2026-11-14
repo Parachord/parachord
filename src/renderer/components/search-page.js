@@ -19,9 +19,9 @@
 // from props under their old names.
 
 const Icons = require('./icons');
+const { CardButton } = require('./card-button');
 const { EmptyState, ErrorState } = require('./states');
 const { SortMenu } = require('./sort-menu');
-const { activateOnKey } = require('../lib/activate-on-key');
 const { ResolverIcon } = require('./ui-atoms');
 const { SectionHeader, SECTION_HEADER_GAP } = require('./section-header');
 const { artistOpenOptions, creditOpenOptions, trackArtistOpenOptions } = require('../lib/artist-open');
@@ -340,7 +340,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                   ...filteredArtists.map((artist, index) => {
                     const animationDelay = Math.min(index * 30, 300);
                     const searchArtistPattern = generateArtistPattern(artist.name);
-                    return React.createElement('div', {
+                    return React.createElement(CardButton, { label: artist.name,
                       key: artist._rowKey || artist.id,
                       className: 'rounded-lg overflow-hidden cursor-pointer group release-card card-fade-up',
                       style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)', animationDelay: `${animationDelay}ms` },
@@ -356,7 +356,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                           }
                         }));
                       },
-                      onClick: () => fetchArtistData(artist.name, artistOpenOptions(artist)), role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
+                      onActivate: () => fetchArtistData(artist.name, artistOpenOptions(artist)),
                       onContextMenu: (e) => {
                         e.preventDefault();
                         e.stopPropagation();
@@ -389,7 +389,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                         artist.image && React.createElement('img', {
                           src: artist.image,
                           alt: artist.name,
-                          className: 'absolute inset-0 w-full h-full object-cover transition-all duration-300 group-hover/art:scale-105',
+                          className: 'absolute inset-0 w-full h-full object-cover transition-all duration-300 group-hover:scale-105',
                           style: { opacity: 0 },
                           ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
                           onLoad: (e) => { e.target.style.opacity = '1'; },
@@ -397,7 +397,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                         }),
                         // Hover overlay with Play and Queue buttons
                         React.createElement('div', {
-                          className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-3',
+                          className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 card-reveal transition-opacity duration-200 flex items-center justify-center gap-3',
                           style: { pointerEvents: 'auto' }
                         },
                           // Play top 10 button
@@ -500,7 +500,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                 },
                   filteredAlbums.map((album, index) => {
                     const animationDelay = Math.min(index * 30, 300);
-                    return React.createElement('div', {
+                    return React.createElement(CardButton, { label: album.title,
                       key: album._rowKey || album.id,
                       className: 'group cursor-pointer release-card card-fade-up',
                       style: {
@@ -527,7 +527,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                         }));
                       },
                       onMouseEnter: () => prefetchSearchAlbumTracks(album),
-                      onClick: () => handleAlbumClick(album), role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
+                      onActivate: () => handleAlbumClick(album),
                       onContextMenu: (e) => {
                         e.preventDefault();
                         e.stopPropagation();
@@ -560,7 +560,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                         }),
                         // Hover overlay with action buttons (Add to Playlist, Play, Queue)
                         React.createElement('div', {
-                          className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-3'
+                          className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 card-reveal transition-opacity duration-200 flex items-center justify-center gap-3'
                         },
                           // Add to Playlist button
                           React.createElement('button', {
@@ -701,7 +701,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                     const isCurrentTrack = currentTrack?.id === track.id;
                     const isNowPlaying = isCurrentTrack && playbackContext?.type === 'search';
 
-                    return React.createElement('div', {
+                    return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`,
                       key: track._rowKey || track.id,
                       'data-track-id': track.id,
                       ref: (el) => {
@@ -741,12 +741,12 @@ const SearchPage = React.memo(function SearchPage(props) {
                       borderRadius: '8px',
                       marginBottom: '2px'
                     },
-                    onClick: () => {
+                    onActivate: () => {
                       const tracksAfter = filteredTracks.slice(index + 1);
                       const context = { type: 'search', name: searchQuery };
                       setQueueWithContext(tracksAfter, context);
                       handlePlay(track);
-                    }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
+                    },
                     onContextMenu: (e) => {
                       e.preventDefault();
                       if (window.electron?.contextMenu?.showTrackMenu) {
@@ -921,7 +921,7 @@ const SearchPage = React.memo(function SearchPage(props) {
               },
                 searchResults.playlists.map((playlist, index) => {
                   const animationDelay = Math.min(index * 30, 300);
-                  return React.createElement('div', {
+                  return React.createElement(CardButton, { label: playlist.title,
                     key: playlist.title,
                     className: 'cursor-pointer group release-card card-fade-up',
                     style: {
@@ -931,7 +931,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       boxShadow: 'var(--card-shadow)',
                       animationDelay: `${animationDelay}ms`
                     },
-                    onClick: () => handlePlaylistClick(playlist), role: 'button', tabIndex: 0, onKeyDown: activateOnKey
+                    onActivate: () => handlePlaylistClick(playlist)
                   },
                     // Playlist icon square with hover overlay
                     React.createElement('div', {
@@ -958,7 +958,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       ),
                       // Hover overlay with action buttons
                       React.createElement('div', {
-                        className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-3'
+                        className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 card-reveal transition-opacity duration-200 flex items-center justify-center gap-3'
                       },
                         // Add to Playlist button
                         React.createElement('button', {
@@ -1414,7 +1414,7 @@ const SearchPage = React.memo(function SearchPage(props) {
               ...searchResults.tracks.slice(0, getItemsPerRow(140)).map((track, index) => {
                 const trackItemWidth = Math.floor((searchContainerWidth - (getItemsPerRow(140) - 1) * 16) / getItemsPerRow(140));
                 const animationDelay = Math.min(index * 40, 300);
-                return React.createElement('div', {
+                return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`,
                   key: track._rowKey || track.id,
                   className: 'group cursor-grab active:cursor-grabbing release-card card-fade-up',
                   style: {
@@ -1426,7 +1426,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                     animationDelay: `${animationDelay}ms`
                   },
                   draggable: true,
-                  onClick: () => {
+                  onActivate: () => {
                     const cachedArt = getCachedAlbumArt(track.artist, track.album, track.releaseGroupId, track.releaseId);
                     saveSearchHistory(searchQuery, {
                       type: 'track',
@@ -1436,7 +1436,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       imageUrl: track.albumArt || cachedArt
                     });
                     handlePlay(track);
-                  }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
+                  },
                   onDragStart: (e) => {
                     e.dataTransfer.effectAllowed = 'copy';
                     e.dataTransfer.setData('text/plain', JSON.stringify({
@@ -1486,7 +1486,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       key: track.albumArt || getCachedAlbumArt(track.artist, track.album, track.releaseGroupId, track.releaseId),
                       src: track.albumArt || getCachedAlbumArt(track.artist, track.album, track.releaseGroupId, track.releaseId),
                       alt: track.album,
-                      className: 'absolute inset-0 w-full h-full object-cover transition-all duration-300 group-hover/art:scale-105',
+                      className: 'absolute inset-0 w-full h-full object-cover transition-all duration-300 group-hover:scale-105',
                       style: { opacity: 0 },
                       ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
                       onLoad: (e) => { e.target.style.opacity = '1'; },
@@ -1494,7 +1494,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                     }),
                     // Hover overlay with action buttons (Add to Playlist, Play, Queue)
                     React.createElement('div', {
-                      className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-1.5',
+                      className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 card-reveal transition-opacity duration-200 flex items-center justify-center gap-1.5',
                       style: { pointerEvents: 'auto' }
                     },
                       // Add to Playlist button
@@ -1556,7 +1556,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                     ),
                     // Resolver dots - bottom right corner (hidden on hover)
                     track.sources && Object.keys(track.sources).filter(id => !track.sources[id]?.noMatch).length > 0 && React.createElement('div', {
-                      className: 'absolute bottom-1.5 right-1.5 flex gap-1 transition-opacity group-hover/art:opacity-0'
+                      className: 'absolute bottom-1.5 right-1.5 flex gap-1 transition-opacity group-hover:opacity-0'
                     },
                       ...Object.keys(track.sources).filter(id => !track.sources[id]?.noMatch).slice(0, 4).map(source => {
                         const sourceResolver = (allResolvers || []).find(r => r.id === source);
@@ -1615,9 +1615,9 @@ const SearchPage = React.memo(function SearchPage(props) {
               ...searchResults.albums.slice(0, getItemsPerRow(160)).map((album, index) => {
                 const albumItemWidth = Math.floor((searchContainerWidth - (getItemsPerRow(160) - 1) * 16) / getItemsPerRow(160));
                 const animationDelay = Math.min(index * 40, 300);
-                return React.createElement('div', {
+                return React.createElement(CardButton, { label: album.title,
                   key: album._rowKey || album.id,
-                  onClick: () => {
+                  onActivate: () => {
                     saveSearchHistory(searchQuery, {
                       type: 'album',
                       id: album.id,
@@ -1626,7 +1626,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       imageUrl: album.albumArt || null
                     });
                     handleAlbumClick(album);
-                  }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
+                  },
                   onMouseEnter: () => {
                     // Prefetch album tracks on hover for context menu
                     prefetchSearchAlbumTracks(album);
@@ -1683,7 +1683,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       key: album.albumArt,
                       src: album.albumArt,
                       alt: album.title,
-                      className: 'absolute inset-0 w-full h-full object-cover transition-all duration-300 group-hover/art:scale-105',
+                      className: 'absolute inset-0 w-full h-full object-cover transition-all duration-300 group-hover:scale-105',
                       style: { opacity: 0 },
                       ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
                       onLoad: (e) => { e.target.style.opacity = '1'; },
@@ -1691,7 +1691,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                     }),
                     // Hover overlay with action buttons (Add to Playlist, Play, Queue)
                     React.createElement('div', {
-                      className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-2',
+                      className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 card-reveal transition-opacity duration-200 flex items-center justify-center gap-2',
                       style: { pointerEvents: 'auto' }
                     },
                       // Add to Playlist button

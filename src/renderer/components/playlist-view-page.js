@@ -17,7 +17,7 @@
 // from props under their old names.
 
 const Icons = require('./icons');
-const { activateOnKey } = require('../lib/activate-on-key');
+const { CardButton } = require('./card-button');
 const { ResolverIcon, ShareButton } = require('./ui-atoms');
 const { Menu } = require('./menu');
 const { playlistMenu } = require('../lib/item-menus');
@@ -1103,7 +1103,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                     const isCurrentTrack = currentTrack?.id === track.id;
                     const isNowPlaying = isCurrentTrack && playbackContext?.type === 'playlist' && playbackContext?.id === selectedPlaylist?.id;
 
-                    return React.createElement('div', {
+                    return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`,
                       key: track.id || index,
                       'data-track-id': track.id,
                       ref: (el) => {
@@ -1159,13 +1159,13 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                         borderRadius: '8px',
                         marginBottom: '2px'
                       },
-                      onClick: () => {
+                      onActivate: () => {
                         if (draggedPlaylistTrack !== null) return; // Don't play if dragging
                         const tracksAfter = playlistTracks.slice(index + 1);
                         const context = { type: 'playlist', id: selectedPlaylist?.id, name: selectedPlaylist?.title };
                         setQueueWithContext(tracksAfter, context);
                         handlePlay(track);
-                      }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
+                      },
                       onContextMenu: (e) => {
                         e.preventDefault();
                         if (window.electron?.contextMenu?.showTrackMenu) {

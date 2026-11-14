@@ -20,8 +20,8 @@
 // from props under their old names.
 
 const { sellerColor, sellerTextColor, sellerBadgeBg, sellerShortName, sellerName } = require('../lib/ticket-sellers');
-const { activateOnKey } = require('../lib/activate-on-key');
 const { Tooltip } = require('./ui-atoms');
+const { CardButton } = require('./card-button');
 const Icons = require('./icons');
 const { EmptyState, ErrorState } = require('./states');
 const { SortMenu } = require('./sort-menu');
@@ -1616,7 +1616,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                 },
                   [...filteredArtists].sort((a, b) => b.match - a.match).map((artist, index) => {
                     const relatedPattern = generateArtistPattern(artist.name);
-                    return React.createElement('div', {
+                    return React.createElement(CardButton, { label: artist.name,
                       key: artist.name,
                       className: 'rounded-lg overflow-hidden cursor-pointer group release-card card-fade-up',
                       style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)', animationDelay: `${Math.min(index * 30, 300)}ms` },
@@ -1632,7 +1632,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                           }
                         }));
                       },
-                      onClick: () => fetchArtistData(artist.name), role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
+                      onActivate: () => fetchArtistData(artist.name),
                       onContextMenu: (e) => {
                         e.preventDefault();
                         e.stopPropagation();
@@ -1665,7 +1665,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                         artist.image && React.createElement('img', {
                           src: artist.image,
                           alt: artist.name,
-                          className: 'absolute inset-0 w-full h-full object-cover transition-all duration-300 group-hover/art:scale-105',
+                          className: 'absolute inset-0 w-full h-full object-cover transition-all duration-300 group-hover:scale-105',
                           style: { opacity: 0 },
                           ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
                           onLoad: (e) => { e.target.style.opacity = '1'; },
@@ -1673,7 +1673,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                         }),
                         // Hover overlay with action buttons (Play, Queue) - Top 10 icons
                         React.createElement('div', {
-                          className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-3',
+                          className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 card-reveal transition-opacity duration-200 flex items-center justify-center gap-3',
                           style: { pointerEvents: 'auto' }
                         },
                           // Play top 10 button (center, larger)

@@ -543,6 +543,7 @@ window.musicbrainzLimiter = window.createLimiter({
   isThrottleError: (err) => !!(err && (err.mbThrottled || err.mbUnreachable))
 });
 const { mbFetchWithRetries, describeMusicBrainzError } = require('./lib/musicbrainz-fetch');
+const { CardButton } = require('./components/card-button');
 const { createIpv4Fallback } = require('./lib/metabrainz-ipv4');
 const {
   isMusicBrainzId, resolverIdFromReleaseId, pickCatalogAlbum, orderCatalogResolvers,
@@ -1983,7 +1984,6 @@ const { statusBadgeStyle } = require('./lib/status-badge');
 const { PAGE_COLORS, pageTint } = require('./lib/page-colors');
 const { Modal, ConfirmModal } = require('./components/modal');
 const { Button } = require('./components/button');
-const { activateOnKey } = require('./lib/activate-on-key');
 const { ToastRegion, NowPlayingAnnouncer } = require('./components/toast');
 const { SortMenu } = require('./components/sort-menu');
 const { Menu } = require('./components/menu');
@@ -16941,8 +16941,8 @@ ${trackListXml}
 
     const [isHovered, setIsHovered] = useState(false);
 
-    return React.createElement('div', {
-      onClick: handleClick, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
+    return React.createElement(CardButton, { label: artist && title ? `${title} by ${artist}` : (title || artist || "Result"),
+      onActivate: handleClick,
       style: {
         display: 'flex',
         alignItems: 'center',
@@ -17003,8 +17003,8 @@ ${trackListXml}
         // Hover overlay with play button (only for tracks and albums)
         // Styled to match app's standard hover play buttons (bg-black/50, white button, shadow-lg)
         // For albums: clicking play button plays the album, clicking elsewhere opens album page
-        (type === 'track' || type === 'album') && React.createElement('div', {
-          onClick: handlePlayButtonClick, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
+        (type === 'track' || type === 'album') && React.createElement('button', { type: 'button', 'aria-label': 'Play',
+          onClick: handlePlayButtonClick,
           style: {
             position: 'absolute',
             inset: 0,
@@ -36574,7 +36574,7 @@ useEffect(() => {
             const isNewlyPinned = newlyPinnedFriendIds.has(friend.id);
             const wasMoved = movedFriendIds.has(friend.id);
 
-            return React.createElement('div', {
+            return React.createElement(CardButton, { label: friend.displayName,
               key: friend.id,
               ref: (el) => {
                 if (el) {
@@ -36594,7 +36594,7 @@ useEffect(() => {
                 color: isSelected ? 'var(--text-primary)' : 'inherit'
               },
               draggable: true,
-              onClick: () => navigateToFriend(friend), role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
+              onActivate: () => navigateToFriend(friend),
               onDragStart: (e) => {
                 e.dataTransfer.setData('draggedFriendId', friend.id);
                 e.dataTransfer.effectAllowed = 'move';
@@ -36682,7 +36682,7 @@ useEffect(() => {
                         className: `flex-shrink-0 transition-all p-1 rounded ${
                           listenAlongFriend?.id === friend.id
                             ? 'text-accent hover:bg-accent-tint opacity-100'
-                            : 'text-ink-tertiary hover:text-ink-secondary hover:bg-surface-hover opacity-0 group-hover:opacity-100'
+                            : 'text-ink-tertiary hover:text-ink-secondary hover:bg-surface-hover opacity-0 group-hover:opacity-100 card-reveal'
                         }`
                       },
                       React.createElement('svg', {
@@ -37611,13 +37611,13 @@ React.createElement('div', {
                   const hasCachedCovers = covers.length > 0;
                   const animationDelay = Math.min(index * 30, 300);
 
-                  return React.createElement('div', {
+                  return React.createElement(CardButton, { label: playlist.title,
                     key: playlist.id,
-                    onClick: (e) => {
+                    onActivate: (e) => {
                       e.preventDefault();
                       e.stopPropagation();
                       loadPlaylist(playlist);
-                    }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
+                    },
                     onContextMenu: (e) => {
                       e.preventDefault();
                       if (window.electron?.contextMenu?.showTrackMenu) {
@@ -37729,7 +37729,7 @@ React.createElement('div', {
 
                       // Hover overlay with action buttons (Add to Playlist, Play, Queue)
                       React.createElement('div', {
-                        className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-3'
+                        className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 card-reveal transition-opacity duration-200 flex items-center justify-center gap-3'
                       },
                         // Add to Playlist button
                         React.createElement('button', {
@@ -37888,7 +37888,7 @@ React.createElement('div', {
                 const hasCachedCovers = covers.length > 0;
                 const trackCount = playlist.tracks?.length || 0;
 
-                return React.createElement('div', {
+                return React.createElement(CardButton, { label: playlist.title,
                   key: playlist.id,
                   draggable: true,
                   onDragStart: (e) => {
@@ -37907,11 +37907,11 @@ React.createElement('div', {
                       }
                     }));
                   },
-                  onClick: (e) => {
+                  onActivate: (e) => {
                     e.preventDefault();
                     e.stopPropagation();
                     loadPlaylist(playlist);
-                  }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
+                  },
                   onContextMenu: (e) => {
                     e.preventDefault();
                     if (window.electron?.contextMenu?.showTrackMenu) {
@@ -38018,14 +38018,14 @@ React.createElement('div', {
                       try { await refreshHostedPlaylist(playlist.id); }
                       finally { setRefreshingPlaylist(null); }
                     },
-                    className: 'w-8 h-8 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0',
+                    className: 'w-8 h-8 flex items-center justify-center opacity-0 group-hover:opacity-100 card-reveal transition-opacity flex-shrink-0',
                     'aria-label': 'Refresh from source', 'data-tooltip': 'Refresh from source',
                   },
                     React.createElement(Icons.RefreshCw, { className: `w-4 h-4 text-ink-tertiary ${refreshingPlaylist === playlist.id ? 'animate-spin' : ''}` })
                   ),
                   // Play icon on hover
                   React.createElement('button', { type: 'button', 'aria-label': 'Play playlist',
-                    className: 'w-8 h-8 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 cursor-pointer hover:scale-110 transition-transform',
+                    className: 'w-8 h-8 flex items-center justify-center opacity-0 group-hover:opacity-100 card-reveal transition-opacity flex-shrink-0 cursor-pointer hover:scale-110 transition-transform',
                     onClick: (e) => {
                       e.preventDefault();
                       e.stopPropagation();
@@ -38362,7 +38362,7 @@ React.createElement('div', {
                 className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-5 pb-6'
               },
                 filtered.map((item, index) =>
-                React.createElement('div', {
+                React.createElement(CardButton, { label: `${item.title} by ${item.artist}`,
                   key: item.id,
                   className: 'group cursor-pointer release-card card-fade-up',
                   style: {
@@ -38375,7 +38375,7 @@ React.createElement('div', {
                   },
                   onMouseEnter: () => scheduleHoverPrefetch(item),
                   onMouseLeave: cancelHoverPrefetch,
-                  onClick: () => { cancelHoverPrefetch(); openChartsAlbum(item); }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
+                  onActivate: () => { cancelHoverPrefetch(); openChartsAlbum(item); },
                   onContextMenu: (e) => {
                     e.preventDefault();
                     if (window.electron?.contextMenu?.showTrackMenu) {
@@ -38455,7 +38455,7 @@ React.createElement('div', {
                     }, `#${item.rank}`),
                     // Hover overlay with action buttons (Add to Playlist, Play, Queue)
                     React.createElement('div', {
-                      className: 'opacity-0 group-hover:opacity-100',
+                      className: 'opacity-0 group-hover:opacity-100 card-reveal',
                       style: {
                         position: 'absolute',
                         inset: 0,
@@ -38642,7 +38642,7 @@ React.createElement('div', {
                   const isCurrentTrack = currentTrack?.title === track.title && currentTrack?.artist === track.artist;
                   const isNowPlaying = isCurrentTrack && isPlaying;
 
-                  return React.createElement('div', {
+                  return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`,
                     key: track.id,
                     'data-track-id': track.id,
                     ref: (el) => {
@@ -38662,7 +38662,7 @@ React.createElement('div', {
                       isResolving ? 'opacity-60' : ''
                     } ${isNowPlaying ? 'bg-accent-tint' : 'hover:bg-surface-hover'}`,
                     style: { borderRadius: '8px', marginBottom: '2px' },
-                    onClick: () => {
+                    onActivate: () => {
                       const tracksAfter = filtered.slice(index + 1);
                       const contextName = chartsSongsSource === 'apple' ? 'Apple Music Charts' : 'Last.fm Charts';
                       const context = { type: 'songs-charts', name: contextName };
@@ -38675,7 +38675,7 @@ React.createElement('div', {
                         id: track.id, title: track.title, artist: track.artist, album: '',
                         sources: trackSources[track.id] || {}
                       });
-                    }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
+                    },
                     onContextMenu: (e) => {
                       e.preventDefault();
                       if (window.electron?.contextMenu?.showTrackMenu) {
@@ -39025,7 +39025,7 @@ React.createElement('div', {
                   className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4'
                 },
                   filtered.map((release, index) =>
-                    React.createElement('div', {
+                    React.createElement(CardButton, { label: `${release.title} by ${release.artist}`,
                       key: release.id,
                       className: 'group text-left release-card card-fade-up',
                       style: {
@@ -39039,10 +39039,10 @@ React.createElement('div', {
                       },
                       onMouseEnter: () => scheduleHoverPrefetch(release),
                       onMouseLeave: cancelHoverPrefetch,
-                      onClick: () => {
+                      onActivate: () => {
                         cancelHoverPrefetch();
                         openChartsAlbum({ artist: release.artist, title: release.title, albumArt: release.albumArt, releaseGroupId: release.id, date: release.date, releaseType: release.releaseType });
-                      }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
+                      },
                       onContextMenu: (e) => {
                         e.preventDefault();
                         if (window.electron?.contextMenu?.showTrackMenu) {
@@ -39074,7 +39074,7 @@ React.createElement('div', {
                           key: release.albumArt,
                           src: release.albumArt,
                           alt: release.title,
-                          className: 'group-hover/art:scale-105',
+                          className: 'group-hover:scale-105',
                           style: {
                             position: 'absolute',
                             inset: 0,
@@ -39112,7 +39112,7 @@ React.createElement('div', {
                         ),
                         // Hover overlay with action buttons
                         React.createElement('div', {
-                          className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 pointer-events-none group-hover/art:pointer-events-auto transition-opacity duration-200 flex items-center justify-center gap-3',
+                          className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 card-reveal pointer-events-none group-hover:pointer-events-auto transition-opacity duration-200 flex items-center justify-center gap-3',
                           style: { borderRadius: '6px', zIndex: 20 }
                         },
                           // Add to Playlist button
@@ -39440,7 +39440,7 @@ React.createElement('div', {
               className: 'space-y-3 pb-6'
             },
               sorted.map((album, index) =>
-              React.createElement('div', {
+              React.createElement(CardButton, { label: `${album.title} by ${album.artist}`,
                 key: album.id,
                 className: 'group flex gap-4 cursor-grab active:cursor-grabbing release-card card-fade-up',
                 style: {
@@ -39469,7 +39469,7 @@ React.createElement('div', {
                   e.dataTransfer.setData('text/plain', JSON.stringify(albumData));
                 },
                 onMouseEnter: () => prefetchCriticsPicksTracks(album),
-                onClick: () => openCriticsPicksAlbum(album), role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
+                onActivate: () => openCriticsPicksAlbum(album),
                 onContextMenu: (e) => {
                   e.preventDefault();
                   if (window.electron?.contextMenu?.showTrackMenu) {
@@ -39536,7 +39536,7 @@ React.createElement('div', {
                   }),
                   // Hover overlay with action buttons (Add to Playlist, Play, Queue)
                   React.createElement('div', {
-                    className: 'opacity-0 group-hover:opacity-100',
+                    className: 'opacity-0 group-hover:opacity-100 card-reveal',
                     style: {
                       position: 'absolute',
                       inset: 0,
@@ -40579,7 +40579,7 @@ React.createElement('div', {
               const recsArtistPattern = generateArtistPattern(item.name);
               const img = imageFor(item);
               const imgLoaded = imageLoadedFor(item);
-              return React.createElement('div', {
+              return React.createElement(CardButton, { label: item.name,
                 key: item.id,
                 className: 'rounded-lg overflow-hidden cursor-pointer group release-card card-fade-up',
                 style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)', animationDelay: `${Math.min(index * 30, 300)}ms` },
@@ -40591,7 +40591,7 @@ React.createElement('div', {
                     artist: { id: item.id, name: item.name, image: img }
                   }));
                 },
-                onClick: () => fetchArtistData(item.name), role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
+                onActivate: () => fetchArtistData(item.name),
                 onContextMenu: (e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -40616,7 +40616,7 @@ React.createElement('div', {
                     className: 'absolute inset-0 w-full h-full object-cover'
                   }),
                   React.createElement('div', {
-                    className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-3',
+                    className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 card-reveal transition-opacity duration-200 flex items-center justify-center gap-3',
                     style: { pointerEvents: 'auto' }
                   },
                     React.createElement('button', {
@@ -40678,7 +40678,7 @@ React.createElement('div', {
                 }
                 return albumTracks;
               };
-              return React.createElement('div', {
+              return React.createElement(CardButton, { label: `${item.name} by ${item.artist}`,
                 key: item.id,
                 className: 'rounded-lg overflow-hidden cursor-pointer group release-card card-fade-up',
                 style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)', animationDelay: `${Math.min(index * 30, 300)}ms` },
@@ -40690,7 +40690,7 @@ React.createElement('div', {
                     album: { title: item.name, artist: item.artist, art }
                   }));
                 },
-                onClick: () => handleCollectionAlbumClick({ title: item.name, artist: item.artist }), role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
+                onActivate: () => handleCollectionAlbumClick({ title: item.name, artist: item.artist }),
                 // Fetch the tracks after a short hover, so the menu can queue
                 // them. It sent none, so its queue and playlist items were
                 // always disabled ("click album first", design audit bug 18).
@@ -40760,7 +40760,7 @@ React.createElement('div', {
                     }
                   }),
                   React.createElement('div', {
-                    className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 pointer-events-none group-hover/art:pointer-events-auto transition-opacity duration-200 flex items-center justify-center gap-3',
+                    className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 card-reveal pointer-events-none group-hover:pointer-events-auto transition-opacity duration-200 flex items-center justify-center gap-3',
                     // Over the cover and the "Coming" badge (same layer, later), under
                     // the reason badge (zIndex 2), which stays hoverable.
                     style: { borderRadius: '6px', zIndex: 1 }
@@ -40834,11 +40834,11 @@ React.createElement('div', {
             const playlistCard = (item, index, section) => {
               const art = imageFor(item);
               const artLoaded = imageLoadedFor(item);
-              return React.createElement('div', {
+              return React.createElement(CardButton, { label: item.title || item.name,
                 key: item.id,
                 className: 'rounded-lg overflow-hidden cursor-pointer group release-card card-fade-up',
                 style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)', animationDelay: `${Math.min(index * 30, 300)}ms` },
-                onClick: () => openRecommendationPlaylist(item, section), role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
+                onActivate: () => openRecommendationPlaylist(item, section),
                 onMouseEnter: () => prefetchRecommendationPlaylist(item),
                 onMouseLeave: () => cancelRecommendationPlaylistPrefetch(item),
                 onContextMenu: (e) => {
@@ -40863,7 +40863,7 @@ React.createElement('div', {
                     className: 'absolute inset-0 w-full h-full object-cover'
                   }),
                   React.createElement('div', {
-                    className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 pointer-events-none group-hover/art:pointer-events-auto transition-opacity duration-200 flex items-center justify-center gap-3',
+                    className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 card-reveal pointer-events-none group-hover:pointer-events-auto transition-opacity duration-200 flex items-center justify-center gap-3',
                     style: { borderRadius: '6px', zIndex: 20 }
                   },
                     // The standard playlist hover set (the Playlists page's
@@ -40958,11 +40958,11 @@ React.createElement('div', {
                 source: item.resolverId,
                 creator
               };
-              return React.createElement('div', {
+              return React.createElement(CardButton, { label: item.title || item.name,
                 key: item.id,
                 className: 'rounded-lg overflow-hidden cursor-pointer group release-card card-fade-up',
                 style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)', animationDelay: `${Math.min(index * 30, 300)}ms` },
-                onClick: () => loadPlaylist({
+                onActivate: () => loadPlaylist({
                   id: record.id,
                   listenbrainzId: item.weekly.id,
                   title: record.title,
@@ -40974,7 +40974,7 @@ React.createElement('div', {
                   isEphemeral: true,
                   source: record.source,
                   creator: record.creator
-                }), role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
+                }),
                 onContextMenu: (e) => {
                   e.preventDefault();
                   if (window.electron?.contextMenu?.showTrackMenu) {
@@ -40999,7 +40999,7 @@ React.createElement('div', {
                       : [])
                   ),
                   React.createElement('div', {
-                    className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 pointer-events-none group-hover/art:pointer-events-auto transition-opacity duration-200 flex items-center justify-center',
+                    className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 card-reveal pointer-events-none group-hover:pointer-events-auto transition-opacity duration-200 flex items-center justify-center',
                     style: { zIndex: 20 }
                   },
                     React.createElement('button', {
@@ -41055,7 +41055,7 @@ React.createElement('div', {
                 setQueueWithContext(tracksAfter, context);
                 handlePlay(playResolverId ? { ...track, preferredResolver: playResolverId } : track);
               };
-              return React.createElement('div', {
+              return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`,
                 key: track.id,
                 'data-track-id': track.id,
                 ref: (el) => {
@@ -41082,7 +41082,7 @@ React.createElement('div', {
                   isResolving ? 'opacity-60' : ''
                 } ${isNowPlaying ? 'bg-accent-tint' : (isResolving ? '' : 'hover:bg-surface-hover')}`,
                 style: { borderRadius: '8px', marginBottom: '2px' },
-                onClick: () => queueTail(), role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
+                onActivate: () => queueTail(),
                 onContextMenu: (e) => {
                   e.preventDefault();
                   if (window.electron?.contextMenu?.showTrackMenu) {
@@ -41748,7 +41748,7 @@ React.createElement('div', {
                       const hasResolved = Object.keys(resolvedSources).length > 0;
                       const isResolving = Object.keys(resolvedSources).length === 0;
 
-                      return React.createElement('div', {
+                      return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`,
                         key: track.id,
                         'data-track-id': track.id,
                         ref: (el) => {
@@ -41778,12 +41778,12 @@ React.createElement('div', {
                           borderRadius: '8px',
                           marginBottom: '2px'
                         },
-                        onClick: () => {
+                        onActivate: () => {
                           const tracksAfter = sorted.slice(index + 1);
                           const context = { type: 'history', name: 'History' };
                           setQueueWithContext(tracksAfter, context);
                           handlePlay(track);
-                        }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
+                        },
                         onContextMenu: (e) => {
                           e.preventDefault();
                           if (window.electron?.contextMenu?.showTrackMenu) {
@@ -41883,7 +41883,7 @@ React.createElement('div', {
                       // Use track.id to look up resolved sources from trackSources state
                       const resolvedSources = trackSources[track.id] || track.sources || {};
                       const hasResolved = Object.keys(resolvedSources).length > 0;
-                      return React.createElement('div', {
+                      return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`,
                         key: track.id,
                         'data-track-id': track.id,
                         ref: (el) => {
@@ -41905,7 +41905,7 @@ React.createElement('div', {
                         onDragEnd: () => { handlePlaylistDragEnd(); },
                         className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${!hasResolved ? 'opacity-60' : 'hover:bg-surface-hover'}`,
                         style: { borderRadius: '8px', marginBottom: '2px' },
-                        onClick: () => { const tracksAfter = filtered.slice(index + 1); const context = { type: 'history', name: 'Top Tracks' }; setQueueWithContext(tracksAfter, context); handlePlay(track); }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
+                        onActivate: () => { const tracksAfter = filtered.slice(index + 1); const context = { type: 'history', name: 'Top Tracks' }; setQueueWithContext(tracksAfter, context); handlePlay(track); },
                         onContextMenu: (e) => { e.preventDefault(); if (window.electron?.contextMenu?.showTrackMenu) window.showItemMenu({ type: 'track', track }); }
                       },
                         React.createElement('span', { className: 'flex-shrink-0 text-right', style: { width: '32px', fontSize: '12px', fontWeight: '500', color: 'var(--text-tertiary)' } }, `#${track.rank}`),
@@ -41991,7 +41991,7 @@ React.createElement('div', {
                 },
                   ...topArtists.artists.map((artist, index) => {
                     const topArtistPattern = generateArtistPattern(artist.name);
-                    return React.createElement('div', {
+                    return React.createElement(CardButton, { label: artist.name,
                       key: artist.id,
                       className: 'rounded-lg overflow-hidden cursor-pointer group release-card card-fade-up',
                       style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)', animationDelay: `${Math.min(index * 30, 300)}ms` },
@@ -42007,7 +42007,7 @@ React.createElement('div', {
                           }
                         }));
                       },
-                      onClick: () => fetchArtistData(artist.name), role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
+                      onActivate: () => fetchArtistData(artist.name),
                       onContextMenu: (e) => {
                         e.preventDefault();
                         e.stopPropagation();
@@ -42040,7 +42040,7 @@ React.createElement('div', {
                         artist.image && React.createElement('img', {
                           src: artist.image,
                           alt: artist.name,
-                          className: 'absolute inset-0 w-full h-full object-cover transition-all duration-300 group-hover/art:scale-105',
+                          className: 'absolute inset-0 w-full h-full object-cover transition-all duration-300 group-hover:scale-105',
                           style: { opacity: 0 },
                           ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
                           onLoad: (e) => { e.target.style.opacity = '1'; },
@@ -42052,7 +42052,7 @@ React.createElement('div', {
                         }, `#${artist.rank}`),
                         // Hover overlay with action buttons (Play, Queue) - Top 10 icons
                         React.createElement('div', {
-                          className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-3',
+                          className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 card-reveal transition-opacity duration-200 flex items-center justify-center gap-3',
                           style: { pointerEvents: 'auto' }
                         },
                           // Play top 10 button (center, larger)
@@ -42167,7 +42167,7 @@ React.createElement('div', {
                   className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-5 pb-6'
                 },
                   ...topAlbums.albums.map((album, index) =>
-                    React.createElement('div', {
+                    React.createElement(CardButton, { label: `${album.name} by ${album.artist}`,
                       key: album.id,
                       className: 'group cursor-pointer release-card card-fade-up',
                       style: {
@@ -42177,7 +42177,7 @@ React.createElement('div', {
                         boxShadow: 'var(--card-shadow)',
                         animationDelay: `${Math.min(index * 30, 300)}ms`
                       },
-                      onClick: () => openTopAlbum(album), role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
+                      onActivate: () => openTopAlbum(album),
                       onMouseEnter: () => prefetchTopAlbumTracks(album.artist, album.name, album.image),
                       onContextMenu: (e) => {
                         e.preventDefault();
@@ -42224,7 +42224,7 @@ React.createElement('div', {
                         album.image && typeof album.image === 'string' && React.createElement('img', {
                           src: album.image,
                           alt: album.name,
-                          className: 'group-hover/art:scale-105',
+                          className: 'group-hover:scale-105',
                           style: {
                             position: 'absolute',
                             inset: 0,
@@ -42256,7 +42256,7 @@ React.createElement('div', {
                         }, `#${album.rank}`),
                         // Hover overlay with action buttons
                         React.createElement('div', {
-                          className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 pointer-events-none group-hover/art:pointer-events-auto transition-opacity duration-200 flex items-center justify-center gap-3',
+                          className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 card-reveal pointer-events-none group-hover:pointer-events-auto transition-opacity duration-200 flex items-center justify-center gap-3',
                           style: { borderRadius: '6px', zIndex: 20 }
                         },
                           // Add to Playlist button
@@ -42638,7 +42638,7 @@ React.createElement('div', {
                       const isResolving = Object.keys(resolvedSources).length === 0;
                       const tracksAfterRecent = sorted.slice(index + 1);
 
-                      return React.createElement('div', {
+                      return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`,
                         key: track.id || index,
                         'data-track-id': track.id,
                         ref: (el) => {
@@ -42662,12 +42662,12 @@ React.createElement('div', {
                         },
                         className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${isResolving ? 'opacity-60' : 'hover:bg-surface-hover'}`,
                         style: { borderRadius: '8px', marginBottom: '2px' },
-                        onClick: () => {
+                        onActivate: () => {
                           const tracksAfter = sorted.slice(index + 1);
                           const context = { type: 'friend', name: currentFriend?.name || 'Friend', tab: 'recent' };
                           setQueueWithContext(tracksAfter, context);
                           handlePlay(track);
-                        }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
+                        },
                           onContextMenu: (e) => {
                             e.preventDefault();
                             if (window.electron?.contextMenu?.showTrackMenu) {
@@ -42741,7 +42741,7 @@ React.createElement('div', {
                         const hasResolved = Object.keys(resolvedSources).length > 0;
                         const isResolving = Object.keys(resolvedSources).length === 0;
 
-                        return React.createElement('div', {
+                        return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`,
                           key: track.id || index,
                           'data-track-id': track.id,
                           ref: (el) => {
@@ -42765,12 +42765,12 @@ React.createElement('div', {
                           },
                           className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${isResolving ? 'opacity-60' : 'hover:bg-surface-hover'}`,
                           style: { borderRadius: '8px', marginBottom: '2px' },
-                          onClick: () => {
+                          onActivate: () => {
                             const tracksAfter = friendHistoryData.topTracks.slice(index + 1);
                             const context = { type: 'friend', name: currentFriend?.name || 'Friend', tab: 'topTracks' };
                             setQueueWithContext(tracksAfter, context);
                             handlePlay(track);
-                          }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
+                          },
                           onContextMenu: (e) => {
                             e.preventDefault();
                             if (window.electron?.contextMenu?.showTrackMenu) {
@@ -42841,11 +42841,11 @@ React.createElement('div', {
                     ? React.createElement('p', { className: 'col-span-full text-center text-ink-tertiary py-8' }, 'No top albums data')
                     : friendHistoryData.topAlbums.map((album, index) => {
                         const albumPattern = generateArtistPattern(`${album.artist} ${album.name}`);
-                        return React.createElement('div', {
+                        return React.createElement(CardButton, { label: `${album.name} by ${album.artist}`,
                           key: album.id || index,
                           className: 'rounded-lg overflow-hidden cursor-pointer group release-card',
                           style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)' },
-                          onClick: () => openTopAlbum(album), role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
+                          onActivate: () => openTopAlbum(album),
                           onMouseEnter: () => prefetchTopAlbumTracks(album.artist, album.name, album.image),
                           onContextMenu: (e) => {
                             e.preventDefault();
@@ -42879,7 +42879,7 @@ React.createElement('div', {
                               key: album.image,
                               src: album.image,
                               alt: album.name,
-                              className: 'absolute inset-0 w-full h-full object-cover transition-all duration-300 group-hover/art:scale-105',
+                              className: 'absolute inset-0 w-full h-full object-cover transition-all duration-300 group-hover:scale-105',
                               style: { opacity: 0 },
                               ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
                               onLoad: (e) => { e.target.style.opacity = '1'; },
@@ -42898,7 +42898,7 @@ React.createElement('div', {
                             }, `#${album.rank}`),
                             // Hover overlay with action buttons
                             React.createElement('div', {
-                              className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 pointer-events-none group-hover/art:pointer-events-auto transition-opacity duration-200 flex items-center justify-center gap-3',
+                              className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 card-reveal pointer-events-none group-hover:pointer-events-auto transition-opacity duration-200 flex items-center justify-center gap-3',
                               style: { zIndex: 20 }
                             },
                               // Add to Playlist button
@@ -43000,11 +43000,11 @@ React.createElement('div', {
                     ? React.createElement('p', { className: 'col-span-full text-center text-ink-tertiary py-8' }, 'No top artists data')
                     : friendHistoryData.topArtists.map((artist, index) => {
                         const artistPattern = generateArtistPattern(artist.name);
-                        return React.createElement('div', {
+                        return React.createElement(CardButton, { label: artist.name,
                           key: artist.id || index,
                           className: 'rounded-lg overflow-hidden cursor-pointer group release-card',
                           style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)' },
-                          onClick: () => fetchArtistData(artist.name), role: 'button', tabIndex: 0, onKeyDown: activateOnKey
+                          onActivate: () => fetchArtistData(artist.name)
                         },
                           React.createElement('div', {
                             className: 'aspect-square relative group/art',
@@ -43029,7 +43029,7 @@ React.createElement('div', {
                               src: artist.image,
                               alt: artist.name,
                               ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
-                              className: 'absolute inset-0 w-full h-full object-cover transition-all duration-300 group-hover/art:scale-105',
+                              className: 'absolute inset-0 w-full h-full object-cover transition-all duration-300 group-hover:scale-105',
                               style: { opacity: 0 },
                               onLoad: (e) => { e.target.style.opacity = '1'; },
                               onError: (e) => { e.target.style.display = 'none'; }
@@ -43039,7 +43039,7 @@ React.createElement('div', {
                             }, `#${artist.rank}`),
                             // Hover overlay with action buttons
                             React.createElement('div', {
-                              className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-3',
+                              className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 card-reveal transition-opacity duration-200 flex items-center justify-center gap-3',
                               style: { pointerEvents: 'auto' }
                             },
                               // Play top tracks button
@@ -50986,15 +50986,15 @@ React.createElement('div', {
           // Note: onDrop doesn't fire in Electron for dynamically-shown elements.
           // The drop is handled via handlePlaylistDragEnd() in each track's onDragEnd handler,
           // which checks dropTargetNewPlaylist state and opens the form with the dragged track.
-          React.createElement('div', {
+          React.createElement(CardButton, { label: 'New playlist',
             key: 'new-playlist-row',
-            onClick: () => {
+            onActivate: () => {
               if (!newPlaylistFormOpen) {
                 setNewPlaylistFormOpen(true);
                 setNewPlaylistName('');
                 setDroppedTrackForNewPlaylist(null);
               }
-            }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
+            },
             onMouseUp: () => {
               // Fallback for drop - if we're hovering while a track is being dragged
               if (dropTargetNewPlaylist && draggingTrackForPlaylist) {
@@ -53324,10 +53324,10 @@ firstRunTutorial.step === 'complete' && React.createElement(React.Fragment, null
     },
       // Drawer header with drag handle - dark translucent theme
       // Clicking anywhere on header (except drag handle and Clear) closes drawer
-      React.createElement('div', {
+      React.createElement(CardButton, { label: 'Close the queue',
         className: 'flex items-center justify-between px-4 py-2 cursor-pointer transition-colors',
         style: { backgroundColor: 'var(--surface-dark-header)', borderBottom: '1px solid var(--surface-dark-border)' },
-        onClick: () => setQueueDrawerOpen(false), role: 'button', tabIndex: 0, onKeyDown: activateOnKey
+        onActivate: () => setQueueDrawerOpen(false)
       },
         React.createElement('div', {
           className: 'flex items-center gap-3'

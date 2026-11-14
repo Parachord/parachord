@@ -328,8 +328,8 @@
        cards (bg-white → --bg-elevated in dark) keep their edges. Page bodies
        used bg-white, which put every page but Home on the card colour. */
     .page-bg { background-color: var(--bg-primary); }
-    /* Elements that act as buttons without being one (lib/activate-on-key.js)
-       show where keyboard focus is. */
+    /* Anything given role="button" shows where keyboard focus is. The
+       renderer has none left (they became <button>s and CardButton). */
     [role="button"]:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
     /* The shared Modal (components/modal.js): one scrim, one entrance. */
     .modal-scrim { background-color: rgba(0, 0, 0, 0.45); backdrop-filter: blur(4px); animation: modalScrimIn 150ms ease-out; }
@@ -825,6 +825,11 @@
     .card-button:has(:focus-visible) .card-actions { opacity: 1; }
     .card-button:hover .card-actions button,
     .card-button:has(:focus-visible) .card-actions button { pointer-events: auto; }
+    /* The card's own buttons and links sit above the stretched one. Zero
+       specificity, so an element's own position (absolute) still wins. */
+    :where(.card-button) :where(button, a):not(:where(.card-button-hit)) { position: relative; z-index: 2; }
+    /* A part shown on hover (group-hover:opacity-100) also shows on keyboard focus. */
+    .card-button:has(:focus-visible) .card-reveal { opacity: 1; }
     .card-button .card-zoom { transition: transform 300ms ease, opacity 300ms ease; }
     .card-button:hover .card-zoom { transform: scale(1.05); }
 

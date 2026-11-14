@@ -1,31 +1,6 @@
-const { activateOnKey } = require('../../src/renderer/lib/activate-on-key');
-
-const evt = (key, same = true) => {
-  const el = { click: jest.fn() };
-  return { key, target: same ? el : {}, currentTarget: el, preventDefault: jest.fn(), el };
-};
-
-test.each(['Enter', ' '])('%j on the element clicks it', (key) => {
-  const e = evt(key);
-  activateOnKey(e);
-  expect(e.el.click).toHaveBeenCalledTimes(1);
-  expect(e.preventDefault).toHaveBeenCalled();
-});
-
-test('other keys, and keys from a control inside it, pass through', () => {
-  const a = evt('Tab'); activateOnKey(a); expect(a.el.click).not.toHaveBeenCalled();
-  const b = evt('Enter', false); activateOnKey(b); expect(b.el.click).not.toHaveBeenCalled();
-});
-
-// The role="button" divs are a stopgap: they move to <button> and
-// CardButton, and design-drift's roleButtonDivs count only falls. While any
-// remain, they keep the focus ring.
-test('the remaining role=button divs keep a focus ring', () => {
-  const fs = require('fs');
-  const path = require('path');
-  const html = fs.readFileSync(path.join(__dirname, '../../index.html'), 'utf8');
-  expect(html).toMatch(/\[role="button"\]:focus-visible \{ outline: 2px solid var\(--accent-primary\)/);
-});
+// The stopgap role="button" divs (lib/activate-on-key.js, removed) are all
+// gone: plain controls are <button>s and cards and rows are CardButton
+// (design-drift's roleButtonDivs is 0 and can only stay there).
 
 // #1386: every text field, select and textarea has a name (aria-label, a
 // wrapping <label>, or an id a <label htmlFor> points at).

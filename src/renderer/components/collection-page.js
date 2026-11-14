@@ -16,11 +16,11 @@
 // from props under their old names.
 
 const Icons = require('./icons');
+const { CardButton } = require('./card-button');
 const { EmptyState, ErrorState } = require('./states');
 const { SortMenu } = require('./sort-menu');
 const { Menu } = require('./menu');
 const { HeroTabs } = require('./hero-tabs');
-const { activateOnKey } = require('../lib/activate-on-key');
 const { VirtualizedTrackList, getBestSourceConfidence } = require('./track-lists');
 const { ResolverIcon } = require('./ui-atoms');
 const { CollectionArtistCard, CollectionAlbumCard } = require('./cards');
@@ -503,7 +503,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                   const isNowPlaying = isCurrentTrack && playbackContext?.type === 'library';
                   const isResolving = Object.keys(effectiveSources).length === 0;
 
-                  return React.createElement('div', {
+                  return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`,
                     ref: (el) => {
                       if (el) {
                         collectionTrackRowRefs.current.set(track.id, el);
@@ -544,13 +544,13 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                       borderRadius: '8px',
                       marginBottom: '2px'
                     },
-                    onClick: () => {
+                    onActivate: () => {
                       const tracksAfter = sorted.slice(index + 1);
                       const context = { type: 'library', name: 'Collection' };
                       setQueueWithContext(tracksAfter, context);
                       // Pass track with merged sources (original + resolved) so handlePlay can use all available resolvers
                       handlePlay({ ...track, sources: effectiveSources });
-                    }, role: 'button', tabIndex: 0, onKeyDown: activateOnKey,
+                    },
                     onContextMenu: (e) => {
                       e.preventDefault();
                       if (window.electron?.contextMenu?.showTrackMenu) {
