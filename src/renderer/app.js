@@ -44885,39 +44885,6 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                       className: 'text-xs text-ink-tertiary mt-1'
                     }, 'Options for testing and development')
                   ),
-                  // Reset Tutorial button
-                  React.createElement('div', {
-                    className: 'flex items-center justify-between py-3 border-b border-line-light'
-                  },
-                    React.createElement('div', null,
-                      React.createElement('div', {
-                        className: 'text-sm font-medium text-ink-primary'
-                      }, 'Reset Tutorial'),
-                      React.createElement('div', {
-                        className: 'text-xs text-ink-tertiary mt-0.5'
-                      }, 'Show the first-run tutorial again on next app launch')
-                    ),
-                    React.createElement(Button, { variant: 'text', size: 'sm', onClick: async () => {
-                        await window.electron.store.delete('tutorial_completed');
-                        showToast('The welcome tutorial will show the next time you open Parachord');
-                      } }, 'Reset')
-                  ),
-                  // Show Tutorial Now button
-                  React.createElement('div', {
-                    className: 'flex items-center justify-between py-3 border-b border-line-light'
-                  },
-                    React.createElement('div', null,
-                      React.createElement('div', {
-                        className: 'text-sm font-medium text-ink-primary'
-                      }, 'Show Tutorial Now'),
-                      React.createElement('div', {
-                        className: 'text-xs text-ink-tertiary mt-0.5'
-                      }, 'Open the first-run tutorial immediately')
-                    ),
-                    React.createElement(Button, { variant: 'text', size: 'sm', onClick: () => {
-                        setFirstRunTutorial(prev => ({ ...prev, open: true, step: 'welcome' }));
-                      } }, 'Show')
-                  ),
                   // Use new sync — N-way migration preview / armed state (parachord#911)
                   React.createElement('div', {
                     className: 'flex items-center justify-between py-3'
@@ -45070,6 +45037,15 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                     }
                   }, 'Tomahawk'),
                   '.'
+                ),
+
+                // The welcome tour, any time (#1387): it opens now. It was two
+                // rows in Developer Settings (reset for next launch, show now).
+                React.createElement('div', { style: { marginBottom: '32px' } },
+                  React.createElement(Button, {
+                    variant: 'secondary',
+                    onClick: () => setFirstRunTutorial(prev => ({ ...prev, open: true, step: 'welcome' }))
+                  }, 'Show welcome tour')
                 ),
 
                 // Divider
@@ -52304,12 +52280,24 @@ firstRunTutorial.step === 'sources' && React.createElement(React.Fragment, null,
             React.createElement(Button, { variant: 'primary', onClick: () => setFirstRunTutorial(prev => ({ ...prev, step: 'complete' })) }, 'Continue')
           )
         ),
-firstRunTutorial.step === 'complete' && React.createElement(React.Fragment, null,
+firstRunTutorial.step === 'complete' && (() => {
+          // Anything enabled that plays music (#1387): otherwise "Almost there".
+          const tutorialPlayable = loadedResolvers.some(r => r.capabilities?.resolve && playbackResolvers.includes(r.id));
+          const finishTutorial = async (where) => {
+            // Save tutorial completion and the plug-in choices (refs: no stale closure)
+            await window.electron.store.set('tutorial_completed', true);
+            await window.electron.store.set('active_resolvers', activeResolversRef.current);
+            await window.electron.store.set('resolver_order', resolverOrderRef.current);
+            setFirstRunTutorial(prev => ({ ...prev, open: false }));
+            if (where === 'plugins') { setSettingsTab('plugins'); navigateTo('settings'); }
+            else navigateTo('home');
+          };
+          return React.createElement(React.Fragment, null,
           // Accent bar
           React.createElement('div', {
             style: { height: '4px', backgroundColor: 'var(--success)' }
           }),
-          // Header
+          // Header: done, or almost (nothing that plays is enabled yet)
           React.createElement('div', {
             style: {
               padding: '32px 32px 24px',
@@ -52323,31 +52311,22 @@ firstRunTutorial.step === 'complete' && React.createElement(React.Fragment, null
                 height: '56px',
                 margin: '0 auto 16px',
                 borderRadius: '50%',
-                backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                backgroundColor: tutorialPlayable ? 'color-mix(in srgb, var(--success) 12%, transparent)' : 'color-mix(in srgb, var(--warning) 12%, transparent)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center'
               }
             },
-              React.createElement('svg', {
-                width: 28,
-                height: 28,
-                viewBox: '0 0 24 24',
-                fill: 'none',
-                stroke: 'var(--success)',
-                strokeWidth: 2.5,
-                strokeLinecap: 'round',
-                strokeLinejoin: 'round'
-              },
-                React.createElement('path', { d: 'M20 6L9 17l-5-5' })
-              )
+              React.createElement(tutorialPlayable ? Icons.Check : Icons.AlertTriangle, { size: 28, style: { color: tutorialPlayable ? 'var(--success)' : 'var(--warning)' } })
             ),
             React.createElement('h1', {
               style: { fontSize: '20px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '6px' }
-            }, 'You\'re All Set!'),
+            }, tutorialPlayable ? 'You’re all set' : 'Almost there'),
             React.createElement('p', {
               style: { fontSize: '14px', color: 'var(--text-secondary)' }
-            }, 'Click below to configure your plugins and start listening.')
+            }, tutorialPlayable
+              ? 'Start listening, or open Plug-Ins to sign in, add music folders and more.'
+              : 'Nothing that plays music is enabled yet. Open Plug-Ins to enable one.')
           ),
           // Content - Show active sources
           React.createElement('div', {
@@ -52359,7 +52338,7 @@ firstRunTutorial.step === 'complete' && React.createElement(React.Fragment, null
             },
               React.createElement('div', {
                 style: { fontSize: '12px', fontWeight: '600', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px' }
-              }, 'Active Sources'),
+              }, 'Active sources'),
               React.createElement('div', {
                 style: { display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center' }
               },
@@ -52381,7 +52360,7 @@ firstRunTutorial.step === 'complete' && React.createElement(React.Fragment, null
             // Info text
             React.createElement('p', {
               style: { fontSize: '13px', color: 'var(--text-secondary)', textAlign: 'center', lineHeight: '1.6' }
-            }, 'You can configure login credentials, add local music folders, and customize your experience in the Plug-Ins settings.')
+            }, 'You can sign in to services, add music folders and change what plays first in Plug-Ins, any time.')
           ),
           // Footer
           React.createElement('div', {
@@ -52393,21 +52372,12 @@ firstRunTutorial.step === 'complete' && React.createElement(React.Fragment, null
               gap: '12px'
             }
           },
-            React.createElement(Button, { variant: 'secondary', onClick: () => setFirstRunTutorial(prev => ({ ...prev, step: 'sources' })) }, 'Back'),
-            React.createElement(Button, { variant: 'primary', onClick: async () => {
-                // Save tutorial completion
-                await window.electron.store.set('tutorial_completed', true);
-                // Save resolver settings (use refs to avoid stale closure)
-                await window.electron.store.set('active_resolvers', activeResolversRef.current);
-                await window.electron.store.set('resolver_order', resolverOrderRef.current);
-                // Close tutorial
-                setFirstRunTutorial(prev => ({ ...prev, open: false }));
-                // Always navigate to Settings > Plug-Ins
-                setSettingsTab('plugins');
-                navigateTo('settings');
-              } }, 'Go to Settings')
+            React.createElement(Button, { variant: 'text', onClick: () => setFirstRunTutorial(prev => ({ ...prev, step: 'sources' })) }, 'Back'),
+            React.createElement(Button, { variant: tutorialPlayable ? 'secondary' : 'primary', onClick: () => finishTutorial('plugins') }, 'Open Plug-Ins'),
+            tutorialPlayable && React.createElement(Button, { variant: 'primary', onClick: () => finishTutorial('home') }, 'Start listening')
           )
-        )),
+        );
+        })()),
 
     // Queue Drawer - slides up above the playbar with matching dark theme
     // Gradient transparency: more opaque near playbar, more transparent at top
