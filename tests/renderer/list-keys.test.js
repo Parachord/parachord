@@ -126,3 +126,29 @@ describe('Artist page: the release-type filter', () => {
     expect(app).toMatch(/startReleaseTypeFilterFor\(previousArtist\);/);
   });
 });
+
+describe('Artist page: the related-artists source filter', () => {
+  const artistPage = read('components', 'artist-page.js');
+
+  test('a new artist puts the filter back on All', () => {
+    // Pick ListenBrainz, open an artist with no MBID: the chips are hidden and
+    // the page said "No artists from ListenBrainz." with no way back.
+    const at = app.indexOf('// Reset header collapse and tab when navigating to a new artist');
+    const effect = app.slice(at, app.indexOf('}, [currentArtist]);', at));
+    expect(effect).toMatch(/const relatedFilterArtist = \(currentArtist\?\.name \|\| ''\)\.trim\(\)\.toLowerCase\(\);\s*if \(relatedFilterArtistRef\.current !== relatedFilterArtist\) \{\s*relatedFilterArtistRef\.current = relatedFilterArtist;\s*setRelatedArtistsSourceFilter\('all'\);\s*\}/);
+    // the ref is declared above the effect (render order)
+    expect(app.indexOf('const relatedFilterArtistRef = useRef(')).toBeGreaterThan(-1);
+    expect(app.indexOf('const relatedFilterArtistRef = useRef(')).toBeLessThan(at);
+  });
+
+  test('a picked chip that is not shown filters as All', () => {
+    const at = artistPage.indexOf("artistPageTab === 'related' && (() => {");
+    const tab = artistPage.slice(at, artistPage.indexOf('// Content with padding', at));
+    expect(tab).toMatch(/const sourceFilter = hasBothServicesConfigured && sourceChips\.some\(c => c\.id === relatedArtistsSourceFilter\)\s*\? relatedArtistsSourceFilter\s*: 'all';/);
+    expect(tab).toMatch(/const filteredArtists = sourceFilter === 'all'/);
+    expect(tab).toMatch(/value: sourceFilter,/);
+    expect(tab).not.toMatch(/relatedArtistsSourceFilter === 'both'/);
+    const empty = artistPage.slice(artistPage.indexOf("'No related artists found.'"), artistPage.indexOf("'No related artists found.'") + 300);
+    expect(empty).toMatch(/sourceFilter === 'listenbrainz'/);
+  });
+});

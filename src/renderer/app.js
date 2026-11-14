@@ -3532,6 +3532,9 @@ const Parachord = () => {
   const [loadingExtendedInfo, setLoadingExtendedInfo] = useState(false);
   const [relatedArtists, setRelatedArtists] = useState([]); // Related artists from Last.fm and ListenBrainz
   const [relatedArtistsSourceFilter, setRelatedArtistsSourceFilter] = useState('all'); // 'all' | 'lastfm' | 'listenbrainz' | 'both'
+  // The artist the related-artists source filter was picked for (lowercased
+  // name): a new artist puts the filter back on All.
+  const relatedFilterArtistRef = useRef(null);
   const [loadingBio, setLoadingBio] = useState(false);
   const [loadingRelated, setLoadingRelated] = useState(false);
   const [loadingArtist, setLoadingArtist] = useState(false);
@@ -6429,6 +6432,16 @@ const Parachord = () => {
 
   // Reset header collapse and tab when navigating to a new artist (but not when opening a release or restoring state)
   useEffect(() => {
+    // The related-artists source filter belongs to one artist. It used to
+    // carry over: ListenBrainz picked on an artist with an MBID, then an
+    // artist without one (no chips to switch back) showed "No artists from
+    // ListenBrainz." A second update of the same artist (its full data
+    // arriving) keeps the pick.
+    const relatedFilterArtist = (currentArtist?.name || '').trim().toLowerCase();
+    if (relatedFilterArtistRef.current !== relatedFilterArtist) {
+      relatedFilterArtistRef.current = relatedFilterArtist;
+      setRelatedArtistsSourceFilter('all');
+    }
     // Don't reset header if we're opening a release - it should stay collapsed
     if (openingReleaseRef.current) {
       openingReleaseRef.current = false;
