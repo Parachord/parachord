@@ -20,7 +20,7 @@ function registerLocalFilesIpc({ ipcMain, dialog, getMainWindow, waitForLocalFil
   ipcMain.handle('localFiles:addWatchFolder', async () => {
     console.log('=== Add Watch Folder ===');
     const result = await dialog.showOpenDialog(getMainWindow(), {
-      title: 'Select Watch Folder',
+      title: 'Choose a music folder',
       properties: ['openDirectory']
     });
 

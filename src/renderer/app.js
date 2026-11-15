@@ -3814,6 +3814,9 @@ const Parachord = () => {
   const [pluginsFilter, setPluginsFilter] = useState('all'); // 'all' | 'installed' | 'available'
   const [marketplaceManifest, setMarketplaceManifest] = useState(null);
   const [marketplaceLoading, setMarketplaceLoading] = useState(false);
+  // The last marketplace load failed: Plug-Ins says so, with Try again
+  // (installed plug-ins still show). #1387.
+  const [marketplaceError, setMarketplaceError] = useState(false);
   const [marketplaceSearchQuery, setMarketplaceSearchQuery] = useState('');
   const [marketplaceCategory, setMarketplaceCategory] = useState('all');
   const [installingResolvers, setInstallingResolvers] = useState(new Set());
@@ -15733,10 +15736,17 @@ ${trackListXml}
     setIsScanning(true);
     try {
       const result = await window.electron.localFiles.addWatchFolder();
+      // null: the folder picker was cancelled.
       if (result?.success) {
         setWatchFolders(await window.electron.localFiles.getWatchFolders());
         setLocalFilesStats(await window.electron.localFiles.getStats());
+      } else if (result) {
+        console.error('Adding a music folder failed:', result.error);
+        showToast('Couldn’t add that folder. Check that Parachord can read it, then try again.', 'error');
       }
+    } catch (error) {
+      console.error('Adding a music folder failed:', error);
+      showToast('Couldn’t add that folder. Check that Parachord can read it, then try again.', 'error');
     } finally {
       setIsScanning(false);
     }
@@ -15755,7 +15765,11 @@ ${trackListXml}
 
     setIsScanning(true);
     try {
-      await window.electron.localFiles.rescanFolder(folderPath);
+      const rescan = await window.electron.localFiles.rescanFolder(folderPath);
+      if (rescan && rescan.success === false) {
+        console.error('Rescan failed:', rescan.error);
+        showToast('Couldn’t rescan that folder. Check that it’s still there, then try again.', 'error');
+      }
       setWatchFolders(await window.electron.localFiles.getWatchFolders());
       setLocalFilesStats(await window.electron.localFiles.getStats());
     } finally {
@@ -25383,6 +25397,7 @@ ${trackListXml}
 
     try {
       const result = await window.electron.resolvers.getMarketplaceManifest();
+      setMarketplaceError(!result.success);
 
       if (result.success) {
         setMarketplaceManifest(result.manifest);
@@ -25393,6 +25408,7 @@ ${trackListXml}
       }
     } catch (error) {
       console.error('Marketplace load error:', error);
+      setMarketplaceError(true);
       setMarketplaceManifest({ version: '1.0.0', plugins: [] });
     } finally {
       setMarketplaceLoading(false);
@@ -43576,6 +43592,14 @@ useEffect(() => {
                     })
                   )
                 )
+              ),
+
+              !marketplaceLoading && marketplaceError && React.createElement('div', { style: { marginBottom: '24px' } },
+                React.createElement(ErrorState, {
+                  title: 'Couldn’t load the plug-in marketplace',
+                  body: 'Your installed plug-ins still work. Check your connection, then try again.',
+                  onRetry: () => loadMarketplaceManifest()
+                })
               ),
 
               // Content Resolvers Section
