@@ -4119,11 +4119,11 @@ const Parachord = () => {
   // First-run tutorial state
   const [firstRunTutorial, setFirstRunTutorial] = useState({
     open: false,
-    step: 'welcome', // 'welcome' | 'sources' | 'social' | 'features' | 'complete'
-    selectedSources: ['spotify', 'bandcamp', 'localfiles'],
-    selectedScrobblers: [],
-    spotifyConnecting: false,
-    spotifyConnected: false
+    step: 'welcome', // 'welcome' | 'sources' | 'accounts' | 'complete'
+    // The accounts step's fields (#1387), filled from saved configs on entry.
+    lastfmUsername: '',
+    listenbrainzUsername: '',
+    connecting: false
   });
 
   // Background sync timer (every 15 minutes)
@@ -52392,7 +52392,9 @@ firstRunTutorial.step === 'sources' && React.createElement(React.Fragment, null,
                       marginBottom: '8px'
                     }
                   },
-                    logo ? logo : React.createElement('span', { className: 'text-3xl text-white' }, resolver.icon)
+                    // The shared logos are drawn at 64px (w-16); the 64px tile
+                    // needs them smaller, or they fill it edge to edge.
+                    logo ? React.cloneElement(logo, { className: undefined, style: { ...(logo.props.style || {}), width: '44px', height: '44px' } }) : React.createElement('span', { className: 'text-3xl text-white' }, resolver.icon)
                   ),
                   // Name
                   React.createElement('span', {
@@ -52425,9 +52427,59 @@ firstRunTutorial.step === 'sources' && React.createElement(React.Fragment, null,
             React.createElement(Button, { variant: 'secondary', onClick: () => setFirstRunTutorial(prev => ({ ...prev, step: 'welcome' })) }, React.createElement('svg', { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
                 React.createElement('path', { d: 'M19 12H5M12 19l-7-7 7-7' })
               ), 'Back'),
-            React.createElement(Button, { variant: 'primary', onClick: () => setFirstRunTutorial(prev => ({ ...prev, step: 'complete' })) }, 'Continue')
+            React.createElement(Button, { variant: 'primary', onClick: () => setFirstRunTutorial(prev => ({
+              ...prev, step: 'accounts',
+              lastfmUsername: prev.lastfmUsername || metaServiceConfigs.lastfm?.username || '',
+              listenbrainzUsername: prev.listenbrainzUsername || metaServiceConfigs.listenbrainz?.username || ''
+            })) }, 'Continue')
           )
         ),
+// Accounts (#1387): the welcome screen promises Last.fm and ListenBrainz;
+// this is where you connect them. Optional: Skip goes on. Continue checks
+// each name the way the plug-in panels do (connectLastfm /
+// connectListenbrainz keep any saved keys or token) and stays on a failure.
+firstRunTutorial.step === 'accounts' && (() => {
+          const t = firstRunTutorial;
+          const setField = (k) => (v) => setFirstRunTutorial(prev => ({ ...prev, [k]: v }));
+          const lastfm = metaServiceConfigs.lastfm || {};
+          const lb = metaServiceConfigs.listenbrainz || {};
+          const next = async () => {
+            setFirstRunTutorial(prev => ({ ...prev, connecting: true }));
+            let ok = true;
+            const lf = t.lastfmUsername.trim();
+            if (lf && lf !== (lastfm.username || '')) ok = (await connectLastfm(lf, lastfm.apiKey, lastfm.apiSecret)) !== false && ok;
+            const lbn = t.listenbrainzUsername.trim();
+            if (ok && lbn && lbn !== (lb.username || '')) ok = (await connectListenbrainz(lbn, lb.userToken)) !== false && ok;
+            setFirstRunTutorial(prev => ({ ...prev, connecting: false, step: ok ? 'complete' : prev.step }));
+          };
+          const field = (id, label, hint, key) => React.createElement('div', { style: { marginBottom: '16px' } },
+            React.createElement('label', { htmlFor: id, className: 'text-ink-primary', style: { display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px' } }, label),
+            React.createElement(TextField, { id, className: 'w-full', value: t[key], onChange: setField(key), placeholder: 'Username', autoComplete: 'off', spellCheck: false, 'aria-describedby': `${id}-hint` }),
+            React.createElement('p', { id: `${id}-hint`, className: 'text-ink-tertiary', style: { fontSize: '12px', marginTop: '4px' } }, hint)
+          );
+          return React.createElement(React.Fragment, null,
+            React.createElement('div', { style: { height: '4px', backgroundColor: 'var(--accent-primary)' } }),
+            React.createElement('div', { style: { padding: '24px 32px 20px', borderBottom: '1px solid var(--border-subtle)' } },
+              React.createElement('h2', { style: { fontSize: '20px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '4px' } }, 'Connect your listening history'),
+              React.createElement('p', { style: { fontSize: '14px', color: 'var(--text-secondary)' } }, 'Optional. With your Last.fm or ListenBrainz username, Parachord can recommend music and you can follow friends.')
+            ),
+            React.createElement('form', {
+              style: { padding: '24px 32px 8px' },
+              onSubmit: (e) => { e.preventDefault(); if (!t.connecting) next(); }
+            },
+              field('tour-lastfm', 'Last.fm username', 'Your profile name on last.fm.', 'lastfmUsername'),
+              field('tour-listenbrainz', 'ListenBrainz username', 'Your name on listenbrainz.org. Add your user token later in Plug-Ins to save listens there.', 'listenbrainzUsername'),
+              React.createElement('button', { type: 'submit', hidden: true, tabIndex: -1, 'aria-hidden': 'true' })
+            ),
+            React.createElement('div', { style: { padding: '16px 32px 20px', borderTop: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
+              React.createElement(Button, { variant: 'secondary', onClick: () => setFirstRunTutorial(prev => ({ ...prev, step: 'sources' })) }, 'Back'),
+              React.createElement('div', { className: 'flex items-center', style: { gap: '8px' } },
+                React.createElement(Button, { variant: 'text', onClick: () => setFirstRunTutorial(prev => ({ ...prev, step: 'complete' })) }, 'Skip'),
+                React.createElement(Button, { variant: 'primary', busy: t.connecting, onClick: next }, 'Continue')
+              )
+            )
+          );
+        })(),
 firstRunTutorial.step === 'complete' && (() => {
           // Anything enabled that plays music (#1387): otherwise "Almost there".
           const tutorialPlayable = loadedResolvers.some(r => r.capabilities?.resolve && playbackResolvers.includes(r.id));
@@ -52520,7 +52572,7 @@ firstRunTutorial.step === 'complete' && (() => {
               gap: '12px'
             }
           },
-            React.createElement(Button, { variant: 'text', onClick: () => setFirstRunTutorial(prev => ({ ...prev, step: 'sources' })) }, 'Back'),
+            React.createElement(Button, { variant: 'text', onClick: () => setFirstRunTutorial(prev => ({ ...prev, step: 'accounts' })) }, 'Back'),
             React.createElement(Button, { variant: tutorialPlayable ? 'secondary' : 'primary', onClick: () => finishTutorial('plugins') }, 'Open Plug-Ins'),
             tutorialPlayable && React.createElement(Button, { variant: 'primary', onClick: () => finishTutorial('home') }, 'Start listening')
           )
