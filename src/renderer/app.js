@@ -2064,7 +2064,7 @@ const { Modal, ConfirmModal, DontShowAgain } = require('./components/modal');
 const { KeyboardShortcutsDialog } = require('./components/keyboard-shortcuts');
 const { WhatsNewDialog } = require('./components/whats-new-dialog');
 const { ArtistCard, RankBadge } = require('./components/artist-card');
-const { ListenerCard } = require('./components/listener-card');
+const { ListenerCard, LISTENER_HEXAGON } = require('./components/listener-card');
 const { Button } = require('./components/button');
 const { HeaderControl } = require('./components/header-control');
 const { ToastRegion, NowPlayingAnnouncer } = require('./components/toast');
@@ -45026,17 +45026,23 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
               // badge's place, since their queue, not yours, decides what's
               // next. Otherwise the count (gray in spinoff mode).
               listenAlongFriend
+                // A hexagon, like every user avatar: an accent hexagon as the
+                // ring, the avatar (or initial) in a smaller one inside it.
                 ? React.createElement('span', {
                     'data-listen-along-badge': '',
                     'aria-hidden': 'true',
-                    className: 'absolute -top-1.5 -right-1.5 rounded-full flex items-center justify-center overflow-hidden',
-                    style: Object.assign({
-                      width: '18px', height: '18px', fontSize: '11px', fontWeight: 600,
-                      boxShadow: '0 0 0 2px var(--accent-fill)', color: 'var(--on-accent)', opacity: 1
-                    }, listenAlongFriend.avatarUrl
-                      ? { backgroundImage: `url(${JSON.stringify(listenAlongFriend.avatarUrl)})`, backgroundSize: 'cover', backgroundPosition: 'center' }
-                      : { backgroundColor: 'var(--accent-fill)' })
-                  }, !listenAlongFriend.avatarUrl && (listenAlongFriend.displayName || listenAlongFriend.username || '?').charAt(0).toUpperCase())
+                    className: 'absolute -top-1.5 -right-1.5 flex items-center justify-center',
+                    style: { width: '20px', height: '20px', clipPath: LISTENER_HEXAGON, backgroundColor: 'var(--accent-fill)', opacity: 1 }
+                  },
+                    React.createElement('span', {
+                      className: 'flex items-center justify-center',
+                      style: Object.assign({
+                        width: '16px', height: '16px', clipPath: LISTENER_HEXAGON,
+                        fontSize: '11px', fontWeight: 600, color: 'var(--on-accent)'
+                      }, listenAlongFriend.avatarUrl
+                        ? { backgroundImage: `url(${JSON.stringify(listenAlongFriend.avatarUrl)})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+                        : { backgroundColor: 'var(--accent-fill)' })
+                    }, !listenAlongFriend.avatarUrl && (listenAlongFriend.displayName || listenAlongFriend.username || '?').charAt(0).toUpperCase()))
                 : currentQueue.length > 0 && React.createElement('span', {
                 className: `absolute -top-1 -right-1 text-white rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1 font-medium ${queueAnimating ? 'badge-flash' : ''}`,
                 style: { fontSize: '10px', backgroundColor: spinoffMode ? '#6b7280' : 'var(--accent-fill)' }

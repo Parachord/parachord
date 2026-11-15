@@ -70,6 +70,8 @@ test('album actions play what the fetch returned, not the pre-fetch render', () 
 // queue decides what's next), not a grayed-out count.
 test('the queue badge shows the listen-along friend', () => {
   const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
-  expect(app).toMatch(/listenAlongFriend\s*\? React\.createElement\('span', \{\s*'data-listen-along-badge': ''/);
+  expect(app).toMatch(/\? React\.createElement\('span', \{\s*'data-listen-along-badge': ''/);
+  // A hexagon, like every user avatar.
+  expect(app).toMatch(/'data-listen-along-badge'[\s\S]{0,300}clipPath: LISTENER_HEXAGON/);
   expect(app).toContain("backgroundColor: spinoffMode ? '#6b7280' : 'var(--accent-fill)'");
 });
