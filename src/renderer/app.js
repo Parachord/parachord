@@ -38118,10 +38118,10 @@ useEffect(() => {
               } }, 'Close')
           ),
           // Loading content placeholder
-          React.createElement('div', { className: 'flex gap-0 p-6' },
+          React.createElement('div', { className: 'flex gap-0 pl-6' },
             // LEFT COLUMN: Skeleton album art and metadata
             React.createElement('div', {
-              className: 'flex-shrink-0 pr-8',
+              className: 'flex-shrink-0 pr-8 pt-8',
               // The playlist view's own art column (#1389), so nothing moves
               // when the playlist lands.
               style: { width: PLAYLIST_ART_COLUMN }
@@ -38156,31 +38156,10 @@ useEffect(() => {
                 })
               )
             ),
-            // RIGHT COLUMN: Skeleton track list
-            React.createElement('div', { className: 'flex-1 min-w-0 space-y-2' },
+            // RIGHT COLUMN: the shared track row's placeholder
+            React.createElement('div', { className: 'flex-1 min-w-0 pt-8 pr-6' },
               Array.from({ length: 8 }).map((_, i) =>
-                React.createElement('div', {
-                  key: `track-skeleton-${i}`,
-                  className: 'flex items-center gap-4 py-2 px-3'
-                },
-                  React.createElement('div', {
-                    className: 'w-8 h-4 shimmer-light rounded animate-shimmer',
-                    style: { backgroundSize: '200% 100%', animationDelay: `${i * 30}ms` }
-                  }),
-                  React.createElement('div', {
-                    className: 'h-4 shimmer-light rounded animate-shimmer',
-                    style: { width: '200px', backgroundSize: '200% 100%', animationDelay: `${i * 30 + 15}ms` }
-                  }),
-                  React.createElement('div', {
-                    className: 'h-4 shimmer-light rounded animate-shimmer',
-                    style: { width: '120px', backgroundSize: '200% 100%', animationDelay: `${i * 30 + 30}ms` }
-                  }),
-                  React.createElement('div', { className: 'flex-1' }),
-                  React.createElement('div', {
-                    className: 'w-10 h-4 shimmer-light rounded animate-shimmer',
-                    style: { backgroundSize: '200% 100%', animationDelay: `${i * 30 + 45}ms` }
-                  })
-                )
+                React.createElement(TrackRowSkeleton, { key: `track-skeleton-${i}`, index: i, duration: true })
               )
             )
           )
@@ -38283,35 +38262,11 @@ collapsedContent: null
             const sorted = sortPlaylists(filtered);
 
             // Show loading skeletons while playlists are loading
+            // The shared card's placeholder, in the real grid (its gaps too).
             if (playlistsLoading && sorted.length === 0) {
-              return React.createElement('div', { className: 'card-grid gap-6' },
+              return React.createElement('div', { className: 'card-grid gap-x-4 gap-y-5' },
                 Array.from({ length: 10 }).map((_, i) =>
-                  React.createElement('div', { key: `playlist-skeleton-${i}` },
-                    // Skeleton 2x2 album art grid
-                    React.createElement('div', {
-                      className: 'aspect-square rounded-lg overflow-hidden mb-3 shadow-md'
-                    },
-                      React.createElement('div', { className: 'grid grid-cols-2 grid-rows-2 w-full h-full' },
-                        [0, 1, 2, 3].map(idx =>
-                          React.createElement('div', {
-                            key: idx,
-                            className: 'shimmer-light animate-shimmer',
-                            style: { backgroundSize: '200% 100%', animationDelay: `${(i * 4 + idx) * 30}ms` }
-                          })
-                        )
-                      )
-                    ),
-                    // Skeleton title
-                    React.createElement('div', {
-                      className: 'h-4 shimmer-light rounded w-3/4 mb-2 animate-shimmer',
-                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 50}ms` }
-                    }),
-                    // Skeleton creator
-                    React.createElement('div', {
-                      className: 'h-3 shimmer-light rounded w-1/2 animate-shimmer',
-                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 25}ms` }
-                    })
-                  )
+                  React.createElement(CardSkeleton, { key: `playlist-skeleton-${i}`, index: i, lines: 1 })
                 )
               );
             }
@@ -38378,32 +38333,7 @@ collapsedContent: null
                 }),
                 // Trailing skeletons while hosted playlists are still loading
                 ...(playlistsLoading ? Array.from({ length: 4 }).map((_, i) =>
-                  React.createElement('div', { key: `trailing-skeleton-${i}`, 'aria-hidden': 'true' },
-                    // Skeleton 2x2 album art grid
-                    React.createElement('div', {
-                      className: 'aspect-square rounded-lg overflow-hidden mb-3 shadow-md'
-                    },
-                      React.createElement('div', { className: 'grid grid-cols-2 grid-rows-2 w-full h-full' },
-                        [0, 1, 2, 3].map(idx =>
-                          React.createElement('div', {
-                            key: idx,
-                            className: 'shimmer-light animate-shimmer',
-                            style: { backgroundSize: '200% 100%', animationDelay: `${(i * 4 + idx) * 30}ms` }
-                          })
-                        )
-                      )
-                    ),
-                    // Skeleton title
-                    React.createElement('div', {
-                      className: 'h-4 shimmer-light rounded w-3/4 mb-2 animate-shimmer',
-                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 50}ms` }
-                    }),
-                    // Skeleton creator
-                    React.createElement('div', {
-                      className: 'h-3 shimmer-light rounded w-1/2 animate-shimmer',
-                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 25}ms` }
-                    })
-                  )
+                  React.createElement(CardSkeleton, { key: `trailing-skeleton-${i}`, index: i, lines: 1 })
                 ) : [])
               );
             }
@@ -38939,28 +38869,7 @@ React.createElement('span', {
               className: 'card-grid gap-4'
             },
               Array.from({ length: 12 }).map((_, i) =>
-                React.createElement('div', {
-                  key: `skeleton-${i}`,
-                  style: {
-                    backgroundColor: 'var(--card-bg)',
-                    borderRadius: '10px',
-                    padding: '10px',
-                    boxShadow: 'var(--card-shadow)'
-                  }
-                },
-                  React.createElement('div', {
-                    className: 'animate-shimmer',
-                    style: { aspectRatio: '1', borderRadius: '6px', marginBottom: '10px', background: 'linear-gradient(to right, var(--shimmer-from), var(--shimmer-via), var(--shimmer-to))', backgroundSize: '200% 100%', animationDelay: `${i * 50}ms` }
-                  }),
-                  React.createElement('div', {
-                    className: 'h-4 rounded animate-shimmer',
-                    style: { background: 'linear-gradient(to right, var(--shimmer-from), var(--shimmer-via), var(--shimmer-to))', backgroundSize: '200% 100%', width: '80%', marginBottom: '6px', animationDelay: `${i * 50 + 25}ms` }
-                  }),
-                  React.createElement('div', {
-                    className: 'h-3 rounded animate-shimmer',
-                    style: { background: 'linear-gradient(to right, var(--shimmer-from), var(--shimmer-via), var(--shimmer-to))', backgroundSize: '200% 100%', width: '60%', animationDelay: `${i * 50 + 50}ms` }
-                  })
-                )
+                React.createElement(CardSkeleton, { key: `skeleton-${i}`, index: i, lines: 2 })
               )
             ),
 
@@ -39133,8 +39042,10 @@ React.createElement('span', {
                 React.createElement('div', {
                   style: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' }
                 },
-                  line(22.5, 14, '40%', 25),
+                  // Title (16px), artist, the release date line, the synopsis.
+                  line(24, 14, '40%', 25),
                   line(19.5, 12, '25%', 50, 2),
+                  line(18, 10, '18%', 60, 2),
                   line(18, 10, '100%', 75, 8),
                   line(18, 10, '80%', 100)
                 )
@@ -40726,40 +40637,7 @@ React.createElement('div', {
               listeningHistory.loading ?
                 React.createElement('div', { className: 'space-y-0' },
                   ...Array(15).fill(null).map((_, i) =>
-                    React.createElement('div', {
-                      key: `history-skeleton-${i}`,
-                      className: 'flex items-center gap-4 py-2 px-3 border-b border-line-light'
-                    },
-                      React.createElement('div', {
-                        className: 'w-8 h-4 shimmer-light animate-shimmer flex-shrink-0',
-                        style: { backgroundSize: '200% 100%', animationDelay: `${i * 50}ms` }
-                      }),
-                      React.createElement('div', {
-                        className: 'h-4 shimmer-light animate-shimmer',
-                        style: { flex: '1 1 0', minWidth: 0, backgroundSize: '200% 100%', animationDelay: `${i * 50 + 25}ms` }
-                      }),
-                      React.createElement('div', {
-                        className: 'h-4 shimmer-light animate-shimmer',
-                        style: { flex: '0.7 1 0', minWidth: 0, backgroundSize: '200% 100%', animationDelay: `${i * 50 + 50}ms` }
-                      }),
-                      React.createElement('div', {
-                        className: 'h-4 shimmer-light animate-shimmer flex-shrink-0',
-                        style: { width: '80px', backgroundSize: '200% 100%', animationDelay: `${i * 50 + 75}ms` }
-                      }),
-                      React.createElement('div', {
-                        className: 'flex gap-1 flex-shrink-0',
-                        style: { width: 'var(--source-col, 140px)' }
-                      },
-                        React.createElement('div', {
-                          className: 'w-5 h-5 rounded shimmer-light animate-shimmer',
-                          style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 100}ms` }
-                        }),
-                        React.createElement('div', {
-                          className: 'w-5 h-5 rounded shimmer-light animate-shimmer',
-                          style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 125}ms` }
-                        })
-                      )
-                    )
+                    React.createElement(TrackRowSkeleton, { key: `history-skeleton-${i}`, index: i, duration: true, cells: [{ key: 'album' }, { key: 'when', width: '80px', align: 'right' }] })
                   )
                 )
               : listeningHistory.error ?
@@ -40790,9 +40668,12 @@ React.createElement('div', {
                         onPlay: (resolverId) => playTrackRow(track, sorted.slice(index + 1), { type: 'history', name: 'History' }, resolverId),
                         onOpenArtist: fetchArtistData,
                         onContextMenu: () => window.showItemMenu({ type: 'track', track }),
+                        duration: true,
                         cells: [
-                          { key: 'album', content: track.album || '' },
-                          { key: 'when', content: track.timestamp ? formatTimeAgo(track.timestamp) : '', width: '80px', align: 'right' }
+                          // The album column only when the list has albums (ListenBrainz's top
+                          // tracks carry none, which left a blank column).
+                          ...(sorted.some(t => t.album) ? [{ key: 'album', content: track.album || '' }] : []),
+                          { key: 'when', content: (track.playedAt || track.timestamp) ? formatTimeAgo(track.playedAt || track.timestamp) : '', width: '80px', align: 'right' }
                         ]
                       }, trackRowDrag(track, { id: track.id, title: track.title, artist: track.artist, album: track.album, duration: track.duration, sources: track.sources || {} })));
                     })
@@ -40805,15 +40686,7 @@ React.createElement('div', {
               topTracks.loading ?
                 React.createElement('div', { className: 'space-y-0' },
                   ...Array(15).fill(null).map((_, i) =>
-                    React.createElement('div', {
-                      key: `top-track-skeleton-${i}`,
-                      className: 'flex items-center gap-4 py-2 px-3 border-b border-line-light'
-                    },
-                      React.createElement('div', { className: 'w-8 h-4 shimmer-light animate-shimmer flex-shrink-0', style: { backgroundSize: '200% 100%' } }),
-                      React.createElement('div', { className: 'h-4 shimmer-light animate-shimmer', style: { flex: '1 1 0', minWidth: 0, backgroundSize: '200% 100%' } }),
-                      React.createElement('div', { className: 'h-4 shimmer-light animate-shimmer', style: { flex: '0.7 1 0', minWidth: 0, backgroundSize: '200% 100%' } }),
-                      React.createElement('div', { className: 'h-4 shimmer-light animate-shimmer flex-shrink-0', style: { width: '80px', backgroundSize: '200% 100%' } })
-                    )
+                    React.createElement(TrackRowSkeleton, { key: `top-track-skeleton-${i}`, index: i, duration: true, cells: [{ key: 'album' }, { key: 'plays', width: '80px', align: 'right' }] })
                   )
                 )
               : topTracks.error ?
@@ -40843,8 +40716,11 @@ React.createElement('div', {
                         onPlay: (resolverId) => playTrackRow(track, filtered.slice(index + 1), { type: 'history', name: 'Top Tracks' }, resolverId),
                         onOpenArtist: fetchArtistData,
                         onContextMenu: () => window.showItemMenu({ type: 'track', track }),
+                        duration: true,
                         cells: [
-                          { key: 'album', content: track.album || '' },
+                          // The album column only when the list has albums (ListenBrainz's top
+                          // tracks carry none, which left a blank column).
+                          ...(filtered.some(t => t.album) ? [{ key: 'album', content: track.album || '' }] : []),
                           { key: 'plays', content: `${track.playCount} plays`, width: '80px', align: 'right' }
                         ]
                       }, trackRowDrag(track)));
@@ -40917,38 +40793,7 @@ React.createElement('div', {
                   className: 'card-grid gap-x-4 gap-y-5 pb-6'
                 },
                   Array.from({ length: 10 }).map((_, i) =>
-                    React.createElement('div', {
-                      key: `album-skeleton-${i}`,
-                      style: {
-                        padding: '10px',
-                        borderRadius: '10px',
-                        backgroundColor: 'var(--card-bg)',
-                        boxShadow: 'var(--card-shadow)'
-                      }
-                    },
-                      React.createElement('div', {
-                        className: 'shimmer-light animate-shimmer',
-                        style: {
-                          aspectRatio: '1',
-                          borderRadius: '6px',
-                          marginBottom: '10px',
-                          backgroundSize: '200% 100%',
-                          animationDelay: `${i * 50}ms`
-                        }
-                      }),
-                      React.createElement('div', {
-                        className: 'h-4 shimmer-light rounded w-3/4 mb-2 animate-shimmer',
-                        style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 25}ms` }
-                      }),
-                      React.createElement('div', {
-                        className: 'h-3 shimmer-light rounded w-1/2 mb-1 animate-shimmer',
-                        style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 50}ms` }
-                      }),
-                      React.createElement('div', {
-                        className: 'h-3 shimmer-light rounded w-1/3 animate-shimmer',
-                        style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 75}ms` }
-                      })
-                    )
+                    React.createElement(CardSkeleton, { key: `album-skeleton-${i}`, index: i, lines: 2 })
                   )
                 )
               : topAlbums.error ?
@@ -41191,9 +41036,12 @@ React.createElement('div', {
                         onPlay: (resolverId) => playTrackRow(track, sorted.slice(index + 1), { type: 'friend', name: currentFriend?.name || 'Friend', tab: 'recent' }, resolverId),
                         onOpenArtist: fetchArtistData,
                         onContextMenu: () => window.showItemMenu({ type: 'track', track }),
+                        duration: true,
                         cells: [
-                          { key: 'album', content: track.album || '' },
-                          { key: 'when', content: track.timestamp ? formatTimeAgo(track.timestamp) : '', width: '80px', align: 'right' }
+                          // The album column only when the list has albums (ListenBrainz's top
+                          // tracks carry none, which left a blank column).
+                          ...(sorted.some(t => t.album) ? [{ key: 'album', content: track.album || '' }] : []),
+                          { key: 'when', content: (track.playedAt || track.timestamp) ? formatTimeAgo(track.playedAt || track.timestamp) : '', width: '80px', align: 'right' }
                         ]
                       }, trackRowDrag(track)));
                     })
@@ -41215,8 +41063,11 @@ React.createElement('div', {
                           onPlay: (resolverId) => playTrackRow(track, friendHistoryData.topTracks.slice(index + 1), { type: 'friend', name: currentFriend?.name || 'Friend', tab: 'topTracks' }, resolverId),
                           onOpenArtist: fetchArtistData,
                           onContextMenu: () => window.showItemMenu({ type: 'track', track }),
+                          duration: true,
                           cells: [
-                            { key: 'album', content: track.album || '' },
+                            // The album column only when the list has albums (ListenBrainz's top
+                            // tracks carry none, which left a blank column).
+                            ...(friendHistoryData.topTracks.some(t => t.album) ? [{ key: 'album', content: track.album || '' }] : []),
                             { key: 'plays', content: `${track.playCount} plays`, width: '80px', align: 'right' }
                           ]
                         }, trackRowDrag(track)));

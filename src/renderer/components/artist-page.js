@@ -23,6 +23,7 @@ const { sellerColor, sellerTextColor, sellerBadgeBg, sellerShortName, sellerName
 const { Tooltip, ShareButton } = require('./ui-atoms');
 const { CardButton } = require('./card-button');
 const Icons = require('./icons');
+const { CardSkeleton } = require('./home-skeletons');
 const { RELEASE_TYPE_COLORS } = require('../lib/release-types');
 const { FilterBox, StickyBar } = require('./filter-box');
 const { Button, buttonClassName } = require('./button');
@@ -763,24 +764,12 @@ const ArtistPage = React.memo(function ArtistPage(props) {
               style: { backgroundSize: '200% 100%' }
             }),
             // Skeleton album grid
+            // The shared card's placeholder, in the discography's grid.
             React.createElement('div', {
-              className: 'card-grid gap-4'
+              className: 'card-grid gap-x-4 gap-y-5'
             },
               Array.from({ length: 10 }).map((_, i) =>
-                React.createElement('div', { key: `album-skeleton-${i}` },
-                  React.createElement('div', {
-                    className: 'aspect-square shimmer-light rounded-lg mb-3 animate-shimmer',
-                    style: { backgroundSize: '200% 100%', animationDelay: `${i * 50}ms` }
-                  }),
-                  React.createElement('div', {
-                    className: 'h-4 shimmer-light rounded w-3/4 mb-2 animate-shimmer',
-                    style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 25}ms` }
-                  }),
-                  React.createElement('div', {
-                    className: 'h-3 shimmer-light rounded w-1/2 animate-shimmer',
-                    style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 50}ms` }
-                  })
-                )
+                React.createElement(CardSkeleton, { key: `album-skeleton-${i}`, index: i, lines: 1 })
               )
             )
           )

@@ -543,3 +543,28 @@ describe('the source icon column fits the user\'s services', () => {
     expect(app).toContain("style: { '--source-col': `${sourceColumnWidth(playbackResolvers)}px` }");
   });
 });
+
+describe('every track list and card grid loads with the shared placeholders', () => {
+  const read = (f) => fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', f), 'utf8');
+  const app = read('app.js');
+  test('track lists: TrackRowSkeleton, in the rows\' columns', () => {
+    expect(app).toMatch(/TrackRowSkeleton, \{ key: `history-skeleton-\$\{i\}`, index: i, duration: true, cells: \[\{ key: 'album' \}, \{ key: 'when', width: '80px', align: 'right' \}\] \}/);
+    expect(app).toMatch(/TrackRowSkeleton, \{ key: `top-track-skeleton-\$\{i\}`, index: i, duration: true, cells: \[\{ key: 'album' \}, \{ key: 'plays', width: '80px', align: 'right' \}\] \}/);
+    expect(app).toMatch(/TrackRowSkeleton, \{ key: `track-skeleton-\$\{i\}`, index: i, duration: true \}/); // the pending playlist view
+    expect(read('components/cards.js')).toMatch(/TrackRowSkeleton, \{ key: `track-skeleton-\$\{i\}`, index: i, duration: true, showArtist: false \}/); // an album's tracklist
+  });
+  test('card grids: CardSkeleton, in the real grid and count', () => {
+    expect(app).toMatch(/CardSkeleton, \{ key: `album-skeleton-\$\{i\}`, index: i, lines: 2 \}/); // History's top albums
+    expect(app).toMatch(/CardSkeleton, \{ key: `playlist-skeleton-\$\{i\}`, index: i, lines: 1 \}/);
+    expect(app).toMatch(/CardSkeleton, \{ key: `trailing-skeleton-\$\{i\}`, index: i, lines: 1 \}/);
+    expect(app).toMatch(/CardSkeleton, \{ key: `skeleton-\$\{i\}`, index: i, lines: 2 \}/); // Fresh Drops
+    expect(read('components/artist-page.js')).toMatch(/className: 'card-grid gap-x-4 gap-y-5'\s*\},\s*Array\.from\(\{ length: 10 \}\)\.map\(\(_, i\) =>\s*React\.createElement\(CardSkeleton/);
+    const search = read('components/search-page.js');
+    expect(search).toMatch(/Array\(getItemsPerRow\(140\)\)\.fill\(null\)/); // the tracks row's real count
+    expect(search).not.toMatch(/getItemsPerRow\(110\)|getItemsPerRow\(150\)/);
+  });
+  test('History reads when a listen was played from the field it carries', () => {
+    expect(app).toContain("formatTimeAgo(track.playedAt || track.timestamp)");
+    expect(app).not.toContain('formatTimeAgo(track.timestamp)');
+  });
+});

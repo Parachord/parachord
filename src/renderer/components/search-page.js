@@ -36,6 +36,7 @@ const { trackSlug, slug } = require('../lib/track-slug');
 const { releaseMenu, artistMenu } = require('../lib/item-menus');
 const { countOf } = require('../lib/plural');
 const { PlaylistCard } = require('./playlist-card');
+const { CardSkeleton } = require('./home-skeletons');
 const { Chip } = require('./filter-chips');
 
 const { Play } = Icons;
@@ -620,30 +621,10 @@ const SearchPage = React.memo(function SearchPage(props) {
             React.createElement('div', null,
               React.createElement(SectionHeader, { as: 'h3', title: 'Tracks', style: SECTION_HEADER_GAP }),
               React.createElement('div', { className: 'flex gap-4' },
-                ...Array(getItemsPerRow(110)).fill(null).map((_, i) => {
-                  const skeletonWidth = Math.floor((searchContainerWidth - (getItemsPerRow(110) - 1) * 16) / getItemsPerRow(110));
-                  return React.createElement('div', {
-                    key: `track-skeleton-${i}`,
-                    className: 'transition-all duration-300 ease-out',
-                    style: { width: skeletonWidth }
-                  },
-                    React.createElement('div', {
-                      className: 'w-full aspect-square rounded-lg shimmer-light mb-2 animate-shimmer',
-                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 100}ms` }
-                    }),
-                    React.createElement('div', {
-                      className: 'h-3 shimmer-light w-3/4 mb-1 rounded animate-shimmer',
-                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 100 + 50}ms` }
-                    }),
-                    React.createElement('div', {
-                      className: 'h-2 shimmer-light w-1/2 rounded animate-shimmer',
-                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 100 + 100}ms` }
-                    }),
-                    React.createElement('div', {
-                      className: 'h-4 shimmer-light w-10 mt-1 rounded animate-shimmer',
-                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 100 + 150}ms` }
-                    })
-                  );
+                // The real row's count and width (getItemsPerRow(140)).
+                ...Array(getItemsPerRow(140)).fill(null).map((_, i) => {
+                  const skeletonWidth = Math.floor((searchContainerWidth - (getItemsPerRow(140) - 1) * 16) / getItemsPerRow(140));
+                  return React.createElement('div', { key: `track-skeleton-${i}`, style: { width: skeletonWidth, flexShrink: 0 } }, React.createElement(CardSkeleton, { index: i, lines: 1 }));
                 })
               )
             ),
@@ -651,26 +632,10 @@ const SearchPage = React.memo(function SearchPage(props) {
             React.createElement('div', null,
               React.createElement(SectionHeader, { as: 'h3', title: 'Albums', style: SECTION_HEADER_GAP }),
               React.createElement('div', { className: 'flex gap-4' },
-                ...Array(getItemsPerRow(150)).fill(null).map((_, i) => {
-                  const skeletonWidth = Math.floor((searchContainerWidth - (getItemsPerRow(150) - 1) * 16) / getItemsPerRow(150));
-                  return React.createElement('div', {
-                    key: `album-skeleton-${i}`,
-                    className: 'transition-all duration-300 ease-out',
-                    style: { width: skeletonWidth }
-                  },
-                    React.createElement('div', {
-                      className: 'w-full aspect-square rounded-lg shimmer-light mb-3 animate-shimmer',
-                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 100}ms` }
-                    }),
-                    React.createElement('div', {
-                      className: 'h-3 shimmer-light w-3/4 mb-1 rounded animate-shimmer',
-                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 100 + 50}ms` }
-                    }),
-                    React.createElement('div', {
-                      className: 'h-2 shimmer-light w-1/2 rounded animate-shimmer',
-                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 100 + 100}ms` }
-                    })
-                  );
+                // The real row's count and width (getItemsPerRow(160)).
+                ...Array(getItemsPerRow(160)).fill(null).map((_, i) => {
+                  const skeletonWidth = Math.floor((searchContainerWidth - (getItemsPerRow(160) - 1) * 16) / getItemsPerRow(160));
+                  return React.createElement('div', { key: `album-skeleton-${i}`, style: { width: skeletonWidth, flexShrink: 0 } }, React.createElement(CardSkeleton, { index: i, lines: 1 }));
                 })
               )
             )

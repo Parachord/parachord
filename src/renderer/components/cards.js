@@ -9,7 +9,7 @@
 // app.js for the in-component call sites; PlayTop10Icon is
 // cards-only (the playtop-10 / queue-top-10 affordances).
 const { ResolverIcon, PlaybackProgress, ShareButton } = require('./ui-atoms');
-const { TrackRow } = require('./track-lists');
+const { TrackRow, TrackRowSkeleton } = require('./track-lists');
 const { AlbumCard } = require('./album-card');
 const { useReveal, ArtOverlay } = require('./card-art');
 const Icons = require('./icons');
@@ -960,29 +960,7 @@ const ReleasePage = ({
       // Show skeleton while tracks are loading
       !release.tracks ? React.createElement('div', { className: 'space-y-0' },
         [75, 60, 85, 55, 70, 80, 50, 65, 90, 58].map((width, i) =>
-          React.createElement('div', {
-            key: `track-skeleton-${i}`,
-            className: 'flex items-center gap-4 py-3 px-4',
-            style: { borderRadius: '8px', marginBottom: '2px' }
-          },
-            // Track number
-            React.createElement('div', {
-              className: 'w-6 h-4 rounded shimmer-light animate-shimmer',
-              style: { backgroundSize: '200% 100%' }
-            }),
-            // Track title
-            React.createElement('div', { className: 'flex-1' },
-              React.createElement('div', {
-                className: 'h-4 rounded shimmer-light animate-shimmer',
-                style: { width: `${width}%`, backgroundSize: '200% 100%' }
-              })
-            ),
-            // Duration
-            React.createElement('div', {
-              className: 'w-10 h-4 rounded shimmer-light animate-shimmer',
-              style: { backgroundSize: '200% 100%' }
-            })
-          )
+          React.createElement(TrackRowSkeleton, { key: `track-skeleton-${i}`, index: i, duration: true, showArtist: false })
         )
       ) :
       release.tracks.length > 0 ?
