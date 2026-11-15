@@ -341,7 +341,11 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                         title: editedPlaylistData.title,
                         creator: editedPlaylistData.creator,
                         tracks: editedPlaylistData.tracks,
-                        lastModified: Date.now()
+                        lastModified: Date.now(),
+                        // Saved with the tracks, so the push loops send the
+                        // edit to the mirrors (sync.md "Local-content mutators
+                        // must persist locallyModified in the same save").
+                        ...((selectedPlaylist.syncedFrom || selectedPlaylist.syncedTo) ? { locallyModified: true } : {})
                       };
                       setSelectedPlaylist(updated);
                       setPlaylistTracks(editedPlaylistData.tracks);

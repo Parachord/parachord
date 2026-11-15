@@ -1316,6 +1316,7 @@ const {
 const { sourceRowState } = require('./lib/visible-sources');
 const { trackDurationLabel } = require('./lib/track-duration');
 const { contextPlaylistTarget, playlistRef } = require('./lib/playlist-context');
+const { refreshedTracks } = require('./lib/hosted-refresh');
 const { pulledOpenPlaylist } = require('./lib/playlist-sync-banner');
 const { shouldPushToSource, recordPushToSource } = require('../../sync-engine/auto-pull');
 const { Play, Pause, SkipForward, SkipBack, Volume2, Search, List, Settings, Plus, Music, Radio, Users, Heart, X } = Icons;
@@ -25832,12 +25833,14 @@ ${tracks}
   const savePlaylistToStore = async (playlist) => {
     if (!playlist || !playlist.id) return;
 
-    // Hosted XSPF only: the poller is canonical, so track edits are not the
-    // saved copy — title and creator overrides live on the reload list.
-    // A provider URL import is a snapshot. It also has sourceUrl, but its
-    // edits must persist through playlists.save, and it must not be written
-    // back into hosted_playlists (that list is what re-imported the Amazon
-    // page at launch and showed "Failed to parse XSPF").
+    // Hosted XSPF: title and creator overrides also go on the reload list, so
+    // the launch reload keeps them. Track edits are saved like any playlist's
+    // (below): Parachord can't write the XSPF back to its server, but an edit
+    // here stays, and reaches the playlist's mirrors, until the link's
+    // tracklist changes (lib/hosted-refresh.js).
+    // A provider URL import is a snapshot. It also has sourceUrl, but it must
+    // not be written into hosted_playlists (that list is what re-imported the
+    // Amazon page at launch and showed "Failed to parse XSPF").
     if (playlist.sourceUrl && !window.isProviderImportedPlaylist(playlist, resolverLoaderRef.current)) {
       try {
         const hostedPlaylists = await window.electron?.store?.get('hosted_playlists') || [];
@@ -25851,7 +25854,6 @@ ${tracks}
       } catch (error) {
         console.error(`❌ Error saving hosted playlist metadata:`, error);
       }
-      return;
     }
 
     // Freshness (Home's "Your playlists, freshest first" and its "+N"):
@@ -34543,10 +34545,15 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         const existing = existingIndex >= 0 ? prev[existingIndex] : existingOnDisk;
         if (existing) {
           didUpdate = true;
-          // Mark as locally modified only if the XSPF content actually changed —
-          // so the sync loop pushes XSPF-driven updates to providers, but startup
-          // reloads with unchanged content don't trigger spurious pushes.
-          const contentChanged = existing.xspf !== content;
+          // Keep the local tracks (edits included) unless the link's
+          // tracklist changed since the last import; a change replaces them
+          // and is flagged so the sync loop pushes it to the mirrors. An
+          // unchanged reload or poll leaves the edits, and their flag, alone
+          // (lib/hosted-refresh.js).
+          let previousLinkTracks = null;
+          try { previousLinkTracks = existing.xspf ? (parseXSPF(existing.xspf)?.tracks || null) : null; } catch { previousLinkTracks = null; }
+          const refreshed = refreshedTracks(existing, { previousLinkTracks, linkTracks: parsed.tracks || [] });
+          const contentChanged = refreshed.changed;
           // Freshness: a refresh that brought different tracks is a change
           // (tracksChangedAt, lastChangeAdded); a re-poll with the same
           // tracks keeps the existing stamp.
@@ -34556,7 +34563,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
             title: playlistTitle,
             creator: playlistCreator,
             ...(playlistCover ? { coverArt: playlistCover } : {}),
-            tracks: parsed.tracks || [],
+            tracks: refreshed.tracks,
             lastUpdated: Date.now(),
             ...(contentChanged ? { locallyModified: true, lastModified: Date.now() } : {})
           }, Date.now());
@@ -34579,8 +34586,10 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         } catch (e) {
           console.warn('Failed to persist updated hosted playlist:', e);
         }
-        console.log(`🔄 Updated hosted playlist: ${playlistTitle} (${parsed.tracks?.length || 0} tracks)`);
-        return { updated: true, playlist: { ...parsed, title: playlistTitle, creator: playlistCreator, ...(playlistCover ? { coverArt: playlistCover } : {}) } };
+        console.log(`🔄 Updated hosted playlist: ${playlistTitle} (${updatedPlaylist?.tracks?.length || 0} tracks)`);
+        // The tracks the record kept, so an open playlist shows the edits
+        // when the link hadn't changed.
+        return { updated: true, playlist: { ...parsed, tracks: updatedPlaylist?.tracks || parsed.tracks || [], title: playlistTitle, creator: playlistCreator, ...(playlistCover ? { coverArt: playlistCover } : {}) } };
       }
 
       // Add new hosted playlist
