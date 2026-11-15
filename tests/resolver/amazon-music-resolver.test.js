@@ -60,9 +60,14 @@ describe('amazonmusic .axe structure', () => {
     ]);
     // The typed patterns (#1356 M11): what getUrlType classifies a matched
     // URL as, manifest data since the per-service arms died. "track" first —
-    // the ?trackAsin= song share link must beat the bare album pattern.
+    // the ?trackAsin= song share link must beat the bare album pattern, in
+    // BOTH query positions (leading, and after other params like ref=dm_sh&).
     expect(axe.urlTypes).toEqual({
-      track: ['music.amazon.com/albums/*?trackAsin=*', 'music.amazon.com/tracks/*'],
+      track: [
+        'music.amazon.com/albums/*?trackAsin=*',
+        'music.amazon.com/albums/*?*trackAsin=*',
+        'music.amazon.com/tracks/*'
+      ],
       album: ['music.amazon.com/albums/*'],
       playlist: [
         'music.amazon.com/playlists/*',

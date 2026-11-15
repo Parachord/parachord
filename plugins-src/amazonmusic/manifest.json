@@ -36,6 +36,7 @@
   "urlTypes": {
     "track": [
       "music.amazon.com/albums/*?trackAsin=*",
+      "music.amazon.com/albums/*?*trackAsin=*",
       "music.amazon.com/tracks/*"
     ],
     "album": [

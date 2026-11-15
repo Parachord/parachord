@@ -56,6 +56,11 @@ const CASES = [
   // Amazon Music — ?trackAsin= is the song share link (one track, not the album).
   ['amazonmusic', 'https://music.amazon.com/albums/B0H7NR1GWR', 'album'],
   ['amazonmusic', 'https://music.amazon.com/albums/B0H7NR1GWR?trackAsin=B0H7NZ97KH', 'track'],
+  // The param can sit NON-leading in the query (?ref=dm_sh&trackAsin=) — the
+  // old arm was a substring check, so the manifest carries both positions
+  // (albums/*?trackAsin=* AND albums/*?*trackAsin=), both before the album
+  // pattern.
+  ['amazonmusic', 'https://music.amazon.com/albums/B07558DQJL?ref=dm_sh&trackAsin=B0H7NZ97KH', 'track'],
   ['amazonmusic', 'https://music.amazon.com/albums/B07558DQJL?ref=dm_sh', 'album'],
   ['amazonmusic', 'https://music.amazon.com/tracks/B000SNWG5Q', 'track'],
   ['amazonmusic', 'https://music.amazon.com/playlists/PP6417A00A9C99470BBC8834FF3BF6009A', 'playlist'],

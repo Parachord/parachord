@@ -808,10 +808,14 @@ class ResolverLoader {
    * resolver declares no typed patterns (or matches none of them) is
    * 'unknown'. Note the glob's exactness bounds, inherited from urlPatterns:
    * a query-param pattern matches the param in the position the pattern
-   * spells (the leading position every real share link uses), and the host
-   * must be spelled as the pattern spells it (no implicit www./m. aliases —
-   * urlPatterns routing never accepted those either, so a typed miss is a URL
-   * no resolver was found for in the first place).
+   * spells — a service whose share links put the param after other params
+   * declares each position its own pattern (Amazon carries both
+   * `albums/*?trackAsin=*` and `albums/*?*trackAsin=`, the
+   * `?ref=dm_sh&trackAsin=` song-share shape, both listed before its album
+   * pattern) — and the host must be spelled as the pattern spells it (no
+   * implicit www./m. aliases — urlPatterns routing never accepted those
+   * either, so a host-shape typed miss is a URL no resolver was found for
+   * in the first place).
    * @param {string} url - The URL to analyze
    * @returns {string} - 'track', 'album', 'playlist', 'artist', or 'unknown'
    */
