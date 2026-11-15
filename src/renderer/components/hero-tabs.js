@@ -17,6 +17,13 @@
 // label (aria-label), compact (the collapsed hero's smaller row).
 // Props-driven; hooks are qualified; loads under plain Node.
 
+// The selected / idle tab look. Rows that can't use HeroTabs (the artist
+// page's, whose On Tour tab fades in; Search's results) use these, so every
+// hero tab row marks the selected tab the same way.
+const HERO_TAB_SELECTED = 'text-white font-semibold underline decoration-2 underline-offset-[6px]';
+const HERO_TAB_IDLE = 'text-white/80 font-medium hover:text-white';
+const heroTabClass = (selected) => (selected ? HERO_TAB_SELECTED : HERO_TAB_IDLE);
+
 function HeroTabs({ items, isSelected, onSelect, renderLabel, label, compact = false }) {
   const e = React.createElement;
   const refs = React.useRef([]);
@@ -53,12 +60,10 @@ function HeroTabs({ items, isSelected, onSelect, renderLabel, label, compact = f
           compact ? 'px-1.5 py-0.5 text-xs' : 'px-2 py-1 text-sm',
           'uppercase tracking-wider transition-colors no-drag rounded',
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80',
-          i === selectedIndex
-            ? 'text-white font-semibold underline decoration-2 underline-offset-[6px]'
-            : 'text-white/80 font-medium hover:text-white',
+          heroTabClass(i === selectedIndex),
         ].join(' '),
       }, renderLabel(item)),
     ]).flat().filter(Boolean));
 }
 
-module.exports = { HeroTabs };
+module.exports = { HeroTabs, heroTabClass, HERO_TAB_SELECTED, HERO_TAB_IDLE };
