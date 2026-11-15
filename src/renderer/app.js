@@ -37378,7 +37378,8 @@ useEffect(() => {
                             : 'text-ink-tertiary hover:text-ink-secondary hover:bg-surface-hover opacity-0 group-hover:opacity-100 card-reveal'
                         }`
                       },
-                      React.createElement(Icons.Link, { className: 'w-4 h-4', strokeWidth: 2 })
+                      // Headphones: listening (a link read as "copy link").
+                      React.createElement(Icons.Headphones, { className: 'w-4 h-4', strokeWidth: 2 })
                     )
                     ) // Close Tooltip
                   ),
