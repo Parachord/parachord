@@ -40975,9 +40975,18 @@ React.createElement('div', {
               }
             },
                 // Loading state
-                friendHistoryLoading && React.createElement('div', { className: 'flex items-center justify-center py-12 text-accent' },
-                  React.createElement(Icons.Spinner, { size: 32, label: 'Loading…' })
-                ),
+                // Loading: the tab's own placeholders in its real layout (a
+                // lone spinner stood in before).
+                friendHistoryLoading && (friendHistoryTab === 'topAlbums' || friendHistoryTab === 'topArtists'
+                  ? React.createElement('div', { className: 'card-grid gap-4', role: 'status', 'aria-label': 'Loading…' },
+                      Array.from({ length: 10 }).map((_, i) => friendHistoryTab === 'topAlbums'
+                        ? React.createElement(CardSkeleton, { key: i, index: i, lines: 2 })
+                        : React.createElement(ArtistCardSkeleton, { key: i, index: i, lines: 2 })))
+                  : React.createElement('div', { className: 'space-y-0', role: 'status', 'aria-label': 'Loading…' },
+                      Array.from({ length: 12 }).map((_, i) => React.createElement(TrackRowSkeleton, {
+                        key: i, index: i, duration: true,
+                        cells: [{ key: 'album' }, { key: friendHistoryTab === 'recent' ? 'when' : 'plays', width: '80px', align: 'right' }]
+                      })))),
                 // A tab whose load failed (the service unreachable): say so,
                 // with Try again, rather than an empty list that reads as
                 // "they have none". The service's name comes from its plugin.

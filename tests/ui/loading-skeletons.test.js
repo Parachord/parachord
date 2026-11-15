@@ -590,3 +590,14 @@ describe('artist grids load with the shared artist card placeholder', () => {
     expect(read('components/search-page.js')).toMatch(/ArtistCardSkeleton, \{ key: `artist-skeleton-\$\{i\}`, index: i \}/);
   });
 });
+
+test('a friend\'s page loads with each tab\'s own placeholders, not a lone spinner', () => {
+  const app = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
+  const i = app.indexOf('friendHistoryLoading && (friendHistoryTab');
+  expect(i).toBeGreaterThan(-1);
+  const block = app.slice(i, i + 1200);
+  expect(block).toContain('CardSkeleton');
+  expect(block).toContain('ArtistCardSkeleton');
+  expect(block).toContain('TrackRowSkeleton');
+  expect(app).not.toMatch(/friendHistoryLoading && React\.createElement\('div', \{ className: 'flex items-center justify-center py-12/);
+});
