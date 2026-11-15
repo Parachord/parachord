@@ -27,6 +27,10 @@
 
 const { trackKey } = require('../playlist-freshness');
 
+// The seed for an import whose edits can't be ruled out (see
+// seedTracksFingerprint). Never the `count:hash` shape, so it never matches.
+const UNKNOWN_FINGERPRINT = 'unknown';
+
 /**
  * A short, order-aware fingerprint of a tracklist: the track count and an
  * FNV-1a hash of each track's artist and title, folded like trackSlug
@@ -130,19 +134,61 @@ function applyPulledTracks(playlist, { providerId, remotePlaylist, tracks, now }
 }
 
 /**
- * `sync:start` reads `local_playlists`, works through every playlist (awaiting
- * each fetch), then saves the whole list. An edit saved in between would be
- * saved over by the pulled copy. When the stored record moved since the pull
- * read it (`baseLastModified`), keep the stored record and flag it as a
- * conflict, with its snapshot left where it was.
+ * A playlist imported before the fingerprint has none, and the timestamp rule
+ * it falls back to forgets an edit after one more sync. So `sync:start` seeds
+ * one the first time it sees such an import from its source, and the old rule
+ * is never asked again:
+ *   - not flagged `locallyModified`: its tracks, taken as agreeing with the
+ *     source (the best we know);
+ *   - flagged: UNKNOWN_FINGERPRINT, which never matches, so it reads as
+ *     edited until the banner's Push or "Use <service>" records a real one.
+ *     A pull-induced flag can't be told from an edit here, so it reads as
+ *     edited too; asking once is the safe side.
  */
-function keepEditsMadeDuringPull(pulled, latest, baseLastModified) {
+function seedTracksFingerprint(playlist, providerId) {
+  const from = playlist && playlist.syncedFrom;
+  if (!from || from.resolver !== providerId || typeof from.tracksFingerprint === 'string') return playlist;
+  return {
+    ...playlist,
+    syncedFrom: {
+      ...from,
+      tracksFingerprint: playlist.locallyModified ? UNKNOWN_FINGERPRINT : tracksFingerprint(playlist.tracks),
+    },
+  };
+}
+
+/**
+ * `sync:start` reads `local_playlists`, works through every playlist (awaiting
+ * each fetch), then saves the whole list. A save in between would be saved
+ * over by the pulled copy. `base` is what the pull read:
+ * `{ lastModified, tracksFingerprint }`.
+ *   - Nothing saved since: the pull.
+ *   - Saved, tracks unchanged (the resolved-sources flush, a rename): the pull
+ *     on top of the stored record, which keeps its other changes.
+ *   - Saved with other tracks (an edit): the stored record, flagged as a
+ *     conflict, its snapshot left where it was.
+ */
+function keepEditsMadeDuringPull(pulled, latest, base = {}) {
   if (!latest) return pulled;
-  if ((latest.lastModified || 0) === (baseLastModified || 0)) return pulled;
+  if ((latest.lastModified || 0) === (base.lastModified || 0)) return pulled;
+  if (typeof base.tracksFingerprint === 'string' && tracksFingerprint(latest.tracks) === base.tracksFingerprint) {
+    return {
+      ...latest,
+      tracks: pulled.tracks,
+      syncedFrom: pulled.syncedFrom,
+      syncSources: pulled.syncSources,
+      hasUpdates: pulled.hasUpdates,
+      locallyModified: !!(pulled.locallyModified || latest.locallyModified),
+      lastModified: Math.max(pulled.lastModified || 0, latest.lastModified || 0),
+      ...('coverArt' in pulled ? { coverArt: pulled.coverArt } : {}),
+    };
+  }
   return { ...latest, hasUpdates: true };
 }
 
 module.exports = {
+  UNKNOWN_FINGERPRINT,
+  seedTracksFingerprint,
   tracksFingerprint,
   hasRealLocalEdits,
   isHostedXspf,

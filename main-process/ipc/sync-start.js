@@ -25,7 +25,7 @@ const Tombstones = require('../../sync-engine/tombstones');
 const { flagDeadMirrors } = require('../../sync-engine/dead-mirrors');
 const { detachMissingSources } = require('../../sync-engine/missing-sources');
 const { keepDroppedLinks } = require('../../sync-engine/playlist-save-guard');
-const { remoteUpdateAction, hasRealLocalEdits, applyPulledTracks, keepEditsMadeDuringPull, tracksFingerprint } = require('../../sync-engine/auto-pull');
+const { remoteUpdateAction, hasRealLocalEdits, applyPulledTracks, keepEditsMadeDuringPull, tracksFingerprint, seedTracksFingerprint } = require('../../sync-engine/auto-pull');
 
 function registerSyncStartIpc({
   ipcMain,
@@ -410,9 +410,10 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
       let playlistsAdded = 0;
       let playlistsUpdated = 0;
       let playlistsFailed = 0;
-      // Playlists this sync pulled, with the lastModified the pull read. A
-      // save between the pull and the final write moves it, and that edit
-      // wins (keepEditsMadeDuringPull, sync-engine/auto-pull.js).
+      // Playlists this sync pulled, with what the pull read
+      // ({ lastModified, tracksFingerprint }). A save between the pull and
+      // the final write is kept if it changed the tracks, and otherwise
+      // takes the pull on top (keepEditsMadeDuringPull, sync-engine/auto-pull.js).
       const pullBases = new Map();
       const keepEditsSinceRead = (list, latestById) => list.map((p) => (pullBases.has(p.id)
         ? keepEditsMadeDuringPull(p, latestById.get(p.id), pullBases.get(p.id))
@@ -527,6 +528,10 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
                   currentPlaylists[idx] = freshPlaylist;
                 }
               }
+              // An import from before the fingerprint gets one now, before
+              // the short-circuit below moves syncedAt and the old rule
+              // forgets an edit (seedTracksFingerprint, sync-engine/auto-pull.js).
+              currentPlaylists[idx] = seedTracksFingerprint(currentPlaylists[idx], providerId);
 
               // Short-circuit unchanged playlists (parachord#796). When the
               // playlist hasn't drifted on either side AND no metadata backfill
@@ -692,7 +697,8 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
               const freshPlaylists = store.get('local_playlists') || [];
               const freshPlaylist = freshPlaylists.find(p => p.id === localPlaylist.id);
               if (freshPlaylist) {
-                currentPlaylists[idx] = freshPlaylist;
+                // The stored copy has no seed yet if this is its first sync.
+                currentPlaylists[idx] = seedTracksFingerprint(freshPlaylist, providerId);
               }
               const current = currentPlaylists[idx];
 
@@ -752,7 +758,7 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
               const base = pulled
                 ? applyPulledTracks(current, { providerId, remotePlaylist, tracks, now })
                 : current;
-              if (pulled) pullBases.set(current.id, current.lastModified || 0);
+              if (pulled) pullBases.set(current.id, { lastModified: current.lastModified || 0, tracksFingerprint: tracksFingerprint(current.tracks) });
 
               // Always update/backfill metadata fields (creator, source, createdAt)
               currentPlaylists[idx] = {
