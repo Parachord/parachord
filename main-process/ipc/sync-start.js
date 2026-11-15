@@ -497,7 +497,10 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
                 [providerId]: { addedAt: earliestTrackDate, syncedAt: Date.now() }
               },
               createdAt: earliestTrackDate,
-              addedAt: Date.now()  // When it was added to Parachord
+              addedAt: Date.now(),  // When it was added to Parachord
+              // The service's playlist cover; the track mosaic stays the
+              // fallback (album-art.md "Playlist covers").
+              ...(remotePlaylist.coverArt ? { coverArt: remotePlaylist.coverArt } : {})
             };
 
             currentPlaylists.push(newPlaylist);
@@ -762,6 +765,13 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
                 tracks: tracksRefetched && !pulled ? tracks : base.tracks,
                 // Backfill creator if not set
                 creator: current.creator || remotePlaylist.ownerName || null,
+                // The source's playlist cover follows the service: a new one
+                // replaces it, a removed one (null) gives the mosaic back. A
+                // service that reports no covers leaves it alone, and so does
+                // a cross-provider mirror (its source owns the cover).
+                ...(isOwnPullSource && remotePlaylist.coverArt !== undefined
+                  ? { coverArt: remotePlaylist.coverArt || null }
+                  : {}),
                 // Backfill source if not set
                 source: current.source || (remotePlaylist.isOwnedByUser ? `${providerId}-sync` : `${providerId}-import`),
                 // Update createdAt from track data

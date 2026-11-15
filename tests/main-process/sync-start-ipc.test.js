@@ -429,6 +429,25 @@ describe('sync:start pulls a changed import without asking', () => {
     expect(saved('listenbrainz-abc').hasUpdates).toBe(true);
   });
 
+  test('a new import keeps the service\'s playlist cover', async () => {
+    const { saved } = await run({ local: [], remotes: [{ ...remote('abc'), coverArt: 'https://img/abc.jpg' }] });
+    expect(saved('listenbrainz-abc').coverArt).toBe('https://img/abc.jpg');
+  });
+
+  test('a later sync picks up a changed cover, and a removed one gives the mosaic back', async () => {
+    const withCover = { ...imported('abc'), coverArt: 'https://img/old.jpg' };
+    const changed = await run({ local: [withCover], remotes: [{ ...remote('abc'), coverArt: 'https://img/new.jpg' }] });
+    expect(changed.saved('listenbrainz-abc').coverArt).toBe('https://img/new.jpg');
+    const removed = await run({ local: [withCover], remotes: [{ ...remote('abc'), coverArt: null }] });
+    expect(removed.saved('listenbrainz-abc').coverArt).toBeNull();
+  });
+
+  test('a service that reports no cover leaves the playlist\'s own alone', async () => {
+    const withCover = { ...imported('abc'), coverArt: 'https://img/own.jpg' };
+    const { saved } = await run({ local: [withCover], remotes: [remote('abc')] });
+    expect(saved('listenbrainz-abc').coverArt).toBe('https://img/own.jpg');
+  });
+
   test('a hosted XSPF is never pulled from the service', async () => {
     const hosted = imported('abc', { sourceUrl: 'https://example.com/list.xspf', source: 'hosted' });
     const { saved, fetched } = await run({ local: [hosted], remotes: [remote('abc')] });
