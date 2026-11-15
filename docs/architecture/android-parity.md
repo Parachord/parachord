@@ -352,3 +352,16 @@ Android and iOS download plugins from the same marketplace as desktop, so they h
 - An app below the floor doesn't download the update (check the catalog entry first, then the downloaded `.axe` before saving it), skips a cached copy below the floor at load, and refuses a manual install with a "needs Parachord X or later" message. The copy bundled with the app is never checked.
 
 What breaks if a client drifts: a plugin built for a newer host (desktop's native Amazon player in parachord#1158 is the first) downloads onto an app that lacks the host feature, and that plugin stops working there until the user updates the app.
+
+### Android Parity Requirements (playlist link import)
+
+**Mobile imports a playlist from every link desktop does.** Desktop's list is not written anywhere in its import code: `handleImportPlaylistFromUrl` asks the plugin registry (`findResolverForUrl`, then `getUrlType(url) === 'playlist'`, then `lookupPlaylist`), and only a URL no plugin claims is fetched as a hosted XSPF. A claimed URL that fails throws, naming the service; it is never parsed as XSPF. Today that is Spotify, Apple Music, Amazon Music, SoundCloud sets, YouTube and YouTube Music playlists, ListenBrainz playlists, and hosted XSPF.
+
+Rules:
+- Every way in imports the same links: on desktop, dropping a link, the import dialog and `parachord://import?url=`; on Android, the import dialog, `parachord://import` and the share sheet.
+- Mobile routes import the same way, through its registry (`PluginManager.lookupPlaylist`, as `ProviderPlaylistResolver` already does for `play/playlist`), with native fast paths allowed in front. Then a new `.axe` adds the link type on both clients with no code, and only a new native path needs a mobile change.
+- A desktop change that adds or removes an import link type outside the registry (a native path, a new document format, a change to the hosted XSPF fallback) needs a mobile ticket.
+- A plugin whose `lookupPlaylist` needs a desktop-only host (Amazon's calls the main-process `window.electron.amazonMusic` bridge) needs an Android host or native client for that call; until then mobile reports the service as unavailable rather than fetching its page.
+- The imported record keeps desktop's shape: `sourceUrl` = the link, `source` = `${resolverId}-import` or `hosted-xspf`, the plugin's playlist image as the cover, and `autoUpdate` once mobile asks the keep-updated question.
+
+Mobile tickets: Parachord/parachord-mobile#690 (every link type), Parachord/parachord-mobile#689 (kept updated or a snapshot). Both give service imports a `sourceUrl`, so mobile's hosted poller (`getHosted` is `WHERE sourceUrl IS NOT NULL`) has to skip `-import` sources in the same change.

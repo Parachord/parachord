@@ -216,6 +216,7 @@ Anything that creates a shared invariant or data shape that Android also has to 
 - Resolver scoring / confidence model changes — `confidence-scoring.js` ↔ `ResolverScoring.kt` byte-equivalence is the strictest mirror requirement
 - Achordion-facing endpoints (writer endpoints that the desktop calls and Android should also call, or where Android's submit semantics need to match)
 - Protocol surface additions (`parachord://` deep links — see "Android Parity Requirements (protocol play handlers)" in [android-parity.md](docs/architecture/android-parity.md))
+- Playlist import link types: mobile imports a playlist from every link desktop does, routed through the plugin registry on both (see "Android Parity Requirements (playlist link import)" in [android-parity.md](docs/architecture/android-parity.md))
 
 ### When this does NOT apply
 
