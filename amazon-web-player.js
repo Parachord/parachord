@@ -537,8 +537,12 @@ const amazonWebPlayer = {
         await navigation;
         // A long navigation (waiting out in-flight replays, up to the 12s
         // pageFetch budget) can eat the whole poll window before the page
-        // even loads — rescan once it has settled.
-        if (!headers && !loadError) scan();
+        // even loads — and the page's gql fires ~1-3s after it settles. Poll
+        // on: a second bounded window after the navigation.
+        for (let i = 0; i < 20 && !headers && !loadError; i++) {
+          await new Promise((resolve) => setTimeout(resolve, 250));
+          scan();
+        }
         // Park on the warm fuse (template replays need an Amazon-origin page
         // world; parkSearchView's immediate blank only happens on real restarts).
         this.scheduleParkSearchView();

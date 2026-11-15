@@ -221,6 +221,31 @@ describe('searchAlbums (the albums tab of the spec search)', () => {
     expect(resolver._specSearchTemplate).not.toBe(minted);
   });
 
+  test('the staleness check short-circuits before path selection — a stale job never replays a warm template', async () => {
+    // The entry-time check (before the fast path): a job already past the
+    // budget must not even replay from a fresh template, never mind a page
+    // load — the caller has moved on either way.
+    const ws = amazonWebSessionMock({ albums: ALBUMS });
+    const resolver = instantiateAmazonPlugin(axe);
+    await searchAlbums(resolver, 'wild pink'); // mints the template
+    ws.load.mockClear();
+    ws.pageFetch.mockClear();
+    const rows = await resolver.specSearch({
+      url: 'https://music.amazon.com/search/wild%20pink/albums',
+      searchText: 'wild pink',
+      specType: 'album',
+      noun: 'albums',
+      staleCheck: () => true,
+      parse: (data) => {
+        const out = resolver.lib.searchAlbumsFromGql(data);
+        return { rows: out.albums, envelope: out.envelope };
+      }
+    });
+    expect(rows).toEqual([]);
+    expect(ws.load).not.toHaveBeenCalled();
+    expect(ws.pageFetch).not.toHaveBeenCalled();
+  });
+
   test('a stale job (past the #1135 8s catalog budget) skips its page load and returns []', async () => {
     const ws = amazonWebSessionMock({ albums: ALBUMS });
     const resolver = instantiateAmazonPlugin(axe);

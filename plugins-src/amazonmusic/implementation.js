@@ -1138,6 +1138,10 @@ module.exports = {
         this._sessionGeneration = state.generation;
         this._planState = null;
         this._specSearchTemplate = null;
+        // The search breaker too: its failure counts may be session-shaped
+        // (a parked-wall run of structural misses), and a fresh session is
+        // the recovery path — a genuine hornet rename re-trips it in three.
+        this._searchBreaker = null;
       }
     }
     return state;
