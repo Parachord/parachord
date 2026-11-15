@@ -200,7 +200,7 @@ Components use `React.createElement()` (no JSX) and live in `src/renderer/compon
 | An artist card | `ArtistCard` (`RankBadge` for a rank) | `artist-card.js` | Play on hover (the top tracks), queue in the artist menu |
 | A person (friend, recommended listener) | `ListenerCard` | `listener-card.js` | The hexagon avatar (`LISTENER_HEXAGON`); user avatars are always hexagons |
 | A cover's hover actions (Add to playlist, Play, Add to queue) | `ArtOverlay` + `useReveal` | `card-art.js` | Shown on hover and keyboard focus. Without `shown`, CSS reveals it (`.card-actions`) for a card drawn in a list. `ArtBox` is the square art (cover, mosaic or placeholder, reporting a dead cover) |
-| A track list row | `TrackRow` | `track-lists.js` | number · title · artist · `cells` · `duration` · source icons. `lead` (edit-mode handles), `showArtist`, `resolving`, `dimResolving`; `onPlay(resolverId?)` covers the row and each icon |
+| A track list row | `TrackRow` | `track-lists.js` | number · title · artist · `cells` · source icons · `duration` (the last column, the icons right up against it). `lead` (edit-mode handles), `showArtist`, `resolving`, `dimResolving`; `onPlay(resolverId?)` covers the row and each icon |
 | A service's play button (a source icon) | `SourceIconButton` (`TrackSources` for the column) | `track-lists.js` | The plug-in's colour and logo, "Play from X (95% match)"; `quiet` on the dark queue drawer (`.source-quiet`: faded and desaturated at rest, full on hover or focus) |
 | A page's coloured header | `PageHero` | `page-hero.js` | 320px, collapsing to 80px; gradient and pattern from `PAGE_COLORS`; the page passes `expanded` and `collapsedContent`. The artist page's photo hero is the one other design |
 | A page's Filter… box | `FilterBox` | `filter-box.js` | Opens focused; an empty box closes on blur; ✕ or Escape empties and closes it (and its Escape doesn't close a dialog around it) |
@@ -274,7 +274,7 @@ TrackRow({ track, number, lead, isNowPlaying, sources, allResolvers, onPlay, onO
 - The row every page list renders: History, a friend's history, Recommendations, Charts, the playlist page, Collection, Search and an album's tracklist (10 copies until 2026-11-15). The queue drawer's row has its own layout.
 - `sources` is `{ trackSources, playbackResolvers, resolverOrder }`; the row runs `sourceRowState` on it, so a row resolving shows a shimmer and an unplayable one is dimmed. A local file's Local Files icon is one more source, in the user's source order.
 - `onPlay(resolverId?)` is both the row click and each source icon's, so they can't disagree about the queue or the context.
-- Columns: `number` (or `lead`) 32px · title (flex 1) · artist (flex 0.7, a link when `onOpenArtist`) · `cells` (`{ content, width | flex, align, onClick }`) · `duration` 50px · icons 140px (`sourcesWidth`). The skeletons use the same columns.
+- Columns: `number` (or `lead`) 32px · title (flex 1) · artist (flex 0.7, a link when `onOpenArtist`) · `cells` (`{ content, width | flex, align, onClick }`) · icons, right-aligned (`--source-col`: one 24px slot per playable service, at most 140px; `sourcesWidth` overrides) · `duration` 50px, right-aligned, last. The icons always touch the duration and the durations line up down the row's end. `TrackRowSkeleton` has the same columns.
 
 ### VirtualizedQueueList
 

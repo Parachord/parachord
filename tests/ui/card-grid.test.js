@@ -45,7 +45,8 @@ test('the playlist view\'s art and icon columns follow the content area, and so 
   const src = fs.readFileSync(path.join(ROOT, 'src/renderer/components/playlist-view-page.js'), 'utf8');
   // The rows' icon column (the shared TrackRow's sourcesWidth) and the skeleton's.
   expect(src).toMatch(/sourcesWidth: PLAYLIST_ICON_COLUMN,/);
-  expect((src.match(/width: PLAYLIST_ICON_COLUMN/g) || []).length).toBe(1);
+  // The skeleton is the shared TrackRowSkeleton, given the same column.
+  expect(src).toMatch(/React\.createElement\(TrackRowSkeleton, \{ key: `skeleton-\$\{index\}`, index, duration: true, sourcesWidth: PLAYLIST_ICON_COLUMN \}\)/);
   expect(src).toMatch(/width: PLAYLIST_ART_COLUMN, overflowY: 'auto'/);
   const app = fs.readFileSync(path.join(ROOT, 'src/renderer/app.js'), 'utf8');
   expect(app).toMatch(/style: \{ width: PLAYLIST_ART_COLUMN \}/);

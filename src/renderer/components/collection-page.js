@@ -22,7 +22,7 @@ const { EmptyState, ErrorState } = require('./states');
 const { SortMenu } = require('./sort-menu');
 const { Menu } = require('./menu');
 const { HeroTabs } = require('./hero-tabs');
-const { VirtualizedTrackList, TrackRow } = require('./track-lists');
+const { VirtualizedTrackList, TrackRow, TrackRowSkeleton } = require('./track-lists');
 const { slug } = require('../lib/track-slug');
 const { artistMenu } = require('../lib/item-menus');
 const { PlayTop10Icon } = require('./cards');
@@ -343,55 +343,11 @@ React.createElement('button', {
             // wrapper below for their padding.
             collectionTab === 'tracks' && (() => {
               if (libraryLoading || collectionLoading) {
-                // Skeleton loaders while loading - matches new rounded row style
+                // The shared track row's placeholder, in the rows' columns
+                // (the album cell and the duration).
                 return React.createElement('div', { className: 'space-y-0' },
                   Array.from({ length: 8 }).map((_, index) =>
-                    React.createElement('div', {
-                      key: `skeleton-${index}`,
-                      className: 'flex items-center gap-4 py-3 px-4',
-                      style: { borderRadius: '8px', marginBottom: '2px' }
-                    },
-                      // Track number skeleton
-                      React.createElement('div', {
-                        className: 'h-3 shimmer-light rounded animate-shimmer',
-                        style: { width: '24px', flexShrink: 0 }
-                      }),
-                      // Title skeleton - flexible
-                      React.createElement('div', {
-                        className: 'h-3.5 shimmer-light rounded animate-shimmer',
-                        style: { flex: '1 1 0', minWidth: 0, animationDelay: '0.1s' }
-                      }),
-                      // Artist skeleton - flexible
-                      React.createElement('div', {
-                        className: 'h-3.5 shimmer-light rounded animate-shimmer',
-                        style: { flex: '0.7 1 0', minWidth: 0, animationDelay: '0.2s' }
-                      }),
-                      // Album skeleton - flexible
-                      React.createElement('div', {
-                        className: 'h-3.5 shimmer-light rounded animate-shimmer',
-                        style: { flex: '0.5 1 0', minWidth: 0, animationDelay: '0.3s' }
-                      }),
-                      // Duration skeleton
-                      React.createElement('div', {
-                        className: 'h-3 shimmer-light rounded animate-shimmer flex-shrink-0',
-                        style: { width: '50px', animationDelay: '0.4s' }
-                      }),
-                      // Resolver icons skeleton
-                      React.createElement('div', {
-                        className: 'flex items-center gap-1 justify-start',
-                        style: { width: 'var(--source-col, 140px)', flexShrink: 0 }
-                      },
-                        React.createElement('div', {
-                          className: 'w-5 h-5 shimmer-light rounded animate-shimmer',
-                          style: { animationDelay: '0.5s' }
-                        }),
-                        React.createElement('div', {
-                          className: 'w-5 h-5 shimmer-light rounded animate-shimmer',
-                          style: { animationDelay: '0.6s' }
-                        })
-                      )
-                    )
-                  )
+                    React.createElement(TrackRowSkeleton, { key: `skeleton-${index}`, index, duration: true, cells: [{ key: 'album' }] }))
                 );
               }
 

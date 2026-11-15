@@ -73,27 +73,23 @@ describe('Recommendations skeletons match the sectioned page', () => {
   });
 
   test('same song row padding and columns', () => {
-    // The song rows are the shared TrackRow (with a duration column): render
-    // one and compare its box and columns with the skeleton's.
+    // The song rows are the shared TrackRow (with a duration column), and
+    // their placeholder is its own TrackRowSkeleton: render both and compare.
     expect(songRow).toMatch(/React\.createElement\(TrackRow,[\s\S]*duration: true/);
+    expect(skel).toContain('return React.createElement(TrackRowSkeleton, { index, duration: true });');
     global.React = require('react');
     const { renderToStaticMarkup } = require('react-dom/server');
-    const { TrackRow } = require('../../src/renderer/components/track-lists');
+    const { TrackRow, TrackRowSkeleton } = require('../../src/renderer/components/track-lists');
     const row = renderToStaticMarkup(React.createElement(TrackRow, {
       track: { id: 'a', title: 'T', artist: 'A', duration: 200 }, number: '01', duration: true,
       sources: { trackSources: {}, playbackResolvers: [], resolverOrder: [] }, allResolvers: [], onPlay() {}, onOpenArtist() {},
     }));
+    const ph = renderToStaticMarkup(React.createElement(TrackRowSkeleton, { duration: true }));
     expect(row).toMatch(/class="card-button flex items-center gap-4 py-3 px-4 /);
-    expect(skel).toMatch(/className: 'flex items-center gap-4 py-3 px-4'/);
-    expect(row).toContain('border-radius:8px;margin-bottom:2px');
-    expect(skel).toMatch(/style: \{ borderRadius: '8px', marginBottom: '2px' \}/);
-    const cols = [
-      ["width: '32px'", 'width:32px'], ["flex: '1 1 0', minWidth: 0", 'flex:1 1 0;min-width:0'], ["flex: '0.7 1 0', minWidth: 0", 'flex:0.7 1 0;min-width:0'],
-      ["width: '50px'", 'width:50px'], ["width: 'var(--source-col, 140px)', flexShrink: 0, minHeight: '24px'", 'width:var(--source-col, 140px);flex-shrink:0;min-height:24px'],
-    ];
-    for (const [src, css] of cols) {
-      expect(row).toContain(css);
-      expect(skel).toContain(src);
+    expect(ph).toMatch(/class="flex items-center gap-4 py-3 px-4"/);
+    for (const css of ['border-radius:8px;margin-bottom:2px', 'width:32px', 'flex:1 1 0;min-width:0', 'flex:0.7 1 0;min-width:0', 'width:50px', 'width:var(--source-col, 140px);flex-shrink:0;min-height:24px']) {
+      expect([css, row.includes(css)]).toEqual([css, true]);
+      expect([css, ph.includes(css)]).toEqual([css, true]);
     }
   });
 
@@ -522,14 +518,16 @@ describe('a track row\'s duration sits against its source icons', () => {
   global.React = require('react');
   const { renderToStaticMarkup } = require('react-dom/server');
   const { TrackRow, TrackRowSkeleton } = require('../../src/renderer/components/track-lists');
-  test('the duration is right-aligned and the icons start at their column\'s left edge', () => {
+  test('the icons sit right-aligned against the duration, which is the last column', () => {
     const row = renderToStaticMarkup(React.createElement(TrackRow, {
       track: { id: 'a', title: 'T', artist: 'A', duration: 200, sources: { spotify: { confidence: 1 } } }, number: '01', duration: true,
       sources: { trackSources: {}, playbackResolvers: ['spotify'], resolverOrder: ['spotify'] },
       allResolvers: [{ id: 'spotify', name: 'Spotify', color: '#1db954', play() {} }],
     }));
-    expect(row).toMatch(/<span class="text-right tabular-nums flex-shrink-0"[^>]*>3:20<\/span><div class="flex items-center gap-1 justify-start"/);
-    expect(renderToStaticMarkup(React.createElement(TrackRowSkeleton, { duration: true }))).toContain('class="flex items-center gap-1 justify-start"');
+    // The icons (right-aligned in their column), then the duration last.
+    expect(row).toMatch(/<div class="flex items-center gap-1 justify-end"[^>]*>(?:(?!<\/div>).)*<\/button><\/div><span class="text-right tabular-nums flex-shrink-0"[^>]*>3:20<\/span>/);
+    const ph = renderToStaticMarkup(React.createElement(TrackRowSkeleton, { duration: true }));
+    expect(ph.indexOf('gap-1 justify-end')).toBeLessThan(ph.lastIndexOf('width:50px'));
   });
 });
 

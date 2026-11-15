@@ -12,6 +12,7 @@
  */
 
 const { SectionHeader, SECTION_HEADER_GAP } = require('./section-header');
+const { TrackRowSkeleton } = require('./track-lists');
 const { HOME_CARD_BOX, HOME_CARD_ART_RADIUS, HOME_CARD_TEXT_GAP } = require('./home-skeletons');
 
 // The row grid the real cards use (app.js renderSubsection).
@@ -78,31 +79,9 @@ function RecommendationCardSkeleton({ index = 0, lines = 1 } = {}) {
   );
 }
 
-/** A song row: number, title, artist, duration and the source icons, in the real row's columns. */
+/** A song row: the shared TrackRow's placeholder (number, title, artist, the source icons, the duration). */
 function RecommendationSongRowSkeleton({ index = 0 } = {}) {
-  const delay = stagger(index);
-  return React.createElement('div', {
-    className: 'flex items-center gap-4 py-3 px-4',
-    style: { borderRadius: '8px', marginBottom: '2px' },
-    'aria-hidden': 'true'
-  },
-    React.createElement('div', { className: 'flex-shrink-0 flex justify-end', style: { width: '32px' } },
-      bar('h-3', { width: '16px', animationDelay: delay })),
-    React.createElement('div', { style: { flex: '1 1 0', minWidth: 0 } },
-      bar('h-3.5', { width: TITLE_WIDTHS[index % TITLE_WIDTHS.length], animationDelay: delay })),
-    React.createElement('div', { style: { flex: '0.7 1 0', minWidth: 0 } },
-      bar('h-3', { width: ARTIST_WIDTHS[index % ARTIST_WIDTHS.length], animationDelay: delay })),
-    React.createElement('div', { className: 'flex-shrink-0 flex justify-end', style: { width: '50px' } },
-      bar('h-3', { width: '32px', animationDelay: delay })),
-    React.createElement('div', {
-      className: 'flex items-center gap-1 justify-start',
-      // TrackRow's icon column (--source-col, set on the app root).
-      style: { width: 'var(--source-col, 140px)', flexShrink: 0, minHeight: '24px' }
-    },
-      bar('w-5 h-5', { animationDelay: delay }),
-      bar('w-5 h-5', { animationDelay: stagger(index, 100) })
-    )
-  );
+  return React.createElement(TrackRowSkeleton, { index, duration: true });
 }
 
 // Collection -> Friends' hexagon and grid (collection-page.js), which the

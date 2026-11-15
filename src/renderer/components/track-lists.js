@@ -28,7 +28,7 @@ const { trackDurationLabel } = require('../lib/track-duration');
 // drifted (JS hover on the source buttons in some, a missing title colour in
 // others); this is that row once:
 //
-//   number · title · artist · [cells…] · [duration] · source icons
+//   number · title · artist · [cells…] · source icons · [duration]
 //
 // The whole row plays the track (CardButton's stretched button); the artist
 // is a link; each source icon plays the track from that service. Which icons
@@ -103,9 +103,9 @@ function SourceIconButton({ resolver, confidence, dim, onClick, size = 20, quiet
 }
 
 // The source column: a shimmer while resolving, the icons when playable,
-// nothing when unplayable (the row is dimmed). The icons start at the
-// column's left edge, so they sit right up against the duration (right-
-// aligned in its column) whatever their number, and still line up row to row.
+// nothing when unplayable (the row is dimmed). The icons sit at the
+// column's right edge, right up against the duration (the row's last
+// column), whatever their number; the column's spare room is on their left.
 function TrackSources({ state, shown, allResolvers, onPlay, width = SOURCE_COLUMN }) {
   const e = React.createElement;
   const icon = ({ resolverId, source, dim }) => {
@@ -114,7 +114,7 @@ function TrackSources({ state, shown, allResolvers, onPlay, width = SOURCE_COLUM
     return e(SourceIconButton, { key: resolverId, resolver, confidence: source && source.confidence, dim, onClick: () => onPlay(resolverId) });
   };
   return e('div', {
-    className: 'flex items-center gap-1 justify-start',
+    className: 'flex items-center gap-1 justify-end',
     style: { width: typeof width === 'number' ? `${width}px` : width, flexShrink: 0, minHeight: '24px', overflow: 'hidden' },
   },
   state === 'playable'
@@ -143,10 +143,10 @@ function TrackRowSkeleton({ index = 0, cells = [], duration = false, showArtist 
     showArtist && e('div', { style: { flex: '0.7 1 0', minWidth: 0 } }, bar({ width: '50%', animationDelay: delay(30) })),
     cells.map((cell, i) => e('div', { key: cell.key || i, style: cell.width ? { width: cell.width, flexShrink: 0 } : { flex: cell.flex || '0.5 1 0', minWidth: 0 } },
       bar({ width: '60%', marginLeft: cell.align === 'right' ? 'auto' : 0, animationDelay: delay(40) }))),
-    duration && e('div', { className: 'flex-shrink-0 flex justify-end', style: { width: '50px' } }, bar({ width: '32px', animationDelay: delay(45) })),
-    e('div', { className: 'flex items-center gap-1 justify-start', style: { width: typeof sourcesWidth === 'number' ? `${sourcesWidth}px` : sourcesWidth, flexShrink: 0, minHeight: '24px' } },
+    e('div', { className: 'flex items-center gap-1 justify-end', style: { width: typeof sourcesWidth === 'number' ? `${sourcesWidth}px` : sourcesWidth, flexShrink: 0, minHeight: '24px' } },
       e('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: delay(60) } }),
-      e('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: delay(75) } })));
+      e('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: delay(75) } })),
+    duration && e('div', { className: 'flex-shrink-0 flex justify-end', style: { width: '50px' } }, bar({ width: '32px', animationDelay: delay(45) })));
 }
 
 function TrackRow({
@@ -198,11 +198,14 @@ function TrackRow({
           onClick: (ev) => { ev.stopPropagation(); cell.onClick(); },
         }, cell.content)
       : e('span', { key: cell.key || i, className: `truncate${cell.align === 'right' ? ' tabular-nums' : ''}`, style: cellStyle(cell) }, cell.content))),
+    e(TrackSources, { state, shown, allResolvers, onPlay: (id) => onPlay && onPlay(id), width: sourcesWidth }),
+    // The duration is the last column, right-aligned, with the source icons
+    // right up against it (right-aligned in theirs): durations line up down
+    // the row's end and nothing is left empty after them.
     duration && e('span', {
       className: 'text-right tabular-nums flex-shrink-0',
       style: Object.assign({}, ROW_CELL, { width: '50px' }),
-    }, trackDurationLabel(track, sources || {})),
-    e(TrackSources, { state, shown, allResolvers, onPlay: (id) => onPlay && onPlay(id), width: sourcesWidth }));
+    }, trackDurationLabel(track, sources || {})));
 }
 
 // VirtualizedQueueList component - Renders queue tracks efficiently using windowing
@@ -476,14 +479,10 @@ const VirtualizedQueueList = React.memo(({
         isError ? (track.errorMessage || 'Unknown error') :
         track.artist
       ),
-      // Duration
-      React.createElement('span', {
-        className: 'text-right tabular-nums',
-        style: { width: '50px', flexShrink: 0, fontSize: '12px', color: 'var(--on-dark-tertiary)' }
-      }, !isLoading && !isError ? trackDurationLabel(track, { trackSources, resolverOrder }) : ''),
-      // Resolver icons, against the duration (as in the page lists)
+      // Resolver icons, right up against the duration after them (as in the
+      // page lists)
       React.createElement('div', {
-        className: 'flex items-center gap-1 justify-start',
+        className: 'flex items-center gap-1 justify-end',
         style: { width: SOURCE_COLUMN, flexShrink: 0, minHeight: '20px' }
       },
         isError ?
@@ -535,6 +534,11 @@ const VirtualizedQueueList = React.memo(({
             })
           )
       ),
+      // Duration: the last column before Remove
+      React.createElement('span', {
+        className: 'text-right tabular-nums',
+        style: { width: '50px', flexShrink: 0, fontSize: '12px', color: 'var(--on-dark-tertiary)' }
+      }, !isLoading && !isError ? trackDurationLabel(track, { trackSources, resolverOrder }) : ''),
       // Remove button
       React.createElement('button', {
         onClick: (e) => {

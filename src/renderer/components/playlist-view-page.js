@@ -29,7 +29,7 @@ const { ShareButton } = require('./ui-atoms');
 const { Menu } = require('./menu');
 const { playlistMenu } = require('../lib/item-menus');
 const { PlaylistCoverImage } = require('./playlist-cover');
-const { VirtualizedTrackList, TrackRow } = require('./track-lists');
+const { VirtualizedTrackList, TrackRow, TrackRowSkeleton } = require('./track-lists');
 const { playlistPlaybackContext } = require('../lib/playlist-context');
 const { trackSlug } = require('../lib/track-slug');
 const { countOf } = require('../lib/plural');
@@ -1111,47 +1111,10 @@ const tracksWithIds = (playlistTracks || []).map(track => ({
                   }
                 })
               :
-                // Skeleton loaders while tracks are loading
+                // The shared track row's placeholder, in the rows' columns.
                 React.createElement('div', { className: 'space-y-0' },
                   Array.from({ length: 8 }).map((_, index) =>
-                    React.createElement('div', {
-                      key: `skeleton-${index}`,
-                      className: 'flex items-center gap-4 py-3 px-4',
-                      style: { borderRadius: '8px', marginBottom: '2px' }
-                    },
-                      // Track number skeleton
-                      React.createElement('div', {
-                        className: 'w-6 h-4 rounded shimmer-light animate-shimmer',
-                        style: { width: '32px', animationDelay: `${index * 50}ms` }
-                      }),
-                      // Track title skeleton - flexible
-                      React.createElement('div', {
-                        className: 'h-4 rounded shimmer-light animate-shimmer',
-                        style: { flex: '1 1 0', minWidth: 0, animationDelay: `${index * 50 + 25}ms` }
-                      }),
-                      // Artist name skeleton - flexible
-                      React.createElement('div', {
-                        className: 'h-4 rounded shimmer-light animate-shimmer',
-                        style: { flex: '0.7 1 0', minWidth: 0, animationDelay: `${index * 50 + 50}ms` }
-                      }),
-                      // Duration skeleton
-                      React.createElement('div', {
-                        className: 'h-4 rounded shimmer-light animate-shimmer flex-shrink-0',
-                        style: { width: '40px', animationDelay: `${index * 50 + 75}ms` }
-                      }),
-                      // Resolver icons skeleton
-                      React.createElement('div', { className: 'flex items-center gap-1', style: { width: PLAYLIST_ICON_COLUMN, flexShrink: 0 } },
-                        React.createElement('div', {
-                          className: 'w-5 h-5 rounded shimmer-light animate-shimmer',
-                          style: { animationDelay: `${index * 50 + 100}ms` }
-                        }),
-                        React.createElement('div', {
-                          className: 'w-5 h-5 rounded shimmer-light animate-shimmer',
-                          style: { animationDelay: `${index * 50 + 125}ms` }
-                        })
-                      )
-                    )
-                  )
+                    React.createElement(TrackRowSkeleton, { key: `skeleton-${index}`, index, duration: true, sourcesWidth: PLAYLIST_ICON_COLUMN }))
                 );
               })()
             )
