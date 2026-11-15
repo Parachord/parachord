@@ -52220,6 +52220,9 @@ React.createElement('div', {
 
     // First-Run Tutorial Modal - Cinematic Light design
     firstRunTutorial.open && React.createElement(Modal, { bare: true, label: "Welcome to Parachord", scrimClassName: 'z-50', dismissible: false, panelProps: { className: 'relative w-full max-w-xl mx-4 overflow-hidden', style: {
+          // Never taller than the window: the body scrolls instead.
+          maxHeight: 'calc(100vh - 48px)',
+          overflowY: 'auto',
           backgroundColor: 'var(--card-bg)',
           borderRadius: '16px',
           boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
@@ -52350,7 +52353,8 @@ firstRunTutorial.step === 'sources' && React.createElement(React.Fragment, null,
                 return React.createElement('div', {
                   key: resolver.id,
                   className: 'flex flex-col items-center',
-                  style: { width: '120px' }
+                  // Four across in the tour's 576px panel.
+                  style: { width: '110px' }
                 },
                 React.createElement('button', { type: 'button', 'aria-pressed': isActive,
                   'aria-describedby': resolver.requirement ? `tour-req-${resolver.id}` : undefined,
@@ -52377,9 +52381,9 @@ firstRunTutorial.step === 'sources' && React.createElement(React.Fragment, null,
                   // Card with colored background
                   React.createElement('div', {
                     style: {
-                      width: '80px',
-                      height: '80px',
-                      borderRadius: '16px',
+                      width: '64px',
+                      height: '64px',
+                      borderRadius: '12px',
                       backgroundColor: resolver.color || '#6B7280',
                       display: 'flex',
                       alignItems: 'center',
@@ -52405,10 +52409,8 @@ firstRunTutorial.step === 'sources' && React.createElement(React.Fragment, null,
                   : React.createElement(Button, { variant: 'text', size: 'sm', className: 'mt-1', onClick: () => handleAddWatchFolder() }, 'Choose folder…'))
                 );
               })
-            ),
-            React.createElement('p', {
-              style: { fontSize: '12px', color: 'var(--text-tertiary)', textAlign: 'center', marginTop: '20px' }
-            }, 'You can change these, sign in and set them up any time in Plug-Ins.')
+            )
+
           ),
           // Footer
           React.createElement('div', {
