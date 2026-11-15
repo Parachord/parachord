@@ -17,6 +17,7 @@
 
 const { VirtualizedTrackList } = require('./track-lists');
 const { sourceRowState } = require('../lib/visible-sources');
+const { trackDurationLabel } = require('../lib/track-duration');
 const { ResolverIcon } = require('./ui-atoms');
 const { CollectionArtistCard, CollectionAlbumCard } = require('./cards');
 
@@ -63,7 +64,6 @@ const CollectionPage = React.memo(function CollectionPage(props) {
     currentTrack,
     fetchArtistData,
     filterCollectionItems,
-    formatTime,
     friendSyncInProgress,
     friends,
     getAlbumArt,
@@ -794,7 +794,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                         color: 'var(--text-tertiary)',
                         textAlign: 'right'
                       }
-                    }, formatTime(track.duration)),
+                    }, trackDurationLabel(track, { trackSources, resolverOrder })),
 
                     // Resolver icons - fixed width column (last column)
                     React.createElement('div', {

@@ -21,6 +21,7 @@ const { ResolverIcon, ShareButton } = require('./ui-atoms');
 const { PlaylistCoverImage } = require('./playlist-cover');
 const { VirtualizedTrackList } = require('./track-lists');
 const { sourceRowState } = require('../lib/visible-sources');
+const { trackDurationLabel } = require('../lib/track-duration');
 const { trackSlug } = require('../lib/track-slug');
 
 const { Play, Music } = Icons;
@@ -56,7 +57,6 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
     draggedPlaylistTrack,
     editedPlaylistData,
     fetchArtistData,
-    formatTime,
     getPlaylistMirrorTargets,
     handleExportPlaylist,
     handlePlay,
@@ -1304,7 +1304,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                           fontSize: '12px',
                           color: 'var(--text-tertiary)'
                         }
-                      }, formatTime(track.duration)),
+                      }, trackDurationLabel(track, { trackSources, resolverOrder })),
 
                       // Resolver icons - fixed width column (last column)
                       React.createElement('div', {

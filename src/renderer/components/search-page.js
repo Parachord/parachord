@@ -24,6 +24,7 @@ const { SectionHeader, SECTION_HEADER_GAP } = require('./section-header');
 const { artistOpenOptions, creditOpenOptions, trackArtistOpenOptions } = require('../lib/artist-open');
 const { VirtualizedTrackList } = require('./track-lists');
 const { visibleSources, sourceRowState } = require('../lib/visible-sources');
+const { trackDurationLabel } = require('../lib/track-duration');
 const { generateArtistPattern, PlayTop10Icon, QueueTop10Icon, SearchArtistCard, SearchHistoryItem } = require('./cards');
 const { trackSlug, slug } = require('../lib/track-slug');
 
@@ -68,7 +69,6 @@ const SearchPage = React.memo(function SearchPage(props) {
     fetchArtistData,
     fetchSearchAlbumTracksAsync,
     filteredHistoryMatches,
-    formatTime,
     getArtistImage,
     getArtistTopTracks,
     getCachedAlbumArt,
@@ -994,7 +994,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                         color: 'var(--text-tertiary)',
                         textAlign: 'right'
                       }
-                    }, formatTime(track.duration)),
+                    }, trackDurationLabel(track, { trackSources, resolverOrder })),
 
                     // Resolver icons - fixed width column
                     React.createElement('div', {

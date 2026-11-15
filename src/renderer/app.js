@@ -1313,6 +1313,7 @@ const {
   VirtualizedQueueList, VirtualizedTrackList,
 } = require('./components/track-lists');
 const { sourceRowState } = require('./lib/visible-sources');
+const { trackDurationLabel } = require('./lib/track-duration');
 const { Play, Pause, SkipForward, SkipBack, Volume2, Search, List, Settings, Plus, Music, Radio, Users, Heart, X } = Icons;
 
 
@@ -37830,7 +37831,7 @@ useEffect(() => {
     // Search Page - Full page search view
     activeView === 'search' ? (
       React.createElement(SearchPage, {
-          activeResolvers: playbackResolvers, activeView, allResolvers, artistImageCache, currentTrack, filteredHistoryMatches, formatTime, handleSearchDetailScroll, handleSearchScrollContainerRef, isPlaying, isSearching, playbackContext, playlists, prefetchedReleasesRef, resolverOrder, searchContainerWidth, searchDetailCategory, searchHeaderCollapsed, searchHistory, searchInputRef, searchQuery, searchResults, searchResultsContainerRef, searchResultsFilter, searchResultsFilterOpen, searchResultsSort, searchResultsSortDropdownOpen, searchScrollContainerRef, searchTracksObserverRef, searchTracksRowRefs, setAddToPlaylistPanel, setDraggingTrackForPlaylist, setSearchDetailCategory, setSearchPreviewItem, setSearchResultsFilter, setSearchResultsFilterOpen, setSearchResultsSort, setSearchResultsSortDropdownOpen, setTrackLoading, showToast, trackSources,
+          activeResolvers: playbackResolvers, activeView, allResolvers, artistImageCache, currentTrack, filteredHistoryMatches, handleSearchDetailScroll, handleSearchScrollContainerRef, isPlaying, isSearching, playbackContext, playlists, prefetchedReleasesRef, resolverOrder, searchContainerWidth, searchDetailCategory, searchHeaderCollapsed, searchHistory, searchInputRef, searchQuery, searchResults, searchResultsContainerRef, searchResultsFilter, searchResultsFilterOpen, searchResultsSort, searchResultsSortDropdownOpen, searchScrollContainerRef, searchTracksObserverRef, searchTracksRowRefs, setAddToPlaylistPanel, setDraggingTrackForPlaylist, setSearchDetailCategory, setSearchPreviewItem, setSearchResultsFilter, setSearchResultsFilterOpen, setSearchResultsSort, setSearchResultsSortDropdownOpen, setTrackLoading, showToast, trackSources,
           ...searchPageHandlers
         }) // end main view
     ) : // end activeView === 'search' ternary
@@ -38012,7 +38013,7 @@ useEffect(() => {
 
       // Main content area - Playlist Page (new design matching album page layout)
       : activeView === 'playlist-view' && selectedPlaylist ? React.createElement(PlaylistViewPage, {
-          activeResolvers: playbackResolvers, allPlaylistCovers, allResolvers, currentTrack, draggedPlaylistTrack, editedPlaylistData, formatTime, handlePlaylistTracksScrollRef, isPlaying, playbackContext, playlistCoverArt, playlistDropTarget, playlistEditMode, playlistObserverRef, playlistScrollContainerReady, playlistScrollContainerRef, playlistTrackRowRefs, playlistTracks, playlistTracksScrollRef, publishCollectionSmartLink, refreshingPlaylist, resolverLoaderRef, resolverOrder, selectedPlaylist, setAddToPlaylistPanel, setDraggedPlaylistTrack, setDraggingTrackForPlaylist, setEditedPlaylistData, setPlaylistCoverArt, setPlaylistDropTarget, setPlaylistEditMode, setPlaylistScrollContainerReady, setPlaylistTracks, setPlaylists, setRefreshingPlaylist, setSelectedPlaylist, setSelectedPlaylistsForAdd, setShareDropdownOpen, setSyncDeleteDialog, setTrackLoading, shareDropdownOpen, showToast, trackSources,
+          activeResolvers: playbackResolvers, allPlaylistCovers, allResolvers, currentTrack, draggedPlaylistTrack, editedPlaylistData, handlePlaylistTracksScrollRef, isPlaying, playbackContext, playlistCoverArt, playlistDropTarget, playlistEditMode, playlistObserverRef, playlistScrollContainerReady, playlistScrollContainerRef, playlistTrackRowRefs, playlistTracks, playlistTracksScrollRef, publishCollectionSmartLink, refreshingPlaylist, resolverLoaderRef, resolverOrder, selectedPlaylist, setAddToPlaylistPanel, setDraggedPlaylistTrack, setDraggingTrackForPlaylist, setEditedPlaylistData, setPlaylistCoverArt, setPlaylistDropTarget, setPlaylistEditMode, setPlaylistScrollContainerReady, setPlaylistTracks, setPlaylists, setRefreshingPlaylist, setSelectedPlaylist, setSelectedPlaylistsForAdd, setShareDropdownOpen, setSyncDeleteDialog, setTrackLoading, shareDropdownOpen, showToast, trackSources,
           ...playlistViewPageHandlers
         })
 
@@ -38873,7 +38874,7 @@ useEffect(() => {
 
         // Library view with collapsible hero header (matching Recommendations pattern)
         activeView === 'library' && React.createElement(CollectionPage, {
-          activeResolvers: playbackResolvers, allResolvers, autoPinnedFriendIds, collectionData, collectionHeaderCollapsed, collectionLoading, collectionObserverRef, collectionScrollContainerRef, collectionSearch, collectionSearchOpen, collectionSongsSorted, collectionSort, collectionSortDropdownOpen, collectionTab, collectionTrackRowRefs, currentTrack, filterCollectionItems, formatTime, friendSyncInProgress, friends, handleCollectionScrollContainerRef, isPlaying, library, libraryLoading, metaServiceConfigs, pinnedFriendIds, playbackContext, resolverOrder, resolverSyncSettings, setAddFriendModalOpen, setAddToPlaylistPanel, setCollectionHeaderCollapsed, setCollectionSearch, setCollectionSearchOpen, setCollectionSort, setCollectionSortDropdownOpen, setCollectionTab, setDraggingTrackForPlaylist, setSyncMenuOpen, setSyncStatusModal, setTrackLoading, showToast, sortCollectionItems, syncMenuOpen, syncProviderConfig, syncStatus, trackSources,
+          activeResolvers: playbackResolvers, allResolvers, autoPinnedFriendIds, collectionData, collectionHeaderCollapsed, collectionLoading, collectionObserverRef, collectionScrollContainerRef, collectionSearch, collectionSearchOpen, collectionSongsSorted, collectionSort, collectionSortDropdownOpen, collectionTab, collectionTrackRowRefs, currentTrack, filterCollectionItems, friendSyncInProgress, friends, handleCollectionScrollContainerRef, isPlaying, library, libraryLoading, metaServiceConfigs, pinnedFriendIds, playbackContext, resolverOrder, resolverSyncSettings, setAddFriendModalOpen, setAddToPlaylistPanel, setCollectionHeaderCollapsed, setCollectionSearch, setCollectionSearchOpen, setCollectionSort, setCollectionSortDropdownOpen, setCollectionTab, setDraggingTrackForPlaylist, setSyncMenuOpen, setSyncStatusModal, setTrackLoading, showToast, sortCollectionItems, syncMenuOpen, syncProviderConfig, syncStatus, trackSources,
           ...collectionPageHandlers
         }),
 
@@ -42265,7 +42266,7 @@ useEffect(() => {
                 React.createElement('span', {
                   className: 'text-right tabular-nums flex-shrink-0',
                   style: { pointerEvents: 'none', width: '50px', fontSize: '12px', color: 'var(--text-tertiary)' }
-                }, formatTime(track.duration)),
+                }, trackDurationLabel(track, { trackSources, resolverOrder })),
                 React.createElement('div', {
                   className: 'flex items-center gap-1 justify-end',
                   style: { width: '140px', flexShrink: 0, minHeight: '24px' }
@@ -56360,7 +56361,6 @@ useEffect(() => {
             fetchArtistData: stableFetchArtistData,
             removeFromQueue,
             handleUrlDrop: stableHandleUrlDrop,
-            formatTime,
             // Resolution scheduler integration
             onVisibilityChange: updateQueueVisibility,
             onTrackHover: setQueueHoverTrack,
