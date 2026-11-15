@@ -45009,18 +45009,34 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
             }, React.createElement(SkipForward, { size: 18 }))
           ),
           // Queue button (hamburger style)
-          React.createElement(Tooltip, { content: 'Queue', position: 'top', variant: 'dark' },
+          React.createElement(Tooltip, { content: listenAlongFriend ? `Queue (listening along with ${listenAlongFriend.displayName || listenAlongFriend.username})` : 'Queue', position: 'top', variant: 'dark' },
             React.createElement('button', {
               'aria-label': 'Queue',
+              // Who decides what's next while listening along.
+              'aria-description': listenAlongFriend ? `Listening along with ${listenAlongFriend.displayName || listenAlongFriend.username}` : undefined,
               onClick: () => setQueueDrawerOpen(!queueDrawerOpen),
               className: `relative p-2 ml-1 rounded hover:bg-white/10 transition-colors ${queueDrawerOpen ? 'bg-white/20 text-white' : 'text-gray-400'} ${queueAnimating ? 'queue-pulse' : ''}`,
               style: { display: 'flex', alignItems: 'center', justifyContent: 'center' }
             },
               React.createElement(List, { size: 15 }),
-              // Show queue badge (gray when in spinoff or listen-along mode)
-              currentQueue.length > 0 && React.createElement('span', {
+              // Listening along: the friend's avatar (or initial) in the
+              // badge's place, since their queue, not yours, decides what's
+              // next. Otherwise the count (gray in spinoff mode).
+              listenAlongFriend
+                ? React.createElement('span', {
+                    'data-listen-along-badge': '',
+                    'aria-hidden': 'true',
+                    className: 'absolute -top-1.5 -right-1.5 rounded-full flex items-center justify-center overflow-hidden',
+                    style: Object.assign({
+                      width: '18px', height: '18px', fontSize: '11px', fontWeight: 600,
+                      boxShadow: '0 0 0 2px var(--accent-fill)', color: 'var(--on-accent)'
+                    }, listenAlongFriend.avatarUrl
+                      ? { backgroundImage: `url(${JSON.stringify(listenAlongFriend.avatarUrl)})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+                      : { backgroundColor: 'var(--accent-fill)' })
+                  }, !listenAlongFriend.avatarUrl && (listenAlongFriend.displayName || listenAlongFriend.username || '?').charAt(0).toUpperCase())
+                : currentQueue.length > 0 && React.createElement('span', {
                 className: `absolute -top-1 -right-1 text-white rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1 font-medium ${queueAnimating ? 'badge-flash' : ''}`,
-                style: { fontSize: '10px', backgroundColor: (spinoffMode || listenAlongFriend) ? '#6b7280' : 'var(--accent-fill)' }
+                style: { fontSize: '10px', backgroundColor: spinoffMode ? '#6b7280' : 'var(--accent-fill)' }
               }, currentQueue.length > 99 ? '99+' : currentQueue.length)
             )
           ),
