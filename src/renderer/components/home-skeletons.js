@@ -90,25 +90,33 @@ function JumpBackInSkeleton() {
   )));
 }
 
-/** A row of square-art cards: art, a title line, a subtitle line. */
-// `lines`: subtitle lines under the title (a playlist card's can wrap to two;
-// an album card has one, its artist).
+/**
+ * One card's placeholder, the shared cards' box (AlbumCard, PlaylistCard):
+ * the card box, rounded square art, a title line, then `lines` subtitle
+ * lines (an album card has one, its artist, or two with a year; a playlist
+ * card's subtitle can wrap to two). For any page's card grid.
+ */
+function CardSkeleton({ index = 0, lines = 2 } = {}) {
+  return React.createElement('div', {
+    'aria-hidden': 'true',
+    style: Object.assign({}, HOME_CARD_BOX, { display: 'flex', flexDirection: 'column', gap: `${HOME_CARD_TEXT_GAP}px` })
+  },
+    React.createElement('div', {
+      className: 'aspect-square shimmer-strong animate-shimmer',
+      style: { borderRadius: `${HOME_CARD_ART_RADIUS}px`, backgroundSize: '200% 100%', animationDelay: stagger(index) }
+    }),
+    bar('h-3.5', { width: '70%', animationDelay: stagger(index) }),
+    bar('h-3', { width: '50%', animationDelay: stagger(index) }),
+    lines > 1 && bar('h-3', { width: '35%', animationDelay: stagger(index) }));
+}
+
+/** A row of square-art cards: CardSkeleton in Home's row grid. */
 function CardRowSkeleton({ count = HOME_ROW_CARDS, columns, lines = 2 } = {}) {
   const cols = columns || count;
   return React.createElement('div', {
     'aria-hidden': 'true',
     style: { display: 'grid', gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gap: `${HOME_ROW_GAP}px` }
-  }, Array.from({ length: count }, (_, i) => React.createElement('div', {
-    key: i,
-    style: Object.assign({}, HOME_CARD_BOX, { display: 'flex', flexDirection: 'column', gap: `${HOME_CARD_TEXT_GAP}px` })
-  },
-    React.createElement('div', {
-      className: 'aspect-square shimmer-strong animate-shimmer',
-      style: { borderRadius: `${HOME_CARD_ART_RADIUS}px`, backgroundSize: '200% 100%', animationDelay: stagger(i) }
-    }),
-    bar('h-3.5', { width: '70%', animationDelay: stagger(i) }),
-    bar('h-3', { width: '50%', animationDelay: stagger(i) }),
-    lines > 1 && bar('h-3', { width: '35%', animationDelay: stagger(i) }))));
+  }, Array.from({ length: count }, (_, i) => React.createElement(CardSkeleton, { key: i, index: i, lines })));
 }
 
 /** Concerts: four cards, a 72px photo (with its date badge) beside four text lines (artist, venue, city, tickets). */
@@ -135,7 +143,7 @@ function ConcertRowSkeleton({ count = HOME_CONCERT_CARDS } = {}) {
 }
 
 module.exports = {
-  JumpBackInSkeleton, CardRowSkeleton, ConcertRowSkeleton,
+  JumpBackInSkeleton, CardSkeleton, CardRowSkeleton, ConcertRowSkeleton,
   HOME_TILE_HEIGHT, HOME_ROW_CARDS, HOME_HALF_ROW_CARDS, HOME_CONCERT_CARDS,
   HOME_ROW_GAP, HOME_CARD_TEXT_GAP, HOME_CARD_BOX, HOME_CARD_ART_RADIUS, HOME_JUMP_GRID, HOME_JUMP_GAP, HOME_HALF_GAP, HOME_HALF_FLEX, HOME_HALF_MIN, homeRowCards, homeConcertCards, homeHalvesStacked,
 };

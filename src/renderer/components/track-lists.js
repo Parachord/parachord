@@ -112,6 +112,29 @@ function TrackSources({ state, shown, allResolvers, onPlay, width = 140 }) {
       : null);
 }
 
+// A track row's placeholder: the same box and columns as TrackRow (number,
+// title, artist, `cells`' widths, the duration, the source icons), so the
+// list doesn't jump when the rows land. `cells` as TrackRow's (only width /
+// flex are read).
+function TrackRowSkeleton({ index = 0, cells = [], duration = false, showArtist = true, sourcesWidth = 140 }) {
+  const e = React.createElement;
+  const delay = (n) => `${Math.min(index * 30, 300) + n}ms`;
+  const bar = (style) => e('div', { className: 'h-3.5 rounded shimmer-light animate-shimmer', style: Object.assign({ backgroundSize: '200% 100%' }, style) });
+  return e('div', {
+    'aria-hidden': 'true', className: 'flex items-center gap-4 py-3 px-4',
+    style: { borderRadius: '8px', marginBottom: '2px' },
+  },
+    e('div', { className: 'flex-shrink-0 flex justify-end', style: { width: '32px' } }, bar({ width: '16px', animationDelay: delay(0) })),
+    e('div', { style: { flex: '1 1 0', minWidth: 0 } }, bar({ width: '60%', animationDelay: delay(15) })),
+    showArtist && e('div', { style: { flex: '0.7 1 0', minWidth: 0 } }, bar({ width: '50%', animationDelay: delay(30) })),
+    cells.map((cell, i) => e('div', { key: cell.key || i, style: cell.width ? { width: cell.width, flexShrink: 0 } : { flex: cell.flex || '0.5 1 0', minWidth: 0 } },
+      bar({ width: '60%', marginLeft: cell.align === 'right' ? 'auto' : 0, animationDelay: delay(40) }))),
+    duration && e('div', { className: 'flex-shrink-0 flex justify-end', style: { width: '50px' } }, bar({ width: '32px', animationDelay: delay(45) })),
+    e('div', { className: 'flex items-center gap-1 justify-end', style: { width: typeof sourcesWidth === 'number' ? `${sourcesWidth}px` : sourcesWidth, flexShrink: 0, minHeight: '24px' } },
+      e('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: delay(60) } }),
+      e('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: delay(75) } })));
+}
+
 function TrackRow({
   track, number, lead, isNowPlaying = false, sources, allResolvers, onPlay, onOpenArtist, onContextMenu,
   cells = [], duration = false, sourcesWidth = 140, rowRef, className,
@@ -666,6 +689,7 @@ const VirtualizedTrackList = React.memo(({
 
 module.exports = {
   TrackRow,
+  TrackRowSkeleton,
   TrackSources,
   SourceIconButton,
   VirtualizedQueueList,

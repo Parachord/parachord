@@ -1271,6 +1271,7 @@ const {
   filterRowBySource, pageSources, weeklyHomeEntries, shuffleupagusSection, FRIEND_SERVICES, categoryFor
 } = require('./lib/recommendation-model');
 const { releaseDateKey, releaseGroupSearchUrl, pickReleaseGroupDate, upcomingLabel, RELEASE_DATE_TTL_MS } = require('./lib/release-date');
+const { formatCalendarDate } = require('./lib/calendar-date');
 const { albumsNeedingTrackCount, trackCountFromRelease, runAlbumTrackCountSync } = require('./lib/album-track-counts');
 const { createConcertLimiters } = require('./lib/concert-limiters');
 const { restorableArtistDataEntries } = require('./lib/artist-data-cache');
@@ -1314,7 +1315,7 @@ const prefetchInProgress = window._prefetchInProgress;
 // lib/visible-sources.js, the same rule as the queue and the pages.
 const Icons = require('./components/icons');
 const {
-  VirtualizedQueueList, VirtualizedTrackList, TrackRow,
+  VirtualizedQueueList, VirtualizedTrackList, TrackRow, TrackRowSkeleton,
 } = require('./components/track-lists');
 const { countOf } = require('./lib/plural');
 const { movePriority, priorityMoves } = require('./lib/priority-order');
@@ -2055,6 +2056,7 @@ const { SectionHeader, SECTION_HEADER_GAP } = require('./components/section-head
 const { FilterChips, Chip } = require('./components/filter-chips');
 const { FilterBox, StickyBar } = require('./components/filter-box');
 const { PageHero } = require('./components/page-hero');
+const { CardSkeleton } = require('./components/home-skeletons');
 const { ArtOverlay } = require('./components/card-art');
 const { hoverDwell } = require('./lib/hover-dwell');
 const { RELEASE_TYPE_COLORS } = require('./lib/release-types');
@@ -26122,6 +26124,16 @@ ${tracks}
   };
 
   // Parse Apple Music Charts JSON feed
+  // A chart album's release year, from Apple's date text, else the UTC year
+  // of the Date an older cached chart kept.
+  const chartAlbumYear = (item) => {
+    if (item.releaseDate) return String(item.releaseDate).slice(0, 4);
+    const d = item.pubDate;
+    if (!d) return '';
+    if (typeof d === 'string') return d.slice(0, 4);
+    return d instanceof Date && !isNaN(d) ? String(d.getUTCFullYear()) : '';
+  };
+
   const parseChartsJSON = (data) => {
     try {
       const results = data?.feed?.results || [];
@@ -26145,6 +26157,9 @@ ${tracks}
             link: link,
             genres: genres,
             pubDate: item.releaseDate ? new Date(item.releaseDate) : null,
+            // The date as Apple sent it ("2026-05-17"): its year is the card's
+            // (a Date of it can read as the day before in the Americas).
+            releaseDate: item.releaseDate || null,
             // Use artwork URL directly from JSON (higher quality available)
             albumArt: artworkUrl ? artworkUrl.replace('100x100bb', '300x300bb') : null
           });
@@ -32907,28 +32922,41 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // user made, in page order (the cards on screen come first), once per album
   // a week. A failed lookup stores nothing and is tried on a later visit.
   const recommendationReleaseDateFetchesRef = useRef(new Set());
-  useEffect(() => {
-    if (activeView !== 'recommendations') return;
+  // Look up the first release date of each { artist, title } not known (or
+  // stale) yet. One store for every page that shows album dates
+  // (Recommendations, Critical Darlings), keyed by the album.
+  const queueReleaseDateLookups = (albums) => {
     const now = Date.now();
-    for (const item of flattenRecommendationItems(recommendations.sections)) {
-      if (item.type !== 'album' || !item.artist || !item.name) continue;
-      // The provider sent the date (Apple Music does): no lookup.
-      if (item.releaseDate) continue;
-      const key = releaseDateKey(item.artist, item.name);
+    for (const { artist, title } of albums) {
+      if (!artist || !title) continue;
+      const key = releaseDateKey(artist, title);
       const known = recommendationReleaseDatesRef.current[key];
       if (known && (now - known.at) < RELEASE_DATE_TTL_MS) continue;
       if (recommendationReleaseDateFetchesRef.current.has(key)) continue;
       recommendationReleaseDateFetchesRef.current.add(key);
-      fetch(releaseGroupSearchUrl(item.artist, item.name), { mbBackground: true, queuedTimeoutMs: 15000 })
+      fetch(releaseGroupSearchUrl(artist, title), { mbBackground: true, queuedTimeoutMs: 15000 })
         .then(res => (res && res.ok ? res.json() : Promise.reject(new Error(`MusicBrainz ${res && res.status}`))))
         .then(data => {
-          const date = pickReleaseGroupDate(data && data['release-groups'], { artist: item.artist, title: item.name });
+          const date = pickReleaseGroupDate(data && data['release-groups'], { artist, title });
           recommendationReleaseDatesWriterRef.current.queue(key, { date, at: Date.now() });
         })
         .catch(() => { /* nothing stored: a later visit asks again */ })
         .finally(() => recommendationReleaseDateFetchesRef.current.delete(key));
     }
+  };
+  useEffect(() => {
+    if (activeView !== 'recommendations') return;
+    // The provider sent the date (Apple Music does): no lookup.
+    queueReleaseDateLookups(flattenRecommendationItems(recommendations.sections)
+      .filter(item => item.type === 'album' && !item.releaseDate)
+      .map(item => ({ artist: item.artist, title: item.name })));
   }, [activeView, recommendations.sections]);
+  // Critical Darlings' release dates (the feed's date is when the pick was
+  // published, not when the album came out).
+  useEffect(() => {
+    if (activeView !== 'critics-picks') return;
+    queueReleaseDateLookups(criticsPicks.map(album => ({ artist: album.artist, title: album.title })));
+  }, [activeView, criticsPicks.length]);
 
   // Fetch artist biography from Last.fm (lazy loaded on Biography tab click)
   const getLastfmBio = async (artistName) => {
@@ -38718,30 +38746,13 @@ React.createElement('span', {
             onScroll: handleChartsScroll
           },
             // ALBUMS TAB - Error state
-            chartsTab === 'albums' && chartsError && !chartsLoading && chartsTab === 'albums' && chartsError && !chartsLoading && React.createElement(ErrorState, { title: 'Couldn’t load the charts', body: chartsError, onRetry: () => { setChartsError(null); loadCharts(); } }),
+            chartsTab === 'albums' && chartsError && !chartsLoading && React.createElement(ErrorState, { title: 'Couldn’t load the charts', body: chartsError, onRetry: () => { setChartsError(null); loadCharts(); } }),
 
-            // ALBUMS TAB - Grid of iTunes albums (skeleton loading)
+            // ALBUMS TAB: the shared card's placeholder (title, artist, year).
             chartsTab === 'albums' && !chartsError && (chartsLoading || !chartsLoaded) && React.createElement('div', {
               className: 'card-grid gap-4 pb-6'
             },
-              Array.from({ length: 15 }).map((_, i) =>
-                React.createElement('div', { key: `skeleton-${i}` },
-                  React.createElement('div', {
-                    className: 'aspect-square rounded-lg mb-3 shimmer-light animate-shimmer',
-                    style: { backgroundSize: '200% 100%', animationDelay: `${i * 50}ms` }
-                  }),
-                  React.createElement('div', { className: 'space-y-2' },
-                    React.createElement('div', {
-                      className: 'h-4 shimmer-light rounded w-3/4 animate-shimmer',
-                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 25}ms` }
-                    }),
-                    React.createElement('div', {
-                      className: 'h-3 shimmer-light rounded w-1/2 animate-shimmer',
-                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 50}ms` }
-                    })
-                  )
-                )
-              )
+              Array.from({ length: 15 }).map((_, i) => React.createElement(CardSkeleton, { key: `skeleton-${i}`, index: i, lines: 2 }))
             ),
 
             // ALBUMS TAB - Album grid content
@@ -38767,6 +38778,10 @@ React.createElement('span', {
                   album: { id: item.id, title: item.title, artist: item.artist, imageUrl: item.albumArt || null },
                   imageLoading: item.albumArt === undefined,
                   cornerBadge: item.rank != null && React.createElement(AlbumRankBadge, { rank: item.rank }),
+                  // The release year (Apple's date; a chart cached before the
+                  // field kept only pubDate, read in UTC). Always a line, so
+                  // the cards line up.
+                  subtitle: chartAlbumYear(item) || '\u00a0',
                   animationDelay: Math.min(index * 30, 300),
                   // The card waits 250ms before this (its own dwell).
                   onHoverPrefetch: () => prefetchChartsTracks(item),
@@ -38781,46 +38796,15 @@ React.createElement('span', {
               );
             })(),
 
-            // SONGS TAB - Skeleton loading for table rows (matches Recommended Songs layout)
+            // SONGS TAB: the shared track row's placeholder, in its columns.
             chartsTab === 'songs' && (
               (chartsSongsSource === 'apple' && (appleMusicSongsChartsLoading || !appleMusicSongsChartsLoaded)) ||
               (chartsSongsSource === 'lastfm' && (lastfmChartsLoading || !lastfmChartsLoaded))
-            ) && React.createElement('div', {
-              className: 'space-y-0'
-            },
-              Array.from({ length: 20 }).map((_, i) =>
-                React.createElement('div', {
-                  key: `skeleton-row-${i}`,
-                  className: 'flex items-center gap-4 py-3 px-4',
-                  style: { borderRadius: '8px', marginBottom: '2px' }
-                },
-                  // Track number skeleton
-                  React.createElement('div', {
-                    className: 'h-4 shimmer-light rounded animate-shimmer',
-                    style: { width: '32px', backgroundSize: '200% 100%', animationDelay: `${i * 30}ms`, flexShrink: 0 }
-                  }),
-                  // Title skeleton - flexible
-                  React.createElement('div', {
-                    className: 'h-4 shimmer-light rounded animate-shimmer',
-                    style: { flex: '1 1 0', minWidth: 0, backgroundSize: '200% 100%', animationDelay: `${i * 30 + 15}ms` }
-                  }),
-                  // Artist skeleton - flexible
-                  React.createElement('div', {
-                    className: 'h-4 shimmer-light rounded animate-shimmer',
-                    style: { flex: '0.7 1 0', minWidth: 0, backgroundSize: '200% 100%', animationDelay: `${i * 30 + 30}ms` }
-                  }),
-                  // Listeners skeleton
-                  React.createElement('div', {
-                    className: 'h-4 shimmer-light rounded animate-shimmer',
-                    style: { width: '80px', backgroundSize: '200% 100%', animationDelay: `${i * 30 + 45}ms`, flexShrink: 0 }
-                  }),
-                  // Badge skeleton
-                  React.createElement('div', {
-                    className: 'h-5 shimmer-light rounded animate-shimmer',
-                    style: { width: '50px', backgroundSize: '200% 100%', animationDelay: `${i * 30 + 60}ms`, flexShrink: 0 }
-                  })
-                )
-              )
+            ) && React.createElement('div', { className: 'space-y-0' },
+              Array.from({ length: 20 }).map((_, i) => React.createElement(TrackRowSkeleton, {
+                key: `skeleton-row-${i}`, index: i, duration: true,
+                cells: chartsSongsSource === 'lastfm' ? [{ key: 'listeners', width: '90px', align: 'right' }] : []
+              }))
             ),
 
             // SONGS TAB - Table of tracks (Apple Music or Last.fm)
@@ -38865,7 +38849,10 @@ React.createElement('span', {
                       type: 'track',
                       track: { id: track.id, title: track.title, artist: track.artist, album: '' }
                     }),
-                    cells: track.listeners > 0 ? [{ key: 'listeners', content: `${(track.listeners / 1000).toFixed(0)}K listeners`, width: '90px', align: 'right' }] : []
+                    duration: true,
+                    // Last.fm's chart says how many listen; the column is
+                    // always there on Last.fm so the rows line up.
+                    cells: chartsSongsSource === 'lastfm' ? [{ key: 'listeners', content: track.listeners > 0 ? `${(track.listeners / 1000).toFixed(0)}K listeners` : '', width: '90px', align: 'right' }] : []
                   });
                 })
               );
@@ -39305,15 +39292,14 @@ addCriticsPicksToQueue(album);
                 },
                   React.createElement('div', {
                     style: {
-                      fontWeight: '500',
-                      fontSize: '15px',
+                      fontWeight: 500,
+                      fontSize: '16px',
                       color: 'var(--text-primary)',
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
                       whiteSpace: 'nowrap',
                       transition: 'color 0.2s ease'
-                    },
-                    className: ''
+                    }
                   }, album.title),
                   React.createElement('button', { type: 'button',
                     style: {
@@ -39332,6 +39318,15 @@ addCriticsPicksToQueue(album);
                       fetchArtistData(album.artist);
                     }
                   }, album.artist),
+                  // The release date, from MusicBrainz (the feed's date is
+                  // when the pick was published). Its line is kept while the
+                  // lookup runs, so the card doesn't move when it lands.
+                  React.createElement('div', {
+                    style: { fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '2px' }
+                  }, (() => {
+                    const known = recommendationReleaseDates[releaseDateKey(album.artist || '', album.title || '')];
+                    return (known && known.date && formatCalendarDate(known.date, 'long')) || '\u00a0';
+                  })()),
                   // Synopsis
                   album.description && React.createElement('p', {
                     style: {
@@ -39787,7 +39782,8 @@ React.createElement('span', {
                         const monthShort = eventDate ? eventDate.toLocaleDateString('en-US', { month: 'short' }) : '';
                         const location = [event.venue?.city, event.venue?.region, event.venue?.country].filter(Boolean).join(', ');
                         const artistImg = event.artist ? concertsArtistImages[event.artist.trim().toLowerCase()] : null;
-                        // Build reason string based on why this artist was recommended
+                        // Why this concert is here: the row's tooltip (it was a
+                        // column of its own; Fresh Drops' cards say why the same way).
                         const reasonText = (() => {
                           const src = event.artistSource;
                           if (src === 'collection') return 'In your Collection';
@@ -39800,6 +39796,7 @@ React.createElement('span', {
                         return React.createElement('div', {
                           key: event.id || `${monthKey}-${eventIdx}`,
                           className: 'flex items-center rounded-xl border cursor-default bg-surface-card border-line-light',
+                          'data-tooltip': reasonText || undefined,
                           style: {
                             animation: 'fadeIn 300ms ease-out both',
                             animationDelay: `${eventIdx * 30}ms`,
@@ -39891,12 +39888,6 @@ React.createElement('span', {
                               }, 'with ' + event.lineup.filter(a => a.toLowerCase() !== event.artist.toLowerCase()).join(', '))
                             )
                           ),
-
-                          // Reason column — fixed width so text aligns vertically across rows
-                          React.createElement('div', {
-                            className: 'flex-shrink-0 text-xs italic px-3 truncate',
-                            style: { width: '200px', textAlign: 'left', color: 'var(--text-tertiary)' }
-                          }, reasonText || ''),
 
                           // Ticket button column — fixed width for alignment
                           React.createElement('div', {

@@ -474,3 +474,46 @@ describe('Recommendations album cards show the release year', () => {
     expect(bars(3)).toBe(bars(2) + 1);
   });
 });
+
+describe('Pop of the Tops', () => {
+  const app = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
+  test('album cards show the release year, from Apple\'s date text', () => {
+    expect(app).toContain("subtitle: chartAlbumYear(item) || '\\u00a0',");
+    expect(app).toContain('releaseDate: item.releaseDate || null,');
+    expect(app).toMatch(/if \(item\.releaseDate\) return String\(item\.releaseDate\)\.slice\(0, 4\);/);
+    expect(app).toMatch(/d\.getUTCFullYear\(\)/);
+  });
+  test('its placeholders are the shared ones, in the real layout', () => {
+    expect(app).toContain("React.createElement(CardSkeleton, { key: `skeleton-${i}`, index: i, lines: 2 })");
+    expect(app).toMatch(/React\.createElement\(TrackRowSkeleton, \{\s*key: `skeleton-row-\$\{i\}`, index: i, duration: true,/);
+    // The rows and their placeholder share the Last.fm listeners column.
+    expect(app).toMatch(/cells: chartsSongsSource === 'lastfm' \? \[\{ key: 'listeners', width: '90px', align: 'right' \}\] : \[\]/);
+  });
+});
+
+describe('TrackRowSkeleton has TrackRow\'s columns', () => {
+  global.React = require('react');
+  const { renderToStaticMarkup } = require('react-dom/server');
+  const { TrackRow, TrackRowSkeleton } = require('../../src/renderer/components/track-lists');
+  test('number, title, artist, a cell, duration and the icon column match', () => {
+    const cells = [{ key: 'x', width: '90px', align: 'right', content: 'x' }];
+    const row = renderToStaticMarkup(React.createElement(TrackRow, { track: { id: 'a', title: 'T', artist: 'A' }, number: '01', duration: true, cells, sources: {}, allResolvers: [] }));
+    const skel = renderToStaticMarkup(React.createElement(TrackRowSkeleton, { duration: true, cells }));
+    for (const css of ['width:32px', 'flex:1 1 0;min-width:0', 'flex:0.7 1 0;min-width:0', 'width:90px', 'width:50px', 'width:140px;flex-shrink:0;min-height:24px']) {
+      expect([css, row.includes(css)]).toEqual([css, true]);
+      expect([css, skel.includes(css)]).toEqual([css, true]);
+    }
+  });
+});
+
+describe('Critical Darlings and Concerts', () => {
+  const app = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
+  test('a Critical Darlings card shows the album\'s release date, from MusicBrainz, its line always kept', () => {
+    expect(app).toMatch(/if \(activeView !== 'critics-picks'\) return;\s*queueReleaseDateLookups\(criticsPicks\.map\(album => \(\{ artist: album\.artist, title: album\.title \}\)\)\);/);
+    expect(app).toContain("return (known && known.date && formatCalendarDate(known.date, 'long')) || '\\u00a0';");
+  });
+  test('a concert row has no reason column; the reason is its tooltip', () => {
+    expect(app).not.toMatch(/\/\/ Reason column/);
+    expect(app).toContain("'data-tooltip': reasonText || undefined,");
+  });
+});

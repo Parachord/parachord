@@ -57,12 +57,14 @@ describe('saved recommendations', () => {
 
   test('each album card\'s release date is looked up on MusicBrainz in the background, once a week, never stored on failure', () => {
     const effect = app.slice(app.indexOf('const recommendationReleaseDateFetchesRef = useRef(new Set());'), app.indexOf('// Fetch artist biography from Last.fm'));
+    // One lookup helper (queueReleaseDateLookups) for every page that shows
+    // album dates; Recommendations hands it its album cards.
     expect(effect).toContain("if (activeView !== 'recommendations') return;");
-    expect(effect).toContain("if (item.type !== 'album' || !item.artist || !item.name) continue;");
+    expect(effect).toContain("if (!artist || !title) continue;");
     // A provider's own date (Apple Music) needs no lookup.
-    expect(effect).toContain('if (item.releaseDate) continue;');
+    expect(effect).toContain(".filter(item => item.type === 'album' && !item.releaseDate)");
     expect(effect).toContain('if (known && (now - known.at) < RELEASE_DATE_TTL_MS) continue;');
-    expect(effect).toContain('fetch(releaseGroupSearchUrl(item.artist, item.name), { mbBackground: true, queuedTimeoutMs: 15000 })');
+    expect(effect).toContain('fetch(releaseGroupSearchUrl(artist, title), { mbBackground: true, queuedTimeoutMs: 15000 })');
     expect(effect).toContain('.catch(() => { /* nothing stored: a later visit asks again */ })');
     expect(effect).toContain('}, [activeView, recommendations.sections]);');
   });
