@@ -116,6 +116,22 @@ function closeSession(resolverId, sessionId) {
   if (!session) return;
   if (sessionId !== undefined && session.id !== sessionId) return;
   session.closed = true;
+  // A session closed mid-relay (stop/ended, supersession, sign-out) must
+  // not leave its in-flight plugin-relay forwards waiting the full timeout:
+  // the player that owned them has moved on. Wake this resolver's waiters
+  // now, with the same shape a plugin rejection answers with — bounded and
+  // harmless (the newer play owns the licence window; a late renderer
+  // answer for the woken request finds no waiter, which is the invalid reply).
+  for (const waiter of [...pluginRelayWaiters.values()]) {
+    if (waiter.resolverId !== resolverId) continue;
+    waiter.finish({
+      success: false,
+      reason: 'playback-failed',
+      licenseDenied: false,
+      denialReason: null,
+      error: `${resolverId}: plugin license relay aborted (session closed)`
+    });
+  }
 }
 
 function relayAllowed(resolverId, sessionId) {

@@ -239,6 +239,29 @@ describe('the plugin-mediated licence relay (widevine:license → forward → an
     }
   });
 
+  test('a session closed mid-relay fails its in-flight forwards fast instead of waiting out the timeout', async () => {
+    const { handlers, pushes, mainFrameEvent } = makeHarness();
+    const open = await openPluginSession(handlers, mainFrameEvent, { resolverId: 'plug' });
+    const relayP = handlers['widevine:license'](mainFrameEvent, { resolverId: 'plug', challenge: 'Q0FRPQ==', sessionId: open.sessionId });
+    await flush(); // the forward is out, unanswered
+    expect(pushes).toHaveLength(1);
+    // A matched 'stopped' closes the session while the forward waits: the
+    // relay must settle NOW, in the same shape a plugin rejection answers
+    // with — not 30s later.
+    await handlers['widevine:player-event'](mainFrameEvent, { resolverId: 'plug', event: { type: 'stopped', sessionId: open.sessionId } });
+    const reply = await relayP;
+    expect(reply).toMatchObject({
+      success: false,
+      reason: 'playback-failed',
+      licenseDenied: false,
+      denialReason: null,
+      error: expect.stringContaining('aborted')
+    });
+    // The woken waiter is gone: a late answer finds nothing pending.
+    expect(await handlers['widevine:plugin-license-answer'](mainFrameEvent, { requestId: pushes[0].payload.requestId, ok: true, license: 'late' }))
+      .toMatchObject({ success: false, reason: 'invalid' });
+  });
+
   test('the session/cap gates apply unchanged: 30 relays per plugin session, matched close on stopped', async () => {
     const { handlers, pushes, mainFrameEvent } = makeHarness();
     const open = await openPluginSession(handlers, mainFrameEvent, { resolverId: 'plug' });
@@ -387,11 +410,13 @@ describe('the preload wrapper against the bridge (plugin-mediated relay, end to 
 
   test('a non-Error throw (a string) still answers, as a plain playback-failed', async () => {
     const unsubscribe = mockWorld.electron.widevine.onPluginLicenseRequest(async () => {
-      throw new Error('plugin bug');
+      throw 'plugin bug'; // not an Error — pin what the wrapper does with one
     });
     const open = await mockWorld.electron.widevine.openSession('plugsvc', '<MPD/>', 'dash', 'widevine', {});
     const reply = await mockWorld.electron.widevine.relayLicense('plugsvc', 'Q0FRPQ==', open.sessionId);
-    expect(reply).toMatchObject({ success: false, reason: 'playback-failed' });
+    // The wrapper answers with the string itself as the message and no
+    // reason field, so main maps it to a plain playback-failed.
+    expect(reply).toMatchObject({ success: false, reason: 'playback-failed', error: 'plugin bug' });
     unsubscribe();
   });
 });

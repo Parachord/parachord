@@ -1841,16 +1841,30 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         let wvResult;
         if (pluginWidevine) {
           // The plugin's manifest fetch is a DIRECT renderer call — the thrown
-          // error fields (reason/plan on plan-ineligible, not-signed-in, …)
+          // error fields (reason/planKey on plan-ineligible, not-signed-in, …)
           // survive the plugin boundary because no IPC serializes them, so
           // the catch below routes them through the same handlers the
           // provider path's bridge replies feed.
           const pluginConfig = await getResolverConfig(resolverId);
           const manifestResult = await resolver.getPlaybackManifest({ ...trackOrSource }, pluginConfig);
+          // The manifest fetch can outlive its play: a newer handlePlay may
+          // have started while it was in flight. playPlugin claims the play
+          // token only when it runs, so this older play reaching it would
+          // take the NEWEST token and abort the newer play as superseded
+          // (rotating its session). Abort here instead — the same generation
+          // check every other await in handlePlay carries, before the token
+          // is claimed.
+          if (playbackGenerationRef.current !== thisGeneration) {
+            const err = new Error('widevine: plugin manifest superseded');
+            err.reason = 'superseded';
+            throw err;
+          }
           wvResult = await window.__parachordWidevine.playPlugin(audioRef.current, {
             resolverId,
             manifestResult,
-            relayLicense: resolver.relayLicense,
+            // Bound: the router calls it detached later, and plugin methods
+            // use `this.` freely (the subsonic plugin does).
+            relayLicense: resolver.relayLicense.bind(resolver),
             startTime: startAt,
             trackContext: {
               albumAsin: sourceToPlay.albumAsin || trackOrSource.albumAsin || null,
@@ -1897,7 +1911,12 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
           return;
         }
         if (handlePlanRefusal(error, resolverId, streamLabel)) return;
-        if (error && error.reason === 'not-signed-in' && window.__parachordManageAmazonMusic) {
+        // The sign-in prompt-retry is Amazon's own UX (the .axe's old play
+        // path), so it stays gated to the Amazon resolver: a future
+        // non-Amazon plugin's not-signed-in must not open Amazon's sign-in
+        // window. The generic sign-in flow arrives with each plugin's own
+        // migration (the web-session surface).
+        if (error && error.reason === 'not-signed-in' && resolverId === 'amazonmusic' && window.__parachordManageAmazonMusic) {
           // reason is what #1172's quiet-retry keys on. explicit skips the
           // radio/hidden gates; forcePrompt is NOT set, so live cookies
           // retry once instead of opening the sign-in window.

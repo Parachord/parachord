@@ -47,8 +47,10 @@ describe('the plugin path gate (checked by presence, like every capability gate)
     expect(engine).toContain('await resolver.getPlaybackManifest({ ...trackOrSource }, pluginConfig);');
   });
 
-  test('the plugin arm hands the reply to playPlugin with the resolver\'s relayLicense', () => {
-    expect(engine).toContain('window.__parachordWidevine.playPlugin(audioRef.current, {\n            resolverId,\n            manifestResult,\n            relayLicense: resolver.relayLicense,\n            startTime: startAt,');
+  test('the plugin arm hands the reply to playPlugin with the resolver\'s relayLicense, BOUND to the resolver', () => {
+    // Bound because the licence router calls it detached, and plugin methods
+    // use `this.` freely (the subsonic plugin does).
+    expect(engine).toContain('window.__parachordWidevine.playPlugin(audioRef.current, {\n            resolverId,\n            manifestResult,\n            // Bound: the router calls it detached later, and plugin methods\n            // use `this.` freely (the subsonic plugin does).\n            relayLicense: resolver.relayLicense.bind(resolver),\n            startTime: startAt,');
   });
 
   test('the provider fallback is intact: the provider play call and its entity are unchanged', () => {
@@ -86,5 +88,200 @@ describe('the seams the engine relies on below it', () => {
     expect(bridge).toContain("ipcMain.handle('widevine:open-session'");
     expect(bridge).toContain('markManifestForRateLimit(resolverId)');
     expect(bridge).toContain("sender.send('widevine:plugin-license'");
+  });
+});
+
+// ── behavioural: the real hook's widevine dispatch, driven end to end ───────
+//
+// The no-match-sentinels.test.js harness — the real hook rendered under
+// ReactDOMServer.renderToStaticMarkup (no effects), handlePlay handed back
+// with the resolver and UI surfaces stubbed — plus the widevine additions:
+// isWidevineResolver keyed on the capability (app.js's own definition), a
+// STUBBED window.__parachordWidevine (the hook's module require installs the
+// real player on window; the stub replaces it after — the seams pinned here
+// are playPlugin/play/stop, not Shaka), and a pre-seeded shared element so
+// ensureSharedAudioElement never needs a DOM.
+const scoring = require('../../sync-providers/confidence-scoring');
+
+function widevineEngineWith(resolver) {
+  global.React = require('react');
+  global.ReactDOM = require('react-dom');
+  const ReactDOMServer = require('react-dom/server');
+  global.window = global.window || {};
+  global.window.ConfidenceScoring = scoring;
+
+  const { usePlaybackEngine } = require('../../src/renderer/hooks/use-playback-engine.js');
+  const widevine = {
+    play: jest.fn(async () => ({ token: 101 })),
+    playPlugin: jest.fn(async () => ({ token: 202 })),
+    untilAudible: () => new Promise(() => {}), // the race resolves via the element's play()
+    stop: jest.fn(async () => ({ stopped: true })),
+    currentVariantFacts: () => null,
+    getState: () => ({ activeResolverId: null })
+  };
+  global.window.__parachordWidevine = widevine;
+
+  const ref = (current = null) => ({ current });
+  const noop = () => {};
+  const showConfirmDialog = jest.fn();
+  const showToast = jest.fn();
+  const setCurrentTrack = jest.fn();
+  const audioEl = {
+    volume: 1, currentTime: 0, duration: 0,
+    play: jest.fn(() => Promise.resolve()), pause: jest.fn(), load: jest.fn(),
+    addEventListener: jest.fn(), removeEventListener: jest.fn()
+  };
+
+  const volume = { volumeRef: ref(80), isMutedRef: ref(false), resolverVolumeOffsets: {}, getEffectiveVolume: (x) => x, setSpotifyVolume: noop };
+  const queue = {
+    currentTrack: null, currentTrackRef: ref(), currentQueueRef: ref([]), setCurrentTrack, setCurrentQueue: noop,
+    playbackContext: null, setPlaybackContext: noop, playHistoryRef: ref([]), playRequestedRef: ref(false),
+    shuffleModeRef: ref(false), originalQueueRef: ref([]), repeatModeRef: ref('off'), playedSinceWrapRef: ref(false)
+  };
+  const ctx = {
+    resolvers: {
+      loadedResolversRef: ref([resolver]),
+      activeResolversRef: ref([resolver.id]),
+      resolverOrderRef: ref([resolver.id]),
+      resolverBlocklistRef: ref([]),
+      resolverConfigCache: ref({}),
+      getResolverConfigRef: ref(async () => ({})),
+      resolveTrackRef: ref(async () => ({})),
+      confidenceForSourceRef: ref((target, source) => scoring.calculateConfidence(target, source)),
+      isHtml5StreamResolver: () => false,
+      // app.js's own definition: the capability keys the branch.
+      isWidevineResolver: (id) => resolver.id === id && resolver.capabilities?.widevine === true,
+      findLoadedResolver: (id) => (id === resolver.id ? resolver : undefined),
+      usesSharedAudio: () => false,
+      embedPlayerKind: () => null,
+      resolveTracksInBackground: noop,
+      buildProtocolFetchHeaders: noop,
+      lastfmFetch: noop,
+      getLastfmApiKey: noop,
+      getArtistTopTracksRef: ref(),
+      keyForSpinoffDedupRef: ref(),
+      refreshSpotifyTokenRef: ref(),
+      startAutoAdvancePollingRef: ref(noop),
+    },
+    enrichment: {
+      trackSources: {},
+      queueTrackSources: jest.fn(),
+      lookupMbidMapper: async () => null,
+      enrichTrackWithMbid: noop,
+      fetchArtworkViaMbid: noop,
+      getAlbumArtRef: ref(noop),
+      getCachedAlbumArtRef: ref(noop),
+      forgetMissingLocalFile: noop,
+      showExternalTrackPromptUIRef: ref(noop),
+    },
+    ui: { showToastRef: ref(showToast), showConfirmDialog, setActiveView: noop, setSettingsTab: noop, setProgress: jest.fn() },
+    scheduling: { updateSchedulerVisibility: noop, abortSchedulerContext: noop, registerPoolContext: noop, setSchedulerPlaybackIndex: noop },
+  };
+
+  let handlePlay;
+  const Probe = () => {
+    const out = usePlaybackEngine({
+      volume, queue, ctx,
+      audioRef: ref(audioEl), localFileSeekTargetRef: ref(), progressRef: ref(), seekingRef: ref(),
+      isPlayingRef: ref(false), streamingPlaybackActiveRef: ref(false),
+      spotifyToken: null, extensionConnected: null, audioContext: null,
+      spinoffMode: false, setSpinoffMode: noop, spinoffSourceTrack: null, setSpinoffSourceTrack: noop, setSpinoffLoading: noop,
+      spinoffModeRef: ref(false), spinoffSourceTrackRef: ref(),
+      handleNextRef: ref(noop), handlePreviousRef: ref(noop), handlePlayPauseRef: ref(noop), handlePlayRef: ref(noop),
+      startSpinoffRef: ref(), playbackPollerRef: ref(), pollingRecoveryRef: ref(), externalTrackTimeoutRef: ref(),
+      externalTrackIntervalRef: ref(), waitingForBrowserPlaybackRef: ref(), pendingCloseTabIdRef: ref(),
+      trackNeedsExplicitStart: ref(false), spotifyProgressBaselineRef: ref(),
+      listenAlongFriend: null, setListenAlongFriend: noop, listenAlongFriendRef: ref(), listenAlongLastTrackRef: ref(),
+      listenAlongPendingTrackRef: ref(), listenAlongUserPausedRef: ref(), listenAlongEndAfterSongRef: ref(),
+    });
+    handlePlay = out.handlePlay;
+    return null;
+  };
+  ReactDOMServer.renderToStaticMarkup(global.React.createElement(Probe));
+  return { handlePlay, widevine, setCurrentTrack, showConfirmDialog, showToast, audioEl };
+}
+
+const PLUGIN_RESOLVER_ID = 'plugres';
+const pluginManifest = (n) => ({ manifest: `<MPD ${n}/>`, type: 'dash', drm: 'widevine', context: { n } });
+const track = (id, extra = {}) => ({
+  id, artist: 'Kara Jackson', title: 'no fun', album: 'Why Does the Earth Give',
+  sources: { [PLUGIN_RESOLVER_ID]: { id: `${id}-s`, title: 'no fun', artist: 'Kara Jackson', confidence: 1, ...extra } }
+});
+const committedTrack = (setCurrentTrack) => setCurrentTrack.mock.calls.map(([t]) => t).filter((t) => t && typeof t === 'object').pop();
+const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+beforeEach(() => {
+  jest.spyOn(console, 'log').mockImplementation(() => {});
+  jest.spyOn(console, 'warn').mockImplementation(() => {});
+  jest.spyOn(console, 'error').mockImplementation(() => {});
+});
+afterEach(() => jest.restoreAllMocks());
+
+describe('handlePlay on the real hook: the plugin branch, behaviourally', () => {
+  test('a plugin play whose manifest resolves LATE, after a newer play started, never reaches playPlugin — the newer play wins', async () => {
+    // The blocker shape: playPlugin claims the play token only when it runs,
+    // so an older play arriving there after a newer play started takes the
+    // NEWEST token, aborts the newer play as superseded and rotates its
+    // session. The engine must abort the older play at its manifest await.
+    let calls = 0;
+    let releaseFirst;
+    const resolver = {
+      id: PLUGIN_RESOLVER_ID,
+      name: 'Plug',
+      capabilities: { resolve: true, widevine: true },
+      getPlaybackManifest: jest.fn(() => {
+        calls += 1;
+        // The first fetch never settles until the test says so; the second
+        // (the newer play's) answers at once.
+        if (calls === 1) return new Promise((resolve) => { releaseFirst = resolve; });
+        return Promise.resolve(pluginManifest('second'));
+      }),
+      relayLicense(challenge, context) { return `RELAYED:${this.id}:${challenge}:${context.n}`; }
+    };
+    const { handlePlay, widevine, setCurrentTrack } = widevineEngineWith(resolver);
+
+    const first = handlePlay(track('t1'));
+    await flush(); // the first play is parked inside getPlaybackManifest
+    expect(resolver.getPlaybackManifest).toHaveBeenCalledTimes(1);
+
+    const second = handlePlay(track('t2'));
+    await second; // the newer play completes on its immediate manifest
+    expect(widevine.playPlugin).toHaveBeenCalledTimes(1);
+
+    // The first play's manifest resolves AFTER the second play started.
+    releaseFirst(pluginManifest('first'));
+    await first;
+
+    // The superseded play never reached playPlugin (never claimed the token,
+    // never rotated the session) and never tore the newer play down.
+    expect(widevine.playPlugin).toHaveBeenCalledTimes(1);
+    expect(widevine.playPlugin.mock.calls[0][1].manifestResult.manifest).toBe('<MPD second/>');
+    expect(widevine.stop).not.toHaveBeenCalled();
+    // And the newer play owns the playbar.
+    expect(committedTrack(setCurrentTrack)).toMatchObject({ id: 't2' });
+
+    // The relay handoff survives the engine detached: the function handed to
+    // playPlugin still sees the resolver as its `this` when invoked bare.
+    const handed = widevine.playPlugin.mock.calls[0][1].relayLicense;
+    expect(handed.call({}, 'Q0FRPQ==', { n: 2 })).toBe(`RELAYED:${PLUGIN_RESOLVER_ID}:Q0FRPQ==:2`);
+  });
+
+  test('a widevine resolver WITHOUT the pair drives the provider path (__parachordWidevine.play), never playPlugin', async () => {
+    const resolver = {
+      id: PLUGIN_RESOLVER_ID,
+      name: 'Plug',
+      capabilities: { resolve: true, widevine: true }
+      // no getPlaybackManifest / relayLicense: the provider fallback
+    };
+    const { handlePlay, widevine, setCurrentTrack, audioEl } = widevineEngineWith(resolver);
+
+    await handlePlay(track('t3', { amazonAsin: 'B0PROVIDER' }));
+
+    expect(widevine.play).toHaveBeenCalledTimes(1);
+    const [el, opts] = widevine.play.mock.calls[0];
+    expect(el).toBe(audioEl);
+    expect(opts).toMatchObject({ resolverId: PLUGIN_RESOLVER_ID, entity: { asin: 'B0PROVIDER' } });
+    expect(widevine.playPlugin).not.toHaveBeenCalled();
+    expect(committedTrack(setCurrentTrack)).toMatchObject({ id: 't3' });
   });
 });
