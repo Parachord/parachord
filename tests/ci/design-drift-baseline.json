@@ -12,7 +12,13 @@
     "offScaleFontSizes": 31,
     "offScaleRadii": 10,
     "jsHover": 47,
-    "roleButtonDivs": 0
+    "roleButtonDivs": 0,
+    "trackRowCopies": 10,
+    "sourceButtonCopies": 12,
+    "spinnerCopies": 5,
+    "emptyStateCopies": 24,
+    "filterPillCopies": 2,
+    "stickyBarCopies": 8
   },
   "undefinedCssVars": []
 }

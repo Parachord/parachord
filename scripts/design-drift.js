@@ -48,6 +48,28 @@ const METRICS = {
   offScaleRadii: 'Inline border radii off the radius scale (4, 6, 8, 10, 12, 16px, full).',
   jsHover: 'onMouseEnter handlers that change style (hover styling done in JS). Use CSS :hover / Tailwind hover: classes.',
   roleButtonDivs: 'div/span/li… with role="button" (lib/activate-on-key.js, a stopgap). Use a <button>, or CardButton for a card or row that holds buttons.',
+
+  // Copies: a hand-built version of something a shared component already
+  // draws. The audit counted colours and classes but not these, so a page
+  // could keep its own track row or empty state while every colour in it
+  // was a token (2026-11-15). Each counts places outside the shared
+  // component's own file (COPY_HOMES).
+  trackRowCopies: 'Hand-built track rows (a sourceRowState() call outside components/track-lists.js). Use the shared TrackRow.',
+  sourceButtonCopies: 'Hand-built "Play from <service>" source buttons. Use the shared source-icon button.',
+  spinnerCopies: 'Hand-drawn spinners (an element with animate-spin or a border-t-transparent ring). Use Icons.Spinner.',
+  emptyStateCopies: 'Hand-built empty states ("No …" / "Nothing …" text in a plain element). Use EmptyState (components/states.js).',
+  filterPillCopies: 'Hand-built pill buttons (rounded-full px-3 py-1…). Use FilterChips.',
+  stickyBarCopies: 'Hand-built sticky bars (sticky top-0 classes). Use the shared sticky toolbar.',
+};
+
+// The file each copy metric's shared component lives in: its own uses don't count.
+const COPY_HOMES = {
+  trackRowCopies: ['components/track-lists.js'],
+  sourceButtonCopies: ['components/track-lists.js', 'components/menu.js'],
+  spinnerCopies: ['components/icons.js'],
+  emptyStateCopies: ['components/states.js'],
+  filterPillCopies: ['components/filter-chips.js'],
+  stickyBarCopies: ['components/sticky-bar.js'],
 };
 
 function rendererFiles(dir = RENDERER, out = []) {
@@ -114,12 +136,24 @@ function scanSource(src) {
       const name = c.type === 'Identifier' ? c.name
         : (c.type === 'MemberExpression' && c.object.name === 'window' ? c.property.name : null);
       if (name === 'alert' || name === 'confirm' || name === 'prompt') counts.nativeDialogs += 1;
+      if (name === 'sourceRowState') counts.trackRowCopies += 1;
 
       if (isCreateElement(c) && node.arguments[0] && node.arguments[0].type === 'StringLiteral') {
         const tag = node.arguments[0].value;
         const props = node.arguments[1] && node.arguments[1].type === 'ObjectExpression' ? node.arguments[1].properties : [];
         const keys = props.map(propKey);
         if (tag === 'path') counts.svgPaths += 1;
+        const cls = props.find((p) => propKey(p) === 'className');
+        const classText = cls && cls.value ? src.slice(cls.value.start, cls.value.end) : '';
+        if (/\banimate-spin\b|\bborder-t-transparent\b/.test(classText)) counts.spinnerCopies += 1;
+        if (tag === 'button' && /\brounded-full\b/.test(classText) && /\bpx-3\b/.test(classText) && /\bpy-1(?:\.5)?\b/.test(classText)) counts.filterPillCopies += 1;
+        if (/\bsticky\b/.test(classText) && /\btop-0\b/.test(classText)) counts.stickyBarCopies += 1;
+        const aria = props.find((p) => propKey(p) === 'aria-label');
+        const ariaText = aria && aria.value ? (aria.value.type === 'StringLiteral' ? aria.value.value : aria.value.type === 'TemplateLiteral' ? aria.value.quasis[0].value.cooked : '') : '';
+        if (/^Play from \S?/.test(ariaText) && ariaText.length > 'Play from'.length) counts.sourceButtonCopies += 1;
+        for (const kid of node.arguments.slice(2)) {
+          if (kid.type === 'StringLiteral' && /^(?:No|Nothing) /.test(kid.value)) counts.emptyStateCopies += 1;
+        }
         if (NON_INTERACTIVE.has(tag) && keys.includes('onClick') && !keys.includes('role')) counts.clickableNonInteractive += 1;
         const roleProp = props.find((p) => propKey(p) === 'role');
         if (NON_INTERACTIVE.has(tag) && roleProp && roleProp.value && roleProp.value.value === 'button') counts.roleButtonDivs += 1;
@@ -166,6 +200,9 @@ function scan() {
     const { counts, cssVars } = scanSource(fs.readFileSync(file, 'utf8'));
     // The shared icon set is where paths belong; svgPaths counts the copies.
     if (rel === path.join('src', 'renderer', 'components', 'icons.js')) counts.svgPaths = 0;
+    for (const [metric, homes] of Object.entries(COPY_HOMES)) {
+      if (homes.some((h) => rel === path.join('src', 'renderer', ...h.split('/')))) counts[metric] = 0;
+    }
     byFile[rel] = counts;
     for (const k of Object.keys(totals)) totals[k] += counts[k];
     for (const v of cssVars) used.add(v);

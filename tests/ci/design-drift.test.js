@@ -4,7 +4,9 @@
  * Counts the anti-patterns the 2026-11-13 design audit found in
  * src/renderer/ (hard-coded colours, Tailwind palette classes, isDark
  * ternaries, clickable divs, hidden focus, native dialogs, "...", pasted SVG
- * paths, off-scale font sizes and radii, JS hover) and compares them with
+ * paths, off-scale font sizes and radii, JS hover), plus hand-built copies
+ * of shared components (track rows, source buttons, spinners, empty states,
+ * pills, sticky bars), and compares them with
  * tests/ci/design-drift-baseline.json.
  *
  * - A count that RISES fails: the change adds new drift. Use the shared
