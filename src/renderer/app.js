@@ -2074,7 +2074,7 @@ const { Modal, ConfirmModal, DontShowAgain } = require('./components/modal');
 const { PlaylistUpdateDialog, UpdateModeChoice } = require('./components/playlist-update-dialog');
 const { KeyboardShortcutsDialog } = require('./components/keyboard-shortcuts');
 const { WhatsNewDialog } = require('./components/whats-new-dialog');
-const { ArtistCard, RankBadge } = require('./components/artist-card');
+const { ArtistCard, ArtistCardSkeleton, RankBadge } = require('./components/artist-card');
 const { AlbumCard, AlbumRankBadge } = require('./components/album-card');
 const { PlaylistCard } = require('./components/playlist-card');
 const { ListenerCard, LISTENER_HEXAGON } = require('./components/listener-card');
@@ -40738,25 +40738,7 @@ React.createElement('div', {
                   style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
                 },
                   Array.from({ length: 12 }).map((_, i) =>
-                    React.createElement('div', {
-                      key: `artist-skeleton-${i}`,
-                      className: 'bg-surface-card rounded-lg overflow-hidden'
-                    },
-                      React.createElement('div', {
-                        className: 'aspect-square shimmer-light animate-shimmer',
-                        style: { backgroundSize: '200% 100%', animationDelay: `${i * 50}ms` }
-                      }),
-                      React.createElement('div', { className: 'p-3' },
-                        React.createElement('div', {
-                          className: 'h-4 shimmer-light rounded w-3/4 mb-2 animate-shimmer',
-                          style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 25}ms` }
-                        }),
-                        React.createElement('div', {
-                          className: 'h-3 shimmer-light rounded w-1/2 animate-shimmer',
-                          style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 50}ms` }
-                        })
-                      )
-                    )
+                    React.createElement(ArtistCardSkeleton, { key: `artist-skeleton-${i}`, index: i, lines: 2 })
                   )
                 )
               : topArtists.error ?

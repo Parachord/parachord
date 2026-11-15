@@ -568,3 +568,25 @@ describe('every track list and card grid loads with the shared placeholders', ()
     expect(app).not.toContain('formatTimeAgo(track.timestamp)');
   });
 });
+
+describe('artist grids load with the shared artist card placeholder', () => {
+  global.React = require('react');
+  const { renderToStaticMarkup } = require('react-dom/server');
+  const { ArtistCard, ArtistCardSkeleton } = require('../../src/renderer/components/artist-card');
+  test('ArtistCardSkeleton has the card\'s box, photo and name line', () => {
+    const card = renderToStaticMarkup(React.createElement(ArtistCard, { artist: { id: 'a', name: 'A' } }));
+    const ph = renderToStaticMarkup(React.createElement(ArtistCardSkeleton, {}));
+    for (const css of ['background-color:var(--card-bg);box-shadow:var(--card-shadow)']) {
+      expect(card).toContain(css);
+      expect(ph).toContain(css);
+    }
+    expect(ph).toContain('class="aspect-square shimmer-light animate-shimmer"');
+    expect(ph).toContain('class="p-3"');
+  });
+  test('the artist page\'s related artists, History\'s top artists and Search use it', () => {
+    const read = (f) => fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', f), 'utf8');
+    expect(read('components/artist-page.js')).toMatch(/loadingRelated && filteredArtists\.length === 0 && React\.createElement\('div'[\s\S]{0,300}ArtistCardSkeleton/);
+    expect(read('app.js')).toMatch(/ArtistCardSkeleton, \{ key: `artist-skeleton-\$\{i\}`, index: i, lines: 2 \}/);
+    expect(read('components/search-page.js')).toMatch(/ArtistCardSkeleton, \{ key: `artist-skeleton-\$\{i\}`, index: i \}/);
+  });
+});

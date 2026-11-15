@@ -110,6 +110,24 @@ function ArtistCard({ artist, image, imageLoaded, getArtistImage, onOpen, onPlay
   );
 }
 
+// An artist card's placeholder: the same box (rounded, the card colour and
+// shadow), the square photo and the name line, plus `lines` - 1 subtitle
+// lines ("12 plays"). `width` for a fixed-width row (Search's overview).
+function ArtistCardSkeleton({ index = 0, lines = 1, width } = {}) {
+  const e = React.createElement;
+  const delay = (n) => `${Math.min(index * 30, 300) + n}ms`;
+  return e('div', {
+    'aria-hidden': 'true', className: 'rounded-lg overflow-hidden' + (width ? ' flex-shrink-0' : ''),
+    style: Object.assign({ backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)' }, width ? { width } : null),
+  },
+    e('div', { className: 'aspect-square shimmer-light animate-shimmer', style: { backgroundSize: '200% 100%', animationDelay: delay(0) } }),
+    e('div', { className: 'p-3' },
+      e('div', { style: { height: '20px', display: 'flex', alignItems: 'center' } },
+        e('div', { className: 'h-3.5 rounded shimmer-light animate-shimmer', style: { width: '70%', backgroundSize: '200% 100%', animationDelay: delay(25) } })),
+      lines > 1 && e('div', { style: { height: '16px', marginTop: '4px', display: 'flex', alignItems: 'center' } },
+        e('div', { className: 'h-3 rounded shimmer-light animate-shimmer', style: { width: '40%', backgroundSize: '200% 100%', animationDelay: delay(50) } }))));
+}
+
 // The rank badge History and a friend's top artists put on the photo.
 function RankBadge({ rank }) {
   return React.createElement('div', {
@@ -118,4 +136,4 @@ function RankBadge({ rank }) {
   }, `#${rank}`);
 }
 
-module.exports = { ArtistCard, RankBadge };
+module.exports = { ArtistCard, ArtistCardSkeleton, RankBadge };

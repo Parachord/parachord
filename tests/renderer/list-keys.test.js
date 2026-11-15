@@ -152,7 +152,9 @@ describe('Artist page: the related-artists source filter', () => {
     expect(tab).toMatch(/const filteredArtists = sourceFilter === 'all'/);
     expect(tab).toMatch(/value: sourceFilter,/);
     expect(tab).not.toMatch(/relatedArtistsSourceFilter === 'both'/);
-    const empty = artistPage.slice(artistPage.indexOf("'No related artists found.'"), artistPage.indexOf("'No related artists found.'") + 300);
-    expect(empty).toMatch(/sourceFilter === 'listenbrainz'/);
+    // The empty state (the shared EmptyState) names the picked source.
+    const emptyAt = artistPage.indexOf("title: 'No related artists yet'");
+    expect(emptyAt).toBeGreaterThan(-1);
+    expect(artistPage.slice(emptyAt, emptyAt + 400)).toMatch(/sourceFilter === 'listenbrainz'/);
   });
 });

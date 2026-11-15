@@ -29,7 +29,7 @@ const { artistOpenOptions, creditOpenOptions, trackArtistOpenOptions } = require
 const { VirtualizedTrackList, TrackRow } = require('./track-lists');
 const { visibleSources } = require('../lib/visible-sources');
 const { generateArtistPattern, PlayTop10Icon, SearchHistoryItem } = require('./cards');
-const { ArtistCard } = require('./artist-card');
+const { ArtistCard, ArtistCardSkeleton } = require('./artist-card');
 const { AlbumCard } = require('./album-card');
 const { heroTabClass } = require('./hero-tabs');
 const { trackSlug, slug } = require('../lib/track-slug');
@@ -599,21 +599,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                 style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
               },
                 ...Array(getItemsPerRow(160)).fill(null).map((_, i) =>
-                  React.createElement('div', {
-                    key: `artist-skeleton-${i}`,
-                    className: 'bg-surface-card rounded-lg overflow-hidden'
-                  },
-                    React.createElement('div', {
-                      className: 'aspect-square shimmer-light animate-shimmer',
-                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 100}ms` }
-                    }),
-                    React.createElement('div', { className: 'p-3' },
-                      React.createElement('div', {
-                        className: 'h-4 shimmer-light w-3/4 rounded animate-shimmer',
-                        style: { backgroundSize: '200% 100%', animationDelay: `${i * 100 + 50}ms` }
-                      })
-                    )
-                  )
+                  React.createElement(ArtistCardSkeleton, { key: `artist-skeleton-${i}`, index: i })
                 )
               )
             ),

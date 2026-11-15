@@ -35,7 +35,7 @@ const { HeroTabs, heroTabClass } = require('./hero-tabs');
 const { SectionHeader } = require('./section-header');
 const { FilterChips } = require('./filter-chips');
 const { ReleasePage, ReleaseCard, generateArtistPattern, PlayTop10Icon } = require('./cards');
-const { ArtistCard } = require('./artist-card');
+const { ArtistCard, ArtistCardSkeleton } = require('./artist-card');
 const { trackSlug, slug } = require('../lib/track-slug');
 const { releaseMenu, artistMenu } = require('../lib/item-menus');
 const { formatCalendarDate } = require('../lib/calendar-date');
@@ -1582,14 +1582,15 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                     onContextMenu: () => window.showItemMenu(artistMenu({ id: slug(artist.name || 'unknown'), name: artist.name, image: artist.image }))
                   }))
                 ),
-                // Cards will appear with their own shimmer animations when data is ready
-                // No related artists found (or filtered to none)
-                !loadingRelated && filteredArtists.length === 0 && React.createElement('div', {
-                  className: 'text-center py-12 text-ink-tertiary'
-                }, relatedArtists.length === 0
-                  ? 'No related artists found.'
-                  : `No artists from ${sourceFilter === 'listenbrainz' ? 'ListenBrainz' : sourceFilter === 'lastfm' ? 'Last.fm' : 'both sources'}.`
-                )
+                // Still looking: the cards' placeholders, in the real grid.
+                loadingRelated && filteredArtists.length === 0 && React.createElement('div', {
+                  className: 'grid gap-4', 'aria-hidden': 'true',
+                  style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
+                }, Array.from({ length: 12 }).map((_, i) => React.createElement(ArtistCardSkeleton, { key: i, index: i }))),
+                // None found (or filtered to none): the shared empty state.
+                !loadingRelated && filteredArtists.length === 0 && React.createElement(EmptyState, relatedArtists.length === 0
+                  ? { title: 'No related artists yet', body: 'ListenBrainz and Last.fm don’t list any for this artist.' }
+                  : { title: `No related artists from ${sourceFilter === 'listenbrainz' ? 'ListenBrainz' : 'Last.fm'}`, body: 'Pick All to see the rest.' })
               )
             );
           })(),

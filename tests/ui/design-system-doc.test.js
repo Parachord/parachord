@@ -14,7 +14,7 @@ const doc = fs.readFileSync(path.join(ROOT, 'docs/DESIGN_SYSTEM.md'), 'utf8');
 const SHARED = {
   'album-card': ['AlbumCard', 'AlbumRankBadge'],
   'playlist-card': ['PlaylistCard'],
-  'artist-card': ['ArtistCard', 'RankBadge'],
+  'artist-card': ['ArtistCard', 'ArtistCardSkeleton', 'RankBadge'],
   'listener-card': ['ListenerCard'],
   'card-art': ['ArtOverlay', 'useReveal', 'ArtBox'],
   'card-button': ['CardButton'],
