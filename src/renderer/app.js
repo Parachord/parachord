@@ -43363,7 +43363,7 @@ useEffect(() => {
               // Uses the shared shimmer-light + animate-shimmer classes with a
               // staggered delay (matches the search-page skeletons).
               marketplaceLoading && React.createElement('div', {
-                className: 'card-grid gap-6'
+                className: 'tile-grid gap-6'
               },
                 ...Array(10).fill(null).map((_, i) =>
                   React.createElement('div', {
@@ -43426,7 +43426,7 @@ useEffect(() => {
                 ),
                 // Resolver grid - combines installed and marketplace
                 React.createElement('div', {
-                  className: 'card-grid gap-6'
+                  className: 'tile-grid gap-6'
                 },
                   (() => {
                     // Get all content resolvers from marketplace (non-meta-service)
@@ -43612,7 +43612,7 @@ useEffect(() => {
                 ),
                 // Meta services grid - combines installed and marketplace
                 React.createElement('div', {
-                  className: 'card-grid gap-6'
+                  className: 'tile-grid gap-6'
                 },
                   (() => {
                     // Get all meta services from marketplace
@@ -43746,7 +43746,7 @@ useEffect(() => {
                 ),
                 // Extensions grid
                 React.createElement('div', {
-                  className: 'card-grid gap-6'
+                  className: 'tile-grid gap-6'
                 },
                   // Browser Extension tile
                   React.createElement('div', {
@@ -44397,8 +44397,9 @@ React.createElement(Switch, { checked: skipExternalPrompt, onToggle: async () =>
                         onChange: (v) => setAuthPortInput(v),
                         style: { width: '96px' },
                       }),
-                      React.createElement(Button, { type: 'submit', size: 'sm' }, 'Save'),
-                      React.createElement(Button, { variant: 'secondary', size: 'sm', onClick: () => setAuthPortInput('8888') }, 'Default')
+                      // Secondary first, the primary last (the app's button order).
+                      React.createElement(Button, { variant: 'secondary', size: 'sm', onClick: () => setAuthPortInput('8888') }, 'Default'),
+                      React.createElement(Button, { type: 'submit', size: 'sm' }, 'Save')
                     )
                   ),
                   authServerStatus && authServerStatus.configuredPort !== authServerStatus.port && React.createElement('p', {
