@@ -70,8 +70,13 @@ describe('menu wiring', () => {
   });
 
   test('a Recommendations album menu has tracks to queue', () => {
-    const i = app.indexOf("onMouseEnter: () => scheduleTopAlbumHoverPrefetch(item.artist, item.name, art),");
-    expect(i).toBeGreaterThan(-1);
+    // The card (the shared AlbumCard) prefetches after its hover dwell; the
+    // menu reads what that put in topAlbumTracksCache.
+    const card = app.indexOf('const albumCard = (item, index) => {');
+    const i = app.indexOf('onHoverPrefetch: () => prefetchTopAlbumTracks(item.artist, item.name, art),', card);
+    expect(card).toBeGreaterThan(-1);
+    expect(i).toBeGreaterThan(card);
+    expect(i).toBeLessThan(app.indexOf('const playlistCard = (item, index, section) => {', card));
     expect(app.slice(i, i + 1400)).toContain('{ tracks: cached, loading: !cached }');
   });
 });

@@ -42,7 +42,15 @@ describe('ReasonBadge', () => {
 
 describe('Recommendations cards carry it', () => {
   test('album and artist cards render the badge on the cover', () => {
-    expect(app.match(/shuffleupagusBadgeProps\(item\) && React\.createElement\(ReasonBadge, shuffleupagusBadgeProps\(item\)\)/g)).toHaveLength(2);
+    // The artist card draws it; the album card is the shared AlbumCard,
+    // which draws its `reason` as the badge (checked under Home below).
+    expect(app.match(/shuffleupagusBadgeProps\(item\) && React\.createElement\(ReasonBadge, shuffleupagusBadgeProps\(item\)\)/g)).toHaveLength(1);
+    expect(app.match(/reason: shuffleupagusBadgeProps\(item\) \|\| null,/g)).toHaveLength(1);
+    const html = renderToStaticMarkup(React.createElement(require('../../src/renderer/components/album-card').AlbumCard, {
+      album: { title: 'Frog', artist: 'Hovvdy', imageUrl: 'https://x/y.jpg' },
+      reason: shuffleupagusBadgeProps({ resolverId: 'shuffleupagus', reason: 'Because slowcore' }),
+    }));
+    expect(html).toMatch(/aria-label="Why Shuffleupagus picked this"/);
   });
   test("a Shuffleupagus pick's reason is on the badge; any other pick's reason is the card's tooltip", () => {
     expect(app.match(/tooltip: item\.reason && !shuffleupagusBadgeProps\(item\) \? item\.reason : undefined,/g)).toHaveLength(2);

@@ -41,12 +41,14 @@ test('the card family uses it, and no card is a button holding buttons', () => {
   // Artist cards are components/artist-card.js's ArtistCard, a CardButton too.
   const artistCard = read('src/renderer/components/artist-card.js');
   expect(artistCard).toContain('return e(CardButton, {');
-  for (const name of ['CollectionAlbumCard']) {
-    const start = cards.indexOf(`const ${name} = `);
-    const body = cards.slice(start, cards.indexOf('\n};\n', start));
-    expect([name, body.includes('React.createElement(CardButton, {')]).toEqual([name, true]);
-    expect([name, /return React\.createElement\('button'/.test(body)]).toEqual([name, false]);
-  }
+  // Every album grid's card is components/album-card.js's AlbumCard (the
+  // old CollectionAlbumCard in cards.js merged into it), a CardButton too.
+  expect(cards).not.toContain('const CollectionAlbumCard = ');
+  const albumCard = read('src/renderer/components/album-card.js');
+  const start = albumCard.indexOf('function AlbumCard(');
+  const body = albumCard.slice(start, albumCard.indexOf('\n}\n', start));
+  expect(body).toContain('return e(CardButton, ');
+  expect(body).not.toMatch(/return e\('button'/);
 });
 
 // A row hands CardButton a ref (the resolution scheduler's visibility

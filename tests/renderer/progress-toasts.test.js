@@ -60,7 +60,17 @@ test('album actions play what the fetch returned, not the pre-fetch render', () 
   for (const src of [app, page]) {
     expect(src).not.toMatch(/await prefetch\w+\([^)]*\);\s*\n\s*(?:let |const )?\w+ = prefetchedReleases(?:Ref\.current)?\[/);
   }
-  expect(app).toContain('const tracks = await prefetchChartsTracks(item);');
+  // Pop of the Tops' card actions (albumCardActions) play, queue and add the
+  // tracks getTracks resolved to: prefetchChartsTracks' own result.
+  expect(app).toContain('albumCardActions({ title: item.title, artist: item.artist, id: item.id, getTracks: () => prefetchChartsTracks(item) })');
+  const at = app.indexOf('const albumCardActions = ({ title, artist, id, getTracks, context }) => {');
+  expect(at).toBeGreaterThan(-1);
+  const actions = app.slice(at, app.indexOf('\n  };\n', at));
+  expect(actions).toContain('const tracks = await getTracks();');
+  expect(actions).toContain('return tracks;');
+  // Play shows the playbar's loading state while the tracks are fetched.
+  expect(actions).toMatch(/onPlay: async \(\) => \{\s*setTrackLoading\(true\);\s*const t = await load\(\);\s*if \(t\) playTrackCollection\(t, ctx\); else setTrackLoading\(false\);/);
+  expect(actions).toContain('onQueue: async () => { const t = await load(); if (t) addToQueue(t, ctx); },');
   expect(app).toMatch(/const prefetchChartsTracks = \(album\) => sharedReleasePrefetch\(album\.id,/);
   expect(app).toMatch(/const prefetchCriticsPicksTracks = \(album\) => sharedReleasePrefetch\(album\.id,/);
   expect(page).toContain('const newPrefetched = { tracks: await prefetchReleaseTracks(rel, currentArtist) };');

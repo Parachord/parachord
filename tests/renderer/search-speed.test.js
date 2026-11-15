@@ -189,7 +189,12 @@ describe('a Search cover that fails to load does not stick', () => {
   test('cards report a failed cover, and the img is keyed on its URL (a hidden img is never reused)', () => {
     expect((page.match(/handleSearchArtBroken\('album', album, album\.albumArt\)/g) || []).length).toBe(2);
     expect(page).toMatch(/handleSearchArtBroken\('track', track, track\.albumArt \|\| getCachedAlbumArt\(/);
-    expect((page.match(/key: album\.albumArt,/g) || []).length).toBe(2);
+    // The two album grids are the shared AlbumCard, fed the slot's URL: its
+    // ArtBox (card-art.js) drops a dead cover and shows a new URL in a fresh
+    // img, which replaced keying the img on its URL here.
+    expect((page.match(/React\.createElement\(AlbumCard, Object\.assign\(\{[\s\S]{0,400}?album: \{ id: album\.id, title: album\.title, artist: artistName, imageUrl: album\.albumArt \|\| null \},/g) || []).length).toBe(2);
+    const cardArt = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/card-art.js'), 'utf8');
+    expect(cardArt).toContain('React.useEffect(() => { setDeadCoverUrl(null); }, [imageUrl]);');
     expect(page).toMatch(/key: track\.albumArt \|\| getCachedAlbumArt\(/);
   });
 

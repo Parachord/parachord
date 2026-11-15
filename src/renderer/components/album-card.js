@@ -17,14 +17,19 @@
 //   onContextMenu (event, album) => void
 //   onHoverPrefetch (album): after a 250ms dwell (a scroll past doesn't fetch)
 //   onArtError    (album): a cover that failed to load (reportBrokenAlbumArt)
+//   getAlbumArt   (artist, title) => Promise<url>: the card looks up its own
+//                 cover (Collection), and a dead one is reported to the art
+//                 pipeline, whose retry it shows
 //   imageLoading  true: a shimmer stands in while the cover is looked up
 //   releaseType   'album' | 'ep' | 'single' | ...: the type badge, top right
 //   reason        ReasonBadge props: why it's here (bottom right)
 //   cornerBadge   a node at the art's top left (History's "#1")
-//   subtitle      a third line ("12 plays", a year)
+//   subtitle      a third line ("12 plays", a date): text or a node
+//   onOpenArtist  (album): the artist line is a link to the artist
 //   tooltip       a note for the whole card
-//   dragData      an object dragged as text/plain JSON ({ type: 'album', ... })
-//   role, animationDelay (ms, the fade-up), className
+//   dragData      an object (or a function returning one, read at drag time)
+//                 dragged as text/plain JSON ({ type: 'album', ... })
+//   role, animationDelay (ms, the fade-up), className, width (a row's fixed width)
 // Props-driven; hooks are qualified; loads under plain Node.
 
 const { CardButton } = require('./card-button');
@@ -36,13 +41,46 @@ const e = React.createElement;
 const ELLIPSIS = { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
 
 function AlbumCard({
-  album, onOpen, onPlay, onQueue, onAddToPlaylist, onContextMenu, onHoverPrefetch, onArtError,
-  imageLoading = false, releaseType, reason, cornerBadge, subtitle, tooltip, dragData, role, animationDelay, className,
+  album, onOpen, onPlay, onQueue, onAddToPlaylist, onContextMenu, onHoverPrefetch, onArtError, onOpenArtist, getAlbumArt,
+  imageLoading = false, releaseType, reason, cornerBadge, subtitle, tooltip, dragData, role, animationDelay, className, width,
 }) {
   const reveal = useReveal();
   const timer = React.useRef(null);
   React.useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  // A card that looks up its own cover (getAlbumArt): undefined while
+  // loading, null when there's none, else the URL.
+  const [fetchedArt, setFetchedArt] = React.useState(album && album.imageUrl ? album.imageUrl : undefined);
+  const shownRef = React.useRef('');
+  const mounted = React.useRef(true);
+  React.useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const artKey = album ? `${album.artist}|${album.title}` : '';
+  shownRef.current = artKey;
+  React.useEffect(() => {
+    if (!getAlbumArt || !album) return undefined;
+    if (album.imageUrl) { setFetchedArt(album.imageUrl); return undefined; }
+    let cancelled = false;
+    setFetchedArt(undefined);
+    Promise.resolve(getAlbumArt(album.artist, album.title))
+      .then((url) => { if (!cancelled) setFetchedArt(url || null); })
+      .catch(() => { if (!cancelled) setFetchedArt(null); });
+    return () => { cancelled = true; };
+  }, [artKey, album && album.imageUrl, !!getAlbumArt]);
   if (!album) return null;
+  const coverUrl = getAlbumArt ? (fetchedArt || null) : album.imageUrl;
+  const coverLoading = getAlbumArt ? fetchedArt === undefined : imageLoading;
+  const reportArt = getAlbumArt
+    ? () => {
+        const broken = fetchedArt;
+        const forAlbum = artKey;
+        setFetchedArt(null);
+        const report = globalThis.reportBrokenAlbumArt;
+        if (report) {
+          report(broken, { artist: album.artist, album: album.title }).then((url) => {
+            if (url && mounted.current && shownRef.current === forAlbum) setFetchedArt(url);
+          }).catch(() => {});
+        }
+      }
+    : onArtError;
   const title = album.title || '';
   const open = () => onOpen && onOpen(album);
   const enter = reveal.props.onMouseEnter;
@@ -67,15 +105,17 @@ function AlbumCard({
     className: ['release-card', animationDelay != null ? 'card-fade-up' : '', className].filter(Boolean).join(' '),
     style: Object.assign({}, HOME_CARD_BOX, {
       display: 'flex', flexDirection: 'column', gap: `${HOME_CARD_TEXT_GAP}px`, minWidth: 0, cursor: 'pointer',
-    }, animationDelay != null ? { animationDelay: `${animationDelay}ms` } : null),
+    }, animationDelay != null ? { animationDelay: `${animationDelay}ms` } : null,
+      // A fixed width, for a horizontal row (Search's overview).
+      width ? { width, flexShrink: 0 } : null),
     draggable: dragData ? true : undefined,
     onDragStart: dragData ? (ev) => {
       ev.dataTransfer.effectAllowed = 'copy';
-      ev.dataTransfer.setData('text/plain', JSON.stringify(dragData));
+      ev.dataTransfer.setData('text/plain', JSON.stringify(typeof dragData === 'function' ? dragData() : dragData));
     } : undefined,
   }, reveal.props, dwell),
-    e(ArtBox, { imageUrl: album.imageUrl, item: album, onArtError, zoom: reveal.shown, style: { borderRadius: `${HOME_CARD_ART_RADIUS}px` } },
-      imageLoading && !album.imageUrl && e('div', { className: 'absolute inset-0 shimmer-strong animate-shimmer', style: { backgroundSize: '200% 100%' } }),
+    e(ArtBox, { imageUrl: coverUrl, item: album, onArtError: reportArt, zoom: reveal.shown, style: { borderRadius: `${HOME_CARD_ART_RADIUS}px` } },
+      coverLoading && !coverUrl && e('div', { className: 'absolute inset-0 shimmer-strong animate-shimmer', style: { backgroundSize: '200% 100%' } }),
       cornerBadge,
       releaseType && releaseBadge(releaseType),
       e(ArtOverlay, {
@@ -86,7 +126,14 @@ function AlbumCard({
       }),
       reason && e(ReasonBadge, reason)),
     e('div', { style: Object.assign({ fontWeight: 500, fontSize: '13px', color: 'var(--text-primary)' }, ELLIPSIS) }, title),
-    album.artist && e('div', { style: Object.assign({ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '-6px' }, ELLIPSIS) }, album.artist),
+    album.artist && (onOpenArtist
+      // A link above the card's stretched button (.card-link).
+      ? e('button', {
+          type: 'button', className: 'card-link block max-w-full text-left hover:text-accent',
+          style: Object.assign({ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '-6px', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }, ELLIPSIS),
+          onClick: (ev) => { ev.stopPropagation(); onOpenArtist(album); },
+        }, album.artist)
+      : e('div', { style: Object.assign({ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '-6px' }, ELLIPSIS) }, album.artist)),
     subtitle && e('div', { style: Object.assign({ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '-6px' }, ELLIPSIS) }, subtitle));
 }
 

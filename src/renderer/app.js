@@ -1298,7 +1298,7 @@ const {
 const {
   generateArtistPattern, PlayTop10Icon,
   SearchHistoryItem,
-  CollectionAlbumCard, ReleaseCard, ReleasePage,
+  ReleaseCard, ReleasePage,
 } = require('./components/cards');
 
 // Global Set to track prefetch in-progress state (on window to survive any reloads)
@@ -2067,6 +2067,7 @@ const { PlaylistUpdateDialog, UpdateModeChoice } = require('./components/playlis
 const { KeyboardShortcutsDialog } = require('./components/keyboard-shortcuts');
 const { WhatsNewDialog } = require('./components/whats-new-dialog');
 const { ArtistCard, RankBadge } = require('./components/artist-card');
+const { AlbumCard, AlbumRankBadge } = require('./components/album-card');
 const { ListenerCard, LISTENER_HEXAGON } = require('./components/listener-card');
 const { Badge } = require('./components/badge');
 const { Button } = require('./components/button');
@@ -26716,13 +26717,10 @@ ${tracks}
     }
   };
 
-  // Prefetch tracks for a Charts album on hover
-  // Hover prefetch fires only after the pointer rests on a card. Cards passing
-  // under a stationary pointer while the grid scrolls used to fire mouseenter
-  // each, queueing a MusicBrainz lookup and a state write (a full render) per
-  // card: the Fresh Drops / charts scroll stutter.
-  const HOVER_PREFETCH_DWELL_MS = 250;
-  const hoverPrefetchTimerRef = useRef(null);
+  // Hover prefetch waits for the pointer to rest on a card (AlbumCard's 250ms
+  // dwell, components/album-card.js): cards passing under a still pointer
+  // while a grid scrolls used to each queue a MusicBrainz lookup and a full
+  // render (the Fresh Drops / charts scroll stutter).
   // id -> the running fetch's promise (it resolves to the tracks)
   const prefetchInFlightRef = useRef(new Map());
   // One fetch per album id: the tracks already prefetched, else the fetch
@@ -26735,29 +26733,6 @@ ${tracks}
     const p = Promise.resolve().then(run).finally(() => prefetchInFlightRef.current.delete(id));
     prefetchInFlightRef.current.set(id, p);
     return p;
-  };
-  const scheduleHoverPrefetch = (album) => {
-    cancelHoverPrefetch();
-    if (!album || prefetchedReleases[album.id] || prefetchInFlightRef.current.has(album.id)) return;
-    hoverPrefetchTimerRef.current = setTimeout(() => {
-      hoverPrefetchTimerRef.current = null;
-      prefetchChartsTracks(album);
-    }, HOVER_PREFETCH_DWELL_MS);
-  };
-  // The same dwell for albums known only by artist and title (Recommendations):
-  // their tracks land in topAlbumTracksCache, which their context menu reads.
-  const scheduleTopAlbumHoverPrefetch = (artistName, albumName, albumArt) => {
-    cancelHoverPrefetch();
-    hoverPrefetchTimerRef.current = setTimeout(() => {
-      hoverPrefetchTimerRef.current = null;
-      prefetchTopAlbumTracks(artistName, albumName, albumArt);
-    }, HOVER_PREFETCH_DWELL_MS);
-  };
-  const cancelHoverPrefetch = () => {
-    if (hoverPrefetchTimerRef.current !== null) {
-      clearTimeout(hoverPrefetchTimerRef.current);
-      hoverPrefetchTimerRef.current = null;
-    }
   };
 
   // Resolves to the album's tracks (null if MusicBrainz has none), so a
@@ -33503,6 +33478,30 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // Fetch top tracks for an artist from Last.fm API
   // An artist card's Play (components/artist-card.js): their top 10, with
   // the rest queued after the first, in the artist's context.
+  // An album card's overlay actions (components/album-card.js): get the
+  // album's tracks (each grid says how), then play, queue or add them.
+  const albumCardActions = ({ title, artist, id, getTracks, context }) => {
+    const ctx = context || Object.assign({ type: 'album', name: title, artist }, id ? { id } : null);
+    const load = async () => {
+      const tracks = await getTracks();
+      if (!tracks || tracks.length === 0) { showToast('Couldn’t load this album’s tracks. Try again.', 'error'); return null; }
+      return tracks;
+    };
+    return {
+      // The playbar shows loading while the tracks are fetched.
+      onPlay: async () => {
+        setTrackLoading(true);
+        const t = await load();
+        if (t) playTrackCollection(t, ctx); else setTrackLoading(false);
+      },
+      onQueue: async () => { const t = await load(); if (t) addToQueue(t, ctx); },
+      onAddToPlaylist: async () => {
+        const t = await load();
+        if (t) setAddToPlaylistPanel({ open: true, tracks: t, sourceName: `${title} by ${artist}`, sourceType: 'album' });
+      },
+    };
+  };
+
   // A plugin's colour (its manifest's color), any kind of plugin: playback,
   // metadata (Last.fm, ListenBrainz) or other. Null when unknown.
   const getServiceColor = (id) => {
@@ -36708,7 +36707,7 @@ useEffect(() => {
   // Stable function props for the memo'd SearchPage (keys must match
   // SEARCH_PAGE_HANDLERS in search-page.js).
   const searchPageHandlers = useStableHandlers({
-    addToQueue, clearSearchHistory, fetchArtistData, fetchSearchAlbumTracksAsync,
+    addToQueue, albumCardActions, clearSearchHistory, fetchArtistData, fetchSearchAlbumTracksAsync,
     getArtistImage, getArtistTopTracks, getCachedAlbumArt, getItemsPerRow,
     handleAlbumClick, handlePlay, handlePlaylistClick, handlePlaylistDragEnd,
     handleSearchArtBroken, handleSearchInput, navigateBack, openChartsAlbum, playArtistTopTracks, prefetchSearchAlbumTracks,
@@ -37090,7 +37089,7 @@ useEffect(() => {
   // every render, always calling the latest closure (lib/stable-handlers.js).
   // The keys must match COLLECTION_PAGE_HANDLERS in collection-page.js.
   const collectionPageHandlers = useStableHandlers({
-    addToQueue, copyParachordLink, fetchArtistData, getAlbumArt, getArtistImage,
+    addToQueue, albumCardActions, copyParachordLink, fetchArtistData, getAlbumArt, getArtistImage,
     getArtistTopTracks, getCollectionSortOptions, handleCollectionAlbumClick, handlePlay,
     handlePlaylistDragEnd, handleStartCollectionStation, isOnAir, navigateToFriend,
     openChartsAlbum, openSyncSetupModal, playArtistTopTracks, playListenerTopTracks, setQueueWithContext, syncFriendsFromServices,
@@ -38995,208 +38994,25 @@ useEffect(() => {
               return React.createElement('div', { role: 'list',
                 className: 'card-grid gap-x-4 gap-y-5 pb-6'
               },
-                filtered.map((item, index) =>
-                React.createElement(CardButton, { role: 'listitem', label: `${item.title} by ${item.artist}`,
+                // The shared album card (components/album-card.js), with the
+                // chart rank on the cover.
+                filtered.map((item, index) => React.createElement(AlbumCard, Object.assign({
                   key: item.id,
-                  className: 'group cursor-pointer release-card card-fade-up',
-                  style: {
-                    padding: '10px',
-                    borderRadius: '10px',
-                    backgroundColor: 'var(--card-bg)',
-                    border: 'none',
-                    boxShadow: 'var(--card-shadow)',
-                    animationDelay: `${Math.min(index * 30, 300)}ms`
+                  role: 'listitem',
+                  album: { id: item.id, title: item.title, artist: item.artist, imageUrl: item.albumArt || null },
+                  imageLoading: item.albumArt === undefined,
+                  cornerBadge: item.rank != null && React.createElement(AlbumRankBadge, { rank: item.rank }),
+                  animationDelay: Math.min(index * 30, 300),
+                  // The card waits 250ms before this (its own dwell).
+                  onHoverPrefetch: () => prefetchChartsTracks(item),
+                  onOpen: () => openChartsAlbum(item),
+                  onOpenArtist: () => fetchArtistData(item.artist),
+                  onContextMenu: () => {
+                    const prefetched = prefetchedReleases[item.id];
+                    window.showItemMenu(releaseMenu(item, { tracks: prefetched?.tracks }));
                   },
-                  onMouseEnter: () => scheduleHoverPrefetch(item),
-                  onMouseLeave: cancelHoverPrefetch,
-                  onActivate: () => { cancelHoverPrefetch(); openChartsAlbum(item); },
-                  onContextMenu: (e) => {
-                    e.preventDefault();
-                    if (window.electron?.contextMenu?.showTrackMenu) {
-                      const prefetched = prefetchedReleases[item.id];
-                      window.showItemMenu(releaseMenu(item, { tracks: prefetched?.tracks }));
-                    }
-                  }
-                },
-                  // Album art with hover overlay - Cinematic Light design
-                  React.createElement('div', {
-                    className: `album-art-container ${item.albumArt === null ? '' : item.albumArt === undefined ? 'animate-shimmer' : ''}`,
-                    style: {
-                      aspectRatio: '1',
-                      borderRadius: '6px',
-                      overflow: 'hidden',
-                      marginBottom: '10px',
-                      position: 'relative',
-                      background: item.albumArt === null
-                        ? 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)'
-                        : item.albumArt === undefined
-                          ? 'linear-gradient(to right, var(--shimmer-from), var(--shimmer-via), var(--shimmer-to))'
-                          : 'var(--placeholder-bg-light)',
-                      backgroundSize: item.albumArt === undefined ? '200% 100%' : undefined
-                    }
-                  },
-                    // Placeholder - only show when no art (null or missing)
-                    !item.albumArt && item.albumArt !== undefined && React.createElement('div', {
-                      style: { position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }
-                    },
-                      React.createElement('svg', {
-                        style: { width: '40px', height: '40px', color: 'rgba(255, 255, 255, 0.2)' },
-                        fill: 'none',
-                        viewBox: '0 0 24 24',
-                        stroke: 'currentColor',
-                        strokeWidth: 1
-                      },
-                        React.createElement('circle', { cx: 12, cy: 12, r: 10 }),
-                        React.createElement('circle', { cx: 12, cy: 12, r: 3 }),
-                        React.createElement('circle', { cx: 12, cy: 12, r: 6, strokeDasharray: '2 2' })
-                      )
-                    ),
-                    item.albumArt && typeof item.albumArt === 'string' && React.createElement('img', {
-                      key: item.albumArt,
-                      src: item.albumArt,
-                      alt: item.title,
-                      style: {
-                        position: 'absolute',
-                        inset: 0,
-                        width: '100%',
-                        height: '100%',
-                        objectFit: 'cover',
-                        opacity: 0,
-                        transition: 'opacity 0.35s ease-out, transform 0.3s ease'
-                      },
-                      className: 'group-hover:scale-105',
-                      ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
-                      onLoad: (e) => { e.target.style.opacity = '1'; },
-                      onError: (e) => {
-                        e.target.style.display = 'none';
-                        retryBrokenListArt(item.albumArt, { artist: item.artist, album: item.title, id: item.id }, patchListArt(setCharts));
-                      }
-                    }),
-                    // Rank badge - refined
-                    React.createElement('div', {
-                      style: {
-                        position: 'absolute',
-                        top: '8px',
-                        right: '8px',
-                        padding: '3px 8px',
-                        borderRadius: '4px',
-                        backgroundColor: 'rgba(0, 0, 0, 0.75)',
-                        color: '#ffffff',
-                        fontSize: '11px',
-                        fontWeight: '600',
-                        letterSpacing: '0.02em'
-                      }
-                    }, `#${item.rank}`),
-                    // Hover overlay with action buttons (Add to Playlist, Play, Queue)
-                    React.createElement('div', {
-                      className: 'opacity-0 group-hover:opacity-100 card-reveal',
-                      style: {
-                        position: 'absolute',
-                        inset: 0,
-                        backgroundColor: 'rgba(0, 0, 0, 0.5)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '12px',
-                        transition: 'opacity 0.2s ease'
-                      }
-                    },
-                      // Add to Playlist button
-                      React.createElement('button', {
-                        onClick: async (e) => {
-                          e.stopPropagation();
-                          const prefetched = prefetchedReleases[item.id];
-                          if (prefetched?.tracks?.length > 0) {
-                            setAddToPlaylistPanel({
-                              open: true,
-                              tracks: prefetched.tracks,
-                              sourceName: item.title,
-                              sourceType: 'album'
-                            });
-                          }
-                        },
-                        className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
-                        style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-                        onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
-                        onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                        'aria-label': 'Add to playlist', 'data-tooltip': 'Add to playlist'
-                      },
-                        React.createElement(Icons.Plus, { className: 'w-5 h-5' })
-                      ),
-                      // Play button (center, larger)
-                      React.createElement('button', {
-                        onClick: async (e) => {
-                          e.stopPropagation();
-                          setTrackLoading(true);
-                          // The fetch's own result: prefetchedReleases here is
-                          // the render before it (a second click was needed).
-                          const tracks = await prefetchChartsTracks(item);
-                          if (tracks?.length > 0) {
-                            const context = { type: 'album', id: item.id, name: item.title, artist: item.artist };
-                            const [firstTrack, ...remainingTracks] = tracks;
-                            const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
-                            setQueueWithContext(remainingTracks, context, true);
-                            handlePlay(taggedFirstTrack);
-                          } else {
-                            setTrackLoading(false);
-                          }
-                        },
-                        className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
-                        style: { border: 'none', cursor: 'pointer' },
-                        'aria-label': 'Play', 'data-tooltip': 'Play'
-                      },
-                        React.createElement(Play, { size: 22, className: 'text-ink-primary ml-0.5' })
-                      ),
-                      // Add to Queue button
-                      React.createElement('button', {
-                        onClick: (e) => {
-                          e.stopPropagation();
-                          addChartsToQueue(item);
-                        },
-                        className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
-                        style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-                        onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
-                        onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                        'aria-label': 'Add to queue', 'data-tooltip': 'Add to queue'
-                      },
-                        React.createElement(Icons.QueueAdd, { className: 'w-5 h-5', strokeWidth: 2 })
-                      ),
-                    )
-                  ),
-                  // Album/Track info - refined typography
-                  React.createElement('div', null,
-                    React.createElement('div', {
-                      style: {
-                        fontWeight: '500',
-                        fontSize: '13px',
-                        color: 'var(--text-primary)',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                        marginBottom: '2px',
-                        transition: 'color 0.2s ease'
-                      },
-                      className: ''
-                    }, item.title),
-                    React.createElement('button', { type: 'button',
-                      style: {
-                        fontSize: '12px',
-                        color: 'var(--text-secondary)',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                        cursor: 'pointer',
-                        transition: 'color 0.2s ease'
-                      },
-                      className: 'block max-w-full text-left hover:text-accent',
-                      onClick: (e) => {
-                        e.stopPropagation();
-                        fetchArtistData(item.artist);
-                      }
-                    }, item.artist)
-                  )
-                )
-              )
+                  onArtError: () => retryBrokenListArt(item.albumArt, { artist: item.artist, album: item.title, id: item.id }, patchListArt(setCharts))
+                }, albumCardActions({ title: item.title, artist: item.artist, id: item.id, getTracks: () => prefetchChartsTracks(item) }))))
               );
             })(),
 
@@ -39642,215 +39458,50 @@ useEffect(() => {
                 React.createElement('div', { role: 'list',
                   className: 'card-grid gap-4'
                 },
-                  filtered.map((release, index) =>
-                    React.createElement(CardButton, { role: 'listitem', label: `${release.title} by ${release.artist}`,
-                      // Why it is in Fresh Drops: the card's tooltip (it was on the title,
-                      // which the stretched button now covers).
-                      tooltip: release.artistSource === 'collection' ? `${release.artist} is in your Collection` : release.artistSource === 'history' ? `Based on your listening history of ${release.artist}` : `${release.artist} is in your library`,
+                  // The shared album card (components/album-card.js).
+                  filtered.map((release, index) => {
+                    const dateLine = release.date && (() => {
+                      const d = new Date(release.date + 'T00:00:00');
+                      const today = new Date(); today.setHours(0, 0, 0, 0);
+                      const isFuture = d > today;
+                      const formatted = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                      return React.createElement('span', { style: { color: isFuture ? 'var(--accent-secondary)' : 'var(--text-tertiary)' } }, isFuture ? `Coming ${formatted}` : formatted);
+                    })();
+                    return React.createElement(AlbumCard, Object.assign({
                       key: release.id,
-                      className: 'group text-left release-card card-fade-up',
-                      style: {
-                        padding: '10px',
-                        borderRadius: '10px',
-                        backgroundColor: 'var(--card-bg)',
-                        border: 'none',
-                        boxShadow: 'var(--card-shadow)',
-                        animationDelay: `${Math.min(index, 20) * 30}ms`,
-                        cursor: 'pointer'
-                      },
-                      onMouseEnter: () => scheduleHoverPrefetch(release),
-                      onMouseLeave: cancelHoverPrefetch,
-                      onActivate: () => {
-                        cancelHoverPrefetch();
+                      role: 'listitem',
+                      album: { id: release.id, title: release.title, artist: release.artist, imageUrl: release.albumArt },
+                      releaseType: release.releaseType,
+                      subtitle: dateLine,
+                      // Why it is in Fresh Drops.
+                      tooltip: release.artistSource === 'collection' ? `${release.artist} is in your Collection` : release.artistSource === 'history' ? `Based on your listening history of ${release.artist}` : `${release.artist} is in your library`,
+                      animationDelay: Math.min(index, 20) * 30,
+                      // The card waits 250ms before this (its own dwell).
+                      onHoverPrefetch: () => prefetchChartsTracks(release),
+                      onOpen: () => {
                         openChartsAlbum({ artist: release.artist, title: release.title, albumArt: release.albumArt, releaseGroupId: release.id, date: release.date, releaseType: release.releaseType });
                       },
-                      onContextMenu: (e) => {
-                        e.preventDefault();
-                        if (window.electron?.contextMenu?.showTrackMenu) {
-                          const prefetched = prefetchedReleases[release.id];
-                          window.showItemMenu(releaseMenu({ ...release, releaseGroupMbid: release.id }, { tracks: prefetched?.tracks }));
-                        }
-                      }
-                    },
-                      React.createElement('div', {
-                        className: 'album-art-container group/art',
-                        style: {
-                          width: '100%',
-                          aspectRatio: '1',
-                          borderRadius: '6px',
-                          marginBottom: '10px',
-                          overflow: 'hidden',
-                          position: 'relative',
-                          background: 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)'
-                        }
+                      onOpenArtist: () => fetchArtistData(release.artist),
+                      onContextMenu: () => {
+                        const prefetched = prefetchedReleases[release.id];
+                        window.showItemMenu(releaseMenu({ ...release, releaseGroupMbid: release.id }, { tracks: prefetched?.tracks }));
                       },
-                        // Always show placeholder underneath (visible when no art or img fails)
-                        React.createElement('div', {
-                          style: { position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }
-                        },
-                          React.createElement(Icons.Music, { style: { width: '36px', height: '36px', color: 'rgba(255, 255, 255, 0.2)' }, strokeWidth: 1.5 })
-                        ),
-                        // Overlay image on top of placeholder (hides itself on error, revealing placeholder)
-                        release.albumArt && React.createElement('img', {
-                          key: release.albumArt,
-                          src: release.albumArt,
-                          alt: release.title,
-                          className: 'group-hover:scale-105',
-                          style: {
-                            position: 'absolute',
-                            inset: 0,
-                            width: '100%',
-                            height: '100%',
-                            objectFit: 'cover',
-                            transition: 'opacity 0.35s ease-out, transform 0.3s ease'
-                          },
-                          loading: 'lazy',
-                          ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
-                          onLoad: (e) => { e.target.style.opacity = '1'; },
-                          onError: (e) => {
-                            e.target.style.display = 'none';
-                            // Dead cached URL: retry once and patch the release, including
-                            // the persisted copy (cache_new_releases) via the art writer.
-                            retryBrokenListArt(release.albumArt, { artist: release.artist, album: release.title, id: release.id, cacheId: release.id }, (id, fresh) => {
-                              newReleasesArtWriterRef.current.queue(id, fresh);
-                              newReleasesArtWriterRef.current.flush();
-                            });
-                          }
-                        }),
-                        // Release type badge
-                        React.createElement('div', {
-                          style: { position: 'absolute', top: '8px', right: '8px', zIndex: 10 }
-                        },
-                          React.createElement('span', {
-                            className: 'release-badge',
-                            style: {
-                              backgroundColor: release.releaseType === 'album' ? 'rgba(99, 102, 241, 0.9)' :
-                                             release.releaseType === 'ep' ? 'rgba(168, 85, 247, 0.9)' :
-                                             'rgba(236, 72, 153, 0.9)',
-                              color: 'white'
-                            }
-                          }, release.releaseType === 'ep' ? 'EP' : release.releaseType.charAt(0).toUpperCase() + release.releaseType.slice(1))
-                        ),
-                        // Hover overlay with action buttons
-                        React.createElement('div', {
-                          className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 card-reveal card-actions transition-opacity duration-200 flex items-center justify-center gap-3',
-                          style: { borderRadius: '6px', zIndex: 20 }
-                        },
-                          // Add to Playlist button
-                          React.createElement('button', {
-                            onClick: async (e) => {
-                              e.stopPropagation();
-                              let tracks = prefetchedReleases[release.id]?.tracks;
-                              if (!tracks?.length) {
-                                showToast(`Loading ${release.title} tracks…`);
-                                tracks = await fetchAlbumTracksFromMusicBrainz(release.artist, release.title, release.albumArt);
-                              }
-                              if (tracks?.length > 0) {
-                                setAddToPlaylistPanel({
-                                  open: true,
-                                  tracks: tracks,
-                                  sourceName: `${release.title} by ${release.artist}`,
-                                  sourceType: 'album'
-                                });
-                              } else {
-                                showToast('Could not load album tracks', 'error');
-                              }
-                            },
-                            className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
-                            style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-                            onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
-                            onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                            'aria-label': 'Add to playlist', 'data-tooltip': 'Add to playlist'
-                          },
-                            React.createElement(Icons.Plus, { className: 'w-5 h-5' })
-                          ),
-                          // Play album button
-                          React.createElement('button', {
-                            onClick: async (e) => {
-                              e.stopPropagation();
-                              let tracks = prefetchedReleases[release.id]?.tracks;
-                              if (!tracks?.length) {
-                                showToast(`Loading ${release.title}…`);
-                                tracks = await fetchAlbumTracksFromMusicBrainz(release.artist, release.title, release.albumArt);
-                              }
-                              if (tracks?.length > 0) {
-                                playTrackCollection(tracks, { type: 'album', name: release.title, artist: release.artist });
-                              } else {
-                                showToast('Could not load album tracks', 'error');
-                              }
-                            },
-                            className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
-                            style: { border: 'none', cursor: 'pointer' },
-                            'aria-label': 'Play album', 'data-tooltip': 'Play album'
-                          },
-                            React.createElement(Play, { size: 22, className: 'text-ink-primary ml-0.5' })
-                          ),
-                          // Add to queue button
-                          React.createElement('button', {
-                            onClick: async (e) => {
-                              e.stopPropagation();
-                              let tracks = prefetchedReleases[release.id]?.tracks;
-                              if (!tracks?.length) {
-                                showToast(`Loading ${release.title} tracks…`);
-                                tracks = await fetchAlbumTracksFromMusicBrainz(release.artist, release.title, release.albumArt);
-                              }
-                              if (tracks?.length > 0) {
-                                addToQueue(tracks, { type: 'album', name: release.title, artist: release.artist });
-                              } else {
-                                showToast('Could not load album tracks', 'error');
-                              }
-                            },
-                            className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
-                            style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-                            onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
-                            onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                            'aria-label': 'Add album to queue', 'data-tooltip': 'Add album to queue'
-                          },
-                            React.createElement(Icons.QueueAdd, { className: 'w-5 h-5', strokeWidth: 2 })
-                          )
-                        )
-                      ),
-                      // Album title + artist (the reason is the card's tooltip)
-                      React.createElement('div', null,
-                          React.createElement('h3', {
-                            style: {
-                              fontWeight: '500',
-                              fontSize: '13px',
-                              color: 'var(--text-primary)',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
-                              marginBottom: '2px'
-                            }
-                          }, release.title),
-                          React.createElement('button', { type: 'button',
-                            style: {
-                              fontSize: '12px',
-                              color: 'var(--text-secondary)',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
-                              cursor: 'pointer',
-                              transition: 'color 0.2s ease'
-                            },
-                            className: 'block max-w-full text-left hover:text-accent',
-                            onClick: (e) => {
-                              e.stopPropagation();
-                              fetchArtistData(release.artist);
-                            }
-                          }, release.artist),
-                          release.date && (() => {
-                            const d = new Date(release.date + 'T00:00:00');
-                            const today = new Date(); today.setHours(0, 0, 0, 0);
-                            const isFuture = d > today;
-                            const formatted = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-                            return React.createElement('p', {
-                              style: { fontSize: '11px', color: isFuture ? 'var(--accent-secondary)' : 'var(--text-tertiary)', marginTop: '2px' }
-                            }, isFuture ? `Coming ${formatted}` : formatted);
-                          })()
-                        )
-                    )
-                  )
+                      // A dead cached cover: retry once and patch the release,
+                      // the persisted copy (cache_new_releases) included.
+                      onArtError: () => retryBrokenListArt(release.albumArt, { artist: release.artist, album: release.title, id: release.id, cacheId: release.id }, (id, fresh) => {
+                        newReleasesArtWriterRef.current.queue(id, fresh);
+                        newReleasesArtWriterRef.current.flush();
+                      })
+                    }, albumCardActions({
+                      title: release.title, artist: release.artist,
+                      getTracks: async () => {
+                        const have = prefetchedReleases[release.id]?.tracks;
+                        if (have?.length) return have;
+                        showToast(`Loading ${release.title}…`);
+                        return fetchAlbumTracksFromMusicBrainz(release.artist, release.title, release.albumArt);
+                      }
+                    })));
+                  })
                 )
               );
             })()
@@ -41178,6 +40829,8 @@ useEffect(() => {
               });
             };
 
+            // The shared album card (components/album-card.js). It was a
+            // full-bleed copy of its own; now it is every grid's card.
             const albumCard = (item, index) => {
               const art = imageFor(item);
               const artLoaded = imageLoadedFor(item);
@@ -41191,155 +40844,55 @@ useEffect(() => {
                 }
                 return albumTracks;
               };
-              return React.createElement(CardButton, { label: `${item.name} by ${item.artist}`,
-                tooltip: item.reason && !shuffleupagusBadgeProps(item) ? item.reason : undefined,
+              // Not out yet: "Coming <date>" over the cover (the provider's
+              // own date first, else the MusicBrainz lookup's).
+              const entry = item.releaseDate
+                ? { date: item.releaseDate }
+                : recommendationReleaseDates[releaseDateKey(item.artist || '', item.name)];
+              const upcoming = entry && upcomingLabel(entry.date);
+              return React.createElement(AlbumCard, Object.assign({
                 key: item.id,
-                className: 'rounded-lg overflow-hidden cursor-pointer group release-card card-fade-up',
-                style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)', animationDelay: `${Math.min(index * 30, 300)}ms` },
-                draggable: true,
-                onDragStart: (e) => {
-                  e.dataTransfer.effectAllowed = 'copy';
-                  e.dataTransfer.setData('text/plain', JSON.stringify({
-                    type: 'album',
-                    album: { title: item.name, artist: item.artist, art }
-                  }));
+                album: { id: item.id, title: item.name, artist: item.artist, imageUrl: art || null },
+                imageLoading: !artLoaded,
+                tooltip: item.reason && !shuffleupagusBadgeProps(item) ? item.reason : undefined,
+                // Shuffleupagus's pick says why, as on Home (components/reason-badge.js).
+                reason: shuffleupagusBadgeProps(item) || null,
+                cornerBadge: upcoming && React.createElement('div', {
+                  className: 'pointer-events-none',
+                  style: { position: 'absolute', top: '8px', right: '8px', zIndex: 1 }
                 },
-                onActivate: () => handleCollectionAlbumClick({ title: item.name, artist: item.artist }),
-                // Fetch the tracks after a short hover, so the menu can queue
-                // them. It sent none, so its queue and playlist items were
-                // always disabled ("click album first", design audit bug 18).
-                onMouseEnter: () => scheduleTopAlbumHoverPrefetch(item.artist, item.name, art),
-                onMouseLeave: cancelHoverPrefetch,
-                onContextMenu: (e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  if (window.electron?.contextMenu?.showTrackMenu) {
-                    const cacheKey = `${item.artist}-${item.name}`.toLowerCase();
-                    const cached = topAlbumTracksCache.current[cacheKey];
-                    // A right-click is intent: fetch now if the hover didn't.
-                    if (!cached) prefetchTopAlbumTracks(item.artist, item.name, art);
-                    window.showItemMenu(releaseMenu({ title: item.name, artist: item.artist, art }, { tracks: cached, loading: !cached }));
+                  React.createElement('span', {
+                    className: 'release-badge',
+                    'data-upcoming-badge': 'true',
+                    style: { backgroundColor: 'rgba(124, 58, 237, 0.9)', color: 'white', whiteSpace: 'nowrap' }
+                  }, upcoming)),
+                animationDelay: Math.min(index * 30, 300),
+                dragData: { type: 'album', album: { title: item.name, artist: item.artist, art } },
+                onOpen: () => handleCollectionAlbumClick({ title: item.name, artist: item.artist }),
+                // Fetch the tracks after a short hover (the card's dwell), so the
+                // menu can queue them (design audit bug 18).
+                onHoverPrefetch: () => prefetchTopAlbumTracks(item.artist, item.name, art),
+                onContextMenu: () => {
+                  const cacheKey = `${item.artist}-${item.name}`.toLowerCase();
+                  const cached = topAlbumTracksCache.current[cacheKey];
+                  // A right-click is intent: fetch now if the hover didn't.
+                  if (!cached) prefetchTopAlbumTracks(item.artist, item.name, art);
+                  window.showItemMenu(releaseMenu({ title: item.name, artist: item.artist, art }, { tracks: cached, loading: !cached }));
+                },
+                // A dead cover URL (album-art.md): the placeholder shows now, and
+                // the pipeline's retry swaps in whatever it finds through the
+                // same coalesced writer the image effect uses.
+                onArtError: () => {
+                  if (art) brokenArt.add(art);
+                  recommendationImagesWriterRef.current.queue(item.id, { url: null, loaded: true }, { merge: true });
+                  const report = globalThis.reportBrokenAlbumArt;
+                  if (report) {
+                    report(art, { artist: item.artist, album: item.name }).then((url) => {
+                      if (url) recommendationImagesWriterRef.current.queue(item.id, { url, loaded: true }, { merge: true });
+                    }).catch(() => {});
                   }
                 }
-              },
-                React.createElement('div', {
-                  className: 'aspect-square relative group/art',
-                  style: { background: 'var(--placeholder-bg)' }
-                },
-                  // Shuffleupagus's pick says why, as on Home (components/reason-badge.js).
-                  shuffleupagusBadgeProps(item) && React.createElement(ReasonBadge, shuffleupagusBadgeProps(item)),
-                  // Not out yet: "Coming <date>" over the cover, from the
-                  // album's MusicBrainz release date. Fresh Drops' cover badge
-                  // (the release-badge class, top-right, a fixed semi-opaque
-                  // colour that reads on any cover in either theme).
-                  (() => {
-                    // The provider's own date first (Apple Music sends one),
-                    // else the MusicBrainz lookup's.
-                    const entry = item.releaseDate
-                      ? { date: item.releaseDate }
-                      : recommendationReleaseDates[releaseDateKey(item.artist || '', item.name)];
-                    const label = entry && upcomingLabel(entry.date);
-                    return label && React.createElement('div', {
-                      className: 'pointer-events-none',
-                      style: { position: 'absolute', top: '8px', right: '8px', zIndex: 1 }
-                    },
-                      React.createElement('span', {
-                        className: 'release-badge',
-                        'data-upcoming-badge': 'true',
-                        style: { backgroundColor: 'rgba(124, 58, 237, 0.9)', color: 'white', whiteSpace: 'nowrap' }
-                      }, label)
-                    );
-                  })(),
-                  !artLoaded && React.createElement('div', {
-                    className: 'absolute inset-0 shimmer-strong animate-shimmer',
-                    style: { backgroundSize: '200% 100%', animationDelay: `${Math.min(index * 30, 300)}ms` }
-                  }),
-                  art && React.createElement('img', {
-                    src: art,
-                    alt: item.name,
-                    className: 'absolute inset-0 w-full h-full object-cover',
-                    // A dead cover URL (the album-art rule, album-art.md): the
-                    // placeholder shows now, and the art pipeline's retry — one
-                    // per album per session — swaps in whatever it finds through
-                    // the same coalesced writer the image effect uses.
-                    onError: () => {
-                      if (art) brokenArt.add(art);
-                      recommendationImagesWriterRef.current.queue(item.id, { url: null, loaded: true }, { merge: true });
-                      const report = globalThis.reportBrokenAlbumArt;
-                      if (report) {
-                        report(art, { artist: item.artist, album: item.name }).then((url) => {
-                          if (url) recommendationImagesWriterRef.current.queue(item.id, { url, loaded: true }, { merge: true });
-                        }).catch(() => {});
-                      }
-                    }
-                  }),
-                  React.createElement('div', {
-                    className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 card-reveal card-actions transition-opacity duration-200 flex items-center justify-center gap-3',
-                    // Over the cover, the "Coming" badge (1) and CardButton's
-                    // stretched button (1), so its Play / Queue take clicks;
-                    // under the reason badge (3), which stays hoverable.
-                    style: { borderRadius: '6px', zIndex: 2 }
-                  },
-                    React.createElement('button', {
-                      onClick: async (e) => {
-                        e.stopPropagation();
-                        const albumTracks = await albumTracksFor();
-                        if (albumTracks.length > 0) {
-                          setAddToPlaylistPanel({
-                            open: true,
-                            tracks: albumTracks,
-                            sourceName: `${item.name} by ${item.artist}`,
-                            sourceType: 'album'
-                          });
-                        } else {
-                          showToast('Could not load album tracks', 'error');
-                        }
-                      },
-                      className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
-                      style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-                      'aria-label': 'Add to playlist', 'data-tooltip': 'Add to playlist'
-                    },
-                      React.createElement(Icons.Plus, { className: 'w-5 h-5' })
-                    ),
-                    React.createElement('button', {
-                      onClick: async (e) => {
-                        e.stopPropagation();
-                        const albumTracks = await albumTracksFor();
-                        if (albumTracks.length > 0) {
-                          playTrackCollection(albumTracks, { type: 'album', name: item.name, artist: item.artist });
-                        } else {
-                          showToast('Could not load album tracks', 'error');
-                        }
-                      },
-                      className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
-                      style: { border: 'none', cursor: 'pointer' },
-                      'aria-label': 'Play album', 'data-tooltip': 'Play album'
-                    }, React.createElement(Play, { size: 22, className: 'text-ink-primary ml-0.5' })),
-                    React.createElement('button', {
-                      onClick: async (e) => {
-                        e.stopPropagation();
-                        const albumTracks = await albumTracksFor();
-                        if (albumTracks.length > 0) {
-                          addToQueue(albumTracks, { type: 'album', name: item.name, artist: item.artist });
-                        } else {
-                          showToast('Could not load album tracks', 'error');
-                        }
-                      },
-                      className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
-                      style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-                      'aria-label': 'Add album to queue', 'data-tooltip': 'Add album to queue'
-                    },
-                      React.createElement(Icons.QueueAdd, { className: 'w-5 h-5', strokeWidth: 2 })
-                    )
-                  )
-                ),
-                React.createElement('div', { className: 'p-3' },
-                  // The reason is the card's tooltip (CardButton tooltip), since
-                  // the stretched button takes the hover from the name.
-                  React.createElement('p', { className: 'font-medium text-ink-primary truncate text-sm transition-colors' }, item.name),
-                  React.createElement('p', { className: 'text-xs text-ink-tertiary truncate mt-0.5' }, item.artist || '')
-                )
-              );
+              }, albumCardActions({ title: item.name, artist: item.artist, getTracks: albumTracksFor })));
             };
 
             const playlistCard = (item, index, section) => {
@@ -42522,212 +42075,26 @@ useEffect(() => {
                 React.createElement('div', { role: 'list',
                   className: 'card-grid gap-x-4 gap-y-5 pb-6'
                 },
-                  ...topAlbums.albums.map((album, index) =>
-                    React.createElement(CardButton, { role: 'listitem', label: `${album.name} by ${album.artist}`,
-                      key: album.id,
-                      className: 'group cursor-pointer release-card card-fade-up',
-                      style: {
-                        padding: '10px',
-                        borderRadius: '10px',
-                        backgroundColor: 'var(--card-bg)',
-                        boxShadow: 'var(--card-shadow)',
-                        animationDelay: `${Math.min(index * 30, 300)}ms`
-                      },
-                      onActivate: () => openTopAlbum(album),
-                      onMouseEnter: () => prefetchTopAlbumTracks(album.artist, album.name, album.image),
-                      onContextMenu: (e) => {
-                        e.preventDefault();
-                        if (window.electron?.contextMenu?.showTrackMenu) {
-                          const cacheKey = `${album.artist}-${album.name}`.toLowerCase();
-                          const cached = topAlbumTracksCache.current[cacheKey];
-                          window.showItemMenu(releaseMenu({ title: album.name, artist: album.artist, image: album.image }, { tracks: cached }));
-                        }
-                      }
+                  // The shared album card (components/album-card.js), with the
+                  // rank on the cover and the play count under the artist.
+                  ...topAlbums.albums.map((album, index) => React.createElement(AlbumCard, Object.assign({
+                    key: album.id,
+                    role: 'listitem',
+                    album: { id: album.id, title: album.name, artist: album.artist, imageUrl: typeof album.image === 'string' && album.image ? album.image : null },
+                    imageLoading: album.image === undefined,
+                    cornerBadge: React.createElement(AlbumRankBadge, { rank: album.rank }),
+                    subtitle: `${album.playCount} plays`,
+                    animationDelay: Math.min(index * 30, 300),
+                    onOpen: () => openTopAlbum(album),
+                    onOpenArtist: () => fetchArtistData(album.artist),
+                    onHoverPrefetch: () => prefetchTopAlbumTracks(album.artist, album.name, album.image),
+                    onContextMenu: () => {
+                      const cacheKey = `${album.artist}-${album.name}`.toLowerCase();
+                      const cached = topAlbumTracksCache.current[cacheKey];
+                      window.showItemMenu(releaseMenu({ title: album.name, artist: album.artist, image: album.image }, { tracks: cached }));
                     },
-                      // Album art - Cinematic Light design
-                      React.createElement('div', {
-                        className: `album-art-container group/art ${album.image === null || album.image === '' ? '' : !album.image ? 'animate-shimmer' : ''}`,
-                        style: {
-                          aspectRatio: '1',
-                          borderRadius: '6px',
-                          overflow: 'hidden',
-                          marginBottom: '10px',
-                          position: 'relative',
-                          background: album.image === null || album.image === ''
-                            ? 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)'
-                            : !album.image
-                              ? 'linear-gradient(to right, var(--shimmer-from), var(--shimmer-via), var(--shimmer-to))'
-                              : 'var(--placeholder-bg-light)',
-                          backgroundSize: !album.image && album.image !== null && album.image !== '' ? '200% 100%' : undefined
-                        }
-                      },
-                        // Placeholder - only show when no art
-                        (album.image === null || album.image === '') && React.createElement('div', {
-                          style: { position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }
-                        },
-                          React.createElement('svg', {
-                            style: { width: '36px', height: '36px', color: 'rgba(255, 255, 255, 0.2)' },
-                            fill: 'none',
-                            viewBox: '0 0 24 24',
-                            stroke: 'currentColor',
-                            strokeWidth: 1
-                          },
-                            React.createElement('circle', { cx: 12, cy: 12, r: 10 }),
-                            React.createElement('circle', { cx: 12, cy: 12, r: 3 }),
-                            React.createElement('circle', { cx: 12, cy: 12, r: 6, strokeDasharray: '2 2' })
-                          )
-                        ),
-                        album.image && typeof album.image === 'string' && React.createElement('img', {
-                          src: album.image,
-                          alt: album.name,
-                          className: 'group-hover:scale-105',
-                          style: {
-                            position: 'absolute',
-                            inset: 0,
-                            width: '100%',
-                            height: '100%',
-                            objectFit: 'cover',
-                            opacity: 0,
-                            transition: 'opacity 0.35s ease-out, transform 0.3s ease'
-                          },
-                          ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
-                          onLoad: (e) => { e.target.style.opacity = '1'; },
-                          onError: (e) => { e.target.style.display = 'none'; }
-                        }),
-                        // Rank badge - refined
-                        React.createElement('div', {
-                          style: {
-                            position: 'absolute',
-                            top: '8px',
-                            right: '8px',
-                            padding: '3px 8px',
-                            borderRadius: '4px',
-                            backgroundColor: 'rgba(0, 0, 0, 0.75)',
-                            color: '#ffffff',
-                            fontSize: '11px',
-                            fontWeight: '600',
-                            letterSpacing: '0.02em',
-                            zIndex: 10
-                          }
-                        }, `#${album.rank}`),
-                        // Hover overlay with action buttons
-                        React.createElement('div', {
-                          className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 card-reveal card-actions transition-opacity duration-200 flex items-center justify-center gap-3',
-                          style: { borderRadius: '6px', zIndex: 20 }
-                        },
-                          // Add to Playlist button
-                          React.createElement('button', {
-                            onClick: async (e) => {
-                              e.stopPropagation();
-                              try {
-                                const tracks = await fetchAlbumTracksByName(album.artist, album.name, album.image);
-                                if (tracks.length > 0) {
-                                  setAddToPlaylistPanel({
-                                    open: true,
-                                    tracks: tracks,
-                                    sourceName: `${album.name} by ${album.artist}`,
-                                    sourceType: 'album'
-                                  });
-                                } else {
-                                  showToast(`No tracks found for ${album.name}`, 'error');
-                                }
-                              } catch (err) {
-                                showToast(`Failed to load album`, 'error');
-                              }
-                            },
-                            className: 'w-10 h-10 rounded-full flex items-center justify-center transition-transform hover:scale-110 bg-white/15 hover:bg-white/25 text-white',
-                            style: { border: 'none', cursor: 'pointer' },
-                            'aria-label': 'Add to playlist', 'data-tooltip': 'Add to playlist'
-                          },
-                            React.createElement(Icons.Plus, { className: 'w-5 h-5' })
-                          ),
-                          // Play album button
-                          React.createElement('button', {
-                            onClick: async (e) => {
-                              e.stopPropagation();
-                              setTrackLoading(true);
-                              try {
-                                const tracks = await fetchAlbumTracksByName(album.artist, album.name, album.image);
-                                if (tracks.length > 0) {
-                                  const context = { type: 'album', name: album.name, artist: album.artist };
-                                  const [firstTrack, ...remainingTracks] = tracks;
-                                  setQueueWithContext(remainingTracks, context, true);
-                                  handlePlay(firstTrack);
-                                } else {
-                                  showToast(`No tracks found for ${album.name}`, 'error');
-                                  setTrackLoading(false);
-                                }
-                              } catch (err) {
-                                showToast(`Failed to load album`, 'error');
-                                setTrackLoading(false);
-                              }
-                            },
-                            className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
-                            style: { border: 'none', cursor: 'pointer' },
-                            'aria-label': 'Play album', 'data-tooltip': 'Play album'
-                          },
-                            React.createElement(Play, { size: 22, className: 'text-ink-primary ml-0.5' })
-                          ),
-                          // Add to queue button
-                          React.createElement('button', {
-                            onClick: async (e) => {
-                              e.stopPropagation();
-                              try {
-                                const tracks = await fetchAlbumTracksByName(album.artist, album.name, album.image);
-                                if (tracks.length > 0) {
-                                  addToQueue(tracks, { type: 'album', name: album.name, artist: album.artist });
-                                } else {
-                                  showToast(`No tracks found for ${album.name}`, 'error');
-                                }
-                              } catch (err) {
-                                showToast(`Failed to load album`, 'error');
-                              }
-                            },
-                            className: 'w-10 h-10 rounded-full flex items-center justify-center transition-transform hover:scale-110 bg-white/15 hover:bg-white/25 text-white',
-                            style: { border: 'none', cursor: 'pointer' },
-                            'aria-label': 'Add album to queue', 'data-tooltip': 'Add album to queue'
-                          },
-                            React.createElement(Icons.QueueAdd, { className: 'w-5 h-5', strokeWidth: 2 })
-                          )
-                        )
-                      ),
-                      // Album info - refined typography
-                      React.createElement('div', null,
-                        React.createElement('div', {
-                          style: {
-                            fontWeight: '500',
-                            fontSize: '13px',
-                            color: 'var(--text-primary)',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                            marginBottom: '2px',
-                            transition: 'color 0.2s ease'
-                          },
-                          className: ''
-                        }, album.name),
-                        React.createElement('button', { type: 'button',
-                          style: {
-                            fontSize: '12px',
-                            color: 'var(--text-secondary)',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                            cursor: 'pointer',
-                            transition: 'color 0.2s ease'
-                          },
-                          className: 'block max-w-full text-left hover:text-accent',
-                          onClick: (e) => {
-                            e.stopPropagation();
-                            fetchArtistData(album.artist);
-                          }
-                        }, album.artist),
-                        React.createElement('div', {
-                          style: { fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '3px' }
-                        }, `${album.playCount} plays`)
-                      )
-                    )
-                  )
+                    onArtError: () => globalThis.reportBrokenAlbumArt && globalThis.reportBrokenAlbumArt(album.image, { artist: album.artist, album: album.name })
+                  }, albumCardActions({ title: album.name, artist: album.artist, getTracks: () => fetchAlbumTracksByName(album.artist, album.name, album.image) }))))
                 )
             )
           )
@@ -43170,151 +42537,30 @@ useEffect(() => {
                 },
                   friendHistoryData.topAlbums.length === 0
                     ? React.createElement('p', { className: 'col-span-full text-center text-ink-tertiary py-8' }, 'No top albums data')
-                    : friendHistoryData.topAlbums.map((album, index) => {
-                        const albumPattern = generateArtistPattern(`${album.artist} ${album.name}`);
-                        return React.createElement(CardButton, { label: `${album.name} by ${album.artist}`,
-                          key: album.id || index,
-                          className: 'rounded-lg overflow-hidden cursor-pointer group release-card',
-                          style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)' },
-                          onActivate: () => openTopAlbum(album),
-                          onMouseEnter: () => prefetchTopAlbumTracks(album.artist, album.name, album.image),
-                          onContextMenu: (e) => {
-                            e.preventDefault();
-                            if (window.electron?.contextMenu?.showTrackMenu) {
-                              const cacheKey = `${album.artist}-${album.name}`.toLowerCase();
-                              const cached = topAlbumTracksCache.current[cacheKey];
-                              window.showItemMenu(releaseMenu({ title: album.name, artist: album.artist, image: album.image }, { tracks: cached }));
-                            }
-                          }
+                    // The shared album card (components/album-card.js): the rank
+                    // on the cover, the play count under the artist.
+                    : friendHistoryData.topAlbums.map((album, index) => React.createElement(AlbumCard, Object.assign({
+                        key: album.id || index,
+                        album: { id: album.id || null, title: album.name, artist: album.artist, imageUrl: album.image || null },
+                        imageLoading: !album.imageLoaded,
+                        cornerBadge: React.createElement(AlbumRankBadge, { rank: album.rank }),
+                        subtitle: `${album.playCount} plays`,
+                        onOpen: () => openTopAlbum(album),
+                        onOpenArtist: () => fetchArtistData(album.artist),
+                        onHoverPrefetch: () => prefetchTopAlbumTracks(album.artist, album.name, album.image),
+                        onContextMenu: () => {
+                          const cacheKey = `${album.artist}-${album.name}`.toLowerCase();
+                          const cached = topAlbumTracksCache.current[cacheKey];
+                          window.showItemMenu(releaseMenu({ title: album.name, artist: album.artist, image: album.image }, { tracks: cached }));
                         },
-                          React.createElement('div', {
-                            className: 'aspect-square relative group/art',
-                            style: { background: album.imageLoaded && !album.image ? albumPattern.gradient : 'var(--placeholder-bg)' }
-                          },
-                            // Shimmer while loading (imageLoaded not yet true)
-                            !album.imageLoaded && React.createElement('div', {
-                              className: 'absolute inset-0 shimmer-strong animate-shimmer',
-                              style: { backgroundSize: '200% 100%' }
-                            }),
-                            // Initials fallback (only show when imageLoaded && no image)
-                            album.imageLoaded && !album.image && React.createElement('div', {
-                              className: 'absolute inset-0 flex items-center justify-center',
-                              style: { color: albumPattern.textColor, opacity: 0.4 }
-                            },
-                              React.createElement('span', {
-                                className: 'font-bold tracking-wider',
-                                style: { fontSize: '2.5rem', textShadow: '0 2px 8px rgba(0,0,0,0.3)' }
-                              }, albumPattern.initials)
-                            ),
-                            album.image && React.createElement('img', {
-                              key: album.image,
-                              src: album.image,
-                              alt: album.name,
-                              className: 'absolute inset-0 w-full h-full object-cover transition-all duration-300 group-hover:scale-105',
-                              style: { opacity: 0 },
-                              ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
-                              onLoad: (e) => { e.target.style.opacity = '1'; },
-                              onError: (e) => {
-                                e.target.style.display = 'none';
-                                retryBrokenListArt(album.image, { artist: album.artist, album: album.name, id: album.id }, (id, fresh) => {
-                                  setFriendHistoryData(prev => ({
-                                    ...prev,
-                                    topAlbums: prev.topAlbums.map(a => (a.id === id ? { ...a, image: fresh } : a))
-                                  }));
-                                });
-                              }
-                            }),
-                            React.createElement('div', {
-                              className: 'absolute top-2 left-2 px-2 py-0.5 bg-black/60 rounded text-xs text-white font-medium z-10'
-                            }, `#${album.rank}`),
-                            // Hover overlay with action buttons
-                            React.createElement('div', {
-                              className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 card-reveal card-actions transition-opacity duration-200 flex items-center justify-center gap-3',
-                              style: { zIndex: 20 }
-                            },
-                              // Add to Playlist button
-                              React.createElement('button', {
-                                onClick: async (e) => {
-                                  e.stopPropagation();
-                                  try {
-                                    const tracks = await fetchAlbumTracksByName(album.artist, album.name, album.image);
-                                    if (tracks.length > 0) {
-                                      setAddToPlaylistPanel({
-                                        open: true,
-                                        tracks: tracks,
-                                        sourceName: `${album.name} by ${album.artist}`,
-                                        sourceType: 'album'
-                                      });
-                                    } else {
-                                      showToast(`No tracks found for ${album.name}`, 'error');
-                                    }
-                                  } catch (err) {
-                                    showToast(`Failed to load album`, 'error');
-                                  }
-                                },
-                                className: 'w-10 h-10 rounded-full flex items-center justify-center transition-transform hover:scale-110 bg-white/15 hover:bg-white/25 text-white',
-                                style: { border: 'none', cursor: 'pointer' },
-                                'aria-label': 'Add to playlist', 'data-tooltip': 'Add to playlist'
-                              },
-                                React.createElement(Icons.Plus, { className: 'w-5 h-5' })
-                              ),
-                              // Play album button
-                              React.createElement('button', {
-                                onClick: async (e) => {
-                                  e.stopPropagation();
-                                  setTrackLoading(true);
-                                  try {
-                                    const tracks = await fetchAlbumTracksByName(album.artist, album.name, album.image);
-                                    if (tracks.length > 0) {
-                                      const context = { type: 'album', name: album.name, artist: album.artist };
-                                      const [firstTrack, ...remainingTracks] = tracks;
-                                      setQueueWithContext(remainingTracks, context, true);
-                                      handlePlay(firstTrack);
-                                    } else {
-                                      showToast(`No tracks found for ${album.name}`, 'error');
-                                      setTrackLoading(false);
-                                    }
-                                  } catch (err) {
-                                    showToast(`Failed to load album`, 'error');
-                                    setTrackLoading(false);
-                                  }
-                                },
-                                className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
-                                style: { border: 'none', cursor: 'pointer' },
-                                'aria-label': 'Play album', 'data-tooltip': 'Play album'
-                              },
-                                React.createElement(Play, { size: 22, className: 'text-ink-primary ml-0.5' })
-                              ),
-                              // Add to queue button
-                              React.createElement('button', {
-                                onClick: async (e) => {
-                                  e.stopPropagation();
-                                  try {
-                                    const tracks = await fetchAlbumTracksByName(album.artist, album.name, album.image);
-                                    if (tracks.length > 0) {
-                                      addToQueue(tracks, { type: 'album', name: album.name, artist: album.artist });
-                                    } else {
-                                      showToast(`No tracks found for ${album.name}`, 'error');
-                                    }
-                                  } catch (err) {
-                                    showToast(`Failed to load album`, 'error');
-                                  }
-                                },
-                                className: 'w-10 h-10 rounded-full flex items-center justify-center transition-transform hover:scale-110 bg-white/15 hover:bg-white/25 text-white',
-                                style: { border: 'none', cursor: 'pointer' },
-                                'aria-label': 'Add album to queue', 'data-tooltip': 'Add album to queue'
-                              },
-                                React.createElement(Icons.QueueAdd, { className: 'w-5 h-5', strokeWidth: 2 })
-                              )
-                            )
-                          ),
-                          React.createElement('div', { className: 'p-3' },
-                            React.createElement('p', { className: 'font-medium text-ink-primary truncate text-sm' }, album.name),
-                            React.createElement('p', { className: 'text-xs text-ink-tertiary truncate' }, album.artist),
-                            React.createElement('p', { className: 'text-xs text-ink-tertiary mt-1' }, `${album.playCount} plays`)
-                          )
-                        );
-                      })
+                        // A dead cover: retry once and patch the friend's album.
+                        onArtError: () => retryBrokenListArt(album.image, { artist: album.artist, album: album.name, id: album.id }, (id, fresh) => {
+                          setFriendHistoryData(prev => ({
+                            ...prev,
+                            topAlbums: prev.topAlbums.map(a => (a.id === id ? { ...a, image: fresh } : a))
+                          }));
+                        })
+                      }, albumCardActions({ title: album.name, artist: album.artist, getTracks: () => fetchAlbumTracksByName(album.artist, album.name, album.image) }))))
                 ),
                 // Top artists tab content
                 !friendHistoryLoading && !friendHistoryData.errors?.topArtists && friendHistoryTab === 'topArtists' && React.createElement('div', {

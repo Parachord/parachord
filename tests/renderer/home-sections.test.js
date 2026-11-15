@@ -25,7 +25,7 @@ describe('AlbumCard', () => {
     expect(html).toContain('aria-label="Add Frog to the queue"');
     expect(count(html, /<button/g)).toBeGreaterThanOrEqual(3);
   });
-  test('the hover is the app\'s card hover: the same overlay and buttons as CollectionAlbumCard, in its order', () => {
+  test('the hover is the app\'s card hover: the overlay and buttons the old CollectionAlbumCard had, in its order', () => {
     const cards = fs.readFileSync(path.join(COMP, 'card-art.js'), 'utf8');
     const overlay = 'absolute inset-0 bg-black/50';
     const side = 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110';
@@ -88,10 +88,13 @@ describe('AlbumCard', () => {
   });
   test('a Fresh Drops card wears the Fresh Drops page\'s release-type badge, top right', () => {
     const app = fs.readFileSync(path.join(COMP, '..', 'app.js'), 'utf8');
-    // The page's own badge colours, which Home copies.
-    expect(app).toContain("backgroundColor: release.releaseType === 'album' ? 'rgba(99, 102, 241, 0.9)' :");
-    expect(app).toContain("release.releaseType === 'ep' ? 'rgba(168, 85, 247, 0.9)' :");
-    expect(app).toContain("'rgba(236, 72, 153, 0.9)',");
+    // One badge for both: the Fresh Drops page hands its release type to the
+    // shared AlbumCard, which draws card-art.js's releaseBadge, the badge
+    // Home's Fresh Drops row wears too.
+    const freshDrops = app.slice(app.indexOf("activeView === 'new-releases' && React.createElement"));
+    expect(freshDrops.slice(0, 60000)).toMatch(/React\.createElement\(AlbumCard, Object\.assign\(\{[\s\S]{0,400}?releaseType: release\.releaseType,/);
+    const { RELEASE_BADGE_BG } = require('../../src/renderer/components/card-art');
+    expect(RELEASE_BADGE_BG).toEqual({ album: 'rgba(99, 102, 241, 0.9)', ep: 'rgba(168, 85, 247, 0.9)', other: 'rgba(236, 72, 153, 0.9)' });
     const badge = (releaseType) => {
       const html = h(S.AlbumCard, { album: { ...album, homeRow: 'fresh', releaseType } });
       return (html.match(/<div style="position:absolute;top:8px;right:8px"><span class="release-badge" style="([^"]*)">([^<]*)<\/span>/) || []).slice(1);

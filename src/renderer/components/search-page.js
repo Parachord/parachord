@@ -31,6 +31,7 @@ const { visibleSources, sourceRowState } = require('../lib/visible-sources');
 const { trackDurationLabel } = require('../lib/track-duration');
 const { generateArtistPattern, PlayTop10Icon, SearchHistoryItem } = require('./cards');
 const { ArtistCard } = require('./artist-card');
+const { AlbumCard } = require('./album-card');
 const { heroTabClass } = require('./hero-tabs');
 const { trackSlug, slug } = require('../lib/track-slug');
 const { releaseMenu, artistMenu } = require('../lib/item-menus');
@@ -45,6 +46,7 @@ const prefetchInProgress = (globalThis._prefetchInProgress = globalThis._prefetc
 // Plain functions from Parachord, passed as stable wrappers.
 const SEARCH_PAGE_HANDLERS = [
   'addToQueue',
+  'albumCardActions',
   'clearSearchHistory',
   'fetchArtistData',
   'fetchSearchAlbumTracksAsync',
@@ -71,6 +73,7 @@ const SearchPage = React.memo(function SearchPage(props) {
     activeResolvers,
     activeView,
     addToQueue,
+    albumCardActions,
     allResolvers,
     artistImageCache,
     clearSearchHistory,
@@ -399,158 +402,39 @@ const SearchPage = React.memo(function SearchPage(props) {
                 return filteredAlbums.length > 0 && React.createElement('div', { role: 'list',
                   className: 'card-grid gap-x-4 gap-y-5 pb-6'
                 },
+                  // The shared album card (components/album-card.js).
                   filteredAlbums.map((album, index) => {
-                    const animationDelay = Math.min(index * 30, 300);
-                    return React.createElement(CardButton, { role: 'listitem', label: album.title,
+                    const artistName = album['artist-credit']?.[0]?.name || 'Unknown';
+                    return React.createElement(AlbumCard, Object.assign({
                       key: album._rowKey || album.id,
-                      className: 'group cursor-pointer release-card card-fade-up',
-                      style: {
-                        padding: '10px',
-                        borderRadius: '10px',
-                        backgroundColor: 'var(--card-bg)',
-                        boxShadow: 'var(--card-shadow)',
-                        animationDelay: `${animationDelay}ms`
-                      },
-                      draggable: true,
-                      onDragStart: (e) => {
-                        e.dataTransfer.effectAllowed = 'copy';
-                        const prefetched = prefetchedReleasesRef.current[album.id];
-                        e.dataTransfer.setData('text/plain', JSON.stringify({
-                          type: 'album',
-                          album: {
-                            id: trackSlug(album['artist-credit']?.[0]?.name || 'unknown', album.title || 'untitled'),
-                            title: album.title,
-                            artist: album['artist-credit']?.[0]?.name || 'Unknown',
-                            year: album['first-release-date']?.split('-')[0] ? parseInt(album['first-release-date'].split('-')[0]) : null,
-                            art: album.albumArt || null,
-                            trackCount: prefetched?.tracks?.length || null
-                          }
-                        }));
-                      },
-                      onMouseEnter: () => prefetchSearchAlbumTracks(album),
-                      onActivate: () => handleAlbumClick(album),
-                      onContextMenu: (e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        const artistName = album['artist-credit']?.[0]?.name || 'Unknown';
+                      role: 'listitem',
+                      album: { id: album.id, title: album.title, artist: artistName, imageUrl: album.albumArt || null },
+                      animationDelay: Math.min(index * 30, 300),
+                      dragData: () => ({
+                        type: 'album',
+                        album: {
+                          id: trackSlug(artistName === 'Unknown' ? 'unknown' : artistName, album.title || 'untitled'),
+                          title: album.title,
+                          artist: artistName,
+                          year: album['first-release-date']?.split('-')[0] ? parseInt(album['first-release-date'].split('-')[0]) : null,
+                          art: album.albumArt || null,
+                          trackCount: prefetchedReleasesRef.current[album.id]?.tracks?.length || null
+                        }
+                      }),
+                      onHoverPrefetch: () => prefetchSearchAlbumTracks(album),
+                      onOpen: () => handleAlbumClick(album),
+                      onOpenArtist: () => fetchArtistData(album['artist-credit']?.[0]?.name, creditOpenOptions(album['artist-credit'])),
+                      onContextMenu: () => {
                         const albumData = { ...album, artist: artistName, releaseGroupMbid: album.id }; // a MusicBrainz release group
                         const prefetched = prefetchedReleasesRef.current[album.id];
-                        const isLoading = prefetchInProgress.has(album.id);
-                        window.showItemMenu(releaseMenu(albumData, { tracks: prefetched?.tracks, loading: isLoading }));
-                      }
-                    },
-                      // Album art with dark placeholder and inner shadow
-                      React.createElement('div', {
-                        className: 'aspect-square rounded-lg overflow-hidden mb-2 relative album-art-container'
+                        window.showItemMenu(releaseMenu(albumData, { tracks: prefetched?.tracks, loading: prefetchInProgress.has(album.id) }));
                       },
-                        // Dark placeholder background
-                        React.createElement('div', {
-                          className: 'absolute inset-0',
-                          style: { background: 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)' }
-                        }),
-                        // Image with fade-in
-                        album.albumArt && React.createElement('img', {
-                          key: album.albumArt,
-                          src: album.albumArt,
-                          alt: album.title,
-                          className: 'absolute inset-0 w-full h-full object-cover transition-all duration-300',
-                          style: { opacity: 0 },
-                          ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
-                          onLoad: (e) => { e.target.style.opacity = '1'; },
-                          onError: (e) => { e.target.style.display = 'none'; handleSearchArtBroken('album', album, album.albumArt); }
-                        }),
-                        // Hover overlay with action buttons (Add to Playlist, Play, Queue)
-                        React.createElement('div', {
-                          className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 card-reveal transition-opacity duration-200 flex items-center justify-center gap-3'
-                        },
-                          // Add to Playlist button
-                          React.createElement('button', {
-                            onClick: (e) => {
-                              e.stopPropagation();
-                              const prefetched = prefetchedReleasesRef.current[album.id];
-                              if (prefetched?.tracks?.length > 0) {
-                                setAddToPlaylistPanel({
-                                  open: true,
-                                  tracks: prefetched.tracks,
-                                  sourceName: album.title,
-                                  sourceType: 'album'
-                                });
-                              }
-                            },
-                            className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
-                            style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff' },
-                            onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
-                            onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                            'aria-label': 'Add to playlist', 'data-tooltip': 'Add to playlist'
-                          },
-                            React.createElement(Icons.Plus, { className: 'w-5 h-5' })
-                          ),
-                          // Play button (center, larger)
-                          React.createElement('button', {
-                            onClick: (e) => {
-                              e.stopPropagation();
-                              setTrackLoading(true);
-                              const prefetched = prefetchedReleasesRef.current[album.id];
-                              if (prefetched?.tracks?.length > 0) {
-                                const context = { type: 'album', id: album.id, name: album.title, artist: album['artist-credit']?.[0]?.name };
-                                const [firstTrack, ...remainingTracks] = prefetched.tracks;
-                                // Tag the first track with context so queue navigation works correctly
-                                const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
-                                setQueueWithContext(remainingTracks, context, true);
-                                handlePlay(taggedFirstTrack);
-                              } else {
-                                setTrackLoading(false);
-                              }
-                            },
-                            className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
-                            'aria-label': 'Play', 'data-tooltip': 'Play'
-                          },
-                            React.createElement(Play, { size: 22, className: 'text-ink-primary ml-0.5' })
-                          ),
-                          // Add to Queue button
-                          React.createElement('button', {
-                            onClick: (e) => {
-                              e.stopPropagation();
-                              const prefetched = prefetchedReleasesRef.current[album.id];
-                              if (prefetched?.tracks?.length > 0) {
-                                const context = { type: 'album', id: album.id, name: album.title, artist: album['artist-credit']?.[0]?.name };
-                                addToQueue(prefetched.tracks, context);
-                              }
-                            },
-                            className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
-                            style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff' },
-                            onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
-                            onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                            'aria-label': 'Add to queue', 'data-tooltip': 'Add to queue'
-                          },
-                            React.createElement(Icons.QueueAdd, { className: 'w-5 h-5', strokeWidth: 2 })
-                          )
-                        )
-                      ),
-                      // Album title - refined typography
-                      React.createElement('div', {
-                        className: 'truncate transition-colors',
-                        style: {
-                          fontSize: '13px',
-                          fontWeight: '500',
-                          color: 'var(--text-primary)',
-                          marginTop: '6px'
-                        }
-                      }, album.title),
-                      // Artist name - clickable
-                      React.createElement('button', { type: 'button',
-                        className: 'block max-w-full text-left truncate hover:text-accent hover:underline cursor-pointer transition-colors',
-                        style: {
-                          fontSize: '11px',
-                          color: 'var(--text-secondary)',
-                          marginTop: '2px'
-                        },
-                        onClick: (e) => {
-                          e.stopPropagation();
-                          fetchArtistData(album['artist-credit']?.[0]?.name, creditOpenOptions(album['artist-credit']));
-                        }
-                      }, album['artist-credit']?.[0]?.name || 'Unknown Artist')
-                    );
+                      onArtError: () => handleSearchArtBroken('album', album, album.albumArt)
+                    }, albumCardActions({
+                      title: album.title, artist: artistName,
+                      context: { type: 'album', id: album.id, name: album.title, artist: artistName },
+                      getTracks: async () => (await fetchSearchAlbumTracksAsync(album))?.tracks
+                    })));
                   })
                 );
               })(),
@@ -1454,201 +1338,48 @@ const SearchPage = React.memo(function SearchPage(props) {
             React.createElement('div', { role: 'list',
               className: 'flex gap-x-4 gap-y-5'
             },
+              // The shared album card (components/album-card.js), a fixed width
+              // in the row; the year is its third line.
               ...searchResults.albums.slice(0, getItemsPerRow(160)).map((album, index) => {
-                const albumItemWidth = Math.floor((searchContainerWidth - (getItemsPerRow(160) - 1) * 16) / getItemsPerRow(160));
-                const animationDelay = Math.min(index * 40, 300);
-                return React.createElement(CardButton, { role: 'listitem', label: album.title,
+                const artistName = album['artist-credit']?.[0]?.name || 'Unknown';
+                return React.createElement(AlbumCard, Object.assign({
                   key: album._rowKey || album.id,
-                  onActivate: () => {
+                  role: 'listitem',
+                  width: Math.floor((searchContainerWidth - (getItemsPerRow(160) - 1) * 16) / getItemsPerRow(160)),
+                  album: { id: album.id, title: album.title, artist: artistName, imageUrl: album.albumArt || null },
+                  subtitle: album['first-release-date']?.split('-')[0] || null,
+                  animationDelay: Math.min(index * 40, 300),
+                  dragData: () => ({
+                    type: 'album',
+                    album: {
+                      id: trackSlug(artistName === 'Unknown' ? 'unknown' : artistName, album.title || 'untitled'),
+                      title: album.title,
+                      artist: artistName,
+                      year: album['first-release-date']?.split('-')[0] ? parseInt(album['first-release-date'].split('-')[0]) : null,
+                      art: album.albumArt || null,
+                      trackCount: prefetchedReleasesRef.current[album.id]?.tracks?.length || null
+                    }
+                  }),
+                  onHoverPrefetch: () => prefetchSearchAlbumTracks(album),
+                  onOpen: () => {
                     saveSearchHistory(searchQuery, {
-                      type: 'album',
-                      id: album.id,
-                      name: album.title,
-                      artist: album['artist-credit']?.[0]?.name,
-                      imageUrl: album.albumArt || null
+                      type: 'album', id: album.id, name: album.title,
+                      artist: album['artist-credit']?.[0]?.name, imageUrl: album.albumArt || null
                     });
                     handleAlbumClick(album);
                   },
-                  onMouseEnter: () => {
-                    // Prefetch album tracks on hover for context menu
-                    prefetchSearchAlbumTracks(album);
-                  },
-                  className: 'group cursor-grab active:cursor-grabbing release-card card-fade-up',
-                  style: {
-                    width: albumItemWidth,
-                    padding: '10px',
-                    borderRadius: '10px',
-                    backgroundColor: 'var(--card-bg)',
-                    boxShadow: 'var(--card-shadow)',
-                    animationDelay: `${animationDelay}ms`
-                  },
-                  draggable: true,
-                  onDragStart: (e) => {
-                    e.dataTransfer.effectAllowed = 'copy';
+                  onOpenArtist: () => fetchArtistData(album['artist-credit']?.[0]?.name, creditOpenOptions(album['artist-credit'])),
+                  onContextMenu: () => {
+                    const albumData = { ...album, artist: artistName, releaseGroupMbid: album.id };
                     const prefetched = prefetchedReleasesRef.current[album.id];
-                    e.dataTransfer.setData('text/plain', JSON.stringify({
-                      type: 'album',
-                      album: {
-                        id: trackSlug(album['artist-credit']?.[0]?.name || 'unknown', album.title || 'untitled'),
-                        title: album.title,
-                        artist: album['artist-credit']?.[0]?.name || 'Unknown',
-                        year: album['first-release-date']?.split('-')[0] ? parseInt(album['first-release-date'].split('-')[0]) : null,
-                        art: null,
-                        trackCount: prefetched?.tracks?.length || null
-                      }
-                    }));
+                    window.showItemMenu(releaseMenu(albumData, { tracks: prefetched?.tracks, loading: prefetchInProgress.has(album.id) }));
                   },
-                  onContextMenu: (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    if (window.electron?.contextMenu?.showTrackMenu) {
-                      const artistName = album['artist-credit']?.[0]?.name || 'Unknown';
-                      const albumData = { ...album, artist: artistName, releaseGroupMbid: album.id }; // a MusicBrainz release group
-                      // Check prefetched cache (use ref) and loading state (use module-level Set)
-                      const prefetched = prefetchedReleasesRef.current[album.id];
-                      const isLoading = prefetchInProgress.has(album.id);
-                      window.showItemMenu(releaseMenu(albumData, { tracks: prefetched?.tracks, loading: isLoading }));
-                    }
-                  }
-                },
-                  // Album art with rounded corners and inner shadow
-                  React.createElement('div', {
-                    className: 'w-full aspect-square rounded-lg overflow-hidden mb-2 relative album-art-container group/art'
-                  },
-                    // Dark placeholder background
-                    React.createElement('div', {
-                      className: 'absolute inset-0',
-                      style: { background: 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)' }
-                    }),
-                    // Image with fade-in
-                    album.albumArt && React.createElement('img', {
-                      key: album.albumArt,
-                      src: album.albumArt,
-                      alt: album.title,
-                      className: 'absolute inset-0 w-full h-full object-cover transition-all duration-300 group-hover:scale-105',
-                      style: { opacity: 0 },
-                      ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
-                      onLoad: (e) => { e.target.style.opacity = '1'; },
-                      onError: (e) => { e.target.style.display = 'none'; handleSearchArtBroken('album', album, album.albumArt); }
-                    }),
-                    // Hover overlay with action buttons (Add to Playlist, Play, Queue)
-                    React.createElement('div', {
-                      className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 card-reveal transition-opacity duration-200 flex items-center justify-center gap-2',
-                      style: { pointerEvents: 'auto' }
-                    },
-                      // Add to Playlist button
-                      React.createElement('button', {
-                        onClick: async (e) => {
-                          e.stopPropagation();
-                          // Get prefetched tracks for playlist, or fetch them
-                          let prefetched = prefetchedReleasesRef.current[album.id];
-                          if (!prefetched?.tracks?.length) {
-                            showToast('Loading album…');
-                            await fetchSearchAlbumTracksAsync(album);
-                            prefetched = prefetchedReleasesRef.current[album.id];
-                          }
-                          if (prefetched?.tracks?.length > 0) {
-                            setAddToPlaylistPanel({
-                              open: true,
-                              tracks: prefetched.tracks,
-                              sourceName: album.title,
-                              sourceType: 'album'
-                            });
-                          } else {
-                            showToast('Could not load album tracks', 'error');
-                          }
-                        },
-                        className: 'w-8 h-8 rounded-full flex items-center justify-center transition-all hover:scale-110',
-                        style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-                        onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
-                        onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                        'aria-label': 'Add to playlist', 'data-tooltip': 'Add to playlist'
-                      },
-                        React.createElement(Icons.Plus, { className: 'w-4 h-4' })
-                      ),
-                      // Play button (center, larger - plays album)
-                      React.createElement('button', {
-                        onClick: async (e) => {
-                          e.stopPropagation();
-                          saveSearchHistory(searchQuery, {
-                            type: 'album',
-                            id: album.id,
-                            name: album.title,
-                            artist: album['artist-credit']?.[0]?.name,
-                            imageUrl: album.albumArt || null
-                          });
-                          // Play the album - fetch tracks if needed
-                          let prefetched = prefetchedReleasesRef.current[album.id];
-                          if (!prefetched?.tracks?.length) {
-                            showToast('Loading album…');
-                            await fetchSearchAlbumTracksAsync(album);
-                            prefetched = prefetchedReleasesRef.current[album.id];
-                          }
-                          if (prefetched?.tracks?.length > 0) {
-                            const context = { type: 'album', name: album.title, artist: album['artist-credit']?.[0]?.name };
-                            const [firstTrack, ...remainingTracks] = prefetched.tracks;
-                            const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
-                            setQueueWithContext(remainingTracks, context, true);
-                            handlePlay(taggedFirstTrack);
-                          } else {
-                            showToast('Could not load album tracks', 'error');
-                          }
-                        },
-                        className: 'w-10 h-10 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
-                        style: { border: 'none', cursor: 'pointer' },
-                        'aria-label': 'Play album', 'data-tooltip': 'Play album'
-                      },
-                        React.createElement(Play, { size: 18, className: 'text-ink-primary ml-0.5' })
-                      ),
-                      // Add to Queue button
-                      React.createElement('button', {
-                        onClick: async (e) => {
-                          e.stopPropagation();
-                          // Fetch album tracks and add to queue
-                          let prefetched = prefetchedReleasesRef.current[album.id];
-                          if (!prefetched?.tracks?.length) {
-                            showToast('Loading album…');
-                            await fetchSearchAlbumTracksAsync(album);
-                            prefetched = prefetchedReleasesRef.current[album.id];
-                          }
-                          if (prefetched?.tracks?.length > 0) {
-                            addToQueue(prefetched.tracks, { type: 'album', name: album.title, artist: album['artist-credit']?.[0]?.name });
-                          } else {
-                            showToast('Could not load album tracks', 'error');
-                          }
-                        },
-                        className: 'w-8 h-8 rounded-full flex items-center justify-center transition-all hover:scale-110',
-                        style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-                        onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
-                        onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                        'aria-label': 'Add to queue', 'data-tooltip': 'Add to queue'
-                      },
-                        React.createElement(Icons.QueueAdd, { className: 'w-4 h-4', strokeWidth: 2 })
-                      )
-                    )
-                  ),
-                  // Album title - refined typography
-                  React.createElement('div', {
-                    className: 'truncate',
-                    style: {
-                      fontSize: '13px',
-                      fontWeight: '500',
-                      color: 'var(--text-primary)',
-                      marginTop: '6px'
-                    }
-                  }, album.title),
-                  // Artist and year
-                  React.createElement('div', {
-                    className: 'truncate',
-                    style: {
-                      fontSize: '11px',
-                      color: 'var(--text-secondary)',
-                      marginTop: '2px'
-                    }
-                  },
-                    `${album['artist-credit']?.[0]?.name || 'Unknown'} • ${album['first-release-date']?.split('-')[0] || ''}`
-                  )
-                );
+                  onArtError: () => handleSearchArtBroken('album', album, album.albumArt)
+                }, albumCardActions({
+                  title: album.title, artist: artistName,
+                  context: { type: 'album', id: album.id, name: album.title, artist: artistName },
+                  getTracks: async () => (await fetchSearchAlbumTracksAsync(album))?.tracks
+                })));
               })
             )
           ),

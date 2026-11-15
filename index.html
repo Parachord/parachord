@@ -779,6 +779,8 @@
     .card-button-hit:focus { outline: none; }
     .card-button-hit:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: -2px; }
     .card-button .card-actions { z-index: 2; opacity: 0; pointer-events: none; transition: opacity 200ms ease; }
+    /* A link in a card's text (an album card's artist): always shown, above the stretched button. */
+    .card-button .card-link { position: relative; z-index: 2; }
     .card-button .card-actions button { pointer-events: none; }
     .card-button:hover .card-actions,
     .card-button:has(:focus-visible) .card-actions { opacity: 1; }

@@ -27,7 +27,8 @@ const { slug } = require('../lib/track-slug');
 const { artistMenu } = require('../lib/item-menus');
 const { trackDurationLabel } = require('../lib/track-duration');
 const { ResolverIcon } = require('./ui-atoms');
-const { CollectionAlbumCard, PlayTop10Icon } = require('./cards');
+const { PlayTop10Icon } = require('./cards');
+const { AlbumCard } = require('./album-card');
 const { ArtistCard } = require('./artist-card');
 const { ListenerCard } = require('./listener-card');
 const { countOf } = require('../lib/plural');
@@ -35,6 +36,7 @@ const { countOf } = require('../lib/plural');
 // Plain functions from Parachord, passed as stable wrappers.
 const COLLECTION_PAGE_HANDLERS = [
   'addToQueue',
+  'albumCardActions',
   'copyParachordLink',
   'fetchArtistData',
   'getAlbumArt',
@@ -59,6 +61,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
   const {
     activeResolvers,
     addToQueue,
+    albumCardActions,
     allResolvers,
     autoPinnedFriendIds,
     collectionData,
@@ -854,61 +857,32 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                 return n === 1 ? base : `${base}#${n}`;
               };
 
-              return React.createElement('div', {
+              return React.createElement('div', { role: 'list',
                 className: 'card-grid gap-x-4 gap-y-5',
                 style: { minHeight: 'calc(100vh - 160px)', alignContent: 'start' }  // Ensure enough scroll area to prevent header bounce
               },
                 sorted.map((album, index) =>
-                  React.createElement(CollectionAlbumCard, {
-                    key: albumKey(album),
-                    album: { ...album, trackCount: album.trackCount ?? collectionData.tracks.filter(t => t.artist === album.artist && t.album === album.title).length },
-                    getAlbumArt: getAlbumArt,
-                    onNavigate: () => handleCollectionAlbumClick(album),
-                    onAddToPlaylist: (albumData) => {
-                      const albumTracks = collectionData.tracks
-                        .filter(t => t.artist === albumData.artist && t.album === albumData.title)
-                        .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
-                      if (albumTracks.length > 0) {
-                        setAddToPlaylistPanel({
-                          open: true,
-                          tracks: albumTracks,
-                          sourceName: `${albumData.title} by ${albumData.artist}`,
-                          sourceType: 'album'
-                        });
-                      }
-                    },
-                    onPlay: (albumData) => {
-                      const albumTracks = collectionData.tracks
-                        .filter(t => t.artist === albumData.artist && t.album === albumData.title)
-                        .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
-                      if (albumTracks.length > 0) {
-                        setTrackLoading(true);
-                        const context = { type: 'album', name: albumData.title, artist: albumData.artist };
-                        const [firstTrack, ...remainingTracks] = albumTracks;
-                        setQueueWithContext(remainingTracks, context, true);
-                        handlePlay(firstTrack);
-                      }
-                    },
-                    onAddToQueue: (albumData) => {
-                      const albumTracks = collectionData.tracks
-                        .filter(t => t.artist === albumData.artist && t.album === albumData.title)
-                        .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
-                      if (albumTracks.length > 0) {
-                        addToQueue(albumTracks, { type: 'album', name: albumData.title, artist: albumData.artist });
-                      }
-                    },
-                    onContextMenu: (e, albumData) => {
-                      const albumTracks = collectionData.tracks
-                        .filter(t => t.artist === albumData.artist && t.album === albumData.title)
-                        .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
-                      window.electron?.contextMenu?.showTrackMenu({
-                        type: 'collection-album',
-                        album: albumData,
-                        tracks: albumTracks
-                      });
-                    },
-                    animationDelay: Math.min(index * 30, 300)
-                  })
+                  // The shared album card (components/album-card.js); it looks up
+                  // its own cover (getAlbumArt).
+                  (() => {
+                    const tracksOf = () => collectionData.tracks
+                      .filter(t => t.artist === album.artist && t.album === album.title)
+                      .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
+                    return React.createElement(AlbumCard, Object.assign({
+                      key: albumKey(album),
+                      role: 'listitem',
+                      album: { ...album, imageUrl: album.art || null },
+                      getAlbumArt: getAlbumArt,
+                      // The year and track count, as the old Collection card showed.
+                      subtitle: [album.year, (() => {
+                        const n = album.trackCount ?? collectionData.tracks.filter(t => t.artist === album.artist && t.album === album.title).length;
+                        return n ? countOf(n, 'track') : null;
+                      })()].filter(Boolean).join(' · ') || null,
+                      animationDelay: Math.min(index * 30, 300),
+                      onOpen: () => handleCollectionAlbumClick(album),
+                      onContextMenu: () => window.showItemMenu({ type: 'collection-album', album, tracks: tracksOf() })
+                    }, albumCardActions({ title: album.title, artist: album.artist, getTracks: async () => tracksOf() })));
+                  })()
                 )
               );
             })(),
