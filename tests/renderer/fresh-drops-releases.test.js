@@ -73,13 +73,61 @@ describe('every Fresh Drops list goes through uniqueReleases', () => {
   const src = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
 
   test('the cache restore, the incremental merge, the progress merge and the full merge', () => {
-    expect(src).toMatch(/const filteredReleases = uniqueReleases\(newReleasesData\.releases\.filter\(/);
-    expect(src).toMatch(/const merged = uniqueReleases\(\[\.\.\.brandNew, \.\.\.newReleases\]\)/);
+    expect(src).toMatch(/const filteredReleases = uniqueReleases\(withinFreshDropsWindow\(newReleasesData\.releases\)\.filter\(/);
+    expect(src).toMatch(/const merged = uniqueReleases\(withinFreshDropsWindow\(\[\.\.\.brandNew, \.\.\.newReleases\]\)\)/);
     expect(src).toMatch(/const deduped = uniqueReleases\(progressMerged\)/);
     expect(src).toMatch(/const uniqueList = uniqueReleases\(merged\)/);
   });
 
   test('no inline artist + title de-duplication is left behind', () => {
     expect(src).not.toMatch(/const key = `\$\{r\.artist\.toLowerCase\(\)\}-\$\{r\.title\.toLowerCase\(\)\}`;\s*\n\s*if \(seen(Releases)?\.has\(key\)\)/);
+  });
+});
+
+// Fresh Drops shows the last three months, up to two weeks ahead. The window
+// used to be applied only to new MusicBrainz results: every scan merged them
+// with the whole cache, nothing ever aged out, and one library reached 436
+// releases, 312 of them over six months old (2026-11).
+describe('Fresh Drops window', () => {
+  const { freshDropsWindow, withinFreshDropsWindow, FRESH_DROPS_MONTHS_BACK, FRESH_DROPS_DAYS_AHEAD } =
+    require('../../src/renderer/lib/fresh-drops-releases');
+  const NOW = new Date('2026-11-15T12:00:00Z');
+
+  test('three months back, two weeks ahead', () => {
+    expect(FRESH_DROPS_MONTHS_BACK).toBe(3);
+    expect(FRESH_DROPS_DAYS_AHEAD).toBe(14);
+    expect(freshDropsWindow(NOW)).toEqual({ from: '2026-08-15', to: '2026-11-29' });
+  });
+
+  test('drops releases that aged out, announcements too far ahead, and undated ones; keeps order', () => {
+    const out = withinFreshDropsWindow([
+      rel('new', 'A', 'New', { date: '2026-11-10' }),
+      rel('edge-from', 'A', 'Edge from', { date: '2026-08-15' }),
+      rel('old', 'A', 'Old', { date: '2026-08-14' }),
+      rel('year-old', 'A', 'Year old', { date: '2025-08-26' }),
+      rel('edge-to', 'A', 'Edge to', { date: '2026-11-29' }),
+      rel('far', 'A', 'Far', { date: '2026-12-01' }),
+      rel('undated', 'A', 'Undated', { date: '' }),
+      rel('month-only', 'A', 'Month only', { date: '2026-10' }),
+    ], NOW);
+    expect(out.map(r => r.id)).toEqual(['new', 'edge-from', 'edge-to', 'month-only']);
+  });
+
+  test('tolerates junk input', () => {
+    expect(withinFreshDropsWindow(null, NOW)).toEqual([]);
+    expect(withinFreshDropsWindow([null, 3, rel('ok', 'A', 'Ok', { date: '2026-11-01' })], NOW).map(r => r.id)).toEqual(['ok']);
+  });
+});
+
+describe('Fresh Drops window wiring (app.js)', () => {
+  const src = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+
+  test('the cache load, both merges and the fetch all use the shared window', () => {
+    expect(src).toMatch(/withinFreshDropsWindow\(newReleasesData\.releases/);
+    expect(src).toMatch(/priorCachedReleases = withinFreshDropsWindow\(/);
+    expect(src).toMatch(/withinFreshDropsWindow\(\[\.\.\.brandNew, \.\.\.newReleases\]\)/);
+    expect(src).toMatch(/const \{ from: cutoffDate \} = freshDropsWindow\(\)/);
+    expect(src).toMatch(/const \{ to: upperCutoffDate \} = freshDropsWindow\(\)/);
+    expect(src).not.toMatch(/sixMonthsAgo/);
   });
 });
