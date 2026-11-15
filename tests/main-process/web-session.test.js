@@ -317,6 +317,22 @@ describe('load — navigation, capture, the quiet window', () => {
 });
 
 describe('the load chain — rule 1: loads serialize', () => {
+  test('a foreground job starts before every queued background job, after the running one', async () => {
+    const host = newSession();
+    const order = [];
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    host.enqueue(async () => { order.push('running'); await gate; });
+    const bg = host.enqueue(async () => { order.push('bg'); });
+    const fg = host.enqueue(async () => { order.push('fg'); return 'fg'; }, { lane: 'foreground' });
+    await Promise.resolve(); // the queue's pump runs the first job on a microtask
+    expect(order).toEqual(['running']); // the running job is never interrupted
+    release();
+    expect(await fg).toBe('fg');
+    await bg;
+    expect(order).toEqual(['running', 'fg', 'bg']); // foreground jumped the queued background job
+  });
+
   test('a second load waits for the first (captures never interleave)', async () => {
     const { host, view } = await warmSession();
     const loads = [];
@@ -795,6 +811,27 @@ describe('clear — sign out', () => {
     // The view's destruction aborts the hung navigation (a raw rejection, the
     // same shape loadURLBudgeted propagates today) — and the chain moved on.
     await expect(hung).rejects.toThrow(/ERR_ABORTED/);
+  });
+
+  test('clear() cuts BOTH lanes: queued jobs from the old account never wedge the new one', async () => {
+    const { host } = await warmSession();
+    const order = [];
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    // A running background job that never settles, a foreground and a
+    // background job queued behind it — the old account's in-flight work.
+    host.enqueue(async () => { order.push('running'); await gate; });
+    host.enqueue(async () => { order.push('bg-queued'); });
+    host.enqueue(async () => { order.push('fg-queued'); }, { lane: 'foreground' });
+    await jest.advanceTimersByTimeAsync(0);
+    expect(order).toEqual(['running']);
+
+    await host.clear(); // cuts the queue: both lanes start clean
+    const next = host.load('https://music.testsvc.com/fresh'); // the new account's first load
+    await jest.advanceTimersByTimeAsync(1100);
+    expect(await next).toMatchObject({ finalUrl: 'https://music.testsvc.com/fresh' });
+    expect(order).toEqual(['running']); // the orphaned jobs never ran
+    release();
   });
 });
 

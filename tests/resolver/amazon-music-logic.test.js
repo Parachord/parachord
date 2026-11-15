@@ -33,7 +33,6 @@ const {
   specTemplateIsFresh,
   specBodyWithVars,
   bodyMatchesTemplate,
-  createReplayGate,
   amazonAlbumSearchUrl,
   amazonAlbumAsinFromUrl,
   amazonAlbumDetailRequest,
@@ -189,37 +188,6 @@ describe('spec-search templates', () => {
     expect(bodyMatchesTemplate(t, pageOwn, { searchText: '"daft punk"', specType: 'track' })).toBe(false);
     expect(bodyMatchesTemplate(null, echo, { searchText: 'x', specType: 'track' })).toBe(false);
     expect(bodyMatchesTemplate(t, null, { searchText: 'x', specType: 'track' })).toBe(false);
-  });
-});
-
-describe('createReplayGate', () => {
-  test('readers run in parallel; a writer refuses new readers and waits out the ones in flight', async () => {
-    const gate = createReplayGate();
-    expect(gate.tryEnterReplay()).toBe(true);
-    expect(gate.tryEnterReplay()).toBe(true);
-    expect(gate.state()).toEqual({ readers: 2, writing: false });
-    let navigated = false;
-    const nav = gate.beginNavigation().then(() => { navigated = true; });
-    // The writer is queued: new readers are refused rather than queued.
-    expect(gate.tryEnterReplay()).toBe(false);
-    await new Promise(r => setTimeout(r, 20));
-    expect(navigated).toBe(false);
-    gate.exitReplay();
-    await new Promise(r => setTimeout(r, 20));
-    expect(navigated).toBe(false);
-    gate.exitReplay();
-    await nav;
-    expect(navigated).toBe(true);
-    gate.endNavigation();
-    expect(gate.tryEnterReplay()).toBe(true);
-    expect(gate.state()).toEqual({ readers: 1, writing: false });
-  });
-
-  test('exitReplay never drives the counter negative', () => {
-    const gate = createReplayGate();
-    gate.exitReplay();
-    gate.exitReplay();
-    expect(gate.state().readers).toBe(0);
   });
 });
 
