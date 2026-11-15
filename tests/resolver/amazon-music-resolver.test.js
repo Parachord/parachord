@@ -13,7 +13,8 @@
  *   - searchArtistImage() (the artistImage capability: bridge mapping, the
  *     no-bridge no-op, and miss vs error — never a sign-in prompt)
  *   - getRecommendations()/expandRecommendationSection() (the recommendations
- *     capability: bridge mapping, miss vs notReady, never a sign-in prompt)
+ *     capability, a real flow over the webSession bridge since #1356 M8: the
+ *     mapping, miss vs notReady, never a sign-in prompt)
  *   - byte-identical FALLBACK_RESOLVERS copy in the generated module (drift guard)
  *   - resolver-limiter does NOT skip amazonmusic (CDP fan-out + web search)
  */
@@ -65,7 +66,7 @@ describe('amazonmusic .axe structure', () => {
       expect(typeof new Function('return ' + src)()).toBe('function');
     }
     expect(Object.keys(axe.implementation).sort()).toEqual(
-      ['_lib', 'assertPlanPlays', 'cleanup', 'enqueuePageFlow', 'expandRecommendationSection', 'getPlan', 'getRecommendations', 'init', 'isSignedIn', 'lookupAlbum', 'lookupAlbumFlow', 'lookupAlbumPageFlow', 'lookupPlaylist', 'lookupPlaylistFlow', 'lookupPlaylistPageFlow', 'play', 'playlistImportPages', 'replayGql', 'requireLib', 'resolve', 'search', 'searchAlbums', 'searchArtistImage', 'sessionState', 'specSearch', 'specSearchPageFlow', 'specStructuralError', 'trySpecReplay'].sort()
+      ['_lib', 'assertPlanPlays', 'cacheSeeMorePage', 'cleanup', 'enqueuePageFlow', 'expandRecommendationSection', 'expandRecommendationSectionParsed', 'getPlan', 'getRecommendations', 'homePageFlow', 'init', 'isSignedIn', 'lookupAlbum', 'lookupAlbumFlow', 'lookupAlbumPageFlow', 'lookupPlaylist', 'lookupPlaylistFlow', 'lookupPlaylistPageFlow', 'musicHomePageFlow', 'personalSections', 'play', 'playlistImportPages', 'replayGql', 'requireLib', 'resolve', 'search', 'searchAlbums', 'searchArtistImage', 'seeMorePageFlow', 'sessionState', 'specSearch', 'specSearchPageFlow', 'specStructuralError', 'tryMusicHomeWalk', 'tryRecommendationReplay', 'trySpecReplay', 'walkMusicHomePages', 'withPlaylistsSection'].sort()
     );
   });
 });
@@ -864,118 +865,75 @@ describe('marketplace manifest entry', () => {
 });
 
 describe('amazonmusic recommendations (the recommendations capability)', () => {
+  // #1356 M8: the recommendations run in the plugin, driving the host web
+  // session through the window.electron.webSession bridge (the flow pins live
+  // in tests/resolver/amazon-music-plugin-recommendations.test.js; this
+  // describe holds the resolver contract: the mapping, miss vs notReady,
+  // never a sign-in prompt).
+  const { amazonRecommendationsMock, amazonMusicHomeData, amazonSeeMoreData } = require('../helpers/amazon-plugin-bridge');
+
   afterEach(() => { delete global.window; });
 
-  const sectionsResult = {
-    success: true,
-    sections: [
-      { id: 'uri:///recommendations/browse-home/browse-home_mp3PrimeAlbumsStrategy', title: 'Albums for You', items: [
-        { type: 'album', id: 'B0G2TSTWXD', name: 'Tempelschlaf', artist: 'The Ruins Of Beverast', imageUrl: 'https://m.media-amazon.com/images/I/81oFI00o8+L.jpg', url: 'https://music.amazon.com/albums/B0G2TSTWXD' }
-      ] },
-      { id: 'uri:///recommendations/browse-home/audiobooksForYouLapsedT2', title: 'Audiobooks for You', items: [] }
-    ]
-  };
+  const SECTION_ID = 'uri:///recommendations/music-home/music-home_mp3PrimeAlbumsStrategy';
+  const albumItem = (id, title, artist) => ({
+    __typename: 'Album', id, title, shortTitle: title,
+    images: [{ url: `https://m.media-amazon.com/images/I/${id}.jpg`, width: 2560, height: 2560, imageType: 'PRIMARY' }],
+    url: `https://music.amazon.com/albums/${id}?ref=dm_wtyd`,
+    contributingArtists: { edges: [{ role: 'PRIMARY', node: { name: artist } }] }
+  });
 
-  test('maps the bridge sections through and drops empty sections', async () => {
-    global.window = { electron: { amazonMusic: { getRecommendations: jest.fn().mockResolvedValue(sectionsResult) } } };
+  const homeMock = ({ homePage, seeMorePage, ...rest } = {}) => amazonRecommendationsMock({
+    homePage: homePage || (async () => amazonMusicHomeData([
+      { id: SECTION_ID, name: 'Albums for You', recommendedContent: { edges: [{ node: albumItem('B0G2TSTWXD', 'Tempelschlaf', 'The Ruins Of Beverast') }] } },
+      { id: 'uri:///recommendations/browse-home/audiobooksForYouLapsedT2', name: 'Audiobooks for You', recommendedContent: { edges: [] } }
+    ])),
+    seeMorePage: seeMorePage || (async () => amazonSeeMoreData([], { hasNextPage: false, token: null })),
+    ...rest
+  });
+
+  test('maps the walked home sections through and drops empty sections', async () => {
+    homeMock();
     const resolver = instantiate(axe);
     const out = await resolver.getRecommendations({});
     expect(out.sections).toHaveLength(1);
-    expect(out.sections[0]).toMatchObject({ id: 'uri:///recommendations/browse-home/browse-home_mp3PrimeAlbumsStrategy', title: 'Albums for You' });
+    expect(out.sections[0]).toMatchObject({ id: SECTION_ID, title: 'Albums for You' });
     expect(out.sections[0].items[0]).toMatchObject({ type: 'album', id: 'B0G2TSTWXD', name: 'Tempelschlaf', artist: 'The Ruins Of Beverast' });
   });
 
-  test('keeps every shelf but Featured This Week, each under a category', async () => {
-    // Live 2026-11-12, a Prime account's BrowseHomePage: the personal sections
-    // are named strategies; editorial shelves carry UUID ids, the onboarding
-    // shelf is GET_STARTED, and the genre shelf ("Soundtracks") is a strategy
-    // but a promo. All of them come back except Featured This Week.
-    const item = { type: 'album', id: 'B0G2TSTWXD', name: 'Tempelschlaf', artist: 'The Ruins Of Beverast' };
-    const pl = { type: 'playlist', id: 'PP1', name: 'A Mix' };
-    const base = 'uri:///recommendations/browse-home/';
-    const sec = (id, title, items) => ({ id: base + id, title, items: items || [item] });
-    global.window = { electron: { amazonMusic: { getRecommendations: jest.fn().mockResolvedValue({ success: true, sections: [
-      sec('GET_STARTED', "Let's Get Started", [pl]),
-      sec('mp3YmlRecentPlaybackStrategy', 'Based on Your Recents'),
-      sec('browse-home_mp3PrimeAlbumsStrategy', 'Albums for You'),
-      sec('f5c621d6-7ba8-4d44-9e72-433921bb5203', 'Recently Played'),
-      sec('browse-home_mp3ByArtistStrategy', 'FIDLAR'),
-      sec('browse-home_playlistStrategy', 'Playlists for You', [pl]),
-      sec('browse-home_mp3CommunityPlaylistsStrategy', 'Community Playlists', [pl]),
-      sec('6a0d8250-d85c-42c0-868a-01dc91991473', 'Top Playlists', [pl]),
-      sec('3cdd6257-e173-4d3b-bd27-e5e7b400492e', 'Featured This Week', [pl]),
-      sec('23e18714-c11c-4576-bbc2-1dece54b3b16', 'On-Demand Albums This Week'),
-      sec('browse-home_mp3GenreForYouStrategy', 'Soundtracks', [pl, item]),
-      sec('fab9f6f8-60d6-49f1-a0ff-9b26256c5e90', 'A Whole Mood', [pl]),
-      sec('457820b0-616c-4fb0-baf4-6114cf1cc230', 'Amazon Music Live'),
-      { id: 'uri:///recommendations/music-home/music-home_newReleasesForYouStrategy', title: 'New Releases for You', items: [item] }
-    ] }) } } };
-    const resolver = instantiate(axe);
-    const out = await resolver.getRecommendations({});
-    expect(out.sections.map(s => [s.title, s.category])).toEqual([
-      ["Let's Get Started", 'editorial'],
-      ['Based on Your Recents', 'personal'],
-      ['Albums for You', 'personal'],
-      ['Recently Played', 'personal'],
-      ['FIDLAR', 'artist'],
-      ['Playlists for You', 'personal'],
-      ['Community Playlists', 'community'],
-      ['Top Playlists', 'editorial'],
-      ['On-Demand Albums This Week', 'editorial'],
-      ['Soundtracks', 'editorial'],
-      ['A Whole Mood', 'editorial'],
-      ['Amazon Music Live', 'editorial'],
-      ['New Releases for You', 'new']
-    ]);
-  });
-
-  test('a section with its own first-page cursor (the synthesized playlists section) carries it through', async () => {
-    global.window = { electron: { amazonMusic: { getRecommendations: jest.fn().mockResolvedValue({
-      success: true,
-      sections: [{ id: 'uri:///recommendations/browse-home/browse-home_playlistStrategy', title: 'Playlists for You', nextCursor: 'browse-home_playlistStrategy.20', items: [
-        { type: 'playlist', id: 'PP6417A00A9C99470BBC8834FF3BF6009A', name: 'My Discovery Mix', url: 'https://music.amazon.com/playlists/PP6417A00A9C99470BBC8834FF3BF6009A' }
-      ] }]
-    }) } } };
-    const resolver = instantiate(axe);
-    const out = await resolver.getRecommendations({});
-    expect(out.sections[0].nextCursor).toBe('browse-home_playlistStrategy.20');
-    expect(out.sections[0].items[0]).toMatchObject({ type: 'playlist', name: 'My Discovery Mix' });
-  });
-
   test('a miss (empty sections) passes through as a miss, never a notReady', async () => {
-    global.window = { electron: { amazonMusic: { getRecommendations: jest.fn().mockResolvedValue({ success: true, sections: [] }) } } };
+    homeMock({ homePage: async () => amazonMusicHomeData([]) });
     const resolver = instantiate(axe);
     await expect(resolver.getRecommendations({})).resolves.toEqual({ sections: [] });
   });
 
   test('readiness failures throw notReady (never cached as a miss, never a sign-in prompt)', async () => {
-    for (const reason of ['not-signed-in', 'not-ready', 'no-cdm', 'load-failed']) {
-      global.window = { electron: { amazonMusic: { getRecommendations: jest.fn().mockResolvedValue({ success: false, reason }) } } };
+    for (const opts of [
+      { signedIn: false },
+      { loadResult: { success: false, reason: 'load-failed', error: 'stalled' } },
+      { capturesFor: () => [] }
+    ]) {
+      homeMock(opts);
       const resolver = instantiate(axe);
-      await expect(resolver.getRecommendations({})).rejects.toMatchObject({ notReady: true, code: reason });
+      await expect(resolver.getRecommendations({})).rejects.toMatchObject({ notReady: true });
     }
   });
 
-  test('a host whose bridge predates the capability is a quiet empty provider', async () => {
-    global.window = { electron: { amazonMusic: {} } };
+  test('a host whose webSession bridge is missing is a quiet empty provider', async () => {
+    global.window = { electron: {} };
     const resolver = instantiate(axe);
     await expect(resolver.getRecommendations({})).resolves.toEqual({ sections: [] });
+    await expect(resolver.expandRecommendationSection(SECTION_ID, null, {})).resolves.toEqual({ items: [], nextCursor: null });
   });
 
   test('expandRecommendationSection maps the page and the offset cursor', async () => {
-    global.window = { electron: { amazonMusic: { expandRecommendationSection: jest.fn().mockResolvedValue({
-      success: true,
-      items: [{ type: 'album', id: 'B07QYGJGVC', name: 'Sons of Northern Darkness', artist: 'Immortal' }],
-      nextCursor: 'browse-home_mp3PrimeAlbumsStrategy.20'
-    }) } } };
+    homeMock({ seeMorePage: async () => amazonSeeMoreData([albumItem('B07QYGJGVC', 'Sons of Northern Darkness', 'Immortal')], { hasNextPage: true, token: 'browse-home_mp3PrimeAlbumsStrategy.20' }) });
     const resolver = instantiate(axe);
-    const page = await resolver.expandRecommendationSection('uri:///recommendations/browse-home/browse-home_mp3PrimeAlbumsStrategy', null, {});
+    const page = await resolver.expandRecommendationSection(SECTION_ID, null, {});
     expect(page).toEqual({ items: [expect.objectContaining({ type: 'album', name: 'Sons of Northern Darkness' })], nextCursor: 'browse-home_mp3PrimeAlbumsStrategy.20' });
-    expect(global.window.electron.amazonMusic.expandRecommendationSection).toHaveBeenCalledWith('uri:///recommendations/browse-home/browse-home_mp3PrimeAlbumsStrategy', null);
   });
 
   test('expandRecommendationSection: an exhausted section is empty, not an error', async () => {
-    global.window = { electron: { amazonMusic: { expandRecommendationSection: jest.fn().mockResolvedValue({ success: true, items: [], nextCursor: null }) } } };
+    homeMock({ seeMorePage: async () => amazonSeeMoreData([], { hasNextPage: false, token: null }) });
     const resolver = instantiate(axe);
     await expect(resolver.expandRecommendationSection('uri:///x/aStrategy', 'aStrategy.20', {})).resolves.toEqual({ items: [], nextCursor: null });
   });
@@ -990,10 +948,11 @@ describe('amazonmusic recommendations (the recommendations capability)', () => {
   });
 
   test('expandRecommendationSection: notReady on readiness failures, and unknown failure reasons are notReady too (never a cached miss)', async () => {
-    global.window = { electron: { amazonMusic: { expandRecommendationSection: jest.fn().mockResolvedValue({ success: false, reason: 'not-signed-in' }) } } };
-    const resolver = instantiate(axe);
+    homeMock({ signedIn: false });
+    let resolver = instantiate(axe);
     await expect(resolver.expandRecommendationSection('uri:///x/aStrategy', null, {})).rejects.toMatchObject({ notReady: true, code: 'not-signed-in' });
-    global.window = { electron: { amazonMusic: { expandRecommendationSection: jest.fn().mockResolvedValue({ success: false, reason: 'weird-new-reason' }) } } };
+    homeMock({ loadResult: { success: false, reason: 'weird-new-reason', error: 'x' } });
+    resolver = instantiate(axe);
     // Any unmapped failure reason is notReady — a future reason string must not
     // silently become a miss the page caches.
     await expect(resolver.expandRecommendationSection('uri:///x/aStrategy', null, {})).rejects.toMatchObject({ notReady: true, code: 'weird-new-reason' });

@@ -242,85 +242,12 @@ function shouldRevealPlayerOnFailure() {
 }
 
 
-// Diagnostic for the lookup miss: the gql operations the page actually fired.
-// When hornet renames an operation, every miss looks like "playlist deleted" /
-// "never searched" — this turns that into a one-line diagnosis. (The playlist
-// import moved into the plugin with its own _lib copy — #1356 M7; this copy
-// serves the remaining host flows, recommendations and the diagnostic
-// capture.)
-function capturedOperationNames(bodies) {
-  const names = new Set();
-  for (const raw of (Array.isArray(bodies) ? bodies : [])) {
-    let parsed;
-    try { parsed = JSON.parse(raw); } catch (e) { continue; }
-    const batch = Array.isArray(parsed) ? parsed : [parsed];
-    for (const req of batch) {
-      if (req && req.operationName) names.add(String(req.operationName));
-    }
-  }
-  return [...names];
-}
-
-
-// --- Request templates (replay-first) -------------------------------------
-// A page load per flow is what mints a fresh capture: the APQ hash
-// renumbers on every hornet redeploy, and the csrf/session headers rotate
-// with the session. But within a deploy+session the page's own request is
-// reusable — a recommendations walk replays one capture up to four times. So
-// a flow that comes in while a captured template is still fresh skips its
-// page load entirely and replays from the still-warm search view. A replay
-// error (stale hash, rotated headers, network) discards the template and
-// falls back to the full page flow, which recaptures — the fallback IS the
-// page load, so nothing about the failure semantics changes; only the happy
-// path gets cheaper. (The spec-search templates moved to the plugin with
-// the searches — #1356 M5/M6, plugins-src/amazonmusic/implementation.js;
-// the templates here serve the recommendations flows.)
-
-// Hard cap on template age, past which the page flow runs anyway: session
-// headers (csrf-ts rotation) have no verified TTL, and a hopeless replay
-// costs one round trip anyway, so fresh means low-risk rather than exactly
-// right. The capture timestamp rides along inside the template.
-const SPEC_TEMPLATE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
-
-// Build the reusable template from one capture of the page's own spec
-// search request: entry { url, headers } (verbatim — amazonGqlFetchHeaders
-// still filters browser-managed headers at replay time) and the matched
-// request body. Everything is deep-cloned (JSON: the capture is pure JSON)
-// so a later capture's mutation cannot alias into the stored template.
-function makeSpecSearchTemplate({ url, headers, body, capturedAt }) {
-  if (!url || !headers || !body || typeof body !== 'object') return null;
-  if (!(body.extensions && body.extensions.persistedQuery && body.extensions.persistedQuery.sha256Hash)) return null;
-  if (!(body.variables && typeof body.variables === 'object')) return null;
-  return JSON.parse(JSON.stringify({
-    url,
-    headers,
-    body,
-    capturedAt: typeof capturedAt === 'number' ? capturedAt : Date.now()
-  }));
-}
-
-// Whether the template can drive a replay-first search: present, shaped
-// right, and not older than the freshness cap.
-function specTemplateIsFresh(template, now) {
-  if (!template || typeof template !== 'object') return false;
-  if (typeof template.url !== 'string' || !template.url) return false;
-  if (!template.headers || typeof template.headers !== 'object') return false;
-  if (!(template.body && template.body.variables && template.body.extensions)) return false;
-  const at = typeof template.capturedAt === 'number' ? template.capturedAt : 0;
-  return (typeof now === 'number' ? now : Date.now()) - at < SPEC_TEMPLATE_MAX_AGE_MS;
-}
-
-
-
-
-
-
-
-
-// Headers to copy onto the replayed gql fetch. The request the page made is
-// authoritative (x-api-key, csrf-*, music-territory, x-amzn-*); the browser
-// adds cookies (credentials: 'include') and origin/referer/sec-* itself, and
-// setting them from JS is either forbidden or wrong, so strip those.
+// Headers to copy onto the replayed gql fetch (the host's replayGql — now the
+// diagnostic capture's only caller, since the recommendations flows moved
+// into the plugin, #1356 M8). The request the page made is authoritative
+// (x-api-key, csrf-*, music-territory, x-amzn-*); the browser adds cookies
+// (credentials: 'include') and origin/referer/sec-* itself, and setting them
+// from JS is either forbidden or wrong.
 const GQL_REPLAY_DROP_HEADERS = new Set([
   'cookie', 'origin', 'referer', 'user-agent', 'accept-encoding', 'accept-language',
   'sec-fetch-dest', 'sec-fetch-mode', 'sec-fetch-site', 'sec-fetch-user',
@@ -352,10 +279,11 @@ const GQL_PARTIAL_STATUS = 294;
 
 // The page-world replay's raw { status, text } (or { error }) -> { parsed }
 // or { error, status? }. Pure, so the status rules are unit-tested; the
-// host's replayGql in amazon-web-player.js is the caller (the recommendations
-// and dmls flows it still serves), and the plugin's `_lib` copy serves the
-// plugin's own replayGql with the moved flows (#1356 M5/M6/M7; the playlist
-// flow's playlistPartialIsUsable predicate moved with it).
+// host's replayGql in amazon-web-player.js is the caller (the diagnostic
+// capture it still serves, since the recommendations flows moved into the
+// plugin, #1356 M8), and the plugin's `_lib` copy serves the plugin's own
+// replayGql with the moved flows (#1356 M5/M6/M7/M8; the playlist flow's
+// playlistPartialIsUsable predicate moved with it).
 function gqlReplayOutcome(replay, { acceptPartial = null } = {}) {
   if (!replay || replay.error) return { error: (replay && replay.error) || 'Amazon gql query failed' };
   const status = replay.status;
@@ -378,16 +306,6 @@ function gqlReplayOutcome(replay, { acceptPartial = null } = {}) {
   return { parsed };
 }
 
-// The widest imageType=PRIMARY image, else the widest image overall. The
-// recommendation item art and section covers use the same pick. (The
-// playlist's own cover pick moved into the plugin with the playlist import —
-// #1356 M7.)
-function gqlPrimaryImageUrl(images) {
-  const list = (Array.isArray(images) ? images : []).filter(i => i && i.url);
-  const widest = (l) => (l.length ? l.reduce((a, b) => ((b.width || 0) >= (a.width || 0) ? b : a)) : null);
-  return (widest(list.filter(i => i.imageType === 'PRIMARY')) || widest(list) || {}).url || null;
-}
-
 // Amazon renders the explicit tag as a marker INSIDE the title text
 // ("Kunnioita [Explicit]") — the gql Track node carries no explicit field.
 // Left in, the tag pollutes every downstream consumer that compares this
@@ -397,7 +315,7 @@ function gqlPrimaryImageUrl(images) {
 // only shape Amazon uses) and report it, so an item mapper can set the
 // explicit flag the payload itself lacks. A bare word ("Sexually Explicit")
 // is the track's real title and is left alone. (The plugin's _lib carries
-// its own copy — #1356 M5; this one serves the recommendation item mapper.)
+// its own copy — #1356 M5; this one serves amazonNowPlayingMismatch.)
 function stripAmazonTitleMarker(title) {
   const raw = String(title || '');
   const m = raw.match(/^(.*?)\s*[[(]\s*explicit\s*[\])]\s*$/i);
@@ -405,306 +323,21 @@ function stripAmazonTitleMarker(title) {
   return { title: m[1].trim(), explicit: true };
 }
 
-// The joined artist credit for a contributingArtists connection: the
-// PRIMARY-role artists, else every named artist. Serves the recommendation
-// item mapper (the search/album/artist/playlist copies live in the plugin's
-// _lib).
-function gqlPrimaryArtistNames(connection) {
-  const artists = (connection && Array.isArray(connection.edges)) ? connection.edges : [];
-  const primary = artists.filter(a => a && a.node && a.node.name && a.role === 'PRIMARY');
-  const all = artists.filter(a => a && a.node && a.node.name);
-  const chosen = primary.length ? primary : all;
-  return chosen.map(a => a.node.name).join(', ');
-}
-
-// (The playlist edge mapper and the data.playlist parsers —
-// playlistTrackFromGqlEdge / playlistFromGql / playlistPageInfoFromGql /
-// playlistEdgesFromGql — lived here until #1356 M7 moved the playlist import
-// into the plugin; the _lib copies in plugins-src/amazonmusic/implementation.js
-// are the only ones now.)
+// (The playlist edge mapper, the data.playlist parsers and the recommendation
+// item mapper — playlistTrackFromGqlEdge / playlistFromGql /
+// playlistPageInfoFromGql / playlistEdgesFromGql /
+// recommendationItemFromGqlNode / gqlPrimaryImageUrl / gqlPrimaryArtistNames,
+// and with them amazonMusicHomeRequest / recommendationsFromMusicHome /
+// musicHomeBodyWithVars / mergeMusicHomeSectionPages / seeMoreSectionIdFor /
+// amazonSeeMoreRequest / recommendationStrategyId / amazonSeeMorePageUrl /
+// seeMoreBodyWithVars / recommendationsFromSeeMore, plus the replay-template
+// trio (makeSpecSearchTemplate / specTemplateIsFresh /
+// SPEC_TEMPLATE_MAX_AGE_MS), capturedOperationNames and isAmazonMusicPage —
+// lived here until #1356 M8 moved the recommendations into the plugin; the
+// _lib copies in plugins-src/amazonmusic/implementation.js are the only ones
+// now.)
 
 
-
-
-
-
-// --- Recommendations (capabilities.recommendations in the plugin) ---------
-// The home page's MUSIC tab (https://music.amazon.com/music) fires
-// MusicHomePage (APQ, no inline query; the full home at / fires
-// BrowseHomePage with stations and audiobooks mixed in — the music tab is
-// the music-only query); its response's data.browse.recommendationConnection.edges
-// are the "Albums for You" / "New Releases for You" / "Your Frequent Plays"
-// sections, each item a Track / Album / Artist / ... node
-// (live-captured 2026-11: section node = { id: the recommender strategy uri
-// (uri:///recommendations/music-home/<strategy>), name, description, itemType
-// (ALBUM/MIXED), tags, recommendedContent.edges[].node }). EVERY section
-// propagates; a station-only one has no mappable items (a Station node never
-// maps) and disappears on its own. data.t1r is the page's top row — the
-// user's station-mix ("My Soundtrack" / "My Likes and More": a Station
-// parentContainer with a playMusic track row, live-captured 2026-11) — and
-// stations are not playable in Parachord, so it is skipped; data.genres is
-// navigation chips, not things to play.
-// The "See More" button on each section is an SPA route,
-// /browse/music-items/home/recommendation/<strategy>, which fires
-// RecommenderSeeMorePage (vars { id: uri:///recommendations/browse-home/<strategy>
-// — the BROWSE-home prefix even for a music-home strategy, live-verified
-// 2026-11 — firstLimit: 20, ... }) — the section expansion; its response's
-// data.recommender.edges[0].node.recommendedContent carries { edges,
-// pageInfo } where pageInfo.token is the OFFSET CURSOR
-// ('<strategy>.<count>', e.g. 'music-home_mp3PrimeAlbumsStrategy.20') that
-// advances the next request passed as the afterCursor variable (live-verified
-// page 2; the Relay-style endCursor is a null decoy here).
-
-// One recommendation item from a gql entity node. Only music entities map;
-// Audiobook / PodcastEpisode / PodcastShow / Station / merch nodes are
-// dropped at parse time (the replay stays verbatim, so audiobooksEnabled /
-// merchEnabled ride the page's own variables and the parser keeps the
-// music). URLs keep Amazon's ?ref= trackers OFF the item (the node url
-// carries one; the canonical form is what the host's URL routing parses).
-function recommendationItemFromGqlNode(node) {
-  if (!node || typeof node !== 'object') return null;
-  const bareUrl = (u) => (typeof u === 'string' && u ? u.split('?')[0] : null);
-  const artist = gqlPrimaryArtistNames(node.contributingArtists);
-  if (node.__typename === 'Track') {
-    const cleaned = stripAmazonTitleMarker(node.title || node.shortTitle || '');
-    if (!node.id || !cleaned.title || !artist) return null;
-    return {
-      type: 'song',
-      id: node.id,
-      name: cleaned.title.slice(0, 200),
-      artist: artist.slice(0, 200),
-      imageUrl: gqlPrimaryImageUrl(node.images) || null,
-      url: bareUrl(node.url),
-      duration: typeof node.duration === 'number' ? node.duration : null
-    };
-  }
-  if (node.__typename === 'Album') {
-    const cleaned = stripAmazonTitleMarker(node.title || node.shortTitle || '');
-    if (!node.id || !cleaned.title || !artist) return null;
-    return {
-      type: 'album',
-      id: node.id,
-      name: cleaned.title.slice(0, 200),
-      artist: artist.slice(0, 200),
-      imageUrl: gqlPrimaryImageUrl(node.images) || null,
-      url: bareUrl(node.url) || ('https://music.amazon.com/albums/' + node.id)
-    };
-  }
-  if (node.__typename === 'Artist') {
-    if (!node.id || !node.name) return null;
-    // The artist-image pick (same rules as artistFromGqlSearchNode): widest
-    // PROFILE else widest overall, bare m.media-amazon.com URLs only.
-    const usable = (Array.isArray(node.images) ? node.images : [])
-      .filter(i => i && typeof i.url === 'string' && /^https:\/\/m\.media-amazon\.com\//i.test(i.url) && !i.url.includes('?'));
-    const widest = (l) => (l.length ? l.reduce((a, b) => ((b.width || 0) >= (a.width || 0) ? b : a)) : null);
-    const picked = widest(usable.filter(i => i.imageType === 'PROFILE')) || widest(usable);
-    return {
-      type: 'artist',
-      id: node.id,
-      name: String(node.name).slice(0, 200),
-      imageUrl: picked ? picked.url : null,
-      url: bareUrl(node.url) || ('https://music.amazon.com/artists/' + node.id)
-    };
-  }
-  if (node.__typename === 'Playlist') {
-    const name = node.title || node.name;
-    if (!node.id || !name) return null;
-    return {
-      type: 'playlist',
-      id: node.id,
-      name: String(name).slice(0, 200),
-      imageUrl: gqlPrimaryImageUrl(node.images) || null,
-      url: bareUrl(node.url)
-    };
-  }
-  return null;
-}
-
-// Find the page's own MusicHomePage among captured request bodies (the MUSIC
-// tab of the home page, https://music.amazon.com/music, fires it — the
-// music-only home; the full home at / fires BrowseHomePage with stations and
-// audiobooks mixed in). Matched on operationName — the page fires exactly one
-// op under this name (unlike SpecSearchSeeMorePage, where the SAME operation
-// carries the track/album/artist specs, which is why the spec matcher matches
-// on variables.searchText instead). The LAST match wins: a re-render fires it
-// again, and the freshest headers ride the last one. Returns the request or
-// null.
-// operationName picks the home: 'MusicHomePage' (the music tab, the default)
-// or 'BrowseHomePage' (the full home, the fallback for an account whose music
-// tab is refused, #1328).
-function amazonMusicHomeRequest(bodies, operationName = 'MusicHomePage') {
-  let found = null;
-  for (const raw of (Array.isArray(bodies) ? bodies : [])) {
-    let parsed;
-    try { parsed = JSON.parse(raw); } catch (e) { continue; }
-    const batch = Array.isArray(parsed) ? parsed : [parsed];
-    for (const req of batch) {
-      if (req && req.operationName === operationName && req.variables && typeof req.variables === 'object') found = req;
-    }
-  }
-  return found;
-}
-
-// The MusicHomePage response -> the recommendations provider shape:
-// { sections: [{ id: strategy uri, title, description, items }], nextCursor,
-// envelope }. nextCursor is the home connection's OFFSET cursor
-// (pageInfo.token: firstLimit-multiples — 5, 10, 20, 40 …, live-verified
-// 2026-11; hasNextPage gates it, the Relay-style endCursor is a null decoy) —
-// the page walk passes it back as the afterCursor variable. EVERY section
-// propagates — a station-only one has no mappable items (a Station node never
-// maps), so it disappears on its own; mixed sections keep their mappable items.
-// An absent data.browse (hornet renamed the field) is envelope false —
-// structural, the caller must throw not-ready rather than cache a miss.
-// data.t1r is skipped on purpose (see the block comment).
-function recommendationsFromMusicHome(data) {
-  if (!data || typeof data !== 'object' || !('browse' in data)) {
-    return { sections: [], nextCursor: null, envelope: false };
-  }
-  const conn = data.browse && data.browse.recommendationConnection;
-  const edges = (conn && Array.isArray(conn.edges)) ? conn.edges : [];
-  const sections = [];
-  for (const edge of edges) {
-    const node = edge && edge.node;
-    if (!node || typeof node !== 'object' || !node.id) continue;
-    const items = ((node.recommendedContent && Array.isArray(node.recommendedContent.edges)) ? node.recommendedContent.edges : [])
-      .map(e => recommendationItemFromGqlNode(e && e.node))
-      .filter(Boolean);
-    if (!items.length) continue;
-    const section = { id: String(node.id).slice(0, 300), title: null, items };
-    if (typeof node.name === 'string' && node.name.trim()) section.title = node.name.trim().slice(0, 200);
-    if (typeof node.description === 'string' && node.description.trim()) section.description = node.description.trim().slice(0, 300);
-    sections.push(section);
-  }
-  const pageInfo = (conn && conn.pageInfo) || {};
-  const nextCursor = pageInfo && pageInfo.hasNextPage && typeof pageInfo.token === 'string' && pageInfo.token
-    ? pageInfo.token
-    : null;
-  return { sections, nextCursor, envelope: true };
-}
-
-// A deep clone of a MusicHomePage request body with the home-connection
-// pagination variables patched: firstLimit (the page's own is 5 — the walk
-// asks for 20, live-verified 2026-11: honored; 25/30/50/100 answer HTTP 294)
-// and afterCursor (the previous page's pageInfo.token; dropped for page 1).
-// Everything else — type: 'music-home', the feature flags, extensions with
-// the APQ hash — stays byte-identical to the capture.
-function musicHomeBodyWithVars(body, { firstLimit, afterCursor } = {}) {
-  const out = JSON.parse(JSON.stringify(body || {}));
-  if (!out.variables || typeof out.variables !== 'object') out.variables = {};
-  if (Number.isFinite(firstLimit)) out.variables.firstLimit = firstLimit;
-  if (afterCursor != null) out.variables.afterCursor = afterCursor;
-  else delete out.variables.afterCursor;
-  return out;
-}
-
-// Merge a home-connection page walk into one section list: first-appearance
-// order, deduped by section id — the server re-ranks sections per request, so
-// an offset page can re-serve a section an earlier page already carried
-// (live-observed 2026-11: page 2 of a firstLimit-20 walk re-served 3 of 5).
-function mergeMusicHomeSectionPages(pages) {
-  const seen = new Set();
-  const sections = [];
-  for (const page of (Array.isArray(pages) ? pages : [])) {
-    for (const section of ((page && page.sections) || [])) {
-      if (!section || !section.id || seen.has(section.id)) continue;
-      seen.add(section.id);
-      sections.push(section);
-    }
-  }
-  return sections;
-}
-
-// Find the page's own RecommenderSeeMorePage among captured bodies (the
-// see-more route's request). Matched on operationName, last match wins, same
-// reasoning as amazonMusicHomeRequest.
-function amazonSeeMoreRequest(bodies) {
-  let found = null;
-  for (const raw of (Array.isArray(bodies) ? bodies : [])) {
-    let parsed;
-    try { parsed = JSON.parse(raw); } catch (e) { continue; }
-    const batch = Array.isArray(parsed) ? parsed : [parsed];
-    for (const req of batch) {
-      if (req && req.operationName === 'RecommenderSeeMorePage' && req.variables && typeof req.variables === 'object') found = req;
-    }
-  }
-  return found;
-}
-
-// A section's strategy suffix: the last path segment of the recommender uri
-// ('uri:///recommendations/browse-home/<strategy>' — what the see-more route
-// URL and the see-more request's variables.id both key on). Accepts the full
-// uri or a bare strategy.
-function recommendationStrategyId(sectionId) {
-  const raw = String(sectionId || '').split('?')[0];
-  if (!raw) return null;
-  const seg = raw.split('/').filter(Boolean).pop();
-  return seg || null;
-}
-
-// The see-more page URL for a section: the SPA route the home page's "See
-// More" button navigates to (live-verified 2026-11), which fires
-// RecommenderSeeMorePage. Accepts the section's full uri or a bare strategy.
-function amazonSeeMorePageUrl(sectionId) {
-  const strategy = recommendationStrategyId(sectionId);
-  if (!strategy) return null;
-  return 'https://music.amazon.com/browse/music-items/home/recommendation/' + encodeURIComponent(strategy);
-}
-
-// The variables.id a section's see-more REQUEST carries. The see-more page
-// always prefixes the uri with browse-home — even for a music-home strategy
-// (a music-home section's own id is uri:///recommendations/music-home/<strategy>,
-// but its see-more request asks for uri:///recommendations/browse-home/<strategy>,
-// live-verified 2026-11 on the page's own See More button) — so the echo guard
-// and the replay's id patch must use THIS id, never the section's own. Browse-home
-// ids (the playlists strategy) are already in this form and pass through
-// unchanged. Accepts the section's full uri or a bare strategy.
-function seeMoreSectionIdFor(sectionId) {
-  const strategy = recommendationStrategyId(sectionId);
-  if (!strategy) return null;
-  return 'uri:///recommendations/browse-home/' + strategy;
-}
-
-// A deep clone of a see-more request body with the section variables patched:
-// id (the template was captured with a different section's uri) and
-// afterCursor (the previous page's pageInfo.token). Everything else —
-// firstLimit, feature flags, extensions with the APQ hash — stays
-// byte-identical to the capture.
-function seeMoreBodyWithVars(body, { sectionId, afterCursor } = {}) {
-  const out = JSON.parse(JSON.stringify(body || {}));
-  if (!out.variables || typeof out.variables !== 'object') out.variables = {};
-  if (sectionId != null) out.variables.id = sectionId;
-  if (afterCursor != null) out.variables.afterCursor = afterCursor;
-  else delete out.variables.afterCursor;
-  return out;
-}
-
-// The RecommenderSeeMorePage response -> { section, nextCursor, envelope }:
-// section is the provider's { title, items } for one expansion page,
-// nextCursor is pageInfo.token when hasNextPage (the offset cursor the next
-// request passes as afterCursor; endCursor is a decoy), null when done. An
-// absent data.recommender is envelope false — structural (hornet rename),
-// never a miss; a present connection with no usable node/edges is a real
-// "nothing more" (envelope true, section null).
-function recommendationsFromSeeMore(data) {
-  if (!data || typeof data !== 'object' || !('recommender' in data)) {
-    return { section: null, nextCursor: null, envelope: false };
-  }
-  const recommender = data.recommender;
-  const edges = (recommender && Array.isArray(recommender.edges)) ? recommender.edges : [];
-  const node = edges.length && edges[0] && edges[0].node;
-  if (!node || typeof node !== 'object') return { section: null, nextCursor: null, envelope: true };
-  const content = node.recommendedContent;
-  const items = ((content && Array.isArray(content.edges)) ? content.edges : [])
-    .map(e => recommendationItemFromGqlNode(e && e.node))
-    .filter(Boolean);
-  const pageInfo = (content && content.pageInfo) || {};
-  const nextCursor = pageInfo && pageInfo.hasNextPage && typeof pageInfo.token === 'string' && pageInfo.token
-    ? pageInfo.token
-    : null;
-  const section = { title: null, items };
-  if (typeof node.name === 'string' && node.name.trim()) section.title = node.name.trim().slice(0, 200);
-  return { section, nextCursor, envelope: true };
-}
 
 
 
@@ -724,24 +357,6 @@ function amazonMediaPauseExpr(expectedGeneration) {
   return `if (window.__parachordPlayGen !== ${gen}) return { ok: false, superseded: true }; m.pause();`;
 }
 
-function isAmazonMusicPage(url) {
-  try {
-    return new URL(url).origin === 'https://music.amazon.com';
-  } catch {
-    return false;
-  }
-}
-
-// ── Diagnostic: gql shapes from a live page ─────────────────────────────────
-// Album search and album lookup for the Amazon plugin need the request and
-// response shapes Amazon's own album and search pages use, and only a live
-// signed-in session shows them (every Amazon flow replays the page's own
-// request; see docs/architecture/amazon-music.md). amazonWebPlayer's
-// debugCaptureGql records them; these pure helpers decide what it replays and
-// what may be written to disk.
-
-// What a page is about: an album page's ASIN, or a search page's text and tab
-// (/search/<text>/albums, /search/<text>/songs, ...). null for anything else.
 function gqlCaptureSubject(rawUrl) {
   let u;
   try { u = new URL(rawUrl); } catch { return null; }
@@ -1209,7 +824,6 @@ module.exports = {
   reportedPlaybackAsin,
   amazonMediaPauseExpr,
   amazonPlayGenerationStamp,
-  isAmazonMusicPage,
   shouldRevealPlayerOnFailure,
   cdmStatusHealthy,
   pageBlocksPlayback,
@@ -1218,25 +832,9 @@ module.exports = {
   amazonNowPlayingMismatch,
   signInLanded,
   asinFromPlayerUrl,
-  SPEC_TEMPLATE_MAX_AGE_MS,
-  makeSpecSearchTemplate,
-  specTemplateIsFresh,
   amazonGqlFetchHeaders,
   GQL_PARTIAL_STATUS,
   gqlReplayOutcome,
-  capturedOperationNames,
-  recommendationItemFromGqlNode,
-  amazonMusicHomeRequest,
-  recommendationsFromMusicHome,
-  musicHomeBodyWithVars,
-  mergeMusicHomeSectionPages,
-  seeMoreSectionIdFor,
-  amazonSeeMoreRequest,
-  recommendationStrategyId,
-  amazonSeeMorePageUrl,
-  seeMoreBodyWithVars,
-  recommendationsFromSeeMore,
-  gqlPrimaryArtistNames,
   stripAmazonTitleMarker,
   AMAZON_DEVICE_TYPE_ID,
   DML_TARGET_PREFIX,

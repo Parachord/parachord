@@ -395,5 +395,148 @@ module.exports = {
   amazonPlaylistDetailCapture,
   amazonPlaylistPage,
   amazonWebSessionMock,
-  captureSatisfiesDoneWhen
+  captureSatisfiesDoneWhen,
+  amazonMusicHomeCapture,
+  amazonMusicHomeData,
+  amazonSeeMoreCapture,
+  amazonSeeMoreData,
+  amazonRecommendationsMock
 };
+
+// ── The recommendations fixtures (#1356 M8) ────────────────────────────────
+
+// One captured MusicHomePage / BrowseHomePage request body, as the bridge's
+// load returns it (the home page's own request; firstLimit is the page's own
+// 5, the walk bumps it). operationName picks the home: 'MusicHomePage' (the
+// music tab) or 'BrowseHomePage' (the full home, the #1328 fallback).
+function amazonMusicHomeCapture({ operationName = 'MusicHomePage', firstLimit = 5, csrfTs = '2000', echo = false, hash = 'browsehash' } = {}) {
+  return {
+    url: 'https://gql.music.amazon.com/',
+    method: 'POST',
+    echo,
+    body: JSON.stringify({
+      operationName,
+      variables: {
+        firstLimit,
+        recommenderItemLimit: 15,
+        type: 'music-home',
+        topRecommenderId: 'musicTopOneRecommender',
+        isAuthenticated: true,
+        audiobooksEnabled: true,
+        merchEnabled: true,
+        categoryInEntityUnionEnabled: false,
+        paginating: false
+      },
+      extensions: { clientLibrary: { name: '@apollo/client', version: '4.1.6' }, persistedQuery: { version: 1, sha256Hash: hash } }
+    }),
+    headers: { 'x-api-key': 'amzn1.application.x', 'csrf-token': 't', 'csrf-rnd': 'r', 'csrf-ts': csrfTs }
+  };
+}
+
+// One MusicHomePage response for given sections ({ id, name, recommendedContent:
+// { edges } } nodes; a section node's items are raw gql entity nodes) and the
+// connection's pageInfo (hasNextPage + token drive the walk's offset cursor).
+// data.t1r is the page's station-mix top row (never mapped) and data.genres
+// are navigation chips.
+function amazonMusicHomeData(sections, pageInfo = { hasNextPage: false, endCursor: null, token: null }) {
+  return {
+    data: {
+      user: { id: 'u', tier: 'UNLIMITED' },
+      t1r: { recommendationConnection: { edges: [{ node: { id: 'uri:///recommendations/music-home/playMusic', parentContainer: { node: { __typename: 'Station', id: 'A1ESXGJW9GSMCX', name: 'My Soundtrack' } }, recommendedContent: { edges: [] } } }] } },
+      browse: { recommendationConnection: { edges: sections.map(s => ({ node: s })), pageInfo } },
+      genres: []
+    }
+  };
+}
+
+// One captured RecommenderSeeMorePage request body (the see-more route's own
+// request). variables.id is the SEE-MORE id (the browse-home prefix even for a
+// music-home strategy).
+function amazonSeeMoreCapture({ id = 'uri:///recommendations/browse-home/music-home_mp3PrimeAlbumsStrategy', csrfTs = '2000', echo = false, hash = 'seemorehash', afterCursor } = {}) {
+  const variables = {
+    id,
+    firstLimit: 20,
+    isAuthenticated: true,
+    audiobooksEnabled: true,
+    merchEnabled: true,
+    categoryInEntityUnionEnabled: false
+  };
+  if (afterCursor != null) variables.afterCursor = afterCursor;
+  return {
+    url: 'https://gql.music.amazon.com/',
+    method: 'POST',
+    echo,
+    body: JSON.stringify({
+      operationName: 'RecommenderSeeMorePage',
+      variables,
+      extensions: { clientLibrary: { name: '@apollo/client', version: '4.1.6' }, persistedQuery: { version: 1, sha256Hash: hash } }
+    }),
+    headers: { 'x-api-key': 'amzn1.application.x', 'csrf-token': 't', 'csrf-rnd': 'r', 'csrf-ts': csrfTs }
+  };
+}
+
+// One RecommenderSeeMorePage response: the section's one page of items (raw
+// gql entity nodes) and its pageInfo (hasNextPage + token = the offset cursor).
+function amazonSeeMoreData(items, pageInfo = { hasNextPage: false, endCursor: null, token: null }, title = 'Albums for You') {
+  return {
+    data: {
+      recommender: {
+        edges: [{ node: { id: 'uri:///recommendations/browse-home/music-home_mp3PrimeAlbumsStrategy', name: title, recommendedContent: { edges: items.map(node => ({ node })), pageInfo } } }]
+      }
+    }
+  };
+}
+
+// The webSession mock for the recommendations flows: every pageFetch answers
+// by operationName — homePage(body) for a MusicHomePage / BrowseHomePage walk
+// replay, seeMorePage(body) for a RecommenderSeeMorePage replay — and the
+// loads answer capturesFor(url) (default: the home flow's own captures: a
+// MusicHomePage on the music tab, a BrowseHomePage on the full home, a
+// RecommenderSeeMorePage on the see-more route). A responder returns a
+// response payload (the full envelope with `data`), or { busy: true } /
+// { fetchError } / { status, text } for the failure shapes. Every request
+// body the plugin sent is recorded on the mock (ws.sentRequests).
+function amazonRecommendationsMock({ homePage, seeMorePage, capturesFor, viewUrl, loadResult, finalUrl, state, signedIn } = {}) {
+  const mockOpts = {
+    capturesFor: capturesFor || ((url) => {
+      const u = String(url);
+      if (/\/music$/.test(u)) return [amazonMusicHomeCapture()];
+      if (u === 'https://music.amazon.com/') return [amazonMusicHomeCapture({ operationName: 'BrowseHomePage' })];
+      const route = /\/browse\/music-items\/home\/recommendation\/([^?]+)/.exec(u);
+      if (route) {
+        // The capture carries the SEE-MORE id for the strategy in the route
+        // URL (the browse-home prefix even for a music-home strategy).
+        let strategy;
+        try { strategy = decodeURIComponent(route[1]); } catch (e) { strategy = route[1]; }
+        return [amazonSeeMoreCapture({ id: 'uri:///recommendations/browse-home/' + strategy })];
+      }
+      return [];
+    }),
+    envelope: {}
+  };
+  if (viewUrl !== undefined) mockOpts.viewUrl = viewUrl;
+  if (signedIn !== undefined) mockOpts.signedIn = signedIn;
+  if (loadResult !== undefined) mockOpts.loadResult = loadResult;
+  if (finalUrl !== undefined) mockOpts.finalUrl = finalUrl;
+  const ws = amazonWebSessionMock(mockOpts);
+  if (state) ws.state.mockImplementation(state);
+  const sentRequests = [];
+  ws.pageFetch.mockImplementation(async (id, request) => {
+    const body = JSON.parse(request.body);
+    sentRequests.push(body);
+    let outcome;
+    if (body.operationName === 'MusicHomePage' || body.operationName === 'BrowseHomePage') {
+      outcome = homePage ? await homePage(body) : { error: 'no homePage responder' };
+    } else if (body.operationName === 'RecommenderSeeMorePage') {
+      outcome = seeMorePage ? await seeMorePage(body) : { error: 'no seeMorePage responder' };
+    } else {
+      outcome = { error: 'unexpected operation ' + body.operationName };
+    }
+    if (outcome && outcome.busy) return { success: true, error: 'busy' };
+    if (outcome && outcome.fetchError) return { success: true, error: outcome.fetchError };
+    if (outcome && outcome.status) return { success: true, status: outcome.status, text: JSON.stringify(outcome.text || {}) };
+    return { success: true, status: 200, text: JSON.stringify(outcome) };
+  });
+  ws.sentRequests = sentRequests;
+  return ws;
+}
