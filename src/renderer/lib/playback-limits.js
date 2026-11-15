@@ -8,7 +8,10 @@
 // links, playlist sync), but it is left out of playback: source selection,
 // source icons and the priority numbers. Each service reports its own limit;
 // everything that acts on one reads this module, so a new service is one
-// more entry in the map, not more special cases in the app.
+// more entry in the map, not more special cases in the app. A plugin can
+// also report its own limit (capabilities.status + getStatus; the mapper
+// below) — the service decides, the plugin is the authority — and Amazon
+// moves onto that surface when its logic migrates into the plugin (#1356).
 //
 // A limit entry: { blocked, planKey, label, message, searchesHeldBack }
 //   blocked  — true when the account's plan can't play here
@@ -77,10 +80,47 @@ function tileStatus(limits, id) {
   return { statusLabel: limit.label || 'No playback', statusTitle: limit.message || null };
 }
 
+// A plugin's limit, from its getStatus reply (capabilities.status,
+// docs/architecture/plugins.md "Status and playback limits", #1356). The
+// plugin is the authority for its service: it answers the limit entry
+// itself, and this mapper only validates the shape — a reply without a
+// playbackLimit, or one that isn't shaped like an entry, is NO verdict
+// (null), never a guess. That is the no-throw contract's other half: a
+// plugin whose status call failed (resolver-loader.js getStatus answers
+// null) must never end up unplugged from playback by a malformed answer.
+function pluginStatusLimit(status) {
+  const limit = status && typeof status === 'object' ? status.playbackLimit : null;
+  if (!limit || typeof limit !== 'object' || typeof limit.blocked !== 'boolean') return null;
+  return {
+    blocked: limit.blocked,
+    planKey: typeof limit.planKey === 'string' && limit.planKey ? limit.planKey : null,
+    label: typeof limit.label === 'string' && limit.label ? limit.label : null,
+    message: typeof limit.message === 'string' && limit.message ? limit.message : null,
+    searchesHeldBack: limit.searchesHeldBack === true
+  };
+}
+
 // The settings panel's explanation for a resolver, or null.
 function limitMessage(limits, id) {
   const limit = limits && limits[id];
   return limit && limit.blocked ? limit.message || null : null;
+}
+
+// The Settings sign-in row for a status-capable plugin (capabilities.status,
+// #1356): its getStatus reply's own two lines. statusLabel is the row's
+// primary line; without one, signedIn carries it (a plugin that reports
+// only sign-in needs no label of its own), and no reply yet — still loading,
+// or the plugin threw (no verdict) — is "Checking…", the Amazon row's own
+// loading line. statusMessage is the second line, or '' when the plugin has
+// none. Pure: the row's rendering stays in app.js.
+function pluginStatusRow(status) {
+  const reply = status && typeof status === 'object' ? status : null;
+  const label = reply && typeof reply.statusLabel === 'string' && reply.statusLabel ? reply.statusLabel
+    : reply && reply.signedIn === true ? 'Signed in'
+    : reply && reply.signedIn === false ? 'Not signed in'
+    : 'Checking…';
+  const message = reply && typeof reply.statusMessage === 'string' ? reply.statusMessage : '';
+  return { label, message };
 }
 
 // After an upgrade, a resolver whose searches were held back while blocked
@@ -103,6 +143,8 @@ function limitStorageKey(id) {
 module.exports = {
   amazonPlaybackLimit,
   appleMusicPlaybackLimit,
+  pluginStatusLimit,
+  pluginStatusRow,
   planBlockedIds,
   playbackResolverIds,
   tileStatus,

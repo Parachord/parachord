@@ -12,6 +12,8 @@ const path = require('path');
 const {
   amazonPlaybackLimit,
   appleMusicPlaybackLimit,
+  pluginStatusLimit,
+  pluginStatusRow,
   planBlockedIds,
   playbackResolverIds,
   tileStatus,
@@ -72,7 +74,7 @@ describe('Apple Music: signed out leaves playback until it connects (2026-11)', 
   test('the app feeds it the startup check and the connection', () => {
     const map = between(app, 'const playbackLimits = useMemo(() => ({', '}), [');
     expect(map).toMatch(/applemusic: PlaybackLimits\.appleMusicPlaybackLimit\(\{ checked: appleMusicAuthChecked, connected: appleMusicConnected \}\)/);
-    expect(app).toMatch(/\}\), \[amazonMusicStatus, appleMusicAuthChecked, appleMusicConnected\]\);/);
+    expect(app).toMatch(/\}\), \[amazonMusicStatus, appleMusicAuthChecked, appleMusicConnected, pluginStatuses\]\);/);
     // The check marks itself finished whatever it decided.
     const check = between(app, 'const checkMusicKitAvailable = async () => {', 'checkMusicKitAvailable();');
     expect(check).toMatch(/finally \{\s*setAppleMusicAuthChecked\(true\);/);
@@ -119,6 +121,52 @@ describe('what the map drives', () => {
     expect(limitTransition(null, amazonPlaybackLimit(amazonStatus('unlimited')))).toEqual({ reresolve: false, store: '0' });
     expect(limitTransition('1', null)).toEqual({ reresolve: false, store: null });
     expect(limitStorageKey('amazonmusic')).toBe('playback_limit_blocked:amazonmusic');
+  });
+});
+
+describe('plugins that report their own status (capabilities.status, #1356)', () => {
+  test('a valid playbackLimit becomes the limit entry, validated field by field', () => {
+    expect(pluginStatusLimit({
+      signedIn: true,
+      playbackLimit: { blocked: true, planKey: 'free', label: 'Free: no playback', message: 'Playing needs Awesome Premium.', searchesHeldBack: true },
+      statusLabel: 'Free plan', statusMessage: 'Playing needs Awesome Premium.'
+    })).toEqual({ blocked: true, planKey: 'free', label: 'Free: no playback', message: 'Playing needs Awesome Premium.', searchesHeldBack: true });
+    // A playable reply is an unblocked entry, like Amazon's unlimited.
+    expect(pluginStatusLimit({ playbackLimit: { blocked: false, planKey: 'premium', searchesHeldBack: false } }))
+      .toEqual({ blocked: false, planKey: 'premium', label: null, message: null, searchesHeldBack: false });
+    // Fields that aren't strings (or are missing) degrade to null, never a
+    // crash or a guess; searchesHeldBack is true only when the plugin says so.
+    expect(pluginStatusLimit({ playbackLimit: { blocked: true, planKey: 7, label: {}, message: null, searchesHeldBack: 'yes' } }))
+      .toEqual({ blocked: true, planKey: null, label: null, message: null, searchesHeldBack: false });
+  });
+
+  test('no verdict: a null status, a reply without a playbackLimit, or a malformed one', () => {
+    expect(pluginStatusLimit(null)).toBeNull();
+    expect(pluginStatusLimit(undefined)).toBeNull();
+    expect(pluginStatusLimit('signed-in')).toBeNull();
+    // Signed in with nothing to say: no limit, like Amazon before the status loads.
+    expect(pluginStatusLimit({ signedIn: true, playbackLimit: null, statusLabel: 'Signed in', statusMessage: null })).toBeNull();
+    // Malformed playbackLimit: no verdict, never a guess — a status outage
+    // must not unplug playback (resolver-loader.js getStatus answers null
+    // for a throwing plugin; this is the same rule for a shaped one).
+    expect(pluginStatusLimit({ playbackLimit: { blocked: 'yes' } })).toBeNull();
+    expect(pluginStatusLimit({ playbackLimit: 'blocked' })).toBeNull();
+    expect(pluginStatusLimit({ playbackLimit: {} })).toBeNull();
+  });
+
+  test('the Settings sign-in row: the reply\u2019s own two lines, signedIn and loading as fallbacks', () => {
+    expect(pluginStatusRow({ statusLabel: 'Free plan', statusMessage: 'Playing needs Awesome Premium.' }))
+      .toEqual({ label: 'Free plan', message: 'Playing needs Awesome Premium.' });
+    // No label of its own: signedIn carries the line (null: not known yet).
+    expect(pluginStatusRow({ signedIn: true }).label).toBe('Signed in');
+    expect(pluginStatusRow({ signedIn: false }).label).toBe('Not signed in');
+    expect(pluginStatusRow({ signedIn: null }).label).toBe('Checking…');
+    // No reply yet — still loading, or the plugin threw (no verdict) — and a
+    // malformed reply: the row degrades, never a crash in the panel.
+    expect(pluginStatusRow(undefined)).toEqual({ label: 'Checking…', message: '' });
+    expect(pluginStatusRow(null)).toEqual({ label: 'Checking…', message: '' });
+    expect(pluginStatusRow('signed-in')).toEqual({ label: 'Checking…', message: '' });
+    expect(pluginStatusRow({ statusLabel: 'Signed in', statusMessage: 42 })).toEqual({ label: 'Signed in', message: '' });
   });
 });
 

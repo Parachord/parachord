@@ -6147,6 +6147,16 @@ const Parachord = () => {
   // Amazon Music sign-in status from the in-app player:
   // { success, engine: 'web', web: { cdm, signedIn }, plan, planMessage }
   const [amazonMusicStatus, setAmazonMusicStatus] = useState(null);
+  // Status replies from plugins that report their own sign-in/playback-limit
+  // state (capabilities.status, the generic surface of #1356):
+  // { [resolverId]: reply }. One reply feeds every consumer — the limit map
+  // below, the resolver tile (tileStatus) and the Settings sign-in row
+  // (pluginStatusRow). A null entry is "no verdict" (the plugin threw or
+  // answered nothing shaped), never a blocked resolver. No shipped plugin
+  // declares the capability yet; Amazon keeps its own IPC status
+  // (amazonMusicStatus) until its plugin migration moves it onto this
+  // surface.
+  const [pluginStatuses, setPluginStatuses] = useState({});
   // Resolvers that are enabled but can't play on the account's plan (Amazon
   // off Music Unlimited, #1220). Each service reports its limit into one map
   // (lib/playback-limits.js); another service with such a plan is one more
@@ -6156,10 +6166,18 @@ const Parachord = () => {
   // priority numbers.
   // Apple Music not signed in is in the same map (appleMusicPlaybackLimit):
   // it can't play, so it leaves the priority order until it connects.
+  // Plugins that report their own status (capabilities.status) join the same
+  // map: the plugin is the authority for its service, so its entry wins
+  // where a per-service mapper still exists — the migration order (a
+  // service's plugin entry takes over the moment it starts declaring the
+  // capability).
   const playbackLimits = useMemo(() => ({
     amazonmusic: PlaybackLimits.amazonPlaybackLimit(amazonMusicStatus),
-    applemusic: PlaybackLimits.appleMusicPlaybackLimit({ checked: appleMusicAuthChecked, connected: appleMusicConnected })
-  }), [amazonMusicStatus, appleMusicAuthChecked, appleMusicConnected]);
+    applemusic: PlaybackLimits.appleMusicPlaybackLimit({ checked: appleMusicAuthChecked, connected: appleMusicConnected }),
+    ...Object.fromEntries(Object.entries(pluginStatuses).map(
+      ([id, status]) => [id, PlaybackLimits.pluginStatusLimit(status)]
+    ))
+  }), [amazonMusicStatus, appleMusicAuthChecked, appleMusicConnected, pluginStatuses]);
   const planBlockedResolverIds = useMemo(() => PlaybackLimits.planBlockedIds(playbackLimits), [playbackLimits]);
   // For the plug-in tile menu's Raise / Lower Priority handler, registered once.
   const planBlockedResolverIdsRef = useRef(planBlockedResolverIds);
@@ -7590,6 +7608,66 @@ const Parachord = () => {
     return window.electron.amazonMusic.onPlanChanged(() => refreshAmazonMusicStatus());
   }, [cacheLoaded, amazonMusicEnabled]);
 
+  // The generic plugin-status surface (capabilities.status, #1356): a plugin
+  // that can report its sign-in/playback-limit state implements getStatus,
+  // and the renderer asks it through the resolver registry (resolver-loader.js
+  // getStatusResolvers/getStatus — direct, renderer-side, no new IPC). Amazon
+  // stays on its own IPC status above until its plugin migration; no shipped
+  // plugin declares the capability yet, so nothing below runs for one.
+
+  // One plugin's status read. The loader logs and swallows a throwing
+  // getStatus (a status outage must not unplug playback), so the reply here
+  // is a verdict or "none"; a null is stored as-is — no verdict is the safe
+  // reading (lib/playback-limits.js pluginStatusLimit maps it to no limit).
+  const refreshPluginStatus = (resolverId) => {
+    const loader = resolverLoaderRef.current;
+    if (!loader || typeof loader.getStatus !== 'function') return;
+    loader.getStatus(resolverId).then((status) => {
+      setPluginStatuses(prev => ({ ...prev, [resolverId]: status }));
+    });
+  };
+
+  // Read every ACTIVE status-capable plugin. Only active ones: a disabled
+  // plugin's status has no reader (its tile is inactive, and playback never
+  // asks it).
+  const refreshPluginStatuses = () => {
+    const loader = resolverLoaderRef.current;
+    if (!loader || typeof loader.getStatusResolvers !== 'function') return;
+    for (const r of loader.getStatusResolvers()) {
+      if (activeResolvers.includes(r.id)) refreshPluginStatus(r.id);
+    }
+  };
+
+  // The trigger set is deliberately the Amazon status's own: once at startup
+  // (after the plugins are loaded) and again each time Settings opens, so a
+  // sign-in or plan change since the last read shows where the person looks.
+  // Nothing else polls — a status read can be a network call (Amazon's asks
+  // the service) — and a plugin has no push channel yet (one would come with
+  // the web-session surface).
+  const havePluginStatuses = Object.keys(pluginStatuses).length > 0;
+  useEffect(() => {
+    if (!cacheLoaded) return;
+    if (activeView !== 'settings' && havePluginStatuses) return;
+    refreshPluginStatuses();
+    // loadedResolvers: the registry (initResolvers) and the caches
+    // (loadCacheFromStore) both start at mount and race, so the startup
+    // read must re-run when the registry lands; the guard above keeps that
+    // a read only where one is due (startup, or Settings open).
+    // activeResolvers: like the Amazon effect's amazonMusicEnabled dep — an
+    // enabled plugin is read at once. The only enable path is the resolver
+    // panel, inside Settings, where the guard above passes.
+  }, [cacheLoaded, activeView, havePluginStatuses, loadedResolvers, activeResolvers]);
+
+  // Opening a status-capable resolver's panel re-reads it (the Amazon
+  // modal's refreshPlan read): the freshest sign-in/plan state shows right
+  // where the person is looking at it, including a plugin enabled since the
+  // startup read.
+  useEffect(() => {
+    if (!selectedResolver?.id) return;
+    if (!(selectedResolver.capabilities?.status && typeof selectedResolver.getStatus === 'function')) return;
+    refreshPluginStatus(selectedResolver.id);
+  }, [selectedResolver]);
+
   // Leaving an Amazon track must blank the player view, not just pause it -
   // the module's own invariant ("pause is not enough": Amazon can start the
   // element a few hundred ms later, and the visibility stub keeps the page
@@ -7876,6 +7954,13 @@ const Parachord = () => {
     if (resolverId === 'amazonmusic') {
       refreshAmazonMusicStatus();
       return null; // main's refusal already carries the Amazon wording
+    }
+    // A status-capable plugin's refusal says its reported status is stale:
+    // re-read it. The refusal itself already carries the wording to show, so
+    // the reply only refreshes the map and the Settings row.
+    const statusLoader = resolverLoaderRef.current;
+    if (statusLoader?.getStatusResolvers && statusLoader.getStatusResolvers().some(r => r.id === resolverId)) {
+      refreshPluginStatus(resolverId);
     }
     return null;
   };
@@ -38298,6 +38383,7 @@ useEffect(() => {
       metaServiceConfigs,
       metaServices,
       playbackLimits,
+      pluginStatuses,
       resolverConfigCache,
       resolverSyncSettings,
       runLoveBackfill,

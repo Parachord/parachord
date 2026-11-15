@@ -116,6 +116,7 @@ const PluginSettingsDialog = React.memo(function PluginSettingsDialog(props) {
     metaServices,
     openSyncSetupModal,
     playbackLimits,
+    pluginStatuses,
     resolverConfigCache,
     resolverSyncSettings,
     runLoveBackfill,
@@ -304,6 +305,29 @@ React.createElement('div', {
             ),
             React.createElement(Switch, { checked: activeResolvers.includes(selectedResolver.id), onToggle: () => toggleResolver(selectedResolver.id), 'aria-label': `Use ${selectedResolver.name}` })
           ),
+
+          // A status-capable plugin's sign-in row (capabilities.status, the
+          // generic surface of #1356): the plugin's own getStatus reply —
+          // label plus message — for any plugin that declares it. Amazon's
+          // own section below keeps its buttons and its IPC status until its
+          // plugin migration moves it onto this surface; no shipped plugin
+          // declares the capability yet, so nothing renders here today.
+          selectedResolver?.capabilities?.status && typeof selectedResolver.getStatus === 'function' && (() => {
+            const row = PlaybackLimits.pluginStatusRow(pluginStatuses[selectedResolver.id]);
+            return React.createElement('div', {
+              style: {
+                padding: '16px 0',
+                borderTop: '1px solid var(--border-subtle)'
+              }
+            },
+              React.createElement('p', {
+                style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' }
+              }, row.label),
+              row.message ? React.createElement('p', {
+                style: { fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }
+              }, row.message) : null
+            );
+          })(),
 
           // Authentication section (for services that require it)
           selectedResolver.id === 'spotify' && React.createElement('div', {

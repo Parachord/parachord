@@ -184,7 +184,7 @@ An `.axe` file is JSON with up to seven top-level keys: `manifest`, `capabilitie
 
 ### Capabilities
 
-A flat object of booleans. Content resolvers use `resolve`, `search`, `stream`, `browse`, `urlLookup`, `purchase` (shows a Buy button in the playbar), `html5Stream` and `widevine` (the host plays a direct stream or a DRM stream; see "HTML5 stream resolvers" above), `embedPlayer` (the host plays the service's own embeddable player; see "Embedded-player resolvers" above), `albumSearch` (finds an album by name for the album-page catalog fallback; see "Album search" below), `artistImage` (finds a photo of an artist by name; see "Artist images" below), `recommendations` (feeds the Recommendations page; see "Recommendations" below) and `historyMixes` (feeds Home's "Made from your listening"; see "History mixes" below). Meta-services use, among others, `generate` (one-shot AI playlist), `chat` (Shuffleupagus), `concerts`, `playbackTelemetry` (self-registers with `window.scrobbleManager`), `recommendations` (feeds the Recommendations page), `historyMixes`, `metadata`, `artistImages`, `biography`, `listeningHistory` and `scrobbling`. Several of these gate loading: the renderer loads a meta-service's implementation only when it declares `generate`, `chat`, `concerts`, `playbackTelemetry`, `recommendations`, `similarUsers` or `historyMixes` alongside the matching function (`getRecommendations`, `getSimilarUsers`, `getHistoryMixes`, ...), or `urlLookup` with `urlPatterns`. `mobile: false` (declared by Ollama) marks a plugin the mobile client should not offer. Check the existing `plugins-src/*/manifest.json` files before inventing a new flag; nothing reads an unknown one.
+A flat object of booleans. Content resolvers use `resolve`, `search`, `stream`, `browse`, `urlLookup`, `purchase` (shows a Buy button in the playbar), `html5Stream` and `widevine` (the host plays a direct stream or a DRM stream; see "HTML5 stream resolvers" above), `embedPlayer` (the host plays the service's own embeddable player; see "Embedded-player resolvers" above), `albumSearch` (finds an album by name for the album-page catalog fallback; see "Album search" below), `artistImage` (finds a photo of an artist by name; see "Artist images" below), `recommendations` (feeds the Recommendations page; see "Recommendations" below), `historyMixes` (feeds Home's "Made from your listening"; see "History mixes" below) and `status` (reports its sign-in/playback-limit state to the app; see "Status and playback limits" below). Meta-services use, among others, `generate` (one-shot AI playlist), `chat` (Shuffleupagus), `concerts`, `playbackTelemetry` (self-registers with `window.scrobbleManager`), `recommendations` (feeds the Recommendations page), `historyMixes`, `metadata`, `artistImages`, `biography`, `listeningHistory` and `scrobbling`. Several of these gate loading: the renderer loads a meta-service's implementation only when it declares `generate`, `chat`, `concerts`, `playbackTelemetry`, `recommendations`, `similarUsers` or `historyMixes` alongside the matching function (`getRecommendations`, `getSimilarUsers`, `getHistoryMixes`, ...), or `urlLookup` with `urlPatterns`. `mobile: false` (declared by Ollama) marks a plugin the mobile client should not offer. Check the existing `plugins-src/*/manifest.json` files before inventing a new flag; nothing reads an unknown one.
 
 ### URL patterns and lookups
 
@@ -324,7 +324,35 @@ Many services have a tier that can search, browse and sync but can't play a chos
 - **Refuse a play with the plan, not a plain failure.** When the service says the account's plan can't play the track (a refusal the service gives for the plan specifically, not any 403), `play()` throws an error with `reason: 'plan-ineligible'` and, if it knows it, `planKey` (the plan as the service names it, e.g. `'free'`), instead of returning `false`. The app records the plan, plays another enabled source if the track has one (or shows the message), and stops offering this resolver for playback. A plain `false` looks like a missing device or a bad match.
 - **Only where the app understands it.** Check for `window.__parachordNotePlanRefusal` first and fall back to returning `false` without it (older apps and the mobile clients), and declare `manifest.minAppVersion.desktop` as the first desktop release with the hook (see "Minimum app version" above). No shipped plugin does this yet (Amazon's refusal comes from the host's widevine bridge), so the first one is the reference.
 - **A search that can't run on the plan is not-ready, not a miss.** If the service refuses searches on that plan too (Amazon gates its track search), surface it as `notReady` with `code: 'plan-ineligible'`, so nothing is cached as a 30-day `noMatch` and an upgrade searches again; the app never opens a sign-in prompt for it. A service whose search works on every plan needs nothing here.
-- **The app supplies the wording and the plan reading.** A new service is one mapper in `src/renderer/lib/playback-limits.js` (`{ blocked, planKey, label, message, searchesHeldBack }`) fed from wherever the plan is known (a status call, or the play refusal itself when the service doesn't report the plan). Mobile mirrors none of this yet.
+- **The app supplies the wording and the plan reading.** A new service is one mapper in `src/renderer/lib/playback-limits.js` (`{ blocked, planKey, label, message, searchesHeldBack }`) fed from wherever the plan is known (the plugin's own `getStatus`, below, or the play refusal itself when the service doesn't report the plan until you play). Mobile mirrors none of this yet.
+
+### Status and playback limits (`getStatus`, optional)
+
+A plugin that knows its own sign-in and playback-limit state declares `capabilities.status: true` (a plain boolean; the mobile decoders read every `capabilities` value as one) and implements `getStatus(config)`, which the renderer calls directly through the resolver registry (`ResolverLoader.getStatusResolvers()` / `getStatus(resolverId, config)` — no IPC). One reply feeds every consumer of a service's state: the playback limit map (`pluginStatusLimit` in `src/renderer/lib/playback-limits.js`, below), the resolver tile's label and tooltip (`tileStatus`) and the Settings sign-in row (`pluginStatusRow` — the generic row the #1356 plan calls "Status text for settings | A generic Sign in / Sign out row"; it is display-only for now: the sign-in/sign-out actions arrive with the web-session surface). No shipped plugin declares the capability yet; Amazon Music migrates onto it when its service logic moves into the plugin (#1356), and its Amazon-specific status paths come out in that milestone.
+
+The reply:
+
+```
+{
+  signedIn: boolean | null,    // null: the plugin can't tell yet
+  playbackLimit: {             // null: no verdict (the account can play, or nothing is known)
+    blocked: boolean,          // required — the account's plan can't play here
+    planKey: string | null,    // the plan as the service names it ('prime', 'free', ...), for logs
+    label: string | null,      // a short tile label ('Free: no playback'); tileStatus falls back to 'No playback'
+    message: string | null,    // the full sentence for the tile tooltip, the Settings row and the play refusal
+    searchesHeldBack: boolean // the service's searches answer not-ready while blocked (Amazon), so an upgrade re-searches
+  } | null,
+  statusLabel: string | null,    // the Settings sign-in row's primary line; null → signedIn's wording ('Signed in' / 'Not signed in')
+  statusMessage: string | null  // the Settings sign-in row's second line
+}
+```
+
+- **A status outage never unplugs playback.** A `getStatus` that throws is logged by the loader and treated as no status; a reply without a `playbackLimit`, or one that isn't shaped like an entry, is no verdict (`pluginStatusLimit` returns null). This is the one accessor that swallows a plugin error on purpose — every other accessor rejects so a caller can tell a miss from a failure, but "unknown" is the safe reading for every status consumer, and a blocked resolver is never guessed from a failure.
+- **The plugin is the authority.** A plugin's entry wins over a per-service mapper for the same resolver id (the migration order: a service's plugin entry takes over the moment it starts declaring the capability).
+- **Keep credentials out of the reply** — the whole reply reaches page state; say `signedIn: true`, never the session itself.
+- **When it is read.** At startup, when Settings opens, when the resolver's detail panel opens, and after a play refused for the plan (`refreshPluginStatus`/`refreshPluginStatuses` in app.js — the same trigger set as the Amazon status it replaces). A plugin has no push channel yet; one would come with the web-session surface. Keep a `getStatus` cheap: it runs on the settings path.
+
+Tests: `tests/resolver/plugin-status-capability.test.js` (the loader gate, the no-throw contract, the reply feeding the limit map and the tile), `tests/renderer/playback-limits.test.js` (the mappers).
 
 ### Where plugins load from, and installing one
 

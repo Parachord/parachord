@@ -618,6 +618,53 @@ class ResolverLoader {
   }
 
   /**
+   * Resolvers that can report their own sign-in and playback-limit state to
+   * the app: they declare capabilities.status and implement getStatus
+   * (docs/architecture/plugins.md, "Status and playback limits"). A
+   * marketplace install can be older than the app, so the method is checked,
+   * not just the flag.
+   * @returns {object[]}
+   */
+  getStatusResolvers() {
+    return this.getAllResolvers().filter(r =>
+      r.capabilities?.status &&
+      typeof r.getStatus === 'function'
+    );
+  }
+
+  /**
+   * Ask one resolver for its status.
+   * @param {string} resolverId
+   * @param {object} configOverride - Optional config to override resolver's stored config
+   * @returns {Promise<object|null>} the plugin's reply — { signedIn: boolean|null,
+   *          playbackLimit: { blocked, planKey, label, message, searchesHeldBack }|null,
+   *          statusLabel: string|null, statusMessage: string|null } (docs/
+   *          architecture/plugins.md, "Status and playback limits") — or
+   *          null when the resolver lacks the capability or answers nothing
+   *          object-shaped. A plugin that THROWS answers null too, logged
+   *          here: this is the one accessor that swallows a plugin error on
+   *          purpose. A status outage must not read as a blocked resolver and
+   *          unplug playback, and "unknown" is the safe reading for every
+   *          consumer (lib/playback-limits.js maps the reply and drops a
+   *          missing one), so no caller ever needs to tell a miss from a
+   *          failure — which is what every other accessor rejects for.
+   */
+  async getStatus(resolverId, configOverride = null) {
+    const resolver = this.resolvers.get(resolverId);
+    if (!resolver || !resolver.capabilities?.status || typeof resolver.getStatus !== 'function') {
+      return null;
+    }
+    try {
+      const status = await resolver.getStatus(configOverride || resolver.config || {});
+      return status && typeof status === 'object' ? status : null;
+    } catch (error) {
+      // The message only: a config can carry a token.
+      console.error(`Status error for ${resolverId}:`, error?.message || error);
+      return null;
+    }
+  }
+
+  /**
    * Load an album that searchAlbums returned, from the resolver that returned
    * it. Not routed by URL pattern: an album url can be private to its plugin
    * (subsonic:album:<id>, localfiles:album:...) and match no urlPatterns.
