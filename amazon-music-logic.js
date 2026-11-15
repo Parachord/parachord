@@ -456,120 +456,19 @@ function amazonPlayGenerationStamp(generation) {
   return `window.__parachordPlayGen = ${generation | 0};`;
 }
 
-// ── Native playback (dmls client + DASH variant selection) ─────────────────
-//
-// The native engine (amazon-native-player.js) plays a track without the
-// hornet page in the audio path: main fetches the DASH manifest from the
-// Digital Music Locator Service (dmls) and a bundled Shaka in our own window
-// decrypts it (the license bytes round-trip through dmls opaquely, relayed by
-// main). These are the pure pieces: request bodies, the region segment, and
-// the mapping from the user's quality setting to one manifest variant.
+// ── config.json (the session facts reader) ──────────────────────────────────
+// #1356 M9: the dmls request bodies, the licence-refusal semantics, the MPD
+// KID parse and the telemetry envelope builders moved into the Amazon plugin's
+// _lib (plugins-src/amazonmusic/implementation.js) with the DRM pair; the host
+// copies died with amazon-dmls.js / main-process/amazon-telemetry.js. What
+// stays here is the config.json parse the getStatus plan stopgap
+// (amazon-web-player.js getPlan) reads — every field degrades to null.
 
-const AMAZON_DEVICE_TYPE_ID = 'A16ZV8BU3SN1N3';
-const DML_TARGET_PREFIX = 'com.amazon.digitalmusiclocator.DigitalMusicLocatorServiceExternal.';
-// An empty Widevine challenge the hornet page sends before its first real
-// per-track license exchange (session/cert init). Mimic it once per session.
-const WIDEVINE_CERT_CHALLENGE = 'CAQ=';
-
-// license-400 denialReason semantics (live captures): only these mean the
-// build's certificate (development VMP) is what Amazon is refusing — the
-// `licenseDenied` "no point trying another Amazon track" class. Everything
-// else (HD entitlement, region, ...) is a per-content refusal the player
-// routes around.
-const CERTIFICATE_DENIAL_REASONS = new Set([
-  'UNTRUSTED_DEVICE_CERTIFICATE',
-  'DEVELOPMENT_CERTIFICATE_NOT_ALLOWED'
-]);
-// Eligibility denials that mean the ACCOUNT lacks the HD tier — after one
-// observed refusal we stop asking for FLAC for the process (jherskowitz's
-// Prime capture: CUSTOMER_NOT_ELIGIBLE on the HD KID group while the opus
-// groups played fine).
-const HD_CONTENT_DENIAL_REASONS = new Set([
-  'CUSTOMER_NOT_ELIGIBLE'
-]);
-// A license denial's message is a sentence, then " - " and a dump of the
-// account's and the title's eligibility that starts
-// `CustomerEligibility(customerId=…, marketplaceId=…, …)`. The message ends
-// up in logs and error text, and logs get pasted into issues, so keep the
-// sentence only, and scrub an account identifier that turns up anyway.
-const LICENSE_DENIAL_SUMMARY_MAX = 200;
-function licenseDenialSummary(message) {
-  if (typeof message !== 'string') return null;
-  let text = message;
-  const separator = text.indexOf(' - ');
-  if (separator !== -1) text = text.slice(0, separator);
-  const eligibility = text.search(/\b(?:Customer|Content)Eligibility\s*\(/);
-  if (eligibility !== -1) text = text.slice(0, eligibility);
-  text = text
-    .replace(/\b(customerId|marketplaceId|deviceId)("?\s*[=:]\s*"?)[^,)"\s]+/gi, '$1$2<redacted>')
-    .trim();
-  if (text.length > LICENSE_DENIAL_SUMMARY_MAX) text = `${text.slice(0, LICENSE_DENIAL_SUMMARY_MAX)}…`;
-  return text || null;
-}
-
-// Region segment in the dmls URL, derived from the session territory.
-const AMAZON_FE_TERRITORIES = new Set(['JP', 'AU', 'NZ', 'SG', 'MY', 'ID', 'TH', 'PH', 'KR', 'TW', 'IN', 'HK']);
-const AMAZON_EU_TERRITORIES = new Set(['GB', 'DE', 'FR', 'IT', 'ES', 'NL', 'BE', 'AT', 'IE', 'SE', 'DK', 'NO', 'FI', 'PL', 'PT', 'CH', 'CZ', 'GR', 'HU', 'RO', 'TR']);
-function amazonDmlsRegion(territoryId) {
-  const t = String(territoryId || '').toUpperCase();
-  if (AMAZON_FE_TERRITORIES.has(t)) return 'FE';
-  if (AMAZON_EU_TERRITORIES.has(t)) return 'EU';
-  return 'NA';
-}
-
-function amazonDmlsManifestBody({ asin, customerId, marketplaceId, territoryId, deviceId, musicAgent, dashVersions } = {}) {
-  if (!asin || !customerId || !deviceId) return null;
-  return {
-    appInfo: { musicAgent: String(musicAgent || '') },
-    customerId,
-    customerInfo: {
-      marketplaceId: String(marketplaceId || 'ATVPDKIKX0DER'),
-      territoryId: String(territoryId || 'US')
-    },
-    contentIdList: [{ identifier: String(asin), identifierType: 'ASIN' }],
-    deviceToken: { deviceTypeId: AMAZON_DEVICE_TYPE_ID, deviceId: String(deviceId) },
-    musicDashVersionList: Array.isArray(dashVersions) && dashVersions.length ? dashVersions.map(String) : ['SIREN_KATANA'],
-    contentProtectionList: ['TRACK_PSSH'],
-    tryAsinSubstitution: true
-  };
-}
-
-function amazonDmlsLicenseBody({ challenge, customerId, deviceId, musicAgent } = {}) {
-  if (!challenge || !customerId || !deviceId) return null;
-  return {
-    DrmType: 'WIDEVINE',
-    licenseChallenge: String(challenge),
-    customerId,
-    deviceToken: { deviceTypeId: AMAZON_DEVICE_TYPE_ID, deviceId: String(deviceId) },
-    appInfo: { musicAgent: String(musicAgent || '') }
-  };
-}
-
-// Codec bucket of a DASH codec string (mpdAudioRepresentations rep.codec).
-function dashCodecFamily(codec) {
-  const c = String(codec || '').toLowerCase();
-  if (c.startsWith('flac')) return 'flac';
-  if (c.startsWith('opus')) return 'opus';
-  if (c.startsWith('mp4a') || c.startsWith('aac')) return 'aac';
-  return c || null;
-}
-
-// Deterministic order inside a tier: bandwidth desc, then sampleRate desc,
-// then bitDepth desc, then id (stable). Used for both picking and ABR caps.
-function compareDashReps(a, b) {
-  const bw = (b.bandwidth || 0) - (a.bandwidth || 0);
-  if (bw) return bw;
-  const sr = (b.sampleRate || 0) - (a.sampleRate || 0);
-  if (sr) return sr;
-  const bd = (b.bitDepth || 0) - (a.bitDepth || 0);
-  if (bd) return bd;
-  return String(a.id || '').localeCompare(String(b.id || ''));
-}
-
-// GET https://music.amazon.com/config.json answers the session facts the
-// native engine needs in one shot (cookies only, no CSRF): customer,
-// marketplace, territory, and the dmls region segment itself (siteRegion).
-// Parse defensively — every field degrades to null.
+// GET https://music.amazon.com/config.json answers the session facts in one
+// shot (cookies only, no CSRF): customer, marketplace, territory, the dmls
+// region segment itself (siteRegion) and the tier. What remains host-side is
+// the plan read (the getStatus stopgap); the plugin's mint parses the same
+// file with its own copy. Parse defensively — every field degrades to null.
 function amazonNativeSessionFromConfig(json) {
   const j = json && typeof json === 'object' ? json : {};
   const str = (v) => (typeof v === 'string' && v ? v : null);
@@ -589,7 +488,7 @@ function amazonNativeSessionFromConfig(json) {
 // we can't read or don't recognize blocks too ('unknown'), so a format change
 // on Amazon's side shows up as a message rather than as plays the plan may
 // not cover. Seen so far: 'PRIME' and values starting 'UNLIMITED'. The rule
-// lives here alone; telemetry's resourceType uses the same test.
+// lives here alone (the plugin's telemetry resourceType uses its own copy).
 function isUnlimitedTier(tier) {
   return typeof tier === 'string' && /^UNLIMITED/i.test(tier.trim());
 }
@@ -610,141 +509,11 @@ function amazonPlanMessage(plan) {
   return AMAZON_PLAN_MESSAGES[plan] || null;
 }
 
-// ── Streaming telemetry (the hornet /telemetry/v1/events vocabulary) ────────
-// Live-captured 2026-10: the web player reports streamingInitiated on play
-// start, streamingTerminated at seek/pause/teardown/end, and trackStreamed
-// paired with the FINAL terminated (carrying the accumulated
-// durationSecondsSum). terminationReason: trackScrub (seek), userStop
-// (pause), systemStop (teardown/advance), trackFinished (natural end).
-// These builders produce clientActionList entries in that exact shape; the
-// reporter (main-process/amazon-telemetry.js) owns session ids and sums.
-// All fields are strings, mirroring hornet's serialization.
-
-const AMAZON_TELEMETRY_CONSTANTS = Object.freeze({
-  appVersion: '1.0.1458',
-  productId: '803',
-  productVersion: 'GREENHORNET',
-  platformName: 'WebPlayer',
-  mediaPlayerName: 'VINYL',
-  playbackSourceType: 'stream',
-  playbackCurrentSpeed: 'ONE',
-  pageType: 'trackDetail',
-  streamOrDRMTech: 'DASH_DRM',
-  cacheHitStatus: 'NONE',
-  enqueueState: 'audio',
-  offlineMode: 'ONLINE_MODE',
-  isOnDemandQueue: 'true',
-  isDirectedPlay: 'true',
-  isShufflePlay: 'false',
-  isVoiceInitiated: 'false',
-  isAugmentedTrack: 'false',
-  isExplicitLanguageFilterOn: 'false',
-  isCustomerSelectedEntity: 'true',
-  source: 'WIFI',
-  deviceConnectivity: 'WiFi',
-  locale: 'en_US'
-});
-
-const TELEMETRY_TERMINATION = Object.freeze({
-  scrub: 'trackScrub',
-  userStop: 'userStop',
-  systemStop: 'systemStop',
-  finished: 'trackFinished'
-});
-
-// Amazon's bitrate-tier labels (from captured UHD48 for 24/48 FLAC). The
-// ladder below is approximate — conservative family+rate naming.
-function amazonTelemetryBitrateLabel({ codec, sampleRate, bitDepth } = {}) {
-  const family = dashCodecFamily(codec);
-  const rate = Number(sampleRate) || 44.1;
-  const depth = Number(bitDepth) || 16;
-  if (family === 'flac') return depth >= 24 ? (rate > 44.1 ? 'UHD48' : 'UHD44') : (rate > 44.1 ? 'HD48' : 'HD44');
-  return 'SD';
-}
-
-function amazonClientAction(actionName, details, { timestampSeconds, sdkEventId } = {}) {
-  if (!actionName || !details) return null;
-  return {
-    actionName: String(actionName),
-    timestamp: Number(timestampSeconds) || 0,
-    contentInfo: [],
-    additionalDetails: {
-      ...details,
-      ...(sdkEventId ? { sdkEventId: String(sdkEventId) } : {})
-    }
-  };
-}
-
-// Streaming facts shared by all three event kinds (mirroring the captured
-// blocks; every undefined input simply drops out).
-function amazonStreamingDetails({
-  asin, albumAsin, territory, tier, playbackInstanceId, playQueueId,
-  subscriptionMode, resourceType, bitrates, durationSeconds, durationSecondsSum,
-  terminationReason, trackProgress, trackCount, initialPlaybackDelaySeconds,
-  rebufferCount, transferSpeedBPS, cdnType, customSessionId, csrf, deviceTimeZone,
-  appVersion
-} = {}) {
-  const d = {
-    customSessionId,
-    customSessionType: 'foreground_session',
-    asin,
-    appVersion: appVersion || AMAZON_TELEMETRY_CONSTANTS.appVersion,
-    deviceTimeZone,
-    isDirectedPlay: AMAZON_TELEMETRY_CONSTANTS.isDirectedPlay,
-    isExplicitLanguageFilterOn: AMAZON_TELEMETRY_CONSTANTS.isExplicitLanguageFilterOn,
-    isShufflePlay: AMAZON_TELEMETRY_CONSTANTS.isShufflePlay,
-    isVoiceInitiated: AMAZON_TELEMETRY_CONSTANTS.isVoiceInitiated,
-    ...(albumAsin ? {
-      selectionSourceId: albumAsin,
-      selectionSourceSessionId: playQueueId,
-      selectionSourceType: 'ALBUM',
-      fulfillmentSourceId: albumAsin,
-      fulfillmentSourceType: 'ALBUM'
-    } : {}),
-    contentSubscriptionMode: subscriptionMode || tier,
-    subContentSubscriptionMode: subscriptionMode || tier,
-    pageType: AMAZON_TELEMETRY_CONSTANTS.pageType,
-    playbackCurrentSpeed: AMAZON_TELEMETRY_CONSTANTS.playbackCurrentSpeed,
-    playbackInstanceId,
-    playbackSourceType: AMAZON_TELEMETRY_CONSTANTS.playbackSourceType,
-    platformName: AMAZON_TELEMETRY_CONSTANTS.platformName,
-    isOnDemandQueue: AMAZON_TELEMETRY_CONSTANTS.isOnDemandQueue,
-    mediaPlayerName: AMAZON_TELEMETRY_CONSTANTS.mediaPlayerName,
-    playQueueId,
-    isCustomerSelectedEntity: AMAZON_TELEMETRY_CONSTANTS.isCustomerSelectedEntity,
-    productVersion: AMAZON_TELEMETRY_CONSTANTS.productVersion,
-    mrn: asin ? `mrn:1.0:catalog:track:asin:${asin}?territory=${territory || 'US'}` : undefined,
-    isAugmentedTrack: AMAZON_TELEMETRY_CONSTANTS.isAugmentedTrack,
-    source: AMAZON_TELEMETRY_CONSTANTS.source,
-    enqueueState: AMAZON_TELEMETRY_CONSTANTS.enqueueState,
-    deviceConnectivity: AMAZON_TELEMETRY_CONSTANTS.deviceConnectivity,
-    offlineMode: AMAZON_TELEMETRY_CONSTANTS.offlineMode,
-    productId: AMAZON_TELEMETRY_CONSTANTS.productId,
-    locale: AMAZON_TELEMETRY_CONSTANTS.locale
-  };
-  // event-specific fields only when meaningful
-  if (bitrates != null) d.bitrates = String(bitrates);
-  if (durationSeconds != null) d.durationSeconds = String(Number(durationSeconds.toFixed ? durationSeconds.toFixed(3) : durationSeconds));
-  if (durationSecondsSum != null) d.durationSecondsSum = String(Number(durationSecondsSum.toFixed ? durationSecondsSum.toFixed(3) : durationSecondsSum));
-  if (terminationReason != null) d.terminationReason = String(terminationReason);
-  if (trackProgress != null) d.trackProgress = String(Math.round(trackProgress));
-  if (trackCount != null) d.trackCount = String(trackCount);
-  if (initialPlaybackDelaySeconds != null) d.initialPlaybackDelaySeconds = String(initialPlaybackDelaySeconds);
-  if (rebufferCount != null) d.rebufferCount = String(rebufferCount);
-  if (transferSpeedBPS != null) d.transferSpeedBPS = String(Math.round(transferSpeedBPS));
-  if (cdnType != null) d.cdnType = String(cdnType);
-  if (resourceType != null) d.resourceType = String(resourceType);
-  if (csrf && csrf.csrfToken) {
-    d.csrf = JSON.stringify({ token: csrf.csrfToken, rnd: csrf.csrfRnd, ts: csrf.csrfTs });
-  }
-  // hornet serializes everything as strings; undefined never survives
-  const out = {};
-  for (const [k, v] of Object.entries(d)) {
-    if (v === undefined || v === null) continue;
-    out[k] = typeof v === 'string' ? v : String(v);
-  }
-  return out;
-}
+// ── Streaming telemetry ─────────────────────────────────────────────────────
+// #1356 M9: the hornet /telemetry/v1/events envelope builders and the reporter
+// state machine moved into the Amazon plugin's _lib (createAmazonTelemetry —
+// the plugin reports the player events itself on the renderer-mediated DRM
+// path); the host copies died with main-process/amazon-telemetry.js.
 
 // Does Amazon's page say it is playing a different song than the one
 // requested? Parachord loads /tracks/<ASIN>?do=play, and for a track the
@@ -776,46 +545,11 @@ function amazonNowPlayingMismatch(expectedTitle, nowPlaying) {
   return !(want.includes(got) || got.includes(want));
 }
 
-// The manifest already says which playback tier carries which protection:
-// every adaptation set's ContentProtection@default_KID. Amazon issues
-// DIFFERENT Widevine keys per rendition group (lossy sets, FLAC set,
-// spatial sets) — shaka 4012 (RESTRICTIONS_CANNOT_BE_MET) usually means a
-// specific KID is missing output-absolution in the license, and the tier to
-// blame is exactly the one named by its KID group. Pure parse from the MPD
-// (defensive about malformed input).
-function mpdContentProtectionSets(xml) {
-  const text = String(xml || '');
-  const sets = [];
-  if (!text) return sets;
-  const attr = (name, tag) => {
-    const m = (tag || '').match(new RegExp(name + '="([^"]*)"'));
-    return m ? m[1] : null;
-  };
-  for (const match of text.matchAll(/<AdaptationSet[\s\S]*?<\/AdaptationSet>/g)) {
-    const set = match[0];
-    const setTag = set.slice(0, set.indexOf('>') + 1);
-    const kids = [...set.matchAll(/cenc:default_KID="([^"]+)"/g)].map((m) => m[1]);
-    const kid = kids.length ? kids[0] : null;
-    const reps = [];
-    for (const rep of set.matchAll(/<Representation ([^>]*)>>?/g)) {
-      reps.push({
-        id: attr('id', rep[1]),
-        codecs: attr('codecs', rep[1]),
-        bandwidth: Number(attr('bandwidth', rep[1])) || null
-      });
-    }
-    const family = reps.length ? dashCodecFamily(reps[0].codecs) : null;
-    sets.push({ kid, family, reps });
-  }
-  return sets;
-}
-
 module.exports = {
   amazonNativeSessionFromConfig,
   isUnlimitedTier,
   amazonPlanFromTier,
   amazonPlanMessage,
-  mpdContentProtectionSets,
   gqlCaptureSubject,
   gqlRequestsIn,
   gqlRequestIsAboutSubject,
@@ -836,20 +570,5 @@ module.exports = {
   GQL_PARTIAL_STATUS,
   gqlReplayOutcome,
   stripAmazonTitleMarker,
-  AMAZON_DEVICE_TYPE_ID,
-  DML_TARGET_PREFIX,
-  WIDEVINE_CERT_CHALLENGE,
-  CERTIFICATE_DENIAL_REASONS,
-  HD_CONTENT_DENIAL_REASONS,
-  licenseDenialSummary,
-  AMAZON_TELEMETRY_CONSTANTS,
-  TELEMETRY_TERMINATION,
-  amazonTelemetryBitrateLabel,
-  amazonClientAction,
-  amazonStreamingDetails,
-  amazonDmlsRegion,
-  amazonDmlsManifestBody,
-  amazonDmlsLicenseBody,
-  dashCodecFamily,
 
 };

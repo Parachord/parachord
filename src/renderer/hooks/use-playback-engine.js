@@ -1897,6 +1897,13 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
             // stop() superseded during the fetch is refused here.
             token: claimedToken,
             startTime: startAt,
+            // The plugin's player-event handler (telemetry), bound the same
+            // way: on the plugin path no main-side provider exists to receive
+            // the bridge's player-event channel, so the shared engine fans
+            // lifecycle events out to the plugin itself.
+            playerEvents: typeof resolver.handlePlayerEvent === 'function'
+              ? resolver.handlePlayerEvent.bind(resolver)
+              : null,
             trackContext: {
               albumAsin: sourceToPlay.albumAsin || trackOrSource.albumAsin || null,
               durationMs: (sourceToPlay.duration || trackOrSource.duration || 0) * 1000

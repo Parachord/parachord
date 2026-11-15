@@ -797,14 +797,16 @@ const appleMusicPoller = {
 };
 
 const amazonWebPlayer = require('./amazon-web-player');
-const { registerWidevineProvider, registerWidevineBridgeIpc } = require('./main-process/widevine-bridge');
-const { registerAmazonDmlsProvider, amazonDmls } = require('./amazon-dmls');
+const { registerWidevineBridgeIpc } = require('./main-process/widevine-bridge');
 const { amazonPlanMessage } = require('./amazon-music-logic');
 
 // Widevine playback runs in the renderer (Shaka on the shared HTMLAudioElement);
 // the bridge relays manifest/license operations to main-side providers per
-// resolver. amazon-dmls is the Amazon Music provider; amazon-web-player
-// keeps its search/sign-in/session role (the hornet audio engine is gone).
+// resolver, OR to the renderer-mediated plugin pair (#1356 M4 — a resolver
+// implementing getPlaybackManifest + relayLicense supplies the manifest itself
+// and answers main-forwarded licence challenges; Amazon's DRM pair lives in
+// the plugin since M9, so no provider is registered for 'amazonmusic' —
+// amazon-web-player keeps its sign-in/status role).
 // Sender gate, shared by the gated IPC bridges (the widevine license-oracle
 // surface and the webSession primitives below): only the main window's top
 // frame may call at all (relay gating rules in widevine-bridge.js).
@@ -815,6 +817,11 @@ const isMainWindowTopFrameSender = (event) => {
   return !!frame && frame.top === frame;
 };
 registerWidevineBridgeIpc({ ipcMain, isAllowedSender: isMainWindowTopFrameSender });
+
+// #1220: the renderer refreshes the Amazon status (tile, settings) and, on
+// an upgrade, re-resolves Amazon. The plan read is the host-side stopgap
+// (amazon-web-player.getPlan — the plugin's own gate is independent of it).
+amazonWebPlayer.setPlanChangeListener(({ plan }) => safeSendToRenderer('amazonmusic-plan-changed', { plan }));
 
 // The webSession IPC bridge (#1356): registered web-session hosts exposed to
 // the renderer. Amazon's session is the ONE createWebSessionHost instance
@@ -1057,13 +1064,6 @@ function createWindow() {
   });
 
   amazonWebPlayer.setHost(mainWindow);
-  registerAmazonDmlsProvider({
-    registerWidevineProvider,
-    store,
-    // #1220: the renderer refreshes the Amazon status (tile, settings) and,
-    // on an upgrade, re-resolves Amazon.
-    onPlanChange: ({ plan }) => safeSendToRenderer('amazonmusic-plan-changed', { plan })
-  });
   mainWindow.loadFile('index.html');
 
   let windowShown = false;
@@ -3851,9 +3851,10 @@ ipcMain.handle('applemusic-polling-status', async () => {
   };
 });
 
-// Amazon Music IPC. Playback runs through the widevine bridge (Shaka in the renderer;
-// amazon-dmls is the provider). Search/sign-in/session mints stay on the
-// hidden search view.
+// Amazon Music IPC. Playback runs through the renderer-mediated DRM pair in
+// the plugin (#1356 M4/M9 — the plugin answers widevine:open-session /
+// widevine:plugin-license through the bridge; the main-side amazon-dmls
+// provider is deleted). Sign-in and getStatus stay host-side.
 // Errors come back as { success: false, error|reason } rather than thrown IPC
 // rejections so the resolver can branch (not-ready must not be cached as noMatch).
 ipcMain.handle('amazonmusic-get-status', async (event, { refreshPlan } = {}) => {
@@ -3867,7 +3868,7 @@ ipcMain.handle('amazonmusic-get-status', async (event, { refreshPlan } = {}) => 
     // up there at once.
     let plan = null;
     if (signedIn) {
-      try { plan = await amazonDmls.getPlan({ refresh: !!refreshPlan }); } catch { plan = 'unknown'; }
+      try { plan = await amazonWebPlayer.getPlan({ refresh: !!refreshPlan }); } catch { plan = 'unknown'; }
     }
     return {
       success: true,
@@ -3881,8 +3882,11 @@ ipcMain.handle('amazonmusic-get-status', async (event, { refreshPlan } = {}) => 
       // Live proof the search-view preload is alive (sandboxed-preload
       // failure surface).
       preload,
-      // The dmls provider's session internals.
-      native: amazonDmls.debugState()
+      // The DRM pair's session internals are PLUGIN state since M9 (the
+      // dmls provider that used to surface them here is deleted); they move
+      // onto the plugin's status surface in M10. What the host still knows:
+      // where the DRM runs, and the plan its stopgap read holds.
+      native: { drm: 'plugin', plan }
     };
   } catch (error) {
     return { success: false, error: error.message };
@@ -3899,7 +3903,11 @@ ipcMain.handle('amazonmusic-open-login', async () => {
 
 ipcMain.handle('amazonmusic-sign-out', async () => {
   try {
-    amazonDmls.onSignOut();
+    // The plugin's session-scoped state (its DRM session context, cert warm
+    // and telemetry) drops on the generation bump clear() carries; the final
+    // trackStreamed accounting rides the engine's stop (the renderer stops
+    // the widevine player before calling this), exactly as the old dmls
+    // onSignOut did before its session died.
     return await amazonWebPlayer.signOut();
   } catch (error) {
     return { success: false, error: error.message };

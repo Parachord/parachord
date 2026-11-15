@@ -1,9 +1,15 @@
-// Amazon telemetry state machine + builder shapes, against fixtures captured
+// The Amazon plugin's telemetry reporter (#1356 M9: createAmazonTelemetry
+// moved into the plugin's _lib from main-process/amazon-telemetry.js, which
+// died with the dmls provider) + builder shapes, against fixtures captured
 // live from the hornet page (2026-10): streamingInitiated / streamingTerminated
 // (trackScrub, userStop, systemStop, trackFinished) / trackStreamed (paired,
-// carrying durationSecondsSum).
+// carrying durationSecondsSum). Dependency-injected exactly as before —
+// { post, context, now, randomUUID } — so the state machine pins carry over
+// verbatim; the wiring pins (the player events over the webSession bridge,
+// the csrf/device headers, the health bookkeeping) live in
+// tests/resolver/amazon-music-plugin-drm.test.js.
 
-const { createAmazonTelemetry } = require('../../main-process/amazon-telemetry');
+const { createAmazonTelemetry } = require('../../plugins-src/amazonmusic/implementation')._lib();
 
 const CTX = {
   customerId: 'CUST1',
@@ -142,7 +148,6 @@ test('idle events are no-ops (seek/pause/ended before any play)', () => {
   expect(posts).toHaveLength(0);
 });
 
-
 test('pause-then-skip still emits the FINAL trackStreamed (review I6)', () => {
   const posts = [];
   const { telemetry, advance } = makeTelemetry({ posts });
@@ -155,4 +160,16 @@ test('pause-then-skip still emits the FINAL trackStreamed (review I6)', () => {
   expect(streamed).toHaveLength(1);
   expect(streamed[0].additionalDetails.terminationReason).toBe('systemStop');
   expect(streamed[0].additionalDetails.durationSecondsSum).toBe('30');
+});
+
+test('a report below Music Unlimited names the PRIME resourceType (the shared Unlimited rule)', () => {
+  const posts = [];
+  const telemetry = createAmazonTelemetry({
+    post: (envelope) => posts.push(envelope),
+    context: () => ({ ...CTX, tier: 'PRIME' }),
+    now: () => 1000,
+    randomUUID: () => 'u'
+  });
+  telemetry.onPlayStarted({ asin: 'B1', durationMs: 100000 });
+  expect(byName(posts, 'streamingInitiated')[0].additionalDetails.resourceType).toBe('PRIME_MUSIC');
 });

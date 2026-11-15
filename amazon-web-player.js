@@ -47,16 +47,17 @@
 //                   matched on variables.searchText — never the operation
 //                   name — and parsed pure; a page that never searches is a
 //                   structural failure (not-ready), an empty edges list is a
-//                   real miss. (#1356 M5/M6/M7/M8: the track search, the
-//                   album/artist catalog flows, the playlist import AND the
-//                   recommendations moved into plugins-src/amazonmusic — they
-//                   drive this same host instance through the
-//                   window.electron.webSession bridge; the spec-search
-//                   runner, the playlist import and the recommendations
-//                   flows that used to live here are deleted. This module's
-//                   remaining page flows — the diagnostic capture and the
-//                   session mint — still ride the same capture-and-replay
-//                   pattern.)
+//                   real miss. (#1356 M5–M9: the track search, the
+//                   album/artist catalog flows, the playlist import, the
+//                   recommendations AND the DRM pair (the dmls manifest/
+//                   licence flows, with their session-headers mint and the
+//                   streaming telemetry) moved into plugins-src/amazonmusic —
+//                   they drive this same host instance through the
+//                   window.electron.webSession bridge; the host-side runners
+//                   and the amazon-dmls.js provider that used to live here
+//                   are deleted. This module's remaining page flow — the
+//                   diagnostic capture — still rides the same
+//                   capture-and-replay pattern.)
 //   GraphQL         gql.music.amazon.com, persisted query (APQ) whose sha256Hash
 //                   renumbers per redeploy — capture the page's own request
 //                   and replay it, never hardcode it
@@ -87,8 +88,16 @@ const {
   gqlRequestsIn,
   gqlRequestIsAboutSubject,
   redactGqlSample,
-  summarizeGqlRequest
+  summarizeGqlRequest,
+  amazonNativeSessionFromConfig,
+  amazonPlanFromTier
 } = require('./amazon-music-logic');
+
+// #1220 plan TTLs (the dmls gate's values, ported with the stopgap read): a
+// known plan is re-read every half hour; a failed or unrecognized reading
+// blocks playback, so it is retried soon.
+const PLAN_TTL_MS = 30 * 60 * 1000;
+const PLAN_UNKNOWN_TTL_MS = 60 * 1000;
 
 // ONE owner of the partition (see the header): every view, navigation, gate
 // entry, capture registration and sign-in window for persist:amazon-music
@@ -353,121 +362,83 @@ const amazonWebPlayer = {
     return webSession.enqueue(fn, { lane });
   },
 
-  // One-shot session-header capture for the native playback engine
-  // and the CSRF triplet that ride
-  // every Amazon API request. The capture lens is the gql host (the page's
-  // specSearch request always carries them), and the trigger page is a
-  // search view load of a BENIGN query the caller supplies (the user's own
-  // most recent search — it is already in their Amazon history, so the mint
-  // adds nothing new). Rides enqueueSearch: webRequest has a single listener
-  // slot per method per session, and the chain is what serializes this
-  // against an in-flight search's own capture registration.
-  async mintSessionHeaders({ query, refresh } = {}) {
+  // ── The plan read (#1220, a #1356 M9 stopgap) ────────────────────────
+  // amazon-dmls.getPlan's replacement: the dmls provider died with the DRM
+  // move (the plugin's own getPlan gates its searches and plays now), but
+  // getStatus still reads the plan for the tile, the settings panel and the
+  // playback-limits map — so the read lives here, over the ONE host web-session
+  // instance's fetch (config.json; the jar's cookies ride it), with the dmls
+  // gate's semantics: not-signed-in without auth cookies, cached 30 min
+  // (1 min when unknown), a forced re-read (opening Settings) that comes back
+  // without a tier keeps a known plan, and a reading that differs from the
+  // last is reported to the renderer (main.js wires the listener — the
+  // upgrade refresh). This dies with the teardown milestone's status move,
+  // when the plugin's status capability takes the surface over.
+  planState: null, // { plan: 'unlimited'|'prime'|'unknown', tier, at }
+  planPromise: null,
+  loggedTiers: new Set(),
+  planChange: null, // set by main.js (setPlanChangeListener)
+
+  setPlanChangeListener(fn) {
+    this.planChange = typeof fn === 'function' ? fn : null;
+  },
+
+  // Record a plan reading and tell the renderer when the plan changes, so
+  // an upgrade re-resolves Amazon without a restart. Logged once per tier
+  // value (the first read of a session is one line, not one per getStatus).
+  notePlan(tier, now = Date.now()) {
+    const plan = amazonPlanFromTier(tier);
+    const previous = this.planState && this.planState.plan;
+    this.planState = { plan, tier: tier || null, at: now };
+    const tierKey = String(tier);
+    if (!this.loggedTiers.has(tierKey)) {
+      this.loggedTiers.add(tierKey);
+      console.log(`[Amazon] plan: tier ${tier ? JSON.stringify(tier) : 'missing'} → ${plan}`);
+    }
+    if (previous !== plan && this.planChange) {
+      try { this.planChange({ plan, previous: previous || null }); } catch { /* best-effort */ }
+    }
+    return this.planState;
+  },
+
+  // The account's plan: 'unlimited', 'prime' or 'unknown'. Throws
+  // not-signed-in without auth cookies (config.json needs them). A failed
+  // fetch reads as no tier, so 'unknown', and is retried after a minute.
+  async getPlan({ refresh } = {}, now = Date.now()) {
+    const s = this.planState;
+    if (!refresh && s) {
+      const ttl = s.plan === 'unknown' ? PLAN_UNKNOWN_TTL_MS : PLAN_TTL_MS;
+      if (now - s.at < ttl) return s.plan;
+    }
     if (!(await this.isSignedIn())) {
       const err = new Error('Sign in to Amazon Music first');
       err.reason = 'not-signed-in';
       throw err;
     }
-    // A dmls 400 REQUIRED_COOKIES calls this with { refresh } — the headers
-    // the caller held were rejected. The mint is always its own page flow now
-    // (the request templates it could once reuse died with the recommendations
-    // move, #1356 M8, and the spec-search template moved with the searches,
-    // M5/M6 — the plugin drops its own session-scoped caches on the
-    // generation bump a sign-out carries), so `refresh` needs no separate
-    // handling here: the page flow always captures fresh headers.
-    return this.enqueueSearch(async () => {
-      const win = await this.ensureWindow();
-      // The bounds are deliberate, not inherited: the host's ensureView keeps a
-      // LIVE view's layout, so without this the mint's load would run at
-      // whatever the last flow left — offscreen after a recent flow, 0×0 on a
-      // fresh view. A 0×0 view is the one where the search page's own
-      // requests never fire (SPAs collapse widgets to max-width: 0), so the
-      // mint lays its view out explicitly like every other flow.
-      await this.layoutSearch(this.searchView);
-      const q = String(query || 'the').slice(0, 120);
-      console.log(`[Amazon] session-headers mint: page flow for "${q}"`);
-      // The registration is the host's — webRequest has a single listener
-      // slot per method per session, and the chain (this whole body rides it)
-      // is what serializes the mint against an in-flight search's own capture
-      // registration.
-      const { captured, detach } = webSession.attachCapture([
-        'https://gql.music.amazon.com/*',
-        'https://music.amazon.com/api/*',
-        'https://music.amazon.com/*/api/*'
-      ]);
-      try {
-        // The page emits PLACEHOLDER csrf values (literally foo/bar) on
-        // requests that do not need them — only the real spec-search-class
-        // requests carry live ones. A dmls call made with placeholders fails
-        // server-side (its "REQUIRED_COOKIES_MISSING" is the bad-csrf
-        // symptom, live-verified 2026-10), so keep listening until values
-        // that look real arrive.
-        const tokenLooksReal = (h) =>
-          typeof h['csrf-token'] === 'string' && h['csrf-token'].length >= 20 &&
-          /^\d+$/.test(String(h['csrf-rnd'] || '')) && /^\d+$/.test(String(h['csrf-ts'] || ''));
-        let loadError = null;
-        let headers = null;
-        // The writer side of the host's gate, like every other load here
-        // (the plugin's bridge loads): a
-        // real navigation — this one included, which since the searches
-        // moved into the plugin (#1356 M5/M6) is the mint's only path —
-        // waits out in-flight pageFetch replays rather than tearing their
-        // frame mid-fetch, and tells replays arriving meanwhile that a
-        // navigation holds the gate. The gate covers the NAVIGATION only
-        // (like every other flow here): the capture poll after it runs
-        // off-gate, so it never answers replays busy for the whole 10s
-        // window.
-        const navigation = (async () => {
-          await webSession.beginNavigation();
-          try {
-            await webSession.loadURLBudgeted(win, `https://music.amazon.com/search/${encodeURIComponent(q)}/songs`);
-          } catch (error) {
-            loadError = error;
-          } finally {
-            webSession.endNavigation();
-          }
-        })();
-        const scan = () => {
-          for (const entry of captured) {
-            const h = entry.headers;
-            if (h && h['csrf-token'] && tokenLooksReal(h)) {
-              headers = {
-                csrfToken: h['csrf-token'],
-                csrfRnd: h['csrf-rnd'] || null,
-                csrfTs: h['csrf-ts'] || null,
-                deviceId: h['x-amzn-device-id'] || null
-              };
-              return;
-            }
-          }
-        };
-        for (let i = 0; i < 40 && !headers && !loadError; i++) {
-          await new Promise((resolve) => setTimeout(resolve, 250));
-          scan();
-        }
-        await navigation;
-        // A long navigation (waiting out in-flight replays, up to the 12s
-        // pageFetch budget) can eat the whole poll window before the page
-        // even loads — and the page's gql fires ~1-3s after it settles. Poll
-        // on: a second bounded window after the navigation.
-        for (let i = 0; i < 20 && !headers && !loadError; i++) {
-          await new Promise((resolve) => setTimeout(resolve, 250));
-          scan();
-        }
-        // Park on the warm fuse (template replays need an Amazon-origin page
-        // world; parkSearchView's immediate blank only happens on real restarts).
-        this.scheduleParkSearchView();
-        if (!headers || !headers.csrfToken) {
-          const err = new Error('session headers: the page fired no captured request');
-          err.reason = 'load-failed'; // transient/network — never a sign-in prompt
-          throw err;
-        }
-        console.log('[Amazon] session-headers mint ok');
-        return headers;
-      } finally {
-        detach();
-      }
+    if (this.planPromise) return this.planPromise;
+    this.planPromise = this.fetchConfigJson()
+      .then((config) => {
+        const tier = amazonNativeSessionFromConfig(config).tier;
+        // A forced re-read (opening Settings) that comes back without a tier,
+        // offline or a bad reply, doesn't overturn a known plan: that would
+        // block an Unlimited account for a minute because Settings opened.
+        if (refresh && !tier && s && s.plan !== 'unknown') return s.plan;
+        return this.notePlan(tier, now).plan;
+      })
+      .finally(() => { this.planPromise = null; });
+    return this.planPromise;
+  },
+
+  // config.json over the one owner's jar-carrying fetch (the dmls provider's
+  // own read, ported): a failed or unparseable reply reads as no tier.
+  async fetchConfigJson() {
+    const out = await webSession.fetch({
+      url: 'https://music.amazon.com/config.json',
+      method: 'GET',
+      headers: { Accept: 'application/json', Referer: 'https://music.amazon.com/' }
     });
+    if (!out || out.status !== 200 || typeof out.text !== 'string') return {};
+    try { return JSON.parse(out.text); } catch { return {}; }
   },
 
   // Capture gql requests (bodies from onBeforeRequest, headers paired by
@@ -596,10 +567,16 @@ const amazonWebPlayer = {
   // the chain cuts and the storage clears — and the clear() bumps the session
   // generation, which is how the plugin (whose request templates and parsed
   // caches are the old account's — the recommendations state since #1356 M8,
-  // the spec-search template since M5/M6) learns of the sign-out it cannot
-  // see the event of: its next state read drops them.
+  // the spec-search template since M5/M6, and the DRM session state since M9
+  // — its minted session context, cert warm and telemetry are plugin state
+  // now) learns of the sign-out it cannot see the event of: its next state
+  // read drops them.
   async signOut() {
     this.cookieWarned = false;
+    // The host-side plan stopgap forgets its reading too: the next sign-in
+    // may be another account (the old dmls onSignOut's plan reset).
+    this.planState = null;
+    this.planPromise = null;
     return await webSession.clear();
   },
 };

@@ -663,9 +663,11 @@ contextBridge.exposeInMainWorld('electron', {
 
   // The resolver-neutral Widevine/DASH bridge. The renderer's shared player
   // (lib/widevine-player.js) asks a main-side provider for the manifest and
-  // relays license bytes through it; providers register per resolver (Amazon
-  // Music is amazon-dmls.js). This is the ONLY surface a stream resolver
-  // needs beyond its search/sign-in channels.
+  // relays license bytes through it, or — for a resolver that implements the
+  // plugin-mediated pair (#1356 M4; Amazon's DRM pair since M9) — takes the
+  // plugin-supplied manifest and forwards licence challenges back to the
+  // plugin. This is the ONLY surface a stream resolver needs beyond its
+  // search/sign-in channels.
   //
   // The plugin-mediated half (#1356 M4): a resolver that implements
   // getPlaybackManifest supplies the manifest renderer-side and declares it
