@@ -570,10 +570,12 @@ describe('the five-section page render', () => {
     // provider playlists, the restore path), so neither back control says or
     // goes Home.
     const view = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/playlist-view-page.js'), 'utf8');
-    const backs = view.match(/if \(selectedPlaylist\?\.isEphemeral\) \{\s*navigateTo\('[a-z]+'\);/g) || [];
+    // A temporary playlist from the Shuffleupagus chat (origin 'chat') is the
+    // exception: it goes to Playlists.
+    const backs = view.match(/if \(selectedPlaylist\?\.isEphemeral && selectedPlaylist\.origin !== 'chat'\) \{[^}]*?navigateTo\('[a-z]+'\);/g) || [];
     expect(backs).toHaveLength(2);
     for (const back of backs) expect(back).toContain("navigateTo('recommendations');");
-    expect(view).toContain("selectedPlaylist?.isEphemeral ? 'Recommendations' : 'Playlists'");
+    expect(view).toContain("selectedPlaylist?.isEphemeral && selectedPlaylist.origin !== 'chat' ? 'Recommendations' : 'Playlists'");
     expect(view).not.toContain("'HOME'");
   });
 

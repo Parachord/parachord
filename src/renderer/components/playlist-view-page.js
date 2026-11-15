@@ -251,7 +251,8 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                   // Ephemeral playlists (weekly cards, provider playlists, the
                   // restore path) all open from Recommendations, so they go back
                   // there; saved ones go to Playlists.
-                  if (selectedPlaylist?.isEphemeral) {
+                  if (selectedPlaylist?.isEphemeral && selectedPlaylist.origin !== 'chat') {
+                    // (A temporary playlist from the chat goes to Playlists.)
                     navigateTo('recommendations');
                   } else {
                     navigateTo('playlists');
@@ -261,7 +262,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                 style: { color: 'var(--text-tertiary)' },
                 onMouseEnter: (e) => { e.currentTarget.style.color = 'var(--text-secondary)'; },
                 onMouseLeave: (e) => { e.currentTarget.style.color = 'var(--text-tertiary)'; }
-              }, selectedPlaylist?.isEphemeral ? 'Recommendations' : 'Playlists'),
+              }, selectedPlaylist?.isEphemeral && selectedPlaylist.origin !== 'chat' ? 'Recommendations' : 'Playlists'),
               React.createElement('span', { style: { color: 'var(--text-tertiary)' } }, '/'),
               React.createElement('span', { className: 'uppercase', style: { color: 'var(--text-secondary)' } },
                 playlistEditMode ? 'Editing' : (selectedPlaylist?.weekLabel || selectedPlaylist.title || 'Playlist Details')
@@ -384,7 +385,8 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                   // Ephemeral playlists (weekly cards, provider playlists, the
                   // restore path) all open from Recommendations, so they go back
                   // there; saved ones go to Playlists.
-                  if (selectedPlaylist?.isEphemeral) {
+                  if (selectedPlaylist?.isEphemeral && selectedPlaylist.origin !== 'chat') {
+                    // (A temporary playlist from the chat goes to Playlists.)
                     navigateTo('recommendations');
                   } else {
                     navigateTo('playlists');

@@ -2430,6 +2430,7 @@ const executeDjTool = async (name, args, context) => {
           album: t.album || null
         }));
         const playlist = await context.createPlaylist(args.name, metadataTracks);
+        if (!playlist) return { success: false, error: 'The playlist could not be saved. Tell the user; do not show a playlist card.' };
         return { success: true, playlist: { id: playlist.id, name: playlist.title || args.name, trackCount: metadataTracks.length } };
       }
       // seek / get_position / block_recommendation (parachord#857) were defined in
@@ -17132,12 +17133,14 @@ ${trackListXml}
     };
 
     const saveResult = await window.electron.playlists.save(newPlaylist);
-    if (saveResult.success) {
-      setPlaylists(prev => [newPlaylist, ...prev]);
-      showSidebarBadge('playlists');
-      fetchPlaylistCovers(playlistId, tracks);
-    }
-
+    // Not saved: say so (null). Returning the playlist anyway let the chat
+    // announce a playlist, with a card, that was never stored.
+    if (!saveResult?.success) return null;
+    setPlaylists(prev => [newPlaylist, ...prev]);
+    // The ref too, so a card clicked before the next render finds it.
+    playlistsRef.current = [newPlaylist, ...(playlistsRef.current || [])];
+    showSidebarBadge('playlists');
+    fetchPlaylistCovers(playlistId, tracks);
     return newPlaylist;
   };
 
@@ -17750,6 +17753,14 @@ ${trackListXml}
   const renderChatContent = (content, isUserMessage) => {
     if (!content) return null;
 
+    // The tracks this message lists ({{track|title|artist|album}}): a playlist
+    // card whose playlist was never saved (the model wrote the card without
+    // calling create_playlist) saves these when clicked.
+    const messageTracks = [...content.matchAll(/\{\{track\|([^}]+)\}\}/g)].map(m => {
+      const [title, artist, album] = m[1].split('|');
+      return { title: (title || '').trim(), artist: (artist || '').trim(), album: (album || '').trim() || null };
+    }).filter(t => t.title && t.artist);
+
     // Process content line by line for better list handling
     const lines = content.split('\n');
     const elements = [];
@@ -18026,12 +18037,32 @@ ${trackListXml}
           const playlist = all.find(p => p.id === playlistId)
             || all.find(p => (p.title || '').trim().toLowerCase() === wanted && p.creator === 'Shuffleupagus')
             || all.find(p => (p.title || '').trim().toLowerCase() === wanted);
-          if (!playlist) {
-            showToast('Couldn’t find that playlist. It may not have been saved; look in Playlists.', 'error');
+          if (playlist) {
+            closeAiChat();
+            loadPlaylist(playlist);
+            return;
+          }
+          // Never saved (the model described a playlist without creating it):
+          // open it as a temporary playlist, like a Weekly Jam, from the tracks
+          // this message lists. Its page plays it and offers Save.
+          if (messageTracks.length === 0) {
+            showToast('Shuffleupagus didn’t make this playlist. Ask it to create the playlist again.', 'error');
             return;
           }
           closeAiChat();
-          loadPlaylist(playlist);
+          loadPlaylist({
+            id: `ai-chat-preview-${playlistId || Date.now()}`,
+            title: (playlistName || 'Shuffleupagus playlist').trim(),
+            creator: 'Shuffleupagus',
+            description: 'Made in your chat with Shuffleupagus',
+            tracks: messageTracks,
+            tracksLoaded: true,
+            isEphemeral: true,
+            isAiPlaylist: true,
+            source: 'ai-chat',
+            origin: 'chat',
+            addedAt: Date.now()
+          });
         };
         return React.createElement('button', { type: 'button', className: 'w-full text-left',
           key,

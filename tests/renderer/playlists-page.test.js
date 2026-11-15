@@ -42,7 +42,9 @@ test("a chat playlist card finds its playlist when clicked, not from the render'
   const fn = app.slice(i, app.indexOf('\n        };', i));
   expect(fn).toContain('const all = playlistsRef.current || [];');
   expect(fn).not.toMatch(/\bplaylists\.find\(/);
-  expect(fn).toMatch(/showToast\('Couldn’t find that playlist/);
+  // Never saved (the model wrote the card without creating it): a temporary
+  // playlist page from the message's tracks, with Save, like a Weekly Jam.
+  expect(fn).toMatch(/loadPlaylist\(\{[\s\S]{0,400}tracks: messageTracks,[\s\S]{0,200}isEphemeral: true,[\s\S]{0,200}origin: 'chat'/);
 });
 
 test('chat cards say what they are in their second line; the chat panel uses on-dark tokens', () => {
@@ -53,4 +55,12 @@ test('chat cards say what they are in their second line; the chat panel uses on-
   expect(app).toContain("'Powered by')");
   expect(app).not.toContain("'powered by:'");
   expect(app).toContain("backgroundColor: aiChatLoading || aiChatInput.trim() ? 'var(--accent-fill)'");
+});
+
+test('a failed chat save is a failure, never a playlist id nothing can open', () => {
+  const i = app.indexOf('const createPlaylistFromChat = async');
+  const fn = app.slice(i, app.indexOf('\n  };', i));
+  expect(fn).toContain('if (!saveResult?.success) return null;');
+  expect(app).toContain("if (!playlist) return { success: false, error: 'The playlist could not be saved.");
+  expect(page).toContain("selectedPlaylist?.isEphemeral && selectedPlaylist.origin !== 'chat' ? 'Recommendations' : 'Playlists'");
 });
