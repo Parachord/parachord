@@ -39470,7 +39470,7 @@ useEffect(() => {
                         ),
                         // Hover overlay with action buttons
                         React.createElement('div', {
-                          className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 card-reveal pointer-events-none group-hover:pointer-events-auto transition-opacity duration-200 flex items-center justify-center gap-3',
+                          className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 card-reveal card-actions transition-opacity duration-200 flex items-center justify-center gap-3',
                           style: { borderRadius: '6px', zIndex: 20 }
                         },
                           // Add to Playlist button
@@ -41089,7 +41089,7 @@ useEffect(() => {
                     }
                   }),
                   React.createElement('div', {
-                    className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 card-reveal pointer-events-none group-hover:pointer-events-auto transition-opacity duration-200 flex items-center justify-center gap-3',
+                    className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 card-reveal card-actions transition-opacity duration-200 flex items-center justify-center gap-3',
                     // Over the cover, the "Coming" badge (1) and CardButton's
                     // stretched button (1), so its Play / Queue take clicks;
                     // under the reason badge (3), which stays hoverable.
@@ -41190,7 +41190,7 @@ useEffect(() => {
                     className: 'absolute inset-0 w-full h-full object-cover'
                   }),
                   React.createElement('div', {
-                    className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 card-reveal pointer-events-none group-hover:pointer-events-auto transition-opacity duration-200 flex items-center justify-center gap-3',
+                    className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 card-reveal card-actions transition-opacity duration-200 flex items-center justify-center gap-3',
                     style: { borderRadius: '6px', zIndex: 20 }
                   },
                     // The standard playlist hover set (the Playlists page's
@@ -41326,7 +41326,7 @@ useEffect(() => {
                       : [])
                   ),
                   React.createElement('div', {
-                    className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 card-reveal pointer-events-none group-hover:pointer-events-auto transition-opacity duration-200 flex items-center justify-center',
+                    className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 card-reveal card-actions transition-opacity duration-200 flex items-center justify-center',
                     style: { zIndex: 20 }
                   },
                     React.createElement('button', {
@@ -42582,7 +42582,7 @@ useEffect(() => {
                         }, `#${album.rank}`),
                         // Hover overlay with action buttons
                         React.createElement('div', {
-                          className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 card-reveal pointer-events-none group-hover:pointer-events-auto transition-opacity duration-200 flex items-center justify-center gap-3',
+                          className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 card-reveal card-actions transition-opacity duration-200 flex items-center justify-center gap-3',
                           style: { borderRadius: '6px', zIndex: 20 }
                         },
                           // Add to Playlist button
@@ -43204,7 +43204,7 @@ useEffect(() => {
                             }, `#${album.rank}`),
                             // Hover overlay with action buttons
                             React.createElement('div', {
-                              className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 card-reveal pointer-events-none group-hover:pointer-events-auto transition-opacity duration-200 flex items-center justify-center gap-3',
+                              className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 card-reveal card-actions transition-opacity duration-200 flex items-center justify-center gap-3',
                               style: { zIndex: 20 }
                             },
                               // Add to Playlist button

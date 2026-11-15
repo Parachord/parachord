@@ -101,7 +101,9 @@ function SideButton({ label, onClick, path }) {
 
 function ArtOverlay({ shown, title, onClick, onPlay, onQueue, onAddToPlaylist }) {
   return e('div', {
-    'data-art-actions': '', onClick, className: APP_OVERLAY,
+    // The click opens the card once: stop it at the overlay, or a card whose
+    // art is also wrapped in an opener (PlaylistCard) opened twice.
+    'data-art-actions': '', onClick: onClick && ((ev) => { ev.stopPropagation(); onClick(ev); }), className: APP_OVERLAY,
     style: { opacity: shown ? 1 : 0, pointerEvents: shown ? 'auto' : 'none', zIndex: 1, padding: '8px', boxSizing: 'border-box' },
   },
     onAddToPlaylist && e(SideButton, { label: `Add ${title} to a playlist`, onClick: onAddToPlaylist, path: 'M12 4v16m8-8H4' }),
