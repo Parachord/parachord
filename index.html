@@ -766,6 +766,12 @@
     .card-button:has(:focus-visible) .card-actions { opacity: 1; }
     .card-button:hover .card-actions button,
     .card-button:has(:focus-visible) .card-actions button { pointer-events: auto; }
+    /* The row's More button (CardButton's more prop) always takes the pointer:
+       the pointer can only be over it while it's over the row, which shows
+       it. Waiting for :hover to switch pointer-events on lost the click (the
+       press could start on it and end on the stretched button below). */
+    .card-button .card-actions.card-more,
+    .card-button .card-actions.card-more button { pointer-events: auto; }
     /* The card's own buttons and links sit above the stretched one. Zero
        specificity, so an element's own position (absolute) still wins. */
     /* Also form fields (a row's inline text field), small icons that carry

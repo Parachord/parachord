@@ -54,7 +54,7 @@ function renderCardButton({ label, current, tooltip, onActivate, onContextMenu, 
   // actions for X"); the last item in the row's own flex layout, so it holds
   // a slot instead of covering the duration; shown on hover or keyboard focus.
   const moreButton = more && onContextMenu
-    ? e('div', { className: 'card-actions flex-shrink-0', style: { position: 'relative' } },
+    ? e('div', { className: 'card-actions card-more flex-shrink-0', style: { position: 'relative' } },
       e(Button, {
         variant: 'icon', size: 'sm', tone: moreTone, 'aria-label': more, 'data-tooltip': 'More',
         onClick: (ev) => { ev.stopPropagation(); onContextMenu(ev); },
