@@ -310,7 +310,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                   showToast('Playlist saved to library', 'success');
                   // Switch to viewing the saved playlist
                   setSelectedPlaylist({ ...newPlaylist, isEphemeral: false });
-                } }, React.createElement(Icons.Check, { className: 'w-4 h-4' }), 'Save'),
+                } }, 'Save'),
               // A playlist imported from a link is kept updated from it or a
               // snapshot (lib/playlist-update-mode.js). Kept updated: check
               // now, or stop. A snapshot never changes, so it has no refresh;

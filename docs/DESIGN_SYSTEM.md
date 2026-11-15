@@ -188,7 +188,7 @@ Components use `React.createElement()` (no JSX) and live in `src/renderer/compon
 | You need | Use | Module | Notes |
 |----------|-----|--------|-------|
 | A button | `Button` | `button.js` | `variant`: primary (one per view), secondary, destructive, text, icon (needs `aria-label`); `size` sm/md; `busy`; `tone: 'dark'` on the always-dark surfaces; `pageColor` for a hero's fill |
-| A page or drawer header's Close / Edit / Save / Cancel | `HeaderControl` | `header-control.js` | Sentence case in the source, CSS uppercase; `close` adds the ✕; tones default / primary / dark |
+| A page or drawer header's Close / Edit / Save / Cancel | `HeaderControl` | `header-control.js` | The shared `Button`, small and sentence case; `close` is an icon-only ✕ with its label as name and tooltip; tones default / primary / dark |
 | A dialog | `Modal` | `modal.js` | Focus moves in and comes back, Escape and the scrim close it, one title size and three widths. `ConfirmModal` for confirm/cancel (the confirm button named for its action, `destructive` for red); `DontShowAgain` for the checkbox |
 | A success, info or error message | `showToast(message, type, action, options)` | `toast.js` (`ToastRegion`) | Success is a toast, never a dialog |
 | A menu (right-click or "More") | `Menu`, items from `lib/item-menus.js` | `menu.js` | Portalled, keyboard and typeahead, flips up near the bottom; the dark 12px look |

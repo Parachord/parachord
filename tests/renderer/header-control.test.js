@@ -10,15 +10,20 @@ const { HeaderControl } = require('../../src/renderer/components/header-control'
 
 const read = (p) => fs.readFileSync(path.join(__dirname, '../..', p), 'utf8');
 
-test('a button with the shared class; tones and the close X', () => {
-  expect(renderToStaticMarkup(React.createElement(HeaderControl, null, 'Edit'))).toBe('<button type="button" class="header-control no-drag">Edit</button>');
-  expect(renderToStaticMarkup(React.createElement(HeaderControl, { tone: 'dark', close: true }, 'Close')))
-    .toMatch(/^<button type="button" class="header-control no-drag header-control-dark">Close<svg[^>]*data-icon="X"/);
-  expect(renderToStaticMarkup(React.createElement(HeaderControl, { tone: 'primary' }, 'Done'))).toContain('header-control-primary');
+test('it is the shared Button: sentence-case actions, an icon-only Close', () => {
+  const edit = renderToStaticMarkup(React.createElement(HeaderControl, null, 'Edit'));
+  expect(edit).toMatch(/^<button[^>]*class="[^"]*bg-surface-card[^"]*"[^>]*>Edit<\/button>$/);
+  expect(edit).not.toContain('header-control');
+  expect(renderToStaticMarkup(React.createElement(HeaderControl, { tone: 'primary' }, 'Done'))).toContain('bg-accent-fill');
+  const close = renderToStaticMarkup(React.createElement(HeaderControl, { tone: 'dark', close: true }, 'Close'));
+  expect(close).toContain('aria-label="Close"');
+  expect(close).toContain('data-tooltip="Close"');
+  expect(close).toMatch(/data-icon="X"/);
+  expect(close).not.toMatch(/>Close</);
 });
 
-test('labels are sentence case in the source; CSS makes them uppercase', () => {
-  expect(read('index.html')).toMatch(/\.header-control \{[^}]*text-transform: uppercase;/);
+test('no uppercase header-control style is left, and labels stay sentence case', () => {
+  expect(read('index.html')).not.toMatch(/\.header-control \{/);
   for (const f of ['src/renderer/app.js', 'src/renderer/components/playlist-view-page.js', 'src/renderer/components/search-page.js']) {
     expect([f, /HeaderControl, \{[^}]*\}[^)]*'(CLOSE|EDIT|SAVE|CANCEL|CLEAR|UNSHUFFLE|REFRESH)'/.test(read(f))]).toEqual([f, false]);
   }
