@@ -39,7 +39,8 @@ function FilterBox({ value, onChange, open, onOpenChange, placeholder = 'Filterâ
         type: 'text', value, autoFocus: true, placeholder, 'aria-label': label,
         onChange: (ev) => onChange(ev.target.value),
         onBlur: () => { if (!String(value || '').trim()) onOpenChange(false); },
-        onKeyDown: (ev) => { if (ev.key === 'Escape') { onChange(''); onOpenChange(false); } },
+        // Escape closes the box only, not a dialog or panel around it.
+        onKeyDown: (ev) => { if (ev.key === 'Escape') { ev.preventDefault(); onChange(''); onOpenChange(false); } },
         className: `bg-transparent text-ink-secondary ${sm ? 'text-xs' : 'text-sm'} placeholder-ink-tertiary outline-none no-drag`,
         style: { width: width || (sm ? '120px' : '150px') },
       }),

@@ -52,6 +52,7 @@ const SHAPES = {
     ['circle', { cx: 12, cy: 12, r: 3 }],
   ],
   Plus: [['path', { d: 'M5 12h14' }], ['path', { d: 'M12 5v14' }]],
+  ListPlus: [['path', { d: 'M11 12H3' }], ['path', { d: 'M16 6H3' }], ['path', { d: 'M16 18H3' }], ['path', { d: 'M18 9v6' }], ['path', { d: 'M21 12h-6' }]],
   X: [['path', { d: 'M18 6 6 18' }], ['path', { d: 'm6 6 12 12' }]],
   Check: [['path', { d: 'M20 6 9 17l-5-5' }]],
   ChevronDown: [['path', { d: 'm6 9 6 6 6-6' }]],

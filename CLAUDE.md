@@ -149,7 +149,7 @@ Each rule below exists because the audit found its absence. Read the audit's are
   - Spacing: the 4px scale. 10px is only for card padding.
   - Radius: 4 · 6 · 8 · 10 · 12 · 16 · full.
   - One 24px page gutter for hero, filter bar and content.
-  - Motion: 100–400ms on transform/opacity, never `transition-all` on list rows.
+  - Motion: 100–400ms on transform/opacity, never `transition-all` on list rows. One deliberate exception: the queue drawer's insert glow (`queue-track-insert`, 1s), which is the only "added to queue" signal since that toast went.
   - Section titles are `SectionHeader`. Filter buttons are `FilterChips`.
 - **Interactive means `<button>` or `<a>`.** Never put `onClick` on a `div`, `span`, `li` or `img`.
   - Icon-only buttons get an `aria-label`.

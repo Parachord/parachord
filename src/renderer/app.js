@@ -5723,6 +5723,27 @@ const Parachord = () => {
   const [addToPlaylistSort, setAddToPlaylistSort] = useState('added'); // Sort option for add-to-playlist panel
   const [addToPlaylistSearch, setAddToPlaylistSearch] = useState(''); // Search filter for add-to-playlist panel
   const [addToPlaylistSearchOpen, setAddToPlaylistSearchOpen] = useState(false); // Search input expanded state
+  // The Add to playlist panel is a dialog: focus moves into it when it opens
+  // and goes back where it was when it closes; Escape closes it.
+  const addPanelReturnFocusRef = useRef(null);
+  const addPanelRef = useCallback((el) => {
+    if (el) {
+      addPanelReturnFocusRef.current = document.activeElement;
+      el.focus();
+    } else {
+      const prev = addPanelReturnFocusRef.current;
+      addPanelReturnFocusRef.current = null;
+      if (prev && typeof prev.focus === 'function' && document.contains(prev)) prev.focus();
+    }
+  }, []);
+  const closeAddToPlaylistPanel = () => {
+    setAddToPlaylistPanel(prev => ({ ...prev, open: false }));
+    setSelectedPlaylistsForAdd([]);
+    setNewPlaylistFormOpen(false);
+    setNewPlaylistName('');
+    setAddToPlaylistSearch('');
+    setAddToPlaylistSearchOpen(false);
+  };
 
   // Confirmation dialog state
   const [confirmDialog, setConfirmDialog] = useState({
@@ -48041,14 +48062,7 @@ React.createElement('div', {
           pointerEvents: 'auto',
           backgroundColor: 'rgba(0, 0, 0, 0.4)'
         },
-        onClick: () => {
-          setAddToPlaylistPanel(prev => ({ ...prev, open: false }));
-          setSelectedPlaylistsForAdd([]);
-          setNewPlaylistFormOpen(false);
-          setNewPlaylistName('');
-          setAddToPlaylistSearch('');
-          setAddToPlaylistSearchOpen(false);
-        },
+        onClick: closeAddToPlaylistPanel,
         onDragOver: (e) => {
           e.preventDefault();
         },
@@ -48057,8 +48071,16 @@ React.createElement('div', {
         }
       }),
 
-      // Panel - positioned at right edge of sidebar, full height above playbar
+      // Panel - positioned at right edge of sidebar, full height above playbar.
+      // A dialog: it takes focus, Escape closes it (an inner field that
+      // handles Escape itself stops it first).
       React.createElement('div', {
+        ref: addPanelRef,
+        role: 'dialog',
+        'aria-modal': 'true',
+        'aria-label': 'Add to playlist',
+        tabIndex: -1,
+        onKeyDown: (e) => { if (e.key === 'Escape' && !e.defaultPrevented) { e.stopPropagation(); closeAddToPlaylistPanel(); } },
         className: 'absolute flex flex-col',
         style: {
           left: '256px',
@@ -48083,9 +48105,10 @@ React.createElement('div', {
         React.createElement('div', {
           style: {
             padding: '20px 24px',
-            background: 'linear-gradient(135deg, #f43f5e 0%, #ec4899 50%, #c026d3 100%)',
             borderBottom: '1px solid var(--border-subtle)'
-          }
+          },
+          // The Playlists page's gradient (lib/page-colors.js).
+          className: PAGE_COLORS.playlists.hero
         },
           React.createElement('div', {
             className: 'flex items-center gap-3'
@@ -48101,30 +48124,15 @@ React.createElement('div', {
                 justifyContent: 'center'
               }
             },
-              React.createElement('svg', {
-                width: 18,
-                height: 18,
-                viewBox: '0 0 24 24',
-                fill: 'none',
-                stroke: '#ffffff',
-                strokeWidth: 2,
-                strokeLinecap: 'round',
-                strokeLinejoin: 'round'
-              },
-                React.createElement('path', { d: 'M11 12H3' }),
-                React.createElement('path', { d: 'M16 6H3' }),
-                React.createElement('path', { d: 'M16 18H3' }),
-                React.createElement('path', { d: 'M18 9v6' }),
-                React.createElement('path', { d: 'M21 12h-6' })
-              )
+              React.createElement(Icons.ListPlus, { size: 18, style: { color: 'var(--on-dark-primary)' } })
             ),
             React.createElement('span', {
               style: {
                 fontSize: '16px',
-                fontWeight: '600',
-                color: '#ffffff'
+                fontWeight: 600,
+                color: 'var(--on-dark-primary)'
               }
-            }, 'Add to Playlist')
+            }, 'Add to playlist')
           )
         ),
 
@@ -48146,16 +48154,22 @@ React.createElement('div', {
                 width: '48px',
                 height: '48px',
                 borderRadius: '8px',
-                background: 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)'
+                background: 'var(--placeholder-bg)'
               }
             },
               // Placeholder always rendered behind
-              React.createElement(Music, { size: 20, style: { color: 'var(--nav-inactive)' } }),
+              React.createElement(Music, { size: 20, style: { color: 'var(--text-tertiary)' } }),
               addToPlaylistPanel.tracks[0]?.albumArt && React.createElement('img', {
                 src: addToPlaylistPanel.tracks[0].albumArt,
+                alt: '',
                 className: 'absolute inset-0 w-full h-full object-cover',
                 style: { borderRadius: '8px' },
-                onError: (e) => { e.target.style.display = 'none'; }
+                // A dead cover is reported to the art pipeline, not only hidden.
+                onError: (e) => {
+                  e.target.style.display = 'none';
+                  const t = addToPlaylistPanel.tracks[0];
+                  if (window.reportBrokenAlbumArt) window.reportBrokenAlbumArt(t.albumArt, { artist: t.artist, album: t.album }).catch(() => {});
+                }
               })
             ),
             // Track/source info
@@ -48309,7 +48323,7 @@ React.createElement('div', {
             },
             className: `flex items-center gap-3 px-5 py-2.5 cursor-pointer transition-all border-b border-line-light ${
               dropTargetNewPlaylist
-                ? 'bg-accent-tint border-l-4 border-l-purple-500 pl-4'
+                ? 'bg-accent-tint border-l-4 border-l-accent pl-4'
                 : newPlaylistFormOpen
                   ? 'bg-surface-inset'
                   : 'hover:bg-surface-hover'
@@ -48363,12 +48377,14 @@ React.createElement('div', {
                       setNewPlaylistName('');
                       setDroppedTrackForNewPlaylist(null); // Clear dropped track
                     } else if (e.key === 'Escape') {
+                      // Closes the form only, not the panel around it.
+                      e.preventDefault();
                       setNewPlaylistFormOpen(false);
                       setNewPlaylistName('');
                       setDroppedTrackForNewPlaylist(null); // Clear dropped track
                     }
                   }, placeholder: 'Playlist name…', autoFocus: true, 'aria-label': 'Playlist name', className: 'flex-1' }),
-                React.createElement('button', {
+                React.createElement(Button, {
                   onClick: () => {
                     if (!newPlaylistName.trim()) return;
                     // Create new playlist with the tracks
@@ -48402,11 +48418,7 @@ React.createElement('div', {
                     setDroppedTrackForNewPlaylist(null); // Clear dropped track
                   },
                   disabled: !newPlaylistName.trim(),
-                  className: `px-3 py-1.5 text-sm font-medium rounded transition-colors ${
-                    newPlaylistName.trim()
-                      ? 'bg-green-500 hover:bg-green-600 text-white'
-                      : 'bg-surface-inset text-ink-tertiary cursor-not-allowed'
-                  }`
+                  variant: 'primary', size: 'sm'
                 }, 'Create')
               )
             :
@@ -48560,7 +48572,7 @@ React.createElement('div', {
                   isAdded
                     ? 'bg-tint-success'
                     : isDropTarget
-                      ? 'bg-accent-tint border-l-4 border-l-purple-500 pl-4'
+                      ? 'bg-accent-tint border-l-4 border-l-accent pl-4'
                       : 'hover:bg-surface-hover'
                 }`
               },
