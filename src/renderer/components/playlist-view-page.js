@@ -26,6 +26,7 @@ const { playlistMenu } = require('../lib/item-menus');
 const { VirtualizedTrackList } = require('./track-lists');
 const { sourceRowState } = require('../lib/visible-sources');
 const { trackSlug } = require('../lib/track-slug');
+const { countOf } = require('../lib/plural');
 
 const { Play, Music } = Icons;
 
@@ -550,7 +551,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                   // Save to disk using the updated playlist from the latest state
                   const playlistToSave = applyPull(playlist);
                   await savePlaylistToStore(playlistToSave);
-                  showToast(`Pulled ${result.tracks.length} tracks from ${providerName}`);
+                  showToast(`Pulled ${countOf(result.tracks.length, 'track')} from ${providerName}`);
                 } else {
                   console.error('Failed to pull playlist:', result?.error);
                   if (result?.errorCode === 'missing_scopes') {

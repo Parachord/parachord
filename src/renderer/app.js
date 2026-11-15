@@ -1310,6 +1310,7 @@ const {
   VirtualizedQueueList, VirtualizedTrackList,
 } = require('./components/track-lists');
 const { sourceRowState } = require('./lib/visible-sources');
+const { countOf } = require('./lib/plural');
 const { Play, Pause, SkipForward, SkipBack, Volume2, Search, List, Settings, Plus, Music, Radio, Users, Heart, X } = Icons;
 
 
@@ -3128,9 +3129,9 @@ class AIChatService {
         case 'queue_clear': return 'Queue cleared';
         case 'create_playlist': return `Created playlist "${result.playlist?.name}"`;
         case 'shuffle': return `Shuffle ${result.shuffle ? 'enabled' : 'disabled'}`;
-        case 'collection_radio': return `Started Collection Radio with ${result.trackCount} tracks`;
-        case 'get_playlists': return `Found ${result.total} playlists`;
-        case 'get_playlist_tracks': return `Loaded ${result.playlist?.trackCount} tracks from "${result.playlist?.name}"`;
+        case 'collection_radio': return `Started Collection Radio with ${countOf(result.trackCount, 'track')}`;
+        case 'get_playlists': return `Found ${countOf(result.total, 'playlist')}`;
+        case 'get_playlist_tracks': return `Loaded ${countOf(result.playlist?.trackCount, 'track')} from "${result.playlist?.name}"`;
         case 'add_to_playlist': return `Added ${result.added} track(s) to "${result.playlist?.name}"`;
         case 'remove_from_playlist': return `Removed "${result.removed?.title}" from "${result.playlist?.name}"`;
         case 'reorder_playlist': return `Moved track in "${result.playlist?.name}"`;
@@ -6756,7 +6757,7 @@ const Parachord = () => {
         const remainingTracks = resolvedTracks.slice(1);
 
         // Show toast notification
-        showToast(`Playing "${collection.name}" (${tracks.length} tracks)`);
+        showToast(`Playing "${collection.name}" (${countOf(tracks.length, 'track')})`);
 
         // Add remaining tracks to the BEGINNING of the queue (so they play next)
         if (remainingTracks.length > 0) {
@@ -6774,7 +6775,7 @@ const Parachord = () => {
         }
       } else {
         // Default behavior: insert tracks at beginning of queue (play next)
-        showToast(`Playing "${collection.name}" next (${tracks.length} tracks)`);
+        showToast(`Playing "${collection.name}" next (${countOf(tracks.length, 'track')})`);
 
         setCurrentQueue(prev => {
           return [...resolvedTracks, ...prev];
@@ -7180,7 +7181,7 @@ const Parachord = () => {
       const context = { type: 'album', id: album.id, name: album.title, artist: album.artist };
       const taggedTracks = tracks.map(t => ({ ...t, _playbackContext: context }));
       if (zone === 'now-playing') {
-        showToast(`Playing "${album.title}" (${tracks.length} tracks)`);
+        showToast(`Playing "${album.title}" (${countOf(tracks.length, 'track')})`);
         const firstTrack = taggedTracks[0];
         const remainingTracks = taggedTracks.slice(1);
         // Add remaining tracks to BEGINNING of queue (play next)
@@ -7194,7 +7195,7 @@ const Parachord = () => {
           triggerQueueAnimation();
         }
       } else {
-        showToast(`Added ${tracks.length} tracks from "${album.title}" to queue`);
+        showToast(`Added ${countOf(tracks.length, 'track')} from "${album.title}" to queue`);
         setCurrentQueue(prev => [...prev, ...taggedTracks]);
         triggerQueueAnimation();
       }
@@ -7209,7 +7210,7 @@ const Parachord = () => {
       const context = { type: 'album', id: album.id, name: album.title, artist: album.artist };
       const taggedTracks = tracks.map(t => ({ ...t, _playbackContext: context }));
       if (zone === 'now-playing') {
-        showToast(`Playing "${album.title}" (${tracks.length} tracks)`);
+        showToast(`Playing "${album.title}" (${countOf(tracks.length, 'track')})`);
         const firstTrack = taggedTracks[0];
         const remainingTracks = taggedTracks.slice(1);
         // Add remaining tracks to BEGINNING of queue (play next)
@@ -7223,7 +7224,7 @@ const Parachord = () => {
           triggerQueueAnimation();
         }
       } else {
-        showToast(`Added ${tracks.length} tracks from "${album.title}" to queue`);
+        showToast(`Added ${countOf(tracks.length, 'track')} from "${album.title}" to queue`);
         setCurrentQueue(prev => [...prev, ...taggedTracks]);
         triggerQueueAnimation();
       }
@@ -7244,7 +7245,7 @@ const Parachord = () => {
     const taggedTracks = tracks.map(t => ({ ...t, _playbackContext: context }));
 
     if (zone === 'now-playing') {
-      showToast(`Playing "${playlist.title}" (${tracks.length} tracks)`);
+      showToast(`Playing "${playlist.title}" (${countOf(tracks.length, 'track')})`);
       const firstTrack = taggedTracks[0];
       const remainingTracks = taggedTracks.slice(1);
       // Add remaining tracks to BEGINNING of queue (play next)
@@ -7258,7 +7259,7 @@ const Parachord = () => {
         triggerQueueAnimation();
       }
     } else {
-      showToast(`Added ${tracks.length} tracks from "${playlist.title}" to queue`);
+      showToast(`Added ${countOf(tracks.length, 'track')} from "${playlist.title}" to queue`);
       setCurrentQueue(prev => [...prev, ...taggedTracks]);
       triggerQueueAnimation();
     }
@@ -9250,7 +9251,7 @@ const Parachord = () => {
     const playlistUrl = playlist.url || null;
     console.log(`📋 Processing scraped playlist: "${playlistName}" with ${playlist.tracks.length} tracks from ${playlistUrl}`);
 
-    showToast(`Adding ${playlist.tracks.length} tracks from "${playlistName}"…`, 'info');
+    showToast(`Adding ${countOf(playlist.tracks.length, 'track')} from "${playlistName}"…`, 'info');
 
     // Convert scraped tracks to our track format
     const context = { type: 'playlist', name: playlistName, url: playlistUrl };
@@ -9281,7 +9282,7 @@ const Parachord = () => {
       setCurrentTrack(firstTrack);
     }
 
-    showToast(`Added ${tracks.length} tracks from "${playlistName}"`, 'success');
+    showToast(`Added ${countOf(tracks.length, 'track')} from "${playlistName}"`, 'success');
   };
 
   // Handle scraped album from browser extension (e.g., Pitchfork reviews)
@@ -9344,7 +9345,7 @@ const Parachord = () => {
         setCurrentTrack(firstTrack);
       }
 
-      showToast(`Added ${tracks.length} tracks from "${albumTitle}"`, 'success');
+      showToast(`Added ${countOf(tracks.length, 'track')} from "${albumTitle}"`, 'success');
     } catch (error) {
       console.error('Error looking up album:', error);
       showToast(`Failed to look up album: ${error.message}`, 'error');
@@ -16448,7 +16449,7 @@ ${trackListXml}
     setPlaybackContext(context);
     handlePlay(firstTrack);
 
-    showToast(`Playing ${uniqueTracks.length} tracks on shuffle`);
+    showToast(`Playing ${countOf(uniqueTracks.length, 'track')} on shuffle`);
     console.log(`📻 Started Collection Station with ${uniqueTracks.length} tracks`);
   };
 
@@ -16890,7 +16891,7 @@ ${trackListXml}
     const context = { type: 'aiPlaylist', name: 'AI Playlist' };
     addToQueue(resultsSidebar.tracks, context);
     closeSidebarAnimated();
-    showToast(`Added ${resultsSidebar.tracks.length} tracks to queue`);
+    showToast(`Added ${countOf(resultsSidebar.tracks.length, 'track')} to queue`);
   };
 
   // Handle playing AI results now (replace queue)
@@ -17135,7 +17136,7 @@ ${trackListXml}
         setPlaybackContext(context);
         handlePlayRef.current(firstTrack);
 
-        showToast(`Playing ${uniqueTracks.length} tracks on shuffle`);
+        showToast(`Playing ${countOf(uniqueTracks.length, 'track')} on shuffle`);
         console.log(`📻 Started Collection Station with ${uniqueTracks.length} tracks (via AI)`);
 
         return { success: true, trackCount: uniqueTracks.length };
@@ -17954,7 +17955,7 @@ ${trackListXml}
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap'
               }
-            }, `${trackCount || '?'} tracks`)
+            }, trackCount ? countOf(trackCount, 'track') : '')
           ),
           // Type indicator
           React.createElement('div', {
@@ -26622,7 +26623,7 @@ ${tracks}
       showConfirmDialog({
         type: 'success',
         title: 'Added to Queue',
-        message: `Added ${list.tracks.length} tracks from "${album.title}"`
+        message: `Added ${countOf(list.tracks.length, 'track')} from "${album.title}"`
       });
     } catch (error) {
       console.error('Error adding chart album to queue:', error);
@@ -36395,7 +36396,7 @@ useEffect(() => {
     try {
       const tracks = await recommendationPlaylistTracks(item);
       addToQueue(tracks, context || { type: 'playlist', name: item.name });
-      showToast(`Added ${tracks.length} tracks from ${item.name}`, 'success');
+      showToast(`Added ${countOf(tracks.length, 'track')} from ${item.name}`, 'success');
     } catch (error) {
       showToast(error?.message || `Could not load ${item.name}`, 'error');
     }
@@ -39442,7 +39443,7 @@ useEffect(() => {
                               }
                               if (tracks?.length > 0) {
                                 addToQueue(tracks, { type: 'album', name: release.title, artist: release.artist });
-                                showToast(`Added ${tracks.length} tracks from ${release.title}`, 'success');
+                                showToast(`Added ${countOf(tracks.length, 'track')} from ${release.title}`, 'success');
                               } else {
                                 showToast('Could not load album tracks', 'error');
                               }
@@ -41061,7 +41062,7 @@ useEffect(() => {
                         const albumTracks = await albumTracksFor();
                         if (albumTracks.length > 0) {
                           addToQueue(albumTracks, { type: 'album', name: item.name, artist: item.artist });
-                          showToast(`Added ${albumTracks.length} tracks from ${item.name}`, 'success');
+                          showToast(`Added ${countOf(albumTracks.length, 'track')} from ${item.name}`, 'success');
                         } else {
                           showToast('Could not load album tracks', 'error');
                         }
@@ -42339,7 +42340,7 @@ useEffect(() => {
                               const tracks = await getArtistTopTracks(artist.name);
                               if (tracks.length > 0) {
                                 addToQueue(tracks, { type: 'artist', name: artist.name });
-                                showToast(`Added ${tracks.length} tracks from ${artist.name}`, 'success');
+                                showToast(`Added ${countOf(tracks.length, 'track')} from ${artist.name}`, 'success');
                               } else {
                                 showToast(`No top tracks found for ${artist.name}`, 'error');
                               }
@@ -42575,7 +42576,7 @@ useEffect(() => {
                                 const tracks = await fetchAlbumTracksByName(album.artist, album.name, album.image);
                                 if (tracks.length > 0) {
                                   addToQueue(tracks, { type: 'album', name: album.name, artist: album.artist });
-                                  showToast(`Added ${tracks.length} tracks from ${album.name}`, 'success');
+                                  showToast(`Added ${countOf(tracks.length, 'track')} from ${album.name}`, 'success');
                                 } else {
                                   showToast(`No tracks found for ${album.name}`, 'error');
                                 }
@@ -43206,7 +43207,7 @@ useEffect(() => {
                                     const tracks = await fetchAlbumTracksByName(album.artist, album.name, album.image);
                                     if (tracks.length > 0) {
                                       addToQueue(tracks, { type: 'album', name: album.name, artist: album.artist });
-                                      showToast(`Added ${tracks.length} tracks from ${album.name}`, 'success');
+                                      showToast(`Added ${countOf(tracks.length, 'track')} from ${album.name}`, 'success');
                                     } else {
                                       showToast(`No tracks found for ${album.name}`, 'error');
                                     }
@@ -43313,7 +43314,7 @@ useEffect(() => {
                                   const tracks = await getArtistTopTracks(artist.name);
                                   if (tracks.length > 0) {
                                     addToQueue(tracks, { type: 'artist', name: artist.name });
-                                    showToast(`Added ${tracks.length} tracks from ${artist.name}`, 'success');
+                                    showToast(`Added ${countOf(tracks.length, 'track')} from ${artist.name}`, 'success');
                                   } else {
                                     showToast(`No top tracks found for ${artist.name}`, 'error');
                                   }
@@ -49155,7 +49156,7 @@ React.createElement('div', {
                             marginTop: '2px'
                           }
                         },
-                          `${folder.track_count || 0} tracks`
+                          `${countOf(folder.track_count || 0, 'track')}`
                         )
                       ),
                       React.createElement('div', { className: 'flex items-center gap-2', style: { marginLeft: '16px' } },
@@ -50374,7 +50375,7 @@ React.createElement('div', {
                   color: 'var(--text-secondary)',
                   marginTop: '2px'
                 }
-              }, addToPlaylistPanel.tracks[0]?.artist || `${addToPlaylistPanel.tracks.length} tracks`)
+              }, addToPlaylistPanel.tracks[0]?.artist || `${countOf(addToPlaylistPanel.tracks.length, 'track')}`)
             ),
             // DONE button - executes additions for all selected playlists
             React.createElement(Button, { variant: selectedPlaylistsForAdd.length > 0 ? 'primary' : 'secondary', onClick: () => {
@@ -50809,7 +50810,7 @@ React.createElement('div', {
                 // Song count - shows updated count from playlists state
                 React.createElement('span', {
                   className: `text-sm flex-shrink-0 ${isAdded ? 'text-ink-success font-medium' : 'text-ink-tertiary'}`
-                }, `${playlist.tracks?.length || 0} songs`),
+                }, `${countOf(playlist.tracks?.length || 0, 'track')}`),
                 // Checkmark if added
                 isAdded && React.createElement(Icons.Check, { className: 'w-5 h-5 text-ink-success flex-shrink-0' })
               );
@@ -51633,7 +51634,7 @@ React.createElement('div', {
                           React.createElement('div', { style: { flex: 1, minWidth: 0 } },
                             React.createElement('div', { style: { fontSize: '14px', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, playlist.name),
                             React.createElement('div', { style: { fontSize: '12px', color: 'var(--text-tertiary)' } },
-                              `${playlist.trackCount} tracks`,
+                              `${countOf(playlist.trackCount, 'track')}`,
                               !playlist.isOwnedByUser && ' · Following'
                             )
                           )

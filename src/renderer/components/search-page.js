@@ -31,6 +31,7 @@ const { visibleSources, sourceRowState } = require('../lib/visible-sources');
 const { generateArtistPattern, PlayTop10Icon, QueueTop10Icon, SearchArtistCard, SearchHistoryItem } = require('./cards');
 const { trackSlug, slug } = require('../lib/track-slug');
 const { releaseMenu, artistMenu } = require('../lib/item-menus');
+const { countOf } = require('../lib/plural');
 
 const { Play } = Icons;
 // The in-flight album prefetch set app.js keeps on window, shared so a
@@ -432,7 +433,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                               const tracks = await getArtistTopTracks(artist.name);
                               if (tracks.length > 0) {
                                 addToQueue(tracks, { type: 'artist', name: artist.name });
-                                showToast(`Added ${tracks.length} tracks from ${artist.name}`, 'success');
+                                showToast(`Added ${countOf(tracks.length, 'track')} from ${artist.name}`, 'success');
                               } else {
                                 showToast(`No top tracks found for ${artist.name}`, 'error');
                               }
@@ -1055,7 +1056,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                         color: 'var(--text-secondary)',
                         marginTop: '2px'
                       }
-                    }, `${playlist.creator || 'Unknown'} • ${playlist.tracks?.length || 0} tracks`)
+                    }, `${playlist.creator || 'Unknown'} • ${countOf(playlist.tracks?.length || 0, 'track')}`)
                   );
                 })
               )
@@ -1366,7 +1367,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                     const tracks = await getArtistTopTracks(artist.name);
                     if (tracks.length > 0) {
                       addToQueue(tracks, { type: 'artist', name: artist.name });
-                      showToast(`Added ${tracks.length} tracks from ${artist.name}`, 'success');
+                      showToast(`Added ${countOf(tracks.length, 'track')} from ${artist.name}`, 'success');
                     } else {
                       showToast(`No top tracks found for ${artist.name}`, 'error');
                     }
@@ -1760,7 +1761,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                           }
                           if (prefetched?.tracks?.length > 0) {
                             addToQueue(prefetched.tracks, { type: 'album', name: album.title, artist: album['artist-credit']?.[0]?.name });
-                            showToast(`Added ${prefetched.tracks.length} tracks from "${album.title}" to queue`, 'success');
+                            showToast(`Added ${countOf(prefetched.tracks.length, 'track')} from "${album.title}" to queue`, 'success');
                           } else {
                             showToast('Could not load album tracks', 'error');
                           }
@@ -1878,7 +1879,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       marginTop: '2px'
                     }
                   },
-                    `${playlist.tracks?.length || 0} tracks`
+                    `${countOf(playlist.tracks?.length || 0, 'track')}`
                   )
                 );
               })

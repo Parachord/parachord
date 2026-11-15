@@ -35,6 +35,7 @@ const { releaseMenu, artistMenu } = require('../lib/item-menus');
 const { formatCalendarDate } = require('../lib/calendar-date');
 const { generateArtistId } = require('../lib/collection-ids');
 const { parseBioMarkup } = require('../lib/discogs-markup');
+const { countOf } = require('../lib/plural');
 
 // Plain functions from Parachord, passed as stable wrappers.
 const ARTIST_PAGE_HANDLERS = [
@@ -698,7 +699,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                   };
                 });
                 addToQueue(tracks, { type: 'album', name: rel.title, id: rel.id });
-                showToast(`Added ${tracks.length} tracks to queue`, 'success');
+                showToast(`Added ${countOf(tracks.length, 'track')} to queue`, 'success');
               }
             },
             onAlbumAddToPlaylist: (rel) => {
@@ -1716,7 +1717,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                               const tracks = await getArtistTopTracks(artist.name);
                               if (tracks.length > 0) {
                                 addToQueue(tracks, { type: 'artist', name: artist.name });
-                                showToast(`Added ${tracks.length} tracks from ${artist.name}`, 'success');
+                                showToast(`Added ${countOf(tracks.length, 'track')} from ${artist.name}`, 'success');
                               } else {
                                 showToast(`No top tracks found for ${artist.name}`, 'error');
                               }

@@ -89,6 +89,7 @@ Summary; the full text, with the incidents behind each rule, is in [renderer-pat
 - **Section titles come from `SectionHeader`** (`src/renderer/components/section-header.js`, Home's style): a heading over a row or grid of content never carries its own font or link styles. Heroes, dialog titles and the small uppercase group labels are different elements.
 - **Source icons come from `visibleSources`** (`src/renderer/lib/visible-sources.js`): a row's service icons, order and dimming are one rule (real sources, `playbackResolvers` only, `resolverOrder`), never a per-list copy.
 - **Filter buttons come from `FilterChips`** (`src/renderer/components/filter-chips.js`, Home's source filter style): a row of pick-one chips never carries its own pill classes.
+- **Counts in UI text come from `countOf`** (`src/renderer/lib/plural.js`): `countOf(n, 'track')` gives "1 track" / "2 tracks"; never write `${n} tracks`, which reads "1 tracks". `tests/renderer/plural.test.js` fails on a hard-coded one (console lines and AI-prompt text excepted).
 - **Buttons come from `Button`** (`src/renderer/components/button.js`): primary, secondary, destructive, text and icon variants with focus, active, disabled and busy states. An icon button needs an `aria-label`.
 - **"Why it's here" badges come from `ReasonBadge`** (`src/renderer/components/reason-badge.js`): the round badge on a cover with the reason as its tooltip (Shuffleupagus picks on Home and Recommendations, Critical Darlings summaries). `shuffleupagusBadgeProps(item)` says whether an item gets one. `ReasonMark` is the same disc as a decorative mark (Home's "Ask Shuffleupagus" heading), so Shuffleupagus reads as one thing everywhere.
 - **Tooltips come from `Tooltip`** (`src/renderer/components/ui-atoms.js`): wrap a trigger in `Tooltip`, or put `data-tooltip` on a control and `TooltipLayer` shows it; never a native `title` on a control. An icon-only control still needs its own `aria-label`.
@@ -150,7 +151,7 @@ Each rule below exists because the audit found its absence. Read the audit's are
   - Never in UI text: "resolver", ids, file extensions, raw `error.message`, or Settings paths that don't exist.
   - Sentence case everywhere except native menus, tabs, Settings section headings and page titles. Never type caps; use CSS `uppercase`.
   - "…" not "...".
-  - Plurals go through one helper, never a hard-coded "tracks".
+  - Plurals go through one helper (`countOf`), never a hard-coded "tracks".
   - An error says what happened and what to do. A confirm button is named for its action and sits next to Cancel. Success is a toast, not a dialog.
 - **The ratchet enforces this.** `tests/ci/design-drift.test.js` runs `scripts/design-drift.js` over `src/renderer/` and compares against `tests/ci/design-drift-baseline.json`.
   - It counts hex colours, palette classes, theme ternaries, clickable non-buttons, `outline: 'none'`, native dialogs, "...", pasted SVG paths, off-scale font sizes and radii, and JS hover handlers that change style. It also flags CSS variables the renderer uses but `index.html` doesn't define.

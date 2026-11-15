@@ -28,6 +28,7 @@ const { homeSetupItems } = require('../lib/home-setup');
 const { freshestPlaylists, recentLoves, changeBadge, freshChangeLine, jumpBackInTiles } = require('../lib/home-model');
 const { playlistSubtitle, homeSections, exampleShufflePrompt, homeTopArtists, albumsNeedingArt, lovesMosaicAlbums } = require('../lib/home-model');
 const { trackSlug } = require('../lib/track-slug');
+const { countOf } = require('../lib/plural');
 
 // Plain functions from Parachord, passed as stable wrappers.
 const HOME_PAGE_HANDLERS = [
@@ -379,7 +380,7 @@ const HomePage = React.memo(function HomePage(props) {
     onPlay: (album) => withAlbumTracks(album, (tracks) => playTrackCollection(tracks, albumContext(album))),
     onQueue: (album) => withAlbumTracks(album, (tracks) => {
       addToQueue(tracks, albumContext(album));
-      showToast(`Added ${tracks.length} tracks from ${album.title}`, 'success');
+      showToast(`Added ${countOf(tracks.length, 'track')} from ${album.title}`, 'success');
     }),
     onAddToPlaylist: (album) => withAlbumTracks(album, (tracks) => setAddToPlaylistPanel({
       open: true, tracks, sourceName: `${album.title} by ${album.artist}`, sourceType: 'album',
@@ -399,7 +400,7 @@ const HomePage = React.memo(function HomePage(props) {
     const tracks = playlistTracks(p);
     if (tracks.length === 0) return;
     addToQueue(tracks, { type: 'playlist', id: p.id, name: p.title });
-    showToast(`Added ${tracks.length} tracks from ${p.title}`, 'success');
+    showToast(`Added ${countOf(tracks.length, 'track')} from ${p.title}`, 'success');
   };
   const playlistActions = {
     onOpen: (p) => loadPlaylist(p),

@@ -25,6 +25,7 @@ const { VirtualizedTrackList } = require('./track-lists');
 const { sourceRowState } = require('../lib/visible-sources');
 const { ResolverIcon } = require('./ui-atoms');
 const { CollectionArtistCard, CollectionAlbumCard } = require('./cards');
+const { countOf } = require('../lib/plural');
 
 // Plain functions from Parachord, passed as stable wrappers.
 const COLLECTION_PAGE_HANDLERS = [
@@ -823,7 +824,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                       const tracks = await getArtistTopTracks(artist.name);
                       if (tracks.length > 0) {
                         addToQueue(tracks, { type: 'artist', name: artist.name });
-                        showToast(`Added ${tracks.length} tracks from ${artist.name}`, 'success');
+                        showToast(`Added ${countOf(tracks.length, 'track')} from ${artist.name}`, 'success');
                       } else {
                         showToast(`No top tracks found for ${artist.name}`, 'error');
                       }
@@ -906,7 +907,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                         .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
                       if (albumTracks.length > 0) {
                         addToQueue(albumTracks, { type: 'album', name: albumData.title, artist: albumData.artist });
-                        showToast(`Added ${albumTracks.length} tracks from ${albumData.title}`, 'success');
+                        showToast(`Added ${countOf(albumTracks.length, 'track')} from ${albumData.title}`, 'success');
                       }
                     },
                     onContextMenu: (e, albumData) => {
