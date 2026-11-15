@@ -108,7 +108,7 @@ test('sort and period menus are sentence case, with en dashes in A–Z', () => {
 test('the artist page shares its Achordion link: a Share menu, and right-click anywhere on the hero', () => {
   const artist = read('src/renderer/components/artist-page.js');
   expect(artist).toMatch(/React\.createElement\(Menu, \{\s*label: 'Share',\s*renderTrigger: \(t\) => React\.createElement\(ShareButton, t\),[\s\S]{0,700}publishArtistSmartLink\([\s\S]{0,300}\{ openInBrowser: true \}\)/);
-  expect(artist).toMatch(/cursor: isHeaderCollapsed \? 'pointer' : 'default'\s*\},[\s\S]{0,200}onContextMenu: copyParachordLink/);
+  expect(artist).toMatch(/cursor: isHeaderCollapsed \? 'pointer' : 'default',[\s\S]{0,500}onContextMenu: copyParachordLink/);
 });
 
 test('the artist hero casts a shadow once content scrolls under it', () => {
