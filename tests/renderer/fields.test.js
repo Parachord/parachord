@@ -58,7 +58,7 @@ test('Settings > General uses the field set', () => {
   const a = app.indexOf("settingsTab === 'general' && ");
   const general = app.slice(a, app.indexOf("settingsTab === 'about' && ", a));
   expect((general.match(/React\.createElement\(SettingRow, \{/g) || []).length).toBeGreaterThanOrEqual(10);
-  expect((general.match(/React\.createElement\(Select, \{/g) || []).length).toBe(2);
+  expect((general.match(/React\.createElement\(Select, \{/g) || []).length).toBe(1);
   expect(general).toContain("React.createElement(RadioGroup, {");
   expect(general).toContain("React.createElement('form', {");
   expect(general).not.toMatch(/React\.createElement\('select', \{/);
@@ -85,4 +85,10 @@ test('no user-facing "resolver" in labels, toasts, dialogs or native menus', () 
   const ui = new RegExp(`(?:label|title|message|confirmLabel|name)\\s*:\\s*['\`][^'\`\\n]*${word}|\\}, '[^'\\n]*${word}[^'\\n]*'\\)|showToast\\(['\`][^'\`\\n]*${word}`, 'g');
   const hits = files.flatMap((f) => (fs.readFileSync(path.join(root, f), 'utf8').match(ui) || []).map((m) => `${f}: ${m}`));
   expect(hits).toEqual([]);
+});
+
+test('Playback Quality says it is Amazon Music only today, and on/off is a switch', () => {
+  const app = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  expect(app).toContain("'Only Amazon Music uses these settings right now. Other services choose their own quality.'");
+  expect(app).toMatch(/label: 'Adjust to your connection'[^\n]*\n\s*React\.createElement\(Switch, \{ checked: playbackAbr === true/);
 });

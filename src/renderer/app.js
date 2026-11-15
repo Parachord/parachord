@@ -44232,13 +44232,14 @@ useEffect(() => {
                     }, 'Playback Quality'),
                     React.createElement('p', {
                       style: { fontSize: '12px', color: 'var(--text-secondary)' }
-                    }, 'Stream quality for sources that play through the shared player (Amazon Music and future streaming plug-ins). Bandwidth ceilings only — codec is irrelevant to the tier; spatial/Atmos rungs need the preference below.')
+                    }, 'Only Amazon Music uses these settings right now. Other services choose their own quality.')
                   ),
-                  React.createElement(SettingRow, { label: 'Quality', hint: 'Applies to the current stream immediately.' },
+                  React.createElement(SettingRow, { label: 'Amazon Music quality', hint: 'Changes the playing track right away.' },
 React.createElement(Select, { value: playbackQuality, onChange: (v) => setPlaybackQuality(v), options: [{ value: 'max', label: 'Max (best available, lossless where playable)' }, { value: 'high', label: 'High (up to 500 kbps)' }, { value: 'standard', label: 'Standard (up to 200 kbps)' }, { value: 'saver', label: 'Data saver (up to 100 kbps)' }] })),
-                  React.createElement(SettingRow, { label: 'Auto adjust quality', hint: 'Adapt to current network speed at or below the chosen tier.' },
-React.createElement(Select, { value: playbackAbr ? 'on' : 'off', onChange: (v) => setPlaybackAbr(v === 'on'), options: [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }] })),
-                  React.createElement(SettingRow, { label: 'Prefer Dolby Atmos mixes', hint: 'Plays the 5.1 core of a track’s Atmos mix when available. This isn’t full Atmos: it’s mixed down on stereo output, and it replaces lossless FLAC at the Max tier.' },
+                  React.createElement(SettingRow, { label: 'Adjust to your connection', hint: 'Lowers quality when your connection is slow, never above the level you chose.' },
+                    React.createElement(Switch, { checked: playbackAbr === true, onToggle: () => setPlaybackAbr(playbackAbr !== true) })
+                  ),
+                  React.createElement(SettingRow, { label: 'Prefer Dolby Atmos mixes', hint: 'Plays the 5.1 core of a track’s Atmos mix when there is one. This isn’t full Atmos: it’s mixed down on stereo output, and it plays instead of lossless FLAC when quality is Max.' },
                     React.createElement(Switch, { checked: playbackSpatial === true, onToggle: () => setPlaybackSpatial(playbackSpatial !== true) })
                   )
                 ),
