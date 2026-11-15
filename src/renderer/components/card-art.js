@@ -143,14 +143,17 @@ function ArtBox({ imageUrl, mosaic, item, onArtError, children, style, placehold
 
 // The Fresh Drops page's release-type badge (app.js; the .release-badge class
 // in index.html): top right, Album indigo, EP purple, anything else pink.
-const RELEASE_BADGE_BG = { album: 'rgba(99, 102, 241, 0.9)', ep: 'rgba(168, 85, 247, 0.9)', other: 'rgba(236, 72, 153, 0.9)' }; // on-art
+// The type's colour (lib/release-types.js, the album page's palette) at 90%.
+const { RELEASE_TYPE_COLORS, releaseTypeColor } = require('../lib/release-types');
+const RELEASE_BADGE_BG = Object.fromEntries(Object.entries(RELEASE_TYPE_COLORS)
+  .map(([type, color]) => [type, `color-mix(in srgb, ${color} 90%, transparent)`]));
 function releaseBadge(type) {
   if (typeof type !== 'string' || !type) return null;
   const t = type.toLowerCase();
   return e('div', { style: { position: 'absolute', top: '8px', right: '8px' } },
     e('span', {
       className: 'release-badge',
-      style: { backgroundColor: RELEASE_BADGE_BG[t] || RELEASE_BADGE_BG.other, color: 'white' }, // on-art
+      style: { backgroundColor: `color-mix(in srgb, ${releaseTypeColor(t)} 90%, transparent)`, color: 'white' }, // on-art
     }, t === 'ep' ? 'EP' : t.charAt(0).toUpperCase() + t.slice(1)));
 }
 

@@ -103,7 +103,8 @@ describe('wiring', () => {
     for (const name of ['ReleaseCard', 'ReleasePage']) {
       expect(slice(name)).toContain('globalThis.reportBrokenAlbumArt');
     }
-    expect(slice('ReleaseCard')).toMatch(/onError: onArtError/);
+    // The artist page's cards are the shared AlbumCard, handed the retry.
+    expect(slice('ReleaseCard')).toMatch(/React\.createElement\(AlbumCard, \{[\s\S]*\bonArtError,/);
     // Every album grid's card (the old CollectionAlbumCard among them) is
     // components/album-card.js's AlbumCard: a cover it looked up itself
     // (getAlbumArt) is reported to the pipeline, and its img (card-art.js's

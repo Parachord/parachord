@@ -78,7 +78,7 @@ describe('the lists use it', () => {
 
   test('Search\'s card dots: the shared rule and the plugin colours, no colour map of their own', () => {
     const page = read('components/search-page.js');
-    const at = page.indexOf('// Source dots - bottom right corner');
+    const at = page.indexOf('// Source dots, bottom right (hidden on hover)');
     expect(at).toBeGreaterThan(-1);
     const dots = page.slice(at, at + 1500);
     expect(dots).toMatch(/visibleSources\(track, \{ trackSources, playbackResolvers: activeResolvers, resolverOrder \}\)\.slice\(0, 4\)/);

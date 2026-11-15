@@ -19,6 +19,7 @@
 
 const Icons = require('./icons');
 const { StickyBar } = require('./filter-box');
+const { useReveal, ArtOverlay } = require('./card-art');
 const { Badge } = require('./badge');
 const { lbMbidOf } = require('../lib/playlist-share');
 const { HeaderControl } = require('./header-control');
@@ -130,6 +131,8 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
   // 2x2 mosaic everywhere this view renders a cover: the blurred hero
   // background, the 192px card and the share link.
   const playlistCover = (typeof selectedPlaylist?.coverArt === 'string' && selectedPlaylist.coverArt.trim()) || null;
+  // The cover's actions show on hover or keyboard focus (card-art useReveal).
+  const coverReveal = useReveal();
   return React.createElement('div', {
         className: 'flex-1 flex flex-col',
         style: { overflow: 'hidden' }
@@ -679,13 +682,13 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                   // Recommendations page's card showed — sits above the tiles,
                   // and a dead URL removes itself so the mosaic shows again.
                   // The hover overlay after it stays on top.
-                  React.createElement('div', {
-                    className: 'rounded-lg overflow-hidden album-art-container group/art relative',
+                  React.createElement('div', Object.assign({
+                    className: 'rounded-lg overflow-hidden album-art-container relative',
                     style: {
                       width: '100%',
                       aspectRatio: '1 / 1'
                     }
-                  },
+                  }, coverReveal.props),
                     hasCachedCovers ?
                       React.createElement('div', { className: 'grid grid-cols-2 grid-rows-2 w-full h-full' },
                         [0, 1, 2, 3].map(idx => {
@@ -723,15 +726,11 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                     // (DOM order = paint order here; see the comment above).
                     playlistCover && React.createElement(PlaylistCoverImage, { url: playlistCover }),
                     // Hover overlay with action buttons
-                    React.createElement('div', {
-                      className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-3',
-                      style: { pointerEvents: 'auto' }
-                    },
-                      // Add to Playlist button
-                      React.createElement('button', {
-                        onClick: (e) => {
-                          e.stopPropagation();
-                          const tracksWithIds = (playlistTracks || []).map(track => ({
+                    React.createElement(ArtOverlay, {
+shown: coverReveal.shown,
+title: selectedPlaylist.title,
+onAddToPlaylist: () => {
+const tracksWithIds = (playlistTracks || []).map(track => ({
                             ...track,
                             id: track.id || trackSlug(track.artist || 'unknown', track.title || 'untitled'),
                             sources: trackSources[track.id] || {}
@@ -746,17 +745,8 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                             setSelectedPlaylistsForAdd([]);
                           }
                         },
-                        className: 'w-10 h-10 rounded-full flex items-center justify-center transition-transform hover:scale-110 bg-white/15 hover:bg-white/25 text-white',
-                        style: { border: 'none', cursor: 'pointer' },
-                        'aria-label': 'Add to playlist', 'data-tooltip': 'Add to playlist'
-                      },
-                        React.createElement(Icons.Plus, { className: 'w-5 h-5' })
-                      ),
-                      // Play button (center, larger)
-                      React.createElement('button', {
-                        onClick: (e) => {
-                          e.stopPropagation();
-                          setTrackLoading(true);
+onPlay: () => {
+setTrackLoading(true);
                           const tracksWithIds = (playlistTracks || []).map(track => ({
                             ...track,
                             id: track.id || trackSlug(track.artist || 'unknown', track.title || 'untitled'),
@@ -772,17 +762,8 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                             setTrackLoading(false);
                           }
                         },
-                        className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
-                        style: { border: 'none', cursor: 'pointer' },
-                        'aria-label': 'Play', 'data-tooltip': 'Play'
-                      },
-                        React.createElement(Play, { size: 22, className: 'text-ink-primary ml-0.5' })
-                      ),
-                      // Add to Queue button
-                      React.createElement('button', {
-                        onClick: (e) => {
-                          e.stopPropagation();
-                          const tracksWithIds = (playlistTracks || []).map(track => ({
+onQueue: () => {
+const tracksWithIds = (playlistTracks || []).map(track => ({
                             ...track,
                             id: track.id || trackSlug(track.artist || 'unknown', track.title || 'untitled'),
                             sources: trackSources[track.id] || {}
@@ -791,14 +772,8 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                             const context = playlistPlaybackContext(selectedPlaylist);
                             addToQueue(tracksWithIds, context);
                           }
-                        },
-                        className: 'w-10 h-10 rounded-full flex items-center justify-center transition-transform hover:scale-110 bg-white/15 hover:bg-white/25 text-white',
-                        style: { border: 'none', cursor: 'pointer' },
-                        'aria-label': 'Add to queue', 'data-tooltip': 'Add to queue'
-                      },
-                        React.createElement(Icons.QueueAdd, { className: 'w-5 h-5', strokeWidth: 2 })
-                      )
-                    )
+                        }
+})
                   ),
                   // Playlist title inside card - matching grid typography (13px/500)
                   React.createElement('div', {

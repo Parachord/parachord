@@ -23,6 +23,7 @@ const { sellerColor, sellerTextColor, sellerBadgeBg, sellerShortName, sellerName
 const { Tooltip, ShareButton } = require('./ui-atoms');
 const { CardButton } = require('./card-button');
 const Icons = require('./icons');
+const { RELEASE_TYPE_COLORS } = require('../lib/release-types');
 const { FilterBox, StickyBar } = require('./filter-box');
 const { Button, buttonClassName } = require('./button');
 const { PAGE_COLORS } = require('../lib/page-colors');
@@ -805,9 +806,9 @@ const ArtistPage = React.memo(function ArtistPage(props) {
               const searchFiltered = filterArtistReleases(artistReleases);
               const chips = [
                 { value: 'all', label: 'All' },
-                { value: 'album', label: 'Studio Albums', color: 'rgb(99, 102, 241)' },
-                { value: 'ep', label: 'EPs', color: '#a855f7' },
-                { value: 'single', label: 'Singles', color: '#db2777' },
+                { value: 'album', label: 'Studio Albums', color: RELEASE_TYPE_COLORS.album },
+                { value: 'ep', label: 'EPs', color: RELEASE_TYPE_COLORS.ep },
+                { value: 'single', label: 'Singles', color: RELEASE_TYPE_COLORS.single },
                 { value: 'live', label: 'Live', color: '#d97706' },
                 { value: 'compilation', label: 'Compilations', color: '#0eb3a0' }
               ].map(({ value, label, color }) => {

@@ -94,14 +94,19 @@ describe('AlbumCard', () => {
     const freshDrops = app.slice(app.indexOf("activeView === 'new-releases' && React.createElement"));
     expect(freshDrops.slice(0, 60000)).toMatch(/React\.createElement\(AlbumCard, Object\.assign\(\{[\s\S]{0,400}?releaseType: release\.releaseType,/);
     const { RELEASE_BADGE_BG } = require('../../src/renderer/components/card-art');
-    expect(RELEASE_BADGE_BG).toEqual({ album: 'rgba(99, 102, 241, 0.9)', ep: 'rgba(168, 85, 247, 0.9)', other: 'rgba(236, 72, 153, 0.9)' });
+    // The album page's palette (lib/release-types.js) at 90%, every type.
+    expect(RELEASE_BADGE_BG.album).toBe('color-mix(in srgb, rgb(99, 102, 241) 90%, transparent)');
+    expect(RELEASE_BADGE_BG.live).toBe('color-mix(in srgb, #d97706 90%, transparent)');
+    expect(RELEASE_BADGE_BG.compilation).toBe('color-mix(in srgb, #0eb3a0 90%, transparent)');
     const badge = (releaseType) => {
       const html = h(S.AlbumCard, { album: { ...album, homeRow: 'fresh', releaseType } });
       return (html.match(/<div style="position:absolute;top:8px;right:8px"><span class="release-badge" style="([^"]*)">([^<]*)<\/span>/) || []).slice(1);
     };
-    expect(badge('album')).toEqual(['background-color:rgba(99, 102, 241, 0.9);color:white', 'Album']);
-    expect(badge('ep')).toEqual(['background-color:rgba(168, 85, 247, 0.9);color:white', 'EP']);
-    expect(badge('single')).toEqual(['background-color:rgba(236, 72, 153, 0.9);color:white', 'Single']);
+    expect(badge('album')).toEqual(['background-color:color-mix(in srgb, rgb(99, 102, 241) 90%, transparent);color:white', 'Album']);
+    expect(badge('ep')).toEqual(['background-color:color-mix(in srgb, #a855f7 90%, transparent);color:white', 'EP']);
+    expect(badge('single')).toEqual(['background-color:color-mix(in srgb, #db2777 90%, transparent);color:white', 'Single']);
+    // Live has its own colour (it wore Single's pink before).
+    expect(badge('live')).toEqual(['background-color:color-mix(in srgb, #d97706 90%, transparent);color:white', 'Live']);
     // No date chip, and no badge outside Fresh Drops or without a type.
     expect(h(S.AlbumCard, { album: { ...album, homeRow: 'fresh', releaseType: 'album' } })).not.toContain('Out Friday');
     expect(h(S.AlbumCard, { album: { ...album, releaseType: 'album' } })).not.toContain('release-badge');

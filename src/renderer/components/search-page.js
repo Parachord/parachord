@@ -777,186 +777,55 @@ const SearchPage = React.memo(function SearchPage(props) {
               ...searchResults.tracks.slice(0, getItemsPerRow(140)).map((track, index) => {
                 const trackItemWidth = Math.floor((searchContainerWidth - (getItemsPerRow(140) - 1) * 16) / getItemsPerRow(140));
                 const animationDelay = Math.min(index * 40, 300);
-                return React.createElement(CardButton, { role: 'listitem', label: `${track.title} by ${track.artist}`,
+                return React.createElement(AlbumCard, {
+                  role: 'listitem',
                   key: track._rowKey || track.id,
-                  className: 'group cursor-grab active:cursor-grabbing release-card card-fade-up',
-                  style: {
-                    width: trackItemWidth,
-                    padding: '10px',
-                    borderRadius: '10px',
-                    backgroundColor: 'var(--card-bg)',
-                    boxShadow: 'var(--card-shadow)',
-                    animationDelay: `${animationDelay}ms`
-                  },
-                  draggable: true,
-                  onActivate: () => {
+                  // A track card: the shared album card's shape (cover, title,
+                  // artist, the overlay), labelled for the track.
+                  album: { id: track.id, title: track.title, artist: track.artist, imageUrl: track.albumArt || getCachedAlbumArt(track.artist, track.album, track.releaseGroupId, track.releaseId) || null },
+                  width: trackItemWidth,
+                  animationDelay,
+                  className: 'group',
+                  label: `Play ${track.title} by ${track.artist}`,
+                  onOpen: () => {
                     const cachedArt = getCachedAlbumArt(track.artist, track.album, track.releaseGroupId, track.releaseId);
-                    saveSearchHistory(searchQuery, {
-                      type: 'track',
-                      id: track.id,
-                      name: track.title,
-                      artist: track.artist,
-                      imageUrl: track.albumArt || cachedArt
-                    });
+                    saveSearchHistory(searchQuery, { type: 'track', id: track.id, name: track.title, artist: track.artist, imageUrl: track.albumArt || cachedArt });
                     handlePlay(track);
                   },
-                  onDragStart: (e) => {
-                    e.dataTransfer.effectAllowed = 'copy';
-                    e.dataTransfer.setData('text/plain', JSON.stringify({
-                      type: 'track',
-                      track: {
-                        id: track.id,
-                        title: track.title,
-                        artist: track.artist,
-                        album: track.album,
-                        duration: track.duration,
-                        albumArt: track.albumArt,
-                        sources: track.sources || {}
-                      }
-                    }));
+                  onPlay: () => {
+                    const cachedArt = getCachedAlbumArt(track.artist, track.album, track.releaseGroupId, track.releaseId);
+                    saveSearchHistory(searchQuery, { type: 'track', id: track.id, name: track.title, artist: track.artist, imageUrl: track.albumArt || cachedArt });
+                    handlePlay(track);
                   },
-                  onContextMenu: (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    if (window.electron?.contextMenu?.showTrackMenu) {
-                      window.showItemMenu({
-                        type: 'track',
-                        track: {
-                          id: track.id,
-                          title: track.title,
-                          artist: track.artist,
-                          album: track.album,
-                          duration: track.duration,
-                          albumArt: track.albumArt,
-                          sources: track.sources || {}
-                        }
-                      });
-                    }
-                  }
-                },
-                  // Album art with rounded corners
-                  React.createElement('div', {
-                    className: 'w-full aspect-square rounded-lg overflow-hidden mb-2 relative album-art-container group/art'
-                  },
-                    // Dark placeholder background
-                    React.createElement('div', {
-                      className: 'absolute inset-0',
-                      style: { background: 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)' }
-                    }),
-                    // Image with fade-in (check cache as fallback for immediate display)
-                    // Use getCachedAlbumArt for consistent lookup (checks IDs + artist/album name)
-                    (track.albumArt || getCachedAlbumArt(track.artist, track.album, track.releaseGroupId, track.releaseId)) && React.createElement('img', {
-                      key: track.albumArt || getCachedAlbumArt(track.artist, track.album, track.releaseGroupId, track.releaseId),
-                      src: track.albumArt || getCachedAlbumArt(track.artist, track.album, track.releaseGroupId, track.releaseId),
-                      alt: track.album,
-                      className: 'absolute inset-0 w-full h-full object-cover transition-all duration-300 group-hover:scale-105',
-                      style: { opacity: 0 },
-                      ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
-                      onLoad: (e) => { e.target.style.opacity = '1'; },
-                      onError: (e) => { e.target.style.display = 'none'; handleSearchArtBroken('track', track, track.albumArt || getCachedAlbumArt(track.artist, track.album, track.releaseGroupId, track.releaseId)); }
-                    }),
-                    // Hover overlay with action buttons (Add to Playlist, Play, Queue)
-                    React.createElement('div', {
-                      className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 card-reveal transition-opacity duration-200 flex items-center justify-center gap-1.5',
-                      style: { pointerEvents: 'auto' }
+                  onQueue: () => addToQueue([track]),
+                  onAddToPlaylist: () => setAddToPlaylistPanel({ open: true, tracks: [track], sourceName: track.title, sourceType: 'track' }),
+                  onArtError: () => handleSearchArtBroken('track', track, track.albumArt || getCachedAlbumArt(track.artist, track.album, track.releaseGroupId, track.releaseId)),
+                  dragData: { type: 'track', track: { id: track.id, title: track.title, artist: track.artist, album: track.album, duration: track.duration, albumArt: track.albumArt, sources: track.sources || {} } },
+                  onContextMenu: () => window.showItemMenu({
+                    type: 'track',
+                    track: { id: track.id, title: track.title, artist: track.artist, album: track.album, duration: track.duration, albumArt: track.albumArt, sources: track.sources || {} }
+                  }),
+                  // Source dots, bottom right (hidden on hover): the shared
+                  // source-icon rule (lib/visible-sources), first four, each in
+                  // its plugin's colour, dimmed like the row icons.
+                  cornerBadge: (() => {
+                    const dots = visibleSources(track, { trackSources, playbackResolvers: activeResolvers, resolverOrder }).slice(0, 4);
+                    if (dots.length === 0) return null;
+                    return React.createElement('div', {
+                      className: 'absolute bottom-1.5 right-1.5 flex gap-1 transition-opacity group-hover:opacity-0'
                     },
-                      // Add to Playlist button
-                      React.createElement('button', {
-                        onClick: (e) => {
-                          e.stopPropagation();
-                          setAddToPlaylistPanel({
-                            open: true,
-                            tracks: [track],
-                            sourceName: track.title,
-                            sourceType: 'track'
-                          });
-                        },
-                        className: 'w-7 h-7 rounded-full flex items-center justify-center transition-all hover:scale-110',
-                        style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-                        onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
-                        onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                        'aria-label': 'Add to playlist', 'data-tooltip': 'Add to playlist'
-                      },
-                        React.createElement(Icons.Plus, { className: 'w-4 h-4' })
-                      ),
-                      // Play button (center, larger)
-                      React.createElement('button', {
-                        onClick: (e) => {
-                          e.stopPropagation();
-                          const cachedArt = getCachedAlbumArt(track.artist, track.album, track.releaseGroupId, track.releaseId);
-                          saveSearchHistory(searchQuery, {
-                            type: 'track',
-                            id: track.id,
-                            name: track.title,
-                            artist: track.artist,
-                            imageUrl: track.albumArt || cachedArt
-                          });
-                          handlePlay(track);
-                        },
-                        className: 'w-9 h-9 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
-                        style: { border: 'none', cursor: 'pointer' },
-                        'aria-label': 'Play', 'data-tooltip': 'Play'
-                      },
-                        React.createElement(Play, { size: 16, className: 'text-ink-primary ml-0.5' })
-                      ),
-                      // Add to Queue button
-                      React.createElement('button', {
-                        onClick: (e) => {
-                          e.stopPropagation();
-                          addToQueue([track]);
-                        },
-                        className: 'w-7 h-7 rounded-full flex items-center justify-center transition-all hover:scale-110',
-                        style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-                        onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
-                        onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                        'aria-label': 'Add to queue', 'data-tooltip': 'Add to queue'
-                      },
-                        React.createElement(Icons.QueueAdd, { className: 'w-4 h-4', strokeWidth: 2 })
-                      )
-                    ),
-                    // Source dots - bottom right corner (hidden on hover): the
-                    // shared source-icon rule (lib/visible-sources), first four,
-                    // each in its plugin's colour, dimmed like the row icons.
-                    (() => {
-                      const dots = visibleSources(track, { trackSources, playbackResolvers: activeResolvers, resolverOrder }).slice(0, 4);
-                      if (dots.length === 0) return null;
-                      return React.createElement('div', {
-                        className: 'absolute bottom-1.5 right-1.5 flex gap-1 transition-opacity group-hover:opacity-0'
-                      },
-                        ...dots.map(({ resolverId, dim }) => React.createElement('div', {
-                          key: resolverId,
-                          style: {
-                            width: '7px',
-                            height: '7px',
-                            borderRadius: '50%',
-                            backgroundColor: allResolvers.find(r => r.id === resolverId)?.color || 'var(--text-tertiary)',
-                            opacity: dim ? 0.6 : 1,
-                            boxShadow: '0 1px 2px rgba(0,0,0,0.3)'
-                          }
-                        }))
-                      );
-                    })()
-                  ),
-                  // Track title - refined typography
-                  React.createElement('div', {
-                    className: 'truncate',
-                    style: {
-                      fontSize: '13px',
-                      fontWeight: '500',
-                      color: 'var(--text-primary)',
-                      marginTop: '6px'
-                    }
-                  }, track.title),
-                  // Artist name
-                  React.createElement('div', {
-                    className: 'truncate',
-                    style: {
-                      fontSize: '11px',
-                      color: 'var(--text-secondary)',
-                      marginTop: '2px'
-                    }
-                  }, track.artist)
-                );
+                      ...dots.map(({ resolverId, dim }) => React.createElement('div', {
+                        key: resolverId,
+                        style: {
+                          width: '7px', height: '7px', borderRadius: '50%',
+                          backgroundColor: allResolvers.find(r => r.id === resolverId)?.color || 'var(--text-tertiary)',
+                          opacity: dim ? 0.6 : 1,
+                          boxShadow: '0 1px 2px rgba(0,0,0,0.3)'
+                        }
+                      }))
+                    );
+                  })()
+                });
               })
             )
           ),

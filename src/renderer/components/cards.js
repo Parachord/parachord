@@ -10,6 +10,8 @@
 // cards-only (the playtop-10 / queue-top-10 affordances).
 const { ResolverIcon, PlaybackProgress, ShareButton } = require('./ui-atoms');
 const { TrackRow } = require('./track-lists');
+const { AlbumCard } = require('./album-card');
+const { useReveal, ArtOverlay } = require('./card-art');
 const Icons = require('./icons');
 const { EmptyState, ErrorState } = require('./states');
 const { Menu } = require('./menu');
@@ -31,13 +33,10 @@ const { regionName } = require('../lib/mb-region');
 // Release-type badge colours, shared by the release cards and the release
 // page (the filter chips use the same colours). The release page had EP and
 // Single swapped (audit bug 4).
-const RELEASE_BADGE_STYLES = {
-  album: { bg: 'rgba(99, 102, 241, 0.08)', color: 'rgb(99, 102, 241)' },
-  ep: { bg: 'rgba(168, 85, 247, 0.08)', color: '#a855f7' },
-  single: { bg: 'rgba(236, 72, 153, 0.08)', color: '#db2777' },
-  live: { bg: 'rgba(245, 158, 11, 0.08)', color: '#d97706' },
-  compilation: { bg: 'rgba(16, 201, 180, 0.08)', color: '#0eb3a0' },
-};
+// The colours are lib/release-types.js (one palette for every badge and chip).
+const { RELEASE_TYPE_COLORS } = require('../lib/release-types');
+const RELEASE_BADGE_STYLES = Object.fromEntries(Object.entries(RELEASE_TYPE_COLORS)
+  .map(([type, color]) => [type, { bg: `color-mix(in srgb, ${color} 8%, transparent)`, color }]));
 
 const generateArtistPattern = (artistName) => {
   const hash = hashString(artistName.toLowerCase());
@@ -207,7 +206,6 @@ const SearchHistoryItem = ({ entry, onQueryClick, onResultClick, onRemove }) => 
 const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, onHoverFetch, isVisible = true, animationDelay = 0, onPlay, onAddToQueue, onAddToPlaylist, prefetchedReleasesRef, onCardRef }) => {
   const year = release.date ? release.date.split('-')[0] : '';
   const [imageFailed, setImageFailed] = React.useState(false);
-  const [imageLoaded, setImageLoaded] = React.useState(false);
   // A fresh cover found after the cached one failed to load (see onArtError).
   const [replacementArt, setReplacementArt] = React.useState(null);
   const art = replacementArt || release.albumArt;
@@ -215,7 +213,6 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, 
   // Reset image states when album art URL changes
   React.useEffect(() => {
     setImageFailed(false);
-    setImageLoaded(false);
     setReplacementArt(null);
   }, [release.albumArt]);
 
@@ -230,211 +227,41 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, 
       if (!url) return;
       setReplacementArt(url);
       setImageFailed(false);
-      setImageLoaded(false);
     });
   };
 
-  const handleDragStart = (e) => {
-    e.dataTransfer.effectAllowed = 'copy';
-    const albumData = {
-      type: 'album',
-      album: {
+  // The shared album card (components/album-card.js): the cover (a
+  // placeholder when there is none, a shimmer while it is looked up), the
+  // release-type badge, the year under the title, the overlay. It was a
+  // <button> holding the overlay's buttons, which HTML doesn't allow.
+  return React.createElement(AlbumCard, {
+    album: { id: release.id, title: release.title, imageUrl: imageFailed ? null : art },
+    imageLoading: art === undefined,
+    releaseType: release.releaseType,
+    subtitle: year,
+    animationDelay,
+    className: isVisible ? '' : 'hidden',
+    cardRef: onCardRef,
+    cardProps: { 'data-release-id': release.id },
+    dragData: () => {
+      const albumData = { type: 'album', album: {
         id: trackSlug(currentArtist?.name || release.artist?.name || 'unknown', release.title || 'untitled'),
         title: release.title,
         artist: currentArtist?.name || release.artist?.name,
         year: year ? parseInt(year) : null,
         art,
         trackCount: release.tracks?.length || null
-      }
-    };
-    e.dataTransfer.setData('text/plain', JSON.stringify(albumData));
-  };
-
-  const handleClick = () => {
-    console.log('🎵 Card clicked:', release.title);
-    fetchReleaseData(release, currentArtist);
-  };
-
-  const badgeStyles = RELEASE_BADGE_STYLES;
-  const badge = badgeStyles[release.releaseType] || badgeStyles.album;
-
-  return React.createElement('button', {
-    className: `no-drag release-card card-fade-up`,
-    draggable: true,
-    onDragStart: handleDragStart,
-    'data-release-id': release.id,
-    ref: onCardRef,
-    style: {
-      width: '100%',
-      textAlign: 'left',
-      display: isVisible ? 'block' : 'none',
-      backgroundColor: 'var(--card-bg)',
-      borderRadius: '10px',
-      padding: '10px',
-      cursor: 'grab',
-      border: 'none',
-      boxShadow: 'var(--card-shadow)',
-      animationDelay: `${animationDelay}ms`
+      } };
+      return albumData;
     },
-    onClick: handleClick,
-    onContextMenu: (e) => {
-      e.preventDefault();
-      if (onContextMenu) {
-        onContextMenu(release);
-      }
-    },
-    onMouseEnter: (e) => {
-      // Prefetch release tracks on hover
-      if (onHoverFetch) {
-        onHoverFetch(release);
-      }
-    }
-  },
-    // Album art container with inner shadow overlay
-    React.createElement('div', {
-      className: `album-art-container group/art ${(art === null || imageFailed || imageLoaded) ? '' : 'animate-shimmer'}`,
-      style: {
-        width: '100%',
-        aspectRatio: '1',
-        borderRadius: '6px',
-        background: art === null || imageFailed
-          ? 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)'
-          : imageLoaded
-            ? 'var(--placeholder-bg-light)'
-            : 'linear-gradient(to right, var(--shimmer-from), var(--shimmer-via), var(--shimmer-to))',
-        backgroundSize: (art === null || imageFailed || imageLoaded) ? undefined : '200% 100%',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginBottom: '10px',
-        overflow: 'hidden',
-        position: 'relative'
-      }
-    },
-      // Album art image with fade-in
-      art && !imageFailed && React.createElement('img', {
-        src: art,
-        alt: release.title,
-        style: {
-          width: '100%',
-          height: '100%',
-          objectFit: 'cover',
-          pointerEvents: 'none',
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          opacity: imageLoaded ? 1 : 0,
-          transition: 'opacity 0.35s ease-out'
-        },
-        ref: (el) => {
-          if (el && el.complete && el.naturalWidth > 0 && !imageLoaded) {
-            setImageLoaded(true);
-          }
-        },
-        onLoad: () => setImageLoaded(true),
-        onError: onArtError
-      }),
-
-      // Music icon placeholder - refined dark style
-      (art === null || imageFailed) && React.createElement(Icons.Music, { style: {
-          width: '36px',
-          height: '36px',
-          color: 'rgba(255, 255, 255, 0.2)',
-          pointerEvents: 'none'
-        }, strokeWidth: 1.5 }),
-
-      // Hover overlay with action buttons (Add to Playlist, Play, Queue)
-      (onPlay || onAddToQueue || onAddToPlaylist) && React.createElement('div', {
-        className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-3',
-        style: { pointerEvents: 'auto' }
-      },
-        // Add to Playlist button
-        onAddToPlaylist && React.createElement('button', {
-          onClick: (e) => {
-            e.stopPropagation();
-            onAddToPlaylist(release);
-          },
-          className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
-          style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-          onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
-          onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-          'aria-label': 'Add to playlist', 'data-tooltip': 'Add to playlist'
-        },
-          React.createElement(Icons.Plus, { className: 'w-5 h-5' })
-        ),
-        // Play button (center, larger)
-        onPlay && React.createElement('button', {
-          onClick: (e) => {
-            e.stopPropagation();
-            onPlay(release);
-          },
-          className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
-          style: { border: 'none', cursor: 'pointer' },
-          'aria-label': 'Play', 'data-tooltip': 'Play'
-        },
-          React.createElement(Play, { size: 22, className: 'text-gray-800 ml-0.5' })
-        ),
-        // Add to Queue button
-        onAddToQueue && React.createElement('button', {
-          onClick: (e) => {
-            e.stopPropagation();
-            onAddToQueue(release);
-          },
-          className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
-          style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-          onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
-          onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-          'aria-label': 'Add to queue', 'data-tooltip': 'Add to queue'
-        },
-          React.createElement(Icons.QueueAdd, { className: 'w-5 h-5', strokeWidth: 2 })
-        )
-      )
-    ),
-
-    // Title - refined typography
-    React.createElement('h3', {
-      style: {
-        fontWeight: '500',
-        fontSize: '13px',
-        lineHeight: '1.4',
-        marginBottom: '3px',
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-        whiteSpace: 'nowrap',
-        color: 'var(--text-primary)',
-        letterSpacing: '0.005em',
-        pointerEvents: 'none'
-      },
-      title: release.title
-    }, release.title),
-
-    // Year and badge row
-    React.createElement('div', {
-      style: {
-        display: 'flex',
-        alignItems: 'center',
-        gap: '6px',
-        pointerEvents: 'none'
-      }
-    },
-      // Year
-      year && React.createElement('span', {
-        style: {
-          fontSize: '11px',
-          color: 'var(--text-tertiary)',
-          fontWeight: '400'
-        }
-      }, year),
-      // Badge - refined style
-      React.createElement('span', {
-        className: 'release-badge',
-        style: {
-          backgroundColor: badge.bg,
-          color: badge.color
-        }
-      }, release.releaseType.toUpperCase())
-    )
-  );
+    onOpen: () => fetchReleaseData(release, currentArtist),
+    onContextMenu: () => { if (onContextMenu) onContextMenu(release); },
+    onHoverPrefetch: onHoverFetch ? () => onHoverFetch(release) : undefined,
+    onArtError,
+    onPlay: onPlay ? () => onPlay(release) : undefined,
+    onQueue: onAddToQueue ? () => onAddToQueue(release) : undefined,
+    onAddToPlaylist: onAddToPlaylist ? () => onAddToPlaylist(release) : undefined
+  });
 };
 
 // ── The album page's source picker (#1238) ──
@@ -781,6 +608,9 @@ const ReleasePage = ({
   React.useEffect(() => { setReplacementArt(null); }, [release.albumArt]);
   const headerArt = replacementArt || release.albumArt;
 
+  // The cover's actions show on hover or keyboard focus (card-art useReveal).
+  const coverReveal = useReveal();
+
   // Use a ref to track container width for responsive layout
   const [containerWidth, setContainerWidth] = React.useState(800);
   const containerRef = React.useRef(null);
@@ -906,13 +736,13 @@ const ReleasePage = ({
           } : undefined
         },
           // Album art container
-          React.createElement('div', {
-            className: 'album-art-container group/art',
+          React.createElement('div', Object.assign({
+            className: 'album-art-container',
             style: {
               width: '100%',
               aspectRatio: '1',
               borderRadius: '6px',
-              background: 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)',
+              background: 'var(--placeholder-bg)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -920,7 +750,7 @@ const ReleasePage = ({
               overflow: 'hidden',
               position: 'relative'
             }
-          },
+          }, coverReveal.props),
             // Image (absolute positioned, fades in on load, hides on error)
             headerArt && React.createElement('img', {
               key: headerArt,
@@ -947,60 +777,23 @@ const ReleasePage = ({
                 if (report) report(headerArt, { artist: artistName, album: release.title, releaseId: release.id }).then((url) => { if (url) setReplacementArt(url); });
               }
             }),
-            // Placeholder icon (always behind) - dark theme
+            // Placeholder icon (always behind)
             React.createElement(Icons.Music, { style: {
                 width: '36px',
                 height: '36px',
-                color: 'rgba(255, 255, 255, 0.2)',
+                color: 'var(--text-tertiary)',
                 pointerEvents: 'none'
               }, strokeWidth: 1.5 }),
 
-            // Hover overlay with action buttons (Add to Playlist, Play, Queue)
-            (onAlbumPlay || onAlbumAddToQueue || onAlbumAddToPlaylist) && React.createElement('div', {
-              className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-3',
-              style: { pointerEvents: 'auto' }
-            },
-              // Add to Playlist button
-              onAlbumAddToPlaylist && React.createElement('button', {
-                onClick: (e) => {
-                  e.stopPropagation();
-                  onAlbumAddToPlaylist(release);
-                },
-                className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
-                style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-                onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
-                onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                'aria-label': 'Add to playlist', 'data-tooltip': 'Add to playlist'
-              },
-                React.createElement(Icons.Plus, { className: 'w-5 h-5' })
-              ),
-              // Play button (center, larger)
-              onAlbumPlay && React.createElement('button', {
-                onClick: (e) => {
-                  e.stopPropagation();
-                  onAlbumPlay(release);
-                },
-                className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
-                style: { border: 'none', cursor: 'pointer' },
-                'aria-label': 'Play', 'data-tooltip': 'Play'
-              },
-                React.createElement(Play, { size: 22, className: 'text-gray-800 ml-0.5' })
-              ),
-              // Add to Queue button
-              onAlbumAddToQueue && React.createElement('button', {
-                onClick: (e) => {
-                  e.stopPropagation();
-                  onAlbumAddToQueue(release);
-                },
-                className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
-                style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-                onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
-                onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                'aria-label': 'Add to queue', 'data-tooltip': 'Add to queue'
-              },
-                React.createElement(Icons.QueueAdd, { className: 'w-5 h-5', strokeWidth: 2 })
-              )
-            )
+            // The app's art overlay (card-art ArtOverlay): Add to playlist,
+            // Play, Add to queue, on hover or keyboard focus.
+            (onAlbumPlay || onAlbumAddToQueue || onAlbumAddToPlaylist) && React.createElement(ArtOverlay, {
+              shown: coverReveal.shown,
+              title: release.title,
+              onAddToPlaylist: onAlbumAddToPlaylist ? () => onAlbumAddToPlaylist(release) : undefined,
+              onPlay: onAlbumPlay ? () => onAlbumPlay(release) : undefined,
+              onQueue: onAlbumAddToQueue ? () => onAlbumAddToQueue(release) : undefined
+            })
           ),
 
           // Title - matching ReleaseCard typography, with the release-type

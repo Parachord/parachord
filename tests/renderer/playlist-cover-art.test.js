@@ -173,7 +173,7 @@ describe('every playlist-cover surface renders the record\'s cover over the mosa
     // the card's cover layer is the LAST occurrence.
     const coverIdx = markup.lastIndexOf('img.example/cover.jpg');
     const lastTileIdx = markup.lastIndexOf('img.example/tile4.jpg');
-    const overlayIdx = markup.indexOf('aria-label="Add to playlist"');
+    const overlayIdx = markup.indexOf('data-art-actions');
     expect(coverIdx).toBeGreaterThan(-1);
     expect(lastTileIdx).toBeGreaterThan(-1);
     // The cover paints after (above) the mosaic tiles…

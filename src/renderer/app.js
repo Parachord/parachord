@@ -2055,6 +2055,7 @@ const { SectionHeader, SECTION_HEADER_GAP } = require('./components/section-head
 const { FilterChips, Chip } = require('./components/filter-chips');
 const { FilterBox, StickyBar } = require('./components/filter-box');
 const { PageHero } = require('./components/page-hero');
+const { RELEASE_TYPE_COLORS } = require('./lib/release-types');
 const {
   RecommendationCardSkeleton,
   RecommendationSongRowSkeleton,
@@ -38889,9 +38890,9 @@ React.createElement('span', {
               pageColor: PAGE_COLORS['new-releases'].fill,
               chips: [
                 { value: 'all', label: 'All' },
-                { value: 'album', label: 'Albums', color: 'rgb(99, 102, 241)' },
-                { value: 'ep', label: 'EPs', color: '#a855f7' },
-                { value: 'single', label: 'Singles', color: '#db2777' }
+                { value: 'album', label: 'Albums', color: RELEASE_TYPE_COLORS.album },
+                { value: 'ep', label: 'EPs', color: RELEASE_TYPE_COLORS.ep },
+                { value: 'single', label: 'Singles', color: RELEASE_TYPE_COLORS.single }
               ].map(({ value, label, color }) => {
                 const count = value === 'all'
                   ? newReleases.length
