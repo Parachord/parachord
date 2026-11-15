@@ -685,6 +685,36 @@ const {
   };
 })();
 
+// Spotify's rate-limit pause (sync-providers/spotify-pause.js). Every
+// api.spotify.com request from the renderer goes through here: plugin
+// searches, playback controls, the discography fallback. While Spotify's
+// Retry-After runs, a call answers the same 429 without a request, since
+// requests sent meanwhile can stretch the limit; any 429 starts or extends the
+// pause. The first one of a pause is announced with the
+// `parachord:spotify-paused` event (the toast in Parachord).
+(function installSpotifyPause() {
+  if (typeof window.fetch !== 'function') return;
+  const { createSpotifyPause, isSpotifyApiUrl, pausedResponse } = require('../../sync-providers/spotify-pause');
+  const spotifyPause = createSpotifyPause();
+  window.spotifyPause = spotifyPause;
+  const innerFetch = window.fetch;
+  window.fetch = function (input, init) {
+    if (!isSpotifyApiUrl(input)) return innerFetch(input, init);
+    if (spotifyPause.isPaused()) {
+      return Promise.resolve(pausedResponse(spotifyPause.msRemaining()));
+    }
+    return innerFetch(input, init).then((response) => {
+      const started = spotifyPause.noteStatus(response.status, response.headers && response.headers.get('Retry-After'));
+      if (started) {
+        try {
+          window.dispatchEvent(new CustomEvent('parachord:spotify-paused', { detail: { until: spotifyPause.until() } }));
+        } catch (_e) { /* no event, still paused */ }
+      }
+      return response;
+    });
+  };
+})();
+
 // Global rate limiter for non-AM resolver search fan-out (parachord#797).
 // Covers YouTube, SoundCloud, Bandcamp (and any future search-capable
 // resolver that hits a CDN-backed search endpoint).
@@ -13438,6 +13468,20 @@ ${trackListXml}
   const showToast = useCallback((message, type = 'neutral', action = null, { persistent = false, duration } = {}) => {
     setToast({ message, type, action, persistent, duration });
   }, []);
+
+  // Spotify's rate-limit pause (installSpotifyPause above): say so once per
+  // pause when it is long enough to notice. Short ones (a few seconds) pass
+  // without a word.
+  useEffect(() => {
+    const onPaused = (event) => {
+      const until = event && event.detail && event.detail.until;
+      if (!until || until - Date.now() < 60 * 1000) return;
+      const at = new Date(until).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      showToast(`Spotify asked Parachord to slow down. Spotify searches and controls resume at ${at}; other services keep working.`, 'warning', null, { duration: 10000 });
+    };
+    window.addEventListener('parachord:spotify-paused', onPaused);
+    return () => window.removeEventListener('parachord:spotify-paused', onPaused);
+  }, [showToast]);
 
   // Copy a track's Achordion entity-page URL to the clipboard. Resolves to:
   //   1. /recording/<mbid> via the entity-link endpoint when MBID is known

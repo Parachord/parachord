@@ -12,6 +12,9 @@ const { pickConfidentMatch } = require('./confidence-scoring');
 // persistence via _setBreakerStore (load on startup, save on every transition);
 // absent → in-memory only (still stops in-session re-hammering).
 const { createSpotifyBreaker } = require('../sync-engine/spotify-breaker');
+// The main process's rate-limit pause, shared with the playback poller in
+// main.js: a 429 either one gets stops both until Retry-After has passed.
+const { sharedPause } = require('./spotify-pause');
 const _spotifyBreaker = createSpotifyBreaker();
 let _spotifyBreakerSave = null;
 function _setBreakerStore(io) {
@@ -22,6 +25,9 @@ function _persistBreaker() { if (_spotifyBreakerSave) { try { _spotifyBreakerSav
 // Throw if the breaker is open (skip the API call to avoid prolonging the ban).
 function _breakerGuard() {
   const now = Date.now();
+  if (sharedPause.isPaused(now)) {
+    throw new Error(`Spotify rate-limit cooldown active (Spotify asked for ${Math.ceil(sharedPause.msRemaining(now) / 60000)} min without requests)`);
+  }
   if (_spotifyBreaker.isOpen(now)) {
     throw new Error(`Spotify rate-limit cooldown active (${Math.ceil(_spotifyBreaker.msRemaining(now) / 60000)} min left); skipping to avoid prolonging the ban`);
   }
@@ -70,6 +76,7 @@ const spotifyRequest = async (endpoint, token, options = {}, _retryCount = 0) =>
   if (!response.ok) {
     if (response.status === 429) {
       const retryAfter = parseInt(response.headers.get('Retry-After') || '5', 10);
+      sharedPause.noteStatus(429, response.headers.get('Retry-After'));
       if (_retryCount >= MAX_RETRIES) {
         _breakerTrip(retryAfter * 1000); // §2b: open the escalating cooldown — stop re-hammering next cycle
         throw new Error('Spotify API rate limit exceeded after maximum retries');
@@ -147,6 +154,7 @@ const spotifyFetch = async (endpoint, token, allItems = [], onProgress, refreshT
   if (!response.ok) {
     if (response.status === 429) {
       const retryAfter = parseInt(response.headers.get('Retry-After') || '5', 10);
+      sharedPause.noteStatus(429, response.headers.get('Retry-After'));
       if (_retryCount >= MAX_RETRIES) {
         _breakerTrip(retryAfter * 1000); // §2b: open the escalating cooldown
         throw new Error('Spotify API rate limit exceeded after maximum retries');

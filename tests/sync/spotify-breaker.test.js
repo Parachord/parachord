@@ -6,6 +6,8 @@
 
 const { createSpotifyBreaker, cooldownMsForLevel, HOUR_MS } = require('../../sync-engine/spotify-breaker');
 const spotify = require('../../sync-providers/spotify');
+const { sharedPause } = require('../../sync-providers/spotify-pause');
+afterEach(() => sharedPause.clear());
 
 describe('createSpotifyBreaker — escalating cooldown', () => {
   test('cooldownMsForLevel: 1st ban 1h, repeats 6h', () => {
