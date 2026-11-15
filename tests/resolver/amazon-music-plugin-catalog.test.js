@@ -293,13 +293,17 @@ describe('searchArtistImage (the artists tab, never throws)', () => {
     expect(resolver._searchBreaker.state().failures).toBe(1);
   });
 
-  test('a URL that is not a bare https CDN URL never leaves the plugin — the cache persists it', async () => {
-    const signed = [
-      { asin: 'B0X1', name: 'Xtc', images: [{ url: 'https://m.media-amazon.com/images/I/x1.jpg?token=abc', width: 2400, imageType: 'PROFILE' }] },
-      { asin: 'B0X2', name: 'Xtc', images: [{ url: 'https://tracker.example.com/pixel.jpg', width: 2400, imageType: 'PROFILE' }] }
-    ];
-    amazonWebSessionMock({ artists: signed });
+  test('a URL that is not a bare CDN URL never leaves the plugin — the cache persists it', async () => {
+    // Each class exercised on its own matched artist: the parser skips the
+    // query-string and off-host URLs at parse time, so the matched artist
+    // reports no usable photo — never another host's pixel in the persisted
+    // image cache.
+    const withQuery = [{ asin: 'B0X1', name: 'Xtc', images: [{ url: 'https://m.media-amazon.com/images/I/x1.jpg?token=abc', width: 2400, imageType: 'PROFILE' }] }];
+    const offHost = [{ asin: 'B0X2', name: 'Xtc', images: [{ url: 'https://tracker.example.com/pixel.jpg', width: 2400, imageType: 'PROFILE' }, { url: 'https://m.media-amazon.com.com.evil.example/images/I/y2.jpg', width: 1200, imageType: 'PROFILE' }] }];
+    amazonWebSessionMock({ artists: withQuery });
     const resolver = instantiateAmazonPlugin(axe);
+    await expect(resolver.searchArtistImage('XTC', {})).resolves.toBeNull();
+    amazonWebSessionMock({ artists: offHost });
     await expect(resolver.searchArtistImage('XTC', {})).resolves.toBeNull();
   });
 

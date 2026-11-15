@@ -770,7 +770,14 @@ module.exports = {
   // library-using method opens with this.
   requireLib: function () {
     if (!this.lib) {
-      throw new Error('Amazon Music needs a newer Parachord — please update the app.');
+      // The notReady shape (not a plain Error — the library is what is
+      // missing, so lib.notReady is not available here): the callers' catch
+      // would otherwise swallow the update message into a cached miss.
+      const err = new Error('Amazon Music needs a newer Parachord — please update the app.');
+      err.reason = 'not-ready';
+      err.notReady = true;
+      err.code = 'not-ready';
+      throw err;
     }
     return this.lib;
   },
