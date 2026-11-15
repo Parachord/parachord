@@ -1317,6 +1317,7 @@ const { sourceRowState } = require('./lib/visible-sources');
 const { trackDurationLabel } = require('./lib/track-duration');
 const { contextPlaylistTarget, playlistRef } = require('./lib/playlist-context');
 const { refreshedTracks } = require('./lib/hosted-refresh');
+const { pulledOpenPlaylist } = require('./lib/playlist-sync-banner');
 const { Play, Pause, SkipForward, SkipBack, Volume2, Search, List, Settings, Plus, Music, Radio, Users, Heart, X } = Icons;
 
 
@@ -3565,6 +3566,23 @@ const Parachord = () => {
   const navigateBackRef = useRef(null);
   const activeViewNowRef = useRef(null);
   const [playlistTracks, setPlaylistTracks] = useState([]);
+  // A sync pulls an unedited import by itself (sync-engine/auto-pull.js). When
+  // the pulled playlist is open, show its new tracks now, and keep the page's
+  // copy current so a later edit saves on top of the pull, not over it.
+  const showPulledOpenPlaylist = (loadedPlaylists) => {
+    if (activeViewNowRef.current !== 'playlist-view') return;
+    const stored = pulledOpenPlaylist(selectedPlaylistRef.current, loadedPlaylists);
+    if (!stored) return;
+    const tracksWithIds = (stored.tracks || []).map(track => ({
+      ...track,
+      id: track.id || trackSlug(track.artist || 'unknown', track.title || 'untitled', track.album || 'noalbum'),
+      sources: track.sources || {}
+    }));
+    setPlaylistTracks(tracksWithIds);
+    setSelectedPlaylist(prev => (prev && prev.id === stored.id
+      ? { ...prev, ...stored, tracks: tracksWithIds, tracksLoaded: true, trackCount: tracksWithIds.length }
+      : prev));
+  };
   const [allPlaylistCovers, setAllPlaylistCovers] = useState({}); // { playlistId: [url1, url2, url3, url4] }
   const [weeklyJamCovers, setWeeklyJamCovers] = useState({}); // { playlistId: [url1, url2, url3, url4] }
   const [draggedPlaylistTrack, setDraggedPlaylistTrack] = useState(null); // For playlist track reordering
@@ -4197,7 +4215,8 @@ const Parachord = () => {
                     return incoming;
                   });
                 }
-                // Reload playlists to pick up hasUpdates flags from sync
+                // Reload playlists to pick up what the sync pulled (and any
+                // conflict it flagged)
                 if (settings.syncPlaylists) {
                   try {
                     const loadedPlaylists = await window.electron.playlists.load();
@@ -4207,6 +4226,7 @@ const Parachord = () => {
                       const hostedOnly = prev.filter(p => p.sourceUrl && !loadedUrls.has(p.sourceUrl));
                       return [...loadedPlaylists, ...hostedOnly];
                     });
+                    showPulledOpenPlaylist(loadedPlaylists);
                   } catch (e) {
                     console.warn('[Sync] Failed to reload playlists after background sync:', e);
                   }
@@ -9831,6 +9851,7 @@ const Parachord = () => {
           const hostedOnly = prev.filter(p => p.sourceUrl && !loadedUrls.has(p.sourceUrl));
           return [...loadedPlaylists, ...hostedOnly];
         });
+        showPulledOpenPlaylist(loadedPlaylists);
       }
 
       setSyncSetupModal(prev => ({
@@ -55337,7 +55358,7 @@ useEffect(() => {
                 React.createElement('span', { style: { color: 'var(--text-secondary)' } }, 'Playlists'),
                 React.createElement('span', { style: { color: 'var(--text-primary)', fontWeight: '500' } },
                   `+${syncSetupModal.results.playlists.added} added` +
-                  (syncSetupModal.results.playlists.updated > 0 ? `, ${syncSetupModal.results.playlists.updated} with updates` : '')
+                  (syncSetupModal.results.playlists.updated > 0 ? `, ${syncSetupModal.results.playlists.updated} updated` : '')
                 )
               )
             )
