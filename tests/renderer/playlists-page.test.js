@@ -44,3 +44,13 @@ test("a chat playlist card finds its playlist when clicked, not from the render'
   expect(fn).not.toMatch(/\bplaylists\.find\(/);
   expect(fn).toMatch(/showToast\('Couldn’t find that playlist/);
 });
+
+test('chat cards say what they are in their second line; the chat panel uses on-dark tokens', () => {
+  expect(app).toMatch(/const chatCardKindLine = \(type, artist\) => \{/);
+  expect(app).toContain('}, chatCardKindLine(type, artist))');
+  expect(app).toContain("trackCount ? `Playlist · ${countOf(trackCount, 'track')}` : 'Playlist'");
+  expect(app).not.toMatch(/textTransform: 'uppercase' \}\s*\}, (type|'playlist')\)/);
+  expect(app).toContain("'Powered by')");
+  expect(app).not.toContain("'powered by:'");
+  expect(app).toContain("backgroundColor: aiChatLoading || aiChatInput.trim() ? 'var(--accent-fill)'");
+});

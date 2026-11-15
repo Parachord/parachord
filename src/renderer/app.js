@@ -17402,6 +17402,11 @@ ${trackListXml}
 
   // ChatCard component - stable reference using ref to prevent re-creation on every render
   // Without the ref, React.memo() would be called on every App render, creating a new component type
+  // A chat card's second line: what it is, then who by.
+  const chatCardKindLine = (type, artist) => {
+    const kind = type === 'artist' ? 'Artist' : type === 'album' ? 'Album' : type === 'playlist' ? 'Playlist' : 'Track';
+    return artist && type !== 'artist' ? `${kind} · ${artist}` : kind;
+  };
   const chatCardRef = useRef(null);
   if (!chatCardRef.current) {
     chatCardRef.current = React.memo(({ type, title, artist, album }) => {
@@ -17711,32 +17716,30 @@ ${trackListXml}
           )
         )
       ),
-      // Text content
+      // Text content: the title, then what it is and who by ("Track ·
+      // Girl Scout"), so you know what a click gets you. It replaces the
+      // grey uppercase TRACK / ALBUM / ARTIST label off to the side.
       React.createElement('div', { style: { flex: 1, minWidth: 0 } },
         React.createElement('div', {
           style: {
             fontSize: '13px',
             fontWeight: '500',
-            color: '#f3f4f6',
+            color: 'var(--on-dark-primary)',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap'
           }
         }, title),
-        artist && React.createElement('div', {
+        React.createElement('div', {
           style: {
             fontSize: '12px',
-            color: 'var(--text-tertiary)',
+            color: 'var(--on-dark-tertiary)',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap'
           }
-        }, artist)
-      ),
-      // Type indicator
-      React.createElement('div', {
-        style: { fontSize: '10px', color: 'var(--text-secondary)', textTransform: 'uppercase' }
-      }, type)
+        }, chatCardKindLine(type, artist))
+      )
     );
   });
   }
@@ -18086,17 +18089,13 @@ ${trackListXml}
             React.createElement('div', {
               style: {
                 fontSize: '12px',
-                color: 'var(--text-tertiary)',
+                color: 'var(--on-dark-tertiary)',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap'
               }
-            }, trackCount ? countOf(trackCount, 'track') : '')
-          ),
-          // Type indicator
-          React.createElement('div', {
-            style: { fontSize: '10px', color: 'var(--text-secondary)', textTransform: 'uppercase' }
-          }, 'playlist')
+            }, trackCount ? `Playlist · ${countOf(trackCount, 'track')}` : 'Playlist')
+          )
         );
       }
       return React.createElement(ChatCard, { key, type, title, artist, album });
@@ -18141,11 +18140,16 @@ ${trackListXml}
       else if (/^(\d+)\.\s+(.+)$/.test(processedLine)) {
         const listMatch = processedLine.match(/^(\d+)\.\s+(.+)$/);
         elements.push(
+          // An item that is a card (a numbered track list) centres its number
+          // on the card and sits close to the next; a text item keeps the
+          // line's top alignment and gap.
           React.createElement('div', {
             key: `line-${keyCounter++}`,
-            style: { display: 'flex', gap: '8px', marginTop: lineIdx > 0 ? '12px' : 0 }
+            style: /^\s*\{\{/.test(listMatch[2])
+              ? { display: 'flex', alignItems: 'center', gap: '8px', marginTop: lineIdx > 0 ? '4px' : 0 }
+              : { display: 'flex', gap: '8px', marginTop: lineIdx > 0 ? '12px' : 0 }
           },
-            React.createElement('span', { style: { color: 'var(--text-tertiary)', minWidth: '20px', flexShrink: 0 } }, `${listMatch[1]}.`),
+            React.createElement('span', { style: { color: 'var(--on-dark-tertiary)', minWidth: '20px', flexShrink: 0, fontVariantNumeric: 'tabular-nums' } }, `${listMatch[1]}.`),
             React.createElement('div', { style: { flex: 1, minWidth: 0 } }, parseInlineMarkdown(listMatch[2], `item-${lineIdx}`))
           )
         );
@@ -46168,7 +46172,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                     )
                   )
                 : React.createElement('span', { style: { color: '#c4b5fd' } }, '✨'),
-              React.createElement('h3', { style: { fontSize: '16px', fontWeight: '600', color: '#f3f4f6' } }, resultsSidebar.title)
+              React.createElement('h3', { style: { fontSize: '16px', fontWeight: '600', color: 'var(--on-dark-primary)' } }, resultsSidebar.title)
             ),
             React.createElement('button', {
               onClick: () => {
@@ -46178,10 +46182,9 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                   closeSidebarAnimated();
                 }
               },
-              className: 'transition-colors',
-              style: { padding: '6px', color: 'var(--on-dark-secondary)', borderRadius: '8px' },
-              onMouseEnter: (e) => { e.currentTarget.style.color = '#d1d5db'; e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)'; },
-              onMouseLeave: (e) => { e.currentTarget.style.color = 'var(--on-dark-secondary)'; e.currentTarget.style.backgroundColor = 'transparent'; }
+              'aria-label': 'Close', 'data-tooltip': 'Close',
+              className: 'transition-colors text-white/70 hover:text-white hover:bg-white/10',
+              style: { padding: '6px', borderRadius: '8px' }
             },
               React.createElement(Icons.X, { className: 'w-5 h-5' })
             )
@@ -46190,7 +46193,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
           resultsSidebar.mode === 'chat'
             ? React.createElement('div', { style: { marginTop: '8px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' } },
                 // "powered by:" label
-                React.createElement('span', { style: { fontSize: '12px', color: 'var(--on-dark-secondary)' } }, 'powered by:'),
+                React.createElement('span', { style: { fontSize: '12px', color: 'var(--on-dark-secondary)' } }, 'Powered by'),
                 // Custom dropdown button
                 (() => {
                   const enabledServices = getChatServices().filter(isServiceEnabled);
@@ -46450,13 +46453,17 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                   React.createElement('button', {
                     onClick: () => aiChatInput.trim() && !aiChatLoading && handleAiChatSend(aiChatInput),
                     disabled: !aiChatInput.trim() || aiChatLoading,
+                    'aria-label': 'Send', 'data-tooltip': 'Send',
                     className: 'transition-transform hover:scale-105',
+                    // The fixed fill accent (white never sits on --accent-primary,
+                    // light purple in dark mode). Empty, it's a quiet circle with
+                    // a dimmed arrow, not a dark purple that read as broken.
                     style: {
                       width: '40px',
                       height: '40px',
                       borderRadius: '50%',
-                      backgroundColor: !aiChatInput.trim() || aiChatLoading ? 'var(--accent-primary-alpha-30)' : 'var(--accent-primary)',
-                      color: '#ffffff',
+                      backgroundColor: aiChatLoading || aiChatInput.trim() ? 'var(--accent-fill)' : 'rgba(255, 255, 255, 0.08)',
+                      color: aiChatLoading || aiChatInput.trim() ? 'var(--on-accent)' : 'var(--on-dark-tertiary)',
                       border: 'none',
                       cursor: !aiChatInput.trim() || aiChatLoading ? 'not-allowed' : 'pointer',
                       display: 'flex',
@@ -46481,16 +46488,14 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                   resultsSidebar.messages && resultsSidebar.messages.length > 0
                     ? React.createElement('button', {
                         onClick: clearAiChatHistory,
+                        className: 'text-white/70 hover:text-white transition-colors',
                         style: {
                           fontSize: '12px',
-                          color: 'var(--on-dark-secondary)',
                           background: 'none',
                           border: 'none',
                           cursor: 'pointer',
                           padding: '4px 8px'
-                        },
-                        onMouseEnter: (e) => e.currentTarget.style.color = 'var(--on-dark-tertiary)',
-                        onMouseLeave: (e) => e.currentTarget.style.color = 'var(--on-dark-secondary)'
+                        }
                       }, 'Clear conversation')
                     : React.createElement('div'),
                   // Share my data toggle (right)
@@ -46499,7 +46504,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                     title: aiIncludeHistory ? 'Sharing your data with AI' : 'Not sharing your data with AI'
                   },
                     React.createElement('span', {
-                      style: { fontSize: '12px', color: aiIncludeHistory ? '#c4b5fd' : 'var(--on-dark-secondary)', whiteSpace: 'nowrap' }
+                      style: { fontSize: '12px', color: 'var(--on-dark-secondary)', whiteSpace: 'nowrap' }
                     }, 'Share my data'),
                     React.createElement('input', {
                       type: 'checkbox',
@@ -46514,7 +46519,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                         width: '28px',
                         height: '16px',
                         borderRadius: '8px',
-                        backgroundColor: aiIncludeHistory ? 'var(--accent-primary)' : 'rgba(255, 255, 255, 0.15)',
+                        backgroundColor: aiIncludeHistory ? 'var(--accent-fill)' : 'rgba(255, 255, 255, 0.15)',
                         transition: 'background-color 0.2s',
                         flexShrink: 0
                       }
