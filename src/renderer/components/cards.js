@@ -797,42 +797,32 @@ const ReleasePage = ({
             })
           ),
 
-          // Title - matching ReleaseCard typography, with the release-type
-          // badge beside it (#1238): the source card below carries the year
-          // now, and "Album" isn't worth a badge — only the other types
-          // (Live, EP, Single, Compilation) say what they are.
+          // The title, up to two lines (it was cut off beside the badge in
+          // the narrow column), then the release-type badge under it
+          // (#1238): the source card below carries the year, and "Album"
+          // isn't worth a badge; only Live, EP, Single and Compilation say
+          // what they are. The badge's class draws the capitals.
           React.createElement('div', {
-            style: {
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              marginBottom: '3px',
-              pointerEvents: 'none'
-            }
+            style: { display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px', marginBottom: '3px', pointerEvents: 'none' }
           },
             React.createElement('h3', {
               style: {
-                fontWeight: '500',
+                fontWeight: 500,
                 fontSize: '13px',
                 lineHeight: '1.4',
+                display: '-webkit-box',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical',
                 overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                minWidth: 0,
                 color: 'var(--text-primary)',
                 letterSpacing: '0.005em'
               },
-              title: release.title
+              'data-tooltip': release.title
             }, release.title),
-            // Badge - matching ReleaseCard style
             releaseType !== 'album' && React.createElement('span', {
               className: 'release-badge',
-              style: {
-                backgroundColor: badge.bg,
-                color: badge.color,
-                flexShrink: 0
-              }
-            }, releaseType.toUpperCase())
+              style: { backgroundColor: badge.bg, color: badge.color }
+            }, releaseType === 'ep' ? 'EP' : releaseType)
           )
         ),
 

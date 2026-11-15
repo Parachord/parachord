@@ -346,14 +346,17 @@ describe('ReleasePage: the source card', () => {
     expect(html).not.toContain('1 song');
   });
 
-  test('the release type shows beside the title only when it isn\'t a plain album', () => {
+  test('the release type shows under the title only when it isn\'t a plain album', () => {
     const live = render({ ...release, releaseType: 'live' });
     const titleAt = live.indexOf('Absolute Elsewhere</h3>');
     expect(titleAt).toBeGreaterThan(-1);
-    // the badge sits right beside the title, under the album cover
-    expect(live.indexOf('>LIVE</span>')).toBeGreaterThan(titleAt);
+    // the badge sits under the title (the title wraps to two lines instead
+    // of being cut off beside it); its class draws the capitals
+    expect(live.indexOf('class="release-badge"')).toBeGreaterThan(titleAt);
+    expect(live).toMatch(/class="release-badge"[^>]*>live<\/span>/);
+    expect(live).toMatch(/-webkit-line-clamp:2/);
     // a plain album: no badge at all
-    expect(render(release)).not.toContain('>ALBUM</span>');
+    expect(render(release)).not.toMatch(/class="release-badge"[^>]*>album<\/span>/);
   });
 });
 

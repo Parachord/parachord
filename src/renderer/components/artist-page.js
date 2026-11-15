@@ -798,8 +798,8 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                 { value: 'album', label: 'Studio Albums', color: RELEASE_TYPE_COLORS.album },
                 { value: 'ep', label: 'EPs', color: RELEASE_TYPE_COLORS.ep },
                 { value: 'single', label: 'Singles', color: RELEASE_TYPE_COLORS.single },
-                { value: 'live', label: 'Live', color: '#d97706' },
-                { value: 'compilation', label: 'Compilations', color: '#0eb3a0' }
+                { value: 'live', label: 'Live', color: RELEASE_TYPE_COLORS.live },
+                { value: 'compilation', label: 'Compilations', color: RELEASE_TYPE_COLORS.compilation }
               ].map(({ value, label, color }) => {
                 const count = value === 'all'
                   ? searchFiltered.length

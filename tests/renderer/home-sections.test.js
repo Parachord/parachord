@@ -659,3 +659,14 @@ describe('theme: no hard-coded neutrals in the Home modules', () => {
     expect(bad).toEqual([]);
   });
 });
+
+describe('a card with no cover', () => {
+  test('an album card shows a music note, a playlist card the playlist glyph', () => {
+    const { AlbumCard } = require('../../src/renderer/components/album-card');
+    const album = h(AlbumCard, { album: { title: 'A', artist: 'B' } });
+    expect(album).toContain('data-album-glyph');
+    expect(album).toContain('data-icon="Music"');
+    expect(h(S.PlaylistCard, { playlist: { id: 'p', title: 'P' } })).toContain('data-playlist-glyph');
+    expect(h(AlbumCard, { album: { title: 'A', artist: 'B', imageUrl: 'https://x/a.jpg' } })).not.toContain('data-album-glyph');
+  });
+});

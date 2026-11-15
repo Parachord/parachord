@@ -6,7 +6,7 @@
 // (hover or keyboard focus shows the overlay) and the release-type badge.
 // Props-driven; hooks are qualified; loads under plain Node.
 
-const { Play } = require('./icons');
+const { Play, Music } = require('./icons');
 
 const e = React.createElement;
 
@@ -133,6 +133,11 @@ function ArtBox({ imageUrl, mosaic, item, onArtError, children, style, placehold
   } else if (placeholder === 'playlist') {
     art = e('div', { style: { width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' } },
       PlaylistGlyph());
+  } else {
+    // No cover (yet, or at all): a music note, as the old album cards
+    // showed, so an empty square doesn't read as broken.
+    art = e('div', { 'data-album-glyph': '', style: { width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' } },
+      e(Music, { 'aria-hidden': 'true', strokeWidth: 1.5, style: { width: '32%', height: '32%', maxWidth: '40px', maxHeight: '40px', color: 'var(--text-tertiary)' } }));
   }
   // `zoom` scales the art the way the app's cards do on hover.
   const zoomed = art && e('div', {
