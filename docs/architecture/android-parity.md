@@ -368,7 +368,7 @@ The rule covers iOS as well as Android (both are in parachord-mobile). Mobile ti
 
 ### Android Parity Requirements (playlist sync links)
 
-From a parity check of how each client keeps a playlist's links to its services (2026-11-15, against #1418, #1419 and #1420; ticket Parachord/parachord-mobile#693). Android keeps links in their own tables (`sync_playlist_source` for `syncedFrom`, `sync_playlist_link` for `syncedTo`).
+From a parity check of how each client keeps a playlist's links to its services (2026-11-15, against #1418, #1419, #1420 and #1424; ticket Parachord/parachord-mobile#693). Android keeps links in their own tables (`sync_playlist_source` for `syncedFrom`, `sync_playlist_link` for `syncedTo`). **iOS is the same:** it builds the same `commonMain` `SyncEngine` with the same providers and tables, and its own playlist edits set `locallyModified` like Android's, so everything below holds for both and one mobile fix covers both.
 
 At parity:
 - The same three services sync playlists: Spotify, Apple Music, ListenBrainz.
@@ -376,6 +376,7 @@ At parity:
 - An import missing from the service's list keeps its link: Android acts only on a confirmed 404 (`confirmedGoneMirrors`), and a deleted Spotify playlist is only unfollowed, so it doesn't 404.
 - Duplicate collection rows (#1419) can't happen on Android (`tracks.id` is the primary key, written with `INSERT OR REPLACE`).
 - A changed import is pulled with no prompt on both.
+- A push back to the source records the source's new snapshot where the next sync compares (the playlist row's `snapshotId` for Spotify, `sync_playlist_link.snapshotId` otherwise), so mobile never had #1424's false conflict.
 
 Not at parity (Parachord/parachord-mobile#693):
 - **A confirmed-gone source deletes the local playlist on Android** when it was the playlist's last source (`playlistDao.delete` in both removal passes of `SyncEngine.kt`). Desktop never deletes a local playlist because its remote went away: an import keeps the playlist and its link (`missing-sources.js`), and a deleted mirror is flagged for the person to decide (#1269).
