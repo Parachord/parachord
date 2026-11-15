@@ -2053,6 +2053,7 @@ const { SearchPage } = require('./components/search-page');
 const { SectionHeader, SECTION_HEADER_GAP } = require('./components/section-header');
 // The app's filter buttons (Home's source filter style).
 const { FilterChips, Chip } = require('./components/filter-chips');
+const { FilterBox, StickyBar } = require('./components/filter-box');
 const {
   RecommendationCardSkeleton,
   RecommendationSongRowSkeleton,
@@ -38036,10 +38037,7 @@ useEffect(() => {
           }
         },
           // PLAYLIST DETAILS sticky bar with breadcrumb (same as loaded state)
-          React.createElement('div', {
-            className: 'sticky top-0 z-10 flex items-center justify-between px-6 py-4',
-            style: { backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
-          },
+          React.createElement(StickyBar, { variant: 'header' },
             // Breadcrumb navigation: Playlists > Playlist Name
             React.createElement('div', {
               className: 'flex items-center gap-2 text-xs font-medium tracking-widest uppercase'
@@ -38252,34 +38250,7 @@ useEffect(() => {
             )
           ),
           // Search
-          React.createElement('div', { className: 'flex items-center' },
-            playlistsSearchOpen ?
-              React.createElement('div', { className: 'flex items-center border border-line-strong rounded-full px-3 py-[5px] filter-pill' },
-                React.createElement('input', {
-                  type: 'text',
-                  value: playlistsSearch,
-                  onChange: (e) => setPlaylistsSearch(e.target.value),
-                  onBlur: () => { if (!playlistsSearch.trim()) setPlaylistsSearchOpen(false); },
-                  autoFocus: true,
-                  placeholder: 'Filter…',
-                  className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none',
-                  style: { width: '150px' }, 'aria-label': 'Filter'
-                }),
-                playlistsSearch && React.createElement('button', { type: 'button', 'aria-label': 'Clear filter', 'data-tooltip': 'Clear filter',
-                  onClick: () => { setPlaylistsSearch(''); setPlaylistsSearchOpen(false); },
-                  className: 'ml-2 text-ink-tertiary hover:text-ink-secondary'
-                },
-                  React.createElement(Icons.X, { className: 'w-4 h-4' })
-                )
-              )
-            :
-              React.createElement('button', { type: 'button', 'aria-label': 'Filter', 'data-tooltip': 'Filter',
-                onClick: () => setPlaylistsSearchOpen(true),
-                className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors'
-              },
-                React.createElement(Icons.Search, { className: 'w-5 h-5' })
-              )
-          ),
+          React.createElement(FilterBox, { value: playlistsSearch, onChange: setPlaylistsSearch, open: playlistsSearchOpen, onOpenChange: setPlaylistsSearchOpen }),
           // Import Playlist button: the outlined secondary style of the album
           // and playlist Share button (theme variables, card-style border and
           // hover), sized to sit level with the filled New button beside it.
@@ -38807,34 +38778,7 @@ useEffect(() => {
               ),
               React.createElement('div', { className: 'flex-1' }),
               // Search
-              React.createElement('div', { className: 'flex items-center' },
-                chartsSearchOpen ?
-                  React.createElement('div', { className: 'flex items-center border border-line-strong rounded-full px-3 py-[5px] filter-pill' },
-                    React.createElement('input', {
-                      type: 'text',
-                      value: chartsSearch,
-                      onChange: (e) => setChartsSearch(e.target.value),
-                      onBlur: () => { if (!chartsSearch.trim()) setChartsSearchOpen(false); },
-                      autoFocus: true,
-                      placeholder: 'Filter…',
-                      className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none',
-                      style: { width: '150px' }, 'aria-label': 'Filter'
-                    }),
-                    chartsSearch && React.createElement('button', { type: 'button', 'aria-label': 'Clear filter', 'data-tooltip': 'Clear filter',
-                      onClick: () => { setChartsSearch(''); setChartsSearchOpen(false); },
-                      className: 'ml-2 text-ink-tertiary hover:text-ink-secondary'
-                    },
-                      React.createElement(Icons.X, { className: 'w-4 h-4' })
-                    )
-                  )
-                :
-                  React.createElement('button', { type: 'button', 'aria-label': 'Filter', 'data-tooltip': 'Filter',
-                    onClick: () => setChartsSearchOpen(true),
-                    className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors'
-                  },
-                    React.createElement(Icons.Search, { className: 'w-5 h-5' })
-                  )
-              )
+              React.createElement(FilterBox, { value: chartsSearch, onChange: setChartsSearch, open: chartsSearchOpen, onOpenChange: setChartsSearchOpen })
           ),
           // Content area (scrollable)
           React.createElement('div', {
@@ -39125,34 +39069,7 @@ useEffect(() => {
             }),
             React.createElement('div', { className: 'flex-1' }),
             // Search
-            React.createElement('div', { className: 'flex items-center' },
-              newReleasesSearchOpen ?
-                React.createElement('div', { className: 'flex items-center border border-line-strong rounded-full px-3 py-[5px] filter-pill' },
-                  React.createElement('input', {
-                    type: 'text',
-                    value: newReleasesSearch,
-                    onChange: (e) => setNewReleasesSearch(e.target.value),
-                    onBlur: () => { if (!newReleasesSearch.trim()) setNewReleasesSearchOpen(false); },
-                    autoFocus: true,
-                    placeholder: 'Filter…',
-                    className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none',
-                    style: { width: '150px' }, 'aria-label': 'Filter'
-                  }),
-                  newReleasesSearch && React.createElement('button', { type: 'button', 'aria-label': 'Clear filter', 'data-tooltip': 'Clear filter',
-                    onClick: () => { setNewReleasesSearch(''); setNewReleasesSearchOpen(false); },
-                    className: 'ml-2 text-ink-tertiary hover:text-ink-secondary'
-                  },
-                    React.createElement(Icons.X, { className: 'w-4 h-4' })
-                  )
-                )
-              :
-                React.createElement('button', { type: 'button', 'aria-label': 'Filter', 'data-tooltip': 'Filter',
-                  onClick: () => setNewReleasesSearchOpen(true),
-                  className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors'
-                },
-                  React.createElement(Icons.Search, { className: 'w-5 h-5' })
-                )
-            )
+            React.createElement(FilterBox, { value: newReleasesSearch, onChange: setNewReleasesSearch, open: newReleasesSearchOpen, onOpenChange: setNewReleasesSearchOpen })
           ),
           // Content area (scrollable)
           React.createElement('div', {
@@ -39368,34 +39285,7 @@ useEffect(() => {
               React.createElement(SortMenu, { value: criticsSort, options: criticsSortOptions, onChange: setCriticsSort, label: "Sort" }),
               React.createElement('div', { className: 'flex-1' }),
               // Search
-              React.createElement('div', { className: 'flex items-center' },
-                criticsSearchOpen ?
-                  React.createElement('div', { className: 'flex items-center border border-line-strong rounded-full px-3 py-[5px] filter-pill' },
-                    React.createElement('input', {
-                      type: 'text',
-                      value: criticsSearch,
-                      onChange: (e) => setCriticsSearch(e.target.value),
-                      onBlur: () => { if (!criticsSearch.trim()) setCriticsSearchOpen(false); },
-                      autoFocus: true,
-                      placeholder: 'Filter…',
-                      className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none',
-                      style: { width: '150px' }, 'aria-label': 'Filter'
-                    }),
-                    criticsSearch && React.createElement('button', { type: 'button', 'aria-label': 'Clear filter', 'data-tooltip': 'Clear filter',
-                      onClick: () => { setCriticsSearch(''); setCriticsSearchOpen(false); },
-                      className: 'ml-2 text-ink-tertiary hover:text-ink-secondary'
-                    },
-                      React.createElement(Icons.X, { className: 'w-4 h-4' })
-                    )
-                  )
-                :
-                  React.createElement('button', { type: 'button', 'aria-label': 'Filter', 'data-tooltip': 'Filter',
-                    onClick: () => setCriticsSearchOpen(true),
-                    className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors'
-                  },
-                    React.createElement(Icons.Search, { className: 'w-5 h-5' })
-                  )
-              )
+              React.createElement(FilterBox, { value: criticsSearch, onChange: setCriticsSearch, open: criticsSearchOpen, onOpenChange: setCriticsSearchOpen })
           ),
           // Content area (scrollable)
           React.createElement('div', {
@@ -40037,34 +39927,7 @@ useEffect(() => {
             ),
             React.createElement('div', { className: 'flex-1' }),
             // Search
-            React.createElement('div', { className: 'flex items-center' },
-              concertsSearchOpen ?
-                React.createElement('div', { className: 'flex items-center border border-line-strong rounded-full px-3 py-[5px] filter-pill' },
-                  React.createElement('input', {
-                    type: 'text',
-                    value: concertsSearch,
-                    onChange: (e) => setConcertsSearch(e.target.value),
-                    onBlur: () => { if (!concertsSearch.trim()) setConcertsSearchOpen(false); },
-                    autoFocus: true,
-                    placeholder: 'Filter…',
-                    className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none',
-                    style: { width: '150px' }, 'aria-label': 'Filter'
-                  }),
-                  concertsSearch && React.createElement('button', { type: 'button', 'aria-label': 'Clear filter', 'data-tooltip': 'Clear filter',
-                    onClick: () => { setConcertsSearch(''); setConcertsSearchOpen(false); },
-                    className: 'ml-2 text-ink-tertiary hover:text-ink-secondary'
-                  },
-                    React.createElement(Icons.X, { className: 'w-4 h-4' })
-                  )
-                )
-              :
-                React.createElement('button', { type: 'button', 'aria-label': 'Filter', 'data-tooltip': 'Filter',
-                  onClick: () => setConcertsSearchOpen(true),
-                  className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors'
-                },
-                  React.createElement(Icons.Search, { className: 'w-5 h-5' })
-                )
-            )
+            React.createElement(FilterBox, { value: concertsSearch, onChange: setConcertsSearch, open: concertsSearchOpen, onOpenChange: setConcertsSearchOpen })
           );
           })(),
           // Scrollable content area
@@ -41242,34 +41105,7 @@ useEffect(() => {
                         else if (historyTab === 'topAlbums') loadTopAlbums(option); }, label: "Time period" }),
             React.createElement('div', { className: 'flex-1' }),
             // Search (only for recent and top tracks)
-            (historyTab === 'recent' || historyTab === 'topTracks') && React.createElement('div', { className: 'flex items-center' },
-              historySearchOpen ?
-                React.createElement('div', { className: 'flex items-center border border-line-strong rounded-full px-3 py-[5px] filter-pill' },
-                  React.createElement('input', {
-                    type: 'text',
-                    value: historySearch,
-                    onChange: (e) => setHistorySearch(e.target.value),
-                    onBlur: () => { if (!historySearch.trim()) setHistorySearchOpen(false); },
-                    autoFocus: true,
-                    placeholder: 'Filter…',
-                    className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none',
-                    style: { width: '150px' }, 'aria-label': 'Filter'
-                  }),
-                  historySearch && React.createElement('button', { type: 'button', 'aria-label': 'Clear filter', 'data-tooltip': 'Clear filter',
-                    onClick: () => { setHistorySearch(''); setHistorySearchOpen(false); },
-                    className: 'ml-2 text-ink-tertiary hover:text-ink-secondary'
-                  },
-                    React.createElement(Icons.X, { className: 'w-4 h-4' })
-                  )
-                )
-              :
-                React.createElement('button', { type: 'button', 'aria-label': 'Filter', 'data-tooltip': 'Filter',
-                  onClick: () => setHistorySearchOpen(true),
-                  className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors'
-                },
-                  React.createElement(Icons.Search, { className: 'w-5 h-5' })
-                )
-            )
+            (historyTab === 'recent' || historyTab === 'topTracks') && React.createElement(FilterBox, { value: historySearch, onChange: setHistorySearch, open: historySearchOpen, onOpenChange: setHistorySearchOpen })
           ),
           // Scrollable content area (shared by recent and topTracks tabs)
           React.createElement('div', {
@@ -48877,34 +48713,7 @@ React.createElement('div', {
           React.createElement(SortMenu, { value: addToPlaylistSort, options: playlistsSortOptions, onChange: setAddToPlaylistSort, label: "Sort playlists" }),
           React.createElement('div', { className: 'flex-1' }),
           // Search
-          React.createElement('div', { className: 'flex items-center' },
-            addToPlaylistSearchOpen ?
-              React.createElement('div', { className: 'flex items-center px-2 py-1 filter-pill', style: { border: '1px solid var(--border-subtle)', borderRadius: '8px' } },
-                React.createElement('input', {
-                  type: 'text',
-                  value: addToPlaylistSearch,
-                  onChange: (e) => setAddToPlaylistSearch(e.target.value),
-                  onBlur: () => { if (!addToPlaylistSearch.trim()) setAddToPlaylistSearchOpen(false); },
-                  autoFocus: true,
-                  placeholder: 'Filter…',
-                  className: 'bg-transparent text-ink-secondary text-xs placeholder-ink-tertiary outline-none',
-                  style: { width: '120px' }, 'aria-label': 'Filter'
-                }),
-                addToPlaylistSearch && React.createElement('button', {
-                  onClick: () => { setAddToPlaylistSearch(''); setAddToPlaylistSearchOpen(false); },
-                  className: 'ml-1 text-ink-tertiary hover:text-ink-secondary'
-                },
-                  React.createElement(Icons.X, { className: 'w-3 h-3' })
-                )
-              )
-            :
-              React.createElement('button', { type: 'button', 'aria-label': 'Filter', 'data-tooltip': 'Filter',
-                onClick: () => setAddToPlaylistSearchOpen(true),
-                className: 'p-1 text-ink-tertiary hover:text-ink-secondary transition-colors'
-              },
-                React.createElement(Icons.Search, { className: 'w-4 h-4' })
-              )
-          )
+          React.createElement(FilterBox, { value: addToPlaylistSearch, onChange: setAddToPlaylistSearch, open: addToPlaylistSearchOpen, onOpenChange: setAddToPlaylistSearchOpen, size: 'sm' })
         ),
 
         // Playlist list (scrollable) - includes New Playlist row at top

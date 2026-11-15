@@ -19,6 +19,7 @@
 // from props under their old names.
 
 const Icons = require('./icons');
+const { FilterBox, StickyBar } = require('./filter-box');
 const { HeaderControl } = require('./header-control');
 const { CardButton } = require('./card-button');
 const { EmptyState, ErrorState } = require('./states');
@@ -199,10 +200,7 @@ const SearchPage = React.memo(function SearchPage(props) {
             onScroll: handleSearchDetailScroll
           },
             // Sticky filter bar for Artists (sort dropdown + search on right like other pages)
-            searchDetailCategory === 'artists' && React.createElement('div', {
-              className: 'sticky top-0 z-10 flex items-center px-6 py-3',
-              style: { backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
-            },
+            searchDetailCategory === 'artists' && React.createElement(StickyBar, null,
               // Sort dropdown
               React.createElement(SortMenu, { value: searchResultsSort, options: [
                     { value: 'relevance', label: 'Relevance' },
@@ -210,41 +208,11 @@ const SearchPage = React.memo(function SearchPage(props) {
                   ], onChange: setSearchResultsSort, label: "Sort" }),
               React.createElement('div', { className: 'flex-1' }),
               // Search/filter on right
-              React.createElement('div', { className: 'flex items-center' },
-                searchResultsFilterOpen ?
-                  React.createElement('div', { className: 'flex items-center border border-line-strong rounded-full px-3 py-[5px] filter-pill' },
-                    React.createElement('input', {
-                      type: 'text',
-                      value: searchResultsFilter,
-                      onChange: (e) => setSearchResultsFilter(e.target.value),
-                      onBlur: () => { if (!searchResultsFilter.trim()) setSearchResultsFilterOpen(false); },
-                      autoFocus: true,
-                      placeholder: 'Filter…',
-                      className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none no-drag',
-                      style: { width: '150px' }, 'aria-label': 'Filter'
-                    }),
-                    searchResultsFilter && React.createElement('button', { type: 'button', 'aria-label': 'Clear filter', 'data-tooltip': 'Clear filter',
-                      onClick: () => { setSearchResultsFilter(''); setSearchResultsFilterOpen(false); },
-                      className: 'ml-2 text-ink-tertiary hover:text-ink-secondary no-drag'
-                    },
-                      React.createElement(Icons.X, { className: 'w-4 h-4' })
-                    )
-                  )
-                :
-                  React.createElement('button', { type: 'button', 'aria-label': 'Filter', 'data-tooltip': 'Filter',
-                    onClick: () => setSearchResultsFilterOpen(true),
-                    className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors no-drag'
-                  },
-                    React.createElement(Icons.Search, { className: 'w-5 h-5' })
-                  )
-              )
+              React.createElement(FilterBox, { value: searchResultsFilter, onChange: setSearchResultsFilter, open: searchResultsFilterOpen, onOpenChange: setSearchResultsFilterOpen })
             ),
 
             // Sticky filter bar for Albums (sort dropdown + search like Critical Darlings)
-            searchDetailCategory === 'albums' && React.createElement('div', {
-              className: 'sticky top-0 z-10 flex items-center px-6 py-3',
-              style: { backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
-            },
+            searchDetailCategory === 'albums' && React.createElement(StickyBar, null,
               // Sort dropdown
               React.createElement(SortMenu, { value: searchResultsSort, options: [
                     { value: 'relevance', label: 'Relevance' },
@@ -255,41 +223,11 @@ const SearchPage = React.memo(function SearchPage(props) {
                   ], onChange: setSearchResultsSort, label: "Sort" }),
               React.createElement('div', { className: 'flex-1' }),
               // Search/filter
-              React.createElement('div', { className: 'flex items-center' },
-                searchResultsFilterOpen ?
-                  React.createElement('div', { className: 'flex items-center border border-line-strong rounded-full px-3 py-[5px] filter-pill' },
-                    React.createElement('input', {
-                      type: 'text',
-                      value: searchResultsFilter,
-                      onChange: (e) => setSearchResultsFilter(e.target.value),
-                      onBlur: () => { if (!searchResultsFilter.trim()) setSearchResultsFilterOpen(false); },
-                      autoFocus: true,
-                      placeholder: 'Filter…',
-                      className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none no-drag',
-                      style: { width: '150px' }, 'aria-label': 'Filter'
-                    }),
-                    searchResultsFilter && React.createElement('button', { type: 'button', 'aria-label': 'Clear filter', 'data-tooltip': 'Clear filter',
-                      onClick: () => { setSearchResultsFilter(''); setSearchResultsFilterOpen(false); },
-                      className: 'ml-2 text-ink-tertiary hover:text-ink-secondary no-drag'
-                    },
-                      React.createElement(Icons.X, { className: 'w-4 h-4' })
-                    )
-                  )
-                :
-                  React.createElement('button', { type: 'button', 'aria-label': 'Filter', 'data-tooltip': 'Filter',
-                    onClick: () => setSearchResultsFilterOpen(true),
-                    className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors no-drag'
-                  },
-                    React.createElement(Icons.Search, { className: 'w-5 h-5' })
-                  )
-              )
+              React.createElement(FilterBox, { value: searchResultsFilter, onChange: setSearchResultsFilter, open: searchResultsFilterOpen, onOpenChange: setSearchResultsFilterOpen })
             ),
 
             // Sticky filter bar for Songs (sort dropdown + search)
-            searchDetailCategory === 'tracks' && React.createElement('div', {
-              className: 'sticky top-0 z-10 flex items-center px-6 py-3',
-              style: { backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
-            },
+            searchDetailCategory === 'tracks' && React.createElement(StickyBar, null,
               // Sort dropdown
               React.createElement(SortMenu, { value: searchResultsSort, options: [
                     { value: 'relevance', label: 'Relevance' },
@@ -300,34 +238,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                   ], onChange: setSearchResultsSort, label: "Sort" }),
               React.createElement('div', { className: 'flex-1' }),
               // Search/filter
-              React.createElement('div', { className: 'flex items-center' },
-                searchResultsFilterOpen ?
-                  React.createElement('div', { className: 'flex items-center border border-line-strong rounded-full px-3 py-[5px] filter-pill' },
-                    React.createElement('input', {
-                      type: 'text',
-                      value: searchResultsFilter,
-                      onChange: (e) => setSearchResultsFilter(e.target.value),
-                      onBlur: () => { if (!searchResultsFilter.trim()) setSearchResultsFilterOpen(false); },
-                      autoFocus: true,
-                      placeholder: 'Filter…',
-                      className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none no-drag',
-                      style: { width: '150px' }, 'aria-label': 'Filter'
-                    }),
-                    searchResultsFilter && React.createElement('button', { type: 'button', 'aria-label': 'Clear filter', 'data-tooltip': 'Clear filter',
-                      onClick: () => { setSearchResultsFilter(''); setSearchResultsFilterOpen(false); },
-                      className: 'ml-2 text-ink-tertiary hover:text-ink-secondary no-drag'
-                    },
-                      React.createElement(Icons.X, { className: 'w-4 h-4' })
-                    )
-                  )
-                :
-                  React.createElement('button', { type: 'button', 'aria-label': 'Filter', 'data-tooltip': 'Filter',
-                    onClick: () => setSearchResultsFilterOpen(true),
-                    className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors no-drag'
-                  },
-                    React.createElement(Icons.Search, { className: 'w-5 h-5' })
-                  )
-              )
+              React.createElement(FilterBox, { value: searchResultsFilter, onChange: setSearchResultsFilter, open: searchResultsFilterOpen, onOpenChange: setSearchResultsFilterOpen })
             ),
 
             // Content container with padding

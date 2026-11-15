@@ -92,7 +92,8 @@ test('the artist page: shared Play and Tickets buttons, plugin colours, no click
 
 test("the artist page's On Tour header is a sticky bar, in sentence case", () => {
   const artist = read('src/renderer/components/artist-page.js');
-  expect(artist).toMatch(/className: 'sticky top-0 z-10 flex items-center px-6 py-3'[\s\S]{0,400}countOf\(events\.length, 'upcoming concert'\)/);
+  // The shared StickyBar (components/filter-box.js).
+  expect(artist).toMatch(/React\.createElement\(StickyBar, null,[\s\S]{0,400}countOf\(events\.length, 'upcoming concert'\)/);
   expect(artist).not.toMatch(/Upcoming Concert\$\{/);
   expect(artist).not.toContain('text-teal-500');
 });

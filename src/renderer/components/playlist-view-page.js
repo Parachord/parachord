@@ -18,6 +18,7 @@
 // from props under their old names.
 
 const Icons = require('./icons');
+const { StickyBar } = require('./filter-box');
 const { Badge } = require('./badge');
 const { lbMbidOf } = require('../lib/playlist-share');
 const { HeaderControl } = require('./header-control');
@@ -229,10 +230,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
           }
         },
           // PLAYLIST DETAILS section header with breadcrumb and Edit buttons (sticky)
-          React.createElement('div', {
-            className: 'sticky top-0 z-10 flex items-center justify-between px-6 py-4',
-            style: { backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
-          },
+          React.createElement(StickyBar, { variant: 'header' },
             // Breadcrumb navigation: Playlists > Playlist Name (or Recommendations for ephemeral)
             React.createElement('div', {
               className: 'flex items-center gap-2 text-xs font-medium tracking-widest uppercase'

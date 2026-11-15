@@ -59,7 +59,7 @@ const METRICS = {
   spinnerCopies: 'Hand-drawn spinners (an element with animate-spin or a border-t-transparent ring). Use Icons.Spinner.',
   emptyStateCopies: 'Hand-built empty states ("No …" / "Nothing …" text in a plain element). Use EmptyState (components/states.js).',
   filterPillCopies: 'Hand-built pill buttons (rounded-full px-3 py-1…). Use FilterChips.',
-  stickyBarCopies: 'Hand-built sticky bars (sticky top-0 classes). Use the shared sticky toolbar.',
+  stickyBarCopies: 'Hand-built sticky bars (sticky top-0 classes). Use StickyBar (components/filter-box.js).',
 };
 
 // The file each copy metric's shared component lives in: its own uses don't count.
@@ -69,7 +69,7 @@ const COPY_HOMES = {
   spinnerCopies: ['components/icons.js'],
   emptyStateCopies: ['components/states.js'],
   filterPillCopies: ['components/filter-chips.js'],
-  stickyBarCopies: ['components/sticky-bar.js'],
+  stickyBarCopies: ['components/filter-box.js'],
 };
 
 function rendererFiles(dir = RENDERER, out = []) {

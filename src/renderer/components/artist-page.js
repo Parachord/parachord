@@ -23,6 +23,7 @@ const { sellerColor, sellerTextColor, sellerBadgeBg, sellerShortName, sellerName
 const { Tooltip, ShareButton } = require('./ui-atoms');
 const { CardButton } = require('./card-button');
 const Icons = require('./icons');
+const { FilterBox, StickyBar } = require('./filter-box');
 const { Button, buttonClassName } = require('./button');
 const { PAGE_COLORS } = require('../lib/page-colors');
 const { EmptyState, ErrorState } = require('./states');
@@ -797,10 +798,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
           onScroll: handleArtistPageScroll
         },
           // Sticky filter bar (Music tab only) - refined styling
-          artistPageTab === 'music' && React.createElement('div', {
-            className: 'sticky top-0 z-10 flex items-center px-6 py-3',
-            style: { backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
-          },
+          artistPageTab === 'music' && React.createElement(StickyBar, null,
             // Release type filters: the app's filter chips (FilterChips), All
             // neutral, each type in its colour.
             (() => {
@@ -829,41 +827,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
               React.createElement(SortMenu, { value: artistSort, options: artistSortOptions, onChange: setArtistSort, label: 'Sort releases', align: 'right' })
             ),
             // Search toggle/field
-            React.createElement('div', { className: 'flex items-center' },
-              artistSearchOpen ?
-                React.createElement('div', { className: 'flex items-center border border-line-strong rounded-full px-3 py-[5px] filter-pill' },
-                  React.createElement('input', {
-                    type: 'text',
-                    value: artistSearch,
-                    onChange: (e) => setArtistSearch(e.target.value),
-                    onBlur: () => {
-                      if (!artistSearch.trim()) {
-                        setArtistSearchOpen(false);
-                      }
-                    },
-                    autoFocus: true,
-                    placeholder: 'Filter…',
-                    className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none',
-                    style: { width: '150px' }, 'aria-label': 'Filter'
-                  }),
-                  artistSearch && React.createElement('button', { type: 'button', 'aria-label': 'Clear filter', 'data-tooltip': 'Clear filter',
-                    onClick: () => {
-                      setArtistSearch('');
-                      setArtistSearchOpen(false);
-                    },
-                    className: 'ml-2 text-ink-tertiary hover:text-ink-secondary'
-                  },
-                    React.createElement(Icons.X, { className: 'w-4 h-4' })
-                  )
-                )
-              :
-                React.createElement('button', { type: 'button', 'aria-label': 'Filter', 'data-tooltip': 'Filter',
-                  onClick: () => setArtistSearchOpen(true),
-                  className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors'
-                },
-                  React.createElement(Icons.Search, { className: 'w-5 h-5' })
-                )
-            )
+            React.createElement(FilterBox, { value: artistSearch, onChange: setArtistSearch, open: artistSearchOpen, onOpenChange: setArtistSearchOpen })
           ),
           // MUSIC TAB - Discography
           artistPageTab === 'music' && React.createElement('div', {
@@ -1596,10 +1560,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
 
             return React.createElement(React.Fragment, null,
               // Sticky filter bar - show when both services are configured
-              hasBothServicesConfigured && React.createElement('div', {
-                className: 'sticky top-0 z-10 flex items-center px-6 py-3',
-              style: { backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
-              },
+              hasBothServicesConfigured && React.createElement(StickyBar, null,
                 // The app's filter chips (FilterChips): All neutral, each source
                 // in the colour it had (orange-500, red-600, and Both the two
                 // as a gradient).
@@ -1664,10 +1625,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
               // A sticky bar (like Related artists' filter bar): the count, a
               // spinner beside it while loading, and refresh on the right; the
               // months scroll beneath it.
-              React.createElement('div', {
-                className: 'sticky top-0 z-10 flex items-center px-6 py-3',
-                style: { backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
-              },
+              React.createElement(StickyBar, null,
                 React.createElement(SectionHeader, {
                   title: React.createElement(React.Fragment, null,
                     countOf(events.length, 'upcoming concert'),

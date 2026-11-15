@@ -16,6 +16,7 @@
 // from props under their old names.
 
 const Icons = require('./icons');
+const { FilterBox } = require('./filter-box');
 const { EmptyState, ErrorState } = require('./states');
 const { SortMenu } = require('./sort-menu');
 const { Menu } = require('./menu');
@@ -255,41 +256,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
             // Spacer
             React.createElement('div', { className: 'flex-1' }),
             // Search toggle/field
-            React.createElement('div', { className: 'flex items-center' },
-              collectionSearchOpen ?
-                React.createElement('div', { className: 'flex items-center border border-line-strong rounded-full px-3 py-[5px] filter-pill' },
-                  React.createElement('input', {
-                    type: 'text',
-                    value: collectionSearch,
-                    onChange: (e) => setCollectionSearch(e.target.value),
-                    onBlur: () => {
-                      if (!collectionSearch.trim()) {
-                        setCollectionSearchOpen(false);
-                      }
-                    },
-                    autoFocus: true,
-                    placeholder: 'Filter…',
-                    className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none',
-                    style: { width: '150px' }, 'aria-label': 'Filter'
-                  }),
-                  collectionSearch && React.createElement('button', { type: 'button', 'aria-label': 'Clear filter', 'data-tooltip': 'Clear filter',
-                    onClick: () => {
-                      setCollectionSearch('');
-                      setCollectionSearchOpen(false);
-                    },
-                    className: 'ml-2 text-ink-tertiary hover:text-ink-secondary'
-                  },
-                    React.createElement(Icons.X, { className: 'w-4 h-4' })
-                  )
-                )
-              :
-                React.createElement('button', { type: 'button', 'aria-label': 'Filter', 'data-tooltip': 'Filter',
-                  onClick: () => setCollectionSearchOpen(true),
-                  className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors'
-                },
-                  React.createElement(Icons.Search, { className: 'w-5 h-5' })
-                )
-            ),
+            React.createElement(FilterBox, { value: collectionSearch, onChange: setCollectionSearch, open: collectionSearchOpen, onOpenChange: setCollectionSearchOpen }),
             // Sync Collection button and its menu (components/menu.js): the
             // sync status and Sync Now (parachord#1009: the Library Sync modal
             // existed since 2026-01 but nothing opened it), then one item per
