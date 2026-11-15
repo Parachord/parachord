@@ -22,6 +22,7 @@ const { PlaylistCoverImage } = require('./playlist-cover');
 const { VirtualizedTrackList } = require('./track-lists');
 const { sourceRowState } = require('../lib/visible-sources');
 const { trackDurationLabel } = require('../lib/track-duration');
+const { playlistPlaybackContext } = require('../lib/playlist-context');
 const { trackSlug } = require('../lib/track-slug');
 
 const { Play, Music } = Icons;
@@ -852,7 +853,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                             sources: trackSources[track.id] || {}
                           }));
                           if (tracksWithIds.length > 0) {
-                            const context = { type: 'playlist', id: selectedPlaylist.id, name: selectedPlaylist.title };
+                            const context = playlistPlaybackContext(selectedPlaylist);
                             const [firstTrack, ...remainingTracks] = tracksWithIds;
                             const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
                             setQueueWithContext(remainingTracks, context, true);
@@ -877,7 +878,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                             sources: trackSources[track.id] || {}
                           }));
                           if (tracksWithIds.length > 0) {
-                            const context = { type: 'playlist', id: selectedPlaylist.id, name: selectedPlaylist.title };
+                            const context = playlistPlaybackContext(selectedPlaylist);
                             addToQueue(tracksWithIds, context);
                           }
                         },
@@ -1216,7 +1217,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                       onClick: () => {
                         if (draggedPlaylistTrack !== null) return; // Don't play if dragging
                         const tracksAfter = playlistTracks.slice(index + 1);
-                        const context = { type: 'playlist', id: selectedPlaylist?.id, name: selectedPlaylist?.title };
+                        const context = playlistPlaybackContext(selectedPlaylist);
                         setQueueWithContext(tracksAfter, context);
                         handlePlay(track);
                       },
@@ -1337,7 +1338,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                                   onClick: (e) => {
                                     e.stopPropagation();
                                     const tracksAfter = playlistTracks.slice(index + 1);
-                                    const context = { type: 'playlist', id: selectedPlaylist?.id, name: selectedPlaylist?.title };
+                                    const context = playlistPlaybackContext(selectedPlaylist);
                                     setQueueWithContext(tracksAfter, context);
                                     handlePlay({ ...track, preferredResolver: resolverId });
                                   },

@@ -1315,6 +1315,7 @@ const {
 } = require('./components/track-lists');
 const { sourceRowState } = require('./lib/visible-sources');
 const { trackDurationLabel } = require('./lib/track-duration');
+const { contextPlaylistTarget, playlistRef } = require('./lib/playlist-context');
 const { Play, Pause, SkipForward, SkipBack, Volume2, Search, List, Settings, Plus, Music, Radio, Users, Heart, X } = Icons;
 
 
@@ -42068,7 +42069,7 @@ useEffect(() => {
               const entry = (homeData[field] || []).find(j => j.id === item.weekly.id) || null;
               return { field, entry };
             };
-            const playWeeklyPlaylist = async (item) => {
+            const playWeeklyPlaylist = async (item, playlist) => {
               const { field, entry } = weeklyEntryFor(item);
               let tracks = (entry && entry.tracks) || [];
               if (!entry || !entry.tracksLoaded || tracks.length === 0) {
@@ -42082,7 +42083,9 @@ useEffect(() => {
               }
               if (tracks.length > 0) {
                 const name = `${item.weekly.weekLabel}'s ${item.weekly.label}`;
-                playTrackCollection(tracks, { type: item.weekly.contextType, name });
+                // The playlist rides along so the queue's context bar can
+                // reopen it (lib/playlist-context).
+                playTrackCollection(tracks, { type: item.weekly.contextType, name, playlist: playlistRef(playlist) });
                 showToast(`Playing ${name}`, 'success');
               }
             };
@@ -42156,7 +42159,7 @@ useEffect(() => {
                     React.createElement('button', {
                       onClick: (e) => {
                         e.stopPropagation();
-                        playWeeklyPlaylist(item);
+                        playWeeklyPlaylist(item, record);
                       },
                       className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
                       style: { border: 'none', cursor: 'pointer' },
@@ -56377,16 +56380,20 @@ useEffect(() => {
             setQueueDrawerOpen(false);
             return;
           }
-          // Navigate to the context source (skip if already on target page)
-          if (playbackContext.type === 'playlist' && playbackContext.id) {
-            const playlist = playlists.find(p => p.id === playbackContext.id);
-            if (playlist) {
-              if (activeView === 'playlist-view' && selectedPlaylist?.id === playlist.id) {
-                // Already viewing this playlist - just close the drawer
-              } else {
-                loadPlaylist(playlist);
-              }
+          // Navigate to the context source (skip if already on target page).
+          // A playlist context opens its playlist: a saved one by id, an
+          // ephemeral one (Weekly Jams, ...) from the reference the context
+          // carries (lib/playlist-context).
+          const contextPlaylist = contextPlaylistTarget(playbackContext, playlists);
+          if (contextPlaylist) {
+            if (activeView === 'playlist-view' && selectedPlaylist?.id === contextPlaylist.id) {
+              // Already viewing this playlist - just close the drawer
+            } else {
+              loadPlaylist(contextPlaylist);
             }
+          } else if (playbackContext.type === 'playlist' && playbackContext.playlist) {
+            // A recommended playlist that can't be reopened: where it lives.
+            navigateTo('recommendations');
           } else if (playbackContext.type === 'album' && playbackContext.artist) {
             // handleCollectionAlbumClick has its own "already viewing" check
             handleCollectionAlbumClick({
