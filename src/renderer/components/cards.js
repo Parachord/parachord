@@ -687,7 +687,7 @@ const ReleasePage = ({
   const albumArtSize = isCompact ? 160 : 192; // 160px or 192px (w-40 or w-48)
   const columnWidth = isCompact ? 180 : 240;
 
-  return React.createElement('div', { ref: containerRef, className: 'flex gap-0 px-6 pb-6', style: { flex: 1, minHeight: 0 } },
+  return React.createElement('div', { ref: containerRef, className: 'flex gap-0 pl-6', style: { flex: 1, minHeight: 0 } },
     // LEFT COLUMN: Album card - matching ReleaseCard styling
     (() => {
       const year = release.date ? release.date.split('-')[0] : '';
@@ -696,7 +696,7 @@ const ReleasePage = ({
       const badge = badgeStyles[releaseType] || badgeStyles.album;
 
       return React.createElement('div', {
-        className: 'flex-shrink-0 pr-4 md:pr-8 pt-6 scrollable-content',
+        className: 'flex-shrink-0 pr-4 md:pr-8 pt-6 pb-6 scrollable-content',
         style: {
           width: `${columnWidth}px`,
           transition: 'width 300ms ease',
@@ -952,8 +952,9 @@ const ReleasePage = ({
       );
     })(),
 
-    // RIGHT COLUMN: Tracklist
-    React.createElement('div', { className: 'flex-1 min-w-0 pt-6 scrollable-content', style: { overflowY: 'auto' } },
+    // RIGHT COLUMN: Tracklist. It carries the right and bottom padding itself
+    // (the wrapper has only the left), so its scrollbar sits at the window edge.
+    React.createElement('div', { className: 'flex-1 min-w-0 pt-6 pr-6 pb-6 scrollable-content', style: { overflowY: 'auto' } },
       // A load that failed: the reason and a retry, in place of the skeleton
       !release.tracks && release._loadError ? React.createElement(ErrorState, { align: 'start', compact: true, title: 'Couldn’t load this album’s tracks', body: release._loadError, onRetry: onRetryLoad || undefined }) :
       // Show skeleton while tracks are loading

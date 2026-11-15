@@ -643,10 +643,13 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
           })(),
 
           // Two-column layout: playlist cover + metadata on left, tracklist on right
-          React.createElement('div', { className: 'flex gap-0 px-6 pb-6', style: { flex: 1, minHeight: 0 } },
+          // Left padding only: the tracklist's own scroll area carries the
+          // right and bottom padding, so its scrollbar sits at the window edge
+          // (the wrapper's px-6 inset it 24px since #1089).
+          React.createElement('div', { className: 'flex gap-0 pl-6', style: { flex: 1, minHeight: 0 } },
             // LEFT COLUMN: 2x2 album art grid and metadata (fixed, scrolls independently)
             React.createElement('div', {
-              className: 'flex-shrink-0 pr-8 pt-8 scrollable-content',
+              className: 'flex-shrink-0 pr-8 pt-8 pb-6 scrollable-content',
               // Scales with the content area (#1389): 240px on a normal
               // window, down to 184px at the minimum, so the tracklist keeps
               // room for titles. The card and cover fill it.
@@ -1004,7 +1007,7 @@ const tracksWithIds = (playlistTracks || []).map(track => ({
             // RIGHT COLUMN: Tracklist (scrolls independently)
             React.createElement('div', {
               ref: handlePlaylistTracksScrollRef,
-              className: 'flex-1 min-w-0 pt-8 scrollable-content scroll-edge',
+              className: 'flex-1 min-w-0 pt-8 pr-6 pb-6 scrollable-content scroll-edge',
               style: { overflowY: 'auto' }
             },
               // Use edited tracks when in edit mode, otherwise use playlistTracks

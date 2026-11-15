@@ -62,3 +62,14 @@ test('collapsed page headers share .hero-bar: titles truncate, tabs scroll, one 
   expect((src.match(/className: 'hero-bar absolute inset-0 flex items-center px-6 z-10'/g) || []).length).toBe(3);
   expect(src).not.toMatch(/absolute inset-0 flex items-center px-16 z-10/);
 });
+
+test('the playlist and album pages\' tracklists scroll to the window edge (the padding is inside the scroller)', () => {
+  const pv = fs.readFileSync(path.join(ROOT, 'src/renderer/components/playlist-view-page.js'), 'utf8');
+  const cards = fs.readFileSync(path.join(ROOT, 'src/renderer/components/cards.js'), 'utf8');
+  for (const src of [pv, cards]) {
+    expect(src).not.toMatch(/className: 'flex gap-0 px-6 pb-6'/);
+    expect(src).toMatch(/className: 'flex gap-0 pl-6'/);
+  }
+  expect(pv).toContain("className: 'flex-1 min-w-0 pt-8 pr-6 pb-6 scrollable-content scroll-edge'");
+  expect(cards).toContain("className: 'flex-1 min-w-0 pt-6 pr-6 pb-6 scrollable-content'");
+});
