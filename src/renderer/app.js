@@ -6569,7 +6569,7 @@ const Parachord = () => {
               { persistent: true }
             );
           } else {
-            showToast('Scanning library…', 'info', null, { persistent: true });
+            showToast('Scanning library…', 'neutral', null, { persistent: true });
           }
         }
 
@@ -9266,7 +9266,7 @@ const Parachord = () => {
                        domain.includes('bandcamp') ? 'Bandcamp' : domain;
 
     // Show toast notification
-    showToast(`Adding ${serviceName} to queue…`, 'info');
+    showToast(`Adding ${serviceName} to queue…`);
 
     // Always add to queue - handleUrlDrop will insert at position 1 (next up)
     // If queue is empty, it will play immediately
@@ -9285,7 +9285,7 @@ const Parachord = () => {
     const playlistUrl = playlist.url || null;
     console.log(`📋 Processing scraped playlist: "${playlistName}" with ${playlist.tracks.length} tracks from ${playlistUrl}`);
 
-    showToast(`Adding ${countOf(playlist.tracks.length, 'track')} from "${playlistName}"…`, 'info');
+    showToast(`Adding ${countOf(playlist.tracks.length, 'track')} from "${playlistName}"…`);
 
     // Convert scraped tracks to our track format
     const context = { type: 'playlist', name: playlistName, url: playlistUrl };
@@ -9330,7 +9330,7 @@ const Parachord = () => {
 
     const { artist, album, score, url } = albumData;
     console.log(`🎵 Looking up album: "${artist}" - "${album}"${score ? ` (score: ${score})` : ''}`);
-    showToast(`Looking up "${album}" by ${artist}…`, 'info');
+    showToast(`Looking up "${album}" by ${artist}…`);
 
     try {
       // MusicBrainz and the services' catalogs race for the track list
@@ -13443,7 +13443,7 @@ ${trackListXml}
       showToast('Achordion plugin not loaded', 'error');
       return;
     }
-    showToast('Creating embed code…', 'info', null, { persistent: true });
+    showToast('Creating embed code…', 'neutral', null, { persistent: true });
     const result = await window.achordion.fetchEmbedCode(track, { entity: 'track' });
     if (!result.ok) {
       const reason = result.reason === 'no-mbid'
@@ -13707,7 +13707,7 @@ ${trackListXml}
       return;
     }
 
-    showToast('Creating embed code…', 'info', null, { persistent: true });
+    showToast('Creating embed code…', 'neutral', null, { persistent: true });
 
     // Resolve a usable MBID. Same precedence as publishCollectionSmartLink.
     let mbid = collection.releaseGroupMbid
@@ -39500,7 +39500,7 @@ useEffect(() => {
                               e.stopPropagation();
                               let tracks = prefetchedReleases[release.id]?.tracks;
                               if (!tracks?.length) {
-                                showToast(`Loading ${release.title} tracks…`, 'info');
+                                showToast(`Loading ${release.title} tracks…`);
                                 tracks = await fetchAlbumTracksFromMusicBrainz(release.artist, release.title, release.albumArt);
                               }
                               if (tracks?.length > 0) {
@@ -39528,7 +39528,7 @@ useEffect(() => {
                               e.stopPropagation();
                               let tracks = prefetchedReleases[release.id]?.tracks;
                               if (!tracks?.length) {
-                                showToast(`Loading ${release.title}…`, 'info');
+                                showToast(`Loading ${release.title}…`);
                                 tracks = await fetchAlbumTracksFromMusicBrainz(release.artist, release.title, release.albumArt);
                               }
                               if (tracks?.length > 0) {
@@ -39549,7 +39549,7 @@ useEffect(() => {
                               e.stopPropagation();
                               let tracks = prefetchedReleases[release.id]?.tracks;
                               if (!tracks?.length) {
-                                showToast(`Loading ${release.title} tracks…`, 'info');
+                                showToast(`Loading ${release.title} tracks…`);
                                 tracks = await fetchAlbumTracksFromMusicBrainz(release.artist, release.title, release.albumArt);
                               }
                               if (tracks?.length > 0) {
@@ -40949,7 +40949,7 @@ useEffect(() => {
                   .filter(t => t.artist === item.artist && t.album === item.name)
                   .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
                 if (albumTracks.length === 0) {
-                  showToast(`Loading ${item.name}…`, 'info');
+                  showToast(`Loading ${item.name}…`);
                   albumTracks = await fetchAlbumTracksFromMusicBrainz(item.artist, item.name, art);
                 }
                 return albumTracks;

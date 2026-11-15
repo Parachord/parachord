@@ -1544,7 +1544,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                           // Get prefetched tracks for playlist, or fetch them
                           let prefetched = prefetchedReleasesRef.current[album.id];
                           if (!prefetched?.tracks?.length) {
-                            showToast('Loading album…', 'info');
+                            showToast('Loading album…');
                             await fetchSearchAlbumTracksAsync(album);
                             prefetched = prefetchedReleasesRef.current[album.id];
                           }
@@ -1581,7 +1581,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                           // Play the album - fetch tracks if needed
                           let prefetched = prefetchedReleasesRef.current[album.id];
                           if (!prefetched?.tracks?.length) {
-                            showToast('Loading album…', 'info');
+                            showToast('Loading album…');
                             await fetchSearchAlbumTracksAsync(album);
                             prefetched = prefetchedReleasesRef.current[album.id];
                           }
@@ -1608,7 +1608,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                           // Fetch album tracks and add to queue
                           let prefetched = prefetchedReleasesRef.current[album.id];
                           if (!prefetched?.tracks?.length) {
-                            showToast('Loading album…', 'info');
+                            showToast('Loading album…');
                             await fetchSearchAlbumTracksAsync(album);
                             prefetched = prefetchedReleasesRef.current[album.id];
                           }
