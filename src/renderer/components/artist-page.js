@@ -31,6 +31,7 @@ const { PAGE_COLORS } = require('../lib/page-colors');
 const { EmptyState, ErrorState } = require('./states');
 const { SortMenu } = require('./sort-menu');
 const { Menu } = require('./menu');
+const { TicketsButton } = require('./tickets-button');
 const { HeroTabs, heroTabClass } = require('./hero-tabs');
 const { SectionHeader } = require('./section-header');
 const { FilterChips } = require('./filter-chips');
@@ -1730,37 +1731,8 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                           }, 'with ' + event.lineup.filter(a => a.toLowerCase() !== (currentArtist?.name || '').toLowerCase()).join(', '))
                         ),
 
-                        // Ticket button with provider flyout
-                        (() => {
-                          const sources = (event.ticketSources || []).filter(s => s.ticketUrl);
-                          const eventId = event.id || `${monthKey}-${eventIdx}`;
-                          if (sources.length === 0) return null;
-                          if (sources.length === 1) {
-                            return React.createElement('a', {
-                              href: sources[0].ticketUrl,
-                              target: '_blank',
-                              rel: 'noopener noreferrer',
-                              // The shared primary button look, in the Concerts page's fill.
-                              className: buttonClassName({ variant: 'primary', size: 'md', className: 'flex-shrink-0' }),
-                              style: { backgroundColor: PAGE_COLORS.concerts.fill },
-                              onClick: (e) => e.stopPropagation()
-                            }, 'Tickets');
-                          }
-                          // The sellers' menu (components/menu.js): one link per seller.
-                          return React.createElement(Menu, {
-                            label: 'Tickets',
-                            align: 'right',
-                            items: sources.map((src, si) => ({ key: si, label: src.label, dot: sellerColor(src.source), href: src.ticketUrl })),
-                            renderTrigger: (t) => React.createElement('button', Object.assign({}, t, {
-                              type: 'button',
-                              className: buttonClassName({ variant: 'primary', size: 'md', className: 'flex-shrink-0' }),
-                              style: { backgroundColor: PAGE_COLORS.concerts.fill }
-                            }),
-                              'Tickets',
-                              React.createElement(Icons.ChevronDown, { className: `w-3 h-3 transition-transform ${t.open ? 'rotate-180' : ''}`, strokeWidth: 2.5 })
-                            ),
-                          });
-                        })()
+                        // The shared teal Tickets button (components/tickets-button.js).
+                        React.createElement(TicketsButton, { sources: event.ticketSources, artist: currentArtist?.name })
                       );
                     })
                   )

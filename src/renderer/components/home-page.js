@@ -591,7 +591,7 @@ const HomePage = React.memo(function HomePage(props) {
           ? React.createElement(AlbumsRow, {
             albums, sourceColors, navigateTo, cards: rowCards, ...albumActions, onOpen: openAlbum,
           })
-          : albumsLoading && skeletonSection('albums', 'Albums you might love', React.createElement(CardRowSkeleton, { count: rowCards, lines: 1 })),
+          : albumsLoading && skeletonSection('albums', 'Albums you might love', React.createElement(CardRowSkeleton, { count: rowCards, lines: 2 })),
 
         // One row for both halves, loaded or not: a half still loading draws
         // its skeleton in its own place, so nothing moves when it lands.

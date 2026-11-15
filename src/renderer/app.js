@@ -2076,6 +2076,7 @@ const { KeyboardShortcutsDialog } = require('./components/keyboard-shortcuts');
 const { WhatsNewDialog } = require('./components/whats-new-dialog');
 const { ArtistCard, ArtistCardSkeleton, RankBadge } = require('./components/artist-card');
 const { AlbumCard, AlbumRankBadge } = require('./components/album-card');
+const { TicketsButton } = require('./components/tickets-button');
 const { PlaylistCard } = require('./components/playlist-card');
 const { ListenerCard, LISTENER_HEXAGON } = require('./components/listener-card');
 const { Badge } = require('./components/badge');
@@ -37222,11 +37223,24 @@ useEffect(() => {
   // recommendation-model.js), so the leading row can't fill Home's row by
   // itself. An album whose id was already kept is skipped too: the card is
   // keyed by id (homeRecommendationAlbums, recommendation-model.js).
+  // Each carries its release year (the provider's date, else the release-date
+  // lookup's), which Home's album card shows as Recommendations' does.
   const recommendationAlbums = useMemo(() => homeRecommendationAlbums({
     sections: recommendations.sections,
     aiAlbums: homeData.aiRecommendations?.albums,
     imageFor: recommendationImageFor
-  }), [recommendations.sections, homeData.aiRecommendations, recommendationImages]);
+  }).map(a => {
+    const known = a.releaseDate ? { date: a.releaseDate } : recommendationReleaseDates[releaseDateKey(a.artist || '', a.title || '')];
+    const year = known && known.date ? String(known.date).slice(0, 4) : '';
+    return year ? { ...a, year } : a;
+  }), [recommendations.sections, homeData.aiRecommendations, recommendationImages, recommendationReleaseDates]);
+  // Home's albums get their release dates looked up too (the first rows'
+  // worth; the rest on Recommendations).
+  useEffect(() => {
+    if (activeView !== 'home') return;
+    queueReleaseDateLookups(recommendationAlbums.filter(a => !a.releaseDate).slice(0, 24)
+      .map(a => ({ artist: a.artist, title: a.title })));
+  }, [activeView, recommendationAlbums.length]);
 
   // Stable function props for the memo'd HomePage (keys must match
   // HOME_PAGE_HANDLERS in home-page.js).
@@ -38450,7 +38464,7 @@ collapsedContent: null
                     playlist.creator && React.createElement('div', { className: 'text-sm text-ink-tertiary truncate' }, playlist.creator)
                   ),
                   // Hosted badge (only for actual hosted XSPF, not Spotify/Apple Music imports)
-                  playlist.sourceUrl && playlist.source === 'hosted-xspf' && React.createElement(Badge, { tone: 'info', icon: Icons.Globe, tooltip: 'Hosted playlist: updates from its link' }, 'Hosted'),
+                  playlist.sourceUrl && playlist.source === 'hosted-xspf' && React.createElement(Badge, { tone: 'surface', icon: Icons.Globe, tooltip: 'Hosted playlist: updates from its link' }, 'Hosted'),
                   // AI badge
                   playlist.isAiPlaylist && !playlist.sourceUrl && React.createElement(Badge, { tone: 'accent', icon: Icons.Sparkles, tooltip: `Made by ${playlist.creator || 'Shuffleupagus'}` }, 'AI'),
                   // Track count
@@ -39815,41 +39829,8 @@ React.createElement('span', {
                             className: 'flex-shrink-0 flex items-center justify-center mr-4',
                             style: { width: '100px' }
                           },
-                          (() => {
-                            const sources = (event.ticketSources || []).filter(s => s.ticketUrl);
-                            const eventId = event.id || `${monthKey}-${eventIdx}`;
-                            if (sources.length === 0) return null;
-                            if (sources.length === 1) {
-                              // Single source — direct link, no flyout
-                              return React.createElement('a', {
-                                href: sources[0].ticketUrl,
-                                target: '_blank',
-                                rel: 'noopener noreferrer',
-                                className: 'px-4 py-2 text-sm font-medium rounded-lg transition-colors no-drag',
-                                style: { backgroundColor: '#10c9b4', color: '#fff' },
-                                onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = '#0eb3a0'; },
-                                onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = '#10c9b4'; },
-                                onClick: (e) => e.stopPropagation()
-                              }, 'Tickets');
-                            }
-                            // Multiple sources — flyout
-                            // The sellers' menu (components/menu.js): one link per seller.
-                            return React.createElement(Menu, {
-                              label: 'Tickets',
-                              align: 'right',
-                              items: sources.map((src, si) => ({ key: si, label: src.label, dot: sellerColor(src.source), href: src.ticketUrl })),
-                              renderTrigger: (t) => React.createElement('button', Object.assign({}, t, {
-                                type: 'button',
-                                className: 'flex-shrink-0 px-4 py-2 text-sm font-medium rounded-lg transition-colors flex items-center gap-1.5',
-                                style: { backgroundColor: '#10c9b4', color: '#fff' },
-                                onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = '#0eb3a0'; },
-                                onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = '#10c9b4'; }
-                              }),
-                                'Tickets',
-                                React.createElement(Icons.ChevronDown, { className: `w-3 h-3 transition-transform ${t.open ? 'rotate-180' : ''}`, strokeWidth: 2.5 })
-                              ),
-                            });
-                          })()
+                          // The shared teal Tickets button (components/tickets-button.js).
+                          React.createElement(TicketsButton, { sources: event.ticketSources, artist: event.artist })
                           )
                         );
                       })

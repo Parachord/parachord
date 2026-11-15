@@ -464,11 +464,15 @@ describe('Concert cards', () => {
     const html = h(S.ConcertsRow, { concerts: [{ ...base, ticketSources: [sellers2[0]] }] });
     expect(html).toMatch(/<a href="https:\/\/s"[^>]*>Tickets<\/a>/);
   });
-  test('several sellers: Tickets is a disclosure button, the list starts closed', () => {
+  test('several sellers: Tickets opens the shared menu, closed to start', () => {
     const html = h(S.ConcertsRow, { concerts: [{ ...base, ticketSources: sellers2 }] });
-    expect(html).toMatch(/<button[^>]*aria-expanded="false"[^>]*aria-controls="[^"]+"[^>]*>Tickets<\/button>/);
-    expect(html).not.toContain('aria-haspopup');
+    expect(html).toMatch(/<button[^>]*aria-haspopup="menu"[^>]*aria-expanded="false"[^>]*>Tickets/);
     expect(html).not.toContain('Songkick');
+  });
+  test('Tickets is the shared teal button (components/tickets-button.js)', () => {
+    const html = h(S.ConcertsRow, { concerts: [{ ...base, ticketSources: [sellers2[0]] }] });
+    expect(html).toContain('background-color:#0f766e');
+    expect(html).not.toContain('text-decoration:underline');
   });
   test('only http(s) ticket links reach an href', () => {
     const bad = [{ source: 'x', ticketUrl: 'javascript:alert(1)' }, { source: 'y', ticketUrl: 'data:text/html,hi' }];
@@ -476,115 +480,6 @@ describe('Concert cards', () => {
     const one = h(S.ConcertsRow, { concerts: [{ ...base, ticketSources: [bad[0], sellers2[0]] }] });
     expect(one).toMatch(/<a href="https:\/\/s"[^>]*>Tickets<\/a>/);
     expect(one).not.toContain('javascript:');
-  });
-
-  // A small hook harness for TicketsLink: one instance, state writes land at
-  // once, document listeners captured, a fake focusable trigger.
-  function ticketsHarness() {
-    const slots = [];
-    let i = 0;
-    const real = global.React;
-    const listeners = {};
-    const doc = {
-      activeElement: null,
-      addEventListener: (t, f) => { listeners[t] = f; },
-      removeEventListener: (t) => { delete listeners[t]; },
-    };
-    let effect = null;
-    const fake = {
-      ...real,
-      useState: (init) => { const k = i++; if (!slots[k]) { slots[k] = [init, (v) => { slots[k][0] = typeof v === 'function' ? v(slots[k][0]) : v; }]; } return [slots[k][0], slots[k][1]]; },
-      useRef: (init) => { const k = i++; if (!slots[k]) slots[k] = { current: init }; return slots[k]; },
-      useId: () => 'r1',
-      useEffect: (fn) => { effect = fn; },
-    };
-    const refs = () => slots.filter((x) => x && !Array.isArray(x)); // [wrap, trigger]
-    const render = () => {
-      global.React = fake;
-      global.document = doc;
-      try { i = 0; return S.__TicketsLink({ sellers: sellers2, artist: 'Hovvdy' }); } finally { global.React = real; }
-    };
-    const runEffect = () => { global.document = doc; effect(); };
-    const cleanup = () => { delete global.document; };
-    return { render, runEffect, listeners, doc, refs, cleanup };
-  }
-  const links = (tree) => walk(tree).filter((n) => n.type === 'a');
-  const trigger = (tree) => walk(tree).find((n) => n.type === 'button');
-
-  test('the trigger controls the list it opens; the list is plain links (no menu roles)', () => {
-    const t = ticketsHarness();
-    try {
-      trigger(t.render()).props.onClick();
-      const tree = t.render();
-      const list = walk(tree).find((n) => n.props.id === trigger(tree).props['aria-controls']);
-      expect(list).toBeTruthy();
-      expect(trigger(tree).props['aria-expanded']).toBe(true);
-      expect(links(tree).map((n) => n.props.href)).toEqual(['https://s', 'https://g']);
-      expect(walk(tree).some((n) => n.props.role === 'menu' || n.props.role === 'menuitem')).toBe(false);
-    } finally { t.cleanup(); }
-  });
-
-  test('Escape closes it and returns focus to Tickets when focus was inside', () => {
-    const t = ticketsHarness();
-    try {
-      trigger(t.render()).props.onClick();
-      t.render();
-      const [wrap, trig] = t.refs();
-      const focused = { id: 'a link' };
-      const focus = jest.fn();
-      wrap.current = { contains: (el) => el === focused };
-      trig.current = { focus };
-      t.doc.activeElement = focused;
-      t.runEffect();
-      t.listeners.keydown({ key: 'Escape' });
-      expect(links(t.render())).toHaveLength(0);
-      expect(focus).toHaveBeenCalled();
-    } finally { t.cleanup(); }
-  });
-
-  test('Escape with focus elsewhere closes it without moving focus', () => {
-    const t = ticketsHarness();
-    try {
-      trigger(t.render()).props.onClick();
-      t.render();
-      const [wrap, trig] = t.refs();
-      const focus = jest.fn();
-      wrap.current = { contains: () => false };
-      trig.current = { focus };
-      t.doc.activeElement = { id: 'elsewhere' };
-      t.runEffect();
-      t.listeners.keydown({ key: 'Escape' });
-      expect(links(t.render())).toHaveLength(0);
-      expect(focus).not.toHaveBeenCalled();
-    } finally { t.cleanup(); }
-  });
-
-  test('an outside click closes it', () => {
-    const t = ticketsHarness();
-    try {
-      trigger(t.render()).props.onClick();
-      t.render();
-      t.refs()[0].current = { contains: () => false };
-      t.runEffect();
-      t.listeners.mousedown({ target: {} });
-      expect(links(t.render())).toHaveLength(0);
-    } finally { t.cleanup(); }
-  });
-
-  test('focus leaving the wrapper closes it; moving between its links does not', () => {
-    const t = ticketsHarness();
-    try {
-      let tree = t.render();
-      trigger(tree).props.onClick();
-      tree = t.render();
-      const wrapEl = walk(tree).find((n) => typeof n.props.onBlur === 'function');
-      const inside = { id: 'link 2' };
-      const currentTarget = { contains: (el) => el === inside };
-      wrapEl.props.onBlur({ currentTarget, relatedTarget: inside });
-      expect(links(t.render())).toHaveLength(2);
-      wrapEl.props.onBlur({ currentTarget, relatedTarget: { id: 'outside' } });
-      expect(links(t.render())).toHaveLength(0);
-    } finally { t.cleanup(); }
   });
 });
 

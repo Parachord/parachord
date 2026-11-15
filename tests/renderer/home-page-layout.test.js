@@ -267,7 +267,10 @@ describe("Home's recommended albums (app.js recommendationAlbums)", () => {
   });
 
   test('app.js builds the row with homeRecommendationAlbums', () => {
-    expect(app).toMatch(/const recommendationAlbums = useMemo\(\(\) => homeRecommendationAlbums\(\{\s*sections: recommendations\.sections,\s*aiAlbums: homeData\.aiRecommendations\?\.albums,\s*imageFor: recommendationImageFor\s*\}\), \[recommendations\.sections, homeData\.aiRecommendations, recommendationImages\]\);/);
+    expect(app).toMatch(/const recommendationAlbums = useMemo\(\(\) => homeRecommendationAlbums\(\{\s*sections: recommendations\.sections,\s*aiAlbums: homeData\.aiRecommendations\?\.albums,\s*imageFor: recommendationImageFor\s*\}\)\.map\(a => \{/);
+    // Each carries its release year (the release-date store), as on Recommendations.
+    expect(app).toContain("}), [recommendations.sections, homeData.aiRecommendations, recommendationImages, recommendationReleaseDates]);");
+    expect(app).toMatch(/if \(activeView !== 'home'\) return;\s*queueReleaseDateLookups\(recommendationAlbums/);
   });
 
   test('takes albums from every category row of the Albums section', () => {

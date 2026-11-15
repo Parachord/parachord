@@ -17,6 +17,7 @@ const { ReasonBadge, ReasonMark, shuffleupagusIcon } = require('./reason-badge')
 const { Play } = require('./icons');
 const { useReveal, ArtOverlay, ArtBox, releaseBadge } = require('./card-art');
 const { AlbumCard } = require('./album-card');
+const { TicketsButton } = require('./tickets-button');
 const { PlaylistCard } = require('./playlist-card');
 const { FilterChips } = require('./filter-chips');
 const { PAGE_COLORS } = require('../lib/page-colors');
@@ -165,6 +166,9 @@ function HomeAlbumCard(props) {
   return e(AlbumCard, Object.assign({}, props, {
     reason: album ? artBadge(album) : null,
     releaseType: album && album.homeRow === 'fresh' ? album.releaseType : null,
+    // A recommended album's release year (as on Recommendations), its line
+    // kept while the date is looked up so the row doesn't jump.
+    subtitle: album && !album.homeRow ? (album.year || '\u00a0') : undefined,
   }));
 }
 
@@ -313,60 +317,8 @@ function FreshCriticalRow(props) {
     showC && half('home-critical', 'Critical Darlings', 'Critical Darlings', 'critics-picks', c, c.length === 0, CRITICAL_HERO, TrophyGlyph()));
 }
 
-// A concert card is not clickable as a whole: "Tickets" is its only action.
-// One seller is a direct link; several make a disclosure: the Tickets button
-// (aria-expanded, aria-controls) shows a list of plain links. It closes on an
-// outside click, on Escape (focus goes back to Tickets when it was inside),
-// and when focus leaves it.
-function TicketsLink({ sellers, artist }) {
-  const [open, setOpen] = React.useState(false);
-  const wrap = React.useRef(null);
-  const trigger = React.useRef(null);
-  const listId = `${React.useId()}-tickets`;
-  React.useEffect(() => {
-    if (!open) return undefined;
-    const onDown = (ev) => { if (wrap.current && !wrap.current.contains(ev.target)) setOpen(false); };
-    const onKey = (ev) => {
-      if (ev.key !== 'Escape') return;
-      const inside = !!(wrap.current && document.activeElement && wrap.current.contains(document.activeElement));
-      setOpen(false);
-      if (inside && trigger.current) trigger.current.focus();
-    };
-    document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onKey);
-    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
-  }, [open]);
-  const tix = { font: 'inherit', fontSize: '12px', fontWeight: 600, marginTop: '2px', color: 'var(--accent-primary)', textDecoration: 'underline', textAlign: 'left' };
-  const safe = (sellers || []).filter((s) => s && isHttpUrl(s.ticketUrl));
-  if (safe.length === 0) return null;
-  if (safe.length === 1) {
-    return e('a', { href: safe[0].ticketUrl, target: '_blank', rel: 'noopener noreferrer', 'aria-label': `Tickets for ${artist}`, style: tix }, 'Tickets');
-  }
-  return e('div', {
-    ref: wrap,
-    // Focus moving out of the trigger and its list closes the list.
-    onBlur: (ev) => { if (!ev.currentTarget.contains(ev.relatedTarget)) setOpen(false); },
-    style: { position: 'relative', alignSelf: 'flex-start' },
-  },
-    e('button', {
-      ref: trigger, type: 'button', 'aria-expanded': open, 'aria-controls': listId, 'aria-label': `Tickets for ${artist}`,
-      onClick: () => setOpen((v) => !v),
-      style: Object.assign({ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }, tix),
-    }, 'Tickets'),
-    open && e('div', {
-      id: listId,
-      style: {
-        position: 'absolute', left: 0, top: '100%', marginTop: '4px', zIndex: 20, minWidth: '160px',
-        display: 'flex', flexDirection: 'column', padding: '4px', borderRadius: '10px',
-        border: '1px solid var(--border-default)', backgroundColor: 'var(--bg-secondary)',
-        boxShadow: '0 4px 12px rgba(0,0,0,.18)',
-      },
-    }, safe.map((s, i) => e('a', {
-      key: i, href: s.ticketUrl, target: '_blank', rel: 'noopener noreferrer',
-      onClick: () => setOpen(false),
-      style: { fontSize: '13px', padding: '8px 10px', borderRadius: '6px', color: 'var(--text-primary)', textDecoration: 'none' },
-    }, s.label || s.source || 'Tickets'))));
-}
+// A concert card is not clickable as a whole: Tickets is its only action
+// (the shared teal button, components/tickets-button.js).
 
 // The concert card's photo and its date badge. The photo is the artist's
 // (the Concerts page's images, face-centred); with none yet, the page's
@@ -413,7 +365,7 @@ function ConcertCard({ concert, image }) {
       e('span', { style: Object.assign({ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }, ELLIPSIS) }, concert.artist),
       e('span', { style: Object.assign({ fontSize: '12px', color: 'var(--text-secondary)' }, ELLIPSIS) }, venue.name || 'Venue TBA'),
       city && e('span', { style: Object.assign({ fontSize: '12px', color: 'var(--text-secondary)' }, ELLIPSIS) }, city),
-      e(TicketsLink, { sellers, artist: concert.artist })));
+      e(TicketsButton, { sources: sellers, artist: concert.artist, size: 'sm' })));
 }
 
 // artistImages: the Concerts page's photos, keyed by lower-cased artist name
@@ -509,5 +461,5 @@ function AskShuffleupagus({ initialPrompt, chatAvailable, onAsk, onSetup }) {
 
 module.exports = {
   JumpBackIn, AlbumCard: HomeAlbumCard, PlaylistCard, SourceFilter, MixesRow, PlaylistsRow, AlbumsRow,
-  FreshCriticalRow, ConcertsRow, AskShuffleupagus, __TicketsLink: TicketsLink, ArtBox,
+  FreshCriticalRow, ConcertsRow, AskShuffleupagus, ArtBox,
 };
