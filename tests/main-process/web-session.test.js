@@ -452,6 +452,18 @@ describe('the gate — rule 2: navigations and pageFetches', () => {
     await jest.advanceTimersByTimeAsync(2500); // the re-armed fuse fires, the gate is free now
     expect(view.webContents.loadURL).toHaveBeenCalledWith('about:blank');
   });
+
+  test('exitReplay never drives the reader counter negative (an unmatched exit is clamped)', async () => {
+    const { host } = await warmSession();
+    // The old createReplayGate warned loudly on an unmatched exit (its unit
+    // test pinned this same clamp); the host's gate clamps silently —
+    // Math.max(0, readers - 1) — so an unmatched exit cannot steal a live
+    // reader's slot by burying the counter below zero.
+    host.exitReplay(); // zero readers in flight: the unmatched exit
+    expect(host.tryEnterReplay()).toBe(true); // the gate still admits a reader
+    host.exitReplay(); // the paired exit
+    expect(host._replayReaders).toBe(0); // back to zero, never below it
+  });
 });
 
 describe('the fuse — rule 3: the idle park', () => {

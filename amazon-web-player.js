@@ -126,7 +126,12 @@ const webSession = createWebSessionHost({
   partition: PARTITION,
   preload: PRELOAD,
   userAgent: chromeUserAgent(),
-  cookieDomains: ['amazon.com']
+  // The auth-cookie hedge (amazonAuthCookieState over the reported names)
+  // must also see host-only auth-shaped cookies set on music.amazon.com:
+  // the pre-refactor read was whole-partition, so the wider list preserves
+  // it. state() merely reports more names; Electron's clear() wipes the
+  // whole partition regardless.
+  cookieDomains: ['amazon.com', 'music.amazon.com']
 });
 
 function electron() {
@@ -331,7 +336,6 @@ const amazonWebPlayer = {
     const wc = view.webContents;
     return {
       webContents: wc,
-      loadURL: (url) => wc.loadURL(url),
       isDestroyed: () => !wc || wc.isDestroyed()
     };
   },
