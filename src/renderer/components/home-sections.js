@@ -415,7 +415,7 @@ const grid = (cols, gap) => ({ display: 'grid', gridTemplateColumns: cols, gap }
 // Loves (`loves`, a card with its own `lovesActions`) leads the row under All.
 // It is no service's, so it adds no chip, and a service's chip shows only
 // that service's mixes.
-function MixesRow({ mixes, loves, lovesActions, sourceColors, onOpen, onPlay, onQueue, onAddToPlaylist, onContextMenu, onArtError }) {
+function MixesRow({ mixes, loves, lovesActions, sourceColors, onOpen, onPlay, onQueue, onAddToPlaylist, onContextMenu, onArtError, cards = HOME_ROW_CARDS }) {
   const [picked, setSource] = React.useState('All');
   const all = Array.isArray(mixes) ? mixes : [];
   if (all.length === 0 && !loves) return null;
@@ -423,11 +423,11 @@ function MixesRow({ mixes, loves, lovesActions, sourceColors, onOpen, onPlay, on
   // A chip whose source has gone leaves the row on All.
   const source = picked === 'All' || chips.some((c) => c.id === picked) ? picked : 'All';
   const lovesCard = source === 'All' ? loves : null;
-  const shown = filterBySource(all, source).slice(0, HOME_ROW_CARDS - (lovesCard ? 1 : 0));
+  const shown = filterBySource(all, source).slice(0, cards - (lovesCard ? 1 : 0));
   return e('section', { 'aria-labelledby': 'home-mixes', style: SECTION_STYLE },
     e(SectionHeader, { id: 'home-mixes', title: 'Made from your listening', sub: "From the services you've connected" }),
     chips.length > 1 && e(SourceFilter, { sources: chips, value: source, onChange: setSource, label: 'Filter mixes by source' }),
-    e('div', { style: grid(`repeat(${HOME_ROW_CARDS}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
+    e('div', { style: grid(`repeat(${cards}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
       lovesCard && e(PlaylistCard, Object.assign({ key: 'recent-loves', playlist: lovesCard, subtitle: lovesCard.subtitle, onArtError }, lovesActions)),
       shown.map((m, i) => e(PlaylistCard, {
         key: m.id || i, playlist: m, subtitle: m.description || m.subtitle,
@@ -435,8 +435,8 @@ function MixesRow({ mixes, loves, lovesActions, sourceColors, onOpen, onPlay, on
       }))));
 }
 
-function PlaylistsRow({ playlists, navigateTo, onOpen, onPlay, onQueue, onAddToPlaylist, onContextMenu, onArtError }) {
-  const list = Array.isArray(playlists) ? playlists.slice(0, HOME_ROW_CARDS) : [];
+function PlaylistsRow({ playlists, navigateTo, onOpen, onPlay, onQueue, onAddToPlaylist, onContextMenu, onArtError, cards = HOME_ROW_CARDS }) {
+  const list = Array.isArray(playlists) ? playlists.slice(0, cards) : [];
   if (list.length === 0) return null;
   return e('section', { 'aria-labelledby': 'home-playlists', style: SECTION_STYLE },
     e(SectionHeader, {
@@ -444,7 +444,7 @@ function PlaylistsRow({ playlists, navigateTo, onOpen, onPlay, onQueue, onAddToP
       sub: 'By last change, so a playlist that refreshes itself stays up front however old it is',
       page: 'Playlists', view: 'playlists', navigateTo, pageColor: PAGE_COLOR.playlists,
     }),
-    e('div', { style: grid(`repeat(${HOME_ROW_CARDS}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
+    e('div', { style: grid(`repeat(${cards}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
       list.map((p, i) => e(PlaylistCard, {
         key: p.id || i, playlist: p, badge: p.badge, subtitle: p.subtitle,
         onOpen, onPlay, onQueue, onAddToPlaylist, onContextMenu, onArtError,
@@ -459,21 +459,21 @@ function albumHandlers(p) {
 }
 
 function AlbumsRow(props) {
-  const { albums, navigateTo } = props;
+  const { albums, navigateTo, cards = HOME_ROW_CARDS } = props;
   const [picked, setSource] = React.useState('All');
   const all = Array.isArray(albums) ? albums : [];
   if (all.length === 0) return null;
   const chips = sourceChips(all, (a, id) => a.sourceLabel || id, props.sourceColors);
   // A chip whose source has gone leaves the row on All.
   const source = picked === 'All' || chips.some((c) => c.id === picked) ? picked : 'All';
-  const shown = filterBySource(all, source).slice(0, HOME_ROW_CARDS);
+  const shown = filterBySource(all, source).slice(0, cards);
   return e('section', { 'aria-labelledby': 'home-albums', style: SECTION_STYLE },
     e(SectionHeader, {
       id: 'home-albums', title: 'Albums you might love', page: 'Recommendations', view: 'recommendations', navigateTo,
       pageColor: PAGE_COLOR.recommendations,
     }),
     chips.length > 1 && e(SourceFilter, { sources: chips, value: source, onChange: setSource }),
-    e('div', { style: grid(`repeat(${HOME_ROW_CARDS}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
+    e('div', { style: grid(`repeat(${cards}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
       shown.map((a, i) => e(AlbumCard, Object.assign({ key: a.id || `${a.artist}-${a.title}-${i}`, album: a }, albumHandlers(props))))));
 }
 
@@ -482,7 +482,7 @@ function AlbumsRow(props) {
 // half still loading draws its skeleton in its own place while the other
 // shows its cards. A half that is neither loading nor has cards is left out.
 function FreshCriticalRow(props) {
-  const { fresh, critical, freshLoading, criticalLoading, navigateTo } = props;
+  const { fresh, critical, freshLoading, criticalLoading, navigateTo, stacked = false } = props;
   // Each half is a card that opens with a slim hero band copied from its
   // page's hero (the same gradient classes, and the collapsed hero's
   // uppercase light title and shadow), the sidebar's icon beside the title.
@@ -490,7 +490,7 @@ function FreshCriticalRow(props) {
   const half = (id, title, page, view, items, loading, hero, icon) => e('section', {
     key: id, 'aria-labelledby': id, 'aria-busy': loading ? 'true' : undefined,
     style: {
-      flex: HOME_HALF_FLEX, minWidth: 0, display: 'flex', flexDirection: 'column',
+      flex: stacked ? '0 0 auto' : HOME_HALF_FLEX, minWidth: 0, display: 'flex', flexDirection: 'column',
       borderRadius: '16px', overflow: 'hidden', border: '1px solid var(--border-default)', backgroundColor: 'var(--bg-primary)',
     },
   },
@@ -520,7 +520,7 @@ function FreshCriticalRow(props) {
   const showF = f.length > 0 || !!freshLoading;
   const showC = c.length > 0 || !!criticalLoading;
   if (!showF && !showC) return null;
-  return e('div', { style: { display: 'flex', gap: `${HOME_HALF_GAP}px` } },
+  return e('div', { style: { display: 'flex', flexDirection: stacked ? 'column' : 'row', gap: `${HOME_HALF_GAP}px` } },
     showF && half('home-fresh', 'Fresh Drops', 'Fresh Drops', 'new-releases', f, f.length === 0, FRESH_HERO, DropletGlyph()),
     showC && half('home-critical', 'Critical Darlings', 'Critical Darlings', 'critics-picks', c, c.length === 0, CRITICAL_HERO, TrophyGlyph()));
 }
@@ -630,15 +630,15 @@ function ConcertCard({ concert, image }) {
 
 // artistImages: the Concerts page's photos, keyed by lower-cased artist name
 // ({ url, facePosition }).
-function ConcertsRow({ concerts, navigateTo, artistImages }) {
-  const list = Array.isArray(concerts) ? concerts.slice(0, HOME_CONCERT_CARDS) : [];
+function ConcertsRow({ concerts, navigateTo, artistImages, cards = HOME_CONCERT_CARDS }) {
+  const list = Array.isArray(concerts) ? concerts.slice(0, cards) : [];
   if (list.length === 0) return null;
   return e('section', { 'aria-labelledby': 'home-concerts', style: SECTION_STYLE },
     e(SectionHeader, {
       id: 'home-concerts', title: 'Concerts near you', sub: 'Artists from your collection playing soon',
       page: 'Concerts', view: 'concerts', navigateTo, pageColor: PAGE_COLOR.concerts,
     }),
-    e('div', { style: grid(`repeat(${HOME_CONCERT_CARDS}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
+    e('div', { style: grid(`repeat(${cards}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
       list.map((c, i) => e(ConcertCard, {
         key: c.id || i, concert: c,
         image: artistImages && c.artist ? artistImages[c.artist.trim().toLowerCase()] : null,

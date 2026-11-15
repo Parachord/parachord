@@ -342,8 +342,8 @@ describe('Home skeletons match the Home rows', () => {
     expect(bars({})).toBe(2);
     expect(bars({ lines: 1 })).toBe(1);
     const page = fs.readFileSync(path.join(dir, 'home-page.js'), 'utf8');
-    expect(page).toContain("skeletonSection('albums', 'Albums you might love', React.createElement(CardRowSkeleton, { lines: 1 }))");
-    expect(page).toContain("skeletonSection('playlists', 'Your playlists, freshest first', React.createElement(CardRowSkeleton))");
+    expect(page).toContain("skeletonSection('albums', 'Albums you might love', React.createElement(CardRowSkeleton, { count: rowCards, lines: 1 }))");
+    expect(page).toContain("skeletonSection('playlists', 'Your playlists, freshest first', React.createElement(CardRowSkeleton, { count: rowCards }))");
   });
 
   test('card rows and their skeletons share one gap', () => {
@@ -367,18 +367,20 @@ describe('Home skeletons match the Home rows', () => {
     const grids = (src) => new Set(src.match(/repeat\([^)]*, minmax\(0, 1fr\)\)/g));
     const inSections = grids(sections);
     expect(inSections.size).toBeGreaterThan(0);
-    // The concert cards are a fixed grid in both files; the card rows pass
-    // their count to CardRowSkeleton, which builds the same string.
-    for (const g of ['repeat(${HOME_CONCERT_CARDS}, minmax(0, 1fr))']) {
-      expect(inSections.has(g)).toBe(true);
-      expect(grids(skeletons).has(g)).toBe(true);
-    }
+    // Card counts fit the content width (#1389): the rows and the concerts
+    // take theirs from the page (rowCards / concertCards), which hands the
+    // same count to the skeletons, so both build the same string.
+    expect(inSections.has('repeat(${cards}, minmax(0, 1fr))')).toBe(true);
+    expect(grids(skeletons).has('repeat(${count}, minmax(0, 1fr))')).toBe(true);
+    const page = fs.readFileSync(path.join(dir, 'home-page.js'), 'utf8');
+    expect(page).toContain('cards: concertCards })');
+    expect(page).toContain('React.createElement(ConcertRowSkeleton, { count: concertCards })');
     // Jump back in: one shared grid string (four across, two by two when
     // narrow) and gap, used by the row and its skeleton.
     expect(sections).toContain('gridTemplateColumns: HOME_JUMP_GRID, gap: `${HOME_JUMP_GAP}px`');
     expect(skeletons).toContain('gridTemplateColumns: HOME_JUMP_GRID, gap: `${HOME_JUMP_GAP}px`');
     expect(sections).not.toContain("'repeat(4, minmax(0, 1fr))'");
-    expect(sections).toContain('repeat(${HOME_ROW_CARDS}, minmax(0, 1fr))');
+    expect(sections).toContain('repeat(${cards}, minmax(0, 1fr))');
     expect(sections).toContain('repeat(${HOME_HALF_ROW_CARDS}, minmax(0, 1fr))');
     expect(skeletons).toContain('repeat(${cols}, minmax(0, 1fr))');
   });
@@ -392,7 +394,7 @@ describe('Home skeletons match the Home rows', () => {
 
   test('Fresh Drops and Critical Darlings halves share one fixed basis, loading or loaded', () => {
     expect(sk.HOME_HALF_FLEX).toBe(`0 0 calc(50% - ${sk.HOME_HALF_GAP / 2}px)`);
-    expect(sections).toContain('flex: HOME_HALF_FLEX');
+    expect(sections).toContain("flex: stacked ? '0 0 auto' : HOME_HALF_FLEX");
     // The loading half renders CardRowSkeleton inside the same section box.
     expect(sections).toContain('e(CardRowSkeleton, { count: HOME_HALF_ROW_CARDS, lines: 1 })');
   });

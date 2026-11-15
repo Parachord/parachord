@@ -21,7 +21,7 @@ const { HomeSetupButton } = require('./home-setup');
 // (Single-line destructures above the props one: page-memo.test.js reads
 // the first multi-line `const {` block as the props list.)
 const { JumpBackIn, MixesRow, PlaylistsRow, AlbumsRow, FreshCriticalRow, ConcertsRow, AskShuffleupagus } = require('./home-sections');
-const { JumpBackInSkeleton, CardRowSkeleton, ConcertRowSkeleton, HOME_HALF_ROW_CARDS, HOME_ROW_CARDS } = require('./home-skeletons');
+const { JumpBackInSkeleton, CardRowSkeleton, ConcertRowSkeleton, HOME_HALF_ROW_CARDS, HOME_ROW_CARDS, homeRowCards, homeConcertCards, homeHalvesStacked } = require('./home-skeletons');
 // The app's section title, which a loading row's heading uses.
 const { SECTION_TITLE_STYLE: H2_STYLE } = require('./section-header');
 const { homeSetupItems } = require('../lib/home-setup');
@@ -107,6 +107,7 @@ const HomePage = React.memo(function HomePage(props) {
     collectionData,
     collectionLoading,
     concerts,
+    contentWidth,
     concertsArtistImages,
     concertsError,
     concertsLoaded,
@@ -166,6 +167,9 @@ const HomePage = React.memo(function HomePage(props) {
     sourceColors,
     whatsNewUnread,
   } = props;
+  // Card counts that fit the content width (#1389); the skeletons use the same.
+  const rowCards = homeRowCards(contentWidth);
+  const concertCards = homeConcertCards(contentWidth);
 
   // ---------------------------------------------------------------- setup
 
@@ -579,22 +583,23 @@ const HomePage = React.memo(function HomePage(props) {
             onImport: () => { navigateTo('settings'); setSettingsTab('general'); },
           }),
 
-        show.mixes && React.createElement(MixesRow, { mixes, loves: lovesCard, lovesActions, sourceColors, ...mixActions }),
+        show.mixes && React.createElement(MixesRow, { mixes, loves: lovesCard, lovesActions, sourceColors, cards: rowCards, ...mixActions }),
 
         show.playlists
-          ? React.createElement(PlaylistsRow, { playlists: homePlaylists, navigateTo, ...playlistActions })
-          : playlistsLoading && skeletonSection('playlists', 'Your playlists, freshest first', React.createElement(CardRowSkeleton)),
+          ? React.createElement(PlaylistsRow, { playlists: homePlaylists, navigateTo, cards: rowCards, ...playlistActions })
+          : playlistsLoading && skeletonSection('playlists', 'Your playlists, freshest first', React.createElement(CardRowSkeleton, { count: rowCards })),
 
         show.albums
           ? React.createElement(AlbumsRow, {
-            albums, sourceColors, navigateTo, ...albumActions, onOpen: openAlbum,
+            albums, sourceColors, navigateTo, cards: rowCards, ...albumActions, onOpen: openAlbum,
           })
-          : albumsLoading && skeletonSection('albums', 'Albums you might love', React.createElement(CardRowSkeleton, { lines: 1 })),
+          : albumsLoading && skeletonSection('albums', 'Albums you might love', React.createElement(CardRowSkeleton, { count: rowCards, lines: 1 })),
 
         // One row for both halves, loaded or not: a half still loading draws
         // its skeleton in its own place, so nothing moves when it lands.
         (show.fresh || show.critical || freshLoading || criticalLoading)
           && React.createElement(FreshCriticalRow, {
+            stacked: homeHalvesStacked(contentWidth),
             fresh,
             critical,
             freshLoading,
@@ -609,8 +614,8 @@ const HomePage = React.memo(function HomePage(props) {
           }),
 
         show.concerts
-          ? React.createElement(ConcertsRow, { concerts, navigateTo, artistImages: concertsArtistImages })
-          : concertsSkeleton && skeletonSection('concerts', 'Concerts near you', React.createElement(ConcertRowSkeleton)),
+          ? React.createElement(ConcertsRow, { concerts, navigateTo, artistImages: concertsArtistImages, cards: concertCards })
+          : concertsSkeleton && skeletonSection('concerts', 'Concerts near you', React.createElement(ConcertRowSkeleton, { count: concertCards })),
 
         React.createElement(AskShuffleupagus, {
           initialPrompt: examplePrompt,

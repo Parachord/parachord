@@ -33,7 +33,30 @@ const HOME_JUMP_GRID = 'repeat(auto-fit, minmax(clamp(calc(25% - 10px), calc((92
 // the row, so a half alone stays half width and nothing reflows as the other
 // half's data lands.
 const HOME_HALF_GAP = 32;
+// Each half keeps half the row, alone or not. Below HOME_HALF_MIN per half
+// (a narrow window, #1389) the halves stack, each the full row.
+const HOME_HALF_MIN = 360;
 const HOME_HALF_FLEX = `0 0 calc(50% - ${HOME_HALF_GAP / 2}px)`;
+
+// Card counts from the content width (#1389). The rows show up to their
+// spec count (6 cards, 4 concerts) but never squeeze a card below its
+// minimum: at the 1000px minimum window (744px of content, less the 24px
+// gutters) a row shows 4 cards and the concerts 3. A width of 0 (not
+// measured yet) gives the spec count.
+const HOME_GUTTER = 24;
+const HOME_MIN_CARD = 140;
+const HOME_MIN_CONCERT = 200;
+const fitCount = (contentWidth, min, lo, hi) => {
+  const w = (Number(contentWidth) || 0) - 2 * HOME_GUTTER;
+  if (w <= 0) return hi;
+  return Math.max(lo, Math.min(hi, Math.floor((w + HOME_ROW_GAP) / (min + HOME_ROW_GAP))));
+};
+const homeRowCards = (contentWidth) => fitCount(contentWidth, HOME_MIN_CARD, 3, HOME_ROW_CARDS);
+const homeConcertCards = (contentWidth) => fitCount(contentWidth, HOME_MIN_CONCERT, 2, HOME_CONCERT_CARDS);
+const homeHalvesStacked = (contentWidth) => {
+  const w = (Number(contentWidth) || 0) - 2 * HOME_GUTTER;
+  return w > 0 && w < 2 * HOME_HALF_MIN + HOME_HALF_GAP;
+};
 
 const bar = (className, style) => React.createElement('div', {
   className: `rounded shimmer-light animate-shimmer ${className}`,
@@ -89,11 +112,11 @@ function CardRowSkeleton({ count = HOME_ROW_CARDS, columns, lines = 2 } = {}) {
 }
 
 /** Concerts: four cards, a 72px photo (with its date badge) beside four text lines (artist, venue, city, tickets). */
-function ConcertRowSkeleton() {
+function ConcertRowSkeleton({ count = HOME_CONCERT_CARDS } = {}) {
   return React.createElement('div', {
     'aria-hidden': 'true',
-    style: { display: 'grid', gridTemplateColumns: `repeat(${HOME_CONCERT_CARDS}, minmax(0, 1fr))`, gap: `${HOME_ROW_GAP}px` }
-  }, Array.from({ length: HOME_CONCERT_CARDS }, (_, i) => React.createElement('div', {
+    style: { display: 'grid', gridTemplateColumns: `repeat(${count}, minmax(0, 1fr))`, gap: `${HOME_ROW_GAP}px` }
+  }, Array.from({ length: count }, (_, i) => React.createElement('div', {
     key: i,
     style: {
       display: 'flex', alignItems: 'center', gap: '12px', padding: '10px', borderRadius: '14px',
@@ -114,5 +137,5 @@ function ConcertRowSkeleton() {
 module.exports = {
   JumpBackInSkeleton, CardRowSkeleton, ConcertRowSkeleton,
   HOME_TILE_HEIGHT, HOME_ROW_CARDS, HOME_HALF_ROW_CARDS, HOME_CONCERT_CARDS,
-  HOME_ROW_GAP, HOME_CARD_TEXT_GAP, HOME_CARD_BOX, HOME_CARD_ART_RADIUS, HOME_JUMP_GRID, HOME_JUMP_GAP, HOME_HALF_GAP, HOME_HALF_FLEX,
+  HOME_ROW_GAP, HOME_CARD_TEXT_GAP, HOME_CARD_BOX, HOME_CARD_ART_RADIUS, HOME_JUMP_GRID, HOME_JUMP_GAP, HOME_HALF_GAP, HOME_HALF_FLEX, HOME_HALF_MIN, homeRowCards, homeConcertCards, homeHalvesStacked,
 };

@@ -337,9 +337,24 @@ describe('Rows', () => {
     expect(HOME_HALF_FLEX).toBe('0 0 calc(50% - 16px)');
     const alone = h(S.FreshCriticalRow, { fresh: [{ title: 'T', artist: 'A' }], critical: [], navigateTo: () => {} });
     expect(alone).toContain('flex:0 0 calc(50% - 16px)');
-    expect(alone.startsWith('<div style="display:flex;gap:32px">')).toBe(true);
+    expect(alone.startsWith('<div style="display:flex;flex-direction:row;gap:32px">')).toBe(true);
     const loading = h(S.FreshCriticalRow, { fresh: [], critical: [], freshLoading: true, criticalLoading: true });
     expect((loading.match(/flex:0 0 calc\(50% - 16px\)/g) || []).length).toBe(2);
+    // A narrow window (#1389): the halves stack, each the full row.
+    const stacked = h(S.FreshCriticalRow, { stacked: true, fresh: [{ title: 'T', artist: 'A' }], critical: [{ title: 'U', artist: 'B' }], navigateTo: () => {} });
+    expect(stacked.startsWith('<div style="display:flex;flex-direction:column;gap:32px">')).toBe(true);
+    expect(stacked).not.toContain('calc(50% - 16px)');
+  });
+  test('card counts fit the content width (#1389)', () => {
+    const sk = require('../../src/renderer/components/home-skeletons');
+    expect(sk.homeRowCards(0)).toBe(6); // not measured yet: the spec count
+    expect(sk.homeRowCards(744)).toBe(4); // the 1000px minimum window
+    expect(sk.homeRowCards(1184)).toBe(6);
+    expect(sk.homeConcertCards(744)).toBe(3);
+    expect(sk.homeConcertCards(1184)).toBe(4);
+    expect(sk.homeHalvesStacked(744)).toBe(true);
+    expect(sk.homeHalvesStacked(1184)).toBe(false);
+    expect(sk.homeHalvesStacked(0)).toBe(false);
   });
   test('each half opens with a hero band copied from its page\'s hero', () => {
     const app = fs.readFileSync(path.join(COMP, '..', 'app.js'), 'utf8');
