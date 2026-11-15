@@ -20,7 +20,7 @@ All playlists live in the electron-store key `local_playlists`, read and written
 | Provider sync | Sync wizard; background sync | Spotify, Apple Music, ListenBrainz playlists | Yes, as `${provider}-${externalId}` | Yes: pull, push, n-way mirrors |
 | Shuffleupagus chat | AI chat `create_playlist` and playlist tools | Model-chosen tracks | Yes, as `ai-chat-*` | No |
 | MCP server | External agents (Claude Desktop etc.) | `create_playlist` | Yes | No |
-| Save queue | Queue panel SAVE; File menu "Export Queue as Playlist" | Current queue | Yes, as `queue-*` | No |
+| Save queue | Queue drawer Save; File menu "Save Queue as Playlist…" | Current queue | Yes, as `queue-*` | No |
 | Weekly Exploration | Recommendations (Playlists), SAVE button | ListenBrainz generated playlist (Weekly and Daily Jams are history mixes on Home instead) | Yes, as `playlist-*` | No |
 | Add-to-Playlist panel | 19 places across album, track, playlist and friend views; drag a track onto the sidebar | Tracks | Creates or extends a playlist | No |
 
@@ -181,7 +181,7 @@ Apple Music writes degrade to append-only when Apple rejects PUT; removals stay 
 
 ## Other ways a playlist is created
 
-- **Save the queue.** The queue panel SAVE button and File menu "Export Queue as Playlist..." open the save dialog (`handleSaveQueueAsPlaylist`), which saves the current track plus the queue as `queue-${Date.now()}` with creator "Queue".
+- **Save the queue.** The queue drawer's Save button and the File menu's "Save Queue as Playlist…" open the save dialog (`handleSaveQueueAsPlaylist`), which saves the current track plus the queue as `queue-${Date.now()}` with creator "Queue".
 - **Weekly Jams / Weekly Exploration.** The SAVE button on a ListenBrainz weekly playlist (`PlaylistViewPage`) copies it into the library as `playlist-${Date.now()}` with `source: 'listenbrainz'`, built by spreading the whole playlist (`buildPlaylistSavePayload`) — only the library-record specifics are overridden.
 - **Recommended playlists (ephemeral provider playlists).** A recommended playlist opened from the Recommendations page carries its provider `sourceUrl`; its SAVE button runs the Import path (`handleImportPlaylistFromUrl`) — the same record the card's Import hover button produces — so the two buttons can never disagree.
 - **Add-to-Playlist panel.** Opened from album, track, playlist and friend views and from the native context menu; its New Playlist row creates `<slug>-${Date.now()}`.

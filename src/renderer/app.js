@@ -12306,7 +12306,7 @@ const Parachord = () => {
               }
               showConfirmDialog({
                 type: 'info',
-                title: 'Import Playlist',
+                title: 'Import playlist',
                 message: `An external link wants to import a playlist from:\n\n${importUrl.hostname}${importUrl.pathname}`,
                 onConfirm: async () => {
                   try {
@@ -12340,8 +12340,8 @@ const Parachord = () => {
 
                 showConfirmDialog({
                   type: 'info',
-                  title: 'Import Playlist',
-                  message: `An external link wants to import "${title}" (${tracks.length} track${tracks.length !== 1 ? 's' : ''}) by ${creator}.`,
+                  title: 'Import playlist',
+                  message: `An external link wants to import "${title}" (${countOf(tracks.length, 'track')}) by ${creator}.`,
                   onConfirm: async () => {
                     try {
                       // Build an XSPF string from the track data
@@ -25307,8 +25307,8 @@ ${trackListXml}
 
     // Use simpler confirmation for marketplace plugins since they can be easily reinstalled
     const confirmMessage = isInMarketplace
-      ? `Remove "${resolverName}"?`
-      : `Are you sure you want to uninstall "${resolverName}"?\n\nThis permanently removes the plug-in.`;
+      ? 'You can install it again from the marketplace.'
+      : 'It isn’t in the marketplace, so you can’t install it again from there.';
 
     const shouldUninstall = await confirmAsync({ title: `Remove ${resolverName}?`, message: confirmMessage, confirmLabel: 'Remove', destructive: true });
 
@@ -25323,11 +25323,8 @@ ${trackListXml}
       const result = await window.electron.resolvers.uninstall(resolverId);
 
       if (!result.success && result.error !== 'Plugin not found') {
-        showConfirmDialog({
-          type: 'error',
-          title: 'Uninstall Failed',
-          message: result.error
-        });
+        console.error('Plug-in removal failed:', result.error);
+        showToast(`Couldn’t remove ${resolverName}. Restart Parachord and try again.`, 'error');
         return;
       }
 
@@ -25364,18 +25361,10 @@ ${trackListXml}
         await window.electron.store.set('uninstalled_resolvers', [...uninstalledResolvers, resolverId]);
       }
 
-      showConfirmDialog({
-        type: 'success',
-        title: 'Removed',
-        message: displayName
-      });
+      showToast(`Removed ${displayName}`, 'success');
     } catch (error) {
       console.error('Error uninstalling resolver:', error);
-      showConfirmDialog({
-        type: 'error',
-        title: 'Uninstall Error',
-        message: error.message
-      });
+      showToast(`Couldn’t remove ${resolverName}. Restart Parachord and try again.`, 'error');
     }
   };
 

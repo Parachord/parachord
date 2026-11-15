@@ -389,7 +389,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
               className: 'ml-3 px-3 py-1.5 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5'
             },
               React.createElement(Icons.Plus, { className: 'w-4 h-4' }),
-              'Add Friend'
+              'Add friend'
             )
           ),
 

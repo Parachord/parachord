@@ -2098,7 +2098,7 @@ app.whenReady().then(async () => {
         },
         { type: 'separator' },
         {
-          label: 'Settings...',
+          label: 'Settings…',
           accelerator: 'CmdOrCtrl+,',
           click: () => safeSendToRenderer('menu-action', 'open-settings')
         },
@@ -2123,16 +2123,16 @@ app.whenReady().then(async () => {
           click: () => safeSendToRenderer('menu-action', 'new-playlist')
         },
         {
-          label: 'Add Friend...',
+          label: 'Add Friend…',
           click: () => safeSendToRenderer('menu-action', 'add-friend')
         },
         { type: 'separator' },
         {
-          label: 'Import Playlist...',
+          label: 'Import Playlist…',
           click: () => safeSendToRenderer('menu-action', 'import-playlist')
         },
         {
-          label: 'Export Queue as Playlist...',
+          label: 'Save Queue as Playlist…',
           click: () => safeSendToRenderer('menu-action', 'export-playlist')
         },
         { type: 'separator' },
@@ -2161,7 +2161,7 @@ app.whenReady().then(async () => {
         ]),
         { type: 'separator' },
         {
-          label: 'Find...',
+          label: 'Find…',
           accelerator: 'CmdOrCtrl+F',
           click: () => safeSendToRenderer('menu-action', 'focus-search')
         }
@@ -2227,7 +2227,7 @@ app.whenReady().then(async () => {
       label: 'Help',
       submenu: [
         {
-          label: 'Check for Updates...',
+          label: 'Check for Updates…',
           click: () => {
             safeSendToRenderer('menu-action', 'check-for-updates');
           }
@@ -2240,7 +2240,7 @@ app.whenReady().then(async () => {
           }
         },
         {
-          label: 'Report an Issue...',
+          label: 'Report a Problem…',
           click: async () => {
             await shell.openExternal('https://github.com/Parachord/parachord/issues');
           }
@@ -4451,7 +4451,7 @@ ipcMain.handle('resolvers-show-context-menu', async (event, resolverId) => {
 
   const menu = Menu.buildFromTemplate([
     {
-      label: 'Uninstall Plug-In',
+      label: 'Remove Plug-In',
       click: () => {
         // Send back to renderer
         safeSendToRenderer('resolver-context-menu-action', {
