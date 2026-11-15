@@ -52213,10 +52213,10 @@ firstRunTutorial.step === 'sources' && React.createElement(React.Fragment, null,
           },
             React.createElement('h2', {
               style: { fontSize: '18px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '4px' }
-            }, 'Enable Your Music Sources'),
+            }, 'Enable your music sources'),
             React.createElement('p', {
               style: { fontSize: '14px', color: 'var(--text-secondary)' }
-            }, 'Click to enable or disable sources. You can configure them in Settings.')
+            }, 'Turn on the ones you use. You can change them any time in Plug-Ins.')
           ),
           // Content - Resolver cards grid (same design as Settings › Plug-Ins)
           React.createElement('div', {
@@ -52374,7 +52374,7 @@ firstRunTutorial.step === 'complete' && (() => {
             // Info text
             React.createElement('p', {
               style: { fontSize: '13px', color: 'var(--text-secondary)', textAlign: 'center', lineHeight: '1.6' }
-            }, 'You can sign in to services, add music folders and change what plays first in Plug-Ins, any time.')
+            }, 'Plug-Ins is where you sign in to services, add music folders and change what plays first.')
           ),
           // Footer
           React.createElement('div', {
