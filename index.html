@@ -728,6 +728,12 @@
        re-render). A zero-height sticky marker at its top then casts a soft
        shadow over what scrolls beneath the hero, toolbar or sticky bar above,
        so content never runs into a hard edge (the artist biography did). */
+    /* A quiet source button (the queue drawer, components/track-lists.js
+       SourceIconButton quiet): faded and desaturated at rest (--rest, set
+       per button: lower for a low-confidence match), full on hover or focus. */
+    .source-quiet { opacity: var(--rest, 0.7); filter: saturate(0.7); transition: opacity 150ms, filter 150ms, transform 100ms; }
+    .source-quiet:hover, .source-quiet:focus-visible { opacity: 1; filter: none; }
+
     .scroll-edge::before {
       content: ''; display: block; position: sticky; height: 0; z-index: 30;
       /* The area's own padding (set by the listener): a sticky element stays

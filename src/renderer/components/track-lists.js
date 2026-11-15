@@ -73,18 +73,20 @@ function cellStyle(cell) {
 
 // A service's play button: its colour and logo (the plugin's `color`). Hover
 // grows it in CSS (no JS hover); the tooltip names the service and the match.
-function SourceIconButton({ resolver, confidence, dim, onClick, size = 20 }) {
+// `quiet` (the queue drawer): desaturated and faded at rest, full on hover or
+// focus (.source-quiet in index.html).
+function SourceIconButton({ resolver, confidence, dim, onClick, size = 20, quiet = false }) {
   const label = `Play from ${resolver.name}${confidence ? ` (${Math.round(confidence * 100)}% match)` : ''}`;
   return React.createElement('button', {
     type: 'button',
-    className: 'no-drag flex items-center justify-center transition-transform hover:scale-110',
+    className: `no-drag flex items-center justify-center transition-transform hover:scale-110${quiet ? ' source-quiet' : ''}`,
     'aria-label': label,
     'data-tooltip': label,
     onClick: (e) => { e.stopPropagation(); onClick(); },
-    style: {
+    style: Object.assign({
       width: `${size}px`, height: `${size}px`, borderRadius: '4px', backgroundColor: resolver.color,
-      border: 'none', cursor: 'pointer', padding: 0, pointerEvents: 'auto', opacity: dim ? 0.6 : 1,
-    },
+      border: 'none', cursor: 'pointer', padding: 0, pointerEvents: 'auto',
+    }, quiet ? { '--rest': dim ? 0.5 : 0.7 } : { opacity: dim ? 0.6 : 1 }),
   }, React.createElement(ResolverIcon, { resolverId: resolver.id, size: Math.round(size * 0.6) }));
 }
 
@@ -362,17 +364,18 @@ const VirtualizedQueueList = React.memo(({
       onMouseLeave: () => {
         if (onTrackHoverEnd) onTrackHoverEnd();
       },
+      // On the always-dark drawer: the accent fill for the playing row, the
+      // on-dark tints for hover and drag, the soft accent for a drop line.
       className: `group flex items-center gap-3 py-1.5 px-3 hover:bg-white/10 transition-all duration-300 ${
-        isCurrentTrack ? 'bg-purple-900/40' : ''
-      } ${isDragging ? 'opacity-50 bg-gray-700/50' : ''} ${
+        isDragging ? 'opacity-50 bg-white/5' : ''} ${
         isError || isUnplayable ? 'opacity-50' : ''
-      } ${isDraggedOver ? 'border-t-2 border-t-purple-400' : ''} ${
+      } ${isDraggedOver ? 'border-t-2' : ''} ${
         isLoading || isError ? 'cursor-default' : 'cursor-pointer'} ${
         isFallingDown ? 'queue-track-drop' : ''} ${
         isInserted ? 'queue-track-insert' : ''} ${
         (spinoffMode || playbackContext?.type === 'spinoff' || playbackContext?.type === 'friend') && !isCurrentTrack ? 'opacity-50' : ''} ${
         listenAlongFriend ? 'opacity-40 pointer-events-none' : ''}`,
-      style: virtualRow ? {
+      style: Object.assign(virtualRow ? {
         position: 'absolute',
         top: 0,
         left: 0,
@@ -383,7 +386,9 @@ const VirtualizedQueueList = React.memo(({
       } : {
         borderRadius: '6px',
         marginBottom: '1px'
-      }
+      },
+      isCurrentTrack ? { backgroundColor: 'color-mix(in srgb, var(--accent-fill) 35%, transparent)' } : null,
+      isDraggedOver ? { borderTopColor: 'var(--accent-soft)' } : null)
     },
       // Track number
       React.createElement('span', {
@@ -412,8 +417,8 @@ const VirtualizedQueueList = React.memo(({
           fontSize: '13px',
           fontWeight: index === 0 ? '500' : '400',
           color: isLoading ? 'var(--on-dark-tertiary)' :
-                 isError ? '#f87171' :
-                 isCurrentTrack ? 'var(--accent-soft)' : 'rgba(229, 231, 235, 0.9)'
+                 isError ? 'var(--error)' :
+                 isCurrentTrack ? 'var(--accent-soft)' : 'var(--on-dark-primary)'
         }
       },
         isLoading ? 'Loading…' :
@@ -422,7 +427,7 @@ const VirtualizedQueueList = React.memo(({
       ),
       // Artist name
       React.createElement('button', { type: 'button',
-        className: 'text-left truncate hover:text-purple-400 hover:underline cursor-pointer transition-colors',
+        className: 'text-left truncate hover:text-white hover:underline cursor-pointer transition-colors',
         // On the always-dark drawer: the fixed on-dark colour (#1386 contrast).
         style: { flex: '0.7 1 0', minWidth: 0, fontSize: '12px', color: 'var(--on-dark-secondary)' },
         onClick: (e) => {
@@ -453,9 +458,11 @@ const VirtualizedQueueList = React.memo(({
                 handleUrlDrop(track.sourceUrl, 'queue');
               }
             },
-            className: 'px-2 py-0.5 text-xs text-gray-400 hover:text-white hover:bg-white/10 rounded transition-colors',
-            'data-tooltip': 'Retry'
-          }, '↻')
+            type: 'button',
+            className: 'p-1 hover:text-white hover:bg-white/10 rounded transition-colors',
+            style: { color: 'var(--on-dark-secondary)' },
+            'aria-label': 'Try again', 'data-tooltip': 'Try again'
+          }, React.createElement(Icons.RefreshCw, { size: 14 }))
         : isLoading ?
           React.createElement('div', { className: 'flex items-center gap-1' },
             React.createElement('div', {
@@ -468,36 +475,14 @@ const VirtualizedQueueList = React.memo(({
             })
           )
         : shownSources.length > 0 ?
+          // The shared source button, quiet on the dark drawer.
           shownSources.map(({ resolverId, source, dim }) => {
               const resolver = allResolvers.find(r => r.id === resolverId);
               if (!resolver) return null;
-              const confidence = source?.confidence || 0;
-              const restingOpacity = dim ? 0.5 : 0.7;
-              return React.createElement('button', {
-                key: resolverId,
-                onClick: (e) => {
-                  e.stopPropagation();
-                  handlePlay({ ...track, preferredResolver: resolverId });
-                },
-                className: 'no-drag',
-                style: {
-                  width: '20px',
-                  height: '20px',
-                  borderRadius: '4px',
-                  backgroundColor: resolver.color,
-                  border: 'none',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  opacity: restingOpacity,
-                  filter: 'saturate(0.7)',
-                  transition: 'opacity 0.15s, filter 0.15s, transform 0.1s'
-                },
-                onMouseEnter: (e) => { e.currentTarget.style.transform = 'scale(1.1)'; e.currentTarget.style.opacity = '1'; e.currentTarget.style.filter = 'saturate(1)'; },
-                onMouseLeave: (e) => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.opacity = String(restingOpacity); e.currentTarget.style.filter = 'saturate(0.7)'; },
-                'aria-label': `Play via ${resolver.name}${confidence ? ` (${Math.round(confidence * 100)}% match)` : ''}`, 'data-tooltip': `Play via ${resolver.name}${confidence ? ` (${Math.round(confidence * 100)}% match)` : ''}`
-              }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
+              return React.createElement(SourceIconButton, {
+                key: resolverId, resolver, confidence: source?.confidence || 0, dim, quiet: true,
+                onClick: () => handlePlay({ ...track, preferredResolver: resolverId })
+              });
             })
         : sourceState === 'unplayable' ? null
         :
@@ -520,7 +505,8 @@ const VirtualizedQueueList = React.memo(({
           // This row only: the same song may be queued more than once.
           removeFromQueue(track.id, index);
         },
-        className: 'flex-shrink-0 p-1 text-gray-500 hover:text-red-400 hover:bg-white/10 rounded transition-colors opacity-0 group-hover:opacity-100 card-reveal',
+        className: 'flex-shrink-0 p-1 hover:text-white hover:bg-white/10 rounded transition-colors opacity-0 group-hover:opacity-100 card-reveal',
+        style: { color: 'var(--on-dark-tertiary)' },
         'aria-label': isLoading ? 'Cancel' : 'Remove from queue', 'data-tooltip': isLoading ? 'Cancel' : 'Remove from queue'
       }, React.createElement(X, { size: 14 }))
     );
