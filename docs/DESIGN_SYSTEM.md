@@ -318,6 +318,40 @@ ParachordWordmark({ fill, height })
 
 ---
 
+## Copy
+
+The words are part of the design system: one concept, one name. The audit (#1388) found five names for a plug-in and "song" next to "track".
+
+### Glossary
+
+| Say | Meaning | Not |
+|-----|---------|-----|
+| **plug-in** (Title Case "Plug-Ins" in headings) | What you install and enable | resolver, plugin, extension, provider |
+| **enable** | Turn a plug-in on | activate |
+| **service** | Spotify, Apple Music, Bandcamp and so on | provider |
+| **source** | Where a track plays from | resolver |
+| **Collection** | Your saved tracks, albums and artists (capitalised: a feature name) | library, Your Music |
+| **Loves** | Tracks you've loved | favourites, likes (a service's own "Liked Songs" keeps its name) |
+| **Shuffleupagus** | The AI DJ ("your AI DJ" on first mention) | the assistant, the AI |
+| **track** | One recording | song |
+| **album** / **edition** | A release / one version of it | |
+| **sync** / **import** | Keep a playlist matched with a service / copy it in once | |
+| Feature names | Fresh Drops, Critical Darlings, Pop of the Tops, Recommendations, Concerts, History | new releases, Critic's Picks |
+
+"Library" stays only where it means local files or a service's own library ("your Spotify library").
+
+### Rules
+
+- **Never in UI text:** "resolver", ids, file extensions, internals (MBID, Widevine CDM, MusicKit, preload.js), HTTP codes, raw `error.message`, or Settings paths that don't exist.
+- **Sentence case** everywhere except native menus, tabs, Settings section headings and page titles. Never type caps; use CSS `uppercase`. `tests/renderer/dialog-title-case.test.js` checks titles.
+- **"…"**, not "...": the `asciiEllipsis` drift metric.
+- **Counts:** `countOf(n, 'track')` (`src/renderer/lib/plural.js`), never `${n} tracks`.
+- **Relative times:** `timeAgo` (`src/renderer/lib/time-ago.js`).
+- **Dates:** US English (`en-US`) until the UI is translated (#1416).
+- **Errors:** what happened, then what to do ("Couldn't load Fresh Drops. Check your connection and try again."). Show `errorText(err, fallback)` (`src/renderer/lib/error-copy.js`); throw `userError('…')` for a message written for the reader; log the raw error.
+- **Buttons:** a confirm button is named for its action and sits next to Cancel. Success is a toast, not a dialog.
+- **Native menus** use the app's words in Title Case: "Save Queue as Playlist…", "Remove Plug-In".
+
 ## Icons
 
 ### Primary Icon Set
