@@ -7,7 +7,7 @@
 const SpotifySyncProvider = require('../sync-providers/spotify');
 const AppleMusicSyncProvider = require('../sync-providers/applemusic');
 const ListenBrainzSyncProvider = require('../sync-providers/listenbrainz');
-const { matchTracks } = require('./track-identity');
+const { matchTracks, mergeRows } = require('./track-identity');
 
 // Registry of available sync providers
 const providers = {
@@ -41,7 +41,9 @@ const getAllProviders = () => {
  * id-keyed map (love_pushed_keys, tombstones, the caches) stays valid. Rows
  * already in the collection for one recording are merged into one keeper; the
  * others are listed in `merged`, which applyDiff drops without counting them
- * as removals.
+ * as removals. Local rows that share one id are folded into one, and a remote
+ * item that repeats an id or native id already placed is dropped, never added
+ * (the #1404 regression grew the collection by one copy per repeat per sync).
  *
  * options: { dataType, nativeIdOf } — tracks get the tiers when dataType is
  * 'tracks'; nativeIdOf is the provider's (a row → its native id, or null).
@@ -56,11 +58,17 @@ const calculateDiff = (remoteItems, localItems, providerId, options = {}) => {
   let pairs;
   let unmatched;
   let claimed;
+  let rows = localItems;
+  let collapsed = new Set();
   if (options.dataType === 'tracks') {
-    ({ pairs, unmatched, claimed, merged } = matchTracks(remoteItems, localItems, {
+    let duplicates;
+    ({ pairs, unmatched, claimed, merged, rows, collapsed, duplicates } = matchTracks(remoteItems, localItems, {
       providerId,
       nativeIdOf: options.nativeIdOf
     }));
+    if (duplicates.length > 0 || collapsed.size > 0) {
+      console.log(`[SyncEngine] ${duplicates.length} remote tracks repeated an id already placed; ${collapsed.size} ids had several local rows (folded)`);
+    }
   } else {
     const remoteMap = new Map(remoteItems.map(item => [item.id, item]));
     const localMap = new Map(localItems.map(item => [item.id, item]));
@@ -137,24 +145,29 @@ const calculateDiff = (remoteItems, localItems, providerId, options = {}) => {
 
   // Find items to remove (in local with this provider source, but matched by
   // no remote item). Keyed on the rows matched, not on remote ids: a row
-  // matched by native id or name keeps its own id.
-  for (const localItem of localItems) {
+  // matched by native id or name keeps its own id. One row per id: copies
+  // with one id were folded together by matchTracks.
+  for (const localItem of rows) {
     if (!localItem || claimed.has(localItem.id)) continue;
-    if (localItem.syncSources?.[providerId]) {
-      // Remove this provider's source
-      const newSyncSources = { ...localItem.syncSources };
-      delete newSyncSources[providerId];
+    if (!localItem.syncSources?.[providerId]) {
+      // Copies with one id that no remote names: write the folded row back,
+      // so applyDiff keeps their merged sources.
+      if (collapsed.has(localItem.id)) toUpdate.push(localItem);
+      continue;
+    }
+    // Remove this provider's source
+    const newSyncSources = { ...localItem.syncSources };
+    delete newSyncSources[providerId];
 
-      // If no sources left, mark for removal
-      if (Object.keys(newSyncSources).length === 0) {
-        toRemove.push(localItem);
-      } else {
-        // Still has other sources - just update syncSources
-        toUpdate.push({
-          ...localItem,
-          syncSources: newSyncSources
-        });
-      }
+    // If no sources left, mark for removal
+    if (Object.keys(newSyncSources).length === 0) {
+      toRemove.push(localItem);
+    } else {
+      // Still has other sources - just update syncSources
+      toUpdate.push({
+        ...localItem,
+        syncSources: newSyncSources
+      });
     }
   }
 
@@ -195,13 +208,37 @@ const applyDiff = (collectionItems, diff) => {
     console.log(`[SyncEngine] Preserved item IDs:`, preservedItems.slice(0, 5).map(i => i.id));
   }
 
-  // Filter out removed items and apply updates
-  const result = collectionItems
-    .filter(item => !removeIds.has(item.id))
-    .map(item => updateMap.get(item.id) || unchangedMap.get(item.id) || item);
+  // Filter out removed items and apply updates. One row per id: copies that
+  // share an id (left by the #1404 regression) leave here, the first copy's
+  // place kept. calculateDiff wrote the folded row into toUpdate/unchanged;
+  // copies it never saw are folded here.
+  const byId = new Map();
+  const result = [];
+  for (const item of collectionItems) {
+    if (!item || !item.id) { result.push(item); continue; }
+    if (removeIds.has(item.id)) continue;
+    const next = updateMap.get(item.id) || unchangedMap.get(item.id);
+    if (byId.has(item.id)) {
+      const index = byId.get(item.id);
+      if (!next) result[index] = mergeRows(result[index], [item]);
+      continue;
+    }
+    byId.set(item.id, result.length);
+    result.push(next || item);
+  }
+  const dropped = collectionItems.length - result.length - collectionItems.filter(item => item && removeIds.has(item.id)).length;
+  if (dropped > 0) {
+    console.log(`[SyncEngine] applyDiff folded ${dropped} rows that repeated an id`);
+  }
 
-  // Add new items
-  const finalResult = [...result, ...toAdd];
+  // Add new items (never a second row for an id the collection holds)
+  const added = [];
+  for (const item of toAdd) {
+    if (item && item.id && byId.has(item.id)) continue;
+    if (item && item.id) byId.set(item.id, -1);
+    added.push(item);
+  }
+  const finalResult = [...result, ...added];
   console.log(`[SyncEngine] applyDiff output: ${finalResult.length} items`);
 
   return finalResult;
