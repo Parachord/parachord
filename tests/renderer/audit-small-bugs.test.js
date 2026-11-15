@@ -11,7 +11,7 @@ const pv = fs.readFileSync(path.join(root, 'src/renderer/components/playlist-vie
 test('no window.alert / alert() left in the renderer pages (bug 25)', () => {
   expect(pv).not.toMatch(/window\.alert\(/);
   expect(app).not.toMatch(/(?<![\w.])alert\('(Tutorial reset|Failed to reset application|Failed to save ID3 tags)/);
-  expect(pv).toMatch(/showToast\(`Failed to push changes: \$\{result\?\.error \|\| 'Unknown error'\}`, 'error'\)/);
+  expect(pv).toMatch(/showToast\(`Couldn’t send your changes to \$\{providerName\}\. Try again\.`, 'error'\)/);
 });
 
 test('an emptied playlist title keeps the old one (bug 26)', () => {

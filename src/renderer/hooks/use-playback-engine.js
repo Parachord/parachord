@@ -1896,8 +1896,8 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
           setTrackLoading(false);
           showConfirmDialog({
             type: 'error',
-            title: 'Playback Error',
-            message: `Failed to play this ${streamLabel} track: ` + error.message
+            title: 'Couldn’t play the track',
+            message: `This ${streamLabel} track didn’t start. Try another source, or try again.`
           });
           return;
         }
@@ -2125,8 +2125,8 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         setTrackLoading(false);
         showConfirmDialog({
           type: 'error',
-          title: 'Playback Error',
-          message: `Failed to play this ${streamLabel} track: ` + error.message
+          title: 'Couldn’t play the track',
+          message: `This ${streamLabel} track didn’t start. Try another source, or try again.`
         });
       }
       return;

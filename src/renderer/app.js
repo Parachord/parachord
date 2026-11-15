@@ -1311,6 +1311,7 @@ const {
 } = require('./components/track-lists');
 const { sourceRowState } = require('./lib/visible-sources');
 const { countOf } = require('./lib/plural');
+const { userError, errorText } = require('./lib/error-copy');
 const { Play, Pause, SkipForward, SkipBack, Volume2, Search, List, Settings, Plus, Music, Radio, Users, Heart, X } = Icons;
 
 
@@ -4089,10 +4090,12 @@ const Parachord = () => {
           }
         }
       } else {
-        showToast(`Cleanup failed: ${result.error}`, 'error');
+        console.error('Cleanup failed:', result.error);
+        showToast('Couldn’t finish the cleanup. Try again.', 'error');
       }
     } catch (err) {
-      showToast(`Cleanup failed: ${err.message}`, 'error');
+      console.error('Cleanup failed:', err);
+      showToast('Couldn’t finish the cleanup. Try again.', 'error');
     }
     setCleanupDuplicatesState({ loading: false, providerId: null });
   };
@@ -6800,7 +6803,7 @@ const Parachord = () => {
 
     } catch (error) {
       console.error(`❌ ${urlType} lookup failed:`, error);
-      showToast(`Could not load ${urlType}: ${error.message}`, 'error');
+      showToast(errorText(error, `Couldn’t open that ${urlType}. Check the link and try again.`), 'error');
     }
   };
 
@@ -9348,7 +9351,7 @@ const Parachord = () => {
       showToast(`Added ${countOf(tracks.length, 'track')} from "${albumTitle}"`, 'success');
     } catch (error) {
       console.error('Error looking up album:', error);
-      showToast(`Failed to look up album: ${error.message}`, 'error');
+      showToast(errorText(error, 'Couldn’t find that album. Try searching for it instead.'), 'error');
     }
   };
 
@@ -10979,7 +10982,7 @@ const Parachord = () => {
             window.copyDiagnosticLog().then(({ count }) => {
               showToast(`Copied ${count} log ${count === 1 ? 'entry' : 'entries'} to clipboard`);
             }).catch(err => {
-              showToast(`Could not copy log: ${err.message || err}`, 'error');
+              showToast('Couldn’t copy the log. Try again.', 'error');
             });
           } else {
             showToast('Diagnostic log not available', 'error');
@@ -11816,7 +11819,7 @@ const Parachord = () => {
                 }
               } catch (err) {
                 console.error(`play/${playKind} failed:`, err);
-                showToast(`Play failed: ${err.message}`, 'error');
+                showToast(errorText(err, 'Couldn’t play that. Check the link and try again.'), 'error');
                 restoreProtocolPlaceholder();
               }
               break;
@@ -11878,7 +11881,7 @@ const Parachord = () => {
                 await startSpinoffRef.current({ pool: initialPool, displayName, refillUrl }, { beforeStart: clearQueue });
               } catch (err) {
                 console.error('play/radio failed:', err);
-                showToast(`Radio failed: ${err.message}`, 'error');
+                showToast(errorText(err, 'Couldn’t start that radio. Try again.'), 'error');
               }
               break;
             }
@@ -12276,7 +12279,7 @@ const Parachord = () => {
               }
             } catch (err) {
               console.error('listen-along failed:', err);
-              showToast(`listen-along failed: ${err.message}`, 'error');
+              showToast(errorText(err, 'Couldn’t listen along. Try again.'), 'error');
             }
             break;
           }
@@ -12318,7 +12321,7 @@ const Parachord = () => {
                       setActiveView('playlists');
                     }
                   } catch (err) {
-                    showToast(`Import failed: ${err.message}`, 'error');
+                    console.error('Import failed:', err); showToast(errorText(err, 'Couldn’t import the playlist. Check the link and try again.'), 'error');
                   }
                 }
               });
@@ -12394,12 +12397,12 @@ ${trackListXml}
                         showToast('Failed to save imported playlist', 'error');
                       }
                     } catch (err) {
-                      showToast(`Import failed: ${err.message}`, 'error');
+                      console.error('Import failed:', err); showToast(errorText(err, 'Couldn’t import the playlist. Check the link and try again.'), 'error');
                     }
                   }
                 });
               } catch (err) {
-                showToast(`Import failed: ${err.message}`, 'error');
+                console.error('Import failed:', err); showToast(errorText(err, 'Couldn’t import the playlist. Check the link and try again.'), 'error');
               }
             } else {
               showToast('Import requires a url or tracks parameter', 'error');
@@ -12412,7 +12415,7 @@ ${trackListXml}
         }
       } catch (error) {
         console.error('🔗 Protocol URL error:', error);
-        showToast(`Protocol error: ${error.message}`, 'error');
+        showToast(errorText(error, 'Couldn’t open that Parachord link. Check it and try again.'), 'error');
         // Take the loading placeholder down if one was set; the toast
         // surfaces the failure but the playbar shouldn't keep showing
         // "Loading…" forever.
@@ -16179,8 +16182,8 @@ ${trackListXml}
       waitingForBrowserPlaybackRef.current = false;
       showConfirmDialog({
         type: 'error',
-        title: 'Browser Error',
-        message: `Failed to open browser: ${error.message}`
+        title: 'Couldn’t open your browser',
+        message: 'Check that a default web browser is set, then try again.'
       });
       setIsExternalPlayback(false);
       setPendingExternalTrack(null);
@@ -17417,8 +17420,8 @@ ${trackListXml}
           setTrackLoading(false);
           showConfirmDialog({
             type: 'error',
-            title: 'Playback Error',
-            message: `Failed to play "${title}" by ${artist}: ${err.message}`
+            title: 'Couldn’t play the track',
+            message: errorText(err, `"${title}" by ${artist} didn’t start. Try another source, or try again.`)
           });
         }
       } else if (type === 'artist') {
@@ -17472,8 +17475,8 @@ ${trackListXml}
           setTrackLoading(false);
           showConfirmDialog({
             type: 'error',
-            title: 'Playback Error',
-            message: `Failed to play album "${title}" by ${artist}: ${err.message}`
+            title: 'Couldn’t play the album',
+            message: errorText(err, `"${title}" by ${artist} didn’t start. Try again.`)
           });
         }
       }
@@ -25272,16 +25275,16 @@ ${trackListXml}
         console.error('Failed to hot-load resolver:', error);
         showConfirmDialog({
           type: 'error',
-          title: 'Load Failed',
-          message: `The plug-in was installed but didn’t load. Restart Parachord to finish.\n\n${error.message}`
+          title: 'Restart to finish',
+          message: 'The plug-in was installed but didn’t load. Restart Parachord to finish.'
         });
       }
     } catch (error) {
       console.error('Error installing resolver:', error);
       showConfirmDialog({
         type: 'error',
-        title: 'Installation Error',
-        message: error.message
+        title: 'Couldn’t install the plug-in',
+        message: errorText(error, 'Try again. If it keeps failing, restart Parachord.')
       });
     }
   };
@@ -25577,8 +25580,8 @@ ${trackListXml}
       console.error('Marketplace install error:', error);
       showConfirmDialog({
         type: 'error',
-        title: 'Installation Failed',
-        message: error.message
+        title: 'Couldn’t install the plug-in',
+        message: errorText(error, 'Try again. If it keeps failing, restart Parachord.')
       });
     } finally {
       setInstallingResolvers(prev => {
@@ -26375,8 +26378,8 @@ ${tracks}
       } else {
         showConfirmDialog({
           type: 'error',
-          title: 'Load Failed',
-          message: `Failed to load Apple Music Songs Charts: ${error.message || 'Network error'}. Please try again.`
+          title: 'Couldn’t load the charts',
+          message: 'Apple Music’s charts didn’t load. Check your connection and try again.'
         });
       }
     } finally {
@@ -29971,12 +29974,12 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     const response = await lastfmFetch(url);
 
     if (!response.ok) {
-      if (response.status === 404) throw new Error('User not found on Last.fm');
+      if (response.status === 404) throw userError('There’s no Last.fm user with that name. Check the spelling and try again.');
       throw new Error(`Last.fm API error: ${response.status}`);
     }
 
     const data = await response.json();
-    if (data.error) throw new Error(data.message || 'User not found on Last.fm');
+    if (data.error) throw userError('There’s no Last.fm user with that name. Check the spelling and try again.');
 
     const user = data.user;
     return {
@@ -29993,14 +29996,14 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     const response = await fetch(url);
 
     if (!response.ok) {
-      if (response.status === 404) throw new Error('User not found on ListenBrainz');
+      if (response.status === 404) throw userError('There’s no ListenBrainz user with that name. Check the spelling and try again.');
       throw new Error(`ListenBrainz API error: ${response.status}`);
     }
 
     // Verify response has valid data
     const data = await response.json();
     if (data.payload?.count === undefined) {
-      throw new Error('User not found on ListenBrainz');
+      throw userError('There’s no ListenBrainz user with that name. Check the spelling and try again.');
     }
 
     // ListenBrainz doesn't have avatars, return username only
@@ -30425,7 +30428,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     // Exactly the friend services: anything else used to fall through to a
     // ListenBrainz lookup of the same name.
     if (!FRIEND_SERVICES.includes(service)) {
-      throw new Error(`Can't follow people on ${service || 'that service'}`);
+      throw userError('You can follow people on Last.fm or ListenBrainz.');
     }
     const userInfo = service === 'lastfm'
       ? await fetchLastfmUserInfo(username)
@@ -30438,7 +30441,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       f.service === finalService
     );
     if (existingFriend) {
-      throw new Error(`${userInfo.displayName} is already in your friends list`);
+      throw userError(`${userInfo.displayName} is already one of your friends.`);
     }
 
     // Create friend object
@@ -30519,7 +30522,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       showToast(`${newFriend.displayName} pinned to sidebar`);
     } catch (error) {
       console.error('Failed to add friend:', error);
-      showToast(error.message || 'Failed to add friend', 'error');
+      showToast(errorText(error, 'Couldn’t add that friend. Check the name and try again.'), 'error');
     } finally {
       setAddFriendLoading(false);
     }
@@ -30536,7 +30539,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       showToast(`Following ${newFriend.displayName}`);
     } catch (error) {
       console.error('Failed to follow:', error);
-      showToast(error.message || 'Failed to follow', 'error');
+      showToast(errorText(error, 'Couldn’t follow them. Try again.'), 'error');
     } finally {
       setFollowingRecommended(false);
     }
@@ -34171,17 +34174,13 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       fetchPlaylistCovers(id, parsed.tracks || []);
 
       console.log(`✅ Imported playlist: ${parsed.title} (${newPlaylist.tracks.length} tracks)`);
-      showConfirmDialog({
-        type: 'success',
-        title: 'Playlist Imported',
-        message: parsed.title
-      });
+      showToast(`Imported “${parsed.title}”`, 'success');
     } catch (error) {
       console.error('Import error:', error);
       showConfirmDialog({
         type: 'error',
-        title: 'Import Failed',
-        message: error.message
+        title: 'Couldn’t import the playlist',
+        message: errorText(error, 'Check that the file is an XSPF playlist, then try again.')
       });
     }
   };
@@ -34528,7 +34527,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
           navigateTo('playlists');
         }
       } catch (err) {
-        showToast(`Import failed: ${err.message}`, 'error');
+        console.error('Import failed:', err); showToast(errorText(err, 'Couldn’t import the playlist. Check the link and try again.'), 'error');
       }
     }
   };
@@ -34756,8 +34755,8 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       console.error('Export error:', error);
       showConfirmDialog({
         type: 'error',
-        title: 'Export Error',
-        message: error.message
+        title: 'Couldn’t export the playlist',
+        message: 'Try again, or save it to a different folder.'
       });
     }
   };
@@ -35329,7 +35328,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         return false;
       } catch (error) {
         console.log('[AppleMusic] Auth window flow failed:', error.message);
-        showToast(`Apple Music sign-in failed: ${error.message}`, 'error');
+        showToast(errorText(error, 'Couldn’t sign in to Apple Music. Try again.'), 'error');
         return false;
       }
     };
@@ -35614,7 +35613,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         showToast('MusicKit token saved. Click "Connect" to sign in with Apple ID.', 'success');
       } catch (error) {
         console.error('🍎 Failed to configure MusicKit JS:', error);
-        showToast('Token saved but MusicKit configuration failed: ' + error.message, 'warning');
+        showToast('Token saved, but Apple Music couldn’t start. Restart Parachord and try again.', 'warning');
       }
     } else {
       showToast('Token saved', 'success');
@@ -45129,7 +45128,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                         const { count } = await window.copyDiagnosticLog();
                         showToast(`Copied ${count} log ${count === 1 ? 'entry' : 'entries'} to clipboard`);
                       } catch (err) {
-                        showToast(`Could not copy log: ${err.message || err}`, 'error');
+                        showToast('Couldn’t copy the log. Try again.', 'error');
                       }
                     } }, 'Copy diagnostic log')
                 ),
@@ -46848,7 +46847,8 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
           close();
           showToast(`${result.updated ? 'Updated' : 'Imported'} “${result.playlist.title}”`, 'success');
         } catch (error) {
-          showConfirmDialog({ type: 'error', title: 'Couldn’t import the playlist', message: error.message });
+          console.error('Import from URL failed:', error);
+          showConfirmDialog({ type: 'error', title: 'Couldn’t import the playlist', message: errorText(error, 'Check the link and try again.') });
         } finally {
           setUrlImportLoading(false);
         }
@@ -50855,11 +50855,12 @@ React.createElement('div', {
                   setId3SelectedArt(null);
                   setId3ArtSuggestions([]);
                 } else {
-                  showToast(`Couldn't save the tags: ${result.error}`, 'error');
+                  console.error('Saving ID3 tags failed:', result.error);
+                  showToast('Couldn’t save the tags. Check that the file isn’t read-only, then try again.', 'error');
                 }
               } catch (error) {
                 console.error('Error saving ID3 tags:', error);
-                showToast(`Couldn't save the tags: ${error.message}`, 'error');
+                showToast('Couldn’t save the tags. Check that the file isn’t read-only, then try again.', 'error');
               } finally {
                 setId3EditorSaving(false);
               }

@@ -377,7 +377,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                       // what was just deleted. Reload so a stale copy can't undo it.
                       const result = await window.electron.sync.setChannel(playlist.id, providerId, false);
                       if (!result?.success) {
-                        showToast(`Could not stop syncing to ${providerName}: ${result?.error || 'unknown error'}`, 'error');
+                        console.error('Stop syncing failed:', result?.error); showToast(`Couldn’t stop syncing to ${providerName}. Try again.`, 'error');
                         return;
                       }
                       const fresh = await window.electron.playlists.load();
@@ -505,11 +505,11 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                   await savePlaylistToStore(applyPush(playlist));
                 } else {
                   console.error('Failed to push playlist:', result?.error);
-                  showToast(`Failed to push changes: ${result?.error || 'Unknown error'}`, 'error');
+                  showToast(`Couldn’t send your changes to ${providerName}. Try again.`, 'error');
                 }
               } catch (err) {
                 console.error('Failed to push playlist:', err);
-                showToast(`Failed to push changes: ${err.message}`, 'error');
+                showToast(`Couldn’t send your changes to ${providerName}. Try again.`, 'error');
               }
             };
 
@@ -557,12 +557,12 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                   if (result?.errorCode === 'missing_scopes') {
                     showToast('Missing permissions. Please disconnect and reconnect Spotify in Settings.', 'error');
                   } else {
-                    showToast(`Failed to pull changes: ${result?.error || 'Unknown error'}`, 'error');
+                    showToast(`Couldn’t get the latest changes from ${providerName}. Try again.`, 'error');
                   }
                 }
               } catch (err) {
                 console.error('Failed to pull playlist updates:', err);
-                showToast(`Failed to pull changes: ${err.message}`, 'error');
+                showToast(`Couldn’t get the latest changes from ${providerName}. Try again.`, 'error');
               }
             };
 
