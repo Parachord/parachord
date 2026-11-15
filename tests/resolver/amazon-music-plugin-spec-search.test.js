@@ -237,24 +237,24 @@ describe('the page flow (webSession.load with the capture window inside it)', ()
   });
 
   test('a cold view whose first gql lands after the host default quiet window is still captured and matched', async () => {
-    // The review fix: the host's awaitCaptureQuiet returns ~quietMs after
-    // load-finish when ZERO captures exist, so a cold view whose first gql
-    // lands >1s after load-finish under the host default (1000ms) would read
-    // as "the page never fired the search" — a structural failure and a
-    // breaker tick. The plugin's explicit window (2500ms) keeps the late
-    // request inside it.
+    // The zero-capture rule: a page that has fired nothing yet is not quiet,
+    // so the wait runs to budgetMs for the FIRST request and only closes
+    // quietMs after the last one. A cold view whose first gql lands 1.2s
+    // after load-finish is inside the window under both the plugin's explicit
+    // window (2500ms quiet, 15s budget) and the host defaults (1000ms quiet,
+    // 8s budget) — the returned capture is matched and replayed.
     const ws = amazonWebSessionMock({ tracks: TRACKS, captureDelayMs: 1200 });
     const resolver = instantiateAmazonPlugin(axe);
     const rows = await search(resolver, 'daft punk');
     expect(rows).toHaveLength(2);
     // The late capture was returned AND matched — the flow replayed it.
     expect(ws.pageFetch).toHaveBeenCalledTimes(1);
-    // The mock simulates the window honestly: the SAME 1200ms-late capture
-    // under the host's default 1000ms window is not returned — the window
-    // closed before the request fired. The wider window the plugin passes
-    // is the only reason the capture above survived.
+    // The mock simulates the window honestly: the SAME 1200ms-late FIRST
+    // capture under a window that closes at 1s for it (quietMs 1000 AND
+    // budgetMs 1000) is not returned — the wait for the first request ended
+    // before it fired.
     const late = await ws.load('amazon-music', 'https://music.amazon.com/search/x/songs', {
-      capture: { urlPrefixes: ['https://gql.music.amazon.com/*'], quietMs: 1000 }
+      capture: { urlPrefixes: ['https://gql.music.amazon.com/*'], quietMs: 1000, budgetMs: 1000 }
     });
     expect(late.captures).toEqual([]);
   });

@@ -210,16 +210,19 @@ function amazonWebSessionMock(opts = {}) {
       if (id !== 'amazon-music') throw new Error('the plugin must drive its own session id');
       if (opts.loadResult) return opts.loadResult;
       // The host's quiet window, simulated at the decision point (the host
-      // polls in real time; a test computes the same verdict): the window
-      // closes quietMs after load-finish with no new captured request, so a
-      // page whose first capture fires captureDelayMs after load-finish is
-      // inside the returned captures only when it fired before the close
-      // (captureDelayMs < quietMs) — a request after the close is not among
-      // them, exactly the captures: [] the host returns. The host's
-      // DEFAULTS.captureQuietMs (1000) applies when the caller passes none.
+      // polls in real time; a test computes the same verdict): a page that
+      // has fired NOTHING yet is not quiet — it has not started — so the
+      // wait runs to budgetMs for the first request, and closes quietMs
+      // after the last one. A page whose first capture fires captureDelayMs
+      // after load-finish is inside the returned captures only when it fired
+      // before the close (captureDelayMs < max(quietMs, budgetMs)); a
+      // request after the close is not among them, exactly the captures: []
+      // the host returns. The host's DEFAULTS (captureQuietMs 1000,
+      // captureBudgetMs 8000) apply when the caller passes none.
       const quietMs = o && o.capture && Number.isFinite(o.capture.quietMs) ? o.capture.quietMs : 1000;
+      const budgetMs = o && o.capture && Number.isFinite(o.capture.budgetMs) ? o.capture.budgetMs : 8000;
       const delayMs = Number.isFinite(opts.captureDelayMs) ? opts.captureDelayMs : 0;
-      const captures = delayMs < quietMs ? capturesFor(url, o) : [];
+      const captures = delayMs < Math.max(quietMs, budgetMs) ? capturesFor(url, o) : [];
       return { success: true, finalUrl: 'finalUrl' in opts ? opts.finalUrl : url, captures };
     }),
     pageFetch: jest.fn().mockImplementation(async (id, request) => {
