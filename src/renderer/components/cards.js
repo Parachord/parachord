@@ -240,7 +240,8 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, 
     releaseType: release.releaseType,
     subtitle: year,
     animationDelay,
-    className: isVisible ? '' : 'hidden',
+    // A card the type filter hides stays mounted (its art and ref keep).
+    hidden: !isVisible,
     cardRef: onCardRef,
     cardProps: { 'data-release-id': release.id },
     dragData: () => {
