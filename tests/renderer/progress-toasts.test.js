@@ -32,3 +32,20 @@ test('no toast repeats what the queue and Collection animations already say', ()
   const bulk = app.slice(app.indexOf('const addTracksToCollection = useCallback('), app.indexOf('const handleCollectionDrop = useCallback('));
   expect(bulk).toContain("showSidebarBadge('collection', addedCount);");
 });
+
+// Every way something arrives plays its animation: the queue pulse, the
+// Collection and Playlists sidebar badges, a friend sliding into the sidebar.
+test('each arrival path plays its animation', () => {
+  const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  const fn = (name) => { const i = app.indexOf(`const ${name} = `); expect(i).toBeGreaterThan(-1); return app.slice(i, app.indexOf('\n  };\n', i)); };
+  // The embed's "add to queue".
+  expect(app).toMatch(/embed\.onQueue\([\s\S]{0,200}setCurrentQueue\(prev => \[\.\.\.prev, track\]\);\s*triggerQueueAnimation\(\);/);
+  // Every new playlist badges Playlists.
+  for (const name of ['handleSaveQueueConfirm', 'handleAiSavePlaylistConfirm', 'createPlaylistFromChat', 'handleImportPlaylistFromUrl']) {
+    expect([name, fn(name).includes("showSidebarBadge('playlists')")]).toEqual([name, true]);
+  }
+  // Adding a friend slides them in.
+  expect(fn('addFriendCore')).toContain('setNewlyPinnedFriendIds(prev => new Set([...prev, newFriend.id]));');
+  // And no toast says it again.
+  expect(app).not.toMatch(/showToast\(`[^`]*(pinned to sidebar|Following \$\{|Saved playlist: )/);
+});

@@ -41,7 +41,8 @@ describe('follow a recommended listener', () => {
     const fn = body('const addFriend = async', 'const followRecommendedFriend');
     expect(fn).toMatch(/addFriendCore\(/);
     expect(fn).toMatch(/setAddFriendModalOpen\(false\)/);
-    expect(fn).toMatch(/pinned to sidebar/);
+    // The friend sliding into the sidebar says it (addFriendCore), not a toast.
+    expect(fn).not.toMatch(/pinned to sidebar/);
   });
 
   test('the friend header shows Follow only for a non-friend', () => {
@@ -52,7 +53,8 @@ describe('follow a recommended listener', () => {
     const fn = body('const followRecommendedFriend', '// Remove a friend completely');
     expect(fn).toMatch(/addFriendCore\(\{ service: person\.service, username: person\.username \}\)/);
     expect(fn).toMatch(/setCurrentFriend\(newFriend\)/);
-    expect(fn).toMatch(/`Following \$\{newFriend\.displayName\}`/);
+    // The sidebar slide-in says they were added; no toast repeats it.
+    expect(fn).not.toMatch(/`Following /);
     expect(fn).toMatch(/showToast\(errorText\(error, 'Couldn’t follow them\. Try again\.'\), 'error'\)/);
   });
 

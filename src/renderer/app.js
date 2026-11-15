@@ -10533,6 +10533,7 @@ const Parachord = () => {
       console.log('➕ Embed queue request:', track?.title);
       if (track) {
         setCurrentQueue(prev => [...prev, track]);
+        triggerQueueAnimation();
       }
     });
 
@@ -12427,6 +12428,7 @@ ${trackListXml}
                       if (saveResult?.success) {
                         setPlaylists(prev => [newPlaylist, ...prev]);
                         fetchPlaylistCovers(id, newPlaylist.tracks);
+                        showSidebarBadge('playlists');
                         showToast(`Imported playlist: ${title}`);
                         setActiveView('playlists');
                       } else {
@@ -16569,7 +16571,7 @@ ${trackListXml}
 
     // Close dialog
     setQueueSaveDialogOpen(false);
-    showToast(`Saved playlist: ${queueSavePlaylistName.trim()}`);
+    showSidebarBadge('playlists');
   };
 
   // "Save to file" in the same dialog: write the queue as an .xspf without
@@ -17072,6 +17074,7 @@ ${trackListXml}
     const saveResult = await window.electron.playlists.save(newPlaylist);
     if (saveResult.success) {
       setPlaylists(prev => [newPlaylist, ...prev]);
+      showSidebarBadge('playlists');
       fetchPlaylistCovers(playlistId, tracks);
     }
 
@@ -25775,7 +25778,7 @@ ${tracks}
     // Close dialogs
     setAiSaveDialogOpen(false);
     closeSidebarAnimated();
-    showToast(`Saved playlist: ${aiSavePlaylistName.trim()}`);
+    showSidebarBadge('playlists');
   };
 
   // Save playlist to local storage (electron-store)
@@ -30538,6 +30541,16 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     setFriends(prev => [...prev, newFriend]);
     // Auto-pin the friend to sidebar (they're not saved to collection yet)
     setPinnedFriendIds(prev => prev.includes(newFriend.id) ? prev : [...prev, newFriend.id]);
+    // Slide them into the sidebar (the friend-entry animation), as a pin does:
+    // that is what says they were added.
+    setNewlyPinnedFriendIds(prev => new Set([...prev, newFriend.id]));
+    setTimeout(() => {
+      setNewlyPinnedFriendIds(prev => {
+        const next = new Set(prev);
+        next.delete(newFriend.id);
+        return next;
+      });
+    }, 300);
     // Mark as auto-pinned so they get auto-unpinned when offline
     // (only manually pinned friends via context menu/drag stay permanently)
     setAutoPinnedFriendIds(prev => prev.includes(newFriend.id) ? prev : [...prev, newFriend.id]);
@@ -30584,11 +30597,10 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         }
       }
 
-      const newFriend = await addFriendCore({ service: finalService, username });
+      await addFriendCore({ service: finalService, username });
 
       setAddFriendModalOpen(false);
       setAddFriendInput('');
-      showToast(`${newFriend.displayName} pinned to sidebar`);
     } catch (error) {
       console.error('Failed to add friend:', error);
       showToast(errorText(error, 'Couldn’t add that friend. Check the name and try again.'), 'error');
@@ -30605,7 +30617,6 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     try {
       const newFriend = await addFriendCore({ service: person.service, username: person.username });
       setCurrentFriend(newFriend);
-      showToast(`Following ${newFriend.displayName}`);
     } catch (error) {
       console.error('Failed to follow:', error);
       showToast(errorText(error, 'Couldn’t follow them. Try again.'), 'error');
@@ -30659,10 +30670,6 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
           return next;
         });
       }, 300); // Match animation duration
-      const friend = friends.find(f => f.id === friendId);
-      if (friend) {
-        showToast(`${friend.displayName} pinned to sidebar`);
-      }
     }
     // If friend was auto-pinned, remove from auto-pinned list (now manually pinned)
     if (autoPinnedFriendIds.includes(friendId)) {
@@ -34270,6 +34277,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       fetchPlaylistCovers(id, parsed.tracks || []);
 
       console.log(`✅ Imported playlist: ${parsed.title} (${newPlaylist.tracks.length} tracks)`);
+      showSidebarBadge('playlists');
       showToast(`Imported “${parsed.title}”`, 'success');
     } catch (error) {
       console.error('Import error:', error);
@@ -34615,6 +34623,9 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       }
 
       console.log(`✅ Imported hosted playlist: ${parsed.title}`);
+      // A new playlist (not the startup reload of a saved one) badges the
+      // sidebar, like every other way a playlist arrives.
+      if (!skipStorageUpdate) showSidebarBadge('playlists');
       return { updated: false, playlist: parsed };
     } catch (error) {
       console.error('URL import error:', error);
