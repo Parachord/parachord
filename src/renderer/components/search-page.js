@@ -29,7 +29,7 @@ const { artistOpenOptions, creditOpenOptions, trackArtistOpenOptions } = require
 const { VirtualizedTrackList } = require('./track-lists');
 const { visibleSources, sourceRowState } = require('../lib/visible-sources');
 const { trackDurationLabel } = require('../lib/track-duration');
-const { generateArtistPattern, PlayTop10Icon, QueueTop10Icon, SearchArtistCard, SearchHistoryItem } = require('./cards');
+const { generateArtistPattern, PlayTop10Icon, SearchArtistCard, SearchHistoryItem } = require('./cards');
 const { trackSlug, slug } = require('../lib/track-slug');
 const { releaseMenu, artistMenu } = require('../lib/item-menus');
 const { countOf } = require('../lib/plural');
@@ -398,10 +398,10 @@ const SearchPage = React.memo(function SearchPage(props) {
                           onLoad: (e) => { e.target.style.opacity = '1'; },
                           onError: (e) => { e.target.style.display = 'none'; }
                         }),
-                        // Hover overlay with Play and Queue buttons
+                        // Hover overlay with Play (queueing is in the artist
+                        // menu): CardButton's actions, shown on hover or focus.
                         React.createElement('div', {
-                          className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 card-reveal transition-opacity duration-200 flex items-center justify-center gap-3',
-                          style: { pointerEvents: 'auto' }
+                          className: 'card-actions absolute inset-0 bg-black/50 flex items-center justify-center'
                         },
                           // Play top 10 button
                           React.createElement('button', {
@@ -422,30 +422,10 @@ const SearchPage = React.memo(function SearchPage(props) {
                             },
                             className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
                             style: { border: 'none', cursor: 'pointer' },
-                            'aria-label': 'Play top 10 tracks', 'data-tooltip': 'Play top 10 tracks'
+                            'aria-label': `Play ${artist.name}’s top 10 tracks`, 'data-tooltip': 'Play top 10 tracks'
                           },
                             React.createElement(PlayTop10Icon, { size: 26, className: 'text-ink-primary' })
                           ),
-                          // Add top 10 to Queue button
-                          React.createElement('button', {
-                            onClick: async (e) => {
-                              e.stopPropagation();
-                              const tracks = await getArtistTopTracks(artist.name);
-                              if (tracks.length > 0) {
-                                addToQueue(tracks, { type: 'artist', name: artist.name });
-                                showToast(`Added ${countOf(tracks.length, 'track')} from ${artist.name}`, 'success');
-                              } else {
-                                showToast(`No top tracks found for ${artist.name}`, 'error');
-                              }
-                            },
-                            className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
-                            style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-                            onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
-                            onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                            'aria-label': 'Add top 10 to queue', 'data-tooltip': 'Add top 10 to queue'
-                          },
-                            React.createElement(QueueTop10Icon, { size: 20 })
-                          )
                         )
                       ),
                       // Artist name section
@@ -1344,15 +1324,6 @@ const SearchPage = React.memo(function SearchPage(props) {
                       handlePlay(taggedFirstTrack);
                     } else {
                       setTrackLoading(false);
-                      showToast(`No top tracks found for ${artist.name}`, 'error');
-                    }
-                  },
-                  onAddToQueue: async (artist) => {
-                    const tracks = await getArtistTopTracks(artist.name);
-                    if (tracks.length > 0) {
-                      addToQueue(tracks, { type: 'artist', name: artist.name });
-                      showToast(`Added ${countOf(tracks.length, 'track')} from ${artist.name}`, 'success');
-                    } else {
                       showToast(`No top tracks found for ${artist.name}`, 'error');
                     }
                   },

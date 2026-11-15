@@ -111,3 +111,12 @@ test('Listener cards are CardButtons with Play for their recent top 10', () => {
   expect(card).toMatch(/className: 'card-actions [^']*'[\s\S]{0,300}playListenerTopTracks\(item\)/);
   expect(app).toMatch(/const playListenerTopTracks = async[\s\S]{0,400}fetchFriendTopTracksList\(friend, '7day', 10\)/);
 });
+
+test("Search's artist cards hover with Play only; queueing is in the artist menu", () => {
+  const fs = require('fs');
+  const path = require('path');
+  const page = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/search-page.js'), 'utf8');
+  expect(page).not.toContain("'aria-label': 'Add top 10 to queue'");
+  const card = page.slice(page.indexOf('React.createElement(SearchArtistCard, {'));
+  expect(card.slice(0, card.indexOf('onContextMenu'))).not.toContain('onAddToQueue');
+});

@@ -346,7 +346,7 @@ const SearchArtistCard = ({ artist, getArtistImage, onClick, onContextMenu, onPl
         className: 'absolute inset-0 shimmer-strong animate-shimmer',
         style: { backgroundSize: '200% 100%' }
       }),
-      // Hover overlay with action buttons (Play, Queue)
+      // Hover overlay: Play, and Queue when the page passes onAddToQueue (Search and Collection queue from the artist menu)
       React.createElement('div', {
         // CardButton's actions: shown on hover or keyboard focus.
         className: 'card-actions absolute inset-0 bg-black/50 flex items-center justify-center gap-3'
@@ -359,7 +359,7 @@ const SearchArtistCard = ({ artist, getArtistImage, onClick, onContextMenu, onPl
           },
           className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
           style: { border: 'none', cursor: 'pointer' },
-          'aria-label': 'Play top 10 tracks', 'data-tooltip': 'Play top 10 tracks'
+          'aria-label': `Play ${artist.name}’s top 10 tracks`, 'data-tooltip': 'Play top 10 tracks'
         },
           React.createElement(PlayTop10Icon, { size: 26, className: 'text-gray-800' })
         ),
@@ -500,7 +500,7 @@ const CollectionArtistCard = ({ artist, getArtistImage, onNavigate, onPlayTopTra
         className: 'absolute inset-0 shimmer-strong animate-shimmer',
         style: { backgroundSize: '200% 100%' }
       }),
-      // Hover overlay with action buttons (Play, Queue)
+      // Hover overlay: Play, and Queue when the page passes onAddToQueue (Search and Collection queue from the artist menu)
       React.createElement('div', {
         // CardButton's actions: shown on hover or keyboard focus.
         className: 'card-actions absolute inset-0 bg-black/50 flex items-center justify-center gap-3'
