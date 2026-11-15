@@ -1294,8 +1294,8 @@ const {
 // to their own module (Track 2b, presentational slice 3). Behavior-identical:
 // props-driven, memoized/animated as before.
 const {
-  generateArtistPattern, PlayTop10Icon, QueueTop10Icon,
-  SearchArtistCard, SearchHistoryItem, CollectionArtistCard,
+  generateArtistPattern, PlayTop10Icon,
+  SearchHistoryItem,
   CollectionAlbumCard, ReleaseCard, ReleasePage,
 } = require('./components/cards');
 
@@ -2061,6 +2061,8 @@ const { PAGE_COLORS, pageTint } = require('./lib/page-colors');
 const { Modal, ConfirmModal, DontShowAgain } = require('./components/modal');
 const { KeyboardShortcutsDialog } = require('./components/keyboard-shortcuts');
 const { WhatsNewDialog } = require('./components/whats-new-dialog');
+const { ArtistCard, RankBadge } = require('./components/artist-card');
+const { ListenerCard } = require('./components/listener-card');
 const { Button } = require('./components/button');
 const { HeaderControl } = require('./components/header-control');
 const { ToastRegion, NowPlayingAnnouncer } = require('./components/toast');
@@ -33333,6 +33335,24 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   };
 
   // Fetch top tracks for an artist from Last.fm API
+  // An artist card's Play (components/artist-card.js): their top 10, with
+  // the rest queued after the first, in the artist's context.
+  const playArtistTopTracks = async (artist) => {
+    const name = typeof artist === 'string' ? artist : artist?.name;
+    if (!name) return;
+    setTrackLoading(true);
+    const tracks = await getArtistTopTracks(name);
+    if (tracks.length > 0) {
+      const context = { type: 'artist', name };
+      const [firstTrack, ...remainingTracks] = tracks;
+      setQueueWithContext(remainingTracks, context, true);
+      handlePlay({ ...firstTrack, _playbackContext: context });
+    } else {
+      setTrackLoading(false);
+      showToast(`No top tracks found for ${name}`, 'error');
+    }
+  };
+
   const getArtistTopTracks = async (artistName, limit = 10) => {
     if (!artistName) return [];
 
@@ -36380,7 +36400,7 @@ useEffect(() => {
     addToQueue, clearSearchHistory, fetchArtistData, fetchSearchAlbumTracksAsync,
     getArtistImage, getArtistTopTracks, getCachedAlbumArt, getItemsPerRow,
     handleAlbumClick, handlePlay, handlePlaylistClick, handlePlaylistDragEnd,
-    handleSearchArtBroken, handleSearchInput, navigateBack, openChartsAlbum, prefetchSearchAlbumTracks,
+    handleSearchArtBroken, handleSearchInput, navigateBack, openChartsAlbum, playArtistTopTracks, prefetchSearchAlbumTracks,
     saveSearchHistory, setQueueWithContext,
   });
 
@@ -36390,7 +36410,7 @@ useEffect(() => {
     addToQueue, copyParachordLink, fetchArtistData, fetchReleaseData, getArtistBio,
     getArtistTopTracks, getLastfmApiKey, getRelatedArtists, handlePlay,
     handlePlaylistDragEnd, handleSearchInput, loadArtistConcerts, openAlbumVersions,
-    prefetchReleaseTracks, reprioritizeAlbumArtQueue, resolveRelatedArtistImages,
+    playArtistTopTracks, prefetchReleaseTracks, reprioritizeAlbumArtQueue, resolveRelatedArtistImages,
     retryReleaseLoad, selectAlbumVersion, setQueueWithContext,
   });
 
@@ -36763,7 +36783,7 @@ useEffect(() => {
     addToQueue, copyParachordLink, fetchArtistData, getAlbumArt, getArtistImage,
     getArtistTopTracks, getCollectionSortOptions, handleCollectionAlbumClick, handlePlay,
     handlePlaylistDragEnd, handleStartCollectionStation, isOnAir, navigateToFriend,
-    openChartsAlbum, openSyncSetupModal, playListenerTopTracks, setQueueWithContext, syncFriendsFromServices,
+    openChartsAlbum, openSyncSetupModal, playArtistTopTracks, playListenerTopTracks, setQueueWithContext, syncFriendsFromServices,
   });
 
   // The sidebar item a playlist page belongs to. An ephemeral playlist (a
@@ -40905,93 +40925,20 @@ useEffect(() => {
 
             // ── Cards ─────────────────────────────────────────────────────
             const artistCard = (item, index) => {
-              const recsArtistPattern = generateArtistPattern(item.name);
               const img = imageFor(item);
-              const imgLoaded = imageLoadedFor(item);
-              return React.createElement(CardButton, { label: item.name,
-                tooltip: item.reason && !shuffleupagusBadgeProps(item) ? item.reason : undefined,
+              return React.createElement(ArtistCard, {
                 key: item.id,
-                className: 'rounded-lg overflow-hidden cursor-pointer group release-card card-fade-up',
-                style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)', animationDelay: `${Math.min(index * 30, 300)}ms` },
-                draggable: true,
-                onDragStart: (e) => {
-                  e.dataTransfer.effectAllowed = 'copy';
-                  e.dataTransfer.setData('text/plain', JSON.stringify({
-                    type: 'artist',
-                    artist: { id: item.id, name: item.name, image: img }
-                  }));
-                },
-                onActivate: () => fetchArtistData(item.name),
-                onContextMenu: (e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  if (window.electron?.contextMenu?.showTrackMenu) {
-                    window.showItemMenu(artistMenu({ id: item.id, name: item.name, image: img }));
-                  }
-                }
-              },
-                React.createElement('div', {
-                  className: 'aspect-square relative group/art',
-                  style: { background: imgLoaded && !img ? recsArtistPattern.gradient : 'var(--placeholder-bg)' }
-                },
-                  // Shuffleupagus's pick says why, as on Home (components/reason-badge.js).
-                  shuffleupagusBadgeProps(item) && React.createElement(ReasonBadge, shuffleupagusBadgeProps(item)),
-                  !imgLoaded && React.createElement('div', {
-                    className: 'absolute inset-0 shimmer-strong animate-shimmer',
-                    style: { backgroundSize: '200% 100%', animationDelay: `${Math.min(index * 30, 300)}ms` }
-                  }),
-                  img && React.createElement('img', {
-                    src: img,
-                    alt: item.name,
-                    className: 'absolute inset-0 w-full h-full object-cover'
-                  }),
-                  React.createElement('div', {
-                    className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 card-reveal transition-opacity duration-200 flex items-center justify-center gap-3',
-                    style: { pointerEvents: 'auto' }
-                  },
-                    React.createElement('button', {
-                      onClick: async (e) => {
-                        e.stopPropagation();
-                        setTrackLoading(true);
-                        const tracks = await getArtistTopTracks(item.name);
-                        if (tracks.length > 0) {
-                          const context = { type: 'artist', name: item.name };
-                          const [firstTrack, ...remainingTracks] = tracks;
-                          const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
-                          setQueueWithContext(remainingTracks, context, true);
-                          handlePlay(taggedFirstTrack);
-                        } else {
-                          setTrackLoading(false);
-                          showToast(`No top tracks found for ${item.name}`, 'error');
-                        }
-                      },
-                      className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
-                      style: { border: 'none', cursor: 'pointer' },
-                      'aria-label': 'Play top 10 tracks', 'data-tooltip': 'Play top 10 tracks'
-                    }, React.createElement(PlayTop10Icon, { size: 26, className: 'text-ink-primary' })),
-                    React.createElement('button', {
-                      onClick: async (e) => {
-                        e.stopPropagation();
-                        const tracks = await getArtistTopTracks(item.name);
-                        if (tracks.length > 0) {
-                          addToQueue(tracks, { type: 'artist', name: item.name });
-                          showToast(`Added ${tracks.length} top tracks from ${item.name} to queue`);
-                        } else {
-                          showToast(`No top tracks found for ${item.name}`, 'error');
-                        }
-                      },
-                      className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
-                      style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-                      'aria-label': 'Add top 10 to queue', 'data-tooltip': 'Add top 10 to queue'
-                    }, React.createElement(QueueTop10Icon, { size: 20 }))
-                  )
-                ),
-                React.createElement('div', { className: 'p-3' },
-                  // The reason is the card's tooltip (CardButton tooltip), since
-                  // the stretched button takes the hover from the name.
-                  React.createElement('p', { className: 'font-medium text-ink-primary truncate text-sm transition-colors' }, item.name)
-                )
-              );
+                artist: { id: item.id, name: item.name },
+                image: img,
+                imageLoaded: imageLoadedFor(item),
+                tooltip: item.reason && !shuffleupagusBadgeProps(item) ? item.reason : undefined,
+                // Shuffleupagus's pick says why, as on Home (components/reason-badge.js).
+                badge: shuffleupagusBadgeProps(item) && React.createElement(ReasonBadge, shuffleupagusBadgeProps(item)),
+                animationDelay: Math.min(index * 30, 300),
+                onOpen: () => fetchArtistData(item.name),
+                onPlay: playArtistTopTracks,
+                onContextMenu: () => window.showItemMenu(artistMenu({ id: item.id, name: item.name, image: img }))
+              });
             };
 
             const albumCard = (item, index) => {
@@ -41502,7 +41449,6 @@ useEffect(() => {
             // in `friends` (the friend loaders work from service and username
             // alone); nobody is followed or saved from here.
             const friendCard = (item, index, row) => {
-              const HEXAGON = 'polygon(50% 0%, 93.3% 25%, 93.3% 75%, 50% 100%, 6.7% 75%, 6.7% 25%)';
               // The badge takes the service's brand colour (its plugin
               // manifest's `color`), the accent when it has none.
               const serviceResolver = (resolverLoaderRef.current?.getAllResolvers?.() || []).find(r => r.id === item.service);
@@ -41512,123 +41458,53 @@ useEffect(() => {
               const pct = Number.isFinite(item.similarity)
                 ? Math.round(Math.min(1, Math.max(0, item.similarity)) * 100)
                 : null;
-              const openListener = () => navigateToFriend({
-                id: `similar:${item.service}:${item.name}`,
-                username: item.name,
-                service: item.service,
-                displayName: item.name,
-                avatarUrl: item.avatarUrl || null
-              });
-              // A CardButton, so it can hold Play: their recent top 10.
-              return React.createElement(CardButton, {
+              // The shared listener card (components/listener-card.js), with
+              // Play for their recent top 10.
+              return React.createElement(ListenerCard, {
                 key: item.id,
-                label: `Open ${item.name}’s profile`,
-                tooltip: `Open ${item.name}’s profile`,
-                onActivate: openListener,
-                className: 'w-full flex flex-col items-center cursor-pointer group release-card card-fade-up',
-                style: {
-                  padding: '14px 12px',
-                  borderRadius: '10px',
-                  backgroundColor: 'var(--card-bg)',
-                  boxShadow: 'var(--card-shadow)',
-                  animationDelay: `${Math.min(index * 30, 300)}ms`
-                },
-              },
-                React.createElement('div', { className: 'relative', style: { width: '100px', height: '100px' } },
-                  // Play their recent top 10: shown on hover or keyboard focus.
-                  React.createElement('div', {
-                    className: 'card-actions absolute inset-0 flex items-center justify-center',
-                    style: { zIndex: 2 }
-                  },
-                    React.createElement('button', {
-                      type: 'button',
-                      onClick: (e) => { e.stopPropagation(); playListenerTopTracks(item); },
-                      className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
-                      style: { border: 'none', cursor: 'pointer', padding: 0 },
-                      'aria-label': `Play ${item.name}’s recent top 10 tracks`, 'data-tooltip': 'Play their recent top 10 tracks'
-                    },
-                      React.createElement(PlayTop10Icon, { size: 26, className: 'text-ink-primary' })
-                    )
-                  ),
-                  // Outer hexagon ring
-                  React.createElement('div', {
-                    className: 'group-hover:scale-105',
-                    style: {
-                      position: 'absolute',
-                      inset: 0,
-                      clipPath: HEXAGON,
-                      background: 'linear-gradient(135deg, var(--hover-bg-subtle) 0%, var(--hover-bg-default) 100%)',
-                      transition: 'transform 0.3s ease'
-                    }
-                  }),
-                  // Inner hexagon with the avatar or the initial
-                  React.createElement('div', {
-                    style: { position: 'absolute', inset: '3px', clipPath: HEXAGON, overflow: 'hidden' }
-                  },
-                    React.createElement('div', {
-                      className: 'group-hover:scale-110 transition-transform duration-300',
-                      style: {
-                        width: '100%',
-                        height: '100%',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        ...(item.avatarUrl
-                          ? { backgroundImage: `url(${JSON.stringify(item.avatarUrl)})`, backgroundSize: 'cover', backgroundPosition: 'center' }
-                          : { backgroundColor: 'var(--placeholder-bg)' })
-                      }
-                    },
-                      !item.avatarUrl && React.createElement('span', {
-                        style: { fontSize: '28px', fontWeight: '500', color: 'var(--text-tertiary)' }
-                      }, (item.name || '?').charAt(0).toUpperCase())
-                    )
-                  ),
-                  // The similarity score, a badge over the hexagon's foot.
-                  pct != null && React.createElement('span', {
-                    'data-similarity-badge': 'true',
-                    title: `${pct}% similar`,
-                    style: {
-                      position: 'absolute',
-                      bottom: '0px',
-                      left: '50%',
-                      transform: 'translateX(-50%)',
-                      padding: '1px 7px',
-                      borderRadius: '9999px',
-                      fontSize: '11px',
-                      fontWeight: '600',
-                      lineHeight: '16px',
-                      whiteSpace: 'nowrap',
-                      backgroundColor: badgeColor,
-                      color: '#fff',
-                      boxShadow: 'var(--card-shadow)'
-                    }
-                  }, `${pct}%`)
-                ),
-                React.createElement('div', {
-                  style: { marginTop: '10px', height: '20px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }
-                },
-                  React.createElement('span', {
-                    className: 'truncate',
-                    style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' }
-                  }, item.name)
-                ),
-                // Where they were found (the row blends services).
-                React.createElement('div', {
-                  className: 'text-xs truncate',
-                  style: { marginTop: '2px', height: '16px', color: 'var(--text-secondary)' }
-                }, itemSourceName(item, row) || ''),
-                // Their top few recent artists, up to two lines. The block is
-                // always there (empty when the service had none), so every card
-                // is the same height.
-                React.createElement('div', {
-                  className: 'text-xs text-center',
+                name: item.name,
+                avatarUrl: item.avatarUrl || null,
+                animationDelay: Math.min(index * 30, 300),
+                onOpen: () => navigateToFriend({
+                  id: `similar:${item.service}:${item.name}`,
+                  username: item.name,
+                  service: item.service,
+                  displayName: item.name,
+                  avatarUrl: item.avatarUrl || null
+                }),
+                onPlay: () => playListenerTopTracks(item),
+                // The similarity score, a badge over the hexagon's foot.
+                badge: pct != null && React.createElement('span', {
+                  'data-similarity-badge': 'true',
+                  title: `${pct}% similar`,
                   style: {
-                    marginTop: '2px', height: '32px', lineHeight: '16px', width: '100%', color: 'var(--text-tertiary)',
-                    display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden'
-                  },
-                  title: (item.topArtists || []).length ? `Recently: ${item.topArtists.join(', ')}` : undefined
-                }, (item.topArtists || []).join(', '))
-              );
+                    position: 'absolute', bottom: '0px', left: '50%', transform: 'translateX(-50%)',
+                    padding: '1px 7px', borderRadius: '9999px', fontSize: '11px', fontWeight: '600',
+                    lineHeight: '16px', whiteSpace: 'nowrap', backgroundColor: badgeColor, color: '#fff',
+                    boxShadow: 'var(--card-shadow)'
+                  }
+                }, `${pct}%`),
+                details: [
+                  // Where they were found (the row blends services).
+                  React.createElement('div', {
+                    key: 'source',
+                    className: 'text-xs truncate',
+                    style: { marginTop: '2px', height: '16px', color: 'var(--text-secondary)' }
+                  }, itemSourceName(item, row) || ''),
+                  // Their top few recent artists, up to two lines. The block is
+                  // always there (empty when the service had none), so every card
+                  // is the same height.
+                  React.createElement('div', {
+                    key: 'artists',
+                    className: 'text-xs text-center',
+                    style: {
+                      marginTop: '2px', height: '32px', lineHeight: '16px', width: '100%', color: 'var(--text-tertiary)',
+                      display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden'
+                    },
+                    title: (item.topArtists || []).length ? `Recently: ${item.topArtists.join(', ')}` : undefined
+                  }, (item.topArtists || []).join(', '))
+                ]
+              });
             };
 
             // ── The section header ───────────────────────────────────────
@@ -42334,129 +42210,19 @@ useEffect(() => {
                   className: 'grid gap-4',
                   style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
                 },
-                  ...topArtists.artists.map((artist, index) => {
-                    const topArtistPattern = generateArtistPattern(artist.name);
-                    return React.createElement(CardButton, { role: 'listitem', label: artist.name,
-                      key: artist.id,
-                      className: 'rounded-lg overflow-hidden cursor-pointer group release-card card-fade-up',
-                      style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)', animationDelay: `${Math.min(index * 30, 300)}ms` },
-                      draggable: true,
-                      onDragStart: (e) => {
-                        e.dataTransfer.effectAllowed = 'copy';
-                        e.dataTransfer.setData('text/plain', JSON.stringify({
-                          type: 'artist',
-                          artist: {
-                            id: artist.id,
-                            name: artist.name,
-                            image: artist.image
-                          }
-                        }));
-                      },
-                      onActivate: () => fetchArtistData(artist.name),
-                      onContextMenu: (e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        if (window.electron?.contextMenu?.showTrackMenu) {
-                          window.showItemMenu(artistMenu({ id: artist.id, name: artist.name, image: artist.image }));
-                        }
-                      }
-                    },
-                      // Square image container - gray while loading, pattern only when imageLoaded && no image
-                      React.createElement('div', {
-                        className: 'aspect-square relative group/art',
-                        style: { background: artist.imageLoaded && !artist.image ? topArtistPattern.gradient : 'var(--placeholder-bg)' }
-                      },
-                        // Shimmer while loading (imageLoaded not yet true)
-                        !artist.imageLoaded && React.createElement('div', {
-                          className: 'absolute inset-0 shimmer-strong animate-shimmer',
-                          style: { backgroundSize: '200% 100%' }
-                        }),
-                        // Initials fallback (only show when imageLoaded && no image)
-                        artist.imageLoaded && !artist.image && React.createElement('div', {
-                          className: 'absolute inset-0 flex items-center justify-center',
-                          style: { color: topArtistPattern.textColor, opacity: 0.4 }
-                        },
-                          React.createElement('span', {
-                            className: 'font-bold tracking-wider',
-                            style: { fontSize: '2.5rem', textShadow: '0 2px 8px rgba(0,0,0,0.3)' }
-                          }, topArtistPattern.initials)
-                        ),
-                        // Image (fades in on load)
-                        artist.image && React.createElement('img', {
-                          src: artist.image,
-                          alt: artist.name,
-                          className: 'absolute inset-0 w-full h-full object-cover transition-all duration-300 group-hover:scale-105',
-                          style: { opacity: 0 },
-                          ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
-                          onLoad: (e) => { e.target.style.opacity = '1'; },
-                          onError: (e) => { e.target.style.display = 'none'; }
-                        }),
-                        // Rank badge
-                        React.createElement('div', {
-                          className: 'absolute top-2 left-2 px-2 py-0.5 bg-black/60 rounded text-xs text-white font-medium'
-                        }, `#${artist.rank}`),
-                        // Hover overlay with action buttons (Play, Queue) - Top 10 icons
-                        React.createElement('div', {
-                          className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 card-reveal transition-opacity duration-200 flex items-center justify-center gap-3',
-                          style: { pointerEvents: 'auto' }
-                        },
-                          // Play top 10 button (center, larger)
-                          React.createElement('button', {
-                            onClick: async (e) => {
-                              e.stopPropagation();
-                              setTrackLoading(true);
-                              const tracks = await getArtistTopTracks(artist.name);
-                              if (tracks.length > 0) {
-                                const context = { type: 'artist', name: artist.name };
-                                const [firstTrack, ...remainingTracks] = tracks;
-                                // Tag the first track with context so queue navigation works correctly
-                                const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
-                                setQueueWithContext(remainingTracks, context, true);
-                                handlePlay(taggedFirstTrack);
-                              } else {
-                                setTrackLoading(false);
-                                showToast(`No top tracks found for ${artist.name}`, 'error');
-                              }
-                            },
-                            className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
-                            style: { border: 'none', cursor: 'pointer' },
-                            'aria-label': 'Play top 10 tracks', 'data-tooltip': 'Play top 10 tracks'
-                          },
-                            React.createElement(PlayTop10Icon, { size: 26, className: 'text-ink-primary' })
-                          ),
-                          // Add top 10 to Queue button
-                          React.createElement('button', {
-                            onClick: async (e) => {
-                              e.stopPropagation();
-                              const tracks = await getArtistTopTracks(artist.name);
-                              if (tracks.length > 0) {
-                                addToQueue(tracks, { type: 'artist', name: artist.name });
-                                showToast(`Added ${countOf(tracks.length, 'track')} from ${artist.name}`, 'success');
-                              } else {
-                                showToast(`No top tracks found for ${artist.name}`, 'error');
-                              }
-                            },
-                            className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
-                            style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-                            onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
-                            onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                            'aria-label': 'Add top 10 to queue', 'data-tooltip': 'Add top 10 to queue'
-                          },
-                            React.createElement(QueueTop10Icon, { size: 20 })
-                          )
-                        )
-                      ),
-                      // Artist name and play count section
-                      React.createElement('div', { className: 'p-3' },
-                        React.createElement('p', {
-                          className: 'font-medium text-ink-primary truncate text-sm transition-colors'
-                        }, artist.name),
-                        React.createElement('p', {
-                          className: 'text-xs text-ink-tertiary mt-1'
-                        }, `${artist.playCount} plays`)
-                      )
-                    );
-                  })
+                  ...topArtists.artists.map((artist, index) => React.createElement(ArtistCard, {
+                    key: artist.id,
+                    role: 'listitem',
+                    artist,
+                    image: artist.image,
+                    imageLoaded: !!artist.imageLoaded,
+                    badge: React.createElement(RankBadge, { rank: artist.rank }),
+                    subtitle: `${artist.playCount} plays`,
+                    animationDelay: Math.min(index * 30, 300),
+                    onOpen: () => fetchArtistData(artist.name),
+                    onPlay: playArtistTopTracks,
+                    onContextMenu: () => window.showItemMenu(artistMenu({ id: artist.id, name: artist.name, image: artist.image }))
+                  }))
                 )
             ),
 
@@ -43321,100 +43087,17 @@ useEffect(() => {
                 },
                   friendHistoryData.topArtists.length === 0
                     ? React.createElement('p', { className: 'col-span-full text-center text-ink-tertiary py-8' }, 'No top artists data')
-                    : friendHistoryData.topArtists.map((artist, index) => {
-                        const artistPattern = generateArtistPattern(artist.name);
-                        return React.createElement(CardButton, { label: artist.name,
-                          key: artist.id || index,
-                          className: 'rounded-lg overflow-hidden cursor-pointer group release-card',
-                          style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)' },
-                          onActivate: () => fetchArtistData(artist.name)
-                        },
-                          React.createElement('div', {
-                            className: 'aspect-square relative group/art',
-                            style: { background: artist.imageLoaded && !artist.image ? artistPattern.gradient : 'var(--placeholder-bg)' }
-                          },
-                            // Shimmer while loading (imageLoaded not yet true)
-                            !artist.imageLoaded && React.createElement('div', {
-                              className: 'absolute inset-0 shimmer-strong animate-shimmer',
-                              style: { backgroundSize: '200% 100%' }
-                            }),
-                            // Initials fallback (only show when imageLoaded && no image)
-                            artist.imageLoaded && !artist.image && React.createElement('div', {
-                              className: 'absolute inset-0 flex items-center justify-center',
-                              style: { color: artistPattern.textColor, opacity: 0.4 }
-                            },
-                              React.createElement('span', {
-                                className: 'font-bold tracking-wider',
-                                style: { fontSize: '2.5rem', textShadow: '0 2px 8px rgba(0,0,0,0.3)' }
-                              }, artistPattern.initials)
-                            ),
-                            artist.image && React.createElement('img', {
-                              src: artist.image,
-                              alt: artist.name,
-                              ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
-                              className: 'absolute inset-0 w-full h-full object-cover transition-all duration-300 group-hover:scale-105',
-                              style: { opacity: 0 },
-                              onLoad: (e) => { e.target.style.opacity = '1'; },
-                              onError: (e) => { e.target.style.display = 'none'; }
-                            }),
-                            React.createElement('div', {
-                              className: 'absolute top-2 left-2 px-2 py-0.5 bg-black/60 rounded text-xs text-white font-medium z-10'
-                            }, `#${artist.rank}`),
-                            // Hover overlay with action buttons
-                            React.createElement('div', {
-                              className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 card-reveal transition-opacity duration-200 flex items-center justify-center gap-3',
-                              style: { pointerEvents: 'auto' }
-                            },
-                              // Play top tracks button
-                              React.createElement('button', {
-                                onClick: async (e) => {
-                                  e.stopPropagation();
-                                  setTrackLoading(true);
-                                  const tracks = await getArtistTopTracks(artist.name);
-                                  if (tracks.length > 0) {
-                                    const context = { type: 'artist', name: artist.name };
-                                    const [firstTrack, ...remainingTracks] = tracks;
-                                    setQueueWithContext(remainingTracks, context, true);
-                                    handlePlay(firstTrack);
-                                  } else {
-                                    showToast(`No top tracks found for ${artist.name}`, 'error');
-                                    setTrackLoading(false);
-                                  }
-                                },
-                                className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
-                                style: { border: 'none', cursor: 'pointer' },
-                                'aria-label': 'Play top 10 tracks', 'data-tooltip': 'Play top 10 tracks'
-                              },
-                                React.createElement(PlayTop10Icon, { size: 26, className: 'text-ink-primary' })
-                              ),
-                              // Add to queue button
-                              React.createElement('button', {
-                                onClick: async (e) => {
-                                  e.stopPropagation();
-                                  const tracks = await getArtistTopTracks(artist.name);
-                                  if (tracks.length > 0) {
-                                    addToQueue(tracks, { type: 'artist', name: artist.name });
-                                    showToast(`Added ${countOf(tracks.length, 'track')} from ${artist.name}`, 'success');
-                                  } else {
-                                    showToast(`No top tracks found for ${artist.name}`, 'error');
-                                  }
-                                },
-                                className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
-                                style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-                                onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
-                                onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                                'aria-label': 'Add top 10 to queue', 'data-tooltip': 'Add top 10 to queue'
-                              },
-                                React.createElement(QueueTop10Icon, { size: 20 })
-                              )
-                            )
-                          ),
-                          React.createElement('div', { className: 'p-3' },
-                            React.createElement('p', { className: 'font-medium text-ink-primary truncate text-sm' }, artist.name),
-                            React.createElement('p', { className: 'text-xs text-ink-tertiary mt-1' }, `${artist.playCount} plays`)
-                          )
-                        );
-                      })
+                    : friendHistoryData.topArtists.map((artist, index) => React.createElement(ArtistCard, {
+                        key: artist.id || index,
+                        artist,
+                        image: artist.image,
+                        imageLoaded: !!artist.imageLoaded,
+                        badge: React.createElement(RankBadge, { rank: artist.rank }),
+                        subtitle: `${artist.playCount} plays`,
+                        onOpen: () => fetchArtistData(artist.name),
+                        onPlay: playArtistTopTracks,
+                        onContextMenu: () => window.showItemMenu(artistMenu({ id: artist.id || null, name: artist.name, image: artist.image }))
+                      }))
                 )
             )
           );

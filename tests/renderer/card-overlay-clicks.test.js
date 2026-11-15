@@ -79,54 +79,38 @@ describe("Home's album and playlist cards open from anywhere on the card", () =>
   });
 });
 
-test("Collection's artist cards open the artist menu, like Search's", () => {
+test('every artist grid uses ArtistCard: Play on hover, queue in the artist menu', () => {
   const fs = require('fs');
   const path = require('path');
-  const cards = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/cards.js'), 'utf8');
-  const page = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/collection-page.js'), 'utf8');
-  const card = cards.slice(cards.indexOf('const CollectionArtistCard'), cards.indexOf('const CollectionAlbumCard'));
-  expect(card).toMatch(/onContextMenu: onContextMenu \? \(e\) => \{ e\.preventDefault\(\); onContextMenu\(e, artist\); \}/);
-  expect(page).toMatch(/CollectionArtistCard, \{[\s\S]{0,400}onContextMenu: \(\) => window\.showItemMenu\(artistMenu\(/);
-});
-
-test("an artist's top tracks queue from its menu; Collection's cards hover with Play only", () => {
-  const fs = require('fs');
-  const path = require('path');
-  const main = fs.readFileSync(path.join(__dirname, '../../main.js'), 'utf8');
-  const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
-  const page = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/collection-page.js'), 'utf8');
+  const read = (p) => fs.readFileSync(path.join(__dirname, '../..', p), 'utf8');
+  const main = read('main.js');
+  const app = read('src/renderer/app.js');
   expect(main).toMatch(/label: 'Add Top 10 to Queue',[\s\S]{0,200}action: 'queue-artist-top-tracks'/);
   expect(app).toMatch(/data\.action === 'queue-artist-top-tracks' && data\.artist\?\.name/);
-  const card = page.slice(page.indexOf('React.createElement(CollectionArtistCard, {'), page.indexOf("collectionTab === 'albums'"));
-  expect(card).not.toContain('onAddToQueue');
-  expect(card).toContain('onPlayTopTracks');
+  const uses = { 'src/renderer/app.js': 3, 'src/renderer/components/search-page.js': 2, 'src/renderer/components/collection-page.js': 1, 'src/renderer/components/artist-page.js': 1 };
+  for (const [file, n] of Object.entries(uses)) {
+    const src = read(file);
+    expect([file, (src.match(/React\.createElement\(ArtistCard, \{/g) || []).length]).toEqual([file, n]);
+    expect([file, src.includes("'aria-label': 'Add top 10 to queue'")]).toEqual([file, false]);
+    expect([file, /ArtistCard, \{[\s\S]{0,900}?onContextMenu: \(\) => window\.showItemMenu\(artistMenu\(/.test(src)]).toEqual([file, true]);
+  }
+  const card = read('src/renderer/components/artist-card.js');
+  expect(card).toMatch(/className: 'card-actions [^']*'/);
+  expect(card).not.toMatch(/onAddToQueue|QueueTop10/);
+  expect(read('src/renderer/components/cards.js')).not.toMatch(/const (Search|Collection|Related)ArtistCard/);
 });
 
-test('Listener cards are CardButtons with Play for their recent top 10', () => {
+test("Listeners and Collection's friends share ListenerCard, with Play for their recent top 10", () => {
   const fs = require('fs');
   const path = require('path');
-  const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
-  const card = app.slice(app.indexOf('const friendCard = '), app.indexOf('// ── The section header'));
-  expect(card).toMatch(/return React\.createElement\(CardButton, \{/);
-  expect(card).toMatch(/className: 'card-actions [^']*'[\s\S]{0,300}playListenerTopTracks\(item\)/);
-  expect(app).toMatch(/const playListenerTopTracks = async[\s\S]{0,400}fetchFriendTopTracksList\(friend, '7day', 10\)/);
-});
-
-test("Search's artist cards hover with Play only; queueing is in the artist menu", () => {
-  const fs = require('fs');
-  const path = require('path');
-  const page = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/search-page.js'), 'utf8');
-  expect(page).not.toContain("'aria-label': 'Add top 10 to queue'");
-  const card = page.slice(page.indexOf('React.createElement(SearchArtistCard, {'));
-  expect(card.slice(0, card.indexOf('onContextMenu'))).not.toContain('onAddToQueue');
-});
-
-test("Collection's friend cards are CardButtons with Play for their recent top 10", () => {
-  const fs = require('fs');
-  const path = require('path');
-  const page = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/collection-page.js'), 'utf8');
-  const tab = page.slice(page.lastIndexOf("collectionTab === 'friends' && (() => {"));
-  expect(tab).toMatch(/return React\.createElement\(CardButton, \{\s*key: friend\.id,/);
-  expect(tab).toMatch(/className: 'card-actions [^']*'[\s\S]{0,300}playListenerTopTracks\(friend\)/);
+  const read = (p) => fs.readFileSync(path.join(__dirname, '../..', p), 'utf8');
+  const app = read('src/renderer/app.js');
+  const page = read('src/renderer/components/collection-page.js');
+  const card = read('src/renderer/components/listener-card.js');
+  expect(app).toMatch(/return React\.createElement\(ListenerCard, \{[\s\S]{0,800}onPlay: \(\) => playListenerTopTracks\(item\)/);
+  expect(page).toMatch(/return React\.createElement\(ListenerCard, \{[\s\S]{0,900}onPlay: \(\) => playListenerTopTracks\(friend\)[\s\S]{0,200}type: 'friend'/);
+  expect(card).toMatch(/return e\(CardButton, /);
+  expect(card).toMatch(/className: 'card-actions [^']*'/);
+  expect(app).toMatch(/const playListenerTopTracks = async[\s\S]{0,600}fetchFriendTopTracksList\(friend, '7day', 10\)/);
   expect(page).toContain("'playListenerTopTracks',");
 });

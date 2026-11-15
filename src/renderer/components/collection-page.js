@@ -27,7 +27,9 @@ const { slug } = require('../lib/track-slug');
 const { artistMenu } = require('../lib/item-menus');
 const { trackDurationLabel } = require('../lib/track-duration');
 const { ResolverIcon } = require('./ui-atoms');
-const { CollectionArtistCard, CollectionAlbumCard, PlayTop10Icon } = require('./cards');
+const { CollectionAlbumCard, PlayTop10Icon } = require('./cards');
+const { ArtistCard } = require('./artist-card');
+const { ListenerCard } = require('./listener-card');
 const { countOf } = require('../lib/plural');
 
 // Plain functions from Parachord, passed as stable wrappers.
@@ -47,6 +49,7 @@ const COLLECTION_PAGE_HANDLERS = [
   'navigateToFriend',
   'openChartsAlbum',
   'openSyncSetupModal',
+  'playArtistTopTracks',
   'playListenerTopTracks',
   'setQueueWithContext',
   'syncFriendsFromServices',
@@ -90,6 +93,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
     libraryLoading,
     metaServiceConfigs,
     navigateToFriend,
+    playArtistTopTracks,
     playListenerTopTracks,
     openChartsAlbum,
     openSyncSetupModal,
@@ -804,29 +808,15 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                 style: { minHeight: 'calc(100vh - 160px)', alignContent: 'start' }  // Ensure enough scroll area to prevent header bounce
               },
                 sorted.map((artist, index) =>
-                  React.createElement(CollectionArtistCard, {
+                  React.createElement(ArtistCard, {
                     key: artist.name,
-                    artist: { ...artist, trackCount: 0 },
+                    artist: { id: slug(artist.name || 'unknown'), name: artist.name },
                     getArtistImage: getArtistImage,
-                    onNavigate: () => fetchArtistData(artist.name),
-                    // The artist menu Search's cards use (Remove from
-                    // Collection, Copy Link, View on Achordion).
+                    onOpen: () => fetchArtistData(artist.name),
+                    onPlay: playArtistTopTracks,
+                    // The artist menu (Remove from Collection, Add Top 10 to
+                    // Queue, Copy Link, View on Achordion).
                     onContextMenu: () => window.showItemMenu(artistMenu({ id: slug(artist.name || 'unknown'), name: artist.name, image: artist.image || null })),
-                    onPlayTopTracks: async (artist) => {
-                      setTrackLoading(true);
-                      const tracks = await getArtistTopTracks(artist.name);
-                      if (tracks.length > 0) {
-                        const context = { type: 'artist', name: artist.name };
-                        const [firstTrack, ...remainingTracks] = tracks;
-                        // Tag the first track with context so queue navigation works correctly
-                        const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
-                        setQueueWithContext(remainingTracks, context, true);
-                        handlePlay(taggedFirstTrack);
-                      } else {
-                        setTrackLoading(false);
-                        showToast(`No top tracks found for ${artist.name}`, 'error');
-                      }
-                    },
                     animationDelay: Math.min(index * 30, 300)
                   })
                 )
@@ -1005,27 +995,25 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                     const onAir = isOnAir(friend);
                     const isPinned = pinnedFriendIds.includes(friend.id);
 
-                    // A CardButton, so it can hold Play: their recent top 10.
-                    return React.createElement(CardButton, {
+                    // The shared listener card (components/listener-card.js):
+                    // the same card as Recommendations' Listeners, with this
+                    // tab's friend menu (Pin, Remove) and lines.
+                    return React.createElement(ListenerCard, {
                       key: friend.id,
-                      label: `Open ${friend.displayName}’s profile`,
-                      tooltip: `Open ${friend.displayName}’s profile`,
-                      className: 'w-full flex flex-col items-center cursor-pointer group release-card card-fade-up',
-                      style: {
-                        padding: '14px 12px',
-                        borderRadius: '10px',
-                        backgroundColor: 'var(--card-bg)',
-                        boxShadow: 'var(--card-shadow)',
-                        animationDelay: `${Math.min(index * 30, 300)}ms`
-                      },
+                      name: friend.displayName,
+                      avatarUrl: friend.avatarUrl || null,
+                      onAir,
+                      // Pin mark for manually pinned friends (not auto-pinned).
+                      pinned: isPinned && !autoPinnedFriendIds.includes(friend.id),
+                      animationDelay: Math.min(index * 30, 300),
                       draggable: true,
                       onDragStart: (e) => {
                         e.dataTransfer.setData('friendId', friend.id);
                         e.dataTransfer.effectAllowed = 'copy';
                       },
-                      onActivate: () => navigateToFriend(friend),
-                      onContextMenu: (e) => {
-                        e.preventDefault();
+                      onOpen: () => navigateToFriend(friend),
+                      onPlay: () => playListenerTopTracks(friend),
+                      onContextMenu: () => {
                         if (window.electron?.contextMenu?.showTrackMenu) {
                           window.showItemMenu({
                             type: 'friend',
@@ -1034,124 +1022,11 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                             isSavedToCollection: friend.savedToCollection
                           });
                         }
-                      }
-                    },
-                      // Hexagonal avatar with border ring and hover effects
-                      React.createElement('div', {
-                        className: 'relative',
-                        style: { width: '100px', height: '100px' }
                       },
-                        // Play their recent top 10: shown on hover or keyboard focus.
-                        React.createElement('div', {
-                          className: 'card-actions absolute inset-0 flex items-center justify-center',
-                          style: { zIndex: 2 }
-                        },
-                          React.createElement('button', {
-                            type: 'button',
-                            onClick: (e) => { e.stopPropagation(); playListenerTopTracks(friend); },
-                            className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
-                            style: { border: 'none', cursor: 'pointer', padding: 0 },
-                            'aria-label': `Play ${friend.displayName}’s recent top 10 tracks`, 'data-tooltip': 'Play their recent top 10 tracks'
-                          },
-                            React.createElement(PlayTop10Icon, { size: 26, className: 'text-ink-primary' })
-                          )
-                        ),
-                        // Outer hexagon border/ring
-                        React.createElement('div', {
-                          style: {
-                            position: 'absolute',
-                            inset: 0,
-                            clipPath: 'polygon(50% 0%, 93.3% 25%, 93.3% 75%, 50% 100%, 6.7% 75%, 6.7% 25%)',
-                            background: onAir
-                              ? 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
-                              : 'linear-gradient(135deg, var(--hover-bg-subtle) 0%, var(--hover-bg-default) 100%)',
-                            transition: 'background 0.3s ease'
-                          },
-                          className: 'group-hover:scale-105'
-                        }),
-                        // Inner hexagon with avatar
-                        React.createElement('div', {
-                          style: {
-                            position: 'absolute',
-                            inset: '3px',
-                            clipPath: 'polygon(50% 0%, 93.3% 25%, 93.3% 75%, 50% 100%, 6.7% 75%, 6.7% 25%)',
-                            overflow: 'hidden'
-                          }
-                        },
-                          React.createElement('div', {
-                            className: 'group-hover:scale-110 transition-transform duration-300',
-                            style: {
-                              width: '100%',
-                              height: '100%',
-                              ...(friend.avatarUrl ? {
-                                backgroundImage: `url(${friend.avatarUrl})`,
-                                backgroundSize: 'cover',
-                                backgroundPosition: 'center'
-                              } : {
-                                background: 'linear-gradient(145deg, #18181b 0%, #27272a 50%, #18181b 100%)'
-                              })
-                            }
-                          },
-                            // Show initial if no avatar
-                            !friend.avatarUrl && React.createElement('div', {
-                              style: {
-                                width: '100%',
-                                height: '100%',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                fontSize: '28px',
-                                fontWeight: '500',
-                                color: 'rgba(255, 255, 255, 0.4)',
-                                letterSpacing: '0.02em'
-                              }
-                            }, friend.displayName.charAt(0).toUpperCase())
-                          )
-                        ),
-                        // On-air pulse indicator
-                        onAir && React.createElement('div', {
-                          className: 'on-air-indicator',
-                          style: {
-                            position: 'absolute',
-                            bottom: '4px',
-                            right: '8px',
-                            width: '14px',
-                            height: '14px',
-                            backgroundColor: 'var(--success)',
-                            borderRadius: '9999px',
-                            border: '2.5px solid #ffffff'
-                          }
-                        })
-                      ),
-                      // Name and pin icon
-                      React.createElement('div', {
-                        style: {
-                          marginTop: '10px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '4px',
-                          width: '100%'
-                        }
-                      },
-                        React.createElement('span', {
-                          style: {
-                            fontSize: '13px',
-                            fontWeight: '500',
-                            color: 'var(--text-primary)',
-                            textAlign: 'center',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                            transition: 'color 0.2s ease'
-                          },
-                          className: ''
-                        }, friend.displayName),
-                        // Pin icon for manually pinned friends (not auto-pinned)
-                        isPinned && !autoPinnedFriendIds.includes(friend.id) && React.createElement(Icons.Bookmark, { style: { width: '12px', height: '12px', color: 'var(--accent-soft)', flexShrink: 0 } })
-                      ),
+                      details: [
                       // Service badge - refined
                       React.createElement('div', {
+                        key: 'service',
                         className: 'release-badge',
                         style: {
                           marginTop: '4px',
@@ -1161,6 +1036,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                       }, friend.service === 'lastfm' ? 'Last.fm' : 'ListenBrainz'),
                       // Current track if on-air
                       onAir && friend.cachedRecentTrack && React.createElement('div', {
+                        key: 'now',
                         style: {
                           marginTop: '6px',
                           fontSize: '11px',
@@ -1178,6 +1054,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                       // A Last.fm profile that hides its recent listening is never
                       // on-air; say why instead of leaving the card blank.
                       !onAir && friend.hidesListening && React.createElement('div', {
+                        key: 'hidden',
                         title: 'This Last.fm profile hides its recent listening',
                         style: {
                           marginTop: '6px',
@@ -1186,7 +1063,8 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                           textAlign: 'center'
                         }
                       }, 'Listening hidden')
-                    );
+                      ]
+                    });
                   })
                 )
               );

@@ -48,23 +48,27 @@ describe('Recommendations skeletons match the sectioned page', () => {
     expect(friendCard).toContain("style: { marginTop: '2px', height: '16px', color: 'var(--text-secondary)' }");
     expect(friendCard).toContain("marginTop: '2px', height: '32px', lineHeight: '16px'");
     expect(skel).toContain("height: '32px'");
+    // The card is components/listener-card.js's ListenerCard (Collection's
+    // Friends tab uses it too).
+    expect(friendCard).toContain('React.createElement(ListenerCard, {');
+    const listener = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'components', 'listener-card.js'), 'utf8');
     for (const part of ["padding: '14px 12px'", "borderRadius: '10px'", "width: '100px', height: '100px'", "marginTop: '10px', height: '20px'"]) {
-      expect(friendCard).toContain(part);
+      expect(listener).toContain(part);
       expect(skel).toContain(part);
     }
-    // The hexagon is Collection -> Friends' clip-path, verbatim.
-    const collection = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'components', 'collection-page.js'), 'utf8');
-    const hex = collection.match(/clipPath: '(polygon\([^']+\))'/)[1];
-    expect(friendCard).toContain(hex);
+    const hex = listener.match(/const HEXAGON = '(polygon\([^']+\))'/)[1];
     expect(skel).toContain(hex);
   });
 
   test('same card box', () => {
-    expect(artistCard).toMatch(/backgroundColor: 'var\(--card-bg\)', boxShadow: 'var\(--card-shadow\)'/);
+    // The artist card is components/artist-card.js's ArtistCard.
+    expect(artistCard).toContain('React.createElement(ArtistCard, {');
+    const shared = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'components', 'artist-card.js'), 'utf8');
+    expect(shared).toMatch(/backgroundColor: 'var\(--card-bg\)', boxShadow: 'var\(--card-shadow\)'/);
     expect(skel).toMatch(/backgroundColor: 'var\(--card-bg\)', boxShadow: 'var\(--card-shadow\)'/);
-    expect(artistCard).toMatch(/className: 'aspect-square relative group\/art'/);
+    expect(shared).toMatch(/className: 'aspect-square relative overflow-hidden'/);
     expect(skel).toMatch(/className: 'aspect-square shimmer-strong animate-shimmer'/);
-    expect(artistCard).toMatch(/React\.createElement\('div', \{ className: 'p-3' \}/);
+    expect(shared).toMatch(/e\('div', \{ className: 'p-3' \}/);
     expect(skel).toMatch(/React\.createElement\('div', \{ className: 'p-3' \}/);
   });
 

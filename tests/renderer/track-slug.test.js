@@ -167,11 +167,11 @@ describe('artist-card id handlers run under jest', () => {
   };
 
   test.each([
-    ['RelatedArtistCard', { artist: { name: 'Король и Шут' }, getArtistImage: async () => null, onNavigate: () => {} }, 'корольишут'],
-    ['SearchArtistCard', { artist: { name: 'Beyoncé' }, getArtistImage: async () => null }, 'beyonce'],
-  ])('%s: onDragStart builds a Unicode artist id without a ReferenceError', (componentName, props, expectedId) => {
-    const cards = require('../../src/renderer/components/cards');
-    const onDragStart = captureHandler(cards[componentName], props, 'onDragStart');
+    [{ artist: { name: 'Король и Шут' }, getArtistImage: async () => null, onOpen: () => {} }, 'корольишут'],
+    [{ artist: { name: 'Beyoncé' }, getArtistImage: async () => null }, 'beyonce'],
+  ])('ArtistCard: onDragStart builds a Unicode artist id without a ReferenceError (%#)', (props, expectedId) => {
+    const { ArtistCard } = require('../../src/renderer/components/artist-card');
+    const onDragStart = captureHandler(ArtistCard, props, 'onDragStart');
     expect(typeof onDragStart).toBe('function');
     const payload = [];
     const event = {
@@ -187,16 +187,5 @@ describe('artist-card id handlers run under jest', () => {
     const dragged = JSON.parse(payload[0][1]);
     expect(dragged.type).toBe('artist');
     expect(dragged.artist.id).toBe(expectedId);
-  });
-
-  test('RelatedArtistCard: onContextMenu does not throw (window.electron absent)', () => {
-    const { RelatedArtistCard } = require('../../src/renderer/components/cards');
-    const onContextMenu = captureHandler(RelatedArtistCard, {
-      artist: { name: 'Король и Шут' },
-      getArtistImage: async () => null,
-      onNavigate: () => {}
-    }, 'onContextMenu');
-    expect(typeof onContextMenu).toBe('function');
-    expect(() => onContextMenu({ preventDefault() {}, stopPropagation() {} })).not.toThrow();
   });
 });

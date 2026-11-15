@@ -29,7 +29,8 @@ const { artistOpenOptions, creditOpenOptions, trackArtistOpenOptions } = require
 const { VirtualizedTrackList } = require('./track-lists');
 const { visibleSources, sourceRowState } = require('../lib/visible-sources');
 const { trackDurationLabel } = require('../lib/track-duration');
-const { generateArtistPattern, PlayTop10Icon, SearchArtistCard, SearchHistoryItem } = require('./cards');
+const { generateArtistPattern, PlayTop10Icon, SearchHistoryItem } = require('./cards');
+const { ArtistCard } = require('./artist-card');
 const { trackSlug, slug } = require('../lib/track-slug');
 const { releaseMenu, artistMenu } = require('../lib/item-menus');
 const { countOf } = require('../lib/plural');
@@ -48,6 +49,7 @@ const SEARCH_PAGE_HANDLERS = [
   'fetchSearchAlbumTracksAsync',
   'getArtistImage',
   'getArtistTopTracks',
+  'playArtistTopTracks',
   'getCachedAlbumArt',
   'getItemsPerRow',
   'handleAlbumClick',
@@ -77,6 +79,7 @@ const SearchPage = React.memo(function SearchPage(props) {
     filteredHistoryMatches,
     getArtistImage,
     getArtistTopTracks,
+    playArtistTopTracks,
     getCachedAlbumArt,
     getItemsPerRow,
     handleAlbumClick,
@@ -340,102 +343,17 @@ const SearchPage = React.memo(function SearchPage(props) {
                   className: 'grid gap-4',
                   style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
                 },
-                  ...filteredArtists.map((artist, index) => {
-                    const animationDelay = Math.min(index * 30, 300);
-                    const searchArtistPattern = generateArtistPattern(artist.name);
-                    return React.createElement(CardButton, { role: 'listitem', label: artist.name,
-                      key: artist._rowKey || artist.id,
-                      className: 'rounded-lg overflow-hidden cursor-pointer group release-card card-fade-up',
-                      style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)', animationDelay: `${animationDelay}ms` },
-                      draggable: true,
-                      onDragStart: (e) => {
-                        e.dataTransfer.effectAllowed = 'copy';
-                        e.dataTransfer.setData('text/plain', JSON.stringify({
-                          type: 'artist',
-                          artist: {
-                            id: slug(artist.name || 'unknown'),
-                            name: artist.name,
-                            image: artist.image || null
-                          }
-                        }));
-                      },
-                      onActivate: () => fetchArtistData(artist.name, artistOpenOptions(artist)),
-                      onContextMenu: (e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        if (window.electron?.contextMenu?.showTrackMenu) {
-                          window.showItemMenu(artistMenu({ id: slug(artist.name || 'unknown'), name: artist.name, image: artist.image || null }));
-                        }
-                      }
-                    },
-                      // Square image container - gray while loading, pattern only when imageLoaded && no image
-                      React.createElement('div', {
-                        className: 'aspect-square relative group/art',
-                        style: { background: artist.imageLoaded && !artist.image ? searchArtistPattern.gradient : 'var(--placeholder-bg)' }
-                      },
-                        // Shimmer while loading (imageLoaded not yet true)
-                        !artist.imageLoaded && React.createElement('div', {
-                          className: 'absolute inset-0 shimmer-strong animate-shimmer',
-                          style: { backgroundSize: '200% 100%' }
-                        }),
-                        // Initials fallback (only show when imageLoaded && no image)
-                        artist.imageLoaded && !artist.image && React.createElement('div', {
-                          className: 'absolute inset-0 flex items-center justify-center',
-                          style: { color: searchArtistPattern.textColor, opacity: 0.4 }
-                        },
-                          React.createElement('span', {
-                            className: 'font-bold tracking-wider',
-                            style: { fontSize: '2.5rem', textShadow: '0 2px 8px rgba(0,0,0,0.3)' }
-                          }, searchArtistPattern.initials)
-                        ),
-                        // Artist image with fade-in
-                        artist.image && React.createElement('img', {
-                          src: artist.image,
-                          alt: artist.name,
-                          className: 'absolute inset-0 w-full h-full object-cover transition-all duration-300 group-hover:scale-105',
-                          style: { opacity: 0 },
-                          ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
-                          onLoad: (e) => { e.target.style.opacity = '1'; },
-                          onError: (e) => { e.target.style.display = 'none'; }
-                        }),
-                        // Hover overlay with Play (queueing is in the artist
-                        // menu): CardButton's actions, shown on hover or focus.
-                        React.createElement('div', {
-                          className: 'card-actions absolute inset-0 bg-black/50 flex items-center justify-center'
-                        },
-                          // Play top 10 button
-                          React.createElement('button', {
-                            onClick: async (e) => {
-                              e.stopPropagation();
-                              setTrackLoading(true);
-                              const tracks = await getArtistTopTracks(artist.name);
-                              if (tracks.length > 0) {
-                                const context = { type: 'artist', name: artist.name };
-                                const [firstTrack, ...remainingTracks] = tracks;
-                                const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
-                                setQueueWithContext(remainingTracks, context, true);
-                                handlePlay(taggedFirstTrack);
-                              } else {
-                                setTrackLoading(false);
-                                showToast(`No top tracks found for ${artist.name}`, 'error');
-                              }
-                            },
-                            className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
-                            style: { border: 'none', cursor: 'pointer' },
-                            'aria-label': `Play ${artist.name}’s top 10 tracks`, 'data-tooltip': 'Play top 10 tracks'
-                          },
-                            React.createElement(PlayTop10Icon, { size: 26, className: 'text-ink-primary' })
-                          ),
-                        )
-                      ),
-                      // Artist name section
-                      React.createElement('div', { className: 'p-3' },
-                        React.createElement('p', {
-                          className: 'font-medium text-ink-primary truncate text-sm transition-colors'
-                        }, artist.name)
-                      )
-                    );
-                  })
+                  ...filteredArtists.map((artist, index) => React.createElement(ArtistCard, {
+                    key: artist._rowKey || artist.id,
+                    role: 'listitem',
+                    artist: { id: slug(artist.name || 'unknown'), name: artist.name },
+                    image: artist.image,
+                    imageLoaded: !!artist.imageLoaded,
+                    animationDelay: Math.min(index * 30, 300),
+                    onOpen: () => fetchArtistData(artist.name, artistOpenOptions(artist)),
+                    onPlay: playArtistTopTracks,
+                    onContextMenu: () => window.showItemMenu(artistMenu({ id: slug(artist.name || 'unknown'), name: artist.name, image: artist.image || null }))
+                  }))
                 );
               })(),
 
@@ -1295,10 +1213,10 @@ const SearchPage = React.memo(function SearchPage(props) {
               className: 'flex gap-4'
             },
               ...searchResults.artists.slice(0, getItemsPerRow(160)).map(artist =>
-                React.createElement(SearchArtistCard, {
+                React.createElement(ArtistCard, {
                   key: artist._rowKey || artist.id,
-                  artist: artist,
-                  onClick: () => {
+                  artist: { id: slug(artist.name || 'unknown'), name: artist.name },
+                  onOpen: () => {
                     // Get cached artist image if available
                     const normalizedName = artist.name?.trim().toLowerCase();
                     const cachedImage = normalizedName ? artistImageCache.current[normalizedName] : null;
@@ -1311,27 +1229,9 @@ const SearchPage = React.memo(function SearchPage(props) {
                     fetchArtistData(artist.name, artistOpenOptions(artist));
                   },
                   getArtistImage: getArtistImage,
-                  itemWidth: Math.floor((searchContainerWidth - (getItemsPerRow(160) - 1) * 16) / getItemsPerRow(160)),
-                  onPlayTopTracks: async (artist) => {
-                    setTrackLoading(true);
-                    const tracks = await getArtistTopTracks(artist.name);
-                    if (tracks.length > 0) {
-                      const context = { type: 'artist', name: artist.name };
-                      const [firstTrack, ...remainingTracks] = tracks;
-                      // Tag the first track with context so queue navigation works correctly
-                      const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
-                      setQueueWithContext(remainingTracks, context, true);
-                      handlePlay(taggedFirstTrack);
-                    } else {
-                      setTrackLoading(false);
-                      showToast(`No top tracks found for ${artist.name}`, 'error');
-                    }
-                  },
-                  onContextMenu: (artist) => {
-                    if (window.electron?.contextMenu?.showTrackMenu) {
-                      window.showItemMenu(artistMenu({ id: slug(artist.name || 'unknown'), name: artist.name, image: null }));
-                    }
-                  }
+                  width: Math.floor((searchContainerWidth - (getItemsPerRow(160) - 1) * 16) / getItemsPerRow(160)),
+                  onPlay: playArtistTopTracks,
+                  onContextMenu: () => window.showItemMenu(artistMenu({ id: slug(artist.name || 'unknown'), name: artist.name, image: null }))
                 })
               )
             )

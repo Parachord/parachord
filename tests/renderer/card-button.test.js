@@ -38,7 +38,10 @@ test('index.html: actions show on hover or keyboard focus, and pass clicks throu
 
 test('the card family uses it, and no card is a button holding buttons', () => {
   const cards = read('src/renderer/components/cards.js');
-  for (const name of ['RelatedArtistCard', 'SearchArtistCard', 'CollectionArtistCard', 'CollectionAlbumCard']) {
+  // Artist cards are components/artist-card.js's ArtistCard, a CardButton too.
+  const artistCard = read('src/renderer/components/artist-card.js');
+  expect(artistCard).toContain('return e(CardButton, {');
+  for (const name of ['CollectionAlbumCard']) {
     const start = cards.indexOf(`const ${name} = `);
     const body = cards.slice(start, cards.indexOf('\n};\n', start));
     expect([name, body.includes('React.createElement(CardButton, {')]).toEqual([name, true]);
