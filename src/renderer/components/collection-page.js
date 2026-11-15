@@ -300,7 +300,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                 if (syncOn) {
                   items.push({
                     key: 'sync-status',
-                    label: Object.values(syncStatus).some(s => s?.inProgress) ? 'Syncing…' : 'Sync status & Sync Now',
+                    label: Object.values(syncStatus).some(s => s?.inProgress) ? 'Syncing…' : 'Library sync…',
                     icon: tile('#06b6d4', React.createElement(Icons.RefreshCw, { size: 16, style: { color: '#ffffff' } })),
                     onSelect: () => setSyncStatusModal({ open: true }),
                   });

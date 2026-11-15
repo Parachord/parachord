@@ -15,7 +15,7 @@ const collectionPage = fs.readFileSync(path.join(__dirname, '..', '..', 'src', '
 describe('Sync Now is reachable', () => {
   test('something opens syncStatusModal', () => {
     expect(collectionPage).toMatch(/setSyncStatusModal\(\{ open: true \}\)/);
-    expect(collectionPage).toMatch(/'Sync status & Sync Now'/);
+    expect(collectionPage).toMatch(/'Library sync…'/);
   });
 
   test('the modal\'s Sync Now runs a full (unstaggered) sync', () => {
