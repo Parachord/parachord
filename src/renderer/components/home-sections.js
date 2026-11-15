@@ -232,7 +232,7 @@ function JumpBackIn({ tiles, onOpenTile, onPlayTile, onContextMenu, onImport, on
       },
         e('div', null,
           e('div', { style: { fontWeight: 600, fontSize: '15px', color: 'var(--text-primary)' } }, 'Build your collection'),
-          e('div', { style: SUB_STYLE }, 'Import your playlists and loved songs from the services you use.')),
+          e('div', { style: SUB_STYLE }, 'Import your playlists and loved tracks from the services you use.')),
         e('button', {
           type: 'button', onClick: () => onImport && onImport(),
           className: 'px-4 py-2 rounded-lg text-sm font-semibold',

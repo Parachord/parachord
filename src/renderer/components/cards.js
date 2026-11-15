@@ -993,7 +993,7 @@ const detailShimmer = (kind) => React.createElement('span', {
   key: `shimmer-${kind}`,
   className: 'inline-block rounded shimmer-light animate-shimmer align-middle',
   role: 'status',
-  'aria-label': kind === 'date' ? 'Loading release date' : 'Loading song count',
+  'aria-label': kind === 'date' ? 'Loading release date' : 'Loading track count',
   style: { width: kind === 'date' ? '4.5em' : '3.5em', height: '0.8em', backgroundSize: '200% 100%', opacity: 0.6 }
 });
 

@@ -262,7 +262,7 @@ function dedupeItems(items) {
 }
 
 const TYPE_SECTIONS = [
-  { type: 'song', title: 'Songs' },
+  { type: 'song', title: 'Tracks' },
   { type: 'album', title: 'Albums' },
   { type: 'artist', title: 'Artists' },
   { type: 'playlist', title: 'Playlists' },

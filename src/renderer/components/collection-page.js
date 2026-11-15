@@ -163,10 +163,10 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                   style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
                 },
                   React.createElement(HeroTabs, { items: [
-                    { key: 'artists', label: collectionLoading ? null : `${collectionData.artists.length} Artists`, staticLabel: 'Artists' },
-                    { key: 'albums', label: collectionLoading ? null : `${collectionData.albums.length} Albums`, staticLabel: 'Albums' },
-                    { key: 'tracks', label: collectionLoading ? null : `${library.length + collectionData.tracks.length} Songs`, staticLabel: 'Songs' },
-                    { key: 'friends', label: `${friends.length} Friends`, staticLabel: 'Friends' }
+                    { key: 'artists', label: collectionLoading ? null : countOf(collectionData.artists.length, 'Artist'), staticLabel: 'Artists' },
+                    { key: 'albums', label: collectionLoading ? null : countOf(collectionData.albums.length, 'Album'), staticLabel: 'Albums' },
+                    { key: 'tracks', label: collectionLoading ? null : countOf(library.length + collectionData.tracks.length, 'Track'), staticLabel: 'Tracks' },
+                    { key: 'friends', label: countOf(friends.length, 'Friend'), staticLabel: 'Friends' }
                   ], isSelected: (tab) => collectionTab === tab.key, onSelect: (tab) => { setCollectionTab(tab.key); }, renderLabel: (tab) => tab.label !== null ? tab.label : React.createElement('span', { className: 'flex items-center gap-1' },
                       React.createElement('span', { className: 'inline-block w-6 h-4 bg-white/30 rounded animate-pulse' }),
                       tab.staticLabel
@@ -211,10 +211,10 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                   style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
                 },
                   React.createElement(HeroTabs, { items: [
-                    { key: 'artists', label: collectionLoading ? null : `${collectionData.artists.length} Artists`, staticLabel: 'Artists' },
-                    { key: 'albums', label: collectionLoading ? null : `${collectionData.albums.length} Albums`, staticLabel: 'Albums' },
-                    { key: 'tracks', label: collectionLoading ? null : `${library.length + collectionData.tracks.length} Songs`, staticLabel: 'Songs' },
-                    { key: 'friends', label: `${friends.length} Friends`, staticLabel: 'Friends' }
+                    { key: 'artists', label: collectionLoading ? null : countOf(collectionData.artists.length, 'Artist'), staticLabel: 'Artists' },
+                    { key: 'albums', label: collectionLoading ? null : countOf(collectionData.albums.length, 'Album'), staticLabel: 'Albums' },
+                    { key: 'tracks', label: collectionLoading ? null : countOf(library.length + collectionData.tracks.length, 'Track'), staticLabel: 'Tracks' },
+                    { key: 'friends', label: countOf(friends.length, 'Friend'), staticLabel: 'Friends' }
                   ], isSelected: (tab) => collectionTab === tab.key, onSelect: (tab) => { setCollectionTab(tab.key); }, renderLabel: (tab) => tab.label !== null ? tab.label : React.createElement('span', { className: 'flex items-center gap-1' },
                       React.createElement('span', { className: 'inline-block w-6 h-4 bg-white/30 rounded animate-pulse' }),
                       tab.staticLabel

@@ -166,7 +166,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                 [
                   { key: 'artists', label: 'Artists', count: searchResults.artists.length },
                   { key: 'albums', label: 'Albums', count: searchResults.albums.length },
-                  { key: 'tracks', label: 'Songs', count: searchResults.tracks.length }
+                  { key: 'tracks', label: 'Tracks', count: searchResults.tracks.length }
                 ].map((tab, i) => React.createElement(React.Fragment, { key: tab.key },
                   i > 0 && React.createElement('span', {
                     className: 'text-white/50 mx-2'
@@ -913,7 +913,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                 return filteredTracks.length === 0;
               })() && React.createElement('div', {
                 className: 'text-center py-12 text-ink-tertiary'
-              }, searchResultsFilter ? 'No songs match your filter.' : 'No songs found.'),
+              }, searchResultsFilter ? 'No tracks match your filter.' : 'No tracks found.'),
 
               // Playlists grid with cards
               searchDetailCategory === 'playlists' && searchResults.playlists.length > 0 && React.createElement('div', { role: 'list',
@@ -1213,7 +1213,7 @@ const SearchPage = React.memo(function SearchPage(props) {
             ),
             // Songs skeleton - rounded style
             React.createElement('div', null,
-              React.createElement(SectionHeader, { as: 'h3', title: 'Songs', style: SECTION_HEADER_GAP }),
+              React.createElement(SectionHeader, { as: 'h3', title: 'Tracks', style: SECTION_HEADER_GAP }),
               React.createElement('div', { className: 'flex gap-4' },
                 ...Array(getItemsPerRow(110)).fill(null).map((_, i) => {
                   const skeletonWidth = Math.floor((searchContainerWidth - (getItemsPerRow(110) - 1) * 16) / getItemsPerRow(110));
@@ -1385,7 +1385,7 @@ const SearchPage = React.memo(function SearchPage(props) {
           // Songs/Tracks section with album art cards - matching album card style
           searchResults.tracks.length > 0 && React.createElement('div', null,
             React.createElement(SectionHeader, {
-              as: 'h3', title: 'Songs', style: SECTION_HEADER_GAP,
+              as: 'h3', title: 'Tracks', style: SECTION_HEADER_GAP,
               action: searchResults.tracks.length > 10 ? {
                 label: 'Show more',
                 onClick: () => {

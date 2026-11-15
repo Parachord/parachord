@@ -7444,7 +7444,7 @@ const Parachord = () => {
     const run = (async () => {
       const status = await window.electron.amazonMusic.getStatus().catch(() => null);
       if (status && status.web && !status.web.cdm) {
-        showToast('This Parachord build has no Widevine CDM, so Amazon Music cannot play.', 'error');
+        showToast('Amazon Music can’t play in this version of Parachord.', 'error');
         return false;
       }
       // A not-signed-in while the auth cookies say the session is live is
@@ -7488,7 +7488,7 @@ const Parachord = () => {
       // not-signed-in reopened the prompt at once, and again after every close.
       amazonManageDeclinedUntilRef.current = Date.now() + 10 * 60 * 1000;
       if (login && login.reason === 'no-cdm') {
-        showToast(login.error || 'Widevine CDM not available', 'error');
+        console.error('Amazon sign-in: no CDM', login.error); showToast('Amazon Music can’t play in this version of Parachord.', 'error');
       }
       return false;
     })().catch((error) => {
@@ -14292,7 +14292,7 @@ ${trackListXml}
     // A not-yet-loaded collection reads as empty: the dedupe would add
     // every love as new. Same guard class as saveCollection (#758).
     if (collectionLoadingRef.current) {
-      showToast('Your library is still loading. Try the import again in a moment.', 'info');
+      showToast('Your Collection is still loading. Try the import again in a moment.', 'info');
       return;
     }
     const scrobbler = service === 'lastfm' ? window.lastfmScrobbler : window.listenbrainzScrobbler;
@@ -26056,7 +26056,7 @@ ${tracks}
         persistCriticsPicksCache(capped);
         console.log(`📰 Achordion feed failed — showing ${capped.length} cached picks`);
       } else {
-        setCriticsPicksError('Failed to load Critic\'s Picks. Please try again.');
+        setCriticsPicksError('Couldn’t load Critical Darlings. Check your connection and try again.');
       }
     } finally {
       setCriticsPicksLoading(false);
@@ -27092,7 +27092,7 @@ ${tracks}
 
     } catch (error) {
       console.error('Failed to load New Releases:', error);
-      setNewReleasesError('Failed to load new releases. Please try again.');
+      setNewReleasesError('Couldn’t load Fresh Drops. Check your connection and try again.');
     } finally {
       setNewReleasesLoading(false);
     }
@@ -34134,8 +34134,8 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       if (!parsed) {
         showConfirmDialog({
           type: 'error',
-          title: 'Import Failed',
-          message: 'Failed to parse XSPF file'
+          title: 'Couldn’t import the playlist',
+          message: 'Parachord can’t read that file. Choose an .xspf playlist file.'
         });
         return;
       }
@@ -34889,8 +34889,8 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       console.error('window.electron.spotify not available!');
       showConfirmDialog({
         type: 'error',
-        title: 'API Not Available',
-        message: 'Electron API not available. Make sure preload.js is loaded correctly.'
+        title: 'Something went wrong',
+        message: 'Parachord didn’t start correctly. Restart it and try again.'
       });
     }
   };
@@ -35044,8 +35044,8 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       console.error('window.electron.soundcloud not available!');
       showConfirmDialog({
         type: 'error',
-        title: 'API Not Available',
-        message: 'SoundCloud API not available. Make sure preload.js is loaded correctly.'
+        title: 'Something went wrong',
+        message: 'Parachord didn’t start correctly. Restart it and try again.'
       });
     }
   };
@@ -35346,9 +35346,9 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     if (!hasNativeMusicKit) {
       showConfirmDialog({
         type: 'error',
-        title: 'MusicKit Not Available',
+        title: 'Couldn’t connect to Apple Music',
         message: developerToken
-          ? 'MusicKit JS authorization failed. Please check your developer token.'
+          ? 'Apple Music didn’t accept your developer token. Check it in Settings › Plug-Ins › Apple Music.'
           : 'Apple Music needs either a developer token (Settings › Plug-Ins › Apple Music) or macOS native integration.'
       });
       return;
@@ -38099,7 +38099,7 @@ useEffect(() => {
                         marginTop: '2px'
                       }
                     },
-                      playlist.creator || `${playlist.tracks?.length || 0} Songs`
+                      playlist.creator || countOf(playlist.tracks?.length || 0, 'track')
                     )
                   );
                 }),
@@ -38261,7 +38261,7 @@ useEffect(() => {
                   }, '✨ AI'),
                   // Track count
                   React.createElement('div', { className: 'text-sm text-ink-tertiary flex-shrink-0 w-20 text-right' },
-                    `${trackCount} song${trackCount !== 1 ? 's' : ''}`
+                    countOf(trackCount, 'track')
                   ),
                   // Refresh — provider snapshots are not reloaded at launch
                   playlist.sourceUrl && (playlist.source === 'hosted-xspf' || window.isProviderImportedPlaylist(playlist, resolverLoaderRef.current)) && React.createElement('button', {
@@ -39246,9 +39246,9 @@ useEffect(() => {
 
             // Empty state (no artists in collection)
             !newReleasesError && !newReleasesLoading && newReleasesLoaded && newReleases.length === 0 && !newReleasesError && !newReleasesLoading && newReleasesLoaded && newReleases.length === 0 && React.createElement(EmptyState, {
-              title: 'No new releases yet',
+              title: 'Nothing in Fresh Drops yet',
               body: collectionData.artists?.length === 0 && collectionData.tracks?.length === 0
-                ? 'Add artists to your collection or listen to some music to see new releases from artists you like.'
+                ? 'Add artists to your Collection or listen to some music to see new releases from artists you like.'
                 : 'None of your artists have released new music in the last 6 months. Check back later.'
             }),
 
@@ -39280,7 +39280,7 @@ useEffect(() => {
                     React.createElement(CardButton, { role: 'listitem', label: `${release.title} by ${release.artist}`,
                       // Why it is in Fresh Drops: the card's tooltip (it was on the title,
                       // which the stretched button now covers).
-                      tooltip: release.artistSource === 'collection' ? `${release.artist} is in your collection` : release.artistSource === 'history' ? `Based on your listening history of ${release.artist}` : `${release.artist} is in your library`,
+                      tooltip: release.artistSource === 'collection' ? `${release.artist} is in your Collection` : release.artistSource === 'history' ? `Based on your listening history of ${release.artist}` : `${release.artist} is in your library`,
                       key: release.id,
                       className: 'group text-left release-card card-fade-up',
                       style: {
@@ -40455,7 +40455,7 @@ useEffect(() => {
                         // Build reason string based on why this artist was recommended
                         const reasonText = (() => {
                           const src = event.artistSource;
-                          if (src === 'collection') return 'In your collection';
+                          if (src === 'collection') return 'In your Collection';
                           if (src === 'library') return 'In your library';
                           if (src === 'history') return 'From your listening history';
                           if (event.description && event.description !== 'AI-suggested event') return event.description;
@@ -41810,7 +41810,7 @@ useEffect(() => {
                 style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
               },
                 React.createElement(HeroTabs, { items: [
-                  { key: 'topTracks', label: 'Top Songs' },
+                  { key: 'topTracks', label: 'Top Tracks' },
                   { key: 'topAlbums', label: 'Top Albums' },
                   { key: 'topArtists', label: 'Top Artists' },
                   { key: 'recent', label: 'Recently Played' }
@@ -41853,7 +41853,7 @@ useEffect(() => {
                 style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
               },
                 React.createElement(HeroTabs, { items: [
-                  { key: 'topTracks', label: 'Top Songs' },
+                  { key: 'topTracks', label: 'Top Tracks' },
                   { key: 'topAlbums', label: 'Top Albums' },
                   { key: 'topArtists', label: 'Top Artists' },
                   { key: 'recent', label: 'Recent' }
@@ -45722,8 +45722,8 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
           // Spinoff button - radio-like playback of similar tracks (with tooltip)
           React.createElement(Tooltip, {
             content: spinoffMode ? 'Exit spinoff mode' :
-              spinoffAvailable === false ? 'No related songs available' :
-              spinoffAvailable === null ? 'Checking for related songs…' : 'Spinoff',
+              spinoffAvailable === false ? 'No related tracks' :
+              spinoffAvailable === null ? 'Checking for related tracks…' : 'Spinoff',
             position: 'top',
             variant: 'dark'
           },
@@ -45858,8 +45858,8 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
             const repeatDisabled = spinoffMode || listenAlongFriend;
             const tooltipContent = repeatDisabled
               ? (spinoffMode ? 'Repeat unavailable in Spinoff mode' : 'Repeat unavailable while listening along')
-              : repeatMode === 'all' ? 'Repeating the queue (click to repeat this song)'
-              : repeatMode === 'one' ? 'Repeating this song (click to turn off)'
+              : repeatMode === 'all' ? 'Repeating the queue (click to repeat this track)'
+              : repeatMode === 'one' ? 'Repeating this track (click to turn off)'
               : 'Repeat the queue';
             return React.createElement(Tooltip, {
               content: tooltipContent,
@@ -47639,7 +47639,7 @@ React.createElement('div', {
                 color: 'var(--text-success)'
               }
             },
-              '✓ Native MusicKit available for direct Apple Music playback'
+              '✓ Apple Music can play directly on this Mac'
             ),
             !appleMusicNativeAvailable && !!window.electron?.musicKit?.openAuthWindow && React.createElement('div', {
               style: {
@@ -47765,8 +47765,8 @@ React.createElement('div', {
                   }
                 },
                   appleMusicDeveloperToken
-                    ? 'Using your MusicKit developer token for enhanced search (no rate limits).'
-                    : 'Add a MusicKit developer token to use Apple Music API for searches instead of iTunes API. This eliminates rate limiting issues.'
+                    ? 'Using your developer token for faster search.'
+                    : 'Add a developer token for faster, more reliable search.'
                 ),
                 React.createElement('div', { style: { marginBottom: '10px' } },
                   React.createElement('label', {
@@ -49031,8 +49031,8 @@ React.createElement('div', {
                   style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' }
                 }, !amazonMusicStatus ? 'Checking Amazon Music…' :
                   amazonMusicStatus.web?.signedIn ? 'Signed in' :
-                  amazonMusicStatus.web?.cdm ? 'Widevine ready — sign in to play' :
-                  'Widevine CDM not available'),
+                  amazonMusicStatus.web?.cdm ? 'Ready — sign in to play' :
+                  'Can’t play in this version of Parachord'),
                 React.createElement('p', {
                   style: { fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }
                 }, !amazonMusicStatus ? '' :

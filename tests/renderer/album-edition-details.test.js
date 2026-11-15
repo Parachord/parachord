@@ -42,20 +42,20 @@ describe('the picker\'s service rows', () => {
   test('while the lookup runs, each missing detail is a shimmer', () => {
     const html = menuWith(bandcampRow({ detailsPending: true }));
     expect(html).toContain('aria-label="Loading release date"');
-    expect(html).toContain('aria-label="Loading song count"');
+    expect(html).toContain('aria-label="Loading track count"');
   });
 
   test('only the missing detail shimmers', () => {
     const html = menuWith(bandcampRow({ releaseDate: '2008-02-19', detailsPending: true }));
     expect(html).toContain('Feb 19, 2008');
     expect(html).not.toContain('aria-label="Loading release date"');
-    expect(html).toContain('aria-label="Loading song count"');
+    expect(html).toContain('aria-label="Loading track count"');
   });
 
   test('a lookup that came back empty leaves the row without details, not shimmering', () => {
     const html = menuWith(bandcampRow({ detailsPending: false }));
     expect(html).not.toContain('Loading release date');
-    expect(html).not.toContain('Loading song count');
+    expect(html).not.toContain('Loading track count');
   });
 });
 

@@ -96,7 +96,7 @@ describe('every page draws the shared header', () => {
     expect(read('recommendation-skeletons.js')).toMatch(/React\.createElement\(SectionHeader, \{/);
 
     const search = read('search-page.js');
-    for (const title of ['Artists', 'Songs', 'Albums', 'Playlists']) {
+    for (const title of ['Artists', 'Tracks', 'Albums', 'Playlists']) {
       expect(search).toContain(`as: 'h3', title: '${title}', style: SECTION_HEADER_GAP`);
     }
     // The old small uppercase result headings are gone (the history and

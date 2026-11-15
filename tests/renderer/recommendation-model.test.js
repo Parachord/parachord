@@ -161,7 +161,7 @@ describe('buildRecommendationPage', () => {
 
   test('TYPE_SECTIONS is the five-type order', () => {
     expect(TYPE_SECTIONS).toEqual([
-      { type: 'song', title: 'Songs' }, { type: 'album', title: 'Albums' },
+      { type: 'song', title: 'Tracks' }, { type: 'album', title: 'Albums' },
       { type: 'artist', title: 'Artists' }, { type: 'playlist', title: 'Playlists' },
       { type: 'friend', title: 'Listeners' }
     ]);

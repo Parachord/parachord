@@ -838,7 +838,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                         color: 'var(--text-secondary)',
                         marginTop: '2px'
                       }
-                    }, `${playlistTracks.length} Songs`)
+                    }, countOf(playlistTracks.length, 'track'))
                 );
               })(),
 
