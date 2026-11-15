@@ -113,7 +113,11 @@ test('the artist page shares its Achordion link: a Share menu, and right-click a
 
 test('page scroll areas share one scroll edge: a shadow once content scrolls under the bar above', () => {
   const html = read('index.html');
-  expect(html).toMatch(/\.scroll-edge::before \{[^}]*position: sticky; top: 0; height: 0;/);
+  expect(html).toMatch(/\.scroll-edge::before \{[^}]*position: sticky; height: 0;/);
+  // A padded area: the marker is pulled to the true top and sides by the
+  // padding the listener reads (a sticky element stays inside padding).
+  expect(html).toMatch(/top: calc\(-1 \* var\(--edge-top, 0px\)\);/);
+  expect(app).toMatch(/el\.style\.setProperty\('--edge-top', cs\.paddingTop\);/);
   expect(html).toMatch(/\.scroll-edge\[data-scrolled\]::before \{ box-shadow:/);
   expect(app).toMatch(/document\.addEventListener\('scroll', onScroll, \{ capture: true, passive: true \}\)/);
   const uses = { 'src/renderer/app.js': 11, 'src/renderer/components/artist-page.js': 1, 'src/renderer/components/collection-page.js': 1, 'src/renderer/components/home-page.js': 1, 'src/renderer/components/search-page.js': 1, 'src/renderer/components/playlist-view-page.js': 1 };

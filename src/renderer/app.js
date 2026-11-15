@@ -6223,7 +6223,18 @@ const Parachord = () => {
       const el = e.target;
       if (!el || !el.classList || !el.classList.contains('scroll-edge')) return;
       const scrolled = el.scrollTop > 0;
-      if (scrolled !== el.hasAttribute('data-scrolled')) el.toggleAttribute('data-scrolled', scrolled);
+      if (scrolled === el.hasAttribute('data-scrolled')) return;
+      // A sticky marker stays inside the area's padding (Chromium), so a
+      // padded area's shadow sat 24px down as a band across the rows. Its
+      // padding, read once, pulls the marker to the true top and sides.
+      if (scrolled && !el.dataset.edgeInset) {
+        const cs = getComputedStyle(el);
+        el.style.setProperty('--edge-top', cs.paddingTop);
+        el.style.setProperty('--edge-left', cs.paddingLeft);
+        el.style.setProperty('--edge-right', cs.paddingRight);
+        el.dataset.edgeInset = '1';
+      }
+      el.toggleAttribute('data-scrolled', scrolled);
     };
     document.addEventListener('scroll', onScroll, { capture: true, passive: true });
     return () => document.removeEventListener('scroll', onScroll, { capture: true });

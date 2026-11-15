@@ -731,7 +731,11 @@
        shadow over what scrolls beneath the hero, toolbar or sticky bar above,
        so content never runs into a hard edge (the artist biography did). */
     .scroll-edge::before {
-      content: ''; display: block; position: sticky; top: 0; height: 0; z-index: 30;
+      content: ''; display: block; position: sticky; height: 0; z-index: 30;
+      /* The area's own padding (set by the listener): a sticky element stays
+         inside it, so these pull the marker to the true top and sides. */
+      top: calc(-1 * var(--edge-top, 0px));
+      margin-left: calc(-1 * var(--edge-left, 0px)); margin-right: calc(-1 * var(--edge-right, 0px));
       pointer-events: none; box-shadow: none; transition: box-shadow 200ms ease;
     }
     .scroll-edge[data-scrolled]::before { box-shadow: 0 0 14px 6px rgba(0, 0, 0, 0.18); }
