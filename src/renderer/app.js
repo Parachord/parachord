@@ -607,6 +607,7 @@ const {
 } = require('./lib/artist-image-chain');
 const { carriedReleaseArt, withArchiveCover, createReleaseGroupPicks } = require('./lib/release-open');
 const { firstNonEmptyList, entriesFromMusicBrainzRelease, entriesFromCatalogRelease, pickReleaseGroup } = require('./lib/album-track-list');
+const { resolversToAskAgain, nextUnanswered } = require('./lib/unanswered-resolvers');
 const { pickRelease } = require('./lib/release-pick');
 const { uniqueReleases, freshDropsWindow, withinFreshDropsWindow } = require('./lib/fresh-drops-releases');
 const { uniqueConcerts, concertSourceKeys, concertMatchesSource } = require('./lib/concert-events');
@@ -23092,16 +23093,37 @@ ${trackListXml}
                       (now - cachedData.timestamp) < CACHE_TTL.trackSources &&
                       cachedData.resolverHash === currentResolverHash;
 
-    // Check if there are active resolvers that weren't queried in the cached data or persisted sources
-    // Note: when cacheValid is true, the resolver hash matches, meaning ALL active resolvers
-    // were already queried when the cache was built. Resolvers absent from sources returned no match.
+    // Check if there are active resolvers that weren't queried in the cached data or persisted sources.
+    // A valid cache still lists the services that never answered: an answer is a
+    // source or a noMatch sentinel, and a service that threw or ran past
+    // RESOLVE_BUDGET_MS left no entry (lib/unanswered-resolvers.js). Reading that
+    // gap as "no match" kept a timed-out service unasked for the whole TTL.
     const cachedResolverIds = cachedData ? Object.keys(cachedData.sources) : [];
     const persistedResolverIds = Object.keys(persistedSources);
     const availableResolverIds = [...new Set([...cachedResolverIds, ...persistedResolverIds])];
-    const missingResolvers = cacheValid ? [] : currentActiveResolvers.filter(id =>
-      !availableResolverIds.includes(id) &&
-      currentResolvers.find(r => r.id === id)?.capabilities?.resolve
-    );
+    const canResolve = id => {
+      const r = currentResolvers.find(x => x.id === id);
+      return !!(r?.capabilities?.resolve && r.play);
+    };
+    // Only services that can play here are asked again: a plan-blocked one
+    // (Amazon on Prime) shows no icon either way, and fails every time.
+    const askAgainIds = currentActiveResolvers.filter(id =>
+      canResolve(id) && (playbackResolversRef.current || currentActiveResolvers).includes(id));
+    const missingResolvers = cacheValid
+      ? resolversToAskAgain(cachedData, askAgainIds, now)
+      : currentActiveResolvers.filter(id =>
+        !availableResolverIds.includes(id) &&
+        currentResolvers.find(r => r.id === id)?.capabilities?.resolve
+      );
+    // Set on a real cache hit that still has services to ask again; the
+    // ask-again branch below then queries only those.
+    let askAgainOnly = false;
+    // What to save as the entry's `unanswered` map after a lookup: a service
+    // asked this time with no entry in `sources` threw or timed out.
+    const unansweredAfter = (prev, asked, sources) => nextUnanswered(prev, {
+      failed: asked.filter(id => !sources[id]),
+      answered: asked.filter(id => sources[id]),
+    }, Date.now());
 
     if (DEBUG_RESOLUTION && (cachedData || hasValidPersistedSources)) {
       console.log(`  🔍 Cache check for "${track.title}": in-memory=${!!cachedData}, persisted=${persistedResolverIds.join(', ') || 'none'}, missing: ${missingResolvers.join(', ') || 'none'}`);
@@ -23182,13 +23204,18 @@ ${trackListXml}
         : displaySources;
       queueTrackSources(trackKey, finalDisplay);
 
-      // Background validation: if cache is > 24 hours old, validate in background
-      if (cacheAge >= 24) {
-        console.log(`🔄 Cache > 24h old, validating in background...`);
-        setTimeout(() => validateCachedSources(track, artistName, cachedData.sources, cacheKey, trackKey), 1000);
-      }
+      if (missingResolvers.length === 0) {
+        // Background validation: if cache is > 24 hours old, validate in background
+        if (cacheAge >= 24) {
+          console.log(`🔄 Cache > 24h old, validating in background...`);
+          setTimeout(() => validateCachedSources(track, artistName, cachedData.sources, cacheKey, trackKey), 1000);
+        }
 
-      return displaySources;
+        return displaySources;
+      }
+      // Some services never answered: the cached sources are on screen, and
+      // the ask-again branch below queries only those services.
+      askAgainOnly = true;
       } // close `else` (real cache hit branch); poisoned-cache path falls through to fresh resolve
     }
 
@@ -23342,23 +23369,32 @@ ${trackListXml}
         sources: sources,
         timestamp: now,
         resolverHash: currentResolverHash,
-        v: CACHE_SCHEMA_VERSION
+        v: CACHE_SCHEMA_VERSION,
+        unanswered: unansweredAfter(cachedData?.unanswered, missingResolvers, sources)
       };
 
-      // Persist new sources (including noMatch sentinels) back to collection/playlist
+      // Persist new sources (including noMatch sentinels) back to collection/playlist.
+      // An explicit playlistId (background pre-resolution of a playlist that
+      // isn't open) comes first, as in the other branches: without it the
+      // fresh sources never reached the playlist, its old ones stayed past the
+      // 30-day limit, and every launch queued the same tracks again.
       if (track.id && collectionTracksRef.current.some(t => t.id === track.id)) {
         queueCollectionSourceUpdate(track.id, sources);
       }
-      const currentPlaylist = selectedPlaylistRef.current;
-      if (track.id && currentPlaylist?.id && currentPlaylist.tracks?.some(t => t.id === track.id)) {
-        queuePlaylistSourceUpdate(currentPlaylist.id, track.id, sources);
+      if (track.id && playlistId) {
+        queuePlaylistSourceUpdate(playlistId, track.id, sources);
+      } else {
+        const currentPlaylist = selectedPlaylistRef.current;
+        if (track.id && currentPlaylist?.id && currentPlaylist.tracks?.some(t => t.id === track.id)) {
+          queuePlaylistSourceUpdate(currentPlaylist.id, track.id, sources);
+        }
       }
 
       return filterNoMatch(sources);
     }
 
     // If cache is valid but missing resolvers, query only the missing ones
-    if (cacheValid && missingResolvers.length > 0) {
+    if (askAgainOnly) {
       console.log(`🔍 Cache valid but missing ${missingResolvers.length} resolver(s), querying: ${missingResolvers.join(', ')}`);
 
       // Start with cached sources
@@ -23408,6 +23444,8 @@ ${trackListXml}
             const confidence = calculateConfidence({ artist: artistName, title: track.title }, result);
             if (confidence < MIN_CONFIDENCE_THRESHOLD) {
               console.warn(`  ⚠️ ${resolver.name}: Rejecting "${result.title}" by "${result.artist}" — does not match "${track.title}" by "${artistName}"`);
+              // An answer, so it isn't asked again (same as the other branches)
+              sources[resolver.id] = { noMatch: true, resolvedAt: Date.now() };
             } else {
               sources[resolver.id] = { ...result, confidence };
               console.log(`  ✅ ${resolver.name}: Found match (confidence: ${(confidence * 100).toFixed(0)}%)`);
@@ -23416,6 +23454,7 @@ ${trackListXml}
               }
             }
           } else {
+            sources[resolver.id] = { noMatch: true, resolvedAt: Date.now() };
             console.log(`  ⚪ ${resolver.name}: No match found`);
           }
         } catch (error) {
@@ -23443,7 +23482,8 @@ ${trackListXml}
         sources: sources,
         timestamp: Date.now(),
         resolverHash: getResolverSettingsHash(),
-        v: CACHE_SCHEMA_VERSION
+        v: CACHE_SCHEMA_VERSION,
+        unanswered: unansweredAfter(cachedData.unanswered, missingResolvers, sources)
       };
 
       // Persist new sources back to collection if this track is in the collection
@@ -23579,7 +23619,10 @@ ${trackListXml}
           const confidence = calculateConfidence({ artist: artistName, title: track.title }, result);
           if (confidence < MIN_CONFIDENCE_THRESHOLD) {
             console.warn(`  ⚠️ ${resolver.name}: Rejecting "${result.title}" by "${result.artist}" — does not match "${track.title}" by "${artistName}"`);
-            return; // skip-attach below floor; no flush
+            // Skip-attach below floor; no flush. A wrong song is an answer
+            // ("no match"), so it's saved as one and not asked again.
+            sources[resolver.id] = existingRealSources[resolver.id] || { noMatch: true, resolvedAt: Date.now() };
+            return;
           }
           sources[resolver.id] = { ...result, confidence };
           console.log(`  ✅ ${resolver.name}: Found match (confidence: ${(confidence * 100).toFixed(0)}%)`);
@@ -23643,7 +23686,8 @@ ${trackListXml}
       sources: sources,
       timestamp: Date.now(),
       resolverHash: getResolverSettingsHash(),
-      v: CACHE_SCHEMA_VERSION
+      v: CACHE_SCHEMA_VERSION,
+      unanswered: unansweredAfter(undefined, enabledResolvers.filter(r => r.capabilities.resolve && r.play).map(r => r.id), sources)
     };
 
     if (trackKey) {
