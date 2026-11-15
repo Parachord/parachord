@@ -739,6 +739,13 @@
     .header-control-dark { color: var(--on-dark-secondary); border-color: rgba(255, 255, 255, 0.2); }
     .header-control-dark:hover { color: #fff; background-color: rgba(255, 255, 255, 0.1); }
 
+    /* Card grids (#1389): as many columns as the CONTENT area holds, never
+       a column count from the window width (md:/lg:/xl: measure the
+       window; at the 1000px minimum window the content is 744px). 180px
+       keeps 3 columns at the minimum and 5 on a typical laptop; the grid's
+       own gap class sets the spacing. Skeleton grids use the same class. */
+    .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
+
     /* CardButton (components/card-button.js): the card's main action is a
        button stretched over it; its own actions (.card-actions) sit above
        and show on hover or keyboard focus, passing clicks through when

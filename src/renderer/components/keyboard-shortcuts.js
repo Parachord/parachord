@@ -42,7 +42,7 @@ function KeyboardShortcutsDialog({ open, onClose, isMac = false }) {
   const e = React.createElement;
   if (!open) return null;
   return e(Modal, { open, onClose, title: 'Keyboard shortcuts', size: 'md' },
-    e('div', { className: 'grid grid-cols-1 sm:grid-cols-2', style: { gap: '20px 32px' } },
+    e('div', { className: 'grid grid-cols-2', style: { gap: '20px 32px' } },
       SHORTCUT_GROUPS.map((group) => e('section', { key: group.title },
         e('h3', { className: 'text-ink-tertiary uppercase', style: { fontSize: '11px', fontWeight: 600, letterSpacing: '0.05em', marginBottom: '8px' } }, group.title),
         e('dl', { style: { margin: 0 } },

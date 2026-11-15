@@ -499,7 +499,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                 }
 
                 return filteredAlbums.length > 0 && React.createElement('div', { role: 'list',
-                  className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-5 pb-6'
+                  className: 'card-grid gap-x-4 gap-y-5 pb-6'
                 },
                   filteredAlbums.map((album, index) => {
                     const animationDelay = Math.min(index * 30, 300);
@@ -915,7 +915,7 @@ const SearchPage = React.memo(function SearchPage(props) {
 
               // Playlists grid with cards
               searchDetailCategory === 'playlists' && searchResults.playlists.length > 0 && React.createElement('div', { role: 'list',
-                className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-5 pb-6'
+                className: 'card-grid gap-x-4 gap-y-5 pb-6'
               },
                 searchResults.playlists.map((playlist, index) => {
                   const animationDelay = Math.min(index * 30, 300);

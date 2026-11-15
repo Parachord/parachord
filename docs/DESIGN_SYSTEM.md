@@ -504,7 +504,7 @@ Navigation history is maintained with `viewHistory` and `forwardHistory` arrays 
 - Main content width is tracked via `ResizeObserver` on the content container
 - Search results grid adjusts item count based on `searchContainerWidth`
 - Artist cards accept `itemWidth` prop for responsive sizing
-- Tailwind's `sm:`/`md:`/`lg:`/`xl:` breakpoints are used in about 20 grids, but they measure the **window**, not the content area: at the 1000px minimum window width the content is only 744px wide. Prefer content-width rules (`ResizeObserver`, `repeat(auto-fill, minmax(…))`); #1389 is moving the grids over.
+- **Card grids use `.card-grid`** (`index.html`): `repeat(auto-fill, minmax(180px, 1fr))`, as many columns as the content area holds; the grid's own gap class sets the spacing, and its skeleton uses the same class. Never Tailwind's `sm:`/`md:`/`lg:`/`xl:` for columns: they measure the **window**, not the content area (at the 1000px minimum window the content is only 744px wide).
 
 ---
 

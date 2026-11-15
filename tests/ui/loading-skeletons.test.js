@@ -326,7 +326,7 @@ describe('Home skeletons match the Home rows', () => {
     const app = fs.readFileSync(path.join(dir, '..', 'app.js'), 'utf8');
     // The Playlists page's card, which Home copies.
     expect(app).toMatch(/className: 'group cursor-pointer release-card card-fade-up',\s*style: \{\s*padding: '10px',\s*borderRadius: '10px',\s*backgroundColor: 'var\(--card-bg\)',\s*boxShadow: 'var\(--card-shadow\)',/);
-    expect(app).toContain("className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-5'");
+    expect(app).toContain("className: 'card-grid gap-x-4 gap-y-5'");
     expect(sk.HOME_CARD_BOX).toEqual({ padding: '10px', borderRadius: '10px', backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)' });
     expect(sk.HOME_CARD_ART_RADIUS).toBe(8);
     // Both cards and the skeleton card use the box; the cards get the hover lift.

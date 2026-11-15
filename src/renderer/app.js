@@ -37890,7 +37890,7 @@ useEffect(() => {
 
             // Show loading skeletons while playlists are loading
             if (playlistsLoading && sorted.length === 0) {
-              return React.createElement('div', { className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6' },
+              return React.createElement('div', { className: 'card-grid gap-6' },
                 Array.from({ length: 10 }).map((_, i) =>
                   React.createElement('div', { key: `playlist-skeleton-${i}` },
                     // Skeleton 2x2 album art grid
@@ -37942,7 +37942,7 @@ useEffect(() => {
             if (playlistsViewMode === 'grid') {
               return React.createElement('div', { role: 'list',
                 key: `playlist-grid-${sorted.length}-${playlistsSearch}`,
-                className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-5'
+                className: 'card-grid gap-x-4 gap-y-5'
               },
                 sorted.map((playlist, index) => {
                   const covers = allPlaylistCovers[playlist.id] || [];
@@ -38674,7 +38674,7 @@ useEffect(() => {
 
             // ALBUMS TAB - Grid of iTunes albums (skeleton loading)
             chartsTab === 'albums' && !chartsError && (chartsLoading || !chartsLoaded) && React.createElement('div', {
-              className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 pb-6'
+              className: 'card-grid gap-4 pb-6'
             },
               Array.from({ length: 15 }).map((_, i) =>
                 React.createElement('div', { key: `skeleton-${i}` },
@@ -38714,7 +38714,7 @@ useEffect(() => {
               }
 
               return React.createElement('div', { role: 'list',
-                className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-5 pb-6'
+                className: 'card-grid gap-x-4 gap-y-5 pb-6'
               },
                 filtered.map((item, index) =>
                 React.createElement(CardButton, { role: 'listitem', label: `${item.title} by ${item.artist}`,
@@ -39314,7 +39314,7 @@ useEffect(() => {
 
             // Skeleton loading state
             !newReleasesError && (newReleasesLoading || !cacheLoaded) && newReleases.length === 0 && React.createElement('div', {
-              className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4'
+              className: 'card-grid gap-4'
             },
               Array.from({ length: 12 }).map((_, i) =>
                 React.createElement('div', {
@@ -39372,7 +39372,7 @@ useEffect(() => {
               return React.createElement('div', null,
                 // Grid
                 React.createElement('div', { role: 'list',
-                  className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4'
+                  className: 'card-grid gap-4'
                 },
                   filtered.map((release, index) =>
                     React.createElement(CardButton, { role: 'listitem', label: `${release.title} by ${release.artist}`,
@@ -42441,7 +42441,7 @@ useEffect(() => {
               topAlbums.loading ?
                 // Skeleton loading grid
                 React.createElement('div', {
-                  className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-5 pb-6'
+                  className: 'card-grid gap-x-4 gap-y-5 pb-6'
                 },
                   Array.from({ length: 10 }).map((_, i) =>
                     React.createElement('div', {
@@ -42485,7 +42485,7 @@ useEffect(() => {
               :
                 // Top Albums grid - Cinematic Light design
                 React.createElement('div', { role: 'list',
-                  className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-5 pb-6'
+                  className: 'card-grid gap-x-4 gap-y-5 pb-6'
                 },
                   ...topAlbums.albums.map((album, index) =>
                     React.createElement(CardButton, { role: 'listitem', label: `${album.name} by ${album.artist}`,
@@ -43136,7 +43136,7 @@ useEffect(() => {
                 ),
                 // Top albums tab content
                 !friendHistoryLoading && !friendHistoryData.errors?.topAlbums && friendHistoryTab === 'topAlbums' && React.createElement('div', {
-                  className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4'
+                  className: 'card-grid gap-4'
                 },
                   friendHistoryData.topAlbums.length === 0
                     ? React.createElement('p', { className: 'col-span-full text-center text-ink-tertiary py-8' }, 'No top albums data')
@@ -43293,7 +43293,7 @@ useEffect(() => {
                 ),
                 // Top artists tab content
                 !friendHistoryLoading && !friendHistoryData.errors?.topArtists && friendHistoryTab === 'topArtists' && React.createElement('div', {
-                  className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4'
+                  className: 'card-grid gap-4'
                 },
                   friendHistoryData.topArtists.length === 0
                     ? React.createElement('p', { className: 'col-span-full text-center text-ink-tertiary py-8' }, 'No top artists data')
@@ -43530,7 +43530,7 @@ useEffect(() => {
                 className: 'rounded-xl border border-line bg-surface-inset',
                 style: { padding: '16px', marginBottom: '24px' }
               },
-                React.createElement('ul', { className: 'grid grid-cols-1 sm:grid-cols-3 gap-4', style: { listStyle: 'none', margin: 0, padding: 0 } },
+                React.createElement('ul', { className: 'grid grid-cols-3 gap-4', style: { listStyle: 'none', margin: 0, padding: 0 } },
                   [
                     [Icons.Music, 'Turn on the services you use. The numbers are the order Parachord tries them in; drag a tile to change it.'],
                     [Icons.Settings, 'Open a tile to sign in or set it up. Some services also need a developer key.'],
@@ -43584,7 +43584,7 @@ useEffect(() => {
               // Uses the shared shimmer-light + animate-shimmer classes with a
               // staggered delay (matches the search-page skeletons).
               marketplaceLoading && React.createElement('div', {
-                className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6'
+                className: 'card-grid gap-6'
               },
                 ...Array(10).fill(null).map((_, i) =>
                   React.createElement('div', {
@@ -43647,7 +43647,7 @@ useEffect(() => {
                 ),
                 // Resolver grid - combines installed and marketplace
                 React.createElement('div', {
-                  className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6'
+                  className: 'card-grid gap-6'
                 },
                   (() => {
                     // Get all content resolvers from marketplace (non-meta-service)
@@ -43833,7 +43833,7 @@ useEffect(() => {
                 ),
                 // Meta services grid - combines installed and marketplace
                 React.createElement('div', {
-                  className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6'
+                  className: 'card-grid gap-6'
                 },
                   (() => {
                     // Get all meta services from marketplace
@@ -43967,7 +43967,7 @@ useEffect(() => {
                 ),
                 // Extensions grid
                 React.createElement('div', {
-                  className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6'
+                  className: 'card-grid gap-6'
                 },
                   // Browser Extension tile
                   React.createElement('div', {

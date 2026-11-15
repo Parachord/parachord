@@ -762,7 +762,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
             }),
             // Skeleton album grid
             React.createElement('div', {
-              className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4'
+              className: 'card-grid gap-4'
             },
               Array.from({ length: 10 }).map((_, i) =>
                 React.createElement('div', { key: `album-skeleton-${i}` },
@@ -870,7 +870,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
           },
             // Discography grid - cards handle their own album art loading shimmer
             React.createElement('div', {
-              className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-5 pb-6',
+              className: 'card-grid gap-x-4 gap-y-5 pb-6',
               ref: (el) => {
                 if (!el) {
                   // Cleanup observer when unmounting
