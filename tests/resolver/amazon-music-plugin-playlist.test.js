@@ -349,6 +349,27 @@ describe('lookupPlaylistFlow (the load + the replay + the pagination)', () => {
     warn.mockRestore();
   });
 
+  test('a no-error null playlist is the not-found miss; an error envelope with a null playlist is a lookup failure', async () => {
+    // The playlist-specific gql-error rule: errors are fatal unless
+    // data.playlist came back. A no-error data.playlist: null — the field
+    // present, nulled — is the deleted/private shape the resolver surfaces
+    // as "Playlist not found"; an error envelope with a null playlist is a
+    // lookup failure (lookup-failed), never a miss (the album section's
+    // not-found vs lookup-failed rule, mirrored).
+    const miss = playlistMock({ respond: () => ({ data: { playlist: null } }) });
+    await expect(instantiateAmazonPlugin(axe).lookupPlaylistFlow(PLAYLIST_URL)).resolves.toBeNull();
+    expect(miss.pageFetch).toHaveBeenCalledTimes(1);
+
+    const failed = playlistMock({
+      respond: () => ({ errors: [{ message: 'playlistDetail exploded' }], data: { playlist: null } })
+    });
+    await expect(instantiateAmazonPlugin(axe).lookupPlaylistFlow(PLAYLIST_URL)).rejects.toMatchObject({
+      reason: 'lookup-failed',
+      message: 'playlistDetail exploded'
+    });
+    expect(failed.pageFetch).toHaveBeenCalledTimes(1);
+  });
+
   test('captures without headers never match (the host pairs bodies with headers by request id)', async () => {
     // onBeforeSendHeaders fires milliseconds after onBeforeRequest — a
     // header-less body is not a replayable request.
@@ -357,10 +378,17 @@ describe('lookupPlaylistFlow (the load + the replay + the pagination)', () => {
       method: 'POST',
       body: JSON.stringify({ operationName: 'playlistDetail', variables: { id: PLAYLIST_ID, firstLimit: 100 } })
     };
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     const ws = playlistMock({ captures: [bodyOnly], respond: () => ({ data: { playlist: null } }) });
     const resolver = instantiateAmazonPlugin(axe);
     await expect(resolver.lookupPlaylistFlow(PLAYLIST_URL)).resolves.toBeNull();
     expect(ws.pageFetch).not.toHaveBeenCalled();
+    // The miss log still names the header-less body's operation — the ops
+    // list is built from the UNFILTERED captures, so the header-pairing race
+    // reads as "playlistDetail fired but never paired" instead of "every
+    // playlist is deleted".
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/gql operations seen: playlistDetail$/));
+    warn.mockRestore();
   });
 
   test("the page's own capture is preferred over our echo of the same request", async () => {

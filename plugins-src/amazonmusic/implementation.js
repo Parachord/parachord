@@ -2336,8 +2336,12 @@ module.exports = {
       // The page loaded but never asked for this playlist: deleted, private,
       // not available in the user's territory — or hornet renamed the
       // operation. Log what the page did fire so a rename reads as a rename
-      // instead of "every playlist is deleted".
-      const ops = lib.capturedOperationNames(captured.map(r => r.body)).join(', ') || 'none';
+      // instead of "every playlist is deleted". The ops list is built from
+      // the UNFILTERED captures — every captured body's operation names,
+      // header-complete or not (a playlistDetail body whose headers never
+      // paired is not replayable, but the race must not hide the rename from
+      // the log; the old host flow logged the same unfiltered list).
+      const ops = lib.capturedOperationNames((load.captures || []).map(r => r.body)).join(', ') || 'none';
       console.warn('[Amazon] playlist lookup: page never requested playlistDetail for ' + playlistId + '; gql operations seen: ' + ops);
       return null;
     }
@@ -2475,8 +2479,8 @@ module.exports = {
       result = await runFlow();
       if (loaded(result)) return mapResult(result.playlist);
       // Only a sign-in problem is fixed by sign-in. load-failed is a network
-      // condition and no-cdm is a playback problem - importing needs neither -
-      // and prompting for sign-in on either points the user at the wrong fix.
+      // condition - and prompting for sign-in on a network failure points
+      // the user at the wrong fix.
       if (result && result.reason === 'not-signed-in') {
         console.log('Amazon Music: not signed in, asking you to sign in...');
         var managed = false;
@@ -2508,7 +2512,6 @@ module.exports = {
     var reason = result && result.reason;
     if (
       reason === 'load-failed' ||
-      reason === 'no-cdm' ||
       reason === 'not-ready' ||
       reason === 'superseded'
     ) {
