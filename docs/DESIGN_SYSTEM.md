@@ -142,61 +142,22 @@ Inside a service's own plugin panel (its header, Connect, Save and sync buttons)
 | `--font-sans` | `-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif` | All UI text |
 | `--font-mono` | `ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace` | Code, technical values |
 
-**Line height scale:**
+**Type, radius and motion are scales, not tokens.** The unused `--leading-*`, `--tracking-*`, `--radius-*`, `--duration-*` and `--ease-*` tokens were deleted in the design audit (#1383); the scales below are what `scripts/design-drift.js` enforces (CLAUDE.md "Design system"):
+
+- **Type:** 11 · 12 · 13 · 14 · 16 · 20 · 24 · 28 · 48px; weights as numbers.
+- **Radius:** 4 · 6 · 8 · 10 · 12 · 16px · full.
+- **Spacing:** the 4px scale; 10px only for card padding.
+- **Motion:** 100–400ms on transform and opacity; never `transition-all` on list rows. `prefers-reduced-motion` turns it off (spinners excepted).
+
+### Z-Index
 
 | Token | Value | Usage |
 |-------|-------|-------|
-| `--leading-tight` | `1.2` | Headings |
-| `--leading-normal` | `1.4` | Default |
-| `--leading-body` | `1.5` | Body text |
-| `--leading-relaxed` | `1.6` | Readable paragraphs |
+| `--z-dropdown` | `20` | Sort menus and other in-page dropdowns |
+| `--z-popover` | `9999` | `Menu` (context and "More" menus), above the playbar |
+| `--z-toast` | `99999` | Toasts, above dialogs |
 
-**Letter spacing scale:**
-
-| Token | Value | Usage |
-|-------|-------|-------|
-| `--tracking-tight` | `0.005em` | Tight headings |
-| `--tracking-normal` | `0.02em` | Default |
-| `--tracking-wide` | `0.05em` | Slightly spaced |
-| `--tracking-caps` | `0.08em` | Uppercase labels |
-| `--tracking-display` | `0.2em` | Display text |
-| `--tracking-display-wide` | `0.3em` | Wide display |
-
-### Border Radius
-
-| Token | Value | Usage |
-|-------|-------|-------|
-| `--radius-sm` | `4px` | Small elements, badges |
-| `--radius-md` | `6px` | Buttons, inputs |
-| `--radius-lg` | `8px` | Cards |
-| `--radius-xl` | `10px` | Larger cards |
-| `--radius-2xl` | `12px` | Panels |
-| `--radius-pill` | `16px` | Pill shapes |
-| `--radius-full` | `9999px` | Circles, full-round |
-
-### Z-Index Scale
-
-| Token | Value | Usage |
-|-------|-------|-------|
-| `--z-base` | `0` | Default layer |
-| `--z-raised` | `10` | Raised cards |
-| `--z-dropdown` | `20` | Dropdown menus |
-| `--z-sticky` | `30` | Sticky headers |
-| `--z-overlay` | `40` | Overlays |
-| `--z-modal` | `50` | Modals |
-| `--z-popover` | `9999` | Popovers |
-| `--z-toast` | `99999` | Toast notifications |
-
-### Transitions
-
-| Token | Value | Usage |
-|-------|-------|-------|
-| `--duration-fast` | `100ms` | Micro-interactions |
-| `--duration-base` | `150ms` | Standard transitions |
-| `--duration-slow` | `300ms` | Panel animations |
-| `--ease-default` | `ease` | General purpose |
-| `--ease-out` | `cubic-bezier(0.4, 0, 0.2, 1)` | Elements entering |
-| `--ease-spring` | `cubic-bezier(0.16, 1, 0.3, 1)` | Bouncy/spring motion |
+Dialogs sit at `z-[60]`. Inside a card, `CardButton`'s stretched button is at 1, card actions at 2 and the reason badge at 3.
 
 ---
 
