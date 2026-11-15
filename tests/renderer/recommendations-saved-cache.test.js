@@ -86,7 +86,9 @@ describe('saved recommendations', () => {
     // button (zIndex 1), below the badge (3).
     expect(card).toContain('reason: shuffleupagusBadgeProps(item) || null,');
     const comp = (f) => fs.readFileSync(require('path').join(__dirname, '../../src/renderer/components', f), 'utf8');
-    expect(comp('card-art.js')).toMatch(/style: \{ opacity: shown \? 1 : 0, pointerEvents: shown \? 'auto' : 'none', zIndex: 2,/);
+    const art = comp('card-art.js');
+    expect(art).toContain("style: Object.assign({ zIndex: 2, padding: '8px', boxSizing: 'border-box' },");
+    expect(art).toContain("css ? null : { opacity: shown ? 1 : 0, pointerEvents: shown ? 'auto' : 'none' }),");
     expect(comp('album-card.js')).toMatch(/reason && e\(ReasonBadge, reason\)/);
     expect(comp('reason-badge.js')).toContain('zIndex: 3');
   });

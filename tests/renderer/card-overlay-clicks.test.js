@@ -75,7 +75,8 @@ describe("Home's album and playlist cards open from anywhere on the card", () =>
   });
   test("the art overlay sits above the stretched button while shown (zIndex 2), under the reason badge (3)", () => {
     const art = fs.readFileSync(path.join(ROOT, 'src/renderer/components/card-art.js'), 'utf8');
-    expect(art).toMatch(/pointerEvents: shown \? 'auto' : 'none', zIndex: 2,/);
+    expect(art).toContain("style: Object.assign({ zIndex: 2, padding: '8px', boxSizing: 'border-box' },");
+    expect(art).toContain("css ? null : { opacity: shown ? 1 : 0, pointerEvents: shown ? 'auto' : 'none' }),");
   });
 });
 

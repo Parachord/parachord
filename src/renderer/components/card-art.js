@@ -59,14 +59,20 @@ function SideButton({ label, onClick, path }) {
     e('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: path })));
 }
 
+// `shown` undefined: CSS shows it (.card-actions, index.html: the CardButton
+// it sits in is hovered or holds keyboard focus), for a card drawn in a list
+// that can't call useReveal per card (Critical Darlings).
 function ArtOverlay({ shown, title, onClick, onPlay, onQueue, onAddToPlaylist }) {
+  const css = shown === undefined;
   return e('div', {
     // The click opens the card once: stop it at the overlay, or a card whose
     // art is also wrapped in an opener (PlaylistCard) opened twice.
-    'data-art-actions': '', onClick: onClick && ((ev) => { ev.stopPropagation(); onClick(ev); }), className: APP_OVERLAY,
+    'data-art-actions': '', onClick: onClick && ((ev) => { ev.stopPropagation(); onClick(ev); }),
+    className: css ? `${APP_OVERLAY} card-actions` : APP_OVERLAY,
     // Above CardButton's stretched button (1) while shown, so its buttons and
     // its own open-on-click work; under the reason badge (3).
-    style: { opacity: shown ? 1 : 0, pointerEvents: shown ? 'auto' : 'none', zIndex: 2, padding: '8px', boxSizing: 'border-box' },
+    style: Object.assign({ zIndex: 2, padding: '8px', boxSizing: 'border-box' },
+      css ? null : { opacity: shown ? 1 : 0, pointerEvents: shown ? 'auto' : 'none' }),
   },
     onAddToPlaylist && e(SideButton, { label: `Add ${title} to a playlist`, onClick: onAddToPlaylist, path: 'M12 4v16m8-8H4' }),
     onPlay && e('button', {

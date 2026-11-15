@@ -2055,6 +2055,8 @@ const { SectionHeader, SECTION_HEADER_GAP } = require('./components/section-head
 const { FilterChips, Chip } = require('./components/filter-chips');
 const { FilterBox, StickyBar } = require('./components/filter-box');
 const { PageHero } = require('./components/page-hero');
+const { ArtOverlay } = require('./components/card-art');
+const { hoverDwell } = require('./lib/hover-dwell');
 const { RELEASE_TYPE_COLORS } = require('./lib/release-types');
 const {
   RecommendationCardSkeleton,
@@ -39175,7 +39177,8 @@ React.createElement('span', {
                   };
                   e.dataTransfer.setData('text/plain', JSON.stringify(albumData));
                 },
-                onMouseEnter: () => prefetchCriticsPicksTracks(album),
+                // The track lookup after a 250ms dwell (a scroll past doesn't fetch).
+                ...hoverDwell(() => prefetchCriticsPicksTracks(album)),
                 onActivate: () => openCriticsPicksAlbum(album),
                 onContextMenu: (e) => {
                   e.preventDefault();
@@ -39242,24 +39245,11 @@ React.createElement('span', {
                     }
                   }),
                   // Hover overlay with action buttons (Add to Playlist, Play, Queue)
-                  React.createElement('div', {
-                    className: 'opacity-0 group-hover:opacity-100 card-reveal',
-                    style: {
-                      position: 'absolute',
-                      inset: 0,
-                      backgroundColor: 'rgba(0, 0, 0, 0.5)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '12px',
-                      transition: 'opacity 0.2s ease'
-                    }
-                  },
-                    // Add to Playlist button
-                    React.createElement('button', {
-                      onClick: async (e) => {
-                        e.stopPropagation();
-                        const prefetched = prefetchedReleases[album.id];
+                  // The app's art overlay, shown by CSS on hover or keyboard focus.
+React.createElement(ArtOverlay, {
+title: album.title,
+onAddToPlaylist: () => {
+const prefetched = prefetchedReleases[album.id];
                         if (prefetched?.tracks?.length > 0) {
                           setAddToPlaylistPanel({
                             open: true,
@@ -39269,19 +39259,8 @@ React.createElement('span', {
                           });
                         }
                       },
-                      className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
-                      style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-                      onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
-                      onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                      'aria-label': 'Add to playlist', 'data-tooltip': 'Add to playlist'
-                    },
-                      React.createElement(Icons.Plus, { className: 'w-5 h-5' })
-                    ),
-                    // Play button (center, larger)
-                    React.createElement('button', {
-                      onClick: async (e) => {
-                        e.stopPropagation();
-                        setTrackLoading(true);
+onPlay: async () => {
+setTrackLoading(true);
                         const tracks = await prefetchCriticsPicksTracks(album);
                         if (tracks?.length > 0) {
                           const context = { type: 'album', id: album.id, name: album.title, artist: album.artist };
@@ -39294,27 +39273,10 @@ React.createElement('span', {
                           setTrackLoading(false);
                         }
                       },
-                      className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
-                      style: { border: 'none', cursor: 'pointer' },
-                      'aria-label': 'Play', 'data-tooltip': 'Play'
-                    },
-                      React.createElement(Play, { size: 22, className: 'text-ink-primary ml-0.5' })
-                    ),
-                    // Add to Queue button
-                    React.createElement('button', {
-                      onClick: (e) => {
-                        e.stopPropagation();
-                        addCriticsPicksToQueue(album);
-                      },
-                      className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
-                      style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-                      onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
-                      onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                      'aria-label': 'Add to queue', 'data-tooltip': 'Add to queue'
-                    },
-                      React.createElement(Icons.QueueAdd, { className: 'w-5 h-5', strokeWidth: 2 })
-                    ),
-                  )
+onQueue: () => {
+addCriticsPicksToQueue(album);
+                      }
+})
                 ),
                 // Album info - right column - refined typography
                 React.createElement('div', {
