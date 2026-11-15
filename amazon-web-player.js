@@ -92,6 +92,8 @@ const {
   createSearchBreaker,
   paginatePlaylistTracks,
   amazonGqlFetchHeaders,
+  gqlReplayOutcome,
+  playlistPartialIsUsable,
   capturedOperationNames,
   isAmazonMusicPage,
   gqlCaptureSubject,
@@ -892,20 +894,16 @@ const amazonWebPlayer = {
   // the body comes from that request too, so it is always current for this
   // hornet deploy. Returns { parsed } (the full response envelope) or
   // { error } — each flow decides which envelope shape it expects.
-  async replayGql(win, entry, body) {
+  // `options.acceptPartial` opts a flow into HTTP 294 partial answers (see
+  // GQL_PARTIAL_STATUS in amazon-music-logic.js): a predicate over the parsed
+  // body that says whether the data the flow needs came back. Without it a
+  // 294 is a failure with its status, which the home flow relies on.
+  async replayGql(win, entry, body, options = {}) {
     const replayUrl = entry.url || 'https://gql.music.amazon.com/';
     const headers = amazonGqlFetchHeaders(entry.headers);
     const raw = JSON.stringify(body);
     const replay = await this.evalOn(win, GQL_FETCH_SCRIPT(replayUrl, headers, raw));
-    if (!replay || replay.error) return { error: (replay && replay.error) || 'Amazon gql query failed' };
-    if (replay.status !== 200) return { error: `Amazon gql query failed (${replay.status})`, status: replay.status };
-    let parsed = null;
-    try { parsed = JSON.parse(replay.text); } catch (e) { /* leave null */ }
-    if (!parsed) return { error: 'Amazon gql response was not JSON' };
-    if (Array.isArray(parsed.errors) && parsed.errors.length && !parsed.data) {
-      return { error: String((parsed.errors[0] || {}).message || 'Amazon gql query error') };
-    }
-    return { parsed };
+    return gqlReplayOutcome(replay, { acceptPartial: options.acceptPartial || null });
   },
 
   // Shared runner for the spec searches — the songs tab (/search/<q>/songs)
@@ -1343,8 +1341,16 @@ const amazonWebPlayer = {
         // deleted/private shape, which surfaces as "Playlist not found").
         const sendPlaylistQuery = async (body) => {
           if (win.isDestroyed()) return { error: 'search view closed' };
-          const out = await this.replayGql(win, entry, body);
+          // A community playlist (/user-playlists/) answers 294: complete
+          // data.playlist plus an error on a capabilities field we never
+          // read. Amazon's own page renders it, so the lookup does too.
+          const out = await this.replayGql(win, entry, body, { acceptPartial: playlistPartialIsUsable });
           if (out.error) return { error: out.error };
+          if (out.partial) {
+            const paths = (Array.isArray(out.parsed.errors) ? out.parsed.errors : [])
+              .map(e => (Array.isArray(e && e.path) ? e.path.join('.') : '?'));
+            console.log(`[Amazon] playlist partial answer (HTTP 294), using data.playlist; errors at: ${paths.join(', ') || 'none'}`);
+          }
           const parsed = out.parsed;
           if (parsed && Array.isArray(parsed.errors) && parsed.errors.length && !(parsed.data && parsed.data.playlist)) {
             return { error: String((parsed.errors[0] || {}).message || 'Amazon playlist query error') };

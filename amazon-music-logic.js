@@ -629,6 +629,53 @@ function amazonGqlFetchHeaders(headers) {
   return out;
 }
 
+// HTTP 294 is the gql server's PARTIAL-SUCCESS status: a resolver for one
+// field failed, the response carries `errors` for that path, and `data`
+// still holds everything else. It is not always a refusal. A community
+// playlist (/user-playlists/<id>) answers playlistDetail with 294 to Amazon's
+// own page, because playlist.capabilities.setOnDemand calls a collaborators
+// service that fails (500) for a playlist the user doesn't own, while
+// data.playlist (title, tracks, pageInfo) is complete, and the page renders
+// it (live-captured 2026-11-15). Other 294s carry no usable data: a Prime
+// account's MusicHomePage, and a home walk with firstLimit above 20. So a
+// 294 is accepted only by a flow that asks, and only when its own predicate
+// finds the data it needs (`acceptPartial(parsed)`); every other non-200 is
+// a failure carrying its status (the home flow reads that status).
+const GQL_PARTIAL_STATUS = 294;
+
+// The page-world replay's raw { status, text } (or { error }) -> { parsed }
+// or { error, status? }. Pure, so the status rules are unit-tested;
+// replayGql in amazon-web-player.js is the caller.
+function gqlReplayOutcome(replay, { acceptPartial = null } = {}) {
+  if (!replay || replay.error) return { error: (replay && replay.error) || 'Amazon gql query failed' };
+  const status = replay.status;
+  const failed = () => ({ error: `Amazon gql query failed (${status})`, status });
+  const partialAllowed = status === GQL_PARTIAL_STATUS && typeof acceptPartial === 'function';
+  if (status !== 200 && !partialAllowed) return failed();
+  let parsed = null;
+  try { parsed = JSON.parse(replay.text); } catch (e) { /* leave null */ }
+  if (status !== 200) {
+    // A partial answer the flow can't use (or that isn't JSON) is the plain
+    // failure, status and all.
+    let usable = false;
+    try { usable = !!(parsed && acceptPartial(parsed)); } catch (e) { usable = false; }
+    return usable ? { parsed, partial: true } : failed();
+  }
+  if (!parsed) return { error: 'Amazon gql response was not JSON' };
+  if (Array.isArray(parsed.errors) && parsed.errors.length && !parsed.data) {
+    return { error: String((parsed.errors[0] || {}).message || 'Amazon gql query error') };
+  }
+  return { parsed };
+}
+
+// The playlist flow's partial-answer predicate: data.playlist present, with
+// track edges where playlistEdgesFromGql finds them. A null playlist, or one
+// with no track rows block, is not a playlist we can import.
+function playlistPartialIsUsable(parsed) {
+  const data = parsed && parsed.data;
+  return !!(data && data.playlist && Array.isArray(playlistEdgesFromGql(data)));
+}
+
 // The widest imageType=PRIMARY image, else the widest image overall. The
 // playlist cover and the per-track art use the same pick.
 function gqlPrimaryImageUrl(images) {
@@ -1895,6 +1942,9 @@ module.exports = {
   amazonAlbumDetailCandidates,
   albumTracksConnectionIn,
   amazonGqlFetchHeaders,
+  GQL_PARTIAL_STATUS,
+  gqlReplayOutcome,
+  playlistPartialIsUsable,
   capturedOperationNames,
   searchTracksFromGql,
   albumFromGqlSearchNode,
