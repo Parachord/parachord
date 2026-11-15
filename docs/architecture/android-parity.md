@@ -106,6 +106,8 @@ Clobbering the cross-provider `syncedFrom` orphans the local from its real pull 
 
 4. **Post-push clear logic filters to `relevantMirrors` excluding the source provider** (see the Kotlin snippet above).
 
+**Auto-pull (2026-11).** Desktop now pulls a changed import on its own, as Android always has (see "Auto-pull" in [sync.md](sync.md)). Two differences stay, both desktop-only and needing nothing from Android: desktop records `syncedFrom.tracksFingerprint` to tell local edits apart (the playlist record never travels between clients, so Android doesn't read or write it), and desktop keeps a conflict for the person to settle where Android uses last write wins. Android's empty-answer guard in `pullPlaylist` is mirrored in `applyPulledTracks`.
+
 **Sync wizard / playlist-picker pre-check state**, if Android has one: seed the "checked" set from the union of saved `selectedPlaylistIds`, externalIds where any local has `syncedFrom.resolver == providerId`, and externalIds where any local has `syncedTo[providerId].externalId`. Don't seed only from the last-saved list — push-only mirrors that were never selected in the wizard will appear unchecked even though they're actively syncing.
 
 **Playlist data-model fields to preserve on every save:**
