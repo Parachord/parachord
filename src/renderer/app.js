@@ -2037,7 +2037,7 @@ const { ReasonBadge, shuffleupagusBadgeProps } = require('./components/reason-ba
 // memoized as before.
 const {
   ResolverCard, McpSettingsSection,
-  ScrobblerSettingsCard, FriendMiniPlaybar,
+  ScrobblerSettingsCard, FriendMiniPlaybar, SettingsSection,
 } = require('./components/settings-cards');
 // The Collection page (Track 2b state-domain split): a React.memo'd module
 // fed stable props, so it no longer re-renders on every Parachord setState.
@@ -41279,7 +41279,7 @@ React.createElement('div', {
                 // Bottom row: Dropdown + Category pills together
                 React.createElement('div', { className: 'flex items-center gap-3 flex-wrap' },
                   // Install status dropdown filter
-                  React.createElement(Select, { 'aria-label': 'Filter plug-ins', value: pluginsFilter, onChange: (_v, e) => setPluginsFilter(e.target.value), options: [{ value: 'all', label: 'All' }, { value: 'installed', label: 'Installed' }, { value: 'available', label: 'Available' }], style: { minWidth: '100px' } }),
+                  React.createElement(Select, { 'aria-label': 'Filter plug-ins', value: pluginsFilter, onChange: (_v, e) => setPluginsFilter(e.target.value), options: [{ value: 'all', label: 'All plug-ins' }, { value: 'installed', label: 'Installed' }, { value: 'available', label: 'Available' }], style: { minWidth: '120px' } }),
                   // Category filters: the app's filter chips (FilterChips); a
                   // category has no colour, so every chip is neutral.
                   React.createElement(FilterChips, {
@@ -41821,34 +41821,8 @@ React.createElement('div', {
               // Settings sections - refined
               React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '24px' } },
                 // Appearance Section
-                React.createElement('div', {
-                  style: {
-                    backgroundColor: 'var(--card-bg)',
-                    border: '1px solid var(--border-subtle)',
-                    borderRadius: '12px',
-                    padding: '24px',
-                    boxShadow: 'var(--card-shadow)'
-                  }
-                },
-                  React.createElement('div', { style: { marginBottom: '16px' } },
-                    React.createElement('h3', {
-                      style: {
-                        fontSize: '11px',
-                        fontWeight: '600',
-                        color: 'var(--text-tertiary)',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.08em'
-                      }
-                    }, 'Appearance'),
-                    React.createElement('p', {
-                      style: {
-                        fontSize: '12px',
-                        color: 'var(--text-tertiary)',
-                        marginTop: '4px'
-                      }
-                    }, 'Choose your preferred color theme')
-                  ),
-                  React.createElement('div', { style: { display: 'flex', gap: '8px' } },
+                React.createElement(SettingsSection, { title: 'Appearance', description: 'Choose your preferred color theme' },
+React.createElement('div', { style: { display: 'flex', gap: '8px' } },
                     // Light button
                     React.createElement('button', {
                       onClick: () => handleThemeChange('light'),
@@ -41915,37 +41889,10 @@ React.createElement('div', {
                       React.createElement('span', null, '\uD83D\uDCBB'),
                       'System'
                     )
-                  )
-                ),
+                  )),
                 // Cache Management Section - refined card
-                React.createElement('div', {
-                  style: {
-                    backgroundColor: 'var(--card-bg)',
-                    border: '1px solid var(--border-subtle)',
-                    borderRadius: '12px',
-                    padding: '24px',
-                    boxShadow: 'var(--card-shadow)'
-                  }
-                },
-                  React.createElement('div', { style: { marginBottom: '16px' } },
-                    React.createElement('h3', {
-                      style: {
-                        fontSize: '11px',
-                        fontWeight: '600',
-                        color: 'var(--text-tertiary)',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.08em'
-                      }
-                    }, 'Cache Management'),
-                    React.createElement('p', {
-                      style: {
-                        fontSize: '12px',
-                        color: 'var(--text-tertiary)',
-                        marginTop: '4px'
-                      }
-                    }, 'Clear cached data to free up space or fix display issues')
-                  ),
-                  React.createElement('p', {
+                React.createElement(SettingsSection, { title: 'Cache Management', description: 'Clear cached data to free up space or fix display issues' },
+React.createElement('p', {
                     style: {
                       fontSize: '13px',
                       color: 'var(--text-secondary)',
@@ -41953,7 +41900,7 @@ React.createElement('div', {
                       lineHeight: '1.6'
                     }
                   }, 'This will remove cached artist images, album art, and API responses. Loading may be slower temporarily while data is re-fetched.'),
-                  React.createElement(Button, { variant: 'destructive', size: 'sm', onClick: async () => {
+React.createElement(Button, { variant: 'destructive', size: 'sm', onClick: async () => {
                       // Clear all caches
                       artistImageCache.current = {};
                       albumArtCache.current = {};
@@ -41971,26 +41918,14 @@ React.createElement('div', {
                       }
 
                       showToast('Cache cleared');
-                    } }, React.createElement(Icons.Trash2, { className: 'w-4 h-4' }), 'Clear cache')
-                ),
+                    } }, React.createElement(Icons.Trash2, { className: 'w-4 h-4' }), 'Clear cache')),
 
                 // Playback Quality Section (global for Widevine/stream resolvers)
-                React.createElement('div', {
+                React.createElement(SettingsSection, {
                   key: 'playback-quality-section',
-                  style: {
-                    padding: '20px',
-                    backgroundColor: 'var(--hover-bg-default)',
-                    borderRadius: '12px'
-                  }
+                  title: 'Playback Quality',
+                  description: 'Amazon Music and Apple Music use these settings right now. Other services choose their own quality.'
                 },
-                  React.createElement('div', { style: { marginBottom: '16px' } },
-                    React.createElement('h3', {
-                      style: { fontSize: '15px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '4px' }
-                    }, 'Playback Quality'),
-                    React.createElement('p', {
-                      style: { fontSize: '12px', color: 'var(--text-secondary)' }
-                    }, 'Amazon Music and Apple Music use these settings right now. Other services choose their own quality.')
-                  ),
                   React.createElement(SettingRow, { label: 'Quality', hint: 'Apple Music has two levels: Data saver plays its lower bitrate, every other level its best. When Apple Music plays through macOS, the Music app’s quality setting applies instead.' },
 React.createElement(Select, { value: playbackQuality, onChange: (v) => setPlaybackQuality(v), options: [{ value: 'max', label: 'Max (best available, lossless where playable)' }, { value: 'high', label: 'High (up to 500 kbps)' }, { value: 'standard', label: 'Standard (up to 200 kbps)' }, { value: 'saver', label: 'Data saver (up to 100 kbps)' }] })),
                   React.createElement(SettingRow, { label: 'Adjust to your connection', hint: 'Amazon Music only. Lowers quality when your connection is slow, never above the level you chose.' },
@@ -42002,34 +41937,8 @@ React.createElement(Select, { value: playbackQuality, onChange: (v) => setPlayba
                 ),
 
                 // Volume Normalization Section - refined card
-                React.createElement('div', {
-                  style: {
-                    backgroundColor: 'var(--card-bg)',
-                    border: '1px solid var(--border-subtle)',
-                    borderRadius: '12px',
-                    padding: '24px',
-                    boxShadow: 'var(--card-shadow)'
-                  }
-                },
-                  React.createElement('div', { style: { marginBottom: '16px' } },
-                    React.createElement('h3', {
-                      style: {
-                        fontSize: '11px',
-                        fontWeight: '600',
-                        color: 'var(--text-tertiary)',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.08em'
-                      }
-                    }, 'Volume Normalization'),
-                    React.createElement('p', {
-                      style: {
-                        fontSize: '12px',
-                        color: 'var(--text-tertiary)',
-                        marginTop: '4px'
-                      }
-                    }, 'Balance loudness between different sources')
-                  ),
-                  React.createElement('p', {
+                React.createElement(SettingsSection, { title: 'Volume Normalization', description: 'Balance loudness between different sources' },
+React.createElement('p', {
                     style: {
                       fontSize: '13px',
                       color: 'var(--text-secondary)',
@@ -42037,9 +41946,7 @@ React.createElement(Select, { value: playbackQuality, onChange: (v) => setPlayba
                       lineHeight: '1.6'
                     }
                   }, 'Adjust each plug-in’s volume to balance loudness. Negative values reduce volume for louder sources.'),
-
-                  // Resolver volume offset sliders - only show enabled content resolvers
-                  React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px' } },
+React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px' } },
                     // Filter to only show content resolvers (have resolve capability) that are enabled
                     loadedResolvers
                       .filter(r => r.capabilities?.resolve && activeResolvers.includes(r.id))
@@ -42091,14 +41998,11 @@ React.createElement(Select, { value: playbackQuality, onChange: (v) => setPlayba
                         );
                       })
                   ),
-                  // Show message if no content resolvers are enabled
-                  loadedResolvers.filter(r => r.capabilities?.resolve && activeResolvers.includes(r.id)).length === 0 &&
+loadedResolvers.filter(r => r.capabilities?.resolve && activeResolvers.includes(r.id)).length === 0 &&
                     React.createElement('p', {
                       style: { fontSize: '13px', color: 'var(--text-tertiary)', fontStyle: 'italic', padding: '12px 0' }
                     }, 'No music services are on. Turn one on in Settings › Plug-Ins.'),
-
-                  // Reset button - refined
-                  React.createElement('div', { style: { marginTop: '24px', paddingTop: '20px', borderTop: '1px solid var(--border-subtle)' } },
+React.createElement('div', { style: { marginTop: '24px', paddingTop: '20px', borderTop: '1px solid var(--border-subtle)' } },
                     React.createElement(Button, { variant: 'secondary', size: 'sm', onClick: () => setResolverVolumeOffsets({
                         spotify: 0,
                         applemusic: 0,
@@ -42107,77 +42011,22 @@ React.createElement(Select, { value: playbackQuality, onChange: (v) => setPlayba
                         bandcamp: -3,
                         youtube: -6
                       }) }, React.createElement(Icons.RefreshCw, { className: 'w-4 h-4' }), 'Reset to defaults')
-                  )
-                ),
+                  )),
 
                 // Playback Behavior Section - refined card
-                React.createElement('div', {
-                  style: {
-                    backgroundColor: 'var(--card-bg)',
-                    border: '1px solid var(--border-subtle)',
-                    borderRadius: '12px',
-                    padding: '24px',
-                    boxShadow: 'var(--card-shadow)'
-                  }
-                },
-                  React.createElement('div', { style: { marginBottom: '16px' } },
-                    React.createElement('h3', {
-                      style: {
-                        fontSize: '11px',
-                        fontWeight: '600',
-                        color: 'var(--text-tertiary)',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.08em'
-                      }
-                    }, 'Playback Behavior'),
-                    React.createElement('p', {
-                      style: {
-                        fontSize: '12px',
-                        color: 'var(--text-tertiary)',
-                        marginTop: '4px'
-                      }
-                    }, 'Configure how external tracks are handled')
-                  ),
-                  // Skip external prompt toggle - refined
-                  React.createElement(SettingRow, { label: 'Auto-open external tracks', hint: 'Skip the confirmation prompt for Bandcamp, YouTube, etc.' },
+                React.createElement(SettingsSection, { title: 'Playback Behavior', description: 'Configure how external tracks are handled' },
+React.createElement(SettingRow, { label: 'Auto-open external tracks', hint: 'Skip the confirmation prompt for Bandcamp, YouTube, etc.' },
 React.createElement(Switch, { checked: skipExternalPrompt, onToggle: async () => {
                         const newValue = !skipExternalPrompt;
                         setSkipExternalPrompt(newValue);
                         if (window.electron?.store) {
                           await window.electron.store.set('skip_external_prompt', newValue);
                         }
-                      } })),
-                ),
+                      } }))),
 
                 // Media Keys Section
-                React.createElement('div', {
-                  style: {
-                    backgroundColor: 'var(--card-bg)',
-                    border: '1px solid var(--border-subtle)',
-                    borderRadius: '12px',
-                    padding: '24px',
-                    boxShadow: 'var(--card-shadow)'
-                  }
-                },
-                  React.createElement('div', { style: { marginBottom: '16px' } },
-                    React.createElement('h3', {
-                      style: {
-                        fontSize: '11px',
-                        fontWeight: '600',
-                        color: 'var(--text-tertiary)',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.08em'
-                      }
-                    }, 'Media Keys'),
-                    React.createElement('p', {
-                      style: {
-                        fontSize: '12px',
-                        color: 'var(--text-tertiary)',
-                        marginTop: '4px'
-                      }
-                    }, 'Control how Parachord responds to media keys')
-                  ),
-                  React.createElement('p', {
+                React.createElement(SettingsSection, { title: 'Media Keys', description: 'Control how Parachord responds to media keys' },
+React.createElement('p', {
                     style: {
                       fontSize: '13px',
                       color: 'var(--text-secondary)',
@@ -42185,8 +42034,7 @@ React.createElement(Switch, { checked: skipExternalPrompt, onToggle: async () =>
                       lineHeight: '1.6'
                     }
                   }, 'When using the Spotify plugin, Spotify also runs in the background and may capture media keys. Choose how Parachord should handle potential conflicts.'),
-                  // Radio options for media key mode
-                  React.createElement(RadioGroup, {
+React.createElement(RadioGroup, {
                     name: 'mediaKeyMode',
                     label: 'Media key handling',
                     value: mediaKeyMode,
@@ -42205,34 +42053,11 @@ React.createElement(Switch, { checked: skipExternalPrompt, onToggle: async () =>
                         }
                       }
                     },
-                  })
-                ),
+                  })),
 
                 // Discord Rich Presence Section
-                React.createElement('div', {
-                  style: {
-                    backgroundColor: 'var(--card-bg)',
-                    border: '1px solid var(--border-subtle)',
-                    borderRadius: '12px',
-                    padding: '24px',
-                    boxShadow: 'var(--card-shadow)'
-                  }
-                },
-                  React.createElement('div', { style: { marginBottom: '16px' } },
-                    React.createElement('h3', {
-                      style: {
-                        fontSize: '11px',
-                        fontWeight: '600',
-                        color: 'var(--text-tertiary)',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.08em'
-                      }
-                    }, 'Discord Presence'),
-                    React.createElement('p', {
-                      style: { fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '4px' }
-                    }, 'Show what you are playing on your Discord profile')
-                  ),
-                  React.createElement(SettingRow, { label: 'Share my now playing', hint: 'Needs the Discord desktop app open alongside Parachord.' },
+                React.createElement(SettingsSection, { title: 'Discord Presence', description: 'Show what you are playing on your Discord profile' },
+React.createElement(SettingRow, { label: 'Share my now playing', hint: 'Needs the Discord desktop app open alongside Parachord.' },
                     React.createElement(Switch, {
                       checked: discordPresenceEnabled,
                       onToggle: async () => {
@@ -42246,8 +42071,7 @@ React.createElement(Switch, { checked: skipExternalPrompt, onToggle: async () =>
                       }
                     })
                   ),
-                  // Connection state, straight from the main process.
-                  discordPresenceEnabled && (() => {
+discordPresenceEnabled && (() => {
                     const statusKey = discordPresenceState?.statusOverride
                       || discordPresenceState?.status
                       || 'connecting';
@@ -42270,41 +42094,18 @@ React.createElement(Switch, { checked: skipExternalPrompt, onToggle: async () =>
                       }, 'This build has no Discord Application id, so there is nothing to connect to yet.')
                     );
                   })(),
-                  React.createElement('p', {
+React.createElement('p', {
                     style: {
                       fontSize: '12px',
                       color: 'var(--text-tertiary)',
                       marginTop: '14px',
                       lineHeight: '1.6'
                     }
-                  }, 'Discord shows the track under "Listening to Parachord". The cover travels when it is an https image; local-only art falls back to the Parachord artwork. The presence is only up while something is actually playing: pausing clears it, resuming puts it back, and it is gone when the queue is cleared or Parachord closes. Discord itself must allow it: Settings → Activity Privacy → "Share your detected activities with others".'),
-                                  ),
+                  }, 'Discord shows the track under "Listening to Parachord". The cover travels when it is an https image; local-only art falls back to the Parachord artwork. The presence is only up while something is actually playing: pausing clears it, resuming puts it back, and it is gone when the queue is cleared or Parachord closes. Discord itself must allow it: Settings → Activity Privacy → "Share your detected activities with others".')),
 
                 // Local Server Port Section (parachord#958)
-                React.createElement('div', {
-                  style: {
-                    backgroundColor: 'var(--card-bg)',
-                    border: '1px solid var(--border-subtle)',
-                    borderRadius: '12px',
-                    padding: '24px',
-                    boxShadow: 'var(--card-shadow)'
-                  }
-                },
-                  React.createElement('div', { style: { marginBottom: '16px' } },
-                    React.createElement('h3', {
-                      style: {
-                        fontSize: '11px',
-                        fontWeight: '600',
-                        color: 'var(--text-tertiary)',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.08em'
-                      }
-                    }, 'Local Server Port'),
-                    React.createElement('p', {
-                      style: { fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '4px' }
-                    }, 'Receives Spotify and SoundCloud sign-in, and parachord:// links from Raycast or curl. Change it if another app already uses this port.')
-                  ),
-                  React.createElement(SettingRow, {
+                React.createElement(SettingsSection, { title: 'Local Server Port', description: 'Receives Spotify and SoundCloud sign-in, and parachord:// links from Raycast or curl. Change it if another app already uses this port.' },
+React.createElement(SettingRow, {
                     label: 'Port',
                     hint: authServerStatus?.error?.code === 'EADDRINUSE'
                       ? `Port ${authPort} is in use by another app, so sign-in is not working.`
@@ -42344,18 +42145,17 @@ React.createElement(Switch, { checked: skipExternalPrompt, onToggle: async () =>
                       React.createElement(Button, { type: 'submit', size: 'sm' }, 'Save')
                     )
                   ),
-                  authServerStatus && authServerStatus.configuredPort !== authServerStatus.port && React.createElement('p', {
+authServerStatus && authServerStatus.configuredPort !== authServerStatus.port && React.createElement('p', {
                     style: { fontSize: '12px', color: 'var(--text-warning)', marginTop: '12px' }
                   }, `Restart Parachord to switch to port ${authServerStatus.configuredPort}.`),
-                  React.createElement('p', {
+React.createElement('p', {
                     style: {
                       fontSize: '12px',
                       color: 'var(--text-tertiary)',
                       marginTop: '14px',
                       lineHeight: '1.6'
                     }
-                  }, 'After changing the port, add the new Redirect URI shown in the Spotify settings to your Spotify developer app, or Spotify sign-in will fail. SoundCloud\'s built-in sign-in only works on port 8888; on another port, use your own SoundCloud app credentials. Raycast and curl integrations need the new port too. Ports 1024 to 65535; 9876 is taken by the browser extension server.')
-                ),
+                  }, 'After changing the port, add the new Redirect URI shown in the Spotify settings to your Spotify developer app, or Spotify sign-in will fail. SoundCloud\'s built-in sign-in only works on port 8888; on another port, use your own SoundCloud app credentials. Raycast and curl integrations need the new port too. Ports 1024 to 65535; 9876 is taken by the browser extension server.')),
 
                 // Dialogs Section - Reset "Don't show again" preferences
                 React.createElement('div', {
@@ -42499,35 +42299,8 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                 ),
 
                 // Library Sync Section
-                React.createElement('div', {
-                  style: {
-                    backgroundColor: 'var(--card-bg)',
-                    border: '1px solid var(--border-subtle)',
-                    borderRadius: '12px',
-                    padding: '24px',
-                    boxShadow: 'var(--card-shadow)'
-                  }
-                },
-                  React.createElement('div', { style: { marginBottom: '16px' } },
-                    React.createElement('h3', {
-                      style: {
-                        fontSize: '11px',
-                        fontWeight: '600',
-                        color: 'var(--text-tertiary)',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.08em'
-                      }
-                    }, 'Library Sync'),
-                    React.createElement('p', {
-                      style: {
-                        fontSize: '12px',
-                        color: 'var(--text-tertiary)',
-                        marginTop: '4px'
-                      }
-                    }, 'Manage synced library data across connected providers')
-                  ),
-                  // Clean up duplicates description
-                  React.createElement('p', {
+                React.createElement(SettingsSection, { title: 'Library Sync', description: 'Manage synced library data across connected providers' },
+React.createElement('p', {
                     style: {
                       fontSize: '13px',
                       color: 'var(--text-secondary)',
@@ -42535,10 +42308,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                       lineHeight: '1.6'
                     }
                   }, 'Scan a connected service for duplicate playlists and orphaned local playlists. Unambiguous local playlists get re-linked to their matching remote copy first, then duplicates are removed — the copy your local is already linked to is kept (or the copy with the most tracks, if none are linked).'),
-                  // One row per synced service: its logo and name, then the
-                  // action (the shared Button). The buttons used to wrap into
-                  // a ragged two-and-one, in Title Case.
-                  React.createElement('div', { style: { display: 'flex', flexDirection: 'column' } },
+React.createElement('div', { style: { display: 'flex', flexDirection: 'column' } },
                     Object.entries(syncProviderConfig)
                       .filter(([pid]) => resolverSyncSettings[pid]?.enabled)
                       .map(([pid, config]) =>
@@ -42609,8 +42379,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                           )
                         )
                       )
-                  )
-                ),
+                  )),
 
                 // Claude Desktop Integration Section
                 React.createElement(McpSettingsSection),

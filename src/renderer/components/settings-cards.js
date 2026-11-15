@@ -638,7 +638,24 @@ const FriendMiniPlaybar = ({ track, getAlbumArt, onPlay, onContextMenu }) => {
   );
 };
 
+// A Settings section: the card (the card colour, a subtle border, the card
+// shadow) with its heading (small capitals; the words are written in Title
+// Case, as Settings headings are) and an optional line under it. Every
+// section of Settings › General is one (there was a copy per section, and
+// Playback Quality had drifted to a grey card with a large heading).
+function SettingsSection({ title, description, children, ...rest }) {
+  const e = React.createElement;
+  return e('div', Object.assign({
+    style: { backgroundColor: 'var(--card-bg)', border: '1px solid var(--border-subtle)', borderRadius: '12px', padding: '24px', boxShadow: 'var(--card-shadow)' },
+  }, rest),
+    e('div', { style: { marginBottom: '16px' } },
+      e('h3', { style: { fontSize: '11px', fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: 0 } }, title),
+      description && e('p', { style: { fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '4px', marginBottom: 0 } }, description)),
+    children);
+}
+
 module.exports = {
+  SettingsSection,
   ResolverCard,
   McpSettingsSection,
   ScrobblerSettingsCard,

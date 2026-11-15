@@ -33,6 +33,7 @@ const SHARED = {
   'sort-menu': ['SortMenu'],
   'states': ['EmptyState', 'ErrorState'],
   'reason-badge': ['ReasonBadge'],
+  'settings-cards': ['SettingsSection'],
 };
 
 test.each(Object.entries(SHARED))('%s: every shared export is exported and documented', (mod, names) => {

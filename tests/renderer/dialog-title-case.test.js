@@ -19,6 +19,9 @@ test('no Title Case titles', () => {
     for (const m of src.matchAll(/title: '([^'$]+)'/g)) {
       const t = m[1];
       if (SAMPLES.has(t)) continue;
+      // Settings section headings are Title Case (CLAUDE.md "Copy"); CSS
+      // draws them in capitals.
+      if (src.slice(Math.max(0, m.index - 30), m.index).endsWith('SettingsSection, { ')) continue;
       const words = t.replace(NAMES, 'x').split(/\s+/).slice(1);
       if (words.filter((w) => /^[A-Z][a-z]/.test(w)).length >= 2) hits.push(`${f}: ${t}`);
     }
