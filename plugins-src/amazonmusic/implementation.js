@@ -7,33 +7,36 @@
 // instance, pure: helpers and constants only — no I/O, no timers, no window;
 // per-instance state lives on `this`).
 //
-// ── The searches and the catalog run in the plugin (#1356 M5/M6) ─────────────
+// ── The searches, the catalog and the playlist import run in the plugin
+// (#1356 M5/M6/M7) ──────────────────────────────────────────────────────────
 // The spec-search runner family (the SpecSearchSeeMorePage capture-and-replay
 // flows: the track search, M5, plus the album search and the artist-image
-// lookup, M6) and the album-detail flow (lookupAlbum's candidate-ranking
-// replay) are the plugin's: they drive the ONE host web-session instance
-// (registered as 'amazon-music') through the window.electron.webSession
-// bridge — pageFetch replays the captured request from the page world,
-// load(url, {capture}) runs the chained page flow with the capture window
-// inside the load (the quiet-bounded returned captures replace the old
-// in-flow poll; our own replay traffic arrives as echo-flagged captures and
-// is never trusted), and state() supplies the facts the signed-in verdict
-// composes — and the session generation whose change (a sign-out the plugin
-// cannot see the event of) drops its session-scoped caches. The host-side
-// runner that used to serve the album/artist tabs is deleted; every helper
-// those flows use lives here (copies of the amazon-music-logic.js originals,
-// whose remaining copies serve the playlist import, recommendations and
-// dmls until their moves).
+// lookup, M6), the album-detail flow (lookupAlbum's candidate-ranking
+// replay) and the playlist import (M7 — the playlistDetail capture, the
+// verbatim replay and the token-driven pagination) are the plugin's: they
+// drive the ONE host web-session instance (registered as 'amazon-music')
+// through the window.electron.webSession bridge — pageFetch replays the
+// captured request from the page world, load(url, {capture}) runs the
+// chained page flow with the capture window inside the load (the
+// quiet-bounded returned captures replace the old in-flow poll; our own
+// replay traffic arrives as echo-flagged captures and is never trusted),
+// and state() supplies the facts the signed-in verdict composes — and the
+// session generation whose change (a sign-out the plugin cannot see the
+// event of) drops its session-scoped caches. The host-side runner that used
+// to serve the album/artist tabs and the host-side playlist import are
+// deleted; every helper those flows use lives here (copies of the
+// amazon-music-logic.js originals, whose remaining copies serve the
+// recommendations and dmls flows until their moves).
 module.exports = {
   // ── The plugin library (#1356) ────────────────────────────────────────────
   // Pure helpers and constants, evaluated once per resolver instance and
   // frozen by the loader. Every copy below mirrors its original in
   // amazon-music-logic.js / amazon-web-player.js. The copies whose flows
   // have moved (the track search in #1356 M5; the album search, album
-  // lookup and artist images in M6) are now the ONLY copy — the host's died
-  // with its flows. The rest still serve the host-side flows that have not
-  // moved (playlist import, recommendations, dmls); each copy notes which,
-  // and dies when its flow moves in.
+  // lookup and artist images in M6; the playlist import in M7) are now the
+  // ONLY copy — the host's died with its flows. The rest still serve the
+  // host-side flows that have not moved (recommendations, dmls); each copy
+  // notes which, and dies when its flow moves in.
   _lib: function () {
     // The session this plugin drives — the id main.js registered the ONE
     // host instance under (registerWebSession('amazon-music', …)). The
@@ -389,9 +392,10 @@ module.exports = {
       return out;
     }
 
-    // ── The track mapper (the host copy in amazon-music-logic.js is
-    // playlistTrackFromGqlEdge, shared with the playlist import that has not
-    // moved; it dies when that flow moves) ──────────────────────────────────
+    // ── The track mapper (shared by the spec search and the playlist import:
+    // both responses return the same Track entity. The host's twin copy,
+    // playlistTrackFromGqlEdge, died with the playlist import's move — this
+    // is the only one) ─────────────────────────────────────────────────
 
     function gqlPrimaryImageUrl(images) {
       const list = (Array.isArray(images) ? images : []).filter(i => i && i.url);
@@ -721,6 +725,187 @@ module.exports = {
       };
     }
 
+    // ── The playlist import (M7) ────────────────────────────────────────────
+    // The playlist page's own request, response and pagination (the shapes
+    // live-verified 2026-10 against a 977-track playlist; see
+    // docs/architecture/amazon-music.md, "Playlist import" — every sentence
+    // there is a requirement). These are the only copies — the host's died
+    // with the flow's move off amazon-web-player.js.
+
+    // A playlist page lives at /playlists/<id> (shared/brand playlists),
+    // /my/playlists/<id> (the user's own) or /user-playlists/<id> (the
+    // share-link shape for user-created playlists). The id is a long token —
+    // PP… (brand), a bare hex uuid, or a dashed uuid — not the 10-char ASIN
+    // a track uses (brand playlists use those too). The id class must accept
+    // dashes: a dashed-uuid id truncated at its first dash never matches the
+    // page's own playlistDetail request (variables.id), and the import times
+    // out into "Playlist not found".
+    function amazonPlaylistIdFromUrl(url) {
+      const m = String(url || '').match(/music\.amazon\.com\/(?:my\/)?(?:user-)?playlists\/([A-Za-z0-9-]+)/i);
+      return m ? m[1] : null;
+    }
+
+    // The page fetches its playlist via a persisted GraphQL query (APQ)
+    // against gql.music.amazon.com: {operationName: 'playlistDetail',
+    // variables: {id, firstLimit: 100, ...}, extensions: {persistedQuery:
+    // {sha256Hash}}}. The hash renumbers on every hornet redeploy, so nothing
+    // is hardcoded: the request the page itself made for OUR playlist is
+    // captured and replayed verbatim. Given the captured request bodies
+    // (strings), return the parsed playlistDetail request for our playlist id,
+    // or null when the page never made one (deleted / private / other
+    // region — or the operation was renamed).
+    function amazonPlaylistDetailRequest(bodies, playlistId) {
+      const wanted = String(playlistId || '').toLowerCase();
+      for (const raw of (Array.isArray(bodies) ? bodies : [])) {
+        let parsed;
+        try { parsed = JSON.parse(raw); } catch (e) { continue; }
+        const batch = Array.isArray(parsed) ? parsed : [parsed];
+        for (const req of batch) {
+          if (!req || req.operationName !== 'playlistDetail') continue;
+          const id = req.variables && req.variables.id;
+          if (!id) continue;
+          if (wanted && String(id).toLowerCase() !== wanted) continue;
+          return req;
+        }
+      }
+      return null;
+    }
+
+    // The gql response's data.playlist -> the lookupPlaylist result shape.
+    // Picks the cover (imageType PRIMARY, else the widest) and a best-effort
+    // owner. Returns null when data.playlist is null (deleted / private /
+    // other region). The rows map with the shared trackFromGqlEdge — the
+    // playlistDetail response returns the same Track entity the spec search
+    // does (album is shortTitle: the detail response has no full album
+    // title; the detail edges carry no images, so albumArt is null there).
+    function playlistFromGql(data) {
+      const playlist = data && data.playlist;
+      if (!playlist) return null;
+      const cover = gqlPrimaryImageUrl(playlist.images);
+      const curator = playlist.curator;
+      const owner = (curator && typeof curator === 'object' && curator.name) || (typeof curator === 'string' ? curator : null);
+      const tracks = (playlist.tracks && Array.isArray(playlist.tracks.edges))
+        ? playlist.tracks.edges.map(trackFromGqlEdge).filter(Boolean)
+        : [];
+      return {
+        id: playlist.id,
+        name: playlist.title || 'Amazon Music Playlist',
+        owner,
+        albumArt: cover,
+        trackCount: typeof playlist.trackCount === 'number' ? playlist.trackCount : tracks.length,
+        tracks
+      };
+    }
+
+    // The connection's pageInfo, when the response carries one. hasNextPage
+    // null = absent; endCursor null = absent. Returns null when there is no
+    // pageInfo at all.
+    function playlistPageInfoFromGql(data) {
+      const tracks = data && data.playlist && data.playlist.tracks;
+      const pageInfo = tracks && tracks.pageInfo;
+      if (!pageInfo || typeof pageInfo !== 'object') return null;
+      const endCursor = pageInfo.endCursor == null ? null : String(pageInfo.endCursor);
+      const hasNextPage = typeof pageInfo.hasNextPage === 'boolean' ? pageInfo.hasNextPage : null;
+      // token is the page's OWN continuation state (a composite base64
+      // blob) — the value the next request passes as afterCursor.
+      // Live-verified 2026-10: the token advances the pages; the Relay-style
+      // endCursor is a decoy the server ignores (it answers page 1 again),
+      // the dependent blob alone errors, and every other variable name is
+      // dropped. Only the composite token advances, page over page.
+      const token = typeof pageInfo.token === 'string' && pageInfo.token ? pageInfo.token : null;
+      return { hasNextPage, endCursor, token };
+    }
+
+    // The response's track edges. The playlistDetail envelope is
+    // data.playlist.tracks.edges; a continuation operation may answer with a
+    // different envelope, so fall back to a bounded scan for any edges[]
+    // whose nodes look like playlist rows (id + title).
+    function playlistEdgesFromGql(data) {
+      const tracks = data && data.playlist && data.playlist.tracks;
+      if (tracks && Array.isArray(tracks.edges)) return tracks.edges;
+      const looksLikeRow = (edges) =>
+        Array.isArray(edges) && edges.some(e => e && e.node && e.node.id && e.node.title);
+      const scan = (value, depth) => {
+        if (depth > 4 || !value || typeof value !== 'object') return null;
+        if (looksLikeRow(value.edges)) return value.edges;
+        for (const key of Object.keys(value)) {
+          const found = scan(value[key], depth + 1);
+          if (found) return found;
+        }
+        return null;
+      };
+      return scan(data, 0);
+    }
+
+    // Follow a playlist's own pagination to the end of the list. The gql
+    // server serves one page per request however high firstLimit is raised
+    // (100 rows observed at firstLimit 500), and the ONLY continuation it
+    // accepts is the response's pageInfo.token passed as the afterCursor
+    // variable — each response's own token drives the next page. Pure except
+    // the injected fetchPage (one gql page by token: { error } or { data })
+    // and now() (the time cap) — the poller pattern, so every stop condition
+    // is unit-testable.
+    //
+    // Progress is judged on RAW edges, never mapped tracks (review feedback
+    // on #1072): a page that is entirely delisted rows (node:null) maps to
+    // zero tracks but still advances — later pages can exist after a label
+    // pulls its catalog — and a duplicate track that happens to be first on
+    // two consecutive pages is not a repeated window. The per-edge cursor
+    // (position-encoded, present even on node:null edges) distinguishes a
+    // genuine advance from the same window served again.
+    //
+    // Returns { playlist, pages, stop }:
+    //   'complete'    — every row merged (tracks >= trackCount)
+    //   'exhausted'   — the server is out of pages (no token / hasNextPage false)
+    //   'page-error'  — fetchPage answered an error (a later page may exist)
+    //   'empty-page'  — a page with zero raw edges
+    //   'no-advance'  — a page starting at the same cursor as the previous one
+    //   'page-limit'  / 'time-limit' — the caps
+    //   'no-playlist' — the first page has no playlist (deleted/private/region)
+    // Every stop keeps what was merged; rows are appended, never deduped
+    // (cursor pages tile exactly, and a likes playlist CAN legitimately hold
+    // the same track at two positions).
+    async function paginatePlaylistTracks({ firstPageData, fetchPage, maxPages = 40, maxMs = 120000, now = Date.now, log = () => {} }) {
+      const playlist = playlistFromGql(firstPageData);
+      if (!playlist) return { playlist: null, pages: 0, stop: 'no-playlist' };
+      const firstEdges = playlistEdgesFromGql(firstPageData) || [];
+      let lastFirstCursor = firstEdges.length && firstEdges[0] && firstEdges[0].cursor != null
+        ? String(firstEdges[0].cursor) : null;
+      let pageInfo = playlistPageInfoFromGql(firstPageData);
+      const startedAt = now();
+      let pages = 0;
+      let stop = null;
+      while (!stop) {
+        if (playlist.tracks.length >= playlist.trackCount) { stop = 'complete'; break; }
+        if (!pageInfo || !pageInfo.token || pageInfo.hasNextPage === false) { stop = 'exhausted'; break; }
+        if (pages >= maxPages) { stop = 'page-limit'; break; }
+        if (now() - startedAt >= maxMs) { stop = 'time-limit'; break; }
+        pages += 1;
+        const page = await fetchPage(pageInfo.token);
+        if (!page || page.error) { stop = 'page-error'; break; }
+        const data = page.data;
+        const edges = (data && playlistEdgesFromGql(data)) || [];
+        if (!edges.length) { stop = 'empty-page'; break; }
+        const firstCursor = edges[0] && edges[0].cursor != null ? String(edges[0].cursor) : null;
+        if (firstCursor != null && firstCursor === lastFirstCursor) { stop = 'no-advance'; break; }
+        lastFirstCursor = firstCursor;
+        let mappedAdded = 0;
+        for (const edge of edges) {
+          const track = trackFromGqlEdge(edge);
+          if (track) {
+            playlist.tracks.push(track);
+            mappedAdded++;
+          }
+        }
+        const info = data ? playlistPageInfoFromGql(data) : null;
+        if (info) pageInfo = info;
+        const respCount = data && data.playlist && data.playlist.trackCount;
+        if (typeof respCount === 'number' && respCount > playlist.trackCount) playlist.trackCount = respCount;
+        log(`page ${pages}: +${edges.length} rows (+${mappedAdded} tracks, ${playlist.tracks.length}/${playlist.trackCount})`);
+      }
+      return { playlist, pages, stop };
+    }
+
     // ── The plan gate (#1220) ────────────────────────────────────────────────
     // The host's dmls gate (amazon-dmls.js) reads the same file for playback;
     // these copies feed the plugin's own search gate. UNLIMITED… →
@@ -780,6 +965,7 @@ module.exports = {
       createSearchBreaker,
       capturedOperationNames,
       amazonGqlFetchHeaders,
+      trackFromGqlEdge,
       searchTracksFromGql,
       searchAlbumsFromGql,
       albumFromGqlSearchNode,
@@ -790,6 +976,12 @@ module.exports = {
       albumDetailFromGql,
       albumTrackFromGqlEdge,
       assignDiscNumbers,
+      amazonPlaylistIdFromUrl,
+      amazonPlaylistDetailRequest,
+      playlistFromGql,
+      playlistPageInfoFromGql,
+      playlistEdgesFromGql,
+      paginatePlaylistTracks,
       amazonNormalizeArtistName,
       amazonPlanFromTier,
       tierFromConfig,
@@ -1112,9 +1304,9 @@ module.exports = {
       else console.warn('[Amazon] spec search captured a request that is not template-shaped; staying page-load-per-search');
     }
     let outcome;
-    // A busy gate is transient (a concurrent navigation — a host-side playlist
-    // import, an album/artist search or the session mint — holds the
-    // readers/writer gate between this flow's load and its own replay), not a
+    // A busy gate is transient (a concurrent navigation — the host's session
+    // mint or diagnostic capture, or a playlist import's pagination replay
+    // riding out this load — holds the readers/writer gate), not a
     // structural failure: the capture already succeeded. A short bounded
     // retry rides it out; anything still busy after it is not-ready.
     for (let attempt = 0; ; attempt++) {
@@ -1127,10 +1319,9 @@ module.exports = {
         outcome = { error: (error && error.message) || String(error) };
       }
       if (outcome.error !== 'busy') break;
-      // Back off within a ~12s bound: a real navigation (a host-side playlist
-      // import or the session mint) can hold the gate for its whole load
-      // budget, and the capture already succeeded — the flow is one gate away
-      // from its answer.
+      // Back off within a ~12s bound: a real navigation can hold the gate
+      // for its whole load budget, and the capture already succeeded — the
+      // flow is one gate away from its answer.
       const wait = attempt < 3 ? 400 : 1000;
       if (attempt >= 3 && (attempt - 3 + 1) * 1000 > 12000) break;
       await new Promise((resolve) => setTimeout(resolve, wait));
@@ -1825,8 +2016,9 @@ module.exports = {
       replayCount += 1;
       console.log('[Amazon] album replaying ' + request.operationName + ' via gql');
       let outcome;
-      // A busy gate (a concurrent host-side navigation — a playlist import or
-      // the session mint holds the readers/writer gate) is transient, not a
+      // A busy gate (a concurrent navigation — the host's session mint or
+      // diagnostic capture, or a playlist import's pagination replay riding
+      // out this load — holds the readers/writer gate) is transient, not a
       // failed candidate: the same short bounded retry the spec-search page
       // flow carries rides it out before the candidate is given up on.
       for (let attempt = 0; ; attempt++) {
@@ -2051,6 +2243,181 @@ module.exports = {
     // the next service.
     return null;
   },
+  // ── The playlist import (#1356 M7) ─────────────────────────────────────────
+  // The flow that used to live in amazon-web-player.js, moved onto the
+  // webSession bridge (the last main-process capture-and-replay flow besides
+  // recommendations). The playlist page has no ASINs in its DOM (rows are
+  // ListItem buttons whose track identity lives in React fiber props), so
+  // the import borrows the page's own GraphQL: the playlist page loads with
+  // the capture window inside the load, the playlistDetail request the page
+  // itself fires (a persisted query / APQ whose hash renumbers on every
+  // hornet redeploy — nothing is hardcoded) is replayed to the captured URL
+  // VERBATIM (the page's own firstLimit, never raised: the server serves
+  // one page per request however high the limit), and a playlist longer than
+  // one page continues via the response's own pageInfo.token passed as the
+  // afterCursor variable (the Relay-style endCursor is a decoy the server
+  // answers with page 1 for; every other variable name is dropped) — the
+  // pure paginatePlaylistTracks in _lib follows it, MAX_PAGES 40 / MAX_MS
+  // 120s, every stop keeping what was merged. NOT plan-gated, like the album
+  // catalog: the plan gate stops playback, not discovery — the old
+  // amazonmusic-lookup-playlist handler never read the plan either.
+
+  // The playlist-lookup entry: URL shape, sign-in check, then the load phase
+  // queued on the plugin's page-flow chain. The chain covers the LOAD only
+  // (serialized against the spec-search and album page flows, so one flow's
+  // navigation never interleaves another's); the replay + token-driven
+  // pagination after it run parallel-safe — pageFetch is reader traffic, and
+  // a busy gate (a concurrent navigation) is ridden out by the bounded
+  // backoff inside sendPlaylistQuery rather than truncating the import.
+  // A long import therefore does not hold the chain hostage (up to 120s of
+  // pagination behind it would starve every search queued on it).
+  lookupPlaylistFlow: async function (rawUrl) {
+    const lib = this.requireLib();
+    const ws = window.electron && window.electron.webSession;
+    if (!ws) throw lib.notReady('not-ready', 'Amazon webSession bridge not available');
+    if (typeof rawUrl !== 'string' || !/^https:\/\/music\.amazon\.com\//i.test(rawUrl)) {
+      throw lib.notReady('not-ready', 'Not an Amazon Music playlist URL');
+    }
+    const playlistId = lib.amazonPlaylistIdFromUrl(rawUrl);
+    if (!playlistId) {
+      throw lib.notReady('not-ready', 'Not an Amazon Music playlist URL');
+    }
+    if (!(await this.isSignedIn())) {
+      throw lib.notReady('not-signed-in', 'Sign in and choose an Amazon Music profile');
+    }
+    const load = (this._pageFlowChain || Promise.resolve())
+      .then(() => this.lookupPlaylistPageFlow(rawUrl, playlistId));
+    this._pageFlowChain = load.then(() => {}, () => {});
+    const page = await load;
+    if (!page) return null;
+    return this.playlistImportPages(page.entry, page.request);
+  },
+
+  // The load phase: load the playlist page through the bridge with the
+  // capture window inside the load, then match the page's own playlistDetail
+  // request on the RETURNED captures. The entries must have their headers
+  // (the host pairs bodies with headers by request id; onBeforeSendHeaders
+  // fires milliseconds after onBeforeRequest, so accepting the body alone
+  // races it) and the page's own capture is preferred over our echo (both
+  // match our playlist id; the echo's headers are session-aged).
+  lookupPlaylistPageFlow: async function (rawUrl, playlistId) {
+    const lib = this.requireLib();
+    const ws = window.electron && window.electron.webSession;
+    if (!ws) throw lib.notReady('not-ready', 'Amazon webSession bridge not available');
+    console.log('[Amazon] playlist lookup ' + rawUrl);
+    const load = await ws.load(lib.SESSION, rawUrl, {
+      capture: {
+        urlPrefixes: [lib.GQL_URL + '*'],
+        quietMs: lib.PAGE_CAPTURE_QUIET_MS,
+        budgetMs: lib.PAGE_CAPTURE_BUDGET_MS
+      }
+    });
+    if (!load || !load.success) {
+      // A refused load: 'load-failed' (the page never finished), 'superseded'
+      // (a sign-out cleared the session mid-load), 'not-ready' (no host
+      // window). Transient/wiring classes, never a miss and never a sign-in
+      // prompt.
+      throw lib.notReady((load && load.reason) || 'load-failed', (load && load.error) || 'Amazon playlist page did not finish loading');
+    }
+    // The after-load URL re-checks: a wall means the session died mid-flight
+    // (the page redirected to a sign-in wall while it loaded); a page that
+    // left music.amazon.com entirely cannot be replayed from.
+    if (lib.pageBlocksPlayback(load.finalUrl)) {
+      console.warn('[Amazon] playlist blocked: ' + load.finalUrl);
+      throw lib.notReady('not-signed-in', 'Choose an Amazon Music profile');
+    }
+    if (!lib.isAmazonMusicPage(load.finalUrl)) {
+      throw lib.notReady('not-ready', 'Amazon playlist page left music.amazon.com before replay');
+    }
+    const captured = (load.captures || []).filter(r => r.headers);
+    const isOurs = (r) => !!lib.amazonPlaylistDetailRequest([r.body], playlistId);
+    const entry = captured.find(r => !r.echo && isOurs(r)) || captured.find(isOurs);
+    if (!entry) {
+      // The page loaded but never asked for this playlist: deleted, private,
+      // not available in the user's territory — or hornet renamed the
+      // operation. Log what the page did fire so a rename reads as a rename
+      // instead of "every playlist is deleted".
+      const ops = lib.capturedOperationNames(captured.map(r => r.body)).join(', ') || 'none';
+      console.warn('[Amazon] playlist lookup: page never requested playlistDetail for ' + playlistId + '; gql operations seen: ' + ops);
+      return null;
+    }
+    const request = lib.amazonPlaylistDetailRequest([entry.body], playlistId);
+    if (!request || !request.variables || typeof request.variables !== 'object') {
+      throw lib.notReady('lookup-failed', 'Unexpected Amazon playlist query shape');
+    }
+    return { entry, request };
+  },
+
+  // The replay + token-driven pagination (parallel-safe after the load
+  // phase; see lookupPlaylistFlow). fetchPage replays the page's own request
+  // with the token as afterCursor — the token is the only continuation the
+  // server accepts (live-verified 2026-10 against a 977-track playlist; the
+  // endCursor decoy answers page 1, the dependent blob alone errors
+  // "Invalid sequence token", other variable names are dropped).
+  playlistImportPages: async function (entry, request) {
+    const lib = this.requireLib();
+    // The playlist-specific gql-error rule: errors are fatal unless
+    // data.playlist came back (a null playlist with errors is the
+    // deleted/private shape, which surfaces as "Playlist not found").
+    const sendPlaylistQuery = async (body) => {
+      let outcome;
+      // A busy gate (a concurrent navigation — another plugin page flow's
+      // load, the host's session mint) is transient, not a failed page: the
+      // same bounded backoff the other replay flows carry rides it out, so
+      // one navigation does not truncate the import.
+      for (let attempt = 0; ; attempt++) {
+        try {
+          outcome = await this.replayGql(entry, body);
+        } catch (error) {
+          // A HARD rejection — the invoke refused, the view destroyed
+          // mid-replay (signOut, host close) — reads like any other replay
+          // error here: a page that stops the pagination keeps what merged.
+          outcome = { error: (error && error.message) || String(error) };
+        }
+        if (outcome.error !== 'busy') break;
+        const wait = attempt < 3 ? 400 : 1000;
+        if (attempt >= 3 && (attempt - 3 + 1) * 1000 > 12000) break;
+        await new Promise((resolve) => setTimeout(resolve, wait));
+      }
+      if (outcome.error) return { error: outcome.error };
+      const parsed = outcome.parsed;
+      if (parsed && Array.isArray(parsed.errors) && parsed.errors.length && !(parsed.data && parsed.data.playlist)) {
+        return { error: String((parsed.errors[0] || {}).message || 'Amazon playlist query error') };
+      }
+      return { parsed };
+    };
+    console.log('[Amazon] playlist replaying playlistDetail via gql');
+    const outcome = await sendPlaylistQuery(request);
+    if (outcome.error) throw lib.notReady('lookup-failed', outcome.error);
+    const paginated = await lib.paginatePlaylistTracks({
+      firstPageData: outcome.parsed && outcome.parsed.data,
+      fetchPage: async (token) => {
+        const page = await sendPlaylistQuery({
+          ...request,
+          variables: { ...request.variables, afterCursor: token }
+        });
+        if (page.error) return { error: page.error };
+        return { data: page.parsed && page.parsed.data };
+      },
+      log: (m) => console.log('[Amazon] playlist ' + m)
+    });
+    const playlist = paginated.playlist;
+    if (playlist && playlist.trackCount > playlist.tracks.length) {
+      // A shortfall is only a truncation when pages were left unfetched
+      // (paginated.stop names why). When the server is out of pages
+      // ('exhausted'), the missing rows are edges with node:null — delisted
+      // tracks the response carries no data for at all; there is nothing to
+      // import, and the natural end is not a failure.
+      if (paginated.stop === 'exhausted') {
+        console.log('[Amazon] playlist complete: ' + playlist.tracks.length + ' of ' + playlist.trackCount + ' rows are importable (' + (playlist.trackCount - playlist.tracks.length) + ' unavailable on Amazon)');
+      } else {
+        console.warn('[Amazon] playlist lookup truncated: got ' + playlist.tracks.length + ' of ' + playlist.trackCount + ' tracks (' + paginated.stop + ')');
+      }
+    }
+    console.log('[Amazon] playlist lookup returning ' + (playlist ? playlist.tracks.length : 0) + ' tracks "' + (playlist ? playlist.name : '') + '"');
+    return playlist;
+  },
+
   lookupPlaylist: async function (url, config) {
     var mapResult = function (p) {
       return {
@@ -2058,7 +2425,7 @@ module.exports = {
         name: p.name || 'Amazon Music Playlist',
         owner: p.owner || null,
         albumArt: p.albumArt || null,
-        // The bridge reports the playlist's own trackCount; keep it so a
+        // The flow reports the playlist's own trackCount; keep it so a
         // server-truncated import is visible instead of silently complete.
         trackCount: p.trackCount || p.tracks.length,
         url: url,
@@ -2085,20 +2452,27 @@ module.exports = {
         result.playlist.tracks.length > 0
       );
     };
+    // The flow's throw → a result-shaped outcome, so the mapping below keeps
+    // the exact semantics the deleted IPC bridge result used to carry. An
+    // error with no reason class (a raw bridge rejection — the invoke itself
+    // broke) propagates to the outer catch instead, which answers null the
+    // way the old IPC rejection did.
+    var runFlow = async () => {
+      try {
+        var playlist = await this.lookupPlaylistFlow(url);
+        return { success: true, playlist: playlist };
+      } catch (error) {
+        if (!error || !error.reason) throw error;
+        return { success: false, reason: error.reason, error: error };
+      }
+    };
     var result = null;
     try {
-      if (!window.electron || !window.electron.amazonMusic) {
-        console.warn('Amazon Music: bridge not available');
+      if (!window.electron || !window.electron.webSession) {
+        console.warn('Amazon Music: webSession bridge not available');
         return null;
       }
-      result = await window.electron.amazonMusic.lookupPlaylist(url);
-      console.log(
-        '[Amazon] resolver playlist lookup',
-        url,
-        result && result.success,
-        result && result.reason,
-        result && result.playlist && result.playlist.tracks && result.playlist.tracks.length,
-      );
+      result = await runFlow();
       if (loaded(result)) return mapResult(result.playlist);
       // Only a sign-in problem is fixed by sign-in. load-failed is a network
       // condition and no-cdm is a playback problem - importing needs neither -
@@ -2113,7 +2487,7 @@ module.exports = {
           });
         }
         if (managed) {
-          result = await window.electron.amazonMusic.lookupPlaylist(url);
+          result = await runFlow();
           if (loaded(result)) return mapResult(result.playlist);
         }
         var err = new Error(
@@ -2132,7 +2506,12 @@ module.exports = {
     // Transient/wiring failures first: a stalled load must not be reported as a
     // missing playlist (or offered a sign-in prompt) - it is a network condition.
     var reason = result && result.reason;
-    if (reason === 'load-failed' || reason === 'no-cdm' || reason === 'not-ready') {
+    if (
+      reason === 'load-failed' ||
+      reason === 'no-cdm' ||
+      reason === 'not-ready' ||
+      reason === 'superseded'
+    ) {
       var transientErr = new Error(
         'Amazon Music is not reachable right now - check your connection and try again',
       );
@@ -2146,7 +2525,7 @@ module.exports = {
       );
     }
     if (result && result.error) {
-      throw new Error('Amazon Music playlist import failed: ' + result.error);
+      throw new Error('Amazon Music playlist import failed: ' + ((result.error && result.error.message) || result.error));
     }
     if (result && result.success) {
       throw new Error(

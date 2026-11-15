@@ -3906,22 +3906,6 @@ ipcMain.handle('amazonmusic-sign-out', async () => {
   }
 });
 
-ipcMain.handle('amazonmusic-lookup-playlist', async (event, { url } = {}) => {
-  console.log(`[Amazon] IPC playlist lookup ${url}`);
-  try {
-    const playlist = await amazonWebPlayer.lookupPlaylist(url);
-    console.log(`[Amazon] IPC playlist done ${(playlist && playlist.tracks && playlist.tracks.length) || 0} tracks`);
-    return { success: true, engine: 'web', playlist };
-  } catch (error) {
-    console.warn(`[Amazon] IPC playlist failed: ${error && error.reason} ${error && error.message}`);
-    return {
-      success: false,
-      reason: error.reason,
-      error: error.message
-    };
-  }
-});
-
 // The Recommendations page's Amazon provider: the home page sections
 // (getRecommendations) and a titled section's next page
 // (expandRecommendationSection — the see-more route). NOT plan-gated, like

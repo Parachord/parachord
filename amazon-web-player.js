@@ -1,7 +1,7 @@
 // In-app Amazon Music player.
 //
 // Parachord runs on castlabs Electron, which ships a Widevine CDM. Search
-// and playlist import run in a hidden WebContentsView on the main window
+// and the page flows run in a hidden WebContentsView on the main window
 // (0×0 when parked, a real size left of the window when in use), so they
 // cannot cover the app and there is no extra OS window. Sign-in is the only
 // real window — the user has to see Amazon's page to pick a profile.
@@ -47,17 +47,18 @@
 //                   matched on variables.searchText — never the operation
 //                   name — and parsed pure; a page that never searches is a
 //                   structural failure (not-ready), an empty edges list is a
-//                   real miss. (#1356 M5/M6: the track search AND the
-//                   album/artist catalog flows moved into
-//                   plugins-src/amazonmusic — they drive this same host
+//                   real miss. (#1356 M5/M6/M7: the track search, the
+//                   album/artist catalog flows AND the playlist import moved
+//                   into plugins-src/amazonmusic — they drive this same host
 //                   instance through the window.electron.webSession bridge;
-//                   the spec-search runner that used to live here is deleted.
-//                   This module's remaining page flows — playlist import,
-//                   recommendations, the diagnostic capture, the session
-//                   mint — still ride the same capture-and-replay pattern.)
+//                   the spec-search runner and the playlist import that used
+//                   to live here are deleted. This module's remaining page
+//                   flows — recommendations, the diagnostic capture, the
+//                   session mint — still ride the same capture-and-replay
+//                   pattern.)
 //   GraphQL         gql.music.amazon.com, persisted query (APQ) whose sha256Hash
 //                   renumbers per redeploy — capture the page's own
-//                   playlistDetail / SpecSearchSeeMorePage requests and
+//                   MusicHomePage / RecommenderSeeMorePage requests and
 //                   replay them, never hardcode it
 //   Quality store   metro module playbackController (audioQualitySettings),
 //                   captured by the window.__r trap in the preload; persisted
@@ -81,8 +82,6 @@ const {
   amazonNowPlayingMismatch,
   amazonAuthCookieState,
   cdmStatusHealthy,
-  amazonPlaylistIdFromUrl,
-  amazonPlaylistDetailRequest,
   makeSpecSearchTemplate,
   specTemplateIsFresh,
   recommendationsFromMusicHome,
@@ -94,10 +93,8 @@ const {
   amazonSeeMoreRequest,
   amazonSeeMorePageUrl,
   seeMoreBodyWithVars,
-  paginatePlaylistTracks,
   amazonGqlFetchHeaders,
   gqlReplayOutcome,
-  playlistPartialIsUsable,
   capturedOperationNames,
   isAmazonMusicPage,
   gqlCaptureSubject,
@@ -152,13 +149,6 @@ function notReady(reason, message) {
   err.reason = reason;
   return err;
 }
-
-// lookupPlaylist's capture poll: every PLAYLIST_CAPTURE_POLL_MS while the page
-// loads, then up to PLAYLIST_CAPTURE_POLLS_AFTER_LOAD more once it has loaded
-// (20s: boot + query is ~2-4s on a cold view). The load itself rides the
-// host's loadURLBudgeted (its budget is the host's loadTimeoutMs, 30s).
-const PLAYLIST_CAPTURE_POLL_MS = 500;
-const PLAYLIST_CAPTURE_POLLS_AFTER_LOAD = 40;
 
 // How long the search view stays on its last Amazon page after a flow
 // finishes is the host's idle-park fuse (warmMs, 30s — a gql template replay
@@ -497,7 +487,7 @@ const amazonWebPlayer = {
         let loadError = null;
         let headers = null;
         // The writer side of the host's gate, like every other load here
-        // (playlist imports, recommendations, the plugin's bridge loads): a
+        // (recommendations, the plugin's bridge loads): a
         // real navigation — this one included, which since the searches
         // moved into the plugin (#1356 M5/M6) is the mint's only path —
         // waits out in-flight pageFetch replays rather than tearing their
@@ -563,9 +553,9 @@ const amazonWebPlayer = {
   // request id) while a page loads and fires its own queries — the host's
   // registration for the gql host: a registration replaces any previous one
   // (webRequest has a single listener slot per method per session) and the
-  // search chain serializes searchTracks and lookupPlaylist, so the two
-  // flows never interleave captures. Returns { captured, detach } — detach
-  // in a finally so a stale capture does not keep buffering every later
+  // remaining page flows (recommendations, the diagnostic capture) never
+  // interleave captures on the host's load chain. Returns { captured, detach } —
+  // detach in a finally so a stale capture does not keep buffering every later
   // page's gql bodies into a dead array (identity-guarded: a superseded
   // registration's detach never clears a newer one's slot). Entries also
   // carry an `echo` flag (true when a pageFetch was in flight as the request
@@ -605,169 +595,6 @@ const amazonWebPlayer = {
     return gqlReplayOutcome(replay, { acceptPartial: options.acceptPartial || null });
   },
 
-
-
-  // Import a playlist page (music.amazon.com/playlists/<id>, /my/playlists/<id>
-  // or /user-playlists/<id>) via the page's own GraphQL. Hornet fetches the
-  // playlist with a persisted query (APQ) whose hash renumbers on every
-  // redeploy, so nothing is hardcoded: the playlist page is loaded in the
-  // (offscreen) search view, the gql request the page itself makes is captured
-  // (URL, headers, APQ hash), and that exact request is replayed from the page
-  // world verbatim. The server serves one page per request, so a longer
-  // playlist continues via the playlist's own continuation: each response's
-  // pageInfo.token (a composite continuation state) passed as the afterCursor
-  // variable. Runs on the search chain: lookupPlaylist and searchTracks share
-  // the search view, so they must not interleave page loads.
-  async lookupPlaylist(rawUrl) {
-    if (typeof rawUrl !== 'string' || !/^https:\/\/music\.amazon\.com\//i.test(rawUrl)) {
-      throw notReady('not-ready', 'Not an Amazon Music playlist URL');
-    }
-    const playlistId = amazonPlaylistIdFromUrl(rawUrl);
-    if (!playlistId) {
-      throw notReady('not-ready', 'Not an Amazon Music playlist URL');
-    }
-    if (!(await this.isSignedIn())) {
-      throw notReady('not-signed-in', 'Sign in and choose an Amazon Music profile');
-    }
-    return this.enqueueSearch(async () => {
-      // A fuse armed by an earlier flow must not blank the view mid-load
-      // (belt; the fuse's fire-time busy check is the suspenders).
-      this.cancelSearchViewPark();
-      const win = await this.ensureWindow();
-      const mode = await this.layoutSearch(this.searchView);
-      console.log(`[Amazon] playlist lookup mode=${mode} ${rawUrl}`);
-
-      // Capture gql requests (bodies from onBeforeRequest, headers paired by
-      // request id) while the page loads and fires playlistDetail itself.
-      const { captured, detach } = this.attachGqlCapture();
-      try {
-        // Don't wait for the whole page to finish loading: the page fires
-        // playlistDetail a few seconds in and can keep loading other things
-        // long after (did-finish-load waits for every subresource). The poll
-        // runs WHILE the page loads and takes the request the moment it is
-        // captured; one slow resource used to time the lookup out at 30s
-        // with the request already in hand (2026-11-15). The host load's own
-        // budget still bounds a page that never fires it: a load that fails
-        // or times out before the capture throws its load-failed error, and
-        // a load that finishes without it gets the poll window below.
-        // The entry must also have its headers (onBeforeSendHeaders fires
-        // milliseconds after onBeforeRequest — accepting the body alone
-        // races that) before we take it.
-        await webSession.beginNavigation();
-        let entry = null;
-        try {
-          const load = { done: false, error: null };
-          webSession.loadURLBudgeted(win, rawUrl).then(
-            () => { load.done = true; },
-            (error) => { load.done = true; load.error = error; }
-          );
-          for (let afterLoad = 0; afterLoad < PLAYLIST_CAPTURE_POLLS_AFTER_LOAD;) {
-            await new Promise(r => setTimeout(r, PLAYLIST_CAPTURE_POLL_MS));
-            const href = win.isDestroyed() ? '' : win.webContents.getURL();
-            if (pageBlocksPlayback(href)) {
-              console.warn(`[Amazon] playlist blocked: ${href}`);
-              throw notReady('not-signed-in', 'Choose an Amazon Music profile');
-            }
-            entry = captured.find(r => r.headers && amazonPlaylistDetailRequest([r.body], playlistId));
-            if (entry) {
-              if (!load.done) console.log('[Amazon] playlist request captured before the page finished loading; going ahead');
-              break;
-            }
-            if (load.error) throw load.error;
-            if (load.done) afterLoad++;
-          }
-        } finally {
-          // A page still loading after the capture is the same document (the
-          // SPA already booted and queried), so replays may run on it.
-          webSession.endNavigation();
-        }
-        if (!entry) {
-          // The page loaded but never asked for this playlist: deleted, private,
-          // not available in the user's territory — or hornet renamed the
-          // operation. Log what the page did fire so a rename reads as a rename
-          // instead of "every playlist is deleted".
-          console.warn(`[Amazon] playlist lookup: page never requested playlistDetail for ${playlistId}; gql operations seen: ${capturedOperationNames(captured.map(c => c.body)).join(', ') || 'none'}`);
-          return null;
-        }
-        const request = amazonPlaylistDetailRequest([entry.body], playlistId);
-        if (!request || !request.variables || typeof request.variables !== 'object') {
-          throw notReady('lookup-failed', 'Unexpected Amazon playlist query shape');
-        }
-
-        // Replay the page's own request, to the URL the page itself used,
-        // VERBATIM — the page's own firstLimit (100). Raising firstLimit is
-        // useless: the server serves one page per request however high the
-        // limit (100 rows observed at firstLimit 500), and the pagination
-        // block below follows the playlist's own continuation instead.
-        // The playlist-specific gql-error rule stays here: errors are fatal
-        // unless data.playlist came back (a null playlist with errors is the
-        // deleted/private shape, which surfaces as "Playlist not found").
-        const sendPlaylistQuery = async (body) => {
-          if (win.isDestroyed()) return { error: 'search view closed' };
-          // A community playlist (/user-playlists/) answers 294: complete
-          // data.playlist plus an error on a capabilities field we never
-          // read. Amazon's own page renders it, so the lookup does too.
-          const out = await this.replayGql(win, entry, body, { acceptPartial: playlistPartialIsUsable });
-          if (out.error) return { error: out.error };
-          if (out.partial) {
-            const paths = (Array.isArray(out.parsed.errors) ? out.parsed.errors : [])
-              .map(e => (Array.isArray(e && e.path) ? e.path.join('.') : '?'));
-            console.log(`[Amazon] playlist partial answer (HTTP 294), using data.playlist; errors at: ${paths.join(', ') || 'none'}`);
-          }
-          const parsed = out.parsed;
-          if (parsed && Array.isArray(parsed.errors) && parsed.errors.length && !(parsed.data && parsed.data.playlist)) {
-            return { error: String((parsed.errors[0] || {}).message || 'Amazon playlist query error') };
-          }
-          return { parsed };
-        };
-        const pageUrl = win.isDestroyed() ? '' : win.webContents.getURL();
-        if (!isAmazonMusicPage(pageUrl)) {
-          throw notReady('not-ready', 'Amazon playlist page left music.amazon.com before replay');
-        }
-        console.log(`[Amazon] playlist replaying playlistDetail via gql`);
-        const outcome = await sendPlaylistQuery(request);
-        if (outcome.error) throw notReady('lookup-failed', outcome.error);
-        // Follow the playlist's own pagination. The loop, its stop conditions
-        // and its raw-edge progress checks live in paginatePlaylistTracks
-        // (amazon-music-logic.js) where they are unit-tested — the poller
-        // pattern. fetchPage replays the page's own request with the token as
-        // afterCursor (live-verified 2026-10: the token is the only
-        // continuation the server accepts; the Relay-style endCursor is a
-        // decoy the server answers with page 1 for).
-        const paginated = await paginatePlaylistTracks({
-          firstPageData: outcome.parsed && outcome.parsed.data,
-          fetchPage: async (token) => {
-            if (win.isDestroyed()) return { error: 'search view closed' };
-            const page = await sendPlaylistQuery({
-              ...request,
-              variables: { ...request.variables, afterCursor: token }
-            });
-            if (page.error) return { error: page.error };
-            return { data: page.parsed && page.parsed.data };
-          },
-          log: (m) => console.log(`[Amazon] playlist ${m}`)
-        });
-        const playlist = paginated.playlist;
-        if (playlist && playlist.trackCount > playlist.tracks.length) {
-          // A shortfall is only a truncation when pages were left unfetched
-          // (paginated.stop names why). When the server is out of pages
-          // ('exhausted'), the missing rows are edges with node:null —
-          // delisted tracks the response carries no data for at all; there is
-          // nothing to import, and the natural end is not a failure.
-          if (paginated.stop === 'exhausted') {
-            console.log(`[Amazon] playlist complete: ${playlist.tracks.length} of ${playlist.trackCount} rows are importable (${playlist.trackCount - playlist.tracks.length} unavailable on Amazon)`);
-          } else {
-            console.warn(`[Amazon] playlist lookup truncated: got ${playlist.tracks.length} of ${playlist.trackCount} tracks (${paginated.stop})`);
-          }
-        }
-        console.log(`[Amazon] playlist lookup returning ${playlist ? playlist.tracks.length : 0} tracks "${playlist ? playlist.name : ''}"`);
-        return playlist;
-      } finally {
-        detach();
-        this.scheduleParkSearchView();
-      }
-    }, { lane: 'foreground' });
-  },
 
   // --- Recommendations (capabilities.recommendations in the plugin) --------
   // Two flows, both the capture-and-replay pattern everything here uses (the
@@ -882,8 +709,8 @@ const amazonWebPlayer = {
   // playlists section — but the playlists STRATEGY answers the see-more route
   // regardless (live-verified 20 playlist items, cursor "...20"). Its first
   // page carries the user's mixes ("My Discovery Mix", "My Recent Plays and
-  // More") plus curated playlists, all with /playlists/<id> URLs the resolver's
-  // lookupPlaylist already handles. So when the home page's sections carry no
+  // More") plus curated playlists, all with /playlists/<id> URLs the plugin's
+  // playlist import (#1356 M7) already handles. So when the home page's sections carry no
   // playlist items, pull the strategy's first page as a "Playlists for You"
   // section, with the route's continuation cursor riding on it (the plugin
   // contract's section.nextCursor) so the page's Load more paginates it.

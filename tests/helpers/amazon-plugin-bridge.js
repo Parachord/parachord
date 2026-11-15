@@ -180,6 +180,60 @@ function quietWindowEnd(loadMs, requests, quietMs, budgetMs) {
   return end === null ? hardEnd : end;
 }
 
+// One captured playlistDetail request body, as the bridge's returned captures
+// carry them — the request the playlist page itself fires for OUR playlist id
+// (a persisted query / APQ: operationName + variables + a hash, never an
+// inline query). playlistPages supplies the paginated responses.
+function amazonPlaylistDetailCapture(playlistId, { firstLimit = 100, hash = 'playlisthash', echo = false } = {}) {
+  return {
+    url: 'https://gql.music.amazon.com/',
+    method: 'POST',
+    echo,
+    body: JSON.stringify({
+      operationName: 'playlistDetail',
+      variables: { id: playlistId, firstLimit, isAuthenticated: true, includeCollaborators: false },
+      extensions: { clientLibrary: { name: '@apollo/client', version: '4.1.6' }, persistedQuery: { version: 1, sha256Hash: hash } }
+    }),
+    headers: { 'x-api-key': 'amzn1.application.x', 'csrf-token': 't', 'csrf-rnd': 'r', 'csrf-ts': '1', 'music-territory': 'US' }
+  };
+}
+
+// One playlistDetail response page for bridge-shaped tracks
+// ({ asin, title, artist, album, albumAsin?, duration?, albumArt? }): the
+// playlist envelope plus a pageInfo whose token is the ONLY continuation the
+// server honors (the Relay-style endCursor is the decoy the real server
+// answers with page 1 for). pageInfo(null) means no pageInfo at all.
+function amazonPlaylistPage(playlist, tracks, pageInfo) {
+  const page = {
+    data: {
+      playlist: {
+        id: playlist.id,
+        title: playlist.name,
+        trackCount: playlist.trackCount != null ? playlist.trackCount : tracks.length,
+        images: playlist.albumArt
+          ? [{ url: playlist.albumArt, width: 2400, height: 2400, imageType: 'PRIMARY' }]
+          : [],
+        curator: playlist.owner || null,
+        tracks: {
+          edges: tracks.map((t, i) => ({
+            cursor: t.cursor != null ? String(t.cursor) : `${i}:${t.cursorId || t.asin}`,
+            node: {
+              id: t.asin,
+              title: t.title,
+              duration: t.duration || 0,
+              contributingArtists: { edges: [{ role: 'PRIMARY', node: { name: t.artist } }] },
+              album: { id: t.albumAsin || null, shortTitle: t.album || 'Album' },
+              images: t.albumArt ? [{ url: t.albumArt, width: 500, height: 500, imageType: 'PRIMARY' }] : undefined
+            }
+          }))
+        }
+      }
+    }
+  };
+  if (pageInfo) page.data.playlist.tracks.pageInfo = pageInfo;
+  return page;
+}
+
 // A window.electron.webSession mock: the page flow's load answers the flow's
 // own searchText out of the URL (the URL builder put it there), and pageFetch
 // answers the configured envelope. opts:
@@ -316,6 +370,8 @@ module.exports = {
   amazonSpecEnvelope,
   amazonAlbumSpecEnvelope,
   amazonArtistSpecEnvelope,
+  amazonPlaylistDetailCapture,
+  amazonPlaylistPage,
   amazonWebSessionMock,
   captureSatisfiesDoneWhen
 };
