@@ -23,6 +23,8 @@
 const path = require('path');
 const Tombstones = require('../../sync-engine/tombstones');
 const { flagDeadMirrors } = require('../../sync-engine/dead-mirrors');
+const { detachMissingSources } = require('../../sync-engine/missing-sources');
+const { keepDroppedLinks } = require('../../sync-engine/playlist-save-guard');
 
 function registerSyncStartIpc({
   ipcMain,
@@ -784,28 +786,22 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
         }
       }
 
-      // Clear syncedFrom on local playlists whose remote counterpart no longer
-      // exists (e.g. deleted on the provider). This turns them into local-only
-      // playlists so the post-sync push logic will re-create them on the provider.
-      //
-      // Safety: only clear syncedFrom when the remote fetch looks complete.
-      // If the API returned far fewer playlists than we have locally synced from
-      // this provider, the response was likely truncated (rate limit, pagination
-      // failure) and clearing syncedFrom would cause mass duplicate creation.
-      const remoteExternalIds = new Set(remotePlaylists.map(p => p.externalId));
-      const localSyncedFromProvider = currentPlaylists.filter(p => p.syncedFrom?.resolver === providerId);
-      const missingCount = localSyncedFromProvider.filter(p => !remoteExternalIds.has(p.syncedFrom.externalId)).length;
-      const tooManyMissing = localSyncedFromProvider.length > 0 && missingCount > 3 && (missingCount / localSyncedFromProvider.length) > 0.3;
-
-      if (tooManyMissing) {
-        console.warn(`[Sync] Skipping syncedFrom clearing: ${missingCount}/${localSyncedFromProvider.length} playlists missing from ${providerId} remote response (likely incomplete API response)`);
+      // Playlists whose source is missing from the provider's list: one made in
+      // Parachord or copied from another service gives up syncedFrom so the
+      // push loops can create it again; one imported from this provider keeps
+      // it (the startup heal would restore it, and imports are never pushed
+      // back to their source). See sync-engine/missing-sources.js.
+      const missingSources = detachMissingSources(currentPlaylists, remotePlaylists, providerId);
+      if (missingSources.looksPartial) {
+        console.warn(`[Sync] Skipping syncedFrom clearing: ${missingSources.missingCount}/${missingSources.total} playlists missing from ${providerId} remote response (likely incomplete API response)`);
       } else {
-        for (let j = 0; j < currentPlaylists.length; j++) {
-          const p = currentPlaylists[j];
-          if (p.syncedFrom?.resolver === providerId && !remoteExternalIds.has(p.syncedFrom.externalId)) {
-            console.log(`[Sync] Playlist "${p.title}" no longer on ${providerId}, clearing syncedFrom so it can be re-pushed`);
-            currentPlaylists[j] = { ...p, syncedFrom: null };
-          }
+        // currentPlaylists is updated in place throughout this handler.
+        missingSources.playlists.forEach((p, j) => { currentPlaylists[j] = p; });
+        for (const p of missingSources.detached) {
+          console.log(`[Sync] Playlist "${p.title}" no longer on ${providerId}, clearing syncedFrom so it can be re-pushed`);
+        }
+        if (missingSources.kept.length > 0) {
+          console.log(`[Sync] ${missingSources.kept.length} playlist(s) imported from ${providerId} aren't in its playlist list; keeping their links (re-following one on ${providerId} brings it back): ${missingSources.kept.map(p => `"${p.title}"`).join(', ')}`);
         }
       }
 
@@ -818,7 +814,13 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
       });
 
       // Save playlists (including any that succeeded before a failure)
-      store.set('local_playlists', playlistsToSave);
+      // This pull read local_playlists when it started; a push loop may have
+      // written a link since. Keep any such link rather than saving over it
+      // (sync-engine/playlist-save-guard.js).
+      const latestById = new Map((store.get('local_playlists') || []).map(p => [p.id, p]));
+      const linksNow = getSyncLinks();
+      const guardedPlaylists = playlistsToSave.map(p => keepDroppedLinks(p, latestById.get(p.id), linksNow).playlist);
+      store.set('local_playlists', guardedPlaylists);
       results.playlists = { added: playlistsAdded, updated: playlistsUpdated, failed: playlistsFailed };
       console.log(`[Sync] Playlists synced: ${playlistsAdded} added, ${playlistsUpdated} with updates${playlistsFailed > 0 ? `, ${playlistsFailed} failed` : ''}`);
     }
