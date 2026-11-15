@@ -13,7 +13,7 @@ const { registerSyncStartIpc } = require('../../main-process/ipc/sync-start');
 
 const SPOTIFY_SCOPES = ['user-library-read', 'user-follow-read', 'playlist-read-private'];
 
-function makeHarness({ provider = {}, storeData = {}, spotifyToken = 'SP-TOK', generatedToken = 'AM-DEV', SyncEngineSyncGate = null } = {}) {
+function makeHarness({ provider = {}, storeData = {}, spotifyToken = 'SP-TOK', generatedToken = 'AM-DEV', SyncEngineSyncGate = null, syncLinks = () => ({}) } = {}) {
   const store = {
     data: { ...storeData },
     get(k) { return this.data[k]; },
@@ -59,7 +59,7 @@ function makeHarness({ provider = {}, storeData = {}, spotifyToken = 'SP-TOK', g
     ensureValidSpotifyToken: async () => spotifyToken,
     getGeneratedMusicKitToken: async () => generatedToken,
     writeCollectionAtomic: async (p, collection) => { calls.collectionWrites.push({ p, collection }); },
-    getSyncLinks: () => ({}),
+    getSyncLinks: syncLinks,
     legacyPlaylistSyncEnabled: () => true,
     getChannelOverride: () => undefined,
   });
@@ -256,6 +256,54 @@ describe('sync:start finds mirrors deleted on the provider (#1269)', () => {
     const asked = [];
     await run({ playlistStatus: async (id) => { asked.push(id); return { exists: false, isPublic: null }; } }, { syncPlaylists: false });
     expect(asked).toEqual([]);
+  });
+});
+
+describe('sync:start and playlists missing from the provider list', () => {
+  const LB = { 'scrobbler-config-listenbrainz': { userToken: 'LB-TOK' } };
+  const event = { sender: { send() {} } };
+  const from = (id, externalId) => ({ id, title: id, syncedFrom: { resolver: 'listenbrainz', externalId } });
+
+  test('an imported playlist keeps its link; a copied one gives it up', async () => {
+    const present = ['p1', 'p2', 'p3', 'p4'].map((x) => from(`listenbrainz-${x}`, x));
+    const harness = makeHarness({
+      provider: { fetchPlaylists: async () => ({ playlists: ['p1', 'p2', 'p3', 'p4'].map((externalId) => ({ externalId, name: externalId, tracks: [] })) }) },
+      storeData: { ...LB, local_playlists: [from('listenbrainz-gone', 'gone'), from('local-copy', 'gone2'), ...present] },
+    });
+    const result = await harness.handlers.get('sync:start')(event, 'listenbrainz', { settings: { syncPlaylists: true } });
+    expect(result.success).toBe(true);
+    const saved = harness.store.data.local_playlists;
+    expect(saved.find((p) => p.id === 'listenbrainz-gone').syncedFrom).toEqual({ resolver: 'listenbrainz', externalId: 'gone' });
+    expect(saved.find((p) => p.id === 'local-copy').syncedFrom).toBeNull();
+  });
+});
+
+describe('sync:start does not save over a link written during the pull', () => {
+  const LB = { 'scrobbler-config-listenbrainz': { userToken: 'LB-TOK' } };
+  const event = { sender: { send() {} } };
+
+  test('a push that links a playlist mid-pull keeps its link', async () => {
+    const links = {};
+    let harness;
+    harness = makeHarness({
+      provider: {
+        fetchPlaylists: async () => {
+          // Another provider's push loop links the hosted playlist meanwhile.
+          harness.store.data.local_playlists = harness.store.data.local_playlists.map((p) => (p.id === 'hosted-1'
+            ? { ...p, syncedTo: { ...p.syncedTo, applemusic: { externalId: 'p.1', syncedAt: 5 } } }
+            : p));
+          links['hosted-1'] = { applemusic: { externalId: 'p.1' } };
+          return { playlists: [] };
+        },
+      },
+      storeData: { ...LB, local_playlists: [{ id: 'hosted-1', title: 'Hosted', syncedTo: { spotify: { externalId: 'sp1' } } }] },
+      syncLinks: () => links,
+    });
+    const result = await harness.handlers.get('sync:start')(event, 'listenbrainz', { settings: { syncPlaylists: true } });
+    expect(result.success).toBe(true);
+    const saved = harness.store.data.local_playlists.find((p) => p.id === 'hosted-1');
+    expect(saved.syncedTo.applemusic).toEqual({ externalId: 'p.1', syncedAt: 5 });
+    expect(saved.syncedTo.spotify).toEqual({ externalId: 'sp1' });
   });
 });
 
