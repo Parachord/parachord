@@ -95,7 +95,7 @@ function RecommendationSongRowSkeleton({ index = 0 } = {}) {
     React.createElement('div', { className: 'flex-shrink-0 flex justify-end', style: { width: '50px' } },
       bar('h-3', { width: '32px', animationDelay: delay })),
     React.createElement('div', {
-      className: 'flex items-center gap-1 justify-end',
+      className: 'flex items-center gap-1 justify-start',
       style: { width: '140px', flexShrink: 0, minHeight: '24px' }
     },
       bar('w-5 h-5', { animationDelay: delay }),

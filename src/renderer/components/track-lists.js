@@ -91,7 +91,9 @@ function SourceIconButton({ resolver, confidence, dim, onClick, size = 20, quiet
 }
 
 // The source column: a shimmer while resolving, the icons when playable,
-// nothing when unplayable (the row is dimmed).
+// nothing when unplayable (the row is dimmed). The icons start at the
+// column's left edge, so they sit right up against the duration (right-
+// aligned in its column) whatever their number, and still line up row to row.
 function TrackSources({ state, shown, allResolvers, onPlay, width = 140 }) {
   const e = React.createElement;
   const icon = ({ resolverId, source, dim }) => {
@@ -100,7 +102,7 @@ function TrackSources({ state, shown, allResolvers, onPlay, width = 140 }) {
     return e(SourceIconButton, { key: resolverId, resolver, confidence: source && source.confidence, dim, onClick: () => onPlay(resolverId) });
   };
   return e('div', {
-    className: 'flex items-center gap-1 justify-end',
+    className: 'flex items-center gap-1 justify-start',
     style: { width: typeof width === 'number' ? `${width}px` : width, flexShrink: 0, minHeight: '24px', overflow: 'hidden' },
   },
   state === 'playable'
@@ -130,7 +132,7 @@ function TrackRowSkeleton({ index = 0, cells = [], duration = false, showArtist 
     cells.map((cell, i) => e('div', { key: cell.key || i, style: cell.width ? { width: cell.width, flexShrink: 0 } : { flex: cell.flex || '0.5 1 0', minWidth: 0 } },
       bar({ width: '60%', marginLeft: cell.align === 'right' ? 'auto' : 0, animationDelay: delay(40) }))),
     duration && e('div', { className: 'flex-shrink-0 flex justify-end', style: { width: '50px' } }, bar({ width: '32px', animationDelay: delay(45) })),
-    e('div', { className: 'flex items-center gap-1 justify-end', style: { width: typeof sourcesWidth === 'number' ? `${sourcesWidth}px` : sourcesWidth, flexShrink: 0, minHeight: '24px' } },
+    e('div', { className: 'flex items-center gap-1 justify-start', style: { width: typeof sourcesWidth === 'number' ? `${sourcesWidth}px` : sourcesWidth, flexShrink: 0, minHeight: '24px' } },
       e('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: delay(60) } }),
       e('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: delay(75) } })));
 }
@@ -467,9 +469,9 @@ const VirtualizedQueueList = React.memo(({
         className: 'text-right tabular-nums',
         style: { width: '50px', flexShrink: 0, fontSize: '12px', color: 'var(--on-dark-tertiary)' }
       }, !isLoading && !isError ? trackDurationLabel(track, { trackSources, resolverOrder }) : ''),
-      // Resolver icons
+      // Resolver icons, against the duration (as in the page lists)
       React.createElement('div', {
-        className: 'flex items-center gap-1 justify-end',
+        className: 'flex items-center gap-1 justify-start',
         style: { width: '140px', flexShrink: 0, minHeight: '20px' }
       },
         isError ?

@@ -374,11 +374,11 @@ React.createElement('button', {
                       // Duration skeleton
                       React.createElement('div', {
                         className: 'h-3 shimmer-light rounded animate-shimmer flex-shrink-0',
-                        style: { width: '50px', marginRight: '16px', animationDelay: '0.4s' }
+                        style: { width: '50px', animationDelay: '0.4s' }
                       }),
                       // Resolver icons skeleton
                       React.createElement('div', {
-                        className: 'flex items-center gap-1 justify-end',
+                        className: 'flex items-center gap-1 justify-start',
                         style: { width: '140px', flexShrink: 0 }
                       },
                         React.createElement('div', {

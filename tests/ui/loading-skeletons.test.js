@@ -517,3 +517,18 @@ describe('Critical Darlings and Concerts', () => {
     expect(app).toContain("'data-tooltip': reasonText || undefined,");
   });
 });
+
+describe('a track row\'s duration sits against its source icons', () => {
+  global.React = require('react');
+  const { renderToStaticMarkup } = require('react-dom/server');
+  const { TrackRow, TrackRowSkeleton } = require('../../src/renderer/components/track-lists');
+  test('the duration is right-aligned and the icons start at their column\'s left edge', () => {
+    const row = renderToStaticMarkup(React.createElement(TrackRow, {
+      track: { id: 'a', title: 'T', artist: 'A', duration: 200, sources: { spotify: { confidence: 1 } } }, number: '01', duration: true,
+      sources: { trackSources: {}, playbackResolvers: ['spotify'], resolverOrder: ['spotify'] },
+      allResolvers: [{ id: 'spotify', name: 'Spotify', color: '#1db954', play() {} }],
+    }));
+    expect(row).toMatch(/<span class="text-right tabular-nums flex-shrink-0"[^>]*>3:20<\/span><div class="flex items-center gap-1 justify-start"/);
+    expect(renderToStaticMarkup(React.createElement(TrackRowSkeleton, { duration: true }))).toContain('class="flex items-center gap-1 justify-start"');
+  });
+});
