@@ -148,6 +148,9 @@
       /* Z-index: the layers above the page. Dialogs are z-[60]; radius,
          type and motion are scales the design-drift ratchet enforces
          (CLAUDE.md "Design system"), not tokens. */
+      /* The scroll-edge shadow: above the content and sticky bars (10),
+         below dropdowns, so it never paints over an open menu. */
+      --z-scroll-edge: 15;
       --z-dropdown: 20;
       --z-popover: 9999;
       --z-toast: 99999;
@@ -735,7 +738,7 @@
     .source-quiet:hover, .source-quiet:focus-visible { opacity: 1; filter: none; }
 
     .scroll-edge::before {
-      content: ''; display: block; position: sticky; height: 0; z-index: 30;
+      content: ''; display: block; position: sticky; height: 0; z-index: var(--z-scroll-edge);
       /* The area's own padding (set by the listener): a sticky element stays
          inside it, so these pull the marker to the true top and sides. */
       top: calc(-1 * var(--edge-top, 0px));

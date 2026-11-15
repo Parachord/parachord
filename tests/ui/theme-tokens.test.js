@@ -149,3 +149,12 @@ test('no hard-coded success / warning / error hex in the page modules', () => {
     expect([f, fs5.readFileSync(path5.join(dir, f), 'utf8').match(status)]).toEqual([f, null]);
   }
 });
+
+test('the scroll-edge shadow sits below dropdowns, so it never paints over an open menu', () => {
+  const css = require('fs').readFileSync(require('path').join(__dirname, '../../index.html'), 'utf8');
+  const edge = Number((css.match(/--z-scroll-edge: (\d+);/) || [])[1]);
+  const dropdown = Number((css.match(/--z-dropdown: (\d+);/) || [])[1]);
+  expect(edge).toBeGreaterThan(10); // above sticky bars (z-10)
+  expect(edge).toBeLessThan(dropdown);
+  expect(css).toMatch(/\.scroll-edge::before \{\s*content: ''; display: block; position: sticky; height: 0; z-index: var\(--z-scroll-edge\);/);
+});
