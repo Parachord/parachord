@@ -1311,6 +1311,7 @@ const {
 } = require('./components/track-lists');
 const { sourceRowState } = require('./lib/visible-sources');
 const { countOf } = require('./lib/plural');
+const { movePriority, priorityMoves } = require('./lib/priority-order');
 const { timeAgo } = require('./lib/time-ago');
 const { userError, errorText } = require('./lib/error-copy');
 const { Play, Pause, SkipForward, SkipBack, Volume2, Search, List, Settings, Plus, Music, Radio, Users, Heart, X } = Icons;
@@ -6117,6 +6118,9 @@ const Parachord = () => {
     applemusic: PlaybackLimits.appleMusicPlaybackLimit({ checked: appleMusicAuthChecked, connected: appleMusicConnected })
   }), [amazonMusicStatus, appleMusicAuthChecked, appleMusicConnected]);
   const planBlockedResolverIds = useMemo(() => PlaybackLimits.planBlockedIds(playbackLimits), [playbackLimits]);
+  // For the plug-in tile menu's Raise / Lower Priority handler, registered once.
+  const planBlockedResolverIdsRef = useRef(planBlockedResolverIds);
+  planBlockedResolverIdsRef.current = planBlockedResolverIds;
   const playbackResolvers = useMemo(
     () => PlaybackLimits.playbackResolverIds(activeResolvers, planBlockedResolverIds),
     [activeResolvers, planBlockedResolverIds]
@@ -6258,6 +6262,8 @@ const Parachord = () => {
   // For the context-menu listener, which is registered once.
   const removeFromQueueRef = useRef(removeFromQueue);
   removeFromQueueRef.current = removeFromQueue;
+  const moveInQueueRef = useRef(moveInQueue);
+  moveInQueueRef.current = moveInQueue;
 
   // The one door for turning shuffle on or off on the current queue (#1319):
   // the playbar button, the app menu, MPRIS, parachord://control/shuffle and
@@ -12718,6 +12724,11 @@ ${trackListXml}
         console.log('Context menu action received:', data);
         if (data.action === 'uninstall') {
           await handleUninstallResolver(data.resolverId);
+        } else if (data.action === 'raise-priority' || data.action === 'lower-priority') {
+          // The tile's numbered neighbours only: the same set the drag
+          // reorders (active, not blocked by the account's plan).
+          const isNumbered = (id) => activeResolversRef.current.includes(id) && !planBlockedResolverIdsRef.current.includes(id);
+          setResolverOrder(prev => movePriority(prev, data.resolverId, data.action === 'raise-priority' ? -1 : 1, isNumbered));
         }
       });
     }
@@ -14957,6 +14968,9 @@ ${trackListXml}
         console.log('Track context menu action received:', data);
         if (data.action === 'remove-from-queue' && data.trackId) {
           removeFromQueueRef.current(data.trackId, data.queueIndex);
+        } else if (data.action === 'move-in-queue' && Number.isInteger(data.from) && Number.isInteger(data.to)) {
+          // Play Sooner / Play Later (#1386): drag's keyboard path.
+          moveInQueueRef.current(data.from, data.to);
         } else if (data.action === 'add-to-queue' && data.tracks) {
           // Build context from source info if available
           let context = null;
@@ -43770,7 +43784,8 @@ useEffect(() => {
                           onContextMenu: isActive ? (e) => {
                             e.preventDefault();
                             if (window.electron?.resolvers?.showContextMenu) {
-                              window.electron.resolvers.showContextMenu(resolver.id);
+                              const isNumbered = (id) => activeResolvers.includes(id) && !planBlockedResolverIds.includes(id);
+                              window.electron.resolvers.showContextMenu(resolver.id, priorityMoves(resolverOrder, resolver.id, isNumbered));
                             }
                           } : undefined
                         });

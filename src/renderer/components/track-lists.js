@@ -310,7 +310,7 @@ const VirtualizedQueueList = React.memo(({
       onContextMenu: (e) => {
         e.preventDefault();
         if (!isLoading && !isError && window.electron?.contextMenu?.showTrackMenu) {
-          window.showItemMenu({ type: 'track', track, inQueue: true, queueIndex: index });
+          window.showItemMenu({ type: 'track', track, inQueue: true, queueIndex: index, queueLength: queue.length });
         }
       },
       onActivate: () => {

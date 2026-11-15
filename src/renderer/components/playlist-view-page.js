@@ -1146,28 +1146,25 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                         }
                       }
                     },
-                      // Track number or drag handle in edit mode
+                      // Track number, or in edit mode the drag handle with
+                      // Move up / Move down for the keyboard and anyone who
+                      // can't drag (#1386).
                       playlistEditMode
                         ? React.createElement('span', {
-                            className: 'text-ink-tertiary flex-shrink-0 flex items-center justify-center',
-                            style: { pointerEvents: 'none', width: '32px' },
-                            title: 'Drag to reorder'
+                            className: 'text-ink-tertiary flex-shrink-0 flex items-center',
+                            style: { gap: '2px' }
                           },
-                          // Drag handle icon (hamburger/grip lines)
-                          React.createElement('svg', {
-                            className: 'w-4 h-4',
-                            fill: 'none',
-                            stroke: 'currentColor',
-                            viewBox: '0 0 24 24'
-                          },
-                            React.createElement('path', {
-                              strokeLinecap: 'round',
-                              strokeLinejoin: 'round',
-                              strokeWidth: 2,
-                              d: 'M4 8h16M4 16h16'
-                            })
+                            React.createElement(Button, {
+                              variant: 'icon', size: 'sm', 'aria-label': `Move ${track.title} up`, 'data-tooltip': 'Move up',
+                              disabled: index === 0,
+                              onClick: (e) => { e.stopPropagation(); moveInEditedPlaylist(index, index - 1); }
+                            }, React.createElement(Icons.ChevronUp, { className: 'w-4 h-4' })),
+                            React.createElement(Button, {
+                              variant: 'icon', size: 'sm', 'aria-label': `Move ${track.title} down`, 'data-tooltip': 'Move down',
+                              disabled: index >= displayTracks.length - 1,
+                              onClick: (e) => { e.stopPropagation(); moveInEditedPlaylist(index, index + 1); }
+                            }, React.createElement(Icons.ChevronDown, { className: 'w-4 h-4' }))
                           )
-                        )
                         : React.createElement('span', {
                             className: 'flex-shrink-0 text-right',
                             style: {

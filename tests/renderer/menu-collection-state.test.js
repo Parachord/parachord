@@ -62,10 +62,10 @@ describe('menu wiring', () => {
   });
 
   test('a queue row offers Remove from Queue for that row, and keeps Add to Queue', () => {
-    expect(read('src/renderer/components/track-lists.js')).toContain("window.showItemMenu({ type: 'track', track, inQueue: true, queueIndex: index });");
+    expect(read('src/renderer/components/track-lists.js')).toContain("window.showItemMenu({ type: 'track', track, inQueue: true, queueIndex: index, queueLength: queue.length });");
     expect(main).not.toContain("if (!(data.type === 'track' && data.inQueue))");
     expect(app).toContain('removeFromQueueRef.current(data.trackId, data.queueIndex);');
-    expect(main).toMatch(/if \(data\.type === 'track' && data\.inQueue\) \{\s*menuItems\.push\(\{\s*label: 'Remove from Queue',/);
+    expect(main).toMatch(/if \(data\.type === 'track' && data\.inQueue\) \{[\s\S]{0,1200}?menuItems\.push\(\{\s*label: 'Remove from Queue',/);
     expect(app).toContain("if (data.action === 'remove-from-queue' && data.trackId) {");
   });
 

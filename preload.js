@@ -254,7 +254,7 @@ contextBridge.exposeInMainWorld('electron', {
     pickFile: () => ipcRenderer.invoke('resolvers-pick-file'),
     install: (axeContent, filename) => ipcRenderer.invoke('resolvers-install', axeContent, filename),
     uninstall: (resolverId) => ipcRenderer.invoke('resolvers-uninstall', resolverId),
-    showContextMenu: (resolverId) => ipcRenderer.invoke('resolvers-show-context-menu', resolverId),
+    showContextMenu: (resolverId, opts) => ipcRenderer.invoke('resolvers-show-context-menu', resolverId, opts),
     onContextMenuAction: (callback) => {
       ipcRenderer.on('resolver-context-menu-action', (event, data) => {
         callback(data);

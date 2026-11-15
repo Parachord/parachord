@@ -4448,13 +4448,26 @@ ipcMain.handle('resolvers-uninstall', async (event, resolverId) => {
 });
 
 // Show context menu for resolver
-ipcMain.handle('resolvers-show-context-menu', async (event, resolverId) => {
+ipcMain.handle('resolvers-show-context-menu', async (event, resolverId, opts) => {
   console.log('=== Show Resolver Context Menu ===');
   console.log('  Resolver ID:', resolverId);
 
   const { Menu } = require('electron');
 
   const menu = Menu.buildFromTemplate([
+    // Raise / Lower Priority: the keyboard path for dragging the tiles
+    // (#1386). opts comes from the renderer: { canRaise, canLower }.
+    {
+      label: 'Raise Priority',
+      enabled: !!(opts && opts.canRaise),
+      click: () => safeSendToRenderer('resolver-context-menu-action', { action: 'raise-priority', resolverId })
+    },
+    {
+      label: 'Lower Priority',
+      enabled: !!(opts && opts.canLower),
+      click: () => safeSendToRenderer('resolver-context-menu-action', { action: 'lower-priority', resolverId })
+    },
+    { type: 'separator' },
     {
       label: 'Remove Plug-In',
       click: () => {
@@ -4561,6 +4574,22 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
   // A queue row's menu can remove that row (design audit bug 19). "Add to
   // Queue" stays: queueing a song again is a real choice.
   if (data.type === 'track' && data.inQueue) {
+    // Play Sooner / Play Later: reordering without a drag (#1386). The
+    // drawer shows the next track at the bottom, so "up"/"down" would
+    // read backwards; these name the effect instead.
+    if (Number.isInteger(data.queueIndex) && Number.isInteger(data.queueLength)) {
+      const i = data.queueIndex;
+      menuItems.push({
+        label: 'Play Sooner',
+        enabled: i > 0,
+        click: () => safeSendToRenderer('track-context-menu-action', { action: 'move-in-queue', from: i, to: i - 1 })
+      });
+      menuItems.push({
+        label: 'Play Later',
+        enabled: i < data.queueLength - 1,
+        click: () => safeSendToRenderer('track-context-menu-action', { action: 'move-in-queue', from: i, to: i + 1 })
+      });
+    }
     menuItems.push({
       label: 'Remove from Queue',
       click: () => {
