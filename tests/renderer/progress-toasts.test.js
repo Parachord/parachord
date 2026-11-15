@@ -49,3 +49,19 @@ test('each arrival path plays its animation', () => {
   // And no toast says it again.
   expect(app).not.toMatch(/showToast\(`[^`]*(pinned to sidebar|Following \$\{|Saved playlist: )/);
 });
+
+// A Play / Add to queue that has to fetch an album's tracks first uses what
+// the fetch returns. Reading prefetchedReleases after awaiting it read the
+// render before the fetch, so Pop of the Tops (Charts) and Critics Picks
+// albums only played on a second click.
+test('album actions play what the fetch returned, not the pre-fetch render', () => {
+  const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  const page = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/artist-page.js'), 'utf8');
+  for (const src of [app, page]) {
+    expect(src).not.toMatch(/await prefetch\w+\([^)]*\);\s*\n\s*(?:let |const )?\w+ = prefetchedReleases(?:Ref\.current)?\[/);
+  }
+  expect(app).toContain('const tracks = await prefetchChartsTracks(item);');
+  expect(app).toMatch(/const prefetchChartsTracks = \(album\) => sharedReleasePrefetch\(album\.id,/);
+  expect(app).toMatch(/const prefetchCriticsPicksTracks = \(album\) => sharedReleasePrefetch\(album\.id,/);
+  expect(page).toContain('const newPrefetched = { tracks: await prefetchReleaseTracks(rel, currentArtist) };');
+});

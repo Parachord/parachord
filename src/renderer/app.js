@@ -21560,14 +21560,18 @@ ${trackListXml}
   };
 
   // Prefetch release tracks on hover (for context menu "Add All to Queue")
+  // Resolves to the tracks (null when there are none or it's the open
+  // album), so a click that waited on it can play them without reading a
+  // render that predates the fetch.
   const prefetchReleaseTracks = async (release, artist) => {
-    // Skip if already prefetched or currently loaded
-    if (prefetchedReleases[release.id] || currentRelease?.id === release.id) {
-      return;
+    const have = prefetchedReleasesRef.current[release.id]?.tracks || prefetchedReleases[release.id]?.tracks;
+    if (have?.length) return have;
+    if (currentRelease?.id === release.id) {
+      return null;
     }
     // An artist-page card built from a service (spotify-…, lastfm-…) has an
     // id MusicBrainz will never know: don't spend a MusicBrainz slot on it.
-    if (!isMusicBrainzId(release.id)) return;
+    if (!isMusicBrainzId(release.id)) return null;
 
     try {
       console.log('🔍 Prefetching tracks for:', release.title);
@@ -21585,7 +21589,7 @@ ${trackListXml}
       });
       if (prefetchedEdition?.kind === 'catalog' && prefetchedEdition.resolverId && prefetchedEdition.url) {
         const found = await lookupAlbumEditionCached(prefetchedEdition.resolverId, prefetchedEdition.url);
-        if (!found) return;
+        if (!found) return null;
         // The same shape every catalog track list takes (disc and track
         // order, the entries' fields), via the shared conversion.
         const editionRelease = catalogAlbumToRelease(found.album, {
@@ -21609,14 +21613,14 @@ ${trackListXml}
           [release.id]: { tracks, title: release.title, albumArt: release.albumArt, artist: artist?.name }
         }));
         console.log(`✅ Prefetched ${tracks.length} tracks (picked edition) for ${release.title}`);
-        return;
+        return tracks;
       }
       let releaseId = release.id;
       const releaseDetailsResponse = await releaseLookupRef.current.loadRelease({
         id: (prefetchedEdition?.kind === 'mb' && prefetchedEdition.releaseId) || release.id,
         isReleaseGroup: (prefetchedEdition?.kind === 'mb' && prefetchedEdition.releaseId) ? false : release.isReleaseGroup
       }, bgFetch);
-      if (!releaseDetailsResponse.ok) return;
+      if (!releaseDetailsResponse.ok) return null;
 
       // It was a release group: remember the pick for openers by name
       if (releaseDetailsResponse.releaseId && releaseDetailsResponse.releaseId !== release.id) {
@@ -21628,7 +21632,7 @@ ${trackListXml}
         });
       }
 
-      if (!releaseDetailsResponse.ok) return;
+      if (!releaseDetailsResponse.ok) return null;
       releaseId = releaseDetailsResponse.releaseId || releaseId;
 
       const releaseData = await releaseDetailsResponse.json();
@@ -21668,8 +21672,10 @@ ${trackListXml}
       }));
 
       console.log(`✅ Prefetched ${tracks.length} tracks for ${release.title}`);
+      return tracks;
     } catch (error) {
       console.error('Error prefetching release tracks:', error);
+      return null;
     }
   };
 
@@ -26603,7 +26609,19 @@ ${tracks}
   // card: the Fresh Drops / charts scroll stutter.
   const HOVER_PREFETCH_DWELL_MS = 250;
   const hoverPrefetchTimerRef = useRef(null);
-  const prefetchInFlightRef = useRef(new Set());
+  // id -> the running fetch's promise (it resolves to the tracks)
+  const prefetchInFlightRef = useRef(new Map());
+  // One fetch per album id: the tracks already prefetched, else the fetch
+  // already running, else a new one (run resolves to the tracks or null).
+  const sharedReleasePrefetch = (id, run) => {
+    const have = prefetchedReleasesRef.current[id]?.tracks || prefetchedReleases[id]?.tracks;
+    if (have?.length) return Promise.resolve(have);
+    const running = prefetchInFlightRef.current.get(id);
+    if (running) return running;
+    const p = Promise.resolve().then(run).finally(() => prefetchInFlightRef.current.delete(id));
+    prefetchInFlightRef.current.set(id, p);
+    return p;
+  };
   const scheduleHoverPrefetch = (album) => {
     cancelHoverPrefetch();
     if (!album || prefetchedReleases[album.id] || prefetchInFlightRef.current.has(album.id)) return;
@@ -26628,14 +26646,12 @@ ${tracks}
     }
   };
 
-  const prefetchChartsTracks = async (album) => {
-    // Skip if already prefetched, or already being fetched (the state check
-    // alone is stale until the next render, so quick re-hovers double-fetched)
-    if (prefetchedReleases[album.id] || prefetchInFlightRef.current.has(album.id)) {
-      return;
-    }
-    prefetchInFlightRef.current.add(album.id);
-
+  // Resolves to the album's tracks (null if MusicBrainz has none), so a
+  // click can play them: a caller that awaited this and then read
+  // prefetchedReleases read the render before the fetch, found nothing, and
+  // the album only played on a second click. A fetch already running (a
+  // hover prefetch) is joined, not skipped.
+  const prefetchChartsTracks = (album) => sharedReleasePrefetch(album.id, async () => {
     try {
       // Background lane of the MusicBrainz limiter: a prefetch must never make
       // a click's lookup wait behind it (two requests per hovered card did).
@@ -26646,17 +26662,17 @@ ${tracks}
         { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
       );
 
-      if (!mbResponse.ok) return;
+      if (!mbResponse.ok) return null;
 
       const mbData = await mbResponse.json();
-      if (!mbData.releases || mbData.releases.length === 0) return;
+      if (!mbData.releases || mbData.releases.length === 0) return null;
 
       const releaseId = mbData.releases[0].id;
 
       // Fetch release details with tracks
       const releaseDetailsResponse = await fetchReleaseDetails(releaseId, bgFetch);
 
-      if (!releaseDetailsResponse.ok) return;
+      if (!releaseDetailsResponse.ok) return null;
 
       const releaseData = await releaseDetailsResponse.json();
       const tracks = [];
@@ -26683,12 +26699,12 @@ ${tracks}
           }
         }));
       }
+      return tracks.length > 0 ? tracks : null;
     } catch (error) {
       // Silent fail for prefetch
-    } finally {
-      prefetchInFlightRef.current.delete(album.id);
+      return null;
     }
-  };
+  });
 
   // Add all tracks from a Charts album to the queue
   const addChartsToQueue = async (album) => {
@@ -31973,12 +31989,8 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   });
 
   // Prefetch Critic's Picks album tracks on hover (for Add to Queue)
-  const prefetchCriticsPicksTracks = async (album) => {
-    // Skip if already prefetched
-    if (prefetchedReleases[album.id]) {
-      return;
-    }
-
+  // Resolves to the tracks, like prefetchChartsTracks (sharedReleasePrefetch).
+  const prefetchCriticsPicksTracks = (album) => sharedReleasePrefetch(album.id, async () => {
     try {
       console.log('🔍 Prefetching Critic\'s Pick tracks for:', album.title);
 
@@ -31991,17 +32003,17 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
       );
 
-      if (!mbResponse.ok) return;
+      if (!mbResponse.ok) return null;
 
       const mbData = await mbResponse.json();
-      if (!mbData.releases || mbData.releases.length === 0) return;
+      if (!mbData.releases || mbData.releases.length === 0) return null;
 
       const releaseId = mbData.releases[0].id;
 
       // Fetch release details with tracks
       const releaseDetailsResponse = await fetchReleaseDetails(releaseId, bgFetch);
 
-      if (!releaseDetailsResponse.ok) return;
+      if (!releaseDetailsResponse.ok) return null;
 
       const releaseData = await releaseDetailsResponse.json();
 
@@ -32040,10 +32052,12 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       }));
 
       console.log(`✅ Prefetched ${tracks.length} tracks for ${album.title}`);
+      return tracks.length > 0 ? tracks : null;
     } catch (error) {
       console.error('Error prefetching Critic\'s Pick tracks:', error);
+      return null;
     }
-  };
+  });
 
   // Add Critic's Picks album to queue
   const addCriticsPicksToQueue = async (album) => {
@@ -32058,10 +32072,9 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     }
 
     // Otherwise, fetch and add
-    await prefetchCriticsPicksTracks(album);
-    const newPrefetched = prefetchedReleases[album.id];
-    if (newPrefetched?.tracks?.length > 0) {
-      addToQueue(newPrefetched.tracks, context);
+    const tracks = await prefetchCriticsPicksTracks(album);
+    if (tracks?.length > 0) {
+      addToQueue(tracks, context);
     }
   };
 
@@ -38941,11 +38954,9 @@ useEffect(() => {
                         onClick: async (e) => {
                           e.stopPropagation();
                           setTrackLoading(true);
-                          let tracks = prefetchedReleases[item.id]?.tracks;
-                          if (!tracks?.length) {
-                            await prefetchChartsTracks(item);
-                            tracks = prefetchedReleases[item.id]?.tracks;
-                          }
+                          // The fetch's own result: prefetchedReleases here is
+                          // the render before it (a second click was needed).
+                          const tracks = await prefetchChartsTracks(item);
                           if (tracks?.length > 0) {
                             const context = { type: 'album', id: item.id, name: item.title, artist: item.artist };
                             const [firstTrack, ...remainingTracks] = tracks;
@@ -40002,11 +40013,7 @@ useEffect(() => {
                       onClick: async (e) => {
                         e.stopPropagation();
                         setTrackLoading(true);
-                        let tracks = prefetchedReleases[album.id]?.tracks;
-                        if (!tracks?.length) {
-                          await prefetchCriticsPicksTracks(album);
-                          tracks = prefetchedReleases[album.id]?.tracks;
-                        }
+                        const tracks = await prefetchCriticsPicksTracks(album);
                         if (tracks?.length > 0) {
                           const context = { type: 'album', id: album.id, name: album.title, artist: album.artist };
                           const [firstTrack, ...remainingTracks] = tracks;
