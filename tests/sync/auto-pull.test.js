@@ -14,6 +14,8 @@ const {
   keepEditsMadeDuringPull,
   seedTracksFingerprint,
   UNKNOWN_FINGERPRINT,
+  shouldPushToSource,
+  recordPushToSource,
 } = require('../../sync-engine/auto-pull');
 
 const imported = (over = {}) => ({
@@ -255,5 +257,75 @@ describe('seedTracksFingerprint (imports from before the fingerprint)', () => {
     expect(seedTracksFingerprint(other, 'applemusic')).toBe(other);
     const notImported = { id: 'p', tracks: [] };
     expect(seedTracksFingerprint(notImported, 'spotify')).toBe(notImported);
+  });
+});
+
+describe('shouldPushToSource (the push loop sending edits back to the playlist\'s own source)', () => {
+  const OLD = [{ title: 'Old', artist: 'A' }];
+  const NEW = [{ title: 'New', artist: 'B' }];
+  const agreed = (over = {}) => imported({
+    tracks: OLD,
+    syncedFrom: { resolver: 'listenbrainz', externalId: 'mbid', snapshotId: 's1', tracksFingerprint: tracksFingerprint(OLD) },
+    syncSources: { listenbrainz: { syncedAt: 1000 } },
+    ...over,
+  });
+
+  test('only for the playlist\'s own source', () => {
+    expect(shouldPushToSource(agreed({ tracks: NEW }), 'spotify')).toBe(false);
+  });
+
+  test('a real edit is pushed, even after unchanged syncs moved syncedAt and the flag was cleared', () => {
+    expect(shouldPushToSource(agreed({ tracks: NEW, locallyModified: false, lastModified: 500, syncSources: { listenbrainz: { syncedAt: 9000 } } }), 'listenbrainz')).toBe(true);
+  });
+
+  test('a pull-induced flag with matching tracks is not pushed', () => {
+    expect(shouldPushToSource(agreed({ locallyModified: true, lastModified: 5000 }), 'listenbrainz')).toBe(false);
+  });
+
+  test('a pending conflict is never pushed: the person picks on the playlist page', () => {
+    expect(shouldPushToSource(agreed({ tracks: NEW, hasUpdates: true }), 'listenbrainz')).toBe(false);
+  });
+
+  test('an unknown seed falls back to the old rule (no burst of pushes after upgrade)', () => {
+    const seeded = agreed({ syncedFrom: { resolver: 'listenbrainz', externalId: 'mbid', tracksFingerprint: UNKNOWN_FINGERPRINT } });
+    expect(shouldPushToSource({ ...seeded, locallyModified: true, lastModified: 500 }, 'listenbrainz')).toBe(false);
+    expect(shouldPushToSource({ ...seeded, locallyModified: true, lastModified: 2000 }, 'listenbrainz')).toBe(true);
+  });
+
+  test('a record with no fingerprint uses the old rule', () => {
+    const legacy = agreed({ syncedFrom: { resolver: 'listenbrainz', externalId: 'mbid' }, locallyModified: true, lastModified: 2000 });
+    expect(shouldPushToSource(legacy, 'listenbrainz')).toBe(true);
+  });
+});
+
+describe('recordPushToSource', () => {
+  const NEW = [{ title: 'New', artist: 'B' }];
+  const pl = imported({
+    tracks: NEW,
+    syncedFrom: { resolver: 'listenbrainz', externalId: 'mbid', snapshotId: 's1', tracksFingerprint: 'old' },
+    syncSources: { listenbrainz: { syncedAt: 1000, addedAt: 5 } },
+    syncedTo: { applemusic: { externalId: 'p.1' } },
+    hasUpdates: false,
+  });
+
+  test('records the pushed tracks as agreed and the source\'s new snapshot, so the next sync sees no change', () => {
+    const out = recordPushToSource(pl, 'listenbrainz', { snapshotId: 's2', tracks: NEW, now: 7000 });
+    expect(out.syncedFrom).toEqual({ resolver: 'listenbrainz', externalId: 'mbid', snapshotId: 's2', tracksFingerprint: tracksFingerprint(NEW) });
+    expect(out.syncSources.listenbrainz).toEqual({ syncedAt: 7000, addedAt: 5 });
+    expect(hasRealLocalEdits(out, 'listenbrainz')).toBe(false);
+    expect(out.syncedTo).toEqual(pl.syncedTo);
+  });
+
+  test('no snapshot from the push keeps the old one (the next sync pulls our own tracks back, which is no change)', () => {
+    expect(recordPushToSource(pl, 'listenbrainz', { snapshotId: undefined, tracks: NEW, now: 7000 }).syncedFrom.snapshotId).toBe('s1');
+  });
+
+  test('a push to another remote on the same service (an owned copy, not the source) changes nothing here', () => {
+    expect(recordPushToSource(pl, 'listenbrainz', { externalId: 'other-mbid', snapshotId: 's2', tracks: NEW, now: 7000 })).toBe(pl);
+    expect(recordPushToSource(pl, 'listenbrainz', { externalId: 'mbid', snapshotId: 's2', tracks: NEW, now: 7000 }).syncedFrom.snapshotId).toBe('s2');
+  });
+
+  test('a push to a mirror that is not the source changes nothing here', () => {
+    expect(recordPushToSource(pl, 'applemusic', { snapshotId: 'x', tracks: NEW, now: 7000 })).toBe(pl);
   });
 });
