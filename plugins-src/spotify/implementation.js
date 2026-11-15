@@ -1,4 +1,4 @@
-// Source of truth for plugins/spotify.axe v1.1.4.
+// Source of truth for plugins/spotify.axe v1.2.5.
 // Imported from the .axe by `node scripts/build-axes.js --import`.
 // Edit here, bump manifest.version in manifest.json, then run `node scripts/build-axes.js`.
 // The functions materialize fully isolated (resolver-loader.js uses
@@ -6,12 +6,31 @@
 module.exports = {
   search: async function (query, config) {
     if (!config.token) return [];
+    // A 429 is a refusal, never "no results": an empty answer is saved as
+    // Spotify not having the track. Spotify's Retry-After (it can be hours) is
+    // kept on the instance (docs/architecture/plugins.md, "State lives on
+    // `this`"), shared with searchAlbums, and no search goes out until it has
+    // passed: searching on prolongs the limit.
+    const g = this;
+    const rateLimited = () => {
+      const err = new Error('Spotify asked for a pause in searches until ' + new Date(g.__parachordSpotifyRetryAt).toISOString());
+      err.name = 'SpotifyRateLimited';
+      err.status = 429;
+      err.retryAt = g.__parachordSpotifyRetryAt;
+      return err;
+    };
+    if (Date.now() < (g.__parachordSpotifyRetryAt || 0)) throw rateLimited();
     const doSearch = async (token) => {
       const response = await fetch(
         `https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=track`,
         { headers: { Authorization: `Bearer ${token}` } },
       );
       if (!response.ok) {
+        if (response.status === 429) {
+          const seconds = parseInt((response.headers && response.headers.get('Retry-After')) || '5', 10) || 5;
+          g.__parachordSpotifyRetryAt = Math.max(g.__parachordSpotifyRetryAt || 0, Date.now() + seconds * 1000);
+          throw rateLimited();
+        }
         let body = '';
         try {
           body = await response.text();
@@ -33,10 +52,13 @@ module.exports = {
         }
       }
       if (!result.ok) {
-        if (result.status >= 500) {
-          throw new Error('Spotify server error: ' + result.status);
-        }
-        return [];
+        // A bad query (400) or nothing there (404) is no results; anything
+        // else (a refused or expired sign-in, a server error) is Spotify not
+        // answering, and must not be saved as a miss.
+        if (result.status === 400 || result.status === 404) return [];
+        const err = new Error('Spotify search refused: ' + result.status);
+        err.status = result.status;
+        throw err;
       }
       return result.items.map((track) => ({
         id: `spotify-${track.id}`,
@@ -146,11 +168,19 @@ module.exports = {
       q = parts.join(' ');
     }
     if (!q || q.length < 2) return [];
+    // The same pause as search (this.__parachordSpotifyRetryAt): no request
+    // while it lasts, and a 429 here starts it too.
+    var g = this;
+    if (Date.now() < (g.__parachordSpotifyRetryAt || 0)) return [];
     var doSearch = async function (token) {
       var response = await fetch(
         'https://api.spotify.com/v1/search?q=' + encodeURIComponent(q) + '&type=album&limit=10',
         { headers: { Authorization: 'Bearer ' + token } },
       );
+      if (response.status === 429) {
+        var seconds = parseInt((response.headers && response.headers.get('Retry-After')) || '5', 10) || 5;
+        g.__parachordSpotifyRetryAt = Math.max(g.__parachordSpotifyRetryAt || 0, Date.now() + seconds * 1000);
+      }
       if (!response.ok) return { ok: false, status: response.status };
       var data = await response.json();
       return { ok: true, items: (data && data.albums && data.albums.items) || [] };
