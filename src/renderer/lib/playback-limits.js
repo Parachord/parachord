@@ -10,8 +10,10 @@
 // everything that acts on one reads this module, so a new service is one
 // more entry in the map, not more special cases in the app. A plugin can
 // also report its own limit (capabilities.status + getStatus; the mapper
-// below) — the service decides, the plugin is the authority — and Amazon
-// moves onto that surface when its logic migrates into the plugin (#1356).
+// below) — the service decides, the plugin is the authority. Amazon moved
+// onto that surface with its plugin (#1356 M10): the plugin's getStatus
+// reply carries its playbackLimit, and amazonPlaybackLimit (the per-service
+// mapper the host's IPC status fed) died with the host status.
 //
 // A limit entry: { blocked, planKey, label, message, searchesHeldBack }
 //   blocked  — true when the account's plan can't play here
@@ -23,25 +25,6 @@
 //   searchesHeldBack — the service's own track searches answer not-ready
 //              while blocked (Amazon), so an upgrade must search again
 // A service with nothing to say has no entry (or null).
-
-const AMAZON_TILE_LABELS = {
-  prime: 'Prime: no playback',
-  unknown: 'Plan not confirmed'
-};
-
-// Amazon's limit from its getStatus reply. Only Music Unlimited plays, and an
-// unknown plan blocks too (amazon-dmls decides; the message comes from main).
-function amazonPlaybackLimit(status) {
-  if (!status || !status.web || !status.web.signedIn || !status.plan) return null;
-  if (status.plan === 'unlimited') return { blocked: false, planKey: 'unlimited', label: null, message: null, searchesHeldBack: true };
-  return {
-    blocked: true,
-    planKey: status.plan,
-    label: AMAZON_TILE_LABELS[status.plan] || AMAZON_TILE_LABELS.unknown,
-    message: status.planMessage || null,
-    searchesHeldBack: true
-  };
-}
 
 // Apple Music's limit: a resolver that isn't signed in can't play (MusicKit JS
 // would only play 30-second previews), so it leaves playback and the
@@ -167,7 +150,6 @@ function limitStorageKey(id) {
 }
 
 module.exports = {
-  amazonPlaybackLimit,
   appleMusicPlaybackLimit,
   pluginStatusLimit,
   pluginStatusLimits,

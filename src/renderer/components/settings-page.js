@@ -57,7 +57,6 @@ const SettingsPage = React.memo(function SettingsPage(props) {
     albumArtCache,
     albumToReleaseIdCache,
     allResolvers,
-    amazonMusicStatus,
     appVersion,
     appleMusicConnected,
     artistDataCache,
@@ -103,6 +102,7 @@ const SettingsPage = React.memo(function SettingsPage(props) {
     playbackLimits,
     playbackQuality,
     playbackSpatial,
+    pluginStatuses,
     pluginsFilter,
     releaseDetailsCache,
     rememberQueue,
@@ -456,8 +456,11 @@ const SettingsPage = React.memo(function SettingsPage(props) {
                             needsConfiguration = true;
                           } else if (resolver.id === 'soundcloud' && !soundcloudConnected) {
                             needsConfiguration = true;
-                          } else if (resolver.id === 'amazonmusic' && amazonMusicStatus && !amazonMusicStatus.web?.signedIn) {
-                            // Unknown status (not fetched yet) is not flagged.
+                          } else if (resolver.id === 'amazonmusic' && pluginStatuses.amazonmusic && pluginStatuses.amazonmusic.signedIn === false) {
+                            // The plugin's status reply (capabilities.status,
+                            // #1356 M10). Unknown status (not fetched yet, or
+                            // the plugin threw and answered null) is not
+                            // flagged — no verdict is the safe reading.
                             needsConfiguration = true;
                           } else if (resolver.id === 'localfiles' && watchFolders.length === 0) {
                             needsConfiguration = true;

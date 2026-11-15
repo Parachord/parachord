@@ -9,9 +9,11 @@
  *
  * The no-throw contract: a plugin whose getStatus throws is logged and
  * treated as NO status, never as a blocked resolver — a status outage must
- * not unplug playback (resolver-loader.js getStatus). No shipped plugin
- * declares the capability yet; Amazon migrates onto it in a later #1356
- * milestone, so nothing here may change behavior for an existing resolver.
+ * not unplug playback (resolver-loader.js getStatus). Amazon Music declares
+ * the capability since #1356 M10 (its reply's mapping is pinned in
+ * tests/resolver/amazon-music-plugin-session.test.js); the wiring pins here
+ * follow the plugin entries feeding the same map the old per-service mappers
+ * fed.
  */
 
 const fs = require('fs');
@@ -196,44 +198,43 @@ describe('a status reply feeds the playback limit map and the tile', () => {
     expect(PlaybackLimits.planBlockedIds(none)).toEqual([]);
   });
 
-  test('an amazonmusic plugin with no verdict never removes the Amazon IPC status\u2019s block', async () => {
-    // The migration window: a plugin declares capabilities.status for
-    // amazonmusic while the host still reads its own IPC status
-    // (amazonMusicStatus → amazonPlaybackLimit, the Prime block). The
-    // plugin's read gives no verdict — it threw, or answered without a
-    // playbackLimit — and the host's verdict stays: a Prime account must not
-    // go back into playbackResolvers because its plugin's status read is
-    // down (#1433 review, finding 1).
+  test('a plugin with no verdict never removes a mapper\u2019s own block', async () => {
+    // The migration order: a plugin declares capabilities.status for a
+    // service whose per-service mapper still feeds the map (Apple Music's
+    // appleMusicPlaybackLimit today; Amazon's own mapper died with its IPC
+    // status, #1356 M10). The plugin's read gives no verdict — it threw, or
+    // answered without a playbackLimit — and the mapper's verdict stays: a
+    // resolver the mapper blocks must not go back into playbackResolvers
+    // because the plugin's status read is down (#1433 review, finding 1).
     const error = jest.spyOn(console, 'error').mockImplementation(() => {});
     try {
-      const amazonMusicStatus = { success: true, web: { cdm: true, signedIn: true }, plan: 'prime' };
-      const threw = loaderWith([fake('amazonmusic', {
+      const threw = loaderWith([fake('applemusic', {
         capabilities: { status: true },
         getStatus: async () => { throw new Error('503 from the service'); },
       })]);
-      const noVerdict = loaderWith([fake('amazonmusic', {
+      const noVerdict = loaderWith([fake('applemusic', {
         capabilities: { status: true },
         getStatus: async () => ({ signedIn: true, playbackLimit: null, statusLabel: 'Signed in', statusMessage: null }),
       })]);
       for (const loader of [threw, noVerdict]) {
-        const reply = await loader.getStatus('amazonmusic');
+        const reply = await loader.getStatus('applemusic');
         expect(reply).toBeTruthy(); // the reply or the loader's failed marker — a no-verdict entry is dropped, never spread over the mapper
         const limits = {
-          amazonmusic: PlaybackLimits.amazonPlaybackLimit(amazonMusicStatus),
-          ...PlaybackLimits.pluginStatusLimits({ amazonmusic: reply })
+          applemusic: PlaybackLimits.appleMusicPlaybackLimit({ checked: true, connected: false }),
+          ...PlaybackLimits.pluginStatusLimits({ applemusic: reply })
         };
-        expect(PlaybackLimits.planBlockedIds(limits)).toEqual(['amazonmusic']);
-        expect(PlaybackLimits.playbackResolverIds(['amazonmusic', 'spotify'], ['amazonmusic'])).toEqual(['spotify']);
+        expect(PlaybackLimits.planBlockedIds(limits)).toEqual(['applemusic']);
+        expect(PlaybackLimits.playbackResolverIds(['applemusic', 'spotify'], ['applemusic'])).toEqual(['spotify']);
       }
       // A plugin that DOES give a verdict still wins — the migration order:
       // the plugin is the authority for its service.
-      const plugin = loaderWith([fake('amazonmusic', {
+      const plugin = loaderWith([fake('applemusic', {
         capabilities: { status: true },
         getStatus: async () => ({ signedIn: true, playbackLimit: { blocked: false, planKey: 'unlimited', searchesHeldBack: true } }),
       })]);
       const limits = {
-        amazonmusic: PlaybackLimits.amazonPlaybackLimit(amazonMusicStatus),
-        ...PlaybackLimits.pluginStatusLimits({ amazonmusic: await plugin.getStatus('amazonmusic') })
+        applemusic: PlaybackLimits.appleMusicPlaybackLimit({ checked: true, connected: false }),
+        ...PlaybackLimits.pluginStatusLimits({ applemusic: await plugin.getStatus('applemusic') })
       };
       expect(PlaybackLimits.planBlockedIds(limits)).toEqual([]);
     } finally {
@@ -259,22 +260,23 @@ describe('wiring', () => {
     expect(loader).toContain('getStatusResolvers() {');
     expect(loader).toContain('async getStatus(resolverId, configOverride = null) {');
     // The refresh path routes through the loader only; the plugin's reply
-    // never crosses the electron bridge (Amazon's own IPC status — untouched
-    // by this surface — is the one getStatus that does).
+    // never crosses the electron bridge (no getStatus does anymore —
+    // Amazon's IPC status died with #1356 M10).
     const readPath = between(app, 'const refreshPluginStatus = (resolverId) => {', '\n  };');
     expect(readPath).not.toMatch(/window\.electron/);
   });
 
   test('one reply feeds the limit map: plugin entries merge with the per-service mappers', () => {
-    const memo = app.slice(app.indexOf('const playbackLimits = useMemo(() => ({'), app.indexOf('}), [amazonMusicStatus'));
-    expect(memo).toContain('amazonmusic: PlaybackLimits.amazonPlaybackLimit(amazonMusicStatus)');
+    const mapStart = app.indexOf('const playbackLimits = useMemo(() => ({');
+    const memo = app.slice(mapStart, app.indexOf('}), [', mapStart));
+    expect(memo).not.toMatch(/amazonmusic:/); // Amazon's entry IS its plugin reply now
     // The plugin entries spread AFTER the mappers, through the
     // null-dropping helper: a plugin wins only when it actually gives a
     // verdict (the tests above); a no-verdict entry never lands over a
     // mapper's own.
     expect(memo).toMatch(/\.\.\.PlaybackLimits\.pluginStatusLimits\(pluginStatuses\)/);
     // The memo recomputes when a reply lands.
-    expect(app).toMatch(/\}\), \[amazonMusicStatus, appleMusicAuthChecked, appleMusicConnected, pluginStatuses\]\);/);
+    expect(app).toMatch(/\}\), \[appleMusicAuthChecked, appleMusicConnected, pluginStatuses\]\);/);
   });
 
   test('an uninstall drops the plugin\u2019s status entry', () => {
@@ -309,30 +311,42 @@ describe('wiring', () => {
     // A play refused for the plan re-reads the refusing plugin's status.
     const note = between(app, 'window.__parachordNotePlanRefusal = (resolverId, planKey) => {', '\n  };');
     expect(note).toContain('refreshPluginStatus(resolverId);');
-    // Amazon's own status path stays untouched by this surface.
-    expect(app).toMatch(/window\.electron\.amazonMusic\.getStatus\(\{ refreshPlan: true \}\)/);
+    // Amazon rides this surface since M10: its own IPC status is gone, and
+    // nothing else reads a status over the electron bridge.
+    expect(app).not.toMatch(/window\.electron\.amazonMusic\.getStatus/);
   });
 
-  test('the Settings sign-in row shows for a status-capable resolver, generic and display-only', () => {
+  test('the Settings sign-in row shows for a status-capable resolver, with the session triggers', () => {
     // #1451 moved the resolver detail panel's markup into its own component;
     // the row moved with the panel, and app.js feeds it the replies.
     const dialog = read('src', 'renderer', 'components', 'plugin-settings-dialog.js');
     const row = between(dialog, "A status-capable plugin's sign-in row", '// Authentication section (for services that require it)');
     expect(row).toContain('selectedResolver?.capabilities?.status && typeof selectedResolver.getStatus === \'function\'');
     expect(row).toContain('PlaybackLimits.pluginStatusRow(pluginStatuses[selectedResolver.id])');
+    // The signIn/signOut triggers ride the row when the plugin implements
+    // the session methods (the web-session surface — Amazon since #1356 M10).
+    expect(row).toContain('typeof selectedResolver.signOut === \'function\'');
+    expect(row).toContain('typeof selectedResolver.signIn === \'function\'');
+    expect(row).toContain('await selectedResolver.signOut()');
     expect(dialog).toContain('pluginStatuses,');
     expect(app).toMatch(/playbackLimits,\s*pluginStatuses,/);
     // The capabilities chip is labelled, not a raw id (lib/capability-labels.js).
     expect(read('src', 'renderer', 'lib', 'capability-labels.js')).toContain("status: 'Status'");
   });
 
-  test('no shipped plugin declares the capability yet — Amazon\u2019s migration flips it', () => {
+  test('Amazon Music declares the capability (#1356 M10); no other plugin does', () => {
     const manifests = fs.readdirSync(path.join(ROOT, 'plugins-src'))
       .filter(d => fs.existsSync(path.join(ROOT, 'plugins-src', d, 'manifest.json')));
     expect(manifests.length).toBeGreaterThan(0);
     for (const dir of manifests) {
       const axe = JSON.parse(read('plugins-src', dir, 'manifest.json'));
-      expect(`${dir}: ${axe.capabilities?.status}`).toBe(`${dir}: undefined`);
+      expect(`${dir}: ${axe.capabilities?.status}`).toBe(`${dir}: ${dir === 'amazonmusic' ? 'true' : 'undefined'}`);
     }
+    // The generated .axe and the fallback copy carry the flag and the methods.
+    const shipped = JSON.parse(read('plugins', 'amazonmusic.axe'));
+    expect(shipped.capabilities.status).toBe(true);
+    expect(shipped.implementation.getStatus).toMatch(/^async function/);
+    expect(shipped.implementation.signIn).toMatch(/^async function/);
+    expect(shipped.implementation.signOut).toMatch(/^async function/);
   });
 });

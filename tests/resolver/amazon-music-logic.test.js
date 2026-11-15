@@ -1,57 +1,14 @@
 const {
   reportedPlaybackAsin,
   shouldRevealPlayerOnFailure,
-  cdmStatusHealthy,
   pageBlocksPlayback,
-  signInLanded,
   amazonAuthCookieState,
   asinFromPlayerUrl,
   amazonGqlFetchHeaders,
   stripAmazonTitleMarker,
   amazonMediaPauseExpr,
-  amazonPlayGenerationStamp,
-  amazonNativeSessionFromConfig,
-  isUnlimitedTier,
-  amazonPlanFromTier,
-  amazonPlanMessage
+  amazonPlayGenerationStamp
 } = require('../../amazon-music-logic');
-
-// #1220: only Music Unlimited plays; Prime and anything unreadable block.
-describe('Amazon plan from config.json tier', () => {
-  test.each([
-    ['UNLIMITED', 'unlimited'],
-    ['UNLIMITED_HD', 'unlimited'],
-    [' unlimited_hd ', 'unlimited'],
-    ['PRIME', 'prime'],
-    ['prime', 'prime'],
-    ['PRIME_PLUS', 'unknown'],
-    ['FREE', 'unknown'],
-    ['', 'unknown'],
-    [null, 'unknown'],
-    [undefined, 'unknown'],
-    [{ name: 'UNLIMITED' }, 'unknown'] // the raw object; amazonNativeSessionFromConfig unwraps it first
-  ])('%p → %s', (tier, plan) => {
-    expect(amazonPlanFromTier(tier)).toBe(plan);
-  });
-
-  test('an object-shaped tier is unwrapped by the config parser', () => {
-    expect(amazonPlanFromTier(amazonNativeSessionFromConfig({ tier: { name: 'UNLIMITED_HD' } }).tier)).toBe('unlimited');
-    expect(amazonPlanFromTier(amazonNativeSessionFromConfig({ tier: { tier: 'PRIME' } }).tier)).toBe('prime');
-    expect(amazonPlanFromTier(amazonNativeSessionFromConfig({}).tier)).toBe('unknown');
-  });
-
-  test('telemetry and the gate share one Unlimited rule', () => {
-    expect(isUnlimitedTier('UNLIMITED_HD')).toBe(true);
-    expect(isUnlimitedTier('PRIME')).toBe(false);
-    expect(isUnlimitedTier(null)).toBe(false);
-  });
-
-  test('one wording per blocked plan; none for Unlimited', () => {
-    expect(amazonPlanMessage('prime')).toBe('Amazon Prime: Amazon is used for album art, artist photos and links. Playing Amazon tracks in Parachord needs Music Unlimited.');
-    expect(amazonPlanMessage('unknown')).toMatch(/^Parachord couldn't confirm your Amazon Music plan, so Amazon playback is off until it can\./);
-    expect(amazonPlanMessage('unlimited')).toBeNull();
-  });
-});
 
 describe('reportedPlaybackAsin', () => {
   test('the page URL wins over a disagreeing mini player', () => {
@@ -107,83 +64,6 @@ describe('pageBlocksPlayback', () => {
 
 });
 
-describe('cdmStatusHealthy', () => {
-  test('a healthy component status is healthy', () => {
-    expect(cdmStatusHealthy({ widevine: { status: 'ok', version: '4.1' } })).toBe(true);
-  });
-
-  test('a failed component status is not', () => {
-    expect(cdmStatusHealthy({ widevine: { status: 'failed' } })).toBe(false);
-    expect(cdmStatusHealthy({ components: [{ name: 'widevine', status: 'component_update_error' }] })).toBe(false);
-  });
-
-  test('an unrelated "failed" string does not disable the CDM', () => {
-    // The old check substring-matched the whole JSON blob.
-    expect(cdmStatusHealthy({
-      widevine: { status: 'ok' },
-      notes: 'update-check-url https://example.com/failed-check'
-    })).toBe(true);
-  });
-
-  test('empty status means nothing installed; unknown shapes are optimistic', () => {
-    expect(cdmStatusHealthy({})).toBe(false);
-    expect(cdmStatusHealthy({ something: { else: true } })).toBe(true);
-    expect(cdmStatusHealthy(null)).toBe(true);
-  });
-
-  test('survives deep nesting and cycles', () => {
-    const deep = { a: { b: { c: { d: { e: { f: { g: { status: 'failed' } } } } } } } };
-    expect(cdmStatusHealthy(deep)).toBe(false);
-    const cyclic = { widevine: { status: 'ok' } };
-    cyclic.self = cyclic;
-    expect(cdmStatusHealthy(cyclic)).toBe(true);
-  });
-});
-
-describe('signInLanded', () => {
-  const home = 'https://music.amazon.com/';
-  const track = 'https://music.amazon.com/tracks/B000SNWG5Q';
-
-  test('a stable non-wall page with an auth cookie lands', () => {
-    let v = signInLanded({ url: home, hasCookie: true });
-    expect(v).toEqual({ landed: false, stableTicks: 1 });
-    v = signInLanded({ url: home, lastUrl: home, stableTicks: v.stableTicks, hasCookie: true });
-    expect(v).toEqual({ landed: true, stableTicks: 2 });
-  });
-
-  test('the bare home path without a cookie waits a third tick', () => {
-    // A logged-out first paint at / (or a slow redirect to /ap/signin) must
-    // not close the sign-in window and report success.
-    let v = signInLanded({ url: home, hasCookie: false });
-    v = signInLanded({ url: home, lastUrl: home, stableTicks: v.stableTicks, hasCookie: false });
-    expect(v.landed).toBe(false);
-    v = signInLanded({ url: home, lastUrl: home, stableTicks: v.stableTicks, hasCookie: false });
-    expect(v.landed).toBe(true); // rotation fallback: nothing but stability
-  });
-
-  test('a page off the home path lands after two stable ticks without a cookie', () => {
-    let v = signInLanded({ url: track, hasCookie: false });
-    v = signInLanded({ url: track, lastUrl: track, stableTicks: v.stableTicks, hasCookie: false });
-    expect(v.landed).toBe(true);
-  });
-
-  test('walls, foreign URLs and navigation churn reset the stability count', () => {
-    // A wall URL never lands, cookies or not — the profile is not chosen yet.
-    expect(signInLanded({
-      url: 'https://music.amazon.com/identity/who-is-listening',
-      lastUrl: 'https://music.amazon.com/identity/who-is-listening',
-      stableTicks: 5, hasCookie: true
-    })).toEqual({ landed: false, stableTicks: 0 });
-    // Off amazon.com (password step) resets too.
-    expect(signInLanded({
-      url: 'https://www.amazon.com/ap/signin', lastUrl: 'https://www.amazon.com/ap/signin',
-      stableTicks: 5, hasCookie: true
-    })).toEqual({ landed: false, stableTicks: 0 });
-    // A URL that changed this tick is not stable yet.
-    expect(signInLanded({ url: track, lastUrl: home, stableTicks: 3, hasCookie: true }))
-      .toEqual({ landed: false, stableTicks: 1 });
-  });
-});
 
 
 // Samples as the poller records them: consecutive PLAYING reads of the
@@ -401,6 +281,13 @@ const LIVE_REPS = [
 // amazonDmlsLicenseBody / dashCodecFamily — were pinned here until #1356 M9
 // moved the DRM pair into the plugin; their cases now drive the _lib copies in
 // tests/resolver/amazon-music-plugin-drm.test.js.)
+
+// (The session-surface helpers — signInLanded, cdmStatusHealthy, the plan
+// mapping (amazonNativeSessionFromConfig / isUnlimitedTier / amazonPlanFromTier /
+// amazonPlanMessage) — were pinned here until #1356 M10 moved sign-in, sign-out
+// and the status read into the plugin; their cases now drive the _lib copies in
+// tests/resolver/amazon-music-plugin-session.test.js. amazonAuthCookieState
+// and pageBlocksPlayback stay: the diagnostic capture's guard reads them.)
 
 describe('amazonAuthCookieState', () => {
   test('the auth cookies isSignedIn has always keyed on are known', () => {

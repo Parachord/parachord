@@ -24,7 +24,8 @@
     "artistImage": true,
     "widevine": true,
     "mobile": false,
-    "recommendations": true
+    "recommendations": true,
+    "status": true
   },
   "urlPatterns": [
     "music.amazon.com/playlists/*",

@@ -87,7 +87,7 @@ describe('the exposed surface', () => {
     for (const name of ['load', 'pageFetch', 'fetch', 'state', 'clear', 'signIn']) {
       expect(typeof mockWorld.electron.webSession[name]).toBe('function');
     }
-    expect([...mockWorld.__parachordHostBridges]).toEqual(['amazonMusic', 'webSession']);
+    expect([...mockWorld.__parachordHostBridges]).toEqual(['webSession']);
   });
 });
 
@@ -243,7 +243,10 @@ describe('the live exposure', () => {
       require('../../preload');
     });
     expect(mockWorld.electron.webSession).toBeTruthy();
-    expect(mockWorld.electron.amazonMusic).toBeTruthy(); // the rest of the surface is untouched
-    expect([...mockWorld.__parachordHostBridges]).toEqual(['amazonMusic', 'webSession']);
+    // The amazonMusic block is the diagnostic remnant since #1356 M10 (the
+    // session surfaces moved into the plugin) — still exposed, no longer
+    // advertised: nothing requires the old bridge.
+    expect(mockWorld.electron.amazonMusic).toBeTruthy();
+    expect([...mockWorld.__parachordHostBridges]).toEqual(['webSession']);
   });
 });

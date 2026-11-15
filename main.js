@@ -798,15 +798,13 @@ const appleMusicPoller = {
 
 const amazonWebPlayer = require('./amazon-web-player');
 const { registerWidevineBridgeIpc } = require('./main-process/widevine-bridge');
-const { amazonPlanMessage } = require('./amazon-music-logic');
 
 // Widevine playback runs in the renderer (Shaka on the shared HTMLAudioElement);
 // the bridge relays manifest/license operations to main-side providers per
 // resolver, OR to the renderer-mediated plugin pair (#1356 M4 — a resolver
 // implementing getPlaybackManifest + relayLicense supplies the manifest itself
 // and answers main-forwarded licence challenges; Amazon's DRM pair lives in
-// the plugin since M9, so no provider is registered for 'amazonmusic' —
-// amazon-web-player keeps its sign-in/status role).
+// the plugin since M9, so no provider is registered for 'amazonmusic').
 // Sender gate, shared by the gated IPC bridges (the widevine license-oracle
 // surface and the webSession primitives below): only the main window's top
 // frame may call at all (relay gating rules in widevine-bridge.js).
@@ -818,10 +816,11 @@ const isMainWindowTopFrameSender = (event) => {
 };
 registerWidevineBridgeIpc({ ipcMain, isAllowedSender: isMainWindowTopFrameSender });
 
-// #1220: the renderer refreshes the Amazon status (tile, settings) and, on
-// an upgrade, re-resolves Amazon. The plan read is the host-side stopgap
-// (amazon-web-player.getPlan — the plugin's own gate is independent of it).
-amazonWebPlayer.setPlanChangeListener(({ plan }) => safeSendToRenderer('amazonmusic-plan-changed', { plan }));
+// #1220's plan-change push died with #1356 M10's status move: the plugin
+// reads its own plan (its getStatus forces a fresh read on the settings
+// path), and the renderer's status sweep — startup, Settings open, the
+// resolver panel, a plan refusal — is what refreshes the tile. No plan-change
+// event crosses this boundary anymore.
 
 // The webSession IPC bridge (#1356): registered web-session hosts exposed to
 // the renderer. Amazon's session is the ONE createWebSessionHost instance
@@ -837,7 +836,9 @@ amazonWebPlayer.setPlanChangeListener(({ plan }) => safeSendToRenderer('amazonmu
 // only, redirect hops re-checked host-side) and load/signIn to the same
 // allowed hosts, caps the caller budgets, and shuttles the sign-in
 // tick/decide/settled protocol (channel contract in
-// docs/architecture/web-session.md, "The IPC bridge").
+// docs/architecture/web-session.md, "The IPC bridge"). Every Amazon flow is
+// the plugin's since #1356 M10 — searches, catalog, playlists,
+// recommendations, the DRM pair, sign-in/out and the status read.
 const { registerWebSession, registerWebSessionBridgeIpc } = require('./main-process/ipc/web-session-bridge');
 registerWebSession('amazon-music', amazonWebPlayer.webSession);
 registerWebSessionBridgeIpc({
@@ -3851,69 +3852,12 @@ ipcMain.handle('applemusic-polling-status', async () => {
   };
 });
 
-// Amazon Music IPC. Playback runs through the renderer-mediated DRM pair in
-// the plugin (#1356 M4/M9 — the plugin answers widevine:open-session /
-// widevine:plugin-license through the bridge; the main-side amazon-dmls
-// provider is deleted). Sign-in and getStatus stay host-side.
+// Amazon Music IPC — the diagnostic capture only since #1356 M10: sign-in,
+// sign-out and getStatus are the plugin's (the session surfaces moved into
+// plugins-src/amazonmusic/ with the status capability; the renderer drives
+// them through the loaded resolver and the webSession bridge).
 // Errors come back as { success: false, error|reason } rather than thrown IPC
 // rejections so the resolver can branch (not-ready must not be cached as noMatch).
-ipcMain.handle('amazonmusic-get-status', async (event, { refreshPlan } = {}) => {
-  try {
-    const cdm = amazonWebPlayer.cdmAvailable();
-    const signedIn = await amazonWebPlayer.isSignedIn();
-    const preload = await amazonWebPlayer.preloadProbe();
-    // #1220: only Music Unlimited plays. Read once signed in; null when
-    // signed out. Cached for 30 minutes, except that opening Settings or the
-    // Amazon panel asks for a fresh read (refreshPlan), so an upgrade shows
-    // up there at once.
-    let plan = null;
-    if (signedIn) {
-      try { plan = await amazonWebPlayer.getPlan({ refresh: !!refreshPlan }); } catch { plan = 'unknown'; }
-    }
-    return {
-      success: true,
-      platform: process.platform,
-      engine: 'widevine',
-      // The settings UI reads web.{cdm,signedIn} — the shape is kept; audio
-      // plays in the main renderer through the widevine bridge.
-      web: { cdm, signedIn },
-      plan,
-      planMessage: plan ? amazonPlanMessage(plan) : null,
-      // Live proof the search-view preload is alive (sandboxed-preload
-      // failure surface).
-      preload,
-      // The DRM pair's session internals are PLUGIN state since M9 (the
-      // dmls provider that used to surface them here is deleted); they move
-      // onto the plugin's status surface in M10. What the host still knows:
-      // where the DRM runs, and the plan its stopgap read holds.
-      native: { drm: 'plugin', plan }
-    };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle('amazonmusic-open-login', async () => {
-  try {
-    return await amazonWebPlayer.openLogin();
-  } catch (error) {
-    return { success: false, reason: error.reason, error: error.message };
-  }
-});
-
-ipcMain.handle('amazonmusic-sign-out', async () => {
-  try {
-    // The plugin's session-scoped state (its DRM session context, cert warm
-    // and telemetry) drops on the generation bump clear() carries; the final
-    // trackStreamed accounting rides the engine's stop (the renderer stops
-    // the widevine player before calling this), exactly as the old dmls
-    // onSignOut did before its session died.
-    return await amazonWebPlayer.signOut();
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
 // Diagnostic, no UI: record the gql an Amazon Music album or search page
 // fires (amazonWebPlayer.debugCaptureGql) into a JSON file in userData, for
 // building the plugin's album search. Run from DevTools:
