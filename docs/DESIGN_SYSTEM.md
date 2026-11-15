@@ -2,14 +2,7 @@
 
 Reference guide for the visual design language, tokens, components, and patterns used across the Parachord desktop application.
 
-> **Partly out of date (2026-11-13).** The [design audit](plans/2026-11-13-design-audit.md) compared this guide with the code. It found several points where they disagree:
-> - tokens documented here that nothing uses (radius, tracking, leading, z-index, motion)
-> - "no breakpoint-based responsive design" (20 grids use breakpoints)
-> - the Recommendations heading style
-> - the Bandcamp colour
-> - the Tailwind scan path
-> - animations listed as in use
-> - the blue slider thumbs
+> **Partly out of date (2026-11-13).** The [design audit](plans/2026-11-13-design-audit.md) compared this guide with the code. Corrected since: the tokens, scales, colours, copy, animations, the Recommendations section, breakpoints, the Tailwind setup and the slider thumbs. Still to rewrite: the Components section.
 >
 > Until this guide is rewritten, the "Design system" section of [CLAUDE.md](../CLAUDE.md) and the audit win where they disagree. The design-drift ratchet (`tests/ci/design-drift.test.js`) enforces them.
 
@@ -278,7 +271,7 @@ ReleaseCard({ release, currentArtist, fetchReleaseData, onContextMenu, onHoverFe
 
 ### Recommendation rows
 
-The Recommendations page reuses Home's and the other tabs' pieces. Each section is one row under its heading (`text-lg font-semibold`); **"See all" / "Show less"** is Home's purple link (accent colour text, no button chrome, right-aligned on the heading's line); sections carry no item counts. Sources are filtered for the whole page in a **filter bar** under the hero, Fresh Drops' bar and pills: All, then one pill per source, no counts, one pick at a time, each pill with its own active colour as on the other tabs (All `#7c3aed`, a source its plugin's brand colour, Shuffleupagus `var(--accent-primary)`). Collapsed, a card section shows two full rows. Items carry no source badges.
+The Recommendations page reuses Home's and the other tabs' pieces. Each section (Tracks, Albums, Artists, Playlists, Friends) sits under a `SectionHeader`, Home's heading; its **"See all" / "Show less"** link is the header's link (accent text, right-aligned on the heading's line), and sections carry no item counts. Sources are filtered for the whole page by `FilterChips` under the hero: All, then one chip per source, no counts, one pick at a time. Collapsed, a card section shows two full rows. Cards are `CardButton`s; a Shuffleupagus pick carries the `ReasonBadge` (its reason as the tooltip), and any other pick's reason is the card's tooltip. Items carry no source badges.
 
 ### Artist Cards
 
@@ -392,45 +385,45 @@ Located in `assets/icons/`:
 
 ## Animations
 
-All animations are defined as `@keyframes` in `index.html`.
+Every animation is a `@keyframes` rule in `index.html`, and every one listed here is in use (the design audit removed the unused `spin-reverse`, `loadingFadeInUp`, `loadingDotPulse` and `friendStatusChange`). Motion stays within 100–400ms on transform and opacity, except loops and the splash. With `prefers-reduced-motion`, one block in `index.html` turns animations and transitions off; spinners keep turning.
 
-### Loading & Feedback
+### Loading and feedback
 
-| Animation | Duration | Easing | Usage |
-|-----------|----------|--------|-------|
-| `spin` | 1s linear infinite | — | Spinner |
-| `spin-reverse` | 1s linear infinite | — | Reverse spinner |
-| `shimmer` | 1.5s ease-in-out infinite | — | Skeleton loading |
-| `loadingFadeInUp` | 0.7s spring | `cubic-bezier(0.16,1,0.3,1)` | App loading wordmark |
-| `loadingDotPulse` | 1.4s ease-in-out infinite | Staggered 0.15s | Loading dots |
+| Keyframes | Class or use | Notes |
+|-----------|--------------|-------|
+| `spin` | `.animate-spin` | 1s linear loop; the one loading spinner (`Icons.Spinner`) |
+| `shimmer` | `.animate-shimmer`, `.now-playing-pending` | 1.5s loop; skeletons, and the playbar while a play starts |
+| `loadingWordmarkPulse` | `.loading-wordmark-svg` | The splash wordmark's per-letter pop-in |
 
-### Queue Animations
+### Dialogs, toasts and tooltips
 
-| Animation | Duration | Usage |
-|-----------|----------|-------|
-| `queue-pulse` | 0.3s ease-out | Queue icon feedback |
-| `badge-flash` | 0.3s ease-out | Queue count badge update |
-| `queue-track-drop` | 0.3s ease-in | Track leaving queue (slides down, fades) |
-| `queue-track-insert` | 1s ease-out | Track entering queue (slides in with purple glow) |
+| Keyframes | Class | Notes |
+|-----------|-------|-------|
+| `modalScrimIn` | `.modal-scrim` | `Modal`'s scrim fades in |
+| `modalPanelIn` | `.modal-panel` | `Modal`'s panel fades and rises 8px |
+| `toastIn` | `.toast-enter` | A toast fades and rises 8px |
+| `tooltip-in` | `.tooltip-panel` | The shared tooltip |
+| `fadeIn` | inline `animation` | Concert rows appearing |
 
-### Navigation & Layout
+### Queue
 
-| Animation | Usage |
-|-----------|-------|
-| `slideInRight` | Sidebar opening (translateX 100% → 0) |
-| `slideOutRight` | Sidebar closing (translateX 0 → 100%) |
-| `cardFadeUp` | Card grid entry (0.4s, translateY 12px → 0 with fade) |
-| `friendSlideIn` | Friend sidebar entry (0.3s, translateX -12px → 0) |
-| `friendMoved` | Friend reorder feedback (0.4s, subtle scale + purple tint) |
-| `friendStatusChange` | Friend status update (0.3s, vertical bounce) |
+| Keyframes | Class | Notes |
+|-----------|-------|-------|
+| `queue-pulse` | `.queue-pulse` | The queue button when something is added |
+| `badge-flash` | `.badge-flash` | The queue count badge |
+| `queue-track-drop` | `.queue-track-drop` | A track leaving the queue |
+| `queue-track-insert` | `.queue-track-insert` | A track entering the queue |
 
-### Hover & Interactive
+### Navigation, cards and friends
 
-| Animation | Usage |
-|-----------|-------|
-| `onAirPulse` | Green pulsing glow for "on air" friends (2s infinite) |
-| `marquee-scroll` | Scrolling text for truncated labels (8s linear, pauses on hover) |
-| Release card hover | `translateY(-6px)` + enhanced shadow (0.25s ease-out) |
+| Keyframes | Class or use | Notes |
+|-----------|--------------|-------|
+| `slideInRight` / `slideOutRight` | inline `animation` | The results sidebar opening and closing (it slides in from the right, above the playbar) |
+| `cardFadeUp` | `.card-fade-up` | Card grids appearing |
+| `friendSlideIn` | `.friend-entry` | A friend joining the sidebar |
+| `friendMoved` | `.friend-moved` | A friend changing places |
+| `onAirPulse` | `.on-air-indicator` | The on-air dot (2s loop) |
+| `marquee-scroll` | `.animate-marquee` | Long names that scroll (pauses on hover) |
 
 ### Shimmer Classes
 
@@ -486,7 +479,7 @@ Navigation history is maintained with `viewHistory` and `forwardHistory` arrays 
 - Main content width is tracked via `ResizeObserver` on the content container
 - Search results grid adjusts item count based on `searchContainerWidth`
 - Artist cards accept `itemWidth` prop for responsive sizing
-- No breakpoint-based responsive design (desktop Electron app)
+- Tailwind's `sm:`/`md:`/`lg:`/`xl:` breakpoints are used in about 20 grids, but they measure the **window**, not the content area: at the 1000px minimum window width the content is only 744px wide. Prefer content-width rules (`ResizeObserver`, `repeat(auto-fill, minmax(…))`); #1389 is moving the grids over.
 
 ---
 

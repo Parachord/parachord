@@ -464,37 +464,6 @@
       animation: spin 1s linear infinite;
     }
 
-    @keyframes spin-reverse {
-      to { transform: rotate(-360deg); }
-    }
-
-    .animate-spin-reverse {
-      animation: spin-reverse 1s linear infinite;
-    }
-
-    /* App loading screen - Wordmark reveal animation */
-    @keyframes loadingFadeInUp {
-      from {
-        opacity: 0;
-        transform: translateY(12px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
-    @keyframes loadingDotPulse {
-      0%, 100% {
-        opacity: 0.3;
-        transform: scale(0.8);
-      }
-      50% {
-        opacity: 1;
-        transform: scale(1);
-      }
-    }
-
     .loading-screen {
       background: radial-gradient(circle at center, #ffffff 0%, #f9fafb 70%, #f3f4f6 100%);
     }
@@ -502,38 +471,6 @@
     .dark .loading-screen {
       background: radial-gradient(circle at center, #1a1a1a 0%, #141414 70%, #111111 100%);
     }
-
-    .dark .loading-dot {
-      background-color: #9ca3af;
-    }
-
-    /* Splash wordmark text color is hardcoded to dark navy in markup so
-       the light-mode path needs no extra rule. The dark-mode override
-       switches it to white (parachord#878). */
-    .dark .loading-wordmark-text {
-      color: #f9fafb !important;
-    }
-
-    .loading-wordmark {
-      animation: loadingFadeInUp 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-    }
-
-    .loading-wordmark svg {
-      display: block;
-    }
-
-    /* Loading dots — retained as a fallback CSS class but not used by the
-       current splash markup. The wordmark itself carries the motion now. */
-    .loading-dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background-color: #6b7280;
-    }
-
-    .loading-dot:nth-child(1) { animation: loadingDotPulse 1.4s ease-in-out infinite; }
-    .loading-dot:nth-child(2) { animation: loadingDotPulse 1.4s ease-in-out 0.15s infinite; }
-    .loading-dot:nth-child(3) { animation: loadingDotPulse 1.4s ease-in-out 0.3s infinite; }
 
     /* Wordmark animation (parachord#878). True per-letter pop-in using the
        inline SVG wordmark (paths grouped by letter via <g class="letter-N">).
@@ -1087,26 +1024,6 @@
 
     .friend-moved {
       animation: friendMoved 0.4s ease-out forwards;
-    }
-
-    /* Friend on-air status change animation */
-    @keyframes friendStatusChange {
-      0% {
-        transform: translateY(0);
-      }
-      25% {
-        transform: translateY(-2px);
-      }
-      75% {
-        transform: translateY(2px);
-      }
-      100% {
-        transform: translateY(0);
-      }
-    }
-
-    .friend-status-change {
-      animation: friendStatusChange 0.3s ease-in-out forwards;
     }
 
     /* Reduced motion (#1386), one block for the whole app. With the system

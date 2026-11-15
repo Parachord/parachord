@@ -160,7 +160,7 @@ Each rule below exists because the audit found its absence. Read the audit's are
   - A count that rises fails: fix it with the shared component or token.
   - A count that falls fails until you lock it in with `npm run design-drift -- --write` and commit the baseline.
   - Raising the baseline is a last resort. The PR must say why no shared way existed.
-- **`docs/DESIGN_SYSTEM.md` is out of date** in the places the audit lists (unused tokens, "no breakpoint-based responsive design", stale colours and animations). Where it disagrees with this section or the audit, this section wins until the doc is rewritten. A PR that settles one of those points updates the doc.
+- **`docs/DESIGN_SYSTEM.md` is the reference for tokens, scales, colours, copy and animations** (corrected in the design audit). Its Components section is still being rewritten; where that section disagrees with this one or the audit, this section wins. A PR that changes a token, scale or shared component updates the doc.
 
 ## Dialog Patterns
 
