@@ -156,6 +156,12 @@ function notReady(reason, message) {
 // which the resolver would cache as a 30-day noMatch.
 const LOAD_URL_TIMEOUT_MS = 30000;
 
+// lookupPlaylist's capture poll: every PLAYLIST_CAPTURE_POLL_MS while the page
+// loads, then up to PLAYLIST_CAPTURE_POLLS_AFTER_LOAD more once it has loaded
+// (20s: boot + query is ~2-4s on a cold view).
+const PLAYLIST_CAPTURE_POLL_MS = 500;
+const PLAYLIST_CAPTURE_POLLS_AFTER_LOAD = 40;
+
 // The album catalog fallback on the renderer bounds each catalog step
 // (withCatalogTimeout / CATALOG_STEP_TIMEOUT_MS in src/renderer/app.js), and
 // getArtistImage bounds each chain step the same way
@@ -1296,27 +1302,45 @@ const amazonWebPlayer = {
       // request id) while the page loads and fires playlistDetail itself.
       const { captured, detach } = this.attachGqlCapture();
       try {
-        await this.replayGate.beginNavigation();
-        try {
-          await loadURLBudgeted(win, rawUrl);
-        } finally {
-          this.replayGate.endNavigation();
-        }
-        // Wait for the page's own playlistDetail request. Boot + query is
-        // ~2-4s on a cold view; the poll window covers a slow load. The
-        // entry must also have its headers (onBeforeSendHeaders fires
+        // Don't wait for the whole page to finish loading: the page fires
+        // playlistDetail a few seconds in and can keep loading other things
+        // long after (did-finish-load waits for every subresource). The poll
+        // runs WHILE the page loads and takes the request the moment it is
+        // captured; one slow resource used to time the lookup out at 30s
+        // with the request already in hand (2026-11-15). The load's own
+        // budget still bounds a page that never fires it: a load that fails
+        // or times out before the capture throws its load-failed error, and
+        // a load that finishes without it gets the poll window below.
+        // The entry must also have its headers (onBeforeSendHeaders fires
         // milliseconds after onBeforeRequest — accepting the body alone
         // races that) before we take it.
+        await this.replayGate.beginNavigation();
         let entry = null;
-        for (let i = 0; i < 40; i++) {
-          await new Promise(r => setTimeout(r, 500));
-          const href = win.isDestroyed() ? '' : win.webContents.getURL();
-          if (pageBlocksPlayback(href)) {
-            console.warn(`[Amazon] playlist blocked: ${href}`);
-            throw notReady('not-signed-in', 'Choose an Amazon Music profile');
+        try {
+          const load = { done: false, error: null };
+          loadURLBudgeted(win, rawUrl).then(
+            () => { load.done = true; },
+            (error) => { load.done = true; load.error = error; }
+          );
+          for (let afterLoad = 0; afterLoad < PLAYLIST_CAPTURE_POLLS_AFTER_LOAD;) {
+            await new Promise(r => setTimeout(r, PLAYLIST_CAPTURE_POLL_MS));
+            const href = win.isDestroyed() ? '' : win.webContents.getURL();
+            if (pageBlocksPlayback(href)) {
+              console.warn(`[Amazon] playlist blocked: ${href}`);
+              throw notReady('not-signed-in', 'Choose an Amazon Music profile');
+            }
+            entry = captured.find(r => r.headers && amazonPlaylistDetailRequest([r.body], playlistId));
+            if (entry) {
+              if (!load.done) console.log('[Amazon] playlist request captured before the page finished loading; going ahead');
+              break;
+            }
+            if (load.error) throw load.error;
+            if (load.done) afterLoad++;
           }
-          entry = captured.find(r => r.headers && amazonPlaylistDetailRequest([r.body], playlistId));
-          if (entry) break;
+        } finally {
+          // A page still loading after the capture is the same document (the
+          // SPA already booted and queried), so replays may run on it.
+          this.replayGate.endNavigation();
         }
         if (!entry) {
           // The page loaded but never asked for this playlist: deleted, private,

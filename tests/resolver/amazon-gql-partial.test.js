@@ -14,6 +14,9 @@
  *     status (the music-home fallback reads error.status === 294)
  *   - lookupPlaylist replays the captured playlistDetail request verbatim and
  *     imports the tracks from a 294 answer
+ *   - lookupPlaylist goes ahead as soon as the request is captured, even
+ *     while the page is still loading; a load failure before any capture
+ *     is still load-failed, and the navigation gate is always released
  */
 
 const amazonWebPlayer = require('../../amazon-web-player');
@@ -218,6 +221,30 @@ describe('lookupPlaylist on a community playlist (HTTP 294)', () => {
     expect(script).toContain('"csrf-token":"t"');
     expect(script).not.toContain('session=secret');
     expect(script).not.toContain('"Origin"');
+  });
+
+  test('goes ahead once the request is captured, without waiting for the page to finish loading', async () => {
+    // A page that never fires did-finish-load (one slow subresource). The
+    // old flow sat out the 30s load budget and failed load-failed with the
+    // request already captured.
+    win.loadURL.mockImplementationOnce(() => new Promise(() => {}));
+    const started = Date.now();
+    const playlist = await amazonWebPlayer.lookupPlaylist(PLAYLIST_URL);
+    expect(playlist.tracks).toHaveLength(2);
+    expect(Date.now() - started).toBeLessThan(5000);
+    // The navigation gate was released: a replay may enter again.
+    expect(amazonWebPlayer.replayGate.tryEnterReplay()).toBe(true);
+    amazonWebPlayer.replayGate.exitReplay();
+  });
+
+  test('a load that fails before any capture is load-failed, and releases the gate', async () => {
+    const err = Object.assign(new Error('Amazon Music page did not finish loading within 30000ms'), { reason: 'load-failed' });
+    win.loadURL.mockImplementationOnce(() => Promise.reject(err));
+    amazonWebPlayer.attachGqlCapture.mockImplementation(() => ({ captured: [], detach: () => {} }));
+    await expect(amazonWebPlayer.lookupPlaylist(PLAYLIST_URL)).rejects.toMatchObject({ reason: 'load-failed' });
+    expect(evalOn).not.toHaveBeenCalled();
+    expect(amazonWebPlayer.replayGate.tryEnterReplay()).toBe(true);
+    amazonWebPlayer.replayGate.exitReplay();
   });
 
   test('a 294 with no playlist is still a lookup failure', async () => {
