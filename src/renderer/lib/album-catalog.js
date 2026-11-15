@@ -143,8 +143,8 @@ function albumVersionsGroup(release) {
 
 // The session key of the source dropdown's data: the album's identity (artist
 // + title, sameAlbumIdentity's basis) plus the group from albumVersionsGroup.
-// A page that learns its group id mid-load (a release-id open, a catalog
-// list filling the page after MusicBrainz failed) changes key, so a list loaded
+// A page that learns its group id mid-load (a release-id open, a catalog race
+// filling the page before MusicBrainz answers) changes key, so a list loaded
 // without a group never stands in for one that should list the group's
 // editions. Null when the release has no artist or title to key on.
 function albumVersionsKey(release) {
