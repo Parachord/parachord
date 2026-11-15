@@ -18,6 +18,7 @@
 // from props under their old names.
 
 const Icons = require('./icons');
+const { Badge } = require('./badge');
 const { lbMbidOf } = require('../lib/playlist-share');
 const { HeaderControl } = require('./header-control');
 const { Button } = require('./button');
@@ -926,27 +927,26 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                     style: { color: 'var(--text-tertiary)' }
                   }, `Source: ${sourceLabel}`);
                 })(),
-                // Sync status for syncedTo playlists
+                // Where it syncs: one Badge per service, named and coloured from
+                // its plugin (an id other than Spotify read "Apple Music"), then
+                // the local-only switch as a real button that says what it does.
                 selectedPlaylist?.syncedTo && !selectedPlaylist.syncedFrom && React.createElement('div', {
-                  className: 'flex items-center gap-2 mt-1'
+                  className: 'flex items-center flex-wrap mt-1',
+                  style: { gap: '6px' }
                 },
-                  // Provider icons
-                  ...Object.keys(selectedPlaylist.syncedTo).map(pid =>
-                    React.createElement('span', {
+                  ...Object.keys(selectedPlaylist.syncedTo).map(pid => {
+                    const service = (allResolvers || []).find(r => r.id === pid);
+                    const name = service?.name || pid;
+                    return React.createElement(Badge, {
                       key: pid,
-                      className: `text-xs px-2 py-0.5 rounded-full ${
-                        pid === 'spotify' ? 'bg-green-100 text-ink-success' : 'bg-pink-100 text-pink-700'
-                      }`,
-                      title: `Synced to ${pid === 'spotify' ? 'Spotify' : 'Apple Music'}`
-                    }, pid === 'spotify' ? 'Spotify' : 'Apple Music')
-                  ),
-                  // Local only toggle
-                  React.createElement('button', {
-                    className: `text-xs px-2 py-0.5 rounded-full transition-colors ${
-                      selectedPlaylist.localOnly
-                        ? 'bg-surface-inset text-ink-secondary'
-                        : 'bg-surface-inset text-ink-tertiary hover:bg-surface-hover'
-                    }`,
+                      color: selectedPlaylist.localOnly ? undefined : (service?.color || undefined),
+                      tooltip: selectedPlaylist.localOnly ? `Linked to ${name}, but kept local only` : `Syncs to ${name}`
+                    }, name);
+                  }),
+                  React.createElement(Button, {
+                    variant: 'secondary',
+                    size: 'sm',
+                    'data-tooltip': selectedPlaylist.localOnly ? 'Send this playlist\'s changes to its services again' : 'Stop sending this playlist\'s changes to its services',
                     onClick: async () => {
                       const updatedPlaylist = { ...selectedPlaylist, localOnly: !selectedPlaylist.localOnly };
                       setSelectedPlaylist(updatedPlaylist);
@@ -954,7 +954,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                       await window.electron.playlists.save(updatedPlaylist);
                       showToast(updatedPlaylist.localOnly ? 'Playlist set to local only' : 'Playlist will sync to services');
                     }
-                  }, selectedPlaylist.localOnly ? 'Local only' : 'Syncing')
+                  }, selectedPlaylist.localOnly ? 'Resume syncing' : 'Keep local only')
                 ),
                 // Edit mode: Title input
                 playlistEditMode && editedPlaylistData && React.createElement('input', {

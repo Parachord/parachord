@@ -2068,6 +2068,7 @@ const { KeyboardShortcutsDialog } = require('./components/keyboard-shortcuts');
 const { WhatsNewDialog } = require('./components/whats-new-dialog');
 const { ArtistCard, RankBadge } = require('./components/artist-card');
 const { ListenerCard, LISTENER_HEXAGON } = require('./components/listener-card');
+const { Badge } = require('./components/badge');
 const { Button } = require('./components/button');
 const { HeaderControl } = require('./components/header-control');
 const { ToastRegion, NowPlayingAnnouncer } = require('./components/toast');
@@ -3882,6 +3883,9 @@ const Parachord = () => {
   const [droppingFromIndex, setDroppingFromIndex] = useState(null); // Index of clicked track - all tracks at index <= this fall down
   // (inserted-track marker moved into use-playback-engine)
   const [queueSaveDialogOpen, setQueueSaveDialogOpen] = useState(false); // Save queue as playlist dialog
+  // The New playlist dialog (Playlists' Create, File › New Playlist / Cmd+N):
+  // null when closed, else the name being typed.
+  const [newPlaylistDialogName, setNewPlaylistDialogName] = useState(null);
   const [queueSavePlaylistName, setQueueSavePlaylistName] = useState(''); // Name for saved queue playlist
   const [soundcloudToken, setSoundcloudToken] = useState(null);
   const [soundcloudConnected, setSoundcloudConnected] = useState(false);
@@ -10989,10 +10993,11 @@ const Parachord = () => {
       console.log('📋 Menu action:', action);
       switch (action) {
         case 'new-playlist':
-          // Open new playlist form and navigate to playlists view
+          // The New playlist dialog, on Playlists. (It set a flag for a name
+          // form that only the Add to Playlist panel renders, so nothing
+          // appeared.)
           setActiveView('playlists');
-          setNewPlaylistFormOpen(true);
-          setNewPlaylistName('');
+          setNewPlaylistDialogName('');
           break;
         case 'open-settings':
           setActiveView('settings');
@@ -29955,7 +29960,9 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         title: track.name,
         artist: track.artist?.name || 'Unknown Artist',
         album: null,
-        albumArt: track.image?.[2]?.['#text'] || null,
+        // Never Last.fm's image: for a track it's the grey-star placeholder.
+        // The art pipeline (getAlbumArt / getTrackArt) fills it in.
+        albumArt: null,
         playCount: parseInt(track.playcount) || 0,
         rank: index + 1,
         sources: {}
@@ -31457,7 +31464,9 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         id: `friend-top-track-${index}-${track.name}`.replace(/\s+/g, '-'),
         title: track.name,
         artist: track.artist?.name || 'Unknown Artist',
-        albumArt: track.image?.[2]?.['#text'] || null,
+        // Never Last.fm's image: for a track it's the grey-star placeholder.
+        // The art pipeline (getAlbumArt / getTrackArt) fills it in.
+        albumArt: null,
         playCount: parseInt(track.playcount) || 0,
         rank: index + 1,
         sources: {}
@@ -38091,35 +38100,9 @@ useEffect(() => {
           // and playlist Share button (theme variables, card-style border and
           // hover), sized to sit level with the filled New button beside it.
           React.createElement(Button, { variant: 'secondary', size: 'sm', type: 'button', onClick: () => setShowUrlImportDialog(true), className: 'ml-3 no-drag' }, React.createElement(Icons.Download, { className: 'w-4 h-4' }), 'Import'),
-          // Create New Playlist button
-          React.createElement('button', {
-            onClick: () => {
-              // Generate a unique name (increment if "New Playlist" already exists)
-              let baseName = 'New Playlist';
-              let name = baseName;
-              let counter = 2;
-              const existingNames = new Set(playlists.map(p => p.title));
-              while (existingNames.has(name)) {
-                name = `${baseName} ${counter}`;
-                counter++;
-              }
-              const playlistId = name.toLowerCase().replace(/[^a-z0-9]/g, '-') + '-' + Date.now();
-              const newPlaylist = {
-                id: playlistId,
-                filename: `${playlistId}.xspf`,
-                title: name,
-                creator: 'Me',
-                tracks: [],
-                createdAt: Date.now(),
-                addedAt: Date.now(),
-                lastModified: Date.now()
-              };
-              setPlaylists(prev => [newPlaylist, ...prev]);
-              savePlaylistToStore(newPlaylist);
-              setSelectedPlaylist(newPlaylist);
-            },
-            className: 'ml-2 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5'
-          },
+          // Create: names the playlist first (the New playlist dialog), in
+          // the accent primary like every primary button (it was green).
+          React.createElement(Button, { variant: 'primary', size: 'sm', type: 'button', className: 'ml-2 no-drag', onClick: () => setNewPlaylistDialogName('') },
             React.createElement(Icons.Plus, { className: 'w-4 h-4' }),
             'Create'
           )
@@ -38300,10 +38283,7 @@ useEffect(() => {
                       linkUpdateMode(playlist) === 'auto' && React.createElement('div', {
                         className: 'absolute top-2 right-2 flex items-center gap-1'
                       },
-                        playlist.source === 'hosted-xspf' && React.createElement('span', {
-                          className: 'bg-white/90 backdrop-blur-sm text-blue-500 text-xs px-2 py-0.5 rounded-full font-medium',
-                          'data-tooltip': 'Hosted playlist'
-                        }, '🌐 Hosted'),
+                        playlist.source === 'hosted-xspf' && React.createElement(Badge, { tone: 'surface', icon: Icons.Globe, tooltip: 'Hosted playlist: updates from its link' }, 'Hosted'),
                         React.createElement('button', {
                           onClick: async (e) => {
                             e.stopPropagation();
@@ -38323,10 +38303,7 @@ useEffect(() => {
                       playlist.isAiPlaylist && !playlist.sourceUrl && React.createElement('div', {
                         className: 'absolute top-2 right-2'
                       },
-                        React.createElement('span', {
-                          className: 'bg-white/90 backdrop-blur-sm text-accent text-xs px-2 py-0.5 rounded-full font-medium',
-                          'data-tooltip': `Generated by ${playlist.creator || 'AI'}`
-                        }, '✨ AI')
+                        React.createElement(Badge, { tone: 'surface', icon: Icons.Sparkles, tooltip: `Made by ${playlist.creator || 'Shuffleupagus'}` }, 'AI')
                       ),
 
                       // Hover overlay with action buttons (Add to Playlist, Play, Queue)
@@ -38420,23 +38397,8 @@ useEffect(() => {
                       }
                     },
                       playlist.title,
-                      playlist.syncedFrom?.isCollaborator === true && React.createElement('span', {
-                        className: 'shared-playlist-badge',
-                        'data-tooltip': "You're a collaborator on this playlist — your edits sync to other collaborators",
-                        style: {
-                          fontSize: '11px',
-                          padding: '2px 6px',
-                          borderRadius: '4px',
-                          backgroundColor: 'var(--accent-secondary, #6366f1)',
-                          color: 'var(--accent-secondary-fg)',
-                          fontWeight: 600,
-                          marginLeft: '6px',
-                          display: 'inline-block',
-                          verticalAlign: 'middle',
-                          letterSpacing: '0.05em',
-                textTransform: 'uppercase'
-                        }
-                      }, 'Shared')
+                      playlist.syncedFrom?.isCollaborator === true && React.createElement('span', { className: 'shared-playlist-badge', style: { marginLeft: '6px', verticalAlign: 'middle', display: 'inline-flex' } },
+                        React.createElement(Badge, { tone: 'accent', icon: Icons.Users, tooltip: 'You’re a collaborator on this playlist: your edits sync to the other collaborators' }, 'Shared'))
                     ),
                     React.createElement('div', {
                       className: 'truncate',
@@ -38578,38 +38540,17 @@ useEffect(() => {
                   ),
                   // Playlist name
                   React.createElement('div', { className: 'flex-1 min-w-0' },
-                    React.createElement('div', { className: 'font-medium text-ink-primary truncate group-hover:text-ink-success transition-colors' },
+                    React.createElement('div', { className: 'font-medium text-ink-primary truncate' },
                       playlist.title,
-                      playlist.syncedFrom?.isCollaborator === true && React.createElement('span', {
-                        className: 'shared-playlist-badge',
-                        'data-tooltip': "You're a collaborator on this playlist — your edits sync to other collaborators",
-                        style: {
-                          fontSize: '11px',
-                          padding: '2px 6px',
-                          borderRadius: '4px',
-                          backgroundColor: 'var(--accent-secondary, #6366f1)',
-                          color: 'var(--accent-secondary-fg)',
-                          fontWeight: 600,
-                          marginLeft: '6px',
-                          display: 'inline-block',
-                          verticalAlign: 'middle',
-                          letterSpacing: '0.05em',
-                textTransform: 'uppercase'
-                        }
-                      }, 'Shared')
+                      playlist.syncedFrom?.isCollaborator === true && React.createElement('span', { className: 'shared-playlist-badge', style: { marginLeft: '6px', verticalAlign: 'middle', display: 'inline-flex' } },
+                        React.createElement(Badge, { tone: 'accent', icon: Icons.Users, tooltip: 'You’re a collaborator on this playlist: your edits sync to the other collaborators' }, 'Shared'))
                     ),
                     playlist.creator && React.createElement('div', { className: 'text-sm text-ink-tertiary truncate' }, playlist.creator)
                   ),
                   // Hosted badge (only for actual hosted XSPF, not Spotify/Apple Music imports)
-                  playlist.sourceUrl && playlist.source === 'hosted-xspf' && React.createElement('span', {
-                    className: 'text-xs text-ink-info bg-tint-info px-2 py-1 rounded-full font-medium flex-shrink-0',
-                    'data-tooltip': 'Hosted playlist'
-                  }, '🌐 Hosted'),
+                  playlist.sourceUrl && playlist.source === 'hosted-xspf' && React.createElement(Badge, { tone: 'info', icon: Icons.Globe, tooltip: 'Hosted playlist: updates from its link' }, 'Hosted'),
                   // AI badge
-                  playlist.isAiPlaylist && !playlist.sourceUrl && React.createElement('span', {
-                    className: 'text-xs text-accent bg-accent-tint px-2 py-1 rounded-full font-medium flex-shrink-0',
-                    'data-tooltip': `Generated by ${playlist.creator || 'AI'}`
-                  }, '✨ AI'),
+                  playlist.isAiPlaylist && !playlist.sourceUrl && React.createElement(Badge, { tone: 'accent', icon: Icons.Sparkles, tooltip: `Made by ${playlist.creator || 'Shuffleupagus'}` }, 'AI'),
                   // Track count
                   React.createElement('div', { className: 'text-sm text-ink-tertiary flex-shrink-0 w-20 text-right' },
                     countOf(trackCount, 'track')
@@ -46752,6 +46693,59 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
         })
       )
     ),
+
+    // New Playlist Dialog: a name, then the empty playlist opens.
+    newPlaylistDialogName !== null && (() => {
+      const close = () => setNewPlaylistDialogName(null);
+      const existing = new Set(playlists.map(p => p.title));
+      let fallback = 'New Playlist';
+      for (let n = 2; existing.has(fallback); n++) fallback = `New Playlist ${n}`;
+      const create = () => {
+        const name = newPlaylistDialogName.trim() || fallback;
+        const playlistId = slug(name) + '-' + Date.now();
+        const newPlaylist = {
+          id: playlistId,
+          filename: `${playlistId}.xspf`,
+          title: name,
+          creator: 'Me',
+          tracks: [],
+          createdAt: Date.now(),
+          addedAt: Date.now(),
+          lastModified: Date.now()
+        };
+        setPlaylists(prev => [newPlaylist, ...prev]);
+        savePlaylistToStore(newPlaylist);
+        close();
+        setActiveView('playlists');
+        setSelectedPlaylist(newPlaylist);
+      };
+      return React.createElement(Modal, {
+        size: 'sm',
+        title: 'New playlist',
+        onClose: close,
+        footer: [
+          React.createElement(Button, { key: 'cancel', variant: 'secondary', onClick: close }, 'Cancel'),
+          React.createElement(Button, { key: 'create', variant: 'primary', type: 'submit', form: 'new-playlist-form' }, 'Create')
+        ]
+      },
+        React.createElement('form', {
+          id: 'new-playlist-form',
+          style: { marginTop: '12px' },
+          onSubmit: (e) => { e.preventDefault(); create(); }
+        },
+          React.createElement('label', { htmlFor: 'new-playlist-name', className: 'block text-ink-secondary', style: { fontSize: '13px', marginBottom: '8px' } }, 'Playlist name'),
+          React.createElement(TextField, {
+            id: 'new-playlist-name',
+            value: newPlaylistDialogName,
+            placeholder: fallback,
+            onChange: (v) => setNewPlaylistDialogName(v),
+            // Global shortcuts stay out of the way while typing.
+            onKeyDown: (e) => e.stopPropagation(),
+            autoFocus: true
+          })
+        )
+      );
+    })(),
 
     // Queue Save Playlist Dialog
     // The standard dialog (components/modal.js), a real form: Enter saves.
