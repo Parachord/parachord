@@ -22,3 +22,8 @@ test('adding or rescanning a music folder says when it fails; a cancelled picker
   const rescan = body('const handleRescanFolder = async', '// "Remove Missing Files"');
   expect(rescan).toMatch(/rescan\.success === false[\s\S]*showToast\('Couldn’t rescan that folder\./);
 });
+
+test('Plug-Ins opens with how to use it, not the developer-facing architecture card', () => {
+  expect(app).not.toMatch(/Extensible Plug-in Architecture/);
+  expect(app).toMatch(/'Install only plug-ins you trust: they run with the same access as Parachord\.'/);
+});
