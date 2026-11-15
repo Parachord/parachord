@@ -20,7 +20,7 @@
 // from props under their old names.
 
 const { sellerColor, sellerTextColor, sellerBadgeBg, sellerShortName, sellerName } = require('../lib/ticket-sellers');
-const { Tooltip } = require('./ui-atoms');
+const { Tooltip, ShareButton } = require('./ui-atoms');
 const { CardButton } = require('./card-button');
 const Icons = require('./icons');
 const { Button, buttonClassName } = require('./button');
@@ -121,6 +121,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
     playbackContext,
     prefetchReleaseTracks,
     prefetchedReleasesRef,
+    publishArtistSmartLink,
     publishCollectionSmartLink,
     relatedArtists,
     relatedArtistsSourceFilter,
@@ -169,6 +170,9 @@ const ArtistPage = React.memo(function ArtistPage(props) {
             overflow: 'hidden',
             cursor: isHeaderCollapsed ? 'pointer' : 'default'
           },
+          // Right-click anywhere on the hero (not only the name): Copy link /
+          // View on Achordion.
+          onContextMenu: copyParachordLink
         },
           // Clickable overlay to expand collapsed header (sits behind content)
           isHeaderCollapsed && React.createElement('button', { type: 'button', 'aria-label': 'Expand header',
@@ -321,12 +325,33 @@ const ArtistPage = React.memo(function ArtistPage(props) {
             ),
             // Play top tracks: the shared primary Button (it was a one-off
             // pink pill with a glow).
-            React.createElement(Button, {
-              variant: 'primary',
-              size: isCompactHeader ? 'sm' : 'md',
-              onClick: () => currentArtist && playArtistTopTracks(currentArtist),
-              className: 'mt-6'
-            }, React.createElement(Icons.Play, { size: 16 }), isCompactHeader ? 'Play' : 'Play top tracks')
+            // Share beside it (components/menu.js), as on album and playlist
+            // pages: the Achordion artist link, or the page itself.
+            React.createElement('div', { className: 'mt-6 flex items-center', style: { gap: '12px' } },
+              React.createElement(Button, {
+                variant: 'primary',
+                size: isCompactHeader ? 'sm' : 'md',
+                onClick: () => currentArtist && playArtistTopTracks(currentArtist)
+              }, React.createElement(Icons.Play, { size: 16 }), isCompactHeader ? 'Play' : 'Play top tracks'),
+              currentArtist && React.createElement(Menu, {
+                label: 'Share',
+                renderTrigger: (t) => React.createElement(ShareButton, t),
+                items: [
+                  {
+                    key: 'copy-link',
+                    label: 'Copy link',
+                    icon: React.createElement(Icons.Link, { size: 16 }),
+                    onSelect: () => publishArtistSmartLink({ id: slug(currentArtist.name || 'unknown'), name: currentArtist.name, image: artistImage })
+                  },
+                  {
+                    key: 'view-on-achordion',
+                    label: 'View on Achordion',
+                    icon: React.createElement(Icons.ExternalLink, { size: 16 }),
+                    onSelect: () => publishArtistSmartLink({ id: slug(currentArtist.name || 'unknown'), name: currentArtist.name, image: artistImage }, { openInBrowser: true })
+                  }
+                ]
+              })
+            )
           ),
           // COLLAPSED STATE - Inline layout
           !loadingRelease && currentArtist && isHeaderCollapsed && React.createElement('div', {
