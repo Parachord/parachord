@@ -41986,12 +41986,14 @@ useEffect(() => {
                 onClick: () => openRecommendationPlaylist(item, section),
                 onMouseEnter: () => prefetchRecommendationPlaylist(item),
                 onMouseLeave: () => cancelRecommendationPlaylistPrefetch(item),
+                // No right-click action. This used to open the playlist's
+                // service page in the web browser with no menu and no label,
+                // so a right-click (the hover had already started the lookup)
+                // looked like a failed lookup opening the browser by itself.
+                // Nothing opens a browser unless the control says it will.
                 onContextMenu: (e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  if (item.url && window.electron?.shell?.openExternal) {
-                    window.electron.shell.openExternal(item.url);
-                  }
                 }
               },
                 React.createElement('div', {

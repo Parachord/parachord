@@ -70,6 +70,7 @@ const {
   specBodyWithVars,
   bodyMatchesTemplate,
   createReplayGate,
+  createLaneQueue,
   amazonAlbumSearchUrl,
   amazonAlbumAsinFromUrl,
   amazonAlbumDetailRequest,
@@ -92,6 +93,8 @@ const {
   createSearchBreaker,
   paginatePlaylistTracks,
   amazonGqlFetchHeaders,
+  gqlReplayOutcome,
+  playlistPartialIsUsable,
   capturedOperationNames,
   isAmazonMusicPage,
   gqlCaptureSubject,
@@ -153,6 +156,12 @@ function notReady(reason, message) {
 // portal, stall), so it throws notReady('load-failed') — NOT an empty result,
 // which the resolver would cache as a 30-day noMatch.
 const LOAD_URL_TIMEOUT_MS = 30000;
+
+// lookupPlaylist's capture poll: every PLAYLIST_CAPTURE_POLL_MS while the page
+// loads, then up to PLAYLIST_CAPTURE_POLLS_AFTER_LOAD more once it has loaded
+// (20s: boot + query is ~2-4s on a cold view).
+const PLAYLIST_CAPTURE_POLL_MS = 500;
+const PLAYLIST_CAPTURE_POLLS_AFTER_LOAD = 40;
 
 // The album catalog fallback on the renderer bounds each catalog step
 // (withCatalogTimeout / CATALOG_STEP_TIMEOUT_MS in src/renderer/app.js), and
@@ -252,7 +261,7 @@ const amazonWebPlayer = {
   searchView: null,
   authWindow: null,
   host: null,
-  searchChain: Promise.resolve(),
+  searchQueue: createLaneQueue(),
 
   cookieWarned: false,
   // Circuit breaker for search's structural failures — a hornet rename of the
@@ -744,7 +753,10 @@ const amazonWebPlayer = {
   // the webRequest listener slots, so they run one at a time. Every enqueued
   // job also holds searchViewBusy — the park fuse must not blank the view
   // under a flow it cannot see (a fuse has no idea what the chain is up to).
-  enqueueSearch(fn) {
+  // `lane: 'foreground'` is for a job the user is waiting on (a playlist
+  // they opened): it starts before every queued background job
+  // (createLaneQueue in amazon-music-logic.js). Everything else is background.
+  enqueueSearch(fn, { lane = 'background' } = {}) {
     const busy = async () => {
       this.searchViewBusy++;
       try {
@@ -753,9 +765,12 @@ const amazonWebPlayer = {
         this.searchViewBusy--;
       }
     };
-    const run = this.searchChain.then(busy, busy);
-    this.searchChain = run.then(() => {}, () => {});
-    return run;
+    const queue = this.searchQueue;
+    const pending = queue.pending();
+    if (lane === 'foreground' && pending.background > 0) {
+      console.log(`[Amazon] search queue: foreground job goes ahead of ${pending.background} queued background job(s)`);
+    }
+    return queue.run(busy, { lane });
   },
 
   // One-shot session-header capture for the native playback engine
@@ -892,20 +907,16 @@ const amazonWebPlayer = {
   // the body comes from that request too, so it is always current for this
   // hornet deploy. Returns { parsed } (the full response envelope) or
   // { error } — each flow decides which envelope shape it expects.
-  async replayGql(win, entry, body) {
+  // `options.acceptPartial` opts a flow into HTTP 294 partial answers (see
+  // GQL_PARTIAL_STATUS in amazon-music-logic.js): a predicate over the parsed
+  // body that says whether the data the flow needs came back. Without it a
+  // 294 is a failure with its status, which the home flow relies on.
+  async replayGql(win, entry, body, options = {}) {
     const replayUrl = entry.url || 'https://gql.music.amazon.com/';
     const headers = amazonGqlFetchHeaders(entry.headers);
     const raw = JSON.stringify(body);
     const replay = await this.evalOn(win, GQL_FETCH_SCRIPT(replayUrl, headers, raw));
-    if (!replay || replay.error) return { error: (replay && replay.error) || 'Amazon gql query failed' };
-    if (replay.status !== 200) return { error: `Amazon gql query failed (${replay.status})`, status: replay.status };
-    let parsed = null;
-    try { parsed = JSON.parse(replay.text); } catch (e) { /* leave null */ }
-    if (!parsed) return { error: 'Amazon gql response was not JSON' };
-    if (Array.isArray(parsed.errors) && parsed.errors.length && !parsed.data) {
-      return { error: String((parsed.errors[0] || {}).message || 'Amazon gql query error') };
-    }
-    return { parsed };
+    return gqlReplayOutcome(replay, { acceptPartial: options.acceptPartial || null });
   },
 
   // Shared runner for the spec searches — the songs tab (/search/<q>/songs)
@@ -1298,27 +1309,45 @@ const amazonWebPlayer = {
       // request id) while the page loads and fires playlistDetail itself.
       const { captured, detach } = this.attachGqlCapture();
       try {
-        await this.replayGate.beginNavigation();
-        try {
-          await loadURLBudgeted(win, rawUrl);
-        } finally {
-          this.replayGate.endNavigation();
-        }
-        // Wait for the page's own playlistDetail request. Boot + query is
-        // ~2-4s on a cold view; the poll window covers a slow load. The
-        // entry must also have its headers (onBeforeSendHeaders fires
+        // Don't wait for the whole page to finish loading: the page fires
+        // playlistDetail a few seconds in and can keep loading other things
+        // long after (did-finish-load waits for every subresource). The poll
+        // runs WHILE the page loads and takes the request the moment it is
+        // captured; one slow resource used to time the lookup out at 30s
+        // with the request already in hand (2026-11-15). The load's own
+        // budget still bounds a page that never fires it: a load that fails
+        // or times out before the capture throws its load-failed error, and
+        // a load that finishes without it gets the poll window below.
+        // The entry must also have its headers (onBeforeSendHeaders fires
         // milliseconds after onBeforeRequest — accepting the body alone
         // races that) before we take it.
+        await this.replayGate.beginNavigation();
         let entry = null;
-        for (let i = 0; i < 40; i++) {
-          await new Promise(r => setTimeout(r, 500));
-          const href = win.isDestroyed() ? '' : win.webContents.getURL();
-          if (pageBlocksPlayback(href)) {
-            console.warn(`[Amazon] playlist blocked: ${href}`);
-            throw notReady('not-signed-in', 'Choose an Amazon Music profile');
+        try {
+          const load = { done: false, error: null };
+          loadURLBudgeted(win, rawUrl).then(
+            () => { load.done = true; },
+            (error) => { load.done = true; load.error = error; }
+          );
+          for (let afterLoad = 0; afterLoad < PLAYLIST_CAPTURE_POLLS_AFTER_LOAD;) {
+            await new Promise(r => setTimeout(r, PLAYLIST_CAPTURE_POLL_MS));
+            const href = win.isDestroyed() ? '' : win.webContents.getURL();
+            if (pageBlocksPlayback(href)) {
+              console.warn(`[Amazon] playlist blocked: ${href}`);
+              throw notReady('not-signed-in', 'Choose an Amazon Music profile');
+            }
+            entry = captured.find(r => r.headers && amazonPlaylistDetailRequest([r.body], playlistId));
+            if (entry) {
+              if (!load.done) console.log('[Amazon] playlist request captured before the page finished loading; going ahead');
+              break;
+            }
+            if (load.error) throw load.error;
+            if (load.done) afterLoad++;
           }
-          entry = captured.find(r => r.headers && amazonPlaylistDetailRequest([r.body], playlistId));
-          if (entry) break;
+        } finally {
+          // A page still loading after the capture is the same document (the
+          // SPA already booted and queried), so replays may run on it.
+          this.replayGate.endNavigation();
         }
         if (!entry) {
           // The page loaded but never asked for this playlist: deleted, private,
@@ -1343,8 +1372,16 @@ const amazonWebPlayer = {
         // deleted/private shape, which surfaces as "Playlist not found").
         const sendPlaylistQuery = async (body) => {
           if (win.isDestroyed()) return { error: 'search view closed' };
-          const out = await this.replayGql(win, entry, body);
+          // A community playlist (/user-playlists/) answers 294: complete
+          // data.playlist plus an error on a capabilities field we never
+          // read. Amazon's own page renders it, so the lookup does too.
+          const out = await this.replayGql(win, entry, body, { acceptPartial: playlistPartialIsUsable });
           if (out.error) return { error: out.error };
+          if (out.partial) {
+            const paths = (Array.isArray(out.parsed.errors) ? out.parsed.errors : [])
+              .map(e => (Array.isArray(e && e.path) ? e.path.join('.') : '?'));
+            console.log(`[Amazon] playlist partial answer (HTTP 294), using data.playlist; errors at: ${paths.join(', ') || 'none'}`);
+          }
           const parsed = out.parsed;
           if (parsed && Array.isArray(parsed.errors) && parsed.errors.length && !(parsed.data && parsed.data.playlist)) {
             return { error: String((parsed.errors[0] || {}).message || 'Amazon playlist query error') };
@@ -1397,7 +1434,7 @@ const amazonWebPlayer = {
         detach();
         this.scheduleParkSearchView();
       }
-    });
+    }, { lane: 'foreground' });
   },
 
   // --- Recommendations (capabilities.recommendations in the plugin) --------
@@ -2135,7 +2172,7 @@ const amazonWebPlayer = {
     }
     this.authWindow = null;
     this.cookieWarned = false;
-    this.searchChain = Promise.resolve();
+    this.searchQueue = createLaneQueue();
     // The captured request templates embed the signed-out session's headers
     // and APQ hash — they must not replay into the next account. The parsed
     // recommendations caches carry the old account's content.
