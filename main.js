@@ -805,16 +805,32 @@ const { amazonPlanMessage } = require('./amazon-music-logic');
 // the bridge relays manifest/license operations to main-side providers per
 // resolver. amazon-dmls is the Amazon Music provider; amazon-web-player
 // keeps its search/sign-in/session role (the hornet audio engine is gone).
-// Sender gate for the license-oracle surface: only the main window's top
+// Sender gate, shared by the gated IPC bridges (the widevine license-oracle
+// surface and the webSession primitives below): only the main window's top
 // frame may call at all (relay gating rules in widevine-bridge.js).
-registerWidevineBridgeIpc({
+const isMainWindowTopFrameSender = (event) => {
+  if (!event || !event.sender || !mainWindow || mainWindow.isDestroyed()) return false;
+  if (event.sender.id !== mainWindow.webContents.id) return false;
+  const frame = event.senderFrame;
+  return !!frame && frame.top === frame;
+};
+registerWidevineBridgeIpc({ ipcMain, isAllowedSender: isMainWindowTopFrameSender });
+
+// The webSession IPC bridge (#1356): registered web-session hosts exposed to
+// the renderer. Amazon's session is the ONE createWebSessionHost instance
+// amazon-web-player owns at module scope (the one owner of the
+// persist:amazon-music partition's webRequest slot) — registered here by
+// reference, never re-created. The bridge gates the sender like the widevine
+// bridge, scopes fetch/pageFetch URLs to the session's cookie domains, and
+// shuttles the sign-in tick/decide/settled protocol (channel contract in
+// docs/architecture/web-session.md, "The IPC bridge"). Nothing calls it yet —
+// the Amazon plugin starts when its flows move.
+const { registerWebSession, registerWebSessionBridgeIpc } = require('./main-process/ipc/web-session-bridge');
+registerWebSession('amazon-music', amazonWebPlayer.webSession);
+registerWebSessionBridgeIpc({
   ipcMain,
-  isAllowedSender: (event) => {
-    if (!event || !event.sender || !mainWindow || mainWindow.isDestroyed()) return false;
-    if (event.sender.id !== mainWindow.webContents.id) return false;
-    const frame = event.senderFrame;
-    return !!frame && frame.top === frame;
-  }
+  isAllowedSender: isMainWindowTopFrameSender,
+  sendToRenderer: safeSendToRenderer
 });
 
 // macOS System Volume Monitor

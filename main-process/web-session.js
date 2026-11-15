@@ -234,6 +234,13 @@ function createWebSessionHost(config = {}) {
     _generation: 0,       // bumped by clear(): a superseded load's finally must not detach a newer capture or re-arm the park
     _signInRun: null,     // the pending signIn promise (one ticker per open window)
 
+    // The declared cookie domains, copied: state()/clear() scope by them, and
+    // the IPC bridge's fetch/pageFetch URL gate reads them off the host — the
+    // host is the one owner of the partition, so its domains are the ones the
+    // bridge must scope by (re-declaring them at the bridge's own seam would
+    // drift from what the jar actually scopes).
+    cookieDomains: [...cfg.cookieDomains],
+
     // ── Electron plumbing ───────────────────────────────────────────────────
 
     session() {

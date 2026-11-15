@@ -630,6 +630,10 @@ const { seekSpotify, spotifyPollPredatesSeek, SPOTIFY_SEEK_DEBOUNCE_MS } = requi
 const { savedPluginConfig, sourcesChangedOnRecheck, shuffleAllowed, SHUFFLE_UNAVAILABLE_MESSAGE, LISTEN_ALONG_FAILED_POLLS_LIMIT, listenAlongWaitDecision, resumeStartPosition, trackPositionKey, REPEAT_UNAVAILABLE_MESSAGE, nextRepeatMode, normalizeRepeatMode, repeatModeFromLoop, loopFromRepeatMode, shouldRestoreQueue, trackBehindPlaceholder } = require('./lib/playback-helpers');
 const { parseFriendLink, buildFriendLink } = require('./lib/friend-link');
 const { listenBrainzCoverUrl } = require('./lib/listenbrainz-cover');
+// The host-bridge compatibility rule (#1355) — the same pure module mobile
+// mirrors as PluginCompat.kt, required here like sync-providers/track-match
+// so the renderer and the Kotlin port read one rule, not two copies.
+const { hostBridgesCompatibility } = require('../../main-process/plugin-compat');
 const {
   searchResolversFor, catalogTracksToSearchResults, catalogAlbumsToSearchResults,
   catalogArtistsFromResults, mergeTrackResults, mergeAlbumResults, withoutLocalDuplicates, localSearchRows,
@@ -8629,6 +8633,27 @@ const Parachord = () => {
           if (removedCount > 0) {
             console.log(`🚫 Excluded ${removedCount} user-uninstalled resolver(s)`);
           }
+        }
+
+        // A plugin whose required host bridges this host doesn't supply is
+        // HIDDEN, not loaded (#1355): a loaded plugin without its bridge would
+        // throw not-ready on every resolve, and a retrying resolver would keep
+        // re-asking it. The host advertises what it supplies in
+        // window.__parachordHostBridges (preload.js); the rule lives in
+        // plugin-compat.js, mirrored by mobile's PluginCompat.kt. Malformed
+        // requires is no requirement (build-axes rejects one at source).
+        // Array.from, not Array.isArray: the list crosses contextBridge, which
+        // need not hand back a literal Array (a proxy still iterates).
+        const suppliedHostBridges = Array.from(window.__parachordHostBridges || []);
+        const hiddenByHostBridges = [];
+        resolversToLoad = resolversToLoad.filter((axe) => {
+          const bridges = hostBridgesCompatibility(axe, suppliedHostBridges);
+          if (bridges.ok) return true;
+          hiddenByHostBridges.push(`${axe.manifest?.name || axe.manifest?.id} (needs ${bridges.missing.join(', ')})`);
+          return false;
+        });
+        if (hiddenByHostBridges.length > 0) {
+          console.log(`🙈 Hidden ${hiddenByHostBridges.length} plugin(s) whose host bridges this app doesn't supply: ${hiddenByHostBridges.join(', ')}`);
         }
 
         // Separate content resolvers from meta services by manifest type

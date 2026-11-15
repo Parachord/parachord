@@ -885,6 +885,18 @@ describe('construction and argument validation', () => {
     expect(() => createWebSessionHost({})).toThrow(/config.id is required/);
   });
 
+  test('the host carries its declared cookieDomains (the IPC bridge scopes fetch/pageFetch by them)', async () => {
+    const { host } = await warmSession({ cookieDomains: ['testsvc.com', '.music.testsvc.com'] });
+    expect(host.cookieDomains).toEqual(['testsvc.com', '.music.testsvc.com']);
+    // A copy, not the host's own list: mutating the exposed array must not
+    // re-scope state()/clear() (the bridge reads it, so it cannot be a
+    // handle into the host's config).
+    mockJarCookies = [{ name: 'at-main', value: 'AT', domain: '.testsvc.com' }];
+    expect((await host.state()).cookieNames).toEqual(['at-main']);
+    host.cookieDomains.push('drift.example');
+    expect((await host.state()).cookieNames).toEqual(['at-main']);
+  });
+
   test('an invalid capture rejects before any state is touched (the fuse stays armed)', async () => {
     const { host, view } = await warmSession({ warmMs: 1000 });
     await expect(host.load('https://music.testsvc.com/x', { capture: {} }))

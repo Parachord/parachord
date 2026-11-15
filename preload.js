@@ -673,6 +673,70 @@ contextBridge.exposeInMainWorld('electron', {
     playerEvent: (resolverId, event) => ipcRenderer.invoke('widevine:player-event', { resolverId, event })
   },
 
+  // The generic web-session bridge (#1356): a registered web-session host's
+  // primitives over IPC, named per session (Amazon's is 'amazon-music').
+  // Thin invoke wrappers for load/pageFetch/fetch/state/clear — payload and
+  // error contract in docs/architecture/web-session.md, "The IPC bridge".
+  // signIn keeps the host's shape: the wrapper runs the plugin's decide() on
+  // every forwarded tick, answers with the verdict, and resolves from the
+  // settled event (the host promise settles on the main side).
+  webSession: {
+    load: (id, url, opts) => ipcRenderer.invoke('webSession:load', { id, url, opts }),
+    pageFetch: (id, request) => ipcRenderer.invoke('webSession:pageFetch', { id, request }),
+    fetch: (id, request) => ipcRenderer.invoke('webSession:fetch', { id, request }),
+    state: (id) => ipcRenderer.invoke('webSession:state', { id }),
+    clear: (id) => ipcRenderer.invoke('webSession:clear', { id }),
+    // signIn(id, url, { decide, window }) → { success, signedIn }:
+    // decide({ url, cookieNames, stableTicks }) is the plugin's pure verdict,
+    // called once per tick; window is { width, height, title } for the visible
+    // sign-in window. The promise always resolves: settled { signedIn } on
+    // success, { success: false, reason, error } when the invoke itself is
+    // refused (an unknown session, a gated sender).
+    signIn: (id, url, opts = {}) => new Promise((resolve) => {
+      let callId = null;
+      const decide = typeof opts.decide === 'function' ? opts.decide : () => false;
+      const onTick = (_event, tick) => {
+        if (!tick || tick.callId !== callId) return;
+        // The plugin's decide sees the host's tick shape — the callId is the
+        // protocol's routing key, not plugin input.
+        const { callId: _callId, ...facts } = tick;
+        let verdict = false;
+        // A throwing decide is the plugin's bug, not a failed sign-in — the
+        // host ignores one too (web-session.js ticks on).
+        try { verdict = !!decide(facts); } catch { verdict = false; }
+        ipcRenderer.invoke('webSession:sign-in-decide', { callId, verdict }).catch(() => {});
+      };
+      const onSettled = (_event, settled) => {
+        if (!settled || settled.callId !== callId) return;
+        ipcRenderer.removeListener('webSession:sign-in-tick', onTick);
+        ipcRenderer.removeListener('webSession:sign-in-settled', onSettled);
+        resolve({ success: true, signedIn: !!settled.signedIn, ...(settled.error ? { error: settled.error } : {}) });
+      };
+      // Subscribed before the invoke, so a fast first tick cannot race the
+      // invoke's reply; ticks for other callIds are dropped by the filter
+      // until ours is known.
+      ipcRenderer.on('webSession:sign-in-tick', onTick);
+      ipcRenderer.on('webSession:sign-in-settled', onSettled);
+      ipcRenderer.invoke('webSession:signIn', {
+        id,
+        url,
+        window: opts.window && typeof opts.window === 'object' ? opts.window : undefined
+      }).then((reply) => {
+        if (!reply || !reply.success) {
+          ipcRenderer.removeListener('webSession:sign-in-tick', onTick);
+          ipcRenderer.removeListener('webSession:sign-in-settled', onSettled);
+          resolve({ success: false, reason: reply && reply.reason, error: reply && reply.error });
+          return;
+        }
+        callId = reply.callId;
+      }, (error) => {
+        ipcRenderer.removeListener('webSession:sign-in-tick', onTick);
+        ipcRenderer.removeListener('webSession:sign-in-settled', onSettled);
+        resolve({ success: false, error: String((error && (error.message || error)) || error) });
+      });
+    })
+  },
+
   // Ollama operations (local AI)
   ollama: {
     start: () => ipcRenderer.invoke('ollama:start'),
@@ -714,3 +778,13 @@ contextBridge.exposeInMainWorld('electron', {
 
   // Generic invoke removed for security — use specific API methods above
 });
+
+// What host bridges this app supplies (#1355): a plugin declares
+// "requires": { "hostBridges": [...] } and the plugin loader hides it when
+// this host doesn't carry every one (docs/architecture/plugins.md, "Required
+// host bridges"). Keep the list in step with the window.electron blocks
+// above — a bridge missing from this list is a bridge no plugin can require.
+// (contextBridge is how a sandboxed preload reaches the page world — a bare
+// window assignment here stays preload-side.)
+const HOST_BRIDGES = ['amazonMusic', 'webSession'];
+contextBridge.exposeInMainWorld('__parachordHostBridges', HOST_BRIDGES);
