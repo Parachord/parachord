@@ -32,7 +32,11 @@ describe('updateModeOptions', () => {
       expect(o.label).toMatch(/^[A-Z][a-z]+( [a-z]+)*$/);
       expect(o.hint).not.toMatch(/resolver|\.\.\./i);
     }
-    expect(updateModeOptions({ isService: true, sourceLabel: 'Spotify' })[0].hint).toMatch(/replace/);
+    // The link wins, edits made here included, and the question says so.
+    expect(updateModeOptions({ isService: true, sourceLabel: 'Spotify' })[0].hint)
+      .toBe('Checks Spotify every hour. Changes there replace this copy, including edits you make here.');
+    expect(updateModeOptions({ isService: false })[0].hint)
+      .toBe('Checks the link every 5 minutes. Changes there replace this copy, including edits you make here.');
   });
 });
 

@@ -24,7 +24,7 @@ function updateModeOptions({ isService = false, sourceLabel } = {}) {
     {
       value: 'auto',
       label: 'Keep it updated',
-      hint: `Checks ${where} ${often}. Changes there replace this copy.`,
+      hint: `Checks ${where} ${often}. Changes there replace this copy, including edits you make here.`,
     },
     {
       value: 'snapshot',
