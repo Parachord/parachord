@@ -238,12 +238,16 @@ const transformPlaylist = (playlist) => {
   // Track count: prefer relationships.tracks.meta.total, fall back to data length, then 0
   const tracksRel = playlist.relationships?.tracks;
   const trackCount = tracksRel?.meta?.total ?? tracksRel?.data?.length ?? 0;
+  const artwork = attrs.artwork?.url?.replace('{w}', '500').replace('{h}', '500') || null;
   return {
     id: `applemusic-${playlist.id}`,
     externalId: playlist.id,
     name: attrs.name || 'Untitled Playlist',
     description: attrs.description?.standard || '',
-    image: attrs.artwork?.url?.replace('{w}', '500').replace('{h}', '500') || null,
+    image: artwork,
+    // The playlist's cover for the local record (sync-start.js stores it as
+    // coverArt; see "Playlist covers" in docs/architecture/album-art.md).
+    coverArt: artwork,
     trackCount,
     snapshotId: attrs.lastModifiedDate || null,
     folderId: null,
@@ -1078,4 +1082,5 @@ const AppleMusicSyncProvider = {
   }
 };
 
+AppleMusicSyncProvider.transformPlaylist = transformPlaylist;
 module.exports = AppleMusicSyncProvider;

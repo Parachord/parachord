@@ -475,6 +475,12 @@ const canShortCircuitPlaylistUpdate = ({ localPlaylist, remotePlaylist, provider
   if (!localPlaylist.creator && remotePlaylist.ownerName) return false;
   if (!localPlaylist.source) return false;
 
+  // The playlist's cover moved (or was never stored: imports from before
+  // sync kept covers). Only a service that reports covers says so; one that
+  // reports none (undefined) never forces a pass.
+  if (remotePlaylist.coverArt !== undefined
+    && (remotePlaylist.coverArt || null) !== (localPlaylist.coverArt || null)) return false;
+
   return true;
 };
 

@@ -13,10 +13,11 @@ const { registerSyncStartIpc } = require('../../main-process/ipc/sync-start');
 
 const SPOTIFY_SCOPES = ['user-library-read', 'user-follow-read', 'playlist-read-private'];
 
-function makeHarness({ provider = {}, storeData = {}, spotifyToken = 'SP-TOK', generatedToken = 'AM-DEV', SyncEngineSyncGate = null, syncLinks = () => ({}) } = {}) {
+function makeHarness({ provider = {}, storeData = {}, spotifyToken = 'SP-TOK', generatedToken = 'AM-DEV', SyncEngineSyncGate = null, syncLinks = () => ({}), shortCircuit = () => true } = {}) {
   const store = {
     data: { ...storeData },
-    get(k) { return this.data[k]; },
+    // A copy, like electron-store (conf parses the file on every get).
+    get(k) { return this.data[k] === undefined ? undefined : structuredClone(this.data[k]); },
     set(k, v) { this.data[k] = v; },
   };
   const handlers = new Map();
@@ -38,8 +39,8 @@ function makeHarness({ provider = {}, storeData = {}, spotifyToken = 'SP-TOK', g
   const SyncEngine = {
     getProvider: () => providerObj,
     getAllProviders: () => (providerObj ? [providerObj] : []),
-    staggerPlaylistsForCycle: (x) => x,
-    canShortCircuitPlaylistUpdate: () => true,
+    staggerPlaylistsForCycle: ({ selectedRemote }) => selectedRemote,
+    canShortCircuitPlaylistUpdate: shortCircuit,
     syncDataType: async (...args) => {
       calls.syncDataType.push(args);
       if (SyncEngineSyncGate) await SyncEngineSyncGate;
@@ -304,6 +305,227 @@ describe('sync:start does not save over a link written during the pull', () => {
     const saved = harness.store.data.local_playlists.find((p) => p.id === 'hosted-1');
     expect(saved.syncedTo.applemusic).toEqual({ externalId: 'p.1', syncedAt: 5 });
     expect(saved.syncedTo.spotify).toEqual({ externalId: 'sp1' });
+  });
+});
+
+describe('sync:start pulls a changed import without asking', () => {
+  const LB = { 'scrobbler-config-listenbrainz': { userToken: 'LB-TOK' } };
+  const event = { sender: { send() {} } };
+  const OLD = [{ title: 'Old', artist: 'A' }];
+  const NEW = [{ title: 'New 1', artist: 'B' }, { title: 'New 2', artist: 'C' }];
+  const imported = (externalId, over = {}) => ({
+    id: `listenbrainz-${externalId}`,
+    title: externalId,
+    tracks: OLD,
+    syncedFrom: { resolver: 'listenbrainz', externalId, snapshotId: 'snap-1' },
+    syncSources: { listenbrainz: { syncedAt: 1000 } },
+    lastModified: 1000,
+    locallyModified: false,
+    hasUpdates: false,
+    ...over,
+  });
+  const remote = (externalId) => ({ id: `listenbrainz-${externalId}`, externalId, name: externalId, snapshotId: 'snap-2', trackCount: NEW.length });
+
+  function run({ local, remotes, fetchPlaylistTracks }) {
+    const fetched = [];
+    const harness = makeHarness({
+      shortCircuit: ({ localPlaylist, remotePlaylist }) => localPlaylist.syncedFrom?.snapshotId === remotePlaylist.snapshotId,
+      provider: {
+        fetchPlaylists: async () => ({ playlists: remotes }),
+        fetchPlaylistTracks: async (externalId) => {
+          fetched.push(externalId);
+          return fetchPlaylistTracks ? fetchPlaylistTracks(externalId, harness) : NEW;
+        },
+      },
+      storeData: { ...LB, local_playlists: local },
+    });
+    return harness.handlers.get('sync:start')(event, 'listenbrainz', { settings: { syncPlaylists: true } })
+      .then((result) => ({ result, harness, fetched, saved: (id) => harness.store.data.local_playlists.find((p) => p.id === id) }));
+  }
+
+  test('an unedited import takes the new tracks and snapshot, with no update flag left', async () => {
+    const { result, saved } = await run({ local: [imported('abc')], remotes: [remote('abc')] });
+    expect(result.success).toBe(true);
+    const pl = saved('listenbrainz-abc');
+    expect(pl.tracks).toEqual(NEW);
+    expect(pl.syncedFrom.snapshotId).toBe('snap-2');
+    expect(pl.hasUpdates).toBe(false);
+    expect(result.results.playlists.updated).toBe(1);
+  });
+
+  test('a playlist stuck with the old update flag is pulled on the next sync', async () => {
+    const { saved } = await run({ local: [imported('abc', { hasUpdates: true })], remotes: [remote('abc')] });
+    expect(saved('listenbrainz-abc').tracks).toEqual(NEW);
+    expect(saved('listenbrainz-abc').hasUpdates).toBe(false);
+  });
+
+  test('an import edited here is not overwritten: it is flagged as a conflict', async () => {
+    const edited = imported('abc', { tracks: [], locallyModified: true, lastModified: 2000 });
+    const { saved, fetched } = await run({ local: [edited], remotes: [remote('abc')] });
+    const pl = saved('listenbrainz-abc');
+    expect(fetched).toEqual([]);
+    expect(pl.tracks).toEqual([]);
+    expect(pl.syncedFrom.snapshotId).toBe('snap-1');
+    expect(pl.hasUpdates).toBe(true);
+  });
+
+  test('an edit saved while the tracks were being fetched wins', async () => {
+    const { saved } = await run({
+      local: [imported('abc')],
+      remotes: [remote('abc')],
+      fetchPlaylistTracks: (externalId, harness) => {
+        harness.store.data.local_playlists = harness.store.data.local_playlists.map((p) => (p.id === 'listenbrainz-abc'
+          ? { ...p, tracks: [], locallyModified: true, lastModified: 3000 }
+          : p));
+        return NEW;
+      },
+    });
+    const pl = saved('listenbrainz-abc');
+    expect(pl.tracks).toEqual([]);
+    expect(pl.syncedFrom.snapshotId).toBe('snap-1');
+    expect(pl.hasUpdates).toBe(true);
+  });
+
+  test('an edit saved later in the same sync is not saved over by the pull', async () => {
+    const { saved } = await run({
+      local: [imported('abc'), imported('def')],
+      remotes: [remote('abc'), remote('def')],
+      fetchPlaylistTracks: (externalId, harness) => {
+        if (externalId === 'def') {
+          // The person edits "abc" after its pull, while "def" is fetched.
+          harness.store.data.local_playlists = harness.store.data.local_playlists.map((p) => (p.id === 'listenbrainz-abc'
+            ? { ...p, tracks: [], locallyModified: true, lastModified: 3000 }
+            : p));
+        }
+        return NEW;
+      },
+    });
+    expect(saved('listenbrainz-abc').tracks).toEqual([]);
+    expect(saved('listenbrainz-abc').hasUpdates).toBe(true);
+    expect(saved('listenbrainz-def').tracks).toEqual(NEW);
+  });
+
+  test('a new import records its tracks as agreed with the source', async () => {
+    const { tracksFingerprint } = require('../../sync-engine/auto-pull');
+    const { saved } = await run({ local: [], remotes: [remote('abc')] });
+    expect(saved('listenbrainz-abc').syncedFrom.tracksFingerprint).toBe(tracksFingerprint(NEW));
+  });
+
+  test('an edit is still protected after a sync that found nothing new', async () => {
+    const { tracksFingerprint } = require('../../sync-engine/auto-pull');
+    // Edited here after an import that recorded its fingerprint; an unchanged
+    // sync since then moved syncedAt past the edit and the push loop cleared
+    // locallyModified once the other mirrors caught up.
+    const edited = imported('abc', {
+      tracks: [],
+      syncedFrom: { resolver: 'listenbrainz', externalId: 'abc', snapshotId: 'snap-1', tracksFingerprint: tracksFingerprint(OLD) },
+      syncSources: { listenbrainz: { syncedAt: 9000 } },
+      lastModified: 2000,
+      locallyModified: false,
+    });
+    const { saved, fetched } = await run({ local: [edited], remotes: [remote('abc')] });
+    expect(fetched).toEqual([]);
+    expect(saved('listenbrainz-abc').tracks).toEqual([]);
+    expect(saved('listenbrainz-abc').hasUpdates).toBe(true);
+  });
+
+  test('a new import keeps the service\'s playlist cover', async () => {
+    const { saved } = await run({ local: [], remotes: [{ ...remote('abc'), coverArt: 'https://img/abc.jpg' }] });
+    expect(saved('listenbrainz-abc').coverArt).toBe('https://img/abc.jpg');
+  });
+
+  test('a later sync picks up a changed cover, and a removed one gives the mosaic back', async () => {
+    const withCover = { ...imported('abc'), coverArt: 'https://img/old.jpg' };
+    const changed = await run({ local: [withCover], remotes: [{ ...remote('abc'), coverArt: 'https://img/new.jpg' }] });
+    expect(changed.saved('listenbrainz-abc').coverArt).toBe('https://img/new.jpg');
+    const removed = await run({ local: [withCover], remotes: [{ ...remote('abc'), coverArt: null }] });
+    expect(removed.saved('listenbrainz-abc').coverArt).toBeNull();
+  });
+
+  test('a service that reports no cover leaves the playlist\'s own alone', async () => {
+    const withCover = { ...imported('abc'), coverArt: 'https://img/own.jpg' };
+    const { saved } = await run({ local: [withCover], remotes: [remote('abc')] });
+    expect(saved('listenbrainz-abc').coverArt).toBe('https://img/own.jpg');
+  });
+
+  test('a legacy edited import survives an unchanged sync, then comes out of a remote change as a conflict', async () => {
+    // Imported before the fingerprint: only the old timestamp rule knows it
+    // was edited, and an unchanged sync moves syncedAt past the edit.
+    const legacy = imported('abc', {
+      tracks: [],
+      syncedFrom: { resolver: 'listenbrainz', externalId: 'abc', snapshotId: 'snap-1' },
+      syncSources: { listenbrainz: { syncedAt: 50 } },
+      locallyModified: true,
+      lastModified: 100,
+    });
+    let snapshot = 'snap-1';
+    const fetched = [];
+    const harness = makeHarness({
+      shortCircuit: ({ localPlaylist, remotePlaylist }) => localPlaylist.syncedFrom?.snapshotId === remotePlaylist.snapshotId,
+      provider: {
+        fetchPlaylists: async () => ({ playlists: [{ ...remote('abc'), snapshotId: snapshot }] }),
+        fetchPlaylistTracks: async (externalId) => { fetched.push(externalId); return NEW; },
+      },
+      storeData: { ...LB, local_playlists: [legacy] },
+    });
+    const sync = () => harness.handlers.get('sync:start')(event, 'listenbrainz', { settings: { syncPlaylists: true } });
+    const saved = () => harness.store.data.local_playlists.find((p) => p.id === 'listenbrainz-abc');
+
+    await sync(); // unchanged: short-circuits, moves syncedAt
+    expect(saved().syncSources.listenbrainz.syncedAt).toBeGreaterThan(100);
+    // The push loop clears the flag once other mirrors catch up.
+    harness.store.data.local_playlists = harness.store.data.local_playlists.map((p) => ({ ...p, locallyModified: false }));
+
+    snapshot = 'snap-2';
+    await sync();
+    expect(fetched).toEqual([]);
+    expect(saved().tracks).toEqual([]);
+    expect(saved().syncedFrom.snapshotId).toBe('snap-1');
+    expect(saved().hasUpdates).toBe(true);
+  });
+
+  test('a legacy unedited import is seeded on its first sync and pulled on a later change', async () => {
+    const legacy = imported('abc', { syncedFrom: { resolver: 'listenbrainz', externalId: 'abc', snapshotId: 'snap-1' } });
+    const { tracksFingerprint } = require('../../sync-engine/auto-pull');
+    const { saved } = await run({ local: [legacy], remotes: [{ ...remote('abc'), snapshotId: 'snap-1' }] });
+    expect(saved('listenbrainz-abc').syncedFrom.tracksFingerprint).toBe(tracksFingerprint(OLD));
+  });
+
+  test('a fetch the service refuses (429 after retries) fails that playlist and leaves it for the next sync', async () => {
+    const { result, saved } = await run({
+      local: [imported('abc', { hasUpdates: true })],
+      remotes: [remote('abc')],
+      fetchPlaylistTracks: () => { throw new Error('Spotify API rate limit exceeded after maximum retries'); },
+    });
+    expect(result.success).toBe(true);
+    expect(result.results.playlists.failed).toBe(1);
+    const pl = saved('listenbrainz-abc');
+    expect(pl.tracks).toEqual(OLD);
+    expect(pl.syncedFrom.snapshotId).toBe('snap-1');
+  });
+
+  test('a save during the sync that only moved lastModified (the sources flush) still takes the pull', async () => {
+    const { saved } = await run({
+      local: [imported('abc'), imported('def')],
+      remotes: [remote('abc'), remote('def')],
+      fetchPlaylistTracks: (externalId, harness) => {
+        if (externalId === 'def') {
+          harness.store.data.local_playlists = harness.store.data.local_playlists.map((p) => (p.id === 'listenbrainz-abc'
+            ? { ...p, lastModified: 3000, tracks: p.tracks.map((t) => ({ ...t, sources: { x: {} } })) }
+            : p));
+        }
+        return NEW;
+      },
+    });
+    expect(saved('listenbrainz-abc').tracks).toEqual(NEW);
+    expect(saved('listenbrainz-abc').hasUpdates).toBe(false);
+  });
+
+  test('a hosted XSPF is never pulled from the service', async () => {
+    const hosted = imported('abc', { sourceUrl: 'https://example.com/list.xspf', source: 'hosted' });
+    const { saved, fetched } = await run({ local: [hosted], remotes: [remote('abc')] });
+    expect(fetched).toEqual([]);
+    expect(saved('listenbrainz-abc').tracks).toEqual(OLD);
   });
 });
 
