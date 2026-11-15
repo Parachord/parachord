@@ -13,7 +13,9 @@
 //      are compatible;
 //   3. the same artist and title, when either side's album is a placeholder.
 // A row is matched at most once. Two rows already in the collection for one
-// native id (left by syncs before this rule) are merged into one keeper.
+// native id (left by syncs before this rule) are merged into one keeper, and
+// so are rows that share one id. A remote item that repeats an id or native id
+// already placed is a duplicate: neither matched nor added.
 //
 // Pure and dependency-free: the main process requires it, and so does the
 // renderer (src/renderer/lib/collection-ids.js re-exports isPlaceholderAlbum,
@@ -117,19 +119,52 @@ const mergeRows = (keeper, others) => {
   return merged;
 };
 
+// Rows that share one id are one row (parachord#1404 regression: claims are
+// keyed by id, so a second row with a claimed id could never be matched,
+// merged or removed, and every sync added another copy). Each id keeps one
+// row, the others folded into it. Returns the rows in order, one per id, and
+// the ids that had copies.
+const collapseSameId = (localItems, providerId) => {
+  const groups = new Map();
+  const rows = [];
+  for (const row of localItems) {
+    if (!row || !row.id) { rows.push(row); continue; }
+    if (!groups.has(row.id)) {
+      groups.set(row.id, []);
+      rows.push(row.id);
+    }
+    groups.get(row.id).push(row);
+  }
+  const collapsed = new Set();
+  const out = rows.map((entry) => {
+    if (typeof entry !== 'string') return entry;
+    const group = groups.get(entry);
+    if (group.length === 1) return group[0];
+    collapsed.add(entry);
+    const keeper = pickKeeper(group, providerId);
+    return mergeRows(keeper, group.filter((r) => r !== keeper));
+  });
+  return { rows: out, collapsed };
+};
+
 // Matches remote library tracks to local rows. Returns
 //   pairs:  [{ remote, local, viaId }] — local is the row to update, already
 //           merged with any rows it absorbed
 //   merged: [{ ...row, mergedInto }] — rows folded into a keeper
 //   claimed: Set of local ids that are matched or merged
 //   unmatched: remote items with no local row
+//   duplicates: remote items that repeat an id or native id another remote
+//           item already placed (neither matched nor added)
+//   rows:   the local rows, one per id (copies with one id folded together)
+//   collapsed: Set of ids that had more than one local row
 function matchTracks(remoteItems, localItems, { providerId, nativeIdOf } = {}) {
+  const { rows, collapsed } = collapseSameId(localItems, providerId);
   const byId = new Map();
   const byNative = new Map();
   const byName = new Map();
-  for (const row of localItems) {
+  for (const row of rows) {
     if (!row || !row.id) continue;
-    if (!byId.has(row.id)) byId.set(row.id, row);
+    byId.set(row.id, row);
     for (const nid of nativeIdsOf(row, nativeIdOf, providerId)) {
       if (!byNative.has(nid)) byNative.set(nid, []);
       byNative.get(nid).push(row);
@@ -144,20 +179,39 @@ function matchTracks(remoteItems, localItems, { providerId, nativeIdOf } = {}) {
   const claimed = new Set();
   const pairs = [];
   const pending = [];
+  const duplicates = [];
+
+  // Remote items already placed (paired or added), by id and native id: a
+  // provider can list one id twice (two catalog copies of one recording) or
+  // one native id twice, and the second is the same saved track.
+  const seenIds = new Set();
+  const seenNatives = new Set();
+  const place = (remote) => {
+    if (remote.id) seenIds.add(remote.id);
+    for (const nid of nativeIdsOf(remote, nativeIdOf, providerId)) seenNatives.add(nid);
+  };
+  const isDuplicate = (remote) => (remote.id && seenIds.has(remote.id))
+    || nativeIdsOf(remote, nativeIdOf, providerId).some((nid) => seenNatives.has(nid));
 
   // Pass 1: exact ids. A fallback in pass 2 must never take a row that
-  // another incoming track carries the exact id of.
+  // another incoming track carries the exact id of. A second remote with an
+  // id already claimed here is a duplicate.
   for (const remote of remoteItems) {
-    const local = remote && byId.get(remote.id);
-    if (local && !claimed.has(local.id)) {
+    if (!remote) continue;
+    const local = byId.get(remote.id);
+    if (local && claimed.has(local.id)) {
+      duplicates.push(remote);
+    } else if (local) {
       claimed.add(local.id);
       pairs.push({ remote, local, viaId: true });
     } else {
       pending.push(remote);
     }
   }
+  for (const pair of pairs) place(pair.remote);
 
-  // Pass 2: the native id, then the name with a placeholder album.
+  // Pass 2: the native id, then the name with a placeholder album. A remote
+  // that matches no free row and repeats one already placed is a duplicate.
   const unmatched = [];
   for (const remote of pending) {
     let local = null;
@@ -175,8 +229,12 @@ function matchTracks(remoteItems, localItems, { providerId, nativeIdOf } = {}) {
     if (local) {
       claimed.add(local.id);
       pairs.push({ remote, local, viaId: false });
+      place(remote);
+    } else if (isDuplicate(remote)) {
+      duplicates.push(remote);
     } else {
       unmatched.push(remote);
+      place(remote);
     }
   }
 
@@ -210,7 +268,7 @@ function matchTracks(remoteItems, localItems, { providerId, nativeIdOf } = {}) {
     pair.viaId = pair.viaId && keeper.id === pair.remote.id;
   }
 
-  return { pairs, merged, claimed, unmatched };
+  return { pairs, merged, claimed, unmatched, duplicates, rows, collapsed };
 }
 
 module.exports = {
@@ -218,5 +276,6 @@ module.exports = {
   albumsCompatible,
   nativeIdsOf,
   pickKeeper,
+  mergeRows,
   matchTracks
 };

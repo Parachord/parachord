@@ -284,3 +284,89 @@ describe('library sync with Apple Music: the same rules hold with its naming', (
     expect(result.data).toHaveLength(2);
   });
 });
+
+// The #1404 regression: claims were keyed by row id, so once one row with an
+// id was claimed every other row (and every other remote) with that id was
+// locked out. A remote list that names one id twice added a copy on every
+// sync, and the copies could never heal (the real collection reached 62 rows
+// for each of 27 ids).
+describe('library sync: rows and remotes that share one id collapse to one row', () => {
+  const pimpin = (spotifyId = '3l9eg9RtisizG12a1D6nZl') => remoteTrack({
+    id: 'kurt-vile-pretty-pimpin-b-lieve-i-m-goin-down',
+    artist: 'Kurt Vile',
+    title: 'Pretty Pimpin',
+    album: "b'lieve i'm goin down...",
+    spotifyId
+  });
+  const syncedRow = (addedAt = 1794689768000) => ({
+    ...pimpin(),
+    addedAt,
+    syncSources: { spotify: { addedAt, syncedAt: 1794689768000 } }
+  });
+  const other = () => remoteTrack({ id: 'radiohead-creep-pablo-honey', artist: 'Radiohead', title: 'Creep', album: 'Pablo Honey', spotifyId: 'c1' });
+
+  test('a remote list naming one id twice adds one row on the first sync', async () => {
+    const result = await sync([pimpin(), pimpin('another-spotify-id'), other()], []);
+    expect(result.data.map((t) => t.id).sort()).toEqual([
+      'kurt-vile-pretty-pimpin-b-lieve-i-m-goin-down', 'radiohead-creep-pablo-honey'
+    ]);
+    expect(result.stats.added).toBe(2);
+  });
+
+  test('a remote list naming one id twice adds nothing when the row exists', async () => {
+    const result = await sync([pimpin(), pimpin('another-spotify-id')], [syncedRow()]);
+    expect(result.data).toHaveLength(1);
+    expect(result.stats.added).toBe(0);
+  });
+
+  test('the same native id twice in the remote list adds nothing', async () => {
+    const dupe = { ...pimpin(), id: 'kurt-vile-pretty-pimpin-other-slug' };
+    const result = await sync([pimpin(), dupe], [syncedRow()]);
+    expect(result.data).toHaveLength(1);
+    expect(result.stats.added).toBe(0);
+  });
+
+  test('N identical rows with one id heal into one row, and the sync adds nothing', async () => {
+    const local = Array.from({ length: 62 }, () => syncedRow());
+    const remote = [pimpin(), pimpin(), other()];
+    const result = await sync(remote, [...local, { ...other(), syncSources: { spotify: { addedAt: 1 } } }]);
+    expect(result.stats.added).toBe(0);
+    expect(result.stats.removed).toBe(0);
+    expect(result.data.map((t) => t.id).sort()).toEqual([
+      'kurt-vile-pretty-pimpin-b-lieve-i-m-goin-down', 'radiohead-creep-pablo-honey'
+    ]);
+
+    // And the next sync is a no-op.
+    const again = await sync(remote, result.data);
+    expect(again.stats.added).toBe(0);
+    expect(again.data).toHaveLength(2);
+  });
+
+  test('same-id rows fold their sources and sync sources into one keeper', async () => {
+    const synced = syncedRow(2000);
+    const saved = {
+      ...syncedRow(1000),
+      sources: { bandcamp: { bandcampUrl: 'https://example.bandcamp.com/track/pretty-pimpin' } },
+      syncSources: { manual: { addedAt: 1000 } }
+    };
+    const result = await sync([pimpin()], [synced, saved]);
+    expect(result.data).toHaveLength(1);
+    const row = result.data[0];
+    expect(Object.keys(row.syncSources).sort()).toEqual(['manual', 'spotify']);
+    expect(row.sources.bandcamp).toBeDefined();
+    expect(row.sources.spotify).toBeDefined();
+  });
+
+  test('same-id rows no remote names still collapse, and keep their other sources', async () => {
+    const saved = { ...syncedRow(1000), syncSources: { manual: { addedAt: 1000 } } };
+    const result = await sync([other()], [saved, { ...saved }, { ...saved }]);
+    expect(result.data.filter((t) => t.id === saved.id)).toHaveLength(1);
+    expect(result.stats.removed).toBe(0);
+  });
+
+  test('same-id rows only this provider synced, now gone from the remote, are removed once', async () => {
+    const local = [syncedRow(), syncedRow(), syncedRow()];
+    const result = await sync([other()], local);
+    expect(result.data.map((t) => t.id)).toEqual(['radiohead-creep-pablo-honey']);
+  });
+});
