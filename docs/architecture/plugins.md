@@ -334,7 +334,7 @@ The reply:
 
 ```
 {
-  signedIn: boolean | null,    // null: the plugin can't tell yet
+  signedIn: boolean | null,    // null: the plugin can't tell yet; without a statusLabel the Settings row reads 'Checking…' even after the read finished
   playbackLimit: {             // null: no verdict (the account can play, or nothing is known)
     blocked: boolean,          // required — the account's plan can't play here
     planKey: string | null,    // the plan as the service names it ('prime', 'free', ...), for logs

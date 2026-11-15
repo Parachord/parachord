@@ -7629,13 +7629,33 @@ const Parachord = () => {
 
   // Read every ACTIVE status-capable plugin. Only active ones: a disabled
   // plugin's status has no reader (its tile is inactive, and playback never
-  // asks it).
+  // asks it). One sweep is ONE setPluginStatuses, the whole batch landing
+  // together (every setState is a full-app render — coalesce the burst); a
+  // throwing getStatus never rejects it, because the loader has already
+  // logged it and answered null, which is stored as-is like the single read
+  // above (a real rejection is the loader itself failing, and that resolver
+  // gets no entry). The reads in flight are held per resolver
+  // (pluginStatusReadsRef), so a re-run while one is still pending — a
+  // startup dep changed, or a read hung — reads only what nothing is
+  // reading: no pending call is re-issued.
+  const pluginStatusReadsRef = useRef(new Set());
   const refreshPluginStatuses = () => {
     const loader = resolverLoaderRef.current;
     if (!loader || typeof loader.getStatusResolvers !== 'function') return;
-    for (const r of loader.getStatusResolvers()) {
-      if (activeResolvers.includes(r.id)) refreshPluginStatus(r.id);
-    }
+    const ids = loader.getStatusResolvers()
+      .filter(r => activeResolvers.includes(r.id))
+      .map(r => r.id)
+      .filter(id => !pluginStatusReadsRef.current.has(id));
+    if (!ids.length) return;
+    ids.forEach(id => pluginStatusReadsRef.current.add(id));
+    Promise.allSettled(ids.map(id => loader.getStatus(id))).then((replies) => {
+      ids.forEach(id => pluginStatusReadsRef.current.delete(id));
+      const statuses = {};
+      ids.forEach((id, i) => {
+        if (replies[i].status === 'fulfilled') statuses[id] = replies[i].value;
+      });
+      setPluginStatuses(prev => ({ ...prev, ...statuses }));
+    });
   };
 
   // The trigger set is deliberately the Amazon status's own: once at startup
