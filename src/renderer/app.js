@@ -38432,7 +38432,7 @@ useEffect(() => {
                             loadLastfmCharts({ country: chartsCountry });
                           }
                         }
-                      }, renderLabel: (tab) => tab.charAt(0).toUpperCase() + tab.slice(1), label: 'Charts' })
+                      }, renderLabel: (tab) => (tab === 'songs' ? 'Tracks' : 'Albums'), label: 'Charts' })
                 ),
                 React.createElement('p', {
                   className: 'mt-3 text-white/80 text-sm'
@@ -38472,7 +38472,7 @@ useEffect(() => {
                             loadLastfmCharts({ country: chartsCountry });
                           }
                         }
-                      }, renderLabel: (tab) => tab.charAt(0).toUpperCase() + tab.slice(1), label: 'Charts' })
+                      }, renderLabel: (tab) => (tab === 'songs' ? 'Tracks' : 'Albums'), label: 'Charts' })
                 ),
                 React.createElement('div', { className: 'flex-1' }),
                 React.createElement('span', {
