@@ -510,7 +510,7 @@ describe('the five-section page render', () => {
     expect(card).toContain("subtitle: creator || '',");
     const plain = between('const playlistCard = (item, index, section) => {', '// ── Weekly playlists');
     expect(plain).toContain("subtitle: itemSourceName(item, section) || '',");
-    expect(view).toContain("const cardLines = sub.type === 'album' || sub.type === 'playlist' ? 2 : 1;");
+    expect(view).toContain("const cardLines = sub.type === 'album' ? 3 : sub.type === 'playlist' ? 2 : 1;");
     // Routed by the item's field, never by provider name.
     expect(view).toMatch(/item\.weekly \? weeklyCard\(item, index, sub\)/);
     expect(card).not.toMatch(/'listenbrainz'|'ListenBrainz'/);

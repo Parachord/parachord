@@ -33,9 +33,10 @@ const bar = (className, style) => React.createElement('div', {
 });
 
 /**
- * A card. `lines` 2 is an album or playlist card: the shared inset card
+ * A card. `lines` 3 is an album card (title, artist, year), 2 a playlist
+ * card (title, source); both: the shared inset card
  * (AlbumCard / PlaylistCard: the app's card box, rounded art, then the title
- * and one subtitle line). `lines` 1 is an artist card: full-bleed art, then
+ * and the subtitle lines). `lines` 1 is an artist card: full-bleed art, then
  * the name.
  */
 function RecommendationCardSkeleton({ index = 0, lines = 1 } = {}) {
@@ -52,7 +53,10 @@ function RecommendationCardSkeleton({ index = 0, lines = 1 } = {}) {
       React.createElement('div', { style: { height: '18px', display: 'flex', alignItems: 'center' } },
         bar('h-3.5', { width: TITLE_WIDTHS[index % TITLE_WIDTHS.length], animationDelay: stagger(index, 50) })),
       React.createElement('div', { style: { height: '16px', marginTop: '-6px', display: 'flex', alignItems: 'center' } },
-        bar('h-3', { width: ARTIST_WIDTHS[index % ARTIST_WIDTHS.length], animationDelay: stagger(index, 100) }))
+        bar('h-3', { width: ARTIST_WIDTHS[index % ARTIST_WIDTHS.length], animationDelay: stagger(index, 100) })),
+      // An album card's year line (lines 3).
+      lines > 2 && React.createElement('div', { style: { height: '16px', marginTop: '-6px', display: 'flex', alignItems: 'center' } },
+        bar('h-3', { width: '28px', animationDelay: stagger(index, 150) }))
     );
   }
   return React.createElement('div', {
@@ -177,7 +181,7 @@ function RecommendationSectionSkeleton({ kind = 'cards', lines = 1, count, title
 function RecommendationsPageSkeleton({ cardCount } = {}) {
   return React.createElement('div', { 'aria-hidden': 'true' },
     React.createElement(RecommendationSectionSkeleton, { kind: 'songs' }),
-    React.createElement(RecommendationSectionSkeleton, { kind: 'cards', lines: 2, count: cardCount })
+    React.createElement(RecommendationSectionSkeleton, { kind: 'cards', lines: 3, count: cardCount })
   );
 }
 

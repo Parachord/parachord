@@ -153,7 +153,7 @@ describe('Recommendations skeletons match the sectioned page', () => {
     expect(view).toMatch(/const llmPlaceholder = llmLoading && !filteringOne && !allSections\.some\(s => s\.type === 'album'\) && !allSubsections\.some\(s => LLM_TAIL_ROWS\.has\(s\.key\)\);/);
     // The slot is a whole section under the Albums heading its picks will
     // bring, placed after Songs.
-    expect(view).toMatch(/llmPlaceholder && React\.createElement\(RecommendationSectionSkeleton, \{ key: 'type:album-pending', kind: 'cards', lines: 2, title: 'Albums', count: SECTION_PREVIEW \}\)/);
+    expect(view).toMatch(/llmPlaceholder && React\.createElement\(RecommendationSectionSkeleton, \{ key: 'type:album-pending', kind: 'cards', lines: 3, title: 'Albums', count: SECTION_PREVIEW \}\)/);
     expect(view.match(/contentBlocks\.push\(llmSlot\)/g) || []).toHaveLength(2);
   });
 
@@ -165,7 +165,7 @@ describe('Recommendations skeletons match the sectioned page', () => {
     // The real cards' grid, one row of cards (what each category row shows
     // when Albums has several), album cards' two text lines.
     expect(pending).toContain("gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))'");
-    expect(pending).toMatch(/Array\.from\(\{ length: \(recommendationsGridColumns\.cards \|\| 6\) \* 1 \}, \(_, i\) => React\.createElement\(RecommendationCardSkeleton, \{ key: `rec-llm-\$\{i\}`, index: i, lines: 2 \}\)\)/);
+    expect(pending).toMatch(/Array\.from\(\{ length: \(recommendationsGridColumns\.cards \|\| 6\) \* 1 \}, \(_, i\) => React\.createElement\(RecommendationCardSkeleton, \{ key: `rec-llm-\$\{i\}`, index: i, lines: 3 \}\)\)/);
     // It counts as a row: the section's rows show one row of cards each.
     expect(typeSection).toContain('const rowCount = visibleRows.length + (llmPersonalPending ? 1 : 0);');
     expect(typeSection).toContain('if (llmPersonalPending) rows.splice(newAt + 1, 0, llmPersonalPendingRow);');
@@ -458,5 +458,19 @@ describe('Recommendations card skeletons match the shared cards', () => {
     const html = renderToStaticMarkup(React.createElement(RecommendationCardSkeleton, { lines: 1 }));
     expect(html).toContain('class="rounded-lg overflow-hidden"');
     expect(html).toContain('class="p-3"');
+  });
+});
+
+describe('Recommendations album cards show the release year', () => {
+  test('the year is the third line, always reserved, and the album skeleton has it', () => {
+    const app = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
+    const card = app.slice(app.indexOf('const albumCard = (item, index) => {'), app.indexOf('const playlistCard = (item, index, section) => {'));
+    expect(card).toContain("const year = entry && entry.date ? String(entry.date).slice(0, 4) : '';");
+    expect(card).toContain("subtitle: year || '\\u00a0',");
+    global.React = require('react');
+    const { renderToStaticMarkup } = require('react-dom/server');
+    const { RecommendationCardSkeleton } = require('../../src/renderer/components/recommendation-skeletons');
+    const bars = (lines) => (renderToStaticMarkup(React.createElement(RecommendationCardSkeleton, { lines })).match(/shimmer-light/g) || []).length;
+    expect(bars(3)).toBe(bars(2) + 1);
   });
 });

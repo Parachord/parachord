@@ -40133,9 +40133,13 @@ React.createElement('p', {
                 ? { date: item.releaseDate }
                 : recommendationReleaseDates[releaseDateKey(item.artist || '', item.name)];
               const upcoming = entry && upcomingLabel(entry.date);
+              // The release year, under the artist (the same date). The line
+              // is always there, so the card doesn't grow when the lookup lands.
+              const year = entry && entry.date ? String(entry.date).slice(0, 4) : '';
               return React.createElement(AlbumCard, Object.assign({
                 key: item.id,
                 album: { id: item.id, title: item.name, artist: item.artist, imageUrl: art || null },
+                subtitle: year || '\u00a0',
                 imageLoading: !artLoaded,
                 tooltip: item.reason && !shuffleupagusBadgeProps(item) ? item.reason : undefined,
                 // Shuffleupagus's pick says why, as on Home (components/reason-badge.js).
@@ -40459,7 +40463,9 @@ React.createElement('p', {
               });
               // Albums (title, artist) and playlists (name, source) have two
               // text lines.
-              const cardLines = sub.type === 'album' || sub.type === 'playlist' ? 2 : 1;
+              // Skeleton lines: an album card has title, artist and year; a
+              // playlist card title and source; an artist card its name.
+              const cardLines = sub.type === 'album' ? 3 : sub.type === 'playlist' ? 2 : 1;
               const header = subsectionHeader(sub, { expanded, showToggle });
 
               let body;
@@ -40502,7 +40508,7 @@ React.createElement('p', {
             // then the items. With Shuffleupagus thinking, no album section on
             // the page and no Artists row for it to tail, one section skeleton
             // under an Albums heading stands in the Albums slot (after Songs).
-            const llmSlot = llmPlaceholder && React.createElement(RecommendationSectionSkeleton, { key: 'type:album-pending', kind: 'cards', lines: 2, title: 'Albums', count: SECTION_PREVIEW });
+            const llmSlot = llmPlaceholder && React.createElement(RecommendationSectionSkeleton, { key: 'type:album-pending', kind: 'cards', lines: 3, title: 'Albums', count: SECTION_PREVIEW });
             // Shuffleupagus's placeholder subsection in a categorized Albums
             // section (renderTypeSection places it): the Based on your
             // listening title with no link, then one row of album card
@@ -40513,7 +40519,7 @@ React.createElement('p', {
                 className: 'grid gap-4',
                 style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
               },
-                ...Array.from({ length: (recommendationsGridColumns.cards || 6) * 1 }, (_, i) => React.createElement(RecommendationCardSkeleton, { key: `rec-llm-${i}`, index: i, lines: 2 }))
+                ...Array.from({ length: (recommendationsGridColumns.cards || 6) * 1 }, (_, i) => React.createElement(RecommendationCardSkeleton, { key: `rec-llm-${i}`, index: i, lines: 3 }))
               )
             );
             const renderTypeSection = (section) => {
