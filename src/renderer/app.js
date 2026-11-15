@@ -2052,7 +2052,7 @@ const { SearchPage } = require('./components/search-page');
 // The app's section title (Home's), over every page's rows and grids.
 const { SectionHeader, SECTION_HEADER_GAP } = require('./components/section-header');
 // The app's filter buttons (Home's source filter style).
-const { FilterChips } = require('./components/filter-chips');
+const { FilterChips, Chip } = require('./components/filter-chips');
 const {
   RecommendationCardSkeleton,
   RecommendationSongRowSkeleton,
@@ -39851,24 +39851,19 @@ useEffect(() => {
             // Location filter
             React.createElement('div', { className: 'relative ml-2 flex items-center gap-1.5' },
               // Location chip (shown when a location is active)
-              concertsLocationCoords && React.createElement('button', {
+              // The shared chip (components/filter-chips.js), in the page's
+              // colour; its ✕ is a button beside it (it was a button inside
+              // the chip's button, which HTML doesn't allow).
+              concertsLocationCoords && React.createElement(Chip, {
+                label: concertsLocation,
+                icon: React.createElement(Icons.MapPin, { className: 'w-4 h-4 flex-shrink-0' }),
+                fill: pageTint('concerts'),
+                color: PAGE_COLORS.concerts.color,
+                tooltip: `${concertsLocation} (${concertsLocationRadius} mi radius)`,
                 onClick: (e) => { e.stopPropagation(); setConcertsLocationOpen(!concertsLocationOpen); },
-                className: 'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors',
-                style: { backgroundColor: pageTint('concerts'), color: PAGE_COLORS.concerts.color },
-                'data-tooltip': `${concertsLocation} (${concertsLocationRadius} mi radius)`
-              },
-                React.createElement(Icons.MapPin, { className: 'w-4 h-4 flex-shrink-0' }),
-                React.createElement('span', { className: 'max-w-[120px] truncate' }, concertsLocation),
-                React.createElement('span', { style: { opacity: 0.7 } }, `${concertsLocationRadius}mi`),
-                // X to clear
-                React.createElement('button', { type: 'button', 'aria-label': 'Clear location',
-                  onClick: (e) => { e.stopPropagation(); setConcertsLocation(''); setConcertsLocationCoords(null); setConcertsLocationRadius(50); },
-                  className: 'ml-0.5 rounded-full p-0.5 transition-colors cursor-pointer',
-                  style: { color: PAGE_COLORS.concerts.color }
-                },
-                  React.createElement(Icons.X, { className: 'w-4 h-4' })
-                )
-              ),
+                onRemove: () => { setConcertsLocation(''); setConcertsLocationCoords(null); setConcertsLocationRadius(50); },
+                removeLabel: 'Clear location'
+              }, React.createElement('span', { style: { opacity: 0.7 } }, `${concertsLocationRadius}mi`)),
               // Location pin button (shown when no location is active)
               !concertsLocationCoords && React.createElement('button', {
                 onClick: (e) => { e.stopPropagation(); setConcertsLocationOpen(!concertsLocationOpen); },

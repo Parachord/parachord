@@ -8,6 +8,7 @@
 // under plain Node.
 
 const { readableTextOn } = require('../lib/readable-text');
+const Icons = require('./icons');
 
 // The selected fill of a chip with no colour of its own (All, a category):
 // the sidebar's accent. Fixed, because the accent variable turns light purple
@@ -56,6 +57,31 @@ function FilterChips({ chips, value, onChange, label, style, pageColor }) {
     }));
 }
 
+/**
+ * One action chip in the filter chips' style: a search suggestion, an active
+ * location. Not a pick-one filter (that is FilterChips). `icon` is a node
+ * before the label (an Icons component or a small image); `fill` and `color`
+ * tint it (a page's colour), else it is the idle chip's grey. `onRemove`
+ * adds a ✕ that clears it, as its own button BESIDE the chip's (a button
+ * can't hold a button), named by `removeLabel`.
+ */
+function Chip({ label, icon, onClick, onRemove, removeLabel, fill, color, tooltip, children }) {
+  const e = React.createElement;
+  const tone = { backgroundColor: fill || 'var(--bg-secondary)', color: color || 'var(--text-primary)' };
+  const main = e('button', {
+    type: 'button', className: 'no-drag', onClick, 'data-tooltip': tooltip,
+    style: Object.assign({}, FILTER_CHIP_STYLE, tone, onRemove ? { paddingRight: '4px', background: 'none', color: 'inherit' } : null),
+  }, icon, e('span', { className: 'truncate', style: { maxWidth: '200px' } }, label), children);
+  if (!onRemove) return main;
+  return e('span', { className: 'inline-flex items-center', style: Object.assign({ borderRadius: '999px' }, tone) },
+    main,
+    e('button', {
+      type: 'button', className: 'no-drag', 'aria-label': removeLabel || `Clear ${label}`, 'data-tooltip': removeLabel || 'Clear',
+      onClick: (ev) => { ev.stopPropagation(); onRemove(); },
+      style: { border: 'none', background: 'none', color: 'inherit', cursor: 'pointer', padding: '8px 10px 8px 4px', display: 'inline-flex', borderRadius: '999px' },
+    }, e(Icons.X, { className: 'w-4 h-4' })));
+}
+
 module.exports = {
-  FilterChips, CHIP_NEUTRAL_FILL, FILTER_CHIPS_ROW_STYLE, FILTER_CHIP_STYLE, FILTER_CHIP_DOT_STYLE,
+  FilterChips, Chip, CHIP_NEUTRAL_FILL, FILTER_CHIPS_ROW_STYLE, FILTER_CHIP_STYLE, FILTER_CHIP_DOT_STYLE,
 };

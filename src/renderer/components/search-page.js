@@ -35,6 +35,7 @@ const { trackSlug, slug } = require('../lib/track-slug');
 const { releaseMenu, artistMenu } = require('../lib/item-menus');
 const { countOf } = require('../lib/plural');
 const { PlaylistCard } = require('./playlist-card');
+const { Chip } = require('./filter-chips');
 
 const { Play } = Icons;
 // The in-flight album prefetch set app.js keeps on window, shared so a
@@ -778,12 +779,17 @@ const SearchPage = React.memo(function SearchPage(props) {
         React.createElement('div', { className: 'space-y-10' },
           // Quick suggestions from search history (shown instantly while loading)
           filteredHistoryMatches.length > 0 && React.createElement('div', { className: 'mb-6' },
-            React.createElement('h3', { className: 'text-xs font-semibold text-ink-tertiary uppercase tracking-wider mb-3' }, 'SUGGESTIONS'),
+            React.createElement('h3', { className: 'text-xs font-semibold text-ink-tertiary uppercase tracking-wider mb-3' }, 'Suggestions'),
             React.createElement('div', { className: 'flex flex-wrap gap-2' },
+              // The shared chip (components/filter-chips.js).
               ...filteredHistoryMatches.map((entry, i) =>
-                React.createElement('button', {
+                React.createElement(Chip, {
                   key: `suggestion-${i}-${entry.query}`,
-                  className: 'flex items-center gap-2 px-3 py-1.5 bg-surface-inset hover:bg-surface-hover rounded-full text-sm text-ink-secondary transition-colors',
+                  label: entry.selectedResult?.name || entry.query,
+                  icon: entry.selectedResult?.imageUrl && React.createElement('img', {
+                    src: entry.selectedResult.imageUrl, alt: '',
+                    className: 'w-5 h-5 rounded-full object-cover'
+                  }),
                   onClick: () => {
                     if (entry.selectedResult) {
                       // Navigate directly to the result
@@ -798,13 +804,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       handleSearchInput(entry.query);
                     }
                   }
-                },
-                  entry.selectedResult?.imageUrl && React.createElement('img', {
-                    src: entry.selectedResult.imageUrl,
-                    className: 'w-5 h-5 rounded-full object-cover'
-                  }),
-                  React.createElement('span', null, entry.selectedResult?.name || entry.query)
-                )
+                })
               )
             )
           ),

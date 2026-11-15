@@ -77,7 +77,7 @@ describe('every page draws the shared chips', () => {
 
   test('Fresh Drops, Recommendations, the plugin marketplace and the artist page use it', () => {
     const app = read('app.js');
-    expect(app).toContain("const { FilterChips } = require('./components/filter-chips');");
+    expect(app).toContain("const { FilterChips, Chip } = require('./components/filter-chips');");
     for (const call of ['onChange: setNewReleasesFilter', 'onChange: setRecommendationSourceFilter', 'onChange: setMarketplaceCategory']) {
       expect(app).toContain(call);
     }
@@ -108,4 +108,22 @@ test('Fresh Drops and Recommendations pass their page colour', () => {
   const app = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/app.js'), 'utf8');
   expect(app).toContain("pageColor: PAGE_COLORS['new-releases'].fill,");
   expect(app).toContain('pageColor: PAGE_COLORS.recommendations.fill,');
+});
+
+describe('Chip', () => {
+  const { renderToStaticMarkup } = require('react-dom/server');
+  const { Chip } = require('../../src/renderer/components/filter-chips');
+
+  test('one button in the chips\' style', () => {
+    const html = renderToStaticMarkup(React.createElement(Chip, { label: 'Radiohead', onClick() {} }));
+    expect(html.match(/<button/g)).toHaveLength(1);
+    expect(html).toContain('border-radius:999px');
+    expect(html).toContain('Radiohead');
+  });
+
+  test('a removable chip puts its ✕ beside the chip\'s button, never inside it', () => {
+    const html = renderToStaticMarkup(React.createElement(Chip, { label: 'Brooklyn', onClick() {}, onRemove() {}, removeLabel: 'Clear location' }));
+    expect(html).toMatch(/^<span[^>]*><button[^>]*>(?:(?!<button).)*<\/button><button[^>]*aria-label="Clear location"/);
+    expect(html).toContain('data-icon="X"');
+  });
 });
