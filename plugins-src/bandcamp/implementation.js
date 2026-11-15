@@ -1,4 +1,4 @@
-// Source of truth for plugins/bandcamp.axe v1.4.4.
+// Source of truth for plugins/bandcamp.axe v1.4.5.
 // Imported from the .axe by `node scripts/build-axes.js --import`.
 // Edit here, bump manifest.version in manifest.json, then run `node scripts/build-axes.js`.
 // The functions materialize fully isolated (resolver-loader.js uses
@@ -33,7 +33,10 @@ module.exports = {
         title: r.name,
         artist: r.band_name || 'Unknown Artist',
         album: r.album_name || '',
-        duration: 210,
+        // The search API carries no length, and fetching every result's page
+        // to read one is too slow for search. Unknown is null: a made-up 210
+        // showed as the track's length in every track list (#1412).
+        duration: null,
         sources: ['bandcamp'],
         bandcampUrl: url,
         purchaseUrl: url,
@@ -267,7 +270,7 @@ module.exports = {
               title: ld.name,
               artist: artist,
               album: album,
-              duration: duration,
+              duration: duration > 0 ? duration : null,
               sources: ['bandcamp'],
               bandcampUrl: url,
               purchaseUrl: url,
@@ -285,7 +288,7 @@ module.exports = {
         title: title,
         artist: artist,
         album: '',
-        duration: 0,
+        duration: null,
         sources: ['bandcamp'],
         bandcampUrl: url,
         purchaseUrl: url,

@@ -1,4 +1,4 @@
-// Source of truth for plugins/youtube.axe v1.0.1.
+// Source of truth for plugins/youtube.axe v1.0.3.
 // Imported from the .axe by `node scripts/build-axes.js --import`.
 // Edit here, bump manifest.version in manifest.json, then run `node scripts/build-axes.js`.
 // The functions materialize fully isolated (resolver-loader.js uses
@@ -24,6 +24,24 @@ module.exports = {
       const videoDataMatches = html.matchAll(
         /"videoId":"([^"]+)","thumbnail".*?"title":\{"runs":\[\{"text":"([^"]+)"\}\].*?"ownerText":\{"runs":\[\{"text":"([^"]+)"/g,
       );
+      // A video's length is its renderer's lengthText ("3:57", "1:02:03"),
+      // which sits between its videoId and the next video's renderer (today
+      // between title and ownerText, so inside the match above). Live streams
+      // and premieres have none, so their length is unknown (null), never a
+      // made-up 180 that track lists would show as the track's length.
+      const lengthAfter = function (from) {
+        const next = html.indexOf('"videoRenderer":{', from);
+        const end = next === -1 ? Math.min(html.length, from + 20000) : next;
+        const chunk = html.slice(from, end);
+        const at = chunk.indexOf('"lengthText":');
+        if (at === -1) return null;
+        const m = chunk.slice(at, at + 400).match(/"simpleText":"(\d+(?::\d{1,2}){1,2})"/);
+        if (!m) return null;
+        const parts = m[1].split(':').map(Number);
+        let seconds = 0;
+        for (const part of parts) seconds = seconds * 60 + part;
+        return seconds > 0 ? seconds : null;
+      };
       let count = 0;
       for (const match of videoDataMatches) {
         if (count >= 20) break;
@@ -33,7 +51,7 @@ module.exports = {
             id: `youtube-${videoId}`,
             title: title,
             artist: channel,
-            duration: 180,
+            duration: lengthAfter(match.index),
             sources: ['youtube'],
             youtubeId: videoId,
             youtubeUrl: `https://www.youtube.com/watch?v=${videoId}`,
@@ -104,7 +122,8 @@ module.exports = {
       return {
         title: title || 'Unknown Title',
         artist,
-        duration: 180,
+        // oEmbed carries no length, and the watch page is a megabyte: unknown.
+        duration: null,
         albumArt: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,
         sourceUrl: url,
         youtubeId: videoId,
@@ -151,7 +170,7 @@ module.exports = {
           tracks.push({
             title: trackTitle,
             artist: artist,
-            duration: 180,
+            duration: null,
             albumArt: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,
             youtubeId: videoId,
             youtubeUrl: `https://www.youtube.com/watch?v=${videoId}`,
