@@ -132,3 +132,13 @@ test('History restored at launch waits for the Last.fm key before loading', () =
   expect(app).toMatch(/lastfmApiKey\.current = lfmKey;[\s\S]{0,400}setLastfmKeyLoaded\(true\);/);
   expect(app).toMatch(/const lastfmReady = !metaServiceConfigs\.lastfm\?\.username \|\| !!metaServiceConfigs\.lastfm\?\.apiKey \|\| lastfmKeyLoaded;\s*if \(cacheLoaded && pendingHistoryLoad\.current && hasMetaService && lastfmReady\)/);
 });
+
+test("History and a friend's page: tokens and shared buttons, no JS hover", () => {
+  const S = app.indexOf("activeView === 'history' && React");
+  const E = app.indexOf("activeView === 'settings' && React.createElement", S);
+  const seg = app.slice(S, E);
+  expect(seg).not.toMatch(/onMouseEnter: \(e\) => e\.currentTarget\.style/);
+  expect(seg).not.toMatch(/bg-green-(400|500)|#8b5cf6/);
+  expect(seg).toContain("'Pin to sidebar'");
+  expect(seg).toContain("'On air'");
+});

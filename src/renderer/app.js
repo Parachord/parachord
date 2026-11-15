@@ -42300,11 +42300,9 @@ useEffect(() => {
                                 if (!resolver || !resolver.play) return null;
                                 return React.createElement('button', {
                                   key: resolverId,
-                                  className: 'no-drag',
+                                  className: 'no-drag transition-transform hover:scale-110',
                                   onClick: (e) => { e.stopPropagation(); const tracksAfter = sorted.slice(index + 1); const context = { type: 'history', name: 'History' }; setQueueWithContext(tracksAfter, context); handlePlay({ ...track, preferredResolver: resolverId }); },
                                   style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', opacity: dim ? 0.6 : 1, transition: 'transform 0.1s' },
-                                  onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
-                                  onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
                                   'aria-label': `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`, 'data-tooltip': `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
                                 }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
                               });
@@ -42401,11 +42399,9 @@ useEffect(() => {
                                 if (!resolver || !resolver.play) return null;
                                 return React.createElement('button', {
                                   key: resolverId,
-                                  className: 'no-drag',
+                                  className: 'no-drag transition-transform hover:scale-110',
                                   onClick: (e) => { e.stopPropagation(); const tracksAfter = filtered.slice(index + 1); const context = { type: 'history', name: 'Top Tracks' }; setQueueWithContext(tracksAfter, context); handlePlay({ ...track, preferredResolver: resolverId }); },
                                   style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: dim ? 0.6 : 1, transition: 'transform 0.1s' },
-                                  onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
-                                  onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
                                   'aria-label': `Play from ${resolver.name}`, 'data-tooltip': `Play from ${resolver.name}`
                                 }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
                               });
@@ -42639,10 +42635,8 @@ useEffect(() => {
                                 showToast(`Failed to load album`, 'error');
                               }
                             },
-                            className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
-                            style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-                            onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
-                            onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
+                            className: 'w-10 h-10 rounded-full flex items-center justify-center transition-transform hover:scale-110 bg-white/15 hover:bg-white/25 text-white',
+                            style: { border: 'none', cursor: 'pointer' },
                             'aria-label': 'Add to playlist', 'data-tooltip': 'Add to playlist'
                           },
                             React.createElement(Icons.Plus, { className: 'w-5 h-5' })
@@ -42689,10 +42683,8 @@ useEffect(() => {
                                 showToast(`Failed to load album`, 'error');
                               }
                             },
-                            className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
-                            style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-                            onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
-                            onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
+                            className: 'w-10 h-10 rounded-full flex items-center justify-center transition-transform hover:scale-110 bg-white/15 hover:bg-white/25 text-white',
+                            style: { border: 'none', cursor: 'pointer' },
                             'aria-label': 'Add album to queue', 'data-tooltip': 'Add album to queue'
                           },
                             React.createElement(Icons.QueueAdd, { className: 'w-5 h-5', strokeWidth: 2 })
@@ -42806,11 +42798,13 @@ useEffect(() => {
                     onContextMenu: copyParachordLink
                   }, currentFriend.displayName),
                   // On-air badge
+                  // The status colour (both themes), sentence case.
                   isOnAir(currentFriend) && React.createElement('span', {
-                    className: 'px-2 py-1 bg-green-500 text-white text-xs font-medium rounded-full flex items-center gap-1'
+                    className: 'px-2 py-1 text-xs font-medium rounded-full flex items-center gap-1',
+                    style: { backgroundColor: 'var(--success)', color: 'var(--on-accent)' }
                   },
                     React.createElement('span', { className: 'w-2 h-2 bg-surface-card rounded-full animate-pulse' }),
-                    'On Air'
+                    'On air'
                   )
                 ),
                 // Tabs in expanded state (matching History)
@@ -42872,7 +42866,8 @@ useEffect(() => {
                 }, currentFriend.displayName),
                 // On-air dot
                 isOnAir(currentFriend) && React.createElement('span', {
-                  className: 'w-2.5 h-2.5 bg-green-400 rounded-full mr-4'
+                  className: 'w-2.5 h-2.5 rounded-full mr-4',
+                  style: { backgroundColor: 'var(--success)' }
                 }),
                 // Tabs in collapsed mode
                 React.createElement('div', {
@@ -42911,15 +42906,16 @@ useEffect(() => {
               // adds them (and pins them); pinning a non-friend would pin nothing.
               !friends.some(f => f.id === currentFriend.id) && React.createElement(Button, { variant: 'primary', size: 'sm', type: 'button', disabled: followingRecommended, onClick: () => followRecommendedFriend(currentFriend) }, followingRecommended ? 'Following\u2026' : 'Follow'),
               // Pin/Unpin button on right side of filter bar
-              friends.some(f => f.id === currentFriend.id) && React.createElement('button', {
+              // The shared Button (a hand-built pill in a hex purple before);
+              // pinned shows a filled bookmark.
+              friends.some(f => f.id === currentFriend.id) && React.createElement(Button, {
+                variant: 'secondary', size: 'sm',
                 onClick: () => pinnedFriendIds.includes(currentFriend.id) ? unpinFriend(currentFriend.id) : pinFriend(currentFriend.id),
-                className: 'flex items-center gap-2 px-3 py-1.5 text-sm rounded-full transition-colors',
-                style: pinnedFriendIds.includes(currentFriend.id)
-                  ? { backgroundColor: '#8b5cf6', color: '#ffffff' }
-                  : { backgroundColor: 'var(--hover-bg-default)', color: 'var(--text-secondary)' }
+                'aria-pressed': pinnedFriendIds.includes(currentFriend.id) ? 'true' : 'false',
+                'data-tooltip': pinnedFriendIds.includes(currentFriend.id) ? 'Unpin from the sidebar' : undefined
               },
-                React.createElement(Icons.Bookmark, { className: 'w-4 h-4', fill: pinnedFriendIds.includes(currentFriend.id) ? 'currentColor' : 'none' }),
-                pinnedFriendIds.includes(currentFriend.id) ? 'Pinned' : 'Pin to Sidebar'
+                React.createElement(Icons.Bookmark, { className: 'w-4 h-4', fill: pinnedFriendIds.includes(currentFriend.id) ? 'currentColor' : 'none', style: pinnedFriendIds.includes(currentFriend.id) ? { color: 'var(--accent-primary)' } : undefined }),
+                pinnedFriendIds.includes(currentFriend.id) ? 'Pinned' : 'Pin to sidebar'
               )
             ),
             // Scrollable content area
@@ -43054,11 +43050,9 @@ useEffect(() => {
                                   if (!resolver || !resolver.play) return null;
                                   return React.createElement('button', {
                                     key: resolverId,
-                                    className: 'no-drag',
+                                    className: 'no-drag transition-transform hover:scale-110',
                                     onClick: (e) => { e.stopPropagation(); const context = { type: 'friend', name: currentFriend?.name || 'Friend', tab: 'recent' }; setQueueWithContext(tracksAfterRecent, context); handlePlay({ ...track, preferredResolver: resolverId }); },
                                     style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', opacity: dim ? 0.6 : 1, transition: 'transform 0.1s' },
-                                    onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
-                                    onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
                                     'aria-label': `Play from ${resolver.name}`, 'data-tooltip': `Play from ${resolver.name}`
                                   }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
                                 });
@@ -43157,11 +43151,9 @@ useEffect(() => {
                                   if (!resolver || !resolver.play) return null;
                                   return React.createElement('button', {
                                     key: resolverId,
-                                    className: 'no-drag',
+                                    className: 'no-drag transition-transform hover:scale-110',
                                     onClick: (e) => { e.stopPropagation(); const context = { type: 'friend', name: currentFriend?.name || 'Friend', tab: 'topTracks' }; setQueueWithContext(friendHistoryData.topTracks.slice(index + 1), context); handlePlay({ ...track, preferredResolver: resolverId }); },
                                     style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', opacity: dim ? 0.6 : 1, transition: 'transform 0.1s' },
-                                    onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
-                                    onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
                                     'aria-label': `Play from ${resolver.name}`, 'data-tooltip': `Play from ${resolver.name}`
                                   }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
                                 });
@@ -43260,10 +43252,8 @@ useEffect(() => {
                                     showToast(`Failed to load album`, 'error');
                                   }
                                 },
-                                className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
-                                style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-                                onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
-                                onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
+                                className: 'w-10 h-10 rounded-full flex items-center justify-center transition-transform hover:scale-110 bg-white/15 hover:bg-white/25 text-white',
+                                style: { border: 'none', cursor: 'pointer' },
                                 'aria-label': 'Add to playlist', 'data-tooltip': 'Add to playlist'
                               },
                                 React.createElement(Icons.Plus, { className: 'w-5 h-5' })
@@ -43310,10 +43300,8 @@ useEffect(() => {
                                     showToast(`Failed to load album`, 'error');
                                   }
                                 },
-                                className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
-                                style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-                                onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
-                                onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
+                                className: 'w-10 h-10 rounded-full flex items-center justify-center transition-transform hover:scale-110 bg-white/15 hover:bg-white/25 text-white',
+                                style: { border: 'none', cursor: 'pointer' },
                                 'aria-label': 'Add album to queue', 'data-tooltip': 'Add album to queue'
                               },
                                 React.createElement(Icons.QueueAdd, { className: 'w-5 h-5', strokeWidth: 2 })
