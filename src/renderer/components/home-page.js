@@ -21,13 +21,14 @@ const { HomeSetupButton } = require('./home-setup');
 // (Single-line destructures above the props one: page-memo.test.js reads
 // the first multi-line `const {` block as the props list.)
 const { JumpBackIn, MixesRow, PlaylistsRow, AlbumsRow, FreshCriticalRow, ConcertsRow, AskShuffleupagus } = require('./home-sections');
-const { JumpBackInSkeleton, CardRowSkeleton, ConcertRowSkeleton, HOME_HALF_ROW_CARDS, HOME_ROW_CARDS } = require('./home-skeletons');
+const { JumpBackInSkeleton, CardRowSkeleton, ConcertRowSkeleton, HOME_HALF_ROW_CARDS, HOME_ROW_CARDS, homeRowCards, homeConcertCards, homeHalvesStacked } = require('./home-skeletons');
 // The app's section title, which a loading row's heading uses.
 const { SECTION_TITLE_STYLE: H2_STYLE } = require('./section-header');
-const { homeSetupItems, missingPopularResolverCount } = require('../lib/home-setup');
+const { homeSetupItems } = require('../lib/home-setup');
 const { freshestPlaylists, recentLoves, changeBadge, freshChangeLine, jumpBackInTiles } = require('../lib/home-model');
 const { playlistSubtitle, homeSections, exampleShufflePrompt, homeTopArtists, albumsNeedingArt, lovesMosaicAlbums } = require('../lib/home-model');
 const { trackSlug } = require('../lib/track-slug');
+const { countOf } = require('../lib/plural');
 
 // Plain functions from Parachord, passed as stable wrappers.
 const HOME_PAGE_HANDLERS = [
@@ -51,7 +52,6 @@ const HOME_PAGE_HANDLERS = [
   'openCriticsPicksAlbum',
   'openHomeBannerCta',
   'openServicePlaylist',
-  'openSyncSetupModal',
   'openTopAlbum',
   'openWhatsNew',
   'playServicePlaylist',
@@ -64,7 +64,7 @@ const HOME_PAGE_HANDLERS = [
 // Playing recent loves from Home: the context isActiveContext matches.
 const LOVES_CONTEXT = { type: 'loves', name: 'Recent Loves' };
 
-const PLAY_FILL = '#7c3aed'; // fill-accent
+const PLAY_FILL = 'var(--accent-fill)'; // fill-accent
 const ON_FILL = '#fff'; // on-color
 
 const artKey = (artist, album) => `${artist || ''}\u0000${album || ''}`.toLowerCase();
@@ -91,7 +91,7 @@ const skeletonSection = (key, title, body) => React.createElement('section', {
 // gradient (centred on violet-600, the sidebar's accent #7c3aed) and the
 // circle pattern Home's hero always had.
 const HOME_HERO_HEIGHT = 80;
-const HOME_HERO_GRADIENT = 'bg-gradient-to-br from-purple-500 via-violet-600 to-indigo-600';
+const HOME_HERO_GRADIENT = require('../lib/page-colors').PAGE_COLORS.home.hero;
 const HOME_HERO_PATTERN = 'url("data:image/svg+xml,%3Csvg width=\'100\' height=\'100\' viewBox=\'0 0 100 100\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'%23ffffff\'%3E%3Ccircle cx=\'50\' cy=\'50\' r=\'40\' fill=\'none\' stroke=\'%23fff\' stroke-width=\'2\'/%3E%3Ccircle cx=\'50\' cy=\'50\' r=\'25\' fill=\'none\' stroke=\'%23fff\' stroke-width=\'1.5\'/%3E%3Ccircle cx=\'50\' cy=\'50\' r=\'10\' fill=\'none\' stroke=\'%23fff\' stroke-width=\'1\'/%3E%3C/g%3E%3C/svg%3E")';
 
 const HomePage = React.memo(function HomePage(props) {
@@ -99,7 +99,6 @@ const HomePage = React.memo(function HomePage(props) {
     addServicePlaylistToPlaylist,
     addToQueue,
     allPlaylistCovers,
-    allResolvers,
     appVersion,
     askShuffleupagus,
     bannerItems,
@@ -108,6 +107,8 @@ const HomePage = React.memo(function HomePage(props) {
     collectionData,
     collectionLoading,
     concerts,
+    contentWidth,
+    concertsArtistImages,
     concertsError,
     concertsLoaded,
     concertsLoading,
@@ -144,7 +145,6 @@ const HomePage = React.memo(function HomePage(props) {
     openCriticsPicksAlbum,
     openHomeBannerCta,
     openServicePlaylist,
-    openSyncSetupModal,
     openTopAlbum,
     openWhatsNew,
     playServicePlaylist,
@@ -162,34 +162,38 @@ const HomePage = React.memo(function HomePage(props) {
     setRaycastInfoOpen,
     setSettingsTab,
     showHomeContextMenu,
+    servicesConnected,
     showToast,
     sourceColors,
-    spotifyConnected,
     whatsNewUnread,
   } = props;
+  // Card counts that fit the content width (#1389); the skeletons use the same.
+  const rowCards = homeRowCards(contentWidth);
+  const concertCards = homeConcertCards(contentWidth);
 
   // ---------------------------------------------------------------- setup
 
-  // The setup checklist: same checks the old cards used.
+  // The setup checklist. Scrobbling counts as connected once any plugin has
+  // an account name saved (Last.fm, ListenBrainz, Libre.fm, or a new one).
+  const scrobblingConnected = Object.values(metaServiceConfigs || {}).some((c) => c && c.username);
   const homeSetup = React.useMemo(() => homeSetupItems({
-    missingPopularResolvers: missingPopularResolverCount(allResolvers),
-    lastfmConnected: !!metaServiceConfigs?.lastfm?.username,
-    listenbrainzConnected: !!metaServiceConfigs?.listenbrainz?.username,
-    spotifyConnected: !!spotifyConnected,
+    servicesConnected: !!servicesConnected,
+    scrobblingConnected,
     extensionConnected,
     isMac: typeof navigator !== 'undefined' && !!navigator.platform && navigator.platform.includes('Mac'),
     dismissed: homeSetupDismissed,
     appVersion,
     whatsNewUnread,
-  }), [allResolvers, metaServiceConfigs, spotifyConnected, extensionConnected, homeSetupDismissed, appVersion, whatsNewUnread]);
+  }), [servicesConnected, scrobblingConnected, extensionConnected, homeSetupDismissed, appVersion, whatsNewUnread]);
 
-  // Each item's click does what its old card did.
+  // Services and scrobbling are both connected in Settings › Plug-Ins.
   const onSetupAction = (id) => {
-    if (id === 'resolvers') { navigateTo('settings'); setSettingsTab('plugins'); }
-    else if (id === 'lastfm' || id === 'listenbrainz') { navigateTo('settings'); setSettingsTab('general'); }
-    else if (id === 'spotify') openSyncSetupModal('spotify');
+    if (id === 'resolvers' || id === 'scrobbling') { navigateTo('settings'); setSettingsTab('plugins'); }
     else if (id === 'browser-extension') setExtensionInfoOpen(true);
-    else if (id === 'raycast') setRaycastInfoOpen(true);
+    // Parachord can't tell whether the Raycast extension is installed, so
+    // opening its instructions is what completes the item: it leaves the
+    // list, and the checklist can reach "all done".
+    else if (id === 'raycast') { setRaycastInfoOpen(true); dismissHomeSetupItem('raycast'); }
   };
 
   // ------------------------------------------------------- background loads
@@ -387,7 +391,6 @@ const HomePage = React.memo(function HomePage(props) {
     onPlay: (album) => withAlbumTracks(album, (tracks) => playTrackCollection(tracks, albumContext(album))),
     onQueue: (album) => withAlbumTracks(album, (tracks) => {
       addToQueue(tracks, albumContext(album));
-      showToast(`Added ${tracks.length} tracks from ${album.title}`, 'success');
     }),
     onAddToPlaylist: (album) => withAlbumTracks(album, (tracks) => setAddToPlaylistPanel({
       open: true, tracks, sourceName: `${album.title} by ${album.artist}`, sourceType: 'album',
@@ -407,7 +410,6 @@ const HomePage = React.memo(function HomePage(props) {
     const tracks = playlistTracks(p);
     if (tracks.length === 0) return;
     addToQueue(tracks, { type: 'playlist', id: p.id, name: p.title });
-    showToast(`Added ${tracks.length} tracks from ${p.title}`, 'success');
   };
   const playlistActions = {
     onOpen: (p) => loadPlaylist(p),
@@ -563,7 +565,7 @@ const HomePage = React.memo(function HomePage(props) {
           style: { textShadow: '0 2px 10px rgba(0,0,0,0.5)', letterSpacing: '0.2em', textTransform: 'uppercase' },
           onContextMenu: copyParachordLink,
         }, 'Home'))),
-    React.createElement('div', { className: 'flex-1 overflow-y-auto scrollable-content', style: { minHeight: 0 } },
+    React.createElement('div', { className: 'flex-1 overflow-y-auto scrollable-content scroll-edge', style: { minHeight: 0 } },
       banner,
       React.createElement('div', {
         style: { display: 'flex', flexDirection: 'column', gap: '40px', padding: '28px 24px 40px', maxWidth: '1400px' },
@@ -574,26 +576,28 @@ const HomePage = React.memo(function HomePage(props) {
           ? skeletonSection('jump', 'Jump back in', React.createElement(JumpBackInSkeleton))
           : React.createElement(JumpBackIn, {
             tiles, onOpenTile, onPlayTile, onContextMenu: onTileMenu, onArtError, showImport: show.importCard,
-            // Library Sync lives in Settings › General.
+            // Library Sync lives in Settings › General; with nothing synced
+            // yet, its card offers each service's sync setup.
             onImport: () => { navigateTo('settings'); setSettingsTab('general'); },
           }),
 
-        show.mixes && React.createElement(MixesRow, { mixes, loves: lovesCard, lovesActions, sourceColors, ...mixActions }),
+        show.mixes && React.createElement(MixesRow, { mixes, loves: lovesCard, lovesActions, sourceColors, cards: rowCards, ...mixActions }),
 
         show.playlists
-          ? React.createElement(PlaylistsRow, { playlists: homePlaylists, navigateTo, ...playlistActions })
-          : playlistsLoading && skeletonSection('playlists', 'Your playlists, freshest first', React.createElement(CardRowSkeleton)),
+          ? React.createElement(PlaylistsRow, { playlists: homePlaylists, navigateTo, cards: rowCards, ...playlistActions })
+          : playlistsLoading && skeletonSection('playlists', 'Your playlists, freshest first', React.createElement(CardRowSkeleton, { count: rowCards })),
 
         show.albums
           ? React.createElement(AlbumsRow, {
-            albums, sourceColors, navigateTo, ...albumActions, onOpen: openAlbum,
+            albums, sourceColors, navigateTo, cards: rowCards, ...albumActions, onOpen: openAlbum,
           })
-          : albumsLoading && skeletonSection('albums', 'Albums you might love', React.createElement(CardRowSkeleton, { lines: 1 })),
+          : albumsLoading && skeletonSection('albums', 'Albums you might love', React.createElement(CardRowSkeleton, { count: rowCards, lines: 1 })),
 
         // One row for both halves, loaded or not: a half still loading draws
         // its skeleton in its own place, so nothing moves when it lands.
         (show.fresh || show.critical || freshLoading || criticalLoading)
           && React.createElement(FreshCriticalRow, {
+            stacked: homeHalvesStacked(contentWidth),
             fresh,
             critical,
             freshLoading,
@@ -608,8 +612,8 @@ const HomePage = React.memo(function HomePage(props) {
           }),
 
         show.concerts
-          ? React.createElement(ConcertsRow, { concerts, navigateTo })
-          : concertsSkeleton && skeletonSection('concerts', 'Concerts near you', React.createElement(ConcertRowSkeleton)),
+          ? React.createElement(ConcertsRow, { concerts, navigateTo, artistImages: concertsArtistImages, cards: concertCards })
+          : concertsSkeleton && skeletonSection('concerts', 'Concerts near you', React.createElement(ConcertRowSkeleton, { count: concertCards })),
 
         React.createElement(AskShuffleupagus, {
           initialPrompt: examplePrompt,

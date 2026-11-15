@@ -122,10 +122,19 @@ describe('the pages use the mitigations', () => {
   });
 
   test('hover prefetch is dwell-timed on both card grids and cancelled on leave', () => {
-    expect(app).not.toMatch(/onMouseEnter: \(\) => prefetchChartsTracks\(/);
-    expect((app.match(/onMouseEnter: \(\) => scheduleHoverPrefetch\(/g) || []).length).toBe(2);
-    expect((app.match(/onMouseLeave: cancelHoverPrefetch,/g) || []).length).toBe(2);
-    expect(app).toMatch(/const HOVER_PREFETCH_DWELL_MS = 250;/);
+    // Neither grid prefetches on a bare mouseenter.
+    expect(app).not.toMatch(/onMouseEnter: \(\) => prefetch(ChartsTracks|TopAlbumTracks)\(/);
+    // Charts and Fresh Drops, and Recommendations' albums, are the shared
+    // AlbumCard: they hand it the prefetch (onHoverPrefetch), and the card
+    // runs it only after its own 250ms dwell.
+    expect((app.match(/onHoverPrefetch: \(\) => prefetchChartsTracks\((item|release)\),/g) || []).length).toBe(2);
+    expect((app.match(/onHoverPrefetch: \(\) => prefetchTopAlbumTracks\(item\.artist, item\.name, art\),/g) || []).length).toBe(1);
+    const card = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'components', 'album-card.js'), 'utf8');
+    expect(card).toContain('timer.current = setTimeout(() => { timer.current = null; onHoverPrefetch(album); }, 250);');
+    // ...and cancelled on leave (and on unmount).
+    expect(card).toContain('onMouseLeave: () => { leave(); if (timer.current) { clearTimeout(timer.current); timer.current = null; } },');
+    expect(card).toContain('React.useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);');
+    // A real render of the dwell: tests/renderer/album-card-behaviour.test.js.
   });
 
   test('both hero headers use the shared collapse decision', () => {
@@ -224,8 +233,8 @@ describe('card click opens the release page before the lookup', () => {
 
   test('every hover prefetch uses the background lane of the MusicBrainz limiter', () => {
     const prefetchers = [
-      'const prefetchChartsTracks = async (album) => {',
-      'const prefetchCriticsPicksTracks = async (album) => {',
+      'const prefetchChartsTracks = (album) => sharedReleasePrefetch(album.id, async () => {',
+      'const prefetchCriticsPicksTracks = (album) => sharedReleasePrefetch(album.id, async () => {',
       'const prefetchReleaseTracks = async (release, artist) => {',
       'const prefetchSearchAlbumTracks = (album) => {',
       'const prefetchTopAlbumTracks = (artistName, albumName, albumArt = null) => {'
@@ -233,7 +242,8 @@ describe('card click opens the release page before the lookup', () => {
     for (const marker of prefetchers) {
       const s = app.indexOf(marker);
       expect(s).toBeGreaterThan(-1);
-      const b = app.slice(s, app.indexOf('\n  };', s));
+      // A body ends at "\n  };" (or "\n  });" for a sharedReleasePrefetch run).
+      const b = app.slice(s, app.indexOf('\n  }', s + marker.length));
       expect(b).toMatch(/mbBackground: true/);
       // the album page's lookup (loadRelease) or a release lookup, in the background lane
       expect(b).toMatch(/fetchReleaseDetails\(releaseId, bgFetch\)|loadRelease\(\{\s*id: \(prefetchedEdition\?\.kind === 'mb' && prefetchedEdition\??\.releaseId\) \|\| release\.id,\s*isReleaseGroup: \(prefetchedEdition\?\.kind === 'mb' && prefetchedEdition\??\.releaseId\) \? false : release\.isReleaseGroup\s*\}, bgFetch\)/);
@@ -246,7 +256,11 @@ describe('card click opens the release page before the lookup', () => {
   });
 
   test('a click cancels the pending hover prefetch on both grids', () => {
-    expect((app.match(/cancelHoverPrefetch\(\); openChartsAlbum\(item\)/g) || []).length).toBe(1);
-    expect(app).toMatch(/cancelHoverPrefetch\(\);\s*openChartsAlbum\(\{ artist: release\.artist/);
+    // The dwell timer lives in AlbumCard now: opening the album changes the
+    // view, which unmounts the card and clears its timer. No page-level
+    // schedule / cancel helpers are left to drift.
+    const card = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/components/album-card.js'), 'utf8');
+    expect(card).toMatch(/React\.useEffect\(\(\) => \(\) => \{ if \(timer\.current\) clearTimeout\(timer\.current\); \}, \[\]\);/);
+    expect(app).not.toMatch(/scheduleHoverPrefetch|cancelHoverPrefetch|HOVER_PREFETCH_DWELL_MS/);
   });
 });

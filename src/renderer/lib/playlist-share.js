@@ -10,10 +10,18 @@
 // a synced playlist (parachord#1084). The summary carries the playlist's id;
 // the stored playlist supplies the fields.
 
+// Also a ListenBrainz playlist that isn't saved: a summary that already
+// carries it (listenbrainzMbid), a weekly playlist (listenbrainzId), or a
+// recommended one opened from its listenbrainz.org page.
+const LB_PLAYLIST_URL = /listenbrainz\.org\/playlist\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
 function lbMbidOf(p) {
   if (!p) return null;
+  const fromUrl = p.source === 'listenbrainz' && typeof p.sourceUrl === 'string' && p.sourceUrl.match(LB_PLAYLIST_URL);
   return (p.syncedTo && p.syncedTo.listenbrainz && p.syncedTo.listenbrainz.externalId)
     || (p.syncedFrom && p.syncedFrom.resolver === 'listenbrainz' && p.syncedFrom.externalId)
+    || p.listenbrainzMbid
+    || p.listenbrainzId
+    || (fromUrl ? fromUrl[1] : null)
     || null;
 }
 
@@ -68,4 +76,4 @@ function notSyncedSharePrompt(config) {
   };
 }
 
-module.exports = { playlistListenbrainzMbid, playlistShareTarget, notSyncedSharePrompt };
+module.exports = { lbMbidOf, playlistListenbrainzMbid, playlistShareTarget, notSyncedSharePrompt };

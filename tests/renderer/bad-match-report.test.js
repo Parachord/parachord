@@ -57,9 +57,12 @@ describe('app.js', () => {
     expect(handler).not.toMatch(/for \(const key of Object\.keys\(updated\)\)/);
   });
 
-  test('both playbar menus send the track id and its source id', () => {
+  test('the playbar source menus (the button and each "Play from" item) send the track id and its source id', () => {
+    // One builder, sourceMenuFor(resId), for the button and every item.
     const shows = src.match(/playbarSourceMenu\.show\(\{[\s\S]*?\}\);/g) || [];
-    expect(shows.length).toBe(2);
+    expect(shows.length).toBe(1);
+    expect(src).toContain('onContextMenu: sourceMenuFor(currentResolverId)');
+    expect(src).toContain('onContextMenu: sourceMenuFor(resId)');
     for (const show of shows) {
       expect(show).toMatch(/id: currentTrack\.id/);
       expect(show).toMatch(/sourceId: sourceBlockId\(/);

@@ -139,6 +139,6 @@ describe('app.js wiring', () => {
 
   test('a local play checks the file is still there before handing it to the audio element', () => {
     expect(app).toMatch(/await window\.electron\.localFiles\.fileStatus\(localPath\)/);
-    expect(app).toMatch(/title: 'File Not Found'/);
+    expect(app).toMatch(/title: 'File not found'/);
   });
 });

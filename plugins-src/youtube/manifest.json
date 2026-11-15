@@ -2,9 +2,10 @@
   "manifest": {
     "id": "youtube",
     "name": "YouTube",
-    "version": "1.0.4",
+    "version": "1.0.5",
     "author": "Parachord Team",
     "description": "Search and play music videos from YouTube. Free with ads. Opens videos in your browser.",
+    "requirement": "No account needed. Videos play in your web browser.",
     "icon": "🎥",
     "color": "#FF0000",
     "homepage": "https://youtube.com",

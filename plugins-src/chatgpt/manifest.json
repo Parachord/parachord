@@ -3,9 +3,10 @@
     "id": "chatgpt",
     "name": "ChatGPT",
     "type": "meta-service",
-    "version": "2.2.1",
+    "version": "2.2.2",
     "author": "Parachord Team",
     "description": "Generate playlists and chat with AI DJ using ChatGPT. Requires OpenAI API key.",
+    "requirement": "Needs your own OpenAI API key.",
     "icon": "🤖",
     "color": "#10a37f",
     "homepage": "https://platform.openai.com"

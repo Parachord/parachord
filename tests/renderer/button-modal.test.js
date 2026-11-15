@@ -1,0 +1,177 @@
+/**
+ * Shared Button and Modal (#1385 steps 1 and 2).
+ */
+const React = require('react');
+const { renderToStaticMarkup } = require('react-dom/server');
+global.React = React;
+const { Button, buttonClassName, BUTTON_VARIANTS } = require('../../src/renderer/components/button');
+const { Modal, ConfirmModal } = require('../../src/renderer/components/modal');
+
+const html = (el) => renderToStaticMarkup(el);
+const h = React.createElement;
+
+describe('Button', () => {
+  test.each(BUTTON_VARIANTS)('%s renders a type="button" with token classes only', (variant) => {
+    const out = html(h(Button, { variant, 'aria-label': 'x' }, 'Go'));
+    expect(out).toMatch(/^<button [^>]*type="button"/);
+    expect(out).toContain('focus-visible:ring-2');
+    expect(out).not.toMatch(/(?:bg|text|border)-(?:gray|purple|red|green)-\d/);
+  });
+
+  test('primary is the fill accent; destructive the error fill', () => {
+    expect(buttonClassName({ variant: 'primary' })).toContain('bg-accent-fill text-ink-on-accent');
+    expect(buttonClassName({ variant: 'destructive' })).toContain('bg-status-error');
+  });
+
+  test('busy disables, sets aria-busy and shows the spinner', () => {
+    const out = html(h(Button, { busy: true }, 'Save'));
+    expect(out).toContain('disabled=""');
+    expect(out).toContain('aria-busy="true"');
+    expect(out).toContain('data-icon="Spinner"');
+    expect(out).toContain('Save');
+  });
+
+  test('a page colour fills a primary button', () => {
+    expect(html(h(Button, { pageColor: '#0f766e' }, 'Apply'))).toContain('background-color:#0f766e');
+  });
+
+  test('an icon button without an aria-label complains', () => {
+    const spy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    html(h(Button, { variant: 'icon' }, 'x'));
+    expect(spy).toHaveBeenCalledWith(expect.stringContaining('aria-label'));
+    spy.mockRestore();
+  });
+});
+
+describe('Modal', () => {
+  const render = (props) => html(h(Modal, Object.assign({ open: true, onClose: () => {}, title: 'Add friend', description: 'Paste a link' }, props), 'body'));
+
+  test('is a labelled, described, modal dialog', () => {
+    const out = render();
+    expect(out).toMatch(/role="dialog"/);
+    expect(out).toContain('aria-modal="true"');
+    const titleId = out.match(/<h2 id="([^"]+)"/)[1];
+    expect(out).toContain(`aria-labelledby="${titleId}"`);
+    expect(out).toMatch(/aria-describedby="[^"]+-desc"/);
+  });
+
+  test('has one labelled close button, unless hidden', () => {
+    expect(render().match(/aria-label="Close"/g)).toHaveLength(1);
+    expect(render({ hideClose: true })).not.toContain('aria-label="Close"');
+  });
+
+  test('renders nothing when closed', () => {
+    expect(render({ open: false })).toBe('');
+  });
+
+  test('one title size and the token surface', () => {
+    const out = render();
+    expect(out).toContain('font-size:20px');
+    expect(out).toContain('bg-surface-card');
+  });
+});
+
+describe('ConfirmModal', () => {
+  const render = (dialog) => html(h(ConfirmModal, { dialog: Object.assign({ show: true }, dialog), onClose: () => {} }));
+  const buttons = (out) => [...out.matchAll(/<button[^>]*class="([^"]*)"[^>]*>(?:<svg[\s\S]*?<\/svg>)?([^<]*)<\/button>/g)]
+    .map((m) => [m[2], m[1].includes('bg-status-error') ? 'destructive' : m[1].includes('bg-accent-fill') ? 'primary' : 'secondary'])
+    .filter(([label]) => label);
+
+  test('a plain notice has one primary OK', () => {
+    expect(buttons(render({ title: 'Done', message: 'Saved' }))).toEqual([['OK', 'primary']]);
+  });
+
+  test('a destructive confirm names its action and offers Cancel', () => {
+    expect(buttons(render({ title: 'Remove?', confirmLabel: 'Remove', destructive: true })))
+      .toEqual([['Cancel', 'secondary'], ['Remove', 'destructive']]);
+  });
+
+  test('an error with a fix makes the fix primary and OK neutral', () => {
+    const out = render({ type: 'error', title: 'No Source Found', actionButton: { label: 'Open Settings' } });
+    expect(buttons(out)).toEqual([['OK', 'secondary'], ['Open Settings', 'primary']]);
+    expect(out).toContain('role="alertdialog"');
+  });
+
+  test('an error without a fix is not a red OK', () => {
+    expect(buttons(render({ type: 'error', title: 'Failed' }))).toEqual([['OK', 'primary']]);
+  });
+});
+
+test('app.js renders the confirm dialog through ConfirmModal', () => {
+  const app = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  expect(app).toContain('confirmDialog.show && React.createElement(ConfirmModal, { dialog: confirmDialog, onClose: closeConfirmDialog })');
+  expect(app).not.toMatch(/actionButton: \{ label: 'Cancel' \}/);
+});
+
+test('every dialog shell in app.js is a Modal; the plain ones use its title, close and footer', () => {
+  const app = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  // Dialogs moved into their own modules (WhatsNewDialog, KeyboardShortcutsDialog) render Modal there.
+  expect((app.match(/React\.createElement\((Modal|WhatsNewDialog|KeyboardShortcutsDialog), \{/g) || []).length).toBeGreaterThanOrEqual(20);
+  // Redone on the standard parts (no longer bare).
+  for (const label of ['Unsaved friend', 'Delete synced playlist', 'Stop syncing', 'Switch sync engine', 'Open in browser', 'Save AI playlist', 'Save queue as playlist', 'Import playlist', 'Add friend', 'Amazon Music sign-in', 'Edit tags']) {
+    expect([label, app.includes(`bare: true, label: "${label}"`)]).toEqual([label, false]);
+  }
+  // What's left with "fixed inset-0" is the Add-to-Playlist side panel and the
+  // parachord-link menu's click catcher, which aren't dialogs.
+  expect((app.match(/className: 'fixed inset-0/g) || []).length).toBeLessThanOrEqual(2);
+});
+
+test('bare mode keeps the panel and adds the dialog semantics', () => {
+  const out = html(h(Modal, { bare: true, label: 'Add friend', onClose: () => {}, panelProps: { className: 'max-w-md', style: { borderRadius: '16px' } } }, 'x'));
+  expect(out).toContain('role="dialog"');
+  expect(out).toContain('aria-modal="true"');
+  expect(out).toContain('aria-label="Add friend"');
+  expect(out).toContain('class="modal-panel focus:outline-none max-w-md"');
+  expect(out).not.toContain('aria-label="Close"');
+});
+
+test('confirmAsync resolves false on any way out but the confirm button', () => {
+  const calls = [];
+  const dialog = { show: true, title: 'Delete?', destructive: true, confirmLabel: 'Delete', onConfirm: () => calls.push('yes'), onCancel: () => calls.push('no') };
+  // ConfirmModal renders ConfirmModalBody, which holds the checkbox state;
+  // call it directly with a stand-in useState.
+  const { ConfirmModalBody } = require('../../src/renderer/components/modal');
+  const realUseState = React.useState;
+  React.useState = (v) => [v, () => {}];
+  const tree = ConfirmModalBody({ dialog, onClose: () => calls.push('close') });
+  React.useState = realUseState;
+  // Modal element's onClose is the cancel path (X, Escape, backdrop)
+  tree.props.onClose();
+  // Close first, then the callback (#1363: a callback may open another dialog).
+  expect(calls).toEqual(['close', 'no']);
+  const cancelBtn = tree.props.footer.find((b) => b.key === 'cancel');
+  cancelBtn.props.onClick();
+  const confirmBtn = tree.props.footer.find((b) => b.key === 'confirm');
+  confirmBtn.props.onClick();
+  expect(calls).toEqual(['close', 'no', 'close', 'no', 'close', 'yes']);
+});
+
+test('the no-source dialog offers "Don\u2019t show this again"', () => {
+  const out = html(h(ConfirmModal, { dialog: { show: true, type: 'error', title: 'No source found', dontShowAgain: { label: 'Don’t show this again. Skip tracks with no source.', onChange() {} } }, onClose() {} }));
+  expect(out).toContain('type="checkbox"');
+  expect(out).toContain('Don’t show this again. Skip tracks with no source.');
+  const engine = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/hooks/use-playback-engine.js'), 'utf8');
+  expect(engine).toMatch(/if \(skipUnplayablePromptRef && skipUnplayablePromptRef\.current\) \{/);
+  expect(engine).toContain("reportUnplayable('No source found',");
+  expect(engine).toContain("reportUnplayable('No enabled source',");
+  const store = require('fs').readFileSync(require('path').join(__dirname, '../../main-process/ipc/store.js'), 'utf8');
+  expect(store).toContain("'skip_unplayable_prompt'");
+});
+
+test("the confirm dialog fires the cancel closeConfirmDialog hands back, and none once it's been replaced", () => {
+  const { ConfirmModalBody } = require('../../src/renderer/components/modal');
+  const realUseState = React.useState;
+  React.useState = (v) => [v, () => {}];
+  const calls = [];
+  const dialog = { show: true, title: 'Import?', confirmLabel: 'Import', onCancel: () => calls.push('stale') };
+  const pending = () => calls.push('pending');
+  const a = ConfirmModalBody({ dialog, onClose: () => pending });
+  const b = ConfirmModalBody({ dialog, onClose: () => null });
+  React.useState = realUseState;
+  // A named confirm with an onCancel has a Cancel button (the love import).
+  expect(a.props.footer.some((x) => x.key === 'cancel')).toBe(true);
+  a.props.onClose();
+  b.props.onClose();
+  expect(calls).toEqual(['pending']);
+});
+

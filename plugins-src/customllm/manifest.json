@@ -3,11 +3,12 @@
     "id": "customllm",
     "name": "Custom LLM",
     "type": "meta-service",
-    "version": "1.1.1",
+    "version": "1.1.2",
     "icon": "🔌",
     "color": "#8b5cf6",
     "author": "Parachord Team",
-    "description": "Bring your own LLM endpoint - any OpenAI-compatible or Anthropic-compatible server (LM Studio, vLLM, llama.cpp, OpenRouter, ...)."
+    "description": "Bring your own LLM endpoint - any OpenAI-compatible or Anthropic-compatible server (LM Studio, vLLM, llama.cpp, OpenRouter, ...).",
+    "requirement": "Needs an OpenAI- or Anthropic-compatible server, and its API key if it needs one."
   },
   "capabilities": {
     "generate": true,

@@ -19,14 +19,23 @@
 // from props under their old names.
 
 const Icons = require('./icons');
+const { HeaderControl } = require('./header-control');
+const { CardButton } = require('./card-button');
+const { EmptyState, ErrorState } = require('./states');
+const { SortMenu } = require('./sort-menu');
 const { ResolverIcon } = require('./ui-atoms');
 const { SectionHeader, SECTION_HEADER_GAP } = require('./section-header');
 const { artistOpenOptions, creditOpenOptions, trackArtistOpenOptions } = require('../lib/artist-open');
 const { VirtualizedTrackList } = require('./track-lists');
 const { visibleSources, sourceRowState } = require('../lib/visible-sources');
 const { trackDurationLabel } = require('../lib/track-duration');
-const { generateArtistPattern, PlayTop10Icon, QueueTop10Icon, SearchArtistCard, SearchHistoryItem } = require('./cards');
+const { generateArtistPattern, PlayTop10Icon, SearchHistoryItem } = require('./cards');
+const { ArtistCard } = require('./artist-card');
+const { AlbumCard } = require('./album-card');
+const { heroTabClass } = require('./hero-tabs');
 const { trackSlug, slug } = require('../lib/track-slug');
+const { releaseMenu, artistMenu } = require('../lib/item-menus');
+const { countOf } = require('../lib/plural');
 
 const { Play } = Icons;
 // The in-flight album prefetch set app.js keeps on window, shared so a
@@ -37,11 +46,13 @@ const prefetchInProgress = (globalThis._prefetchInProgress = globalThis._prefetc
 // Plain functions from Parachord, passed as stable wrappers.
 const SEARCH_PAGE_HANDLERS = [
   'addToQueue',
+  'albumCardActions',
   'clearSearchHistory',
   'fetchArtistData',
   'fetchSearchAlbumTracksAsync',
   'getArtistImage',
   'getArtistTopTracks',
+  'playArtistTopTracks',
   'getCachedAlbumArt',
   'getItemsPerRow',
   'handleAlbumClick',
@@ -62,6 +73,7 @@ const SearchPage = React.memo(function SearchPage(props) {
     activeResolvers,
     activeView,
     addToQueue,
+    albumCardActions,
     allResolvers,
     artistImageCache,
     clearSearchHistory,
@@ -71,6 +83,7 @@ const SearchPage = React.memo(function SearchPage(props) {
     filteredHistoryMatches,
     getArtistImage,
     getArtistTopTracks,
+    playArtistTopTracks,
     getCachedAlbumArt,
     getItemsPerRow,
     handleAlbumClick,
@@ -102,7 +115,6 @@ const SearchPage = React.memo(function SearchPage(props) {
     searchResultsFilter,
     searchResultsFilterOpen,
     searchResultsSort,
-    searchResultsSortDropdownOpen,
     searchScrollContainerRef,
     searchTracksObserverRef,
     searchTracksRowRefs,
@@ -114,7 +126,6 @@ const SearchPage = React.memo(function SearchPage(props) {
     setSearchResultsFilter,
     setSearchResultsFilterOpen,
     setSearchResultsSort,
-    setSearchResultsSortDropdownOpen,
     setTrackLoading,
     showToast,
     trackSources,
@@ -122,7 +133,7 @@ const SearchPage = React.memo(function SearchPage(props) {
   return searchDetailCategory ?
         // DETAIL VIEW - Similar structure to artist page with collapsible header
         React.createElement('div', {
-          className: 'flex-1 flex flex-col bg-white',
+          className: 'flex-1 flex flex-col page-bg',
           style: { overflow: 'hidden' }
         },
           // Header section (outside scrollable area)
@@ -148,9 +159,7 @@ const SearchPage = React.memo(function SearchPage(props) {
             },
               // Left: Search icon + query in quotes
               React.createElement('div', { className: 'flex items-center gap-3 flex-shrink-0 mr-6' },
-                React.createElement('svg', { className: 'w-5 h-5 text-white/70', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
-                ),
+                React.createElement(Icons.Search, { className: 'w-5 h-5 text-white/70' }),
                 React.createElement('span', {
                   className: 'text-2xl font-light text-white uppercase',
                   style: { textShadow: '0 2px 10px rgba(0,0,0,0.3)', letterSpacing: '0.2em' }
@@ -164,7 +173,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                 [
                   { key: 'artists', label: 'Artists', count: searchResults.artists.length },
                   { key: 'albums', label: 'Albums', count: searchResults.albums.length },
-                  { key: 'tracks', label: 'Songs', count: searchResults.tracks.length }
+                  { key: 'tracks', label: 'Tracks', count: searchResults.tracks.length }
                 ].map((tab, i) => React.createElement(React.Fragment, { key: tab.key },
                   i > 0 && React.createElement('span', {
                     className: 'text-white/50 mx-2'
@@ -173,9 +182,8 @@ const SearchPage = React.memo(function SearchPage(props) {
                     onClick: () => {
                       setSearchDetailCategory(tab.key);
                     },
-                    className: `px-2 py-1 text-sm font-medium uppercase tracking-wider transition-colors no-drag ${
-                      searchDetailCategory === tab.key ? 'text-white' : 'text-white/60 hover:text-white'
-                    }`
+                    // The hero tab look (heroTabClass).
+                    className: `px-2 py-1 text-sm uppercase tracking-wider transition-colors no-drag ${heroTabClass(searchDetailCategory === tab.key)}`
                   }, `${tab.count} ${tab.label}`)
                 ))
               )
@@ -184,7 +192,7 @@ const SearchPage = React.memo(function SearchPage(props) {
           // Scrollable content area - single column layout with grids/lists
           React.createElement('div', {
             ref: handleSearchScrollContainerRef,
-            className: 'flex-1 overflow-y-auto bg-white scrollable-content',
+            className: 'flex-1 overflow-y-auto page-bg scrollable-content scroll-edge',
             onScroll: handleSearchDetailScroll
           },
             // Sticky filter bar for Artists (sort dropdown + search on right like other pages)
@@ -193,82 +201,38 @@ const SearchPage = React.memo(function SearchPage(props) {
               style: { backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
             },
               // Sort dropdown
-              React.createElement('div', { className: 'relative' },
-                React.createElement('button', {
-                  onClick: (e) => { e.stopPropagation(); setSearchResultsSortDropdownOpen(!searchResultsSortDropdownOpen); },
-                  className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors no-drag'
-                },
-                  React.createElement('span', null,
-                    searchResultsSort === 'relevance' ? 'Relevance' :
-                    searchResultsSort === 'name' ? 'Name' : 'Sort'
-                  ),
-                  React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
-                  )
-                ),
-                searchResultsSortDropdownOpen && React.createElement('div', {
-                  className: 'absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-gray-200'
-                },
-                  [
+              React.createElement(SortMenu, { value: searchResultsSort, options: [
                     { value: 'relevance', label: 'Relevance' },
                     { value: 'name', label: 'Name' }
-                  ].map(option =>
-                    React.createElement('button', {
-                      key: option.value,
-                      onClick: (e) => {
-                        e.stopPropagation();
-                        setSearchResultsSort(option.value);
-                        setSearchResultsSortDropdownOpen(false);
-                      },
-                      className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between no-drag ${
-                        searchResultsSort === option.value ? 'text-gray-900 font-medium' : 'text-gray-600'
-                      }`
-                    },
-                      option.label,
-                      searchResultsSort === option.value && React.createElement('svg', {
-                        className: 'w-4 h-4',
-                        fill: 'none',
-                        viewBox: '0 0 24 24',
-                        stroke: 'currentColor'
-                      },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
-                      )
-                    )
-                  )
-                )
-              ),
+                  ], onChange: setSearchResultsSort, label: "Sort" }),
               React.createElement('div', { className: 'flex-1' }),
               // Search/filter on right
               React.createElement('div', { className: 'flex items-center' },
                 searchResultsFilterOpen ?
-                  React.createElement('div', { className: 'flex items-center border border-gray-300 rounded-full px-3 py-[5px] filter-pill' },
+                  React.createElement('div', { className: 'flex items-center border border-line-strong rounded-full px-3 py-[5px] filter-pill' },
                     React.createElement('input', {
                       type: 'text',
                       value: searchResultsFilter,
                       onChange: (e) => setSearchResultsFilter(e.target.value),
                       onBlur: () => { if (!searchResultsFilter.trim()) setSearchResultsFilterOpen(false); },
                       autoFocus: true,
-                      placeholder: 'Filter...',
-                      className: 'bg-transparent text-gray-700 text-sm placeholder-gray-400 outline-none no-drag',
-                      style: { width: '150px' }
+                      placeholder: 'Filter…',
+                      className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none no-drag',
+                      style: { width: '150px' }, 'aria-label': 'Filter'
                     }),
-                    searchResultsFilter && React.createElement('button', {
+                    searchResultsFilter && React.createElement('button', { type: 'button', 'aria-label': 'Clear filter', 'data-tooltip': 'Clear filter',
                       onClick: () => { setSearchResultsFilter(''); setSearchResultsFilterOpen(false); },
-                      className: 'ml-2 text-gray-400 hover:text-gray-600 no-drag'
+                      className: 'ml-2 text-ink-tertiary hover:text-ink-secondary no-drag'
                     },
-                      React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
-                      )
+                      React.createElement(Icons.X, { className: 'w-4 h-4' })
                     )
                   )
                 :
-                  React.createElement('button', {
+                  React.createElement('button', { type: 'button', 'aria-label': 'Filter', 'data-tooltip': 'Filter',
                     onClick: () => setSearchResultsFilterOpen(true),
-                    className: 'p-1.5 text-gray-400 hover:text-gray-600 transition-colors no-drag'
+                    className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors no-drag'
                   },
-                    React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
-                    )
+                    React.createElement(Icons.Search, { className: 'w-5 h-5' })
                   )
               )
             ),
@@ -279,88 +243,41 @@ const SearchPage = React.memo(function SearchPage(props) {
               style: { backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
             },
               // Sort dropdown
-              React.createElement('div', { className: 'relative' },
-                React.createElement('button', {
-                  onClick: (e) => { e.stopPropagation(); setSearchResultsSortDropdownOpen(!searchResultsSortDropdownOpen); },
-                  className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors no-drag'
-                },
-                  React.createElement('span', null,
-                    searchResultsSort === 'relevance' ? 'Relevance' :
-                    searchResultsSort === 'title' ? 'Title' :
-                    searchResultsSort === 'artist' ? 'Artist' :
-                    searchResultsSort === 'year-desc' ? 'Year (Newest)' :
-                    searchResultsSort === 'year-asc' ? 'Year (Oldest)' : 'Sort'
-                  ),
-                  React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
-                  )
-                ),
-                searchResultsSortDropdownOpen && React.createElement('div', {
-                  className: 'absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-gray-200'
-                },
-                  [
+              React.createElement(SortMenu, { value: searchResultsSort, options: [
                     { value: 'relevance', label: 'Relevance' },
                     { value: 'title', label: 'Title' },
                     { value: 'artist', label: 'Artist' },
                     { value: 'year-desc', label: 'Year (Newest)' },
                     { value: 'year-asc', label: 'Year (Oldest)' }
-                  ].map(option =>
-                    React.createElement('button', {
-                      key: option.value,
-                      onClick: (e) => {
-                        e.stopPropagation();
-                        setSearchResultsSort(option.value);
-                        setSearchResultsSortDropdownOpen(false);
-                      },
-                      className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between no-drag ${
-                        searchResultsSort === option.value ? 'text-gray-900 font-medium' : 'text-gray-600'
-                      }`
-                    },
-                      option.label,
-                      searchResultsSort === option.value && React.createElement('svg', {
-                        className: 'w-4 h-4',
-                        fill: 'none',
-                        viewBox: '0 0 24 24',
-                        stroke: 'currentColor'
-                      },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
-                      )
-                    )
-                  )
-                )
-              ),
+                  ], onChange: setSearchResultsSort, label: "Sort" }),
               React.createElement('div', { className: 'flex-1' }),
               // Search/filter
               React.createElement('div', { className: 'flex items-center' },
                 searchResultsFilterOpen ?
-                  React.createElement('div', { className: 'flex items-center border border-gray-300 rounded-full px-3 py-[5px] filter-pill' },
+                  React.createElement('div', { className: 'flex items-center border border-line-strong rounded-full px-3 py-[5px] filter-pill' },
                     React.createElement('input', {
                       type: 'text',
                       value: searchResultsFilter,
                       onChange: (e) => setSearchResultsFilter(e.target.value),
                       onBlur: () => { if (!searchResultsFilter.trim()) setSearchResultsFilterOpen(false); },
                       autoFocus: true,
-                      placeholder: 'Filter...',
-                      className: 'bg-transparent text-gray-700 text-sm placeholder-gray-400 outline-none no-drag',
-                      style: { width: '150px' }
+                      placeholder: 'Filter…',
+                      className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none no-drag',
+                      style: { width: '150px' }, 'aria-label': 'Filter'
                     }),
-                    searchResultsFilter && React.createElement('button', {
+                    searchResultsFilter && React.createElement('button', { type: 'button', 'aria-label': 'Clear filter', 'data-tooltip': 'Clear filter',
                       onClick: () => { setSearchResultsFilter(''); setSearchResultsFilterOpen(false); },
-                      className: 'ml-2 text-gray-400 hover:text-gray-600 no-drag'
+                      className: 'ml-2 text-ink-tertiary hover:text-ink-secondary no-drag'
                     },
-                      React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
-                      )
+                      React.createElement(Icons.X, { className: 'w-4 h-4' })
                     )
                   )
                 :
-                  React.createElement('button', {
+                  React.createElement('button', { type: 'button', 'aria-label': 'Filter', 'data-tooltip': 'Filter',
                     onClick: () => setSearchResultsFilterOpen(true),
-                    className: 'p-1.5 text-gray-400 hover:text-gray-600 transition-colors no-drag'
+                    className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors no-drag'
                   },
-                    React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
-                    )
+                    React.createElement(Icons.Search, { className: 'w-5 h-5' })
                   )
               )
             ),
@@ -371,88 +288,41 @@ const SearchPage = React.memo(function SearchPage(props) {
               style: { backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
             },
               // Sort dropdown
-              React.createElement('div', { className: 'relative' },
-                React.createElement('button', {
-                  onClick: (e) => { e.stopPropagation(); setSearchResultsSortDropdownOpen(!searchResultsSortDropdownOpen); },
-                  className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors no-drag'
-                },
-                  React.createElement('span', null,
-                    searchResultsSort === 'relevance' ? 'Relevance' :
-                    searchResultsSort === 'title' ? 'Title' :
-                    searchResultsSort === 'artist' ? 'Artist' :
-                    searchResultsSort === 'duration-asc' ? 'Duration (Short)' :
-                    searchResultsSort === 'duration-desc' ? 'Duration (Long)' : 'Sort'
-                  ),
-                  React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
-                  )
-                ),
-                searchResultsSortDropdownOpen && React.createElement('div', {
-                  className: 'absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-gray-200'
-                },
-                  [
+              React.createElement(SortMenu, { value: searchResultsSort, options: [
                     { value: 'relevance', label: 'Relevance' },
                     { value: 'title', label: 'Title' },
                     { value: 'artist', label: 'Artist' },
                     { value: 'duration-asc', label: 'Duration (Short)' },
                     { value: 'duration-desc', label: 'Duration (Long)' }
-                  ].map(option =>
-                    React.createElement('button', {
-                      key: option.value,
-                      onClick: (e) => {
-                        e.stopPropagation();
-                        setSearchResultsSort(option.value);
-                        setSearchResultsSortDropdownOpen(false);
-                      },
-                      className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between no-drag ${
-                        searchResultsSort === option.value ? 'text-gray-900 font-medium' : 'text-gray-600'
-                      }`
-                    },
-                      option.label,
-                      searchResultsSort === option.value && React.createElement('svg', {
-                        className: 'w-4 h-4',
-                        fill: 'none',
-                        viewBox: '0 0 24 24',
-                        stroke: 'currentColor'
-                      },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
-                      )
-                    )
-                  )
-                )
-              ),
+                  ], onChange: setSearchResultsSort, label: "Sort" }),
               React.createElement('div', { className: 'flex-1' }),
               // Search/filter
               React.createElement('div', { className: 'flex items-center' },
                 searchResultsFilterOpen ?
-                  React.createElement('div', { className: 'flex items-center border border-gray-300 rounded-full px-3 py-[5px] filter-pill' },
+                  React.createElement('div', { className: 'flex items-center border border-line-strong rounded-full px-3 py-[5px] filter-pill' },
                     React.createElement('input', {
                       type: 'text',
                       value: searchResultsFilter,
                       onChange: (e) => setSearchResultsFilter(e.target.value),
                       onBlur: () => { if (!searchResultsFilter.trim()) setSearchResultsFilterOpen(false); },
                       autoFocus: true,
-                      placeholder: 'Filter...',
-                      className: 'bg-transparent text-gray-700 text-sm placeholder-gray-400 outline-none no-drag',
-                      style: { width: '150px' }
+                      placeholder: 'Filter…',
+                      className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none no-drag',
+                      style: { width: '150px' }, 'aria-label': 'Filter'
                     }),
-                    searchResultsFilter && React.createElement('button', {
+                    searchResultsFilter && React.createElement('button', { type: 'button', 'aria-label': 'Clear filter', 'data-tooltip': 'Clear filter',
                       onClick: () => { setSearchResultsFilter(''); setSearchResultsFilterOpen(false); },
-                      className: 'ml-2 text-gray-400 hover:text-gray-600 no-drag'
+                      className: 'ml-2 text-ink-tertiary hover:text-ink-secondary no-drag'
                     },
-                      React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
-                      )
+                      React.createElement(Icons.X, { className: 'w-4 h-4' })
                     )
                   )
                 :
-                  React.createElement('button', {
+                  React.createElement('button', { type: 'button', 'aria-label': 'Filter', 'data-tooltip': 'Filter',
                     onClick: () => setSearchResultsFilterOpen(true),
-                    className: 'p-1.5 text-gray-400 hover:text-gray-600 transition-colors no-drag'
+                    className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors no-drag'
                   },
-                    React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
-                    )
+                    React.createElement(Icons.Search, { className: 'w-5 h-5' })
                   )
               )
             ),
@@ -472,133 +342,21 @@ const SearchPage = React.memo(function SearchPage(props) {
                 }
                 // 'relevance' keeps original order from search results
 
-                return filteredArtists.length > 0 && React.createElement('div', {
+                return filteredArtists.length > 0 && React.createElement('div', { role: 'list',
                   className: 'grid gap-4',
                   style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
                 },
-                  ...filteredArtists.map((artist, index) => {
-                    const animationDelay = Math.min(index * 30, 300);
-                    const searchArtistPattern = generateArtistPattern(artist.name);
-                    return React.createElement('div', {
-                      key: artist._rowKey || artist.id,
-                      className: 'rounded-lg overflow-hidden cursor-pointer group release-card card-fade-up',
-                      style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)', animationDelay: `${animationDelay}ms` },
-                      draggable: true,
-                      onDragStart: (e) => {
-                        e.dataTransfer.effectAllowed = 'copy';
-                        e.dataTransfer.setData('text/plain', JSON.stringify({
-                          type: 'artist',
-                          artist: {
-                            id: slug(artist.name || 'unknown'),
-                            name: artist.name,
-                            image: artist.image || null
-                          }
-                        }));
-                      },
-                      onClick: () => fetchArtistData(artist.name, artistOpenOptions(artist)),
-                      onContextMenu: (e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        if (window.electron?.contextMenu?.showTrackMenu) {
-                          window.electron.contextMenu.showTrackMenu({
-                            type: 'artist',
-                            artist: {
-                              id: slug(artist.name || 'unknown'),
-                              name: artist.name,
-                              image: artist.image || null
-                            }
-                          });
-                        }
-                      }
-                    },
-                      // Square image container - gray while loading, pattern only when imageLoaded && no image
-                      React.createElement('div', {
-                        className: 'aspect-square relative group/art',
-                        style: { background: artist.imageLoaded && !artist.image ? searchArtistPattern.gradient : 'var(--placeholder-bg)' }
-                      },
-                        // Shimmer while loading (imageLoaded not yet true)
-                        !artist.imageLoaded && React.createElement('div', {
-                          className: 'absolute inset-0 shimmer-strong animate-shimmer',
-                          style: { backgroundSize: '200% 100%' }
-                        }),
-                        // Initials fallback (only show when imageLoaded && no image)
-                        artist.imageLoaded && !artist.image && React.createElement('div', {
-                          className: 'absolute inset-0 flex items-center justify-center',
-                          style: { color: searchArtistPattern.textColor, opacity: 0.4 }
-                        },
-                          React.createElement('span', {
-                            className: 'font-bold tracking-wider',
-                            style: { fontSize: '2.5rem', textShadow: '0 2px 8px rgba(0,0,0,0.3)' }
-                          }, searchArtistPattern.initials)
-                        ),
-                        // Artist image with fade-in
-                        artist.image && React.createElement('img', {
-                          src: artist.image,
-                          alt: artist.name,
-                          className: 'absolute inset-0 w-full h-full object-cover transition-all duration-300 group-hover/art:scale-105',
-                          style: { opacity: 0 },
-                          ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
-                          onLoad: (e) => { e.target.style.opacity = '1'; },
-                          onError: (e) => { e.target.style.display = 'none'; }
-                        }),
-                        // Hover overlay with Play and Queue buttons
-                        React.createElement('div', {
-                          className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-3',
-                          style: { pointerEvents: 'auto' }
-                        },
-                          // Play top 10 button
-                          React.createElement('button', {
-                            onClick: async (e) => {
-                              e.stopPropagation();
-                              setTrackLoading(true);
-                              const tracks = await getArtistTopTracks(artist.name);
-                              if (tracks.length > 0) {
-                                const context = { type: 'artist', name: artist.name };
-                                const [firstTrack, ...remainingTracks] = tracks;
-                                const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
-                                setQueueWithContext(remainingTracks, context, true);
-                                handlePlay(taggedFirstTrack);
-                              } else {
-                                setTrackLoading(false);
-                                showToast(`No top tracks found for ${artist.name}`, 'error');
-                              }
-                            },
-                            className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
-                            style: { border: 'none', cursor: 'pointer' },
-                            title: 'Play top 10 tracks'
-                          },
-                            React.createElement(PlayTop10Icon, { size: 26, className: 'text-gray-800' })
-                          ),
-                          // Add top 10 to Queue button
-                          React.createElement('button', {
-                            onClick: async (e) => {
-                              e.stopPropagation();
-                              const tracks = await getArtistTopTracks(artist.name);
-                              if (tracks.length > 0) {
-                                addToQueue(tracks, { type: 'artist', name: artist.name });
-                                showToast(`Added ${tracks.length} tracks from ${artist.name}`, 'success');
-                              } else {
-                                showToast(`No top tracks found for ${artist.name}`, 'error');
-                              }
-                            },
-                            className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
-                            style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-                            onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
-                            onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                            title: 'Add top 10 to queue'
-                          },
-                            React.createElement(QueueTop10Icon, { size: 20 })
-                          )
-                        )
-                      ),
-                      // Artist name section
-                      React.createElement('div', { className: 'p-3' },
-                        React.createElement('p', {
-                          className: 'font-medium text-gray-900 truncate text-sm transition-colors'
-                        }, artist.name)
-                      )
-                    );
-                  })
+                  ...filteredArtists.map((artist, index) => React.createElement(ArtistCard, {
+                    key: artist._rowKey || artist.id,
+                    role: 'listitem',
+                    artist: { id: slug(artist.name || 'unknown'), name: artist.name },
+                    image: artist.image,
+                    imageLoaded: !!artist.imageLoaded,
+                    animationDelay: Math.min(index * 30, 300),
+                    onOpen: () => fetchArtistData(artist.name, artistOpenOptions(artist)),
+                    onPlay: playArtistTopTracks,
+                    onContextMenu: () => window.showItemMenu(artistMenu({ id: slug(artist.name || 'unknown'), name: artist.name, image: artist.image || null }))
+                  }))
                 );
               })(),
 
@@ -607,7 +365,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                 ? searchResults.artists.filter(a => a.name?.toLowerCase().includes(searchResultsFilter.toLowerCase())).length === 0
                 : searchResults.artists.length === 0
               ) && React.createElement('div', {
-                className: 'text-center py-12 text-gray-400'
+                className: 'text-center py-12 text-ink-tertiary'
               }, searchResultsFilter ? 'No artists match your filter.' : 'No artists found.'),
 
               // Albums grid (like Critical Darlings)
@@ -641,176 +399,42 @@ const SearchPage = React.memo(function SearchPage(props) {
                   });
                 }
 
-                return filteredAlbums.length > 0 && React.createElement('div', {
-                  className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-5 pb-6'
+                return filteredAlbums.length > 0 && React.createElement('div', { role: 'list',
+                  className: 'card-grid gap-x-4 gap-y-5 pb-6'
                 },
+                  // The shared album card (components/album-card.js).
                   filteredAlbums.map((album, index) => {
-                    const animationDelay = Math.min(index * 30, 300);
-                    return React.createElement('div', {
+                    const artistName = album['artist-credit']?.[0]?.name || 'Unknown';
+                    return React.createElement(AlbumCard, Object.assign({
                       key: album._rowKey || album.id,
-                      className: 'group cursor-pointer release-card card-fade-up',
-                      style: {
-                        padding: '10px',
-                        borderRadius: '10px',
-                        backgroundColor: 'var(--card-bg)',
-                        boxShadow: 'var(--card-shadow)',
-                        animationDelay: `${animationDelay}ms`
-                      },
-                      draggable: true,
-                      onDragStart: (e) => {
-                        e.dataTransfer.effectAllowed = 'copy';
-                        const prefetched = prefetchedReleasesRef.current[album.id];
-                        e.dataTransfer.setData('text/plain', JSON.stringify({
-                          type: 'album',
-                          album: {
-                            id: trackSlug(album['artist-credit']?.[0]?.name || 'unknown', album.title || 'untitled'),
-                            title: album.title,
-                            artist: album['artist-credit']?.[0]?.name || 'Unknown',
-                            year: album['first-release-date']?.split('-')[0] ? parseInt(album['first-release-date'].split('-')[0]) : null,
-                            art: album.albumArt || null,
-                            trackCount: prefetched?.tracks?.length || null
-                          }
-                        }));
-                      },
-                      onMouseEnter: () => prefetchSearchAlbumTracks(album),
-                      onClick: () => handleAlbumClick(album),
-                      onContextMenu: (e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        const artistName = album['artist-credit']?.[0]?.name || 'Unknown';
-                        const albumData = {
+                      role: 'listitem',
+                      album: { id: album.id, title: album.title, artist: artistName, imageUrl: album.albumArt || null },
+                      animationDelay: Math.min(index * 30, 300),
+                      dragData: () => ({
+                        type: 'album',
+                        album: {
+                          id: trackSlug(artistName === 'Unknown' ? 'unknown' : artistName, album.title || 'untitled'),
                           title: album.title,
                           artist: artistName,
                           year: album['first-release-date']?.split('-')[0] ? parseInt(album['first-release-date'].split('-')[0]) : null,
-                          art: album.albumArt || null
-                        };
+                          art: album.albumArt || null,
+                          trackCount: prefetchedReleasesRef.current[album.id]?.tracks?.length || null
+                        }
+                      }),
+                      onHoverPrefetch: () => prefetchSearchAlbumTracks(album),
+                      onOpen: () => handleAlbumClick(album),
+                      onOpenArtist: () => fetchArtistData(album['artist-credit']?.[0]?.name, creditOpenOptions(album['artist-credit'])),
+                      onContextMenu: () => {
+                        const albumData = { ...album, artist: artistName, releaseGroupMbid: album.id }; // a MusicBrainz release group
                         const prefetched = prefetchedReleasesRef.current[album.id];
-                        const isLoading = prefetchInProgress.has(album.id);
-                        window.electron.contextMenu.showTrackMenu({
-                          type: 'release',
-                          name: album.title,
-                          album: albumData,
-                          tracks: prefetched?.tracks || [],
-                          loading: isLoading
-                        });
-                      }
-                    },
-                      // Album art with dark placeholder and inner shadow
-                      React.createElement('div', {
-                        className: 'aspect-square rounded-lg overflow-hidden mb-2 relative album-art-container'
+                        window.showItemMenu(releaseMenu(albumData, { tracks: prefetched?.tracks, loading: prefetchInProgress.has(album.id) }));
                       },
-                        // Dark placeholder background
-                        React.createElement('div', {
-                          className: 'absolute inset-0',
-                          style: { background: 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)' }
-                        }),
-                        // Image with fade-in
-                        album.albumArt && React.createElement('img', {
-                          key: album.albumArt,
-                          src: album.albumArt,
-                          alt: album.title,
-                          className: 'absolute inset-0 w-full h-full object-cover transition-all duration-300',
-                          style: { opacity: 0 },
-                          ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
-                          onLoad: (e) => { e.target.style.opacity = '1'; },
-                          onError: (e) => { e.target.style.display = 'none'; handleSearchArtBroken('album', album, album.albumArt); }
-                        }),
-                        // Hover overlay with action buttons (Add to Playlist, Play, Queue)
-                        React.createElement('div', {
-                          className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-3'
-                        },
-                          // Add to Playlist button
-                          React.createElement('button', {
-                            onClick: (e) => {
-                              e.stopPropagation();
-                              const prefetched = prefetchedReleasesRef.current[album.id];
-                              if (prefetched?.tracks?.length > 0) {
-                                setAddToPlaylistPanel({
-                                  open: true,
-                                  tracks: prefetched.tracks,
-                                  sourceName: album.title,
-                                  sourceType: 'album'
-                                });
-                              }
-                            },
-                            className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
-                            style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff' },
-                            onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
-                            onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                            title: 'Add to Playlist'
-                          },
-                            React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
-                            )
-                          ),
-                          // Play button (center, larger)
-                          React.createElement('button', {
-                            onClick: (e) => {
-                              e.stopPropagation();
-                              setTrackLoading(true);
-                              const prefetched = prefetchedReleasesRef.current[album.id];
-                              if (prefetched?.tracks?.length > 0) {
-                                const context = { type: 'album', id: album.id, name: album.title, artist: album['artist-credit']?.[0]?.name };
-                                const [firstTrack, ...remainingTracks] = prefetched.tracks;
-                                // Tag the first track with context so queue navigation works correctly
-                                const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
-                                setQueueWithContext(remainingTracks, context, true);
-                                handlePlay(taggedFirstTrack);
-                              } else {
-                                setTrackLoading(false);
-                              }
-                            },
-                            className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
-                            title: 'Play'
-                          },
-                            React.createElement(Play, { size: 22, className: 'text-gray-800 ml-0.5' })
-                          ),
-                          // Add to Queue button
-                          React.createElement('button', {
-                            onClick: (e) => {
-                              e.stopPropagation();
-                              const prefetched = prefetchedReleasesRef.current[album.id];
-                              if (prefetched?.tracks?.length > 0) {
-                                const context = { type: 'album', id: album.id, name: album.title, artist: album['artist-credit']?.[0]?.name };
-                                addToQueue(prefetched.tracks, context);
-                              }
-                            },
-                            className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
-                            style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff' },
-                            onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
-                            onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                            title: 'Add to Queue'
-                          },
-                            React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
-                            )
-                          )
-                        )
-                      ),
-                      // Album title - refined typography
-                      React.createElement('div', {
-                        className: 'truncate transition-colors',
-                        style: {
-                          fontSize: '13px',
-                          fontWeight: '500',
-                          color: 'var(--text-primary)',
-                          marginTop: '6px'
-                        }
-                      }, album.title),
-                      // Artist name - clickable
-                      React.createElement('div', {
-                        className: 'truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
-                        style: {
-                          fontSize: '11px',
-                          color: 'var(--text-secondary)',
-                          marginTop: '2px'
-                        },
-                        onClick: (e) => {
-                          e.stopPropagation();
-                          fetchArtistData(album['artist-credit']?.[0]?.name, creditOpenOptions(album['artist-credit']));
-                        }
-                      }, album['artist-credit']?.[0]?.name || 'Unknown Artist')
-                    );
+                      onArtError: () => handleSearchArtBroken('album', album, album.albumArt)
+                    }, albumCardActions({
+                      title: album.title, artist: artistName,
+                      context: { type: 'album', id: album.id, name: album.title, artist: artistName },
+                      getTracks: async () => (await fetchSearchAlbumTracksAsync(album))?.tracks
+                    })));
                   })
                 );
               })(),
@@ -825,7 +449,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                   : searchResults.albums;
                 return filteredAlbums.length === 0;
               })() && React.createElement('div', {
-                className: 'text-center py-12 text-gray-400'
+                className: 'text-center py-12 text-ink-tertiary'
               }, searchResultsFilter ? 'No albums match your filter.' : 'No albums found.'),
 
               // Tracks list (like Recommended Songs)
@@ -863,7 +487,8 @@ const SearchPage = React.memo(function SearchPage(props) {
                     const isCurrentTrack = currentTrack?.id === track.id;
                     const isNowPlaying = isCurrentTrack && playbackContext?.type === 'search';
 
-                    return React.createElement('div', {
+                    return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`, more: `More actions for ${track.title}`,
+                    current: isNowPlaying,
                       key: track._rowKey || track.id,
                       'data-track-id': track.id,
                       ref: (el) => {
@@ -898,12 +523,12 @@ const SearchPage = React.memo(function SearchPage(props) {
                     },
                     className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${
                       isResolving || isUnplayable ? 'opacity-60' : ''
-                    } ${isNowPlaying && isPlaying ? 'bg-purple-50' : 'hover:bg-gray-50/80'}`,
+                    } ${isNowPlaying && isPlaying ? 'bg-accent-tint' : 'hover:bg-surface-hover'}`,
                     style: {
                       borderRadius: '8px',
                       marginBottom: '2px'
                     },
-                    onClick: () => {
+                    onActivate: () => {
                       const tracksAfter = filteredTracks.slice(index + 1);
                       const context = { type: 'search', name: searchQuery };
                       setQueueWithContext(tracksAfter, context);
@@ -912,7 +537,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                     onContextMenu: (e) => {
                       e.preventDefault();
                       if (window.electron?.contextMenu?.showTrackMenu) {
-                        window.electron.contextMenu.showTrackMenu({
+                        window.showItemMenu({
                           type: 'track',
                           track: track
                         });
@@ -945,8 +570,8 @@ const SearchPage = React.memo(function SearchPage(props) {
                     }, track.title),
 
                     // Artist name - flexible column, clickable
-                    React.createElement('span', {
-                      className: 'truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
+                    React.createElement('button', { type: 'button',
+                      className: 'text-left truncate hover:text-accent hover:underline cursor-pointer transition-colors',
                       style: {
                         flex: '0.7 1 0',
                         minWidth: 0,
@@ -960,8 +585,8 @@ const SearchPage = React.memo(function SearchPage(props) {
                     }, track.artist),
 
                     // Album name - flexible column, clickable
-                    track.album ? React.createElement('span', {
-                      className: 'truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
+                    track.album ? React.createElement('button', { type: 'button',
+                      className: 'text-left truncate hover:text-accent hover:underline cursor-pointer transition-colors',
                       style: {
                         flex: '0.5 1 0',
                         minWidth: 0,
@@ -1007,7 +632,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                         },
                           React.createElement('div', {
                             className: 'w-5 h-5 rounded shimmer-light animate-shimmer',
-                            title: 'Resolving track...'
+                            title: 'Resolving track…'
                           }),
                           React.createElement('div', {
                             className: 'w-5 h-5 rounded shimmer-light animate-shimmer',
@@ -1045,7 +670,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                                 },
                                 onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                                 onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
-                                title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
+                                'aria-label': `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`, 'data-tooltip': `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
                               }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
                             });
                         })()
@@ -1067,16 +692,16 @@ const SearchPage = React.memo(function SearchPage(props) {
                   : searchResults.tracks;
                 return filteredTracks.length === 0;
               })() && React.createElement('div', {
-                className: 'text-center py-12 text-gray-400'
-              }, searchResultsFilter ? 'No songs match your filter.' : 'No songs found.'),
+                className: 'text-center py-12 text-ink-tertiary'
+              }, searchResultsFilter ? 'No tracks match your filter.' : 'No tracks found.'),
 
               // Playlists grid with cards
-              searchDetailCategory === 'playlists' && searchResults.playlists.length > 0 && React.createElement('div', {
-                className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-5 pb-6'
+              searchDetailCategory === 'playlists' && searchResults.playlists.length > 0 && React.createElement('div', { role: 'list',
+                className: 'card-grid gap-x-4 gap-y-5 pb-6'
               },
                 searchResults.playlists.map((playlist, index) => {
                   const animationDelay = Math.min(index * 30, 300);
-                  return React.createElement('div', {
+                  return React.createElement(CardButton, { role: 'listitem', label: playlist.title,
                     key: playlist.id || `${playlist.title}-${index}`,
                     className: 'cursor-pointer group release-card card-fade-up',
                     style: {
@@ -1086,7 +711,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       boxShadow: 'var(--card-shadow)',
                       animationDelay: `${animationDelay}ms`
                     },
-                    onClick: () => handlePlaylistClick(playlist)
+                    onActivate: () => handlePlaylistClick(playlist)
                   },
                     // Playlist icon square with hover overlay
                     React.createElement('div', {
@@ -1097,23 +722,11 @@ const SearchPage = React.memo(function SearchPage(props) {
                       React.createElement('div', {
                         className: 'absolute inset-0 flex items-center justify-center'
                       },
-                        React.createElement('svg', {
-                          className: 'w-12 h-12 text-gray-500',
-                          fill: 'none',
-                          viewBox: '0 0 24 24',
-                          stroke: 'currentColor',
-                          strokeWidth: 1.5
-                        },
-                          React.createElement('path', {
-                            strokeLinecap: 'round',
-                            strokeLinejoin: 'round',
-                            d: 'M9 9l10.5-3m0 6.553v3.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 11-.99-3.467l2.31-.66a2.25 2.25 0 001.632-2.163zm0 0V4.5L9 7.5v9.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 01-.99-3.467l2.31-.66A2.25 2.25 0 009 13.125V9'
-                          })
-                        )
+                        React.createElement(Icons.Music, { className: 'w-12 h-12 text-ink-tertiary', strokeWidth: 1.5 })
                       ),
                       // Hover overlay with action buttons
                       React.createElement('div', {
-                        className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-3'
+                        className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 card-reveal transition-opacity duration-200 flex items-center justify-center gap-3'
                       },
                         // Add to Playlist button
                         React.createElement('button', {
@@ -1137,11 +750,9 @@ const SearchPage = React.memo(function SearchPage(props) {
                           style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff' },
                           onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
                           onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                          title: 'Add to Playlist'
+                          'aria-label': 'Add to playlist', 'data-tooltip': 'Add to playlist'
                         },
-                          React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                            React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
-                          )
+                          React.createElement(Icons.Plus, { className: 'w-5 h-5' })
                         ),
                         // Play button (center, larger)
                         React.createElement('button', {
@@ -1164,10 +775,10 @@ const SearchPage = React.memo(function SearchPage(props) {
                               setTrackLoading(false);
                             }
                           },
-                          className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
-                          title: 'Play'
+                          className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
+                          'aria-label': 'Play', 'data-tooltip': 'Play'
                         },
-                          React.createElement(Play, { size: 22, className: 'text-gray-800 ml-0.5' })
+                          React.createElement(Play, { size: 22, className: 'text-ink-primary ml-0.5' })
                         ),
                         // Add to Queue button
                         React.createElement('button', {
@@ -1187,11 +798,9 @@ const SearchPage = React.memo(function SearchPage(props) {
                           style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff' },
                           onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
                           onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                          title: 'Add to Queue'
+                          'aria-label': 'Add to queue', 'data-tooltip': 'Add to queue'
                         },
-                          React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                            React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
-                          )
+                          React.createElement(Icons.QueueAdd, { className: 'w-5 h-5', strokeWidth: 2 })
                         )
                       )
                     ),
@@ -1213,7 +822,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                         color: 'var(--text-secondary)',
                         marginTop: '2px'
                       }
-                    }, `${playlist.creator || 'Unknown'} • ${playlist.tracks?.length || 0} tracks`)
+                    }, `${playlist.creator || 'Unknown'} • ${countOf(playlist.tracks?.length || 0, 'track')}`)
                   );
                 })
               )
@@ -1223,7 +832,7 @@ const SearchPage = React.memo(function SearchPage(props) {
       :
         // MAIN VIEW - clean white layout matching reference
         React.createElement('div', {
-          className: 'h-full overflow-y-auto bg-white'
+          className: 'h-full overflow-y-auto page-bg'
         },
           // Header bar with SEARCH title and CLOSE button
           React.createElement('div', {
@@ -1233,8 +842,10 @@ const SearchPage = React.memo(function SearchPage(props) {
               backgroundColor: 'var(--bg-secondary)'
             }
           },
-            React.createElement('span', {
+            React.createElement('h1', {
+              // The page's heading (#1386), drawn as the small header label.
               style: {
+                margin: 0,
                 fontSize: '11px',
                 fontWeight: '600',
                 letterSpacing: '0.08em',
@@ -1242,23 +853,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                 textTransform: 'uppercase'
               }
             }, 'Search'),
-            React.createElement('button', {
-              onClick: () => navigateBack(),
-              className: 'flex items-center gap-2 no-drag transition-all',
-              style: {
-                padding: '6px 12px',
-                fontSize: '12px',
-                fontWeight: '500',
-                color: 'var(--text-secondary)',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: '6px',
-                backgroundColor: 'transparent',
-                cursor: 'pointer'
-              }
-            },
-              'CLOSE',
-              React.createElement('span', { style: { color: 'var(--text-tertiary)' } }, '×')
-            )
+            React.createElement(HeaderControl, { close: true, onClick: () => navigateBack() }, 'Close')
           ),
 
           // Content area
@@ -1283,11 +878,11 @@ const SearchPage = React.memo(function SearchPage(props) {
                 }
               },
               placeholder: '',
-              className: 'w-full text-6xl font-extralight text-gray-900 bg-transparent border-none outline-none tracking-tight',
+              className: 'w-full text-6xl font-extralight text-ink-primary bg-transparent border-none outline-none tracking-tight',
               style: {
                 caretColor: 'var(--text-tertiary)',
                 fontFamily: 'var(--font-sans)'
-              }
+              }, 'aria-label': ''
             })
           ),
 
@@ -1300,11 +895,11 @@ const SearchPage = React.memo(function SearchPage(props) {
               // Header with clear all button
               React.createElement('div', { className: 'flex items-center justify-between' },
                 React.createElement('h3', {
-                  className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider'
+                  className: 'text-xs font-semibold text-ink-tertiary uppercase tracking-wider'
                 }, 'Recent Searches'),
                 React.createElement('button', {
                   onClick: () => clearSearchHistory(),
-                  className: 'text-xs text-gray-400 hover:text-red-500 transition-colors'
+                  className: 'text-xs text-ink-tertiary hover:text-ink-danger transition-colors'
                 }, 'Clear All')
               ),
               // History list
@@ -1343,22 +938,7 @@ const SearchPage = React.memo(function SearchPage(props) {
               )
             ) :
             // No history yet - show placeholder
-            React.createElement('div', { className: 'text-center py-12' },
-              React.createElement('svg', {
-                className: 'w-12 h-12 mx-auto text-gray-300 mb-4',
-                fill: 'none',
-                stroke: 'currentColor',
-                viewBox: '0 0 24 24'
-              },
-                React.createElement('path', {
-                  strokeLinecap: 'round',
-                  strokeLinejoin: 'round',
-                  strokeWidth: 1.5,
-                  d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z'
-                })
-              ),
-              React.createElement('p', { className: 'text-gray-400 text-sm' }, 'Start typing to search')
-            )
+            React.createElement(EmptyState, { icon: Icons.Search, title: 'Search your services', body: 'Start typing to find artists, albums, tracks and playlists.' })
           ) :
         // Skeletons only until the first results land: each category shows as
         // soon as it has rows (the services answer in a few hundred ms,
@@ -1381,7 +961,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                 ...Array(getItemsPerRow(160)).fill(null).map((_, i) =>
                   React.createElement('div', {
                     key: `artist-skeleton-${i}`,
-                    className: 'bg-white rounded-lg overflow-hidden'
+                    className: 'bg-surface-card rounded-lg overflow-hidden'
                   },
                     React.createElement('div', {
                       className: 'aspect-square shimmer-light animate-shimmer',
@@ -1399,7 +979,7 @@ const SearchPage = React.memo(function SearchPage(props) {
             ),
             // Songs skeleton - rounded style
             React.createElement('div', null,
-              React.createElement(SectionHeader, { as: 'h3', title: 'Songs', style: SECTION_HEADER_GAP }),
+              React.createElement(SectionHeader, { as: 'h3', title: 'Tracks', style: SECTION_HEADER_GAP }),
               React.createElement('div', { className: 'flex gap-4' },
                 ...Array(getItemsPerRow(110)).fill(null).map((_, i) => {
                   const skeletonWidth = Math.floor((searchContainerWidth - (getItemsPerRow(110) - 1) * 16) / getItemsPerRow(110));
@@ -1463,7 +1043,7 @@ const SearchPage = React.memo(function SearchPage(props) {
         searchResults.tracks.length === 0 &&
         searchResults.playlists.length === 0 &&
         filteredHistoryMatches.length === 0 ?
-          React.createElement('div', { className: 'text-center py-12 text-gray-400' },
+          React.createElement('div', { className: 'text-center py-12 text-ink-tertiary' },
             `No results found for "${searchQuery}"`
           )
         :
@@ -1471,12 +1051,12 @@ const SearchPage = React.memo(function SearchPage(props) {
         React.createElement('div', { className: 'space-y-10' },
           // Quick suggestions from search history (shown instantly while loading)
           filteredHistoryMatches.length > 0 && React.createElement('div', { className: 'mb-6' },
-            React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3' }, 'SUGGESTIONS'),
+            React.createElement('h3', { className: 'text-xs font-semibold text-ink-tertiary uppercase tracking-wider mb-3' }, 'SUGGESTIONS'),
             React.createElement('div', { className: 'flex flex-wrap gap-2' },
               ...filteredHistoryMatches.map((entry, i) =>
                 React.createElement('button', {
                   key: `suggestion-${i}-${entry.query}`,
-                  className: 'flex items-center gap-2 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-full text-sm text-gray-700 transition-colors',
+                  className: 'flex items-center gap-2 px-3 py-1.5 bg-surface-inset hover:bg-surface-hover rounded-full text-sm text-ink-secondary transition-colors',
                   onClick: () => {
                     if (entry.selectedResult) {
                       // Navigate directly to the result
@@ -1517,10 +1097,10 @@ const SearchPage = React.memo(function SearchPage(props) {
               className: 'flex gap-4'
             },
               ...searchResults.artists.slice(0, getItemsPerRow(160)).map(artist =>
-                React.createElement(SearchArtistCard, {
+                React.createElement(ArtistCard, {
                   key: artist._rowKey || artist.id,
-                  artist: artist,
-                  onClick: () => {
+                  artist: { id: slug(artist.name || 'unknown'), name: artist.name },
+                  onOpen: () => {
                     // Get cached artist image if available
                     const normalizedName = artist.name?.trim().toLowerCase();
                     const cachedImage = normalizedName ? artistImageCache.current[normalizedName] : null;
@@ -1533,43 +1113,9 @@ const SearchPage = React.memo(function SearchPage(props) {
                     fetchArtistData(artist.name, artistOpenOptions(artist));
                   },
                   getArtistImage: getArtistImage,
-                  itemWidth: Math.floor((searchContainerWidth - (getItemsPerRow(160) - 1) * 16) / getItemsPerRow(160)),
-                  onPlayTopTracks: async (artist) => {
-                    setTrackLoading(true);
-                    const tracks = await getArtistTopTracks(artist.name);
-                    if (tracks.length > 0) {
-                      const context = { type: 'artist', name: artist.name };
-                      const [firstTrack, ...remainingTracks] = tracks;
-                      // Tag the first track with context so queue navigation works correctly
-                      const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
-                      setQueueWithContext(remainingTracks, context, true);
-                      handlePlay(taggedFirstTrack);
-                    } else {
-                      setTrackLoading(false);
-                      showToast(`No top tracks found for ${artist.name}`, 'error');
-                    }
-                  },
-                  onAddToQueue: async (artist) => {
-                    const tracks = await getArtistTopTracks(artist.name);
-                    if (tracks.length > 0) {
-                      addToQueue(tracks, { type: 'artist', name: artist.name });
-                      showToast(`Added ${tracks.length} tracks from ${artist.name}`, 'success');
-                    } else {
-                      showToast(`No top tracks found for ${artist.name}`, 'error');
-                    }
-                  },
-                  onContextMenu: (artist) => {
-                    if (window.electron?.contextMenu?.showTrackMenu) {
-                      window.electron.contextMenu.showTrackMenu({
-                        type: 'artist',
-                        artist: {
-                          id: slug(artist.name || 'unknown'),
-                          name: artist.name,
-                          image: null
-                        }
-                      });
-                    }
-                  }
+                  width: Math.floor((searchContainerWidth - (getItemsPerRow(160) - 1) * 16) / getItemsPerRow(160)),
+                  onPlay: playArtistTopTracks,
+                  onContextMenu: () => window.showItemMenu(artistMenu({ id: slug(artist.name || 'unknown'), name: artist.name, image: null }))
                 })
               )
             )
@@ -1578,7 +1124,7 @@ const SearchPage = React.memo(function SearchPage(props) {
           // Songs/Tracks section with album art cards - matching album card style
           searchResults.tracks.length > 0 && React.createElement('div', null,
             React.createElement(SectionHeader, {
-              as: 'h3', title: 'Songs', style: SECTION_HEADER_GAP,
+              as: 'h3', title: 'Tracks', style: SECTION_HEADER_GAP,
               action: searchResults.tracks.length > 10 ? {
                 label: 'Show more',
                 onClick: () => {
@@ -1587,13 +1133,13 @@ const SearchPage = React.memo(function SearchPage(props) {
                 }
               } : null
             }),
-            React.createElement('div', {
+            React.createElement('div', { role: 'list',
               className: 'flex gap-4'
             },
               ...searchResults.tracks.slice(0, getItemsPerRow(140)).map((track, index) => {
                 const trackItemWidth = Math.floor((searchContainerWidth - (getItemsPerRow(140) - 1) * 16) / getItemsPerRow(140));
                 const animationDelay = Math.min(index * 40, 300);
-                return React.createElement('div', {
+                return React.createElement(CardButton, { role: 'listitem', label: `${track.title} by ${track.artist}`,
                   key: track._rowKey || track.id,
                   className: 'group cursor-grab active:cursor-grabbing release-card card-fade-up',
                   style: {
@@ -1605,7 +1151,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                     animationDelay: `${animationDelay}ms`
                   },
                   draggable: true,
-                  onClick: () => {
+                  onActivate: () => {
                     const cachedArt = getCachedAlbumArt(track.artist, track.album, track.releaseGroupId, track.releaseId);
                     saveSearchHistory(searchQuery, {
                       type: 'track',
@@ -1635,7 +1181,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                     e.preventDefault();
                     e.stopPropagation();
                     if (window.electron?.contextMenu?.showTrackMenu) {
-                      window.electron.contextMenu.showTrackMenu({
+                      window.showItemMenu({
                         type: 'track',
                         track: {
                           id: track.id,
@@ -1665,7 +1211,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       key: track.albumArt || getCachedAlbumArt(track.artist, track.album, track.releaseGroupId, track.releaseId),
                       src: track.albumArt || getCachedAlbumArt(track.artist, track.album, track.releaseGroupId, track.releaseId),
                       alt: track.album,
-                      className: 'absolute inset-0 w-full h-full object-cover transition-all duration-300 group-hover/art:scale-105',
+                      className: 'absolute inset-0 w-full h-full object-cover transition-all duration-300 group-hover:scale-105',
                       style: { opacity: 0 },
                       ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
                       onLoad: (e) => { e.target.style.opacity = '1'; },
@@ -1673,7 +1219,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                     }),
                     // Hover overlay with action buttons (Add to Playlist, Play, Queue)
                     React.createElement('div', {
-                      className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-1.5',
+                      className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 card-reveal transition-opacity duration-200 flex items-center justify-center gap-1.5',
                       style: { pointerEvents: 'auto' }
                     },
                       // Add to Playlist button
@@ -1691,11 +1237,9 @@ const SearchPage = React.memo(function SearchPage(props) {
                         style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
                         onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
                         onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                        title: 'Add to Playlist'
+                        'aria-label': 'Add to playlist', 'data-tooltip': 'Add to playlist'
                       },
-                        React.createElement('svg', { className: 'w-3.5 h-3.5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
-                        )
+                        React.createElement(Icons.Plus, { className: 'w-4 h-4' })
                       ),
                       // Play button (center, larger)
                       React.createElement('button', {
@@ -1711,28 +1255,25 @@ const SearchPage = React.memo(function SearchPage(props) {
                           });
                           handlePlay(track);
                         },
-                        className: 'w-9 h-9 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
+                        className: 'w-9 h-9 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
                         style: { border: 'none', cursor: 'pointer' },
-                        title: 'Play'
+                        'aria-label': 'Play', 'data-tooltip': 'Play'
                       },
-                        React.createElement(Play, { size: 16, className: 'text-gray-800 ml-0.5' })
+                        React.createElement(Play, { size: 16, className: 'text-ink-primary ml-0.5' })
                       ),
                       // Add to Queue button
                       React.createElement('button', {
                         onClick: (e) => {
                           e.stopPropagation();
                           addToQueue([track]);
-                          showToast(`Added "${track.title}" to queue`, 'success');
                         },
                         className: 'w-7 h-7 rounded-full flex items-center justify-center transition-all hover:scale-110',
                         style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
                         onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
                         onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                        title: 'Add to Queue'
+                        'aria-label': 'Add to queue', 'data-tooltip': 'Add to queue'
                       },
-                        React.createElement('svg', { className: 'w-3.5 h-3.5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
-                        )
+                        React.createElement(Icons.QueueAdd, { className: 'w-4 h-4', strokeWidth: 2 })
                       )
                     ),
                     // Source dots - bottom right corner (hidden on hover): the
@@ -1742,7 +1283,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       const dots = visibleSources(track, { trackSources, playbackResolvers: activeResolvers, resolverOrder }).slice(0, 4);
                       if (dots.length === 0) return null;
                       return React.createElement('div', {
-                        className: 'absolute bottom-1.5 right-1.5 flex gap-1 transition-opacity group-hover/art:opacity-0'
+                        className: 'absolute bottom-1.5 right-1.5 flex gap-1 transition-opacity group-hover:opacity-0'
                       },
                         ...dots.map(({ resolverId, dim }) => React.createElement('div', {
                           key: resolverId,
@@ -1794,220 +1335,51 @@ const SearchPage = React.memo(function SearchPage(props) {
                 }
               } : null
             }),
-            React.createElement('div', {
+            React.createElement('div', { role: 'list',
               className: 'flex gap-x-4 gap-y-5'
             },
+              // The shared album card (components/album-card.js), a fixed width
+              // in the row; the year is its third line.
               ...searchResults.albums.slice(0, getItemsPerRow(160)).map((album, index) => {
-                const albumItemWidth = Math.floor((searchContainerWidth - (getItemsPerRow(160) - 1) * 16) / getItemsPerRow(160));
-                const animationDelay = Math.min(index * 40, 300);
-                return React.createElement('div', {
+                const artistName = album['artist-credit']?.[0]?.name || 'Unknown';
+                return React.createElement(AlbumCard, Object.assign({
                   key: album._rowKey || album.id,
-                  onClick: () => {
+                  role: 'listitem',
+                  width: Math.floor((searchContainerWidth - (getItemsPerRow(160) - 1) * 16) / getItemsPerRow(160)),
+                  album: { id: album.id, title: album.title, artist: artistName, imageUrl: album.albumArt || null },
+                  subtitle: album['first-release-date']?.split('-')[0] || null,
+                  animationDelay: Math.min(index * 40, 300),
+                  dragData: () => ({
+                    type: 'album',
+                    album: {
+                      id: trackSlug(artistName === 'Unknown' ? 'unknown' : artistName, album.title || 'untitled'),
+                      title: album.title,
+                      artist: artistName,
+                      year: album['first-release-date']?.split('-')[0] ? parseInt(album['first-release-date'].split('-')[0]) : null,
+                      art: album.albumArt || null,
+                      trackCount: prefetchedReleasesRef.current[album.id]?.tracks?.length || null
+                    }
+                  }),
+                  onHoverPrefetch: () => prefetchSearchAlbumTracks(album),
+                  onOpen: () => {
                     saveSearchHistory(searchQuery, {
-                      type: 'album',
-                      id: album.id,
-                      name: album.title,
-                      artist: album['artist-credit']?.[0]?.name,
-                      imageUrl: album.albumArt || null
+                      type: 'album', id: album.id, name: album.title,
+                      artist: album['artist-credit']?.[0]?.name, imageUrl: album.albumArt || null
                     });
                     handleAlbumClick(album);
                   },
-                  onMouseEnter: () => {
-                    // Prefetch album tracks on hover for context menu
-                    prefetchSearchAlbumTracks(album);
-                  },
-                  className: 'group cursor-grab active:cursor-grabbing release-card card-fade-up',
-                  style: {
-                    width: albumItemWidth,
-                    padding: '10px',
-                    borderRadius: '10px',
-                    backgroundColor: 'var(--card-bg)',
-                    boxShadow: 'var(--card-shadow)',
-                    animationDelay: `${animationDelay}ms`
-                  },
-                  draggable: true,
-                  onDragStart: (e) => {
-                    e.dataTransfer.effectAllowed = 'copy';
+                  onOpenArtist: () => fetchArtistData(album['artist-credit']?.[0]?.name, creditOpenOptions(album['artist-credit'])),
+                  onContextMenu: () => {
+                    const albumData = { ...album, artist: artistName, releaseGroupMbid: album.id };
                     const prefetched = prefetchedReleasesRef.current[album.id];
-                    e.dataTransfer.setData('text/plain', JSON.stringify({
-                      type: 'album',
-                      album: {
-                        id: trackSlug(album['artist-credit']?.[0]?.name || 'unknown', album.title || 'untitled'),
-                        title: album.title,
-                        artist: album['artist-credit']?.[0]?.name || 'Unknown',
-                        year: album['first-release-date']?.split('-')[0] ? parseInt(album['first-release-date'].split('-')[0]) : null,
-                        art: null,
-                        trackCount: prefetched?.tracks?.length || null
-                      }
-                    }));
+                    window.showItemMenu(releaseMenu(albumData, { tracks: prefetched?.tracks, loading: prefetchInProgress.has(album.id) }));
                   },
-                  onContextMenu: (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    if (window.electron?.contextMenu?.showTrackMenu) {
-                      const artistName = album['artist-credit']?.[0]?.name || 'Unknown';
-                      const albumData = {
-                        title: album.title,
-                        artist: artistName,
-                        year: album['first-release-date']?.split('-')[0] ? parseInt(album['first-release-date'].split('-')[0]) : null,
-                        art: album.albumArt || null
-                      };
-                      // Check prefetched cache (use ref) and loading state (use module-level Set)
-                      const prefetched = prefetchedReleasesRef.current[album.id];
-                      const isLoading = prefetchInProgress.has(album.id);
-                      window.electron.contextMenu.showTrackMenu({
-                        type: 'release',
-                        name: album.title,
-                        album: albumData,
-                        tracks: prefetched?.tracks || [],
-                        loading: isLoading
-                      });
-                    }
-                  }
-                },
-                  // Album art with rounded corners and inner shadow
-                  React.createElement('div', {
-                    className: 'w-full aspect-square rounded-lg overflow-hidden mb-2 relative album-art-container group/art'
-                  },
-                    // Dark placeholder background
-                    React.createElement('div', {
-                      className: 'absolute inset-0',
-                      style: { background: 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)' }
-                    }),
-                    // Image with fade-in
-                    album.albumArt && React.createElement('img', {
-                      key: album.albumArt,
-                      src: album.albumArt,
-                      alt: album.title,
-                      className: 'absolute inset-0 w-full h-full object-cover transition-all duration-300 group-hover/art:scale-105',
-                      style: { opacity: 0 },
-                      ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
-                      onLoad: (e) => { e.target.style.opacity = '1'; },
-                      onError: (e) => { e.target.style.display = 'none'; handleSearchArtBroken('album', album, album.albumArt); }
-                    }),
-                    // Hover overlay with action buttons (Add to Playlist, Play, Queue)
-                    React.createElement('div', {
-                      className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-2',
-                      style: { pointerEvents: 'auto' }
-                    },
-                      // Add to Playlist button
-                      React.createElement('button', {
-                        onClick: async (e) => {
-                          e.stopPropagation();
-                          // Get prefetched tracks for playlist, or fetch them
-                          let prefetched = prefetchedReleasesRef.current[album.id];
-                          if (!prefetched?.tracks?.length) {
-                            showToast('Loading album...', 'info');
-                            await fetchSearchAlbumTracksAsync(album);
-                            prefetched = prefetchedReleasesRef.current[album.id];
-                          }
-                          if (prefetched?.tracks?.length > 0) {
-                            setAddToPlaylistPanel({
-                              open: true,
-                              tracks: prefetched.tracks,
-                              sourceName: album.title,
-                              sourceType: 'album'
-                            });
-                          } else {
-                            showToast('Could not load album tracks', 'error');
-                          }
-                        },
-                        className: 'w-8 h-8 rounded-full flex items-center justify-center transition-all hover:scale-110',
-                        style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-                        onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
-                        onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                        title: 'Add to Playlist'
-                      },
-                        React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
-                        )
-                      ),
-                      // Play button (center, larger - plays album)
-                      React.createElement('button', {
-                        onClick: async (e) => {
-                          e.stopPropagation();
-                          saveSearchHistory(searchQuery, {
-                            type: 'album',
-                            id: album.id,
-                            name: album.title,
-                            artist: album['artist-credit']?.[0]?.name,
-                            imageUrl: album.albumArt || null
-                          });
-                          // Play the album - fetch tracks if needed
-                          let prefetched = prefetchedReleasesRef.current[album.id];
-                          if (!prefetched?.tracks?.length) {
-                            showToast('Loading album...', 'info');
-                            await fetchSearchAlbumTracksAsync(album);
-                            prefetched = prefetchedReleasesRef.current[album.id];
-                          }
-                          if (prefetched?.tracks?.length > 0) {
-                            const context = { type: 'album', name: album.title, artist: album['artist-credit']?.[0]?.name };
-                            const [firstTrack, ...remainingTracks] = prefetched.tracks;
-                            const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
-                            setQueueWithContext(remainingTracks, context, true);
-                            handlePlay(taggedFirstTrack);
-                          } else {
-                            showToast('Could not load album tracks', 'error');
-                          }
-                        },
-                        className: 'w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
-                        style: { border: 'none', cursor: 'pointer' },
-                        title: 'Play album'
-                      },
-                        React.createElement(Play, { size: 18, className: 'text-gray-800 ml-0.5' })
-                      ),
-                      // Add to Queue button
-                      React.createElement('button', {
-                        onClick: async (e) => {
-                          e.stopPropagation();
-                          // Fetch album tracks and add to queue
-                          let prefetched = prefetchedReleasesRef.current[album.id];
-                          if (!prefetched?.tracks?.length) {
-                            showToast('Loading album...', 'info');
-                            await fetchSearchAlbumTracksAsync(album);
-                            prefetched = prefetchedReleasesRef.current[album.id];
-                          }
-                          if (prefetched?.tracks?.length > 0) {
-                            addToQueue(prefetched.tracks, { type: 'album', name: album.title, artist: album['artist-credit']?.[0]?.name });
-                            showToast(`Added ${prefetched.tracks.length} tracks from "${album.title}" to queue`, 'success');
-                          } else {
-                            showToast('Could not load album tracks', 'error');
-                          }
-                        },
-                        className: 'w-8 h-8 rounded-full flex items-center justify-center transition-all hover:scale-110',
-                        style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-                        onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
-                        onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                        title: 'Add to Queue'
-                      },
-                        React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
-                        )
-                      )
-                    )
-                  ),
-                  // Album title - refined typography
-                  React.createElement('div', {
-                    className: 'truncate',
-                    style: {
-                      fontSize: '13px',
-                      fontWeight: '500',
-                      color: 'var(--text-primary)',
-                      marginTop: '6px'
-                    }
-                  }, album.title),
-                  // Artist and year
-                  React.createElement('div', {
-                    className: 'truncate',
-                    style: {
-                      fontSize: '11px',
-                      color: 'var(--text-secondary)',
-                      marginTop: '2px'
-                    }
-                  },
-                    `${album['artist-credit']?.[0]?.name || 'Unknown'} • ${album['first-release-date']?.split('-')[0] || ''}`
-                  )
-                );
+                  onArtError: () => handleSearchArtBroken('album', album, album.albumArt)
+                }, albumCardActions({
+                  title: album.title, artist: artistName,
+                  context: { type: 'album', id: album.id, name: album.title, artist: artistName },
+                  getTracks: async () => (await fetchSearchAlbumTracksAsync(album))?.tracks
+                })));
               })
             )
           ),
@@ -2029,7 +1401,7 @@ const SearchPage = React.memo(function SearchPage(props) {
             },
               ...searchResults.playlists.slice(0, 20).map((playlist, index) => {
                 const animationDelay = Math.min(index * 40, 300);
-                return React.createElement('div', {
+                return React.createElement('button', { type: 'button',
                   key: playlist.id || `${playlist.title}-${index}`,
                   onClick: () => {
                     saveSearchHistory(searchQuery, {
@@ -2040,7 +1412,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                     });
                     handlePlaylistClick(playlist);
                   },
-                  className: 'flex-shrink-0 cursor-pointer group release-card card-fade-up',
+                  className: 'text-left flex-shrink-0 cursor-pointer group release-card card-fade-up',
                   style: {
                     width: '160px',
                     padding: '12px',
@@ -2055,19 +1427,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                     className: 'w-full aspect-square rounded-lg mb-2 flex items-center justify-center',
                     style: { background: 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)' }
                   },
-                    React.createElement('svg', {
-                      className: 'w-10 h-10 text-gray-500',
-                      fill: 'none',
-                      viewBox: '0 0 24 24',
-                      stroke: 'currentColor',
-                      strokeWidth: 1.5
-                    },
-                      React.createElement('path', {
-                        strokeLinecap: 'round',
-                        strokeLinejoin: 'round',
-                        d: 'M9 9l10.5-3m0 6.553v3.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 11-.99-3.467l2.31-.66a2.25 2.25 0 001.632-2.163zm0 0V4.5L9 7.5v9.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 01-.99-3.467l2.31-.66A2.25 2.25 0 009 13.125V9'
-                      })
-                    )
+                    React.createElement(Icons.Music, { className: 'w-10 h-10 text-ink-tertiary', strokeWidth: 1.5 })
                   ),
                   // Playlist title
                   React.createElement('div', {
@@ -2087,7 +1447,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       marginTop: '2px'
                     }
                   },
-                    `${playlist.tracks?.length || 0} tracks`
+                    `${countOf(playlist.tracks?.length || 0, 'track')}`
                   )
                 );
               })

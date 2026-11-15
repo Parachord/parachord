@@ -355,8 +355,12 @@ describe('wiring (source markers)', () => {
   test('the cross-service confirmation is wired for cancel, backdrop and supersede, and only offers a connected service', () => {
     expect(app).toContain('const superseded = pendingConfirmCancelRef.current;');
     expect(app).toContain('if (superseded) superseded();');
-    // Cancel button and backdrop dismiss consume-and-fire; OK consumes without.
-    expect(app).toContain('const fn = closeConfirmDialog();');
+    // Cancel, the close X, Escape and the backdrop consume-and-fire; OK
+    // consumes without (ConfirmModal on the shared Modal, components/modal.js).
+    expect(app).toContain('confirmDialog.show && React.createElement(ConfirmModal, { dialog: confirmDialog, onClose: closeConfirmDialog })');
+    const modal = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/components/modal.js'), 'utf8');
+    expect(modal).toContain("const fn = typeof pending === 'function' ? pending : (pending === null ? null : onCancel);");
+    expect(modal).toContain('const confirm = () => { onClose(); if (onConfirm) onConfirm(); };');
     expect(app).toContain('onConfirm: () => resolve(true),');
     expect(app).toContain('onCancel: () => resolve(false),');
     // Connected, not just toggled.

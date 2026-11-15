@@ -12,6 +12,7 @@
 // vendor global; ResolverIcon via the ui-atoms module; icons via the icons
 // module's own destructure below.
 const { ResolverIcon } = require('./ui-atoms');
+const { CardButton } = require('./card-button');
 const Icons = require('./icons');
 const { Music, Pause, Play, X } = Icons;
 
@@ -106,7 +107,7 @@ const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick, onCo
             }
           },
           className: 'text-xs text-gray-500 truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
-          title: `View ${track.artist}'s discography`
+          'data-tooltip': `View ${track.artist}'s discography`
         }, track.artist),
         // Resolver badges - clickable for manual override
         ...availableSources.map(resolverId => {
@@ -121,7 +122,7 @@ const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick, onCo
               handlePlay(track.sources[resolverId]);
             },
             className: `text-xs px-2 py-0.5 ${meta.bgColor} ${meta.textColor} rounded-full hover:opacity-80 transition-opacity cursor-pointer`,
-            title: `Play from ${meta.label} (manual override)`
+            'data-tooltip': `Play from ${meta.label} (manual override)`
           }, meta.label);
         }),
       ),
@@ -269,7 +270,8 @@ const VirtualizedQueueList = React.memo(({
     const isInserted = insertedTrackId === track.id;
     const isFallingDown = droppingFromIndex !== null && index <= droppingFromIndex;
 
-    return React.createElement('div', {
+    return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`, more: `More actions for ${track.title}`, moreTone: 'dark',
+    current: isCurrentTrack,
       key: track.id,
       'data-index': index,
       ref: virtualRow ? virtualizer.measureElement : undefined,
@@ -308,10 +310,10 @@ const VirtualizedQueueList = React.memo(({
       onContextMenu: (e) => {
         e.preventDefault();
         if (!isLoading && !isError && window.electron?.contextMenu?.showTrackMenu) {
-          window.electron.contextMenu.showTrackMenu({ type: 'track', track });
+          window.showItemMenu({ type: 'track', track, inQueue: true, queueIndex: index, queueLength: queue.length });
         }
       },
-      onClick: () => {
+      onActivate: () => {
         if (isLoading || isError) return;
         if (spinoffMode) exitSpinoff();
         setDroppingFromIndex(index);
@@ -360,13 +362,12 @@ const VirtualizedQueueList = React.memo(({
           flexShrink: 0,
           fontSize: '12px',
           fontWeight: '500',
-          color: (spinoffMode || playbackContext?.type === 'spinoff' || playbackContext?.type === 'friend')
-            ? 'rgba(156, 163, 175, 0.5)' : 'rgba(156, 163, 175, 0.7)'
+          color: 'var(--on-dark-tertiary)'
         }
       },
         listenAlongFriend ? '–' :
-        isLoading ? React.createElement('span', { className: 'animate-spin inline-block' }, '◌') :
-        isError ? '⚠' :
+        isLoading ? React.createElement(Icons.Spinner, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }) :
+        isError ? React.createElement(Icons.AlertTriangle, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }) :
         isCurrentTrack ? '▶' :
         (spinoffMode || playbackContext?.type === 'spinoff' || playbackContext?.type === 'friend')
           ? '··' : String(index + 1).padStart(2, '0')
@@ -379,19 +380,20 @@ const VirtualizedQueueList = React.memo(({
           minWidth: 0,
           fontSize: '13px',
           fontWeight: index === 0 ? '500' : '400',
-          color: isLoading ? 'rgba(156, 163, 175, 0.6)' :
+          color: isLoading ? 'var(--on-dark-tertiary)' :
                  isError ? '#f87171' :
                  isCurrentTrack ? 'var(--accent-soft)' : 'rgba(229, 231, 235, 0.9)'
         }
       },
-        isLoading ? 'Loading...' :
+        isLoading ? 'Loading…' :
         isError ? 'Could not load track' :
         track.title
       ),
       // Artist name
-      React.createElement('span', {
-        className: 'truncate hover:text-purple-400 hover:underline cursor-pointer transition-colors',
-        style: { flex: '0.7 1 0', minWidth: 0, fontSize: '12px', color: 'rgba(156, 163, 175, 0.7)' },
+      React.createElement('button', { type: 'button',
+        className: 'text-left truncate hover:text-purple-400 hover:underline cursor-pointer transition-colors',
+        // On the always-dark drawer: the fixed on-dark colour (#1386 contrast).
+        style: { flex: '0.7 1 0', minWidth: 0, fontSize: '12px', color: 'var(--on-dark-secondary)' },
         onClick: (e) => {
           e.stopPropagation();
           if (!isLoading && !isError && track.artist) fetchArtistData(track.artist);
@@ -404,7 +406,7 @@ const VirtualizedQueueList = React.memo(({
       // Duration
       React.createElement('span', {
         className: 'text-right tabular-nums',
-        style: { width: '50px', flexShrink: 0, fontSize: '12px', color: 'rgba(156, 163, 175, 0.5)' }
+        style: { width: '50px', flexShrink: 0, fontSize: '12px', color: 'var(--on-dark-tertiary)' }
       }, !isLoading && !isError ? trackDurationLabel(track, { trackSources, resolverOrder }) : ''),
       // Resolver icons
       React.createElement('div', {
@@ -421,7 +423,7 @@ const VirtualizedQueueList = React.memo(({
               }
             },
             className: 'px-2 py-0.5 text-xs text-gray-400 hover:text-white hover:bg-white/10 rounded transition-colors',
-            title: 'Retry'
+            'data-tooltip': 'Retry'
           }, '↻')
         : isLoading ?
           React.createElement('div', { className: 'flex items-center gap-1' },
@@ -463,7 +465,7 @@ const VirtualizedQueueList = React.memo(({
                 },
                 onMouseEnter: (e) => { e.currentTarget.style.transform = 'scale(1.1)'; e.currentTarget.style.opacity = '1'; e.currentTarget.style.filter = 'saturate(1)'; },
                 onMouseLeave: (e) => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.opacity = String(restingOpacity); e.currentTarget.style.filter = 'saturate(0.7)'; },
-                title: `Play via ${resolver.name}${confidence ? ` (${Math.round(confidence * 100)}% match)` : ''}`
+                'aria-label': `Play via ${resolver.name}${confidence ? ` (${Math.round(confidence * 100)}% match)` : ''}`, 'data-tooltip': `Play via ${resolver.name}${confidence ? ` (${Math.round(confidence * 100)}% match)` : ''}`
               }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
             })
         : sourceState === 'unplayable' ? null
@@ -472,7 +474,7 @@ const VirtualizedQueueList = React.memo(({
             React.createElement('div', {
               className: 'rounded shimmer-light animate-shimmer',
               style: { width: '20px', height: '20px' },
-              title: 'Resolving track...'
+              title: 'Resolving track…'
             }),
             React.createElement('div', {
               className: 'rounded shimmer-light animate-shimmer',
@@ -484,10 +486,11 @@ const VirtualizedQueueList = React.memo(({
       React.createElement('button', {
         onClick: (e) => {
           e.stopPropagation();
-          removeFromQueue(track.id);
+          // This row only: the same song may be queued more than once.
+          removeFromQueue(track.id, index);
         },
-        className: 'flex-shrink-0 p-1 text-gray-500 hover:text-red-400 hover:bg-white/10 rounded transition-colors opacity-0 group-hover:opacity-100',
-        title: isLoading ? 'Cancel' : 'Remove from queue'
+        className: 'flex-shrink-0 p-1 text-gray-500 hover:text-red-400 hover:bg-white/10 rounded transition-colors opacity-0 group-hover:opacity-100 card-reveal',
+        'aria-label': isLoading ? 'Cancel' : 'Remove from queue', 'data-tooltip': isLoading ? 'Cancel' : 'Remove from queue'
       }, React.createElement(X, { size: 14 }))
     );
   };
@@ -602,14 +605,18 @@ const VirtualizedTrackList = React.memo(({
   // windowed path on the next render. Never blank.
   if (!virtualizer || tracks.length < virtualizationThreshold || virtualItems.length === 0) {
     return React.createElement('div', {
+      role: 'list',
       className: 'space-y-0',
       style: { minHeight: 'calc(100vh - 160px)' }
     },
-      tracks.map((track, index) => renderRow(track, index, null))
+      // Each row is a list item (#1386): the page's renderRow stays as it was.
+      tracks.map((track, index) => React.createElement('div', { key: track.id || track.filePath || index, role: 'listitem' },
+        renderRow(track, index, null)))
     );
   }
 
   return React.createElement('div', {
+    role: 'list',
     style: {
       height: `${virtualizer.getTotalSize()}px`,
       width: '100%',
@@ -626,6 +633,7 @@ const VirtualizedTrackList = React.memo(({
       return React.createElement('div', {
         key: track.id || track.filePath || virtualRow.index,
         'data-index': virtualRow.index,
+        role: 'listitem',
         ref: virtualizer.measureElement,
         style: {
           position: 'absolute',

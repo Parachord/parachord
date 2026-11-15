@@ -2,16 +2,7 @@
 
 Reference guide for the visual design language, tokens, components, and patterns used across the Parachord desktop application.
 
-> **Partly out of date (2026-11-13).** The [design audit](plans/2026-11-13-design-audit.md) compared this guide with the code. It found several points where they disagree:
-> - tokens documented here that nothing uses (radius, tracking, leading, z-index, motion)
-> - "no breakpoint-based responsive design" (20 grids use breakpoints)
-> - the Recommendations heading style
-> - the Bandcamp colour
-> - the Tailwind scan path
-> - animations listed as in use
-> - the blue slider thumbs
->
-> Until this guide is rewritten, the "Design system" section of [CLAUDE.md](../CLAUDE.md) and the audit win where they disagree. The design-drift ratchet (`tests/ci/design-drift.test.js`) enforces them.
+This guide matches the code as of the 2026-11-13 [design audit](plans/2026-11-13-design-audit.md) and its follow-up (#1382–#1391). The design-drift ratchet (`tests/ci/design-drift.test.js`) enforces the scales and tokens; CLAUDE.md's "Design system" section has the rules in short. A PR that changes a token, a scale or a shared component updates this guide.
 
 ## Overview
 
@@ -32,71 +23,99 @@ All design tokens are defined as CSS custom properties on `:root` (light) and `.
 
 ### Colors
 
+Every colour has a light and a dark value, so both themes work by construction. In code, reach for them in this order:
+
+1. **A theme-token Tailwind class** (`tailwind.config.js`, below): `text-ink-secondary`, `bg-surface-card`, `border-line`, `bg-accent-fill`.
+2. **The CSS variable** in an inline style: `color: 'var(--text-secondary)'`.
+3. **A new token** when nothing fits: add it to `:root` and `.dark` together in `index.html`, and to `tailwind.config.js` if classes will use it.
+
+Never a hex value, a Tailwind palette class (`text-gray-500`, `bg-purple-600`, ...) or an `isDark` / `effectiveTheme` ternary. `tests/ci/design-drift.test.js` counts all three, and `themeTernaries` is 0. `:root` and `.dark` also set `color-scheme`, so native controls, scrollbars and background-less inputs follow the theme.
+
 #### Backgrounds
 
-| Token | Light | Dark | Usage |
-|-------|-------|------|-------|
-| `--bg-primary` | `#ffffff` | `#161616` | Main content area |
-| `--bg-secondary` | `#f9fafb` | `#1e1e1e` | Secondary surfaces |
-| `--bg-elevated` | `#ffffff` | `#252525` | Elevated cards, modals |
-| `--bg-inset` | `#f3f4f6` | `#1a1a1a` | Recessed/inset areas |
-| `--bg-tertiary` | `#fafafa` | `#1e1e1e` | Tertiary backgrounds |
+| Token | Tailwind | Light | Dark | Usage |
+|-------|----------|-------|------|-------|
+| `--bg-primary` | `bg-surface-page`, `.page-bg` | `#ffffff` | `#161616` | A page's body |
+| `--bg-elevated` | `bg-surface-card` | `#ffffff` | `#252525` | Cards, menus, modals |
+| `--bg-secondary` | `bg-surface-subtle` | `#f9fafb` | `#1e1e1e` | Secondary surfaces |
+| `--bg-inset` | `bg-surface-inset` | `#f3f4f6` | `#1a1a1a` | Recessed areas, neutral chips |
+| `--hover-bg-default` | `bg-surface-hover` | `#f3f4f6` | `rgba(255,255,255,0.05)` | Row and item hover |
+| `--placeholder-bg` | `bg-surface-placeholder` | `#e5e7eb` | `#383838` | Image placeholders, skeleton bars |
+
+A page body is `--bg-primary` and the cards on it `--bg-elevated`, so in dark mode cards keep their edges. Never put a page body on `bg-white` (dark mode maps it to the card colour).
 
 #### Text
 
-| Token | Light | Dark | Usage |
-|-------|-------|------|-------|
-| `--text-primary` | `#111827` | `#f3f4f6` | Headings, primary content |
-| `--text-secondary` | `#6b7280` | `#9ca3af` | Secondary labels, metadata |
-| `--text-tertiary` | `#9ca3af` | `#6b7280` | Placeholders, hints |
+| Token | Tailwind | Light | Dark | Usage |
+|-------|----------|-------|------|-------|
+| `--text-primary` | `text-ink-primary` | `#111827` | `#f3f4f6` | Headings, primary content |
+| `--text-secondary` | `text-ink-secondary` | `#4b5563` | `#9ca3af` | Secondary labels, metadata |
+| `--text-tertiary` | `text-ink-tertiary` | `#6b7280` | `#8b8f97` | Hints, counts, timestamps |
+| `--icon-faint` | `text-ink-faint` | `#d1d5db` | `#4b5563` | Large decorative empty-state icons only |
+
+Secondary and tertiary both pass 4.5:1 on the page and on cards in both themes, and stay distinct (`tests/ui/theme-tokens.test.js`). Map Tailwind greys as: gray-900/800 → primary, 700/600 → secondary, 500/400 → tertiary.
 
 #### Accent (Purple)
 
-The primary accent color is **purple**, shifting slightly between themes for contrast.
+| Token | Tailwind | Light | Dark | Usage |
+|-------|----------|-------|------|-------|
+| `--accent-primary` | `text-accent`, `ring-accent` | `#7c3aed` | `#a78bfa` | Accent text, icons, focus rings, slider `accent-color` |
+| `--accent-fill` | `bg-accent-fill` | `#7c3aed` | `#7c3aed` | **Fills with white text on them** |
+| `--accent-fill-hover` | `hover:bg-accent-fill-hover` | `#6d28d9` | `#6d28d9` | Their hover |
+| `--on-accent` | `text-ink-on-accent` | `#ffffff` | `#ffffff` | Text on a fill |
+| `--accent-primary-alpha-10` | `bg-accent-tint` | 10% | 10% | Selected and now-playing rows, accent chips |
+| `--accent-primary-alpha-15` | `bg-accent-tint-hover` | 15% | 15% | Their hover |
 
-| Token | Light | Dark | Usage |
-|-------|-------|------|-------|
-| `--accent-primary` | `#7c3aed` | `#a78bfa` | Primary actions, links |
-| `--accent-primary-hover` | `#6d28d9` | `#8b5cf6` | Hover state |
-| `--accent-secondary` | `#8b5cf6` | `#c4b5fd` | Secondary accent |
-| `--accent-tertiary` | `#a855f7` | `#a855f7` | Tertiary accent |
-| `--accent-soft` | `#a78bfa` | `#c4b5fd` | Soft/muted accent |
-| `--accent-surface` | `#ede9fe` | `rgba(139,92,246,0.15)` | Accent-tinted surface |
+**The fill-accent convention.** `--accent-primary` turns light purple in dark mode, where white text on it is 2.72:1. So a button, badge or switch track with white text uses `--accent-fill` / `--on-accent`, and `--accent-primary` is for accent-coloured text, icons and outlines. Other accent tokens (`--accent-secondary`, `--accent-soft`, `--accent-surface`, alpha variants at 6–60%) are in `index.html`.
 
-Alpha variants exist at 6%, 8%, 10%, 15%, 20%, 30%, 50%, and 60% opacity as `--accent-primary-alpha-{N}`.
+#### Status
 
-#### Semantic Colors
+| Purpose | Tokens | Tailwind |
+|---------|--------|----------|
+| Status text on a page or card (≥ 4.5:1 in both themes) | `--text-success`, `--text-warning`, `--text-danger`, `--text-info` | `text-ink-success`, `text-ink-warning`, `text-ink-danger`, `text-ink-info` |
+| A faint background behind status text (the colour at 12%) | — | `bg-tint-success`, `bg-tint-warning`, `bg-tint-danger`, `bg-tint-info` |
+| Fills with white text: toasts, the Home banner, the confirm dialog's button | `--fill-success`, `--fill-warning`, `--fill-error`, `--fill-info` (the same in both themes, each ≥ 4.5:1 with white) | `bg-status-error`, `hover:bg-status-error-hover` |
+| Dots, icons and indicators | `--success`, `--warning`, `--error`, `--info` | — |
 
-| Token | Value | Usage |
-|-------|-------|-------|
-| `--success` | `#10b981` | Resolved states, positive indicators |
-| `--warning` | `#f59e0b` | Warnings, unresolved states |
-| `--error` | `#ef4444` | Errors, destructive actions |
+`lib/home-banners.js` (`BANNER_SEVERITY_COLORS`) and `lib/toast-style.js` read the fill tokens; a severity is one colour wherever it shows.
 
-#### Borders
+#### Borders and controls
 
-| Token | Light | Dark |
-|-------|-------|------|
-| `--border-default` | `#e5e7eb` | `#2e2e2e` |
-| `--border-light` | `#f3f4f6` | `#252525` |
-| `--border-subtle` | `rgba(0,0,0,0.06)` | `rgba(255,255,255,0.06)` |
+| Token | Tailwind | Light | Dark |
+|-------|----------|-------|------|
+| `--border-default` | `border-line` | `#e5e7eb` | `#2e2e2e` |
+| `--border-light` | `border-line-light` | `#f3f4f6` | `#252525` |
+| `--border-strong` | `border-line-strong` | `#d1d5db` | `#404040` |
+| `--border-danger` | `border-line-danger` | `#fecaca` | red at 35% |
+| `--border-subtle` | — | `rgba(0,0,0,0.06)` | `rgba(255,255,255,0.06)` |
+| `--control-off` | `bg-control-off` | `#d1d5db` | `#707070` |
+| `--control-knob` | `bg-control-knob` | `#ffffff` | `#ffffff` |
 
-#### Resolver / Service Colors
+A switch is an `--accent-fill` track when on, `--control-off` when off, and always a white `--control-knob`.
 
-Each music service has a branded color used in badges and icons:
+#### Page colours
 
-| Service | Text Class | Badge Color | Icon Hex |
-|---------|-----------|-------------|----------|
-| Spotify | `text-green-400` | `bg-green-600/20` | `#1DB954` |
-| Apple Music | - | - | `#FA243C` |
-| Amazon Music | - | - | `#25D1DA` |
-| YouTube | `text-red-400` | `bg-red-600/20` | `#FF0000` |
-| Bandcamp | `text-cyan-400` | `bg-cyan-600/20` | `#629AA9` |
-| SoundCloud | `text-orange-400` | `bg-orange-600/20` | `#FF5500` |
-| Subsonic | `text-teal-400` | `bg-teal-600/20` | `#14b8a6` |
-| Local Files | - | - | `#6366f1` |
+Each page has one colour, in `src/renderer/lib/page-colors.js` (`PAGE_COLORS`): the sidebar item's active text and 10% tint (`pageTint(view)`), the hero gradient, links to the page (`SectionHeader`'s `pageColor`), Home's panels that preview it, and the page's own controls (Concerts' location and radius). Each entry has `color`, `rgb`, `fill` (a darker shade for white-text buttons, ≥ 4.5:1) and `hero` (full Tailwind gradient classes, so Tailwind's scan generates them).
 
-The icon hex is each plug-in's `manifest.color` (`plugins-src/<id>/manifest.json`); the resolver badges in the track lists use it as their background (`backgroundColor: resolver.color` in `track-lists.js`). The text and badge classes are `TrackRow`'s `resolverMeta` map in `src/renderer/components/track-lists.js`, which covers only the services listed with classes here.
+| Page | Colour | Hero |
+|------|--------|------|
+| Home | the accent | purple → violet → indigo |
+| Playlists | `#ec4899` | rose → pink → fuchsia |
+| Collection | `#06b6d4` | cyan → blue |
+| History (and a friend's history) | `#3b82f6` | sky → blue → indigo |
+| Fresh Drops | `#22c55e` | lime → green → emerald |
+| Recommendations | `#f59e0b` | amber → orange |
+| Charts | `#f97316` | orange → pink → purple |
+| Critical Darlings | `#ef4444` | red → rose |
+| Concerts | `#10c9b4` | teal → cyan |
+
+No two heroes start in the same colour family (`tests/renderer/page-colors.test.js`). Never copy a page colour into a component; read the map.
+
+#### Service colours
+
+A music service's colour is its plug-in's `manifest.color` (`plugins-src/<id>/manifest.json`), exposed as `resolver.color` (`#888888` when a manifest has none). The track-list badges, the playbar's source button and "Play from" menu, Search's source dots and Home's source chips all read it. (`TrackRow` in `track-lists.js` still has its own `resolverMeta` table, but nothing renders `TrackRow` any more.) Concert ticket sellers' colours are in `src/renderer/lib/ticket-sellers.js`, equal to their plug-ins' manifest colours (tested); their text is the brand colour mixed 70% with `--text-primary`, so one value reads on both themes.
+
+Inside a service's own plugin panel (its header, Connect, Save and sync buttons), the service's brand colour is used on purpose instead of the accent: a decision of 2026-11-14. Everywhere else, buttons are `Button`'s variants.
 
 ### Shadows
 
@@ -114,61 +133,22 @@ The icon hex is each plug-in's `manifest.color` (`plugins-src/<id>/manifest.json
 | `--font-sans` | `-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif` | All UI text |
 | `--font-mono` | `ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace` | Code, technical values |
 
-**Line height scale:**
+**Type, radius and motion are scales, not tokens.** The unused `--leading-*`, `--tracking-*`, `--radius-*`, `--duration-*` and `--ease-*` tokens were deleted in the design audit (#1383); the scales below are what `scripts/design-drift.js` enforces (CLAUDE.md "Design system"):
+
+- **Type:** 11 · 12 · 13 · 14 · 16 · 20 · 24 · 28 · 48px; weights as numbers.
+- **Radius:** 4 · 6 · 8 · 10 · 12 · 16px · full.
+- **Spacing:** the 4px scale; 10px only for card padding.
+- **Motion:** 100–400ms on transform and opacity; never `transition-all` on list rows. `prefers-reduced-motion` turns it off (spinners excepted).
+
+### Z-Index
 
 | Token | Value | Usage |
 |-------|-------|-------|
-| `--leading-tight` | `1.2` | Headings |
-| `--leading-normal` | `1.4` | Default |
-| `--leading-body` | `1.5` | Body text |
-| `--leading-relaxed` | `1.6` | Readable paragraphs |
+| `--z-dropdown` | `20` | Sort menus and other in-page dropdowns |
+| `--z-popover` | `9999` | `Menu` (context and "More" menus), above the playbar |
+| `--z-toast` | `99999` | Toasts, above dialogs |
 
-**Letter spacing scale:**
-
-| Token | Value | Usage |
-|-------|-------|-------|
-| `--tracking-tight` | `0.005em` | Tight headings |
-| `--tracking-normal` | `0.02em` | Default |
-| `--tracking-wide` | `0.05em` | Slightly spaced |
-| `--tracking-caps` | `0.08em` | Uppercase labels |
-| `--tracking-display` | `0.2em` | Display text |
-| `--tracking-display-wide` | `0.3em` | Wide display |
-
-### Border Radius
-
-| Token | Value | Usage |
-|-------|-------|-------|
-| `--radius-sm` | `4px` | Small elements, badges |
-| `--radius-md` | `6px` | Buttons, inputs |
-| `--radius-lg` | `8px` | Cards |
-| `--radius-xl` | `10px` | Larger cards |
-| `--radius-2xl` | `12px` | Panels |
-| `--radius-pill` | `16px` | Pill shapes |
-| `--radius-full` | `9999px` | Circles, full-round |
-
-### Z-Index Scale
-
-| Token | Value | Usage |
-|-------|-------|-------|
-| `--z-base` | `0` | Default layer |
-| `--z-raised` | `10` | Raised cards |
-| `--z-dropdown` | `20` | Dropdown menus |
-| `--z-sticky` | `30` | Sticky headers |
-| `--z-overlay` | `40` | Overlays |
-| `--z-modal` | `50` | Modals |
-| `--z-popover` | `9999` | Popovers |
-| `--z-toast` | `99999` | Toast notifications |
-
-### Transitions
-
-| Token | Value | Usage |
-|-------|-------|-------|
-| `--duration-fast` | `100ms` | Micro-interactions |
-| `--duration-base` | `150ms` | Standard transitions |
-| `--duration-slow` | `300ms` | Panel animations |
-| `--ease-default` | `ease` | General purpose |
-| `--ease-out` | `cubic-bezier(0.4, 0, 0.2, 1)` | Elements entering |
-| `--ease-spring` | `cubic-bezier(0.16, 1, 0.3, 1)` | Bouncy/spring motion |
+Dialogs sit at `z-[60]`. Inside a card, `CardButton`'s stretched button is at 1, card actions at 2 and the reason badge at 3.
 
 ---
 
@@ -191,49 +171,72 @@ In dark mode these surfaces are lifted slightly above `--bg-primary` so they sti
 
 ## Tailwind Configuration
 
-Defined in `tailwind.config.js`. The config extends the default Tailwind palette with custom teal shades:
+Defined in `tailwind.config.js`; the generated CSS is `vendor/tailwind.css` (rebuild with `npm run build:css` and commit it). Dark mode is `darkMode: 'class'`.
 
-```js
-colors: {
-  teal: {
-    100: '#d1fcf4',
-    400: '#36dcc8',
-    500: '#10c9b4',
-    600: '#0eb3a0',
-  }
-}
-```
+The config adds **theme-token colours**: each reads a CSS variable from `index.html`, so a class like `text-ink-secondary` is right in both themes with no dark override. The groups are `ink-*` (text), `surface-*` (backgrounds), `line-*` (borders), `accent-*`, `control-*`, `status-*` and `tint-*`; the tables above list them. It also extends `teal` with the Concerts shades.
 
-Dark mode is applied via `darkMode: 'class'`. The generated CSS is output to `vendor/tailwind.css`.
-
-Additionally, `index.html` contains overrides that map standard Tailwind classes (e.g., `.dark .text-gray-900`, `.dark .bg-white`) to CSS custom property values, ensuring dark mode consistency even when components use hardcoded Tailwind classes.
+`index.html` still has a few `.dark` overrides that remap Tailwind palette classes (`.dark .text-gray-500`, `.dark .bg-white`, ...) for code not yet converted, mostly the always-dark surfaces. Don't rely on them in new code. `tests/ui/theme-tokens.test.js` fails when a remap rule outlives its last user, so delete the rule with the last class.
 
 ---
 
 ## Components
 
-Components use `React.createElement()` (no JSX). The reusable ones live in `src/renderer/components/`, required by `src/renderer/app.js`:
+Components use `React.createElement()` (no JSX) and live in `src/renderer/components/`, required by `src/renderer/app.js`. **Reuse before you build:** before writing any UI element, find the shared one below. A second copy of something that exists gets extracted into a shared component first, and a page never restyles a shared component's output (CLAUDE.md "Design system"). Each one also has a "comes from" line in [architecture/renderer-patterns.md](architecture/renderer-patterns.md).
+
+### Which component, when
+
+| You need | Use | Module | Notes |
+|----------|-----|--------|-------|
+| A button | `Button` | `button.js` | `variant`: primary (one per view), secondary, destructive, text, icon (needs `aria-label`); `size` sm/md; `busy`; `tone: 'dark'` on the always-dark surfaces; `pageColor` for a hero's fill |
+| A page or drawer header's Close / Edit / Save / Cancel | `HeaderControl` | `header-control.js` | The shared `Button`, small and sentence case; `close` is an icon-only ✕ with its label as name and tooltip; tones default / primary / dark |
+| A dialog | `Modal` | `modal.js` | Focus moves in and comes back, Escape and the scrim close it, one title size and three widths. `ConfirmModal` for confirm/cancel (the confirm button named for its action, `destructive` for red); `DontShowAgain` for the checkbox |
+| A success, info or error message | `showToast(message, type, action, options)` | `toast.js` (`ToastRegion`) | Success is a toast, never a dialog |
+| A menu (right-click or "More") | `Menu`, items from `lib/item-menus.js` | `menu.js` | Portalled, keyboard and typeahead, flips up near the bottom; the dark 12px look |
+| A sort control | `SortMenu` | `sort-menu.js` | |
+| A clickable card or row | `CardButton` | `card-button.js` | A stretched `<button>` under the card; inner buttons sit above it; `onContextMenu` also opens on Shift+F10 / the Menu key; `tooltip` for a whole-card note |
+| A heading over a row or grid | `SectionHeader` | `section-header.js` | Home's style, with the optional "See all" link |
+| Pick-one filter buttons | `FilterChips` | `filter-chips.js` | Home's source filter style |
+| Tabs in a hero | `HeroTabs` | `hero-tabs.js` | `role="tablist"`, arrow keys |
+| A setting row, text field, secret field, select, switch or radio group | `SettingRow`, `TextField`, `SecretField`, `Select`, `Switch`, `RadioGroup` | `fields.js` | Every field has a label; on/off is always a `Switch` |
+| Nothing to show yet / a load that failed | `EmptyState` / `ErrorState` | `states.js` | `ErrorState` has "Try again" (`onRetry`) |
+| A loading placeholder | the page's skeletons | `home-skeletons.js`, `recommendation-skeletons.js` | Same box as the content (see Shimmer classes) |
+| A tooltip | `Tooltip`, or `data-tooltip` on a control | `ui-atoms.js` | Never a native `title` (below) |
+| A "why it's here" badge on a cover | `ReasonBadge` (`ReasonMark` for a heading) | `reason-badge.js` | Shuffleupagus picks, Critical Darlings summaries |
+| A service's icon or logo | `ResolverIcon`, `SERVICE_LOGOS` | `ui-atoms.js` | The colour comes from the plug-in's `manifest.color` |
+| An icon | `Icons.*` | `icons.js` | Real SVGs from one set (see Icons); never a pasted path or a text glyph |
+| A track's source icons | `visibleSources` / `sourceRowState` | `lib/visible-sources.js` | One rule for every list |
+| Share | `ShareButton` | `ui-atoms.js` | |
+| A count, a relative time or an error message | `countOf`, `timeAgo`, `errorText` | `lib/plural.js`, `lib/time-ago.js`, `lib/error-copy.js` | See Copy |
+
+### Modules
 
 | Module | Exports |
 |--------|---------|
-| `ui-atoms.js` | `Tooltip`, `FixedTooltip`, `ResolverIcon`, `SERVICE_LOGO_PATHS`, `SERVICE_LOGO_IMAGES`, `SERVICE_LOGOS`, `ParachordWordmark`, `PlaybackProgress` |
-| `icons.js` | `Icons` (the fallback icon set) |
-| `track-lists.js` | `TrackRow`, `VirtualizedQueueList`, `VirtualizedTrackList`, (badge icons from `lib/visible-sources.js`) |
-| `cards.js` | `ReleaseCard`, `ReleasePage`, `RelatedArtistCard`, `SearchArtistCard`, `SearchHistoryItem`, `CollectionArtistCard`, `CollectionAlbumCard`, `PlayTop10Icon`, `QueueTop10Icon`, `generateArtistPattern` |
-| `settings-cards.js` | `ResolverCard`, `McpSettingsSection`, `ScrobblerSettingsCard`, `FriendMiniPlaybar` |
-| `home-page.js`, `collection-page.js`, `artist-page.js`, `playlist-view-page.js`, `search-page.js` | Whole pages (`HomePage`, `CollectionPage`, `ArtistPage`, `PlaylistViewPage`, `SearchPage`), each `React.memo`'d |
+| `button.js`, `header-control.js`, `modal.js`, `toast.js`, `menu.js`, `sort-menu.js`, `card-button.js`, `section-header.js`, `filter-chips.js`, `hero-tabs.js`, `fields.js`, `states.js`, `reason-badge.js`, `keyboard-shortcuts.js` | The shared controls in the table above, and the keyboard shortcuts dialog |
+| `ui-atoms.js` | `Tooltip`, `FixedTooltip`, `TooltipLayer`, `placeTooltip`, `ResolverIcon`, `SERVICE_LOGOS` (and its paths and images), `ParachordWordmark`, `PlaybackProgress`, `ShareButton` |
+| `icons.js` | `Icons`, the one icon set |
+| `track-lists.js` | `TrackRow`, `VirtualizedQueueList`, `VirtualizedTrackList` |
+| `cards.js` | `ReleaseCard`, `ReleasePage`, `RelatedArtistCard`, `SearchArtistCard`, `SearchHistoryItem`, `CollectionArtistCard`, `CollectionAlbumCard`, `AlbumVersionsMenu`, `PlayTop10Icon`, `QueueTop10Icon`, `generateArtistPattern` |
+| `settings-cards.js` | `ResolverCard` (the plug-in tile), `McpSettingsSection`, `ScrobblerSettingsCard`, `FriendMiniPlaybar` |
+| `home-sections.js`, `home-banner.js`, `home-setup.js`, `home-skeletons.js`, `recommendation-skeletons.js` | Home's rows and both pages' skeletons |
+| `home-page.js`, `collection-page.js`, `artist-page.js`, `playlist-view-page.js`, `search-page.js` | Whole pages, each `React.memo`'d and fed stable props |
 
-Everything else still renders inline in `src/renderer/app.js`. Key reusable components:
+Everything else still renders inline in `src/renderer/app.js`. Details of a few:
 
 ### Tooltip
 
 ```
-Tooltip({ children, content, position, variant, className })
+Tooltip({ children, content, position, variant, className, id, delay })
+data-tooltip="…"   (any control, through TooltipLayer)
 ```
 
-- **Props:** `position` = `'top'` | `'bottom'` | `'left'` | `'right'` | `'top-end'`; `variant` = `'light'` | `'dark'`
-- **Behavior:** CSS-only hover reveal with fade + translate animation (150ms ease)
-- **Bio variant:** `.tooltip-bio` allows text wrapping with `max-width: 480px`
+One tooltip, two ways in (#1385 step 9):
+
+- **`Tooltip`** wraps a trigger. **`data-tooltip`** goes on a control with no wrapper; `TooltipLayer`, mounted once at the app root, shows it. Controls never use a native `title` (it shows late, never on focus, and in the OS's look); `tests/renderer/tooltip-layer.test.js` fails on one.
+- **Panel:** `.tooltip-panel` in `index.html`, portalled to `<body>` and `position: fixed`, so no `overflow: hidden` clips it. `variant: 'dark'` / `data-tooltip-variant="dark"` adds an outline on the always-dark surfaces (same dark tip); `.tooltip-bio` wraps long text.
+- **Placement:** `position` = `'top'` (default) | `'top-end'` | `'bottom'` | `'bottom-start'` | `'left'` | `'right'` (`data-tooltip-position`). `placeTooltip` (pure) keeps it inside the window and flips it when its side has no room.
+- **Behaviour:** shows on hover and on keyboard focus (focus-visible only for `data-tooltip`) after 400ms (`TOOLTIP_DELAY_MS`), stays while either lasts, and Escape or a scroll dismisses it (WCAG 1.4.13). A click hides a `data-tooltip` one.
+- **Names:** a tooltip is a description, not a name. An icon-only control needs an `aria-label` too, usually the same words. A wrapped single element gets `aria-describedby` pointing at the tip while it shows.
 
 ### FixedTooltip
 
@@ -241,10 +244,7 @@ Tooltip({ children, content, position, variant, className })
 FixedTooltip({ children, content, id })
 ```
 
-- Uses `position: fixed` + `ReactDOM.createPortal` to escape `overflow: hidden` containers (e.g., sidebar)
-- Positioned below the trigger, left-aligned; shifted left to stay inside the window and flipped above the trigger near the bottom (`placeFixedTooltip`, pure). Coordinates are set only after the tip is measured, so showing it again (focus after hover) keeps the clamp
-- Shows on hover or on keyboard focus inside the trigger and stays while either lasts; Escape dismisses it until the pointer or focus comes back (WCAG 1.4.13)
-- The tip is `role="tooltip"`, with `id` when given. A tooltip is not an accessible name or description by itself: give the trigger an `aria-describedby` (Home's badges point it at a visually hidden copy of the text)
+`Tooltip` preset for a card's explanation (Fresh Drops' "why", Recommendations' reason): `bottom-start`, wrapping (`.tooltip-note`), with a block trigger. `placeFixedTooltip` is `placeTooltip(…, 'bottom-start')`.
 
 ### TrackRow
 
@@ -252,9 +252,7 @@ FixedTooltip({ children, content, id })
 TrackRow({ track, isPlaying, handlePlay, onArtistClick, onContextMenu, allResolvers, resolverOrder, activeResolvers })
 ```
 
-- `React.memo` wrapped for performance
-- Displays track title, artist, duration, and resolver source badges
-- Shows resolver priority indicators with branded colors
+- Nothing renders `TrackRow` any more; the track lists render their own rows. Its source icons and dimming would come from `sourceRowState` (`lib/visible-sources.js`), like every list's.
 
 ### VirtualizedQueueList
 
@@ -273,8 +271,8 @@ ResolverCard({ ... })
 ```
 
 - `React.memo` wrapped
-- Settings card for configuring individual music resolvers
-- Includes toggle, status indicator, and priority drag handle
+- The plug-in tile on Settings › Plug-Ins: the service's colour and logo, its priority number, an enabled check and a status line ("Setup required").
+- Reordering: drag a tile, or use Raise Priority / Lower Priority in its menu (right-click, or Shift+F10 / the Menu key on the focused tile).
 
 ### ScrobblerSettingsCard
 
@@ -298,14 +296,14 @@ ReleaseCard({ release, currentArtist, fetchReleaseData, onContextMenu, onHoverFe
 
 ### Recommendation rows
 
-The Recommendations page reuses Home's and the other tabs' pieces. Each section is one row under its heading (`text-lg font-semibold`); **"See all" / "Show less"** is Home's purple link (accent colour text, no button chrome, right-aligned on the heading's line); sections carry no item counts. Sources are filtered for the whole page in a **filter bar** under the hero, Fresh Drops' bar and pills: All, then one pill per source, no counts, one pick at a time, each pill with its own active colour as on the other tabs (All `#7c3aed`, a source its plugin's brand colour, Shuffleupagus `var(--accent-primary)`). Collapsed, a card section shows two full rows. Items carry no source badges.
+The Recommendations page reuses Home's and the other tabs' pieces. Each section (Tracks, Albums, Artists, Playlists, Friends) sits under a `SectionHeader`, Home's heading; its **"See all" / "Show less"** link is the header's link (accent text, right-aligned on the heading's line), and sections carry no item counts. Sources are filtered for the whole page by `FilterChips` under the hero: All, then one chip per source, no counts, one pick at a time. Collapsed, a card section shows two full rows. Cards are `CardButton`s; a Shuffleupagus pick carries the `ReasonBadge` (its reason as the tooltip), and any other pick's reason is the card's tooltip. Items carry no source badges.
 
 ### Artist Cards
 
 - **`RelatedArtistCard`** — Related artist display on artist pages
 - **`SearchArtistCard`** — Artist cards in search results (responsive width via `itemWidth` prop)
-- **`CollectionArtistCard`** — Artist cards in the library/collection view
-- **`CollectionAlbumCard`** — Album cards in the library/collection view
+- **`CollectionArtistCard`** — Artist cards in Collection
+- **`CollectionAlbumCard`** — Album cards in Collection
 
 ### FriendMiniPlaybar
 
@@ -338,28 +336,58 @@ ParachordWordmark({ fill, height })
 
 ---
 
+## Copy
+
+The words are part of the design system: one concept, one name. The audit (#1388) found five names for a plug-in and "song" next to "track".
+
+### Glossary
+
+| Say | Meaning | Not |
+|-----|---------|-----|
+| **plug-in** (Title Case "Plug-Ins" in headings) | What you install and enable | resolver, plugin, extension, provider |
+| **enable** | Turn a plug-in on | activate |
+| **service** | Spotify, Apple Music, Bandcamp and so on | provider |
+| **source** | Where a track plays from | resolver |
+| **Collection** | Your saved tracks, albums and artists (capitalised: a feature name) | library, Your Music |
+| **Loves** | Tracks you've loved | favourites, likes (a service's own "Liked Songs" keeps its name) |
+| **Shuffleupagus** | The AI DJ ("your AI DJ" on first mention) | the assistant, the AI |
+| **track** | One recording | song |
+| **album** / **edition** | A release / one version of it | |
+| **sync** / **import** | Keep a playlist matched with a service / copy it in once | |
+| Feature names | Fresh Drops, Critical Darlings, Pop of the Tops, Recommendations, Concerts, History | new releases, Critic's Picks |
+
+"Library" stays only where it means local files or a service's own library ("your Spotify library").
+
+### Rules
+
+- **Never in UI text:** "resolver", ids, file extensions, internals (MBID, Widevine CDM, MusicKit, preload.js), HTTP codes, raw `error.message`, or Settings paths that don't exist.
+- **Sentence case** everywhere except native menus, tabs, Settings section headings and page titles. Never type caps; use CSS `uppercase`. `tests/renderer/dialog-title-case.test.js` checks titles.
+- **"…"**, not "...": the `asciiEllipsis` drift metric.
+- **Counts:** `countOf(n, 'track')` (`src/renderer/lib/plural.js`), never `${n} tracks`.
+- **Relative times:** `timeAgo` (`src/renderer/lib/time-ago.js`).
+- **Dates:** US English (`en-US`) until the UI is translated (#1416).
+- **Errors:** what happened, then what to do ("Couldn't load Fresh Drops. Check your connection and try again."). Show `errorText(err, fallback)` (`src/renderer/lib/error-copy.js`); throw `userError('…')` for a message written for the reader; log the raw error.
+- **Buttons:** a confirm button is named for its action and sits next to Cancel. Success is a toast, not a dialog.
+- **Native menus** use the app's words in Title Case: "Save Queue as Playlist…", "Remove Plug-In".
+
 ## Icons
 
 ### Primary Icon Set
 
-`src/renderer/components/icons.js` exports `Icons`: the `lucideReact` global if one is loaded, otherwise a fallback set. Nothing loads Lucide (there is no script for it in `index.html` and no copy in `vendor/`), so the fallbacks below are what actually renders wherever `Icons` is used: mostly single glyphs or emoji, and an SVG for `List`. Most other icons in the app are inline SVG paths written where they are used.
+`src/renderer/components/icons.js` is the app's icon set: each icon is a component drawn with Lucide's paths (ISC licence), inlined so nothing has to load at runtime. Use it for every interface icon; don't paste an SVG `<path>` or use a text glyph (✕ × ✓ ⚠ ◌ …) as an icon. `tests/renderer/icons.test.js` fails on a glyph icon, and the design-drift `svgPaths` count tracks the pasted SVGs still to move.
 
-| Icon | Lucide name (unused) | What renders |
-|------|--------|----------|
-| Play | `lucideReact.Play` | `▶` |
-| Pause | `lucideReact.Pause` | `⏸` |
-| SkipForward | `lucideReact.SkipForward` | `⏭` |
-| SkipBack | `lucideReact.SkipBack` | `⏮` |
-| Volume2 | `lucideReact.Volume2` | `🔊` |
-| Music | `lucideReact.Music` | `♫` |
-| List | `lucideReact.List` | SVG (3 horizontal lines) |
-| Users | `lucideReact.Users` | `👥` |
-| Radio | `lucideReact.Radio` | `📻` |
-| Heart | `lucideReact.Heart` | `♥` |
-| Search | `lucideReact.Search` | `🔍` |
-| Settings | `lucideReact.Settings` | `⚙` |
-| Plus | `lucideReact.Plus` | `+` |
-| X | `lucideReact.X` | `✕` |
+```js
+const Icons = require('./icons');            // in a component module
+React.createElement(Icons.X, { className: 'w-4 h-4' })
+React.createElement(Icons.Check, { size: 16, strokeWidth: 2.5 })
+React.createElement(Icons.Spinner, { className: 'w-5 h-5', label: 'Loading' })
+```
+
+Props: `size` (default 24; a `w-*`/`h-*` class or `style` overrides it), `className`, `style`, `strokeWidth` (default 2), `fill`, and `title`. An icon is `aria-hidden` unless it has a `title`; an icon-only button carries the `aria-label`. The transport icons (Play, Pause, SkipBack, SkipForward) are solid; the rest are outlines. Inside text, size an icon to the text with `style: { width: '1em', height: '1em' }`.
+
+**Sizes:** 16px (`w-4 h-4`) in rows, chips, small buttons and inline with text; 20px (`w-5 h-5`) in buttons and dialog titles; 12px (`w-3 h-3`) only inside a text badge or a 16px control; 32–48px only for an empty state's illustration. Stroke 2 (1.5 on the large illustrations); a heavier stroke only marks a state, like the active sidebar item.
+
+**The set:** Play, Pause, SkipForward, SkipBack, Volume2, Music, List, QueueAdd (add to queue), Users, User, Radio, Heart, Star, Search, Settings, Plus, X, Check, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ArrowRight, Info, MoreHorizontal, AlertTriangle, RefreshCw, ExternalLink, Link, Download, Upload, Folder, FilePlus, Copy, Trash2, Bookmark, Clock, Home, Droplet, Trophy, Ticket, MapPin, Shuffle, Zap, and **Spinner** (the one loading spinner). To add an icon, copy its shapes from lucide.dev into `SHAPES` in `icons.js`.
 
 ### Service Logos
 
@@ -382,45 +410,45 @@ Located in `assets/icons/`:
 
 ## Animations
 
-All animations are defined as `@keyframes` in `index.html`.
+Every animation is a `@keyframes` rule in `index.html`, and every one listed here is in use (the design audit removed the unused `spin-reverse`, `loadingFadeInUp`, `loadingDotPulse` and `friendStatusChange`). Motion stays within 100–400ms on transform and opacity, except loops and the splash. With `prefers-reduced-motion`, one block in `index.html` turns animations and transitions off; spinners keep turning.
 
-### Loading & Feedback
+### Loading and feedback
 
-| Animation | Duration | Easing | Usage |
-|-----------|----------|--------|-------|
-| `spin` | 1s linear infinite | — | Spinner |
-| `spin-reverse` | 1s linear infinite | — | Reverse spinner |
-| `shimmer` | 1.5s ease-in-out infinite | — | Skeleton loading |
-| `loadingFadeInUp` | 0.7s spring | `cubic-bezier(0.16,1,0.3,1)` | App loading wordmark |
-| `loadingDotPulse` | 1.4s ease-in-out infinite | Staggered 0.15s | Loading dots |
+| Keyframes | Class or use | Notes |
+|-----------|--------------|-------|
+| `spin` | `.animate-spin` | 1s linear loop; the one loading spinner (`Icons.Spinner`) |
+| `shimmer` | `.animate-shimmer`, `.now-playing-pending` | 1.5s loop; skeletons, and the playbar while a play starts |
+| `loadingWordmarkPulse` | `.loading-wordmark-svg` | The splash wordmark's per-letter pop-in |
 
-### Queue Animations
+### Dialogs, toasts and tooltips
 
-| Animation | Duration | Usage |
-|-----------|----------|-------|
-| `queue-pulse` | 0.3s ease-out | Queue icon feedback |
-| `badge-flash` | 0.3s ease-out | Queue count badge update |
-| `queue-track-drop` | 0.3s ease-in | Track leaving queue (slides down, fades) |
-| `queue-track-insert` | 1s ease-out | Track entering queue (slides in with purple glow) |
+| Keyframes | Class | Notes |
+|-----------|-------|-------|
+| `modalScrimIn` | `.modal-scrim` | `Modal`'s scrim fades in |
+| `modalPanelIn` | `.modal-panel` | `Modal`'s panel fades and rises 8px |
+| `toastIn` | `.toast-enter` | A toast fades and rises 8px |
+| `tooltip-in` | `.tooltip-panel` | The shared tooltip |
+| `fadeIn` | inline `animation` | Concert rows appearing |
 
-### Navigation & Layout
+### Queue
 
-| Animation | Usage |
-|-----------|-------|
-| `slideInRight` | Sidebar opening (translateX 100% → 0) |
-| `slideOutRight` | Sidebar closing (translateX 0 → 100%) |
-| `cardFadeUp` | Card grid entry (0.4s, translateY 12px → 0 with fade) |
-| `friendSlideIn` | Friend sidebar entry (0.3s, translateX -12px → 0) |
-| `friendMoved` | Friend reorder feedback (0.4s, subtle scale + purple tint) |
-| `friendStatusChange` | Friend status update (0.3s, vertical bounce) |
+| Keyframes | Class | Notes |
+|-----------|-------|-------|
+| `queue-pulse` | `.queue-pulse` | The queue button when something is added |
+| `badge-flash` | `.badge-flash` | The queue count badge |
+| `queue-track-drop` | `.queue-track-drop` | A track leaving the queue |
+| `queue-track-insert` | `.queue-track-insert` | A track entering the queue |
 
-### Hover & Interactive
+### Navigation, cards and friends
 
-| Animation | Usage |
-|-----------|-------|
-| `onAirPulse` | Green pulsing glow for "on air" friends (2s infinite) |
-| `marquee-scroll` | Scrolling text for truncated labels (8s linear, pauses on hover) |
-| Release card hover | `translateY(-6px)` + enhanced shadow (0.25s ease-out) |
+| Keyframes | Class or use | Notes |
+|-----------|--------------|-------|
+| `slideInRight` / `slideOutRight` | inline `animation` | The results sidebar opening and closing (it slides in from the right, above the playbar) |
+| `cardFadeUp` | `.card-fade-up` | Card grids appearing |
+| `friendSlideIn` | `.friend-entry` | A friend joining the sidebar |
+| `friendMoved` | `.friend-moved` | A friend changing places |
+| `onAirPulse` | `.on-air-indicator` | The on-air dot (2s loop) |
+| `marquee-scroll` | `.animate-marquee` | Long names that scroll (pauses on hover) |
 
 ### Shimmer Classes
 
@@ -476,7 +504,7 @@ Navigation history is maintained with `viewHistory` and `forwardHistory` arrays 
 - Main content width is tracked via `ResizeObserver` on the content container
 - Search results grid adjusts item count based on `searchContainerWidth`
 - Artist cards accept `itemWidth` prop for responsive sizing
-- No breakpoint-based responsive design (desktop Electron app)
+- **Card grids use `.card-grid`** (`index.html`): `repeat(auto-fill, minmax(180px, 1fr))`, as many columns as the content area holds; the grid's own gap class sets the spacing, and its skeleton uses the same class. Never Tailwind's `sm:`/`md:`/`lg:`/`xl:` for columns: they measure the **window**, not the content area (at the 1000px minimum window the content is only 744px wide).
 
 ---
 
@@ -543,9 +571,7 @@ Context menus are handled natively via Electron's `contextMenu` API (`window.ele
 
 ### Tooltips
 
-Two tooltip systems coexist:
-1. **CSS tooltips** (`Tooltip` component) — Pure CSS hover-triggered, positioned relative to parent
-2. **Portal tooltips** (`FixedTooltip` component) — `position: fixed` via React portal, escapes `overflow: hidden`
+One system: `Tooltip`, its `FixedTooltip` preset, and `data-tooltip` through `TooltipLayer` (see Tooltip above).
 
 ---
 

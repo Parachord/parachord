@@ -38,8 +38,8 @@ describe('Settings → General Discord presence control', () => {
 
   test('the toggle is an accessible switch bound to the stored setting', () => {
     expect(settingsSection).toMatch(/'Discord Presence'/);
-    expect(settingsSection).toMatch(/role: 'switch'/);
-    expect(settingsSection).toMatch(/'aria-checked': discordPresenceEnabled/);
+    // The shared Switch (components/fields.js) is role="switch" with aria-checked.
+    expect(settingsSection).toMatch(/React\.createElement\(Switch, \{\s*checked: discordPresenceEnabled,/);
     expect(settingsSection).toMatch(/'Share my now playing'/);
   });
 

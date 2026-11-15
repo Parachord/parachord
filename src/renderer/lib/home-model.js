@@ -7,6 +7,7 @@
 // album and releaseMbid; a playback context is { type, id?, name?, artist? }.
 
 const { normalizeAlbumTitle, normalizeArtistName } = require('./album-catalog');
+const { timeAgo } = require('./time-ago');
 
 const DAY_MS = 86400000;
 const BADGE_WINDOW_MS = 7 * DAY_MS;
@@ -117,23 +118,9 @@ function latestLoveAlbum(loves, active) {
   return null;
 }
 
-function relativeTime(at, now) {
-  const diff = Math.max(0, now - at);
-  const m = Math.floor(diff / 60000);
-  if (m < 1) return 'just now';
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.floor(h / 24);
-  if (d < 30) return `${d}d ago`;
-  const mo = Math.floor(d / 30);
-  if (mo < 12) return `${mo}mo ago`;
-  return `${Math.floor(d / 365)}y ago`;
-}
-
 function playlistSubtitle(p, now) {
   const at = playlistFreshness(p);
-  const base = `Refreshed ${relativeTime(at, now)}`;
+  const base = `Refreshed ${timeAgo(at, now)}`;
   const created = num(p && p.createdAt);
   if (created === null) return base;
   return `${base} · since ${new Date(created).getUTCFullYear()}`;

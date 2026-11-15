@@ -1,0 +1,67 @@
+/**
+ * The "why it's here" badge (components/reason-badge.js): one component for
+ * Home's album cards and the Recommendations page's album and artist cards.
+ */
+global.React = require('react');
+global.ReactDOM = require('react-dom');
+const fs = require('fs');
+const path = require('path');
+const { renderToStaticMarkup } = require('react-dom/server');
+const { ReasonBadge, ReasonMark, shuffleupagusBadgeProps } = require('../../src/renderer/components/reason-badge');
+
+const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+
+describe('shuffleupagusBadgeProps', () => {
+  test("Shuffleupagus's own items and merged items it sent get the badge", () => {
+    expect(shuffleupagusBadgeProps({ resolverId: 'shuffleupagus', reason: 'Because slowcore' }))
+      .toEqual({ label: 'Why Shuffleupagus picked this', text: 'Because slowcore' });
+    expect(shuffleupagusBadgeProps({ sourceIds: ['lastfm', 'shuffleupagus'] }).text).toBe('Picked by Shuffleupagus');
+  });
+  test('other sources get none', () => {
+    expect(shuffleupagusBadgeProps({ sourceIds: ['lastfm'], reason: 'Similar to X' })).toBeNull();
+    expect(shuffleupagusBadgeProps(null)).toBeNull();
+  });
+});
+
+describe('ReasonBadge', () => {
+  test('a named button described by a hidden copy of the reason', () => {
+    const html = renderToStaticMarkup(React.createElement(ReasonBadge, { label: 'Why Shuffleupagus picked this', text: 'Because slowcore' }));
+    expect(html).toMatch(/<button type="button" aria-label="Why Shuffleupagus picked this" aria-describedby="([^"]+)-why"/);
+    expect(html).toMatch(/-why"[^>]*>Because slowcore<\/span>/);
+    expect(html).toMatch(/<svg/);
+  });
+  test('the mark is the same disc, decorative', () => {
+    const html = renderToStaticMarkup(React.createElement(ReasonMark, null));
+    expect(html).toMatch(/^<span aria-hidden="true"[^>]*><svg/);
+    expect(html).not.toMatch(/<button/);
+  });
+  test('no text, no badge', () => {
+    expect(renderToStaticMarkup(React.createElement(ReasonBadge, { label: 'x', text: '' }))).toBe('');
+  });
+});
+
+describe('Recommendations cards carry it', () => {
+  test('album and artist cards render the badge on the cover', () => {
+    // The artist card draws it; the album card is the shared AlbumCard,
+    // which draws its `reason` as the badge (checked under Home below).
+    expect(app.match(/shuffleupagusBadgeProps\(item\) && React\.createElement\(ReasonBadge, shuffleupagusBadgeProps\(item\)\)/g)).toHaveLength(1);
+    expect(app.match(/reason: shuffleupagusBadgeProps\(item\) \|\| null,/g)).toHaveLength(1);
+    const html = renderToStaticMarkup(React.createElement(require('../../src/renderer/components/album-card').AlbumCard, {
+      album: { title: 'Frog', artist: 'Hovvdy', imageUrl: 'https://x/y.jpg' },
+      reason: shuffleupagusBadgeProps({ resolverId: 'shuffleupagus', reason: 'Because slowcore' }),
+    }));
+    expect(html).toMatch(/aria-label="Why Shuffleupagus picked this"/);
+  });
+  test("a Shuffleupagus pick's reason is on the badge; any other pick's reason is the card's tooltip", () => {
+    expect(app.match(/tooltip: item\.reason && !shuffleupagusBadgeProps\(item\) \? item\.reason : undefined,/g)).toHaveLength(2);
+  });
+  test('Home uses the same component', () => {
+    // Home's albums are the shared AlbumCard, which draws the badge.
+    const card = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/album-card.js'), 'utf8');
+    expect(card).toMatch(/reason && e\(ReasonBadge, reason\)/);
+  });
+  test("Home's Ask Shuffleupagus heading carries the mark", () => {
+    const home = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/home-sections.js'), 'utf8');
+    expect(home).toMatch(/e\(ReasonMark, null\), 'Ask Shuffleupagus'\)/);
+  });
+});

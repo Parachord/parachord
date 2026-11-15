@@ -13,9 +13,13 @@
 // home-skeletons.js; change one, change the other.
 
 const { filterBySource } = require('../lib/home-model');
-const { FixedTooltip, SERVICE_LOGOS } = require('./ui-atoms');
+const { ReasonBadge, ReasonMark, shuffleupagusIcon } = require('./reason-badge');
 const { Play } = require('./icons');
+const { CardButton } = require('./card-button');
+const { useReveal, ArtOverlay, ArtBox, releaseBadge } = require('./card-art');
+const { AlbumCard } = require('./album-card');
 const { FilterChips } = require('./filter-chips');
+const { PAGE_COLORS } = require('../lib/page-colors');
 const { SectionHeader, PAGE_COLOR, SECTION_TITLE_STYLE: H2_STYLE, SECTION_SUB_STYLE: SUB_STYLE } = require('./section-header');
 const {
   HOME_TILE_HEIGHT, HOME_ROW_CARDS, HOME_HALF_ROW_CARDS, HOME_CONCERT_CARDS, HOME_ROW_GAP, HOME_CARD_TEXT_GAP,
@@ -26,161 +30,28 @@ const {
 const e = React.createElement;
 
 // Drawn over album art or on a filled accent: the same in both themes.
-const CHIP_BG = 'rgba(255,255,255,.94)'; // on-art
-const CHIP_FG = '#111827'; // on-art
-const PLAY_FILL = '#7c3aed'; // fill-accent
+const PLAY_FILL = 'var(--accent-fill)'; // fill-accent
 const ON_FILL = '#fff'; // on-color
-const SHUFFLE_COLOR = '#7c3aed'; // fill-accent: the accent var turns light purple in dark mode
+const SHUFFLE_COLOR = 'var(--accent-fill)'; // fill-accent: the accent var turns light purple in dark mode
 
 // The Fresh Drops and Critical Darlings pages' hero gradients (app.js) and
 // the collapsed hero title's shadow, which the halves' bands copy.
-const FRESH_HERO = 'bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-600';
-const CRITICAL_HERO = 'bg-gradient-to-br from-amber-500 via-orange-500 to-red-500';
+const FRESH_HERO = PAGE_COLORS['new-releases'].hero;
+const CRITICAL_HERO = PAGE_COLORS['critics-picks'].hero;
 const HERO_TEXT_SHADOW = '0 2px 10px rgba(0,0,0,0.5)';
 // Inner padding of the Fresh Drops / Critical Darlings panels.
 const HOME_HALF_PANEL_PAD = 20;
 const SECTION_STYLE = { display: 'flex', flexDirection: 'column', gap: '14px' };
 const CLAMP2 = { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' };
 const ELLIPSIS = { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
-// Read by screen readers, not drawn.
-const VISUALLY_HIDDEN = {
-  position: 'absolute', width: '1px', height: '1px', padding: 0, margin: '-1px',
-  overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap', border: 0,
-};
 
 // Only http(s) ticket links reach an href.
 const isHttpUrl = (u) => typeof u === 'string' && /^https?:\/\//i.test(u.trim());
-
-// Hover or keyboard focus anywhere inside the card reveals its actions.
-function useReveal() {
-  const [hover, setHover] = React.useState(false);
-  const [focus, setFocus] = React.useState(false);
-  return {
-    shown: hover || focus,
-    props: {
-      onMouseEnter: () => setHover(true),
-      onMouseLeave: () => setHover(false),
-      onFocus: () => setFocus(true),
-      onBlur: (ev) => {
-        if (!ev.currentTarget.contains(ev.relatedTarget)) setFocus(false);
-      },
-    },
-  };
-}
 
 const svg = (size, children, extra) => e('svg', Object.assign({
   'aria-hidden': 'true', width: size, height: size, viewBox: '0 0 24 24',
   fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
 }, extra), children);
-
-
-// A round action over art. `primary` is the filled play button.
-// The app's art hover, copied from CollectionAlbumCard (cards.js) and the
-// Playlists grid so Home looks like every other page: the art dims, Add to
-// Playlist and Add to Queue flank a larger white Play, and the cover scales up
-// a little. The class strings are the app's own; only the reveal is ours (state,
-// so keyboard focus shows the buttons too). A card passes only the actions its
-// type has, as the app's cards do.
-const APP_OVERLAY = 'absolute inset-0 bg-black/50 transition-opacity duration-200 flex items-center justify-center gap-3';
-const APP_SIDE_BTN = 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110';
-const APP_PLAY_BTN = 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110';
-const APP_SIDE_BG = 'rgba(255, 255, 255, 0.15)'; // on-art
-const APP_SIDE_BG_HOVER = 'rgba(255, 255, 255, 0.25)'; // on-art
-const APP_SIDE_FG = '#ffffff'; // on-art
-const APP_ART_ZOOM = 'scale(1.05)';
-// The app's sizes (40/48/40px) need 152px of art. Home's half-row cards can be
-// narrower, so the buttons may shrink in proportion and stay round instead
-// of clipping; at the app's usual widths they are its exact sizes.
-const SHRINK = { flexShrink: 1, minWidth: 0, height: 'auto', aspectRatio: '1' };
-
-function SideButton({ label, onClick, path }) {
-  return e('button', {
-    type: 'button', 'aria-label': label, title: label,
-    onClick: (ev) => { ev.stopPropagation(); if (onClick) onClick(ev); },
-    className: APP_SIDE_BTN,
-    style: Object.assign({ backgroundColor: APP_SIDE_BG, color: APP_SIDE_FG, border: 'none', cursor: 'pointer', padding: 0 }, SHRINK),
-    onMouseEnter: (ev) => { ev.currentTarget.style.backgroundColor = APP_SIDE_BG_HOVER; },
-    onMouseLeave: (ev) => { ev.currentTarget.style.backgroundColor = APP_SIDE_BG; },
-  }, e('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2, 'aria-hidden': 'true' },
-    e('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: path })));
-}
-
-function ArtOverlay({ shown, title, onClick, onPlay, onQueue, onAddToPlaylist }) {
-  return e('div', {
-    'data-art-actions': '', onClick, className: APP_OVERLAY,
-    style: { opacity: shown ? 1 : 0, pointerEvents: shown ? 'auto' : 'none', zIndex: 1, padding: '8px', boxSizing: 'border-box' },
-  },
-    onAddToPlaylist && e(SideButton, { label: `Add ${title} to a playlist`, onClick: onAddToPlaylist, path: 'M12 4v16m8-8H4' }),
-    onPlay && e('button', {
-      type: 'button', 'aria-label': `Play ${title}`, title: `Play ${title}`,
-      onClick: (ev) => { ev.stopPropagation(); onPlay(ev); },
-      className: APP_PLAY_BTN,
-      style: Object.assign({ border: 'none', cursor: 'pointer', padding: 0 }, SHRINK),
-    }, e(Play, { size: 22, className: 'text-gray-800 ml-0.5' })),
-    onQueue && e(SideButton, { label: `Add ${title} to the queue`, onClick: onQueue, path: 'M4 6h16M4 12h16M4 18h7' }));
-}
-
-// The Playlists page's placeholder glyph: three lines and a play triangle.
-const PlaylistGlyph = () => e('svg', {
-  'aria-hidden': 'true', 'data-playlist-glyph': '', viewBox: '0 0 24 24', fill: 'currentColor',
-  style: { width: '40%', height: '40%', maxWidth: '48px', maxHeight: '48px', color: 'var(--text-secondary)' },
-},
-  e('rect', { x: 3, y: 5, width: 18, height: 2, rx: 1 }),
-  e('rect', { x: 3, y: 11, width: 10, height: 2, rx: 1 }),
-  e('rect', { x: 3, y: 17, width: 7, height: 2, rx: 1 }),
-  e('path', { d: 'M15 13.5v6l5.5-3-5.5-3z' }));
-
-// Square art: a mosaic (2x2), one cover, or a placeholder block. A playlist
-// with no covers yet (`placeholder: 'playlist'`) shows the Playlists page's
-// glyph rather than an empty box.
-function ArtBox({ imageUrl, mosaic, item, onArtError, children, style, placeholder, zoom }) {
-  const tiles = Array.isArray(mosaic) ? mosaic.filter(Boolean).slice(0, 4) : [];
-  // A cover that failed to load drops out and the mosaic (or the placeholder)
-  // below shows — a dead cover degrades, never blanks; a fresh URL (a refresh
-  // swapped the image) retries. Same contract as PlaylistCoverImage on the
-  // layered surfaces ("Playlist covers" in docs/architecture/album-art.md).
-  const [deadCoverUrl, setDeadCoverUrl] = React.useState(null);
-  React.useEffect(() => { setDeadCoverUrl(null); }, [imageUrl]);
-  const cover = imageUrl && deadCoverUrl !== imageUrl ? imageUrl : null;
-  // A playlist's cover never reports into the album-art pipeline: it is not
-  // any album's art (reportBroken needs the artist and album the playlist
-  // does not carry, so the report would be a no-op — but it must not reach
-  // the pipeline at all). Album art keeps reporting: that retry is how a
-  // dead album cover heals.
-  const fail = () => { if (placeholder !== 'playlist' && onArtError) onArtError(item); };
-  let art;
-  if (cover) {
-    art = e('img', {
-      src: cover, alt: '', loading: 'lazy',
-      onError: () => { setDeadCoverUrl(imageUrl); fail(); },
-      style: { width: '100%', height: '100%', objectFit: 'cover', display: 'block' },
-    });
-  } else if (tiles.length >= 4) {
-    art = e('div', { style: { width: '100%', height: '100%', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' } },
-      tiles.map((u, i) => e('img', {
-        key: i, src: u, alt: '', loading: 'lazy', onError: fail,
-        style: { width: '100%', height: '100%', objectFit: 'cover', display: 'block' },
-      })));
-  } else if (tiles.length > 0) {
-    art = e('img', {
-      src: tiles[0], alt: '', loading: 'lazy', onError: fail,
-      style: { width: '100%', height: '100%', objectFit: 'cover', display: 'block' },
-    });
-  } else if (placeholder === 'playlist') {
-    art = e('div', { style: { width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' } },
-      PlaylistGlyph());
-  }
-  // `zoom` scales the art the way the app's cards do on hover.
-  const zoomed = art && e('div', {
-    style: { width: '100%', height: '100%', transition: 'transform 0.3s ease', transform: zoom ? APP_ART_ZOOM : 'none' },
-  }, art);
-  return e('div', {
-    style: Object.assign({
-      position: 'relative', aspectRatio: '1', borderRadius: '10px', overflow: 'hidden',
-      backgroundColor: 'var(--accent-surface)',
-    }, style),
-  }, zoomed, children);
-}
 
 // ---------------------------------------------------------------- Jump back in
 
@@ -253,7 +124,7 @@ function JumpBackIn({ tiles, onOpenTile, onPlayTile, onContextMenu, onImport, on
       },
         e('div', null,
           e('div', { style: { fontWeight: 600, fontSize: '15px', color: 'var(--text-primary)' } }, 'Build your collection'),
-          e('div', { style: SUB_STYLE }, 'Import your playlists and loved songs from the services you use.')),
+          e('div', { style: SUB_STYLE }, 'Import your playlists and loved tracks from the services you use.')),
         e('button', {
           type: 'button', onClick: () => onImport && onImport(),
           className: 'px-4 py-2 rounded-lg text-sm font-semibold',
@@ -275,11 +146,6 @@ function JumpBackIn({ tiles, onOpenTile, onPlayTile, onContextMenu, onImport, on
 const DropletGlyph = () => svg(16, e('path', { d: 'M12 22a7 7 0 0 0 7-7c0-5-7-13-7-13S5 10 5 15a7 7 0 0 0 7 7z' }));
 const TrophyGlyph = () => svg(16, e('path', { d: 'M6 2h12v6a6 6 0 01-12 0V2zM9 21h6M12 14v7M6 4H3v2a3 3 0 003 3M18 4h3v2a3 3 0 01-3 3' }));
 
-// Shuffleupagus's icon from the shared icon set, sized to 18px.
-const shuffleupagusIcon = () => (SERVICE_LOGOS && SERVICE_LOGOS.shuffleupagus
-  ? React.cloneElement(SERVICE_LOGOS.shuffleupagus, { className: undefined, width: 18, height: 18, 'aria-hidden': 'true' })
-  : null);
-
 // The round badge in the art's lower right corner: Shuffleupagus's reason, or a
 // Critical Darlings pick's review summary. A critics pick with no summary
 // (the feed item had no description) gets no badge.
@@ -294,74 +160,14 @@ function artBadge(album) {
   return null;
 }
 
-// The Fresh Drops page's release-type badge (app.js; the .release-badge class
-// in index.html): top right, Album indigo, EP purple, anything else pink.
-const RELEASE_BADGE_BG = { album: 'rgba(99, 102, 241, 0.9)', ep: 'rgba(168, 85, 247, 0.9)', other: 'rgba(236, 72, 153, 0.9)' }; // on-art
-function releaseBadge(type) {
-  if (typeof type !== 'string' || !type) return null;
-  const t = type.toLowerCase();
-  return e('div', { style: { position: 'absolute', top: '8px', right: '8px' } },
-    e('span', {
-      className: 'release-badge',
-      style: { backgroundColor: RELEASE_BADGE_BG[t] || RELEASE_BADGE_BG.other, color: 'white' }, // on-art
-    }, t === 'ep' ? 'EP' : t.charAt(0).toUpperCase() + t.slice(1)));
-}
-
-function AlbumCard({ album, onOpen, onPlay, onQueue, onAddToPlaylist, onContextMenu, onHoverPrefetch, onArtError }) {
-  const reveal = useReveal();
-  const timer = React.useRef(null);
-  const badgeId = React.useId();
-  React.useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
-  if (!album) return null;
-  const title = album.title;
-  const open = () => onOpen && onOpen(album);
-  const badge = artBadge(album);
-  const enter = reveal.props.onMouseEnter;
-  const leave = reveal.props.onMouseLeave;
-  const dwell = {
-    onMouseEnter: () => {
-      enter();
-      if (onHoverPrefetch) {
-        if (timer.current) clearTimeout(timer.current);
-        timer.current = setTimeout(() => { timer.current = null; onHoverPrefetch(album); }, 250);
-      }
-    },
-    onMouseLeave: () => { leave(); if (timer.current) { clearTimeout(timer.current); timer.current = null; } },
-  };
-  return e('div', Object.assign({
-    onContextMenu: (ev) => { if (onContextMenu) { ev.preventDefault(); onContextMenu(ev, album); } },
-    // The app's card (HOME_CARD_BOX), with its release-card hover lift.
-    className: 'release-card', style: Object.assign({}, HOME_CARD_BOX, { display: 'flex', flexDirection: 'column', gap: `${HOME_CARD_TEXT_GAP}px`, minWidth: 0 }),
-  }, reveal.props, dwell),
-    e(ArtBox, { imageUrl: album.imageUrl, item: album, onArtError, zoom: reveal.shown, style: { cursor: 'pointer', borderRadius: `${HOME_CARD_ART_RADIUS}px` } },
-      album.homeRow === 'fresh' && releaseBadge(album.releaseType),
-      e(ArtOverlay, {
-        shown: reveal.shown, title, onClick: open,
-        onAddToPlaylist: () => onAddToPlaylist && onAddToPlaylist(album),
-        onPlay: () => onPlay && onPlay(album),
-        onQueue: () => onQueue && onQueue(album),
-      }),
-      // The reason is the button's description: a hidden copy is always in
-      // the tree for screen readers, and the tooltip draws it on hover/focus.
-      badge && e('div', { style: { position: 'absolute', bottom: '8px', right: '8px', zIndex: 2 } },
-        e('span', { id: `${badgeId}-why`, style: VISUALLY_HIDDEN }, badge.text),
-        e(FixedTooltip, { content: badge.text, id: `${badgeId}-tip` },
-          e('button', {
-            type: 'button', 'aria-label': badge.label, 'aria-describedby': `${badgeId}-why`,
-            style: {
-              width: '26px', height: '26px', borderRadius: '50%', border: 'none', padding: 0, cursor: 'help',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              backgroundColor: CHIP_BG, color: CHIP_FG,
-            },
-          }, badge.icon)))),
-    e('button', {
-      type: 'button', onClick: open, 'aria-label': `Open ${title}`,
-      style: Object.assign({ font: 'inherit', textAlign: 'left', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 500, fontSize: '13px', color: 'var(--text-primary)' }, ELLIPSIS),
-    }, title),
-    // An album names no source (only a playlist card does: a playlist is
-    // the service's own). Shuffleupagus and Critical Darlings say why in the
-    // badge on the art.
-    album.artist && e('div', { style: Object.assign({ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '-6px' }, ELLIPSIS) }, album.artist));
+// Home's album card: the shared one (./album-card) with Home's reason badge
+// (Shuffleupagus, Critical Darlings) and Fresh Drops' release type.
+function HomeAlbumCard(props) {
+  const album = props.album;
+  return e(AlbumCard, Object.assign({}, props, {
+    reason: album ? artBadge(album) : null,
+    releaseType: album && album.homeRow === 'fresh' ? album.releaseType : null,
+  }));
 }
 
 // "Refreshed 18m ago · since 2023" shows as two lines: the age, then "Since 2023".
@@ -375,12 +181,14 @@ function PlaylistCard({ playlist, badge, subtitle, onOpen, onPlay, onQueue, onAd
   if (!playlist) return null;
   const title = playlist.title;
   const open = () => onOpen && onOpen(playlist);
-  return e('div', Object.assign({
+  // The whole card opens the playlist (CardButton), the text lines included.
+  return e(CardButton, Object.assign({
+    label: `Open ${title}`, onActivate: open,
     onContextMenu: (ev) => { if (onContextMenu) { ev.preventDefault(); onContextMenu(ev, playlist); } },
     // The app's card (HOME_CARD_BOX), with its release-card hover lift.
-    className: 'release-card', style: Object.assign({}, HOME_CARD_BOX, { display: 'flex', flexDirection: 'column', gap: `${HOME_CARD_TEXT_GAP}px`, minWidth: 0 }),
+    className: 'release-card', style: Object.assign({}, HOME_CARD_BOX, { display: 'flex', flexDirection: 'column', gap: `${HOME_CARD_TEXT_GAP}px`, minWidth: 0, cursor: 'pointer' }),
   }, reveal.props),
-    e('div', { onClick: open, style: { cursor: 'pointer' } },
+    e('div', null,
       e(ArtBox, { imageUrl: playlist.imageUrl, mosaic: playlist.mosaic, item: playlist, onArtError, placeholder: 'playlist', zoom: reveal.shown, style: { borderRadius: `${HOME_CARD_ART_RADIUS}px` } },
         badge && e('span', {
           style: {
@@ -395,9 +203,8 @@ function PlaylistCard({ playlist, badge, subtitle, onOpen, onPlay, onQueue, onAd
           onPlay: () => onPlay && onPlay(playlist),
           onQueue: () => onQueue && onQueue(playlist),
         }))),
-    e('button', {
-      type: 'button', onClick: open, 'aria-label': `Open ${title}`,
-      style: Object.assign({ font: 'inherit', textAlign: 'left', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 500, fontSize: '13px', color: 'var(--text-primary)' }, ELLIPSIS),
+    e('div', {
+      style: Object.assign({ fontWeight: 500, fontSize: '13px', color: 'var(--text-primary)' }, ELLIPSIS),
     }, title),
     subtitle && e('div', { style: { fontSize: '12px', color: 'var(--text-secondary)', marginTop: '-6px' } },
       subtitleLines(subtitle).map((line, i) => e('div', { key: i, style: i === 0 ? CLAMP2 : ELLIPSIS }, line))));
@@ -438,7 +245,7 @@ const grid = (cols, gap) => ({ display: 'grid', gridTemplateColumns: cols, gap }
 // Loves (`loves`, a card with its own `lovesActions`) leads the row under All.
 // It is no service's, so it adds no chip, and a service's chip shows only
 // that service's mixes.
-function MixesRow({ mixes, loves, lovesActions, sourceColors, onOpen, onPlay, onQueue, onAddToPlaylist, onContextMenu, onArtError }) {
+function MixesRow({ mixes, loves, lovesActions, sourceColors, onOpen, onPlay, onQueue, onAddToPlaylist, onContextMenu, onArtError, cards = HOME_ROW_CARDS }) {
   const [picked, setSource] = React.useState('All');
   const all = Array.isArray(mixes) ? mixes : [];
   if (all.length === 0 && !loves) return null;
@@ -446,11 +253,11 @@ function MixesRow({ mixes, loves, lovesActions, sourceColors, onOpen, onPlay, on
   // A chip whose source has gone leaves the row on All.
   const source = picked === 'All' || chips.some((c) => c.id === picked) ? picked : 'All';
   const lovesCard = source === 'All' ? loves : null;
-  const shown = filterBySource(all, source).slice(0, HOME_ROW_CARDS - (lovesCard ? 1 : 0));
+  const shown = filterBySource(all, source).slice(0, cards - (lovesCard ? 1 : 0));
   return e('section', { 'aria-labelledby': 'home-mixes', style: SECTION_STYLE },
     e(SectionHeader, { id: 'home-mixes', title: 'Made from your listening', sub: "From the services you've connected" }),
     chips.length > 1 && e(SourceFilter, { sources: chips, value: source, onChange: setSource, label: 'Filter mixes by source' }),
-    e('div', { style: grid(`repeat(${HOME_ROW_CARDS}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
+    e('div', { style: grid(`repeat(${cards}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
       lovesCard && e(PlaylistCard, Object.assign({ key: 'recent-loves', playlist: lovesCard, subtitle: lovesCard.subtitle, onArtError }, lovesActions)),
       shown.map((m, i) => e(PlaylistCard, {
         key: m.id || i, playlist: m, subtitle: m.description || m.subtitle,
@@ -458,8 +265,8 @@ function MixesRow({ mixes, loves, lovesActions, sourceColors, onOpen, onPlay, on
       }))));
 }
 
-function PlaylistsRow({ playlists, navigateTo, onOpen, onPlay, onQueue, onAddToPlaylist, onContextMenu, onArtError }) {
-  const list = Array.isArray(playlists) ? playlists.slice(0, HOME_ROW_CARDS) : [];
+function PlaylistsRow({ playlists, navigateTo, onOpen, onPlay, onQueue, onAddToPlaylist, onContextMenu, onArtError, cards = HOME_ROW_CARDS }) {
+  const list = Array.isArray(playlists) ? playlists.slice(0, cards) : [];
   if (list.length === 0) return null;
   return e('section', { 'aria-labelledby': 'home-playlists', style: SECTION_STYLE },
     e(SectionHeader, {
@@ -467,7 +274,7 @@ function PlaylistsRow({ playlists, navigateTo, onOpen, onPlay, onQueue, onAddToP
       sub: 'By last change, so a playlist that refreshes itself stays up front however old it is',
       page: 'Playlists', view: 'playlists', navigateTo, pageColor: PAGE_COLOR.playlists,
     }),
-    e('div', { style: grid(`repeat(${HOME_ROW_CARDS}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
+    e('div', { style: grid(`repeat(${cards}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
       list.map((p, i) => e(PlaylistCard, {
         key: p.id || i, playlist: p, badge: p.badge, subtitle: p.subtitle,
         onOpen, onPlay, onQueue, onAddToPlaylist, onContextMenu, onArtError,
@@ -482,22 +289,22 @@ function albumHandlers(p) {
 }
 
 function AlbumsRow(props) {
-  const { albums, navigateTo } = props;
+  const { albums, navigateTo, cards = HOME_ROW_CARDS } = props;
   const [picked, setSource] = React.useState('All');
   const all = Array.isArray(albums) ? albums : [];
   if (all.length === 0) return null;
   const chips = sourceChips(all, (a, id) => a.sourceLabel || id, props.sourceColors);
   // A chip whose source has gone leaves the row on All.
   const source = picked === 'All' || chips.some((c) => c.id === picked) ? picked : 'All';
-  const shown = filterBySource(all, source).slice(0, HOME_ROW_CARDS);
+  const shown = filterBySource(all, source).slice(0, cards);
   return e('section', { 'aria-labelledby': 'home-albums', style: SECTION_STYLE },
     e(SectionHeader, {
       id: 'home-albums', title: 'Albums you might love', page: 'Recommendations', view: 'recommendations', navigateTo,
       pageColor: PAGE_COLOR.recommendations,
     }),
     chips.length > 1 && e(SourceFilter, { sources: chips, value: source, onChange: setSource }),
-    e('div', { style: grid(`repeat(${HOME_ROW_CARDS}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
-      shown.map((a, i) => e(AlbumCard, Object.assign({ key: a.id || `${a.artist}-${a.title}-${i}`, album: a }, albumHandlers(props))))));
+    e('div', { style: grid(`repeat(${cards}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
+      shown.map((a, i) => e(HomeAlbumCard, Object.assign({ key: a.id || `${a.artist}-${a.title}-${i}`, album: a }, albumHandlers(props))))));
 }
 
 // Two halves side by side. Each is its own column at a fixed basis (half the
@@ -505,7 +312,7 @@ function AlbumsRow(props) {
 // half still loading draws its skeleton in its own place while the other
 // shows its cards. A half that is neither loading nor has cards is left out.
 function FreshCriticalRow(props) {
-  const { fresh, critical, freshLoading, criticalLoading, navigateTo } = props;
+  const { fresh, critical, freshLoading, criticalLoading, navigateTo, stacked = false } = props;
   // Each half is a card that opens with a slim hero band copied from its
   // page's hero (the same gradient classes, and the collapsed hero's
   // uppercase light title and shadow), the sidebar's icon beside the title.
@@ -513,7 +320,7 @@ function FreshCriticalRow(props) {
   const half = (id, title, page, view, items, loading, hero, icon) => e('section', {
     key: id, 'aria-labelledby': id, 'aria-busy': loading ? 'true' : undefined,
     style: {
-      flex: HOME_HALF_FLEX, minWidth: 0, display: 'flex', flexDirection: 'column',
+      flex: stacked ? '0 0 auto' : HOME_HALF_FLEX, minWidth: 0, display: 'flex', flexDirection: 'column',
       borderRadius: '16px', overflow: 'hidden', border: '1px solid var(--border-default)', backgroundColor: 'var(--bg-primary)',
     },
   },
@@ -537,13 +344,13 @@ function FreshCriticalRow(props) {
       loading
         ? e(CardRowSkeleton, { count: HOME_HALF_ROW_CARDS, lines: 1 })
         : e('div', { style: grid(`repeat(${HOME_HALF_ROW_CARDS}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
-          items.slice(0, HOME_HALF_ROW_CARDS).map((a, i) => e(AlbumCard, Object.assign({ key: a.id || `${a.artist}-${a.title}-${i}`, album: a }, albumHandlers(props)))))));
+          items.slice(0, HOME_HALF_ROW_CARDS).map((a, i) => e(HomeAlbumCard, Object.assign({ key: a.id || `${a.artist}-${a.title}-${i}`, album: a }, albumHandlers(props)))))));
   const f = Array.isArray(fresh) ? fresh : [];
   const c = Array.isArray(critical) ? critical : [];
   const showF = f.length > 0 || !!freshLoading;
   const showC = c.length > 0 || !!criticalLoading;
   if (!showF && !showC) return null;
-  return e('div', { style: { display: 'flex', gap: `${HOME_HALF_GAP}px` } },
+  return e('div', { style: { display: 'flex', flexDirection: stacked ? 'column' : 'row', gap: `${HOME_HALF_GAP}px` } },
     showF && half('home-fresh', 'Fresh Drops', 'Fresh Drops', 'new-releases', f, f.length === 0, FRESH_HERO, DropletGlyph()),
     showC && half('home-critical', 'Critical Darlings', 'Critical Darlings', 'critics-picks', c, c.length === 0, CRITICAL_HERO, TrophyGlyph()));
 }
@@ -603,30 +410,47 @@ function TicketsLink({ sellers, artist }) {
     }, s.label || s.source || 'Tickets'))));
 }
 
-function ConcertCard({ concert }) {
+// The concert card's photo and its date badge. The photo is the artist's
+// (the Concerts page's images, face-centred); with none yet, the page's
+// grey with a note. The date sits on it as a badge in Concerts' fill.
+const CONCERT_ART = 72;
+const CONCERT_BADGE_STYLE = {
+  position: 'absolute', left: '4px', bottom: '4px', padding: '2px 6px', borderRadius: '4px',
+  fontSize: '11px', fontWeight: 700, lineHeight: '16px', letterSpacing: '.04em', textTransform: 'uppercase',
+  backgroundColor: PAGE_COLORS.concerts.fill, color: ON_FILL,
+  whiteSpace: 'nowrap',
+};
+
+function ConcertCard({ concert, image }) {
   const d = concert.date ? new Date(`${concert.date}T00:00:00`) : null;
   const valid = d && !Number.isNaN(d.getTime());
   const mon = valid ? d.toLocaleDateString('en-US', { month: 'short' }) : '';
-  const day = valid ? d.getDate() : '?';
+  const day = valid ? d.getDate() : '';
   const venue = concert.venue || {};
   // The venue, then its city and state on a line of their own.
   const city = [venue.city, venue.region, venue.country].filter(Boolean).join(', ');
   const sellers = (concert.ticketSources || []).filter((s) => s && isHttpUrl(s.ticketUrl));
+  const photo = image && isHttpUrl(image.url) ? image : null;
   return e('div', {
     style: {
-      display: 'flex', alignItems: 'center', gap: '14px', padding: '12px', borderRadius: '14px', minWidth: 0,
+      display: 'flex', alignItems: 'center', gap: '12px', padding: '10px', borderRadius: '14px', minWidth: 0,
       border: '1px solid var(--border-default)',
     },
   },
     e('div', {
-      'aria-hidden': 'true',
       style: {
-        flex: '0 0 56px', height: '64px', borderRadius: '10px', backgroundColor: 'var(--bg-secondary)',
-        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        position: 'relative', flex: `0 0 ${CONCERT_ART}px`, height: `${CONCERT_ART}px`, borderRadius: '10px',
+        overflow: 'hidden', backgroundColor: 'var(--bg-secondary)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
       },
     },
-      e('span', { style: { fontSize: '11px', fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--accent-primary)' } }, mon),
-      e('span', { style: { fontSize: '22px', fontWeight: 700, lineHeight: 1, color: 'var(--text-primary)' } }, day)),
+      photo
+        ? e('img', {
+          src: photo.url, alt: '', loading: 'lazy',
+          style: { width: '100%', height: '100%', objectFit: 'cover', objectPosition: photo.facePosition || 'center 25%' },
+        })
+        : e('span', { 'aria-hidden': 'true', style: { fontSize: '24px', color: 'var(--text-tertiary)' } }, '\u266A'),
+      valid && e('span', { style: CONCERT_BADGE_STYLE }, `${mon} ${day}`)),
     e('div', { style: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' } },
       e('span', { style: Object.assign({ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }, ELLIPSIS) }, concert.artist),
       e('span', { style: Object.assign({ fontSize: '12px', color: 'var(--text-secondary)' }, ELLIPSIS) }, venue.name || 'Venue TBA'),
@@ -634,16 +458,21 @@ function ConcertCard({ concert }) {
       e(TicketsLink, { sellers, artist: concert.artist })));
 }
 
-function ConcertsRow({ concerts, navigateTo }) {
-  const list = Array.isArray(concerts) ? concerts.slice(0, HOME_CONCERT_CARDS) : [];
+// artistImages: the Concerts page's photos, keyed by lower-cased artist name
+// ({ url, facePosition }).
+function ConcertsRow({ concerts, navigateTo, artistImages, cards = HOME_CONCERT_CARDS }) {
+  const list = Array.isArray(concerts) ? concerts.slice(0, cards) : [];
   if (list.length === 0) return null;
   return e('section', { 'aria-labelledby': 'home-concerts', style: SECTION_STYLE },
     e(SectionHeader, {
       id: 'home-concerts', title: 'Concerts near you', sub: 'Artists from your collection playing soon',
       page: 'Concerts', view: 'concerts', navigateTo, pageColor: PAGE_COLOR.concerts,
     }),
-    e('div', { style: grid(`repeat(${HOME_CONCERT_CARDS}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
-      list.map((c, i) => e(ConcertCard, { key: c.id || i, concert: c }))));
+    e('div', { style: grid(`repeat(${cards}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
+      list.map((c, i) => e(ConcertCard, {
+        key: c.id || i, concert: c,
+        image: artistImages && c.artist ? artistImages[c.artist.trim().toLowerCase()] : null,
+      }))));
 }
 
 // ------------------------------------------------------------------------- Ask
@@ -665,10 +494,19 @@ function AskShuffleupagus({ initialPrompt, chatAvailable, onAsk, onSetup }) {
     display: 'flex', flexDirection: 'column', gap: '12px', padding: '20px', borderRadius: '16px',
     border: '1px solid var(--border-default)', backgroundColor: 'var(--bg-secondary)',
   };
-  const heading = e('h2', { id: 'home-ask', style: Object.assign({}, H2_STYLE, { fontSize: '16px' }) }, 'Ask Shuffleupagus');
+  // Shuffleupagus's mark, the same disc as the badges on its picks, so the
+  // box and the badges read as one thing.
+  const heading = e('h2', {
+    id: 'home-ask',
+    style: Object.assign({}, H2_STYLE, { fontSize: '16px', display: 'flex', alignItems: 'center', gap: '8px' }),
+  }, e(ReasonMark, null), 'Ask Shuffleupagus');
+  // What Shuffleupagus is (#1387): the box never said.
+  const explain = e('p', { id: 'home-ask-what', style: { margin: 0, fontSize: '13px', lineHeight: 1.5, color: 'var(--text-secondary)' } },
+    'Shuffleupagus is Parachord’s AI DJ. Ask for a playlist, a mood or a question about music, and it answers with songs you can play, using the AI plug-in you choose.');
   if (chatAvailable === false) {
-    return e('section', { 'aria-labelledby': 'home-ask', style: box },
+    return e('section', { 'aria-labelledby': 'home-ask', 'aria-describedby': 'home-ask-what', style: box },
       heading,
+      explain,
       e('div', null,
         e('button', {
           type: 'button', onClick: () => onSetup && onSetup(),
@@ -676,13 +514,16 @@ function AskShuffleupagus({ initialPrompt, chatAvailable, onAsk, onSetup }) {
           style: { border: 'none', cursor: 'pointer', backgroundColor: PLAY_FILL, color: ON_FILL },
         }, 'Set up Shuffleupagus')));
   }
+  // The example reads as a suggestion (tertiary text) until it's edited.
+  const isExample = !touched.current && !!value && value === (initialPrompt || '');
   const submit = (ev) => {
     ev.preventDefault();
     const text = value.trim().slice(0, PROMPT_CAP);
     if (text && onAsk) onAsk(text);
   };
-  return e('section', { 'aria-labelledby': 'home-ask', style: box },
+  return e('section', { 'aria-labelledby': 'home-ask', 'aria-describedby': 'home-ask-what', style: box },
     heading,
+    explain,
     e('form', { onSubmit: submit, style: { display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center', margin: 0 } },
       e('label', {
         htmlFor: 'home-ask-prompt',
@@ -692,7 +533,7 @@ function AskShuffleupagus({ initialPrompt, chatAvailable, onAsk, onSetup }) {
         id: 'home-ask-prompt', type: 'text', maxLength: PROMPT_CAP, value,
         onChange: (ev) => { touched.current = true; setValue(ev.target.value); },
         style: {
-          flex: '1 1 360px', minWidth: 0, font: 'inherit', fontSize: '15px', color: 'var(--text-primary)',
+          flex: '1 1 360px', minWidth: 0, font: 'inherit', fontSize: '15px', color: isExample ? 'var(--text-tertiary)' : 'var(--text-primary)',
           backgroundColor: 'var(--bg-primary)', border: '1px solid var(--border-default)', borderRadius: '12px',
           padding: '12px 14px', minHeight: '48px', boxSizing: 'border-box',
         },
@@ -705,10 +546,10 @@ function AskShuffleupagus({ initialPrompt, chatAvailable, onAsk, onSetup }) {
         },
       }, 'Ask')),
     e('div', { style: { fontSize: '12px', color: 'var(--text-secondary)' } },
-      "An example built from what you've been playing. Edit it, or ask for anything."));
+      'An example built from what you’ve been playing. Edit it, or ask for anything.'));
 }
 
 module.exports = {
-  JumpBackIn, AlbumCard, PlaylistCard, SourceFilter, MixesRow, PlaylistsRow, AlbumsRow,
+  JumpBackIn, AlbumCard: HomeAlbumCard, PlaylistCard, SourceFilter, MixesRow, PlaylistsRow, AlbumsRow,
   FreshCriticalRow, ConcertsRow, AskShuffleupagus, __TicketsLink: TicketsLink, ArtBox,
 };

@@ -3,9 +3,10 @@
     "id": "songkick",
     "name": "Songkick",
     "type": "meta-service",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "author": "Parachord Team",
     "description": "Find live music events and concerts near you. Powered by Songkick.",
+    "requirement": "Needs your own Songkick API key.",
     "icon": "🎶",
     "color": "#F80046",
     "homepage": "https://www.songkick.com"

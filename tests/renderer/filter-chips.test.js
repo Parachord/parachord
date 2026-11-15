@@ -23,7 +23,7 @@ describe('filter chip style', () => {
       padding: '8px 12px', minHeight: '36px', display: 'inline-flex', alignItems: 'center', gap: '8px',
     });
     expect(F.FILTER_CHIP_DOT_STYLE).toEqual({ width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0 });
-    expect(F.CHIP_NEUTRAL_FILL).toBe('#7c3aed');
+    expect(F.CHIP_NEUTRAL_FILL).toBe('var(--accent-fill)');
   });
 });
 
@@ -42,7 +42,7 @@ describe('FilterChips', () => {
     const idle = h({ chips, value: 'ep' });
     expect(idle).toMatch(/aria-pressed="false"[^>]*background-color:var\(--bg-secondary\);color:var\(--text-primary\)"[^>]*>All</);
     const picked = h({ chips, value: 'all' });
-    expect(picked).toMatch(/aria-pressed="true"[^>]*background-color:#7c3aed;color:#fff"[^>]*>All</);
+    expect(picked).toMatch(/aria-pressed="true"[^>]*background-color:var\(--accent-fill\);color:#fff"[^>]*>All</);
     expect(picked.match(/data-chip-dot/g)).toHaveLength(1); // the idle EPs chip's
   });
 
@@ -91,4 +91,21 @@ describe('every page draws the shared chips', () => {
     expect(read('app.js')).not.toMatch(pill);
     expect(read('components/artist-page.js')).not.toMatch(pill);
   });
+});
+
+test('a picked neutral chip takes the page colour when one is given', () => {
+  const F = require('../../src/renderer/components/filter-chips');
+  const React = require('react');
+  const { renderToStaticMarkup } = require('react-dom/server');
+  global.React = React;
+  const html = renderToStaticMarkup(React.createElement(F.FilterChips, {
+    chips: [{ id: 'all', label: 'All' }], value: 'all', pageColor: '#15803d',
+  }));
+  expect(html).toMatch(/aria-pressed="true"[^>]*background-color:#15803d/);
+});
+
+test('Fresh Drops and Recommendations pass their page colour', () => {
+  const app = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  expect(app).toContain("pageColor: PAGE_COLORS['new-releases'].fill,");
+  expect(app).toContain('pageColor: PAGE_COLORS.recommendations.fill,');
 });

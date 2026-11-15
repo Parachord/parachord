@@ -2,9 +2,10 @@
   "manifest": {
     "id": "subsonic",
     "name": "Subsonic",
-    "version": "0.3.3",
+    "version": "0.3.4",
     "author": "Parachord Team",
     "description": "Stream music from your self-hosted Subsonic-compatible server (Navidrome, Subsonic, Airsonic, Gonic, ...). Configure the server URL, username and password in settings.",
+    "requirement": "Needs your own Subsonic-compatible server, such as Navidrome.",
     "icon": "📡",
     "color": "#14b8a6",
     "homepage": "https://subsonic.org",

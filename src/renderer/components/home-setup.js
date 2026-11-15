@@ -6,6 +6,7 @@
 // button and a × that dismisses them for good. The popover closes on an
 // outside click or Escape.
 
+const Icons = require('./icons');
 function whatsNewLabel(notes) {
   return notes && notes.version ? `What's new in v${notes.version}` : "What's new";
 }
@@ -98,7 +99,7 @@ function HomeSetupButton({ setup, onAction, onDismiss, onOpenWhatsNew }) {
         React.createElement('span', {
           'aria-hidden': 'true',
           style: { width: '16px', flexShrink: 0, color: item.done ? 'var(--accent-primary)' : 'var(--text-secondary)' }
-        }, item.done ? '✓' : '○'),
+        }, item.done ? React.createElement(Icons.Check, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }) : '○'),
         React.createElement('span', {
           className: 'flex-1 min-w-0',
           style: {
@@ -119,7 +120,7 @@ function HomeSetupButton({ setup, onAction, onDismiss, onOpenWhatsNew }) {
           onClick: () => onDismiss && onDismiss(item.id),
           className: 'px-1 text-base leading-none',
           style: { color: 'var(--text-secondary)', background: 'none', border: 'none' }
-        }, '×')
+        }, React.createElement(Icons.X, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }))
       ))
     )
   );

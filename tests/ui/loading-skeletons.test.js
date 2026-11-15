@@ -48,23 +48,27 @@ describe('Recommendations skeletons match the sectioned page', () => {
     expect(friendCard).toContain("style: { marginTop: '2px', height: '16px', color: 'var(--text-secondary)' }");
     expect(friendCard).toContain("marginTop: '2px', height: '32px', lineHeight: '16px'");
     expect(skel).toContain("height: '32px'");
+    // The card is components/listener-card.js's ListenerCard (Collection's
+    // Friends tab uses it too).
+    expect(friendCard).toContain('React.createElement(ListenerCard, {');
+    const listener = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'components', 'listener-card.js'), 'utf8');
     for (const part of ["padding: '14px 12px'", "borderRadius: '10px'", "width: '100px', height: '100px'", "marginTop: '10px', height: '20px'"]) {
-      expect(friendCard).toContain(part);
+      expect(listener).toContain(part);
       expect(skel).toContain(part);
     }
-    // The hexagon is Collection -> Friends' clip-path, verbatim.
-    const collection = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'components', 'collection-page.js'), 'utf8');
-    const hex = collection.match(/clipPath: '(polygon\([^']+\))'/)[1];
-    expect(friendCard).toContain(hex);
+    const hex = listener.match(/const HEXAGON = '(polygon\([^']+\))'/)[1];
     expect(skel).toContain(hex);
   });
 
   test('same card box', () => {
-    expect(artistCard).toMatch(/backgroundColor: 'var\(--card-bg\)', boxShadow: 'var\(--card-shadow\)'/);
+    // The artist card is components/artist-card.js's ArtistCard.
+    expect(artistCard).toContain('React.createElement(ArtistCard, {');
+    const shared = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'components', 'artist-card.js'), 'utf8');
+    expect(shared).toMatch(/backgroundColor: 'var\(--card-bg\)', boxShadow: 'var\(--card-shadow\)'/);
     expect(skel).toMatch(/backgroundColor: 'var\(--card-bg\)', boxShadow: 'var\(--card-shadow\)'/);
-    expect(artistCard).toMatch(/className: 'aspect-square relative group\/art'/);
+    expect(shared).toMatch(/className: 'aspect-square relative overflow-hidden'/);
     expect(skel).toMatch(/className: 'aspect-square shimmer-strong animate-shimmer'/);
-    expect(artistCard).toMatch(/React\.createElement\('div', \{ className: 'p-3' \}/);
+    expect(shared).toMatch(/e\('div', \{ className: 'p-3' \}/);
     expect(skel).toMatch(/React\.createElement\('div', \{ className: 'p-3' \}/);
   });
 
@@ -285,7 +289,7 @@ describe('Critical Darlings skeleton matches the album cards', () => {
   const coverStyle = cards.slice(cards.indexOf('album-art-container'), cards.indexOf('background: album.albumArt === null'));
 
   test('same list spacing and card gap', () => {
-    expect(cards).toMatch(/return React\.createElement\('div', \{\s*className: 'space-y-3 pb-6'/);
+    expect(cards).toMatch(/return React\.createElement\('div', \{(\s*role: 'list',)?\s*className: 'space-y-3 pb-6'/);
     expect(skeleton).toMatch(/className: 'space-y-3 pb-6'/);
     expect(cardStyle).toMatch(/flex gap-4/);
     expect(skeleton).toMatch(/className: 'flex gap-4',/);
@@ -326,11 +330,13 @@ describe('Home skeletons match the Home rows', () => {
     const app = fs.readFileSync(path.join(dir, '..', 'app.js'), 'utf8');
     // The Playlists page's card, which Home copies.
     expect(app).toMatch(/className: 'group cursor-pointer release-card card-fade-up',\s*style: \{\s*padding: '10px',\s*borderRadius: '10px',\s*backgroundColor: 'var\(--card-bg\)',\s*boxShadow: 'var\(--card-shadow\)',/);
-    expect(app).toContain("className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-5'");
+    expect(app).toContain("className: 'card-grid gap-x-4 gap-y-5'");
     expect(sk.HOME_CARD_BOX).toEqual({ padding: '10px', borderRadius: '10px', backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)' });
     expect(sk.HOME_CARD_ART_RADIUS).toBe(8);
     // Both cards and the skeleton card use the box; the cards get the hover lift.
-    expect((sections.match(/className: 'release-card', style: Object\.assign\(\{\}, HOME_CARD_BOX/g) || []).length).toBe(2);
+    // The playlist card (home-sections) and the shared album card use the box.
+    expect((sections.match(/className: 'release-card', style: Object\.assign\(\{\}, HOME_CARD_BOX/g) || []).length).toBe(1);
+    expect(fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'components', 'album-card.js'), 'utf8')).toMatch(/style: Object\.assign\(\{\}, HOME_CARD_BOX/);
     expect(skeletons).toContain('style: Object.assign({}, HOME_CARD_BOX');
     expect(skeletons).toContain('borderRadius: `${HOME_CARD_ART_RADIUS}px`');
   });
@@ -342,8 +348,8 @@ describe('Home skeletons match the Home rows', () => {
     expect(bars({})).toBe(2);
     expect(bars({ lines: 1 })).toBe(1);
     const page = fs.readFileSync(path.join(dir, 'home-page.js'), 'utf8');
-    expect(page).toContain("skeletonSection('albums', 'Albums you might love', React.createElement(CardRowSkeleton, { lines: 1 }))");
-    expect(page).toContain("skeletonSection('playlists', 'Your playlists, freshest first', React.createElement(CardRowSkeleton))");
+    expect(page).toContain("skeletonSection('albums', 'Albums you might love', React.createElement(CardRowSkeleton, { count: rowCards, lines: 1 }))");
+    expect(page).toContain("skeletonSection('playlists', 'Your playlists, freshest first', React.createElement(CardRowSkeleton, { count: rowCards }))");
   });
 
   test('card rows and their skeletons share one gap', () => {
@@ -367,18 +373,20 @@ describe('Home skeletons match the Home rows', () => {
     const grids = (src) => new Set(src.match(/repeat\([^)]*, minmax\(0, 1fr\)\)/g));
     const inSections = grids(sections);
     expect(inSections.size).toBeGreaterThan(0);
-    // The concert cards are a fixed grid in both files; the card rows pass
-    // their count to CardRowSkeleton, which builds the same string.
-    for (const g of ['repeat(${HOME_CONCERT_CARDS}, minmax(0, 1fr))']) {
-      expect(inSections.has(g)).toBe(true);
-      expect(grids(skeletons).has(g)).toBe(true);
-    }
+    // Card counts fit the content width (#1389): the rows and the concerts
+    // take theirs from the page (rowCards / concertCards), which hands the
+    // same count to the skeletons, so both build the same string.
+    expect(inSections.has('repeat(${cards}, minmax(0, 1fr))')).toBe(true);
+    expect(grids(skeletons).has('repeat(${count}, minmax(0, 1fr))')).toBe(true);
+    const page = fs.readFileSync(path.join(dir, 'home-page.js'), 'utf8');
+    expect(page).toContain('cards: concertCards })');
+    expect(page).toContain('React.createElement(ConcertRowSkeleton, { count: concertCards })');
     // Jump back in: one shared grid string (four across, two by two when
     // narrow) and gap, used by the row and its skeleton.
     expect(sections).toContain('gridTemplateColumns: HOME_JUMP_GRID, gap: `${HOME_JUMP_GAP}px`');
     expect(skeletons).toContain('gridTemplateColumns: HOME_JUMP_GRID, gap: `${HOME_JUMP_GAP}px`');
     expect(sections).not.toContain("'repeat(4, minmax(0, 1fr))'");
-    expect(sections).toContain('repeat(${HOME_ROW_CARDS}, minmax(0, 1fr))');
+    expect(sections).toContain('repeat(${cards}, minmax(0, 1fr))');
     expect(sections).toContain('repeat(${HOME_HALF_ROW_CARDS}, minmax(0, 1fr))');
     expect(skeletons).toContain('repeat(${cols}, minmax(0, 1fr))');
   });
@@ -392,7 +400,7 @@ describe('Home skeletons match the Home rows', () => {
 
   test('Fresh Drops and Critical Darlings halves share one fixed basis, loading or loaded', () => {
     expect(sk.HOME_HALF_FLEX).toBe(`0 0 calc(50% - ${sk.HOME_HALF_GAP / 2}px)`);
-    expect(sections).toContain('flex: HOME_HALF_FLEX');
+    expect(sections).toContain("flex: stacked ? '0 0 auto' : HOME_HALF_FLEX");
     // The loading half renders CardRowSkeleton inside the same section box.
     expect(sections).toContain('e(CardRowSkeleton, { count: HOME_HALF_ROW_CARDS, lines: 1 })');
   });
@@ -400,7 +408,7 @@ describe('Home skeletons match the Home rows', () => {
   test('the tile and card box match the real ones', () => {
     expect(sections).toContain('height: `${HOME_TILE_HEIGHT}px`');
     expect(skeletons).toContain('height: `${HOME_TILE_HEIGHT}px`');
-    expect(sections).toMatch(/aspectRatio: '1'/);
+    expect(fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'components', 'card-art.js'), 'utf8')).toMatch(/aspectRatio: '1'/);
     expect(skeletons).toContain('aspect-square');
   });
 
@@ -411,5 +419,7 @@ describe('Home skeletons match the Home rows', () => {
     expect((renderToStaticMarkup(React.createElement(sk.CardRowSkeleton, { count: 6 })).match(/aspect-square/g) || []).length).toBe(6);
     expect((renderToStaticMarkup(React.createElement(sk.CardRowSkeleton, { count: 3, columns: 3 })).match(/aspect-square/g) || []).length).toBe(3);
     expect(renderToStaticMarkup(React.createElement(sk.ConcertRowSkeleton))).toContain('shimmer');
+    // The card's 72px photo box, padding 10 (home-sections.js ConcertCard).
+    expect(renderToStaticMarkup(React.createElement(sk.ConcertRowSkeleton))).toContain('flex:0 0 72px;height:72px');
   });
 });

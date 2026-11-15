@@ -16,28 +16,31 @@ const count = (html, re) => (html.match(re) || []).length;
 
 describe('AlbumCard', () => {
   const album = { title: 'Frog', artist: 'Hovvdy', imageUrl: 'https://x/y.jpg', tag: 'Out Friday' };
+  // The shared card shows an action only when its handler is passed (Home's rows pass all three).
+  const acts = { onPlay() {}, onQueue() {}, onAddToPlaylist() {} };
   test('has the three labelled actions', () => {
-    const html = h(S.AlbumCard, { album });
+    const html = h(S.AlbumCard, { album, ...acts });
     expect(html).toContain('aria-label="Add Frog to a playlist"');
     expect(html).toContain('aria-label="Play Frog"');
     expect(html).toContain('aria-label="Add Frog to the queue"');
     expect(count(html, /<button/g)).toBeGreaterThanOrEqual(3);
   });
-  test('the hover is the app\'s card hover: the same overlay and buttons as CollectionAlbumCard, in its order', () => {
-    const cards = fs.readFileSync(path.join(COMP, 'cards.js'), 'utf8');
+  test('the hover is the app\'s card hover: the overlay and buttons the old CollectionAlbumCard had, in its order', () => {
+    const cards = fs.readFileSync(path.join(COMP, 'card-art.js'), 'utf8');
     const overlay = 'absolute inset-0 bg-black/50';
     const side = 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110';
     const play = 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110';
     for (const cls of [overlay, side, play, 'transition-opacity duration-200 flex items-center justify-center gap-3']) expect(cards).toContain(cls);
-    const html = h(S.AlbumCard, { album });
+    const html = h(S.AlbumCard, { album, ...acts });
     expect(html).toMatch(/data-art-actions[^>]*class="absolute inset-0 bg-black\/50 transition-opacity duration-200 flex items-center justify-center gap-3"[^>]*opacity:0/);
-    expect(html).toMatch(new RegExp(`aria-label="Add Frog to a playlist"[^>]*class="${side}"[^>]*background-color:rgba\\(255, 255, 255, 0\\.15\\)`));
+    // The side buttons' tint and hover are classes now (not JS hover).
+    expect(html).toMatch(new RegExp(`aria-label="Add Frog to a playlist"[^>]*class="${side} bg-white/15 hover:bg-white/25 text-white"`));
     expect(html).toMatch(new RegExp(`aria-label="Play Frog"[^>]*class="${play}"`));
     expect(html.indexOf('Add Frog to a playlist')).toBeLessThan(html.indexOf('aria-label="Play Frog"'));
     expect(html.indexOf('aria-label="Play Frog"')).toBeLessThan(html.indexOf('Add Frog to the queue'));
   });
   test('on a narrow card the buttons shrink in proportion and stay round, the overlay padded 8px', () => {
-    const html = h(S.AlbumCard, { album });
+    const html = h(S.AlbumCard, { album, ...acts });
     expect(count(html, /flex-shrink:1;min-width:0;height:auto;aspect-ratio:1/g)).toBe(3);
     expect(html).toMatch(/data-art-actions[^>]*padding:8px;box-sizing:border-box/);
   });
@@ -55,7 +58,7 @@ describe('AlbumCard', () => {
   });
   test('the badge sits in the art\'s lower right corner, clear of the top-left tag', () => {
     const html = h(S.AlbumCard, { album: { ...album, tag: 'New', resolverId: 'shuffleupagus', reason: 'r' } });
-    expect(html).toMatch(/bottom:8px;right:8px;z-index:2/);
+    expect(html).toMatch(/bottom:8px;right:8px;z-index:3/);
     expect(html).not.toMatch(/top:8px;left:8px;z-index:2/);
   });
   test('the badge reason reaches screen readers: aria-describedby names a hidden copy', () => {
@@ -85,10 +88,13 @@ describe('AlbumCard', () => {
   });
   test('a Fresh Drops card wears the Fresh Drops page\'s release-type badge, top right', () => {
     const app = fs.readFileSync(path.join(COMP, '..', 'app.js'), 'utf8');
-    // The page's own badge colours, which Home copies.
-    expect(app).toContain("backgroundColor: release.releaseType === 'album' ? 'rgba(99, 102, 241, 0.9)' :");
-    expect(app).toContain("release.releaseType === 'ep' ? 'rgba(168, 85, 247, 0.9)' :");
-    expect(app).toContain("'rgba(236, 72, 153, 0.9)',");
+    // One badge for both: the Fresh Drops page hands its release type to the
+    // shared AlbumCard, which draws card-art.js's releaseBadge, the badge
+    // Home's Fresh Drops row wears too.
+    const freshDrops = app.slice(app.indexOf("activeView === 'new-releases' && React.createElement"));
+    expect(freshDrops.slice(0, 60000)).toMatch(/React\.createElement\(AlbumCard, Object\.assign\(\{[\s\S]{0,400}?releaseType: release\.releaseType,/);
+    const { RELEASE_BADGE_BG } = require('../../src/renderer/components/card-art');
+    expect(RELEASE_BADGE_BG).toEqual({ album: 'rgba(99, 102, 241, 0.9)', ep: 'rgba(168, 85, 247, 0.9)', other: 'rgba(236, 72, 153, 0.9)' });
     const badge = (releaseType) => {
       const html = h(S.AlbumCard, { album: { ...album, homeRow: 'fresh', releaseType } });
       return (html.match(/<div style="position:absolute;top:8px;right:8px"><span class="release-badge" style="([^"]*)">([^<]*)<\/span>/) || []).slice(1);
@@ -153,7 +159,7 @@ describe('SourceFilter colours', () => {
   });
   test('All stays neutral and has no dot', () => {
     const html = h(S.SourceFilter, { sources, value: 'All' });
-    expect(html).toMatch(/aria-pressed="true"[^>]*background-color:#7c3aed/);
+    expect(html).toMatch(/aria-pressed="true"[^>]*background-color:var\(--accent-fill\)/);
   });
 });
 
@@ -300,9 +306,14 @@ describe('Rows', () => {
   test('each See all takes its page\'s sidebar colour', () => {
     const app = fs.readFileSync(path.join(COMP, '..', 'app.js'), 'utf8');
     // The sidebar's colours for those pages, which the links copy.
-    expect(app).toContain("color: playlistsNavActive ? '#ec4899' : 'var(--nav-inactive)',");
-    expect(app).toContain("color: recommendationsNavActive ? '#f59e0b' : 'var(--nav-inactive)',");
-    expect(app).toContain("color: activeView === 'concerts' ? '#10c9b4' : 'var(--nav-inactive)',");
+    // The sidebar and the links read the same map (lib/page-colors.js).
+    const { PAGE_COLORS } = require('../../src/renderer/lib/page-colors');
+    expect(PAGE_COLORS.playlists.color).toBe('#ec4899');
+    expect(PAGE_COLORS.recommendations.color).toBe('#f59e0b');
+    expect(PAGE_COLORS.concerts.color).toBe('#10c9b4');
+    expect(app).toContain("color: playlistsNavActive ? PAGE_COLORS.playlists.color : 'var(--nav-inactive)',");
+    expect(app).toContain("color: recommendationsNavActive ? PAGE_COLORS.recommendations.color : 'var(--nav-inactive)',");
+    expect(app).toContain("color: activeView === 'concerts' ? PAGE_COLORS['concerts'].color : 'var(--nav-inactive)',");
     const link = (html, page) => (html.match(new RegExp(`aria-label="See all in ${page}"[^>]*style="[^"]*color:(#[0-9a-f]{6})`)) || [])[1];
     expect(link(h(S.PlaylistsRow, { playlists: [{ id: 'a', title: 'A' }], navigateTo: () => {} }), 'Playlists')).toBe('#ec4899');
     expect(link(h(S.AlbumsRow, { albums: [{ title: 'T', artist: 'A', resolverId: 'lastfm' }], navigateTo: () => {} }), 'Recommendations')).toBe('#f59e0b');
@@ -332,22 +343,38 @@ describe('Rows', () => {
     expect(HOME_HALF_FLEX).toBe('0 0 calc(50% - 16px)');
     const alone = h(S.FreshCriticalRow, { fresh: [{ title: 'T', artist: 'A' }], critical: [], navigateTo: () => {} });
     expect(alone).toContain('flex:0 0 calc(50% - 16px)');
-    expect(alone.startsWith('<div style="display:flex;gap:32px">')).toBe(true);
+    expect(alone.startsWith('<div style="display:flex;flex-direction:row;gap:32px">')).toBe(true);
     const loading = h(S.FreshCriticalRow, { fresh: [], critical: [], freshLoading: true, criticalLoading: true });
     expect((loading.match(/flex:0 0 calc\(50% - 16px\)/g) || []).length).toBe(2);
+    // A narrow window (#1389): the halves stack, each the full row.
+    const stacked = h(S.FreshCriticalRow, { stacked: true, fresh: [{ title: 'T', artist: 'A' }], critical: [{ title: 'U', artist: 'B' }], navigateTo: () => {} });
+    expect(stacked.startsWith('<div style="display:flex;flex-direction:column;gap:32px">')).toBe(true);
+    expect(stacked).not.toContain('calc(50% - 16px)');
+  });
+  test('card counts fit the content width (#1389)', () => {
+    const sk = require('../../src/renderer/components/home-skeletons');
+    expect(sk.homeRowCards(0)).toBe(6); // not measured yet: the spec count
+    expect(sk.homeRowCards(744)).toBe(4); // the 1000px minimum window
+    expect(sk.homeRowCards(1184)).toBe(6);
+    expect(sk.homeConcertCards(744)).toBe(3);
+    expect(sk.homeConcertCards(1184)).toBe(4);
+    expect(sk.homeHalvesStacked(744)).toBe(true);
+    expect(sk.homeHalvesStacked(1184)).toBe(false);
+    expect(sk.homeHalvesStacked(0)).toBe(false);
   });
   test('each half opens with a hero band copied from its page\'s hero', () => {
     const app = fs.readFileSync(path.join(COMP, '..', 'app.js'), 'utf8');
     // The pages' own hero gradients and collapsed-title style, which the bands copy.
-    expect(app).toContain("className: 'absolute inset-0 bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-600'");
-    expect(app).toContain("className: 'absolute inset-0 bg-gradient-to-br from-amber-500 via-orange-500 to-red-500'");
+    expect(app).toContain("className: `absolute inset-0 ${PAGE_COLORS['new-releases'].hero}`");
+    expect(app).toContain("className: `absolute inset-0 ${PAGE_COLORS['critics-picks'].hero}`");
     expect(app).toMatch(/className: 'text-2xl font-light text-white',\s*style: \{\s*textShadow: '0 2px 10px rgba\(0,0,0,0\.5\)',\s*letterSpacing: '0\.2em',/);
     const html = h(S.FreshCriticalRow, { fresh: [{ title: 'T', artist: 'A' }], critical: [{ title: 'U', artist: 'B' }], navigateTo: () => {} });
     const sections = html.split('<section').slice(1);
     expect(sections).toHaveLength(2);
     const band = (sec) => (sec.match(/<div data-home-hero="" class="([^"]*)"/) || [])[1];
-    expect(band(sections[0])).toBe('bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-600');
-    expect(band(sections[1])).toBe('bg-gradient-to-br from-amber-500 via-orange-500 to-red-500');
+    const { PAGE_COLORS: PC } = require('../../src/renderer/lib/page-colors');
+    expect(band(sections[0])).toBe(PC['new-releases'].hero);
+    expect(band(sections[1])).toBe(PC['critics-picks'].hero);
     for (const sec of sections) {
       // A bordered card on the page background; the cards sit below the band.
       expect(sec).toMatch(/^[^>]*border-radius:16px;overflow:hidden;border:1px solid var\(--border-default\);background-color:var\(--bg-primary\)/);
@@ -414,6 +441,17 @@ describe('Concert cards', () => {
     expect(el.props.style.cursor).toBeUndefined();
     const html = h(S.ConcertsRow, { concerts: [{ ...base, ticketSources: [sellers2[0]] }] });
     expect(count(html, /<button/g)).toBe(1); // the See all button only
+  });
+  test("the artist's photo, face-centred, with the date as a badge on it", () => {
+    const images = { hovvdy: { url: 'https://img/h.jpg', facePosition: 'center 30%' } };
+    const html = h(S.ConcertsRow, { concerts: [{ ...base, artist: 'Hovvdy ' }], artistImages: images });
+    expect(html).toMatch(/<img src="https:\/\/img\/h.jpg" alt=""[^>]*object-position:center 30%/);
+    expect(html).toMatch(/<span style="position:absolute;left:4px;bottom:4px[^"]*">Dec 5<\/span>/);
+  });
+  test('no photo yet: a placeholder, the badge still there', () => {
+    const html = h(S.ConcertsRow, { concerts: [base] });
+    expect(html).not.toContain('<img');
+    expect(html).toContain('>Dec 5</span>');
   });
   test('one seller is a direct link', () => {
     const html = h(S.ConcertsRow, { concerts: [{ ...base, ticketSources: [sellers2[0]] }] });

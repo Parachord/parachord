@@ -23,5 +23,5 @@ test('the feed is Achordion, topped up only from the local cache', () => {
 test('a failed feed falls back to the cache, and only then shows an error', () => {
   const catchBlock = load.slice(load.indexOf('} catch (error) {'));
   expect(catchBlock).toContain('const fallback = criticsPicksCache.current.albums || [];');
-  expect(catchBlock).toContain("setCriticsPicksError('Failed to load Critic\\'s Picks. Please try again.')");
+  expect(catchBlock).toContain("setCriticsPicksError('Couldn’t load Critical Darlings. Check your connection and try again.')");
 });

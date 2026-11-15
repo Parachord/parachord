@@ -931,11 +931,29 @@ function getSavedWindowBounds() {
   }
 }
 
+// The window's backdrop per theme: what shows before the page paints and
+// behind it while it resizes. Dark matches --bg-primary.
+const WINDOW_BACKGROUND = { light: '#f3f4f6', dark: '#161616' };
+function initialThemeFor(pref, systemDark) {
+  return pref === 'dark' || (pref !== 'light' && systemDark) ? 'dark' : 'light';
+}
+function applyWindowBackground() {
+  const bg = WINDOW_BACKGROUND[nativeTheme.shouldUseDarkColors ? 'dark' : 'light'];
+  BrowserWindow.getAllWindows().forEach((win) => {
+    try { win.setBackgroundColor(bg); } catch (_) { /* window closing */ }
+  });
+}
+
 function createWindow() {
   console.log('Creating main window...');
   console.log('Preload path:', path.join(__dirname, 'preload.js'));
 
   const savedBounds = getSavedWindowBounds();
+  // The window opens in the saved theme: its backdrop, and the renderer's
+  // <html class="dark"> set by index.html before anything paints (via
+  // --parachord-theme, read in preload.js). Without it a dark-mode launch
+  // flashed light until React applied the class.
+  const initialTheme = initialThemeFor(store.get('theme_preference'), nativeTheme.shouldUseDarkColors);
 
   mainWindow = new BrowserWindow({
     width: savedBounds?.width || 1400,
@@ -950,7 +968,7 @@ function createWindow() {
     // of the window frame, so we use the default title bar to keep menus accessible.
     ...(process.platform === 'darwin' ? { titleBarStyle: 'hidden' } : {}),
     frame: true,
-    backgroundColor: '#f3f4f6',
+    backgroundColor: WINDOW_BACKGROUND[initialTheme],
     icon: path.join(__dirname, 'assets/icons/icon512.png'),
     webPreferences: {
       nodeIntegration: false,
@@ -971,9 +989,33 @@ function createWindow() {
       // wrapper forwards log/info to the real console (dev) or only to the
       // diagnostic ring buffer (prod). __dirname is not available in
       // sandboxed preloads, hence this argv-based path.
-      additionalArguments: [`--parachord-is-dev=${!app.isPackaged}`]
+      additionalArguments: [`--parachord-is-dev=${!app.isPackaged}`, `--parachord-theme=${initialTheme}`]
     },
     show: false
+  });
+
+  // Text fields get the usual Cut / Copy / Paste menu, and selected text a
+  // Copy menu. The app's own menus (tracks, albums, playlists) call
+  // preventDefault in the page, so this only fires where nothing else
+  // handles the right-click (design audit bug 31).
+  mainWindow.webContents.on('context-menu', (_event, params) => {
+    const flags = params.editFlags || {};
+    let template = null;
+    if (params.isEditable) {
+      template = [
+        { role: 'undo', enabled: !!flags.canUndo },
+        { role: 'redo', enabled: !!flags.canRedo },
+        { type: 'separator' },
+        { role: 'cut', enabled: !!flags.canCut },
+        { role: 'copy', enabled: !!flags.canCopy },
+        { role: 'paste', enabled: !!flags.canPaste },
+        { type: 'separator' },
+        { role: 'selectAll', enabled: !!flags.canSelectAll },
+      ];
+    } else if (params.selectionText && params.selectionText.trim()) {
+      template = [{ role: 'copy' }];
+    }
+    if (template) Menu.buildFromTemplate(template).popup({ window: mainWindow });
   });
 
   amazonWebPlayer.setHost(mainWindow);
@@ -2056,7 +2098,7 @@ app.whenReady().then(async () => {
         },
         { type: 'separator' },
         {
-          label: 'Settings...',
+          label: 'Settings…',
           accelerator: 'CmdOrCtrl+,',
           click: () => safeSendToRenderer('menu-action', 'open-settings')
         },
@@ -2081,16 +2123,16 @@ app.whenReady().then(async () => {
           click: () => safeSendToRenderer('menu-action', 'new-playlist')
         },
         {
-          label: 'Add Friend...',
+          label: 'Add Friend…',
           click: () => safeSendToRenderer('menu-action', 'add-friend')
         },
         { type: 'separator' },
         {
-          label: 'Import Playlist...',
+          label: 'Import Playlist…',
           click: () => safeSendToRenderer('menu-action', 'import-playlist')
         },
         {
-          label: 'Export Queue as Playlist...',
+          label: 'Save Queue as Playlist…',
           click: () => safeSendToRenderer('menu-action', 'export-playlist')
         },
         { type: 'separator' },
@@ -2119,7 +2161,7 @@ app.whenReady().then(async () => {
         ]),
         { type: 'separator' },
         {
-          label: 'Find...',
+          label: 'Find…',
           accelerator: 'CmdOrCtrl+F',
           click: () => safeSendToRenderer('menu-action', 'focus-search')
         }
@@ -2185,7 +2227,7 @@ app.whenReady().then(async () => {
       label: 'Help',
       submenu: [
         {
-          label: 'Check for Updates...',
+          label: 'Check for Updates…',
           click: () => {
             safeSendToRenderer('menu-action', 'check-for-updates');
           }
@@ -2198,10 +2240,15 @@ app.whenReady().then(async () => {
           }
         },
         {
-          label: 'Report an Issue...',
+          label: 'Report a Problem…',
           click: async () => {
             await shell.openExternal('https://github.com/Parachord/parachord/issues');
           }
+        },
+        {
+          label: 'Keyboard Shortcuts',
+          accelerator: 'CmdOrCtrl+/',
+          click: () => safeSendToRenderer('menu-action', 'show-shortcuts')
         },
         {
           // Routes to window.copyDiagnosticLog() in the renderer; see
@@ -3037,6 +3084,9 @@ ipcMain.handle('updater-get-version', () => {
   return app.getVersion();
 });
 
+// "1 track", "2 tracks": the item menus printed "(1 tracks)" (audit bug 38).
+const trackCount = (n) => `${n} ${n === 1 ? 'track' : 'tracks'}`;
+
 // Theme IPC handlers
 ipcMain.handle('theme-get-system', () => {
   return nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
@@ -3045,12 +3095,14 @@ ipcMain.handle('theme-get-system', () => {
 ipcMain.handle('theme-set-native', (event, mode) => {
   // mode: 'light', 'dark', or 'system'
   nativeTheme.themeSource = mode;
+  applyWindowBackground();
   return nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
 });
 
 // Notify renderer when system theme changes
 nativeTheme.on('updated', () => {
   const effectiveTheme = nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
+  applyWindowBackground();
   BrowserWindow.getAllWindows().forEach(win => {
     win.webContents.send('theme-changed', effectiveTheme);
   });
@@ -3457,7 +3509,7 @@ ipcMain.handle('soundcloud-auth', async () => {
   // Validate client ID exists
   if (!clientId) {
     console.error('❌ No SoundCloud credentials configured!');
-    return { success: false, error: 'SoundCloud requires API credentials. Configure them in Settings → Installed → SoundCloud → Advanced.' };
+    return { success: false, error: 'SoundCloud requires API credentials. Configure them in Settings › Plug-Ins › SoundCloud › Advanced.' };
   }
 
   // The bundled (and .env) SoundCloud app is registered at :8888 and
@@ -3470,7 +3522,7 @@ ipcMain.handle('soundcloud-auth', async () => {
       success: false,
       error: `SoundCloud's built-in sign-in only works on port ${DEFAULT_AUTH_PORT}, and Parachord's local server is on port ${authPort}. `
         + `Either set the port back to ${DEFAULT_AUTH_PORT} in Settings → General, or add your own SoundCloud app credentials `
-        + `(Settings → Installed → SoundCloud → Advanced) with ${redirectUri} registered as its redirect URI.`
+        + `(Settings › Plug-Ins › SoundCloud › Advanced) with ${redirectUri} registered as its redirect URI.`
     };
   }
 
@@ -4200,10 +4252,10 @@ ipcMain.handle('resolvers-pick-file', async () => {
   const { dialog } = require('electron');
   
   const result = await dialog.showOpenDialog(mainWindow, {
-    title: 'Select Resolver (.axe file)',
+    title: 'Choose a Plug-In',
     buttonLabel: 'Install',
     filters: [
-      { name: 'Parachord Resolver', extensions: ['axe'] },
+      { name: 'Parachord Plug-In', extensions: ['axe'] },
       { name: 'All Files', extensions: ['*'] }
     ],
     properties: ['openFile']
@@ -4322,15 +4374,28 @@ ipcMain.handle('resolvers-uninstall', async (event, resolverId) => {
 });
 
 // Show context menu for resolver
-ipcMain.handle('resolvers-show-context-menu', async (event, resolverId) => {
+ipcMain.handle('resolvers-show-context-menu', async (event, resolverId, opts) => {
   console.log('=== Show Resolver Context Menu ===');
   console.log('  Resolver ID:', resolverId);
 
   const { Menu } = require('electron');
 
   const menu = Menu.buildFromTemplate([
+    // Raise / Lower Priority: the keyboard path for dragging the tiles
+    // (#1386). opts comes from the renderer: { canRaise, canLower }.
     {
-      label: 'Uninstall Resolver',
+      label: 'Raise Priority',
+      enabled: !!(opts && opts.canRaise),
+      click: () => safeSendToRenderer('resolver-context-menu-action', { action: 'raise-priority', resolverId })
+    },
+    {
+      label: 'Lower Priority',
+      enabled: !!(opts && opts.canLower),
+      click: () => safeSendToRenderer('resolver-context-menu-action', { action: 'lower-priority', resolverId })
+    },
+    { type: 'separator' },
+    {
+      label: 'Remove Plug-In',
       click: () => {
         // Send back to renderer
         safeSendToRenderer('resolver-context-menu-action', {
@@ -4388,12 +4453,12 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
       menuLabel = 'Add to Queue';
       break;
     case 'playlist':
-      menuLabel = `Add All to Queue (${data.tracks?.length || 0} tracks)`;
+      menuLabel = `Add All to Queue (${trackCount(data.tracks?.length || 0)})`;
       enabled = data.tracks?.length > 0;
       break;
     case 'release':
       if (data.tracks?.length > 0) {
-        menuLabel = `Add All to Queue (${data.tracks.length} tracks)`;
+        menuLabel = `Add All to Queue (${trackCount(data.tracks.length)})`;
       } else if (data.loading) {
         menuLabel = 'Add All to Queue (loading...)';
         enabled = false;
@@ -4413,11 +4478,11 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
       addToPlaylistLabel = 'Add to Playlist...';
       break;
     case 'playlist':
-      addToPlaylistLabel = `Add All to Playlist... (${data.tracks?.length || 0} tracks)`;
+      addToPlaylistLabel = `Add All to Playlist... (${trackCount(data.tracks?.length || 0)})`;
       break;
     case 'release':
       if (data.tracks?.length > 0) {
-        addToPlaylistLabel = `Add All to Playlist... (${data.tracks.length} tracks)`;
+        addToPlaylistLabel = `Add All to Playlist... (${trackCount(data.tracks.length)})`;
       } else if (data.loading) {
         addToPlaylistLabel = 'Add All to Playlist... (loading...)';
       } else {
@@ -4432,6 +4497,36 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
 
   // Only add queue/playlist options for types that have playable tracks
   // Exclude friend-track since it has its own specific menu items
+  // A queue row's menu can remove that row (design audit bug 19). "Add to
+  // Queue" stays: queueing a song again is a real choice.
+  if (data.type === 'track' && data.inQueue) {
+    // Play Sooner / Play Later: reordering without a drag (#1386). The
+    // drawer shows the next track at the bottom, so "up"/"down" would
+    // read backwards; these name the effect instead.
+    if (Number.isInteger(data.queueIndex) && Number.isInteger(data.queueLength)) {
+      const i = data.queueIndex;
+      menuItems.push({
+        label: 'Play Sooner',
+        enabled: i > 0,
+        click: () => safeSendToRenderer('track-context-menu-action', { action: 'move-in-queue', from: i, to: i - 1 })
+      });
+      menuItems.push({
+        label: 'Play Later',
+        enabled: i < data.queueLength - 1,
+        click: () => safeSendToRenderer('track-context-menu-action', { action: 'move-in-queue', from: i, to: i + 1 })
+      });
+    }
+    menuItems.push({
+      label: 'Remove from Queue',
+      click: () => {
+        safeSendToRenderer('track-context-menu-action', {
+          action: 'remove-from-queue',
+          trackId: data.track?.id,
+          queueIndex: data.queueIndex
+        });
+      }
+    });
+  }
   if (data.type !== 'artist' && data.type !== 'friend' && data.type !== 'friend-track' && data.type !== 'collection-album' && data.type !== 'loves') {
     menuItems.push({
       label: menuLabel,
@@ -4462,11 +4557,25 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
     });
   }
 
+  // An artist's top tracks go to the queue from its menu (the cards' hover
+  // keeps only Play).
+  if (data.type === 'artist' && data.artist?.name) {
+    menuItems.push({
+      label: 'Add Top 10 to Queue',
+      click: () => {
+        safeSendToRenderer('track-context-menu-action', {
+          action: 'queue-artist-top-tracks',
+          artist: data.artist
+        });
+      }
+    });
+  }
+
   // Home's recent-loves tile: Add to Queue, and Open in Collection
   // (Collection's songs, newest loved first).
   if (data.type === 'loves') {
     menuItems.push({
-      label: `Add to Queue (${data.tracks?.length || 0} tracks)`,
+      label: `Add to Queue (${trackCount(data.tracks?.length || 0)})`,
       enabled: data.tracks?.length > 0,
       click: () => {
         safeSendToRenderer('track-context-menu-action', {
@@ -4571,6 +4680,10 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
       }
     }
 
+    // Export and Delete act on a saved local playlist. A service's playlist
+    // shown in Parachord (Weekly Exploration, a recommended mix) is
+    // ephemeral: Export silently did nothing and Delete had nothing to delete.
+    if (!data.isEphemeral) {
     menuItems.push({ type: 'separator' });
     menuItems.push({
       label: 'Export as XSPF…',
@@ -4592,6 +4705,7 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
         });
       }
     });
+    }
   }
 
   // Add "Edit ID3 Tags" option for local files (tracks with filePath)
@@ -4683,27 +4797,30 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
         });
       }
     } else if (data.type === 'release') {
+      // The renderer says whether the album is saved
+      // (lib/menu-collection-state.js), so a saved one offers Remove.
+      const album = data.album || {
+        title: data.name,
+        artist: data.artist,
+        year: data.year,
+        art: data.albumArt
+      };
       menuItems.push({
-        label: 'Add Album to Collection',
+        label: data.isInCollection ? 'Remove Album from Collection' : 'Add Album to Collection',
         click: () => {
           safeSendToRenderer('track-context-menu-action', {
-            action: 'add-to-collection',
+            action: data.isInCollection ? 'remove-from-collection' : 'add-to-collection',
             type: 'album',
-            album: data.album || {
-              title: data.name,
-              artist: data.artist,
-              year: data.year,
-              art: data.albumArt
-            }
+            album
           });
         }
       });
     } else if (data.type === 'artist') {
       menuItems.push({
-        label: 'Add Artist to Collection',
+        label: data.isInCollection ? 'Remove Artist from Collection' : 'Add Artist to Collection',
         click: () => {
           safeSendToRenderer('track-context-menu-action', {
-            action: 'add-to-collection',
+            action: data.isInCollection ? 'remove-from-collection' : 'add-to-collection',
             type: 'artist',
             artist: data.artist
           });
@@ -4712,10 +4829,13 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
     }
   }
 
-  // Add Copy-link options for tracks, releases, artists, and collection albums.
-  // Playlists are deliberately excluded — Achordion has no playlist entity
-  // surface yet, so we hide the menu item rather than show one that errors.
-  if (data.type === 'track' || data.type === 'release' || data.type === 'artist' || data.type === 'collection-album') {
+  // Copy Link and View on Achordion for tracks, releases, artists, collection
+  // albums and playlists. A playlist is on Achordion when it's on ListenBrainz
+  // (the renderer sends its listenbrainzMbid); a saved one that isn't gets
+  // Copy Link alone, which offers to sync it. An unsaved one from another
+  // service (a recommendation) has no link to copy.
+  const playlistLinkable = data.type === 'playlist' && (!!data.listenbrainzMbid || !data.isEphemeral);
+  if (data.type === 'track' || data.type === 'release' || data.type === 'artist' || data.type === 'collection-album' || playlistLinkable) {
     menuItems.push({ type: 'separator' });
 
     if (data.type === 'track') {
@@ -4785,6 +4905,7 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
         // The renderer looks the playlist's ListenBrainz link up by id
         // (parachord#1084); this summary carries no sync fields.
         playlistId: isPlaylist ? (data.playlistId || null) : undefined,
+        listenbrainzMbid: isPlaylist ? (data.listenbrainzMbid || null) : undefined,
         title: data.name || data.title || data.album?.title,
         artist: collectionArtist,
         creator: data.creator || null,
@@ -4808,9 +4929,8 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
           });
         }
       });
-      // Playlists: Achordion has no entity surface yet (issue #775), so the
-      // View-on-Achordion item only makes sense for albums.
-      if (!isPlaylist) {
+      // A playlist is on Achordion only when it's on ListenBrainz.
+      if (!isPlaylist || data.listenbrainzMbid) {
         menuItems.push({
           label: 'View on Achordion',
           click: () => {
@@ -4910,6 +5030,14 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
         }
       });
     }
+    // Every ListenBrainz user has an Achordion profile.
+    if (data.friend?.service === 'listenbrainz' && data.friend.username) {
+      menuItems.push({ type: 'separator' });
+      menuItems.push({
+        label: 'View on Achordion',
+        click: () => safeSendToRenderer('track-context-menu-action', { action: 'view-on-achordion-user', username: data.friend.username })
+      });
+    }
   }
 
   // Friend's now-playing track context menu
@@ -4951,6 +5079,41 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
         });
       }
     });
+    // The same link items as any other track.
+    menuItems.push({ type: 'separator' });
+    menuItems.push({
+      label: 'Copy Link',
+      click: () => {
+        safeSendToRenderer('track-context-menu-action', { action: 'publish-smart-link', track: data.track });
+      }
+    });
+    menuItems.push({
+      label: 'View on Achordion',
+      click: () => {
+        safeSendToRenderer('track-context-menu-action', { action: 'view-on-achordion-track', track: data.track });
+      }
+    });
+  }
+
+  // A Listener (Recommendations: someone like you, not a friend yet): open
+  // their profile, follow them, and, for a ListenBrainz user, their
+  // Achordion profile (every ListenBrainz user has one).
+  if (data.type === 'listener' && data.listener) {
+    menuItems.push({
+      label: 'View History',
+      click: () => safeSendToRenderer('track-context-menu-action', { action: 'open-listener', listener: data.listener })
+    });
+    menuItems.push({
+      label: 'Follow',
+      click: () => safeSendToRenderer('track-context-menu-action', { action: 'follow-listener', listener: data.listener })
+    });
+    if (data.listener.service === 'listenbrainz') {
+      menuItems.push({ type: 'separator' });
+      menuItems.push({
+        label: 'View on Achordion',
+        click: () => safeSendToRenderer('track-context-menu-action', { action: 'view-on-achordion-user', username: data.listener.username })
+      });
+    }
   }
 
   const menu = Menu.buildFromTemplate(menuItems);

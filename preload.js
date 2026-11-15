@@ -18,6 +18,18 @@ const __isDevBuild = (() => {
   }
 })();
 
+// The theme the window opened in ('light' | 'dark'), from main.js's
+// --parachord-theme. index.html sets <html class="dark"> from it before the
+// first paint, and the renderer seeds its theme state from that class.
+const __initialTheme = (() => {
+  try {
+    const flag = (process.argv || []).find(a => a.startsWith('--parachord-theme='));
+    return flag && flag.split('=')[1] === 'dark' ? 'dark' : 'light';
+  } catch (e) {
+    return 'light';
+  }
+})();
+
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electron', {
@@ -246,7 +258,7 @@ contextBridge.exposeInMainWorld('electron', {
     pickFile: () => ipcRenderer.invoke('resolvers-pick-file'),
     install: (axeContent, filename) => ipcRenderer.invoke('resolvers-install', axeContent, filename),
     uninstall: (resolverId) => ipcRenderer.invoke('resolvers-uninstall', resolverId),
-    showContextMenu: (resolverId) => ipcRenderer.invoke('resolvers-show-context-menu', resolverId),
+    showContextMenu: (resolverId, opts) => ipcRenderer.invoke('resolvers-show-context-menu', resolverId, opts),
     onContextMenuAction: (callback) => {
       ipcRenderer.on('resolver-context-menu-action', (event, data) => {
         callback(data);
@@ -678,6 +690,7 @@ contextBridge.exposeInMainWorld('electron', {
 
   // Theme management
   theme: {
+    initial: __initialTheme,
     getSystem: () => ipcRenderer.invoke('theme-get-system'),
     setNative: (mode) => ipcRenderer.invoke('theme-set-native', mode),
     onChanged: (callback) => {

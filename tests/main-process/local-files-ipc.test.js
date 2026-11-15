@@ -111,7 +111,7 @@ describe('localFiles IPC surface', () => {
     const result = await handlers.get('localFiles:addWatchFolder')();
     expect(result).toEqual({ success: true, folderPath: '/music/flac', scanResult: { marker: 'addWatchFolder-result' } });
     expect(serviceCalls).toEqual([{ method: 'addWatchFolder', args: ['/music/flac'] }]);
-    expect(dialogCalls).toEqual([{ window: win, opts: { title: 'Select Watch Folder', properties: ['openDirectory'] } }]);
+    expect(dialogCalls).toEqual([{ window: win, opts: { title: 'Choose a music folder', properties: ['openDirectory'] } }]);
   });
 
   test('addWatchFolder: a service error becomes { success: false, error }', async () => {

@@ -96,14 +96,14 @@ describe('every page draws the shared header', () => {
     expect(read('recommendation-skeletons.js')).toMatch(/React\.createElement\(SectionHeader, \{/);
 
     const search = read('search-page.js');
-    for (const title of ['Artists', 'Songs', 'Albums', 'Playlists']) {
+    for (const title of ['Artists', 'Tracks', 'Albums', 'Playlists']) {
       expect(search).toContain(`as: 'h3', title: '${title}', style: SECTION_HEADER_GAP`);
     }
     // The old small uppercase result headings are gone (the history and
     // suggestion labels above the results keep theirs).
     expect(search).not.toMatch(/uppercase tracking-wider[^']*' \}, '(ARTISTS|SONGS|ALBUMS|PLAYLISTS)'/);
 
-    expect(read('artist-page.js')).toMatch(/React\.createElement\(SectionHeader, \{\s*title: React\.createElement\(React\.Fragment, null,\s*`\$\{events\.length\} Upcoming Concert/);
+    expect(read('artist-page.js')).toMatch(/React\.createElement\(SectionHeader, \{\s*title: React\.createElement\(React\.Fragment, null,\s*countOf\(events\.length, 'upcoming concert'\)/);
   });
 
   test('the old Recommendations title and link classes are gone', () => {

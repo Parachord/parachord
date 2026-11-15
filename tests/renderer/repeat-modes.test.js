@@ -169,7 +169,8 @@ describe('every caller says what moved the queue', () => {
     expect((app.match(/handleNextRef\.current\(false, \{ trigger: 'ended' \}\)/g) || []).length).toBe(6);
   });
   test('a track that couldn\'t play', () => {
-    expect((engine.match(/handleNextRef\.current\(false, \{ trigger: 'unplayable' \}\)/g) || []).length).toBe(2);
+    // autoSkipIfAdvancing, the skip when the no-source prompt is turned off, and one more
+    expect((engine.match(/handleNextRef\.current\(false, \{ trigger: 'unplayable' \}\)/g) || []).length).toBe(3);
     expect(engine).toMatch(/handleNextRef\.current\?\.\(false, \{ trigger: 'unplayable' \}\);/);
     expect((app.match(/handleNext\(false, \{ trigger: 'unplayable' \}\);/g) || []).length).toBe(3);
   });

@@ -35,11 +35,14 @@ describe('History: Recent', () => {
 
 describe('Collection: Albums', () => {
   const collectionPage = read('components', 'collection-page.js');
-  const cards = read('components', 'cards.js');
+  // Collection's cards are the shared AlbumCard (components/album-card.js),
+  // which looks up its own cover when passed getAlbumArt.
+  const albumCard = read('components', 'album-card.js');
 
   test('album cards are keyed by album id, never by position', () => {
     expect(collectionPage).not.toMatch(/key: `\$\{album\.title\}-\$\{album\.artist\}-\$\{index\}`/);
-    const at = collectionPage.indexOf('React.createElement(CollectionAlbumCard, {');
+    const at = collectionPage.indexOf('React.createElement(AlbumCard, Object.assign({');
+    expect(at).toBeGreaterThan(-1);
     expect(collectionPage.slice(at, at + 120)).toMatch(/key: albumKey\(album\),/);
     expect(collectionPage).toMatch(/const base = album\.id \|\| `\$\{album\.artist\}\|\$\{album\.title\}`;/);
     // a repeated id still gets a key of its own
@@ -47,12 +50,13 @@ describe('Collection: Albums', () => {
   });
 
   test('a late broken-art answer only paints the album the card still shows', () => {
-    const at = cards.indexOf('const CollectionAlbumCard = (');
-    const card = cards.slice(at, cards.indexOf('\n};\n', at));
-    expect(card).toMatch(/shownAlbumRef\.current = `\$\{album\.artist\}\|\$\{album\.title\}`;/);
-    expect(card).toMatch(/return \(\) => \{ mountedRef\.current = false; \};/);
-    expect(card).toMatch(/const forAlbum = shownAlbumRef\.current;/);
-    expect(card).toMatch(/if \(url && mountedRef\.current && shownAlbumRef\.current === forAlbum\) setImageUrl\(url\);/);
+    // A real render of this is in album-card-behaviour.test.js.
+    const at = albumCard.indexOf('function AlbumCard(');
+    const card = albumCard.slice(at, albumCard.indexOf('\n}\n', at));
+    expect(card).toMatch(/const artKey = album \? `\$\{album\.artist\}\|\$\{album\.title\}` : '';\s*shownRef\.current = artKey;/);
+    expect(card).toMatch(/return \(\) => \{ mounted\.current = false; \};/);
+    expect(card).toMatch(/const forAlbum = artKey;/);
+    expect(card).toMatch(/if \(url && mounted\.current && shownRef\.current === forAlbum\) setFetchedArt\(url\);/);
   });
 });
 

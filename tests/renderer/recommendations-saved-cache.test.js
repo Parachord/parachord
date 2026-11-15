@@ -71,9 +71,24 @@ describe('saved recommendations', () => {
     const card = app.slice(app.indexOf('const albumCard = (item, index) => {'), app.indexOf('const playlistCard = (item, index, section) => {'));
     expect(card).toContain('const entry = item.releaseDate');
     expect(card).toContain(": recommendationReleaseDates[releaseDateKey(item.artist || '', item.name)];");
-    expect(card).toContain('const label = entry && upcomingLabel(entry.date);');
+    expect(card).toContain('const upcoming = entry && upcomingLabel(entry.date);');
+    // On the shared AlbumCard's cover (its cornerBadge slot).
+    expect(card).toMatch(/cornerBadge: upcoming && React\.createElement\('div', \{/);
     expect(card).toContain("className: 'release-badge',");
-    expect(card).toContain("style: { position: 'absolute', top: '8px', right: '8px', zIndex: 10 }");
+    expect(card).toContain("style: { position: 'absolute', top: '8px', right: '8px', zIndex: 1 }");
+    expect(card).toMatch(/'data-upcoming-badge': 'true',[\s\S]{0,200}?\}, upcoming\)\),/);
+  });
+
+  test("the hover overlay sits under Shuffleupagus's badge, so the badge's tooltip still shows on hover", () => {
+    const card = app.slice(app.indexOf('const albumCard = (item, index) => {'), app.indexOf('const playlistCard = (item, index, section) => {'));
+    // The card is the shared AlbumCard, and the badge its `reason`: the
+    // overlay (card-art.js's ArtOverlay) sits above CardButton's stretched
+    // button (zIndex 1), below the badge (3).
+    expect(card).toContain('reason: shuffleupagusBadgeProps(item) || null,');
+    const comp = (f) => fs.readFileSync(require('path').join(__dirname, '../../src/renderer/components', f), 'utf8');
+    expect(comp('card-art.js')).toMatch(/style: \{ opacity: shown \? 1 : 0, pointerEvents: shown \? 'auto' : 'none', zIndex: 2,/);
+    expect(comp('album-card.js')).toMatch(/reason && e\(ReasonBadge, reason\)/);
+    expect(comp('reason-badge.js')).toContain('zIndex: 3');
   });
 
   test('fresh answers are used as is; stale ones show while their provider refreshes', () => {
@@ -162,9 +177,9 @@ describe('each provider applies as it lands', () => {
 describe('recommended playlist cards', () => {
   const card = app.slice(app.indexOf('const playlistCard = (item, index, section) => {'), app.indexOf('// ── Weekly playlists (moved from Home)'));
 
-  test('carry the standard playlist hover set: Add to Playlist, Play, Add to Queue', () => {
-    const titles = [...card.matchAll(/title: '([^']+)'/g)].map(m => m[1]);
-    expect(titles).toEqual(['Add to Playlist', 'Play', 'Add to Queue']);
+  test('carry the standard playlist hover set: Add to playlist, Play, Add to queue', () => {
+    const titles = [...card.matchAll(/'data-tooltip': '([^']+)'/g)].map(m => m[1]);
+    expect(titles).toEqual(['Add to playlist', 'Play', 'Add to queue']);
     expect(card).toMatch(/addRecommendationPlaylistToPlaylist\(item\)/);
     expect(card).toMatch(/playRecommendationPlaylist\(item\)/);
     expect(card).toMatch(/queueRecommendationPlaylist\(item\)/);

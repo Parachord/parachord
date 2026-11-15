@@ -2,9 +2,10 @@
   "manifest": {
     "id": "bandcamp",
     "name": "Bandcamp",
-    "version": "1.4.5",
+    "version": "1.4.6",
     "author": "Parachord Team",
     "description": "Find, play and purchase music on Bandcamp, through Bandcamp's own player.",
+    "requirement": "Works right away. No account needed.",
     "icon": "🎸",
     "color": "#629AA9",
     "homepage": "https://bandcamp.com",

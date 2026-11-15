@@ -11,7 +11,7 @@ A modern multi-source music player inspired by [Tomahawk](https://github.com/tom
 ### Multi-Source Playback
 - **Unified Library** - Search and play from multiple services simultaneously
 - **Smart Resolution** - Automatically finds the best available source for each track, with incremental results as resolvers respond
-- **Source Priority** - Drag to reorder which services are preferred
+- **Source Priority** - Drag the tiles, or use Raise Priority / Lower Priority in a tile's menu, to choose which services are preferred
 - **Volume Normalization** - Balance loudness between different sources
 - **Buy Links** - Bandcamp purchase buttons surfaced for any track that can be found, even when streaming from a different source
 

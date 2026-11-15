@@ -15,11 +15,11 @@ const collectionPage = fs.readFileSync(path.join(__dirname, '..', '..', 'src', '
 describe('Sync Now is reachable', () => {
   test('something opens syncStatusModal', () => {
     expect(collectionPage).toMatch(/setSyncStatusModal\(\{ open: true \}\)/);
-    expect(collectionPage).toMatch(/'Sync status & Sync Now'/);
+    expect(collectionPage).toMatch(/'Library sync…'/);
   });
 
   test('the modal\'s Sync Now runs a full (unstaggered) sync', () => {
-    const start = app.indexOf("syncStatusModal.open && React.createElement('div', {");
+    const start = app.indexOf('syncStatusModal.open && React.createElement(Modal, {');
     expect(start).toBeGreaterThan(-1);
     const src = app.slice(start, start + 12000);
     expect(src).toMatch(/window\.electron\.sync\.start\(providerId, \{ settings, fullSync: true \}\)/);

@@ -2,9 +2,10 @@
   "manifest": {
     "id": "soundcloud",
     "name": "SoundCloud",
-    "version": "1.3.4",
+    "version": "1.3.5",
     "author": "Parachord Team",
     "description": "Search and stream music from SoundCloud. Requires OAuth login for full access.",
+    "requirement": "Needs a SoundCloud account. Sign in from its panel.",
     "icon": "☁",
     "color": "#FF5500",
     "homepage": "https://soundcloud.com",

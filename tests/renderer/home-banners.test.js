@@ -1,4 +1,4 @@
-const { homeBannerItems, BANNER_SEVERITY_COLORS } = require('../../src/renderer/lib/home-banners');
+const { homeBannerItems, BANNER_SEVERITY_COLORS, BANNER_SEVERITY_HEX } = require('../../src/renderer/lib/home-banners');
 
 const luminance = (hex) => {
   const [r, g, b] = [1, 3, 5].map((i) => {
@@ -42,7 +42,15 @@ describe('BANNER_SEVERITY_COLORS', () => {
   test('has the four severities', () => {
     expect(Object.keys(BANNER_SEVERITY_COLORS).sort()).toEqual(['error', 'info', 'success', 'warn']);
   });
-  test.each(Object.entries(BANNER_SEVERITY_COLORS))('%s has contrast >= 4.5 against white', (_k, hex) => {
+  test.each(Object.entries(BANNER_SEVERITY_HEX))('%s has contrast >= 4.5 against white', (_k, hex) => {
     expect(contrastOnWhite(hex)).toBeGreaterThanOrEqual(4.5);
+  });
+  test('the fills are index.html tokens with those values', () => {
+    const html = require('fs').readFileSync(require('path').join(__dirname, '../../index.html'), 'utf8');
+    const token = { info: 'info', success: 'success', warn: 'warning', error: 'error' };
+    for (const [k, hex] of Object.entries(BANNER_SEVERITY_HEX)) {
+      expect(BANNER_SEVERITY_COLORS[k]).toBe(`var(--fill-${token[k]})`);
+      expect(html).toContain(`--fill-${token[k]}: ${hex};`);
+    }
   });
 });

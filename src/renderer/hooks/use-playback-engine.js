@@ -210,6 +210,8 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
   const {
     showToastRef,
     showConfirmDialog,
+    skipUnplayablePromptRef,
+    setSkipUnplayablePrompt,
     setActiveView,
     setSettingsTab,
     setProgress,
@@ -669,7 +671,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         holdElementTrack(localFilePlaybackTrackRef.current);
         showConfirmDialog({
           type: 'error',
-          title: 'Playback Error',
+          title: 'Playback error',
           message: errorMessage
         });
         return;
@@ -825,6 +827,38 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       }
       setTimeout(() => { if (handleNextRef.current) handleNextRef.current(false, { trigger: 'unplayable' }); }, 600);
       return true;
+    };
+
+    // A track with no playable source. Normally a dialog; with its "Don't
+    // show this again" ticked (skip_unplayable_prompt), a toast and on to the
+    // next track, the way an auto-advance skips it.
+    const reportUnplayable = (title, message) => {
+      if (skipUnplayablePromptRef && skipUnplayablePromptRef.current) {
+        console.log(`⏭️ Skip "${trackOrSource?.title || 'track'}" — ${title} (prompt turned off)`);
+        setTrackLoading(false);
+        if (trackOrSource?.id) {
+          setCurrentQueue(prev => prev.map(t => t.id === trackOrSource.id ? { ...t, status: 'error' } : t));
+        }
+        if (showToastRef?.current) showToastRef.current(`Skipped “${trackOrSource?.title || 'track'}”: no playable source`, 'info');
+        setTimeout(() => { if (handleNextRef.current) handleNextRef.current(false, { trigger: 'unplayable' }); }, 600);
+        return;
+      }
+      showConfirmDialog({
+        type: 'error',
+        title,
+        message,
+        actionButton: {
+          label: 'Open Plug-Ins',
+          onClick: () => { setActiveView('settings'); setSettingsTab('plugins'); },
+        },
+        dontShowAgain: {
+          label: 'Don’t show this again. Skip tracks with no source.',
+          onChange: (on) => {
+            if (setSkipUnplayablePrompt) setSkipUnplayablePrompt(on);
+            window.electron?.store?.set('skip_unplayable_prompt', on);
+          },
+        },
+      });
     };
 
     // The account's plan doesn't cover playback on this service
@@ -1186,15 +1220,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
           setTrackLoading(false); // Clear loading state
           setCurrentTrack(prev => prev?.id === placeholderTrack.id ? { ...prev, status: 'error' } : prev);
           if (autoSkipIfAdvancing('no playable source')) return;
-          showConfirmDialog({
-            type: 'error',
-            title: 'No Source Found',
-            message: 'Could not find a playable source for this track. Try enabling more resolvers in settings.',
-            actionButton: {
-              label: 'Open Resolver Settings',
-              onClick: () => { setActiveView('settings'); setSettingsTab('plugins'); },
-            },
-          });
+          reportUnplayable('No source found', 'Could not find a playable source for this track. Try enabling more plug-ins.');
           return;
         }
 
@@ -1273,15 +1299,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         }));
         if (autoSkipIfAdvancing('no enabled source matches')) return;
         setTrackLoading(false); // Clear loading state
-        showConfirmDialog({
-          type: 'error',
-          title: 'No Enabled Source',
-          message: 'This track has sources but none match your enabled resolvers. Check your resolver settings.',
-          actionButton: {
-            label: 'Open Resolver Settings',
-            onClick: () => { setActiveView('settings'); setSettingsTab('plugins'); },
-          },
-        });
+        reportUnplayable('No enabled source', 'This track has sources, but none from the plug-ins you have enabled.');
         return;
       }
 
@@ -1352,7 +1370,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
           if (autoSkipIfAdvancing(`local file missing: ${localPath}`, { needsNetwork: false })) return;
           showConfirmDialog({
             type: 'error',
-            title: 'File Not Found',
+            title: 'File not found',
             message: `This file is no longer on disk, so it can't be played:\n${localPath}`
           });
           return;
@@ -1560,7 +1578,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         if (autoSkipIfAdvancing(`local file playback: ${errorMessage}`, { needsNetwork: false })) return;
         showConfirmDialog({
           type: 'error',
-          title: 'Playback Error',
+          title: 'Playback error',
           message: errorMessage
         });
       }
@@ -1861,7 +1879,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
               setTrackLoading(false);
               showConfirmDialog({
                 type: 'error',
-                title: 'Playback Error',
+                title: 'Playback error',
                 message: `Failed to play this ${streamLabel} track: ` + retryError.message
               });
               return;
@@ -1878,8 +1896,8 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
           setTrackLoading(false);
           showConfirmDialog({
             type: 'error',
-            title: 'Playback Error',
-            message: `Failed to play this ${streamLabel} track: ` + error.message
+            title: 'Couldn’t play the track',
+            message: `This ${streamLabel} track didn’t start. Try another source, or try again.`
           });
           return;
         }
@@ -2030,12 +2048,12 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
 
       if (!streamUrl) {
         console.error(`❌ No ${streamLabel} stream URL available`);
-        if (autoSkipIfAdvancing(`${streamLabel}: no stream URL (check its settings in Settings > Resolvers)`)) return;
+        if (autoSkipIfAdvancing(`${streamLabel}: no stream URL (check its settings in Settings › Plug-Ins)`)) return;
         setTrackLoading(false);
         showConfirmDialog({
           type: 'error',
           title: `${streamLabel} Not Configured`,
-          message: `Could not get a stream URL from ${streamLabel}. Check its settings in Settings > Resolvers (server reachable, signed in, library selected) and try again.`
+          message: `Could not get a stream URL from ${streamLabel}. Check its settings in Settings › Plug-Ins (server reachable, signed in, library selected) and try again.`
         });
         return;
       }
@@ -2107,8 +2125,8 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         setTrackLoading(false);
         showConfirmDialog({
           type: 'error',
-          title: 'Playback Error',
-          message: `Failed to play this ${streamLabel} track: ` + error.message
+          title: 'Couldn’t play the track',
+          message: `This ${streamLabel} track didn’t start. Try another source, or try again.`
         });
       }
       return;
@@ -2492,8 +2510,8 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
           // bug while his own play() was returning false).
           showConfirmDialog({
             type: 'info',
-            title: 'Track Re-resolved',
-            message: `Playback via ${resolver.name} failed, so the track has been re-resolved with fresh sources. Try playing it again.\n\nIf it keeps failing, the developer console (View > Toggle Developer Tools) shows what ${resolver.name} reported.`
+            title: 'Track re-resolved',
+            message: `Playback via ${resolver.name} failed, so the track has been re-resolved with fresh sources. Try playing it again.\n\nIf it keeps failing, use Help › Copy Diagnostic Log and include it when you report the problem.`
           });
         } else {
           // The last source of a fallback chain failed too: stop on the track.
@@ -2523,7 +2541,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         if (autoSkipIfAdvancing('playback error; re-resolved in background')) return;
         showConfirmDialog({
           type: 'error',
-          title: 'Track Re-resolved',
+          title: 'Track re-resolved',
           message: `Playback via ${resolver.name} hit an error (${error?.message || error}), so the track has been re-resolved with fresh sources. Try playing it again.`
         });
       } else {
@@ -3875,7 +3893,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         title: track.title
       });
       if (pool.failed) {
-        showToast('Failed to fetch similar tracks');
+        showToast('Failed to fetch similar tracks', 'error');
         return false;
       }
       const similarTracks = pool.tracks;
@@ -3958,7 +3976,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       return true;
     } catch (error) {
       console.error('Failed to start spinoff:', error);
-      showToast('Failed to fetch similar tracks');
+      showToast('Failed to fetch similar tracks', 'error');
       return false;
     } finally {
       setSpinoffLoading(false);

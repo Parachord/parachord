@@ -23,7 +23,6 @@ const base = {
 
 const render = (release, extra = {}) => renderToStaticMarkup(React.createElement(ReleasePage, {
   release,
-  setShareDropdownOpen: () => {},
   ...extra,
 }));
 
@@ -35,7 +34,7 @@ describe('ReleasePage load error', () => {
     );
     expect(html).toContain('role="alert"');
     expect(html).toContain('Couldn&#x27;t reach MusicBrainz');
-    expect(html).toContain('Try Again');
+    expect(html).toContain('>Try again</button>');
     expect(html).not.toContain('track-skeleton');
     expect(html).not.toContain('animate-shimmer');
     expect(html).not.toContain('Loading...');

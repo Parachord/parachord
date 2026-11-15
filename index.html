@@ -11,11 +11,18 @@
        compiles plugins and calls their init(). Android sets the same global
        to 'android' from its scrobbler-plugin bridge. -->
   <script>window.__parachordClient = 'desktop';</script>
+  <!-- Open in the saved theme: no light flash before React applies it. -->
+  <script>try { if (window.electron && window.electron.theme && window.electron.theme.initial === 'dark') document.documentElement.classList.add('dark'); } catch (e) {}</script>
   <title>Parachord Desktop</title>
   <link rel="stylesheet" href="vendor/tailwind.css">
   <style>
     /* ========== Design Tokens (CSS Custom Properties) ========== */
     :root {
+      /* Native controls (checkboxes, ranges, selects, scrollbars) and inputs
+         with no background follow the theme. Without it they stayed light in
+         dark mode: white Settings fields with near-white text. */
+      color-scheme: light;
+
       /* Backgrounds */
       --bg-primary: #ffffff;
       --bg-secondary: #f9fafb;
@@ -24,8 +31,10 @@
 
       /* Text */
       --text-primary: #111827;
-      --text-secondary: #6b7280;
-      --text-tertiary: #9ca3af;
+      /* Secondary and tertiary both pass 4.5:1 on white and stay two
+         distinct levels (#1383; tertiary was #9ca3af, 2.5:1). */
+      --text-secondary: #4b5563;
+      --text-tertiary: #6b7280;
 
       /* Borders */
       --border-default: #e5e7eb;
@@ -47,10 +56,48 @@
       --accent-primary-alpha-50: rgba(124, 58, 237, 0.50);
       --accent-primary-alpha-60: rgba(124, 58, 237, 0.60);
 
-      /* Semantic */
+      /* Semantic: fills and icons. Each has a dark value under .dark. */
       --success: #10b981;
       --warning: #f59e0b;
       --error: #ef4444;
+      --info: #2563eb;
+      /* Status text on the page background, at least 4.5:1 in each theme. */
+      --text-success: #15803d;
+      --text-warning: #b45309;
+      --text-danger: #b91c1c;
+      --text-info: #1d4ed8;
+      /* A fill that stays the deep accent in both themes, with white text on
+         it (the "fill-accent" convention in home-sections.js and
+         filter-chips.js). --accent-primary turns light purple in dark mode,
+         where white text on it is 2.72:1. */
+      --accent-fill: #7c3aed;
+      --on-accent: #ffffff;
+      /* Text on --accent-secondary (the SHARED badge). */
+      --accent-secondary-fg: #ffffff;
+      /* Status fills with white text on them (toasts, the Home banner, the
+         confirm dialog's button). The same in both themes, each at least
+         4.5:1 with white; not redefined under .dark. */
+      --fill-info: #2563eb;
+      --fill-success: #15803d;
+      --fill-warning: #b45309;
+      --fill-error: #b91c1c;
+      /* The playbar's sliders. The playbar is dark in both themes, so the
+         accent there is the dark-mode accent in both. */
+      --playbar-accent: #a78bfa;
+      --playbar-accent-hover: #c4b5fd;
+      --accent-fill-hover: #6d28d9;
+      --fill-error-hover: #991b1b;
+      /* Controls and lines with a value per theme (redefined under .dark). */
+      --control-off: #d1d5db;
+      /* A switch's knob: white on both the off track and the accent. */
+      --control-knob: #ffffff;
+      /* Large decorative icons in empty states. */
+      --icon-faint: #d1d5db;
+      /* Image placeholders and skeleton bars. */
+      --placeholder-bg: #e5e7eb;
+      --border-strong: #d1d5db;
+      --border-danger: #fecaca;
+      --border-danger-hover: #fca5a5;
 
       /* Shadows */
       --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
@@ -97,43 +144,13 @@
       /* Typography */
       --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
       --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
-      --leading-tight: 1.2;
-      --leading-normal: 1.4;
-      --leading-body: 1.5;
-      --leading-relaxed: 1.6;
-      --tracking-tight: 0.005em;
-      --tracking-normal: 0.02em;
-      --tracking-wide: 0.05em;
-      --tracking-caps: 0.08em;
-      --tracking-display: 0.2em;
-      --tracking-display-wide: 0.3em;
 
-      /* Border radius */
-      --radius-sm: 4px;
-      --radius-md: 6px;
-      --radius-lg: 8px;
-      --radius-xl: 10px;
-      --radius-2xl: 12px;
-      --radius-pill: 16px;
-      --radius-full: 9999px;
-
-      /* Z-index scale */
-      --z-base: 0;
-      --z-raised: 10;
+      /* Z-index: the layers above the page. Dialogs are z-[60]; radius,
+         type and motion are scales the design-drift ratchet enforces
+         (CLAUDE.md "Design system"), not tokens. */
       --z-dropdown: 20;
-      --z-sticky: 30;
-      --z-overlay: 40;
-      --z-modal: 50;
       --z-popover: 9999;
       --z-toast: 99999;
-
-      /* Transitions */
-      --duration-fast: 100ms;
-      --duration-base: 150ms;
-      --duration-slow: 300ms;
-      --ease-default: ease;
-      --ease-out: cubic-bezier(0.4, 0, 0.2, 1);
-      --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
 
       /* Always-dark surfaces (player bar, queue drawer, AI panels) */
       --surface-dark: rgba(31, 41, 55, 0.95);
@@ -141,14 +158,26 @@
       /* Now-playing title and artist while a start is pending (on --surface-dark) */
       --now-playing-pending-base: rgba(255, 255, 255, 0.4);
       --now-playing-pending-highlight: rgba(255, 255, 255, 0.95);
+      /* Secondary and tertiary text ON the always-dark surfaces above (the
+         playbar, the sidebar's on-air pill, the AI panels, the queue drawer).
+         Never the theme's --text-secondary/-tertiary there: those are for
+         light pages in light mode (#4b5563 on #111827 is 2.2:1). White at
+         0.7 is about 7:1 on --surface-dark, 0.55 about 4.8:1. */
+      --on-dark-primary: rgba(255, 255, 255, 0.95);
+      --on-dark-secondary: rgba(255, 255, 255, 0.7);
+      --on-dark-tertiary: rgba(255, 255, 255, 0.55);
       --surface-dark-gradient-from: rgba(17, 24, 39, 0.9);
-      --surface-dark-gradient-to: rgba(17, 24, 39, 0.5);
+      /* 0.85, not 0.5: over a light page the drawer's top was too clear for
+         its text (white at 0.7 fell to 2.5:1). */
+      --surface-dark-gradient-to: rgba(17, 24, 39, 0.85);
       --surface-dark-header: rgba(17, 24, 39, 0.6);
       --surface-dark-border: #374151;
     }
 
     /* Dark theme overrides */
     .dark {
+      color-scheme: dark;
+
       --bg-primary: #161616;
       --bg-secondary: #1e1e1e;
       --bg-elevated: #252525;
@@ -156,7 +185,8 @@
 
       --text-primary: #f3f4f6;
       --text-secondary: #9ca3af;
-      --text-tertiary: #6b7280;
+      /* 5.6:1 on the page, 4.7:1 on cards (was #6b7280, 3.2:1 on cards). */
+      --text-tertiary: #8b8f97;
 
       --border-default: #2e2e2e;
       --border-light: #252525;
@@ -176,6 +206,24 @@
       --accent-primary-alpha-50: rgba(167, 139, 250, 0.50);
       --accent-primary-alpha-60: rgba(167, 139, 250, 0.60);
 
+      --success: #34d399;
+      --warning: #fbbf24;
+      --error: #f87171;
+      --info: #60a5fa;
+      --text-success: #4ade80;
+      --text-warning: #fbbf24;
+      --text-danger: #f87171;
+      --text-info: #93c5fd;
+      /* --accent-fill and --on-accent stay as in :root. */
+      /* 3.1:1 against cards, and the white knob is 5:1 on it. */
+      --control-off: #707070;
+      --icon-faint: #4b5563;
+      --placeholder-bg: #383838;
+      --border-strong: #404040;
+      --border-danger: rgba(248, 113, 113, 0.35);
+      --border-danger-hover: rgba(248, 113, 113, 0.55);
+      --accent-secondary-fg: #1e1b4b;
+
       --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
       --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.4);
       --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.5);
@@ -184,9 +232,9 @@
       --card-border: #2e2e2e;
       --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.2), 0 4px 12px rgba(0, 0, 0, 0.15);
 
-      --scrollbar-track: rgba(255, 255, 255, 0.05);
-      --scrollbar-thumb: rgba(255, 255, 255, 0.15);
-      --scrollbar-thumb-hover: rgba(255, 255, 255, 0.25);
+      --scrollbar-track: rgba(255, 255, 255, 0.04);
+      --scrollbar-thumb: rgba(255, 255, 255, 0.22);
+      --scrollbar-thumb-hover: rgba(255, 255, 255, 0.35);
 
       --shimmer-from: #252525;
       --shimmer-via: #2e2e2e;
@@ -216,6 +264,9 @@
       --surface-dark-solid: rgba(38, 38, 38, 0.98);
       --now-playing-pending-base: rgba(255, 255, 255, 0.35);
       --now-playing-pending-highlight: rgba(255, 255, 255, 0.9);
+      --on-dark-primary: rgba(255, 255, 255, 0.95);
+      --on-dark-secondary: rgba(255, 255, 255, 0.7);
+      --on-dark-tertiary: rgba(255, 255, 255, 0.55);
       --surface-dark-gradient-from: rgba(38, 38, 38, 0.95);
       --surface-dark-gradient-to: rgba(38, 38, 38, 0.85);
       --surface-dark-header: rgba(42, 42, 42, 0.95);
@@ -244,48 +295,33 @@
     /* Tailwind dark mode overrides */
     .dark .text-gray-900 { color: var(--text-primary) !important; }
     .dark .text-gray-800 { color: var(--text-primary) !important; }
-    .dark .text-gray-700 { color: var(--text-secondary) !important; }
-    .dark .text-gray-600 { color: var(--text-secondary) !important; }
     .dark .text-gray-500 { color: var(--text-tertiary) !important; }
     .dark .text-gray-400 { color: var(--text-tertiary) !important; }
     .dark .bg-white { background-color: var(--bg-elevated) !important; }
-    .dark .bg-gray-50 { background-color: var(--bg-secondary) !important; }
+    /* A page's body: the page colour in both themes (white / #161616), so
+       cards (bg-white → --bg-elevated in dark) keep their edges. Page bodies
+       used bg-white, which put every page but Home on the card colour. */
+    .page-bg { background-color: var(--bg-primary); }
+    /* Anything given role="button" shows where keyboard focus is. The
+       renderer has none left (they became <button>s and CardButton). */
+    [role="button"]:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
+    /* The shared Modal (components/modal.js): one scrim, one entrance. */
+    .modal-scrim { background-color: rgba(0, 0, 0, 0.45); backdrop-filter: blur(4px); animation: modalScrimIn 150ms ease-out; }
+    .modal-panel { animation: modalPanelIn 150ms cubic-bezier(0, 0, 0.2, 1); }
+    @keyframes modalScrimIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes modalPanelIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+    @media (prefers-reduced-motion: reduce) { .modal-scrim, .modal-panel { animation: none; } }
+    /* Toasts (components/toast.js) rise in. */
+    .toast-enter { animation: toastIn 150ms cubic-bezier(0, 0, 0.2, 1); }
+    @keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+    @media (prefers-reduced-motion: reduce) { .toast-enter { animation: none; } }
     .dark .bg-gray-100 { background-color: var(--bg-inset) !important; }
-    .dark .bg-gray-200 { background-color: #383838 !important; }
-    .dark .bg-gray-300 { background-color: #444444 !important; }
-    .dark .bg-gray-800 { background-color: #252525 !important; }
-    .dark .border-gray-200 { border-color: var(--border-default) !important; }
-    .dark .border-gray-300 { border-color: var(--border-default) !important; }
-    .dark .border-gray-100 { border-color: var(--border-light) !important; }
     .dark .shadow-sm { box-shadow: var(--shadow-sm) !important; }
     .dark .shadow-md { box-shadow: var(--shadow-md) !important; }
     .dark .shadow-lg { box-shadow: var(--shadow-lg) !important; }
-    .dark .hover\:bg-gray-200:hover { background-color: rgba(255, 255, 255, 0.1) !important; }
-    .dark .hover\:bg-gray-50\/80:hover { background-color: rgba(255, 255, 255, 0.06) !important; }
     .dark .hover\:bg-gray-100:hover { background-color: rgba(255, 255, 255, 0.08) !important; }
     .dark .hover\:bg-gray-50:hover { background-color: rgba(255, 255, 255, 0.05) !important; }
-    .dark .divide-gray-100 > :not(:last-child) { border-color: var(--border-light) !important; }
-    .dark .bg-purple-50 { background-color: rgba(139, 92, 246, 0.1) !important; }
-    .dark .bg-purple-100 { background-color: rgba(139, 92, 246, 0.15) !important; }
     .dark .text-purple-600 { color: #a78bfa !important; }
-    .dark .text-purple-700 { color: #c4b5fd !important; }
-    .dark .hover\:bg-purple-50:hover { background-color: rgba(139, 92, 246, 0.12) !important; }
-    .dark .hover\:bg-purple-50\/80:hover { background-color: rgba(139, 92, 246, 0.1) !important; }
-    .dark .hover\:bg-purple-100:hover { background-color: rgba(139, 92, 246, 0.2) !important; }
-    .dark .divide-gray-200 > :not(:last-child) { border-color: var(--border-default) !important; }
-    .dark .placeholder-gray-400::placeholder { color: var(--text-tertiary) !important; }
-    .dark .bg-violet-50 { background-color: rgba(139, 92, 246, 0.1) !important; }
-    .dark .bg-violet-100 { background-color: rgba(139, 92, 246, 0.15) !important; }
-    .dark .text-violet-500 { color: #a78bfa !important; }
-    .dark .text-violet-600 { color: #a78bfa !important; }
-    .dark .border-violet-100 { border-color: rgba(139, 92, 246, 0.2) !important; }
-    .dark .border-violet-200 { border-color: rgba(139, 92, 246, 0.25) !important; }
-    .dark .border-violet-300 { border-color: rgba(139, 92, 246, 0.3) !important; }
-    .dark .hover\:border-violet-200:hover { border-color: rgba(139, 92, 246, 0.3) !important; }
-    .dark .hover\:bg-violet-50:hover { background-color: rgba(139, 92, 246, 0.12) !important; }
-    .dark .hover\:text-violet-600:hover { color: #a78bfa !important; }
-    .dark .hover\:text-gray-700:hover { color: var(--text-primary) !important; }
-    .dark .hover\:text-gray-600:hover { color: var(--text-secondary) !important; }
 
     /* ========== End Design Tokens ========== */
 
@@ -319,6 +355,11 @@
     :focus:not(:focus-visible) {
       outline: none;
     }
+    /* On the always-dark surfaces (.on-dark: the playbar, the queue drawer,
+       the AI prompt and chat panel) the accent ring is hard to see in light
+       mode (#7c3aed on #1f2937); they get a light ring instead. */
+    .on-dark :focus-visible,
+    .on-dark .card-button-hit:focus-visible { outline-color: rgba(255, 255, 255, 0.85); }
 
     input:focus-visible,
     textarea:focus-visible,
@@ -351,23 +392,24 @@
       -webkit-app-region: no-drag;
     }
 
-    /* Scrollbar styling - light theme */
+    /* Page scrollbars follow the theme (--scrollbar-*). They were black at
+       15% in both themes, nearly invisible on dark pages. */
     .scrollable-content::-webkit-scrollbar {
       width: 12px;
     }
 
     .scrollable-content::-webkit-scrollbar-track {
-      background: rgba(0, 0, 0, 0.03);
+      background: var(--scrollbar-track);
       border-radius: 10px;
     }
 
     .scrollable-content::-webkit-scrollbar-thumb {
-      background: rgba(0, 0, 0, 0.15);
+      background: var(--scrollbar-thumb);
       border-radius: 10px;
     }
 
     .scrollable-content::-webkit-scrollbar-thumb:hover {
-      background: rgba(0, 0, 0, 0.25);
+      background: var(--scrollbar-thumb-hover);
     }
 
     /* Scrollbar styling - dark theme (for queue drawer) */
@@ -424,37 +466,6 @@
       animation: spin 1s linear infinite;
     }
 
-    @keyframes spin-reverse {
-      to { transform: rotate(-360deg); }
-    }
-
-    .animate-spin-reverse {
-      animation: spin-reverse 1s linear infinite;
-    }
-
-    /* App loading screen - Wordmark reveal animation */
-    @keyframes loadingFadeInUp {
-      from {
-        opacity: 0;
-        transform: translateY(12px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
-    @keyframes loadingDotPulse {
-      0%, 100% {
-        opacity: 0.3;
-        transform: scale(0.8);
-      }
-      50% {
-        opacity: 1;
-        transform: scale(1);
-      }
-    }
-
     .loading-screen {
       background: radial-gradient(circle at center, #ffffff 0%, #f9fafb 70%, #f3f4f6 100%);
     }
@@ -462,38 +473,6 @@
     .dark .loading-screen {
       background: radial-gradient(circle at center, #1a1a1a 0%, #141414 70%, #111111 100%);
     }
-
-    .dark .loading-dot {
-      background-color: #9ca3af;
-    }
-
-    /* Splash wordmark text color is hardcoded to dark navy in markup so
-       the light-mode path needs no extra rule. The dark-mode override
-       switches it to white (parachord#878). */
-    .dark .loading-wordmark-text {
-      color: #f9fafb !important;
-    }
-
-    .loading-wordmark {
-      animation: loadingFadeInUp 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-    }
-
-    .loading-wordmark svg {
-      display: block;
-    }
-
-    /* Loading dots — retained as a fallback CSS class but not used by the
-       current splash markup. The wordmark itself carries the motion now. */
-    .loading-dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background-color: #6b7280;
-    }
-
-    .loading-dot:nth-child(1) { animation: loadingDotPulse 1.4s ease-in-out infinite; }
-    .loading-dot:nth-child(2) { animation: loadingDotPulse 1.4s ease-in-out 0.15s infinite; }
-    .loading-dot:nth-child(3) { animation: loadingDotPulse 1.4s ease-in-out 0.3s infinite; }
 
     /* Wordmark animation (parachord#878). True per-letter pop-in using the
        inline SVG wordmark (paths grouped by letter via <g class="letter-N">).
@@ -683,14 +662,18 @@
       animation-play-state: paused;
     }
 
-    /* Queue track drop animation - track slides down into player */
+    /* Queue track drop animation - track slides down into player.
+       Both queue keyframes animate `translate`, not `transform`: a virtual
+       row is positioned with an inline transform: translateY(start), and an
+       animated transform replaced it, so the row jumped to the top of the
+       list while it animated (audit bug 13). `translate` stacks on top. */
     @keyframes queue-track-drop {
       0% {
-        transform: translateY(0);
+        translate: 0 0;
         opacity: 1;
       }
       100% {
-        transform: translateY(40px);
+        translate: 0 40px;
         opacity: 0;
       }
     }
@@ -703,19 +686,19 @@
     /* Queue track insert animation - track slides in from top with glow */
     @keyframes queue-track-insert {
       0% {
-        transform: translateY(-20px);
+        translate: 0 -20px;
         opacity: 0;
         background-color: rgba(168, 85, 247, 0.6);
         box-shadow: 0 0 20px rgba(168, 85, 247, 0.8), inset 0 0 20px rgba(168, 85, 247, 0.3);
       }
       50% {
-        transform: translateY(0);
+        translate: 0 0;
         opacity: 1;
         background-color: rgba(168, 85, 247, 0.5);
         box-shadow: 0 0 15px rgba(168, 85, 247, 0.6), inset 0 0 15px rgba(168, 85, 247, 0.2);
       }
       100% {
-        transform: translateY(0);
+        translate: 0 0;
         opacity: 1;
         background-color: transparent;
         box-shadow: none;
@@ -738,138 +721,97 @@
       to { transform: translateX(100%); }
     }
 
-    /* Tooltip styling */
+    /* Tooltip (src/renderer/components/ui-atoms.js). The trigger wrapper is
+       .tooltip-container; the tip is portalled to <body> as .tooltip-panel and
+       placed by placeTooltip, so no overflow:hidden parent clips it. */
+
+    /* Scroll edge: a page's scroll area (.scroll-edge) is marked
+       data-scrolled once it scrolls (one capture listener in app.js, no
+       re-render). A zero-height sticky marker at its top then casts a soft
+       shadow over what scrolls beneath the hero, toolbar or sticky bar above,
+       so content never runs into a hard edge (the artist biography did). */
+    .scroll-edge::before {
+      content: ''; display: block; position: sticky; height: 0; z-index: 30;
+      /* The area's own padding (set by the listener): a sticky element stays
+         inside it, so these pull the marker to the true top and sides. */
+      top: calc(-1 * var(--edge-top, 0px));
+      margin-left: calc(-1 * var(--edge-left, 0px)); margin-right: calc(-1 * var(--edge-right, 0px));
+      pointer-events: none; box-shadow: none; transition: box-shadow 200ms ease;
+    }
+    .scroll-edge[data-scrolled]::before { box-shadow: 0 0 14px 6px rgba(0, 0, 0, 0.18); }
+
+    /* The artist page bio's social links: hover in CSS, not JS. */
+    .social-link { background-color: var(--placeholder-bg-light); transition: background-color 150ms ease; }
+    .social-link:hover, .social-link:focus-visible { background-color: var(--placeholder-bg); }
+
+    /* Card grids (#1389): as many columns as the CONTENT area holds, never
+       a column count from the window width (md:/lg:/xl: measure the
+       window; at the 1000px minimum window the content is 744px). 180px
+       keeps 3 columns at the minimum and 5 on a typical laptop; the grid's
+       own gap class sets the spacing. Skeleton grids use the same class. */
+    .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
+    /* Plug-in tiles (ResolverCard, 120px): narrower columns than album cards,
+       or a 120px tile sits alone in a 180px+ cell (#1389 made them 3 wide). */
+    .tile-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); justify-items: center; }
+    /* Collapsed page headers (#1389): the title, the tabs and the actions
+       share one row. On a narrow window the title truncates and the tabs
+       scroll sideways; buttons keep their size. */
+    .hero-bar > * { flex-shrink: 0; }
+    .hero-bar > h1, .hero-bar > h2 { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .hero-bar > .truncate, .hero-bar > .hero-bar-title { flex-shrink: 1; min-width: 0; }
+    .hero-bar-title > h1 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .hero-bar > [role="tablist"], .hero-bar > div:has([role="tablist"]) { flex-shrink: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+    .hero-bar > [role="tablist"]::-webkit-scrollbar, .hero-bar > div:has([role="tablist"])::-webkit-scrollbar { display: none; }
+    .hero-bar [role="tab"] { white-space: nowrap; flex-shrink: 0; }
+    /* Page hero titles (#1389): 48px, scaled down with the content area
+       (the window less the 256px sidebar) so a long uppercase title fits at
+       the 1000px minimum (744px of content: about 41px), never below 28. */
+    .hero-title { font-size: clamp(28px, calc((100vw - 256px) * 0.055), 48px); line-height: 1; }
+
+    /* CardButton (components/card-button.js): the card's main action is a
+       button stretched over it; its own actions (.card-actions) sit above
+       and show on hover or keyboard focus, passing clicks through when
+       hidden; .card-zoom is the cover's hover zoom. */
+    .card-button-hit {
+      position: absolute; inset: 0; z-index: 1; margin: 0; padding: 0;
+      border: 0; background: transparent; cursor: pointer; border-radius: inherit;
+    }
+    .card-button-hit:focus { outline: none; }
+    .card-button-hit:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: -2px; }
+    .card-button .card-actions { z-index: 2; opacity: 0; pointer-events: none; transition: opacity 200ms ease; }
+    /* A link in a card's text (an album card's artist): always shown, above the stretched button. */
+    .card-button .card-link { position: relative; z-index: 2; }
+    .card-button .card-actions button { pointer-events: none; }
+    .card-button:hover .card-actions,
+    .card-button:has(:focus-visible) .card-actions { opacity: 1; }
+    .card-button:hover .card-actions button,
+    .card-button:has(:focus-visible) .card-actions button { pointer-events: auto; }
+    /* The row's More button (CardButton's more prop) always takes the pointer:
+       the pointer can only be over it while it's over the row, which shows
+       it. Waiting for :hover to switch pointer-events on lost the click (the
+       press could start on it and end on the stretched button below). */
+    .card-button .card-actions.card-more,
+    .card-button .card-actions.card-more button { pointer-events: auto; }
+    /* The card's own buttons and links sit above the stretched one. Zero
+       specificity, so an element's own position (absolute) still wins. */
+    /* Also form fields (a row's inline text field), small icons that carry
+       their own tooltip, and handles marked .card-above (the queue drawer's
+       resize grip): under the stretched button they'd get no clicks or hover. */
+    :where(.card-button) :where(button, a, input, select, textarea, label, [data-tooltip], .card-above):not(:where(.card-button-hit)) { position: relative; z-index: 2; }
+    /* A part shown on hover (group-hover:opacity-100) also shows on keyboard focus. */
+    .card-button:has(:focus-visible) .card-reveal { opacity: 1; }
+    .card-button .card-zoom { transition: transform 300ms ease, opacity 300ms ease; }
+    .card-button:hover .card-zoom { transform: scale(1.05); }
+
+    /* Menu items (components/menu.js): the dark menu panel's rows. */
+    .menu-item { background: transparent; color: var(--tooltip-text); }
+    .menu-item:hover, .menu-item:focus { background: var(--tooltip-hover); outline: none; }
+    .menu-item:focus-visible { box-shadow: inset 0 0 0 2px var(--accent-primary); }
+
     .tooltip-container {
       position: relative;
       display: inline-flex;
     }
-
-    .tooltip-content {
-      position: absolute;
-      z-index: 9999;
-      padding: 8px 12px;
-      font-size: 12px;
-      font-weight: 500;
-      color: var(--tooltip-text);
-      background-color: var(--tooltip-bg);
-      border: 1px solid var(--tooltip-border);
-      border-radius: 8px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15), 0 2px 4px rgba(0, 0, 0, 0.1);
-      white-space: nowrap;
-      pointer-events: none;
-      opacity: 0;
-      transform: translateY(4px);
-      transition: opacity 150ms ease, transform 150ms ease;
-    }
-
-    .tooltip-container:hover .tooltip-content {
-      opacity: 1;
-      transform: translateY(0);
-    }
-
-    /* Tooltip arrow */
-    .tooltip-content::before {
-      content: '';
-      position: absolute;
-      width: 8px;
-      height: 8px;
-      background-color: var(--tooltip-bg);
-      transform: rotate(45deg);
-    }
-
-    /* Tooltip positions */
-    .tooltip-top {
-      bottom: calc(100% + 8px);
-      left: 50%;
-      transform: translateX(-50%) translateY(4px);
-    }
-
-    .tooltip-top::before {
-      bottom: -4px;
-      left: 50%;
-      transform: translateX(-50%) rotate(45deg);
-    }
-
-    .tooltip-container:hover .tooltip-top {
-      transform: translateX(-50%) translateY(0);
-    }
-
-    /* Top-end: right-aligned to prevent overflow at right edge of window */
-    .tooltip-top-end {
-      bottom: calc(100% + 8px);
-      right: 0;
-      transform: translateY(4px);
-    }
-
-    .tooltip-top-end::before {
-      bottom: -4px;
-      right: 12px;
-      transform: rotate(45deg);
-    }
-
-    .tooltip-container:hover .tooltip-top-end {
-      transform: translateY(0);
-    }
-
-    .tooltip-bottom {
-      top: calc(100% + 8px);
-      left: 50%;
-      transform: translateX(-50%) translateY(-4px);
-    }
-
-    .tooltip-bottom::before {
-      top: -4px;
-      left: 50%;
-      transform: translateX(-50%) rotate(45deg);
-    }
-
-    .tooltip-container:hover .tooltip-bottom {
-      transform: translateX(-50%) translateY(0);
-    }
-
-    .tooltip-left {
-      right: calc(100% + 8px);
-      top: 50%;
-      transform: translateY(-50%) translateX(4px);
-    }
-
-    .tooltip-left::before {
-      right: -4px;
-      top: 50%;
-      transform: translateY(-50%) rotate(45deg);
-    }
-
-    .tooltip-container:hover .tooltip-left {
-      transform: translateY(-50%) translateX(0);
-    }
-
-    .tooltip-right {
-      left: calc(100% + 8px);
-      top: 50%;
-      transform: translateY(-50%) translateX(-4px);
-    }
-
-    .tooltip-right::before {
-      left: -4px;
-      top: 50%;
-      transform: translateY(-50%) rotate(45deg);
-    }
-
-    .tooltip-container:hover .tooltip-right {
-      transform: translateY(-50%) translateX(0);
-    }
-
-    /* Dark theme tooltip variant */
-    .tooltip-dark .tooltip-content {
-      background-color: rgba(255, 255, 255, 0.95);
-      color: #1f2937;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
-    }
-
-    .tooltip-dark .tooltip-content::before {
-      background-color: rgba(255, 255, 255, 0.95);
-    }
-
 
     /* Tooltip around text that must still truncate (playbar title). The
        container is inline-flex, which sizes to its content, so without a
@@ -879,15 +821,53 @@
       min-width: 0;
     }
 
-    /* Bio tooltip - allows text wrapping for longer content */
-    .tooltip-bio .tooltip-content {
-      white-space: normal;
-      max-width: 480px;
+    .tooltip-panel {
+      position: fixed;
+      z-index: 99999;
+      max-width: 320px;
+      padding: 8px 12px;
+      font-size: 12px;
+      font-weight: 500;
+      line-height: 1.4;
+      color: var(--tooltip-text);
+      background-color: var(--tooltip-bg);
+      border: 1px solid var(--tooltip-border);
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15), 0 2px 4px rgba(0, 0, 0, 0.1);
+      pointer-events: none;
+      animation: tooltip-in 150ms ease-out;
+    }
+    @keyframes tooltip-in {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    @media (prefers-reduced-motion: reduce) { .tooltip-panel { animation: none; } }
+
+    /* On the always-dark surfaces (playbar, queue) the tip keeps the
+       standard dark look, with an outline so it doesn't merge into them. */
+    .tooltip-panel.tooltip-on-dark {
+      border-color: rgba(255, 255, 255, 0.14);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    }
+
+    /* A card's explanation (FixedTooltip): wraps, a little roomier. */
+    .tooltip-panel.tooltip-note {
+      min-width: 180px;
+      max-width: 280px;
+      padding: 10px 14px;
+      font-weight: 400;
+      line-height: 1.5;
+    }
+
+    /* Bio tooltip: long text that wraps. */
+    .tooltip-panel.tooltip-wrap {
       min-width: 300px;
-      text-align: left;
-      line-height: 1.6;
+      max-width: 480px;
       padding: 12px 16px;
       font-size: 13px;
+      font-weight: 400;
+      line-height: 1.6;
+      text-align: left;
     }
 
     /* Progress slider styling */
@@ -909,14 +889,14 @@
       width: 12px;
       height: 12px;
       border-radius: 50%;
-      background: #3b82f6;
+      background: var(--playbar-accent);
       margin-top: -4px;
       cursor: pointer;
       transition: background-color 0.15s ease;
     }
 
     .progress-slider:hover::-webkit-slider-thumb {
-      background: #60a5fa;
+      background: var(--playbar-accent-hover);
     }
 
     .progress-slider:disabled::-webkit-slider-thumb {
@@ -947,13 +927,13 @@
       width: 12px;
       height: 12px;
       border-radius: 50%;
-      background: #3b82f6;
+      background: var(--playbar-accent);
       margin-top: -4px;
       cursor: pointer;
     }
 
     .volume-slider:hover::-webkit-slider-thumb {
-      background: #60a5fa;
+      background: var(--playbar-accent-hover);
     }
 
     .volume-slider.disabled::-webkit-slider-thumb {
@@ -965,7 +945,9 @@
       background: #374151;
     }
 
-    /* Release card hover lift animation */
+    /* Release card hover lift animation. The hover shadow is !important
+       because cards set their resting shadow inline (var(--card-shadow)),
+       which otherwise wins. */
     .release-card {
       transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1),
                   box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1);
@@ -974,7 +956,7 @@
     .release-card:hover {
       transform: translateY(-6px);
       box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.15),
-                  0 8px 16px -8px rgba(0, 0, 0, 0.1);
+                  0 8px 16px -8px rgba(0, 0, 0, 0.1) !important;
     }
 
     .release-card:active {
@@ -1019,9 +1001,20 @@
       }
     }
 
+    /* `backwards`, not `forwards`: the from-state (hidden, 12px down) covers
+       the stagger delay, and the card is released when the animation ends.
+       With `forwards` the finished animation kept holding `transform`, which
+       beats every normal rule, so .release-card:hover could never lift the
+       card (design audit bug 12). */
     .card-fade-up {
-      animation: cardFadeUp 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-      opacity: 0;
+      animation: cardFadeUp 0.4s cubic-bezier(0.4, 0, 0.2, 1) backwards;
+    }
+
+    /* Concert rows (Concerts page, artist On Tour) stagger in with this. It
+       was referenced but never defined, so they appeared all at once. */
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
     }
 
     /* Release type badge styling */
@@ -1070,24 +1063,28 @@
       animation: friendMoved 0.4s ease-out forwards;
     }
 
-    /* Friend on-air status change animation */
-    @keyframes friendStatusChange {
-      0% {
-        transform: translateY(0);
+    /* Reduced motion (#1386), one block for the whole app. With the system
+       setting on, animations and transitions finish at once: no shimmer
+       sweep, pulse, marquee, fade-up or hero transition, and no hover zoom.
+       Spinners keep turning (they say something is loading); entrance
+       animations end at their final, visible state. */
+    @media (prefers-reduced-motion: reduce) {
+      *:not(.animate-spin):not([data-icon="Spinner"]),
+      *:not(.animate-spin)::before,
+      *:not(.animate-spin)::after {
+        animation-duration: 0.01ms !important;
+        animation-delay: 0ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        transition-delay: 0ms !important;
+        scroll-behavior: auto !important;
       }
-      25% {
-        transform: translateY(-2px);
-      }
-      75% {
-        transform: translateY(2px);
-      }
-      100% {
-        transform: translateY(0);
-      }
-    }
-
-    .friend-status-change {
-      animation: friendStatusChange 0.3s ease-in-out forwards;
+      .card-fade-up, .now-playing-pending { opacity: 1 !important; transform: none !important; }
+      .animate-shimmer, .animate-marquee { animation: none !important; }
+      .card-button:hover .card-zoom,
+      [class*="hover:scale-"]:hover,
+      [class*="group-hover:scale-"],
+      [class*="group-hover/art:scale-"] { transform: none !important; }
     }
   </style>
 </head>
@@ -1147,7 +1144,26 @@
           <path d="M1039.72 33.8887C1042.39 35.348 1042.43 39.1612 1039.8 40.6846L984.893 72.4893C982.313 73.9831 979.08 72.1478 979.039 69.167L978.192 6.85254C978.152 3.86673 981.345 1.94449 983.965 3.37793L1039.72 33.8887Z" fill="#E12949" stroke="white" stroke-width="0.2"/>
         </g>
     </svg>
+    <!-- Shown by the watchdog below if the app never finishes loading. -->
+    <div id="parachord-splash-stuck" role="alert" style="position:absolute;left:0;right:0;bottom:15%;display:none;flex-direction:column;align-items:center;gap:12px;font-size:13px;color:var(--text-secondary);">
+      <span>Parachord is taking longer than usual to start.</span>
+      <button type="button" onclick="location.reload()" style="font:inherit;font-weight:500;padding:8px 16px;border-radius:8px;border:1px solid var(--border-default);background:var(--card-bg);color:var(--text-primary);cursor:pointer;">Reload</button>
+    </div>
   </div>
+  <!--
+    Splash watchdog. The app removes the splash once its saved data has
+    loaded; if the renderer script fails before that, nothing ever did, and
+    the wordmark pulsed forever. After 20 seconds with the splash still up,
+    say so and offer Reload. Plain script, so it runs even when the app
+    bundle does not.
+  -->
+  <script>
+    setTimeout(function () {
+      var splash = document.getElementById('parachord-splash');
+      var stuck = document.getElementById('parachord-splash-stuck');
+      if (splash && stuck && !splash.classList.contains('fade-out')) stuck.style.display = 'flex';
+    }, 20000);
+  </script>
 
   <!-- React mount point. Splash overlay above (#parachord-splash) covers
        any partial paint until the Parachord component removes it. -->

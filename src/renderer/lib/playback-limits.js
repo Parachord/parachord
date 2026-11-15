@@ -53,7 +53,7 @@ function appleMusicPlaybackLimit({ checked, connected }) {
     blocked: true,
     planKey: 'signed-out',
     label: 'Not connected',
-    message: "Apple Music isn't signed in, so Parachord won't play from it. Connect it in Settings → Apple Music.",
+    message: "Apple Music isn't signed in, so Parachord won't play from it. Connect it in Settings › Plug-Ins › Apple Music.",
     searchesHeldBack: false
   };
 }

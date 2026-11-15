@@ -168,7 +168,7 @@ describe('handlePlay on a row marked no match', () => {
 
     expect(resolver.search).toHaveBeenCalled();
     expect(queueTrackSources).toHaveBeenCalledWith('t1', expect.objectContaining({ testres: expect.anything() }), expect.anything());
-    expect(titles(showConfirmDialog)).not.toContain('No Enabled Source');
+    expect(titles(showConfirmDialog)).not.toContain('No enabled source');
   });
 
   test('says no source was found, not that the settings are wrong, when nothing matches', async () => {
@@ -177,7 +177,7 @@ describe('handlePlay on a row marked no match', () => {
 
     await handlePlay(track({ __noMatchAll: true })).catch(() => {});
 
-    expect(titles(showConfirmDialog)).toEqual(['No Source Found']);
+    expect(titles(showConfirmDialog)).toEqual(['No source found']);
   });
 
   // #1295: the failed track stays in the playbar, paused, for Play to load

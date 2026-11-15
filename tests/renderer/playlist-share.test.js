@@ -46,8 +46,11 @@ describe('wiring', () => {
 
   test('the playlist page Share button and the context menu pass the playlist id', () => {
     const page = read('src/renderer/components/playlist-view-page.js');
-    const i = page.indexOf('publishCollectionSmartLink(collectionData)');
-    expect(page.slice(i - 900, i)).toMatch(/playlistId: selectedPlaylist\.id/);
+    // Copy link and View on Achordion build the same summary (playlistLink).
+    const i = page.indexOf('const playlistLink = () => ({');
+    expect(i).toBeGreaterThan(-1);
+    expect(page.slice(i, i + 300)).toMatch(/playlistId: selectedPlaylist\.id/);
+    expect(page).toContain('onSelect: () => publishCollectionSmartLink(playlistLink()),');
     const main = read('main.js');
     const j = main.indexOf("action: 'publish-collection-smart-link'");
     expect(main.slice(j - 1600, j)).toMatch(/playlistId: isPlaylist \? \(data\.playlistId \|\| null\) : undefined/);
@@ -116,7 +119,7 @@ describe('playlistShareTarget', () => {
     const onConfirm = prompt.indexOf('onConfirm:');
     expect(onConfirm).toBeGreaterThan(-1);
     expect(prompt.indexOf('setPlaylistPublic')).toBeGreaterThan(onConfirm);
-    expect(prompt).toContain("actionButton: { label: 'Cancel' }");
+    expect(prompt).toContain("cancelLabel: 'Cancel'");
     // Clicking outside the dialog must not count as saying yes.
     const dialog = app.indexOf('confirmDialog.show && React.createElement');
     const backdrop = app.slice(dialog, app.indexOf('e.stopPropagation()', dialog));

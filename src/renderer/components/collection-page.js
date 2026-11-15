@@ -15,15 +15,28 @@
 // The body is the original render expression, unchanged: it reads its inputs
 // from props under their old names.
 
+const Icons = require('./icons');
+const { CardButton } = require('./card-button');
+const { EmptyState, ErrorState } = require('./states');
+const { SortMenu } = require('./sort-menu');
+const { Menu } = require('./menu');
+const { HeroTabs } = require('./hero-tabs');
 const { VirtualizedTrackList } = require('./track-lists');
 const { sourceRowState } = require('../lib/visible-sources');
+const { slug } = require('../lib/track-slug');
+const { artistMenu } = require('../lib/item-menus');
 const { trackDurationLabel } = require('../lib/track-duration');
 const { ResolverIcon } = require('./ui-atoms');
-const { CollectionArtistCard, CollectionAlbumCard } = require('./cards');
+const { PlayTop10Icon } = require('./cards');
+const { AlbumCard } = require('./album-card');
+const { ArtistCard } = require('./artist-card');
+const { ListenerCard } = require('./listener-card');
+const { countOf } = require('../lib/plural');
 
 // Plain functions from Parachord, passed as stable wrappers.
 const COLLECTION_PAGE_HANDLERS = [
   'addToQueue',
+  'albumCardActions',
   'copyParachordLink',
   'fetchArtistData',
   'getAlbumArt',
@@ -38,6 +51,8 @@ const COLLECTION_PAGE_HANDLERS = [
   'navigateToFriend',
   'openChartsAlbum',
   'openSyncSetupModal',
+  'playArtistTopTracks',
+  'playListenerTopTracks',
   'setQueueWithContext',
   'syncFriendsFromServices',
 ];
@@ -46,6 +61,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
   const {
     activeResolvers,
     addToQueue,
+    albumCardActions,
     allResolvers,
     autoPinnedFriendIds,
     collectionData,
@@ -57,7 +73,6 @@ const CollectionPage = React.memo(function CollectionPage(props) {
     collectionSearchOpen,
     collectionSongsSorted,
     collectionSort,
-    collectionSortDropdownOpen,
     collectionTab,
     collectionTrackRowRefs,
     copyParachordLink,
@@ -81,6 +96,8 @@ const CollectionPage = React.memo(function CollectionPage(props) {
     libraryLoading,
     metaServiceConfigs,
     navigateToFriend,
+    playArtistTopTracks,
+    playListenerTopTracks,
     openChartsAlbum,
     openSyncSetupModal,
     pinnedFriendIds,
@@ -93,17 +110,14 @@ const CollectionPage = React.memo(function CollectionPage(props) {
     setCollectionSearch,
     setCollectionSearchOpen,
     setCollectionSort,
-    setCollectionSortDropdownOpen,
     setCollectionTab,
     setDraggingTrackForPlaylist,
     setQueueWithContext,
-    setSyncMenuOpen,
     setSyncStatusModal,
     setTrackLoading,
     showToast,
     sortCollectionItems,
     syncFriendsFromServices,
-    syncMenuOpen,
     syncProviderConfig,
     syncStatus,
     trackSources,
@@ -126,7 +140,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
           },
               // Gradient background
               React.createElement('div', {
-                className: 'absolute inset-0 bg-gradient-to-br from-cyan-500 via-cyan-600 to-blue-700'
+                className: `absolute inset-0 ${require('../lib/page-colors').PAGE_COLORS.library.hero}`
               }),
               // Vinyl pattern overlay
               React.createElement('div', {
@@ -146,7 +160,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
             },
                 // Title
                 React.createElement('h1', {
-                  className: 'text-5xl font-light text-white',
+                  className: 'hero-title font-light text-white',
                   style: {
                     textShadow: '0 2px 20px rgba(0,0,0,0.5)',
                     letterSpacing: '0.3em',
@@ -159,29 +173,15 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                   className: 'flex items-center gap-1 mt-6',
                   style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
                 },
-                  [
-                    { key: 'artists', label: collectionLoading ? null : `${collectionData.artists.length} Artists`, staticLabel: 'Artists' },
-                    { key: 'albums', label: collectionLoading ? null : `${collectionData.albums.length} Albums`, staticLabel: 'Albums' },
-                    { key: 'tracks', label: collectionLoading ? null : `${library.length + collectionData.tracks.length} Songs`, staticLabel: 'Songs' },
-                    { key: 'friends', label: `${friends.length} Friends`, staticLabel: 'Friends' }
-                  ].map((tab, index) => [
-                    index > 0 && React.createElement('span', {
-                      key: `sep-expanded-${tab.key}`,
-                      className: 'text-white/50 mx-2'
-                    }, '|'),
-                    React.createElement('button', {
-                      key: `expanded-${tab.key}`,
-                      onClick: () => setCollectionTab(tab.key),
-                      className: `px-2 py-1 text-sm font-medium uppercase tracking-wider transition-colors no-drag ${
-                        collectionTab === tab.key
-                          ? 'text-white'
-                          : 'text-white/60 hover:text-white'
-                      }`
-                    }, tab.label !== null ? tab.label : React.createElement('span', { className: 'flex items-center gap-1' },
+                  React.createElement(HeroTabs, { items: [
+                    { key: 'artists', label: collectionLoading ? null : countOf(collectionData.artists.length, 'Artist'), staticLabel: 'Artists' },
+                    { key: 'albums', label: collectionLoading ? null : countOf(collectionData.albums.length, 'Album'), staticLabel: 'Albums' },
+                    { key: 'tracks', label: collectionLoading ? null : countOf(library.length + collectionData.tracks.length, 'Track'), staticLabel: 'Tracks' },
+                    { key: 'friends', label: countOf(friends.length, 'Friend'), staticLabel: 'Friends' }
+                  ], isSelected: (tab) => collectionTab === tab.key, onSelect: (tab) => { setCollectionTab(tab.key); }, renderLabel: (tab) => tab.label !== null ? tab.label : React.createElement('span', { className: 'flex items-center gap-1' },
                       React.createElement('span', { className: 'inline-block w-6 h-4 bg-white/30 rounded animate-pulse' }),
                       tab.staticLabel
-                    ))
-                  ]).flat().filter(Boolean)
+                    ), label: 'Collection' })
                 ),
                 // Buttons row
                 React.createElement('div', {
@@ -200,7 +200,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
               ),
             // COLLAPSED STATE - Inline layout matching Recommendations
             collectionHeaderCollapsed && React.createElement('div', {
-              className: 'absolute inset-0 flex items-center px-6 z-10',
+              className: 'hero-bar absolute inset-0 flex items-center px-6 z-10',
               style: {
                 opacity: collectionHeaderCollapsed ? 1 : 0,
                 transition: 'opacity 300ms ease-out'
@@ -221,29 +221,15 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                   className: 'flex items-center gap-1',
                   style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
                 },
-                  [
-                    { key: 'artists', label: collectionLoading ? null : `${collectionData.artists.length} Artists`, staticLabel: 'Artists' },
-                    { key: 'albums', label: collectionLoading ? null : `${collectionData.albums.length} Albums`, staticLabel: 'Albums' },
-                    { key: 'tracks', label: collectionLoading ? null : `${library.length + collectionData.tracks.length} Songs`, staticLabel: 'Songs' },
-                    { key: 'friends', label: `${friends.length} Friends`, staticLabel: 'Friends' }
-                  ].map((tab, index) => [
-                    index > 0 && React.createElement('span', {
-                      key: `sep-collapsed-${tab.key}`,
-                      className: 'text-white/50 mx-2'
-                    }, '|'),
-                    React.createElement('button', {
-                      key: `collapsed-${tab.key}`,
-                      onClick: () => setCollectionTab(tab.key),
-                      className: `px-2 py-1 text-sm font-medium uppercase tracking-wider transition-colors no-drag ${
-                        collectionTab === tab.key
-                          ? 'text-white'
-                          : 'text-white/60 hover:text-white'
-                      }`
-                    }, tab.label !== null ? tab.label : React.createElement('span', { className: 'flex items-center gap-1' },
+                  React.createElement(HeroTabs, { items: [
+                    { key: 'artists', label: collectionLoading ? null : countOf(collectionData.artists.length, 'Artist'), staticLabel: 'Artists' },
+                    { key: 'albums', label: collectionLoading ? null : countOf(collectionData.albums.length, 'Album'), staticLabel: 'Albums' },
+                    { key: 'tracks', label: collectionLoading ? null : countOf(library.length + collectionData.tracks.length, 'Track'), staticLabel: 'Tracks' },
+                    { key: 'friends', label: countOf(friends.length, 'Friend'), staticLabel: 'Friends' }
+                  ], isSelected: (tab) => collectionTab === tab.key, onSelect: (tab) => { setCollectionTab(tab.key); }, renderLabel: (tab) => tab.label !== null ? tab.label : React.createElement('span', { className: 'flex items-center gap-1' },
                       React.createElement('span', { className: 'inline-block w-6 h-4 bg-white/30 rounded animate-pulse' }),
                       tab.staticLabel
-                    ))
-                  ]).flat().filter(Boolean)
+                    ), label: 'Collection' })
                 ),
                 // Right: Start Collection Station button
                 React.createElement('button', {
@@ -263,52 +249,19 @@ const CollectionPage = React.memo(function CollectionPage(props) {
             className: 'flex items-center px-6 py-3',
             style: { backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
           },
-            // Sort dropdown (moved to left)
-            React.createElement('div', { className: 'relative' },
-              React.createElement('button', {
-                onClick: (e) => { e.stopPropagation(); setCollectionSortDropdownOpen(!collectionSortDropdownOpen); },
-                className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors'
-              },
-                React.createElement('span', null, getCollectionSortOptions(collectionTab).find(o => o.value === collectionSort[collectionTab])?.label || 'Sort'),
-                React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
-                )
-              ),
-              // Dropdown menu
-              collectionSortDropdownOpen && React.createElement('div', {
-                className: 'absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-gray-200'
-              },
-                getCollectionSortOptions(collectionTab).map(option =>
-                  React.createElement('button', {
-                    key: option.value,
-                    onClick: (e) => {
-                      e.stopPropagation();
-                      setCollectionSort(prev => ({ ...prev, [collectionTab]: option.value }));
-                      setCollectionSortDropdownOpen(false);
-                    },
-                    className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between ${
-                      collectionSort[collectionTab] === option.value ? 'text-gray-900 font-medium' : 'text-gray-600'
-                    }`
-                  },
-                    option.label,
-                    collectionSort[collectionTab] === option.value && React.createElement('svg', {
-                      className: 'w-4 h-4',
-                      fill: 'none',
-                      viewBox: '0 0 24 24',
-                      stroke: 'currentColor'
-                    },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
-                    )
-                  )
-                )
-              )
-            ),
+            // Sort (components/sort-menu.js)
+            React.createElement(SortMenu, {
+              value: collectionSort[collectionTab],
+              options: getCollectionSortOptions(collectionTab),
+              onChange: (v) => setCollectionSort(prev => ({ ...prev, [collectionTab]: v })),
+              label: 'Sort',
+            }),
             // Spacer
             React.createElement('div', { className: 'flex-1' }),
             // Search toggle/field
             React.createElement('div', { className: 'flex items-center' },
               collectionSearchOpen ?
-                React.createElement('div', { className: 'flex items-center border border-gray-300 rounded-full px-3 py-[5px] filter-pill' },
+                React.createElement('div', { className: 'flex items-center border border-line-strong rounded-full px-3 py-[5px] filter-pill' },
                   React.createElement('input', {
                     type: 'text',
                     value: collectionSearch,
@@ -319,138 +272,56 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                       }
                     },
                     autoFocus: true,
-                    placeholder: 'Filter...',
-                    className: 'bg-transparent text-gray-700 text-sm placeholder-gray-400 outline-none',
-                    style: { width: '150px' }
+                    placeholder: 'Filter…',
+                    className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none',
+                    style: { width: '150px' }, 'aria-label': 'Filter'
                   }),
-                  collectionSearch && React.createElement('button', {
+                  collectionSearch && React.createElement('button', { type: 'button', 'aria-label': 'Clear filter', 'data-tooltip': 'Clear filter',
                     onClick: () => {
                       setCollectionSearch('');
                       setCollectionSearchOpen(false);
                     },
-                    className: 'ml-2 text-gray-400 hover:text-gray-600'
+                    className: 'ml-2 text-ink-tertiary hover:text-ink-secondary'
                   },
-                    React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
-                    )
+                    React.createElement(Icons.X, { className: 'w-4 h-4' })
                   )
                 )
               :
-                React.createElement('button', {
+                React.createElement('button', { type: 'button', 'aria-label': 'Filter', 'data-tooltip': 'Filter',
                   onClick: () => setCollectionSearchOpen(true),
-                  className: 'p-1.5 text-gray-400 hover:text-gray-600 transition-colors'
+                  className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors'
                 },
-                  React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
-                  )
+                  React.createElement(Icons.Search, { className: 'w-5 h-5' })
                 )
             ),
-            // Sync Collection button with provider dropdown (hide on friends tab)
-            collectionTab !== 'friends' && React.createElement('div', {
-              style: { position: 'relative', marginLeft: '12px' }
-            },
-              React.createElement('button', {
-                onClick: () => setSyncMenuOpen(!syncMenuOpen),
-                className: 'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5',
-                style: {
-                  backgroundColor: Object.values(resolverSyncSettings).some(s => s?.enabled) ? '#06b6d4' : 'var(--nav-inactive)',
-                  color: '#ffffff',
-                  border: 'none',
-                  cursor: 'pointer'
-                },
-                title: 'Sync your music library'
-              },
-                React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M20 4v5h-.582m-15.356 2A8.001 8.001 0 0119.418 9m0 0H15m-11 11v-5h.581m0 0a8.003 8.003 0 0015.357-2m-15.357 2H9' })
-                ),
-                Object.values(resolverSyncSettings).some(s => s?.enabled) ? 'Synced' : 'Sync',
-                React.createElement('svg', { className: 'w-3 h-3', style: { marginLeft: '2px', opacity: 0.8 }, fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2.5, d: 'M19 9l-7 7-7-7' })
-                )
-              ),
-              // Provider dropdown menu
-              syncMenuOpen && React.createElement('div', {
-                style: {
-                  position: 'absolute',
-                  top: '100%',
-                  right: 0,
-                  marginTop: '4px',
-                  width: '200px',
-                  backgroundColor: 'var(--card-bg)',
-                  borderRadius: '12px',
-                  boxShadow: '0 10px 25px rgba(0, 0, 0, 0.15)',
-                  border: '1px solid var(--border-subtle)',
-                  zIndex: 50,
-                  overflow: 'hidden'
-                }
-              },
-                // Sync status + "Sync Now" (parachord#1009). The Library Sync
-                // modal has existed since 2026-01 but nothing opened it, so the
-                // only full sync a user could trigger was the wizard's Start Sync.
-                Object.values(resolverSyncSettings).some(s => s?.enabled) && React.createElement('button', {
-                  key: 'sync-status',
-                  onClick: () => { setSyncMenuOpen(false); setSyncStatusModal({ open: true }); },
+            // Sync Collection button and its menu (components/menu.js): the
+            // sync status and Sync Now (parachord#1009: the Library Sync modal
+            // existed since 2026-01 but nothing opened it), then one item per
+            // provider, with a dot on the ones syncing.
+            collectionTab !== 'friends' && React.createElement('div', { style: { marginLeft: '12px' } },
+              (() => {
+                const syncOn = Object.values(resolverSyncSettings).some(s => s?.enabled);
+                const tile = (color, svg) => React.createElement('span', {
                   style: {
-                    width: '100%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '10px',
-                    padding: '10px 14px',
-                    fontSize: '13px',
-                    fontWeight: '500',
-                    color: 'var(--text-primary)',
-                    backgroundColor: 'transparent',
-                    border: 'none',
-                    borderBottom: '1px solid var(--border-subtle)',
-                    cursor: 'pointer',
-                    transition: 'background-color 100ms ease'
-                  },
-                  onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'var(--hover-bg-default)',
-                  onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'transparent'
-                },
-                  React.createElement('div', {
-                    style: {
-                      width: '28px', height: '28px', borderRadius: '8px',
-                      backgroundColor: '#06b6d4',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      flexShrink: 0
-                    }
-                  },
-                    React.createElement('svg', { style: { width: '16px', height: '16px' }, fill: 'none', viewBox: '0 0 24 24', stroke: '#ffffff' },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15' })
-                    )
-                  ),
-                  Object.values(syncStatus).some(s => s?.inProgress) ? 'Syncing…' : 'Sync status & Sync Now'
-                ),
-                Object.entries(syncProviderConfig).map(([pid, config]) =>
-                  React.createElement('button', {
+                    width: '28px', height: '28px', borderRadius: '8px', backgroundColor: color,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                  }
+                }, svg);
+                const items = [];
+                if (syncOn) {
+                  items.push({
+                    key: 'sync-status',
+                    label: Object.values(syncStatus).some(s => s?.inProgress) ? 'Syncing…' : 'Library sync…',
+                    icon: tile('#06b6d4', React.createElement(Icons.RefreshCw, { size: 16, style: { color: '#ffffff' } })),
+                    onSelect: () => setSyncStatusModal({ open: true }),
+                  });
+                  items.push({ separator: true, key: 'sep' });
+                }
+                for (const [pid, config] of Object.entries(syncProviderConfig)) {
+                  items.push({
                     key: pid,
-                    onClick: () => { setSyncMenuOpen(false); openSyncSetupModal(pid); },
-                    style: {
-                      width: '100%',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '10px',
-                      padding: '10px 14px',
-                      fontSize: '13px',
-                      fontWeight: '500',
-                      color: 'var(--text-primary)',
-                      backgroundColor: 'transparent',
-                      border: 'none',
-                      cursor: 'pointer',
-                      transition: 'background-color 100ms ease'
-                    },
-                    onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'var(--hover-bg-default)',
-                    onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'transparent'
-                  },
-                    React.createElement('div', {
-                      style: {
-                        width: '28px', height: '28px', borderRadius: '8px',
-                        backgroundColor: config.color,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        flexShrink: 0
-                      }
-                    },
+                    label: config.name,
+                    icon: tile(config.color,
                       React.createElement('svg', {
                         style: { width: '16px', height: '16px' },
                         viewBox: pid === 'spotify' ? '0 0 24 24' : pid === 'listenbrainz' ? '0 0 146 160' : '0 0 122.88 122.88',
@@ -466,23 +337,35 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                           : React.createElement('path', { d: 'M47.76,86.16v-38.4c0-1.44,0.8-2.32,2.4-2.64l33.12-6.72c1.76-0.32,2.72,0.48,2.88,2.4v29.28c0,2.4-3.6,4-10.8,4.8c-13.68,2.16-11.52,25.2,7.2,18.96c7.2-2.64,8.4-9.6,8.4-16.56V21.12c0,0,0-4.8-4.08-3.6l-40.8,8.4c0,0-3.12,0.48-3.12,4.32v48.72c0,2.4-3.6,4-10.8,4.8c-13.68,2.16-11.52,25.2,7.2,18.96C46.56,100.08,47.76,93.12,47.76,86.16z' })
                       )
                     ),
-                    config.name,
-                    resolverSyncSettings[pid]?.enabled && React.createElement('span', {
-                      style: {
-                        marginLeft: 'auto',
-                        width: '8px', height: '8px',
-                        borderRadius: '50%',
-                        backgroundColor: '#22c55e'
-                      }
-                    })
-                  )
-                )
-              ),
-              // Click-away to close dropdown
-              syncMenuOpen && React.createElement('div', {
-                style: { position: 'fixed', inset: 0, zIndex: 49 },
-                onClick: () => setSyncMenuOpen(false)
-              })
+                    trailing: resolverSyncSettings[pid]?.enabled && React.createElement('span', {
+                      'aria-label': 'Sync on', role: 'img',
+                      style: { width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--success)' }
+                    }),
+                    onSelect: () => openSyncSetupModal(pid),
+                  });
+                }
+                return React.createElement(Menu, {
+                  label: 'Sync',
+                  align: 'right',
+                  minWidth: 220,
+                  items,
+                  renderTrigger: (t) => React.createElement('button', Object.assign({}, t, {
+                    type: 'button',
+                    className: 'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5',
+                    style: {
+                      backgroundColor: syncOn ? '#06b6d4' : 'var(--nav-inactive)',
+                      color: '#ffffff',
+                      border: 'none',
+                      cursor: 'pointer'
+                    },
+                    'data-tooltip': 'Sync your music library'
+                  }),
+                    React.createElement(Icons.RefreshCw, { className: 'w-4 h-4' }),
+                    syncOn ? 'Synced' : 'Sync',
+                    React.createElement(Icons.ChevronDown, { className: 'w-3 h-3', style: { marginLeft: '2px', opacity: 0.8 }, strokeWidth: 2.5 })
+                  ),
+                });
+              })()
             ),
             // Sync friends button in header (only on friends tab).
             // Manually triggers inbound pull from Last.fm + ListenBrainz.
@@ -494,20 +377,16 @@ const CollectionPage = React.memo(function CollectionPage(props) {
               return React.createElement('button', {
                 onClick: () => syncFriendsFromServices({ silent: false }),
                 disabled: friendSyncInProgress || !hasCreds,
-                title: hasCreds
+                'aria-label': hasCreds
+                  ? 'Sync friends from Last.fm and ListenBrainz'
+                  : 'Connect Last.fm or ListenBrainz in Settings to sync friends', 'data-tooltip': hasCreds
                   ? 'Sync friends from Last.fm and ListenBrainz'
                   : 'Connect Last.fm or ListenBrainz in Settings to sync friends',
-                className: 'ml-3 p-1.5 text-gray-500 hover:text-gray-700 transition-colors',
+                className: 'ml-3 p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors',
                 style: { opacity: friendSyncInProgress || !hasCreds ? 0.4 : 1, cursor: hasCreds ? 'pointer' : 'not-allowed' }
               },
                 friendSyncInProgress
-                  ? React.createElement('svg', {
-                      className: 'w-5 h-5 animate-spin',
-                      fill: 'none', viewBox: '0 0 24 24'
-                    },
-                      React.createElement('circle', { className: 'opacity-25', cx: '12', cy: '12', r: '10', stroke: 'currentColor', strokeWidth: '4' }),
-                      React.createElement('path', { className: 'opacity-75', fill: 'currentColor', d: 'M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z' })
-                    )
+                  ? React.createElement(Icons.Spinner, { className: 'w-5 h-5' })
                   : React.createElement('svg', {
                       className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor'
                     },
@@ -520,10 +399,8 @@ const CollectionPage = React.memo(function CollectionPage(props) {
               onClick: () => setAddFriendModalOpen(true),
               className: 'ml-3 px-3 py-1.5 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5'
             },
-              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M12 4v16m8-8H4' })
-              ),
-              'Add Friend'
+              React.createElement(Icons.Plus, { className: 'w-4 h-4' }),
+              'Add friend'
             )
           ),
 
@@ -541,7 +418,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
           // benefit for the other tabs without breaking the virtualizer.
           React.createElement('div', {
             ref: handleCollectionScrollContainerRef,
-            className: 'flex-1 overflow-y-auto scrollable-content',
+            className: 'flex-1 overflow-y-auto scrollable-content scroll-edge',
             style: collectionTab === 'tracks'
               ? { minHeight: 0 }
               : { minHeight: 0, contain: 'strict' },
@@ -617,22 +494,11 @@ const CollectionPage = React.memo(function CollectionPage(props) {
               const sorted = collectionSongsSorted;
 
               if (sorted.length === 0 && collectionSearch) {
-                return React.createElement('div', { className: 'text-center py-12 text-gray-400' },
-                  React.createElement('svg', { className: 'w-12 h-12 mx-auto mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
-                  ),
-                  React.createElement('div', { className: 'text-sm' }, 'No tracks match your search')
-                );
+                return React.createElement(EmptyState, { compact: true, icon: Icons.Search, title: "No tracks match your search" });
               }
 
               if (sorted.length === 0) {
-                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-gray-400 py-20' },
-                  React.createElement('svg', { className: 'w-16 h-16 mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
-                  ),
-                  React.createElement('p', { className: 'text-lg font-medium text-gray-500 mb-2' }, 'No tracks yet'),
-                  React.createElement('p', { className: 'text-sm text-gray-400' }, 'Drag tracks here or add local music folders in Settings')
-                );
+                return React.createElement(EmptyState, { icon: Icons.Music, title: "No tracks yet", body: "Drag tracks here, or add a music folder in the Local Files plug-in." });
               }
 
               // Windowed render (parachord#783). Below the virtualization
@@ -655,7 +521,8 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                   const isResolving = sourceState === 'resolving';
                   const isUnplayable = sourceState === 'unplayable' && !track.filePath;
 
-                  return React.createElement('div', {
+                  return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`, more: `More actions for ${track.title}`,
+                  current: isNowPlaying,
                     ref: (el) => {
                       if (el) {
                         collectionTrackRowRefs.current.set(track.id, el);
@@ -690,13 +557,13 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                       handlePlaylistDragEnd();
                     },
                     className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all no-drag group ${
-                      isNowPlaying && isPlaying ? 'bg-cyan-50' : 'hover:bg-gray-50/80'
+                      isNowPlaying && isPlaying ? 'bg-accent-tint' : 'hover:bg-surface-hover'
                     } ${isUnplayable ? 'opacity-60' : ''}`,
                     style: {
                       borderRadius: '8px',
                       marginBottom: '2px'
                     },
-                    onClick: () => {
+                    onActivate: () => {
                       const tracksAfter = sorted.slice(index + 1);
                       const context = { type: 'library', name: 'Collection' };
                       setQueueWithContext(tracksAfter, context);
@@ -711,7 +578,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                         // "Remove from Collection", which could only fail with
                         // "not in your collection" (#1002).
                         const inCollection = collectionData.tracks.some(t => t.id === track.id);
-                        window.electron.contextMenu.showTrackMenu({
+                        window.showItemMenu({
                           type: 'track',
                           track: track,
                           isInCollection: inCollection,
@@ -745,8 +612,8 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                     }, track.title),
 
                     // Artist name - flexible column, clickable
-                    React.createElement('span', {
-                      className: 'truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
+                    React.createElement('button', { type: 'button',
+                      className: 'text-left truncate hover:text-accent hover:underline cursor-pointer transition-colors',
                       style: {
                         flex: '0.7 1 0',
                         minWidth: 0,
@@ -760,8 +627,8 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                     }, track.artist || 'Unknown Artist'),
 
                     // Album name - flexible column, clickable
-                    track.album ? React.createElement('span', {
-                      className: 'truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
+                    track.album ? React.createElement('button', { type: 'button',
+                      className: 'text-left truncate hover:text-accent hover:underline cursor-pointer transition-colors',
                       style: {
                         flex: '0.5 1 0',
                         minWidth: 0,
@@ -835,7 +702,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                                 },
                                 onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                                 onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
-                                title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
+                                'aria-label': `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`, 'data-tooltip': `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
                               }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
                             });
                         } else if (isResolving) {
@@ -868,12 +735,12 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                               },
                               onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                               onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
-                              title: 'Play from Local Files'
+                              'aria-label': 'Play from Local Files', 'data-tooltip': 'Play from Local Files'
                             }, React.createElement(ResolverIcon, { resolverId: 'localfiles', size: 12 })),
                             // Shimmer skeletons
                             React.createElement('div', {
                               className: 'w-5 h-5 rounded shimmer-light animate-shimmer',
-                              title: 'Resolving...'
+                              title: 'Resolving…'
                             }),
                             React.createElement('div', {
                               className: 'w-5 h-5 rounded shimmer-light animate-shimmer',
@@ -909,7 +776,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                             },
                             onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                             onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
-                            title: 'Play from Local Files'
+                            'aria-label': 'Play from Local Files', 'data-tooltip': 'Play from Local Files'
                           }, React.createElement(ResolverIcon, { resolverId: 'localfiles', size: 12 }));
                         }
                         return null;
@@ -932,55 +799,27 @@ const CollectionPage = React.memo(function CollectionPage(props) {
               const sorted = sortCollectionItems(filtered, 'artists');
 
               if (sorted.length === 0 && collectionSearch) {
-                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-gray-400 py-20' },
-                  React.createElement('p', { className: 'text-lg font-medium text-gray-500' }, 'No artists match your search')
-                );
+                return React.createElement(EmptyState, { compact: true, icon: Icons.Search, title: "No artists match your search" });
               }
 
               if (sorted.length === 0) {
-                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-gray-400 py-20' },
-                  React.createElement('svg', { className: 'w-16 h-16 mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' })
-                  ),
-                  React.createElement('p', { className: 'text-lg font-medium text-gray-500 mb-2' }, 'No artists yet'),
-                  React.createElement('p', { className: 'text-sm text-gray-400' }, 'Drag artists here to add them to your collection')
-                );
+                return React.createElement(EmptyState, { icon: Icons.Users, title: "No artists yet", body: "Drag artists here to add them to your collection." });
               }
 
               return React.createElement('div', {
-                className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-5',
+                className: 'card-grid gap-x-4 gap-y-5',
                 style: { minHeight: 'calc(100vh - 160px)', alignContent: 'start' }  // Ensure enough scroll area to prevent header bounce
               },
                 sorted.map((artist, index) =>
-                  React.createElement(CollectionArtistCard, {
+                  React.createElement(ArtistCard, {
                     key: artist.name,
-                    artist: { ...artist, trackCount: 0 },
+                    artist: { id: slug(artist.name || 'unknown'), name: artist.name },
                     getArtistImage: getArtistImage,
-                    onNavigate: () => fetchArtistData(artist.name),
-                    onPlayTopTracks: async (artist) => {
-                      setTrackLoading(true);
-                      const tracks = await getArtistTopTracks(artist.name);
-                      if (tracks.length > 0) {
-                        const context = { type: 'artist', name: artist.name };
-                        const [firstTrack, ...remainingTracks] = tracks;
-                        // Tag the first track with context so queue navigation works correctly
-                        const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
-                        setQueueWithContext(remainingTracks, context, true);
-                        handlePlay(taggedFirstTrack);
-                      } else {
-                        setTrackLoading(false);
-                        showToast(`No top tracks found for ${artist.name}`, 'error');
-                      }
-                    },
-                    onAddToQueue: async (artist) => {
-                      const tracks = await getArtistTopTracks(artist.name);
-                      if (tracks.length > 0) {
-                        addToQueue(tracks, { type: 'artist', name: artist.name });
-                        showToast(`Added ${tracks.length} tracks from ${artist.name}`, 'success');
-                      } else {
-                        showToast(`No top tracks found for ${artist.name}`, 'error');
-                      }
-                    },
+                    onOpen: () => fetchArtistData(artist.name),
+                    onPlay: playArtistTopTracks,
+                    // The artist menu (Remove from Collection, Add Top 10 to
+                    // Queue, Copy Link, View on Achordion).
+                    onContextMenu: () => window.showItemMenu(artistMenu({ id: slug(artist.name || 'unknown'), name: artist.name, image: artist.image || null })),
                     animationDelay: Math.min(index * 30, 300)
                   })
                 )
@@ -998,19 +837,11 @@ const CollectionPage = React.memo(function CollectionPage(props) {
               const sorted = sortCollectionItems(filtered, 'albums');
 
               if (sorted.length === 0 && collectionSearch) {
-                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-gray-400 py-20' },
-                  React.createElement('p', { className: 'text-lg font-medium text-gray-500' }, 'No albums match your search')
-                );
+                return React.createElement(EmptyState, { compact: true, icon: Icons.Search, title: "No albums match your search" });
               }
 
               if (sorted.length === 0) {
-                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-gray-400 py-20' },
-                  React.createElement('svg', { className: 'w-16 h-16 mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
-                  ),
-                  React.createElement('p', { className: 'text-lg font-medium text-gray-500 mb-2' }, 'No albums yet'),
-                  React.createElement('p', { className: 'text-sm text-gray-400' }, 'Drag albums here to add them to your collection')
-                );
+                return React.createElement(EmptyState, { icon: Icons.Music, title: "No albums yet", body: "Drag albums here to add them to your collection." });
               }
 
               // Each card is keyed by its album id, so after a search or sort a
@@ -1026,62 +857,32 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                 return n === 1 ? base : `${base}#${n}`;
               };
 
-              return React.createElement('div', {
-                className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-5',
+              return React.createElement('div', { role: 'list',
+                className: 'card-grid gap-x-4 gap-y-5',
                 style: { minHeight: 'calc(100vh - 160px)', alignContent: 'start' }  // Ensure enough scroll area to prevent header bounce
               },
                 sorted.map((album, index) =>
-                  React.createElement(CollectionAlbumCard, {
-                    key: albumKey(album),
-                    album: { ...album, trackCount: album.trackCount ?? collectionData.tracks.filter(t => t.artist === album.artist && t.album === album.title).length },
-                    getAlbumArt: getAlbumArt,
-                    onNavigate: () => handleCollectionAlbumClick(album),
-                    onAddToPlaylist: (albumData) => {
-                      const albumTracks = collectionData.tracks
-                        .filter(t => t.artist === albumData.artist && t.album === albumData.title)
-                        .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
-                      if (albumTracks.length > 0) {
-                        setAddToPlaylistPanel({
-                          open: true,
-                          tracks: albumTracks,
-                          sourceName: `${albumData.title} by ${albumData.artist}`,
-                          sourceType: 'album'
-                        });
-                      }
-                    },
-                    onPlay: (albumData) => {
-                      const albumTracks = collectionData.tracks
-                        .filter(t => t.artist === albumData.artist && t.album === albumData.title)
-                        .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
-                      if (albumTracks.length > 0) {
-                        setTrackLoading(true);
-                        const context = { type: 'album', name: albumData.title, artist: albumData.artist };
-                        const [firstTrack, ...remainingTracks] = albumTracks;
-                        setQueueWithContext(remainingTracks, context, true);
-                        handlePlay(firstTrack);
-                      }
-                    },
-                    onAddToQueue: (albumData) => {
-                      const albumTracks = collectionData.tracks
-                        .filter(t => t.artist === albumData.artist && t.album === albumData.title)
-                        .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
-                      if (albumTracks.length > 0) {
-                        addToQueue(albumTracks, { type: 'album', name: albumData.title, artist: albumData.artist });
-                        showToast(`Added ${albumTracks.length} tracks from ${albumData.title}`, 'success');
-                      }
-                    },
-                    onContextMenu: (e, albumData) => {
-                      const albumTracks = collectionData.tracks
-                        .filter(t => t.artist === albumData.artist && t.album === albumData.title)
-                        .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
-                      window.electron?.contextMenu?.showTrackMenu({
-                        type: 'collection-album',
-                        album: albumData,
-                        tracks: albumTracks
-                      });
-                    },
-                    animationDelay: Math.min(index * 30, 300)
-                  })
+                  // The shared album card (components/album-card.js); it looks up
+                  // its own cover (getAlbumArt).
+                  (() => {
+                    const tracksOf = () => collectionData.tracks
+                      .filter(t => t.artist === album.artist && t.album === album.title)
+                      .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
+                    return React.createElement(AlbumCard, Object.assign({
+                      key: albumKey(album),
+                      role: 'listitem',
+                      album: { ...album, imageUrl: album.art || null },
+                      getAlbumArt: getAlbumArt,
+                      // The year and track count, as the old Collection card showed.
+                      subtitle: [album.year, (() => {
+                        const n = album.trackCount ?? collectionData.tracks.filter(t => t.artist === album.artist && t.album === album.title).length;
+                        return n ? countOf(n, 'track') : null;
+                      })()].filter(Boolean).join(' · ') || null,
+                      animationDelay: Math.min(index * 30, 300),
+                      onOpen: () => handleCollectionAlbumClick(album),
+                      onContextMenu: () => window.showItemMenu({ type: 'collection-album', album, tracks: tracksOf() })
+                    }, albumCardActions({ title: album.title, artist: album.artist, getTracks: async () => tracksOf() })));
+                  })()
                 )
               );
             })(),
@@ -1140,43 +941,19 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                     : filtered;
 
               if (displayFriends.length === 0 && collectionSearch) {
-                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-gray-400 py-20' },
-                  React.createElement('p', { className: 'text-lg font-medium text-gray-500' }, 'No friends match your search')
-                );
+                return React.createElement(EmptyState, { compact: true, icon: Icons.Search, title: "No friends match your search" });
               }
 
               if (displayFriends.length === 0 && collectionSort.friends === 'on-air') {
-                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-gray-400 py-20' },
-                  React.createElement('svg', { className: 'w-16 h-16 mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M5.636 18.364a9 9 0 010-12.728m12.728 0a9 9 0 010 12.728m-9.9-2.829a5 5 0 010-7.07m7.072 0a5 5 0 010 7.07M13 12a1 1 0 11-2 0 1 1 0 012 0z' })
-                  ),
-                  React.createElement('p', { className: 'text-lg font-medium text-gray-500 mb-2' }, 'No friends on air right now'),
-                  React.createElement('p', { className: 'text-sm text-gray-400' }, 'Check back later to see who\'s listening')
-                );
+                return React.createElement(EmptyState, { icon: Icons.Radio, title: "No friends on air right now", body: "Check back later to see who’s listening." });
               }
 
               if (displayFriends.length === 0 && collectionSort.friends === 'active') {
-                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-gray-400 py-20' },
-                  React.createElement('svg', { className: 'w-16 h-16 mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' })
-                  ),
-                  React.createElement('p', { className: 'text-lg font-medium text-gray-500 mb-2' }, 'No friends active in the last 14 days'),
-                  React.createElement('p', { className: 'text-sm text-gray-400' }, 'Try a different sort to see all your friends')
-                );
+                return React.createElement(EmptyState, { icon: Icons.Users, title: "No friends active in the last 14 days", body: "Try a different sort to see all your friends." });
               }
 
               if (savedFriends.length === 0) {
-                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-gray-400 py-20' },
-                  React.createElement('svg', { className: 'w-16 h-16 mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z' })
-                  ),
-                  React.createElement('p', { className: 'text-lg font-medium text-gray-500 mb-2' }, 'No friends in collection'),
-                  React.createElement('p', { className: 'text-sm text-gray-400 mb-4' }, 'Add friends to your collection to see them here'),
-                  React.createElement('button', {
-                    onClick: () => setAddFriendModalOpen(true),
-                    className: 'px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors'
-                  }, 'Add Friend')
-                );
+                return React.createElement(EmptyState, { icon: Icons.Users, title: "No friends in your collection yet", body: "Add friends to see what they’re listening to.", actions: [{ label: 'Add friend', onClick: () => setAddFriendModalOpen(true) }] });
               }
 
               return React.createElement('div', {
@@ -1191,142 +968,38 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                     const onAir = isOnAir(friend);
                     const isPinned = pinnedFriendIds.includes(friend.id);
 
-                    return React.createElement('div', {
+                    // The shared listener card (components/listener-card.js):
+                    // the same card as Recommendations' Listeners, with this
+                    // tab's friend menu (Pin, Remove) and lines.
+                    return React.createElement(ListenerCard, {
                       key: friend.id,
-                      className: 'flex flex-col items-center cursor-pointer group release-card card-fade-up',
-                      style: {
-                        padding: '14px 12px',
-                        borderRadius: '10px',
-                        backgroundColor: 'var(--card-bg)',
-                        boxShadow: 'var(--card-shadow)',
-                        animationDelay: `${Math.min(index * 30, 300)}ms`
-                      },
+                      name: friend.displayName,
+                      avatarUrl: friend.avatarUrl || null,
+                      onAir,
+                      // Pin mark for manually pinned friends (not auto-pinned).
+                      pinned: isPinned && !autoPinnedFriendIds.includes(friend.id),
+                      animationDelay: Math.min(index * 30, 300),
                       draggable: true,
                       onDragStart: (e) => {
                         e.dataTransfer.setData('friendId', friend.id);
                         e.dataTransfer.effectAllowed = 'copy';
                       },
-                      onClick: () => navigateToFriend(friend),
-                      onContextMenu: (e) => {
-                        e.preventDefault();
+                      onOpen: () => navigateToFriend(friend),
+                      onPlay: () => playListenerTopTracks(friend),
+                      onContextMenu: () => {
                         if (window.electron?.contextMenu?.showTrackMenu) {
-                          window.electron.contextMenu.showTrackMenu({
+                          window.showItemMenu({
                             type: 'friend',
                             friend: friend,
                             isPinned: isPinned,
                             isSavedToCollection: friend.savedToCollection
                           });
                         }
-                      }
-                    },
-                      // Hexagonal avatar with border ring and hover effects
-                      React.createElement('div', {
-                        className: 'relative',
-                        style: { width: '100px', height: '100px' }
                       },
-                        // Outer hexagon border/ring
-                        React.createElement('div', {
-                          style: {
-                            position: 'absolute',
-                            inset: 0,
-                            clipPath: 'polygon(50% 0%, 93.3% 25%, 93.3% 75%, 50% 100%, 6.7% 75%, 6.7% 25%)',
-                            background: onAir
-                              ? 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
-                              : 'linear-gradient(135deg, var(--hover-bg-subtle) 0%, var(--hover-bg-default) 100%)',
-                            transition: 'background 0.3s ease'
-                          },
-                          className: 'group-hover:scale-105'
-                        }),
-                        // Inner hexagon with avatar
-                        React.createElement('div', {
-                          style: {
-                            position: 'absolute',
-                            inset: '3px',
-                            clipPath: 'polygon(50% 0%, 93.3% 25%, 93.3% 75%, 50% 100%, 6.7% 75%, 6.7% 25%)',
-                            overflow: 'hidden'
-                          }
-                        },
-                          React.createElement('div', {
-                            className: 'group-hover:scale-110 transition-transform duration-300',
-                            style: {
-                              width: '100%',
-                              height: '100%',
-                              ...(friend.avatarUrl ? {
-                                backgroundImage: `url(${friend.avatarUrl})`,
-                                backgroundSize: 'cover',
-                                backgroundPosition: 'center'
-                              } : {
-                                background: 'linear-gradient(145deg, #18181b 0%, #27272a 50%, #18181b 100%)'
-                              })
-                            }
-                          },
-                            // Show initial if no avatar
-                            !friend.avatarUrl && React.createElement('div', {
-                              style: {
-                                width: '100%',
-                                height: '100%',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                fontSize: '28px',
-                                fontWeight: '500',
-                                color: 'rgba(255, 255, 255, 0.4)',
-                                letterSpacing: '0.02em'
-                              }
-                            }, friend.displayName.charAt(0).toUpperCase())
-                          )
-                        ),
-                        // On-air pulse indicator
-                        onAir && React.createElement('div', {
-                          className: 'on-air-indicator',
-                          style: {
-                            position: 'absolute',
-                            bottom: '4px',
-                            right: '8px',
-                            width: '14px',
-                            height: '14px',
-                            backgroundColor: '#22c55e',
-                            borderRadius: '9999px',
-                            border: '2.5px solid #ffffff'
-                          }
-                        })
-                      ),
-                      // Name and pin icon
-                      React.createElement('div', {
-                        style: {
-                          marginTop: '10px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '4px',
-                          width: '100%'
-                        }
-                      },
-                        React.createElement('span', {
-                          style: {
-                            fontSize: '13px',
-                            fontWeight: '500',
-                            color: 'var(--text-primary)',
-                            textAlign: 'center',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                            transition: 'color 0.2s ease'
-                          },
-                          className: ''
-                        }, friend.displayName),
-                        // Pin icon for manually pinned friends (not auto-pinned)
-                        isPinned && !autoPinnedFriendIds.includes(friend.id) && React.createElement('svg', {
-                          style: { width: '12px', height: '12px', color: 'var(--accent-soft)', flexShrink: 0 },
-                          fill: 'currentColor',
-                          viewBox: '0 0 24 24',
-                          title: 'Pinned to sidebar'
-                        },
-                          React.createElement('path', { d: 'M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z' })
-                        )
-                      ),
+                      details: [
                       // Service badge - refined
                       React.createElement('div', {
+                        key: 'service',
                         className: 'release-badge',
                         style: {
                           marginTop: '4px',
@@ -1336,6 +1009,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                       }, friend.service === 'lastfm' ? 'Last.fm' : 'ListenBrainz'),
                       // Current track if on-air
                       onAir && friend.cachedRecentTrack && React.createElement('div', {
+                        key: 'now',
                         style: {
                           marginTop: '6px',
                           fontSize: '11px',
@@ -1347,12 +1021,13 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                           maxWidth: '100%'
                         }
                       },
-                        React.createElement('span', { style: { color: '#22c55e' } }, '\u266A '),
+                        React.createElement('span', { style: { color: 'var(--text-success)' } }, '\u266A '),
                         `${friend.cachedRecentTrack.name}`
                       ),
                       // A Last.fm profile that hides its recent listening is never
                       // on-air; say why instead of leaving the card blank.
                       !onAir && friend.hidesListening && React.createElement('div', {
+                        key: 'hidden',
                         title: 'This Last.fm profile hides its recent listening',
                         style: {
                           marginTop: '6px',
@@ -1361,7 +1036,8 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                           textAlign: 'center'
                         }
                       }, 'Listening hidden')
-                    );
+                      ]
+                    });
                   })
                 )
               );

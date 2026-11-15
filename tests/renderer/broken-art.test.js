@@ -100,27 +100,45 @@ describe('wiring', () => {
       const start = cards.indexOf(`const ${name} = (`);
       return cards.slice(start, cards.indexOf('\n};\n', start));
     };
-    for (const name of ['ReleaseCard', 'CollectionAlbumCard', 'ReleasePage']) {
+    for (const name of ['ReleaseCard', 'ReleasePage']) {
       expect(slice(name)).toContain('globalThis.reportBrokenAlbumArt');
     }
     expect(slice('ReleaseCard')).toMatch(/onError: onArtError/);
+    // Every album grid's card (the old CollectionAlbumCard among them) is
+    // components/album-card.js's AlbumCard: a cover it looked up itself
+    // (getAlbumArt) is reported to the pipeline, and its img (card-art.js's
+    // ArtBox) hands a failed load to that report.
+    const albumCard = fs.readFileSync(path.join(root, 'src', 'renderer', 'components', 'album-card.js'), 'utf8');
+    expect(albumCard).toContain('globalThis.reportBrokenAlbumArt');
+    expect(albumCard).toMatch(/e\(ArtBox, \{ imageUrl: coverUrl, item: album, onArtError: reportArt,/);
+    const cardArt = fs.readFileSync(path.join(root, 'src', 'renderer', 'components', 'card-art.js'), 'utf8');
+    expect(cardArt).toMatch(/onError: \(\) => \{ setDeadCoverUrl\(imageUrl\); fail\(\); \},/);
   });
 
-  // Fresh Drops, Pop of the Tops and Critical Darlings render their covers
-  // inline in app.js from their own list state (Fresh Drops' copy is persisted
-  // in cache_new_releases), so the retry has to patch that list. The img is
-  // keyed on its URL: onError hides the element, and React would otherwise
-  // reuse the hidden element for the fresh URL.
+  // Fresh Drops, Pop of the Tops and Critical Darlings draw their covers from
+  // their own list state in app.js (Fresh Drops' copy is persisted in
+  // cache_new_releases), so the retry has to patch that list. A hidden img is
+  // never reused for the fresh URL: onError hides the element, and React
+  // would otherwise reuse it. Critical Darlings keys its img on the URL;
+  // Fresh Drops and Pop of the Tops hand the list's URL to the shared
+  // AlbumCard, whose ArtBox drops a dead cover and shows a new URL afresh
+  // (see the ArtBox test below and album-card-behaviour.test.js).
   test.each([
-    ['new-releases', /retryBrokenListArt\(release\.albumArt, \{ artist: release\.artist, album: release\.title, id: release\.id, cacheId: release\.id \}/, 'key: release.albumArt,'],
-    ['discover', /retryBrokenListArt\(item\.albumArt, \{ artist: item\.artist, album: item\.title, id: item\.id \}, patchListArt\(setCharts\)\)/, 'key: item.albumArt,'],
-    ['critics-picks', /retryBrokenListArt\(album\.albumArt, \{ artist: album\.artist, album: album\.title, id: album\.id \}, patchListArt\(setCriticsPicks\)\)/, 'key: album.albumArt,'],
-  ])('the %s grid retries a dead cover and keys its img on the URL', (view, call, key) => {
+    ['new-releases', /retryBrokenListArt\(release\.albumArt, \{ artist: release\.artist, album: release\.title, id: release\.id, cacheId: release\.id \}/, /React\.createElement\(AlbumCard, Object\.assign\(\{[\s\S]{0,200}?imageUrl: release\.albumArt \}/],
+    ['discover', /retryBrokenListArt\(item\.albumArt, \{ artist: item\.artist, album: item\.title, id: item\.id \}, patchListArt\(setCharts\)\)/, /React\.createElement\(AlbumCard, Object\.assign\(\{[\s\S]{0,200}?imageUrl: item\.albumArt \|\| null \}/],
+    ['critics-picks', /retryBrokenListArt\(album\.albumArt, \{ artist: album\.artist, album: album\.title, id: album\.id \}, patchListArt\(setCriticsPicks\)\)/, /key: album\.albumArt,/],
+  ])('the %s grid retries a dead cover and never reuses a hidden img for the fresh URL', (view, call, img) => {
     const start = app.indexOf(`activeView === '${view}' && React.createElement`);
     expect(start).toBeGreaterThan(-1);
     const body = app.slice(start, start + 60000);
     expect(body).toMatch(call);
-    expect(body).toContain(key);
+    expect(body).toMatch(img);
+  });
+
+  test("the shared card's ArtBox forgets a dead cover when the URL changes (replaces the per-grid img key)", () => {
+    const cardArt = fs.readFileSync(path.join(root, 'src', 'renderer', 'components', 'card-art.js'), 'utf8');
+    expect(cardArt).toContain('React.useEffect(() => { setDeadCoverUrl(null); }, [imageUrl]);');
+    expect(cardArt).toContain('const cover = imageUrl && deadCoverUrl !== imageUrl ? imageUrl : null;');
   });
 
   test('Fresh Drops patches through its art writer, so the persisted copy is fixed too', () => {

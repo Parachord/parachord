@@ -193,6 +193,21 @@ The decision is `remoteUpdateAction` (`sync-engine/auto-pull.js`, tests in `test
 
 **Desktop and mobile differ on conflicts.** Mobile settles local-plus-remote changes by last write wins (`localIsNewer` pushes, otherwise it pulls). Desktop asks, because either answer loses someone's edits.
 
+### Link imports: kept updated or a snapshot
+
+A playlist imported from a link (dropped on the sidebar's Playlists button or the Playlists page, pasted in the import dialog, or opened from `parachord://import?url=`) is either kept updated from the link or a snapshot, and the person picks when importing: `PlaylistUpdateDialog` for a drop or a deep link, the same `UpdateModeChoice` inline in the import dialog (a second dialog over it would fight it for Escape). The answer is the record's `autoUpdate` (`src/renderer/lib/playlist-update-mode.js`, tests in `tests/renderer/playlist-update-mode.test.js` and `tests/renderer/playlist-update-dialog.test.js`); it rides the whole-record spread like every field and is never pushed. A link already imported isn't asked again: importing it again refreshes it, as before.
+
+| Mode | XSPF URL | Service link (Spotify, Apple Music, …) |
+|---|---|---|
+| Kept updated (`autoUpdate: true`) | The hosted machinery below: on the `hosted_playlists` startup list, polled every 5 minutes | Looked up again once an hour (`serviceRefreshDue`, the service-link poller in app.js, a 10-minute tick); a failed lookup waits an hour too. Never on `hosted_playlists`: that fetched a service's page as an XSPF (the launch dialog below). |
+| Snapshot (`autoUpdate: false`) | Not on the startup list, not polled; saved through `playlists.save` like any playlist, so its edits persist | Never re-fetched |
+
+**Playlists imported before the choice have no `autoUpdate` and keep what they did**: a hosted XSPF kept updating, a service link was a snapshot. Turning every old service import into an hourly lookup would have surprised people and cost API calls; a snapshot's page offers "Keep updated".
+
+Either way the link wins for a kept-updated playlist: a change there replaces the copy here, edits included, and the question says so. That is the hosted XSPF rule extended to service links, not the sync auto-pull's (above), which keeps local edits: a link import has no sync baseline to tell an edit from the source.
+
+**The refresh controls follow the mode.** Kept updated: the playlist page shows "Check now" and "Stop updating", and the Playlists grid card and table row show a check-now button ("Updates on its own from its link"). Snapshot: no refresh anywhere, because a snapshot never changes; the playlist page shows "Keep updated", which switches it (`setPlaylistUpdateMode`: saves `autoUpdate`, puts an XSPF on or off `hosted_playlists` through `hostedListForMode`, and brings it up to date now). A snapshot of an XSPF also isn't "hosted" to the sync auto-pull (`isHostedXspf`), since nothing polls it.
+
 ### Hosted XSPF Semantics
 
 A playlist with `sourceUrl` is a **hosted XSPF** — it mirrors a remote URL polled every 5 minutes (`pollHostedPlaylists` effect, app.js ~L37104). The XSPF is canonical; Spotify (if linked) is a passive mirror.

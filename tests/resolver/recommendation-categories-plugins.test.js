@@ -47,7 +47,7 @@ describe('Amazon Music sends playlist categories', () => {
     expect(sections[0].seedArtist).toBeUndefined();
     expect(sections[1].seedArtist).toBeUndefined();
     expect(sections[2].seedArtist).toBe('FIDLAR');
-    expect(axe.manifest.version).toBe('1.12.0');
+    expect(axe.manifest.version).toBe('1.12.1');
   });
 
   test('Amazon artist shelf with blank artists has no seed', async () => {
@@ -83,7 +83,7 @@ describe('ListenBrainz sends playlist categories', () => {
     const weekly = sections.filter(s => s.id === 'weekly-exploration' || s.id === 'weekly-jams');
     expect(weekly).toHaveLength(2);
     expect(weekly.every(s => s.category === 'personal')).toBe(true);
-    expect(axe.manifest.version).toBe('1.6.0');
+    expect(axe.manifest.version).toBe('1.6.1');
   });
 });
 
@@ -113,7 +113,7 @@ describe('Apple Music sends playlist categories', () => {
     ])]);
     const items = sections.flatMap(s => s.items);
     expect(items.map(i => i.category)).toEqual(['personal', 'editorial', 'community', undefined]);
-    expect(axe.manifest.version).toBe('1.5.0');
+    expect(axe.manifest.version).toBe('1.5.1');
   });
 
   test('Apple ignores inherited property names as playlistType', async () => {

@@ -91,6 +91,26 @@ Summary; the full text, with the incidents behind each rule, is in [renderer-pat
 - **Source icons come from `visibleSources`** (`src/renderer/lib/visible-sources.js`): a row's service icons, order and dimming are one rule (real sources, `playbackResolvers` only, `resolverOrder`), never a per-list copy.
 - **Track lengths come from `trackDurationLabel`** (`src/renderer/lib/track-duration.js`): the track's own duration, else its best source's (same merge as `visibleSources`), else a blank cell, never "0:00".
 - **Filter buttons come from `FilterChips`** (`src/renderer/components/filter-chips.js`, Home's source filter style): a row of pick-one chips never carries its own pill classes.
+- **A playlist link's "keep it updated or snapshot" question comes from `PlaylistUpdateDialog` / `UpdateModeChoice`** (`src/renderer/components/playlist-update-dialog.js`, on `Modal` and `RadioGroup`): every way of importing a playlist from a link asks it the same way. What each mode does: "Link imports" in [sync.md](docs/architecture/sync.md).
+- **Status pills come from `Badge`** (`src/renderer/components/badge.js`): Hosted, AI, Shared and a playlist's sync services; a service's pill takes its plugin's `color`, never a palette class or emoji.
+- **Album cards come from `AlbumCard`** (`src/renderer/components/album-card.js`, art parts in `card-art.js`): every album grid (Home, Collection, Search, Fresh Drops, Pop of the Tops, Recommendations, History's and a friend's top albums) is this inset card; its overlay actions come from app.js's `albumCardActions({ title, artist, id, getTracks })`, and its hover prefetch dwell is the card's own. Critical Darlings' wide review cards are a different layout.
+- **Artist cards come from `ArtistCard`** (`src/renderer/components/artist-card.js`): every artist grid (Collection, Search, Recommendations, top artists, related artists) is this card, with Play (`playArtistTopTracks`) on hover and the artist menu, whose Add Top 10 to Queue replaces a hover queue button. Seven hand-built copies had drifted.
+- **Person cards come from `ListenerCard`** (`src/renderer/components/listener-card.js`): Collection's Friends and Recommendations' Listeners share it; each page passes its own menu and lines, and Play (`playListenerTopTracks`) plays their recent top 10.
+- **Counts in UI text come from `countOf`** (`src/renderer/lib/plural.js`): `countOf(n, 'track')` gives "1 track" / "2 tracks"; never write `${n} tracks`, which reads "1 tracks". `tests/renderer/plural.test.js` fails on a hard-coded one (console lines and AI-prompt text excepted).
+- **Error text comes from `errorText`** (`src/renderer/lib/error-copy.js`): a toast or dialog shows `errorText(err, 'Couldn’t X. What to do.')`, never `err.message`; code that throws something a person should read throws `userError('…')`. Log the raw error with `console.error`. `tests/renderer/error-copy.test.js` fails on a message built from `error.message`.
+- **Relative times come from `timeAgo`** (`src/renderer/lib/time-ago.js`): "just now", "18m ago", "3h ago"; never another copy of the ladder (`tests/renderer/time-ago.test.js`).
+- **A page's scroll area carries `.scroll-edge`** (`index.html`): once it scrolls, a soft shadow falls over what scrolls under the hero, toolbar or sticky bar above it. One capture listener in app.js sets `data-scrolled`; a new page's scroll area adds the class, never its own scroll shadow.
+- **Card grids use `.card-grid`** (`index.html`): `repeat(auto-fill, minmax(180px, 1fr))` over the content area. Never `md:`/`lg:`/`xl:grid-cols-*`: they measure the window, and at the 1000px minimum the content is 744px. `tests/ui/card-grid.test.js` fails on one.
+- **Buttons come from `Button`** (`src/renderer/components/button.js`): primary, secondary, destructive, text and icon variants with focus, active, disabled and busy states. An icon button needs an `aria-label`.
+- **"Why it's here" badges come from `ReasonBadge`** (`src/renderer/components/reason-badge.js`): the round badge on a cover with the reason as its tooltip (Shuffleupagus picks on Home and Recommendations, Critical Darlings summaries). `shuffleupagusBadgeProps(item)` says whether an item gets one. `ReasonMark` is the same disc as a decorative mark (Home's "Ask Shuffleupagus" heading), so Shuffleupagus reads as one thing everywhere.
+- **Tooltips come from `Tooltip`** (`src/renderer/components/ui-atoms.js`): wrap a trigger in `Tooltip`, or put `data-tooltip` on a control and `TooltipLayer` shows it; never a native `title` on a control. An icon-only control still needs its own `aria-label`.
+- **Dialogs come from `Modal`** (`src/renderer/components/modal.js`): role, labelling, focus trap and return, Escape, one scrim, close X and title size. `showConfirmDialog` renders `ConfirmModal`; name the confirm button for its action (`confirmLabel`), and pass `destructive` or `cancelLabel` to offer Cancel.
+- **Pick-one dropdowns come from `SortMenu`** (`src/renderer/components/sort-menu.js`): it owns its open state and keyboard handling; never hand-build a sort or filter dropdown.
+- **Action menus come from `Menu`** (`src/renderer/components/menu.js`): Share, Tickets, Sync, the playbar's Play from, the chat provider. Pass `items` (actions, links, choices with `checked`, separators) and a `renderTrigger`; it owns its open state, keyboard handling and placement (a portal over the page, one dark look), so never hand-build a dropdown of actions.
+- **Right-click menus are built by `lib/item-menus.js`** (`releaseMenu`, `artistMenu`, `playlistMenu`), then sent through `window.showItemMenu`; never build an album, artist or playlist menu payload by hand, or the same item gets a different menu on another page.
+- **A page header's controls come from `HeaderControl`** (`src/renderer/components/header-control.js`): Close, Edit, Cancel, Done, Save, Refresh, and the queue drawer's (`tone: 'dark'`). It renders the shared `Button` (small, sentence case: `tone: 'primary'` is the fill accent, anything else secondary), and `close` is an icon-only ✕ named and tooltipped by its label. There is no separate uppercase header-button style.
+- **Clickable cards come from `CardButton`** (`src/renderer/components/card-button.js`): a container whose main action is a `<button>` stretched over it; put the card's own actions in a `card-actions` container (shown on hover and keyboard focus) and the cover's zoom on `card-zoom`. Never a `div` with `onClick` or `role="button"` (design-drift's `roleButtonDivs` is 0), and never a `<button>` holding buttons.
+- **Empty and error states come from `EmptyState` / `ErrorState`** (`src/renderer/components/states.js`): a title, why, and what to do; errors offer Try again or a fix.
 - **A list's React key is unique among its siblings: de-duplicate the data by the same id the key uses, or key by something that is unique.** A repeated key leaves stale cards behind after a filter or search (Fresh Drops, Concerts, Search playlists, 2026-11).
 - **A playlist's own cover comes from `PlaylistCoverImage`** (`src/renderer/components/playlist-cover.js`): a playlist record can carry `coverArt`, the provider's image for the playlist. Never stamp a playlist cover on a track's `albumArt` (that is the 4×-tiled-mosaic bug) and never write it into `albumArtCache` (it is playlist art, not album art). The surfaces, layering and fallback rules: "Playlist covers" in [album-art.md](docs/architecture/album-art.md).
 - **Colors come from CSS variables** (`var(--accent-primary)`, `var(--card-bg)`, ...) so both themes work.
@@ -112,12 +132,13 @@ Each rule below exists because the audit found its absence. Read the audit's are
   - If you'd otherwise write a second copy of something that already exists elsewhere (a button, dialog shell, menu, empty or error state, input, switch, spinner, icon), first extract it into a shared component under `src/renderer/components/`, then point both places at it. That's how `SectionHeader` (#1370) and `FilterChips` (#1371) were made.
   - Never restyle a shared component's output from a page; change the component.
   - A new shared component gets a "comes from X" line in the Renderer patterns list above and in `renderer-patterns.md`.
-- **Colours come from the CSS variables** in `index.html`, so both themes work.
-  - Don't add hex values, Tailwind palette classes (`text-gray-500`, `bg-red-50`, `purple-600`, ...), or `isDark` / `effectiveTheme` ternaries. Most palette classes have no `.dark` remap, and Tailwind's `purple-600` isn't the accent.
-  - If no token fits, add one to `:root` and `.dark` together.
-  - White text never sits on `var(--accent-primary)` (it's `#a78bfa` in dark mode). Use the fixed fill accent `#7c3aed` behind a named constant, the "fill-accent" convention in `home-sections.js` / `filter-chips.js`.
-  - Success, warning and error use the `--success` / `--warning` / `--error` tokens, never their own hex values.
-  - A service's colour is its plugin's `resolver.color`, never a hard-coded copy.
+- **Colours come from the theme tokens** in `index.html`, so both themes work. The token list is in `docs/DESIGN_SYSTEM.md` "Colors".
+  - Use the theme-token Tailwind classes (`text-ink-secondary`, `bg-surface-card`, `border-line`, `bg-accent-fill`, `bg-tint-danger`, ...; `tailwind.config.js`) or `var(--…)` in inline styles. Don't add hex values, Tailwind palette classes (`text-gray-500`, `bg-red-50`, `purple-600`, ...), or `isDark` / `effectiveTheme` ternaries (the count is 0; keep it there).
+  - If no token fits, add one to `:root` and `.dark` together (and to `tailwind.config.js` if classes will use it).
+  - White text never sits on `var(--accent-primary)` (it's `#a78bfa` in dark mode): fills with white text use `--accent-fill` / `--on-accent` (`bg-accent-fill text-ink-on-accent`).
+  - Status text uses `--text-success/-warning/-danger/-info`; white-text status fills use `--fill-*`. Never their own hex values.
+  - A page's colour comes from `PAGE_COLORS` (`src/renderer/lib/page-colors.js`); a service's from its plugin's `resolver.color`. Never a hard-coded copy.
+  - The playbar, queue drawer and AI panels are dark in both themes: they use `--surface-dark*`, never page tokens.
 - **Stay on the scales.**
   - Type: 11 · 12 · 13 · 14 · 16 · 20 · 24 · 28 · 48px. Weights as numbers.
   - Spacing: the 4px scale. 10px is only for card padding.
@@ -135,21 +156,21 @@ Each rule below exists because the audit found its absence. Read the audit's are
 - **Look before calling a UI change done.** Check it in light mode, in dark mode, and at the 1000px minimum window width (the content area is then 744px wide; Tailwind `md:`/`lg:` measure the window, not the content). Update its loading skeleton in the same PR (Renderer patterns above).
 - **Copy.**
   - Terms:
-    - **plugin**: what you install
+    - **plug-in**: what you install ("Plug-Ins" in Title Case; never "resolver" in UI text, whatever its type; code and docs may say plugin)
     - **service**: Spotify, Apple Music and so on
     - **source**: where a track plays from
     - also **Collection**, **Loves**, **Shuffleupagus**, **track**, **album**/**edition**, **sync**/**import**
   - Never in UI text: "resolver", ids, file extensions, raw `error.message`, or Settings paths that don't exist.
   - Sentence case everywhere except native menus, tabs, Settings section headings and page titles. Never type caps; use CSS `uppercase`.
   - "…" not "...".
-  - Plurals go through one helper, never a hard-coded "tracks".
+  - Plurals go through one helper (`countOf`), never a hard-coded "tracks".
   - An error says what happened and what to do. A confirm button is named for its action and sits next to Cancel. Success is a toast, not a dialog.
 - **The ratchet enforces this.** `tests/ci/design-drift.test.js` runs `scripts/design-drift.js` over `src/renderer/` and compares against `tests/ci/design-drift-baseline.json`.
-  - It counts hex colours, palette classes, theme ternaries, clickable non-buttons, `outline: 'none'`, native dialogs, "...", pasted SVG paths, off-scale font sizes and radii, and JS hover handlers. It also flags CSS variables the renderer uses but `index.html` doesn't define.
+  - It counts hex colours, palette classes, theme ternaries, clickable non-buttons, `outline: 'none'`, native dialogs, "...", pasted SVG paths, off-scale font sizes and radii, and JS hover handlers that change style. It also flags CSS variables the renderer uses but `index.html` doesn't define.
   - A count that rises fails: fix it with the shared component or token.
   - A count that falls fails until you lock it in with `npm run design-drift -- --write` and commit the baseline.
   - Raising the baseline is a last resort. The PR must say why no shared way existed.
-- **`docs/DESIGN_SYSTEM.md` is out of date** in the places the audit lists (unused tokens, "no breakpoint-based responsive design", stale colours and animations). Where it disagrees with this section or the audit, this section wins until the doc is rewritten. A PR that settles one of those points updates the doc.
+- **`docs/DESIGN_SYSTEM.md` is the reference**: tokens, scales, colours, components ("Which component, when"), copy and animations, rewritten to match the code in the design audit. A PR that changes a token, scale or shared component updates it.
 
 ## Dialog Patterns
 
@@ -200,6 +221,7 @@ Anything that creates a shared invariant or data shape that Android also has to 
 - Resolver scoring / confidence model changes — `confidence-scoring.js` ↔ `ResolverScoring.kt` byte-equivalence is the strictest mirror requirement
 - Achordion-facing endpoints (writer endpoints that the desktop calls and Android should also call, or where Android's submit semantics need to match)
 - Protocol surface additions (`parachord://` deep links — see "Android Parity Requirements (protocol play handlers)" in [android-parity.md](docs/architecture/android-parity.md))
+- Playlist import link types: mobile imports a playlist from every link desktop does, routed through the plugin registry on both (see "Android Parity Requirements (playlist link import)" in [android-parity.md](docs/architecture/android-parity.md))
 
 ### When this does NOT apply
 
