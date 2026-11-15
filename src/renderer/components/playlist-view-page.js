@@ -31,6 +31,12 @@ const { playlistPlaybackContext } = require('../lib/playlist-context');
 const { trackSlug } = require('../lib/track-slug');
 const { countOf } = require('../lib/plural');
 
+// Column widths that follow the content area (#1389). At the 1000px minimum
+// window the content is 744px: a fixed 240px art column and 140px of source
+// icons left track titles about 190px. The icon column's skeleton uses it too.
+const PLAYLIST_ART_COLUMN = 'clamp(184px, 26%, 240px)';
+const PLAYLIST_ICON_COLUMN = 'clamp(72px, 14%, 140px)';
+
 const { Play, Music } = Icons;
 
 // Plain functions from Parachord, passed as stable wrappers.
@@ -686,7 +692,10 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
             // LEFT COLUMN: 2x2 album art grid and metadata (fixed, scrolls independently)
             React.createElement('div', {
               className: 'flex-shrink-0 pr-8 pt-8 scrollable-content',
-              style: { width: '240px', overflowY: 'auto', overflowX: 'hidden' }
+              // Scales with the content area (#1389): 240px on a normal
+              // window, down to 184px at the minimum, so the tracklist keeps
+              // room for titles. The card and cover fill it.
+              style: { width: PLAYLIST_ART_COLUMN, overflowY: 'auto', overflowX: 'hidden' }
             },
               // Playlist card - matches playlist card style from grid view
               (() => {
@@ -699,7 +708,8 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                     borderRadius: '10px',
                     backgroundColor: 'var(--card-bg)',
                     boxShadow: 'var(--card-shadow)',
-                    width: '212px'
+                    width: '100%',
+                    boxSizing: 'border-box'
                   },
                   onContextMenu: (e) => {
                     e.preventDefault();
@@ -722,8 +732,8 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                   React.createElement('div', {
                     className: 'rounded-lg overflow-hidden album-art-container group/art relative',
                     style: {
-                      width: '192px',
-                      height: '192px'
+                      width: '100%',
+                      aspectRatio: '1 / 1'
                     }
                   },
                     hasCachedCovers ?
@@ -1023,7 +1033,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                 }, 'Delete Playlist')
               ),
               // Share button (outside space-y-1 metadata div for independent spacing)
-              React.createElement('div', { className: 'relative mt-5 flex justify-start', style: { width: '212px' } },
+              React.createElement('div', { className: 'relative mt-5 flex justify-start', style: { width: '100%' } },
                 // Share menu (components/menu.js).
                 React.createElement(Menu, {
                   label: 'Share',
@@ -1249,7 +1259,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                       // Resolver icons - fixed width column (last column)
                       React.createElement('div', {
                         className: 'flex items-center gap-1 justify-end',
-                        style: { width: '140px', flexShrink: 0, minHeight: '24px' }
+                        style: { width: PLAYLIST_ICON_COLUMN, flexShrink: 0, minHeight: '24px', overflow: 'hidden' }
                       },
                         isResolving ?
                           React.createElement('div', {
@@ -1338,7 +1348,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                         style: { width: '40px', animationDelay: `${index * 50 + 75}ms` }
                       }),
                       // Resolver icons skeleton
-                      React.createElement('div', { className: 'flex items-center gap-1', style: { width: '140px', flexShrink: 0 } },
+                      React.createElement('div', { className: 'flex items-center gap-1', style: { width: PLAYLIST_ICON_COLUMN, flexShrink: 0 } },
                         React.createElement('div', {
                           className: 'w-5 h-5 rounded shimmer-light animate-shimmer',
                           style: { animationDelay: `${index * 50 + 100}ms` }
@@ -1358,4 +1368,4 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
       );
 });
 
-module.exports = { PlaylistViewPage, PLAYLIST_VIEW_PAGE_HANDLERS };
+module.exports = { PlaylistViewPage, PLAYLIST_VIEW_PAGE_HANDLERS, PLAYLIST_ART_COLUMN, PLAYLIST_ICON_COLUMN };

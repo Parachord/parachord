@@ -2041,7 +2041,7 @@ const { useVolume } = require('./hooks/use-volume');
 const { usePlaybackQueue } = require('./hooks/use-playback-queue');
 const { usePlaybackEngine } = require('./hooks/use-playback-engine');
 const { HomePage } = require('./components/home-page');
-const { PlaylistViewPage } = require('./components/playlist-view-page');
+const { PlaylistViewPage, PLAYLIST_ART_COLUMN } = require('./components/playlist-view-page');
 const { ArtistPage } = require('./components/artist-page');
 const { SearchPage } = require('./components/search-page');
 // The app's section title (Home's), over every page's rows and grids.
@@ -37628,12 +37628,15 @@ useEffect(() => {
             // LEFT COLUMN: Skeleton album art and metadata
             React.createElement('div', {
               className: 'flex-shrink-0 pr-8',
-              style: { width: '240px' }
+              // The playlist view's own art column (#1389), so nothing moves
+              // when the playlist lands.
+              style: { width: PLAYLIST_ART_COLUMN }
             },
-              // Skeleton 2x2 album art grid
+              // Skeleton 2x2 album art grid (the card's art: the column less
+              // the card's 10px padding each side)
               React.createElement('div', {
                 className: 'grid grid-cols-2 gap-0.5 rounded-lg overflow-hidden mb-4',
-                style: { width: '192px', height: '192px' }
+                style: { width: 'calc(100% - 20px)', aspectRatio: '1 / 1' }
               },
                 Array.from({ length: 4 }).map((_, i) =>
                   React.createElement('div', {
