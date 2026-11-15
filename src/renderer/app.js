@@ -37277,7 +37277,7 @@ useEffect(() => {
                             : 'text-ink-tertiary hover:text-ink-secondary hover:bg-surface-hover opacity-0 group-hover:opacity-100 card-reveal'
                         }`
                       },
-                      React.createElement(Icons.Link, { className: 'w-3.5 h-3.5', strokeWidth: 2 })
+                      React.createElement(Icons.Link, { className: 'w-4 h-4', strokeWidth: 2 })
                     )
                     ) // Close Tooltip
                   ),
@@ -37434,7 +37434,7 @@ useEffect(() => {
       return React.createElement(Modal, {
         size: 'sm',
         title: 'Open in browser',
-        icon: React.createElement(Icons.ExternalLink, { className: 'w-6 h-6', style: { color: 'var(--accent-primary)' } }),
+        icon: React.createElement(Icons.ExternalLink, { className: 'w-5 h-5', style: { color: 'var(--accent-primary)' } }),
         onClose: dismiss,
         footer: [
           React.createElement(Button, { key: 'skip', variant: 'secondary', onClick: handleSkipExternalTrack }, 'Skip'),
@@ -37468,7 +37468,7 @@ useEffect(() => {
       size: 'sm',
       title: 'Friend not saved',
       description: `${pendingUnpinFriend.displayName} isn’t saved to your collection. If you unpin them, you’ll need to add them again to pin them later.`,
-      icon: React.createElement(Icons.AlertTriangle, { className: 'w-6 h-6', style: { color: 'var(--warning)' } }),
+      icon: React.createElement(Icons.AlertTriangle, { className: 'w-5 h-5', style: { color: 'var(--warning)' } }),
       onClose: () => {
         setUnsavedFriendWarningOpen(false);
         setPendingUnpinFriend(null);
@@ -40174,7 +40174,7 @@ useEffect(() => {
                 style: { backgroundColor: pageTint('concerts'), color: PAGE_COLORS.concerts.color },
                 'data-tooltip': `${concertsLocation} (${concertsLocationRadius} mi radius)`
               },
-                React.createElement(Icons.MapPin, { className: 'w-3.5 h-3.5 flex-shrink-0' }),
+                React.createElement(Icons.MapPin, { className: 'w-4 h-4 flex-shrink-0' }),
                 React.createElement('span', { className: 'max-w-[120px] truncate' }, concertsLocation),
                 React.createElement('span', { style: { opacity: 0.7 } }, `${concertsLocationRadius}mi`),
                 // X to clear
@@ -40183,7 +40183,7 @@ useEffect(() => {
                   className: 'ml-0.5 rounded-full p-0.5 transition-colors cursor-pointer',
                   style: { color: PAGE_COLORS.concerts.color }
                 },
-                  React.createElement(Icons.X, { className: 'w-3.5 h-3.5', strokeWidth: 2.5 })
+                  React.createElement(Icons.X, { className: 'w-4 h-4' })
                 )
               ),
               // Location pin button (shown when no location is active)
@@ -40292,7 +40292,7 @@ useEffect(() => {
                       onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = 'var(--hover-bg-default)'; },
                       onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'transparent'; }
                     },
-                      React.createElement(Icons.MapPin, { className: 'w-3.5 h-3.5 flex-shrink-0', style: { color: 'var(--text-tertiary)' } }),
+                      React.createElement(Icons.MapPin, { className: 'w-4 h-4 flex-shrink-0', style: { color: 'var(--text-tertiary)' } }),
                       React.createElement('span', { className: 'truncate' }, suggestion.region)
                     )
                   )
@@ -40302,7 +40302,7 @@ useEffect(() => {
                   className: 'flex items-center gap-1.5 mb-3',
                   style: { fontSize: '13px', color: 'var(--text-success)' }
                 },
-                  React.createElement(Icons.Check, { className: 'w-3.5 h-3.5', strokeWidth: 2.5 }),
+                  React.createElement(Icons.Check, { className: 'w-4 h-4' }),
                   React.createElement('span', null, concertsLocation)
                 ),
                 // Radius slider
@@ -51248,7 +51248,7 @@ React.createElement('div', { style: { marginTop: '12px' } },
         role: 'alertdialog',
         title: `Delete “${syncDeleteDialog.playlist?.title}”?`,
         description: `This playlist is synced with ${svcs.length ? svcs.join(', ') : 'a sync service'}. What would you like to do?`,
-        icon: React.createElement(Icons.Trash2, { className: 'w-6 h-6', style: { color: 'var(--text-danger)' } }),
+        icon: React.createElement(Icons.Trash2, { className: 'w-5 h-5', style: { color: 'var(--text-danger)' } }),
         onClose: close,
         footer: [
           React.createElement(Button, { key: 'cancel', variant: 'secondary', onClick: close }, 'Cancel'),

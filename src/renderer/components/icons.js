@@ -6,8 +6,9 @@
 // global, but nothing ever loaded it, so every icon rendered a text glyph
 // (▶ ⏸ ✕ ♫ ...) and dropped its size and className.
 //
-// Conventions (docs/DESIGN_SYSTEM.md "Icons"): stroke 2; 16px (w-4) in rows
-// and chips, 20px (w-5) in buttons and dialogs. Transport icons (Play, Pause,
+// Conventions (docs/DESIGN_SYSTEM.md "Icons"): stroke 2; 16px (w-4) in rows,
+// chips and small buttons, 20px (w-5) in buttons and dialog titles, 12px
+// (w-3) only inside a badge. Transport icons (Play, Pause,
 // SkipBack, SkipForward) are solid, like the glyphs they replace; pass
 // fill="none" for an outline. An icon is decorative (aria-hidden) unless it
 // gets a `title`; the button around an icon-only control carries the

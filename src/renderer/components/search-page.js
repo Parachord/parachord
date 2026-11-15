@@ -1484,7 +1484,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                         onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
                         'aria-label': 'Add to playlist', 'data-tooltip': 'Add to playlist'
                       },
-                        React.createElement(Icons.Plus, { className: 'w-3.5 h-3.5' })
+                        React.createElement(Icons.Plus, { className: 'w-4 h-4' })
                       ),
                       // Play button (center, larger)
                       React.createElement('button', {
@@ -1519,7 +1519,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                         onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
                         'aria-label': 'Add to queue', 'data-tooltip': 'Add to queue'
                       },
-                        React.createElement(Icons.QueueAdd, { className: 'w-3.5 h-3.5', strokeWidth: 2 })
+                        React.createElement(Icons.QueueAdd, { className: 'w-4 h-4', strokeWidth: 2 })
                       )
                     ),
                     // Source dots - bottom right corner (hidden on hover): the

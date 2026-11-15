@@ -301,7 +301,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                   showToast('Playlist saved to library', 'success');
                   // Switch to viewing the saved playlist
                   setSelectedPlaylist({ ...newPlaylist, isEphemeral: false });
-                } }, React.createElement(Icons.Check, { className: 'w-3.5 h-3.5' }), 'Save'),
+                } }, React.createElement(Icons.Check, { className: 'w-4 h-4' }), 'Save'),
               // Manual refresh. Provider URL imports are snapshots — they are not
               // re-fetched at launch (that path parsed the provider page as XSPF
               // and dialoged). Hosted XSPF still auto-updates; this is the
@@ -659,7 +659,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                     onClick: handlePull,
                     className: 'flex items-center gap-1.5 px-3 py-1.5 bg-surface-inset text-ink-secondary text-xs font-medium rounded-full hover:bg-surface-hover transition-colors'
                   },
-                    React.createElement(Icons.Download, { className: 'w-3.5 h-3.5' }),
+                    React.createElement(Icons.Download, { className: 'w-4 h-4' }),
                     `Use ${providerName}`
                   ),
 
