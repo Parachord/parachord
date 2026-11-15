@@ -110,3 +110,9 @@ test('the artist page shares its Achordion link: a Share menu, and right-click a
   expect(artist).toMatch(/React\.createElement\(Menu, \{\s*label: 'Share',\s*renderTrigger: \(t\) => React\.createElement\(ShareButton, t\),[\s\S]{0,700}publishArtistSmartLink\([\s\S]{0,300}\{ openInBrowser: true \}\)/);
   expect(artist).toMatch(/cursor: isHeaderCollapsed \? 'pointer' : 'default'\s*\},[\s\S]{0,200}onContextMenu: copyParachordLink/);
 });
+
+test('the artist hero casts a shadow once content scrolls under it', () => {
+  const artist = read('src/renderer/components/artist-page.js');
+  expect(artist).toContain("boxShadow: contentScrolled ? '0 6px 16px -6px rgba(0, 0, 0, 0.35)' : 'none',");
+  expect(artist).toContain('onScroll: (e) => { setContentScrolled(e.currentTarget.scrollTop > 0); handleArtistPageScroll(e); }');
+});

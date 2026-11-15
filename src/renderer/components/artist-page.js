@@ -155,6 +155,10 @@ const ArtistPage = React.memo(function ArtistPage(props) {
     trackSources,
     visibleAlbumIds,
   } = props;
+  // Content scrolled under the hero: a soft shadow marks the hero's edge (the
+  // biography text ran straight into it). React skips the render when the
+  // value doesn't change, so this flips once, not per scroll event.
+  const [contentScrolled, setContentScrolled] = React.useState(false);
   return React.createElement('div', { 
         className: 'flex-1 flex flex-col',
         style: { overflow: 'hidden' }
@@ -166,9 +170,12 @@ const ArtistPage = React.memo(function ArtistPage(props) {
           style: {
             height: isHeaderCollapsed ? '80px' : '320px',
             flexShrink: 0,
-            transition: 'height 300ms ease-out',
             overflow: 'hidden',
-            cursor: isHeaderCollapsed ? 'pointer' : 'default'
+            cursor: isHeaderCollapsed ? 'pointer' : 'default',
+            // Above the content (its next sibling paints later) so the shadow shows.
+            zIndex: 2,
+            boxShadow: contentScrolled ? '0 6px 16px -6px rgba(0, 0, 0, 0.35)' : 'none',
+            transition: 'height 300ms ease-out, box-shadow 200ms ease'
           },
           // Right-click anywhere on the hero (not only the name): Copy link /
           // View on Achordion.
@@ -285,7 +292,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                       style: isOnTour ? {
                         opacity: showOnTour ? 1 : 0,
                         maxWidth: showOnTour ? '20px' : '0px',
-                        overflow: 'hidden',
+            overflow: 'hidden',
                         transition: 'opacity 0.4s ease, max-width 0.4s ease'
                       } : undefined
                     }, '|'),
@@ -313,7 +320,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                       style: isOnTour ? {
                         opacity: showOnTour ? 1 : 0,
                         maxWidth: showOnTour ? '200px' : '0px',
-                        overflow: 'hidden',
+            overflow: 'hidden',
                         padding: showOnTour ? '0.25rem 0.5rem' : '0.25rem 0',
                         transition: 'opacity 0.4s ease, max-width 0.4s ease, padding 0.4s ease',
                         whiteSpace: 'nowrap'
@@ -438,7 +445,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                       style: isOnTour ? {
                         opacity: showOnTour ? 1 : 0,
                         maxWidth: showOnTour ? '20px' : '0px',
-                        overflow: 'hidden',
+            overflow: 'hidden',
                         transition: 'opacity 0.4s ease, max-width 0.4s ease'
                       } : undefined
                     }, '|'),
@@ -465,7 +472,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                       style: isOnTour ? {
                         opacity: showOnTour ? 1 : 0,
                         maxWidth: showOnTour ? '200px' : '0px',
-                        overflow: 'hidden',
+            overflow: 'hidden',
                         padding: showOnTour ? '0.25rem 0.5rem' : '0.25rem 0',
                         transition: 'opacity 0.4s ease, max-width 0.4s ease, padding 0.4s ease',
                         whiteSpace: 'nowrap'
@@ -793,7 +800,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
             overflowY: 'scroll',
             pointerEvents: 'auto'
           },
-          onScroll: handleArtistPageScroll
+          onScroll: (e) => { setContentScrolled(e.currentTarget.scrollTop > 0); handleArtistPageScroll(e); }
         },
           // Sticky filter bar (Music tab only) - refined styling
           artistPageTab === 'music' && React.createElement('div', {
@@ -1292,7 +1299,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                         fontSize: '12px',
                         fontWeight: '500',
                         display: 'block',
-                        overflow: 'hidden',
+            overflow: 'hidden',
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap',
                         textDecoration: 'none'
