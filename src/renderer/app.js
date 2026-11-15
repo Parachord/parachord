@@ -1317,6 +1317,7 @@ const { sourceRowState } = require('./lib/visible-sources');
 const { trackDurationLabel } = require('./lib/track-duration');
 const { contextPlaylistTarget, playlistRef } = require('./lib/playlist-context');
 const { pulledOpenPlaylist } = require('./lib/playlist-sync-banner');
+const { shouldPushToSource, recordPushToSource } = require('../../sync-engine/auto-pull');
 const { Play, Pause, SkipForward, SkipBack, Volume2, Search, List, Settings, Plus, Music, Radio, Users, Heart, X } = Icons;
 
 
@@ -4320,10 +4321,9 @@ const Parachord = () => {
                   {
                     const sourceProvider = playlist.syncedFrom?.resolver;
                     if (sourceProvider === providerId) {
-                      const sourceSyncedAt = playlist.syncSources?.[sourceProvider]?.syncedAt || 0;
-                      const hasGenuineLocalEdits = playlist.locallyModified
-                        && (playlist.lastModified || 0) > sourceSyncedAt;
-                      if (!hasGenuineLocalEdits) continue;
+                      // Real edits by the tracks fingerprint, never with a
+                      // conflict pending (sync-engine/auto-pull.js).
+                      if (!shouldPushToSource(playlist, providerId)) continue;
                       // Fall through: push back to source IS warranted (collaborative case).
                     }
                   }
@@ -4342,10 +4342,15 @@ const Parachord = () => {
                   {
                     const idImpliesThisProvider = playlist.id?.startsWith(`${providerId}-`);
                     if (idImpliesThisProvider) {
-                      const sourceSyncedAt = playlist.syncSources?.[providerId]?.syncedAt || 0;
-                      const hasGenuineLocalEdits = playlist.locallyModified
-                        && (playlist.lastModified || 0) > sourceSyncedAt;
-                      if (!hasGenuineLocalEdits) continue;
+                      // A playlist whose syncedFrom is this provider was decided by
+                      // shouldPushToSource above; the timestamp rule here is only for
+                      // one whose syncedFrom is missing or points elsewhere.
+                      if (playlist.syncedFrom?.resolver !== providerId) {
+                        const sourceSyncedAt = playlist.syncSources?.[providerId]?.syncedAt || 0;
+                        const hasGenuineLocalEdits = playlist.locallyModified
+                          && (playlist.lastModified || 0) > sourceSyncedAt;
+                        if (!hasGenuineLocalEdits) continue;
+                      }
                       // Fall through: push back to source IS warranted (collaborative case).
                     }
                   }
@@ -4427,6 +4432,8 @@ const Parachord = () => {
                             pendingAction: null
                           }
                         };
+                        // Linked to (and pushed to) the playlist's own source.
+                        Object.assign(playlist, recordPushToSource(playlist, providerId, { externalId: result.externalId, snapshotId: result.snapshotId, tracks: playlist.tracks || [], now: Date.now() }));
                         playlistsChanged = true;
                         modifiedPlaylistIds.add(playlist.id);
                         createOk = true;
@@ -4439,7 +4446,7 @@ const Parachord = () => {
                     }
                     if (noteLbOutcome(createOk)) break;
                     await breathe();
-                  } else if (playlist.locallyModified) {
+                  } else if (playlist.locallyModified || shouldPushToSource(playlist, providerId)) {
                     // CHANNEL gate for the EDIT branch (parachord#911). SYNC:
                     // sync-engine/playlist-push-candidate.js channelOverrideExcludes.
                     // An already-linked mirror must STOP receiving edits the moment
@@ -4479,6 +4486,10 @@ const Parachord = () => {
                           snapshotId: pushResult.snapshotId,
                           syncedAt: Date.now()
                         };
+                        // Pushed to the playlist's own source: record the source's new
+                        // snapshot and these tracks as agreed, or the next sync reads our
+                        // own push as a conflict (sync-engine/auto-pull.js).
+                        Object.assign(playlist, recordPushToSource(playlist, providerId, { externalId: syncInfo.externalId, snapshotId: pushResult.snapshotId, tracks: playlist.tracks || [], now: Date.now() }));
                         playlistsChanged = true;
                         modifiedPlaylistIds.add(playlist.id);
                         pushOk = true;
@@ -9930,10 +9941,9 @@ const Parachord = () => {
               {
                 const sourceProvider = playlist.syncedFrom?.resolver;
                 if (sourceProvider === providerId) {
-                  const sourceSyncedAt = playlist.syncSources?.[sourceProvider]?.syncedAt || 0;
-                  const hasGenuineLocalEdits = playlist.locallyModified
-                    && (playlist.lastModified || 0) > sourceSyncedAt;
-                  if (!hasGenuineLocalEdits) continue;
+                  // Real edits by the tracks fingerprint, never with a
+                  // conflict pending (sync-engine/auto-pull.js).
+                  if (!shouldPushToSource(playlist, providerId)) continue;
                   // Fall through: push back to source IS warranted (collaborative case).
                 }
               }
@@ -9942,10 +9952,15 @@ const Parachord = () => {
               {
                 const idImpliesThisProvider = playlist.id?.startsWith(`${providerId}-`);
                 if (idImpliesThisProvider) {
-                  const sourceSyncedAt = playlist.syncSources?.[providerId]?.syncedAt || 0;
-                  const hasGenuineLocalEdits = playlist.locallyModified
-                    && (playlist.lastModified || 0) > sourceSyncedAt;
-                  if (!hasGenuineLocalEdits) continue;
+                  // A playlist whose syncedFrom is this provider was decided by
+                  // shouldPushToSource above; the timestamp rule here is only for
+                  // one whose syncedFrom is missing or points elsewhere.
+                  if (playlist.syncedFrom?.resolver !== providerId) {
+                    const sourceSyncedAt = playlist.syncSources?.[providerId]?.syncedAt || 0;
+                    const hasGenuineLocalEdits = playlist.locallyModified
+                      && (playlist.lastModified || 0) > sourceSyncedAt;
+                    if (!hasGenuineLocalEdits) continue;
+                  }
                   // Fall through: push back to source IS warranted (collaborative case).
                 }
               }
@@ -10021,6 +10036,8 @@ const Parachord = () => {
                         pendingAction: null
                       }
                     };
+                    // Linked to (and pushed to) the playlist's own source.
+                    Object.assign(playlist, recordPushToSource(playlist, providerId, { externalId: createResult.externalId, snapshotId: createResult.snapshotId, tracks: playlist.tracks || [], now: Date.now() }));
                     playlistsChanged = true;
                     modifiedPlaylistIds.add(playlist.id);
                     createOk = true;
@@ -10030,7 +10047,7 @@ const Parachord = () => {
                 }
                 if (noteLbOutcome(createOk)) break;
                 await breathe();
-              } else if (playlist.locallyModified) {
+              } else if (playlist.locallyModified || shouldPushToSource(playlist, providerId)) {
                 // CHANNEL gate for the EDIT branch (parachord#911) — lockstep with
                 // the background-sync loop. An already-linked mirror stops getting
                 // edits the moment the user's override excludes its provider.
@@ -10066,6 +10083,10 @@ const Parachord = () => {
                       snapshotId: pushResult.snapshotId,
                       syncedAt: Date.now()
                     };
+                    // Pushed to the playlist's own source: record the source's new
+                    // snapshot and these tracks as agreed, or the next sync reads our
+                    // own push as a conflict (sync-engine/auto-pull.js).
+                    Object.assign(playlist, recordPushToSource(playlist, providerId, { externalId: syncInfo.externalId, snapshotId: pushResult.snapshotId, tracks: playlist.tracks || [], now: Date.now() }));
                     playlistsChanged = true;
                     modifiedPlaylistIds.add(playlist.id);
                     pushOk = true;
