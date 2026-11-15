@@ -2050,6 +2050,7 @@ const { homeBannerItems, bannerViewId } = require('./lib/home-banners');
 const { toastBackground } = require('./lib/toast-style');
 const { PAGE_COLORS, pageTint } = require('./lib/page-colors');
 const { Modal, ConfirmModal, DontShowAgain } = require('./components/modal');
+const { KeyboardShortcutsDialog } = require('./components/keyboard-shortcuts');
 const { Button } = require('./components/button');
 const { HeaderControl } = require('./components/header-control');
 const { ToastRegion, NowPlayingAnnouncer } = require('./components/toast');
@@ -3817,6 +3818,8 @@ const Parachord = () => {
   // The last marketplace load failed: Plug-Ins says so, with Try again
   // (installed plug-ins still show). #1387.
   const [marketplaceError, setMarketplaceError] = useState(false);
+  // The keyboard shortcuts dialog: "?" or Help › Keyboard Shortcuts (#1386).
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [marketplaceSearchQuery, setMarketplaceSearchQuery] = useState('');
   const [marketplaceCategory, setMarketplaceCategory] = useState('all');
   const [installingResolvers, setInstallingResolvers] = useState(new Set());
@@ -10979,6 +10982,9 @@ const Parachord = () => {
         case 'toggle-shuffle':
           requestShuffleRef.current?.('toggle');
           break;
+        case 'show-shortcuts':
+          setShortcutsOpen(true);
+          break;
         case 'check-for-updates':
           showToast('Checking for updates…');
           window.electron.updater?.check();
@@ -15932,6 +15938,14 @@ ${trackListXml}
 
       if (e.key === 'Escape' && activeView === 'search') {
         navigateBack();
+      }
+
+      // "?" shows the keyboard shortcuts (#1386), unless a dialog or menu
+      // is already open.
+      if (e.key === '?' && !e.metaKey && !e.ctrlKey && !e.altKey &&
+          !document.querySelector('[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]')) {
+        e.preventDefault();
+        setShortcutsOpen(true);
       }
 
       // Space plays and pauses (#1386), unless focus is on something Space
@@ -37317,6 +37331,7 @@ useEffect(() => {
 
       // Every control's data-tooltip (ui-atoms.js TooltipLayer).
       React.createElement(TooltipLayer, null),
+      React.createElement(KeyboardShortcutsDialog, { open: shortcutsOpen, onClose: () => setShortcutsOpen(false), isMac }),
 
       // Toasts (components/toast.js): an always-mounted live region, so a
       // screen reader hears each one; and the track that started.

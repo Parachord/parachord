@@ -2246,6 +2246,11 @@ app.whenReady().then(async () => {
           }
         },
         {
+          label: 'Keyboard Shortcuts',
+          accelerator: 'CmdOrCtrl+/',
+          click: () => safeSendToRenderer('menu-action', 'show-shortcuts')
+        },
+        {
           // Routes to window.copyDiagnosticLog() in the renderer; see
           // app.js's diagnostic-log buffer block. Lets bug reporters
           // attach a recent-history dump without opening DevTools.
