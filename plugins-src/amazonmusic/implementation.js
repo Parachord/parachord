@@ -45,18 +45,19 @@ module.exports = {
     // The page flow's capture window: the bridge's load returns its
     // captures once the page's request burst goes quiet, never later than
     // this budget after the load finishes — the same 15s window the old
-    // in-flow poll (60 × 250ms) allowed a slow page.
+    // in-flow poll (60 × 250ms) allowed a slow page (and, since the host's
+    // zero-capture fix, a page that has fired nothing yet waits this budget
+    // rather than closing early).
     const PAGE_CAPTURE_BUDGET_MS = 15000;
     // The quiet window is explicit, NOT the host's 1000ms default: a COLD
     // view's first gql fires well after load-finish (boot + query is ~1-3s
     // on a warm view — amazon-web-player.js's old poll comment — and a cold
-    // view pays the view mint and its config fetch first), and the host's
-    // awaitCaptureQuiet returns ~quietMs after load-finish when ZERO captures
-    // exist. Under the default a cold view whose first gql lands >1s after
-    // load-finish comes back captures: [] — "the page never fired the
-    // search", a breaker tick. 2500ms past load-finish keeps that late
-    // first request inside the window — the gap the old poll's
-    // unconditional 15s coverage existed to close.
+    // view pays the view mint and its config fetch first). Under the default
+    // a cold view whose first gql lands >1s after its SECOND request would
+    // come back captures: [] — "the page never fired the search", a breaker
+    // tick. 2500ms past the last captured request keeps that late follow-up
+    // inside the window — the gap the old poll's unconditional 15s coverage
+    // existed to close.
     const PAGE_CAPTURE_QUIET_MS = 2500;
 
     // The album catalog fallback on the renderer bounds each catalog step
@@ -1193,7 +1194,12 @@ module.exports = {
           config = JSON.parse(out.text); // a bad reply reads as no tier → unknown
         }
       } catch (e) { /* a failed fetch reads as no tier → unknown */ }
-      const plan = lib.amazonPlanFromTier(lib.tierFromConfig(config));
+      let plan = lib.amazonPlanFromTier(lib.tierFromConfig(config));
+      // A read that came back without a tier (offline, a bad reply) keeps a
+      // known plan instead of blocking on unknown — the dmls gate's rule:
+      // an Unlimited account must not be locked out by a network blip past
+      // the TTL, and the scheduled re-read stays the judge.
+      if (plan === 'unknown' && s && s.plan !== 'unknown') plan = s.plan;
       // A sign-out raced the read (the generation bumped): the reading
       // belongs to the old account — don't cache it under the new one (the
       // generation drop in sessionState is worthless if this write lands
@@ -1736,6 +1742,12 @@ module.exports = {
     }
     if (!winner) {
       const ops = lib.capturedOperationNames(captured.map(r => r.body)).join(', ') || 'none';
+      if (lastReplayError) {
+        // An errored replay outranks the header-only miss: the AlbumSeo
+        // header proves the album EXISTS, so a replay that failed is a failed
+        // lookup — never a "deleted album" miss the catalog would cache.
+        throw lib.notReady('lookup-failed', lastReplayError);
+      }
       if (headerOnlyOp) {
         // An AlbumSeo-style header seen but no operation exposed a tracks
         // connection: the detail op never ran. A miss with the ops log, so a
@@ -1743,7 +1755,6 @@ module.exports = {
         console.warn('[Amazon] album lookup: ' + asin + ' header came from ' + headerOnlyOp + ' but no operation exposed a tracks connection; gql operations seen: ' + ops);
         return null;
       }
-      if (lastReplayError) throw lib.notReady('lookup-failed', lastReplayError);
       // The page loaded but never asked for this album: deleted, not
       // available in the user's territory — or hornet renamed everything.
       // Log what the page did fire so a rename reads as a rename instead of

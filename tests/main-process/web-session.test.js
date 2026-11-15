@@ -424,6 +424,24 @@ describe('load — navigation, capture, the quiet window', () => {
     expect(result.captures.map((c) => c.body)).toEqual(['{"from":"the page flow"}', '{"from":"a fetch()"}']);
   });
 
+  test('a cold view whose first capture lands past quietMs is still returned (the budget covers it)', async () => {
+    // Zero captures is NOT quiet — the page has not started. The wait runs
+    // to budgetMs for the first request, so a cold view whose first gql
+    // fires well after load-finish is captured instead of reading "never
+    // fired" (the old in-flow poll's unconditional window; the plugin sizes
+    // its quietMs for the same gap).
+    const { host } = await warmSession();
+    const pending = host.load('https://music.testsvc.com/', {
+      capture: { urlPrefixes: ['https://gql.testsvc.com/*'], quietMs: 1000, budgetMs: 2000 }
+    });
+    await jest.advanceTimersByTimeAsync(0);
+    await jest.advanceTimersByTimeAsync(1500); // past quietMs, still zero captures
+    fireCaptured({ id: 1 }); // the cold view's first gql, 1.5s in
+    await jest.advanceTimersByTimeAsync(1100); // quiet since the capture
+    const result = await pending;
+    expect(result.captures.length).toBe(1);
+  });
+
   test('the capture window ends on quiet, bounded by budget', async () => {
     const { host } = await warmSession();
     const pending = host.load('https://music.testsvc.com/', {
@@ -487,7 +505,9 @@ describe('the load chain — rule 1: loads serialize', () => {
         await new Promise((resolve) => { releaseFirst = resolve; });
       }
     });
-    const capture = { urlPrefixes: ['https://gql.testsvc.com/*'], quietMs: 100 };
+    // A small budgetMs too: with zero captures the quiet window runs to
+    // budgetMs (not quietMs), and the second load below fires no captures.
+    const capture = { urlPrefixes: ['https://gql.testsvc.com/*'], quietMs: 100, budgetMs: 200 };
     const first = host.load('https://music.testsvc.com/a', { capture });
     const second = host.load('https://music.testsvc.com/b', { capture });
     await jest.advanceTimersByTimeAsync(0);
@@ -498,6 +518,11 @@ describe('the load chain — rule 1: loads serialize', () => {
     const webRequest = theSession().webRequest;
     expect(webRequest.onBeforeRequest).toHaveBeenCalledTimes(1);
     releaseFirst();
+    // One captured request as the page settles: the quiet window (100ms) is
+    // what ends the first load's capture — with zero captures the wait runs
+    // to budgetMs instead (a page that has not fired anything is not quiet;
+    // see the cold-view window test).
+    fireCaptured({ id: 1 });
     await jest.advanceTimersByTimeAsync(500); // the first load's quiet window ends, the chain releases
     expect(loads).toEqual(['https://music.testsvc.com/a', 'https://music.testsvc.com/b']);
     await first;

@@ -181,6 +181,46 @@ describe('searchAlbums (the albums tab of the spec search)', () => {
     expect(resolver._specSearchTemplate.body.variables.specType).toBe('track');
   });
 
+  test('a template dropped by a session-generation bump is never replayed by a queued page flow', async () => {
+    // The warmed retry inside the chained page flow re-reads the template
+    // AFTER its state read: a sign-out + sign-in as another account between
+    // the queue and the run must not send account A's csrf-bearing template
+    // into account B's session. The drop (sessionState) nulls the instance
+    // field — the snapshot must be re-checked, not trusted.
+    const ws = amazonWebSessionMock({ albums: ALBUMS });
+    const resolver = instantiateAmazonPlugin(axe);
+    await searchAlbums(resolver, 'wild pink'); // mints the template under generation 0
+    const minted = resolver._specSearchTemplate;
+    expect(minted).toBeTruthy();
+    ws.state.mockResolvedValue({
+      success: true,
+      url: 'https://music.amazon.com/search/x/albums',
+      signInUrl: null,
+      cookieNames: ['at-main', 'sess-at-main'],
+      generation: 1
+    });
+    ws.load.mockClear();
+    ws.pageFetch.mockClear();
+    // specSearch directly (the warmed-retry seam): no isSignedIn first, so
+    // the generation bump is first observed inside the retry's own read.
+    const rows = await resolver.specSearch({
+      url: 'https://music.amazon.com/search/wild%20pink/albums',
+      searchText: 'wild pink',
+      specType: 'album',
+      noun: 'albums',
+      parse: (data) => {
+        const out = resolver.lib.searchAlbumsFromGql(data);
+        return { rows: out.albums, envelope: out.envelope };
+      }
+    });
+    expect(rows).toHaveLength(2);
+    // The stale template was NOT replayed (no pageFetch before the load) —
+    // the identity re-check sent the flow to its page load, which re-minted.
+    expect(ws.load).toHaveBeenCalledTimes(1);
+    expect(ws.pageFetch).toHaveBeenCalledTimes(1); // the page flow's own replay only
+    expect(resolver._specSearchTemplate).not.toBe(minted);
+  });
+
   test('a stale job (past the #1135 8s catalog budget) skips its page load and returns []', async () => {
     const ws = amazonWebSessionMock({ albums: ALBUMS });
     const resolver = instantiateAmazonPlugin(axe);
@@ -191,12 +231,15 @@ describe('searchAlbums (the albums tab of the spec search)', () => {
     resolver._pageFlowChain = new Promise((resolve) => { releaseChain = resolve; });
     const base = Date.now();
     const dateSpy = jest.spyOn(Date, 'now').mockReturnValue(base);
-    const pending = searchAlbums(resolver, 'wild pink');
-    await new Promise((r) => setTimeout(r, 0)); // the job reaches the chain wait
-    dateSpy.mockReturnValue(base + 8001);
-    releaseChain();
-    await expect(pending).resolves.toEqual([]);
-    dateSpy.mockRestore();
+    try {
+      const pending = searchAlbums(resolver, 'wild pink');
+      await new Promise((r) => setTimeout(r, 0)); // the job reaches the chain wait
+      dateSpy.mockReturnValue(base + 8001);
+      releaseChain();
+      await expect(pending).resolves.toEqual([]);
+    } finally {
+      dateSpy.mockRestore();
+    }
     expect(ws.load).not.toHaveBeenCalled();
     expect(ws.pageFetch).not.toHaveBeenCalled();
   });
@@ -280,12 +323,15 @@ describe('searchArtistImage (the artists tab, never throws)', () => {
     resolver._pageFlowChain = new Promise((resolve) => { releaseChain = resolve; });
     const base = Date.now();
     const dateSpy = jest.spyOn(Date, 'now').mockReturnValue(base);
-    const pending = resolver.searchArtistImage('The Warning', {});
-    await new Promise((r) => setTimeout(r, 0)); // the job reaches the chain wait
-    dateSpy.mockReturnValue(base + 8001);
-    releaseChain();
-    await expect(pending).resolves.toBeNull();
-    dateSpy.mockRestore();
+    try {
+      const pending = resolver.searchArtistImage('The Warning', {});
+      await new Promise((r) => setTimeout(r, 0)); // the job reaches the chain wait
+      dateSpy.mockReturnValue(base + 8001);
+      releaseChain();
+      await expect(pending).resolves.toBeNull();
+    } finally {
+      dateSpy.mockRestore();
+    }
     expect(ws.load).not.toHaveBeenCalled();
     expect(ws.pageFetch).not.toHaveBeenCalled();
   });
@@ -509,6 +555,23 @@ describe('lookupAlbum (the candidate-ranking flow)', () => {
     });
   });
 
+  test('an errored detail replay outranks the AlbumSeo header — a failed lookup, never a "deleted album" miss', async () => {
+    // The SEO replay answered the header (the album exists), the detail
+    // replay errored: the lookup FAILED — returning a miss here would cache
+    // a live album as deleted.
+    const ws = albumLookupMock({
+      replayFor: (body) => (body.operationName === 'AlbumSeo'
+        ? { success: true, status: 200, text: JSON.stringify({ data: { album: { id: 'B07558DQJL', title: 'Master of Puppets (Remastered)', trackCount: 8 } } }) }
+        : { success: true, error: 'Amazon gql query failed (500)' })
+    });
+    const resolver = instantiateAmazonPlugin(axe);
+    await expect(resolver.lookupAlbum(ALBUM_URL, {})).rejects.toMatchObject({
+      notReady: true,
+      code: 'lookup-failed'
+    });
+    expect(ws.pageFetch).toHaveBeenCalledTimes(2); // both ranked candidates were tried
+  });
+
   test('a data.album: null response (deleted / other region) never wins — every candidate is tried and the miss is null', async () => {
     // The connection is the arbiter: a response whose data.album is null is
     // not a winner (and not a header-only op either), so the ranked pool is
@@ -635,12 +698,15 @@ describe('lookupAlbum (the candidate-ranking flow)', () => {
     resolver._pageFlowChain = new Promise((resolve) => { releaseChain = resolve; });
     const base = Date.now();
     const dateSpy = jest.spyOn(Date, 'now').mockReturnValue(base);
-    const pending = resolver.lookupAlbum(ALBUM_URL, {});
-    await new Promise((r) => setTimeout(r, 0)); // the job reaches the chain wait
-    dateSpy.mockReturnValue(base + 8001);
-    releaseChain();
-    await expect(pending).resolves.toBeNull();
-    dateSpy.mockRestore();
+    try {
+      const pending = resolver.lookupAlbum(ALBUM_URL, {});
+      await new Promise((r) => setTimeout(r, 0)); // the job reaches the chain wait
+      dateSpy.mockReturnValue(base + 8001);
+      releaseChain();
+      await expect(pending).resolves.toBeNull();
+    } finally {
+      dateSpy.mockRestore();
+    }
     expect(ws.load).not.toHaveBeenCalled();
     expect(ws.pageFetch).not.toHaveBeenCalled();
   });

@@ -710,7 +710,10 @@ function createWebSessionHost(config = {}) {
 
     // The quiet window (rule 5): after the navigation settles, keep capturing
     // until quietMs passes with no new captured request, never longer than
-    // budgetMs.
+    // budgetMs. A page that has fired NOTHING yet is not quiet — it has not
+    // started: with zero captures the wait runs to budgetMs (the old in-flow
+    // poll's unconditional window), so a cold view whose first gql lands well
+    // after load-finish is captured instead of reading "never fired".
     async awaitCaptureQuiet(state, { quietMs = cfg.captureQuietMs, budgetMs = cfg.captureBudgetMs } = {}, generation) {
       const startAt = Date.now();
       for (;;) {
@@ -718,7 +721,11 @@ function createWebSessionHost(config = {}) {
         // A clear() superseded this load: stop waiting — the session moved on.
         if (generation !== undefined && generation !== this._generation) return;
         const elapsed = Date.now() - startAt;
-        const lastAt = state.captured.length ? state.captured[state.captured.length - 1].at : startAt;
+        if (!state.captured.length) {
+          if (elapsed >= budgetMs) return;
+          continue;
+        }
+        const lastAt = state.captured[state.captured.length - 1].at;
         if (Date.now() - lastAt >= quietMs) return;
         if (elapsed >= budgetMs) return;
       }

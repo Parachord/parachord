@@ -144,6 +144,22 @@ describe('the plan gate (#1220) before any search', () => {
     expect(ws.fetch).toHaveBeenCalledTimes(3); // still the cached unlimited reading
   });
 
+  test('a read past the TTL that comes back without a tier keeps the known plan — the dmls rule', async () => {
+    // An Unlimited account must not be locked out by a network blip past the
+    // 30-min TTL: an unreadable config.json keeps the last KNOWN plan (the
+    // unknown TTL still applies to a genuinely unknown plan), and the
+    // scheduled re-read stays the judge.
+    const ws = amazonWebSessionMock({ tracks: TRACKS, tier: 'UNLIMITED_AUDIO' });
+    const resolver = instantiateAmazonPlugin(axe);
+    await search(resolver, 'daft punk'); // caches the unlimited reading
+    expect(ws.fetch).toHaveBeenCalledTimes(1);
+    resolver._planState.at = Date.now() - (31 * 60 * 1000); // the TTL elapsed
+    ws.fetch.mockResolvedValue({ success: true, status: 200, headers: {}, text: 'not json' });
+    const rows = await search(resolver, 'daft punk');
+    expect(rows).toHaveLength(2);
+    expect(ws.fetch).toHaveBeenCalledTimes(2);
+  });
+
   test('an unlimited tier searches (the gate passes through)', async () => {
     const ws = amazonWebSessionMock({ tracks: TRACKS, tier: 'UNLIMITED_AUDIO' });
     const resolver = instantiateAmazonPlugin(axe);
@@ -312,6 +328,19 @@ describe('the page flow (webSession.load with the capture window inside it)', ()
       const loadsBefore = ws.load.mock.calls.length;
       await expect(search(resolver, 'daft punk')).rejects.toMatchObject({ code: 'not-ready' });
       expect(ws.load.mock.calls.length).toBe(loadsBefore);
+      // ...and with a FRESH TEMPLATE SEEDED, the fail-fast still precedes the
+      // fast path: a reordering that replayed first (or minted on a breaker
+      // tick) would pageFetch here.
+      resolver._specSearchTemplate = resolver.lib.makeSpecSearchTemplate({
+        url: 'https://gql.music.amazon.com/',
+        headers: { 'x-api-key': 'k', 'csrf-token': 't', 'csrf-rnd': 'r', 'csrf-ts': '1' },
+        body: { operationName: 'SpecSearchSeeMorePage', variables: { searchText: 'seed', specType: 'track', firstLimit: 30 }, extensions: { clientLibrary: { name: '@apollo/client' }, persistedQuery: { version: 1, sha256Hash: 'h' } } },
+        capturedAt: Date.now()
+      });
+      ws.pageFetch.mockClear();
+      await expect(search(resolver, 'daft punk')).rejects.toMatchObject({ code: 'not-ready' });
+      expect(ws.load.mock.calls.length).toBe(loadsBefore);
+      expect(ws.pageFetch).not.toHaveBeenCalled();
     } finally {
       warn.mockRestore();
     }
