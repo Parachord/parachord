@@ -1,0 +1,262 @@
+/**
+ * The plugin library (#1356): implementation._lib is a FACTORY, not a method.
+ * resolver-loader.js materializes it with the same `new Function('return ' +
+ * src)()` as every implementation entry, then invokes it exactly once per
+ * resolver instance and exposes its return value to every method as
+ * `this.lib`. This is the prerequisite for moving Amazon's logic into the
+ * plugin (issue #1356): the ~60 shared helpers in amazon-music-logic.js have
+ * to live somewhere a plugin's methods can all reach.
+ *
+ * The tests serialize real functions with String(fn) — the exact wire path
+ * scripts/build-axes.js produces — so the contract is proven end to end:
+ * the factory is written as a normal function in implementation.js, not as a
+ * source string by hand.
+ */
+
+const ResolverLoader = require('../../resolver-loader');
+
+// Serialize a function the way build-axes does, so tests can define the
+// plugin as real functions (and lint/eslint still parse them).
+const axeImplementation = (fns) => Object.fromEntries(
+  Object.entries(fns).map(([key, fn]) => [key, String(fn)])
+);
+
+function loadPlugin(implementation, id = 'libtest') {
+  const loader = new ResolverLoader();
+  loader.loadResolver({
+    manifest: { id, name: 'Lib Test', version: '1.0.0' },
+    capabilities: { resolve: true },
+    urlPatterns: [],
+    implementation: axeImplementation(implementation),
+  });
+  return loader.getResolver(id);
+}
+
+describe('implementation._lib — the plugin library', () => {
+  test('every method sees the same library object as this.lib', async () => {
+    const resolver = loadPlugin({
+      // The factory runs once and returns the shared library.
+      _lib: function () {
+        return { marker: { shared: true }, count: 0 };
+      },
+      readMarker: async function () { return this.lib.marker; },
+      readMarkerToo: async function () { return this.lib.marker; },
+    });
+
+    expect(typeof resolver.lib).toBe('object');
+    // One object, shared between methods — not one per method.
+    const a = await resolver.readMarker();
+    const b = await resolver.readMarkerToo();
+    expect(a).toBe(b);
+    expect(a).toBe(resolver.lib.marker);
+  });
+
+  test('per-instance state lives on this (the resolver instance), per the purity contract', async () => {
+    // The library is helpers and constants ONLY (a pure factory — it runs for
+    // every instance, disabled plugins included, so any side effect in it
+    // runs far more often than anyone expects). Per-instance state (a
+    // request-template cache, a breaker) lives on `this`, which _bindContext
+    // already shares across every method, fresh per loaded instance.
+    const resolver = loadPlugin({
+      _lib: function () { return { increment: (n) => n + 1 }; },
+      increment: async function () { this._counter = this.lib.increment(this._counter || 0); return this._counter; },
+      stash: async function (key, value) { this[key] = value; },
+      read: async function (key) { return this[key]; },
+    });
+
+    expect(await resolver.increment()).toBe(1);
+    expect(await resolver.increment()).toBe(2);
+    await resolver.stash('_cache', { hits: 1 });
+    expect(await resolver.read('_cache')).toEqual({ hits: 1 });
+  });
+
+  test('each loaded instance gets its own library (the factory is per instance)', async () => {
+    let factories = 0;
+    const makeAxe = () => ({
+      manifest: { id: `libtest-${++factories}`, name: 'Lib Test', version: '1.0.0' },
+      capabilities: {},
+      urlPatterns: [],
+      implementation: axeImplementation({
+        _lib: function () { return { self: Math.random() }; },
+        identity: async function () { return this.lib; },
+      }),
+    });
+    const loader = new ResolverLoader();
+    loader.loadResolver(makeAxe());
+    loader.loadResolver(makeAxe());
+    const first = loader.getResolver('libtest-1');
+    const second = loader.getResolver('libtest-2');
+
+    expect(first.lib).not.toBe(second.lib);
+    expect(await first.identity()).toBe(first.lib);
+    expect(await second.identity()).toBe(second.lib);
+  });
+
+  test('_lib never materializes as a callable method, and lib is reserved', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const resolver = loadPlugin({
+      _lib: function () { return { answer: 42 }; },
+      // A method named `lib` must not clobber the injected library.
+      lib: async function () { return 'i am not the library'; },
+      answer: async function () { return this.lib.answer; },
+    });
+
+    expect(typeof resolver._lib).toBe('undefined'); // not a method
+    expect(typeof resolver.lib).toBe('object'); // not clobbered by the method above
+    expect(await resolver.answer()).toBe(42);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('reserved implementation key "lib"'));
+    warn.mockRestore();
+  });
+
+  test('a plugin without _lib loads unchanged, with this.lib null', async () => {
+    const resolver = loadPlugin({
+      search: async function () { return [{ id: 'x', title: 't', artist: 'a' }]; },
+    });
+
+    expect(resolver.lib).toBeNull();
+    expect(await resolver.search('t')).toEqual([{ id: 'x', title: 't', artist: 'a' }]);
+  });
+
+  test('a throwing factory FAILS the load — never a plugin that looks enabled and throws on every call', async () => {
+    const loader = new ResolverLoader();
+    const attempt = loader.loadResolver({
+      manifest: { id: 'libtest', name: 'Lib Test', version: '1.0.0' },
+      capabilities: {},
+      urlPatterns: [],
+      implementation: { _lib: 'function () { throw new Error(\"factory exploded\"); }', search: 'async function () { return 1; }' },
+    });
+
+    await expect(attempt).rejects.toThrow('factory exploded');
+    expect(loader.getResolver('libtest')).toBeUndefined(); // nothing half-loaded
+  });
+
+  test('a factory that returns a primitive FAILS the load', async () => {
+    const loader = new ResolverLoader();
+    const attempt = loader.loadResolver({
+      manifest: { id: 'libtest', name: 'Lib Test', version: '1.0.0' },
+      capabilities: {},
+      urlPatterns: [],
+      implementation: { _lib: 'function () { return \"not a library\"; }', search: 'async function () { return 1; }' },
+    });
+
+    await expect(attempt).rejects.toThrow('must return the library');
+    expect(loader.getResolver('libtest')).toBeUndefined();
+  });
+
+  test('a non-string _lib entry (a hand-edited .axe) FAILS the load', async () => {
+    const loader = new ResolverLoader();
+    const axeContent = JSON.stringify({
+      manifest: { id: 'libtest', name: 'Lib Test', version: '1.0.0' },
+      capabilities: {},
+      urlPatterns: [],
+      implementation: { _lib: { not: 'source' }, search: 'async function () { return 1; }' }
+    });
+    const attempt = loader.loadResolver(axeContent); // the string path parses (a real .axe arrives as JSON)
+
+    await expect(attempt).rejects.toThrow('must be serialized function source');
+    expect(loader.getResolver('libtest')).toBeUndefined();
+  });
+
+  test('the requireLib guard pattern: a readable error on an app whose loader predates _lib', async () => {
+    // The compat pattern from plugins.md: the plugin ships requireLib as a
+    // NORMAL entry (an old app materializes it like any method — which is why
+    // the guard cannot be loader-side), and every library-using method opens
+    // with it. Simulated here with a plugin that ships no _lib at all —
+    // exactly what an old app's view of a _lib plugin is.
+    const resolver = loadPlugin({
+      requireLib: function () {
+        if (!this.lib) {
+          throw new Error('Amazon Music needs a newer Parachord — please update the app.');
+        }
+        return this.lib;
+      },
+      search: async function () { const lib = this.requireLib(); return lib.answer; },
+    });
+
+    expect(resolver.lib).toBeNull(); // the old app's view
+    await expect(resolver.search()).rejects.toThrow('needs a newer Parachord');
+  });
+
+  test('the library is FROZEN — state belongs on this, not on this.lib', async () => {
+    // The purity contract is mechanical: an assignment to this.lib.x does not
+    // stick (silently, in sloppy mode — a plugin that tries finds its state
+    // missing, which is the point). State lives on this (the resolver
+    // instance), per docs/architecture/plugins.md.
+    const resolver = loadPlugin({
+      _lib: function () { return { helper: () => 1 }; },
+      stashOnLib: async function (k, v) { this.lib[k] = v; return this.lib[k]; },
+      stashOnThis: async function (k, v) { this[k] = v; return this[k]; },
+    });
+
+    expect(Object.isFrozen(resolver.lib)).toBe(true);
+    expect(await resolver.stashOnLib('counter', 1)).toBeUndefined(); // silently dropped
+    expect(resolver.lib.counter).toBeUndefined();
+    expect(await resolver.stashOnThis('counter', 1)).toBe(1); // state on this works
+  });
+
+  test('the requireLib guard returns the library on a loader that has _lib', async () => {
+    const resolver = loadPlugin({
+      _lib: function () { return { answer: 42 }; },
+      requireLib: function () {
+        if (!this.lib) {
+          throw new Error('Amazon Music needs a newer Parachord — please update the app.');
+        }
+        return this.lib;
+      },
+      search: async function () { const lib = this.requireLib(); return lib.answer; },
+    });
+
+    expect(await resolver.search()).toBe(42);
+  });
+
+  test('the loader still drops prototype-pollution keys alongside a _lib', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const loader = new ResolverLoader();
+    // JSON.parse, not an object literal: { __proto__: ... } in a literal sets
+    // the prototype instead of creating an own key, and the loader's filter
+    // would never see it. A parsed .axe carries it as a real entry.
+    const implementation = JSON.parse('{"_lib": "function () { return { ok: true }; }", "__proto__": "function () { return 1; }", "constructor": "function () { return 2; }", "search": "async function () { return this.lib.ok; }"}');
+    loader.loadResolver({
+      manifest: { id: 'libtest', name: 'Lib Test', version: '1.0.0' },
+      capabilities: {},
+      urlPatterns: [],
+      implementation,
+    });
+    const resolver = loader.getResolver('libtest');
+
+    expect(resolver.lib).toEqual({ ok: true });
+    expect(await resolver.search()).toBe(true);
+    // `constructor` (a normal own key) is filtered with the standard warning.
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('"constructor"'));
+    // `__proto__` never gets that far: `implFunctions[key] = fn` on that name
+    // hits the prototype setter and is silently dropped (pre-existing loader
+    // behavior — it never reaches the filter and never lands on the resolver).
+    // Assert the outcome that matters: no own `__proto__` lands anywhere.
+    expect(Object.prototype.hasOwnProperty.call(resolver, '__proto__')).toBe(false);
+    warn.mockRestore();
+  });
+});
+
+describe('the wire path — a real plugin through scripts/build-axes serialization', () => {
+  test('an implementation.js-style module with _lib survives String(fn) round-trip', async () => {
+    // Exactly what build-axes writes: every export is a function, serialized
+    // with String(fn); the loader materializes each with new Function. A
+    // plugin author writes implementation.js normally and never sees strings.
+    // The library is pure helpers; the call counter (per-instance state)
+    // lives on `this`, not on the frozen library.
+    const implementationModule = {
+      _lib: function () {
+        return { shout: (s) => String(s || '').toUpperCase() };
+      },
+      search: async function (query) {
+        this._seen = (this._seen || 0) + 1;
+        return [{ id: this.lib.shout(query), title: query }];
+      },
+    };
+    const resolver = loadPlugin(implementationModule);
+
+    expect(await resolver.search('quiet')).toEqual([{ id: 'QUIET', title: 'quiet' }]);
+    expect(await resolver.search('again')).toEqual([{ id: 'AGAIN', title: 'again' }]);
+    expect(resolver._seen).toBe(2);
+  });
+});

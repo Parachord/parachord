@@ -5357,6 +5357,8 @@ ipcMain.handle('playlists-import', async () => {
   }
 });
 
+const { keepDroppedLinks } = require('./sync-engine/playlist-save-guard');
+
 ipcMain.handle('playlists-save', async (event, playlistData) => {
   console.log('=== Save Playlist to electron-store ===');
   console.log('  Playlist ID:', playlistData?.id);
@@ -5368,8 +5370,13 @@ ipcMain.handle('playlists-save', async (event, playlistData) => {
     const existingIndex = playlists.findIndex(p => p.id === playlistData.id);
 
     if (existingIndex >= 0) {
-      // Update existing playlist
-      playlists[existingIndex] = playlistData;
+      // Update existing playlist. A stale renderer copy must not erase a
+      // mirror link that is still live (sync-engine/playlist-save-guard.js).
+      const { playlist: guarded, kept } = keepDroppedLinks(playlistData, playlists[existingIndex], getSyncLinks());
+      if (kept.length > 0) {
+        console.warn(`  ⚠️ Save of "${playlistData.title}" left out its ${kept.join(', ')} link(s); kept them`);
+      }
+      playlists[existingIndex] = guarded;
       console.log('  ✅ Updated existing playlist');
     } else {
       // Add new playlist

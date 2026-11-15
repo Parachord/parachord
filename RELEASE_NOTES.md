@@ -128,6 +128,8 @@
 - **Playlists deleted on ListenBrainz get noticed sooner.** They were only spotted if you edited the playlist, so one could sit there for months. Each sync now checks, and the playlist's page offers to delete your copy, stop syncing or create it again.
 - **Stop syncing on a deleted playlist stays stopped.** If the playlist was also synced to another service, the next sync could create it again on the one you'd stopped.
 - **A playlist you import from a URL while sync setup finishes stays in your list.** Setting up sync could take minutes, and a hosted playlist imported during that time could disappear from your playlists until they next reloaded. Thanks to @theli-ua for finding and fixing it.
+- **Playlists that left your Spotify library come back when you add them again.** If a playlist you'd imported from Spotify disappeared from your Spotify library, Parachord dropped its link on each sync and restored it on each launch, and logged it as gone every time. It now keeps the link, so the next sync picks the playlist up once it's back in your library.
+- **Synced playlists keep all their links.** Saving a playlist could drop its link to another service, such as Apple Music or Spotify, and the next sync then had to find it again. Nothing was created twice, but the playlist's sync links were often out of date. A save now keeps every link that's still live.
 
 ## AI DJ
 
@@ -138,6 +140,10 @@
 
 - **The Ticketmaster key link goes to the right place.** The link for getting a Ticketmaster API key, in the plugin's settings and in its error message, pointed to the wrong Ticketmaster site. It now opens developer.ticketmaster.com.
 - **Tidier Discover and Scrobbling settings.** A long description under a Discover switch no longer runs up against the switch and squeezes it, and the note under Enable Scrobbling lines up with the rest of the section instead of sitting centered.
+
+## Plugins
+
+- **For plugin authors: a shared library.** A plugin can now keep helpers that several of its functions use in one `_lib` entry instead of copying them into each function, and every function reaches them as `this.lib`. The build fails a plugin whose functions use a name they don't define, rather than leaving it to fail on someone's machine. A plugin that uses the library needs this release or later; see the plugin docs. Thanks to @theli-ua.
 
 ---
 
