@@ -37735,7 +37735,7 @@ useEffect(() => {
             }
           },
             React.createElement('h1', {
-              className: 'text-5xl font-light text-white',
+              className: 'hero-title font-light text-white',
               style: {
                 textShadow: '0 2px 20px rgba(0,0,0,0.5)',
                 letterSpacing: '0.3em',
@@ -38509,7 +38509,7 @@ useEffect(() => {
                 }
               },
                 React.createElement('h1', {
-                  className: 'text-5xl font-light text-white',
+                  className: 'hero-title font-light text-white',
                   style: {
                     textShadow: '0 2px 20px rgba(0,0,0,0.5)',
                     letterSpacing: '0.3em',
@@ -39190,7 +39190,7 @@ useEffect(() => {
                 }
               },
                 React.createElement('h1', {
-                  className: 'text-5xl font-light text-white',
+                  className: 'hero-title font-light text-white',
                   style: {
                     textShadow: '0 2px 20px rgba(0,0,0,0.5)',
                     letterSpacing: '0.3em',
@@ -39626,7 +39626,7 @@ useEffect(() => {
                 }
               },
                 React.createElement('h1', {
-                  className: 'text-5xl font-light text-white',
+                  className: 'hero-title font-light text-white',
                   style: {
                     textShadow: '0 2px 20px rgba(0,0,0,0.5)',
                     letterSpacing: '0.3em',
@@ -40073,7 +40073,7 @@ useEffect(() => {
                 }
               },
                 React.createElement('h1', {
-                  className: 'text-5xl font-light text-white',
+                  className: 'hero-title font-light text-white',
                   style: {
                     textShadow: '0 2px 20px rgba(0,0,0,0.5)',
                     letterSpacing: '0.3em',
@@ -40751,7 +40751,7 @@ useEffect(() => {
               }
             },
               React.createElement('h1', {
-                className: 'text-5xl font-light text-white',
+                className: 'hero-title font-light text-white',
                 style: {
                   textShadow: '0 2px 20px rgba(0,0,0,0.5)',
                   letterSpacing: '0.3em',
@@ -41876,7 +41876,7 @@ useEffect(() => {
               }
             },
               React.createElement('h1', {
-                className: 'text-5xl font-light text-white',
+                className: 'hero-title font-light text-white',
                 style: {
                   textShadow: '0 2px 20px rgba(0,0,0,0.5)',
                   letterSpacing: '0.3em',

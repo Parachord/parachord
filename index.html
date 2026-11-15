@@ -745,6 +745,10 @@
        keeps 3 columns at the minimum and 5 on a typical laptop; the grid's
        own gap class sets the spacing. Skeleton grids use the same class. */
     .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
+    /* Page hero titles (#1389): 48px, scaled down with the content area
+       (the window less the 256px sidebar) so a long uppercase title fits at
+       the 1000px minimum (744px of content: about 41px), never below 28. */
+    .hero-title { font-size: clamp(28px, calc((100vw - 256px) * 0.055), 48px); line-height: 1; }
 
     /* CardButton (components/card-button.js): the card's main action is a
        button stretched over it; its own actions (.card-actions) sit above
