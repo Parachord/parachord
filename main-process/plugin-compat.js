@@ -124,6 +124,27 @@ function hostBridgesCompatibility(axe, supplied) {
   return missing.length > 0 ? { ok: false, missing } : { ok: true };
 }
 
+// The hide-filter the renderer's plugin loader runs over its .axe list
+// (#1355 wiring): every axe whose required bridges the host doesn't fully
+// supply is dropped, and each dropped one is named for the loader's log
+// line ("Name (needs bridge, …)"). Extracted here — not left inline in
+// app.js's initResolvers — so tests drive the filter the renderer actually
+// runs (app.js executes only in the Electron renderer, never under jest);
+// mobile mirrors the RULE (PluginCompat.kt), not this loader plumbing.
+function hostBridgesHideFilter(axes, supplied) {
+  const visible = [];
+  const hidden = [];
+  for (const axe of Array.isArray(axes) ? axes : []) {
+    const bridges = hostBridgesCompatibility(axe, supplied);
+    if (bridges.ok) {
+      visible.push(axe);
+    } else {
+      hidden.push(`${axe.manifest?.name || axe.manifest?.id} (needs ${bridges.missing.join(', ')})`);
+    }
+  }
+  return { visible, hidden };
+}
+
 // For build-axes: the list of problems with an .axe's `requires` field
 // (empty when it is absent or well formed). Only hostBridges is known today;
 // future requires keys ("playback": the host's DRM list) pass through
@@ -155,5 +176,6 @@ module.exports = {
   validateMinAppVersion,
   pluginRequiredHostBridges,
   hostBridgesCompatibility,
+  hostBridgesHideFilter,
   validateRequires
 };

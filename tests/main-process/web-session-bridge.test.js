@@ -170,11 +170,11 @@ describe('webSession:state / webSession:clear', () => {
     expect(out).toEqual({ success: true, url: 'https://music.amazon.com/', signInUrl: null, cookieNames: ['at-main'] });
   });
 
-  test('clear passes the host shape through in both directions', async () => {
+  test('a host clear failure maps to clear-failed (the channel contract) like a throw does; success passes through', async () => {
     const host = makeFakeHost({ clear: jest.fn(async () => ({ success: false, error: 'clearStorageData refused' })) });
     const { handlers } = makeBridge({ host });
     expect(await handlers['webSession:clear'](mainFrameEvent, { id: 'amazon-music' }))
-      .toEqual({ success: false, error: 'clearStorageData refused' });
+      .toEqual({ success: false, reason: 'clear-failed', error: 'clearStorageData refused' });
     host.clear = jest.fn(async () => ({ success: true }));
     expect(await handlers['webSession:clear'](mainFrameEvent, { id: 'amazon-music' }))
       .toEqual({ success: true });

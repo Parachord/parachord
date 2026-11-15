@@ -240,10 +240,10 @@ describe('host-bridge enforcement wiring (#1355)', () => {
     expect(preload).toMatch(/exposeInMainWorld\('__parachordHostBridges', HOST_BRIDGES\)/);
   });
 
-  test("the renderer hides a plugin whose host bridges aren't supplied (initResolvers)", () => {
-    expect(app).toMatch(/require\('\.\.\/\.\.\/main-process\/plugin-compat'\)/);
-    expect(app).toMatch(/hostBridgesCompatibility\(axe, suppliedHostBridges\)/);
-    expect(app).toMatch(/Array\.from\(window\.__parachordHostBridges \|\| \[\]\)/);
+  test("the renderer hides a plugin whose host bridges aren't supplied (initResolvers drives the hide-filter seam)", () => {
+    expect(app).toContain("const { hostBridgesHideFilter } = require('../../main-process/plugin-compat')");
+    expect(app).toContain('hostBridgesHideFilter(resolversToLoad, suppliedHostBridges)');
+    expect(app).toContain('Array.from(window.__parachordHostBridges || [])');
   });
 
   test("main.js registers Amazon's ONE webSession host under its session id, gated like the widevine bridge", () => {

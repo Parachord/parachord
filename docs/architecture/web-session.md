@@ -48,7 +48,7 @@ Channels (`ipcMain.handle`), all gated like the widevine bridge — only the mai
 | `webSession:pageFetch` | `{id, request}` | `{success: true, status, text}` or `{success: true, error}` |
 | `webSession:fetch` | `{id, request}` | `{success: true, status, headers, text}` |
 | `webSession:state` | `{id}` | `{success: true, url, signInUrl, cookieNames}` |
-| `webSession:clear` | `{id}` | the host's own `{success}` shape |
+| `webSession:clear` | `{id}` | `{success: true}` or `{success: false, reason: 'clear-failed', error}` |
 | `webSession:signIn` | `{id, url, window?}` | `{success: true, callId}` — settles via the settled event below |
 | `webSession:sign-in-decide` | `{callId, verdict}` | `{success: true}` |
 

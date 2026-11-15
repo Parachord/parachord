@@ -632,8 +632,10 @@ const { parseFriendLink, buildFriendLink } = require('./lib/friend-link');
 const { listenBrainzCoverUrl } = require('./lib/listenbrainz-cover');
 // The host-bridge compatibility rule (#1355) — the same pure module mobile
 // mirrors as PluginCompat.kt, required here like sync-providers/track-match
-// so the renderer and the Kotlin port read one rule, not two copies.
-const { hostBridgesCompatibility } = require('../../main-process/plugin-compat');
+// so the renderer and the Kotlin port read one rule, not two copies. The
+// loader's hide-filter (hostBridgesHideFilter) lives there too, so tests
+// drive the filter the renderer actually runs.
+const { hostBridgesHideFilter } = require('../../main-process/plugin-compat');
 const {
   searchResolversFor, catalogTracksToSearchResults, catalogAlbumsToSearchResults,
   catalogArtistsFromResults, mergeTrackResults, mergeAlbumResults, withoutLocalDuplicates, localSearchRows,
@@ -8645,13 +8647,8 @@ const Parachord = () => {
         // Array.from, not Array.isArray: the list crosses contextBridge, which
         // need not hand back a literal Array (a proxy still iterates).
         const suppliedHostBridges = Array.from(window.__parachordHostBridges || []);
-        const hiddenByHostBridges = [];
-        resolversToLoad = resolversToLoad.filter((axe) => {
-          const bridges = hostBridgesCompatibility(axe, suppliedHostBridges);
-          if (bridges.ok) return true;
-          hiddenByHostBridges.push(`${axe.manifest?.name || axe.manifest?.id} (needs ${bridges.missing.join(', ')})`);
-          return false;
-        });
+        const { visible, hidden: hiddenByHostBridges } = hostBridgesHideFilter(resolversToLoad, suppliedHostBridges);
+        resolversToLoad = visible;
         if (hiddenByHostBridges.length > 0) {
           console.log(`🙈 Hidden ${hiddenByHostBridges.length} plugin(s) whose host bridges this app doesn't supply: ${hiddenByHostBridges.join(', ')}`);
         }

@@ -693,10 +693,29 @@ contextBridge.exposeInMainWorld('electron', {
     // success, { success: false, reason, error } when the invoke itself is
     // refused (an unknown session, a gated sender).
     signIn: (id, url, opts = {}) => new Promise((resolve) => {
-      let callId = null;
+      let callId = null;   // set when the invoke's reply lands
+      let stopped = false; // the promise settled: no listener or flush may act again
+      // The race this buffers around: the bridge can settle a run BEFORE the
+      // invoke's reply names our callId (a synchronous host.signIn throw
+      // settles inside the handler, and the settled event can reach us ahead
+      // of the reply). A callId filter alone would drop that settle and wedge
+      // the promise forever — so while the invoke is outstanding, tick and
+      // settled payloads are buffered, keyed by their own payload callIds:
+      // when the reply lands, a buffered settle for OUR callId resolves the
+      // promise, buffered ticks for our callId run their decide late (in
+      // order), and payloads for any other callId (another window's concurrent
+      // call) are discarded harmlessly. The refused-invoke paths never see a
+      // callId: the buffers die with the failure.
+      const earlySettled = [];
+      const earlyTicks = [];
       const decide = typeof opts.decide === 'function' ? opts.decide : () => false;
-      const onTick = (_event, tick) => {
-        if (!tick || tick.callId !== callId) return;
+      const stop = () => {
+        if (stopped) return; // the listeners come off exactly once per call
+        stopped = true;
+        ipcRenderer.removeListener('webSession:sign-in-tick', onTick);
+        ipcRenderer.removeListener('webSession:sign-in-settled', onSettled);
+      };
+      const runTick = (tick) => {
         // The plugin's decide sees the host's tick shape — the callId is the
         // protocol's routing key, not plugin input.
         const { callId: _callId, ...facts } = tick;
@@ -704,17 +723,28 @@ contextBridge.exposeInMainWorld('electron', {
         // A throwing decide is the plugin's bug, not a failed sign-in — the
         // host ignores one too (web-session.js ticks on).
         try { verdict = !!decide(facts); } catch { verdict = false; }
-        ipcRenderer.invoke('webSession:sign-in-decide', { callId, verdict }).catch(() => {});
+        ipcRenderer.invoke('webSession:sign-in-decide', { callId: tick.callId, verdict }).catch(() => {});
       };
-      const onSettled = (_event, settled) => {
-        if (!settled || settled.callId !== callId) return;
-        ipcRenderer.removeListener('webSession:sign-in-tick', onTick);
-        ipcRenderer.removeListener('webSession:sign-in-settled', onSettled);
+      const settle = (settled) => {
+        stop();
         resolve({ success: true, signedIn: !!settled.signedIn, ...(settled.error ? { error: settled.error } : {}) });
       };
-      // Subscribed before the invoke, so a fast first tick cannot race the
-      // invoke's reply; ticks for other callIds are dropped by the filter
-      // until ours is known.
+      const onTick = (_event, tick) => {
+        if (stopped || !tick || typeof tick.callId !== 'string') return;
+        if (callId === null) { earlyTicks.push(tick); return; } // pre-reply: buffered, flushed when the reply names our callId
+        if (tick.callId !== callId) return;
+        runTick(tick);
+      };
+      const onSettled = (_event, settled) => {
+        if (stopped || !settled || typeof settled.callId !== 'string') return;
+        if (callId === null) { earlySettled.push(settled); return; } // pre-reply: buffered, resolved when the reply names our callId
+        if (settled.callId !== callId) return;
+        settle(settled);
+      };
+      // Subscribed before the invoke so no event of the run is MISSED; what
+      // protects an event that beats the reply is the buffer above, not this
+      // order — subscription order alone would leave the settle dropped by
+      // the callId filter.
       ipcRenderer.on('webSession:sign-in-tick', onTick);
       ipcRenderer.on('webSession:sign-in-settled', onSettled);
       ipcRenderer.invoke('webSession:signIn', {
@@ -722,16 +752,22 @@ contextBridge.exposeInMainWorld('electron', {
         url,
         window: opts.window && typeof opts.window === 'object' ? opts.window : undefined
       }).then((reply) => {
+        if (stopped) return;
         if (!reply || !reply.success) {
-          ipcRenderer.removeListener('webSession:sign-in-tick', onTick);
-          ipcRenderer.removeListener('webSession:sign-in-settled', onSettled);
+          stop();
           resolve({ success: false, reason: reply && reply.reason, error: reply && reply.error });
           return;
         }
         callId = reply.callId;
+        // A settle that raced the reply (the synchronous host throw) resolves
+        // now; ticks that raced it run their decide late, in order — the
+        // verdict's answer is one tick late exactly like every other one.
+        const raced = earlySettled.find((s) => s.callId === callId);
+        if (raced) { settle(raced); return; }
+        for (const tick of earlyTicks) if (tick.callId === callId) runTick(tick);
       }, (error) => {
-        ipcRenderer.removeListener('webSession:sign-in-tick', onTick);
-        ipcRenderer.removeListener('webSession:sign-in-settled', onSettled);
+        if (stopped) return;
+        stop();
         resolve({ success: false, error: String((error && (error.message || error)) || error) });
       });
     })

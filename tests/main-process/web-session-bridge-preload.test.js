@@ -135,6 +135,50 @@ describe('webSession.signIn — the preload wrapper against the bridge', () => {
     expect(mockIpcListeners.get('webSession:sign-in-settled')?.size || 0).toBe(0);
   });
 
+  test('a settle that lands BEFORE the invoke reply (a synchronous host throw) is buffered and still resolves the wrapper', async () => {
+    // The order the race lives on: the bridge settles a synchronously-throwing
+    // host.signIn INSIDE the handler (startSignIn's catch), and this harness
+    // delivers sendToRenderer synchronously inside the invoke — so the settled
+    // event reaches the wrapper while its callId is still null, ahead of the
+    // invoke's reply. A callId filter alone drops it and wedges the promise
+    // forever; the wrapper must buffer it and resolve on the reply.
+    wireBridge({
+      cookieDomains: ['amazon.com'],
+      load: jest.fn(), pageFetch: jest.fn(), fetch: jest.fn(), state: jest.fn(), clear: jest.fn(),
+      signIn: jest.fn(() => { throw new Error('no BrowserWindow'); })
+    });
+    const wrapper = mockWorld.electron.webSession.signIn('amazon-music', 'https://music.amazon.com/', { decide: () => true });
+    await expect(wrapper).resolves.toEqual({ success: true, signedIn: false, error: 'no BrowserWindow' });
+    // And the listeners came off exactly once: nothing stays subscribed.
+    expect(mockIpcListeners.get('webSession:sign-in-tick')?.size || 0).toBe(0);
+    expect(mockIpcListeners.get('webSession:sign-in-settled')?.size || 0).toBe(0);
+  });
+
+  test('a tick that lands BEFORE the invoke reply is buffered and flushed once the reply names the callId', async () => {
+    // The same order, tick half: this fake host fires its first decide()
+    // during the handler, so the forwarded tick beats the reply. The wrapper
+    // buffers it, then runs the plugin's decide on it after the reply lands.
+    let settleRun;
+    const run = new Promise((resolve) => { settleRun = resolve; });
+    const decide = jest.fn(() => false);
+    wireBridge({
+      cookieDomains: ['amazon.com'],
+      load: jest.fn(), pageFetch: jest.fn(), fetch: jest.fn(), state: jest.fn(), clear: jest.fn(),
+      signIn: jest.fn(async (_url, { decide: d }) => {
+        d({ url: 'https://music.amazon.com/ap/signin', cookieNames: [], stableTicks: 0 }); // the pre-reply tick
+        return run;
+      })
+    });
+    const wrapper = mockWorld.electron.webSession.signIn('amazon-music', 'https://music.amazon.com/', { decide });
+    await flush(); // the reply lands; the buffered tick flushes through decide
+    expect(decide).toHaveBeenCalledTimes(1);
+    expect(decide).toHaveBeenCalledWith({ url: 'https://music.amazon.com/ap/signin', cookieNames: [], stableTicks: 0 });
+    settleRun({ signedIn: true });
+    await expect(wrapper).resolves.toEqual({ success: true, signedIn: true });
+    expect(mockIpcListeners.get('webSession:sign-in-tick')?.size || 0).toBe(0);
+    expect(mockIpcListeners.get('webSession:sign-in-settled')?.size || 0).toBe(0);
+  });
+
   test('two wrapper signIn calls join one run: both deciders tick, both promises settle', async () => {
     const flow = fakeSignInFlow();
     wireBridge({

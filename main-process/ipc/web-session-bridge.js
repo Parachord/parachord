@@ -226,9 +226,13 @@ function registerWebSessionBridgeIpc({ ipcMain, isAllowedSender, sendToRenderer 
     const entry = registered(id);
     if (!entry) return fail('not-ready', `no web session registered for ${id}`);
     try {
-      // The host's clear() already answers the channel's shape
-      // ({ success: true } | { success: false, error }).
-      return await entry.host.clear();
+      const out = await entry.host.clear();
+      // The host's own failure shape carries no reason ({ success: false,
+      // error } from a refused clearStorageData) — every other channel's
+      // contract names its failure, so a host clear failure maps to
+      // clear-failed here like the catch below does.
+      if (out && out.success === false) return fail(out.reason || 'clear-failed', out.error);
+      return out;
     } catch (error) {
       return fail((error && error.reason) || 'clear-failed', message(error));
     }

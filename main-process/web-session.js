@@ -529,7 +529,24 @@ function createWebSessionHost(config = {}) {
       };
       const onSendHeaders = (details, callback) => {
         const mine = captured.find((r) => r._id === details.id);
-        if (mine) mine.headers = details.requestHeaders;
+        if (mine) {
+          // Cookie values never enter host capture state in either direction
+          // (fetch()'s boundary rule, stated in its own comment): a capture
+          // snapshot crosses to the renderer (webSession:load), and the jar's
+          // values must not ride it. No consumer loses anything — the
+          // page-world replay attaches cookies itself (credentials:
+          // 'include'), and main-process replay consumers drop cookie headers
+          // anyway (amazon-music-logic's GQL_REPLAY_DROP_HEADERS). Case-
+          // insensitive, Cookie and Cookie2 both: Chromium sends 'Cookie',
+          // the stored copy must not smuggle a value in any spelling.
+          const headers = {};
+          for (const [name, value] of Object.entries(details.requestHeaders || {})) {
+            const lower = String(name).toLowerCase();
+            if (lower === 'cookie' || lower === 'cookie2') continue;
+            headers[name] = value;
+          }
+          mine.headers = headers;
+        }
         callback({ requestHeaders: details.requestHeaders });
       };
       try { ses.webRequest.onBeforeRequest(filter, onRequest); } catch { /* a second registration replaces */ }

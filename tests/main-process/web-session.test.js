@@ -280,6 +280,32 @@ describe('load — navigation, capture, the quiet window', () => {
     expect(result.captures[0].headers).toEqual({ 'x-api-key': 'k' });
   });
 
+  test('captured headers carry no cookie keys, in any case spelling (values never cross the boundary)', async () => {
+    const { host } = await warmSession();
+    const pending = host.load('https://music.testsvc.com/', {
+      capture: { urlPrefixes: ['https://gql.testsvc.com/*'], quietMs: 1000 }
+    });
+    await jest.advanceTimersByTimeAsync(0);
+    // The page's request rides the jar (Chromium attached it); the stored
+    // copy must not — a snapshot crosses to the renderer via webSession:load.
+    fireCaptured({
+      id: 9,
+      headers: {
+        'csrf-token': 'tok',
+        Cookie: 'at-main=SECRET',
+        cookie: 'session-id=SECRET',
+        COOKIE: 'x-main=SECRET',
+        cOoKiE: 'ubid-main=SECRET',
+        Cookie2: 'c2=SECRET',
+        COOKIE2: 'c2b=SECRET',
+        'x-api-key': 'k'
+      }
+    });
+    await jest.advanceTimersByTimeAsync(1200);
+    const result = await pending;
+    expect(result.captures[0].headers).toEqual({ 'csrf-token': 'tok', 'x-api-key': 'k' });
+  });
+
   test('the capture window ends on quiet, bounded by budget', async () => {
     const { host } = await warmSession();
     const pending = host.load('https://music.testsvc.com/', {
