@@ -100,10 +100,62 @@ function amazonSpecEnvelope(tracks) {
   };
 }
 
+// The album-spec SpecSearchSeeMorePage response envelope for bridge-shaped
+// albums ({ asin, name, artist, albumArt?, explicit? }) — the search spec
+// carries no releaseDate/trackCount and the response's own node url carries a
+// ?ref= tracker, which the mapper drops in favor of the canonical ASIN url.
+function amazonAlbumSpecEnvelope(albums) {
+  return {
+    data: {
+      specificationSearch: {
+        result: [{
+          edges: albums.map((a) => ({
+            node: {
+              __typename: 'Album',
+              id: a.asin,
+              title: a.explicit ? a.name + ' [Explicit]' : a.name,
+              url: 'https://music.amazon.com/albums/' + a.asin + '?ref=dm_ff_amazonmusic_greenhornet_web',
+              contributingArtists: { edges: [{ role: 'PRIMARY', node: { name: a.artist } }] },
+              images: a.albumArt
+                ? [{ url: a.albumArt, width: 1400, height: 1400, imageType: 'PRIMARY' }]
+                : [],
+              parentalSettings: a.explicit ? { hasExplicitLanguage: true } : undefined
+            }
+          }))
+        }]
+      }
+    }
+  };
+}
+
+// The artist-spec SpecSearchSeeMorePage response envelope for artists shaped
+// { asin, name, images: [{ url, width, imageType }] } (the mapper accepts
+// only Artist nodes and bare https m.media-amazon.com urls).
+function amazonArtistSpecEnvelope(artists) {
+  return {
+    data: {
+      specificationSearch: {
+        result: [{
+          edges: artists.map((a) => ({
+            node: {
+              __typename: 'Artist',
+              id: a.asin,
+              name: a.name,
+              images: a.images || []
+            }
+          }))
+        }]
+      }
+    }
+  };
+}
+
 // A window.electron.webSession mock: the page flow's load answers the flow's
 // own searchText out of the URL (the URL builder put it there), and pageFetch
 // answers the configured envelope. opts:
 //   tracks / envelope — what the search answers (default: no tracks)
+//   albums — the album-spec response rows (the albums tab; default none)
+//   artists — the artist-spec response rows (the artists tab; default none)
 //   replay           — overrides for the pageFetch outcome ({ status, text }
 //                      merged after the default), or { error } to fail replays
 //   signedIn         — false serves a logged-out cookie jar (default true)
@@ -112,7 +164,8 @@ function amazonSpecEnvelope(tracks) {
 //   tier             — config.json's tier for the plan gate (default
 //                      'UNLIMITED_AUDIO'; 'PRIME' and null are the refusals)
 //   capturesFor      — (url, opts) => captures the load returns (default: one
-//                      track-spec capture carrying the URL's searchText)
+//                      capture carrying the URL's searchText, specType from
+//                      the URL's tab)
 //   finalUrl         — the load's final URL (a wall redirect)
 //   loadResult       — the load's whole outcome ({ success: false, reason } for
 //                      the failure paths)
@@ -123,14 +176,20 @@ function amazonSpecEnvelope(tracks) {
 //                      a bumped value after a sign-out→sign-in drops the
 //                      plugin's session-scoped caches)
 function amazonWebSessionMock(opts = {}) {
-  const envelope = opts.envelope !== undefined ? opts.envelope : amazonSpecEnvelope(opts.tracks || []);
+  const envelope = opts.envelope !== undefined
+    ? opts.envelope
+    : (opts.albums ? amazonAlbumSpecEnvelope(opts.albums)
+      : (opts.artists ? amazonArtistSpecEnvelope(opts.artists)
+        : amazonSpecEnvelope(opts.tracks || [])));
   const replayOutcome = Object.assign(
     { status: 200, text: JSON.stringify(envelope) },
     opts.replay || {}
   );
   const capturesFor = opts.capturesFor || ((url) => {
-    const m = decodeURIComponent(String(url)).match(/\/search\/(.+)\/songs$/);
-    return m ? [amazonSearchCapture(m[1])] : [];
+    const m = decodeURIComponent(String(url)).match(/\/search\/(.+)\/(songs|albums|artists)$/);
+    if (!m) return [];
+    const specType = { songs: 'track', albums: 'album', artists: 'artist' }[m[2]];
+    return [amazonSearchCapture(m[1], { specType })];
   });
   const ws = {
     state: jest.fn().mockResolvedValue({
@@ -179,5 +238,7 @@ module.exports = {
   instantiateAmazonPlugin,
   amazonSearchCapture,
   amazonSpecEnvelope,
+  amazonAlbumSpecEnvelope,
+  amazonArtistSpecEnvelope,
   amazonWebSessionMock
 };

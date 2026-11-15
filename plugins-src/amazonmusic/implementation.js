@@ -7,30 +7,33 @@
 // instance, pure: helpers and constants only — no I/O, no timers, no window;
 // per-instance state lives on `this`).
 //
-// ── The track search runs in the plugin (#1356 M5) ───────────────────────────
-// The spec-search runner (the songs-tab SpecSearchSeeMorePage capture-and-
-// replay flow that used to live in amazon-web-player.js) is the plugin's: it
-// drives the ONE host web-session instance (registered as 'amazon-music')
-// through the window.electron.webSession bridge — pageFetch replays the
-// captured request from the page world, load(url, {capture}) runs the chained
-// page flow with the capture window inside the load (the quiet-bounded
-// returned captures replace the old in-flow poll; our own replay traffic
-// arrives as echo-flagged captures and is never trusted), and state()
-// supplies the facts the signed-in verdict composes — and the session
-// generation whose change (a sign-out the plugin cannot see the event of)
-// drops its session-scoped caches. The album/artist spec
-// searches still run host-side (their milestone hasn't come): they drive the
-// same host instance through amazon-web-player.js's copy of the runner, and
-// the matchers agree because they are copies of the same pure helpers in
-// amazon-music-logic.js.
+// ── The searches and the catalog run in the plugin (#1356 M5/M6) ─────────────
+// The spec-search runner family (the SpecSearchSeeMorePage capture-and-replay
+// flows: the track search, M5, plus the album search and the artist-image
+// lookup, M6) and the album-detail flow (lookupAlbum's candidate-ranking
+// replay) are the plugin's: they drive the ONE host web-session instance
+// (registered as 'amazon-music') through the window.electron.webSession
+// bridge — pageFetch replays the captured request from the page world,
+// load(url, {capture}) runs the chained page flow with the capture window
+// inside the load (the quiet-bounded returned captures replace the old
+// in-flow poll; our own replay traffic arrives as echo-flagged captures and
+// is never trusted), and state() supplies the facts the signed-in verdict
+// composes — and the session generation whose change (a sign-out the plugin
+// cannot see the event of) drops its session-scoped caches. The host-side
+// runner that used to serve the album/artist tabs is deleted; every helper
+// those flows use lives here (copies of the amazon-music-logic.js originals,
+// whose remaining copies serve the playlist import, recommendations and
+// dmls until their moves).
 module.exports = {
   // ── The plugin library (#1356) ────────────────────────────────────────────
   // Pure helpers and constants, evaluated once per resolver instance and
   // frozen by the loader. Every copy below mirrors its original in
-  // amazon-music-logic.js / amazon-web-player.js, whose copies still serve
-  // the host-side flows that have not moved yet (album/artist search,
-  // playlist import, recommendations, dmls); each copy notes which. The
-  // copies die one by one as those flows move in.
+  // amazon-music-logic.js / amazon-web-player.js. The copies whose flows
+  // have moved (the track search in #1356 M5; the album search, album
+  // lookup and artist images in M6) are now the ONLY copy — the host's died
+  // with its flows. The rest still serve the host-side flows that have not
+  // moved (playlist import, recommendations, dmls); each copy notes which,
+  // and dies when its flow moves in.
   _lib: function () {
     // The session this plugin drives — the id main.js registered the ONE
     // host instance under (registerWebSession('amazon-music', …)). The
@@ -55,6 +58,18 @@ module.exports = {
     // first request inside the window — the gap the old poll's
     // unconditional 15s coverage existed to close.
     const PAGE_CAPTURE_QUIET_MS = 2500;
+
+    // The album catalog fallback on the renderer bounds each catalog step
+    // (withCatalogTimeout / CATALOG_STEP_TIMEOUT_MS in src/renderer/app.js),
+    // and getArtistImage bounds each chain step the same way
+    // (ARTIST_IMAGE_STEP_TIMEOUT_MS in src/renderer/lib/artist-image-chain.js
+    // — a Home or Search page can ask for 5-20 artist photos at once). An
+    // album or artist-image job that waits behind the plugin's page-flow
+    // chain longer than that budget has a caller that already moved on:
+    // skip its page load and return the miss, so track resolution is not
+    // starved behind catalog/image jobs. Mirrors the renderer budget on
+    // purpose (#1135) — the plugin cannot read the renderer constant.
+    const ALBUM_JOB_STALE_MS = 8000;
 
     // #1220: the plan is read from config.json and cached 30 min (1 min when
     // unknown), the same TTLs the host's dmls gate uses.
@@ -175,6 +190,53 @@ module.exports = {
         }
       }
       return null;
+    }
+
+    // The albums tab of the same spec search (the plugin's albumSearch
+    // capability): the same quoted-or query the songs search builds, on the
+    // /albums tab. (The host copy in amazon-music-logic.js died with the
+    // host-side album search — this is the only one now.)
+    function amazonAlbumSearchUrl(input) {
+      const opts = typeof input === 'string' ? { query: input } : input;
+      const spec = amazonSongSearchUrl(opts || {});
+      if (!spec) return null;
+      return { url: spec.url.replace(/\/songs$/, '/albums'), searchText: spec.searchText };
+    }
+
+    // The artists tab URL for an artist NAME (the artist-image chain passes a
+    // bare name, never the search object's title/artist pair). The name is
+    // quoted like the single-artist album query: Amazon's matching is
+    // order/phrase-sensitive, and a quoted name is the closest thing to an
+    // exact-name search the page offers. Returns { url, searchText } (searchText
+    // is what the page puts in variables.searchText, so the runner can find its
+    // own request), null when there is nothing to search.
+    function amazonArtistSearchUrl(artistName) {
+      // The name is track metadata, not typed text: control characters never
+      // belong in it. One surviving into searchText and being normalized
+      // differently by hornet would leave the runner waiting out its capture
+      // window for a request it can never match — one junk name tripping the
+      // shared search breaker.
+      const name = String(artistName || '').replace(/"/g, '').replace(/[\p{Cc}]+/gu, ' ').trim();
+      if (!name) return null;
+      const q = '"' + name + '"';
+      let url;
+      try {
+        url = 'https://music.amazon.com/search/' + encodeURIComponent(q) + '/artists';
+      } catch (e) {
+        // A lone surrogate in metadata makes encodeURIComponent throw; a name
+        // that malformed is garbage, not a search — miss, never an exception.
+        return null;
+      }
+      return { url, searchText: q };
+    }
+
+    // The album page lives at /albums/<ASIN> — a 10-char uppercase ASIN,
+    // unlike the long token playlist ids use. The gql search response carries
+    // node.url with a ?ref= tracker; both that and the bare canonical form
+    // yield the ASIN.
+    function amazonAlbumAsinFromUrl(url) {
+      const m = String(url || '').match(/music\.amazon\.com\/albums\/([A-Za-z0-9]{10})(?:[/?#]|$)/i);
+      return m ? m[1].toUpperCase() : null;
     }
 
     // ── Spec-search request templates (replay-first) ────────────────────────
@@ -367,6 +429,253 @@ module.exports = {
       return { tracks, envelope: true };
     }
 
+    // ── The album catalog (M6: album search, album detail, artist images) ───
+    // The album-spec SpecSearchSeeMorePage response and the AlbumDetailPage
+    // response (both shapes live-verified 2026-10 via the page's own
+    // requests, replayed verbatim like the track search). These are the only
+    // copies — the host's died with the album/artist flows.
+
+    // The album-spec response's Album node → the searchAlbums row. Only
+    // Album nodes map: a Track edge in the album slot is the same
+    // ASIN-in-the-wrong-slot failure the track parser guards against, in
+    // reverse. The node carries no releaseDate/trackCount in the search spec
+    // (the plugin contract allows both null), and its own url carries a
+    // ?ref= tracker — the canonical album URL (the form lookupAlbum parses)
+    // is minted from the ASIN.
+    function albumFromGqlSearchNode(node) {
+      if (!node || node.__typename !== 'Album' || !node.id) return null;
+      const artist = gqlPrimaryArtistNames(node.contributingArtists);
+      if (!artist) return null;
+      const cleaned = stripAmazonTitleMarker(node.title || node.shortTitle || '');
+      if (!cleaned.title) return null;
+      return {
+        asin: node.id,
+        name: cleaned.title.slice(0, 200),
+        artist: artist.slice(0, 200),
+        albumArt: gqlPrimaryImageUrl(node.images) || null,
+        url: 'https://music.amazon.com/albums/' + node.id,
+        explicit: cleaned.explicit || !!(node.parentalSettings && node.parentalSettings.hasExplicitLanguage)
+      };
+    }
+
+    // The album-spec response → the searchAlbums rows. Same envelope
+    // semantics as searchTracksFromGql: a miss is a present envelope with no
+    // usable edges; an absent envelope (hornet renamed the field) is
+    // structural.
+    function searchAlbumsFromGql(data) {
+      const search = data && data.specificationSearch;
+      if (!search || typeof search !== 'object') return { albums: [], envelope: false };
+      const results = Array.isArray(search.result) ? search.result : [];
+      let spec = null;
+      for (const r of results) {
+        if (r && Array.isArray(r.edges) && r.edges.length) { spec = r; break; }
+      }
+      if (!spec) {
+        for (const r of results) {
+          if (r && Array.isArray(r.edges)) { spec = r; break; }
+        }
+      }
+      const albums = ((spec && spec.edges) || [])
+        .map(e => albumFromGqlSearchNode(e && e.node))
+        .filter(Boolean);
+      return { albums, envelope: true };
+    }
+
+    // Mirrors normalizeArtistName in src/renderer/lib/album-catalog.js (the
+    // normalization the Deezer step of the artist-image chain matches on):
+    // case, diacritic marks, a leading "The", "&" and punctuation are folded
+    // away. Kept as a local copy — the plugin cannot depend on renderer
+    // sources.
+    function amazonNormalizeArtistName(name) {
+      let out = String(name || '');
+      try { out = out.normalize('NFKD').replace(/\p{M}/gu, ''); } catch (e) { /* old engines */ }
+      return out.toLowerCase().replace(/^the\s+/, '').replace(/&/g, 'and').replace(/[^\p{L}\p{N}]+/gu, '');
+    }
+
+    // One artist-spec edges[] entry → { asin, name, imageUrl }. Only Artist
+    // nodes map: a Track/Album/Station edge in the artist slot is the
+    // ASIN-in-the-wrong-slot failure the track and album parsers guard
+    // against, and a misfiled entity here would pin the wrong photo on the
+    // artist for 90 days (the renderer persists artist images). The photo pick
+    // is the widest PROFILE image (the square artist photo; BACKGROUND is a
+    // wide banner — albums use PRIMARY, artists do not have one), else the
+    // widest image overall. Only a bare https URL on Amazon's m.media-amazon
+    // CDN qualifies: the photo goes into the persisted cache, so anything
+    // else — another host (a third-party tracking pixel would persist and
+    // load on every render) or a query string (Amazon has never signed these;
+    // a '?' would be new, and a credential-bearing URL must not be stored) —
+    // is skipped. imageUrl is null when the artist has no usable photo at
+    // all — the caller reports a miss for that artist, never another
+    // artist's photo.
+    function artistFromGqlSearchNode(node) {
+      if (!node || node.__typename !== 'Artist' || !node.id || !node.name) return null;
+      const usable = (Array.isArray(node.images) ? node.images : [])
+        .filter(i => i && typeof i.url === 'string' && /^https:\/\/m\.media-amazon\.com\//i.test(i.url) && !i.url.includes('?'));
+      const widest = (l) => (l.length ? l.reduce((a, b) => ((b.width || 0) >= (a.width || 0) ? b : a)) : null);
+      const picked = widest(usable.filter(i => i.imageType === 'PROFILE')) || widest(usable);
+      return { asin: node.id, name: String(node.name).slice(0, 200), imageUrl: picked ? picked.url : null };
+    }
+
+    // The artist-spec response → the artist's photo URL, or null. Same
+    // envelope semantics as searchAlbumsFromGql. The edges are ranked by
+    // Amazon and the top hit is not always the exact name ('warning' leads
+    // with 'The Warning', and both fold to the same key anyway). The photo
+    // comes only from the FIRST node whose normalized name equals the
+    // requested one — never from another artist the search happened to rank
+    // higher, however similar ('Fates Warning' is not 'Warning').
+    function searchArtistImageFromGql(data, artistName) {
+      const search = data && data.specificationSearch;
+      if (!search || typeof search !== 'object') return { url: null, envelope: false };
+      const results = Array.isArray(search.result) ? search.result : [];
+      let spec = null;
+      for (const r of results) {
+        if (r && Array.isArray(r.edges) && r.edges.length) { spec = r; break; }
+      }
+      if (!spec) {
+        for (const r of results) {
+          if (r && Array.isArray(r.edges)) { spec = r; break; }
+        }
+      }
+      const artists = ((spec && spec.edges) || [])
+        .map(e => artistFromGqlSearchNode(e && e.node))
+        .filter(Boolean);
+      const wanted = amazonNormalizeArtistName(artistName);
+      if (!wanted) return { url: null, envelope: true };
+      const match = artists.find(a => amazonNormalizeArtistName(a.name) === wanted);
+      return { url: (match && match.imageUrl) || null, envelope: true };
+    }
+
+    // Write-shaped gql names (a replay would repeat the action on the user's
+    // account) never become album-detail candidates (copies of the originals
+    // in amazon-music-logic.js, which gqlRequestIsAboutSubject — the debug
+    // capture that stays host-side — still uses).
+    const GQL_WRITE_OP = /^(?:add|remove|delete|update|set|put|create|follow|unfollow|like|unlike|save|record|log|report|send|post|mark)[A-Z_]|^track[A-Z]/;
+    const GQL_MUTATION_NAME = /mutation/i;
+
+    // The album-detail candidates the album page fired for OUR album. The
+    // page fires AlbumDetailPage as variables.id = the ASIN (live-captured
+    // 2026-10), but it also fires OTHER reads whose variables carry the
+    // ASIN: AlbumSeo (the header-only op — its response has data.album with
+    // title/trackCount but no tracksConnection) arrives FIRST on a real page,
+    // and an unrelated read that happens to carry the ASIN may too. So
+    // first-arrival must not win: candidates are ranked — detail-named, then
+    // album-named, then (with { anyName: true }, the hornet-rename hedge)
+    // any read carrying the ASIN — and the caller verifies the REPLAY
+    // carries data.album.tracksConnection (albumTracksConnectionIn) before
+    // accepting one.
+    function amazonAlbumDetailCandidates(bodies, asin, { anyName = false } = {}) {
+      const wanted = String(asin || '').toUpperCase();
+      if (!wanted || wanted === 'UNDEFINED' || wanted === 'NULL') return [];
+      const detail = [];
+      const named = [];
+      const other = [];
+      for (const raw of (Array.isArray(bodies) ? bodies : [])) {
+        let parsed;
+        try { parsed = JSON.parse(raw); } catch (e) { continue; }
+        const batch = Array.isArray(parsed) ? parsed : [parsed];
+        for (const req of batch) {
+          const opName = String((req && req.operationName) || '');
+          if (GQL_WRITE_OP.test(opName) || GQL_MUTATION_NAME.test(opName)) continue;
+          if (/^\s*mutation\b/.test(String((req && req.query) || ''))) continue;
+          const vars = req && req.variables;
+          if (!vars || typeof vars !== 'object') continue;
+          if (String(vars.id || '').toUpperCase() !== wanted) continue;
+          if (/detail/i.test(opName)) detail.push(req);
+          else if (/album/i.test(opName)) named.push(req);
+          else if (anyName) other.push(req);
+        }
+      }
+      return [...detail, ...named, ...other];
+    }
+
+    // Whether a replayed response IS the album detail: data.album carrying a
+    // tracksConnection with an edges array (empty edges are fine — a pre-order /
+    // fully-delisted album still comes from the detail op; the header-only
+    // AlbumSeo response has data.album WITHOUT tracksConnection).
+    function albumTracksConnectionIn(data) {
+      const album = data && data.album;
+      const tc = album && album.tracksConnection;
+      return !!(tc && Array.isArray(tc.edges));
+    }
+
+    // One tracksConnection.edges[] entry → the album track row. Per-track
+    // contributingArtists (a VA compilation keeps its own artists), the
+    // title-marker strip, trackNumber, seconds duration.
+    function albumTrackFromGqlEdge(edge) {
+      const node = edge && edge.node;
+      if (!node || !node.id || !node.title) return null;
+      if (node.__typename && node.__typename !== 'Track') return null;
+      const artist = gqlPrimaryArtistNames(node.contributingArtists);
+      if (!artist) return null;
+      const cleaned = stripAmazonTitleMarker(node.title);
+      if (!cleaned.title) return null;
+      return {
+        asin: node.id,
+        title: cleaned.title.slice(0, 200),
+        artist: artist.slice(0, 200),
+        duration: typeof node.duration === 'number' ? node.duration : 0,
+        trackNumber: typeof node.trackNumber === 'number' ? node.trackNumber : null,
+        explicit: cleaned.explicit || !!(node.parentalSettings && node.parentalSettings.hasExplicitLanguage)
+      };
+    }
+
+    // The album detail response numbers tracks per disc (1..n, 1..m — verified
+    // on 2-disc, 3-disc and 100-track sets) but carries no discNumber field
+    // anywhere: a trackNumber that does not advance past the previous one
+    // starts a new disc. Rows without a trackNumber keep discNumber null (the
+    // plugin contract has it "when known").
+    function assignDiscNumbers(tracks) {
+      let disc = 1;
+      let prev = 0;
+      for (const t of tracks) {
+        if (typeof t.trackNumber === 'number') {
+          if (t.trackNumber <= prev) disc += 1;
+          prev = t.trackNumber;
+          t.discNumber = disc;
+        } else {
+          t.discNumber = null;
+        }
+      }
+      return tracks;
+    }
+
+    // The AlbumDetailPage response's data.album → the lookupAlbum row. The
+    // tracksConnection has no pageInfo at all (a 100-track album answers all
+    // 100 edges in one response — live-verified), so unlike playlistDetail
+    // there is no continuation to follow; trackCount above the edge count is
+    // logged by the caller as a truncation, the way a short playlist page is.
+    // Returns { album, envelope }: data.album null is a legitimate not-found
+    // (deleted / other region), a data object with no 'album' field at all is
+    // a hornet rename (structural — the caller throws instead of reporting a
+    // miss).
+    function albumDetailFromGql(data) {
+      if (!data || typeof data !== 'object' || !('album' in data)) {
+        return { album: null, envelope: false };
+      }
+      const album = data.album;
+      if (!album || typeof album !== 'object') return { album: null, envelope: true };
+      const artist = gqlPrimaryArtistNames(album.contributingArtists);
+      const cleaned = stripAmazonTitleMarker(album.title || album.shortTitle || '');
+      const edges = (album.tracksConnection && Array.isArray(album.tracksConnection.edges))
+        ? album.tracksConnection.edges : [];
+      const tracks = assignDiscNumbers(edges.map(albumTrackFromGqlEdge).filter(Boolean));
+      return {
+        album: {
+          asin: album.id || null,
+          // The full title (editions distinguish releases), not shortTitle.
+          name: (cleaned.title || album.shortTitle || '').slice(0, 200),
+          artist: artist.slice(0, 200) || null,
+          albumArt: gqlPrimaryImageUrl(album.images) || null,
+          releaseDate: typeof album.releaseDate === 'string' ? album.releaseDate : null,
+          trackCount: typeof album.trackCount === 'number' ? album.trackCount : tracks.length,
+          url: album.id ? 'https://music.amazon.com/albums/' + album.id : null,
+          explicit: cleaned.explicit || !!(album.parentalSettings && album.parentalSettings.hasExplicitLanguage),
+          tracks
+        },
+        envelope: true
+      };
+    }
+
     // ── The plan gate (#1220) ────────────────────────────────────────────────
     // The host's dmls gate (amazon-dmls.js) reads the same file for playback;
     // these copies feed the plugin's own search gate. UNLIMITED… →
@@ -409,13 +718,17 @@ module.exports = {
 
     return {
       SESSION, GQL_URL, CONFIG_URL,
-      PAGE_CAPTURE_BUDGET_MS, PAGE_CAPTURE_QUIET_MS, PLAN_TTL_MS, PLAN_UNKNOWN_TTL_MS,
+      PAGE_CAPTURE_BUDGET_MS, PAGE_CAPTURE_QUIET_MS, ALBUM_JOB_STALE_MS,
+      PLAN_TTL_MS, PLAN_UNKNOWN_TTL_MS,
       notReady,
       pageBlocksPlayback,
       amazonAuthCookieState,
       isAmazonMusicPage,
       amazonSongSearchUrl,
       amazonSpecSearchRequest,
+      amazonAlbumSearchUrl,
+      amazonArtistSearchUrl,
+      amazonAlbumAsinFromUrl,
       makeSpecSearchTemplate,
       specTemplateIsFresh,
       specBodyWithVars,
@@ -423,6 +736,16 @@ module.exports = {
       capturedOperationNames,
       amazonGqlFetchHeaders,
       searchTracksFromGql,
+      searchAlbumsFromGql,
+      albumFromGqlSearchNode,
+      searchArtistImageFromGql,
+      artistFromGqlSearchNode,
+      amazonAlbumDetailCandidates,
+      albumTracksConnectionIn,
+      albumDetailFromGql,
+      albumTrackFromGqlEdge,
+      assignDiscNumbers,
+      amazonNormalizeArtistName,
       amazonPlanFromTier,
       tierFromConfig,
       amazonPlanMessage
@@ -502,13 +825,23 @@ module.exports = {
     return { parsed };
   },
 
-  // The shared runner for the spec searches. The fast path first; any
-  // template miss falls to the chained page flow, whose capture re-mints the
-  // template — the fallback IS the old flow, so the failure semantics never
-  // change. Only real page navigation is serialized (the per-instance page
-  // flow chain below + the host's load chain); replays run in parallel.
-  specSearch: async function ({ url, searchText, specType, parse, noun }) {
+  // The shared runner for the spec searches — the track search, the album
+  // search and the artist-image lookup all ride it (the albums/artists tabs
+  // fire the same SpecSearchSeeMorePage operation, differing only in
+  // variables.specType). The fast path first; any template miss falls to the
+  // chained page flow, whose capture re-mints the template — the fallback IS
+  // the old flow, so the failure semantics never change. Only real page
+  // navigation is serialized (the per-instance page flow chain below + the
+  // host's load chain); replays run in parallel. `staleCheck` (the album
+  // catalog / artist-image jobs' #1135 budget) short-circuits a job whose
+  // caller already moved on — before any path selection, and again after
+  // the chain wait — returning [] without a page load.
+  specSearch: async function ({ url, searchText, specType, parse, noun, staleCheck = null }) {
     const lib = this.requireLib();
+    if (staleCheck && staleCheck()) {
+      console.log('[Amazon] ' + specType + ' search skipped: past the ' + lib.ALBUM_JOB_STALE_MS + 'ms budget before it started — the caller already moved on');
+      return [];
+    }
     if (!this._searchBreaker) this._searchBreaker = lib.createSearchBreaker();
     if (!this._searchBreaker.allows()) {
       const probe = this._searchBreaker.isProbe() ? ' (probing after cooldown)' : '';
@@ -521,11 +854,18 @@ module.exports = {
     // verbatim replay after it) so one flow's re-minted template heals every
     // search queued behind it, and one flow's replay is never run into the
     // teeth of the next flow's navigation (a pageFetch arriving while a
-    // navigation holds the gate answers { error: 'busy' }). Host-side flows
-    // (the album/artist searches that have not moved) serialize against the
-    // loads on the same host chain.
+    // navigation holds the gate answers { error: 'busy' }). The album lookup
+    // rides the same chain; the host-side flows that remain (playlist
+    // import, recommendations) serialize against the loads on the host's
+    // own chain.
     const run = (this._pageFlowChain || Promise.resolve())
-      .then(() => this.specSearchPageFlow({ url, searchText, specType, parse, noun }));
+      .then(() => {
+        if (staleCheck && staleCheck()) {
+          console.log('[Amazon] ' + specType + ' search skipped: queued past the ' + lib.ALBUM_JOB_STALE_MS + 'ms budget — the caller already moved on');
+          return [];
+        }
+        return this.specSearchPageFlow({ url, searchText, specType, parse, noun });
+      });
     this._pageFlowChain = run.then(() => {}, () => {});
     return run;
   },
@@ -661,10 +1001,10 @@ module.exports = {
       // "the page searched the wrong tab", concluded structurally early):
       // on the returned captures the window has already closed, so the grace
       // is a diagnosis, not a wait — and an echo-flagged capture is never
-      // evidence. Echoes are OUR replay traffic (this plugin's, or the
-      // host-side album/artist runner's): reading one as "the page searched
-      // another spec" is exactly the #1152 poisoning, so an echoed candidate
-      // degrades the diagnosis to "never searched".
+      // evidence. Echoes are OUR replay traffic (this plugin's — track,
+      // album or artist spec replays share the one template): reading one
+      // as "the page searched another spec" is exactly the #1152 poisoning,
+      // so an echoed candidate degrades the diagnosis to "never searched".
       const otherSpec = captured.find(r => !r.echo && lib.amazonSpecSearchRequest([r.body], searchText, { anySpec: true }));
       const seen = lib.capturedOperationNames(bodies).join(', ') || 'none';
       if (otherSpec) {
@@ -753,6 +1093,10 @@ module.exports = {
   // reason amazon-web-player.js's signOut nulls its own templates). Every
   // state read goes through here (isSignedIn, trySpecReplay), so the drop
   // lands on the first read after the switch — before any cache is served.
+  // The album/artist flows (M6) hold no session-scoped state of their own:
+  // the album search and the artist image ride the SHARED template above,
+  // and the album lookup caches nothing (every lookup is a fresh page
+  // load), so the two drops here cover them too.
   sessionState: async function () {
     const lib = this.requireLib();
     const ws = window.electron && window.electron.webSession;
@@ -1128,20 +1472,29 @@ module.exports = {
       }
     } catch (e) {}
   },
+  // ── The album catalog (#1356 M6: album search, album lookup, artist images) ──
+  // The three flows that used to live in amazon-web-player.js, moved onto the
+  // webSession bridge. NOT plan-gated (#1220: the plan gate stops playback,
+  // not discovery — the deleted amazonmusic-search-albums /
+  // -search-artist-image / -lookup-album handlers never read the plan, and
+  // neither do these): a Prime account still gets album search, album
+  // lookups and artist photos.
+
   // capabilities.albumSearch (docs/architecture/plugins.md, "searchAlbums"):
   // the album-page catalog fallback. searchAlbums finds an album by
-  // artist+title or free text over the albums tab of Amazon's spec search;
-  // lookupAlbum loads what searchAlbums returned (the host calls it on this
-  // plugin) by replaying the album page's own AlbumDetailPage gql request.
-  // Both still ride the host's runner through the amazonMusic IPC bridge
-  // (their move into the plugin is a later #1356 milestone); the track
-  // search above is the first flow that moved.
+  // artist+title or free text over the albums tab of the same spec search the
+  // track search uses (SpecSearchSeeMorePage with variables.specType 'album'
+  // — live-verified 2026-10), parsed by searchAlbumsFromGql (only Album
+  // nodes; the search spec carries no releaseDate/trackCount, so both stay
+  // null in the mapped result). Throwing notReady only on sign-in/readiness
+  // failures — the same rule as search — and returning [] on a miss.
   searchAlbums: async function (query, config) {
     try {
-      if (!window.electron || !window.electron.amazonMusic) {
-        console.warn('Amazon Music: bridge not available');
+      if (!window.electron || !window.electron.webSession) {
+        console.warn('Amazon Music: webSession bridge not available');
         return [];
       }
+      const lib = this.requireLib();
       var payload = query;
       if (typeof query === 'string') {
         if (!query.trim() || query.trim().length < 2) return [];
@@ -1153,30 +1506,25 @@ module.exports = {
       ) {
         return [];
       }
-      const result = await window.electron.amazonMusic.searchAlbums(payload);
-      console.log(
-        '[Amazon] resolver album search',
-        payload,
-        result && result.success,
-        result && result.reason,
-        result && result.albums && result.albums.length,
-      );
-      if (!result || !result.success) {
-        var reason = result && result.reason;
-        if (
-          reason === 'not-ready' ||
-          reason === 'not-signed-in' ||
-          reason === 'no-cdm' ||
-          reason === 'load-failed'
-        ) {
-          var err = new Error('Amazon Music not ready');
-          err.notReady = true;
-          err.code = reason;
-          throw err;
-        }
-        return [];
+      const spec = lib.amazonAlbumSearchUrl(typeof payload === 'string' ? { query: payload } : payload);
+      if (!spec) return [];
+      if (!(await this.isSignedIn())) {
+        throw lib.notReady('not-signed-in', 'Sign in and choose an Amazon Music profile');
       }
-      return (result.albums || []).map(function (a) {
+      const queuedAt = Date.now();
+      const albums = await this.specSearch({
+        url: spec.url,
+        searchText: spec.searchText,
+        specType: 'album',
+        noun: 'albums',
+        staleCheck: () => Date.now() - queuedAt > lib.ALBUM_JOB_STALE_MS,
+        parse: (data) => {
+          const out = lib.searchAlbumsFromGql(data);
+          return { rows: out.albums, envelope: out.envelope };
+        }
+      });
+      console.log('[Amazon] resolver album search', payload, albums.length);
+      return (albums || []).map(function (a) {
         return {
           id: 'amazonmusic-album-' + a.asin,
           name: a.name,
@@ -1192,48 +1540,248 @@ module.exports = {
       });
     } catch (error) {
       if (error && error.notReady) throw error;
+      var reason = error && error.reason;
+      // not-ready / not-signed-in / load-failed: readiness failures are never
+      // cached as a miss (the album pages would store a 30-day noMatch for
+      // them) — the same rule as search.
+      if (
+        reason === 'not-ready' ||
+        reason === 'not-signed-in' ||
+        reason === 'no-cdm' ||
+        reason === 'load-failed'
+      ) {
+        var err = new Error('Amazon Music not ready');
+        err.notReady = true;
+        err.code = reason;
+        throw err;
+      }
       console.error('Amazon Music album search error:', error);
       return [];
     }
   },
+
   // capabilities.artistImage (docs/architecture/plugins.md,
   // "searchArtistImage"): a photo of an artist by name, from the artists tab
-  // of the same spec search the track and album searches use
-  // (docs/architecture/amazon-music.md). The bridge returns the photo URL or
-  // null: not signed in is null WITHOUT a request — the artist-image chain
-  // just asks the next source (Deezer needs no account) — a miss is null,
-  // and the exact-name check happens main-side, so a wrong artist's photo
-  // can never reach the persisted image cache. A host whose bridge predates
-  // this capability is a quiet no-op.
+  // of the same spec search the track and album searches use. The lookup
+  // rides the shared runner with its never-throw wrapper + the #1135
+  // staleness check: not signed in is null WITHOUT a request (the
+  // artist-image chain just asks the next source — Deezer needs no account),
+  // the runner's structural notReady (which trips the shared breaker)
+  // degrades to null too, since a photo is always optional. The name match
+  // happens in the parser (searchArtistImageFromGql — only an exact
+  // normalized name's photo is returned, never the top hit's when Amazon
+  // ranks a different artist first), and the bare-https re-check below keeps
+  // anything but a credential-free CDN URL out of the persisted image cache.
   searchArtistImage: async function (artistName, config) {
     try {
-      if (
-        !window.electron ||
-        !window.electron.amazonMusic ||
-        typeof window.electron.amazonMusic.searchArtistImage !== 'function'
-      ) {
-        return null;
-      }
+      if (!window.electron || !window.electron.webSession) return null;
+      const lib = this.requireLib();
       var name = (artistName || '').trim();
       if (name.length < 2) return null;
-      var result = await window.electron.amazonMusic.searchArtistImage(name);
-      console.log(
-        '[Amazon] resolver artist image',
-        name,
-        result && result.success ? 'ok' : result && result.reason,
-        result && result.imageUrl ? 'hit' : 'miss',
-      );
-      if (!result || !result.success || !result.imageUrl) return null;
-      var url = result.imageUrl;
-      // The bridge only returns credential-free https CDN URLs, but this URL
+      const spec = lib.amazonArtistSearchUrl(name);
+      if (!spec) return null;
+      if (!(await this.isSignedIn())) {
+        console.log('[Amazon] artist image for ' + name + ' skipped: not signed in');
+        return null;
+      }
+      const queuedAt = Date.now();
+      const rows = await this.specSearch({
+        url: spec.url,
+        searchText: spec.searchText,
+        specType: 'artist',
+        noun: 'artist image',
+        staleCheck: () => Date.now() - queuedAt > lib.ALBUM_JOB_STALE_MS,
+        parse: (data) => {
+          const out = lib.searchArtistImageFromGql(data, name);
+          return { rows: out.url ? [out.url] : [], envelope: out.envelope };
+        }
+      });
+      var url = (rows && rows[0]) || null;
+      // The parser only returns credential-free https CDN URLs, but this URL
       // is persisted in the image cache — check before trusting.
       if (typeof url !== 'string' || !/^https:\/\//i.test(url) || url.indexOf('?') !== -1) return null;
       return url;
     } catch (error) {
-      console.error('Amazon Music artist image error:', error);
+      // Catches the runner's structural notReady (which trips the shared
+      // breaker) and anything the URL builder or sign-in check throws: the
+      // artist-image chain contracts a miss, never an exception.
+      console.warn('[Amazon] artist image for ' + String(artistName) + ' failed: ' + (error && error.reason) + ' ' + (error && error.message));
       return null;
     }
   },
+
+  // The album-lookup entry (lookupAlbum's flow, moved from
+  // amazon-web-player.js): sign-in check, then the queued page flow. The
+  // queue is the plugin's page-flow chain — the same chain the spec searches
+  // ride — so an album lookup never interleaves a navigation with a search's
+  // page flow, and a lookup queued behind a slow flow checks the #1135
+  // staleness budget before paying its page load.
+  lookupAlbumFlow: async function (rawUrl) {
+    const lib = this.requireLib();
+    const ws = window.electron && window.electron.webSession;
+    if (!ws) throw lib.notReady('not-ready', 'Amazon webSession bridge not available');
+    if (typeof rawUrl !== 'string' || !/^https:\/\/music\.amazon\.com\//i.test(rawUrl)) {
+      throw lib.notReady('not-ready', 'Not an Amazon Music album URL');
+    }
+    const asin = lib.amazonAlbumAsinFromUrl(rawUrl);
+    if (!asin) {
+      throw lib.notReady('not-ready', 'Not an Amazon Music album URL');
+    }
+    if (!(await this.isSignedIn())) {
+      throw lib.notReady('not-signed-in', 'Sign in and choose an Amazon Music profile');
+    }
+    const queuedAt = Date.now();
+    const run = (this._pageFlowChain || Promise.resolve())
+      .then(() => {
+        if (Date.now() - queuedAt > lib.ALBUM_JOB_STALE_MS) {
+          console.log('[Amazon] album lookup skipped: queued past the ' + lib.ALBUM_JOB_STALE_MS + 'ms catalog budget — the caller already moved on');
+          return null;
+        }
+        return this.lookupAlbumPageFlow(asin);
+      });
+    this._pageFlowChain = run.then(() => {}, () => {});
+    return run;
+  },
+
+  // The album-lookup page flow: load the album page through the bridge with
+  // the capture window inside the load, then replay the captured candidates
+  // for the ASIN until one's response carries data.album.tracksConnection.
+  // The real album page fires AlbumDetailPage with variables.id = the ASIN —
+  // but it also fires AlbumSeo with the same id, a header-only op whose
+  // data.album has title/trackCount but no tracksConnection, and it arrives
+  // FIRST (live-captured 2026-10, which is how the first attempt shipped a
+  // "0 of 12 tracks" truncation). So the winner is judged by RESPONSE:
+  // amazonAlbumDetailCandidates ranks every captured read carrying the ASIN
+  // (detail-named, then album-named, then — the hornet-rename hedge — any
+  // name at all; write-shaped names are never replayed), candidates are
+  // replayed in order with a cap, and the first replay carrying the
+  // tracksConnection (albumTracksConnectionIn) wins; a replayed header-only
+  // op is logged and skipped. Unlike the old in-flow poll (which replayed
+  // candidates as they streamed in), the bridge returns the whole burst once
+  // it goes quiet — so the ranking replay runs over the complete candidate
+  // set.
+  lookupAlbumPageFlow: async function (asin) {
+    const lib = this.requireLib();
+    const ws = window.electron && window.electron.webSession;
+    if (!ws) throw lib.notReady('not-ready', 'Amazon webSession bridge not available');
+    const url = 'https://music.amazon.com/albums/' + asin;
+    const load = await ws.load(lib.SESSION, url, {
+      capture: {
+        urlPrefixes: [lib.GQL_URL + '*'],
+        quietMs: lib.PAGE_CAPTURE_QUIET_MS,
+        budgetMs: lib.PAGE_CAPTURE_BUDGET_MS
+      }
+    });
+    if (!load || !load.success) {
+      // A refused load: 'load-failed' (the page never finished), 'superseded'
+      // (a sign-out cleared the session mid-load), 'not-ready' (no host
+      // window). Transient/wiring classes, never a miss and never a sign-in
+      // prompt.
+      throw lib.notReady((load && load.reason) || 'load-failed', (load && load.error) || 'Amazon album page did not finish loading');
+    }
+    // The after-load URL re-checks: a wall means the session died mid-flight;
+    // a page that left music.amazon.com entirely cannot be replayed from.
+    if (lib.pageBlocksPlayback(load.finalUrl)) {
+      console.warn('[Amazon] album lookup blocked: ' + load.finalUrl);
+      throw lib.notReady('not-signed-in', 'Choose an Amazon Music profile');
+    }
+    if (!lib.isAmazonMusicPage(load.finalUrl)) {
+      throw lib.notReady('not-ready', 'Amazon album page left music.amazon.com before replay');
+    }
+    // The entries must have their headers — the host pairs bodies with headers
+    // by request id — and every candidate is deduped by operationName +
+    // variables (a same-burst sibling like AlbumSeo fires alongside the
+    // detail op on one page load; both are ranked, not first-arrival).
+    const captured = (load.captures || []).filter(r => r.headers);
+    const reqKey = (request) => ((request && request.operationName) || '') + ':' + JSON.stringify((request && request.variables) || {});
+    const entryFor = (request) => captured.find(r => lib.amazonAlbumDetailCandidates([r.body], asin, { anyName: true }).some(c => reqKey(c) === reqKey(request)));
+    const candidates = lib.amazonAlbumDetailCandidates(captured.map(r => r.body), asin, { anyName: true });
+    const seen = new Set();
+    let winner = null;        // { request, data } — the replay that carried a tracksConnection
+    let headerOnlyOp = null;   // replayed op that had data.album but no tracksConnection (AlbumSeo)
+    let lastReplayError = null;
+    let replayCount = 0;
+    for (const request of candidates) {
+      if (winner || replayCount >= 4) break;
+      const key = reqKey(request);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      replayCount += 1;
+      console.log('[Amazon] album replaying ' + request.operationName + ' via gql');
+      let outcome;
+      try {
+        outcome = await this.replayGql(entryFor(request), request);
+      } catch (error) {
+        // A HARD rejection — the invoke refused, the view destroyed
+        // mid-replay — reads like any other replay error: the next ranked
+        // candidate is still worth a try.
+        outcome = { error: (error && error.message) || String(error) };
+      }
+      if (outcome.error) {
+        lastReplayError = outcome.error;
+        console.warn('[Amazon] album replay of ' + request.operationName + ' failed: ' + outcome.error);
+        continue;
+      }
+      const data = outcome.parsed && outcome.parsed.data;
+      if (lib.albumTracksConnectionIn(data)) {
+        winner = { request, data };
+        break;
+      }
+      if (data && data.album) {
+        if (!headerOnlyOp) headerOnlyOp = request.operationName;
+        console.log('[Amazon] album replay of ' + request.operationName + ' carried the header but no tracks connection');
+      }
+    }
+    if (!winner) {
+      const ops = lib.capturedOperationNames(captured.map(r => r.body)).join(', ') || 'none';
+      if (headerOnlyOp) {
+        // An AlbumSeo-style header seen but no operation exposed a tracks
+        // connection: the detail op never ran. A miss with the ops log, so a
+        // hornet rename reads as a rename instead of "every album is gone".
+        console.warn('[Amazon] album lookup: ' + asin + ' header came from ' + headerOnlyOp + ' but no operation exposed a tracks connection; gql operations seen: ' + ops);
+        return null;
+      }
+      if (lastReplayError) throw lib.notReady('lookup-failed', lastReplayError);
+      // The page loaded but never asked for this album: deleted, not
+      // available in the user's territory — or hornet renamed everything.
+      // Log what the page did fire so a rename reads as a rename instead of
+      // "every album is gone".
+      console.warn('[Amazon] album lookup: page never requested the album detail for ' + asin + '; gql operations seen: ' + ops);
+      return null;
+    }
+    const { album, envelope } = lib.albumDetailFromGql(winner.data);
+    if (!envelope) {
+      console.warn('[Amazon] album lookup: response was not an album detail envelope for ' + asin);
+      throw lib.notReady('lookup-failed', 'Amazon album response was not an album detail envelope');
+    }
+    if (album && album.trackCount > album.tracks.length) {
+      // The tracksConnection has no pageInfo at all (a 100-track album
+      // answers all 100 edges in one response — live-verified), so there is
+      // no continuation to follow: a trackCount above the mapped rows is a
+      // truncation, visible the way a short playlist page's is.
+      console.warn('[Amazon] album lookup truncated: got ' + album.tracks.length + ' of ' + album.trackCount + ' tracks');
+      if (album.tracks.length === 0) {
+        // Every edge failed to map: either the server carries no rows for
+        // this album (pre-order / delisted) or hornet changed the row shape.
+        // Say which — a future "0 of N" in the field log should not need a
+        // DevTools session to diagnose.
+        const tc = winner.data && winner.data.album && winner.data.album.tracksConnection;
+        const edges = tc && tc.edges;
+        const first = Array.isArray(edges) && edges[0] && edges[0].node;
+        console.warn('[Amazon] album lookup: 0 of ' + album.trackCount + ' mapped — edges=' + (Array.isArray(edges) ? edges.length : 'absent') + (first ? ', first node keys=' + Object.keys(first).join(',') : ', first node null'));
+      }
+    }
+    console.log('[Amazon] album lookup returning ' + (album ? album.tracks.length : 0) + ' tracks "' + (album ? album.name : '') + '"');
+    return album;
+  },
+
+  // capabilities.albumSearch's other half: load what searchAlbums returned.
+  // A legitimate miss (data.album null — deleted / other region) is null; a
+  // sign-in problem prompts and retries once (the same contract as
+  // lookupPlaylist); transient/wiring failures (a stalled load, a hornet
+  // rename) throw notReady — never a bogus miss — and a lookup-failed (an
+  // errored replay, a response with no album field at all — the hornet-rename
+  // shape) throws too.
   lookupAlbum: async function (url, config) {
     var mapAlbum = function (a) {
       return {
@@ -1242,7 +1790,7 @@ module.exports = {
         artist: a.artist || null,
         albumArt: a.albumArt || null,
         releaseDate: a.releaseDate || null,
-        // The bridge reports the album's own trackCount; keep it so a
+        // The flow reports the album's own trackCount; keep it so a
         // server-truncated load is visible instead of silently complete.
         trackCount: a.trackCount || a.tracks.length,
         url: a.url || url,
@@ -1273,20 +1821,23 @@ module.exports = {
         result.album.tracks.length > 0
       );
     };
+    // The flow's throw → a result-shaped outcome, so the mapping below keeps
+    // the exact semantics the IPC bridge result used to carry.
+    var runFlow = async () => {
+      try {
+        var album = await this.lookupAlbumFlow(url);
+        return { success: true, album: album };
+      } catch (error) {
+        return { success: false, reason: error && error.reason, error: error };
+      }
+    };
     var result = null;
     try {
-      if (!window.electron || !window.electron.amazonMusic) {
-        console.warn('Amazon Music: bridge not available');
+      if (!window.electron || !window.electron.webSession) {
+        console.warn('Amazon Music: webSession bridge not available');
         return null;
       }
-      result = await window.electron.amazonMusic.lookupAlbum(url);
-      console.log(
-        '[Amazon] resolver album lookup',
-        url,
-        result && result.success,
-        result && result.reason,
-        result && result.album && result.album.tracks && result.album.tracks.length,
-      );
+      result = await runFlow();
       if (loaded(result)) return mapAlbum(result.album);
       // Only a sign-in problem is fixed by sign-in — the same rule the
       // playlist import follows.
@@ -1300,7 +1851,7 @@ module.exports = {
           });
         }
         if (managed) {
-          result = await window.electron.amazonMusic.lookupAlbum(url);
+          result = await runFlow();
           if (loaded(result)) return mapAlbum(result.album);
         }
         var err = new Error(

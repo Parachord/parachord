@@ -47,11 +47,14 @@
 //                   matched on variables.searchText — never the operation
 //                   name — and parsed pure; a page that never searches is a
 //                   structural failure (not-ready), an empty edges list is a
-//                   real miss. (#1356 M5: the TRACK search moved into
-//                   plugins-src/amazonmusic — it drives this same host
-//                   instance through the window.electron.webSession bridge.
-//                   The spec-search runner below stays for the album/artist
-//                   tabs those flows still use; it moves when they do.)
+//                   real miss. (#1356 M5/M6: the track search AND the
+//                   album/artist catalog flows moved into
+//                   plugins-src/amazonmusic — they drive this same host
+//                   instance through the window.electron.webSession bridge;
+//                   the spec-search runner that used to live here is deleted.
+//                   This module's remaining page flows — playlist import,
+//                   recommendations, the diagnostic capture, the session
+//                   mint — still ride the same capture-and-replay pattern.)
 //   GraphQL         gql.music.amazon.com, persisted query (APQ) whose sha256Hash
 //                   renumbers per redeploy — capture the page's own
 //                   playlistDetail / SpecSearchSeeMorePage requests and
@@ -80,20 +83,8 @@ const {
   cdmStatusHealthy,
   amazonPlaylistIdFromUrl,
   amazonPlaylistDetailRequest,
-  amazonSpecSearchRequest,
   makeSpecSearchTemplate,
   specTemplateIsFresh,
-  specBodyWithVars,
-  bodyMatchesTemplate,
-  amazonAlbumSearchUrl,
-  amazonAlbumAsinFromUrl,
-  amazonAlbumDetailRequest,
-  amazonAlbumDetailCandidates,
-  albumTracksConnectionIn,
-  searchAlbumsFromGql,
-  amazonArtistSearchUrl,
-  searchArtistImageFromGql,
-  albumDetailFromGql,
   recommendationsFromMusicHome,
   musicHomeBodyWithVars,
   mergeMusicHomeSectionPages,
@@ -103,7 +94,6 @@ const {
   amazonSeeMoreRequest,
   amazonSeeMorePageUrl,
   seeMoreBodyWithVars,
-  createSearchBreaker,
   paginatePlaylistTracks,
   amazonGqlFetchHeaders,
   gqlReplayOutcome,
@@ -169,19 +159,6 @@ function notReady(reason, message) {
 // host's loadURLBudgeted (its budget is the host's loadTimeoutMs, 30s).
 const PLAYLIST_CAPTURE_POLL_MS = 500;
 const PLAYLIST_CAPTURE_POLLS_AFTER_LOAD = 40;
-
-// The album catalog fallback on the renderer bounds each catalog step
-// (withCatalogTimeout / CATALOG_STEP_TIMEOUT_MS in src/renderer/app.js), and
-// getArtistImage bounds each chain step the same way
-// (ARTIST_IMAGE_STEP_TIMEOUT_MS in src/renderer/lib/artist-image-chain.js —
-// a Home or Search page can ask for 5-20 artist photos at once). An album or
-// artist-image job that waits behind the shared Amazon search chain longer
-// than that budget has a caller that already moved on: skip its page load
-// and return the miss, so track resolution and playlist imports are not
-// starved behind catalog/image jobs during a MusicBrainz outage. Mirrors
-// the host budget on purpose — the web player cannot read the renderer
-// constant.
-const ALBUM_JOB_STALE_MS = 8000;
 
 // How long the search view stays on its last Amazon page after a flow
 // finishes is the host's idle-park fuse (warmMs, 30s — a gql template replay
@@ -252,19 +229,6 @@ const amazonWebPlayer = {
   set searchView(view) { webSession._view = view; },
 
   cookieWarned: false,
-  // Circuit breaker for search's structural failures — a hornet rename of the
-  // search operation makes every search burn the full capture window before
-  // failing not-ready, serially on the search chain (starving playlist
-  // imports too). After consecutive structural failures this opens and
-  // searchTracks fails fast for a cooldown (createSearchBreaker in
-  // amazon-music-logic.js, unit-tested there).
-  searchBreaker: createSearchBreaker(),
-  // The captured spec-search request the replay-first fast path patches and
-  // replays (makeSpecSearchTemplate / specBodyWithVars in
-  // amazon-music-logic.js). Minted by every page-flow capture, dropped on
-  // any replay error (a stale APQ hash or rotated session headers) and on
-  // signOut. See specSearch.
-  specSearchTemplate: null,
   // The captured music-home MusicHomePage request (the recommendations flow
   // — same makeSpecSearchTemplate contract: url + headers + APQ body; the
   // variables are the page's own and never patched). Dropped on any replay
@@ -282,12 +246,6 @@ const amazonWebPlayer = {
   // Session cache of see-more expansion pages, keyed `${sectionId}|${afterCursor}`.
   // Bounded (SEE_MORE_CACHE_MAX); cleared on signOut.
   seeMorePages: new Map(),
-  // Monotone counter bumped on every template-replay entry. A page flow
-  // reads it at start: replay traffic that overlaps its capture poll can
-  // masquerade as the page's own other-spec request and poison the grace
-  // fast-fail, so a changed mark degrades the grace to the full window
-  // instead of a structural miss (see specSearchPageFlow).
-  replayActivity: 0,
 
   // castlabs Electron exposes electron.components. Stock Electron does not,
   // and the old --widevine-cdm-path switch does nothing there. EME probe is
@@ -394,18 +352,6 @@ const amazonWebPlayer = {
     webSession.cancelPark();
   },
 
-  // Structural failure reporting shared by the fast and page flows: record
-  // on the search breaker (which opens after consecutive failures — see
-  // searchBreaker) and make the not-ready error. A hornet rename must never
-  // be confused with a miss, which resolution caches for 30 days.
-  specStructuralError(message) {
-    if (this.searchBreaker) {
-      this.searchBreaker.recordFailure();
-      const state = this.searchBreaker.state();
-      if (state.open) console.warn(`[Amazon] search breaker open for ${Math.max(0, state.openUntil - Date.now())}ms (${state.failures} consecutive structural failures)`);
-    }
-    return notReady('not-ready', message);
-  },
 
   // The hidden search view, through the one owner. The host creates the
   // WebContentsView (the Amazon preload, the UA mask, the session's
@@ -508,29 +454,15 @@ const amazonWebPlayer = {
       throw err;
     }
     // A dmls 400 REQUIRED_COOKIES means THESE headers were rejected. The
-    // stored search template is the same token — reusing it makes the retry
-    // fail and the user get a sign-in prompt on a live session. Drop it and
-    // mint from a page flow. (The recommendations templates carry the same
-    // session headers, so they go too.)
+    // stored recommendation templates carry the same session headers —
+    // reusing one makes the retry fail and the user get a sign-in prompt on
+    // a live session. Drop them and mint from a page flow. (The spec-search
+    // template that used to shortcut this mint lives in the plugin since the
+    // searches moved there — #1356 M5/M6 — so the mint is always its own
+    // page flow now.)
     if (refresh) {
-      this.specSearchTemplate = null;
       this.musicHomeTemplate = null;
       this.seeMoreTemplate = null;
-    }
-    // Fast path since the search template landed (#1152): the captured
-    // spec-search request already carries exactly these headers from a real
-    // page flow — the replay's freshness check is the mint's too.
-    const t = this.specSearchTemplate;
-    if (t && t.headers && typeof t.headers['csrf-token'] === 'string' &&
-        t.headers['csrf-token'].length >= 20 &&
-        /^\d+$/.test(String(t.headers['csrf-rnd'] || '')) &&
-        /^\d+$/.test(String(t.headers['csrf-ts'] || ''))) {
-      return {
-        csrfToken: t.headers['csrf-token'],
-        csrfRnd: t.headers['csrf-rnd'] || null,
-        csrfTs: t.headers['csrf-ts'] || null,
-        deviceId: t.headers['x-amzn-device-id'] || null
-      };
     }
     return this.enqueueSearch(async () => {
       const win = await this.ensureWindow();
@@ -644,340 +576,7 @@ const amazonWebPlayer = {
     return gqlReplayOutcome(replay, { acceptPartial: options.acceptPartial || null });
   },
 
-  // Shared runner for the spec searches — the albums tab (/search/<q>/
-  // albums) fires the album-spec SpecSearchSeeMorePage and the artists tab
-  // (/search/<q>/artists) the artist spec; everything else about the flow is
-  // identical. (The songs tab / track spec moved into the plugin — #1356 M5,
-  // plugins-src/amazonmusic/implementation.js — which drives this same host
-  // instance through the webSession bridge with its own copy of this runner;
-  // the matchers agree because both are copies of the same pure helpers in
-  // amazon-music-logic.js.) Search runs over the page's own GraphQL — the
-  // same capture-and-replay pattern as lookupPlaylist. The tab page fires
-  // SpecSearchSeeMorePage with our exact searchText; that request (URL,
-  // headers, APQ hash, variables) is captured while the page loads and
-  // replayed verbatim, and the result is parsed pure — no DOM scraping: no
-  // row-mount waits, no testid heuristics, no like-button ASIN exclusion
-  // dance, and the rows carry cover art the DOM never exposed. The request is
-  // matched on variables.searchText, not the operation name, so a hornet
-  // rename of the operation cannot break it — and only the requested spec is
-  // ever replayed: an album/artist spec edge must never import in the wrong
-  // slot (an album ASIN in the track slot passes the confidence gate on
-  // self-titled releases).
-  //
-  // Structural failures (the page never searched, another spec searched but
-  // ours never came, or the response carried no spec search envelope) throw
-  // not-ready — never cached as a 30-day noMatch — and trip the shared search
-  // breaker so a rename fails fast instead of burning the capture window on
-  // every search of a resolution run. An envelope with empty edges IS a real
-  // miss and returns [].
-  //
-  // Two paths ("Spec-search request templates" in amazon-music-logic.js):
-  // the FAST path replays the last captured request with fresh variables
-  // from the still-warm view — no page load, no chain, and replays run in
-  // parallel (a playlist resolve or a burst of catalog/image lookups pays
-  // one page load total, not one per lookup). Any template miss (none yet,
-  // stale, view cold/parked, navigation in flight, replay error) falls back
-  // to the chained page flow, whose capture re-mints the template — the
-  // fallback IS the old flow, so the failure semantics never change. Only
-  // real page navigation is serialized on the chain now (fallback searches,
-  // playlist imports) — and it waits out in-flight replays first (the host's
-  // readers/writer gate), instead of their frames being torn down mid-fetch.
-  async specSearch({ url, searchText, specType, parse, noun, staleCheck = null }) {
-    if (staleCheck && staleCheck()) {
-      console.log(`[Amazon] ${specType} search skipped: past the ${ALBUM_JOB_STALE_MS}ms budget before it started — the caller already moved on`);
-      return [];
-    }
-    if (this.searchBreaker && !this.searchBreaker.allows()) {
-      const probe = this.searchBreaker.isProbe() ? ' (probing after cooldown)' : '';
-      throw notReady('not-ready', `Amazon search is cooling down after repeated structural failures${probe}`);
-    }
-    const fast = await this.trySpecReplay({ searchText, specType, parse, noun });
-    if (fast !== null) return fast;
-    return this.enqueueSearch(async () => {
-      if (staleCheck && staleCheck()) {
-        console.log(`[Amazon] ${specType} search skipped: queued past the ${ALBUM_JOB_STALE_MS}ms catalog budget — the caller already moved on`);
-        return [];
-      }
-      // The page flow that ran while we queued may have refreshed the
-      // template — one refresh heals every search queued behind it.
-      const warmed = await this.trySpecReplay({ searchText, specType, parse, noun });
-      if (warmed !== null) return warmed;
-      return this.specSearchPageFlow({ url, searchText, specType, parse, noun });
-    });
-  },
 
-  // specSearch's fast path: replay the cached request with fresh searchText/
-  // specType from the warm view. Returns the parsed rows, or null for any
-  // template-miss (the caller then queues the page flow, which re-mints the
-  // template). Throws not-signed-in on a wall URL, exactly like the page
-  // flow. A structural-looking response (200 with data but no spec search
-  // envelope) is NOT judged here: on the page flow that can only mean a
-  // hornet rename (its request was captured seconds earlier), but on the
-  // fast path it can equally mean the template went bad (a partial GraphQL
-  // error — the auth-failed-field shape of rotated session headers — leaves
-  // data.specificationSearch null). Replay-and-throw here made every later
-  // search fail identically, probe included, with nothing able to heal the
-  // template for 24h (review on #1152). So a missing envelope drops the
-  // template and defers to the chained page flow, which makes the
-  // structural call with a fresh capture.
-  async trySpecReplay({ searchText, specType, parse, noun }) {
-    const template = this.specSearchTemplate;
-    if (!specTemplateIsFresh(template, Date.now())) return null;
-    // Take the host's reader side for the whole replay: a navigation (a page
-    // flow or the idle park) waits this replay out instead of tearing its
-    // frame mid-fetch. A page flow's capture poll also consults
-    // replayActivity before trusting its other-spec grace (our own fetch can
-    // look like the page's request).
-    if (!webSession.tryEnterReplay()) return null;
-    this.replayActivity++;
-    try {
-      webSession.cancelPark();
-      // A replay needs an Amazon-origin page world (cookies, CORS): a parked
-      // or never-loaded view means the page flow runs instead.
-      const href = webSession.viewUrl();
-      if (!href || !isAmazonMusicPage(href)) return null;
-      if (pageBlocksPlayback(href)) {
-        console.warn(`[Amazon] ${specType} replay blocked: ${href}`);
-        throw notReady('not-signed-in', 'Choose an Amazon Music profile');
-      }
-      const body = specBodyWithVars(template.body, { searchText, specType });
-      let outcome;
-      try {
-        outcome = await this.replayGql(this.searchView, template, body);
-      } catch (error) {
-        // A HARD rejection — the view destroyed mid-replay (signOut, host
-        // close), a navigation tearing the frame — is the same miss as an
-        // error envelope: the fallback page flow re-evaluates view state
-        // itself. The fast path must never break specSearch's throw contract.
-        outcome = { error: (error && error.message) || String(error) };
-      }
-      if (outcome.error) {
-        console.warn(`[Amazon] ${specType} template replay failed (${outcome.error}); refreshing via a page load`);
-        // Drop only if nobody re-minted meanwhile — a page flow that ran in
-        // parallel already put a fresh template in place.
-        if (this.specSearchTemplate === template) this.specSearchTemplate = null;
-        return null;
-      }
-      const parsed = outcome.parsed;
-      const { rows, envelope } = parse(parsed && parsed.data);
-      if (!envelope) {
-        // Defer structure to the page flow (see the method comment): the
-        // template may be stale, and only a fresh capture can prove a hornet
-        // rename. The breaker gets involved only if the page flow also
-        // fails structurally.
-        console.warn(`[Amazon] ${specType} template replay was not a spec search envelope for ${JSON.stringify(searchText)}; dropping the template`);
-        if (this.specSearchTemplate === template) this.specSearchTemplate = null;
-        return null;
-      }
-      if (this.searchBreaker) this.searchBreaker.recordSuccess();
-      const fromSpec = template.body && template.body.variables && template.body.variables.specType;
-      console.log(`[Amazon] ${specType} replay${fromSpec && fromSpec !== specType ? ` (${fromSpec} template)` : ''} returning ${rows.length} ${noun} for ${JSON.stringify(searchText)}`);
-      return rows;
-    } finally {
-      webSession.exitReplay();
-      webSession.schedulePark();
-    }
-  },
-
-  // The page flow behind specSearch (one at a time on the search chain):
-  // load the tab page in the shared view, capture the page's own search
-  // request, replay it, parse pure. Mint the template the fast path replays.
-  // The navigation is gated — it waits out in-flight template replays rather
-  // than tearing their frame down mid-fetch.
-  async specSearchPageFlow({ url, searchText, specType, parse, noun }) {
-    // A fuse armed by an earlier flow must not blank the view mid-load.
-    this.cancelSearchViewPark();
-    // Read the replay-activity mark BEFORE anything else: replay traffic
-    // overlapping ANY of this flow — navigation AND poll — degrades the
-    // other-spec grace to the full capture window (see the poll below).
-    // Reading at the poll would still let a span-past-the-boundary replay
-    // poison it.
-    const replayMark = this.replayActivity;
-    const win = await this.ensureWindow();
-    const mode = await this.layoutSearch(this.searchView);
-    console.log(`[Amazon] search mode=${mode} ${url}`);
-    const { captured, detach } = this.attachGqlCapture();
-    try {
-      await webSession.beginNavigation();
-      try {
-        await webSession.loadURLBudgeted(win, url);
-      } finally {
-        webSession.endNavigation();
-      }
-      // Wait for the page's own search request (boot + query is ~1-3s on a
-      // warm view; the poll window covers a slow load). The entry must also
-      // have its headers — onBeforeSendHeaders fires milliseconds *after*
-      // onBeforeRequest, so accepting the body alone races it. ALL
-      // header-complete bodies go to the matcher each poll — the matcher
-      // only ever accepts the wanted spec, so a different-spec request that
-      // arrives first cannot win by first-arrival.
-      // Our own off-chain template replays ALSO hit this capture (the
-      // listener is session-wide; pre-rework the chain made concurrent gql
-      // impossible). A same-text different-spec replay body is rejected by
-      // the matcher but ACCEPTED by the anySpec grace — and 8 polls later
-      // the grace would conclude structurally even though the page's own
-      // request may just be slow. Replay traffic overlapping this flow
-      // degrades the grace to the full window instead of a spurious
-      // structural failure (and a breaker tick we caused ourselves).
-      let request = null;
-      let entry = null;
-      let otherSpecSeenAt = -1;
-      for (let i = 0; i < 60 && !request; i++) {
-        await new Promise(r => setTimeout(r, 250));
-        const href = win.isDestroyed() ? '' : win.webContents.getURL();
-        if (pageBlocksPlayback(href)) {
-          console.warn(`[Amazon] search blocked: ${href}`);
-          throw notReady('not-signed-in', 'Choose an Amazon Music profile');
-        }
-        const ready = captured.filter(r => r.headers);
-        const bodies = ready.map(r => r.body);
-        request = amazonSpecSearchRequest(bodies, searchText, { spec: specType });
-        if (request) {
-          entry = ready.find(r => amazonSpecSearchRequest([r.body], searchText, { spec: specType }));
-          break;
-        }
-        // Another spec searched our text but ours has not arrived: give it
-        // a short grace (the page may fire specs out of order), then
-        // conclude structurally instead of burning the full window.
-        // Echo-flagged captures are replay traffic, never the page's own
-        // request — the plugin's track-search replays (the moved #1356 M5
-        // flow, driving this same session through the bridge) do not bump
-        // this module's replayActivity counter, but the host flags every
-        // capture seen while a pageFetch was in flight, so the echo flag
-        // covers both replays and this module's own.
-        if (otherSpecSeenAt < 0 && amazonSpecSearchRequest(ready.filter(r => !r.echo).map(r => r.body), searchText, { anySpec: true })) {
-          otherSpecSeenAt = i;
-          console.warn(`[Amazon] search: a non-${specType} spec searched for ${JSON.stringify(searchText)}; waiting briefly for the ${specType} spec`);
-        }
-        if (otherSpecSeenAt >= 0 && i - otherSpecSeenAt >= 8 && this.replayActivity === replayMark) break;
-      }
-      if (!request || !entry) {
-        // The page loaded but never ran our search: a hornet rename of the
-        // operation (or the search page itself), or an SPA failure. Log
-        // what the page did fire so a rename reads as a rename instead of a
-        // silent run of empty searches each cached as a 30-day noMatch.
-        console.warn(`[Amazon] search: page never fired the ${specType} search for ${JSON.stringify(searchText)}; gql operations seen: ${capturedOperationNames(captured.map(c => c.body)).join(', ') || 'none'}`);
-        throw this.specStructuralError(`Amazon search page never issued its ${specType} search`);
-      }
-      if (!request.variables || typeof request.variables !== 'object') {
-        throw this.specStructuralError('Unexpected Amazon search query shape');
-      }
-
-      // Replay the page's own request verbatim. (Capturing the page's own
-      // response in the page world instead — the stream-capture pattern —
-      // does NOT work here: hornet binds its fetch at module init, before
-      // any preload-injected wrapper can install, so the page's own search
-      // bypasses the wrapper (live-verified 2026-10; the stream capture only
-      // survives because media segments are fetched seconds later, at play
-      // time). The replay's cost is one request on top of the ~9 ops the
-      // page load itself fires.)
-      // Mint the template the fast path replays — unless the matched
-      // request is OUR OWN replay echoing back into the capture (duplicate
-      // same-text same-spec activity overlapped the poll; see
-      // bodyMatchesTemplate in amazon-music-logic.js): minting from it
-      // would re-certify session-aged headers as fresh. The rows are still
-      // correct — the replay below answers the same search either way. The
-      // skip applies only while the existing template is fresh: a stale
-      // template is exactly what the page flow is healing, so it always
-      // re-mints (fresh headers are the point of the page capture).
-      const agedTemplate = !specTemplateIsFresh(this.specSearchTemplate, Date.now());
-      if (!agedTemplate && bodyMatchesTemplate(this.specSearchTemplate, request, { searchText, specType })) {
-        console.log('[Amazon] search matched our own replay in the capture; keeping the existing template');
-      } else {
-        // Mint BEFORE this flow's own replay runs: the template captures the
-        // page's own fresh request, which is valid whether or not the replay
-        // that follows answers well — a replay error drops it again anyway.
-        const template = makeSpecSearchTemplate({ url: entry.url, headers: entry.headers, body: request, capturedAt: Date.now() });
-        if (template) this.specSearchTemplate = template;
-        else console.warn('[Amazon] spec search captured a request that is not template-shaped; staying page-load-per-search');
-      }
-      const outcome = await this.replayGql(win, entry, request);
-      if (outcome.error) throw notReady('not-ready', outcome.error);
-      const parsed = outcome.parsed;
-      const { rows, envelope } = parse(parsed && parsed.data);
-      if (!envelope) {
-        // The response carried no spec search envelope: hornet renamed the
-        // response field. A rename must surface as not-ready, not as a
-        // cached miss.
-        console.warn(`[Amazon] search response was not a spec search envelope for ${JSON.stringify(searchText)}`);
-        throw this.specStructuralError('Amazon search response was not a spec search envelope');
-      }
-      if (this.searchBreaker) this.searchBreaker.recordSuccess();
-      console.log(`[Amazon] search returning ${rows.length} ${noun} for ${JSON.stringify(searchText)}`);
-      return rows;
-    } finally {
-      detach();
-      this.scheduleParkSearchView();
-    }
-  },
-
-  // Album search for the album-page catalog fallback (the plugin's
-  // capabilities.albumSearch): the albums tab of the same spec search, parsed
-  // by searchAlbumsFromGql.
-  async searchAlbums(input) {
-    const opts = typeof input === 'string' ? { query: input } : (input || {});
-    const spec = amazonAlbumSearchUrl(opts);
-    if (!spec) return [];
-    if (!(await this.isSignedIn())) {
-      throw notReady('not-signed-in', 'Sign in and choose an Amazon Music profile');
-    }
-    const queuedAt = Date.now();
-    return this.specSearch({
-      url: spec.url,
-      searchText: spec.searchText,
-      specType: 'album',
-      noun: 'albums',
-      staleCheck: () => Date.now() - queuedAt > ALBUM_JOB_STALE_MS,
-      parse: (data) => {
-        const { albums, envelope } = searchAlbumsFromGql(data);
-        return { rows: albums, envelope };
-      }
-    });
-  },
-
-  // Artist photos for the artist-image chain (the plugin's
-  // capabilities.artistImage; docs/architecture/plugins.md,
-  // "searchArtistImage"). The artists tab (/search/<q>/artists) of the same
-  // spec search the track and album searches use — the photo comes out of
-  // the Artist node in the response, so the whole lookup is the one page
-  // load + one replay the runner already does. Unlike the track/album
-  // searches this method never throws and never prompts for sign-in: not
-  // signed in is `null` without a request (the chain just moves on to
-  // Deezer), and the runner's structural notReady (which trips the shared
-  // breaker) degrades to `null` here too, since an artist photo is always
-  // optional. The name-match happens in the parser — only an exact
-  // (normalized) name's photo is returned, never the top hit's when Amazon
-  // ranks a different artist first.
-  async searchArtistImage(artistName) {
-    let rows;
-    try {
-      const spec = amazonArtistSearchUrl(artistName);
-      if (!spec) return null;
-      if (!(await this.isSignedIn())) {
-        console.log(`[Amazon] artist image for ${String(artistName)} skipped: not signed in`);
-        return null;
-      }
-      const queuedAt = Date.now();
-      rows = await this.specSearch({
-        url: spec.url,
-        searchText: spec.searchText,
-        specType: 'artist',
-        noun: 'artist image',
-        staleCheck: () => Date.now() - queuedAt > ALBUM_JOB_STALE_MS,
-        parse: (data) => {
-          const { url, envelope } = searchArtistImageFromGql(data, artistName);
-          return { rows: url ? [url] : [], envelope };
-        }
-      });
-    } catch (error) {
-      // Catches the runner's structural notReady (which trips the shared
-      // breaker) and anything the URL builder or sign-in check throws: the
-      // artist-image chain contracts a miss, never an exception.
-      console.warn(`[Amazon] artist image for ${String(artistName)} failed: ${error && error.reason} ${error && error.message}`);
-      return null;
-    }
-    return (rows && rows[0]) || null;
-  },
 
   // Import a playlist page (music.amazon.com/playlists/<id>, /my/playlists/<id>
   // or /user-playlists/<id>) via the page's own GraphQL. Hornet fetches the
@@ -1181,10 +780,8 @@ const amazonWebPlayer = {
   async tryRecommendationReplay({ template, drop, bodyFor, parse, noun }) {
     if (!specTemplateIsFresh(template, Date.now())) return null;
     // Take the host's reader side for the whole replay (a navigation waits it
-    // out rather than tearing its frame mid-fetch; the page flow's capture
-    // poll also consults replayActivity).
+    // out rather than tearing its frame mid-fetch).
     if (!webSession.tryEnterReplay()) return null;
-    this.replayActivity++;
     try {
       webSession.cancelPark();
       // A replay needs an Amazon-origin page world (cookies, CORS): a parked
@@ -1331,10 +928,8 @@ const amazonWebPlayer = {
     const template = this.musicHomeTemplate;
     if (!specTemplateIsFresh(template, Date.now())) return null;
     // Take the host's reader side around the WHOLE walk (a navigation must
-    // never tear the view between two pages of one walk; the page flow's
-    // capture poll also consults replayActivity).
+    // never tear the view between two pages of one walk).
     if (!webSession.tryEnterReplay()) return null;
-    this.replayActivity++;
     try {
       webSession.cancelPark();
       // A replay needs an Amazon-origin page world (cookies, CORS): a parked
@@ -1617,174 +1212,6 @@ const amazonWebPlayer = {
     }
   },
 
-  // Import an album page (music.amazon.com/albums/<ASIN>) via the page's own
-  // GraphQL — the same capture-and-replay pattern as lookupPlaylist. The album
-  // page fires AlbumDetailPage with variables.id = the ASIN — but it also
-  // fires OTHER reads whose variables carry the ASIN: AlbumSeo (a header-only
-  // op whose data.album has title/trackCount but no tracksConnection) arrives
-  // FIRST on a real page (live-verified 2026-10), so the winner is never
-  // name-matched alone: every captured candidate is replayed until one's
-  // response carries data.album.tracksConnection (amazonAlbumDetailCandidates
-  // ranks detail-named, then album-named, then — the hornet-rename hedge —
-  // any read holding the ASIN; albumTracksConnectionIn is the arbiter).
-  // Unlike playlistDetail the tracksConnection carries no pageInfo at all (a
-  // 100-track album answers all 100 edges in one response — live-verified),
-  // so there is no continuation to follow: a trackCount above the mapped
-  // rows is logged as a truncation. data.album null in the winning response
-  // is a legitimate not-found (deleted / other region) and returns null; a
-  // response with no album field at all is a hornet rename and throws
-  // lookup-failed instead of masquerading as a miss. Runs on the search
-  // chain: album lookups share the search view with the searches and playlist
-  // imports, so they must not interleave page loads.
-  async lookupAlbum(rawUrl) {
-    if (typeof rawUrl !== 'string' || !/^https:\/\/music\.amazon\.com\//i.test(rawUrl)) {
-      throw notReady('not-ready', 'Not an Amazon Music album URL');
-    }
-    const asin = amazonAlbumAsinFromUrl(rawUrl);
-    if (!asin) {
-      throw notReady('not-ready', 'Not an Amazon Music album URL');
-    }
-    if (!(await this.isSignedIn())) {
-      throw notReady('not-signed-in', 'Sign in and choose an Amazon Music profile');
-    }
-    const queuedAt = Date.now();
-    return this.enqueueSearch(async () => {
-      if (Date.now() - queuedAt > ALBUM_JOB_STALE_MS) {
-        console.log(`[Amazon] album lookup skipped: queued past the ${ALBUM_JOB_STALE_MS}ms catalog budget — the caller already moved on`);
-        return null;
-      }
-      // A fuse armed by an earlier flow must not blank the view mid-load.
-      this.cancelSearchViewPark();
-      const win = await this.ensureWindow();
-      const mode = await this.layoutSearch(this.searchView);
-      const url = `https://music.amazon.com/albums/${asin}`;
-      console.log(`[Amazon] album lookup mode=${mode} ${url}`);
-
-      // Capture gql requests (bodies from onBeforeRequest, headers paired by
-      // request id) while the page loads and fires AlbumDetailPage itself.
-      const { captured, detach } = this.attachGqlCapture();
-      try {
-        await webSession.beginNavigation();
-        try {
-          await webSession.loadURLBudgeted(win, url);
-        } finally {
-          webSession.endNavigation();
-        }
-        const pageUrl = win.isDestroyed() ? '' : win.webContents.getURL();
-        if (!isAmazonMusicPage(pageUrl)) {
-          throw notReady('not-ready', 'Amazon album page left music.amazon.com before replay');
-        }
-
-        // Wait for the page's own album-detail request and replay candidates
-        // as they arrive. Boot + query is ~2-4s on a cold view; the poll
-        // window covers a slow load. The entry must have its headers
-        // (onBeforeSendHeaders fires milliseconds *after* onBeforeRequest —
-        // accepting the body alone races that). Candidates are deduped by
-        // operationName+variables and re-collected each poll, so a same-burst
-        // sibling (AlbumSeo fires alongside the detail op on one page load)
-        // is picked up whenever it lands. Replays are capped — the common
-        // case is one (the detail op wins on the first try).
-        const reqKey = (request) => `${(request && request.operationName) || ''}:${JSON.stringify((request && request.variables) || {})}`;
-        const seen = new Set();
-        const newCandidates = (anyName) => {
-          const ready = captured.filter(r => r.headers);
-          return amazonAlbumDetailCandidates(ready.map(r => r.body), asin, { anyName })
-            .map((request) => ({
-              request,
-              entry: ready.find(r => amazonAlbumDetailCandidates([r.body], asin, { anyName: true })
-                .some(c => reqKey(c) === reqKey(request)))
-            }))
-            .filter(p => p.entry && !seen.has(reqKey(p.request)));
-        };
-        let winner = null;      // { request, entry, data } — the replay that carried a tracksConnection
-        let headerOnlyOp = null; // replayed op that had data.album but no tracksConnection (AlbumSeo)
-        let lastReplayError = null;
-        let replayCount = 0;
-        const tryNewCandidates = async (anyName) => {
-          for (const p of newCandidates(anyName)) {
-            if (winner || replayCount >= 4) return;
-            seen.add(reqKey(p.request));
-            replayCount += 1;
-            console.log(`[Amazon] album replaying ${p.request.operationName} via gql`);
-            const outcome = await this.replayGql(win, p.entry, p.request);
-            if (outcome.error) {
-              lastReplayError = outcome.error;
-              console.warn(`[Amazon] album replay of ${p.request.operationName} failed: ${outcome.error}`);
-              continue;
-            }
-            const data = outcome.parsed && outcome.parsed.data;
-            if (albumTracksConnectionIn(data)) {
-              winner = { ...p, data };
-              return;
-            }
-            if (data && data.album) {
-              if (!headerOnlyOp) headerOnlyOp = p.request.operationName;
-              console.log(`[Amazon] album replay of ${p.request.operationName} carried the header but no tracks connection`);
-            }
-          }
-        };
-        // A replay that won (the loop condition) or errored ends the wait;
-        // while every replay so far was header-only, keep polling to the end
-        // of the window — on a slow load the detail op can lag its SEO
-        // sibling by more than a poll, and settling early here used to be a
-        // bogus miss with the detail op still on its way (review on #1135).
-        for (let i = 0; i < 40 && !winner; i++) {
-          await new Promise(r => setTimeout(r, 500));
-          const href = win.isDestroyed() ? '' : win.webContents.getURL();
-          if (pageBlocksPlayback(href)) {
-            console.warn(`[Amazon] album lookup blocked: ${href}`);
-            throw notReady('not-signed-in', 'Choose an Amazon Music profile');
-          }
-          await tryNewCandidates(false);
-          if (lastReplayError) break;
-        }
-        if (!winner) {
-          // No winning replay from the album-named pool — either hornet
-          // renamed the detail op (hedge: any read carrying the ASIN, still
-          // judged by the tracks-connection response) or the page never
-          // fetched tracks for this album (a pre-order header, an error
-          // page). The same response check decides.
-          await tryNewCandidates(true);
-        }
-        if (!winner) {
-          if (headerOnlyOp) {
-            console.warn(`[Amazon] album lookup: ${asin} header came from ${headerOnlyOp} but no operation exposed a tracks connection; gql operations seen: ${capturedOperationNames(captured.map(c => c.body)).join(', ') || 'none'}`);
-            return null;
-          }
-          if (lastReplayError) throw notReady('lookup-failed', lastReplayError);
-          // The page loaded but never asked for this album: deleted, not
-          // available in the user's territory — or hornet renamed everything.
-          // Log what the page did fire so a rename reads as a rename instead
-          // of "every album is gone".
-          console.warn(`[Amazon] album lookup: page never requested the album detail for ${asin}; gql operations seen: ${capturedOperationNames(captured.map(c => c.body)).join(', ') || 'none'}`);
-          return null;
-        }
-        const { album, envelope } = albumDetailFromGql(winner.data);
-        if (!envelope) {
-          console.warn(`[Amazon] album lookup: response was not an album detail envelope for ${asin}`);
-          throw notReady('lookup-failed', 'Amazon album response was not an album detail envelope');
-        }
-        if (album && album.trackCount > album.tracks.length) {
-          console.warn(`[Amazon] album lookup truncated: got ${album.tracks.length} of ${album.trackCount} tracks`);
-          if (album.tracks.length === 0) {
-            // Every edge failed to map: either the server carries no rows for
-            // this album (pre-order / delisted) or hornet changed the row
-            // shape. Say which — a future "0 of N" in the field log should
-            // not need a DevTools session to diagnose.
-            const tc = winner.data && winner.data.album && winner.data.album.tracksConnection;
-            const edges = tc && tc.edges;
-            const first = Array.isArray(edges) && edges[0] && edges[0].node;
-            console.warn(`[Amazon] album lookup: 0 of ${album.trackCount} mapped — edges=${Array.isArray(edges) ? edges.length : 'absent'}${first ? `, first node keys=${Object.keys(first).join(',')}` : ', first node null'}`);
-          }
-        }
-        console.log(`[Amazon] album lookup returning ${album ? album.tracks.length : 0} tracks "${album ? album.name : ''}"`);
-        return album;
-      } finally {
-        detach();
-        this.scheduleParkSearchView();
-      }
-    });
-  },
 
 
   // Diagnostic (a developer tool, no UI): load one Amazon Music album page
@@ -1869,8 +1296,9 @@ const amazonWebPlayer = {
     this.cookieWarned = false;
     // The captured request templates embed the signed-out session's headers
     // and APQ hash — they must not replay into the next account. The parsed
-    // recommendations caches carry the old account's content.
-    this.specSearchTemplate = null;
+    // recommendations caches carry the old account's content. (The spec-search
+    // template is plugin state since the searches moved there — #1356 M5/M6 —
+    // and drops on the plugin's own session-generation check.)
     this.musicHomeTemplate = null;
     this.seeMoreTemplate = null;
     this.recommendationsCache = null;
