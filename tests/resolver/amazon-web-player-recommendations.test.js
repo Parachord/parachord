@@ -123,7 +123,7 @@ describe('amazonWebPlayer.getRecommendations', () => {
     Object.assign(amazonWebPlayer, saved);
     amazonWebPlayer.searchViewBusy = 0;
     if (amazonWebPlayer.searchViewParkTimer) clearTimeout(amazonWebPlayer.searchViewParkTimer);
-    amazonWebPlayer.searchChain = Promise.resolve();
+    amazonWebPlayer.searchQueue = require('../../amazon-music-logic').createLaneQueue();
   });
 
   test('not signed in: notReady without any request', async () => {
@@ -403,7 +403,7 @@ describe('amazonWebPlayer.expandRecommendationSection', () => {
     Object.assign(amazonWebPlayer, saved);
     amazonWebPlayer.searchViewBusy = 0;
     if (amazonWebPlayer.searchViewParkTimer) clearTimeout(amazonWebPlayer.searchViewParkTimer);
-    amazonWebPlayer.searchChain = Promise.resolve();
+    amazonWebPlayer.searchQueue = require('../../amazon-music-logic').createLaneQueue();
   });
 
   test('a fresh template replays with the id/afterCursor patched, hash and firstLimit intact', async () => {
@@ -514,7 +514,7 @@ describe('amazonWebPlayer.withPlaylistsSection (the synthesized "Playlists for Y
   const playlistSections = [{ id: 'uri:///recommendations/browse-home/other', title: 'Home playlists', items: [{ type: 'playlist', id: 'PP1', name: 'My Discovery Mix', url: 'https://music.amazon.com/playlists/PP1' }] }];
 
   beforeEach(() => {
-    saved = { recommendationsCache: amazonWebPlayer.recommendationsCache, seeMorePages: amazonWebPlayer.seeMorePages, searchChain: amazonWebPlayer.searchChain };
+    saved = { recommendationsCache: amazonWebPlayer.recommendationsCache, seeMorePages: amazonWebPlayer.seeMorePages, searchQueue: amazonWebPlayer.searchQueue };
     amazonWebPlayer.recommendationsCache = null;
     amazonWebPlayer.seeMorePages = new Map();
     amazonWebPlayer.musicHomeVariant = null;
@@ -527,7 +527,7 @@ describe('amazonWebPlayer.withPlaylistsSection (the synthesized "Playlists for Y
     expandParsed.mockRestore();
     amazonWebPlayer.recommendationsCache = saved.recommendationsCache;
     amazonWebPlayer.seeMorePages = saved.seeMorePages;
-    amazonWebPlayer.searchChain = saved.searchChain;
+    amazonWebPlayer.searchQueue = saved.searchQueue;
   });
 
   test('no playlist items in the home sections: the playlists strategy is pulled as a titled section with its cursor', async () => {
@@ -589,7 +589,7 @@ describe('signOut recommendations hygiene', () => {
       amazonWebPlayer.seeMoreTemplate = saved.seeMoreTemplate;
       amazonWebPlayer.recommendationsCache = saved.recommendationsCache;
       amazonWebPlayer.seeMorePages = saved.seeMorePages;
-      amazonWebPlayer.searchChain = Promise.resolve();
+      amazonWebPlayer.searchQueue = require('../../amazon-music-logic').createLaneQueue();
     }
   });
 });

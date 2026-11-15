@@ -488,6 +488,45 @@ function bodyMatchesTemplate(template, request, { searchText, specType } = {}) {
 // flips — safe under JS's single thread; every reader exit runs in a finally
 // so a thrown replay cannot leak the count. A reader is bounded by the
 // caller's own replay timeout, so the writer's drain wait is bounded too.
+// The search view's job queue: one job runs at a time (real page navigation
+// on the shared view, and the single webRequest listener slot per method),
+// in two lanes. A FOREGROUND job (something the user clicked and is waiting
+// on, such as opening a playlist) starts before every queued BACKGROUND job
+// (artist photos, the recommendations refresh, catalog fallbacks, the
+// session-header mint), FIFO within each lane. A running job is never
+// interrupted: a foreground job waits at most for the one in progress.
+// Before this, the queue was one FIFO promise chain, and a playlist click
+// waited behind a two-page recommendations refresh and two artist-photo
+// searches (2026-11-15). A job that throws rejects its own promise only;
+// the queue moves on.
+function createLaneQueue() {
+  const lanes = { foreground: [], background: [] };
+  let running = false;
+  const pump = () => {
+    if (running) return;
+    const job = lanes.foreground.shift() || lanes.background.shift();
+    if (!job) return;
+    running = true;
+    Promise.resolve()
+      .then(job.fn)
+      .then(job.resolve, job.reject)
+      .then(() => { running = false; pump(); });
+  };
+  return {
+    run(fn, { lane = 'background' } = {}) {
+      return new Promise((resolve, reject) => {
+        lanes[lane === 'foreground' ? 'foreground' : 'background'].push({ fn, resolve, reject });
+        pump();
+      });
+    },
+    // Jobs waiting (not counting the one running), per lane.
+    pending() {
+      return { foreground: lanes.foreground.length, background: lanes.background.length };
+    },
+    isRunning() { return running; }
+  };
+}
+
 function createReplayGate() {
   let readers = 0;
   let writing = false;
@@ -627,6 +666,53 @@ function amazonGqlFetchHeaders(headers) {
     if (!GQL_REPLAY_DROP_HEADERS.has(String(k).toLowerCase())) out[k] = v;
   }
   return out;
+}
+
+// HTTP 294 is the gql server's PARTIAL-SUCCESS status: a resolver for one
+// field failed, the response carries `errors` for that path, and `data`
+// still holds everything else. It is not always a refusal. A community
+// playlist (/user-playlists/<id>) answers playlistDetail with 294 to Amazon's
+// own page, because playlist.capabilities.setOnDemand calls a collaborators
+// service that fails (500) for a playlist the user doesn't own, while
+// data.playlist (title, tracks, pageInfo) is complete, and the page renders
+// it (live-captured 2026-11-15). Other 294s carry no usable data: a Prime
+// account's MusicHomePage, and a home walk with firstLimit above 20. So a
+// 294 is accepted only by a flow that asks, and only when its own predicate
+// finds the data it needs (`acceptPartial(parsed)`); every other non-200 is
+// a failure carrying its status (the home flow reads that status).
+const GQL_PARTIAL_STATUS = 294;
+
+// The page-world replay's raw { status, text } (or { error }) -> { parsed }
+// or { error, status? }. Pure, so the status rules are unit-tested;
+// replayGql in amazon-web-player.js is the caller.
+function gqlReplayOutcome(replay, { acceptPartial = null } = {}) {
+  if (!replay || replay.error) return { error: (replay && replay.error) || 'Amazon gql query failed' };
+  const status = replay.status;
+  const failed = () => ({ error: `Amazon gql query failed (${status})`, status });
+  const partialAllowed = status === GQL_PARTIAL_STATUS && typeof acceptPartial === 'function';
+  if (status !== 200 && !partialAllowed) return failed();
+  let parsed = null;
+  try { parsed = JSON.parse(replay.text); } catch (e) { /* leave null */ }
+  if (status !== 200) {
+    // A partial answer the flow can't use (or that isn't JSON) is the plain
+    // failure, status and all.
+    let usable = false;
+    try { usable = !!(parsed && acceptPartial(parsed)); } catch (e) { usable = false; }
+    return usable ? { parsed, partial: true } : failed();
+  }
+  if (!parsed) return { error: 'Amazon gql response was not JSON' };
+  if (Array.isArray(parsed.errors) && parsed.errors.length && !parsed.data) {
+    return { error: String((parsed.errors[0] || {}).message || 'Amazon gql query error') };
+  }
+  return { parsed };
+}
+
+// The playlist flow's partial-answer predicate: data.playlist present, with
+// track edges where playlistEdgesFromGql finds them. A null playlist, or one
+// with no track rows block, is not a playlist we can import.
+function playlistPartialIsUsable(parsed) {
+  const data = parsed && parsed.data;
+  return !!(data && data.playlist && Array.isArray(playlistEdgesFromGql(data)));
 }
 
 // The widest imageType=PRIMARY image, else the widest image overall. The
@@ -1889,12 +1975,16 @@ module.exports = {
   specBodyWithVars,
   bodyMatchesTemplate,
   createReplayGate,
+  createLaneQueue,
   amazonAlbumSearchUrl,
   amazonAlbumAsinFromUrl,
   amazonAlbumDetailRequest,
   amazonAlbumDetailCandidates,
   albumTracksConnectionIn,
   amazonGqlFetchHeaders,
+  GQL_PARTIAL_STATUS,
+  gqlReplayOutcome,
+  playlistPartialIsUsable,
   capturedOperationNames,
   searchTracksFromGql,
   albumFromGqlSearchNode,
