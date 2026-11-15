@@ -3540,7 +3540,7 @@ module.exports = {
     // parallel flow may have re-minted one while this call queued).
     const tryFast = (noun, { keepTemplate = false } = {}) => {
       const template = this._seeMoreTemplate;
-      return this.tryRecommendationReplay({
+      return this.trySeeMoreReplay({
         template,
         // Drop only if nobody re-minted meanwhile — a page flow that ran in
         // parallel already put a fresh template in place. keepTemplate (the
@@ -3631,7 +3631,7 @@ module.exports = {
   // re-mints. A structural-looking response (200 with data but no envelope)
   // drops the template and defers to the page flow, the #1152 rule: only a
   // fresh capture can prove a hornet rename.
-  tryRecommendationReplay: async function ({ template, drop, bodyFor, parse, noun }) {
+  trySeeMoreReplay: async function ({ template, drop, bodyFor, parse, noun }) {
     const lib = this.requireLib();
     if (!lib.specTemplateIsFresh(template, Date.now())) return null;
     const state = await this.sessionState();

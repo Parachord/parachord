@@ -118,9 +118,6 @@ describe('getRecommendations (the music-home walk)', () => {
     // Page 1: the page's own request with ONLY firstLimit patched (the walk
     // bumps the page's 5 to 20) — full-body equality pins that everything else
     // (type, feature flags, the hash) stays the capture's.
-    expect(ws.sentRequests[0]).toEqual(JSON.parse(amazonMusicHomeCapture().body).operationName === 'MusicHomePage'
-      ? expect.objectContaining({ operationName: 'MusicHomePage' })
-      : expect.anything());
     const capturedBody = JSON.parse(amazonMusicHomeCapture().body);
     expect(ws.sentRequests[0]).toEqual({ ...capturedBody, variables: { ...capturedBody.variables, firstLimit: 20 } });
     // Page 2: the cursor page.
@@ -614,6 +611,35 @@ describe('expandRecommendationSection', () => {
     const again = await resolver.expandRecommendationSection(SECTION_ID, 'music-home_mp3PrimeAlbumsStrategy.20', {});
     expect(again.items[0].name).toBe('Sons of Northern Darkness');
     expect(ws.sentRequests.length).toBe(2);
+  });
+
+  test('the page cache evicts at SEE_MORE_CACHE_MAX (40): the oldest inserted key goes first', async () => {
+    // The cache is a plain Map walked in INSERTION order (cacheSeeMorePage's
+    // keys().next()), not LRU — a cached key is served without re-insertion —
+    // so the 41st distinct section+cursor costs the OLDEST key its slot.
+    const ws = amazonRecommendationsMock({
+      seeMorePage: oneSeeMorePage([albumNode('B07QYGJGVC', 'Sons of Northern Darkness', 'Immortal')], { hasNextPage: false, endCursor: null, token: null })
+    });
+    const resolver = instantiateAmazonPlugin(axe);
+    // The first page (no cursor) mints the template and takes the oldest slot.
+    await resolver.expandRecommendationSection(SECTION_ID, null, {});
+    // 41 distinct cursor pages — one cache key each — all served by the fresh
+    // template's fast replay.
+    for (let i = 0; i < 41; i++) {
+      await resolver.expandRecommendationSection(SECTION_ID, 'cursor' + i, {});
+    }
+    // 42 pages against 40 slots: the two oldest keys were evicted; the newest
+    // 40 remain.
+    expect(resolver._seeMorePages.size).toBe(40);
+    expect(resolver._seeMorePages.has(SECTION_ID + '|')).toBe(false);
+    expect(resolver._seeMorePages.has(SECTION_ID + '|cursor0')).toBe(false);
+    expect(resolver._seeMorePages.has(SECTION_ID + '|cursor40')).toBe(true);
+    // The evicted key re-fetches; a retained one is a cache hit.
+    const replays = ws.sentRequests.length;
+    await resolver.expandRecommendationSection(SECTION_ID, 'cursor40', {});
+    expect(ws.sentRequests.length).toBe(replays);
+    await resolver.expandRecommendationSection(SECTION_ID, null, {});
+    expect(ws.sentRequests.length).toBe(replays + 1);
   });
 
   test('the route flow never mints or returns a DIFFERENT section\'s echo (variables.id guard)', async () => {
