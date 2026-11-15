@@ -3,11 +3,12 @@
     "id": "ollama",
     "name": "Ollama (Local)",
     "type": "meta-service",
-    "version": "1.1.1",
+    "version": "1.1.2",
     "icon": "🦙",
     "color": "#000000",
     "author": "Parachord Team",
     "description": "Run AI locally with Ollama. Free, private, works offline.",
+    "requirement": "Needs Ollama running on this computer.",
     "homepage": "https://ollama.ai"
   },
   "capabilities": {

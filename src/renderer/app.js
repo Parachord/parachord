@@ -47131,9 +47131,15 @@ React.createElement('div', {
               fontSize: '13px',
               color: 'var(--text-secondary)',
               lineHeight: '1.6',
-              marginBottom: '24px'
+              marginBottom: selectedResolver.requirement ? '8px' : '24px'
             }
           }, selectedResolver.description),
+          // What it needs (manifest.requirement, #1387): a sign-in, a
+          // subscription, a developer key, or nothing.
+          selectedResolver.requirement && React.createElement('p', {
+            className: 'text-ink-primary',
+            style: { fontSize: '13px', lineHeight: '1.6', marginBottom: '24px' }
+          }, selectedResolver.requirement),
 
           // Capabilities
           React.createElement('div', { style: { marginBottom: '24px' } },
@@ -49606,9 +49612,15 @@ React.createElement('div', {
               fontSize: '13px',
               color: 'var(--text-secondary)',
               lineHeight: '1.6',
-              marginBottom: '24px'
+              marginBottom: (selectedMarketplaceItem.requirement || selectedMarketplaceItem.installedResolver?.requirement) ? '8px' : '24px'
             }
           }, selectedMarketplaceItem.description),
+          // What it needs (manifest.requirement, #1387): a sign-in, a
+          // subscription, a developer key, or nothing.
+          (selectedMarketplaceItem.requirement || selectedMarketplaceItem.installedResolver?.requirement) && React.createElement('p', {
+            className: 'text-ink-primary',
+            style: { fontSize: '13px', lineHeight: '1.6', marginBottom: '24px' }
+          }, (selectedMarketplaceItem.requirement || selectedMarketplaceItem.installedResolver?.requirement)),
 
           // Capabilities
           selectedMarketplaceItem.capabilities && React.createElement('div', { style: { marginBottom: '24px' } },
@@ -52332,10 +52344,18 @@ firstRunTutorial.step === 'sources' && React.createElement(React.Fragment, null,
               loadedResolvers.filter(r => r.capabilities?.resolve).map(resolver => {
                 const isActive = activeResolvers.includes(resolver.id);
                 const logo = SERVICE_LOGOS[resolver.id];
-                return React.createElement('button', { type: 'button', 'aria-pressed': isActive,
+                // Each tile says what the service needs (manifest.requirement,
+                // #1387); Local Files can choose its folder right here.
+                const needsFolder = resolver.id === 'localfiles' && isActive;
+                return React.createElement('div', {
                   key: resolver.id,
+                  className: 'flex flex-col items-center',
+                  style: { width: '120px' }
+                },
+                React.createElement('button', { type: 'button', 'aria-pressed': isActive,
+                  'aria-describedby': resolver.requirement ? `tour-req-${resolver.id}` : undefined,
                   className: `flex flex-col items-center cursor-pointer transition-all ${!isActive ? 'opacity-50 grayscale' : ''}`,
-                  style: { width: '90px' },
+                  style: { width: '100%' },
                   onClick: () => {
                     if (isActive) {
                       setActiveResolvers(prev => prev.filter(id => id !== resolver.id));
@@ -52374,13 +52394,21 @@ firstRunTutorial.step === 'sources' && React.createElement(React.Fragment, null,
                   React.createElement('span', {
                     style: { fontSize: '12px', fontWeight: '500', color: 'var(--text-primary)', textAlign: 'center' }
                   }, resolver.name)
+                ),
+                resolver.requirement && React.createElement('p', {
+                  id: `tour-req-${resolver.id}`,
+                  className: 'text-ink-tertiary',
+                  style: { fontSize: '11px', lineHeight: 1.4, textAlign: 'center', marginTop: '4px' }
+                }, resolver.requirement),
+                needsFolder && (watchFolders.length > 0
+                  ? React.createElement('span', { className: 'text-ink-secondary', style: { fontSize: '11px', marginTop: '4px' } }, countOf(watchFolders.length, 'folder'))
+                  : React.createElement(Button, { variant: 'text', size: 'sm', className: 'mt-1', onClick: () => handleAddWatchFolder() }, 'Choose folder…'))
                 );
               })
             ),
-            // Info text
             React.createElement('p', {
               style: { fontSize: '12px', color: 'var(--text-tertiary)', textAlign: 'center', marginTop: '20px' }
-            }, 'Some sources may require login or configuration after setup.')
+            }, 'You can change these, sign in and set them up any time in Plug-Ins.')
           ),
           // Footer
           React.createElement('div', {
