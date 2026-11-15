@@ -77,7 +77,11 @@ describe('every page draws the shared chips', () => {
 
   test('Fresh Drops, Recommendations, the plugin marketplace and the artist page use it', () => {
     const app = require('../helpers/renderer-source').appWithPages(); // app.js and the pages moved out of it (#1451)
+    // app.js draws the shared chips; the fill-accent pair the generic
+    // status row's Sign in button reads (#1356 M10's round-13 fix) is
+    // required by the plug-in settings dialog.
     expect(app).toContain("const { FilterChips, Chip } = require('./components/filter-chips');");
+    expect(app).toContain("const { CHIP_NEUTRAL_FILL, CHIP_NEUTRAL_TEXT } = require('./filter-chips');");
     for (const call of ['onChange: setNewReleasesFilter', 'onChange: setRecommendationSourceFilter', 'onChange: setMarketplaceCategory']) {
       expect(app).toContain(call);
     }
