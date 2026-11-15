@@ -37761,7 +37761,7 @@ useEffect(() => {
           ),
           // COLLAPSED STATE - Inline layout
           playlistsHeaderCollapsed && React.createElement('div', {
-            className: 'absolute inset-0 flex items-center px-6 z-10',
+            className: 'hero-bar absolute inset-0 flex items-center px-6 z-10',
             style: {
               opacity: playlistsHeaderCollapsed ? 1 : 0,
               transition: 'opacity 300ms ease-out'
@@ -38547,7 +38547,7 @@ useEffect(() => {
               ),
               // COLLAPSED STATE - Inline layout
               chartsHeaderCollapsed && React.createElement('div', {
-                className: 'absolute inset-0 flex items-center px-6 z-10',
+                className: 'hero-bar absolute inset-0 flex items-center px-6 z-10',
                 style: {
                   opacity: chartsHeaderCollapsed ? 1 : 0,
                   transition: 'opacity 300ms ease-out'
@@ -39215,7 +39215,7 @@ useEffect(() => {
               ),
               // COLLAPSED STATE - Inline layout
               newReleasesHeaderCollapsed && React.createElement('div', {
-                className: 'absolute inset-0 flex items-center px-6 z-10',
+                className: 'hero-bar absolute inset-0 flex items-center px-6 z-10',
                 style: {
                   opacity: newReleasesHeaderCollapsed ? 1 : 0,
                   transition: 'opacity 300ms ease-out'
@@ -39651,7 +39651,7 @@ useEffect(() => {
               ),
               // COLLAPSED STATE - Inline layout
               criticsHeaderCollapsed && React.createElement('div', {
-                className: 'absolute inset-0 flex items-center px-6 z-10',
+                className: 'hero-bar absolute inset-0 flex items-center px-6 z-10',
                 style: {
                   opacity: criticsHeaderCollapsed ? 1 : 0,
                   transition: 'opacity 300ms ease-out'
@@ -40098,7 +40098,7 @@ useEffect(() => {
               ),
               // COLLAPSED STATE - Inline layout
               concertsHeaderCollapsed && React.createElement('div', {
-                className: 'absolute inset-0 flex items-center px-6 z-10',
+                className: 'hero-bar absolute inset-0 flex items-center px-6 z-10',
                 style: {
                   opacity: concertsHeaderCollapsed ? 1 : 0,
                   transition: 'opacity 300ms ease-out'
@@ -40783,7 +40783,7 @@ useEffect(() => {
             ),
             // COLLAPSED STATE - Inline layout matching artist page
             recommendationsHeaderCollapsed && React.createElement('div', {
-              className: 'absolute inset-0 flex items-center px-6 z-10',
+              className: 'hero-bar absolute inset-0 flex items-center px-6 z-10',
               style: {
                 opacity: recommendationsHeaderCollapsed ? 1 : 0,
                 transition: 'opacity 300ms ease-out'
@@ -41916,7 +41916,7 @@ useEffect(() => {
             ),
             // COLLAPSED STATE - Inline layout with tabs
             historyHeaderCollapsed && React.createElement('div', {
-              className: 'absolute inset-0 flex items-center px-6 z-10',
+              className: 'hero-bar absolute inset-0 flex items-center px-6 z-10',
               style: {
                 opacity: historyHeaderCollapsed ? 1 : 0,
                 transition: 'opacity 300ms ease-out'
@@ -42803,7 +42803,7 @@ useEffect(() => {
               ),
               // COLLAPSED STATE - Inline layout with tabs (matching History)
               historyHeaderCollapsed && React.createElement('div', {
-                className: 'absolute inset-0 flex items-center px-6 z-10',
+                className: 'hero-bar absolute inset-0 flex items-center px-6 z-10',
                 style: {
                   opacity: historyHeaderCollapsed ? 1 : 0,
                   transition: 'opacity 300ms ease-out'

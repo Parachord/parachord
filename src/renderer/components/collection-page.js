@@ -189,7 +189,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
               ),
             // COLLAPSED STATE - Inline layout matching Recommendations
             collectionHeaderCollapsed && React.createElement('div', {
-              className: 'absolute inset-0 flex items-center px-6 z-10',
+              className: 'hero-bar absolute inset-0 flex items-center px-6 z-10',
               style: {
                 opacity: collectionHeaderCollapsed ? 1 : 0,
                 transition: 'opacity 300ms ease-out'

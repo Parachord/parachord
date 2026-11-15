@@ -39,3 +39,13 @@ test('the playlist view\'s art and icon columns follow the content area, and so 
   const app = fs.readFileSync(path.join(ROOT, 'src/renderer/app.js'), 'utf8');
   expect(app).toMatch(/style: \{ width: PLAYLIST_ART_COLUMN \}/);
 });
+
+test('collapsed page headers share .hero-bar: titles truncate, tabs scroll, one 24px gutter', () => {
+  const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+  expect(html).toContain('.hero-bar > * { flex-shrink: 0; }');
+  expect(html).toContain('.hero-bar > h1, .hero-bar > h2 { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }');
+  expect(html).toContain('.hero-bar > [role="tablist"], .hero-bar > div:has([role="tablist"]) { flex-shrink: 1; min-width: 0; overflow-x: auto;');
+  const src = files.map((f) => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n');
+  expect((src.match(/className: 'hero-bar absolute inset-0 flex items-center px-6 z-10'/g) || []).length).toBe(11);
+  expect(src).not.toMatch(/absolute inset-0 flex items-center px-16 z-10/);
+});

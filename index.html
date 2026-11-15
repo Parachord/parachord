@@ -745,6 +745,16 @@
        keeps 3 columns at the minimum and 5 on a typical laptop; the grid's
        own gap class sets the spacing. Skeleton grids use the same class. */
     .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
+    /* Collapsed page headers (#1389): the title, the tabs and the actions
+       share one row. On a narrow window the title truncates and the tabs
+       scroll sideways; buttons keep their size. */
+    .hero-bar > * { flex-shrink: 0; }
+    .hero-bar > h1, .hero-bar > h2 { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .hero-bar > .truncate, .hero-bar > .hero-bar-title { flex-shrink: 1; min-width: 0; }
+    .hero-bar-title > h1 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .hero-bar > [role="tablist"], .hero-bar > div:has([role="tablist"]) { flex-shrink: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+    .hero-bar > [role="tablist"]::-webkit-scrollbar, .hero-bar > div:has([role="tablist"])::-webkit-scrollbar { display: none; }
+    .hero-bar [role="tab"] { white-space: nowrap; flex-shrink: 0; }
     /* Page hero titles (#1389): 48px, scaled down with the content area
        (the window less the 256px sidebar) so a long uppercase title fits at
        the 1000px minimum (744px of content: about 41px), never below 28. */

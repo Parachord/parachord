@@ -340,7 +340,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
           ),
           // COLLAPSED STATE - Inline layout
           !loadingRelease && currentArtist && isHeaderCollapsed && React.createElement('div', {
-            className: 'absolute inset-0 flex items-center px-16 z-10',
+            className: 'hero-bar absolute inset-0 flex items-center px-6 z-10',
             style: {
               opacity: isHeaderCollapsed ? 1 : 0,
               transition: 'opacity 300ms ease-out'
@@ -348,7 +348,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
           },
             // Left side: Artist name with star button - clickable to expand header
             React.createElement('div', {
-              className: 'flex items-center gap-2 mr-6 flex-shrink-0',
+              className: 'hero-bar-title flex items-center gap-2 mr-6',
               style: { maxWidth: '40%' }
             },
               React.createElement('h1', {
@@ -516,7 +516,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
           }),
           // Artist info overlay (inline layout for release page - matches collapsed artist header)
           React.createElement('div', {
-            className: 'absolute inset-0 flex items-center px-16 z-10'
+            className: 'hero-bar absolute inset-0 flex items-center px-6 z-10'
           },
             // Left side: Artist name
             React.createElement('h1', {
