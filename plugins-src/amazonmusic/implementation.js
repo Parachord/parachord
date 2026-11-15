@@ -34,15 +34,17 @@
 // recommendations flows, the amazon-dmls.js provider (with its
 // main-process/amazon-telemetry.js reporter), the host's sign-in/out and its
 // getStatus (with its stopgap plan read) are deleted; every helper those
-// flows use lives here (copies of the amazon-music-logic.js originals, whose
-// remaining copies serve the diagnostic capture until the teardown milestone
-// deletes it). What remains host-side is the view machinery and the
-// diagnostic capture.
+// flows use lives here (copies of the deleted amazon-music-logic.js
+// originals). Since the teardown (#1356 M11) nothing remains host-side but
+// the view machinery (main-process/web-session.js behind the ONE instance
+// main-process/amazon-web-session.js owns) — even the diagnostic capture is
+// this plugin's (debugCaptureGql below).
 module.exports = {
   // ── The plugin library (#1356) ────────────────────────────────────────
   // Pure helpers and constants, evaluated once per resolver instance and
-  // frozen by the loader. Every copy below mirrors its original in
-  // amazon-music-logic.js / amazon-web-player.js. The copies whose flows
+  // frozen by the loader. Every copy below mirrors its original (deleted
+  // with the M11 teardown) in amazon-music-logic.js / amazon-web-player.js.
+  // The copies whose flows
   // have moved (the track search in #1356 M5; the album search, album lookup
   // and artist images in M6; the playlist import in M7; the recommendations
   // in M8; the dmls bodies, the licence-refusal semantics, the MPD KID parse
@@ -173,10 +175,10 @@ module.exports = {
       return err;
     }
 
-    // ── Walls and session cookies (amazon-music-logic.js owns the original
-    // pageBlocksPlayback for the diagnostic capture; the rest of these copies
-    // are the ONLY ones since #1356 M10 moved the host's sign-in/status
-    // flows here) ──────────────────────────────────────────────────────────
+    // ── Walls and session cookies (the ONLY copies since #1356 M11 deleted
+    // the host modules — M10 moved the host's sign-in/status flows here, the
+    // teardown moved the diagnostic capture that owned the
+    // originals) ───────────────────────────────────────────────────────────
 
     // Amazon's web player is not usable for search or play while it is still
     // on the account sign-in page or the post-login profile picker. Cookies
@@ -219,9 +221,8 @@ module.exports = {
       }
     }
 
-    // ── The search URL and request matching (amazon-music-logic.js owns the
-    // originals; its amazonAlbumSearchUrl/amazonArtistSearchUrl call the same
-    // builder for the host-side album/artist searches) ──────────────────────
+    // ── The search URL and request matching (the ONLY copies since the M11
+    // teardown deleted amazon-music-logic.js) ──────────────────────────────
 
     // A loose "Stations Warning" search misses the song, so both terms are
     // quoted — but quoting alone imposes phrase ORDER, and Amazon's matching
@@ -745,9 +746,10 @@ module.exports = {
     }
 
     // Write-shaped gql names (a replay would repeat the action on the user's
-    // account) never become album-detail candidates (copies of the originals
-    // in amazon-music-logic.js, which gqlRequestIsAboutSubject — the debug
-    // capture that stays host-side — still uses).
+    // account) never become album-detail candidates, and never get replayed
+    // by the diagnostic capture's subject matcher (gqlRequestIsAboutSubject
+    // shares the same two shapes — #1356 M11 moved the capture into the
+    // plugin with its helpers).
     const GQL_WRITE_OP = /^(?:add|remove|delete|update|set|put|create|follow|unfollow|like|unlike|save|record|log|report|send|post|mark)[A-Z_]|^track[A-Z]/;
     const GQL_MUTATION_NAME = /mutation/i;
 
@@ -2030,6 +2032,109 @@ module.exports = {
       };
     }
 
+    // ── The diagnostic capture's helpers (#1356 M11, moved from the deleted
+    // amazon-music-logic.js) — pure, and the only copy since the teardown.
+    // The capture is how a NEW flow is learned: load a live page, list every
+    // gql operation it fires, replay only the page's own reads about its
+    // subject, and redact what comes back. ────────────────────────────────
+
+    // Which page a capture URL names: an album page (/albums/<ASIN>) or a
+    // search page (/search/<text>/<tab>). Everything else is refused — the
+    // capture loads a real page and matches its requests against the
+    // subject, so a URL that names neither has nothing to match.
+    function gqlCaptureSubject(rawUrl) {
+      let u;
+      try { u = new URL(rawUrl); } catch { return null; }
+      if (u.origin !== 'https://music.amazon.com') return null;
+      const album = /^\/albums\/([A-Z0-9]{10})(?:\/|$)/i.exec(u.pathname);
+      if (album) return { kind: 'album', asin: album[1].toUpperCase() };
+      const search = /^\/search\/([^/]+)(?:\/([a-z]+))?\/?$/i.exec(u.pathname);
+      if (search) {
+        let text;
+        try { text = decodeURIComponent(search[1]); } catch { text = search[1]; }
+        return { kind: 'search', searchText: text, tab: search[2] ? search[2].toLowerCase() : null };
+      }
+      return null;
+    }
+
+    // The requests in one captured body: a single request or a batch.
+    function gqlRequestsIn(raw) {
+      let parsed;
+      try { parsed = JSON.parse(raw); } catch { return []; }
+      return (Array.isArray(parsed) ? parsed : [parsed]).filter(r => r && typeof r === 'object');
+    }
+
+    // Whether a captured request is the page's own read query for what it
+    // shows: its variables name the album ASIN, or carry the search text.
+    // Only these are replayed (to read their response shape); everything else
+    // is listed by name. Writes are NEVER replayed, even when their variables
+    // name the album — a replay would repeat the action ("add to library",
+    // "record a view") on the user's account. (Shares GQL_WRITE_OP /
+    // GQL_MUTATION_NAME with the album-detail candidate filter.)
+    function gqlRequestIsAboutSubject(req, subject) {
+      if (!req || !subject || !req.variables || typeof req.variables !== 'object') return false;
+      if (/^\s*mutation\b/.test(String(req.query || ''))) return false;
+      const opName = String(req.operationName || '');
+      if (GQL_WRITE_OP.test(opName) || GQL_MUTATION_NAME.test(opName)) return false;
+      if (subject.kind === 'album') {
+        return JSON.stringify(req.variables).toUpperCase().includes(subject.asin);
+      }
+      if (subject.kind === 'search') {
+        const text = req.variables.searchText;
+        return typeof text === 'string' && text.toLowerCase() === String(subject.searchText).toLowerCase();
+      }
+      return false;
+    }
+
+    // Keys whose values could identify or authenticate the user.
+    const GQL_SECRET_KEY = /token|cookie|session|auth|csrf|secret|password|credential|signature|customer|device|email/i;
+
+    // A copy of a gql value that is safe to log and share: secret-looking
+    // keys redacted, query strings cut from URLs (signed CDN URLs carry
+    // credentials), long strings and long arrays trimmed. The shape survives;
+    // that is what a parser needs.
+    function redactGqlSample(value, opts = {}, depth = 0) {
+      const maxArray = opts.maxArray || 3;
+      const maxString = opts.maxString || 300;
+      if (depth > 40) return '[too deep]';
+      if (Array.isArray(value)) {
+        const out = value.slice(0, maxArray).map(v => redactGqlSample(v, opts, depth + 1));
+        if (value.length > maxArray) out.push(`[${value.length - maxArray} more]`);
+        return out;
+      }
+      if (value && typeof value === 'object') {
+        const out = {};
+        for (const [k, v] of Object.entries(value)) {
+          out[k] = GQL_SECRET_KEY.test(k) ? '[redacted]' : redactGqlSample(v, opts, depth + 1);
+        }
+        return out;
+      }
+      if (typeof value === 'string') {
+        let s = value;
+        if (/^https?:\/\//i.test(s) && s.includes('?')) s = `${s.slice(0, s.indexOf('?'))}?[query removed]`;
+        return s.length > maxString ? `${s.slice(0, maxString)}…` : s;
+      }
+      return value;
+    }
+
+    // One captured request as written to a capture: never header values (they
+    // carry the session), only their names.
+    function summarizeGqlRequest(entry, req) {
+      let endpoint = null;
+      try {
+        const u = new URL(entry && entry.url);
+        endpoint = u.origin + u.pathname;
+      } catch { /* leave null */ }
+      return {
+        operationName: (req && req.operationName) || null,
+        endpoint,
+        persistedQuery: !!(req && req.extensions && req.extensions.persistedQuery),
+        hasQueryText: !!(req && req.query),
+        variables: redactGqlSample(req && req.variables, { maxArray: 10 }),
+        headerNames: Object.keys((entry && entry.headers) || {}).sort()
+      };
+    }
+
     return {
       SESSION, GQL_URL, CONFIG_URL,
       PAGE_CAPTURE_BUDGET_MS, PAGE_CAPTURE_QUIET_MS, ALBUM_CAPTURE_QUIET_MS, ALBUM_DETAIL_OP_NAME, ALBUM_JOB_STALE_MS,
@@ -2058,6 +2163,11 @@ module.exports = {
       GQL_PARTIAL_STATUS,
       gqlReplayOutcome,
       playlistPartialIsUsable,
+      gqlCaptureSubject,
+      gqlRequestsIn,
+      gqlRequestIsAboutSubject,
+      redactGqlSample,
+      summarizeGqlRequest,
       trackFromGqlEdge,
       searchTracksFromGql,
       searchAlbumsFromGql,
@@ -2494,6 +2604,111 @@ module.exports = {
     if (this._searchBreaker) this._searchBreaker.recordSuccess();
     console.log('[Amazon] search returning ' + rows.length + ' ' + noun + ' for ' + JSON.stringify(searchText));
     return rows;
+  },
+
+  // ── The diagnostic capture (#1356 M11, moved from the deleted host module) ─
+  // Diagnostic (a developer tool, no UI): load one Amazon Music album page
+  // (/albums/<ASIN>) or search page (/search/<text>/<tab>) in the offscreen
+  // view and record the gql operations it fires — the tool the album search,
+  // the album lookup, the artist-image lookup and the recommendations flows
+  // were built from, since those shapes are only visible from a live
+  // signed-in session. Every operation is listed (name, endpoint, redacted
+  // variables, header NAMES only: their values carry the session); only the
+  // page's own read queries about its subject (gqlRequestIsAboutSubject) are
+  // replayed once each, so their response shapes can be read, and those
+  // responses are redacted and trimmed (redactGqlSample) before they leave
+  // the method. The caller decides what to do with the reply — DevTools
+  // reaches it through the renderer's window.__parachordResolver helper
+  // (src/renderer/app.js) and copies the JSON out:
+  //
+  //   const out = await window.__parachordResolver('amazonmusic')
+  //     .debugCaptureGql('https://music.amazon.com/albums/<ASIN>');
+  //   copy(JSON.stringify(out, null, 2));   // DevTools clipboard
+  //
+  // (the old IPC handler wrote the capture to userData; the plugin has no
+  // file access, and copy() from the console replaces the file). Rides the
+  // plugin's page-flow chain like every other page flow (serialized against
+  // the spec-search/catalog/playlist/recommendation flows; the host's own
+  // load chain serializes the navigation itself).
+  debugCaptureGql: async function (rawUrl) {
+    const lib = this.requireLib();
+    const ws = window.electron && window.electron.webSession;
+    if (!ws) throw lib.notReady('not-ready', 'Amazon webSession bridge not available');
+    const subject = lib.gqlCaptureSubject(rawUrl);
+    if (!subject) {
+      throw lib.notReady('not-ready', 'Pass a music.amazon.com album URL (/albums/<ASIN>) or search URL (/search/<text>/<tab>)');
+    }
+    if (!(await this.isSignedIn())) {
+      throw lib.notReady('not-signed-in', 'Sign in and choose an Amazon Music profile');
+    }
+    const run = (this._pageFlowChain || Promise.resolve()).then(() => this.debugCapturePageFlow(rawUrl, subject));
+    this._pageFlowChain = run.then(() => {}, () => {});
+    return run;
+  },
+
+  // The capture's own page flow (the chain wrapper above serializes it): one
+  // load with the gql capture window inside it, then the subject reads
+  // replayed once each. The quiet window is the old host flow's (3s with no
+  // new captured request, at most 20s — a diagnostic wants the page's whole
+  // burst, not the flows' tighter 2.5s/15s window).
+  debugCapturePageFlow: async function (rawUrl, subject) {
+    const lib = this.requireLib();
+    const ws = window.electron && window.electron.webSession;
+    if (!ws) throw lib.notReady('not-ready', 'Amazon webSession bridge not available');
+    const load = await ws.load(lib.SESSION, rawUrl, {
+      capture: {
+        urlPrefixes: [lib.GQL_URL + '*'],
+        quietMs: 3000,
+        budgetMs: 20000
+      }
+    });
+    if (!load || !load.success) {
+      throw lib.notReady((load && load.reason) || 'load-failed', (load && load.error) || 'Amazon capture page did not finish loading');
+    }
+    // A wall the page redirected to while it loaded (the same after-load
+    // re-check every page flow runs).
+    if (lib.pageBlocksPlayback(load.finalUrl)) {
+      throw lib.notReady('not-signed-in', 'Choose an Amazon Music profile');
+    }
+    // Headers must be attached before an entry counts (the host pairs bodies
+    // with headers by request id; onBeforeSendHeaders fires milliseconds
+    // after onBeforeRequest).
+    const captured = (load.captures || []).filter(r => r.headers);
+    const operations = [];
+    for (const entry of captured) {
+      for (const req of lib.gqlRequestsIn(entry.body)) {
+        const op = lib.summarizeGqlRequest(entry, req);
+        if (lib.gqlRequestIsAboutSubject(req, subject)) {
+          // A busy gate (a concurrent navigation holds the host's
+          // readers/writer gate) is transient: the same bounded backoff the
+          // other replay flows carry, then whatever error remains is recorded
+          // on the operation — a diagnostic reports it, never hides it.
+          let out;
+          for (let attempt = 0; ; attempt++) {
+            try {
+              out = await this.replayGql(entry, req);
+            } catch (error) {
+              out = { error: (error && error.message) || String(error) };
+            }
+            if (!out || out.error !== 'busy') break;
+            const wait = attempt < 3 ? 400 : 1000;
+            if (attempt >= 3 && (attempt - 3 + 1) * 1000 > 12000) break;
+            await new Promise((resolve) => setTimeout(resolve, wait));
+          }
+          op.replayed = true;
+          op.response = (!out || out.error) ? { error: (out && out.error) || 'Amazon gql query failed' } : lib.redactGqlSample(out.parsed);
+        }
+        operations.push(op);
+      }
+    }
+    console.log('[Amazon] gql capture ' + rawUrl + ': ' + operations.length + ' operation(s), ' + operations.filter(o => o.replayed).length + ' replayed');
+    return {
+      capturedAt: new Date().toISOString(),
+      page: rawUrl,
+      finalUrl: load.finalUrl,
+      subject,
+      operations
+    };
   },
 
   // ── The session generation (the sign-out the plugin cannot see) ───────────

@@ -49,8 +49,9 @@
 // ── The concurrency contract (the half the primitive signatures don't show) ──
 //
 // One hidden view serves every flow of the session, and it is shared state
-// with sharp edges. The rules below are what amazon-web-player.js learned
-// the hard way; they are the contract, not an implementation detail:
+// with sharp edges. The rules below are what the deleted amazon-web-player.js
+// (the pre-#1356 Amazon host module) learned the hard way; they are the
+// contract, not an implementation detail:
 //
 //   1. LOADS SERIALIZE. webRequest has a single listener slot per method per
 //      session, so two page loads must never interleave captures. Every load
@@ -112,7 +113,7 @@
 //
 // Error convention: load() throws an Error with .reason ('load-failed',
 // 'not-ready', 'invalid') for host failures — the same shape
-// amazon-web-player's flows throw today; pageFetch() never throws — every
+// the old amazon-web-player's flows threw; pageFetch() never throws — every
 // failure is { error } so a caller can treat it as a recoverable miss.
 
 'use strict';
@@ -345,8 +346,8 @@ function createWebSessionHost(config = {}) {
   function electron() { return require('electron'); }
 
   const host = {
-    // View/session state. Directly parallel to amazon-web-player's fields of
-    // the same names; see the concurrency contract above.
+    // View/session state. Directly parallel to the old amazon-web-player's
+    // fields of the same names; see the concurrency contract above.
     _host: null,          // the app window hosting the hidden view
     _view: null,          // the hidden view (search/import view)
     _authWindow: null,    // the visible sign-in window
@@ -597,8 +598,8 @@ function createWebSessionHost(config = {}) {
       // while the drain is in progress must be refused, or a stream of
       // parallel pageFetches (which the architecture deliberately allows
       // off-chain) starves the navigation forever (the "sync flag flip
-      // first, then drain" rule amazon-music-logic's old createReplayGate
-      // taught, now the host's own gate).
+      // first, then drain" rule the deleted amazon-music-logic.js's old
+      // createReplayGate taught, now the host's own gate).
       this._navigating = true;
       while (this._replayReaders > 0) {
         await sleep(50);
@@ -750,7 +751,8 @@ function createWebSessionHost(config = {}) {
           // values must not ride it. No consumer loses anything — the
           // page-world replay attaches cookies itself (credentials:
           // 'include'), and main-process replay consumers drop cookie headers
-          // anyway (amazon-music-logic's GQL_REPLAY_DROP_HEADERS). Case-
+          // anyway (the plugin _lib's amazonGqlFetchHeaders, the old
+          // amazon-music-logic.js's copy's heir). Case-
           // insensitive, Cookie and Cookie2 both: Chromium sends 'Cookie',
           // the stored copy must not smuggle a value in any spelling.
           const headers = {};
@@ -869,7 +871,7 @@ function createWebSessionHost(config = {}) {
         const view = this.ensureView();
         // The offscreen size, not the 0×0 collapse: SPAs collapse widgets to
         // max-width: 0 in a 0×0 view, and the page's own requests then never
-        // fire (amazon-web-player's layoutSearch ran per flow for exactly
+        // fire (the old amazon-web-player's layoutSearch ran per flow for exactly
         // this — a load without it captures nothing).
         this.layoutOffscreen(view);
         this.cancelPark();

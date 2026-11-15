@@ -95,7 +95,10 @@ describe('main process', () => {
       expect(main).not.toContain(`ipcMain.handle('${ch}'`);
       expect(preload).not.toContain(`'${ch}'`);
     }
-    expect(read('amazon-web-player.js')).not.toMatch(/async getPlan\(/);
+    // #1356 M11: the host-side module is deleted entirely — there is no
+    // host-side getPlan to drift back in.
+    expect(require('fs').existsSync(path.join(__dirname, '../..', 'amazon-web-player.js'))).toBe(false);
+    expect(main).not.toMatch(/async getPlan\(/);
   });
 
   test('every status read is fresh \u2014 the old Settings/panel refreshPlan is the plugin\u2019s default', () => {
@@ -114,7 +117,10 @@ describe('main process', () => {
   test('the plan-change push channel is gone \u2014 the sweep is the refresh path', () => {
     expect(main).not.toContain('amazonmusic-plan-changed');
     expect(preload).not.toContain('amazonmusic-plan-changed');
-    expect(read('amazon-web-player.js')).not.toContain('setPlanChangeListener');
+    // amazon-web-player.js is deleted (#1356 M11) — nothing host-side can
+    // re-grow a plan-change listener.
+    expect(require('fs').existsSync(path.join(__dirname, '../..', 'amazon-web-player.js'))).toBe(false);
+    expect(main).not.toContain('setPlanChangeListener');
     // The renderer re-reads the plugin\u2019s status (startup, Settings, the
     // panel, a plan refusal) and the limitTransition effect re-resolves on an
     // upgrade \u2014 pinned in tests/renderer/playback-limits.test.js.

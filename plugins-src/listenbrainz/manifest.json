@@ -24,6 +24,12 @@
     "listenbrainz.org/playlist/*",
     "*.listenbrainz.org/playlist/*"
   ],
+  "urlTypes": {
+    "playlist": [
+      "listenbrainz.org/playlist/*",
+      "*.listenbrainz.org/playlist/*"
+    ]
+  },
   "settings": {
     "requiresAuth": true,
     "authType": "token",

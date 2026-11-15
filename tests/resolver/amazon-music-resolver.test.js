@@ -42,7 +42,7 @@ function instantiate(axeContent) {
 describe('amazonmusic .axe structure', () => {
   test('manifest identifies the resolver', () => {
     expect(axe.manifest.id).toBe('amazonmusic');
-    expect(axe.manifest.version).toBe('1.19.0');
+    expect(axe.manifest.version).toBe('1.20.0');
   });
 
   test('declares streaming capabilities without auth', () => {
@@ -58,6 +58,18 @@ describe('amazonmusic .axe structure', () => {
       'music.amazon.com/user-playlists/*',
       'music.amazon.com/albums/*'
     ]);
+    // The typed patterns (#1356 M11): what getUrlType classifies a matched
+    // URL as, manifest data since the per-service arms died. "track" first —
+    // the ?trackAsin= song share link must beat the bare album pattern.
+    expect(axe.urlTypes).toEqual({
+      track: ['music.amazon.com/albums/*?trackAsin=*', 'music.amazon.com/tracks/*'],
+      album: ['music.amazon.com/albums/*'],
+      playlist: [
+        'music.amazon.com/playlists/*',
+        'music.amazon.com/my/playlists/*',
+        'music.amazon.com/user-playlists/*'
+      ]
+    });
   });
 
   test('implementation functions compile', () => {
@@ -66,7 +78,8 @@ describe('amazonmusic .axe structure', () => {
       expect(typeof new Function('return ' + src)()).toBe('function');
     }
     expect(Object.keys(axe.implementation).sort()).toEqual(
-      ['_lib', 'appVersion', 'assertPlanPlays', 'cacheSeeMorePage', 'cdmAvailable', 'cleanup', 'dmls', 'dropSessionState', 'drmAsinFromTrack', 'enqueuePageFlow', 'ensureSessionContext', 'expandRecommendationSection', 'expandRecommendationSectionParsed', 'fetchConfigJson', 'getPlan', 'getPlaybackManifest', 'getRecommendations', 'getStatus', 'handlePlayerEvent', 'homePageFlow', 'init', 'isSignedIn', 'kickCertWarm', 'lookupAlbum', 'lookupAlbumFlow', 'lookupAlbumPageFlow', 'lookupPlaylist', 'lookupPlaylistFlow', 'lookupPlaylistPageFlow', 'mintCsrfHeaders', 'mintCsrfPageFlow', 'mintSessionContext', 'musicAgent', 'musicHomePageFlow', 'pageSections', 'play', 'playlistImportPages', 'postTelemetryEvent', 'relayLicense', 'replayGql', 'requireLib', 'resolve', 'search', 'searchAlbums', 'searchArtistImage', 'seeMorePageFlow', 'sessionState', 'signIn', 'signInPromptDecision', 'signOut', 'specSearch', 'specSearchPageFlow', 'specStructuralError', 'telemetry', 'tryMusicHomeWalk', 'trySeeMoreReplay', 'trySpecReplay', 'walkMusicHomePages', 'warmCertSession', 'withPlaylistsSection'].sort()    );
+      ['_lib', 'appVersion', 'assertPlanPlays', 'cacheSeeMorePage', 'cdmAvailable', 'cleanup', 'debugCaptureGql', 'debugCapturePageFlow', 'dmls', 'dropSessionState', 'drmAsinFromTrack', 'enqueuePageFlow', 'ensureSessionContext', 'expandRecommendationSection', 'expandRecommendationSectionParsed', 'fetchConfigJson', 'getPlan', 'getPlaybackManifest', 'getRecommendations', 'getStatus', 'handlePlayerEvent', 'homePageFlow', 'init', 'isSignedIn', 'kickCertWarm', 'lookupAlbum', 'lookupAlbumFlow', 'lookupAlbumPageFlow', 'lookupPlaylist', 'lookupPlaylistFlow', 'lookupPlaylistPageFlow', 'mintCsrfHeaders', 'mintCsrfPageFlow', 'mintSessionContext', 'musicAgent', 'musicHomePageFlow', 'pageSections', 'play', 'playlistImportPages', 'postTelemetryEvent', 'relayLicense', 'replayGql', 'requireLib', 'resolve', 'search', 'searchAlbums', 'searchArtistImage', 'seeMorePageFlow', 'sessionState', 'signIn', 'signInPromptDecision', 'signOut', 'specSearch', 'specSearchPageFlow', 'specStructuralError', 'telemetry', 'tryMusicHomeWalk', 'trySeeMoreReplay', 'trySpecReplay', 'walkMusicHomePages', 'warmCertSession', 'withPlaylistsSection'].sort()
+    );
   });
 });
 
@@ -807,6 +820,11 @@ describe('playlist URL routing', () => {
   const loader = () => {
     const l = new ResolverLoader();
     l.urlPatterns = axe.urlPatterns.map(pattern => ({ pattern, resolverId: 'amazonmusic' }));
+    // The typed patterns, in the manifest's own key order — what
+    // loadResolver registers for getUrlType.
+    for (const [type, patterns] of Object.entries(axe.urlTypes)) {
+      for (const pattern of patterns) l.urlTypedPatterns.push({ pattern, type, resolverId: 'amazonmusic' });
+    }
     return l;
   };
 
@@ -821,8 +839,9 @@ describe('playlist URL routing', () => {
     expect(l.getUrlType('https://music.amazon.com/my/playlists/PP6417A00A9C99470BBC8834FF3BF6009A?ref=dm_sh'))
       .toBe('playlist');
     // /user-playlists/<hex-uuid> — the share-link shape for user-created
-    // playlists. getUrlType's '/playlists/' substring check misses it, so it
-    // has its own arm; findResolverForUrl needs its own manifest pattern too.
+    // playlists. It does NOT contain the literal '/playlists/' substring, so
+    // it has its own typed pattern in the manifest (and its own urlPattern
+    // for findResolverForUrl).
     expect(l.findResolverForUrl('https://music.amazon.com/user-playlists/e518f7064d964396a9dc211c4a705a80'))
       .toBe('amazonmusic');
     expect(l.getUrlType('https://music.amazon.com/user-playlists/e518f7064d964396a9dc211c4a705a80'))

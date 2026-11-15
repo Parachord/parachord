@@ -98,6 +98,9 @@ describe('ListenBrainz playlist links (urlLookup, lookupPlaylist)', () => {
   const loader = () => {
     const l = new ResolverLoader();
     for (const pattern of axe.urlPatterns) l.urlPatterns.push({ pattern, resolverId: 'listenbrainz' });
+    for (const [type, patterns] of Object.entries(axe.urlTypes || {})) {
+      for (const pattern of patterns) l.urlTypedPatterns.push({ pattern, type, resolverId: 'listenbrainz' });
+    }
     return l;
   };
 

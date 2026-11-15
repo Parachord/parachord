@@ -30,6 +30,23 @@
     "spotify:album:*",
     "spotify:playlist:*"
   ],
+  "urlTypes": {
+    "track": [
+      "spotify:track:*",
+      "open.spotify.com/track/*",
+      "open.spotify.com/intl-*/track/*"
+    ],
+    "album": [
+      "spotify:album:*",
+      "open.spotify.com/album/*",
+      "open.spotify.com/intl-*/album/*"
+    ],
+    "playlist": [
+      "spotify:playlist:*",
+      "open.spotify.com/playlist/*",
+      "open.spotify.com/intl-*/playlist/*"
+    ]
+  },
   "settings": {
     "requiresAuth": true,
     "authType": "oauth",

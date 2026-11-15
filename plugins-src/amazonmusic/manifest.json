@@ -2,7 +2,7 @@
   "manifest": {
     "id": "amazonmusic",
     "name": "Amazon Music",
-    "version": "1.19.0",
+    "version": "1.20.0",
     "minAppVersion": {
       "desktop": "0.9.13"
     },
@@ -33,6 +33,20 @@
     "music.amazon.com/user-playlists/*",
     "music.amazon.com/albums/*"
   ],
+  "urlTypes": {
+    "track": [
+      "music.amazon.com/albums/*?trackAsin=*",
+      "music.amazon.com/tracks/*"
+    ],
+    "album": [
+      "music.amazon.com/albums/*"
+    ],
+    "playlist": [
+      "music.amazon.com/playlists/*",
+      "music.amazon.com/my/playlists/*",
+      "music.amazon.com/user-playlists/*"
+    ]
+  },
   "requires": {
     "hostBridges": [
       "webSession"

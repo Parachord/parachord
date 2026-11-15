@@ -30,6 +30,20 @@
     "soundcloud.com/*",
     "*.soundcloud.com/*"
   ],
+  "urlTypes": {
+    "playlist": [
+      "soundcloud.com/*/sets/*",
+      "*.soundcloud.com/*/sets/*"
+    ],
+    "track": [
+      "soundcloud.com/*/*",
+      "*.soundcloud.com/*/*"
+    ],
+    "artist": [
+      "soundcloud.com/*",
+      "*.soundcloud.com/*"
+    ]
+  },
   "settings": {
     "requiresAuth": true,
     "authType": "oauth",

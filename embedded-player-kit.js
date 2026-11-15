@@ -51,9 +51,9 @@
 // own handlers it does with ours — there is no per-world session ambiguity
 // to worry about.
 //
-// Sandbox constraint (identical to amazon-music-logic.js): this file is the
-// single source of truth, but sandboxed preloads CANNOT require local
-// modules — consumers inline a literal copy into their page-world stub, and
+// Sandbox constraint: this file is the single source of truth, but sandboxed
+// preloads CANNOT require local modules — consumers inline a literal copy
+// into their page-world stub, and
 // tests/preload/embedded-player-kit.test.js +
 // tests/resolver/amazon-player-preload.test.js fail the build if the copy
 // drifts. Keep this function serialization-safe: no closure over module

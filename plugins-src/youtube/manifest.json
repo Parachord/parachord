@@ -32,6 +32,24 @@
     "www.youtube.com/playlist?list=*",
     "music.youtube.com/playlist?list=*"
   ],
+  "urlTypes": {
+    "playlist": [
+      "youtube.com/playlist?list=*",
+      "www.youtube.com/playlist?list=*",
+      "music.youtube.com/playlist?list=*",
+      "youtube.com/watch?v=*&list=*",
+      "www.youtube.com/watch?v=*&list=*",
+      "m.youtube.com/watch?v=*&list=*",
+      "music.youtube.com/watch?v=*&list=*"
+    ],
+    "track": [
+      "youtube.com/watch?v=*",
+      "www.youtube.com/watch?v=*",
+      "m.youtube.com/watch?v=*",
+      "music.youtube.com/watch?v=*",
+      "youtu.be/*"
+    ]
+  },
   "settings": {
     "requiresAuth": false,
     "authType": "none",

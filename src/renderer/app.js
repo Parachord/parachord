@@ -7378,6 +7378,16 @@ const Parachord = () => {
   // Display-name lookup for engine-side labels/toasts — id→name via the
   // registry, never === 'service' arms (capability-not-id rule).
   window.resolverLabelById = (id) => (findLoadedResolver(id)?.name) || id || 'Stream';
+  // DevTools accessor for a loaded resolver INSTANCE (its plugin methods).
+  // The plugin owns every service surface since #1356 — sign-in flows ask
+  // `window.__parachordResolver('amazonmusic').signIn()` through the loaded
+  // registry, and the plugin's diagnostic capture (debugCaptureGql) is
+  // reached the same way from the console (docs/architecture/amazon-music.md,
+  // "gql capture"). Null while the resolvers load or for an unknown id.
+  window.__parachordResolver = (id) => {
+    const loader = resolverLoaderRef.current;
+    return (loader && typeof loader.getResolver === 'function') ? (loader.getResolver(id) || null) : null;
+  };
   const isHtml5StreamResolver = (id) => !!findLoadedResolver(id)?.capabilities?.html5Stream;
   // Widevine resolvers (capabilities.widevine: Amazon Music today) play
   // encrypted adaptive streams through Shaka on the SAME shared element —

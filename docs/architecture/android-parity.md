@@ -387,7 +387,7 @@ Not at parity (Parachord/parachord-mobile#693):
 
 ### Android Parity Requirements (plugin host bridges)
 
-Desktop implemented #1355's per-platform loading rule: a plugin manifest may declare `"requires": { "hostBridges": ["webSession"] }` (a top-level `.axe` field), each host advertises what it supplies — desktop's `preload.js` sets `window.__parachordHostBridges` (today `['amazonMusic', 'webSession']`) — and the plugin loader **hides** a plugin whose required bridges are not all supplied. From #1355's text: "This fits the existing plugin-compat check (`main-process/plugin-compat.js`, ported to mobile as `PluginCompat.kt`). Mobile would implement the same rule in `shared/.../plugin/PluginCompat.kt` and the same bootstrap globals in both apps' JS runtimes."
+Desktop implemented #1355's per-platform loading rule: a plugin manifest may declare `"requires": { "hostBridges": ["webSession"] }` (a top-level `.axe` field), each host advertises what it supplies — desktop's `preload.js` sets `window.__parachordHostBridges` (today `['webSession']`) — and the plugin loader **hides** a plugin whose required bridges are not all supplied. From #1355's text: "This fits the existing plugin-compat check (`main-process/plugin-compat.js`, ported to mobile as `PluginCompat.kt`). Mobile would implement the same rule in `shared/.../plugin/PluginCompat.kt` and the same bootstrap globals in both apps' JS runtimes."
 
 Mobile must mirror three things:
 

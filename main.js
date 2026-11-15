@@ -796,7 +796,12 @@ const appleMusicPoller = {
   }
 };
 
-const amazonWebPlayer = require('./amazon-web-player');
+// Amazon Music's ONE web-session host instance (#1356 M11, the teardown:
+// amazon-web-player.js is deleted — the plugin owns every Amazon flow, the
+// host owns the machinery). The instance lives in
+// main-process/amazon-web-session.js and is registered with the bridge by
+// reference, never re-created.
+const amazonWebSession = require('./main-process/amazon-web-session');
 const { registerWidevineBridgeIpc } = require('./main-process/widevine-bridge');
 
 // Widevine playback runs in the renderer (Shaka on the shared HTMLAudioElement);
@@ -824,7 +829,7 @@ registerWidevineBridgeIpc({ ipcMain, isAllowedSender: isMainWindowTopFrameSender
 
 // The webSession IPC bridge (#1356): registered web-session hosts exposed to
 // the renderer. Amazon's session is the ONE createWebSessionHost instance
-// amazon-web-player owns at module scope (the one owner of the
+// main-process/amazon-web-session.js owns (the one owner of the
 // persist:amazon-music partition's webRequest slot) — registered here by
 // reference, never re-created. The registration is LIVE as of the
 // track-search move (#1356 M5): that layer is the bridge's first consumer
@@ -837,10 +842,11 @@ registerWidevineBridgeIpc({ ipcMain, isAllowedSender: isMainWindowTopFrameSender
 // allowed hosts, caps the caller budgets, and shuttles the sign-in
 // tick/decide/settled protocol (channel contract in
 // docs/architecture/web-session.md, "The IPC bridge"). Every Amazon flow is
-// the plugin's since #1356 M10 — searches, catalog, playlists,
-// recommendations, the DRM pair, sign-in/out and the status read.
+// the plugin's since #1356 — searches, catalog, playlists, recommendations,
+// the DRM pair, sign-in/out, the status read and the diagnostic capture; the
+// plugin drives the session through window.electron.webSession.
 const { registerWebSession, registerWebSessionBridgeIpc } = require('./main-process/ipc/web-session-bridge');
-registerWebSession('amazon-music', amazonWebPlayer.webSession);
+registerWebSession('amazon-music', amazonWebSession);
 registerWebSessionBridgeIpc({
   ipcMain,
   isAllowedSender: isMainWindowTopFrameSender,
@@ -1064,7 +1070,7 @@ function createWindow() {
     if (template) Menu.buildFromTemplate(template).popup({ window: mainWindow });
   });
 
-  amazonWebPlayer.setHost(mainWindow);
+  amazonWebSession.setHost(mainWindow);
   mainWindow.loadFile('index.html');
 
   let windowShown = false;
@@ -1187,7 +1193,7 @@ function createWindow() {
   });
 
   mainWindow.on('closed', () => {
-    amazonWebPlayer.setHost(null);
+    amazonWebSession.setHost(null);
     mainWindow = null;
   });
 
@@ -3851,35 +3857,6 @@ ipcMain.handle('applemusic-polling-status', async () => {
     expectedSongId: appleMusicPoller.expectedSongId
   };
 });
-
-// Amazon Music IPC — the diagnostic capture only since #1356 M10: sign-in,
-// sign-out and getStatus are the plugin's (the session surfaces moved into
-// plugins-src/amazonmusic/ with the status capability; the renderer drives
-// them through the loaded resolver and the webSession bridge).
-// Errors come back as { success: false, error|reason } rather than thrown IPC
-// rejections so the resolver can branch (not-ready must not be cached as noMatch).
-// Diagnostic, no UI: record the gql an Amazon Music album or search page
-// fires (amazonWebPlayer.debugCaptureGql) into a JSON file in userData, for
-// building the plugin's album search. Run from DevTools:
-//   await window.electron.amazonMusic.debugCaptureGql('https://music.amazon.com/albums/<ASIN>')
-// Header values and credential-like fields never reach the file; review it
-// before sharing anyway (docs/architecture/amazon-music.md, "gql capture").
-ipcMain.handle('amazonmusic-debug-capture-gql', async (event, { url } = {}) => {
-  try {
-    const capture = await amazonWebPlayer.debugCaptureGql(url);
-    const file = path.join(app.getPath('userData'), `amazon-gql-capture-${capture.subject.kind}-${Date.now()}.json`);
-    await fs.promises.writeFile(file, JSON.stringify(capture, null, 2));
-    console.log(`[Amazon] gql capture written to ${file}`);
-    return {
-      success: true,
-      file,
-      operations: capture.operations.map(o => `${o.operationName || '(unnamed)'}${o.replayed ? ' (replayed)' : ''}`)
-    };
-  } catch (error) {
-    return { success: false, reason: error && error.reason, error: error && error.message };
-  }
-});
-
 
 // Bandcamp plays in a hidden embed the main process drives: main-process/ipc/bandcamp-embed.js.
 const { registerBandcampEmbedIpc } = require('./main-process/ipc/bandcamp-embed');
