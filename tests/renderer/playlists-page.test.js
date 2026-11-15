@@ -96,3 +96,11 @@ test("the artist page's On Tour header is a sticky bar, in sentence case", () =>
   expect(artist).not.toMatch(/Upcoming Concert\$\{/);
   expect(artist).not.toContain('text-teal-500');
 });
+
+test('sort and period menus are sentence case, with en dashes in A–Z', () => {
+  for (const label of ['Newest First', 'Oldest First', 'Recently Added', 'Artist Name', 'Last 7 Days', 'All Time', 'Created by Me']) {
+    expect([label, app.includes(`label: '${label}'`)]).toEqual([label, false]);
+  }
+  expect(app).not.toMatch(/label: '(A-Z|Z-A)'/);
+  expect(app).toContain("{ value: 'date-desc', label: 'Newest first' }");
+});

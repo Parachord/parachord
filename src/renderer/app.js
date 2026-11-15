@@ -5388,38 +5388,38 @@ const Parachord = () => {
   const getCollectionSortOptions = (tab) => {
     if (tab === 'artists') {
       return [
-        { value: 'alpha-asc', label: 'A-Z' },
-        { value: 'alpha-desc', label: 'Z-A' },
-        { value: 'tracks', label: 'Most Tracks' },
-        { value: 'recent', label: 'Recently Added' }
+        { value: 'alpha-asc', label: 'A–Z' },
+        { value: 'alpha-desc', label: 'Z–A' },
+        { value: 'tracks', label: 'Most tracks' },
+        { value: 'recent', label: 'Recently added' }
       ];
     }
     if (tab === 'albums') {
       return [
-        { value: 'alpha-asc', label: 'A-Z' },
-        { value: 'alpha-desc', label: 'Z-A' },
-        { value: 'artist', label: 'Artist Name' },
-        { value: 'year-new', label: 'Year (Newest)' },
-        { value: 'year-old', label: 'Year (Oldest)' },
-        { value: 'recent', label: 'Recently Added' }
+        { value: 'alpha-asc', label: 'A–Z' },
+        { value: 'alpha-desc', label: 'Z–A' },
+        { value: 'artist', label: 'Artist name' },
+        { value: 'year-new', label: 'Year (newest)' },
+        { value: 'year-old', label: 'Year (oldest)' },
+        { value: 'recent', label: 'Recently added' }
       ];
     }
     if (tab === 'friends') {
       return [
-        { value: 'alpha-asc', label: 'A-Z' },
-        { value: 'alpha-desc', label: 'Z-A' },
-        { value: 'recent', label: 'Recently Added' },
-        { value: 'active', label: 'Recently Active' },
-        { value: 'on-air', label: 'On Air Now' }
+        { value: 'alpha-asc', label: 'A–Z' },
+        { value: 'alpha-desc', label: 'Z–A' },
+        { value: 'recent', label: 'Recently added' },
+        { value: 'active', label: 'Recently active' },
+        { value: 'on-air', label: 'On air now' }
       ];
     }
     return [
-      { value: 'title-asc', label: 'Title A-Z' },
-      { value: 'title-desc', label: 'Title Z-A' },
-      { value: 'artist', label: 'Artist Name' },
-      { value: 'album', label: 'Album Name' },
+      { value: 'title-asc', label: 'Title A–Z' },
+      { value: 'title-desc', label: 'Title Z–A' },
+      { value: 'artist', label: 'Artist name' },
+      { value: 'album', label: 'Album name' },
       { value: 'duration', label: 'Duration' },
-      { value: 'recent', label: 'Recently Added' }
+      { value: 'recent', label: 'Recently added' }
     ];
   };
 
@@ -5463,11 +5463,11 @@ const Parachord = () => {
   }, [playlistsSort]);
 
   const playlistsSortOptions = [
-    { value: 'added', label: 'Recently Added' },
-    { value: 'created', label: 'Date Created' },
-    { value: 'modified', label: 'Recently Modified' },
-    { value: 'alpha-asc', label: 'A-Z' },
-    { value: 'alpha-desc', label: 'Z-A' }
+    { value: 'added', label: 'Recently added' },
+    { value: 'created', label: 'Date created' },
+    { value: 'modified', label: 'Recently modified' },
+    { value: 'alpha-asc', label: 'A–Z' },
+    { value: 'alpha-desc', label: 'Z–A' }
   ];
 
   // Filter artist releases by search query
@@ -5492,10 +5492,10 @@ const Parachord = () => {
   // Memoized (constant): a prop of the memo'd ArtistPage, and an array
   // literal rebuilt on every render would change that prop every time.
   const artistSortOptions = useMemo(() => [
-    { value: 'date-desc', label: 'Newest First' },
-    { value: 'date-asc', label: 'Oldest First' },
-    { value: 'alpha-asc', label: 'A-Z' },
-    { value: 'alpha-desc', label: 'Z-A' }
+    { value: 'date-desc', label: 'Newest first' },
+    { value: 'date-asc', label: 'Oldest first' },
+    { value: 'alpha-asc', label: 'A–Z' },
+    { value: 'alpha-desc', label: 'Z–A' }
   ], []);
 
   // The release-type filter belongs to one artist. Its default ('all', the
@@ -5556,8 +5556,8 @@ const Parachord = () => {
   }, [criticsSort]);
 
   const criticsSortOptions = [
-    { value: 'recent', label: 'Date Added' },
-    { value: 'artist', label: 'Artist Name' }
+    { value: 'recent', label: 'Date added' },
+    { value: 'artist', label: 'Artist name' }
   ];
 
   // Filter and sort history
@@ -5583,8 +5583,8 @@ const Parachord = () => {
 
   const historySortOptions = [
     { value: 'recent', label: 'Recent' },
-    { value: 'artist', label: 'Artist A-Z' },
-    { value: 'title', label: 'Title A-Z' }
+    { value: 'artist', label: 'Artist A–Z' },
+    { value: 'title', label: 'Title A–Z' }
   ];
 
   // Sort friend history
@@ -29947,12 +29947,12 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
   // Period options for top charts
   const historyPeriodOptions = [
-    { value: '7day', label: 'Last 7 Days' },
-    { value: '1month', label: 'Last Month' },
-    { value: '3month', label: 'Last 3 Months' },
-    { value: '6month', label: 'Last 6 Months' },
-    { value: '12month', label: 'Last Year' },
-    { value: 'overall', label: 'All Time' }
+    { value: '7day', label: 'Last 7 days' },
+    { value: '1month', label: 'Last month' },
+    { value: '3month', label: 'Last 3 months' },
+    { value: '6month', label: 'Last 6 months' },
+    { value: '12month', label: 'Last year' },
+    { value: 'overall', label: 'All time' }
   ];
 
   // Load Top Tracks from Last.fm
@@ -51439,7 +51439,7 @@ React.createElement('div', {
                   },
                     [
                       { key: 'all', label: 'All' },
-                      { key: 'owned', label: 'Created by Me' },
+                      { key: 'owned', label: 'Created by me' },
                       { key: 'following', label: 'Following' }
                     ].map(filter =>
                       React.createElement('button', {
