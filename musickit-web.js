@@ -17,6 +17,35 @@ class MusicKitWeb {
     // us from looping if the SDK truly won't honor injection, while
     // still letting a fresh post-reauth token try once.
     this._lastLateInjectionToken = null;
+    // MusicKit's stream bitrate, from the global Quality setting
+    // (setQuality); applied after every configure.
+    this.preferredBitrate = null;
+  }
+
+  /**
+   * Follow the global Quality setting (Settings › General › Playback
+   * Quality, store key playback_quality). MusicKit JS has two bitrates, so
+   * 'saver' picks the standard one and every other level the high one.
+   * The settings stay global; this is where Apple Music reads them.
+   */
+  setQuality(quality) {
+    this.preferredBitrate = musicKitBitrateForQuality(quality);
+    this._applyBitrate();
+  }
+
+  _applyBitrate() {
+    const mk = this.musicKit;
+    if (!mk || this.preferredBitrate == null) return;
+    try {
+      if (!('bitrate' in mk)) {
+        console.log('[MusicKitWeb] This MusicKit has no bitrate setting; playing at its default');
+        return;
+      }
+      mk.bitrate = this.preferredBitrate;
+      console.log(`[MusicKitWeb] Bitrate set to ${this.preferredBitrate} (reads back ${mk.bitrate})`);
+    } catch (e) {
+      console.warn('[MusicKitWeb] Could not set the bitrate:', e && e.message);
+    }
   }
 
   /**
@@ -114,6 +143,7 @@ class MusicKitWeb {
       this.musicKit = await window.MusicKit.configure(musicKitConfig);
 
       this.isConfigured = true;
+      this._applyBitrate();
       const initialAuth = this.musicKit.isAuthorized;
       console.log(`[MusicKitWeb] Configured. isAuthorized at configure: ${initialAuth}`);
 
@@ -866,6 +896,15 @@ function getMusicKitWeb() {
   return musicKitWebInstance;
 }
 
+// The MusicKit bitrate for a Quality setting: MusicKit.PlaybackBitrate's
+// STANDARD (64 kbps) for Data saver, HIGH (256 kbps) for the rest.
+function musicKitBitrateForQuality(quality) {
+  const rates = (typeof window !== 'undefined' && window.MusicKit && window.MusicKit.PlaybackBitrate) || {};
+  const high = typeof rates.HIGH === 'number' ? rates.HIGH : 256;
+  const standard = typeof rates.STANDARD === 'number' ? rates.STANDARD : 64;
+  return quality === 'saver' ? standard : high;
+}
+
 // Export for use in app
 if (typeof window !== 'undefined') {
   window.MusicKitWeb = MusicKitWeb;
@@ -874,5 +913,5 @@ if (typeof window !== 'undefined') {
 
 // For module systems
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { MusicKitWeb, getMusicKitWeb };
+  module.exports = { MusicKitWeb, getMusicKitWeb, musicKitBitrateForQuality };
 }

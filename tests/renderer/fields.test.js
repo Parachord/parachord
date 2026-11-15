@@ -87,8 +87,8 @@ test('no user-facing "resolver" in labels, toasts, dialogs or native menus', () 
   expect(hits).toEqual([]);
 });
 
-test('Playback Quality says it is Amazon Music only today, and on/off is a switch', () => {
+test('Playback Quality names the services it applies to, and on/off is a switch', () => {
   const app = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/app.js'), 'utf8');
-  expect(app).toContain("'Only Amazon Music uses these settings right now. Other services choose their own quality.'");
+  expect(app).toContain("'Amazon Music and Apple Music use these settings right now. Other services choose their own quality.'");
   expect(app).toMatch(/label: 'Adjust to your connection'[^\n]*\n\s*React\.createElement\(Switch, \{ checked: playbackAbr === true/);
 });

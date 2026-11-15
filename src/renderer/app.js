@@ -6175,10 +6175,12 @@ const Parachord = () => {
   // deps-array uses of the hook's returned names).
   const [cacheLoaded, setCacheLoaded] = useState(false);
 
-  // Global stream playback quality (Widevine/DASH resolvers: Amazon Music
-  // today). Store keys playback_quality/playback_abr/playback_spatial drive
-  // lib/widevine-player's variant selection; changes apply live to the
-  // current stream. playback_spatial is the Dolby-Atmos opt-in (E-AC-3 JOC).
+  // Global stream playback quality. Store keys playback_quality/playback_abr/
+  // playback_spatial drive lib/widevine-player's variant selection (Amazon
+  // Music today); changes apply live to the current stream. playback_spatial
+  // is the Dolby-Atmos opt-in (E-AC-3 JOC). playback_quality also sets Apple
+  // Music's MusicKit bitrate (musickit-web.js setQuality): Data saver is its
+  // standard bitrate, every other level its high one.
   const [playbackQuality, setPlaybackQuality] = useState('max');
   const [playbackAbr, setPlaybackAbr] = useState(true);
   const [playbackSpatial, setPlaybackSpatial] = useState(false);
@@ -6217,6 +6219,8 @@ const Parachord = () => {
       if (window.__parachordWidevine && typeof window.__parachordWidevine.applyQuality === 'function') {
         window.__parachordWidevine.applyQuality();
       }
+      const musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
+      if (musicKitWeb && typeof musicKitWeb.setQuality === 'function') musicKitWeb.setQuality(playbackQuality);
     })();
   }, [playbackQuality, playbackAbr, playbackSpatial, cacheLoaded, qualityLoaded]);
 
@@ -44232,14 +44236,14 @@ useEffect(() => {
                     }, 'Playback Quality'),
                     React.createElement('p', {
                       style: { fontSize: '12px', color: 'var(--text-secondary)' }
-                    }, 'Only Amazon Music uses these settings right now. Other services choose their own quality.')
+                    }, 'Amazon Music and Apple Music use these settings right now. Other services choose their own quality.')
                   ),
-                  React.createElement(SettingRow, { label: 'Amazon Music quality', hint: 'Changes the playing track right away.' },
+                  React.createElement(SettingRow, { label: 'Quality', hint: 'Apple Music has two levels: Data saver plays its lower bitrate, every other level its best. When Apple Music plays through macOS, the Music app’s quality setting applies instead.' },
 React.createElement(Select, { value: playbackQuality, onChange: (v) => setPlaybackQuality(v), options: [{ value: 'max', label: 'Max (best available, lossless where playable)' }, { value: 'high', label: 'High (up to 500 kbps)' }, { value: 'standard', label: 'Standard (up to 200 kbps)' }, { value: 'saver', label: 'Data saver (up to 100 kbps)' }] })),
-                  React.createElement(SettingRow, { label: 'Adjust to your connection', hint: 'Lowers quality when your connection is slow, never above the level you chose.' },
+                  React.createElement(SettingRow, { label: 'Adjust to your connection', hint: 'Amazon Music only. Lowers quality when your connection is slow, never above the level you chose.' },
                     React.createElement(Switch, { checked: playbackAbr === true, onToggle: () => setPlaybackAbr(playbackAbr !== true) })
                   ),
-                  React.createElement(SettingRow, { label: 'Prefer Dolby Atmos mixes', hint: 'Plays the 5.1 core of a track’s Atmos mix when there is one. This isn’t full Atmos: it’s mixed down on stereo output, and it plays instead of lossless FLAC when quality is Max.' },
+                  React.createElement(SettingRow, { label: 'Prefer Dolby Atmos mixes', hint: 'Amazon Music only. Plays the 5.1 core of a track’s Atmos mix when there is one. This isn’t full Atmos: it’s mixed down on stereo output, and it plays instead of lossless FLAC when quality is Max.' },
                     React.createElement(Switch, { checked: playbackSpatial === true, onToggle: () => setPlaybackSpatial(playbackSpatial !== true) })
                   )
                 ),
