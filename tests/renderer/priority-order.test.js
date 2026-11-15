@@ -3,6 +3,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+global.React = require('react');
 const { movePriority, priorityMoves } = require('../../src/renderer/lib/priority-order');
 
 const numbered = new Set(['spotify', 'bandcamp', 'soundcloud', 'localfiles']);
@@ -53,4 +54,15 @@ describe('wiring', () => {
     expect(pv).toMatch(/'aria-label': `Move \$\{track\.title\} up`[\s\S]{0,200}moveInEditedPlaylist\(index, index - 1\)/);
     expect(pv).toMatch(/'aria-label': `Move \$\{track\.title\} down`[\s\S]{0,200}moveInEditedPlaylist\(index, index \+ 1\)/);
   });
+});
+
+test('a plug-in tile opens its menu from the keyboard (Shift+F10 / Menu key)', () => {
+  const sc = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/settings-cards.js'), 'utf8');
+  expect(sc).toMatch(/onKeyDown: onContextMenu \? menuKeyHandler\(onContextMenu\) : undefined/);
+  const { menuKeyHandler } = require('../../src/renderer/components/card-button');
+  const calls = [];
+  const h = menuKeyHandler((ev) => calls.push(ev.key));
+  const ev = (key, shiftKey = false) => ({ key, shiftKey, preventDefault() {} });
+  h(ev('F10', true)); h(ev('ContextMenu')); h(ev('F10')); h(ev('Enter'));
+  expect(calls).toEqual(['F10', 'ContextMenu']);
 });

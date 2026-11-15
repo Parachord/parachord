@@ -10,6 +10,7 @@ const Icons = require('./icons');
 const { Button } = require('./button');
 const { TextField, SecretField, Switch } = require('./fields');
 const { Tooltip, SERVICE_LOGOS } = require('./ui-atoms');
+const { menuKeyHandler } = require('./card-button');
 
 // ResolverCard component - Tomahawk-style colored card with centered logo
 // Four user-facing states:
@@ -82,7 +83,10 @@ const ResolverCard = React.memo(({
           ? '0 0 0 3px var(--accent-primary), 0 4px 12px rgba(0, 0, 0, 0.15)'
           : '0 2px 8px rgba(0, 0, 0, 0.1), 0 4px 16px rgba(0, 0, 0, 0.05)'
       },
-      onClick: onClick
+      onClick: onClick,
+      // Shift+F10 / the Menu key: the tile's menu (Raise / Lower Priority,
+      // Remove), as a right-click (#1386).
+      onKeyDown: onContextMenu ? menuKeyHandler(onContextMenu) : undefined
     },
       // Priority number badge (top-left) - only for enabled resolvers
       priorityNumber && React.createElement('div', {

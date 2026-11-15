@@ -27,15 +27,23 @@
 // root. Props-driven; no hooks. React must be global when it loads (as for
 // ui-atoms' React.memo).
 
-function renderCardButton({ label, current, tooltip, onActivate, onContextMenu, className, style, children, ...rest }, ref) {
-  const e = React.createElement;
-  const openMenu = (ev) => {
+// A keydown handler that opens onContextMenu on Shift+F10 or the Menu key
+// (Chromium on macOS fires no contextmenu event for them). Shared with any
+// control that has a right-click menu but isn't a CardButton (the plug-in
+// tiles).
+function menuKeyHandler(onContextMenu) {
+  return (ev) => {
     if (!onContextMenu) return;
     if (ev.key === 'ContextMenu' || (ev.shiftKey && ev.key === 'F10')) {
       ev.preventDefault();
       onContextMenu(ev);
     }
   };
+}
+
+function renderCardButton({ label, current, tooltip, onActivate, onContextMenu, className, style, children, ...rest }, ref) {
+  const e = React.createElement;
+  const openMenu = menuKeyHandler(onContextMenu);
   return e('div', Object.assign({}, rest, {
     ref,
     className: ['card-button', className].filter(Boolean).join(' '),
@@ -68,4 +76,4 @@ function renderCardButton({ label, current, tooltip, onActivate, onContextMenu, 
 const CardButton = React.forwardRef(renderCardButton);
 CardButton.displayName = 'CardButton';
 
-module.exports = { CardButton };
+module.exports = { CardButton, menuKeyHandler };
