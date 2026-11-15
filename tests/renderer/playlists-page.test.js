@@ -126,3 +126,9 @@ test('page scroll areas share one scroll edge: a shadow once content scrolls und
   }
   expect(read('src/renderer/components/artist-page.js')).not.toContain('contentScrolled');
 });
+
+test('History restored at launch waits for the Last.fm key before loading', () => {
+  expect(app).toMatch(/const \[lastfmKeyLoaded, setLastfmKeyLoaded\] = useState\(false\);/);
+  expect(app).toMatch(/lastfmApiKey\.current = lfmKey;[\s\S]{0,400}setLastfmKeyLoaded\(true\);/);
+  expect(app).toMatch(/const lastfmReady = !metaServiceConfigs\.lastfm\?\.username \|\| !!metaServiceConfigs\.lastfm\?\.apiKey \|\| lastfmKeyLoaded;\s*if \(cacheLoaded && pendingHistoryLoad\.current && hasMetaService && lastfmReady\)/);
+});

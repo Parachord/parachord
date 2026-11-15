@@ -7945,6 +7945,8 @@ const Parachord = () => {
 
   // API keys loaded from environment via IPC (fallback)
   const lastfmApiKey = useRef(null);
+  // Set once the Last.fm key lookup at launch has finished (with a key or without).
+  const [lastfmKeyLoaded, setLastfmKeyLoaded] = useState(false);
 
   // Helper to get effective Last.fm API key: user-configured > environment/fallback
   const getLastfmApiKey = () => {
@@ -8652,6 +8654,10 @@ const Parachord = () => {
         lastfmApiKey.current = lfmKey;
         console.log('🔑 Last.fm API key loaded from environment');
       }
+      // The key is a ref, so nothing re-renders when it lands: History,
+      // restored at launch, waits on this instead of loading first and
+      // reporting "API key not configured" for a key that's set.
+      setLastfmKeyLoaded(true);
 
       try {
         let resolversToLoad = builtinAxeFiles;
@@ -20371,10 +20377,13 @@ ${trackListXml}
     }
   }, [activeView, recommendations.sections, criticsPicks, charts, newReleases, concerts, generateDiscoveryHash, markDiscoverySeen]);
 
-  // Load pending history data once cache is fully loaded
+  // Load pending history data once cache is fully loaded, and (for Last.fm)
+  // once its API key has loaded: the restored tab ran before the built-in key
+  // arrived and said "Last.fm API key not configured".
   useEffect(() => {
     const hasMetaService = metaServiceConfigs.lastfm?.username || metaServiceConfigs.listenbrainz?.username;
-    if (cacheLoaded && pendingHistoryLoad.current && hasMetaService) {
+    const lastfmReady = !metaServiceConfigs.lastfm?.username || !!metaServiceConfigs.lastfm?.apiKey || lastfmKeyLoaded;
+    if (cacheLoaded && pendingHistoryLoad.current && hasMetaService && lastfmReady) {
       const tab = pendingHistoryLoad.current;
       pendingHistoryLoad.current = null; // Clear pending load
       console.log(`📦 Loading history data for restored tab: ${tab}`);
@@ -20383,7 +20392,7 @@ ${trackListXml}
       else if (tab === 'topArtists') loadTopArtists();
       else if (tab === 'recent') loadListeningHistory();
     }
-  }, [cacheLoaded, metaServiceConfigs.lastfm?.username, metaServiceConfigs.listenbrainz?.username]);
+  }, [cacheLoaded, metaServiceConfigs.lastfm?.username, metaServiceConfigs.lastfm?.apiKey, metaServiceConfigs.listenbrainz?.username, lastfmKeyLoaded]);
 
   // Load pending release/album once artist data is available
   useEffect(() => {
