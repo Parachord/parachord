@@ -488,6 +488,45 @@ function bodyMatchesTemplate(template, request, { searchText, specType } = {}) {
 // flips — safe under JS's single thread; every reader exit runs in a finally
 // so a thrown replay cannot leak the count. A reader is bounded by the
 // caller's own replay timeout, so the writer's drain wait is bounded too.
+// The search view's job queue: one job runs at a time (real page navigation
+// on the shared view, and the single webRequest listener slot per method),
+// in two lanes. A FOREGROUND job (something the user clicked and is waiting
+// on, such as opening a playlist) starts before every queued BACKGROUND job
+// (artist photos, the recommendations refresh, catalog fallbacks, the
+// session-header mint), FIFO within each lane. A running job is never
+// interrupted: a foreground job waits at most for the one in progress.
+// Before this, the queue was one FIFO promise chain, and a playlist click
+// waited behind a two-page recommendations refresh and two artist-photo
+// searches (2026-11-15). A job that throws rejects its own promise only;
+// the queue moves on.
+function createLaneQueue() {
+  const lanes = { foreground: [], background: [] };
+  let running = false;
+  const pump = () => {
+    if (running) return;
+    const job = lanes.foreground.shift() || lanes.background.shift();
+    if (!job) return;
+    running = true;
+    Promise.resolve()
+      .then(job.fn)
+      .then(job.resolve, job.reject)
+      .then(() => { running = false; pump(); });
+  };
+  return {
+    run(fn, { lane = 'background' } = {}) {
+      return new Promise((resolve, reject) => {
+        lanes[lane === 'foreground' ? 'foreground' : 'background'].push({ fn, resolve, reject });
+        pump();
+      });
+    },
+    // Jobs waiting (not counting the one running), per lane.
+    pending() {
+      return { foreground: lanes.foreground.length, background: lanes.background.length };
+    },
+    isRunning() { return running; }
+  };
+}
+
 function createReplayGate() {
   let readers = 0;
   let writing = false;
@@ -1936,6 +1975,7 @@ module.exports = {
   specBodyWithVars,
   bodyMatchesTemplate,
   createReplayGate,
+  createLaneQueue,
   amazonAlbumSearchUrl,
   amazonAlbumAsinFromUrl,
   amazonAlbumDetailRequest,

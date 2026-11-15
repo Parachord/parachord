@@ -70,6 +70,7 @@ const {
   specBodyWithVars,
   bodyMatchesTemplate,
   createReplayGate,
+  createLaneQueue,
   amazonAlbumSearchUrl,
   amazonAlbumAsinFromUrl,
   amazonAlbumDetailRequest,
@@ -260,7 +261,7 @@ const amazonWebPlayer = {
   searchView: null,
   authWindow: null,
   host: null,
-  searchChain: Promise.resolve(),
+  searchQueue: createLaneQueue(),
 
   cookieWarned: false,
   // Circuit breaker for search's structural failures — a hornet rename of the
@@ -752,7 +753,10 @@ const amazonWebPlayer = {
   // the webRequest listener slots, so they run one at a time. Every enqueued
   // job also holds searchViewBusy — the park fuse must not blank the view
   // under a flow it cannot see (a fuse has no idea what the chain is up to).
-  enqueueSearch(fn) {
+  // `lane: 'foreground'` is for a job the user is waiting on (a playlist
+  // they opened): it starts before every queued background job
+  // (createLaneQueue in amazon-music-logic.js). Everything else is background.
+  enqueueSearch(fn, { lane = 'background' } = {}) {
     const busy = async () => {
       this.searchViewBusy++;
       try {
@@ -761,9 +765,12 @@ const amazonWebPlayer = {
         this.searchViewBusy--;
       }
     };
-    const run = this.searchChain.then(busy, busy);
-    this.searchChain = run.then(() => {}, () => {});
-    return run;
+    const queue = this.searchQueue;
+    const pending = queue.pending();
+    if (lane === 'foreground' && pending.background > 0) {
+      console.log(`[Amazon] search queue: foreground job goes ahead of ${pending.background} queued background job(s)`);
+    }
+    return queue.run(busy, { lane });
   },
 
   // One-shot session-header capture for the native playback engine
@@ -1427,7 +1434,7 @@ const amazonWebPlayer = {
         detach();
         this.scheduleParkSearchView();
       }
-    });
+    }, { lane: 'foreground' });
   },
 
   // --- Recommendations (capabilities.recommendations in the plugin) --------
@@ -2165,7 +2172,7 @@ const amazonWebPlayer = {
     }
     this.authWindow = null;
     this.cookieWarned = false;
-    this.searchChain = Promise.resolve();
+    this.searchQueue = createLaneQueue();
     // The captured request templates embed the signed-out session's headers
     // and APQ hash — they must not replay into the next account. The parsed
     // recommendations caches carry the old account's content.

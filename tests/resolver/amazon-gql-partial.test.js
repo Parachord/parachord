@@ -179,8 +179,8 @@ describe('lookupPlaylist on a community playlist (HTTP 294)', () => {
   };
 
   beforeEach(() => {
-    savedChain = amazonWebPlayer.searchChain;
-    amazonWebPlayer.searchChain = Promise.resolve();
+    savedChain = amazonWebPlayer.searchQueue;
+    amazonWebPlayer.searchQueue = require('../../amazon-music-logic').createLaneQueue();
     spy('isSignedIn', async () => true);
     spy('ensureWindow', async () => win);
     spy('layoutSearch', async () => 'offscreen');
@@ -199,7 +199,7 @@ describe('lookupPlaylist on a community playlist (HTTP 294)', () => {
     while (spies.length) spies.pop().mockRestore();
     console.log.mockRestore();
     console.warn.mockRestore();
-    amazonWebPlayer.searchChain = savedChain;
+    amazonWebPlayer.searchQueue = savedChain;
   });
 
   test('imports the tracks from the partial answer', async () => {
