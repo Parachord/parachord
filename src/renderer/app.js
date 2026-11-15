@@ -11511,8 +11511,9 @@ const Parachord = () => {
     if (classified.kind === 'soundcloud-short') {
       let canonical = null;
       try {
-        const res = await window.electron.proxyFetch(rawUrl, { method: 'HEAD' });
-        canonical = res && res.finalUrl;
+        // Every hop checked: public and on SoundCloud (main-process/public-fetch.js).
+        const res = await window.electron.publicFetch(rawUrl, 'soundcloud-short');
+        canonical = res && res.success && res.ok ? res.finalUrl : null;
       } catch { /* leave canonical null → throw below */ }
       let canonHost = '';
       try { canonHost = new URL(canonical).hostname.toLowerCase(); } catch { canonHost = ''; }
@@ -11677,16 +11678,15 @@ const Parachord = () => {
           const fromProvider = await resolveProviderPlaylistUrl(params.url);
           if (fromProvider) return fromProvider;
         }
-        const resp = await fetch(params.url, {
-          redirect: 'error',
+        // No redirects and a 100 KB cap, both enforced while fetching
+        // (main-process/public-fetch.js, the protocol-tracklist profile).
+        const result = await window.electron.publicFetch(params.url, 'protocol-tracklist', {
           headers: buildProtocolFetchHeaders(params.url),
         });
-        if (!resp.ok) throw new Error(`Fetch failed: ${resp.status}`);
-        const ct = resp.headers.get('content-type') || '';
-        const body = await resp.text();
-        if (body.length > 100 * 1024) {
-          throw new Error('Tracklist response too large (max 100KB)');
-        }
+        if (!result || !result.success) throw new Error(result?.error || 'Fetch failed');
+        if (!result.ok) throw new Error(`Fetch failed: ${result.status}`);
+        const ct = result.contentType || '';
+        const body = result.text;
         return window.parseProtocolTracklist(body, ct);
       }
 
@@ -34378,17 +34378,20 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // Fetch a hosted playlist document with the public-URL guard and body cap
   // (parachord#1011). Shared by the URL import below and the 5-minute poller
   // so neither can fetch a private address or parse an unbounded body.
+  // Through the main process (main-process/public-fetch.js): each redirect
+  // hop is checked before it is requested and the body stops at the cap. A
+  // renderer fetch could only check afterwards, once the redirect to a
+  // private address had been requested and the whole body read.
   const fetchHostedPlaylistText = async (url) => {
     const problem = window.hostedPlaylistFetchProblem(url, null, 0);
     if (problem) throw new Error(problem);
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch: ${response.status} ${response.statusText}`);
-    }
-    const text = await response.text();
-    const afterProblem = window.hostedPlaylistFetchProblem(url, response.url, text.length);
+    const result = await window.electron.publicFetch(url, 'hosted-playlist');
+    if (!result || !result.success) throw new Error(result?.error || 'Failed to fetch the playlist');
+    if (!result.ok) throw new Error(`Failed to fetch: ${result.status}`);
+    // Belt and braces: the main process already enforced both.
+    const afterProblem = window.hostedPlaylistFetchProblem(url, result.finalUrl, result.text.length);
     if (afterProblem) throw new Error(afterProblem);
-    return text;
+    return result.text;
   };
 
   // background: true from the startup reload list and the 5-minute poller —

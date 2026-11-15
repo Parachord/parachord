@@ -3950,6 +3950,13 @@ registerBandcampEmbedIpc({
   fetch: (...args) => require('electron').net.fetch(...args)
 });
 
+// Fetches of a URL a user or link supplied (a hosted playlist, a
+// parachord://play tracklist, a SoundCloud short link): every redirect hop is
+// checked before it is requested, and the body is read only up to the cap.
+// main-process/public-fetch.js.
+const { registerPublicFetchIpc } = require('./main-process/ipc/public-fetch');
+registerPublicFetchIpc({ ipcMain });
+
 // Proxy fetch handler - bypasses CORS for resolvers that need to fetch external content
 ipcMain.handle('proxy-fetch', async (event, url, options = {}) => {
   console.log('=== Proxy Fetch ===');
