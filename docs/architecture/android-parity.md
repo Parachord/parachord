@@ -106,7 +106,7 @@ Clobbering the cross-provider `syncedFrom` orphans the local from its real pull 
 
 4. **Post-push clear logic filters to `relevantMirrors` excluding the source provider** (see the Kotlin snippet above).
 
-**Auto-pull (2026-11).** Desktop now pulls a changed import on its own, as Android always has (see "Auto-pull" in [sync.md](sync.md)). Two differences stay, both desktop-only and needing nothing from Android: desktop records `syncedFrom.tracksFingerprint` to tell local edits apart (the playlist record never travels between clients, so Android doesn't read or write it), and desktop keeps a conflict for the person to settle where Android uses last write wins. Android's empty-answer guard in `pullPlaylist` is mirrored in `applyPulledTracks`.
+**Auto-pull (2026-11).** Desktop now pulls a changed import on its own, as Android always has (see "Auto-pull" in [sync.md](sync.md)). Desktop records `syncedFrom.tracksFingerprint` to tell local edits apart (the playlist record never travels between clients) and keeps a conflict for the person to settle where Android uses last write wins. Android's empty-answer guard in `pullPlaylist` is mirrored in `applyPulledTracks`. Android can still forget an edit and pull over it; see "Android Parity Requirements (playlist sync links)" below.
 
 **Sync wizard / playlist-picker pre-check state**, if Android has one: seed the "checked" set from the union of saved `selectedPlaylistIds`, externalIds where any local has `syncedFrom.resolver == providerId`, and externalIds where any local has `syncedTo[providerId].externalId`. Don't seed only from the last-saved list — push-only mirrors that were never selected in the wizard will appear unchecked even though they're actively syncing.
 
@@ -352,3 +352,21 @@ Android and iOS download plugins from the same marketplace as desktop, so they h
 - An app below the floor doesn't download the update (check the catalog entry first, then the downloaded `.axe` before saving it), skips a cached copy below the floor at load, and refuses a manual install with a "needs Parachord X or later" message. The copy bundled with the app is never checked.
 
 What breaks if a client drifts: a plugin built for a newer host (desktop's native Amazon player in parachord#1158 is the first) downloads onto an app that lacks the host feature, and that plugin stops working there until the user updates the app.
+
+### Android Parity Requirements (playlist sync links)
+
+From a parity check of how each client keeps a playlist's links to its services (2026-11-15, against #1418, #1419 and #1420; ticket Parachord/parachord-mobile#693). Android keeps links in their own tables (`sync_playlist_source` for `syncedFrom`, `sync_playlist_link` for `syncedTo`).
+
+At parity:
+- The same three services sync playlists: Spotify, Apple Music, ListenBrainz.
+- A save never erases a live link (#1418): structural on Android, since no playlist save touches the link tables.
+- An import missing from the service's list keeps its link: Android acts only on a confirmed 404 (`confirmedGoneMirrors`), and a deleted Spotify playlist is only unfollowed, so it doesn't 404.
+- Duplicate collection rows (#1419) can't happen on Android (`tracks.id` is the primary key, written with `INSERT OR REPLACE`).
+- A changed import is pulled with no prompt on both.
+
+Not at parity (Parachord/parachord-mobile#693):
+- **A confirmed-gone source deletes the local playlist on Android** when it was the playlist's last source (`playlistDao.delete` in both removal passes of `SyncEngine.kt`). Desktop never deletes a local playlist because its remote went away: an import keeps the playlist and its link (`missing-sources.js`), and a deleted mirror is flagged for the person to decide (#1269).
+- **Android can forget an edit and pull over it.** An edit to a playlist whose source refuses the push (a followed Spotify playlist) keeps `locallyModified` only until `clearLocallyModifiedFlags` runs at the end of the cycle, which clears it for a playlist with no other mirrors. The next remote change then pulls over the edit. Desktop's fix for the same failure is the tracks fingerprint (`sync-engine/auto-pull.js`).
+- Conflicts: Android uses last write wins, desktop asks. A product decision; the ticket lays out both.
+- Covers: Android keeps its generated mosaic over the service's cover and takes Spotify's generated mosaic as a cover; desktop does the reverse (Parachord/parachord-mobile#676).
+
