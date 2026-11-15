@@ -78,3 +78,13 @@ test("a playlist's page: shared sync banner, fields and Delete; the breadcrumb s
   // The breadcrumb: Playlists (or Recommendations) / the playlist.
   expect(page).toContain("selectedPlaylist?.isEphemeral && selectedPlaylist.origin !== 'chat' ? 'Recommendations' : 'Playlists'");
 });
+
+test('the artist page: shared Play and Tickets buttons, plugin colours, no clickable headings', () => {
+  const artist = read('src/renderer/components/artist-page.js');
+  expect(artist).not.toMatch(/#E91E63|#10c9b4|#9333ea/);
+  expect(artist).toMatch(/isCompactHeader \? 'Play' : 'Play top tracks'/);
+  expect(artist).toContain("style: { backgroundColor: PAGE_COLORS.concerts.fill }");
+  expect(artist).toContain("const serviceColor = (id) => (resolvers || []).find(r => r.id === id)?.color");
+  expect(artist).not.toMatch(/React\.createElement\('h1', \{\s*className: '[^']*cursor-pointer/);
+  expect(artist).not.toContain("fontSize: '10px'");
+});

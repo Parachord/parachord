@@ -23,6 +23,8 @@ const { sellerColor, sellerTextColor, sellerBadgeBg, sellerShortName, sellerName
 const { Tooltip } = require('./ui-atoms');
 const { CardButton } = require('./card-button');
 const Icons = require('./icons');
+const { Button, buttonClassName } = require('./button');
+const { PAGE_COLORS } = require('../lib/page-colors');
 const { EmptyState, ErrorState } = require('./states');
 const { SortMenu } = require('./sort-menu');
 const { Menu } = require('./menu');
@@ -315,29 +317,14 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                 }).flat().filter(Boolean);
               })()
             ),
-            // Play Top Tracks button - responsive sizing
-            React.createElement('button', {
-              onClick: async () => {
-                if (!currentArtist) return;
-                setTrackLoading(true);
-                const tracks = await getArtistTopTracks(currentArtist.name);
-                if (tracks.length > 0) {
-                  const context = { type: 'artist', name: currentArtist.name };
-                  const [firstTrack, ...remainingTracks] = tracks;
-                  const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
-                  setQueueWithContext(remainingTracks, context, true);
-                  handlePlay(taggedFirstTrack);
-                } else {
-                  setTrackLoading(false);
-                  showToast(`No top tracks found for ${currentArtist.name}`, 'error');
-                }
-              },
-              className: `mt-6 rounded-full font-medium text-white no-drag transition-all hover:scale-105 ${isCompactHeader ? 'px-4 py-1.5 text-sm' : 'px-6 py-2'}`,
-              style: {
-                backgroundColor: '#E91E63',
-                boxShadow: '0 4px 15px rgba(233, 30, 99, 0.4)'
-              }
-            }, isCompactHeader ? 'Play' : 'Play Top Tracks')
+            // Play top tracks: the shared primary Button (it was a one-off
+            // pink pill with a glow).
+            React.createElement(Button, {
+              variant: 'primary',
+              size: isCompactHeader ? 'sm' : 'md',
+              onClick: () => currentArtist && playArtistTopTracks(currentArtist),
+              className: 'mt-6'
+            }, React.createElement(Icons.Play, { size: 16 }), isCompactHeader ? 'Play' : 'Play top tracks')
           ),
           // COLLAPSED STATE - Inline layout
           !loadingRelease && currentArtist && isHeaderCollapsed && React.createElement('div', {
@@ -352,8 +339,10 @@ const ArtistPage = React.memo(function ArtistPage(props) {
               className: 'hero-bar-title flex items-center gap-2 mr-6',
               style: { maxWidth: '40%' }
             },
-              React.createElement('h1', {
-                className: 'text-2xl font-light text-white cursor-pointer hover:text-purple-300 transition-colors no-drag',
+              // A button (keyboard-reachable), not a clickable heading: the
+              // expanded hero holds the page's h1.
+              React.createElement('button', { type: 'button',
+                className: 'text-left text-2xl font-light text-white cursor-pointer hover:text-white/80 transition-colors no-drag',
                 style: {
                   textShadow: '0 2px 10px rgba(0,0,0,0.5)',
                   letterSpacing: '0.2em',
@@ -362,7 +351,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                 },
                 onClick: () => setIsHeaderCollapsed(false),
                 onContextMenu: copyParachordLink,
-                title: 'Click to expand'
+                'data-tooltip': 'Show the full header'
               }, currentArtist.name),
               // Star button to add/remove artist from collection
               (() => {
@@ -459,29 +448,13 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                 }).flat().filter(Boolean);
               })()
             ),
-            // Right side: Play Top Tracks button - responsive sizing
-            React.createElement('button', {
-              onClick: async () => {
-                if (!currentArtist) return;
-                setTrackLoading(true);
-                const tracks = await getArtistTopTracks(currentArtist.name);
-                if (tracks.length > 0) {
-                  const context = { type: 'artist', name: currentArtist.name };
-                  const [firstTrack, ...remainingTracks] = tracks;
-                  const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
-                  setQueueWithContext(remainingTracks, context, true);
-                  handlePlay(taggedFirstTrack);
-                } else {
-                  setTrackLoading(false);
-                  showToast(`No top tracks found for ${currentArtist.name}`, 'error');
-                }
-              },
-              className: `ml-auto rounded-full font-medium text-white no-drag transition-all hover:scale-105 ${isCompactHeader ? 'px-3 py-1.5 text-xs' : 'px-5 py-2 text-sm'}`,
-              style: {
-                backgroundColor: '#E91E63',
-                boxShadow: '0 4px 15px rgba(233, 30, 99, 0.4)'
-              }
-            }, isCompactHeader ? 'Play' : 'Play Top Tracks')
+            // Right side: Play top tracks (the shared primary Button).
+            React.createElement(Button, {
+              variant: 'primary',
+              size: 'sm',
+              onClick: () => currentArtist && playArtistTopTracks(currentArtist),
+              className: 'ml-auto'
+            }, React.createElement(Icons.Play, { size: 14 }), isCompactHeader ? 'Play' : 'Play top tracks')
           )
         ),
         
@@ -518,8 +491,10 @@ const ArtistPage = React.memo(function ArtistPage(props) {
             className: 'hero-bar absolute inset-0 flex items-center px-6 z-10'
           },
             // Left side: Artist name
-            React.createElement('h1', {
-              className: 'text-2xl font-light mr-6 text-white cursor-pointer hover:text-purple-300 transition-colors no-drag flex-shrink-0',
+            // A button (keyboard-reachable), not a clickable heading: the
+              // expanded hero holds the page's h1.
+              React.createElement('button', { type: 'button',
+              className: 'text-left text-2xl font-light mr-6 text-white cursor-pointer hover:text-white/80 transition-colors no-drag flex-shrink-0',
               style: {
                 textShadow: '0 2px 10px rgba(0,0,0,0.5)',
                 letterSpacing: '0.2em',
@@ -535,7 +510,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                   fetchArtistData(artistName);
                 }
               },
-              title: 'Back to artist'
+              'data-tooltip': 'Back to artist'
             }, currentRelease.artist?.name || currentArtist?.name),
             // Center: Navigation tabs
             React.createElement('div', {
@@ -1205,7 +1180,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                   artistExtendedInfo.foundedDate && React.createElement('div', null,
                     React.createElement('div', {
                       style: {
-                        fontSize: '10px',
+                        fontSize: '11px',
                         fontWeight: '600',
                         color: 'var(--text-tertiary)',
                         textTransform: 'uppercase',
@@ -1230,7 +1205,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                   artistExtendedInfo.foundedIn && React.createElement('div', null,
                     React.createElement('div', {
                       style: {
-                        fontSize: '10px',
+                        fontSize: '11px',
                         fontWeight: '600',
                         color: 'var(--text-tertiary)',
                         textTransform: 'uppercase',
@@ -1252,7 +1227,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                   artistExtendedInfo.type === 'Group' && React.createElement('div', null,
                     React.createElement('div', {
                       style: {
-                        fontSize: '10px',
+                        fontSize: '11px',
                         fontWeight: '600',
                         color: 'var(--text-tertiary)',
                         textTransform: 'uppercase',
@@ -1274,7 +1249,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                   artistExtendedInfo.urls.officialHomepage && React.createElement('div', null,
                     React.createElement('div', {
                       style: {
-                        fontSize: '10px',
+                        fontSize: '11px',
                         fontWeight: '600',
                         color: 'var(--text-tertiary)',
                         textTransform: 'uppercase',
@@ -1289,16 +1264,14 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                       style: {
                         fontSize: '12px',
                         fontWeight: '500',
-                        color: '#9333ea',
                         display: 'block',
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap',
                         textDecoration: 'none'
                       },
-                      'data-tooltip': artistExtendedInfo.urls.officialHomepage,
-                      onMouseEnter: (e) => e.currentTarget.style.color = '#7e22ce',
-                      onMouseLeave: (e) => e.currentTarget.style.color = '#9333ea'
+                      className: 'text-accent hover:underline',
+                      'data-tooltip': artistExtendedInfo.urls.officialHomepage
                     }, new URL(artistExtendedInfo.urls.officialHomepage).hostname.replace(/^www\./, ''))
                   ),
 
@@ -1306,7 +1279,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                   (artistExtendedInfo.urls.twitter || artistExtendedInfo.urls.instagram || artistExtendedInfo.urls.facebook || artistExtendedInfo.urls.youtube) && React.createElement('div', { style: { paddingTop: '4px' } },
                     React.createElement('div', {
                       style: {
-                        fontSize: '10px',
+                        fontSize: '11px',
                         fontWeight: '600',
                         color: 'var(--text-tertiary)',
                         textTransform: 'uppercase',
@@ -1324,15 +1297,12 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                           width: '28px',
                           height: '28px',
                           borderRadius: '6px',
-                          backgroundColor: 'var(--placeholder-bg-light)',
                           display: 'flex',
                           alignItems: 'center',
-                          justifyContent: 'center',
-                          transition: 'background-color 150ms ease'
+                          justifyContent: 'center'
                         },
                         'aria-label': 'Twitter/X', 'data-tooltip': 'Twitter/X',
-                        onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'var(--placeholder-bg)',
-                        onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'var(--placeholder-bg-light)'
+                        className: 'social-link'
                       },
                         React.createElement('svg', { style: { width: '14px', height: '14px', color: 'var(--nav-inactive)' }, viewBox: '0 0 24 24', fill: 'currentColor' },
                           React.createElement('path', { d: 'M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z' })
@@ -1347,15 +1317,12 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                           width: '28px',
                           height: '28px',
                           borderRadius: '6px',
-                          backgroundColor: 'var(--placeholder-bg-light)',
                           display: 'flex',
                           alignItems: 'center',
-                          justifyContent: 'center',
-                          transition: 'background-color 150ms ease'
+                          justifyContent: 'center'
                         },
                         'aria-label': 'Instagram', 'data-tooltip': 'Instagram',
-                        onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'var(--placeholder-bg)',
-                        onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'var(--placeholder-bg-light)'
+                        className: 'social-link'
                       },
                         React.createElement('svg', { style: { width: '14px', height: '14px', color: 'var(--nav-inactive)' }, viewBox: '0 0 24 24', fill: 'currentColor' },
                           React.createElement('path', { d: 'M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z' })
@@ -1370,15 +1337,12 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                           width: '28px',
                           height: '28px',
                           borderRadius: '6px',
-                          backgroundColor: 'var(--placeholder-bg-light)',
                           display: 'flex',
                           alignItems: 'center',
-                          justifyContent: 'center',
-                          transition: 'background-color 150ms ease'
+                          justifyContent: 'center'
                         },
                         'aria-label': 'Facebook', 'data-tooltip': 'Facebook',
-                        onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'var(--placeholder-bg)',
-                        onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'var(--placeholder-bg-light)'
+                        className: 'social-link'
                       },
                         React.createElement('svg', { style: { width: '14px', height: '14px', color: 'var(--nav-inactive)' }, viewBox: '0 0 24 24', fill: 'currentColor' },
                           React.createElement('path', { d: 'M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z' })
@@ -1393,15 +1357,12 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                           width: '28px',
                           height: '28px',
                           borderRadius: '6px',
-                          backgroundColor: 'var(--placeholder-bg-light)',
                           display: 'flex',
                           alignItems: 'center',
-                          justifyContent: 'center',
-                          transition: 'background-color 150ms ease'
+                          justifyContent: 'center'
                         },
                         'aria-label': 'YouTube', 'data-tooltip': 'YouTube',
-                        onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'var(--placeholder-bg)',
-                        onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'var(--placeholder-bg-light)'
+                        className: 'social-link'
                       },
                         React.createElement('svg', { style: { width: '14px', height: '14px', color: 'var(--nav-inactive)' }, viewBox: '0 0 24 24', fill: 'currentColor' },
                           React.createElement('path', { d: 'M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z' })
@@ -1415,14 +1376,14 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                     style: {
                       paddingTop: '10px',
                       marginTop: '6px',
-                      borderTop: '1px solid #f3f4f6'
+                      borderTop: '1px solid var(--border-subtle)'
                     }
                   },
                     // Current Members
                     artistExtendedInfo.members.current.length > 0 && React.createElement('div', { style: { marginBottom: '10px' } },
                       React.createElement('div', {
                         style: {
-                          fontSize: '10px',
+                          fontSize: '11px',
                           fontWeight: '600',
                           color: 'var(--text-tertiary)',
                           textTransform: 'uppercase',
@@ -1444,7 +1405,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                             member.name,
                             member.attributes.length > 0 && React.createElement('span', {
                               style: {
-                                fontSize: '10px',
+                                fontSize: '11px',
                                 fontWeight: '400',
                                 color: 'var(--text-tertiary)',
                                 marginLeft: '4px'
@@ -1458,7 +1419,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                     artistExtendedInfo.members.former.length > 0 && React.createElement('div', null,
                       React.createElement('div', {
                         style: {
-                          fontSize: '10px',
+                          fontSize: '11px',
                           fontWeight: '600',
                           color: 'var(--text-tertiary)',
                           textTransform: 'uppercase',
@@ -1480,7 +1441,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                             member.name,
                             member.attributes.length > 0 && React.createElement('span', {
                               style: {
-                                fontSize: '10px',
+                                fontSize: '11px',
                                 fontWeight: '400',
                                 color: 'var(--text-tertiary)',
                                 marginLeft: '4px'
@@ -1574,11 +1535,15 @@ const ArtistPage = React.memo(function ArtistPage(props) {
             // Show filter bar when both services have data OR when configured (MBID available for ListenBrainz, API key for Last.fm)
             const hasBothServicesConfigured = !!currentArtist?.mbid && !!getLastfmApiKey();
             // The chips shown: All, and each source with artists.
+            // Each source in its plugin's colour (resolver.color), never a copy.
+            const serviceColor = (id) => (resolvers || []).find(r => r.id === id)?.color || 'var(--accent-primary)';
+            const lbColor = serviceColor('listenbrainz');
+            const lfmColor = serviceColor('lastfm');
             const sourceChips = [
               { value: 'all', label: 'All', count: relatedArtists.length },
-              { value: 'listenbrainz', label: 'ListenBrainz', count: listenbrainzCount + bothCount, color: '#f97316' },
-              { value: 'lastfm', label: 'Last.fm', count: lastfmCount + bothCount, color: '#dc2626' },
-              { value: 'both', label: 'Both', count: bothCount, color: '#dc2626', gradient: 'linear-gradient(to right, #f97316, #dc2626)' }
+              { value: 'listenbrainz', label: 'ListenBrainz', count: listenbrainzCount + bothCount, color: lbColor },
+              { value: 'lastfm', label: 'Last.fm', count: lastfmCount + bothCount, color: lfmColor },
+              { value: 'both', label: 'Both', count: bothCount, color: lfmColor, gradient: `linear-gradient(to right, ${lbColor}, ${lfmColor})` }
             ].filter(({ value, count }) => value === 'all' || count > 0).map(({ value, label, count, color, gradient }) => (
               { id: value, label: loadingRelated ? label : `${label} (${count})`, color, gradient }
             ));
@@ -1787,10 +1752,9 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                               href: sources[0].ticketUrl,
                               target: '_blank',
                               rel: 'noopener noreferrer',
-                              className: 'flex-shrink-0 px-4 py-2 text-sm font-medium rounded-lg transition-colors no-drag',
-                                style: { backgroundColor: '#10c9b4', color: '#fff' },
-                                onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = '#0eb3a0'; },
-                                onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = '#10c9b4'; },
+                              // The shared primary button look, in the Concerts page's fill.
+                              className: buttonClassName({ variant: 'primary', size: 'md', className: 'flex-shrink-0' }),
+                              style: { backgroundColor: PAGE_COLORS.concerts.fill },
                               onClick: (e) => e.stopPropagation()
                             }, 'Tickets');
                           }
@@ -1801,10 +1765,8 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                             items: sources.map((src, si) => ({ key: si, label: src.label, dot: sellerColor(src.source), href: src.ticketUrl })),
                             renderTrigger: (t) => React.createElement('button', Object.assign({}, t, {
                               type: 'button',
-                              className: 'flex-shrink-0 px-4 py-2 text-sm font-medium rounded-lg transition-colors flex items-center gap-1.5',
-                              style: { backgroundColor: '#10c9b4', color: '#fff' },
-                              onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = '#0eb3a0'; },
-                              onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = '#10c9b4'; }
+                              className: buttonClassName({ variant: 'primary', size: 'md', className: 'flex-shrink-0' }),
+                              style: { backgroundColor: PAGE_COLORS.concerts.fill }
                             }),
                               'Tickets',
                               React.createElement(Icons.ChevronDown, { className: `w-3 h-3 transition-transform ${t.open ? 'rotate-180' : ''}`, strokeWidth: 2.5 })

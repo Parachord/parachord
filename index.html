@@ -725,6 +725,10 @@
        .tooltip-container; the tip is portalled to <body> as .tooltip-panel and
        placed by placeTooltip, so no overflow:hidden parent clips it. */
 
+    /* The artist page bio's social links: hover in CSS, not JS. */
+    .social-link { background-color: var(--placeholder-bg-light); transition: background-color 150ms ease; }
+    .social-link:hover, .social-link:focus-visible { background-color: var(--placeholder-bg); }
+
     /* Card grids (#1389): as many columns as the CONTENT area holds, never
        a column count from the window width (md:/lg:/xl: measure the
        window; at the 1000px minimum window the content is 744px). 180px
