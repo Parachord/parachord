@@ -87,6 +87,11 @@ const APP_ART_ZOOM = 'scale(1.05)';
 // narrower, so the buttons may shrink in proportion and stay round instead
 // of clipping; at the app's usual widths they are its exact sizes.
 const SHRINK = { flexShrink: 1, minWidth: 0, height: 'auto', aspectRatio: '1' };
+// The icons shrink with their buttons, in the app's proportions (a 20px icon
+// in a 40px side button, 22px in the 48px play button, nudged right 2px to
+// look centred), so a smaller circle never holds a full-size triangle.
+const SIDE_ICON = { width: '50%', height: '50%' };
+const PLAY_ICON = { width: '46%', height: '46%', marginLeft: '4%' };
 
 function SideButton({ label, onClick, path }) {
   return e('button', {
@@ -96,7 +101,7 @@ function SideButton({ label, onClick, path }) {
     style: Object.assign({ backgroundColor: APP_SIDE_BG, color: APP_SIDE_FG, border: 'none', cursor: 'pointer', padding: 0 }, SHRINK),
     onMouseEnter: (ev) => { ev.currentTarget.style.backgroundColor = APP_SIDE_BG_HOVER; },
     onMouseLeave: (ev) => { ev.currentTarget.style.backgroundColor = APP_SIDE_BG; },
-  }, e('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2, 'aria-hidden': 'true' },
+  }, e('svg', { style: SIDE_ICON, fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2, 'aria-hidden': 'true' },
     e('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: path })));
 }
 
@@ -115,7 +120,7 @@ function ArtOverlay({ shown, title, onClick, onPlay, onQueue, onAddToPlaylist })
       onClick: (ev) => { ev.stopPropagation(); onPlay(ev); },
       className: APP_PLAY_BTN,
       style: Object.assign({ border: 'none', cursor: 'pointer', padding: 0 }, SHRINK),
-    }, e(Play, { size: 22, className: 'text-gray-800 ml-0.5' })),
+    }, e(Play, { size: 22, className: 'text-gray-800', style: PLAY_ICON })),
     onQueue && e(SideButton, { label: `Add ${title} to the queue`, onClick: onQueue, path: 'M4 6h16M4 12h16M4 18h7' }));
 }
 
@@ -692,6 +697,8 @@ function AskShuffleupagus({ initialPrompt, chatAvailable, onAsk, onSetup }) {
           style: { border: 'none', cursor: 'pointer', backgroundColor: PLAY_FILL, color: ON_FILL },
         }, 'Set up Shuffleupagus')));
   }
+  // The example reads as a suggestion (tertiary text) until it's edited.
+  const isExample = !touched.current && !!value && value === (initialPrompt || '');
   const submit = (ev) => {
     ev.preventDefault();
     const text = value.trim().slice(0, PROMPT_CAP);
@@ -709,7 +716,7 @@ function AskShuffleupagus({ initialPrompt, chatAvailable, onAsk, onSetup }) {
         id: 'home-ask-prompt', type: 'text', maxLength: PROMPT_CAP, value,
         onChange: (ev) => { touched.current = true; setValue(ev.target.value); },
         style: {
-          flex: '1 1 360px', minWidth: 0, font: 'inherit', fontSize: '15px', color: 'var(--text-primary)',
+          flex: '1 1 360px', minWidth: 0, font: 'inherit', fontSize: '15px', color: isExample ? 'var(--text-tertiary)' : 'var(--text-primary)',
           backgroundColor: 'var(--bg-primary)', border: '1px solid var(--border-default)', borderRadius: '12px',
           padding: '12px 14px', minHeight: '48px', boxSizing: 'border-box',
         },
@@ -722,7 +729,7 @@ function AskShuffleupagus({ initialPrompt, chatAvailable, onAsk, onSetup }) {
         },
       }, 'Ask')),
     e('div', { style: { fontSize: '12px', color: 'var(--text-secondary)' } },
-      "An example built from what you've been playing. Edit it, or ask for anything."));
+      'An example built from what you’ve been playing. Edit it, or ask for anything.'));
 }
 
 module.exports = {
