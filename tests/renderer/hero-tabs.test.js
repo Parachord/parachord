@@ -29,3 +29,9 @@ test('every hero tab row uses HeroTabs or tab roles', () => {
   expect(artist.match(/role: 'tablist',/g)).toHaveLength(2);
   expect(app).toContain("'aria-current': settingsTab === 'plugins' ? 'page' : undefined,");
 });
+
+test('the selected tab stands out: semibold and underlined, not only brighter', () => {
+  const src = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/components/hero-tabs.js'), 'utf8');
+  expect(src).toContain("? 'text-white font-semibold underline decoration-2 underline-offset-[6px]'");
+  expect(src).toContain(": 'text-white/80 font-medium hover:text-white'");
+});

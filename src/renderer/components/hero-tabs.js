@@ -9,7 +9,9 @@
 //     only the selected tab is in the Tab order (roving tabindex)
 //   - ArrowLeft/Right move and select, Home/End jump
 //   - separators are aria-hidden
-//   - inactive tabs are white at 80%, with the hero's text shadow
+//   - inactive tabs are white at 80%, with the hero's text shadow; the
+//     selected tab is white, semibold and underlined (white vs 80% white
+//     alone was too close to tell which tab was on)
 //
 // Props: items (any array), isSelected(item), onSelect(item), renderLabel(item),
 // label (aria-label), compact (the collapsed hero's smaller row).
@@ -49,9 +51,11 @@ function HeroTabs({ items, isSelected, onSelect, renderLabel, label, compact = f
         onKeyDown: (ev) => onKeyDown(ev, i),
         className: [
           compact ? 'px-1.5 py-0.5 text-xs' : 'px-2 py-1 text-sm',
-          'font-medium uppercase tracking-wider transition-colors no-drag rounded',
+          'uppercase tracking-wider transition-colors no-drag rounded',
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80',
-          i === selectedIndex ? 'text-white' : 'text-white/80 hover:text-white',
+          i === selectedIndex
+            ? 'text-white font-semibold underline decoration-2 underline-offset-[6px]'
+            : 'text-white/80 font-medium hover:text-white',
         ].join(' '),
       }, renderLabel(item)),
     ]).flat().filter(Boolean));
