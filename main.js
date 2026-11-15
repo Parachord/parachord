@@ -4903,10 +4903,13 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
     }
   }
 
-  // Add Copy-link options for tracks, releases, artists, and collection albums.
-  // Playlists are deliberately excluded — Achordion has no playlist entity
-  // surface yet, so we hide the menu item rather than show one that errors.
-  if (data.type === 'track' || data.type === 'release' || data.type === 'artist' || data.type === 'collection-album') {
+  // Copy Link and View on Achordion for tracks, releases, artists, collection
+  // albums and playlists. A playlist is on Achordion when it's on ListenBrainz
+  // (the renderer sends its listenbrainzMbid); a saved one that isn't gets
+  // Copy Link alone, which offers to sync it. An unsaved one from another
+  // service (a recommendation) has no link to copy.
+  const playlistLinkable = data.type === 'playlist' && (!!data.listenbrainzMbid || !data.isEphemeral);
+  if (data.type === 'track' || data.type === 'release' || data.type === 'artist' || data.type === 'collection-album' || playlistLinkable) {
     menuItems.push({ type: 'separator' });
 
     if (data.type === 'track') {
@@ -4976,6 +4979,7 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
         // The renderer looks the playlist's ListenBrainz link up by id
         // (parachord#1084); this summary carries no sync fields.
         playlistId: isPlaylist ? (data.playlistId || null) : undefined,
+        listenbrainzMbid: isPlaylist ? (data.listenbrainzMbid || null) : undefined,
         title: data.name || data.title || data.album?.title,
         artist: collectionArtist,
         creator: data.creator || null,
@@ -4999,9 +5003,8 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
           });
         }
       });
-      // Playlists: Achordion has no entity surface yet (issue #775), so the
-      // View-on-Achordion item only makes sense for albums.
-      if (!isPlaylist) {
+      // A playlist is on Achordion only when it's on ListenBrainz.
+      if (!isPlaylist || data.listenbrainzMbid) {
         menuItems.push({
           label: 'View on Achordion',
           click: () => {
@@ -5101,6 +5104,14 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
         }
       });
     }
+    // Every ListenBrainz user has an Achordion profile.
+    if (data.friend?.service === 'listenbrainz' && data.friend.username) {
+      menuItems.push({ type: 'separator' });
+      menuItems.push({
+        label: 'View on Achordion',
+        click: () => safeSendToRenderer('track-context-menu-action', { action: 'view-on-achordion-user', username: data.friend.username })
+      });
+    }
   }
 
   // Friend's now-playing track context menu
@@ -5142,6 +5153,41 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
         });
       }
     });
+    // The same link items as any other track.
+    menuItems.push({ type: 'separator' });
+    menuItems.push({
+      label: 'Copy Link',
+      click: () => {
+        safeSendToRenderer('track-context-menu-action', { action: 'publish-smart-link', track: data.track });
+      }
+    });
+    menuItems.push({
+      label: 'View on Achordion',
+      click: () => {
+        safeSendToRenderer('track-context-menu-action', { action: 'view-on-achordion-track', track: data.track });
+      }
+    });
+  }
+
+  // A Listener (Recommendations: someone like you, not a friend yet): open
+  // their profile, follow them, and, for a ListenBrainz user, their
+  // Achordion profile (every ListenBrainz user has one).
+  if (data.type === 'listener' && data.listener) {
+    menuItems.push({
+      label: 'View History',
+      click: () => safeSendToRenderer('track-context-menu-action', { action: 'open-listener', listener: data.listener })
+    });
+    menuItems.push({
+      label: 'Follow',
+      click: () => safeSendToRenderer('track-context-menu-action', { action: 'follow-listener', listener: data.listener })
+    });
+    if (data.listener.service === 'listenbrainz') {
+      menuItems.push({ type: 'separator' });
+      menuItems.push({
+        label: 'View on Achordion',
+        click: () => safeSendToRenderer('track-context-menu-action', { action: 'view-on-achordion-user', username: data.listener.username })
+      });
+    }
   }
 
   const menu = Menu.buildFromTemplate(menuItems);

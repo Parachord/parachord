@@ -1262,7 +1262,9 @@ const { pickTrackMatch } = require('../../sync-providers/track-match');
 const { stampPlaylist } = require('../../playlist-freshness');
 const { checkSpinoffAvailable, lastfmJsonFetcher } = require('./lib/spinoff-pool');
 const { discogsRefIds, normalizeDiscogsProfile, REF_PATH: DISCOGS_REF_PATH, MAX_REF_LOOKUPS: DISCOGS_MAX_REF_LOOKUPS } = require('./lib/discogs-markup');
-const { playlistShareTarget, notSyncedSharePrompt } = require('./lib/playlist-share');
+const { playlistShareTarget, notSyncedSharePrompt, playlistListenbrainzMbid, lbMbidOf } = require('./lib/playlist-share');
+// A ListenBrainz user's Achordion profile (every ListenBrainz user has one).
+const achordionUserUrl = (username) => `https://achordion.xyz/user/${encodeURIComponent(username)}`;
 const { emptyRecommendationsMessage } = require('./lib/recommendations-empty');
 const {
   blockedItemPick, normalizeRecommendationSections, buildRecommendationPage, buildRecommendationViews, flattenRecommendationItems, homeRecommendationAlbums,
@@ -5963,6 +5965,7 @@ const Parachord = () => {
   const getResolverConfigRef = useRef(null);
   // Friend function refs (for use in early useEffects before functions are defined)
   const navigateToFriendRef = useRef(null);
+  const followListenerRef = useRef(null);
   const loadPlaylistRef = useRef(null);
   const pinFriendRef = useRef(null);
   const unpinFriendRef = useRef(null);
@@ -6181,9 +6184,18 @@ const Parachord = () => {
   useEffect(() => { collectionDataRef.current = collectionData; }, [collectionData]);
   // Every native item menu goes through here, so a track, album or artist
   // already in the collection is offered "Remove", not "Add".
-  window.showItemMenu = (data) => window.electron?.contextMenu?.showTrackMenu
-    ? window.electron.contextMenu.showTrackMenu(withCollectionState(data, collectionDataRef.current))
-    : Promise.resolve();
+  // A playlist on ListenBrainz is on Achordion: its MBID (from the menu
+  // builder, else the stored playlist's sync fields) lets main.js offer View
+  // on Achordion.
+  window.showItemMenu = (data) => {
+    if (!window.electron?.contextMenu?.showTrackMenu) return Promise.resolve();
+    let out = withCollectionState(data, collectionDataRef.current);
+    if (out && out.type === 'playlist' && !out.listenbrainzMbid) {
+      const lbMbid = playlistListenbrainzMbid(out, playlistsRef.current);
+      if (lbMbid) out = { ...out, listenbrainzMbid: lbMbid };
+    }
+    return window.electron.contextMenu.showTrackMenu(out);
+  };
   useEffect(() => { collectionLoadingRef.current = collectionLoading; }, [collectionLoading]);
   useEffect(() => { pinnedFriendIdsRef.current = pinnedFriendIds; }, [pinnedFriendIds]);
   useEffect(() => { autoPinnedFriendIdsRef.current = autoPinnedFriendIds; }, [autoPinnedFriendIds]);
@@ -15200,6 +15212,17 @@ ${trackListXml}
           }
         } else if (data.action === 'view-friend-history' && data.friend) {
           if (navigateToFriendRef.current) navigateToFriendRef.current(data.friend);
+        } else if (data.action === 'view-on-achordion-user' && data.username) {
+          // Every ListenBrainz user has an Achordion profile.
+          window.electron?.shell?.openExternal?.(achordionUserUrl(data.username));
+        } else if (data.action === 'open-listener' && data.listener) {
+          const l = data.listener;
+          if (navigateToFriendRef.current) navigateToFriendRef.current({
+            id: `similar:${l.service}:${l.username}`, username: l.username, service: l.service,
+            displayName: l.username, avatarUrl: l.avatarUrl || null
+          });
+        } else if (data.action === 'follow-listener' && data.listener) {
+          if (followListenerRef.current) followListenerRef.current(data.listener);
         } else if (data.action === 'pin-friend' && data.friendId) {
           if (pinFriendRef.current) pinFriendRef.current(data.friendId);
         } else if (data.action === 'unpin-friend' && data.friendId) {
@@ -30611,6 +30634,18 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
   // Follow a person opened from Recommendations (not yet in `friends`).
   const [followingRecommended, setFollowingRecommended] = useState(false);
+  // A Listener card's Follow (its menu): add them as a friend where you are;
+  // they slide into the sidebar.
+  const followListener = async (person) => {
+    try {
+      await addFriendCore({ service: person.service, username: person.username });
+    } catch (error) {
+      console.error('Failed to follow:', error);
+      showToast(errorText(error, 'Couldn’t follow them. Try again.'), 'error');
+    }
+  };
+  followListenerRef.current = followListener;
+
   const followRecommendedFriend = async (person) => {
     if (followingRecommended) return;
     setFollowingRecommended(true);
@@ -34021,6 +34056,28 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
           runView: () => publishArtistSmartLink(artist, { openInBrowser: true })
         };
       }
+    }
+    // A ListenBrainz user's profile, and a playlist that's on ListenBrainz,
+    // are on Achordion too.
+    if (activeView === 'friendHistory' && currentFriend?.service === 'listenbrainz' && currentFriend.username) {
+      const url = achordionUserUrl(currentFriend.username);
+      achordionShare = {
+        run: () => navigator.clipboard.writeText(url).then(() => showToast('Link copied to clipboard!')),
+        runView: () => window.electron?.shell?.openExternal?.(url)
+      };
+    } else if (activeView === 'playlist-view' && selectedPlaylist && lbMbidOf(selectedPlaylist)) {
+      const collection = {
+        playlistId: selectedPlaylist.id,
+        listenbrainzMbid: lbMbidOf(selectedPlaylist),
+        title: selectedPlaylist.title,
+        creator: selectedPlaylist.creator || null,
+        type: 'playlist',
+        tracks: []
+      };
+      achordionShare = {
+        run: () => publishCollectionSmartLink(collection),
+        runView: () => publishCollectionSmartLink(collection, { openInBrowser: true })
+      };
     }
     setParachordLinkMenu({ x: e.clientX, y: e.clientY, link, achordionShare });
   };
@@ -41471,6 +41528,17 @@ useEffect(() => {
                   avatarUrl: item.avatarUrl || null
                 }),
                 onPlay: () => playListenerTopTracks(item),
+                // A friend already gets the friend menu; anyone else the
+                // Listener menu (View History, Follow, and View on Achordion
+                // for a ListenBrainz user).
+                onContextMenu: () => {
+                  const friend = friends.find(f => f.service === item.service && (f.username || '').toLowerCase() === (item.name || '').toLowerCase());
+                  if (friend) {
+                    window.showItemMenu({ type: 'friend', friend, isPinned: pinnedFriendIds.includes(friend.id), isSavedToCollection: friend.savedToCollection });
+                  } else {
+                    window.showItemMenu({ type: 'listener', listener: { service: item.service, username: item.name, avatarUrl: item.avatarUrl || null } });
+                  }
+                },
                 // The similarity score, a badge over the hexagon's foot.
                 badge: pct != null && React.createElement('span', {
                   'data-similarity-badge': 'true',

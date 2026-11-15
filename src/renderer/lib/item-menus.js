@@ -13,6 +13,8 @@
 //
 // Pure; loads under plain Node.
 
+const { lbMbidOf } = require('./playlist-share');
+
 const nameOf = (v) => (v && typeof v === 'object' ? v.name || null : v || null);
 const yearOf = (v) => {
   if (typeof v === 'number') return v;
@@ -72,6 +74,9 @@ function playlistMenu(playlist, tracks, opts = {}) {
     tracks: Array.isArray(tracks) ? tracks : [],
   };
   if (opts.isEphemeral) out.isEphemeral = true;
+  // On ListenBrainz, so on Achordion: main.js offers View on Achordion.
+  const lbMbid = lbMbidOf(p);
+  if (lbMbid) out.listenbrainzMbid = lbMbid;
   return out;
 }
 

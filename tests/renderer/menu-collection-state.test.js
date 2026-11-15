@@ -49,7 +49,7 @@ describe('menu wiring', () => {
         expect([f, calls.length]).toEqual([f, f === 'app.js' && dir === 'src/renderer' ? 1 : 0]);
       }
     }
-    expect(app).toContain('window.electron.contextMenu.showTrackMenu(withCollectionState(data, collectionDataRef.current))');
+    expect(app).toContain('let out = withCollectionState(data, collectionDataRef.current);');
   });
 
   test('albums and artists toggle between Add and Remove', () => {

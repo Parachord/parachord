@@ -1286,11 +1286,9 @@ const ReleasePage = ({
               renderTrigger: (t) => React.createElement(ShareButton, Object.assign({}, t, {
                 onClick: (ev) => { setSourceOpen(false); t.onClick(ev); },
               })),
-              items: [{
-                key: 'copy-link',
-                label: 'Copy link',
-                icon: React.createElement(Icons.Link, { size: 16 }),
-                onSelect: () => {
+              items: (() => {
+                // What Copy link and View on Achordion both send.
+                const albumLink = () => {
                   // Harvest any available MBID. release.id is typically the
                   // release-group MBID for MB-derived discography; for Spotify
                   // / Apple Music fallback paths it's prefixed (e.g.
@@ -1304,7 +1302,7 @@ const ReleasePage = ({
                     || release.id
                     || release.tracks?.[0]?.releaseMbid
                     || null;
-                  const collectionData = {
+                  return {
                     title: release.title,
                     artist: release.artist?.name || release.artist,
                     albumArt: release.albumArt,
@@ -1317,9 +1315,19 @@ const ReleasePage = ({
                       trackNumber: t.trackNumber || (i + 1)
                     }))
                   };
-                  publishCollectionSmartLink(collectionData);
-                },
-              }],
+                };
+                return [{
+                  key: 'copy-link',
+                  label: 'Copy link',
+                  icon: React.createElement(Icons.Link, { size: 16 }),
+                  onSelect: () => publishCollectionSmartLink(albumLink()),
+                }, {
+                  key: 'view-on-achordion',
+                  label: 'View on Achordion',
+                  icon: React.createElement(Icons.ExternalLink, { size: 16 }),
+                  onSelect: () => publishCollectionSmartLink(albumLink(), { openInBrowser: true }),
+                }];
+              })(),
             })
           )
         )
