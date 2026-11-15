@@ -4410,7 +4410,9 @@ const Parachord = () => {
                         playlistsChanged = true;
                         modifiedPlaylistIds.add(playlist.id);
                         createOk = true;
-                        console.log(`[Sync] Created playlist "${playlist.title}" on ${providerId}: ${result.externalId}`);
+                        console.log(result.linkedToExisting
+                          ? `[Sync] Linked playlist "${playlist.title}" to its existing ${providerId} playlist ${result.externalId} (via ${result.linkSource}); nothing created`
+                          : `[Sync] Created playlist "${playlist.title}" on ${providerId}: ${result.externalId}`);
                       }
                     } catch (err) {
                       console.warn(`[Sync] Failed to create playlist "${playlist.title}" on ${providerId}:`, err.message);
