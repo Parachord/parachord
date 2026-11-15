@@ -7229,7 +7229,6 @@ const Parachord = () => {
           triggerQueueAnimation();
         }
       } else {
-        showToast(`Added ${countOf(tracks.length, 'track')} from "${album.title}" to queue`);
         setCurrentQueue(prev => [...prev, ...taggedTracks]);
         triggerQueueAnimation();
       }
@@ -7258,7 +7257,6 @@ const Parachord = () => {
           triggerQueueAnimation();
         }
       } else {
-        showToast(`Added ${countOf(tracks.length, 'track')} from "${album.title}" to queue`);
         setCurrentQueue(prev => [...prev, ...taggedTracks]);
         triggerQueueAnimation();
       }
@@ -7293,7 +7291,6 @@ const Parachord = () => {
         triggerQueueAnimation();
       }
     } else {
-      showToast(`Added ${countOf(tracks.length, 'track')} from "${playlist.title}" to queue`);
       setCurrentQueue(prev => [...prev, ...taggedTracks]);
       triggerQueueAnimation();
     }
@@ -9316,7 +9313,7 @@ const Parachord = () => {
       setCurrentTrack(firstTrack);
     }
 
-    showToast(`Added ${countOf(tracks.length, 'track')} from "${playlistName}"`, 'success');
+    triggerQueueAnimation();
   };
 
   // Handle scraped album from browser extension (e.g., Pitchfork reviews)
@@ -9379,7 +9376,7 @@ const Parachord = () => {
         setCurrentTrack(firstTrack);
       }
 
-      showToast(`Added ${countOf(tracks.length, 'track')} from "${albumTitle}"`, 'success');
+      triggerQueueAnimation();
     } catch (error) {
       console.error('Error looking up album:', error);
       showToast(errorText(error, 'Couldn’t find that album. Try searching for it instead.'), 'error');
@@ -11983,7 +11980,6 @@ const Parachord = () => {
             if (subCommand === 'add' && params.artist && params.title) {
               const track = { artist: params.artist, title: params.title, album: params.album || null };
               addToQueue([track], { type: 'protocol', name: 'Protocol' }, { skipAutoPlay: false });
-              showToast(`Added "${params.title}" by ${params.artist} to queue`);
             } else if (subCommand === 'clear') {
               clearQueue();
               showToast('Queue cleared');
@@ -14027,7 +14023,6 @@ ${trackListXml}
       const newData = { ...prev, tracks: [...prev.tracks, newTrack] };
       // Save async (don't block state update)
       saveCollection(newData);
-      showToast(`Added ${track.title} to Collection`);
       showSidebarBadge('collection');
       return newData;
     });
@@ -14747,7 +14742,6 @@ ${trackListXml}
       const newData = { ...prev, albums: [...prev.albums, newAlbum] };
       // Save async (don't block state update)
       saveCollection(newData);
-      showToast(`Added ${album.title} to Collection`);
       showSidebarBadge('collection');
       return newData;
     });
@@ -14888,7 +14882,6 @@ ${trackListXml}
       const newData = { ...prev, artists: [...prev.artists, newArtist] };
       // Save async (don't block state update)
       saveCollection(newData);
-      showToast(`Added ${artist.name} to Collection`);
       showSidebarBadge('collection');
       return newData;
     });
@@ -14996,7 +14989,6 @@ ${trackListXml}
           const tracks = await getArtistTopTracksRef.current(name);
           if (tracks.length > 0) {
             addToQueue(tracks, { type: 'artist', name });
-            showToast(`Added ${countOf(tracks.length, 'track')} from ${name}`, 'success');
           } else {
             showToast(`No top tracks found for ${name}`, 'error');
           }
@@ -15280,10 +15272,10 @@ ${trackListXml}
       const newData = { ...prev, tracks: newTracks };
       // Save async (don't block state update)
       saveCollection(newData);
-      showToast(`Added ${addedCount} track${addedCount !== 1 ? 's' : ''} to Collection`);
+      showSidebarBadge('collection', addedCount);
       return newData;
     });
-  }, [saveCollection, showToast]);
+  }, [saveCollection, showToast, showSidebarBadge]);
 
   // Handle drop on collection sidebar
   const handleCollectionDrop = useCallback((e) => {
@@ -16970,7 +16962,6 @@ ${trackListXml}
     const context = { type: 'aiPlaylist', name: 'AI Playlist' };
     addToQueue(resultsSidebar.tracks, context);
     closeSidebarAnimated();
-    showToast(`Added ${countOf(resultsSidebar.tracks.length, 'track')} to queue`);
   };
 
   // Handle playing AI results now (replace queue)
@@ -17862,7 +17853,6 @@ ${trackListXml}
                         if (segments[0] === 'add' && params.artist && params.title) {
                           const track = { artist: params.artist, title: params.title };
                           addToQueue([track], { type: 'chat', name: 'Chat' }, { skipAutoPlay: false });
-                          showToast(`Added "${params.title}" to queue`);
                         }
                         break;
                       case 'playlist':
@@ -30720,7 +30710,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     ));
     const friend = friends.find(f => f.id === friendId);
     if (friend) {
-      showToast(`${friend.displayName} saved to collection`);
+      showSidebarBadge('collection');
     }
   };
   saveFriendToCollectionRef.current = saveFriendToCollection;
@@ -36524,7 +36514,6 @@ useEffect(() => {
     try {
       const tracks = await recommendationPlaylistTracks(item);
       addToQueue(tracks, context || { type: 'playlist', name: item.name });
-      showToast(`Added ${countOf(tracks.length, 'track')} from ${item.name}`, 'success');
     } catch (error) {
       showToast(error?.message || `Could not load ${item.name}`, 'error');
     }
@@ -39554,7 +39543,6 @@ useEffect(() => {
                               }
                               if (tracks?.length > 0) {
                                 addToQueue(tracks, { type: 'album', name: release.title, artist: release.artist });
-                                showToast(`Added ${countOf(tracks.length, 'track')} from ${release.title}`, 'success');
                               } else {
                                 showToast('Could not load album tracks', 'error');
                               }
@@ -41084,7 +41072,6 @@ useEffect(() => {
                         const albumTracks = await albumTracksFor();
                         if (albumTracks.length > 0) {
                           addToQueue(albumTracks, { type: 'album', name: item.name, artist: item.artist });
-                          showToast(`Added ${countOf(albumTracks.length, 'track')} from ${item.name}`, 'success');
                         } else {
                           showToast('Could not load album tracks', 'error');
                         }
@@ -42433,7 +42420,6 @@ useEffect(() => {
                                 const tracks = await fetchAlbumTracksByName(album.artist, album.name, album.image);
                                 if (tracks.length > 0) {
                                   addToQueue(tracks, { type: 'album', name: album.name, artist: album.artist });
-                                  showToast(`Added ${countOf(tracks.length, 'track')} from ${album.name}`, 'success');
                                 } else {
                                   showToast(`No tracks found for ${album.name}`, 'error');
                                 }
@@ -43055,7 +43041,6 @@ useEffect(() => {
                                     const tracks = await fetchAlbumTracksByName(album.artist, album.name, album.image);
                                     if (tracks.length > 0) {
                                       addToQueue(tracks, { type: 'album', name: album.name, artist: album.artist });
-                                      showToast(`Added ${countOf(tracks.length, 'track')} from ${album.name}`, 'success');
                                     } else {
                                       showToast(`No tracks found for ${album.name}`, 'error');
                                     }

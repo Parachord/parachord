@@ -1382,7 +1382,6 @@ const SearchPage = React.memo(function SearchPage(props) {
                         onClick: (e) => {
                           e.stopPropagation();
                           addToQueue([track]);
-                          showToast(`Added "${track.title}" to queue`, 'success');
                         },
                         className: 'w-7 h-7 rounded-full flex items-center justify-center transition-all hover:scale-110',
                         style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
@@ -1614,7 +1613,6 @@ const SearchPage = React.memo(function SearchPage(props) {
                           }
                           if (prefetched?.tracks?.length > 0) {
                             addToQueue(prefetched.tracks, { type: 'album', name: album.title, artist: album['artist-credit']?.[0]?.name });
-                            showToast(`Added ${countOf(prefetched.tracks.length, 'track')} from "${album.title}" to queue`, 'success');
                           } else {
                             showToast('Could not load album tracks', 'error');
                           }

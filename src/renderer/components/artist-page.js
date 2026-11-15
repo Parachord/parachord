@@ -702,7 +702,6 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                   };
                 });
                 addToQueue(tracks, { type: 'album', name: rel.title, id: rel.id });
-                showToast(`Added ${countOf(tracks.length, 'track')} to queue`, 'success');
               }
             },
             onAlbumAddToPlaylist: (rel) => {

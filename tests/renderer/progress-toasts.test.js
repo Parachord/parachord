@@ -17,3 +17,18 @@ test('no progress toast carries a severity', () => {
   }
   expect(bad).toEqual([]);
 });
+
+// Adding to the queue pulses the queue icon (addToQueue, triggerQueueAnimation)
+// and adding to the Collection puts a +N badge on its sidebar item
+// (showSidebarBadge), so a toast saying the same thing is noise.
+test('no toast repeats what the queue and Collection animations already say', () => {
+  const bad = [];
+  for (const f of files) {
+    const src = fs.readFileSync(path.join(__dirname, '../..', f), 'utf8');
+    for (const m of src.matchAll(/showToast\(`Added [^`]*`|showToast\(`[^`]*saved to collection`/g)) bad.push(`${f}: ${m[0]}`);
+  }
+  expect(bad).toEqual([]);
+  const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  const bulk = app.slice(app.indexOf('const addTracksToCollection = useCallback('), app.indexOf('const handleCollectionDrop = useCallback('));
+  expect(bulk).toContain("showSidebarBadge('collection', addedCount);");
+});

@@ -895,7 +895,6 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                         .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
                       if (albumTracks.length > 0) {
                         addToQueue(albumTracks, { type: 'album', name: albumData.title, artist: albumData.artist });
-                        showToast(`Added ${countOf(albumTracks.length, 'track')} from ${albumData.title}`, 'success');
                       }
                     },
                     onContextMenu: (e, albumData) => {
