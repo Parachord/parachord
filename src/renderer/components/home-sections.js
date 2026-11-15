@@ -15,6 +15,7 @@
 const { filterBySource } = require('../lib/home-model');
 const { ReasonBadge, ReasonMark, shuffleupagusIcon } = require('./reason-badge');
 const { Play } = require('./icons');
+const { CardButton } = require('./card-button');
 const { FilterChips } = require('./filter-chips');
 const { PAGE_COLORS } = require('../lib/page-colors');
 const { SectionHeader, PAGE_COLOR, SECTION_TITLE_STYLE: H2_STYLE, SECTION_SUB_STYLE: SUB_STYLE } = require('./section-header');
@@ -104,7 +105,9 @@ function ArtOverlay({ shown, title, onClick, onPlay, onQueue, onAddToPlaylist })
     // The click opens the card once: stop it at the overlay, or a card whose
     // art is also wrapped in an opener (PlaylistCard) opened twice.
     'data-art-actions': '', onClick: onClick && ((ev) => { ev.stopPropagation(); onClick(ev); }), className: APP_OVERLAY,
-    style: { opacity: shown ? 1 : 0, pointerEvents: shown ? 'auto' : 'none', zIndex: 1, padding: '8px', boxSizing: 'border-box' },
+    // Above CardButton's stretched button (1) while shown, so its buttons and
+    // its own open-on-click work; under the reason badge (3).
+    style: { opacity: shown ? 1 : 0, pointerEvents: shown ? 'auto' : 'none', zIndex: 2, padding: '8px', boxSizing: 'border-box' },
   },
     onAddToPlaylist && e(SideButton, { label: `Add ${title} to a playlist`, onClick: onAddToPlaylist, path: 'M12 4v16m8-8H4' }),
     onPlay && e('button', {
@@ -318,12 +321,15 @@ function AlbumCard({ album, onOpen, onPlay, onQueue, onAddToPlaylist, onContextM
     },
     onMouseLeave: () => { leave(); if (timer.current) { clearTimeout(timer.current); timer.current = null; } },
   };
-  return e('div', Object.assign({
+  // The whole card opens the album (CardButton: a stretched button under the
+  // card), the title and artist lines included.
+  return e(CardButton, Object.assign({
+    label: `Open ${title}`, onActivate: open,
     onContextMenu: (ev) => { if (onContextMenu) { ev.preventDefault(); onContextMenu(ev, album); } },
     // The app's card (HOME_CARD_BOX), with its release-card hover lift.
-    className: 'release-card', style: Object.assign({}, HOME_CARD_BOX, { display: 'flex', flexDirection: 'column', gap: `${HOME_CARD_TEXT_GAP}px`, minWidth: 0 }),
+    className: 'release-card', style: Object.assign({}, HOME_CARD_BOX, { display: 'flex', flexDirection: 'column', gap: `${HOME_CARD_TEXT_GAP}px`, minWidth: 0, cursor: 'pointer' }),
   }, reveal.props, dwell),
-    e(ArtBox, { imageUrl: album.imageUrl, item: album, onArtError, zoom: reveal.shown, style: { cursor: 'pointer', borderRadius: `${HOME_CARD_ART_RADIUS}px` } },
+    e(ArtBox, { imageUrl: album.imageUrl, item: album, onArtError, zoom: reveal.shown, style: { borderRadius: `${HOME_CARD_ART_RADIUS}px` } },
       album.homeRow === 'fresh' && releaseBadge(album.releaseType),
       e(ArtOverlay, {
         shown: reveal.shown, title, onClick: open,
@@ -333,9 +339,8 @@ function AlbumCard({ album, onOpen, onPlay, onQueue, onAddToPlaylist, onContextM
       }),
       // Why it's here (components/reason-badge.js).
       badge && e(ReasonBadge, badge)),
-    e('button', {
-      type: 'button', onClick: open, 'aria-label': `Open ${title}`,
-      style: Object.assign({ font: 'inherit', textAlign: 'left', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 500, fontSize: '13px', color: 'var(--text-primary)' }, ELLIPSIS),
+    e('div', {
+      style: Object.assign({ fontWeight: 500, fontSize: '13px', color: 'var(--text-primary)' }, ELLIPSIS),
     }, title),
     // An album names no source (only a playlist card does: a playlist is
     // the service's own). Shuffleupagus and Critical Darlings say why in the
@@ -354,12 +359,14 @@ function PlaylistCard({ playlist, badge, subtitle, onOpen, onPlay, onQueue, onAd
   if (!playlist) return null;
   const title = playlist.title;
   const open = () => onOpen && onOpen(playlist);
-  return e('div', Object.assign({
+  // The whole card opens the playlist (CardButton), the text lines included.
+  return e(CardButton, Object.assign({
+    label: `Open ${title}`, onActivate: open,
     onContextMenu: (ev) => { if (onContextMenu) { ev.preventDefault(); onContextMenu(ev, playlist); } },
     // The app's card (HOME_CARD_BOX), with its release-card hover lift.
-    className: 'release-card', style: Object.assign({}, HOME_CARD_BOX, { display: 'flex', flexDirection: 'column', gap: `${HOME_CARD_TEXT_GAP}px`, minWidth: 0 }),
+    className: 'release-card', style: Object.assign({}, HOME_CARD_BOX, { display: 'flex', flexDirection: 'column', gap: `${HOME_CARD_TEXT_GAP}px`, minWidth: 0, cursor: 'pointer' }),
   }, reveal.props),
-    e('div', { onClick: open, style: { cursor: 'pointer' } },
+    e('div', null,
       e(ArtBox, { imageUrl: playlist.imageUrl, mosaic: playlist.mosaic, item: playlist, onArtError, placeholder: 'playlist', zoom: reveal.shown, style: { borderRadius: `${HOME_CARD_ART_RADIUS}px` } },
         badge && e('span', {
           style: {
@@ -374,9 +381,8 @@ function PlaylistCard({ playlist, badge, subtitle, onOpen, onPlay, onQueue, onAd
           onPlay: () => onPlay && onPlay(playlist),
           onQueue: () => onQueue && onQueue(playlist),
         }))),
-    e('button', {
-      type: 'button', onClick: open, 'aria-label': `Open ${title}`,
-      style: Object.assign({ font: 'inherit', textAlign: 'left', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 500, fontSize: '13px', color: 'var(--text-primary)' }, ELLIPSIS),
+    e('div', {
+      style: Object.assign({ fontWeight: 500, fontSize: '13px', color: 'var(--text-primary)' }, ELLIPSIS),
     }, title),
     subtitle && e('div', { style: { fontSize: '12px', color: 'var(--text-secondary)', marginTop: '-6px' } },
       subtitleLines(subtitle).map((line, i) => e('div', { key: i, style: i === 0 ? CLAMP2 : ELLIPSIS }, line))));

@@ -61,3 +61,20 @@ test("Home's art overlay opens the card once (stops the click)", () => {
   const home = fs.readFileSync(path.join(ROOT, 'src/renderer/components/home-sections.js'), 'utf8');
   expect(home).toMatch(/onClick: onClick && \(\(ev\) => \{ ev\.stopPropagation\(\); onClick\(ev\); \}\)/);
 });
+
+describe("Home's album and playlist cards open from anywhere on the card", () => {
+  global.React = global.React || require('react');
+  const { renderToStaticMarkup } = require('react-dom/server');
+  const H = require('../../src/renderer/components/home-sections');
+  test('they are CardButtons: the stretched button carries "Open <title>", and the title is text', () => {
+    for (const [C, props] of [[H.AlbumCard, { album: { title: 'Alb', artist: 'Art' } }], [H.PlaylistCard, { playlist: { title: 'Pl' }, subtitle: 'Refreshed 2m ago' }]]) {
+      const html = renderToStaticMarkup(React.createElement(C, Object.assign({ onOpen() {} }, props)));
+      expect(html).toMatch(/class="card-button-hit no-drag" aria-label="Open (Alb|Pl)"/);
+      expect(html).not.toMatch(/<button[^>]*>(Alb|Pl)<\/button>/);
+    }
+  });
+  test("the art overlay sits above the stretched button while shown (zIndex 2), under the reason badge (3)", () => {
+    const home = fs.readFileSync(path.join(ROOT, 'src/renderer/components/home-sections.js'), 'utf8');
+    expect(home).toMatch(/pointerEvents: shown \? 'auto' : 'none', zIndex: 2,/);
+  });
+});
