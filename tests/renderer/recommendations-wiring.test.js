@@ -207,8 +207,10 @@ describe('opening a recommended playlist is responsive', () => {
     expect(prefetch).toMatch(/\}, 250\)\);/);
     expect(prefetch).toContain('clearTimeout(timer);');
     const card = app.slice(app.indexOf('const playlistCard = (item, index, section) => {'));
-    expect(card.slice(0, 800)).toContain('onMouseEnter: () => prefetchRecommendationPlaylist(item),');
-    expect(card.slice(0, 800)).toContain('onMouseLeave: () => cancelRecommendationPlaylistPrefetch(item),');
+    // The shared PlaylistCard: onHoverStart on enter (the prefetch keeps its
+    // own dwell), onHoverEnd on leave.
+    expect(card.slice(0, 1400)).toContain('onHoverStart: () => prefetchRecommendationPlaylist(item),');
+    expect(card.slice(0, 1400)).toContain('onHoverEnd: () => cancelRecommendationPlaylistPrefetch(item),');
   });
 });
 
@@ -503,10 +505,11 @@ describe('the five-section page render', () => {
     expect(card).toMatch(/playWeeklyPlaylist\(item, record\)/);
     // Titled with the playlist's full name, its source under it, as on every
     // playlist card (only the newest week is on the page).
-    expect(card).toContain("React.createElement('p', { className: 'font-medium text-ink-primary truncate text-sm transition-colors' }, item.weekly.label)");
-    expect(card).toContain("React.createElement('p', { className: 'text-xs text-ink-tertiary truncate mt-0.5' }, creator || '')");
+    // Both are the shared PlaylistCard: the title, then the subtitle.
+    expect(card).toMatch(/playlist: \{ id: record\.id, title: item\.weekly\.label \},\s*mosaic: covers \|\| null,/);
+    expect(card).toContain("subtitle: creator || '',");
     const plain = between('const playlistCard = (item, index, section) => {', '// ── Weekly playlists');
-    expect(plain).toContain("React.createElement('p', { className: 'text-xs text-ink-tertiary truncate mt-0.5' }, itemSourceName(item, section) || '')");
+    expect(plain).toContain("subtitle: itemSourceName(item, section) || '',");
     expect(view).toContain("const cardLines = sub.type === 'album' || sub.type === 'playlist' ? 2 : 1;");
     // Routed by the item's field, never by provider name.
     expect(view).toMatch(/item\.weekly \? weeklyCard\(item, index, sub\)/);

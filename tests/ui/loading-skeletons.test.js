@@ -440,3 +440,23 @@ describe('Home skeletons match the Home rows', () => {
     expect(renderToStaticMarkup(React.createElement(sk.ConcertRowSkeleton))).toContain('flex:0 0 72px;height:72px');
   });
 });
+
+describe('Recommendations card skeletons match the shared cards', () => {
+  global.React = require('react');
+  const { renderToStaticMarkup } = require('react-dom/server');
+  const { RecommendationCardSkeleton } = require('../../src/renderer/components/recommendation-skeletons');
+  const sk = require('../../src/renderer/components/home-skeletons');
+
+  test('an album or playlist row (lines 2) gets the inset card: the card box and rounded art', () => {
+    const html = renderToStaticMarkup(React.createElement(RecommendationCardSkeleton, { lines: 2 }));
+    expect(html).toContain(`padding:${sk.HOME_CARD_BOX.padding};border-radius:${sk.HOME_CARD_BOX.borderRadius}`);
+    expect(html).toContain(`gap:${sk.HOME_CARD_TEXT_GAP}px`);
+    expect(html).toContain(`border-radius:${sk.HOME_CARD_ART_RADIUS}px`);
+  });
+
+  test('an artist row (lines 1) keeps the full-bleed card', () => {
+    const html = renderToStaticMarkup(React.createElement(RecommendationCardSkeleton, { lines: 1 }));
+    expect(html).toContain('class="rounded-lg overflow-hidden"');
+    expect(html).toContain('class="p-3"');
+  });
+});

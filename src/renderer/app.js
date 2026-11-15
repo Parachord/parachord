@@ -40670,82 +40670,28 @@ useEffect(() => {
             const playlistCard = (item, index, section) => {
               const art = imageFor(item);
               const artLoaded = imageLoadedFor(item);
-              return React.createElement(CardButton, { label: item.title || item.name,
+              return React.createElement(PlaylistCard, {
                 key: item.id,
-                className: 'rounded-lg overflow-hidden cursor-pointer group release-card card-fade-up',
-                style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)', animationDelay: `${Math.min(index * 30, 300)}ms` },
-                onActivate: () => openRecommendationPlaylist(item, section),
-                onMouseEnter: () => prefetchRecommendationPlaylist(item),
-                onMouseLeave: () => cancelRecommendationPlaylistPrefetch(item),
-                // No right-click action. This used to open the playlist's
-                // service page in the web browser with no menu and no label,
-                // so a right-click (the hover had already started the lookup)
-                // looked like a failed lookup opening the browser by itself.
-                // Nothing opens a browser unless the control says it will.
-                onContextMenu: (e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                }
-              },
-                React.createElement('div', {
-                  className: 'aspect-square relative group/art',
-                  style: { background: 'var(--placeholder-bg)' }
-                },
-                  !artLoaded && React.createElement('div', {
-                    className: 'absolute inset-0 shimmer-strong animate-shimmer',
-                    style: { backgroundSize: '200% 100%', animationDelay: `${Math.min(index * 30, 300)}ms` }
-                  }),
-                  art && React.createElement('img', {
-                    src: art,
-                    alt: item.name,
-                    className: 'absolute inset-0 w-full h-full object-cover'
-                  }),
-                  React.createElement('div', {
-                    className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 card-reveal card-actions transition-opacity duration-200 flex items-center justify-center gap-3',
-                    style: { borderRadius: '6px', zIndex: 20 }
-                  },
-                    // The standard playlist hover set (the Playlists page's
-                    // cards): Add to Playlist, Play, Add to Queue. Import is the
-                    // opened playlist's SAVE (the same handleImportPlaylistFromUrl).
-                    React.createElement('button', {
-                      onClick: (e) => {
-                        e.stopPropagation();
-                        addRecommendationPlaylistToPlaylist(item);
-                      },
-                      className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
-                      style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-                      'aria-label': 'Add to playlist', 'data-tooltip': 'Add to playlist'
-                    },
-                      React.createElement(Icons.Plus, { className: 'w-5 h-5' })
-                    ),
-                    React.createElement('button', {
-                      onClick: (e) => {
-                        e.stopPropagation();
-                        playRecommendationPlaylist(item);
-                      },
-                      className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
-                      style: { border: 'none', cursor: 'pointer' },
-                      'aria-label': 'Play', 'data-tooltip': 'Play'
-                    }, React.createElement(Play, { size: 22, className: 'text-ink-primary ml-0.5' })),
-                    React.createElement('button', {
-                      onClick: (e) => {
-                        e.stopPropagation();
-                        queueRecommendationPlaylist(item);
-                      },
-                      className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
-                      style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-                      'aria-label': 'Add to queue', 'data-tooltip': 'Add to queue'
-                    },
-                      React.createElement(Icons.QueueAdd, { className: 'w-5 h-5', strokeWidth: 2 })
-                    )
-                  )
-                ),
-                React.createElement('div', { className: 'p-3' },
-                  React.createElement('p', { className: 'font-medium text-ink-primary truncate text-sm transition-colors' }, item.name),
-                  // Every playlist card names its source (the row is blended).
-                  React.createElement('p', { className: 'text-xs text-ink-tertiary truncate mt-0.5' }, itemSourceName(item, section) || '')
-                )
-              );
+                // The shared playlist card (components/playlist-card.js): the
+                // provider's image, shimmering until it loads; the source under
+                // the name (the row is blended).
+                playlist: { id: item.id, title: item.name || item.title, imageUrl: art },
+                imageLoading: !artLoaded,
+                subtitle: itemSourceName(item, section) || '',
+                animationDelay: Math.min(index * 30, 300),
+                onOpen: () => openRecommendationPlaylist(item, section),
+                // prefetchRecommendationPlaylist waits its own 250ms dwell.
+                onHoverStart: () => prefetchRecommendationPlaylist(item),
+                onHoverEnd: () => cancelRecommendationPlaylistPrefetch(item),
+                // The standard playlist hover set: Add to playlist, Play, Add to
+                // queue. Import is the opened playlist's Save.
+                onAddToPlaylist: () => addRecommendationPlaylistToPlaylist(item),
+                onPlay: () => playRecommendationPlaylist(item),
+                onQueue: () => queueRecommendationPlaylist(item)
+                // No right-click action. It used to open the playlist's service
+                // page in the web browser with no menu and no label. Nothing
+                // opens a browser unless the control says it will.
+              });
             };
 
             // ── Weekly playlists (moved from Home) ─────────────────────────
@@ -40796,11 +40742,18 @@ useEffect(() => {
                 source: item.resolverId,
                 creator
               };
-              return React.createElement(CardButton, { label: item.title || item.name,
+              return React.createElement(PlaylistCard, {
                 key: item.id,
-                className: 'rounded-lg overflow-hidden cursor-pointer group release-card card-fade-up',
-                style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)', animationDelay: `${Math.min(index * 30, 300)}ms` },
-                onActivate: () => loadPlaylist({
+                // Home's 2x2 mosaic from the weekly covers effect, shimmering
+                // until its covers land. The playlist's full name ("Weekly
+                // Exploration"), then its source (only the newest week is on
+                // the page, so the week needs no label).
+                playlist: { id: record.id, title: item.weekly.label },
+                mosaic: covers || null,
+                imageLoading: !covers,
+                subtitle: creator || '',
+                animationDelay: Math.min(index * 30, 300),
+                onOpen: () => loadPlaylist({
                   id: record.id,
                   listenbrainzId: item.weekly.id,
                   title: record.title,
@@ -40813,52 +40766,9 @@ useEffect(() => {
                   source: record.source,
                   creator: record.creator
                 }),
-                onContextMenu: (e) => {
-                  e.preventDefault();
-                  if (window.electron?.contextMenu?.showTrackMenu) {
-                    window.showItemMenu(playlistMenu(record, record.tracks, { isEphemeral: true }));
-                  }
-                }
-              },
-                React.createElement('div', { className: 'aspect-square relative group/art' },
-                  // Home's 2x2 mosaic from the weekly covers effect, shimmering
-                  // until its covers land.
-                  React.createElement('div', {
-                    className: `w-full h-full grid grid-cols-2 grid-rows-2${!covers ? ' animate-shimmer' : ''}`,
-                    style: {
-                      background: covers
-                        ? 'var(--placeholder-bg)'
-                        : 'linear-gradient(to right, var(--shimmer-from), var(--shimmer-via), var(--shimmer-to))',
-                      backgroundSize: !covers ? '200% 100%' : undefined
-                    }
-                  },
-                    ...(covers
-                      ? covers.slice(0, 4).map((url, i) => React.createElement('img', { key: i, src: url, alt: '', className: 'w-full h-full object-cover' }))
-                      : [])
-                  ),
-                  React.createElement('div', {
-                    className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 card-reveal card-actions transition-opacity duration-200 flex items-center justify-center',
-                    style: { zIndex: 20 }
-                  },
-                    React.createElement('button', {
-                      onClick: (e) => {
-                        e.stopPropagation();
-                        playWeeklyPlaylist(item, record);
-                      },
-                      className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
-                      style: { border: 'none', cursor: 'pointer' },
-                      'aria-label': 'Play', 'data-tooltip': 'Play'
-                    }, React.createElement(Play, { size: 22, className: 'text-ink-primary ml-0.5' }))
-                  )
-                ),
-                React.createElement('div', { className: 'p-3' },
-                  // The playlist's full name ("Weekly Exploration"), then its
-                  // source, like every playlist card (only the newest week is
-                  // on the page, so the week needs no label).
-                  React.createElement('p', { className: 'font-medium text-ink-primary truncate text-sm transition-colors' }, item.weekly.label),
-                  React.createElement('p', { className: 'text-xs text-ink-tertiary truncate mt-0.5' }, creator || '')
-                )
-              );
+                onPlay: () => playWeeklyPlaylist(item, record),
+                onContextMenu: () => window.showItemMenu(playlistMenu(record, record.tracks, { isEphemeral: true }))
+              });
             };
 
             const cardFor = (item, index, sub) => (

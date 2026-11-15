@@ -23,7 +23,8 @@
 //   imageLoading  true: a shimmer while the cover is looked up
 //   onOpen, onPlay, onQueue, onAddToPlaylist  (playlist) => void
 //   onContextMenu (event, playlist) => void
-//   onHoverPrefetch (playlist): after a 250ms dwell; onHoverEnd on leave
+//   onHoverPrefetch (playlist): after a 250ms dwell; onHoverEnd on leave;
+//                 onHoverStart at once (a prefetch that keeps its own dwell)
 //   dragData      an object (or a function returning one, read at drag time)
 //   role, animationDelay (ms), className, width (a row's fixed width), tooltip
 // Props-driven; hooks are qualified; loads under plain Node.
@@ -44,7 +45,7 @@ function subtitleLines(subtitle) {
 
 function PlaylistCard({
   playlist, mosaic, subtitle, titleBadge, badge, cornerBadges, imageLoading = false,
-  onOpen, onPlay, onQueue, onAddToPlaylist, onContextMenu, onHoverPrefetch, onHoverEnd,
+  onOpen, onPlay, onQueue, onAddToPlaylist, onContextMenu, onHoverPrefetch, onHoverStart, onHoverEnd,
   dragData, role, animationDelay, className, width, tooltip,
 }) {
   const reveal = useReveal();
@@ -60,6 +61,7 @@ function PlaylistCard({
   const dwell = {
     onMouseEnter: () => {
       enter();
+      if (onHoverStart) onHoverStart(playlist);
       if (onHoverPrefetch) {
         if (timer.current) clearTimeout(timer.current);
         timer.current = setTimeout(() => { timer.current = null; onHoverPrefetch(playlist); }, 250);

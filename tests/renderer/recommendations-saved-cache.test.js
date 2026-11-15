@@ -178,8 +178,10 @@ describe('recommended playlist cards', () => {
   const card = app.slice(app.indexOf('const playlistCard = (item, index, section) => {'), app.indexOf('// ── Weekly playlists (moved from Home)'));
 
   test('carry the standard playlist hover set: Add to playlist, Play, Add to queue', () => {
-    const titles = [...card.matchAll(/'data-tooltip': '([^']+)'/g)].map(m => m[1]);
-    expect(titles).toEqual(['Add to playlist', 'Play', 'Add to queue']);
+    // The shared PlaylistCard draws the overlay (Add to playlist, Play, Add
+    // to queue, in that order) from the three handlers.
+    expect(card).toMatch(/React\.createElement\(PlaylistCard, \{/);
+    expect(card).toMatch(/onAddToPlaylist: \(\) => addRecommendationPlaylistToPlaylist\(item\),\s*onPlay: \(\) => playRecommendationPlaylist\(item\),\s*onQueue: \(\) => queueRecommendationPlaylist\(item\)/);
     expect(card).toMatch(/addRecommendationPlaylistToPlaylist\(item\)/);
     expect(card).toMatch(/playRecommendationPlaylist\(item\)/);
     expect(card).toMatch(/queueRecommendationPlaylist\(item\)/);
