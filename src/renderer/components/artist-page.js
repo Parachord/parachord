@@ -1512,9 +1512,10 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                 )
               ),
               // No bio found (artistBio === false means we fetched but found nothing)
-              !loadingBio && artistBio === false && React.createElement('div', {
-                className: 'text-center py-12 text-ink-tertiary'
-              }, 'No biography available for this artist.')
+              !loadingBio && artistBio === false && React.createElement(EmptyState, {
+                title: 'No biography for this artist',
+                body: 'None of your services has one yet.'
+              })
             )
           ),
 

@@ -38312,10 +38312,7 @@ useEffect(() => {
             }
 
             if (sorted.length === 0 && playlistsSearch) {
-              return React.createElement('div', { className: 'text-center py-12 text-ink-tertiary' },
-                React.createElement(Icons.Search, { className: 'w-12 h-12 mx-auto mb-4 text-ink-faint', strokeWidth: 1.5 }),
-                React.createElement('div', { className: 'text-sm' }, 'No playlists match your search')
-              );
+              return React.createElement(EmptyState, { icon: Icons.Search, title: 'No playlists match your search', body: 'Try other words, or clear the filter.' });
             }
 
             if (sorted.length === 0) {
@@ -38829,16 +38826,11 @@ useEffect(() => {
               const filtered = filterCharts(charts);
 
               if (filtered.length === 0 && chartsSearch) {
-                return React.createElement('div', { className: 'text-center py-12 text-ink-tertiary' },
-                  React.createElement(Icons.Search, { className: 'w-12 h-12 mx-auto mb-4 text-ink-faint', strokeWidth: 1.5 }),
-                  React.createElement('div', { className: 'text-sm' }, 'No albums match your search')
-                );
+                return React.createElement(EmptyState, { icon: Icons.Search, title: 'No albums match your search', body: 'Try other words, or clear the filter.' });
               }
 
               if (filtered.length === 0) {
-                return React.createElement('div', { className: 'text-center py-12 text-ink-tertiary' },
-                  React.createElement('div', { className: 'text-sm' }, 'No chart data available')
-                );
+                return React.createElement(EmptyState, { title: 'No chart data yet', body: 'The chart didn’t load. Try again in a moment.' });
               }
 
               return React.createElement('div', { role: 'list',
@@ -38917,16 +38909,11 @@ useEffect(() => {
               const filtered = filterCharts(songsData);
 
               if (filtered.length === 0 && chartsSearch) {
-                return React.createElement('div', { className: 'text-center py-12 text-ink-tertiary' },
-                  React.createElement(Icons.Search, { className: 'w-12 h-12 mx-auto mb-4 text-ink-faint', strokeWidth: 1.5 }),
-                  React.createElement('div', { className: 'text-sm' }, 'No tracks match your search')
-                );
+                return React.createElement(EmptyState, { icon: Icons.Search, title: 'No tracks match your search', body: 'Try other words, or clear the filter.' });
               }
 
               if (filtered.length === 0) {
-                return React.createElement('div', { className: 'text-center py-12 text-ink-tertiary' },
-                  React.createElement('div', { className: 'text-sm' }, 'No chart data available')
-                );
+                return React.createElement(EmptyState, { title: 'No chart data yet', body: 'The chart didn’t load. Try again in a moment.' });
               }
 
               return React.createElement('div', { role: 'list', className: 'space-y-0' },
@@ -39349,16 +39336,11 @@ useEffect(() => {
             const sorted = sortCriticsPicks(filtered);
 
             if (sorted.length === 0 && criticsSearch) {
-              return React.createElement('div', { className: 'text-center py-12 text-ink-tertiary' },
-                React.createElement(Icons.Search, { className: 'w-12 h-12 mx-auto mb-4 text-ink-faint', strokeWidth: 1.5 }),
-                React.createElement('div', { className: 'text-sm' }, 'No albums match your search')
-              );
+              return React.createElement(EmptyState, { icon: Icons.Search, title: 'No albums match your search', body: 'Try other words, or clear the filter.' });
             }
 
             if (sorted.length === 0) {
-              return React.createElement('div', { className: 'text-center py-12 text-ink-tertiary' },
-                React.createElement('div', { className: 'text-sm' }, 'No critic picks available')
-              );
+              return React.createElement(EmptyState, { title: 'No critics’ picks yet', body: 'The picks didn’t load. Try again in a moment.' });
             }
 
             return React.createElement('div', { role: 'list',
@@ -39974,22 +39956,13 @@ useEffect(() => {
             ),
 
             // Empty state
-            !concertsLoading && concertsLoaded && !concertsError && concerts.length === 0 && React.createElement('div', {
-              className: 'flex flex-col items-center justify-center py-20 px-6'
-            },
-              React.createElement('div', {
-                className: 'w-16 h-16 rounded-full bg-teal-100 flex items-center justify-center mb-4'
-              },
-                React.createElement(Icons.Ticket, { className: 'w-8 h-8 text-teal-400' })
-              ),
-              React.createElement('h3', {
-                className: 'text-lg font-medium text-ink-primary mb-2'
-              }, 'No Upcoming Concerts Found'),
-              React.createElement('p', {
-                className: 'text-sm text-ink-tertiary text-center max-w-md'
-              }, 'Add artists to your collection or listen to more music. We\'ll check for upcoming shows from artists you love.'),
-              React.createElement(Button, { variant: 'secondary', size: 'sm', onClick: () => loadConcerts(true), className: 'mt-4' }, 'Refresh')
-            ),
+            // The shared empty state (components/states.js).
+            !concertsLoading && concertsLoaded && !concertsError && concerts.length === 0 && React.createElement(EmptyState, {
+              icon: Icons.Ticket,
+              title: 'No upcoming concerts',
+              body: 'Add artists to your Collection or listen to more music, and shows from artists you love appear here.',
+              actions: [{ label: 'Check again', variant: 'secondary', onClick: () => loadConcerts(true) }]
+            }),
 
             // Concert list
             !concertsError && concerts.length > 0 && (() => {
@@ -41168,9 +41141,9 @@ useEffect(() => {
                   const sorted = sortHistory(filtered);
 
                   if (sorted.length === 0) {
-                    return React.createElement('div', {
-                      className: 'text-center py-12 text-ink-tertiary'
-                    }, historySearch ? 'No tracks match your search.' : 'No recent tracks found.');
+                    return historySearch
+                      ? React.createElement(EmptyState, { icon: Icons.Search, title: 'No tracks match your search', body: 'Try other words, or clear the filter.' })
+                      : React.createElement(EmptyState, { title: 'No recent listens yet', body: 'What you play shows up here.' });
                   }
 
                   return React.createElement('div', { role: 'list', className: 'space-y-0' },
@@ -41224,8 +41197,9 @@ useEffect(() => {
                   ) : topTracks.tracks;
 
                   if (filtered.length === 0) {
-                    return React.createElement('div', { className: 'text-center py-12 text-ink-tertiary' },
-                      historySearch ? 'No tracks match your search.' : 'No top tracks found for this period.');
+                    return historySearch
+                      ? React.createElement(EmptyState, { icon: Icons.Search, title: 'No tracks match your search', body: 'Try other words, or clear the filter.' })
+                      : React.createElement(EmptyState, { title: 'No top tracks for this period', body: 'Pick a longer period.' });
                   }
 
                   return React.createElement('div', { role: 'list', className: 'space-y-0' },
@@ -41284,7 +41258,7 @@ useEffect(() => {
               : topArtists.error ?
                 historyErrorState(topArtists.error, () => loadTopArtists(), [{ id: 'lastfm', name: 'Last.fm' }])
               : topArtists.artists.length === 0 ?
-                React.createElement('div', { className: 'text-center py-12 text-ink-tertiary' }, 'No top artists found for this period.')
+                React.createElement(EmptyState, { title: 'No top artists for this period', body: 'Pick a longer period.' })
               :
                 // Top Artists grid - Square card design
                 React.createElement('div', { role: 'list',
@@ -41352,7 +41326,7 @@ useEffect(() => {
               : topAlbums.error ?
                 historyErrorState(topAlbums.error, () => loadTopAlbums(), [{ id: 'lastfm', name: 'Last.fm' }])
               : topAlbums.albums.length === 0 ?
-                React.createElement('div', { className: 'text-center py-12 text-ink-tertiary' }, 'No top albums found for this period.')
+                React.createElement(EmptyState, { title: 'No top albums for this period', body: 'Pick a longer period.' })
               :
                 // Top Albums grid - Cinematic Light design
                 React.createElement('div', { role: 'list',
@@ -41613,7 +41587,7 @@ useEffect(() => {
                       `${currentFriend.displayName} hides their recent listening on Last.fm. Their top tracks, albums and artists are in the other tabs.`);
                   }
                   if (sorted.length === 0) {
-                    return React.createElement('p', { className: 'text-center text-ink-tertiary py-8' }, 'No recent listens');
+                    return React.createElement(EmptyState, { title: 'No recent listens', body: 'Nothing played lately.' });
                   }
                   return React.createElement('div', { role: 'list', className: 'space-y-0' },
                     ...sorted.map((track, index) => {
@@ -41641,7 +41615,7 @@ useEffect(() => {
                 // Top tracks tab content - matching History page layout
                 !friendHistoryLoading && !friendHistoryData.errors?.topTracks && friendHistoryTab === 'topTracks' && React.createElement('div', { className: 'space-y-0' },
                   friendHistoryData.topTracks.length === 0
-                    ? React.createElement('p', { className: 'text-center text-ink-tertiary py-8' }, 'No top tracks data')
+                    ? React.createElement(EmptyState, { title: 'No top tracks for this period', body: 'Pick a longer period.' })
                     : friendHistoryData.topTracks.map((track, index) => {
 
                         return React.createElement(TrackRow, Object.assign({
@@ -41666,7 +41640,7 @@ useEffect(() => {
                   className: 'card-grid gap-4'
                 },
                   friendHistoryData.topAlbums.length === 0
-                    ? React.createElement('p', { className: 'col-span-full text-center text-ink-tertiary py-8' }, 'No top albums data')
+                    ? React.createElement('div', { className: 'col-span-full' }, React.createElement(EmptyState, { title: 'No top albums for this period', body: 'Pick a longer period.' }))
                     // The shared album card (components/album-card.js): the rank
                     // on the cover, the play count under the artist.
                     : friendHistoryData.topAlbums.map((album, index) => React.createElement(AlbumCard, Object.assign({
@@ -41697,7 +41671,7 @@ useEffect(() => {
                   className: 'card-grid gap-4'
                 },
                   friendHistoryData.topArtists.length === 0
-                    ? React.createElement('p', { className: 'col-span-full text-center text-ink-tertiary py-8' }, 'No top artists data')
+                    ? React.createElement('div', { className: 'col-span-full' }, React.createElement(EmptyState, { title: 'No top artists for this period', body: 'Pick a longer period.' }))
                     : friendHistoryData.topArtists.map((artist, index) => React.createElement(ArtistCard, {
                         key: artist.id || index,
                         artist,
@@ -47521,13 +47495,7 @@ React.createElement('div', {
             // Watch folders list
             React.createElement('div', { style: { marginBottom: '16px' } },
               watchFolders.length === 0
-                ? React.createElement('p', {
-                    style: {
-                      fontSize: '13px',
-                      color: 'var(--text-tertiary)',
-                      fontStyle: 'italic'
-                    }
-                  }, 'No watch folders configured')
+                ? React.createElement(EmptyState, { compact: true, align: 'start', title: 'No watch folders yet' })
                 : watchFolders.map(folder =>
                     React.createElement('div', {
                       key: folder.path,
@@ -50243,9 +50211,7 @@ React.createElement('div', {
 
           // No providers message
           Object.keys(resolverSyncSettings).filter(id => resolverSyncSettings[id]?.enabled).length === 0 &&
-            React.createElement('div', {
-              style: { textAlign: 'center', padding: '24px 0', color: 'var(--text-secondary)', fontSize: '14px' }
-            }, 'No sync providers enabled'),
+            React.createElement(EmptyState, { compact: true, title: 'No service syncs yet', body: 'Set up Library sync for a service and it shows here.' }),
 
           // Message about closing safely - only show when sync is in progress
           Object.values(syncStatus).some(s => s?.inProgress) &&

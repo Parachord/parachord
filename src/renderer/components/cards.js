@@ -1257,9 +1257,10 @@ const ReleasePage = ({
           })
         )
       :
-        React.createElement('div', { className: 'text-center py-12 text-gray-400' },
-          'No track information available'
-        )
+        React.createElement(EmptyState, {
+          title: 'No tracklist for this album',
+          body: 'Its tracks couldn’t be found.'
+        })
     )
   );
 };
