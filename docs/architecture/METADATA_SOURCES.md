@@ -200,7 +200,7 @@ Import library and playlists from external services, and keep playlists mirrored
 | Apple Music | `sync-providers/applemusic.js` | MusicKit user token | Library songs, albums, artists, playlists (append-only writes) |
 | ListenBrainz | `sync-providers/listenbrainz.js` | User token | Playlists only (JSPF, recording MBID per track) |
 
-**Rate Limiting:** 100ms delay between Spotify requests, respects 429 responses with retry-after header. Apple Music catalog calls go through a dedicated limiter.
+**Rate Limiting:** 100ms delay between Spotify requests. A 429 is honoured: sync waits out a `Retry-After` of up to 60 s, and a longer one opens the sync breaker (`sync-engine/spotify-breaker.js`) until it has passed instead of sleeping inside the request; the Spotify plugin sends no search until it has passed. Apple Music catalog calls go through a dedicated limiter.
 
 ---
 
