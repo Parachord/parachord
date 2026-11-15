@@ -1364,11 +1364,12 @@ module.exports = {
     }
 
     // ── The plan gate (#1220) ────────────────────────────────────────────────
-    // The host's dmls gate (amazon-dmls.js) reads the same file for playback;
-    // these copies feed the plugin's own search gate. UNLIMITED… →
-    // unlimited, PRIME → prime, anything else, missing or unreadable →
-    // unknown, which BLOCKS too (a format change on Amazon's side must show
-    // up as a message, not as plays the plan may not cover).
+    // The plugin's own DRM gate (assertPlanPlays in getPlaybackManifest)
+    // reads the same file for playback; these copies feed the plugin's own
+    // search gate. UNLIMITED… → unlimited, PRIME → prime, anything else,
+    // missing or unreadable → unknown, which BLOCKS too (a format change on
+    // Amazon's side must show up as a message, not as plays the plan may
+    // not cover).
 
     function isUnlimitedTier(tier) {
       return typeof tier === 'string' && /^UNLIMITED/i.test(tier.trim());
@@ -2430,6 +2431,10 @@ module.exports = {
         this._certSessionReady = false;
         this._telemetry = null;
         this._telemetryHealth = { last: null, dropped: 0 };
+        // The mint's benign-query source too: account A's last search is not
+        // "already in the user's history" under account B — null it so the
+        // next mint falls back to the constant.
+        this._lastSearchText = null;
       }
     }
     return state;
@@ -3302,11 +3307,12 @@ module.exports = {
   },
   play: async function (track, config) {
     // Host-owned: with capabilities.widevine the host's handlePlay drives the
-    // shared Widevine player (Shaka on the shared audio element, manifest and
-    // license bytes via window.electron.widevine from the main-process dmls
-    // provider). What used to live here — playTrack IPC, prompt-then-retry —
-    // lives in the host's widevine branch, which also keeps the
-    // not-signed-in → prompt → retry contract.
+    // shared Widevine player (Shaka on the shared audio element, the manifest
+    // and license bytes supplied by this plugin's own DRM pair —
+    // getPlaybackManifest/relayLicense over the renderer-mediated path). What
+    // used to live here — playTrack IPC, prompt-then-retry — lives in the
+    // host's widevine branch, which also keeps the not-signed-in → prompt →
+    // retry contract.
     console.log('Amazon Music: play() is host-owned (capabilities.widevine branch in handlePlay); not handled here');
     return false;
   },

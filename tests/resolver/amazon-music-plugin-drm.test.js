@@ -763,4 +763,25 @@ describe('the session-generation drop', () => {
     expect(gen1.loads).toHaveLength(1);
     expect(configFetches(gen1.fetches)).toHaveLength(1);
   });
+
+  test('the drop clears the mint\'s benign-query source too (account A\'s last search is not "already in the user\'s history" under account B)', async () => {
+    const gen0 = drmMock({ generation: 0 });
+    const resolver = instantiateAmazonPlugin(axe);
+    // The benign-query setup: a search records its own query text (the
+    // search itself fails structurally on this mock's mint-shaped captures
+    // — irrelevant here: the query is recorded before the runner).
+    await resolver.search({ title: 'Around the World', artist: 'Daft Punk' }, {}).catch(() => {});
+    await resolver.getPlaybackManifest(drmTrack(), {});
+    await flush(); // the fire-and-forget cert warm settles here, on this mock
+    expect(resolver._lastSearchText).toContain('"Around the World"');
+
+    // The sign-out bumped the generation: the next state read drops the
+    // benign-query source, and the next mint falls back to the constant.
+    const gen1 = drmMock({ generation: 1 });
+    await resolver.sessionState();
+    expect(resolver._lastSearchText).toBeNull();
+    await resolver.getPlaybackManifest(drmTrack(), {});
+    expect(gen1.loads).toHaveLength(1);
+    expect(gen1.loads[0].url).toContain('/search/the/songs');
+  });
 });
