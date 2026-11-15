@@ -10,11 +10,11 @@ All playlists live in the electron-store key `local_playlists`, read and written
 
 | Path | Entry point | Accepts | Saved to library? | Ongoing? |
 |---|---|---|---|---|
-| Import from URL | Import Playlist modal; Playlists page Import button; File menu | Spotify, Apple Music, SoundCloud sets, YouTube playlists, Amazon playlists, ListenBrainz playlists, any hosted XSPF URL | Yes | Hosted XSPF: re-fetched at startup and every 5 minutes. Provider URL imports are snapshots: manual Refresh only |
-| Drop a URL | Sidebar Playlists button; Playlists page | Same as above | Yes | Same as above: hosted XSPF yes, provider URLs are snapshots |
+| Import from URL | Import Playlist modal; Playlists page Import button; File menu | Spotify, Apple Music, SoundCloud sets, YouTube playlists, Amazon playlists, ListenBrainz playlists, any hosted XSPF URL | Yes | The person picks: kept updated (an XSPF every 5 minutes, a service link every hour) or a snapshot. Imports from before the choice: hosted XSPF kept updated, service links snapshots |
+| Drop a URL | Sidebar Playlists button; Playlists page | Same as above | Yes | Same as above: the person is asked |
 | Drop a URL on the queue or now-playing | Queue panel; playbar | Track, album or playlist URL any resolver claims | No, queue only | No |
 | XSPF file | Import modal "Load from File" | `.xspf` file | Yes | No |
-| `parachord://import` | Deep link, website bounce, embed button, local HTTP/WebSocket server | `url=` (hosted or provider) or inline `tracks=` | Yes, after a confirmation dialog | URL form yes, inline form no |
+| `parachord://import` | Deep link, website bounce, embed button, local HTTP/WebSocket server | `url=` (hosted or provider) or inline `tracks=` | Yes, after a confirmation dialog | URL form: the confirmation asks kept updated or snapshot. Inline form no |
 | `parachord://play/playlist` | Deep link | Hosted XSPF/JSPF/JSON, provider pages, Achordion playlist pages, inline tracks | No, plays only | No |
 | Browser extension | Popup, context menu, inline buttons, link intercept | Spotify, Apple Music, YouTube, Bandcamp, SoundCloud, Pitchfork pages and links | No, queue only | No |
 | Provider sync | Sync wizard; background sync | Spotify, Apple Music, ListenBrainz playlists | Yes, as `${provider}-${externalId}` | Yes: pull, push, n-way mirrors |
@@ -47,7 +47,7 @@ Resolvers that implement `lookupPlaylist`:
 | listenbrainz.axe | `listenbrainz.org/playlist/<mbid>` (with or without `www.` or a trailing slash) | Fetches the JSPF from `/1/playlist/<mbid>` and maps its tracks, with each track's recording MBID. Sends the user's token when one is set, so a private playlist of theirs loads. A failed request throws rather than answering an empty playlist. Also what Home's Daily and Weekly Jams cards play. |
 | amazonmusic.axe | `music.amazon.com/playlists/*`, `music.amazon.com/my/playlists/*`, `music.amazon.com/user-playlists/*` | Loads the playlist page in a hidden view and replays the page's own `playlistDetail` GraphQL request, following the continuation token page by page. Needs an Amazon Music sign-in, not the Widevine CDM. Rows Amazon has delisted are dropped. See [docs/architecture/amazon-music.md](../architecture/amazon-music.md). |
 
-The imported playlist gets the id `hosted-${hash(url)}`, `sourceUrl: url`, and `source` of `${resolverId}-import` or `hosted-xspf`. A hosted XSPF URL is appended to the `hosted_playlists` store list. A provider URL import is not — that list is re-imported at launch, and fetching a provider playlist page as XSPF shows "Failed to parse XSPF" (Electron's `file://` renderer does not enforce CORS, so the HTML comes back and parses to zero tracks). Re-importing an existing URL updates the playlist in place and sets `locallyModified` only when the content changed. Provider imports keep `sourceUrl` for a manual Refresh button, which re-runs `lookupPlaylist` and toasts on failure. They are not polled.
+The imported playlist gets the id `hosted-${hash(url)}`, `sourceUrl: url`, and `source` of `${resolverId}-import` or `hosted-xspf`. A hosted XSPF URL is appended to the `hosted_playlists` store list. A provider URL import is not — that list is re-imported at launch, and fetching a provider playlist page as XSPF shows "Failed to parse XSPF" (Electron's `file://` renderer does not enforce CORS, so the HTML comes back and parses to zero tracks). Re-importing an existing URL updates the playlist in place and sets `locallyModified` only when the content changed. Each new link import records the person's choice as `autoUpdate` ("Link imports: kept updated or a snapshot" in [sync.md](../architecture/sync.md)): a kept-updated service link is looked up again hourly, a snapshot never; a snapshot XSPF is not added to `hosted_playlists`. Re-importing a link already imported doesn't ask.
 
 The hosted fetch goes through `fetchHostedPlaylistText`, which applies `hostedPlaylistFetchProblem` (module scope, next to `isPublicHttpUrl`): the requested URL must be a public http(s) address, redirects are followed but the final URL must also be public, and the body is capped at 5 MB (roughly 10k tracks of XSPF). There is no track cap on this path.
 
@@ -55,7 +55,7 @@ The hosted fetch goes through `fetchHostedPlaylistText`, which applies `hostedPl
 
 Two different drops exist and they do different things.
 
-**Drop a URL to import** (`handlePlaylistDrop`). Targets: the sidebar "Playlists" button and the whole Playlists page. Accepts a resolver URL of type `playlist`, or any http(s) URL no resolver claims, which is treated as hosted XSPF. Album and track URLs are ignored here. The URL is read from `text/uri-list` or `text/plain` (`extractUrlFromDrop`). Saves to the library through the URL import above.
+**Drop a URL to import** (`handlePlaylistDrop`). Targets: the sidebar "Playlists" button and the whole Playlists page. Accepts a resolver URL of type `playlist`, or any http(s) URL no resolver claims, which is treated as hosted XSPF. Album and track URLs are ignored here. The URL is read from `text/uri-list` or `text/plain` (`extractUrlFromDrop`). Asks whether to keep the playlist updated or import a snapshot (`PlaylistUpdateDialog`; not for a link already imported), then saves to the library through the URL import above.
 
 **Drop a URL to play or queue** (`handleUrlDrop`, via `handleDrop`). Targets: the queue panel and the now-playing area. Album and playlist URLs go through `handleCollectionUrlDrop`, which uses `lookupAlbum` or `lookupPlaylist` and puts the tracks at the front of the queue, or plays them when dropped on now-playing. Nothing is saved.
 
@@ -94,7 +94,7 @@ There is no file drop. `dataTransfer.files` is never read, so dropping `.xspf`, 
 The command switch is the `switch (command)` block in the protocol handler. Public docs: [protocol-schema.md](../protocol-schema.md). The website reconstructs `parachord://` from `https://parachord.com/<verb>` links, so every form below also works as an HTTPS share link.
 
 **`parachord://import`** saves to the library and always shows a confirmation dialog first.
-- `?url=`: must pass `isPublicHttpUrl`. On confirm it calls the URL import above. A hosted XSPF keeps updating. A provider playlist URL is a snapshot (manual Refresh only).
+- `?url=`: must pass `isPublicHttpUrl`. The confirmation is `PlaylistUpdateDialog`, naming the site and asking kept updated or snapshot; on Import it calls the URL import above with that choice. A URL already imported gets a plain confirmation and refreshes.
 - `?tracks=<base64 JSON>` with optional `title` and `creator`: rejected over 100,000 encoded characters or 500 tracks. Decoded as UTF-8. Saved as `imported-${Date.now()}` with `source: 'imported-xspf'`. One-shot.
 
 **`parachord://play/playlist`** plays only and never saves. Input resolution is `resolveProtocolPlayInput`.
@@ -141,8 +141,8 @@ A URL no resolver claims is a hosted XSPF. There is no checkbox and no `.xspf` e
 
 - **Startup reload.** `loadHostedPlaylists` runs two seconds after launch, waits for resolver init (bounded at 15 seconds), drops provider URLs out of `hosted_playlists`, and re-imports the rest. Failures throw instead of opening a dialog.
 - **Poller.** `pollHostedPlaylists` runs ten seconds after mount and then every five minutes. It skips provider playlist URLs. Hosted documents are fetched through `fetchHostedPlaylistText` and re-imported when the body differs from the stored XSPF.
-- **Provider snapshots.** Not re-fetched at launch or on the poller — that is what showed "Failed to parse XSPF" for an Amazon playlist import. Refresh is the button on the playlist detail header, the grid card, and the table row. It calls `lookupPlaylist` and toasts on failure. It does not fetch the page as XSPF.
-- **Edits.** `savePlaylistToStore` writes only title and creator overrides for hosted XSPF. Provider snapshots (`source` ending in `-import`) save tracks and metadata through `playlists.save`, and are not written back into `hosted_playlists`.
+- **Provider links.** Never on the startup list or the XSPF poller: that is what showed "Failed to parse XSPF" for an Amazon playlist import. A kept-updated one is looked up again hourly through `lookupPlaylist`; a snapshot never changes. The playlist detail header shows "Check now" and "Stop updating" for a kept-updated playlist and "Keep updated" for a snapshot; the grid card and table row show a check-now button only for kept-updated ones.
+- **Edits.** `savePlaylistToStore` writes only title and creator overrides for a kept-updated hosted XSPF. Provider imports (`source` ending in `-import`) and snapshot XSPFs save tracks and metadata through `playlists.save`, and are not written back into `hosted_playlists`.
 - **Sync.** A hosted XSPF is never pulled from a service, because the poller is canonical. Provider snapshots are not treated as hosted. "Mirror only" is locked on for both, labelled "followed" for a `-import` source and "hosted" for a real XSPF (main.js). In the classic engine the push loop skips `hosted-*` playlists for ListenBrainz unless a channel override includes them.
 
 ## Provider sync

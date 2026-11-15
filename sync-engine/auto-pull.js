@@ -70,6 +70,9 @@ function hasRealLocalEdits(playlist, providerId) {
  */
 function isHostedXspf(playlist) {
   if (!playlist || !playlist.sourceUrl) return false;
+  // Imported from its link as a snapshot: nothing polls it
+  // (src/renderer/lib/playlist-update-mode.js).
+  if (playlist.autoUpdate === false) return false;
   const isProviderSnapshot = typeof playlist.source === 'string' && playlist.source.endsWith('-import');
   return !isProviderSnapshot;
 }

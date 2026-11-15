@@ -26,5 +26,7 @@ test('labels are sentence case in the source; CSS makes them uppercase', () => {
 
 test('the page headers and the queue drawer use it', () => {
   expect((read('src/renderer/app.js').match(/React\.createElement\(HeaderControl, \{/g) || []).length).toBeGreaterThanOrEqual(6);
-  expect((read('src/renderer/components/playlist-view-page.js').match(/React\.createElement\(HeaderControl, \{/g) || []).length).toBe(6);
+  // 8: Refresh became Keep updated / Check now + Stop updating (a playlist
+  // link kept updated or a snapshot).
+  expect((read('src/renderer/components/playlist-view-page.js').match(/React\.createElement\(HeaderControl, \{/g) || []).length).toBe(8);
 });

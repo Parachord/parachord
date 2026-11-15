@@ -1322,6 +1322,7 @@ const { userError, errorText } = require('./lib/error-copy');
 const { trackDurationLabel } = require('./lib/track-duration');
 const { contextPlaylistTarget, playlistRef } = require('./lib/playlist-context');
 const { pulledOpenPlaylist } = require('./lib/playlist-sync-banner');
+const { SERVICE_REFRESH_MS, playlistUpdateMode, isPolledHostedXspf, serviceRefreshDue, hostedListForMode } = require('./lib/playlist-update-mode');
 const { Play, Pause, SkipForward, SkipBack, Volume2, Search, List, Settings, Plus, Music, Radio, Users, Heart, X } = Icons;
 
 
@@ -2060,6 +2061,7 @@ const { homeBannerItems, bannerViewId } = require('./lib/home-banners');
 const { toastBackground } = require('./lib/toast-style');
 const { PAGE_COLORS, pageTint } = require('./lib/page-colors');
 const { Modal, ConfirmModal, DontShowAgain } = require('./components/modal');
+const { PlaylistUpdateDialog, UpdateModeChoice } = require('./components/playlist-update-dialog');
 const { KeyboardShortcutsDialog } = require('./components/keyboard-shortcuts');
 const { WhatsNewDialog } = require('./components/whats-new-dialog');
 const { ArtistCard, RankBadge } = require('./components/artist-card');
@@ -3965,6 +3967,11 @@ const Parachord = () => {
 
   const [showUrlImportDialog, setShowUrlImportDialog] = useState(false);
   const [urlImportValue, setUrlImportValue] = useState('');
+  // The import dialog's "keep it updated / snapshot" choice for a link.
+  const [urlImportMode, setUrlImportMode] = useState('auto');
+  // The question asked when a playlist link is dropped or opened from a
+  // parachord://import link: { url, isService, sourceLabel, description, resolve }.
+  const [updateModeAsk, setUpdateModeAsk] = useState(null);
   const [urlImportLoading, setUrlImportLoading] = useState(false);
 
   // Local Files state
@@ -12365,13 +12372,12 @@ const Parachord = () => {
                 showToast('Import failed: invalid URL', 'error');
                 break;
               }
-              showConfirmDialog({
-                type: 'info',
-                title: 'Import playlist',
-                message: `An external link wants to import a playlist from:\n\n${importUrl.hostname}${importUrl.pathname}`,
-                onConfirm: async () => {
+              // The question is also the confirmation: Cancel imports nothing.
+              // A link already imported refreshes, as before, and only confirms.
+              const importDescription = `An external link wants to import a playlist from:\n\n${importUrl.hostname}${importUrl.pathname}`;
+              const runImport = async (autoUpdate) => {
                   try {
-                    const result = await handleImportPlaylistFromUrl(params.url);
+                    const result = await handleImportPlaylistFromUrl(params.url, false, null, null, { autoUpdate });
                     if (result?.updated) {
                       showToast(`Updated playlist: ${result.playlist?.title || 'Untitled'}`);
                     } else if (result?.playlist) {
@@ -12381,8 +12387,12 @@ const Parachord = () => {
                   } catch (err) {
                     console.error('Import failed:', err); showToast(errorText(err, 'Couldn’t import the playlist. Check the link and try again.'), 'error');
                   }
-                }
-              });
+              };
+              if (isPlaylistLinkImported(params.url)) {
+                showConfirmDialog({ type: 'info', title: 'Import playlist', message: importDescription, confirmLabel: 'Import', cancelLabel: 'Cancel', onConfirm: () => runImport(undefined) });
+              } else {
+                askPlaylistUpdateMode(params.url, importDescription).then((mode) => { if (mode) runImport(mode === 'auto'); });
+              }
             } else if (params.tracks) {
               // Import from inline base64-encoded JSON tracks
               try {
@@ -25810,7 +25820,9 @@ ${tracks}
     // edits must persist through playlists.save, and it must not be written
     // back into hosted_playlists (that list is what re-imported the Amazon
     // page at launch and showed "Failed to parse XSPF").
-    if (playlist.sourceUrl && !window.isProviderImportedPlaylist(playlist, resolverLoaderRef.current)) {
+    // A snapshot of an XSPF (autoUpdate: false) isn't polled, so its edits
+    // persist like any playlist's (lib/playlist-update-mode.js).
+    if (playlist.sourceUrl && isPolledHostedXspf(playlist, { providerImported: window.isProviderImportedPlaylist(playlist, resolverLoaderRef.current) })) {
       try {
         const hostedPlaylists = await window.electron?.store?.get('hosted_playlists') || [];
         const updatedHosted = hostedPlaylists.map(item =>
@@ -34400,7 +34412,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // metadataOverrides: { title?, creator?, coverArt? } — local edits (title /
   // creator) or the cover the ephemeral view is showing (coverArt; wins over
   // the resolver's own so the image never swaps on save).
-  const handleImportPlaylistFromUrl = async (url, skipStorageUpdate = false, storedAddedAt = null, metadataOverrides = null, { background = false, quiet = false, provider = false } = {}) => {
+  const handleImportPlaylistFromUrl = async (url, skipStorageUpdate = false, storedAddedAt = null, metadataOverrides = null, { background = false, quiet = false, provider = false, autoUpdate } = {}) => {
     try {
       console.log('🌐 Importing playlist from URL:', url);
 
@@ -34601,6 +34613,9 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         xspf: content,
         source: importSource,
         sourceUrl: url,  // Track the source URL for updates
+        // Keep it updated from the link, or a snapshot (the person's answer;
+        // lib/playlist-update-mode.js). Absent means the old behaviour.
+        ...(typeof autoUpdate === 'boolean' ? { autoUpdate } : {}),
         createdAt: parsed.date || Date.now(), // Use XSPF date (original creation) or import time
         addedAt: storedAddedAt || Date.now(), // When added to library (use stored value on reload)
         lastModified: Date.now()
@@ -34630,7 +34645,8 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       // startup reload would re-run a full resolver import every launch (and
       // race resolver init into "Failed to parse XSPF"), and the 5-minute
       // poller would fetch the page HTML forever.
-      if (!skipStorageUpdate && !resolverId) {
+      // A snapshot of an XSPF isn't reloaded or polled either.
+      if (!skipStorageUpdate && !resolverId && autoUpdate !== false) {
         const hostedPlaylists = await window.electron?.store?.get('hosted_playlists') || [];
         hostedPlaylists.push({ url, id, addedAt: Date.now() });
         await window.electron?.store?.set('hosted_playlists', hostedPlaylists);
@@ -34658,8 +34674,15 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
     // Accept playlist URLs from resolvers, or any URL that could be a hosted XSPF
     if ((resolverId && urlType === 'playlist') || (!resolverId && isValidUrl(url))) {
+      // A new link: keep it updated, or a snapshot? (lib/playlist-update-mode.js)
+      let autoUpdate;
+      if (!isPlaylistLinkImported(url)) {
+        const mode = await askPlaylistUpdateMode(url);
+        if (!mode) return;
+        autoUpdate = mode === 'auto';
+      }
       try {
-        const result = await handleImportPlaylistFromUrl(url);
+        const result = await handleImportPlaylistFromUrl(url, false, null, null, { autoUpdate });
         if (result?.updated) {
           showToast(`Updated playlist: ${result.playlist?.title || 'Untitled'}`);
         } else if (result?.playlist) {
@@ -34676,7 +34699,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // are not on the startup reload list — this button is the only update path.
   // It goes through lookupPlaylist (never parseXSPF of the provider page) and
   // toasts on failure instead of opening the import dialog.
-  const refreshHostedPlaylist = async (playlistId) => {
+  const refreshHostedPlaylist = async (playlistId, { background = false } = {}) => {
     const playlist = (playlistsRef.current || []).find(p => p.id === playlistId);
     if (!playlist?.sourceUrl) {
       console.log('Not a hosted playlist, cannot refresh');
@@ -34714,12 +34737,74 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
           : prev);
       }
 
-      showToast(`Updated ${result?.playlist?.title || playlist.title}`);
+      if (!background) showToast(`Updated ${result?.playlist?.title || playlist.title}`);
       return true;
     } catch (error) {
       console.error('Refresh error:', error);
-      showToast(error?.message || 'Could not refresh playlist', 'error');
+      if (!background) showToast(error?.message || 'Could not refresh playlist', 'error');
       return false;
+    }
+  };
+
+  // How a playlist imported from a link updates: 'auto' | 'snapshot', or null
+  // for one that wasn't (lib/playlist-update-mode.js). The guard is the one
+  // the refresh buttons always used.
+  const linkUpdateMode = (playlist) => {
+    if (!playlist?.sourceUrl || playlist.isEphemeral) return null;
+    const providerImported = window.isProviderImportedPlaylist(playlist, resolverLoaderRef.current);
+    if (playlist.source !== 'hosted-xspf' && !providerImported) return null;
+    return playlistUpdateMode(playlist, { providerImported });
+  };
+
+  // The service a playlist link belongs to, for the question's wording.
+  const playlistLinkService = (url) => {
+    const resolverId = resolverLoaderRef.current?.findResolverForUrl(url);
+    if (!resolverId || resolverLoaderRef.current.getUrlType(url) !== 'playlist') return { isService: false, sourceLabel: null };
+    return { isService: true, sourceLabel: resolverLoaderRef.current.getResolver(resolverId)?.name || null };
+  };
+
+  // Ask how a new playlist link should update. Resolves 'auto' | 'snapshot',
+  // or null when the person cancels.
+  const askPlaylistUpdateMode = (url, description) => new Promise((resolve) => {
+    setUpdateModeAsk({ url, description, ...playlistLinkService(url), resolve });
+  });
+  // Called from the dialog this render drew, so updateModeAsk is current.
+  const answerUpdateModeAsk = (mode) => {
+    const ask = updateModeAsk;
+    setUpdateModeAsk(null);
+    if (ask?.resolve) ask.resolve(mode);
+  };
+
+  // Already imported from this link: importing it again refreshes it, as
+  // before, and doesn't ask.
+  const isPlaylistLinkImported = (url) => (playlistsRef.current || []).some(p => p.sourceUrl === url);
+
+  // Switch a link-imported playlist between kept updated and a snapshot.
+  // Keeping it updated also brings it up to date now.
+  const setPlaylistUpdateMode = async (playlistId, mode) => {
+    const playlist = (playlistsRef.current || []).find(p => p.id === playlistId);
+    if (!playlist?.sourceUrl) return;
+    const providerImported = window.isProviderImportedPlaylist(playlist, resolverLoaderRef.current);
+    const updated = { ...playlist, autoUpdate: mode === 'auto' };
+    setPlaylists(prev => prev.map(p => (p.id === playlistId ? { ...p, autoUpdate: updated.autoUpdate } : p)));
+    setSelectedPlaylist(prev => (prev && prev.id === playlistId ? { ...prev, autoUpdate: updated.autoUpdate } : prev));
+    try {
+      // Straight to the store: the hosted save path only keeps the title.
+      await window.electron.playlists.save(window.buildPlaylistSavePayload(updated));
+      const hostedList = await window.electron?.store?.get('hosted_playlists') || [];
+      const nextList = hostedListForMode(hostedList, updated, mode, { providerImported });
+      if (nextList !== hostedList) await window.electron?.store?.set('hosted_playlists', nextList);
+    } catch (error) {
+      console.error('Could not save the playlist’s update setting:', error);
+      showToast('Couldn’t change how this playlist updates. Try again.', 'error');
+      return;
+    }
+    if (mode === 'auto') {
+      // playlistsRef catches up on the next render; refresh reads it.
+      playlistsRef.current = (playlistsRef.current || []).map(p => (p.id === playlistId ? updated : p));
+      await refreshHostedPlaylist(playlistId);
+    } else {
+      showToast(`“${playlist.title}” is now a snapshot`);
     }
   };
 
@@ -34733,7 +34818,9 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       // Apple Music, Amazon — kept via sourceUrl for provenance/refresh) is
       // not an XSPF: its fetched HTML never matches the stored XSPF, so every
       // poll would re-run a full resolver import.
-      const hostedPlaylists = playlists.filter(p => p.sourceUrl && !window.isProviderPlaylistUrl(p.sourceUrl, resolverLoaderRef.current));
+      // A snapshot of an XSPF (autoUpdate: false) isn't polled.
+      const hostedPlaylists = playlists.filter(p => p.sourceUrl && !window.isProviderPlaylistUrl(p.sourceUrl, resolverLoaderRef.current)
+        && isPolledHostedXspf(p, { providerImported: window.isProviderImportedPlaylist(p, resolverLoaderRef.current) }));
       if (hostedPlaylists.length === 0) return;
 
       console.log(`🔄 Checking ${hostedPlaylists.length} hosted playlist(s) for updates...`);
@@ -34776,6 +34863,43 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       clearTimeout(initialPoll);
     };
   }, [playlists.filter(p => p.sourceUrl).length]); // Re-run when hosted playlist count changes
+
+  // Kept-updated service links (a Spotify, Apple Music, … playlist link the
+  // person chose to keep updated) are looked up again once an hour
+  // (serviceRefreshDue, lib/playlist-update-mode.js). Not the hosted poller:
+  // a service's page is not an XSPF. A failed lookup (signed out, offline)
+  // waits an hour too, so it doesn't retry every tick.
+  const refreshHostedPlaylistRef = useRef(null);
+  refreshHostedPlaylistRef.current = refreshHostedPlaylist;
+  const serviceLinkFailedAtRef = useRef(new Map());
+  useEffect(() => {
+    let running = false;
+    const refreshServiceLinks = async () => {
+      if (running) return;
+      running = true;
+      try {
+        if (resolversInitRef.current) {
+          await Promise.race([resolversInitRef.current, new Promise(resolve => setTimeout(resolve, 15000))]);
+        }
+        const now = Date.now();
+        const failedAt = serviceLinkFailedAtRef.current;
+        const due = (playlistsRef.current || []).filter(p =>
+          serviceRefreshDue(p, { providerImported: window.isProviderImportedPlaylist(p, resolverLoaderRef.current), now })
+          && !(now - (failedAt.get(p.id) || 0) < SERVICE_REFRESH_MS));
+        for (const p of due) {
+          await yieldToIdle(10000);
+          console.log(`🔄 Checking kept-updated playlist link: ${p.title}`);
+          const ok = await refreshHostedPlaylistRef.current(p.id, { background: true });
+          if (ok) failedAt.delete(p.id); else failedAt.set(p.id, Date.now());
+        }
+      } finally {
+        running = false;
+      }
+    };
+    const interval = setInterval(refreshServiceLinks, 10 * 60 * 1000);
+    const initial = setTimeout(refreshServiceLinks, 60 * 1000);
+    return () => { clearInterval(interval); clearTimeout(initial); };
+  }, []);
 
   // Load hosted playlists on app start
   useEffect(() => {
@@ -36431,8 +36555,8 @@ useEffect(() => {
   const playlistViewPageHandlers = useStableHandlers({
     addToQueue, copyParachordLink, deletePlaylistLocally, fetchArtistData,
     getPlaylistMirrorTargets, handleExportPlaylist, handleImportPlaylistFromUrl, handlePlay, handlePlaylistDragEnd,
-    markPlaylistAsLocallyModified, moveInEditedPlaylist, navigateTo,
-    refreshHostedPlaylist, savePlaylistToStore, setQueueWithContext,
+    linkUpdateMode, markPlaylistAsLocallyModified, moveInEditedPlaylist, navigateTo,
+    refreshHostedPlaylist, savePlaylistToStore, setPlaylistUpdateMode, setQueueWithContext,
   });
 
   // A recommended (or Home's service-mix) playlist card's art: the
@@ -37738,7 +37862,7 @@ useEffect(() => {
 
       // Main content area - Playlist Page (new design matching album page layout)
       : activeView === 'playlist-view' && selectedPlaylist ? React.createElement(PlaylistViewPage, {
-          activeResolvers: playbackResolvers, allPlaylistCovers, allResolvers, currentTrack, draggedPlaylistTrack, editedPlaylistData, emptyPlaylistId, handlePlaylistTracksScrollRef, isPlaying, playbackContext, playlistCoverArt, playlistDropTarget, playlistEditMode, playlistObserverRef, playlistScrollContainerReady, playlistScrollContainerRef, playlistTrackRowRefs, playlistTracks, playlistTracksScrollRef, publishCollectionSmartLink, refreshingPlaylist, resolverLoaderRef, resolverOrder, selectedPlaylist, setAddToPlaylistPanel, setDraggedPlaylistTrack, setDraggingTrackForPlaylist, setEditedPlaylistData, setPlaylistCoverArt, setPlaylistDropTarget, setPlaylistEditMode, setPlaylistScrollContainerReady, setPlaylistTracks, setPlaylists, setRefreshingPlaylist, setSelectedPlaylist, setSelectedPlaylistsForAdd, setSyncDeleteDialog, setTrackLoading, showToast, trackSources,
+          activeResolvers: playbackResolvers, allPlaylistCovers, allResolvers, currentTrack, draggedPlaylistTrack, editedPlaylistData, emptyPlaylistId, handlePlaylistTracksScrollRef, isPlaying, playbackContext, playlistCoverArt, playlistDropTarget, playlistEditMode, playlistObserverRef, playlistScrollContainerReady, playlistScrollContainerRef, playlistTrackRowRefs, playlistTracks, playlistTracksScrollRef, publishCollectionSmartLink, refreshingPlaylist, resolverOrder, selectedPlaylist, setAddToPlaylistPanel, setDraggedPlaylistTrack, setDraggingTrackForPlaylist, setEditedPlaylistData, setPlaylistCoverArt, setPlaylistDropTarget, setPlaylistEditMode, setPlaylistScrollContainerReady, setPlaylistTracks, setPlaylists, setRefreshingPlaylist, setSelectedPlaylist, setSelectedPlaylistsForAdd, setSyncDeleteDialog, setTrackLoading, showToast, trackSources,
           ...playlistViewPageHandlers
         })
 
@@ -38089,10 +38213,10 @@ useEffect(() => {
                       // (DOM order = paint order; see the comment above).
                       playlist.coverArt && React.createElement(PlaylistCoverImage, { url: playlist.coverArt }),
 
-                      // Refresh for hosted XSPF (auto-polled) and provider snapshots
-                      // (manual only — startup reload of a provider page is the
-                      // "Failed to parse XSPF" dialog). No Hosted badge on snapshots.
-                      playlist.sourceUrl && (playlist.source === 'hosted-xspf' || window.isProviderImportedPlaylist(playlist, resolverLoaderRef.current)) && React.createElement('div', {
+                      // A playlist kept updated from its link: the Hosted badge
+                      // (XSPF) and a check-now button. A snapshot shows neither:
+                      // it never changes (lib/playlist-update-mode.js).
+                      linkUpdateMode(playlist) === 'auto' && React.createElement('div', {
                         className: 'absolute top-2 right-2 flex items-center gap-1'
                       },
                         playlist.source === 'hosted-xspf' && React.createElement('span', {
@@ -38108,7 +38232,7 @@ useEffect(() => {
                             finally { setRefreshingPlaylist(null); }
                           },
                           className: `p-1 bg-white/90 backdrop-blur-sm rounded-full hover:bg-white transition-colors ${refreshingPlaylist === playlist.id ? 'animate-spin' : ''}`,
-                          'aria-label': 'Refresh from source', 'data-tooltip': 'Refresh from source'
+                          'aria-label': 'Check for updates now', 'data-tooltip': 'Updates on its own from its link. Check now'
                         },
                           React.createElement(Icons.RefreshCw, { className: 'w-3 h-3 text-ink-secondary' })
                         )
@@ -38409,8 +38533,9 @@ useEffect(() => {
                   React.createElement('div', { className: 'text-sm text-ink-tertiary flex-shrink-0 w-20 text-right' },
                     countOf(trackCount, 'track')
                   ),
-                  // Refresh — provider snapshots are not reloaded at launch
-                  playlist.sourceUrl && (playlist.source === 'hosted-xspf' || window.isProviderImportedPlaylist(playlist, resolverLoaderRef.current)) && React.createElement('button', {
+                  // Check now, for a playlist kept updated from its link. A
+                  // snapshot has none: it never changes.
+                  linkUpdateMode(playlist) === 'auto' && React.createElement('button', {
                     onClick: async (e) => {
                       e.preventDefault();
                       e.stopPropagation();
@@ -38420,7 +38545,7 @@ useEffect(() => {
                       finally { setRefreshingPlaylist(null); }
                     },
                     className: 'w-8 h-8 flex items-center justify-center opacity-0 group-hover:opacity-100 card-reveal transition-opacity flex-shrink-0',
-                    'aria-label': 'Refresh from source', 'data-tooltip': 'Refresh from source',
+                    'aria-label': 'Check for updates now', 'data-tooltip': 'Updates on its own from its link. Check now',
                   },
                     React.createElement(Icons.RefreshCw, { className: `w-4 h-4 text-ink-tertiary ${refreshingPlaylist === playlist.id ? 'animate-spin' : ''}` })
                   ),
@@ -46562,12 +46687,16 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
     // The standard dialog (components/modal.js): two ways in, each with its
     // own action, so no footer. The URL is a real form: Enter imports.
     showUrlImportDialog && (() => {
-      const close = () => { setShowUrlImportDialog(false); setUrlImportValue(''); };
+      const close = () => { setShowUrlImportDialog(false); setUrlImportValue(''); setUrlImportMode('auto'); };
+      const linkService = playlistLinkService(urlImportValue.trim());
       const importUrl = async () => {
         if (!urlImportValue.trim() || urlImportLoading) return;
         setUrlImportLoading(true);
         try {
-          const result = await handleImportPlaylistFromUrl(urlImportValue.trim());
+          // The choice below; a link already imported just refreshes.
+          const url = urlImportValue.trim();
+          const autoUpdate = isPlaylistLinkImported(url) ? undefined : urlImportMode === 'auto';
+          const result = await handleImportPlaylistFromUrl(url, false, null, null, { autoUpdate });
           close();
           showToast(`${result.updated ? 'Updated' : 'Imported'} “${result.playlist.title}”`, 'success');
         } catch (error) {
@@ -46598,7 +46727,16 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
               onKeyDown: (e) => e.stopPropagation(),
               placeholder: 'Paste playlist URL…', disabled: urlImportLoading, autoFocus: true, className: 'flex-1'
             }),
-            React.createElement(Button, { type: 'submit', variant: 'primary', busy: urlImportLoading, disabled: !urlImportValue.trim() }, 'Import'))
+            React.createElement(Button, { type: 'submit', variant: 'primary', busy: urlImportLoading, disabled: !urlImportValue.trim() }, 'Import')),
+          // Keep it updated, or a snapshot (the same choice a dropped link asks).
+          React.createElement('div', { style: { marginTop: '12px' } },
+            React.createElement(UpdateModeChoice, {
+              name: 'import-url-update-mode',
+              value: urlImportMode,
+              onChange: setUrlImportMode,
+              isService: linkService.isService,
+              sourceLabel: linkService.sourceLabel
+            }))
         ),
         // Divider
         React.createElement('div', { className: 'flex items-center gap-3', style: { marginBottom: '16px' }, 'aria-hidden': 'true' },
@@ -50801,6 +50939,16 @@ React.createElement('div', { style: { marginTop: '12px' } },
     // Confirmation Dialog Modal - refined styling
     // The confirm dialog (showConfirmDialog), on the shared Modal (#1385).
     confirmDialog.show && React.createElement(ConfirmModal, { dialog: confirmDialog, onClose: closeConfirmDialog }),
+    // Keep a new playlist link updated, or a snapshot (dropped links and
+    // parachord://import links).
+    updateModeAsk && React.createElement(PlaylistUpdateDialog, {
+      key: updateModeAsk.url,
+      isService: updateModeAsk.isService,
+      sourceLabel: updateModeAsk.sourceLabel,
+      description: updateModeAsk.description,
+      onChoose: answerUpdateModeAsk,
+      onCancel: () => answerUpdateModeAsk(null)
+    }),
 
     // Amazon Music sign-in dialog. Opens music.amazon.com inside Parachord.
     // The standard dialog (components/modal.js). While the sign-in window

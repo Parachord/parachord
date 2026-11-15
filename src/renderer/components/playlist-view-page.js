@@ -9,9 +9,10 @@
 // React.memo, fed only stable props: state values, useState setters, refs,
 // useCallback results, and Parachord's plain functions as stable wrappers
 // (useStableHandlers in app.js; the list is PLAYLIST_VIEW_PAGE_HANDLERS).
-// The one ref read during render, resolverLoaderRef (the hosted / imported
-// playlist check), changes only when resolvers load, which also changes the
-// allResolvers prop. tests/renderer/page-memo.test.js checks the call site.
+// The hosted / imported playlist check (linkUpdateMode, a stable wrapper)
+// reads resolverLoaderRef during render; it changes only when resolvers load,
+// which also changes the allResolvers prop. tests/renderer/page-memo.test.js
+// checks the call site.
 //
 // The body is the original render expression, unchanged: it reads its inputs
 // from props under their old names.
@@ -52,11 +53,13 @@ const PLAYLIST_VIEW_PAGE_HANDLERS = [
   'handleImportPlaylistFromUrl',
   'handlePlay',
   'handlePlaylistDragEnd',
+  'linkUpdateMode',
   'markPlaylistAsLocallyModified',
   'moveInEditedPlaylist',
   'navigateTo',
   'refreshHostedPlaylist',
   'savePlaylistToStore',
+  'setPlaylistUpdateMode',
   'setQueueWithContext',
 ];
 
@@ -79,6 +82,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
     handlePlaylistDragEnd,
     handlePlaylistTracksScrollRef,
     isPlaying,
+    linkUpdateMode,
     markPlaylistAsLocallyModified,
     moveInEditedPlaylist,
     navigateTo,
@@ -95,7 +99,6 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
     publishCollectionSmartLink,
     refreshHostedPlaylist,
     refreshingPlaylist,
-    resolverLoaderRef,
     resolverOrder,
     savePlaylistToStore,
     handleImportPlaylistFromUrl,
@@ -109,6 +112,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
     setPlaylistEditMode,
     setPlaylistScrollContainerReady,
     setPlaylistTracks,
+    setPlaylistUpdateMode,
     setPlaylists,
     setQueueWithContext,
     setRefreshingPlaylist,
@@ -304,18 +308,36 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                   // Switch to viewing the saved playlist
                   setSelectedPlaylist({ ...newPlaylist, isEphemeral: false });
                 } }, React.createElement(Icons.Check, { className: 'w-4 h-4' }), 'Save'),
-              // Manual refresh. Provider URL imports are snapshots — they are not
-              // re-fetched at launch (that path parsed the provider page as XSPF
-              // and dialoged). Hosted XSPF still auto-updates; this is the
-              // on-demand path for both.
-              !selectedPlaylist?.isEphemeral && !playlistEditMode && selectedPlaylist?.sourceUrl
-                && (selectedPlaylist.source === 'hosted-xspf' || window.isProviderImportedPlaylist(selectedPlaylist, resolverLoaderRef.current))
-                && React.createElement(HeaderControl, { onClick: async () => {
-                    if (refreshingPlaylist === selectedPlaylist.id) return;
-                    setRefreshingPlaylist(selectedPlaylist.id);
-                    try { await refreshHostedPlaylist(selectedPlaylist.id); }
-                    finally { setRefreshingPlaylist(null); }
-                  }, 'data-tooltip': 'Re-import from the source URL. This does not run at launch.' }, refreshingPlaylist === selectedPlaylist.id ? 'Refreshing…' : 'Refresh'),
+              // A playlist imported from a link is kept updated from it or a
+              // snapshot (lib/playlist-update-mode.js). Kept updated: check
+              // now, or stop. A snapshot never changes, so it has no refresh;
+              // "Keep updated" turns updating on (and updates it now).
+              (() => {
+                if (selectedPlaylist?.isEphemeral || playlistEditMode) return null;
+                const mode = linkUpdateMode(selectedPlaylist);
+                if (!mode) return null;
+                const id = selectedPlaylist.id;
+                if (mode === 'snapshot') {
+                  return React.createElement(HeaderControl, {
+                    onClick: () => setPlaylistUpdateMode(id, 'auto'),
+                    'data-tooltip': 'A snapshot of its link. Keep it updated from the link instead'
+                  }, 'Keep updated');
+                }
+                return React.createElement(React.Fragment, null,
+                  React.createElement(HeaderControl, {
+                    onClick: async () => {
+                      if (refreshingPlaylist === id) return;
+                      setRefreshingPlaylist(id);
+                      try { await refreshHostedPlaylist(id); }
+                      finally { setRefreshingPlaylist(null); }
+                    },
+                    'data-tooltip': 'Updates on its own from its link. This checks now'
+                  }, refreshingPlaylist === id ? 'Checking…' : 'Check now'),
+                  React.createElement(HeaderControl, {
+                    onClick: () => setPlaylistUpdateMode(id, 'snapshot'),
+                    'data-tooltip': 'Keep it as it is now and stop updating it'
+                  }, 'Stop updating'));
+              })(),
               // Edit / Cancel+Done buttons (only for non-ephemeral playlists)
               !selectedPlaylist?.isEphemeral && (playlistEditMode ? React.createElement(React.Fragment, null,
                 // Cancel button

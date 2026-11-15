@@ -114,7 +114,7 @@ describe('importing (SAVE, dropped link, URL import) keeps the provider cover', 
   });
 
   test('the on-screen playlist takes a refreshed cover (a hosted refresh keeps the old one)', () => {
-    const refresh = sliceFrom(app, 'const refreshHostedPlaylist = async (playlistId) => {', '// Poll hosted playlists for updates');
+    const refresh = sliceFrom(app, 'const refreshHostedPlaylist = async (playlistId, { background = false } = {}) => {', '// How a playlist imported from a link updates');
     expect(refresh).toMatch(/result\.playlist\.coverArt \? \{ coverArt: result\.playlist\.coverArt \} : \{\}/);
   });
 });
@@ -165,6 +165,7 @@ describe('every playlist-cover surface renders the record\'s cover over the mosa
       getPlaylistMirrorTargets: () => [], handleExportPlaylist: () => {}, handleImportPlaylistFromUrl: () => {},
       handlePlay: () => {}, handlePlaylistDragEnd: () => {}, loadPlaylist: () => {}, navigateTo: () => {},
       navigateBack: () => {}, openCollection: () => {}, refreshHostedPlaylist: () => {}, setQueueWithContext: () => {},
+      linkUpdateMode: () => null, setPlaylistUpdateMode: () => {},
       markPlaylistAsLocallyModified: () => {}, fetchArtistData: () => {},
     };
     const markup = renderToStaticMarkup(React.createElement(PlaylistViewPage, props));
