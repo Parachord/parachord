@@ -71,6 +71,18 @@ function cellStyle(cell) {
     cell.style || null);
 }
 
+// The source icon column's width: room for one icon per service the user can
+// play from (24px each: a 20px icon and the 4px gap), at least two, at most
+// 140px. The app root sets it as --source-col (app.js), and every icon
+// column and its skeleton reads SOURCE_COLUMN, so a list has no dead space
+// right of its icons and its rows and placeholders still line up.
+const SOURCE_ICON_STEP = 24;
+function sourceColumnWidth(playbackResolvers) {
+  const n = Array.isArray(playbackResolvers) ? playbackResolvers.length : 0;
+  return Math.min(140, Math.max(2, n) * SOURCE_ICON_STEP - 4);
+}
+const SOURCE_COLUMN = 'var(--source-col, 140px)';
+
 // A service's play button: its colour and logo (the plugin's `color`). Hover
 // grows it in CSS (no JS hover); the tooltip names the service and the match.
 // `quiet` (the queue drawer): desaturated and faded at rest, full on hover or
@@ -94,7 +106,7 @@ function SourceIconButton({ resolver, confidence, dim, onClick, size = 20, quiet
 // nothing when unplayable (the row is dimmed). The icons start at the
 // column's left edge, so they sit right up against the duration (right-
 // aligned in its column) whatever their number, and still line up row to row.
-function TrackSources({ state, shown, allResolvers, onPlay, width = 140 }) {
+function TrackSources({ state, shown, allResolvers, onPlay, width = SOURCE_COLUMN }) {
   const e = React.createElement;
   const icon = ({ resolverId, source, dim }) => {
     const resolver = (allResolvers || []).find((r) => r.id === resolverId);
@@ -118,7 +130,7 @@ function TrackSources({ state, shown, allResolvers, onPlay, width = 140 }) {
 // title, artist, `cells`' widths, the duration, the source icons), so the
 // list doesn't jump when the rows land. `cells` as TrackRow's (only width /
 // flex are read).
-function TrackRowSkeleton({ index = 0, cells = [], duration = false, showArtist = true, sourcesWidth = 140 }) {
+function TrackRowSkeleton({ index = 0, cells = [], duration = false, showArtist = true, sourcesWidth = SOURCE_COLUMN }) {
   const e = React.createElement;
   const delay = (n) => `${Math.min(index * 30, 300) + n}ms`;
   const bar = (style) => e('div', { className: 'h-3.5 rounded shimmer-light animate-shimmer', style: Object.assign({ backgroundSize: '200% 100%' }, style) });
@@ -139,7 +151,7 @@ function TrackRowSkeleton({ index = 0, cells = [], duration = false, showArtist 
 
 function TrackRow({
   track, number, lead, isNowPlaying = false, sources, allResolvers, onPlay, onOpenArtist, onContextMenu,
-  cells = [], duration = false, sourcesWidth = 140, rowRef, className,
+  cells = [], duration = false, sourcesWidth = SOURCE_COLUMN, rowRef, className,
   showArtist = true, resolving, dimResolving = true, ...rest
 }) {
   const e = React.createElement;
@@ -472,7 +484,7 @@ const VirtualizedQueueList = React.memo(({
       // Resolver icons, against the duration (as in the page lists)
       React.createElement('div', {
         className: 'flex items-center gap-1 justify-start',
-        style: { width: '140px', flexShrink: 0, minHeight: '20px' }
+        style: { width: SOURCE_COLUMN, flexShrink: 0, minHeight: '20px' }
       },
         isError ?
           React.createElement('button', {
@@ -692,6 +704,8 @@ const VirtualizedTrackList = React.memo(({
 module.exports = {
   TrackRow,
   TrackRowSkeleton,
+  sourceColumnWidth,
+  SOURCE_COLUMN,
   TrackSources,
   SourceIconButton,
   VirtualizedQueueList,

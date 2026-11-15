@@ -89,7 +89,7 @@ describe('Recommendations skeletons match the sectioned page', () => {
     expect(skel).toMatch(/style: \{ borderRadius: '8px', marginBottom: '2px' \}/);
     const cols = [
       ["width: '32px'", 'width:32px'], ["flex: '1 1 0', minWidth: 0", 'flex:1 1 0;min-width:0'], ["flex: '0.7 1 0', minWidth: 0", 'flex:0.7 1 0;min-width:0'],
-      ["width: '50px'", 'width:50px'], ["width: '140px', flexShrink: 0, minHeight: '24px'", 'width:140px;flex-shrink:0;min-height:24px'],
+      ["width: '50px'", 'width:50px'], ["width: 'var(--source-col, 140px)', flexShrink: 0, minHeight: '24px'", 'width:var(--source-col, 140px);flex-shrink:0;min-height:24px'],
     ];
     for (const [src, css] of cols) {
       expect(row).toContain(css);
@@ -499,7 +499,7 @@ describe('TrackRowSkeleton has TrackRow\'s columns', () => {
     const cells = [{ key: 'x', width: '90px', align: 'right', content: 'x' }];
     const row = renderToStaticMarkup(React.createElement(TrackRow, { track: { id: 'a', title: 'T', artist: 'A' }, number: '01', duration: true, cells, sources: {}, allResolvers: [] }));
     const skel = renderToStaticMarkup(React.createElement(TrackRowSkeleton, { duration: true, cells }));
-    for (const css of ['width:32px', 'flex:1 1 0;min-width:0', 'flex:0.7 1 0;min-width:0', 'width:90px', 'width:50px', 'width:140px;flex-shrink:0;min-height:24px']) {
+    for (const css of ['width:32px', 'flex:1 1 0;min-width:0', 'flex:0.7 1 0;min-width:0', 'width:90px', 'width:50px', 'width:var(--source-col, 140px);flex-shrink:0;min-height:24px']) {
       expect([css, row.includes(css)]).toEqual([css, true]);
       expect([css, skel.includes(css)]).toEqual([css, true]);
     }
@@ -530,5 +530,18 @@ describe('a track row\'s duration sits against its source icons', () => {
     }));
     expect(row).toMatch(/<span class="text-right tabular-nums flex-shrink-0"[^>]*>3:20<\/span><div class="flex items-center gap-1 justify-start"/);
     expect(renderToStaticMarkup(React.createElement(TrackRowSkeleton, { duration: true }))).toContain('class="flex items-center gap-1 justify-start"');
+  });
+});
+
+describe('the source icon column fits the user\'s services', () => {
+  const { sourceColumnWidth, SOURCE_COLUMN } = require('../../src/renderer/components/track-lists');
+  test('24px per playable service, at least two, at most 140', () => {
+    expect(sourceColumnWidth(['spotify', 'soundcloud'])).toBe(44);
+    expect(sourceColumnWidth(['a', 'b', 'c'])).toBe(68);
+    expect(sourceColumnWidth([])).toBe(44);
+    expect(sourceColumnWidth(['a', 'b', 'c', 'd', 'e', 'f', 'g'])).toBe(140);
+    expect(SOURCE_COLUMN).toBe('var(--source-col, 140px)');
+    const app = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
+    expect(app).toContain("style: { '--source-col': `${sourceColumnWidth(playbackResolvers)}px` }");
   });
 });

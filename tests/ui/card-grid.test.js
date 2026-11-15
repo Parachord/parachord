@@ -41,7 +41,7 @@ test('the playlist view\'s art and icon columns follow the content area, and so 
   global.React = global.React || require('react');
   const pv = require('../../src/renderer/components/playlist-view-page');
   expect(pv.PLAYLIST_ART_COLUMN).toBe('clamp(184px, 26%, 240px)');
-  expect(pv.PLAYLIST_ICON_COLUMN).toBe('clamp(72px, 14%, 140px)');
+  expect(pv.PLAYLIST_ICON_COLUMN).toBe('min(var(--source-col, 140px), clamp(72px, 14%, 140px))');
   const src = fs.readFileSync(path.join(ROOT, 'src/renderer/components/playlist-view-page.js'), 'utf8');
   // The rows' icon column (the shared TrackRow's sourcesWidth) and the skeleton's.
   expect(src).toMatch(/sourcesWidth: PLAYLIST_ICON_COLUMN,/);

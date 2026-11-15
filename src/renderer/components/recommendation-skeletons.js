@@ -96,7 +96,8 @@ function RecommendationSongRowSkeleton({ index = 0 } = {}) {
       bar('h-3', { width: '32px', animationDelay: delay })),
     React.createElement('div', {
       className: 'flex items-center gap-1 justify-start',
-      style: { width: '140px', flexShrink: 0, minHeight: '24px' }
+      // TrackRow's icon column (--source-col, set on the app root).
+      style: { width: 'var(--source-col, 140px)', flexShrink: 0, minHeight: '24px' }
     },
       bar('w-5 h-5', { animationDelay: delay }),
       bar('w-5 h-5', { animationDelay: stagger(index, 100) })

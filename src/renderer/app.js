@@ -1315,7 +1315,7 @@ const prefetchInProgress = window._prefetchInProgress;
 // lib/visible-sources.js, the same rule as the queue and the pages.
 const Icons = require('./components/icons');
 const {
-  VirtualizedQueueList, VirtualizedTrackList, TrackRow, TrackRowSkeleton,
+  VirtualizedQueueList, VirtualizedTrackList, TrackRow, TrackRowSkeleton, sourceColumnWidth,
 } = require('./components/track-lists');
 const { countOf } = require('./lib/plural');
 const { movePriority, priorityMoves } = require('./lib/priority-order');
@@ -37257,7 +37257,9 @@ useEffect(() => {
   const recommendationsNavActive = activeView === 'recommendations' || viewingRecommendedPlaylist;
 
   return React.createElement('div', {
-    className: 'h-screen bg-surface-inset text-ink-primary flex flex-col'
+    className: 'h-screen bg-surface-inset text-ink-primary flex flex-col',
+    // Every track list's icon column: room for one icon per playable service.
+    style: { '--source-col': `${sourceColumnWidth(playbackResolvers)}px` }
   },
 
     // Main content with sidebar (no separate header - search is in sidebar)
@@ -40746,7 +40748,7 @@ React.createElement('div', {
                       }),
                       React.createElement('div', {
                         className: 'flex gap-1 flex-shrink-0',
-                        style: { width: '140px' }
+                        style: { width: 'var(--source-col, 140px)' }
                       },
                         React.createElement('div', {
                           className: 'w-5 h-5 rounded shimmer-light animate-shimmer',

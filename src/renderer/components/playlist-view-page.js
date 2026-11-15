@@ -40,7 +40,9 @@ const { tracksFingerprint } = require('../../../sync-engine/auto-pull');
 // window the content is 744px: a fixed 240px art column and 140px of source
 // icons left track titles about 190px. The icon column's skeleton uses it too.
 const PLAYLIST_ART_COLUMN = 'clamp(184px, 26%, 240px)';
-const PLAYLIST_ICON_COLUMN = 'clamp(72px, 14%, 140px)';
+// The icon column: the app's --source-col (one icon per playable service),
+// narrowing with the content area like the art column.
+const PLAYLIST_ICON_COLUMN = 'min(var(--source-col, 140px), clamp(72px, 14%, 140px))';
 
 const { Play, Music } = Icons;
 

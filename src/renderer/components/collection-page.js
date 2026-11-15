@@ -379,7 +379,7 @@ React.createElement('button', {
                       // Resolver icons skeleton
                       React.createElement('div', {
                         className: 'flex items-center gap-1 justify-start',
-                        style: { width: '140px', flexShrink: 0 }
+                        style: { width: 'var(--source-col, 140px)', flexShrink: 0 }
                       },
                         React.createElement('div', {
                           className: 'w-5 h-5 shimmer-light rounded animate-shimmer',
