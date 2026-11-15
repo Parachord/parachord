@@ -103,7 +103,7 @@ describe('every page draws the shared header', () => {
     // suggestion labels above the results keep theirs).
     expect(search).not.toMatch(/uppercase tracking-wider[^']*' \}, '(ARTISTS|SONGS|ALBUMS|PLAYLISTS)'/);
 
-    expect(read('artist-page.js')).toMatch(/React\.createElement\(SectionHeader, \{\s*title: React\.createElement\(React\.Fragment, null,\s*`\$\{events\.length\} Upcoming Concert/);
+    expect(read('artist-page.js')).toMatch(/React\.createElement\(SectionHeader, \{\s*title: React\.createElement\(React\.Fragment, null,\s*countOf\(events\.length, 'upcoming concert'\)/);
   });
 
   test('the old Recommendations title and link classes are gone', () => {

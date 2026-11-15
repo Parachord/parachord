@@ -51,6 +51,7 @@ const ARTIST_PAGE_HANDLERS = [
   'playArtistTopTracks',
   'getLastfmApiKey',
   'getRelatedArtists',
+  'getServiceColor',
   'handlePlay',
   'handlePlaylistDragEnd',
   'handleSearchInput',
@@ -102,6 +103,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
     playArtistTopTracks,
     getLastfmApiKey,
     getRelatedArtists,
+    getServiceColor,
     handleArtistPageScroll,
     handlePlay,
     handlePlaylistDragEnd,
@@ -1536,14 +1538,17 @@ const ArtistPage = React.memo(function ArtistPage(props) {
             const hasBothServicesConfigured = !!currentArtist?.mbid && !!getLastfmApiKey();
             // The chips shown: All, and each source with artists.
             // Each source in its plugin's colour (resolver.color), never a copy.
-            const serviceColor = (id) => (resolvers || []).find(r => r.id === id)?.color || 'var(--accent-primary)';
+            // Every plugin, metadata ones included (the page's resolvers list
+            // only has playback plugins, so these fell back to the accent).
+            const serviceColor = (id) => getServiceColor(id) || 'var(--accent-primary)';
             const lbColor = serviceColor('listenbrainz');
             const lfmColor = serviceColor('lastfm');
             const sourceChips = [
               { value: 'all', label: 'All', count: relatedArtists.length },
               { value: 'listenbrainz', label: 'ListenBrainz', count: listenbrainzCount + bothCount, color: lbColor },
-              { value: 'lastfm', label: 'Last.fm', count: lastfmCount + bothCount, color: lfmColor },
-              { value: 'both', label: 'Both', count: bothCount, color: lfmColor, gradient: `linear-gradient(to right, ${lbColor}, ${lfmColor})` }
+              // No "Both" chip: no other filter row has one, and an artist both
+              // sources found already shows under each.
+              { value: 'lastfm', label: 'Last.fm', count: lastfmCount + bothCount, color: lfmColor }
             ].filter(({ value, count }) => value === 'all' || count > 0).map(({ value, label, count, color, gradient }) => (
               { id: value, label: loadingRelated ? label : `${label} (${count})`, color, gradient }
             ));
@@ -1628,36 +1633,42 @@ const ArtistPage = React.memo(function ArtistPage(props) {
             }
             const sortedMonths = Object.keys(grouped).sort();
 
-            return React.createElement('div', { className: 'p-6' },
-              // The app's section title (SectionHeader): the count, a spinner
-              // beside it while loading, and refresh on the right.
-              React.createElement(SectionHeader, {
-                title: React.createElement(React.Fragment, null,
-                  `${events.length} Upcoming Concert${events.length !== 1 ? 's' : ''}`,
-                  artistConcertsLoading && React.createElement(Icons.Spinner, { className: 'w-4 h-4 text-teal-500', style: { display: 'inline-block', verticalAlign: 'middle', marginLeft: '12px' } })),
-                style: { marginBottom: '24px', alignItems: 'center' },
-                extra: React.createElement('button', {
-                  onClick: () => currentArtist && loadArtistConcerts(currentArtist.name, true),
-                  disabled: artistConcertsLoading,
-                  className: `p-1.5 transition-colors ${artistConcertsLoading ? 'text-teal-500' : 'text-ink-tertiary hover:text-ink-secondary'}`,
-                  'aria-label': artistConcertsLoading ? 'Loading…' : 'Refresh', 'data-tooltip': artistConcertsLoading ? 'Loading…' : 'Refresh'
-                },
-                  React.createElement(Icons.RefreshCw, { className: `w-4 h-4 ${artistConcertsLoading ? 'animate-spin' : ''}` })
-                )
-              }),
+            const concertsColor = PAGE_COLORS.concerts.color;
+            return React.createElement(React.Fragment, null,
+              // A sticky bar (like Related artists' filter bar): the count, a
+              // spinner beside it while loading, and refresh on the right; the
+              // months scroll beneath it.
+              React.createElement('div', {
+                className: 'sticky top-0 z-10 flex items-center px-6 py-3',
+                style: { backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
+              },
+                React.createElement(SectionHeader, {
+                  title: React.createElement(React.Fragment, null,
+                    countOf(events.length, 'upcoming concert'),
+                    artistConcertsLoading && React.createElement(Icons.Spinner, { className: 'w-4 h-4', style: { display: 'inline-block', verticalAlign: 'middle', marginLeft: '12px', color: concertsColor } })),
+                  style: { marginBottom: 0, alignItems: 'center', width: '100%' },
+                  extra: React.createElement(Button, {
+                    variant: 'icon', size: 'sm',
+                    onClick: () => currentArtist && loadArtistConcerts(currentArtist.name, true),
+                    disabled: artistConcertsLoading,
+                    'aria-label': artistConcertsLoading ? 'Loading…' : 'Refresh', 'data-tooltip': artistConcertsLoading ? 'Loading…' : 'Refresh'
+                  },
+                    React.createElement(Icons.RefreshCw, { className: `w-4 h-4 ${artistConcertsLoading ? 'animate-spin' : ''}` })
+                  )
+                })
+              ),
+              React.createElement('div', { className: 'p-6' },
 
               // Empty state
-              events.length === 0 && !artistConcertsLoading && React.createElement('div', {
-                className: 'flex flex-col items-center justify-center py-12'
-              },
-                React.createElement('p', { className: `text-sm text-ink-tertiary` }, 'No upcoming concerts found.')
-              ),
+              events.length === 0 && !artistConcertsLoading && React.createElement(EmptyState, {
+                icon: Icons.Ticket, title: 'No upcoming concerts', body: 'Nothing announced yet. Check back later.'
+              }),
 
               // Loading state
               events.length === 0 && artistConcertsLoading && React.createElement('div', {
                 className: 'flex flex-col items-center justify-center py-12'
               },
-                React.createElement(Icons.Spinner, { className: 'w-8 h-8 text-teal-500 mb-3' }),
+                React.createElement(Icons.Spinner, { className: 'w-8 h-8 mb-3', style: { color: concertsColor } }),
                 React.createElement('p', { className: `text-sm text-ink-tertiary` }, 'Loading concerts…')
               ),
 
@@ -1690,7 +1701,8 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                           style: { minWidth: '56px' }
                         },
                           React.createElement('span', {
-                            className: 'text-xs font-medium text-teal-500 uppercase'
+                            className: 'text-xs font-medium uppercase',
+                            style: { color: concertsColor }
                           }, monthShort),
                           React.createElement('span', {
                             className: `text-2xl font-bold leading-tight text-ink-primary`
@@ -1778,7 +1790,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                   )
                 )
               )
-            );
+            ));
           })()
         )
       );

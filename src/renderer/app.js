@@ -33469,6 +33469,13 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // Fetch top tracks for an artist from Last.fm API
   // An artist card's Play (components/artist-card.js): their top 10, with
   // the rest queued after the first, in the artist's context.
+  // A plugin's colour (its manifest's color), any kind of plugin: playback,
+  // metadata (Last.fm, ListenBrainz) or other. Null when unknown.
+  const getServiceColor = (id) => {
+    const r = (resolverLoaderRef.current?.getAllResolvers?.() || []).find(x => x.id === id);
+    return r && r.color && r.color !== '#888888' ? r.color : null;
+  };
+
   const playArtistTopTracks = async (artist) => {
     const name = typeof artist === 'string' ? artist : artist?.name;
     if (!name) return;
@@ -36680,7 +36687,7 @@ useEffect(() => {
     addToQueue, copyParachordLink, fetchArtistData, fetchReleaseData, getArtistBio,
     getArtistTopTracks, getLastfmApiKey, getRelatedArtists, handlePlay,
     handlePlaylistDragEnd, handleSearchInput, loadArtistConcerts, openAlbumVersions,
-    playArtistTopTracks, prefetchReleaseTracks, reprioritizeAlbumArtQueue, resolveRelatedArtistImages,
+    playArtistTopTracks, prefetchReleaseTracks, getServiceColor, reprioritizeAlbumArtQueue, resolveRelatedArtistImages,
     retryReleaseLoad, selectAlbumVersion, setQueueWithContext,
   });
 

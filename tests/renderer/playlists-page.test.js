@@ -84,7 +84,15 @@ test('the artist page: shared Play and Tickets buttons, plugin colours, no click
   expect(artist).not.toMatch(/#E91E63|#10c9b4|#9333ea/);
   expect(artist).toMatch(/isCompactHeader \? 'Play' : 'Play top tracks'/);
   expect(artist).toContain("style: { backgroundColor: PAGE_COLORS.concerts.fill }");
-  expect(artist).toContain("const serviceColor = (id) => (resolvers || []).find(r => r.id === id)?.color");
+  expect(artist).toContain("const serviceColor = (id) => getServiceColor(id) || 'var(--accent-primary)';");
+  expect(artist).not.toMatch(/value: 'both', label: 'Both'/);
   expect(artist).not.toMatch(/React\.createElement\('h1', \{\s*className: '[^']*cursor-pointer/);
   expect(artist).not.toContain("fontSize: '10px'");
+});
+
+test("the artist page's On Tour header is a sticky bar, in sentence case", () => {
+  const artist = read('src/renderer/components/artist-page.js');
+  expect(artist).toMatch(/className: 'sticky top-0 z-10 flex items-center px-6 py-3'[\s\S]{0,400}countOf\(events\.length, 'upcoming concert'\)/);
+  expect(artist).not.toMatch(/Upcoming Concert\$\{/);
+  expect(artist).not.toContain('text-teal-500');
 });
