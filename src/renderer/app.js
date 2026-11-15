@@ -9492,7 +9492,7 @@ const Parachord = () => {
           console.warn('[Sync] Spotify auth check failed right after a successful login; not re-authenticating', authStatus);
           showConfirmDialog({
             type: 'error',
-            title: 'Spotify Sync Unavailable',
+            title: 'Spotify sync unavailable',
             message: `You're signed in to Spotify, but Spotify refused the sync request${authStatus.status ? ` (HTTP ${authStatus.status})` : ''}.\n\n` +
               'If your Spotify app is in Development Mode, check that your Spotify account is added under User Management in the developer dashboard, then try again.'
           });
@@ -15473,7 +15473,7 @@ ${trackListXml}
 
       showConfirmDialog({
         type: 'warning',
-        title: 'Apple Music Reconnect Required',
+        title: 'Apple Music reconnect required',
         message:
           "Apple Music sync is failing because the authorization has gone stale at the system level — reads still work (so playback is fine), but writes (adding/removing tracks on playlists) are rejected.\n\n" +
           "Parachord has disconnected Apple Music locally. To fully reset:\n" +
@@ -15783,7 +15783,7 @@ ${trackListXml}
         : '';
       if (found.missing.length === 0) {
         if (skipped) {
-          showConfirmDialog({ type: 'info', title: 'No Missing Files', message: `Every file in the folders that could be checked is still there.${skipped}` });
+          showConfirmDialog({ type: 'info', title: 'No missing files', message: `Every file in the folders that could be checked is still there.${skipped}` });
         } else {
           showToast('No missing files: every library file is still on disk', 'success');
         }
@@ -17412,7 +17412,7 @@ ${trackListXml}
             setCurrentTrack(prev => prev?.id === placeholderId ? { ...prev, status: 'error' } : prev);
             showConfirmDialog({
               type: 'error',
-              title: 'Track Not Found',
+              title: 'Track not found',
               message: `Could not find "${title}" by ${artist} on any of your enabled music services. Try searching for it, or check which plug-ins are enabled.`
             });
           }
@@ -17467,7 +17467,7 @@ ${trackListXml}
             setTrackLoading(false);
             showConfirmDialog({
               type: 'error',
-              title: 'Album Not Found',
+              title: 'Album not found',
               message: `Could not find "${title}" by ${artist} on MusicBrainz.`
             });
           }
@@ -20889,7 +20889,7 @@ ${trackListXml}
           // No results from any source
           showConfirmDialog({
             type: 'info',
-            title: 'Artist Not Found',
+            title: 'Artist not found',
             message: `"${artistName}" was not found in MusicBrainz or any enabled fallback source`
           });
           setLoadingArtist(false);
@@ -22518,7 +22518,7 @@ ${trackListXml}
       console.error('Error fetching album from search:', error);
       showConfirmDialog({
         type: 'error',
-        title: 'Load Failed',
+        title: 'Load failed',
         message: 'Failed to load album. Please try again.'
       });
     }
@@ -25183,7 +25183,7 @@ ${trackListXml}
     if (!window.electron?.resolvers?.pickFile) {
       showConfirmDialog({
         type: 'error',
-        title: 'Not Available',
+        title: 'Not available',
         message: 'File picker not available. Make sure you are running in Electron.'
       });
       return;
@@ -25202,7 +25202,7 @@ ${trackListXml}
       if (result.error) {
         showConfirmDialog({
           type: 'error',
-          title: 'File Error',
+          title: 'File error',
           message: result.error
         });
         return;
@@ -25236,7 +25236,7 @@ ${trackListXml}
       if (!installResult.success) {
         showConfirmDialog({
           type: 'error',
-          title: 'Installation Failed',
+          title: 'Installation failed',
           message: installResult.error
         });
         return;
@@ -25457,7 +25457,7 @@ ${trackListXml}
         if (!downloadUrl) {
           showConfirmDialog({
             type: 'info',
-            title: 'Not Available',
+            title: 'Not available',
             message: `${name} is not available in this build. Please update the app to get this feature.`
           });
           return;
@@ -25471,7 +25471,7 @@ ${trackListXml}
       if (!downloadResult.success) {
         showConfirmDialog({
           type: 'error',
-          title: 'Download Failed',
+          title: 'Download failed',
           message: `Failed to download ${name}: ${downloadResult.error}`
         });
         return;
@@ -25501,7 +25501,7 @@ ${trackListXml}
       if (!installResult.success) {
         showConfirmDialog({
           type: 'error',
-          title: 'Installation Failed',
+          title: 'Installation failed',
           message: `Failed to install ${resolverName}: ${installResult.error}`
         });
         return;
@@ -26261,13 +26261,13 @@ ${tracks}
         setLastfmChartsLoaded(true);
         showConfirmDialog({
           type: 'info',
-          title: 'Using Cached Data',
+          title: 'Using cached data',
           message: `Could not refresh Last.fm charts. Showing cached data from ${cacheAgeHours} hours ago.`
         });
       } else {
         showConfirmDialog({
           type: 'error',
-          title: 'Load Failed',
+          title: 'Load failed',
           message: 'Failed to load Last.fm Charts. Please try again.'
         });
       }
@@ -26373,7 +26373,7 @@ ${tracks}
         setAppleMusicSongsChartsLoaded(true);
         showConfirmDialog({
           type: 'info',
-          title: 'Using Cached Data',
+          title: 'Using cached data',
           message: `Could not refresh Apple Music charts. Showing cached data from ${cacheAgeHours} hours ago.`
         });
       } else {
@@ -26605,7 +26605,7 @@ ${tracks}
       if (!list) {
         showConfirmDialog({
           type: 'error',
-          title: 'Album Not Found',
+          title: 'Album not found',
           message: `Could not find tracks for "${album.title}"`
         });
         return;
@@ -34121,7 +34121,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       if (result.error) {
         showConfirmDialog({
           type: 'error',
-          title: 'Import Failed',
+          title: 'Import failed',
           message: result.error
         });
         return;
@@ -34162,7 +34162,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       if (!saveResult.success) {
         showConfirmDialog({
           type: 'error',
-          title: 'Save Failed',
+          title: 'Save failed',
           message: saveResult.error
         });
         return;
@@ -34350,7 +34350,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         }
         showConfirmDialog({
           type: 'error',
-          title: 'Import Failed',
+          title: 'Import failed',
           message: resolverId
             ? `No tracks found. Make sure ${resolverId} is connected and the playlist URL is correct.`
             : 'Failed to parse XSPF file from URL'
@@ -34740,7 +34740,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       if (!result.success) {
         showConfirmDialog({
           type: 'error',
-          title: 'Export Failed',
+          title: 'Export failed',
           message: result.error
         });
         return;
@@ -34749,7 +34749,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       console.log(`✅ Exported to: ${result.filepath}`);
       showConfirmDialog({
         type: 'success',
-        title: 'Playlist Exported',
+        title: 'Playlist exported',
         message: 'Successfully saved to disk'
       });
     } catch (error) {
@@ -34859,7 +34859,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
           if (result.error === 'no_client_id') {
             showConfirmDialog({
               type: 'info',
-              title: 'Spotify Client ID Required',
+              title: 'Spotify client ID required',
               message: 'To use Spotify, you need to create a free Spotify Developer app and enter your Client ID below.\n\n' +
                 '1. Go to developer.spotify.com/dashboard\n' +
                 '2. Create an app (name it anything)\n' +
@@ -34872,7 +34872,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
           } else {
             showConfirmDialog({
               type: 'error',
-              title: 'Authentication Failed',
+              title: 'Authentication failed',
               message: result.error || 'Spotify authentication failed. Please check your configuration.'
             });
           }
@@ -34881,7 +34881,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         console.error('Spotify auth error:', error);
         showConfirmDialog({
           type: 'error',
-          title: 'Authentication Failed',
+          title: 'Authentication failed',
           message: 'Spotify authentication failed. Check console for details.'
         });
       }
@@ -34929,7 +34929,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       if (spotifyConnected && clientId) {
         showConfirmDialog({
           type: 'info',
-          title: 'Credentials Updated',
+          title: 'Credentials updated',
           message: 'Your Spotify Client ID has been saved. Please disconnect and reconnect to use your new credentials.'
         });
       } else if (!clientId) {
@@ -34992,7 +34992,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       if (soundcloudConnected && clientId && clientSecret) {
         showConfirmDialog({
           type: 'info',
-          title: 'Credentials Updated',
+          title: 'Credentials updated',
           message: 'Your SoundCloud credentials have been saved. Please disconnect and reconnect to use your new credentials.'
         });
       } else if (!clientId && !clientSecret) {
@@ -35027,7 +35027,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
           } else {
             showConfirmDialog({
               type: 'error',
-              title: 'Authentication Failed',
+              title: 'Authentication failed',
               message: result.error
             });
           }
@@ -35036,7 +35036,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         console.error('SoundCloud auth error:', error);
         showConfirmDialog({
           type: 'error',
-          title: 'Authentication Failed',
+          title: 'Authentication failed',
           message: 'SoundCloud authentication failed. Check console for details.'
         });
       }
@@ -35487,7 +35487,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         // Previously denied — user must toggle permission in System Settings
         showConfirmDialog({
           type: 'info',
-          title: 'Apple Music Access Denied',
+          title: 'Apple Music access denied',
           message: 'Apple Music access was previously denied. Please enable it in System Settings → Privacy & Security → Media & Apple Music, then try again.',
           confirmLabel: 'Open System Settings',
           onConfirm: () => {
@@ -35500,7 +35500,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         // User denied or other status
         showConfirmDialog({
           type: 'info',
-          title: 'Authorization Required',
+          title: 'Authorization required',
           message: 'Apple Music access was not granted. Status: ' + authResult.status
         });
       }
@@ -35520,7 +35520,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
       showConfirmDialog({
         type: 'error',
-        title: 'Authentication Failed',
+        title: 'Authentication failed',
         message,
         confirmLabel: 'Open System Settings',
         onConfirm: () => {
@@ -35677,7 +35677,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     if (!username?.trim()) {
       showConfirmDialog({
         type: 'error',
-        title: 'Username Required',
+        title: 'Username required',
         message: 'Please enter your Last.fm username.'
       });
       return false;
@@ -35692,7 +35692,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         setLastfmConnecting(false);
         showConfirmDialog({
           type: 'error',
-          title: 'Invalid Username',
+          title: 'Invalid username',
           message: `Could not find Last.fm user "${username}". Please check the username and try again.`
         });
         return false;
@@ -35702,7 +35702,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       setLastfmConnecting(false);
       showConfirmDialog({
         type: 'error',
-        title: 'Connection Error',
+        title: 'Connection error',
         message: 'Could not connect to Last.fm. Please check your internet connection.'
       });
       return false;
@@ -35741,7 +35741,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     if (!username?.trim()) {
       showConfirmDialog({
         type: 'error',
-        title: 'Username Required',
+        title: 'Username required',
         message: 'Please enter your ListenBrainz username.'
       });
       return false;
@@ -35756,7 +35756,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         setListenbrainzConnecting(false);
         showConfirmDialog({
           type: 'error',
-          title: 'Invalid Username',
+          title: 'Invalid username',
           message: `Could not find ListenBrainz user "${username}". Please check the username and try again.`
         });
         return false;
@@ -35766,7 +35766,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       setListenbrainzConnecting(false);
       showConfirmDialog({
         type: 'error',
-        title: 'Connection Error',
+        title: 'Connection error',
         message: 'Could not connect to ListenBrainz. Please check your internet connection.'
       });
       return false;
@@ -35785,7 +35785,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
           setListenbrainzConnecting(false);
           showConfirmDialog({
             type: 'error',
-            title: 'Invalid Token',
+            title: 'Invalid token',
             message: 'The user token is invalid. Please check and try again, or leave it blank to connect without a token.'
           });
           return false;
@@ -35913,7 +35913,7 @@ useEffect(() => {
       pendingSyncSetupRef.current = null; // Clear pending sync setup on auth failure
       showConfirmDialog({
         type: 'error',
-        title: 'Spotify Authentication Failed',
+        title: 'Spotify authentication failed',
         message: error
       });
     });
@@ -35971,7 +35971,7 @@ useEffect(() => {
       console.error('SoundCloud auth failed:', error);
       showConfirmDialog({
         type: 'error',
-        title: 'SoundCloud Authentication Failed',
+        title: 'SoundCloud authentication failed',
         message: error
       });
     });

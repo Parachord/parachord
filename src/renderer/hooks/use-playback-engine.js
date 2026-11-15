@@ -671,7 +671,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         holdElementTrack(localFilePlaybackTrackRef.current);
         showConfirmDialog({
           type: 'error',
-          title: 'Playback Error',
+          title: 'Playback error',
           message: errorMessage
         });
         return;
@@ -1370,7 +1370,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
           if (autoSkipIfAdvancing(`local file missing: ${localPath}`, { needsNetwork: false })) return;
           showConfirmDialog({
             type: 'error',
-            title: 'File Not Found',
+            title: 'File not found',
             message: `This file is no longer on disk, so it can't be played:\n${localPath}`
           });
           return;
@@ -1578,7 +1578,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         if (autoSkipIfAdvancing(`local file playback: ${errorMessage}`, { needsNetwork: false })) return;
         showConfirmDialog({
           type: 'error',
-          title: 'Playback Error',
+          title: 'Playback error',
           message: errorMessage
         });
       }
@@ -1879,7 +1879,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
               setTrackLoading(false);
               showConfirmDialog({
                 type: 'error',
-                title: 'Playback Error',
+                title: 'Playback error',
                 message: `Failed to play this ${streamLabel} track: ` + retryError.message
               });
               return;
@@ -2510,7 +2510,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
           // bug while his own play() was returning false).
           showConfirmDialog({
             type: 'info',
-            title: 'Track Re-resolved',
+            title: 'Track re-resolved',
             message: `Playback via ${resolver.name} failed, so the track has been re-resolved with fresh sources. Try playing it again.\n\nIf it keeps failing, use Help › Copy Diagnostic Log and include it when you report the problem.`
           });
         } else {
@@ -2541,7 +2541,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         if (autoSkipIfAdvancing('playback error; re-resolved in background')) return;
         showConfirmDialog({
           type: 'error',
-          title: 'Track Re-resolved',
+          title: 'Track re-resolved',
           message: `Playback via ${resolver.name} hit an error (${error?.message || error}), so the track has been re-resolved with fresh sources. Try playing it again.`
         });
       } else {
