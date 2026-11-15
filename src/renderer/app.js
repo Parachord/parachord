@@ -43454,7 +43454,10 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                   // service mark; the playbar used to keep its own copies.
                   const currentIconColor = (resolver.color && resolver.color !== '#888888') ? resolver.color : 'var(--playbar-accent)';
 
-                  return React.createElement('div', { className: 'flex items-center gap-1.5' },
+                  // A fixed 20px line: the picker turning from a label into a
+                  // menu (a second source resolving), the external pill or the
+                  // buy button never change the playbar's height.
+                  return React.createElement('div', { className: 'flex items-center gap-1.5', style: { height: '20px' } },
                     // The source picker: "Play from" (components/menu.js), a
                     // choice among the sources this track resolved on. One
                     // source: just its name, no menu. Right-click on the
@@ -43486,7 +43489,9 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                           onContextMenu: sourceMenuFor(currentResolverId)
                         }, triggerBody(false));
                       }
-                      return React.createElement('div', { className: 'no-drag' },
+                      // flex: the trigger sits on no text line (a block wrapper
+                      // added the line's baseline gap, a few pixels).
+                      return React.createElement('div', { className: 'no-drag flex items-center' },
                         React.createElement(Menu, {
                           label: 'Play from',
                           heading: 'Play from',

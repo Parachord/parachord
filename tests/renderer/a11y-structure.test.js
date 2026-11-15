@@ -64,3 +64,10 @@ test('landmarks and headings', () => {
   expect(read('src/renderer/components/search-page.js')).toMatch(/React\.createElement\('h1', \{\n\s*\/\/ The page's heading \(#1386\)[\s\S]{0,400}\}, 'Search'\)/);
   expect(read('src/renderer/components/artist-page.js')).toMatch(/React\.createElement\('h2', \{[^}]*\}, className: 'uppercase' \},\n\s*currentRelease\?\.title/);
 });
+
+test('the playbar source line is a fixed 20px, so the picker turning into a menu never grows the bar', () => {
+  const i = app.indexOf('// A fixed 20px line: the picker turning from a label into a');
+  expect(i).toBeGreaterThan(-1);
+  expect(app.slice(i, i + 400)).toContain("React.createElement('div', { className: 'flex items-center gap-1.5', style: { height: '20px' } },");
+  expect(app).toContain("return React.createElement('div', { className: 'no-drag flex items-center' },\n                        React.createElement(Menu, {\n                          label: 'Play from',");
+});
