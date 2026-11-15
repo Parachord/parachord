@@ -38805,7 +38805,7 @@ useEffect(() => {
                       }, renderLabel: (tab) => (tab === 'songs' ? 'Tracks' : 'Albums'), label: 'Charts' })
                 ),
                 React.createElement('p', {
-                  className: 'mt-3 text-white/80 text-sm'
+                  className: 'mt-4 text-white/80 text-sm'
                 }, chartsTab === 'albums'
                   ? 'Top 50 most played albums on Apple Music'
                   : chartsSongsSource === 'apple'
@@ -42043,7 +42043,7 @@ useEffect(() => {
                     }, renderLabel: (tab) => tab.label, label: 'History' })
               ),
               React.createElement('p', {
-                className: 'mt-2 text-white/80 text-sm'
+                className: 'mt-4 text-white/80 text-sm'
               }, metaServiceConfigs.listenbrainz?.username && metaServiceConfigs.lastfm?.username
                 ? 'Your listening activity from ListenBrainz & Last.fm'
                 : metaServiceConfigs.listenbrainz?.username
@@ -42824,7 +42824,7 @@ useEffect(() => {
                 ),
                 // Service subtitle
                 React.createElement('p', {
-                  className: 'mt-2 text-white/80 text-sm'
+                  className: 'mt-4 text-white/80 text-sm'
                 }, `Listening activity from ${currentFriend.service === 'lastfm' ? 'Last.fm' : 'ListenBrainz'}`)
               ),
               // COLLAPSED STATE - Inline layout with tabs (matching History)

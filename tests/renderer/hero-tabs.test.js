@@ -42,3 +42,12 @@ test('rows that build their own tabs use the shared look (artist page, Search re
   expect((read('components/artist-page.js').match(/heroTabClass\(artistPageTab === tab\)/g) || []).length).toBe(2);
   expect(read('components/search-page.js')).toContain('heroTabClass(searchDetailCategory === tab.key)');
 });
+
+test('a line under hero tabs sits 16px below them (clear of the selected underline)', () => {
+  const app = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  // Pop of the Tops, History, a friend's page: the line after the tabs. (A
+  // subtitle right under a title, with no tabs, keeps mt-2.)
+  const afterTabs = [...app.matchAll(/React\.createElement\(HeroTabs, \{[\s\S]{0,1500}?className: '(mt-\d) text-white\/80 text-sm'/g)].map(m => m[1]);
+  expect(afterTabs.length).toBeGreaterThanOrEqual(3);
+  for (const mt of afterTabs) expect(mt).toBe('mt-4');
+});
