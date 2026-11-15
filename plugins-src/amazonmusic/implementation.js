@@ -151,7 +151,14 @@ module.exports = {
     // among everything the page fires. The songs tab is always used: that is
     // the page which fires the track search.
     function amazonSongSearchUrl({ title, artist, query } = {}) {
-      const quote = (value) => '"' + String(value || '').replace(/"/g, '').trim() + '"';
+      // Titles and artists are track metadata, not typed text: control
+      // characters never belong in them. One surviving into searchText and
+      // being normalized differently by hornet would leave the runner waiting
+      // out its capture window for a request it can never match — one junk
+      // string tripping the shared search breaker (the same fold
+      // amazonArtistSearchUrl applies to a name).
+      const clean = (value) => String(value || '').replace(/[\p{Cc}]+/gu, ' ');
+      const quote = (value) => '"' + clean(value).replace(/"/g, '').trim() + '"';
       let q = '';
       if ((title && String(title).trim()) || (artist && String(artist).trim())) {
         const titlePart = title && String(title).trim() ? quote(title) : '';
@@ -160,7 +167,7 @@ module.exports = {
           ? titlePart + ' by ' + artistPart + ' OR ' + titlePart + ' ' + artistPart + ' OR ' + artistPart + ' ' + titlePart
           : titlePart || artistPart;
       } else {
-        q = String(query || '').trim();
+        q = clean(query).trim();
       }
       if (!q) return null;
       let url;
@@ -1761,8 +1768,11 @@ module.exports = {
           // candidate is still worth a try.
           outcome = { error: (error && error.message) || String(error) };
         }
-        if (outcome.error !== 'busy' || attempt >= 3) break;
-        await new Promise((resolve) => setTimeout(resolve, 400));
+        if (outcome.error !== 'busy') break;
+        // The same bounded backoff as the spec-search page flow's replay.
+        const wait = attempt < 3 ? 400 : 1000;
+        if (attempt >= 3 && (attempt - 3 + 1) * 1000 > 12000) break;
+        await new Promise((resolve) => setTimeout(resolve, wait));
       }
       if (outcome.error) {
         lastReplayError = outcome.error;

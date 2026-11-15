@@ -403,7 +403,7 @@ describe('the page flow (webSession.load with the capture window inside it)', ()
     // session-aged headers with a fresh capturedAt. The warmed retry at flow
     // entry fails busy (a navigation holds the gate), the load then sees the
     // echo, and the mint is skipped.
-    let echoNow = true;
+    let echoNow = false; // the seed flow's capture is the page's own — it mints
     const ws = amazonWebSessionMock({
       tracks: TRACKS,
       capturesFor: (url) => {
@@ -414,6 +414,8 @@ describe('the page flow (webSession.load with the capture window inside it)', ()
     const resolver = instantiateAmazonPlugin(axe);
     await search(resolver, 'daft punk'); // one real page flow mints the template
     const minted = resolver._specSearchTemplate;
+    expect(minted).toBeTruthy();
+    echoNow = true; // from here every capture is our own replay echoing back
     // The two warmed retries fail busy (a navigation holds the gate); each
     // page flow's own replay after the load answers the envelope.
     const outcomes = [
@@ -988,6 +990,12 @@ describe('amazonSongSearchUrl', () => {
     // catch would cache the throw as a noMatch); a well-formed pair searches.
     expect(lib.amazonSongSearchUrl({ title: 'AC\uD83DDC', artist: 'X' })).toBeNull();
     expect(lib.amazonSongSearchUrl({ title: 'AC\uD83D\uDE00DC', artist: 'X' })).not.toBeNull();
+    // Control characters in metadata fold to a space — a junk string must not
+    // wedge the matcher for a request it can never match (the same fold
+    // amazonArtistSearchUrl applies to a name).
+    expect(lib.amazonSongSearchUrl({ title: 'Around\nthe World', artist: 'Daft Punk' }).searchText)
+      .toBe('"Around the World" by "Daft Punk" OR "Around the World" "Daft Punk" OR "Daft Punk" "Around the World"');
+    expect(lib.amazonSongSearchUrl({ query: 'a\tb' }).searchText).toBe('a b');
   });
 });
 
