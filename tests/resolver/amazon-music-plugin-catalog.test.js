@@ -597,6 +597,36 @@ describe('lookupAlbum (the candidate-ranking flow)', () => {
     expect(album.name).toBe('Master of Puppets (Remastered)');
   });
 
+  test('a permanently-busy replay backs off to a bounded ~13s per candidate, then the busy is the replay error', async () => {
+    // The backoff the busy retry actually promises (the same ladder as the
+    // spec-search page flow's replay): three 400ms waits, then 1000ms waits
+    // until 12s of the 1000ms ladder — 15 sleeps, 13200ms total, 16 attempts
+    // — and then the still-busy candidate is given up on as a replay error
+    // (lookup-failed), never an endless spin on the page-flow chain. A
+    // mid-retry staleness re-check is deliberately NOT part of this: the
+    // #1135 budget guards the QUEUE wait (a job queued past 8s skips its page
+    // load); once a flow is inside its page flow it runs to its bounded end.
+    const ws = albumLookupMock({ captures: [albumPageCapture('B07558DQJL', 'AlbumDetailPage')] });
+    ws.pageFetch.mockImplementation(async () => ({ success: true, error: 'busy' }));
+    const resolver = instantiateAmazonPlugin(axe);
+    jest.useFakeTimers();
+    try {
+      const t0 = Date.now();
+      const pending = resolver.lookupAlbum(ALBUM_URL, {});
+      // The rejection expectation attaches BEFORE the timers are driven: the
+      // flow rejects while the advance is still running, and a pending without
+      // a handler yet would surface as an unhandled rejection.
+      const rejection = expect(pending).rejects.toMatchObject({ notReady: true, code: 'lookup-failed' });
+      await jest.advanceTimersByTimeAsync(0); // the flow reaches the first backoff sleep
+      await jest.advanceTimersByTimeAsync(13200);
+      await rejection;
+      expect(Date.now() - t0).toBe(13200); // exactly 3×400 + 12×1000 of backoff
+      expect(ws.pageFetch).toHaveBeenCalledTimes(16); // the initial attempt + 15 retries, then the bound gives up
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   test('an errored replay is lookup-failed, never a bogus miss', async () => {
     const ws = albumLookupMock({ replayFor: () => ({ success: true, error: 'Amazon gql query failed (500)' }) });
     const resolver = instantiateAmazonPlugin(axe);
@@ -637,6 +667,89 @@ describe('lookupAlbum (the candidate-ranking flow)', () => {
       // Both captured candidates were replayed (the pool is exhausted before
       // the miss is concluded).
       expect(ws.pageFetch).toHaveBeenCalledTimes(2);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test('a replay that parses with no album field at all is lookup-failed, never a miss', async () => {
+    // The hornet rename of the response's album field: the winner is chosen
+    // by the connection, which requires data.album, so an album-less replay
+    // can never win — and before the loop classified it, the exhausted pool
+    // fell into the "page never requested the album detail" MISS, caching a
+    // rename as a deleted album. albumDetailFromGql's envelope:false shape
+    // now surfaces where it can actually bite: lookup-failed (the playlist
+    // structural rule, mirrored).
+    const ws = albumLookupMock({
+      replayFor: () => ({ success: true, status: 200, text: JSON.stringify({ data: { albumV2: { id: 'B07558DQJL', tracksConnection: { edges: [] } } } }) })
+    });
+    const resolver = instantiateAmazonPlugin(axe);
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await expect(resolver.lookupAlbum(ALBUM_URL, {})).rejects.toMatchObject({
+        notReady: true,
+        code: 'lookup-failed'
+      });
+      // The whole ranked pool was replayed (the response stays the arbiter —
+      // a later candidate could still have carried the connection).
+      expect(ws.pageFetch).toHaveBeenCalledTimes(2);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('carried no album field at all'));
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test('an album-less replay does not outrank a seen header — the header proves the field intact', async () => {
+    // AlbumSeo answered data.album (no connection), an unrelated read that
+    // happens to carry the ASIN answered with no album field at all. The
+    // header proves the album field intact, so the stray's album-less
+    // response is its expected shape, not a rename: the header-only verdict
+    // (the detail op never ran) stands — a miss with the ops log.
+    const entries = [
+      albumPageCapture('B07558DQJL', 'AlbumSeo'),
+      albumPageCapture('B07558DQJL', 'PlaybackContextSeed')
+    ];
+    const ws = albumLookupMock({
+      captures: entries,
+      replayFor: (body) => (body.operationName === 'AlbumSeo'
+        ? { success: true, status: 200, text: JSON.stringify({ data: { album: { id: 'B07558DQJL', title: 'Master of Puppets (Remastered)', trackCount: 8 } } }) }
+        : { success: true, status: 200, text: JSON.stringify({ data: { playbackContext: { id: 'B07558DQJL' } } }) })
+    });
+    const resolver = instantiateAmazonPlugin(axe);
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await expect(resolver.lookupAlbum(ALBUM_URL, {})).resolves.toBeNull();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('header came from AlbumSeo but no operation exposed a tracks connection'));
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test('the ranked pool is replayed to a cap of four — a fifth candidate is never replayed', async () => {
+    // A page whose every candidate answers the not-found shape (data.album
+    // null) exhausts the pool at four pageFetch replays; the fifth-ranked
+    // candidate (an unrelated read carrying the ASIN) is never asked.
+    const asin = 'B07558DQJL';
+    const entries = [
+      albumPageCapture(asin, 'AlbumDetailPage'),
+      albumPageCapture(asin, 'AlbumSeo'),
+      albumPageCapture(asin, 'PlaybackContextSeed'),
+      albumPageCapture(asin, 'LibrarySeed'),
+      albumPageCapture(asin, 'MerchModuleSeed')
+    ];
+    const ws = albumLookupMock({
+      captures: entries,
+      replayFor: () => ({ success: true, status: 200, text: JSON.stringify({ data: { album: null } }) })
+    });
+    const resolver = instantiateAmazonPlugin(axe);
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await expect(resolver.lookupAlbum(ALBUM_URL, {})).resolves.toBeNull();
+      expect(ws.pageFetch).toHaveBeenCalledTimes(4);
+      // And the four the cap allowed were the highest-ranked: the detail op,
+      // the album-named header, then the strays in capture order.
+      expect(ws.pageFetch.mock.calls.map((c) => JSON.parse(c[1].body).operationName))
+        .toEqual(['AlbumDetailPage', 'AlbumSeo', 'PlaybackContextSeed', 'LibrarySeed']);
     } finally {
       warn.mockRestore();
     }

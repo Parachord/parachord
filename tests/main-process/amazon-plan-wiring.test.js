@@ -23,6 +23,20 @@ const between = (src, start, end) => {
   return src.slice(i, j);
 };
 
+// A plugin method's body: from its `name: async function` line to the exact
+// two-space `},` line that closes it (the methods sit at that one indent
+// level). A plain indexOf('  },\n') would stop at the first NESTED `},` with
+// ≥2 leading spaces and silently truncate the scan — anything after that
+// point would go unread — so the terminator is matched at the method's own
+// indent, exactly.
+const methodBody = (src, method) => {
+  const start = src.indexOf(method);
+  expect(start).toBeGreaterThan(-1);
+  const end = src.slice(start).search(/\n  \},\n/);
+  expect(end).toBeGreaterThan(-1);
+  return src.slice(start, start + end);
+};
+
 describe('main process', () => {
   test('track search checks the plan only when signed in, before searching', () => {
     // #1356 M5: the track search (and with it the plan gate the deleted
@@ -54,10 +68,7 @@ describe('main process', () => {
     // through the webSession bridge).
     const impl = read('plugins-src/amazonmusic/implementation.js');
     for (const method of ['searchAlbums: async function', 'searchArtistImage: async function', 'lookupAlbumFlow: async function']) {
-      const start = impl.indexOf(method);
-      expect(start).toBeGreaterThan(-1);
-      const next = impl.indexOf('  },\n', start);
-      expect(impl.slice(start, next)).not.toMatch(/assertPlanPlays|getPlan|plan-ineligible/);
+      expect(methodBody(impl, method)).not.toMatch(/assertPlanPlays|getPlan|plan-ineligible/);
     }
     // The handlers are deleted, and the preload no longer exposes them.
     for (const ch of ['amazonmusic-search-albums', 'amazonmusic-search-artist-image', 'amazonmusic-lookup-album']) {

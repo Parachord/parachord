@@ -1702,10 +1702,11 @@ module.exports = {
   // name at all; write-shaped names are never replayed), candidates are
   // replayed in order with a cap, and the first replay carrying the
   // tracksConnection (albumTracksConnectionIn) wins; a replayed header-only
-  // op is logged and skipped. Unlike the old in-flow poll (which replayed
-  // candidates as they streamed in), the bridge returns the whole burst once
-  // it goes quiet — so the ranking replay runs over the complete candidate
-  // set.
+  // op is logged and skipped, and a replay that parses with no `album` field
+  // at all is the hornet-rename shape and fails the lookup (below). Unlike
+  // the old in-flow poll (which replayed candidates as they streamed in), the
+  // bridge returns the whole burst once it goes quiet — so the ranking replay
+  // runs over the complete candidate set.
   lookupAlbumPageFlow: async function (asin) {
     const lib = this.requireLib();
     const ws = window.electron && window.electron.webSession;
@@ -1745,6 +1746,7 @@ module.exports = {
     const seen = new Set();
     let winner = null;        // { request, data } — the replay that carried a tracksConnection
     let headerOnlyOp = null;   // replayed op that had data.album but no tracksConnection (AlbumSeo)
+    let albumLessOp = null;    // replayed op whose response parsed with no album field at all (the hornet-rename shape)
     let lastReplayError = null;
     let replayCount = 0;
     for (const request of candidates) {
@@ -1787,6 +1789,19 @@ module.exports = {
       if (data && data.album) {
         if (!headerOnlyOp) headerOnlyOp = request.operationName;
         console.log('[Amazon] album replay of ' + request.operationName + ' carried the header but no tracks connection');
+      } else if (!lib.albumDetailFromGql(data).envelope) {
+        // A replay that PARSED with no album field at all — albumDetailFromGql's
+        // envelope:false, the hornet rename of the response's album field. The
+        // winner is chosen by the connection, which requires data.album, so
+        // this shape can never win; it is recorded and classified once the
+        // pool is exhausted (lookup-failed, never a miss — a rename must not
+        // be cached as a deleted album). The pool is still replayed to the
+        // end: the response stays the arbiter, and a later candidate (a
+        // hornet-renamed op name in the any-name tier) can still carry the
+        // connection. data.album null (deleted / other region) carries the
+        // field and stays the not-found miss.
+        if (!albumLessOp) albumLessOp = request.operationName;
+        console.warn('[Amazon] album replay of ' + request.operationName + ' carried no album field at all');
       }
     }
     if (!winner) {
@@ -1801,8 +1816,21 @@ module.exports = {
         // An AlbumSeo-style header seen but no operation exposed a tracks
         // connection: the detail op never ran. A miss with the ops log, so a
         // hornet rename reads as a rename instead of "every album is gone".
+        // The header also proves the album field intact, so an album-less
+        // replay elsewhere in the pool is an unrelated read's expected shape,
+        // not a rename — the header-only verdict stands over it.
         console.warn('[Amazon] album lookup: ' + asin + ' header came from ' + headerOnlyOp + ' but no operation exposed a tracks connection; gql operations seen: ' + ops);
         return null;
+      }
+      if (albumLessOp) {
+        // A replay parsed with no album field at all and nothing carried the
+        // header either: the hornet rename of the response's album field —
+        // albumDetailFromGql's envelope:false, which the winner can never
+        // reach (it is chosen by the connection, so the rename surfaces
+        // here, on the non-winning replays). lookup-failed, never a miss: a
+        // rename must not be cached as a deleted album.
+        console.warn('[Amazon] album lookup: replay of ' + albumLessOp + ' carried no album field at all; gql operations seen: ' + ops);
+        throw lib.notReady('lookup-failed', 'Amazon album response had no album field at all');
       }
       // The page loaded but never asked for this album: deleted, not
       // available in the user's territory — or hornet renamed everything.
@@ -1813,6 +1841,10 @@ module.exports = {
     }
     const { album, envelope } = lib.albumDetailFromGql(winner.data);
     if (!envelope) {
+      // Belt: the loop classifies album-less replays before a winner can
+      // exist (the winner is chosen by the connection, which requires
+      // data.album), so this cannot fire today — but if the winner predicate
+      // ever loosens, fail honestly instead of mapping a bogus album.
       console.warn('[Amazon] album lookup: response was not an album detail envelope for ' + asin);
       throw lib.notReady('lookup-failed', 'Amazon album response was not an album detail envelope');
     }
