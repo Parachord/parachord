@@ -923,8 +923,14 @@ module.exports = {
     const href = state.url;
     if (!href || !lib.isAmazonMusicPage(href)) return null;
     if (lib.pageBlocksPlayback(href)) {
-      console.warn('[Amazon] ' + specType + ' replay blocked: ' + href);
-      throw lib.notReady('not-signed-in', 'Choose an Amazon Music profile');
+      // A MISS, not a throw: the view keeps whatever URL its last navigation
+      // left behind, so a token-refresh redirect can park it on a wall with a
+      // LIVE session — and a throw here would block the very page flow that
+      // navigates it off. The page flow's own after-load URL re-check is
+      // where a genuinely dead session surfaces not-signed-in (it loads a
+      // fresh page, so its verdict is current).
+      console.warn('[Amazon] ' + specType + ' replay blocked: ' + href + '; the page flow will navigate it off');
+      return null;
     }
     const body = lib.specBodyWithVars(template.body, { searchText, specType });
     let outcome;
@@ -1036,7 +1042,11 @@ module.exports = {
     if (!request.variables || typeof request.variables !== 'object') {
       throw this.specStructuralError('Unexpected Amazon search query shape');
     }
-    const entry = captured.find(r => lib.amazonSpecSearchRequest([r.body], searchText, { spec: specType }));
+    // The page's OWN capture is preferred over our echo (both match; the
+    // echo's headers are session-aged) — for the replay either answers, but
+    // the mint must take the page's.
+    const match = (r) => lib.amazonSpecSearchRequest([r.body], searchText, { spec: specType });
+    const entry = captured.find(r => !r.echo && match(r)) || captured.find(match);
 
     // Replay the page's own request verbatim. (Capturing the page's own
     // response in the page world instead — the stream-capture pattern —
@@ -1047,17 +1057,16 @@ module.exports = {
     // Mint BEFORE this flow's own replay runs: the template captures the
     // page's own fresh request, which is valid whether or not the replay
     // that follows answers well — a later replay error drops it again
-    // anyway. Never mint from OUR OWN echo (echo: true): the echoed capture
-    // is a replay of some template, and minting from it would re-store
-    // session-aged headers with a fresh capturedAt, keeping a stale header
-    // set certified-fresh indefinitely (#1152 — bodyMatchesTemplate in the
-    // host copy guarded this by comparing bytes; the bridge's echo flag
-    // says it outright). The skip applies only while the existing template
-    // is fresh: a stale template is exactly what the page flow is healing,
-    // so a real page capture always re-mints.
-    const agedTemplate = !lib.specTemplateIsFresh(this._specSearchTemplate, Date.now());
-    if (!agedTemplate && entry.echo) {
-      console.log('[Amazon] search matched our own replay in the capture; keeping the existing template');
+    // anyway. NEVER mint from OUR OWN echo (echo: true), whatever the
+    // existing template's state: the echoed capture is a replay of some
+    // template, and minting from it would re-store session-aged headers
+    // with a fresh capturedAt, keeping a stale header set certified-fresh
+    // indefinitely (#1152 — bodyMatchesTemplate in the host copy guarded
+    // this by comparing bytes; the bridge's echo flag says it outright).
+    // The rows are still correct — the replay below answers the same search
+    // either way; an echo-only match just stays page-load-per-search.
+    if (entry.echo) {
+      console.log('[Amazon] search matched our own replay in the capture; not minting from it');
     } else {
       const template = lib.makeSpecSearchTemplate({ url: entry.url, headers: entry.headers, body: request, capturedAt: Date.now() });
       if (template) this._specSearchTemplate = template;
@@ -1735,13 +1744,21 @@ module.exports = {
       replayCount += 1;
       console.log('[Amazon] album replaying ' + request.operationName + ' via gql');
       let outcome;
-      try {
-        outcome = await this.replayGql(entryFor(request), request);
-      } catch (error) {
-        // A HARD rejection — the invoke refused, the view destroyed
-        // mid-replay — reads like any other replay error: the next ranked
-        // candidate is still worth a try.
-        outcome = { error: (error && error.message) || String(error) };
+      // A busy gate (a concurrent host-side navigation — a playlist import or
+      // the session mint holds the readers/writer gate) is transient, not a
+      // failed candidate: the same short bounded retry the spec-search page
+      // flow carries rides it out before the candidate is given up on.
+      for (let attempt = 0; ; attempt++) {
+        try {
+          outcome = await this.replayGql(entryFor(request), request);
+        } catch (error) {
+          // A HARD rejection — the invoke refused, the view destroyed
+          // mid-replay — reads like any other replay error: the next ranked
+          // candidate is still worth a try.
+          outcome = { error: (error && error.message) || String(error) };
+        }
+        if (outcome.error !== 'busy' || attempt >= 3) break;
+        await new Promise((resolve) => setTimeout(resolve, 400));
       }
       if (outcome.error) {
         lastReplayError = outcome.error;

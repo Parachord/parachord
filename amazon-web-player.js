@@ -516,8 +516,7 @@ const amazonWebPlayer = {
             webSession.endNavigation();
           }
         })();
-        for (let i = 0; i < 40 && !headers && !loadError; i++) {
-          await new Promise((resolve) => setTimeout(resolve, 250));
+        const scan = () => {
           for (const entry of captured) {
             const h = entry.headers;
             if (h && h['csrf-token'] && tokenLooksReal(h)) {
@@ -527,11 +526,19 @@ const amazonWebPlayer = {
                 csrfTs: h['csrf-ts'] || null,
                 deviceId: h['x-amzn-device-id'] || null
               };
-              break;
+              return;
             }
           }
+        };
+        for (let i = 0; i < 40 && !headers && !loadError; i++) {
+          await new Promise((resolve) => setTimeout(resolve, 250));
+          scan();
         }
         await navigation;
+        // A long navigation (waiting out in-flight replays, up to the 12s
+        // pageFetch budget) can eat the whole poll window before the page
+        // even loads — rescan once it has settled.
+        if (!headers && !loadError) scan();
         // Park on the warm fuse (template replays need an Amazon-origin page
         // world; parkSearchView's immediate blank only happens on real restarts).
         this.scheduleParkSearchView();

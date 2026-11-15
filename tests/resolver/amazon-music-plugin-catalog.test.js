@@ -550,6 +550,28 @@ describe('lookupAlbum (the candidate-ranking flow)', () => {
     expect(ws.pageFetch).not.toHaveBeenCalled();
   });
 
+  test('a busy gate on a candidate replay is ridden out, not a failed candidate', async () => {
+    // A concurrent host-side navigation (a playlist import, the session mint)
+    // can hold the readers/writer gate after the album page's capture
+    // succeeded: busy is transient there, not a failed candidate — the same
+    // short bounded retry the spec-search page flow carries.
+    const ws = albumLookupMock({});
+    const outcomes = [
+      { success: true, error: 'busy' },
+      { success: true, error: 'busy' },
+      null // the third call answers the detail response
+    ];
+    const base = ws.pageFetch.getMockImplementation();
+    ws.pageFetch.mockImplementation(async (id, request) => {
+      const next = outcomes.shift();
+      if (next) return next;
+      return base(id, request);
+    });
+    const resolver = instantiateAmazonPlugin(axe);
+    const album = await resolver.lookupAlbum(ALBUM_URL, {});
+    expect(album.name).toBe('Master of Puppets (Remastered)');
+  });
+
   test('an errored replay is lookup-failed, never a bogus miss', async () => {
     const ws = albumLookupMock({ replayFor: () => ({ success: true, error: 'Amazon gql query failed (500)' }) });
     const resolver = instantiateAmazonPlugin(axe);

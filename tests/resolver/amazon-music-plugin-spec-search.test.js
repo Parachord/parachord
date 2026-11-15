@@ -551,16 +551,59 @@ describe('the fast path (template replay via webSession.pageFetch)', () => {
     expect(ws.load).toHaveBeenCalledTimes(1);
   });
 
-  test('a wall URL on the warm view is not-signed-in without replaying', async () => {
+  test('a wall URL on the warm view falls to the page flow — a parked wall is a miss, not a verdict', async () => {
+    // The view keeps whatever URL its last navigation left behind, so a
+    // token-refresh redirect can park it on a wall with a LIVE session: a
+    // throw here would block the very page flow that navigates it off. The
+    // fast path misses (no replay), the page flow loads — and ITS verdict
+    // decides: a genuinely dead session still lands on the wall.
     const ws = amazonWebSessionMock({ tracks: TRACKS });
     const resolver = await seededResolver(ws);
     ws.state.mockResolvedValue({ success: true, url: 'https://music.amazon.com/ap/signin', signInUrl: null, cookieNames: ['at-main'] });
     ws.pageFetch.mockClear();
+    ws.load.mockClear();
+    // The loaded page lands on the wall too — the session is genuinely dead.
+    ws.load.mockImplementation(async (id, url) => ({
+      success: true,
+      finalUrl: 'https://www.amazon.com/ap/signin',
+      captures: []
+    }));
     await expect(search(resolver, 'daft punk')).rejects.toMatchObject({
       notReady: true,
       code: 'not-signed-in'
     });
+    // The fast path did not replay the stale template off the wall view...
     expect(ws.pageFetch).not.toHaveBeenCalled();
+    // ...but the page flow RAN (the healing navigation).
+    expect(ws.load).toHaveBeenCalledTimes(1);
+  });
+
+  test('a parked wall with a LIVE session heals: the page flow navigates it off', async () => {
+    // The stale view URL says /ap/signin, but the session is fine (a
+    // token-refresh redirect parked it there): the fast path misses and the
+    // page flow's fresh load answers the search.
+    const ws = amazonWebSessionMock({ tracks: TRACKS });
+    const resolver = await seededResolver(ws);
+    ws.state.mockImplementation(async (id) => ({
+      success: true,
+      // The state read still reports the parked wall URL...
+      url: 'https://music.amazon.com/ap/signin',
+      signInUrl: null,
+      cookieNames: ['at-main', 'sess-at-main'],
+      generation: 0
+    }));
+    // ...but the fresh page load lands on the tab, not the wall.
+    const m = decodeURIComponent('https://music.amazon.com/search/daft%20punk/songs');
+    ws.load.mockImplementation(async (id, url) => ({
+      success: true,
+      finalUrl: url,
+      captures: [require('../helpers/amazon-plugin-bridge').amazonSearchCapture('daft punk')]
+    }));
+    ws.pageFetch.mockClear();
+    ws.load.mockClear();
+    const rows = await search(resolver, 'daft punk');
+    expect(rows).toHaveLength(2);
+    expect(ws.load).toHaveBeenCalledTimes(1);
   });
 
   test('a parked (about:blank) view means the page flow runs — a replay needs an origin page world', async () => {
