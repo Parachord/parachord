@@ -56,6 +56,7 @@
 - **An artist page says when it couldn't load.** When MusicBrainz was down or busy, an artist page showed "No albums found", as if the artist had no releases, and that empty list could stick for a month. Now Parachord shows the artist's albums from Spotify, Apple Music, Last.fm or Discogs instead. If none of those has them either, the page says it couldn't load the discography, with Try Again.
 - **Back from an album shows that artist's albums.** Opening an album from your Collection, the playbar or Charts and then going back to the artist page could list the albums of the artist you'd looked at before. It now shows the right artist's.
 - **Songs found in a short session stay found.** Where each song plays from was saved only every five minutes, so after a shorter session Parachord searched every service again for the songs you'd just seen. It now saves within a minute of finding them.
+- **A service that was slow to answer is asked again.** When Parachord looked up many songs at once, such as a big playlist arriving, slower services like Apple Music could run out of time. Those songs were then saved as not on that service, so a row could show only Spotify for a week. Now a service that didn't answer is asked again the next time the song is on screen, and songs already missing a service fill it in the same way.
 
 ## Recommendations
 
