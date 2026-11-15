@@ -193,7 +193,20 @@ Components use `React.createElement()` (no JSX) and live in `src/renderer/compon
 | A success, info or error message | `showToast(message, type, action, options)` | `toast.js` (`ToastRegion`) | Success is a toast, never a dialog |
 | A menu (right-click or "More") | `Menu`, items from `lib/item-menus.js` | `menu.js` | Portalled, keyboard and typeahead, flips up near the bottom; the dark 12px look |
 | A sort control | `SortMenu` | `sort-menu.js` | |
-| A clickable card or row | `CardButton` | `card-button.js` | A stretched `<button>` under the card; inner buttons sit above it; `onContextMenu` also opens on Shift+F10 / the Menu key; `tooltip` for a whole-card note |
+| A clickable card or row | `CardButton` | `card-button.js` | A stretched `<button>` under the card; inner buttons sit above it; `onContextMenu` also opens on Shift+F10 / the Menu key; `tooltip` for a whole-card note. Use the cards and `TrackRow` below first; `CardButton` is what they are built on |
+| An album card (any grid of albums, or a track shown as a card) | `AlbumCard` (`AlbumRankBadge` for a rank) | `album-card.js` | The inset card: `HOME_CARD_BOX`, rounded art, title, artist (or `onOpenArtist` for a link), `subtitle`. `releaseType` badge, `reason` badge, `cornerBadge`; `onHoverPrefetch` dwells 250ms; `getAlbumArt` to look up its own cover; `label` when a click doesn't open |
+| A playlist card | `PlaylistCard` | `playlist-card.js` | The playlist's own cover (`coverArt`) over the mosaic of its tracks' covers, or the playlist glyph; `titleBadge` (Shared), `badge`, `cornerBadges` (Hosted, AI); a saved playlist's actions from `playlistCardActions` in app.js |
+| An artist card | `ArtistCard` (`RankBadge` for a rank) | `artist-card.js` | Play on hover (the top tracks), queue in the artist menu |
+| A person (friend, recommended listener) | `ListenerCard` | `listener-card.js` | The hexagon avatar (`LISTENER_HEXAGON`); user avatars are always hexagons |
+| A cover's hover actions (Add to playlist, Play, Add to queue) | `ArtOverlay` + `useReveal` | `card-art.js` | Shown on hover and keyboard focus. Without `shown`, CSS reveals it (`.card-actions`) for a card drawn in a list. `ArtBox` is the square art (cover, mosaic or placeholder, reporting a dead cover) |
+| A track list row | `TrackRow` | `track-lists.js` | number · title · artist · `cells` · `duration` · source icons. `lead` (edit-mode handles), `showArtist`, `resolving`, `dimResolving`; `onPlay(resolverId?)` covers the row and each icon |
+| A service's play button (a source icon) | `SourceIconButton` (`TrackSources` for the column) | `track-lists.js` | The plug-in's colour and logo, "Play from X (95% match)"; `quiet` on the dark queue drawer |
+| A page's coloured header | `PageHero` | `page-hero.js` | 320px, collapsing to 80px; gradient and pattern from `PAGE_COLORS`; the page passes `expanded` and `collapsedContent`. The artist page's photo hero is the one other design |
+| A page's Filter… box | `FilterBox` | `filter-box.js` | Opens focused; an empty box closes on blur; ✕ or Escape empties and closes it (and its Escape doesn't close a dialog around it) |
+| The strip that stays at the top of a page's scroll area | `StickyBar` | `filter-box.js` | `variant` 'filter' or 'header' |
+| An action pill (a suggestion, an active location) | `Chip` | `filter-chips.js` | The filter chips' style; `onRemove` puts a ✕ button beside it, never inside |
+| A small label on a card or row (Shared, Hosted, AI, a service) | `Badge` | `badge.js` | Tones neutral, info, accent, surface, or a service colour |
+| A spinner | `Icons.Spinner` | `icons.js` | The one loading spinner |
 | A heading over a row or grid | `SectionHeader` | `section-header.js` | Home's style, with the optional "See all" link |
 | Pick-one filter buttons | `FilterChips` | `filter-chips.js` | Home's source filter style |
 | Tabs in a hero | `HeroTabs` | `hero-tabs.js` | `role="tablist"`, arrow keys |
@@ -204,7 +217,10 @@ Components use `React.createElement()` (no JSX) and live in `src/renderer/compon
 | A "why it's here" badge on a cover | `ReasonBadge` (`ReasonMark` for a heading) | `reason-badge.js` | Shuffleupagus picks, Critical Darlings summaries |
 | A service's icon or logo | `ResolverIcon`, `SERVICE_LOGOS` | `ui-atoms.js` | The colour comes from the plug-in's `manifest.color` |
 | An icon | `Icons.*` | `icons.js` | Real SVGs from one set (see Icons); never a pasted path or a text glyph |
-| A track's source icons | `visibleSources` / `sourceRowState` | `lib/visible-sources.js` | One rule for every list |
+| A track's source icons | `visibleSources` / `sourceRowState` | `lib/visible-sources.js` | One rule for every list (`TrackRow` runs it) |
+| A page's colour, gradient or hero pattern | `PAGE_COLORS`, `pageTint` | `lib/page-colors.js` | |
+| A release type's colour | `RELEASE_TYPE_COLORS`, `releaseTypeColor` | `lib/release-types.js` | The album page's badge, the cards' badge and the type chips |
+| A hover prefetch on an element that isn't a shared card | `hoverDwell` | `lib/hover-dwell.js` | Runs after a 250ms rest, so a scroll past doesn't fetch |
 | Share | `ShareButton` | `ui-atoms.js` | |
 | A count, a relative time or an error message | `countOf`, `timeAgo`, `errorText` | `lib/plural.js`, `lib/time-ago.js`, `lib/error-copy.js` | See Copy |
 
@@ -212,11 +228,12 @@ Components use `React.createElement()` (no JSX) and live in `src/renderer/compon
 
 | Module | Exports |
 |--------|---------|
-| `button.js`, `header-control.js`, `modal.js`, `toast.js`, `menu.js`, `sort-menu.js`, `card-button.js`, `section-header.js`, `filter-chips.js`, `hero-tabs.js`, `fields.js`, `states.js`, `reason-badge.js`, `keyboard-shortcuts.js` | The shared controls in the table above, and the keyboard shortcuts dialog |
+| `button.js`, `header-control.js`, `modal.js`, `toast.js`, `menu.js`, `sort-menu.js`, `card-button.js`, `section-header.js`, `filter-chips.js` (`FilterChips`, `Chip`), `filter-box.js` (`FilterBox`, `StickyBar`), `hero-tabs.js`, `page-hero.js`, `badge.js`, `fields.js`, `states.js`, `reason-badge.js`, `keyboard-shortcuts.js`, `whats-new-dialog.js` | The shared controls in the table above, the keyboard shortcuts dialog and What's New |
+| `album-card.js`, `playlist-card.js`, `artist-card.js`, `listener-card.js`, `card-art.js` | The cards, and the art and overlay they share |
 | `ui-atoms.js` | `Tooltip`, `FixedTooltip`, `TooltipLayer`, `placeTooltip`, `ResolverIcon`, `SERVICE_LOGOS` (and its paths and images), `ParachordWordmark`, `PlaybackProgress`, `ShareButton` |
 | `icons.js` | `Icons`, the one icon set |
-| `track-lists.js` | `TrackRow`, `VirtualizedQueueList`, `VirtualizedTrackList` |
-| `cards.js` | `ReleaseCard`, `ReleasePage`, `RelatedArtistCard`, `SearchArtistCard`, `SearchHistoryItem`, `CollectionArtistCard`, `CollectionAlbumCard`, `AlbumVersionsMenu`, `PlayTop10Icon`, `QueueTop10Icon`, `generateArtistPattern` |
+| `track-lists.js` | `TrackRow`, `TrackSources`, `SourceIconButton`, `VirtualizedQueueList`, `VirtualizedTrackList` |
+| `cards.js` | `ReleasePage` (the album page), `ReleaseCard` (the artist page's discography card, an `AlbumCard`), `AlbumVersionsMenu`, `SearchHistoryItem`, `PlayTop10Icon`, `RELEASE_BADGE_STYLES`, `generateArtistPattern` |
 | `settings-cards.js` | `ResolverCard` (the plug-in tile), `McpSettingsSection`, `ScrobblerSettingsCard`, `FriendMiniPlaybar` |
 | `home-sections.js`, `home-banner.js`, `home-setup.js`, `home-skeletons.js`, `recommendation-skeletons.js` | Home's rows and both pages' skeletons |
 | `home-page.js`, `collection-page.js`, `artist-page.js`, `playlist-view-page.js`, `search-page.js` | Whole pages, each `React.memo`'d and fed stable props |
@@ -249,10 +266,14 @@ FixedTooltip({ children, content, id })
 ### TrackRow
 
 ```
-TrackRow({ track, isPlaying, handlePlay, onArtistClick, onContextMenu, allResolvers, resolverOrder, activeResolvers })
+TrackRow({ track, number, lead, isNowPlaying, sources, allResolvers, onPlay, onOpenArtist, onContextMenu,
+           cells, duration, sourcesWidth, rowRef, showArtist, resolving, dimResolving, ...CardButton props })
 ```
 
-- Nothing renders `TrackRow` any more; the track lists render their own rows. Its source icons and dimming would come from `sourceRowState` (`lib/visible-sources.js`), like every list's.
+- The row every page list renders: History, a friend's history, Recommendations, Charts, the playlist page, Collection, Search and an album's tracklist (10 copies until 2026-11-15). The queue drawer's row has its own layout.
+- `sources` is `{ trackSources, playbackResolvers, resolverOrder }`; the row runs `sourceRowState` on it, so a row resolving shows a shimmer and an unplayable one is dimmed. A local file's Local Files icon is one more source, in the user's source order.
+- `onPlay(resolverId?)` is both the row click and each source icon's, so they can't disagree about the queue or the context.
+- Columns: `number` (or `lead`) 32px · title (flex 1) · artist (flex 0.7, a link when `onOpenArtist`) · `cells` (`{ content, width | flex, align, onClick }`) · `duration` 50px · icons 140px (`sourcesWidth`). The skeletons use the same columns.
 
 ### VirtualizedQueueList
 
@@ -283,27 +304,26 @@ ScrobblerSettingsCard({ scrobbler, config, onConfigChange })
 - `React.memo` wrapped
 - Configuration card for scrobbling services (Last.fm, ListenBrainz, Libre.fm)
 
-### ReleaseCard
+### Cards
 
-```
-ReleaseCard({ release, currentArtist, fetchReleaseData, onContextMenu, onHoverFetch, isVisible, animationDelay, ... })
-```
+`AlbumCard`, `PlaylistCard`, `ArtistCard` and `ListenerCard` are every card in the app (2026-11-15: one copy per page before). They share the box (`HOME_CARD_BOX` from `home-skeletons.js`: 10px padding, 10px radius, `--card-bg`, `--card-shadow`), the rounded art (`HOME_CARD_ART_RADIUS`), the text gap (`HOME_CARD_TEXT_GAP`), the `release-card` hover lift and the `card-fade-up` entry. Every page's card skeleton uses those same constants.
 
-- Album/single/EP card with cover art, title, year, and release type badge
-- Hover effect: `translateY(-6px)` lift with enhanced shadow
-- Active state: `translateY(-2px)` with reduced shadow
-- Entry animation: `cardFadeUp` with staggered delays
+- **`ReleaseCard`** (`cards.js`) is the artist page's discography card: an `AlbumCard` with the year as its subtitle and the type badge on the art. It keeps its own replacement-art state for the broken-art retry.
+- **Critical Darlings** keeps its wide review-card layout (art beside the text), with the shared `ArtOverlay`.
 
 ### Recommendation rows
 
-The Recommendations page reuses Home's and the other tabs' pieces. Each section (Tracks, Albums, Artists, Playlists, Friends) sits under a `SectionHeader`, Home's heading; its **"See all" / "Show less"** link is the header's link (accent text, right-aligned on the heading's line), and sections carry no item counts. Sources are filtered for the whole page by `FilterChips` under the hero: All, then one chip per source, no counts, one pick at a time. Collapsed, a card section shows two full rows. Cards are `CardButton`s; a Shuffleupagus pick carries the `ReasonBadge` (its reason as the tooltip), and any other pick's reason is the card's tooltip. Items carry no source badges.
+The Recommendations page reuses Home's and the other tabs' pieces. Each section (Tracks, Albums, Artists, Playlists, Friends) sits under a `SectionHeader`, Home's heading; its **"See all" / "Show less"** link is the header's link (accent text, right-aligned on the heading's line), and sections carry no item counts. Sources are filtered for the whole page by `FilterChips` under the hero: All, then one chip per source, no counts, one pick at a time. Collapsed, a card section shows two full rows. Cards are the shared `AlbumCard`, `PlaylistCard`, `ArtistCard` and `ListenerCard`, and songs are `TrackRow`s; a Shuffleupagus pick carries the `ReasonBadge` (its reason as the tooltip), and any other pick's reason is the card's tooltip. Items carry no source badges.
 
-### Artist Cards
+### PageHero
 
-- **`RelatedArtistCard`** — Related artist display on artist pages
-- **`SearchArtistCard`** — Artist cards in search results (responsive width via `itemWidth` prop)
-- **`CollectionArtistCard`** — Artist cards in Collection
-- **`CollectionAlbumCard`** — Album cards in Collection
+```
+PageHero({ collapsed, page, title, onTitleContextMenu, expanded, collapsedContent })
+```
+
+- The coloured header of Collection, Playlists, History (and a friend's), Recommendations, Pop of the Tops, Fresh Drops, Critical Darlings and Concerts.
+- The gradient and pattern come from `PAGE_COLORS[page]` (`hero`, `pattern`, `patternOpacity`). The title is written in words; CSS draws the tracked capitals. Right-clicking it copies the page's link.
+- `title: null` for a page that draws its own (a friend's page leads with the avatar).
 
 ### FriendMiniPlaybar
 
@@ -387,7 +407,7 @@ Props: `size` (default 24; a `w-*`/`h-*` class or `style` overrides it), `classN
 
 **Sizes:** 16px (`w-4 h-4`) in rows, chips, small buttons and inline with text; 20px (`w-5 h-5`) in buttons and dialog titles; 12px (`w-3 h-3`) only inside a text badge or a 16px control; 32–48px only for an empty state's illustration. Stroke 2 (1.5 on the large illustrations); a heavier stroke only marks a state, like the active sidebar item.
 
-**The set:** Play, Pause, SkipForward, SkipBack, Volume2, Music, List, QueueAdd (add to queue), Users, User, Radio, Heart, Star, Search, Settings, Plus, X, Check, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ArrowRight, Info, MoreHorizontal, AlertTriangle, RefreshCw, ExternalLink, Link, Download, Upload, Folder, FilePlus, Copy, Trash2, Bookmark, Clock, Home, Droplet, Trophy, Ticket, MapPin, Shuffle, Zap, and **Spinner** (the one loading spinner). To add an icon, copy its shapes from lucide.dev into `SHAPES` in `icons.js`.
+**The set:** Play, Pause, SkipForward, SkipBack, Volume2, Music, Headphones, List, Users, Radio, Heart, Search, Settings, Plus, ListPlus, X, Check, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Info, MoreHorizontal, AlertTriangle, RefreshCw, ExternalLink, Link, Download, Folder, Copy, QueueAdd, ArrowRight, MapPin, Bookmark, Zap, Star, Ticket, Shuffle, Home, Clock, User, Droplet, Trophy, Upload, FilePlus, Globe, Sparkles, Trash2, and **Spinner** (the one loading spinner). To add an icon, copy its shapes from lucide.dev into `SHAPES` in `icons.js`.
 
 ### Service Logos
 
@@ -437,7 +457,7 @@ Every animation is a `@keyframes` rule in `index.html`, and every one listed her
 | `queue-pulse` | `.queue-pulse` | The queue button when something is added |
 | `badge-flash` | `.badge-flash` | The queue count badge |
 | `queue-track-drop` | `.queue-track-drop` | A track leaving the queue |
-| `queue-track-insert` | `.queue-track-insert` | A track entering the queue |
+| `queue-track-insert` | `.queue-track-insert` | A track entering the queue: a 1s accent glow, the one deliberate exception to the 100–400ms rule (it is the only "added to queue" signal) |
 
 ### Navigation, cards and friends
 
