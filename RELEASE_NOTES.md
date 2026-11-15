@@ -139,6 +139,10 @@
 - **The Ticketmaster key link goes to the right place.** The link for getting a Ticketmaster API key, in the plugin's settings and in its error message, pointed to the wrong Ticketmaster site. It now opens developer.ticketmaster.com.
 - **Tidier Discover and Scrobbling settings.** A long description under a Discover switch no longer runs up against the switch and squeezes it, and the note under Enable Scrobbling lines up with the rest of the section instead of sitting centered.
 
+## Plugins
+
+- **For plugin authors: a shared library.** A plugin can now keep helpers that several of its functions use in one `_lib` entry instead of copying them into each function, and every function reaches them as `this.lib`. The build fails a plugin whose functions use a name they don't define, rather than leaving it to fail on someone's machine. A plugin that uses the library needs this release or later; see the plugin docs. Thanks to @theli-ua.
+
 ---
 
 # Parachord v0.9.12
