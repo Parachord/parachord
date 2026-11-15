@@ -31416,25 +31416,28 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
   // A Listener card's Play: their top 10 of the past week (the past month
   // when the week has none), played like a top-tracks row.
+  // `listener` is a Listener card's item ({ service, name }) or a saved
+  // friend ({ service, username, displayName }).
   const playListenerTopTracks = async (listener) => {
-    const friend = { service: listener.service, username: listener.name };
+    const friend = { service: listener.service, username: listener.username || listener.name };
+    const name = listener.displayName || listener.name || friend.username;
     setTrackLoading(true);
     try {
       let tracks = await fetchFriendTopTracksList(friend, '7day', 10);
       if (tracks.length === 0) tracks = await fetchFriendTopTracksList(friend, '1month', 10);
       if (tracks.length === 0) {
         setTrackLoading(false);
-        showToast(`${listener.name} has no recent top tracks`, 'error');
+        showToast(`${name} has no recent top tracks`, 'error');
         return;
       }
-      const context = { type: 'friend', name: listener.name, tab: 'topTracks' };
+      const context = { type: 'friend', name, tab: 'topTracks' };
       const [first, ...rest] = tracks;
       setQueueWithContext(rest, context, true);
       handlePlay({ ...first, _playbackContext: context });
     } catch (error) {
       console.error('Failed to play listener top tracks:', error);
       setTrackLoading(false);
-      showToast(`Couldn’t load ${listener.name}’s top tracks. Try again in a moment.`, 'error');
+      showToast(`Couldn’t load ${name}’s top tracks. Try again in a moment.`, 'error');
     }
   };
 
@@ -36760,7 +36763,7 @@ useEffect(() => {
     addToQueue, copyParachordLink, fetchArtistData, getAlbumArt, getArtistImage,
     getArtistTopTracks, getCollectionSortOptions, handleCollectionAlbumClick, handlePlay,
     handlePlaylistDragEnd, handleStartCollectionStation, isOnAir, navigateToFriend,
-    openChartsAlbum, openSyncSetupModal, setQueueWithContext, syncFriendsFromServices,
+    openChartsAlbum, openSyncSetupModal, playListenerTopTracks, setQueueWithContext, syncFriendsFromServices,
   });
 
   // The sidebar item a playlist page belongs to. An ephemeral playlist (a

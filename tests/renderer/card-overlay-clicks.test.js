@@ -120,3 +120,13 @@ test("Search's artist cards hover with Play only; queueing is in the artist menu
   const card = page.slice(page.indexOf('React.createElement(SearchArtistCard, {'));
   expect(card.slice(0, card.indexOf('onContextMenu'))).not.toContain('onAddToQueue');
 });
+
+test("Collection's friend cards are CardButtons with Play for their recent top 10", () => {
+  const fs = require('fs');
+  const path = require('path');
+  const page = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/collection-page.js'), 'utf8');
+  const tab = page.slice(page.lastIndexOf("collectionTab === 'friends' && (() => {"));
+  expect(tab).toMatch(/return React\.createElement\(CardButton, \{\s*key: friend\.id,/);
+  expect(tab).toMatch(/className: 'card-actions [^']*'[\s\S]{0,300}playListenerTopTracks\(friend\)/);
+  expect(page).toContain("'playListenerTopTracks',");
+});

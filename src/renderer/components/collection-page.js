@@ -27,7 +27,7 @@ const { slug } = require('../lib/track-slug');
 const { artistMenu } = require('../lib/item-menus');
 const { trackDurationLabel } = require('../lib/track-duration');
 const { ResolverIcon } = require('./ui-atoms');
-const { CollectionArtistCard, CollectionAlbumCard } = require('./cards');
+const { CollectionArtistCard, CollectionAlbumCard, PlayTop10Icon } = require('./cards');
 const { countOf } = require('../lib/plural');
 
 // Plain functions from Parachord, passed as stable wrappers.
@@ -47,6 +47,7 @@ const COLLECTION_PAGE_HANDLERS = [
   'navigateToFriend',
   'openChartsAlbum',
   'openSyncSetupModal',
+  'playListenerTopTracks',
   'setQueueWithContext',
   'syncFriendsFromServices',
 ];
@@ -89,6 +90,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
     libraryLoading,
     metaServiceConfigs,
     navigateToFriend,
+    playListenerTopTracks,
     openChartsAlbum,
     openSyncSetupModal,
     pinnedFriendIds,
@@ -1003,8 +1005,11 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                     const onAir = isOnAir(friend);
                     const isPinned = pinnedFriendIds.includes(friend.id);
 
-                    return React.createElement('button', { type: 'button',
+                    // A CardButton, so it can hold Play: their recent top 10.
+                    return React.createElement(CardButton, {
                       key: friend.id,
+                      label: `Open ${friend.displayName}’s profile`,
+                      tooltip: `Open ${friend.displayName}’s profile`,
                       className: 'w-full flex flex-col items-center cursor-pointer group release-card card-fade-up',
                       style: {
                         padding: '14px 12px',
@@ -1018,7 +1023,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                         e.dataTransfer.setData('friendId', friend.id);
                         e.dataTransfer.effectAllowed = 'copy';
                       },
-                      onClick: () => navigateToFriend(friend),
+                      onActivate: () => navigateToFriend(friend),
                       onContextMenu: (e) => {
                         e.preventDefault();
                         if (window.electron?.contextMenu?.showTrackMenu) {
@@ -1036,6 +1041,21 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                         className: 'relative',
                         style: { width: '100px', height: '100px' }
                       },
+                        // Play their recent top 10: shown on hover or keyboard focus.
+                        React.createElement('div', {
+                          className: 'card-actions absolute inset-0 flex items-center justify-center',
+                          style: { zIndex: 2 }
+                        },
+                          React.createElement('button', {
+                            type: 'button',
+                            onClick: (e) => { e.stopPropagation(); playListenerTopTracks(friend); },
+                            className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
+                            style: { border: 'none', cursor: 'pointer', padding: 0 },
+                            'aria-label': `Play ${friend.displayName}’s recent top 10 tracks`, 'data-tooltip': 'Play their recent top 10 tracks'
+                          },
+                            React.createElement(PlayTop10Icon, { size: 26, className: 'text-ink-primary' })
+                          )
+                        ),
                         // Outer hexagon border/ring
                         React.createElement('div', {
                           style: {
