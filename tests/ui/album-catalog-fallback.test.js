@@ -112,26 +112,24 @@ describe('search', () => {
   });
 });
 
-describe('the catalogs race MusicBrainz', () => {
+describe('the catalogs back MusicBrainz up', () => {
   test('concurrent lookups for the same album share one', () => {
     const body = fnBody('const loadAlbumFromCatalogs = (args) => {');
     expect(body).toMatch(/catalogLookupsInFlight\.current\.get\(key\)/);
     expect(body).toMatch(/\.finally\(\(\) => catalogLookupsInFlight\.current\.delete\(key\)\)/);
   });
 
-  test('the catalogs race MusicBrainz as soon as a page is waiting for its track list', () => {
-    // It used to wait 5s (MB_SLOW_FALLBACK_MS) before asking the catalogs.
+  test('an album page waits for MusicBrainz: the catalogs no longer race it', () => {
+    // The race showed a service's list first, then MusicBrainz's replaced it:
+    // the page's source flickered from the service to MusicBrainz (2026-11-15).
+    expect(app).not.toMatch(/const waitingAlbumKey = /);
+    expect(app).not.toMatch(/answered before MusicBrainz, showing it meanwhile/);
     expect(app).not.toMatch(/MB_SLOW_FALLBACK_MS/);
-    const s = app.indexOf('const waitingAlbumKey = ');
-    const body = app.slice(s, app.indexOf('}, [waitingAlbumKey]);', s));
-    expect(body).not.toMatch(/setTimeout/);
-    expect(body).toMatch(/currentReleaseRef\.current/); // the page now, not a stale closure
-    expect(body).toMatch(/sameAlbumIdentity\(prev, waiting\)/); // keyed on the album, not the id
-    // MusicBrainz's answer already cached: it lands at once, no catalog call
-    expect(body).toMatch(/if \(waiting\.id && cachedReleaseDetails\(waiting\.id\)\) return;/);
-    expect(body).toMatch(/cancelled = true/);
-    // the dependency is computed during render from state declared above it
-    expect(app.indexOf('const [currentRelease, setCurrentRelease] = useState')).toBeLessThan(s);
+    // The catalogs still answer when MusicBrainz fails or doesn't have it,
+    // and for an album with only a service's id.
+    const body = fnBody('const fetchReleaseData = async (release, artist) => {');
+    expect(body).toMatch(/if \(await tryCatalogs\(\)\) return;/);
+    expect(body).toMatch(/if \(!isMusicBrainzId\(release\.id\) && pickEdition\?\.kind !== 'mb'\) \{\s*if \(await tryCatalogs\(\)\) return;/);
   });
 
   test('a track the catalog list is already resolving is not resolved again when MusicBrainz\'s list lands', () => {
