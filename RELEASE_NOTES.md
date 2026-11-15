@@ -114,6 +114,7 @@
 - **A radio link checks something plays before it replaces your queue.** A `parachord://play/radio` link cleared your queue and swapped your current song for a loading placeholder before knowing whether any of its tracks would play. It now finds a playable track first; if none plays, it says so and leaves your queue and current song alone. A radio link for an artist also starts playing straight away, instead of only switching into spinoff mode.
 - **A Listen Along link keeps your queue.** Starting Listen Along from a `parachord://listen-along` link cleared your queue, so there was nothing to go back to when the session ended. It now keeps it, as starting Listen Along in the app does. A link to someone who isn't listening leaves your playback alone; it used to leave "Connecting to…" in the playbar.
 - **An album or playlist link that fails gives your song back.** While an album or playlist link loads, its placeholder now remembers the song you were on. If the link finds nothing to play or fails, your song comes back to the playbar; before, the placeholder stayed or the playbar went blank. When the link does play, Previous goes back to your song, not to "Loading album…".
+- **YouTube playlist links import again.** YouTube changed how its playlist pages list videos, so opening or importing a YouTube playlist came back empty. Parachord reads the new page and the old one, with each video's title, channel and length, up to 100 tracks. This needs the latest YouTube plugin, which updates itself.
 
 ## Sync
 
