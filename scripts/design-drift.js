@@ -59,6 +59,7 @@ const METRICS = {
   spinnerCopies: 'Hand-drawn spinners (an element with animate-spin or a border-t-transparent ring). Use Icons.Spinner.',
   emptyStateCopies: 'Hand-built empty states ("No …" / "Nothing …" text in a plain element). Use EmptyState (components/states.js).',
   filterPillCopies: 'Hand-built pill buttons (rounded-full px-3 py-1…). Use FilterChips.',
+  heroCopies: 'Hand-built page heroes (a 320px block collapsing to 80px). Use PageHero (components/page-hero.js); the artist page\'s photo hero is the one other design.',
   stickyBarCopies: 'Hand-built sticky bars (sticky top-0 classes). Use StickyBar (components/filter-box.js).',
 };
 
@@ -70,6 +71,7 @@ const COPY_HOMES = {
   emptyStateCopies: ['components/states.js'],
   filterPillCopies: ['components/filter-chips.js'],
   stickyBarCopies: ['components/filter-box.js'],
+  heroCopies: ['components/page-hero.js'],
 };
 
 function rendererFiles(dir = RENDERER, out = []) {
@@ -167,6 +169,7 @@ function scanSource(src) {
     if (node.type === 'ObjectProperty') {
       const key = propKey(node);
       if (key === 'outline' && node.value.type === 'StringLiteral' && node.value.value === 'none') counts.inlineOutlineNone += 1;
+      if (key === 'height' && /\? '80px' : '320px'/.test(src.slice(node.value.start, node.value.end))) counts.heroCopies += 1;
       if (key === 'fontSize') {
         const px = pxValue(node.value);
         if (px != null && !FONT_SIZES.has(px)) counts.offScaleFontSizes += 1;

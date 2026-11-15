@@ -171,7 +171,7 @@ Each rule below exists because the audit found its absence. Read the audit's are
   - An error says what happened and what to do. A confirm button is named for its action and sits next to Cancel. Success is a toast, not a dialog.
 - **The ratchet enforces this.** `tests/ci/design-drift.test.js` runs `scripts/design-drift.js` over `src/renderer/` and compares against `tests/ci/design-drift-baseline.json`.
   - It counts hex colours, palette classes, theme ternaries, clickable non-buttons, `outline: 'none'`, native dialogs, "...", pasted SVG paths, off-scale font sizes and radii, and JS hover handlers that change style. It also flags CSS variables the renderer uses but `index.html` doesn't define.
-  - It also counts hand-built copies of shared components: track rows (a `sourceRowState()` call outside `TrackRow`), "Play from" source buttons, spinners, "No …" empty states, pill buttons and sticky bars. The audit counted colours but not copies, so pages kept their own rows and states while every colour in them was a token (2026-11-15).
+  - It also counts hand-built copies of shared components: track rows (a `sourceRowState()` call outside `TrackRow`), "Play from" source buttons, spinners, "No …" empty states, pill buttons, sticky bars and page heroes. The audit counted colours but not copies, so pages kept their own rows and states while every colour in them was a token (2026-11-15).
   - A count that rises fails: fix it with the shared component or token.
   - A count that falls fails until you lock it in with `npm run design-drift -- --write` and commit the baseline.
   - Raising the baseline is a last resort. The PR must say why no shared way existed.
