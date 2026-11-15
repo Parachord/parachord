@@ -175,10 +175,16 @@ A playlist with `sourceUrl` is a **hosted XSPF** — it mirrors a remote URL pol
 - `pollHostedPlaylists` filters `p.sourceUrl && !isProviderPlaylistUrl(p.sourceUrl)` — only true hosted documents are polled.
 - Background reloads (startup list + poller) and the Refresh button (`quiet: true`) call `handleImportPlaylistFromUrl` so a zero-track parse **throws** instead of showing a modal. A `provider: true` call whose loader cannot classify the URL throws rather than fetching the page as XSPF. User-initiated imports keep the dialog.
 
+**Edits stay until the link changes (2026-11).** Parachord can only read a hosted XSPF from its server; it can't push changes back to the source. But the person can edit the playlist here, and if it's synced to other services those edits are applied there until the next update at the link replaces them. Android and iOS always behaved this way (their poll replaces tracks only on a content change). Desktop used to lose the edit at the next launch, even with no update at the link: `savePlaylistToStore` kept only title and creator for a hosted playlist, and the launch reload re-imported every hosted URL and replaced the tracks. Now:
+- `savePlaylistToStore` still writes title and creator overrides onto the `hosted_playlists` list, and then saves the record like any playlist's, tracks included.
+- Every re-import (`handleImportPlaylistFromUrl`'s existing-record branch: the launch reload, the 5-minute poll, the Refresh button) keeps the local tracks unless the link's tracklist changed since the last import (`refreshedTracks`, `src/renderer/lib/hosted-refresh.js`, tests in `tests/renderer/hosted-refresh.test.js`). It compares tracklists by artist and title (`trackKeysOf`), not the document text, because a service link's copy is regenerated with a new date on every lookup. The previous tracklist comes from the record's stored `xspf`; a record without one takes the link.
+- The playlist page's edit-mode Done saves `locallyModified` with the tracks (it used to set it in React state only), so the edit reaches the mirrors.
+
 Flow:
-1. Poller fetches `sourceUrl`. If `content !== playlist.xspf`, call `handleImportPlaylistFromUrl` → replaces `tracks`, sets `locallyModified: true`.
-2. Next sync push loop pushes local tracks to Spotify via `updatePlaylistTracks` (full replace).
-3. Spotify's own state (if changed since last sync) is overwritten.
+1. The person edits the playlist: the tracks and `locallyModified` are saved, and the next push loop sends them to the mirrors.
+2. Poller fetches `sourceUrl`. If `content !== playlist.xspf`, it calls `handleImportPlaylistFromUrl`; if the tracklist itself changed, that replaces `tracks` (edits included) and sets `locallyModified: true`, otherwise the local tracks stay.
+3. Next sync push loop pushes local tracks to Spotify via `updatePlaylistTracks` (full replace).
+4. Spotify's own state (if changed since last sync) is overwritten.
 
 **Sync banner behavior for hosted playlists** (app.js ~L44433): the "pull" option is suppressed. A pull would briefly replace local tracks with Spotify's, but the 5-min poller would revert it and the next sync push would overwrite Spotify again — effectively a no-op with confusing UX. For hosted playlists:
 - `hasUpdates=true, locallyModified=false` → banner hidden (pull is useless).
