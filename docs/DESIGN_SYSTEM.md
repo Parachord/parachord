@@ -2,9 +2,7 @@
 
 Reference guide for the visual design language, tokens, components, and patterns used across the Parachord desktop application.
 
-> **Partly out of date (2026-11-13).** The [design audit](plans/2026-11-13-design-audit.md) compared this guide with the code. Corrected since: the tokens, scales, colours, copy, animations, the Recommendations section, breakpoints, the Tailwind setup and the slider thumbs. Still to rewrite: the Components section.
->
-> Until this guide is rewritten, the "Design system" section of [CLAUDE.md](../CLAUDE.md) and the audit win where they disagree. The design-drift ratchet (`tests/ci/design-drift.test.js`) enforces them.
+This guide matches the code as of the 2026-11-13 [design audit](plans/2026-11-13-design-audit.md) and its follow-up (#1382–#1391). The design-drift ratchet (`tests/ci/design-drift.test.js`) enforces the scales and tokens; CLAUDE.md's "Design system" section has the rules in short. A PR that changes a token, a scale or a shared component updates this guide.
 
 ## Overview
 
@@ -183,18 +181,47 @@ The config adds **theme-token colours**: each reads a CSS variable from `index.h
 
 ## Components
 
-Components use `React.createElement()` (no JSX). The reusable ones live in `src/renderer/components/`, required by `src/renderer/app.js`:
+Components use `React.createElement()` (no JSX) and live in `src/renderer/components/`, required by `src/renderer/app.js`. **Reuse before you build:** before writing any UI element, find the shared one below. A second copy of something that exists gets extracted into a shared component first, and a page never restyles a shared component's output (CLAUDE.md "Design system"). Each one also has a "comes from" line in [architecture/renderer-patterns.md](architecture/renderer-patterns.md).
+
+### Which component, when
+
+| You need | Use | Module | Notes |
+|----------|-----|--------|-------|
+| A button | `Button` | `button.js` | `variant`: primary (one per view), secondary, destructive, text, icon (needs `aria-label`); `size` sm/md; `busy`; `tone: 'dark'` on the always-dark surfaces; `pageColor` for a hero's fill |
+| A page or drawer header's Close / Edit / Save / Cancel | `HeaderControl` | `header-control.js` | Sentence case in the source, CSS uppercase; `close` adds the ✕; tones default / primary / dark |
+| A dialog | `Modal` | `modal.js` | Focus moves in and comes back, Escape and the scrim close it, one title size and three widths. `ConfirmModal` for confirm/cancel (the confirm button named for its action, `destructive` for red); `DontShowAgain` for the checkbox |
+| A success, info or error message | `showToast(message, type, action, options)` | `toast.js` (`ToastRegion`) | Success is a toast, never a dialog |
+| A menu (right-click or "More") | `Menu`, items from `lib/item-menus.js` | `menu.js` | Portalled, keyboard and typeahead, flips up near the bottom; the dark 12px look |
+| A sort control | `SortMenu` | `sort-menu.js` | |
+| A clickable card or row | `CardButton` | `card-button.js` | A stretched `<button>` under the card; inner buttons sit above it; `onContextMenu` also opens on Shift+F10 / the Menu key; `tooltip` for a whole-card note |
+| A heading over a row or grid | `SectionHeader` | `section-header.js` | Home's style, with the optional "See all" link |
+| Pick-one filter buttons | `FilterChips` | `filter-chips.js` | Home's source filter style |
+| Tabs in a hero | `HeroTabs` | `hero-tabs.js` | `role="tablist"`, arrow keys |
+| A setting row, text field, secret field, select, switch or radio group | `SettingRow`, `TextField`, `SecretField`, `Select`, `Switch`, `RadioGroup` | `fields.js` | Every field has a label; on/off is always a `Switch` |
+| Nothing to show yet / a load that failed | `EmptyState` / `ErrorState` | `states.js` | `ErrorState` has "Try again" (`onRetry`) |
+| A loading placeholder | the page's skeletons | `home-skeletons.js`, `recommendation-skeletons.js` | Same box as the content (see Shimmer classes) |
+| A tooltip | `Tooltip`, or `data-tooltip` on a control | `ui-atoms.js` | Never a native `title` (below) |
+| A "why it's here" badge on a cover | `ReasonBadge` (`ReasonMark` for a heading) | `reason-badge.js` | Shuffleupagus picks, Critical Darlings summaries |
+| A service's icon or logo | `ResolverIcon`, `SERVICE_LOGOS` | `ui-atoms.js` | The colour comes from the plug-in's `manifest.color` |
+| An icon | `Icons.*` | `icons.js` | Real SVGs from one set (see Icons); never a pasted path or a text glyph |
+| A track's source icons | `visibleSources` / `sourceRowState` | `lib/visible-sources.js` | One rule for every list |
+| Share | `ShareButton` | `ui-atoms.js` | |
+| A count, a relative time or an error message | `countOf`, `timeAgo`, `errorText` | `lib/plural.js`, `lib/time-ago.js`, `lib/error-copy.js` | See Copy |
+
+### Modules
 
 | Module | Exports |
 |--------|---------|
-| `ui-atoms.js` | `Tooltip`, `FixedTooltip`, `TooltipLayer`, `ResolverIcon`, `SERVICE_LOGO_PATHS`, `SERVICE_LOGO_IMAGES`, `SERVICE_LOGOS`, `ParachordWordmark`, `PlaybackProgress` |
-| `icons.js` | `Icons` (the fallback icon set) |
-| `track-lists.js` | `TrackRow`, `VirtualizedQueueList`, `VirtualizedTrackList`, (badge icons from `lib/visible-sources.js`) |
-| `cards.js` | `ReleaseCard`, `ReleasePage`, `RelatedArtistCard`, `SearchArtistCard`, `SearchHistoryItem`, `CollectionArtistCard`, `CollectionAlbumCard`, `PlayTop10Icon`, `QueueTop10Icon`, `generateArtistPattern` |
-| `settings-cards.js` | `ResolverCard`, `McpSettingsSection`, `ScrobblerSettingsCard`, `FriendMiniPlaybar` |
-| `home-page.js`, `collection-page.js`, `artist-page.js`, `playlist-view-page.js`, `search-page.js` | Whole pages (`HomePage`, `CollectionPage`, `ArtistPage`, `PlaylistViewPage`, `SearchPage`), each `React.memo`'d |
+| `button.js`, `header-control.js`, `modal.js`, `toast.js`, `menu.js`, `sort-menu.js`, `card-button.js`, `section-header.js`, `filter-chips.js`, `hero-tabs.js`, `fields.js`, `states.js`, `reason-badge.js`, `keyboard-shortcuts.js` | The shared controls in the table above, and the keyboard shortcuts dialog |
+| `ui-atoms.js` | `Tooltip`, `FixedTooltip`, `TooltipLayer`, `placeTooltip`, `ResolverIcon`, `SERVICE_LOGOS` (and its paths and images), `ParachordWordmark`, `PlaybackProgress`, `ShareButton` |
+| `icons.js` | `Icons`, the one icon set |
+| `track-lists.js` | `TrackRow`, `VirtualizedQueueList`, `VirtualizedTrackList` |
+| `cards.js` | `ReleaseCard`, `ReleasePage`, `RelatedArtistCard`, `SearchArtistCard`, `SearchHistoryItem`, `CollectionArtistCard`, `CollectionAlbumCard`, `AlbumVersionsMenu`, `PlayTop10Icon`, `QueueTop10Icon`, `generateArtistPattern` |
+| `settings-cards.js` | `ResolverCard` (the plug-in tile), `McpSettingsSection`, `ScrobblerSettingsCard`, `FriendMiniPlaybar` |
+| `home-sections.js`, `home-banner.js`, `home-setup.js`, `home-skeletons.js`, `recommendation-skeletons.js` | Home's rows and both pages' skeletons |
+| `home-page.js`, `collection-page.js`, `artist-page.js`, `playlist-view-page.js`, `search-page.js` | Whole pages, each `React.memo`'d and fed stable props |
 
-Everything else still renders inline in `src/renderer/app.js`. Key reusable components:
+Everything else still renders inline in `src/renderer/app.js`. Details of a few:
 
 ### Tooltip
 
@@ -225,9 +252,7 @@ FixedTooltip({ children, content, id })
 TrackRow({ track, isPlaying, handlePlay, onArtistClick, onContextMenu, allResolvers, resolverOrder, activeResolvers })
 ```
 
-- `React.memo` wrapped for performance
-- Displays track title, artist, duration, and resolver source badges
-- Shows resolver priority indicators with branded colors
+- Nothing renders `TrackRow` any more; the track lists render their own rows. Its source icons and dimming would come from `sourceRowState` (`lib/visible-sources.js`), like every list's.
 
 ### VirtualizedQueueList
 
@@ -246,8 +271,8 @@ ResolverCard({ ... })
 ```
 
 - `React.memo` wrapped
-- Settings card for configuring individual music resolvers
-- Includes toggle, status indicator, and priority drag handle
+- The plug-in tile on Settings › Plug-Ins: the service's colour and logo, its priority number, an enabled check and a status line ("Setup required").
+- Reordering: drag a tile, or use Raise Priority / Lower Priority in its menu (right-click, or Shift+F10 / the Menu key on the focused tile).
 
 ### ScrobblerSettingsCard
 
@@ -277,8 +302,8 @@ The Recommendations page reuses Home's and the other tabs' pieces. Each section 
 
 - **`RelatedArtistCard`** — Related artist display on artist pages
 - **`SearchArtistCard`** — Artist cards in search results (responsive width via `itemWidth` prop)
-- **`CollectionArtistCard`** — Artist cards in the library/collection view
-- **`CollectionAlbumCard`** — Album cards in the library/collection view
+- **`CollectionArtistCard`** — Artist cards in Collection
+- **`CollectionAlbumCard`** — Album cards in Collection
 
 ### FriendMiniPlaybar
 
