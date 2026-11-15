@@ -137,6 +137,7 @@
 - **Synced playlists update on their own.** A playlist you imported from Spotify, Apple Music or ListenBrainz now takes the latest version on the next sync, instead of waiting for you to click Pull Changes. If you've edited it in Parachord, your edits stay, and the playlist's page lets you choose which version to keep.
 - **Synced playlists show their own cover.** A playlist imported by sync from Spotify or Apple Music now shows the cover it has there, and follows it when it changes. One with no cover of its own, and one from ListenBrainz, still shows its grid of album covers.
 - **Your edits to a shared ListenBrainz playlist don't come back as a conflict.** When Parachord sent your edits back to a ListenBrainz playlist you share, the next sync could take its own change for someone else's and ask which version to keep.
+- **Edits to a hosted playlist stay until the playlist itself changes.** Parachord can only read a hosted playlist from its server, but you can edit your copy, and your edits now reach the services it's synced to and stay until the playlist at its link changes. They used to disappear the next time you opened Parachord. Edits made with Edit on any synced playlist also reach its other services now.
 
 ## AI DJ
 
