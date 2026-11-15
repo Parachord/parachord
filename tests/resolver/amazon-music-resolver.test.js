@@ -511,7 +511,9 @@ describe('amazonmusic searchAlbums', () => {
     amazonWebSessionMock({ envelope: { data: { specificationSearch: { result: [{ edges: [] }] } } } });
     const resolver = instantiate(axe);
     expect(await resolver.searchAlbums('nothing anywhere', {})).toEqual([]);
-    for (const reason of ['not-ready', 'not-signed-in', 'load-failed']) {
+    // superseded too: a sign-out mid-load is a readiness failure (search's
+    // list) — never a miss the album catalog caches.
+    for (const reason of ['not-ready', 'not-signed-in', 'load-failed', 'superseded']) {
       // A fresh resolver per case: one that already minted a spec-search
       // template answers the next search on the fast path, past the load.
       amazonWebSessionMock({
@@ -717,7 +719,10 @@ describe('amazonmusic lookupAlbum', () => {
   });
 
   test('transient and structural failures throw notReady — never a bogus miss', async () => {
-    for (const reason of ['load-failed', 'not-ready', 'lookup-failed']) {
+    // superseded too: a sign-out mid-lookup is a readiness failure — its
+    // captures belong to the old account, and the catalog fallback must not
+    // cache it as a missing album.
+    for (const reason of ['load-failed', 'not-ready', 'lookup-failed', 'superseded']) {
       amazonWebSessionMock({
         loadResult: { success: false, reason, error: reason + ' happened' },
         capturesFor: () => [],

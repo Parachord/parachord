@@ -1541,14 +1541,16 @@ module.exports = {
     } catch (error) {
       if (error && error.notReady) throw error;
       var reason = error && error.reason;
-      // not-ready / not-signed-in / load-failed: readiness failures are never
-      // cached as a miss (the album pages would store a 30-day noMatch for
-      // them) — the same rule as search.
+      // not-ready / not-signed-in / load-failed / superseded (a sign-out
+      // cleared the session mid-load): readiness failures are never cached
+      // as a miss (the album pages would store a 30-day noMatch for them)
+      // — the same rule as search.
       if (
         reason === 'not-ready' ||
         reason === 'not-signed-in' ||
         reason === 'no-cdm' ||
-        reason === 'load-failed'
+        reason === 'load-failed' ||
+        reason === 'superseded'
       ) {
         var err = new Error('Amazon Music not ready');
         err.notReady = true;
@@ -1874,7 +1876,8 @@ module.exports = {
       reason === 'load-failed' ||
       reason === 'no-cdm' ||
       reason === 'not-ready' ||
-      reason === 'lookup-failed'
+      reason === 'lookup-failed' ||
+      reason === 'superseded'
     ) {
       var transientErr = new Error(
         'Amazon Music is not reachable right now - check your connection and try again',
