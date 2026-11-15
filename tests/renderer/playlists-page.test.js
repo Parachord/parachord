@@ -111,8 +111,14 @@ test('the artist page shares its Achordion link: a Share menu, and right-click a
   expect(artist).toMatch(/cursor: isHeaderCollapsed \? 'pointer' : 'default',[\s\S]{0,500}onContextMenu: copyParachordLink/);
 });
 
-test('the artist hero casts a shadow once content scrolls under it', () => {
-  const artist = read('src/renderer/components/artist-page.js');
-  expect(artist).toContain("boxShadow: contentScrolled ? '0 6px 16px -6px rgba(0, 0, 0, 0.35)' : 'none',");
-  expect(artist).toContain('onScroll: (e) => { setContentScrolled(e.currentTarget.scrollTop > 0); handleArtistPageScroll(e); }');
+test('page scroll areas share one scroll edge: a shadow once content scrolls under the bar above', () => {
+  const html = read('index.html');
+  expect(html).toMatch(/\.scroll-edge::before \{[^}]*position: sticky; top: 0; height: 0;/);
+  expect(html).toMatch(/\.scroll-edge\[data-scrolled\]::before \{ box-shadow:/);
+  expect(app).toMatch(/document\.addEventListener\('scroll', onScroll, \{ capture: true, passive: true \}\)/);
+  const uses = { 'src/renderer/app.js': 11, 'src/renderer/components/artist-page.js': 1, 'src/renderer/components/collection-page.js': 1, 'src/renderer/components/home-page.js': 1, 'src/renderer/components/search-page.js': 1, 'src/renderer/components/playlist-view-page.js': 1 };
+  for (const [f, n] of Object.entries(uses)) {
+    expect([f, (read(f).match(/scroll-edge[ ']/g) || []).length >= n]).toEqual([f, true]);
+  }
+  expect(read('src/renderer/components/artist-page.js')).not.toContain('contentScrolled');
 });

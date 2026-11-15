@@ -155,10 +155,6 @@ const ArtistPage = React.memo(function ArtistPage(props) {
     trackSources,
     visibleAlbumIds,
   } = props;
-  // Content scrolled under the hero: a soft shadow marks the hero's edge (the
-  // biography text ran straight into it). React skips the render when the
-  // value doesn't change, so this flips once, not per scroll event.
-  const [contentScrolled, setContentScrolled] = React.useState(false);
   return React.createElement('div', { 
         className: 'flex-1 flex flex-col',
         style: { overflow: 'hidden' }
@@ -172,10 +168,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
             flexShrink: 0,
             overflow: 'hidden',
             cursor: isHeaderCollapsed ? 'pointer' : 'default',
-            // Above the content (its next sibling paints later) so the shadow shows.
-            zIndex: 2,
-            boxShadow: contentScrolled ? '0 6px 16px -6px rgba(0, 0, 0, 0.35)' : 'none',
-            transition: 'height 300ms ease-out, box-shadow 200ms ease'
+            transition: 'height 300ms ease-out'
           },
           // Right-click anywhere on the hero (not only the name): Copy link /
           // View on Achordion.
@@ -794,13 +787,14 @@ const ArtistPage = React.memo(function ArtistPage(props) {
         // Artist content (scrollable) - show when we have artist data (even while releases are loading)
         !currentRelease && !loadingRelease && currentArtist && React.createElement('div', {
           ref: artistPageScrollRef,
-          className: 'scrollable-content',
+          // scroll-edge: a shadow under the hero once content scrolls beneath it.
+          className: 'scrollable-content scroll-edge',
           style: {
             flex: 1,
             overflowY: 'scroll',
             pointerEvents: 'auto'
           },
-          onScroll: (e) => { setContentScrolled(e.currentTarget.scrollTop > 0); handleArtistPageScroll(e); }
+          onScroll: handleArtistPageScroll
         },
           // Sticky filter bar (Music tab only) - refined styling
           artistPageTab === 'music' && React.createElement('div', {

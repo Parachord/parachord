@@ -725,6 +725,17 @@
        .tooltip-container; the tip is portalled to <body> as .tooltip-panel and
        placed by placeTooltip, so no overflow:hidden parent clips it. */
 
+    /* Scroll edge: a page's scroll area (.scroll-edge) is marked
+       data-scrolled once it scrolls (one capture listener in app.js, no
+       re-render). A zero-height sticky marker at its top then casts a soft
+       shadow over what scrolls beneath the hero, toolbar or sticky bar above,
+       so content never runs into a hard edge (the artist biography did). */
+    .scroll-edge::before {
+      content: ''; display: block; position: sticky; top: 0; height: 0; z-index: 30;
+      pointer-events: none; box-shadow: none; transition: box-shadow 200ms ease;
+    }
+    .scroll-edge[data-scrolled]::before { box-shadow: 0 0 14px 6px rgba(0, 0, 0, 0.18); }
+
     /* The artist page bio's social links: hover in CSS, not JS. */
     .social-link { background-color: var(--placeholder-bg-light); transition: background-color 150ms ease; }
     .social-link:hover, .social-link:focus-visible { background-color: var(--placeholder-bg); }

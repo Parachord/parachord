@@ -6215,6 +6215,20 @@ const Parachord = () => {
   useEffect(() => { scrobblerConfigsRef.current = scrobblerConfigs; }, [scrobblerConfigs]);
   useEffect(() => { scrobblerLovePushEnabledRef.current = scrobblerLovePushEnabled; }, [scrobblerLovePushEnabled]);
   useEffect(() => { collectionDataRef.current = collectionData; }, [collectionData]);
+  // Scroll edge (index.html .scroll-edge): mark a page scroll area once it
+  // has scrolled. Scroll events don't bubble, so one capture listener sees
+  // them all; it sets an attribute, so nothing re-renders.
+  useEffect(() => {
+    const onScroll = (e) => {
+      const el = e.target;
+      if (!el || !el.classList || !el.classList.contains('scroll-edge')) return;
+      const scrolled = el.scrollTop > 0;
+      if (scrolled !== el.hasAttribute('data-scrolled')) el.toggleAttribute('data-scrolled', scrolled);
+    };
+    document.addEventListener('scroll', onScroll, { capture: true, passive: true });
+    return () => document.removeEventListener('scroll', onScroll, { capture: true });
+  }, []);
+
   // Every native item menu goes through here, so a track, album or artist
   // already in the collection is offered "Remove", not "Add".
   // A playlist on ListenBrainz is on Achordion: its MBID (from the menu
@@ -37896,7 +37910,7 @@ useEffect(() => {
         ),
         // Content area with sticky bar and loading skeletons
         React.createElement('div', {
-          className: 'scrollable-content page-bg',
+          className: 'scrollable-content scroll-edge page-bg',
           style: {
             flex: 1,
             overflowY: 'scroll',
@@ -38161,7 +38175,7 @@ useEffect(() => {
         ),
         // Content area (scrollable)
         React.createElement('div', {
-          className: 'scrollable-content',
+          className: 'scrollable-content scroll-edge',
           style: {
             flex: 1,
             overflowY: 'scroll',
@@ -38689,7 +38703,7 @@ useEffect(() => {
           // Views with custom scroll handling should not have overflow on parent
           ['home', 'library', 'discover', 'new-releases', 'critics-picks', 'recommendations', 'history', 'friendHistory', 'settings', 'concerts'].includes(activeView)
             ? 'overflow-hidden'
-            : 'overflow-y-auto scrollable-content'
+            : 'overflow-y-auto scrollable-content scroll-edge'
         } ${
           // No padding for views with full-bleed heroes
           ['home', 'library', 'discover', 'new-releases', 'critics-picks', 'recommendations', 'history', 'friendHistory', 'settings', 'concerts'].includes(activeView) ? '' : 'p-6'
@@ -38899,7 +38913,7 @@ useEffect(() => {
           ),
           // Content area (scrollable)
           React.createElement('div', {
-            className: 'scrollable-content',
+            className: 'scrollable-content scroll-edge',
             ref: (el) => {
               lastfmChartsScrollContainerRef.current = el;
               if (el && chartsTab === 'songs') {
@@ -39534,7 +39548,7 @@ useEffect(() => {
           ),
           // Content area (scrollable)
           React.createElement('div', {
-            className: 'scrollable-content',
+            className: 'scrollable-content scroll-edge',
             style: {
               flex: 1,
               overflowY: 'scroll',
@@ -39942,7 +39956,7 @@ useEffect(() => {
           ),
           // Content area (scrollable)
           React.createElement('div', {
-            className: 'scrollable-content',
+            className: 'scrollable-content scroll-edge',
             style: {
               flex: 1,
               overflowY: 'scroll',
@@ -40617,7 +40631,7 @@ useEffect(() => {
           })(),
           // Scrollable content area
           React.createElement('div', {
-            className: 'flex-1 overflow-y-auto',
+            className: 'flex-1 overflow-y-auto scroll-edge',
             style: { minHeight: 0 },
             onScroll: handleConcertsScroll
           },
@@ -41890,7 +41904,7 @@ useEffect(() => {
                   setRecommendationsScrollContainerReady(true);
                 }
               },
-              className: 'flex-1 overflow-y-auto scrollable-content',
+              className: 'flex-1 overflow-y-auto scrollable-content scroll-edge',
               onScroll: (e) => {
                 // Hysteresis + content guard (same as Fresh Drops): the old
                 // single 50px threshold flip-flopped when collapsing the
@@ -42116,7 +42130,7 @@ useEffect(() => {
                 if (!topTracksScrollContainerReady) setTopTracksScrollContainerReady(true);
               }
             },
-            className: 'flex-1 overflow-y-auto scrollable-content p-6',
+            className: 'flex-1 overflow-y-auto scrollable-content scroll-edge p-6',
             onScroll: handleHistoryScroll
           },
             // RECENTLY PLAYED TAB
@@ -42896,7 +42910,7 @@ useEffect(() => {
                   setFriendHistoryScrollContainerReady(true);
                 }
               },
-              className: 'flex-1 overflow-y-auto scrollable-content p-6',
+              className: 'flex-1 overflow-y-auto scrollable-content scroll-edge p-6',
               onScroll: (e) => {
                 const scrollTop = e.target.scrollTop;
                 if (scrollTop > 50 && !historyHeaderCollapsed) {
@@ -43412,7 +43426,7 @@ useEffect(() => {
           ),
           // Settings content area (right side) - refined styling
           React.createElement('div', {
-            className: 'flex-1 overflow-y-auto scrollable-content',
+            className: 'flex-1 overflow-y-auto scrollable-content scroll-edge',
             style: { padding: '32px 0 32px 40px' }
           },
             // Unified Plug-Ins Tab

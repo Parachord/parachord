@@ -415,7 +415,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
           // benefit for the other tabs without breaking the virtualizer.
           React.createElement('div', {
             ref: handleCollectionScrollContainerRef,
-            className: 'flex-1 overflow-y-auto scrollable-content',
+            className: 'flex-1 overflow-y-auto scrollable-content scroll-edge',
             style: collectionTab === 'tracks'
               ? { minHeight: 0 }
               : { minHeight: 0, contain: 'strict' },

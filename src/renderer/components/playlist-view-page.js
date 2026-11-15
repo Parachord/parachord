@@ -1028,7 +1028,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
             // RIGHT COLUMN: Tracklist (scrolls independently)
             React.createElement('div', {
               ref: handlePlaylistTracksScrollRef,
-              className: 'flex-1 min-w-0 pt-8 scrollable-content',
+              className: 'flex-1 min-w-0 pt-8 scrollable-content scroll-edge',
               style: { overflowY: 'auto' }
             },
               // Use edited tracks when in edit mode, otherwise use playlistTracks

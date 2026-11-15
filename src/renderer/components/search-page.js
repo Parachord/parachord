@@ -189,7 +189,7 @@ const SearchPage = React.memo(function SearchPage(props) {
           // Scrollable content area - single column layout with grids/lists
           React.createElement('div', {
             ref: handleSearchScrollContainerRef,
-            className: 'flex-1 overflow-y-auto page-bg scrollable-content',
+            className: 'flex-1 overflow-y-auto page-bg scrollable-content scroll-edge',
             onScroll: handleSearchDetailScroll
           },
             // Sticky filter bar for Artists (sort dropdown + search on right like other pages)

@@ -565,7 +565,7 @@ const HomePage = React.memo(function HomePage(props) {
           style: { textShadow: '0 2px 10px rgba(0,0,0,0.5)', letterSpacing: '0.2em', textTransform: 'uppercase' },
           onContextMenu: copyParachordLink,
         }, 'Home'))),
-    React.createElement('div', { className: 'flex-1 overflow-y-auto scrollable-content', style: { minHeight: 0 } },
+    React.createElement('div', { className: 'flex-1 overflow-y-auto scrollable-content scroll-edge', style: { minHeight: 0 } },
       banner,
       React.createElement('div', {
         style: { display: 'flex', flexDirection: 'column', gap: '40px', padding: '28px 24px 40px', maxWidth: '1400px' },
