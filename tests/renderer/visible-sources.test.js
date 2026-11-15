@@ -86,9 +86,12 @@ describe('the lists use it', () => {
     expect(dots).not.toMatch(/#1DB954|const colors = \{/);
   });
 
-  test('every page list calls it', () => {
-    for (const rel of ['components/collection-page.js', 'components/playlist-view-page.js', 'components/search-page.js', 'components/cards.js', 'components/track-lists.js']) {
-      expect(read(rel)).toMatch(/(visibleSources|sourceRowState)\(/);
+  test('every page list calls it, through the shared TrackRow', () => {
+    // TrackRow (track-lists.js) runs the rule; the page lists render it.
+    expect(read('components/track-lists.js')).toMatch(/sourceRowState\(track, sources \|\| \{\}\)/);
+    for (const rel of ['components/collection-page.js', 'components/playlist-view-page.js', 'components/search-page.js', 'components/cards.js']) {
+      expect(read(rel)).toMatch(/React\.createElement\(TrackRow, \{/);
+      expect(read(rel)).not.toMatch(/sourceRowState\(/);
     }
   });
 });

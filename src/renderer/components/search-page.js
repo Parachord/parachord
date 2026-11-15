@@ -23,12 +23,10 @@ const { HeaderControl } = require('./header-control');
 const { CardButton } = require('./card-button');
 const { EmptyState, ErrorState } = require('./states');
 const { SortMenu } = require('./sort-menu');
-const { ResolverIcon } = require('./ui-atoms');
 const { SectionHeader, SECTION_HEADER_GAP } = require('./section-header');
 const { artistOpenOptions, creditOpenOptions, trackArtistOpenOptions } = require('../lib/artist-open');
-const { VirtualizedTrackList } = require('./track-lists');
-const { visibleSources, sourceRowState } = require('../lib/visible-sources');
-const { trackDurationLabel } = require('../lib/track-duration');
+const { VirtualizedTrackList, TrackRow } = require('./track-lists');
+const { visibleSources } = require('../lib/visible-sources');
 const { generateArtistPattern, PlayTop10Icon, SearchHistoryItem } = require('./cards');
 const { ArtistCard } = require('./artist-card');
 const { AlbumCard } = require('./album-card');
@@ -477,26 +475,23 @@ const SearchPage = React.memo(function SearchPage(props) {
                   tracks: filteredTracks,
                   parentRef: searchScrollContainerRef,
                   renderRow: (track, index) => {
-                    // The row's sources, one rule for every list (lib/visible-sources):
-                    // resolving (shimmer, while Search is still resolving it),
-                    // unplayable (dimmed, no icons) or playable.
-                    const { shown: shownSources, state: sourceState } = sourceRowState(track, { trackSources, playbackResolvers: activeResolvers, resolverOrder });
-                    const hasResolved = sourceState === 'playable';
-                    const isResolving = sourceState === 'resolving' && track.resolving;
-                    const isUnplayable = sourceState === 'unplayable';
                     const isCurrentTrack = currentTrack?.id === track.id;
                     const isNowPlaying = isCurrentTrack && playbackContext?.type === 'search';
 
-                    return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`, more: `More actions for ${track.title}`,
-                    current: isNowPlaying,
+                    return React.createElement(TrackRow, {
                       key: track._rowKey || track.id,
-                      'data-track-id': track.id,
-                      ref: (el) => {
+                      track,
+                      number: String(index + 1).padStart(2, '0'),
+                      isNowPlaying: isNowPlaying && isPlaying,
+                      sources: { trackSources, playbackResolvers: activeResolvers, resolverOrder },
+                      allResolvers,
+                      duration: true,
+                      // The shimmer only while Search is still resolving this one.
+                      resolving: !!track.resolving,
+                      rowRef: (el) => {
                         if (el) {
                           searchTracksRowRefs.current.set(track.id, el);
-                          if (searchTracksObserverRef.current) {
-                            searchTracksObserverRef.current.observe(el);
-                          }
+                          if (searchTracksObserverRef.current) searchTracksObserverRef.current.observe(el);
                         } else {
                           searchTracksRowRefs.current.delete(track.id);
                         }
@@ -505,179 +500,20 @@ const SearchPage = React.memo(function SearchPage(props) {
                       onDragStart: (e) => {
                         setDraggingTrackForPlaylist(track);
                         e.dataTransfer.effectAllowed = 'copy';
-                      e.dataTransfer.setData('text/plain', JSON.stringify({
-                        type: 'track',
-                        track: {
-                          id: track.id,
-                          title: track.title,
-                          artist: track.artist,
-                          album: track.album,
-                          duration: track.duration,
-                          albumArt: track.albumArt,
-                          sources: track.sources || {}
-                        }
-                      }));
-                    },
-                    onDragEnd: () => {
-                      handlePlaylistDragEnd();
-                    },
-                    className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${
-                      isResolving || isUnplayable ? 'opacity-60' : ''
-                    } ${isNowPlaying && isPlaying ? 'bg-accent-tint' : 'hover:bg-surface-hover'}`,
-                    style: {
-                      borderRadius: '8px',
-                      marginBottom: '2px'
-                    },
-                    onActivate: () => {
-                      const tracksAfter = filteredTracks.slice(index + 1);
-                      const context = { type: 'search', name: searchQuery };
-                      setQueueWithContext(tracksAfter, context);
-                      handlePlay(track);
-                    },
-                    onContextMenu: (e) => {
-                      e.preventDefault();
-                      if (window.electron?.contextMenu?.showTrackMenu) {
-                        window.showItemMenu({
+                        e.dataTransfer.setData('text/plain', JSON.stringify({
                           type: 'track',
-                          track: track
-                        });
-                      }
-                    }
-                  },
-                    // Track number or playing indicator
-                    React.createElement('span', {
-                      className: 'flex-shrink-0 text-right',
-                      style: {
-                        pointerEvents: 'none',
-                        width: '32px',
-                        fontSize: '12px',
-                        fontWeight: '500',
-                        color: isNowPlaying && isPlaying ? 'var(--accent-secondary)' : 'var(--text-tertiary)'
-                      }
-                    }, isNowPlaying && isPlaying ? '▶' : String(index + 1).padStart(2, '0')),
-
-                    // Track title - flexible column
-                    React.createElement('span', {
-                      className: 'truncate transition-colors',
-                      style: {
-                        pointerEvents: 'none',
-                        flex: '1 1 0',
-                        minWidth: 0,
-                        fontSize: '13px',
-                        fontWeight: isNowPlaying && isPlaying ? '500' : '400',
-                        color: isNowPlaying && isPlaying ? 'var(--accent-primary)' : hasResolved ? 'var(--text-primary)' : 'var(--text-tertiary)'
-                      }
-                    }, track.title),
-
-                    // Artist name - flexible column, clickable
-                    React.createElement('button', { type: 'button',
-                      className: 'text-left truncate hover:text-accent hover:underline cursor-pointer transition-colors',
-                      style: {
-                        flex: '0.7 1 0',
-                        minWidth: 0,
-                        fontSize: '13px',
-                        color: 'var(--text-secondary)'
+                          track: { id: track.id, title: track.title, artist: track.artist, album: track.album, duration: track.duration, albumArt: track.albumArt, sources: track.sources || {} }
+                        }));
                       },
-                      onClick: (e) => {
-                        e.stopPropagation();
-                        fetchArtistData(track.artist, trackArtistOpenOptions(track));
-                      }
-                    }, track.artist),
-
-                    // Album name - flexible column, clickable
-                    track.album ? React.createElement('button', { type: 'button',
-                      className: 'text-left truncate hover:text-accent hover:underline cursor-pointer transition-colors',
-                      style: {
-                        flex: '0.5 1 0',
-                        minWidth: 0,
-                        fontSize: '13px',
-                        color: 'var(--text-secondary)'
+                      onDragEnd: () => handlePlaylistDragEnd(),
+                      onPlay: (resolverId) => {
+                        setQueueWithContext(filteredTracks.slice(index + 1), { type: 'search', name: searchQuery });
+                        handlePlay(resolverId ? { ...track, preferredResolver: resolverId } : track);
                       },
-                      onClick: (e) => {
-                        e.stopPropagation();
-                        openChartsAlbum({ artist: track.artist, title: track.album, albumArt: track.albumArt });
-                      }
-                    }, track.album) : React.createElement('span', {
-                      className: 'truncate',
-                      style: {
-                        pointerEvents: 'none',
-                        flex: '0.5 1 0',
-                        minWidth: 0,
-                        fontSize: '13px',
-                        color: 'var(--text-secondary)'
-                      }
-                    }, ''),
-
-                    // Duration - right-justified before resolver icons
-                    React.createElement('span', {
-                      className: 'flex-shrink-0 tabular-nums',
-                      style: {
-                        pointerEvents: 'none',
-                        width: '50px',
-                        marginRight: '16px',
-                        fontSize: '12px',
-                        color: 'var(--text-tertiary)',
-                        textAlign: 'right'
-                      }
-                    }, trackDurationLabel(track, { trackSources, resolverOrder })),
-
-                    // Resolver icons - fixed width column
-                    React.createElement('div', {
-                      className: 'flex items-center gap-1 justify-end',
-                      style: { width: '140px', flexShrink: 0, minHeight: '24px' }
-                    },
-                      isResolving ?
-                        React.createElement('div', {
-                          className: 'flex items-center gap-1'
-                        },
-                          React.createElement('div', {
-                            className: 'w-5 h-5 rounded shimmer-light animate-shimmer',
-                            title: 'Resolving track…'
-                          }),
-                          React.createElement('div', {
-                            className: 'w-5 h-5 rounded shimmer-light animate-shimmer',
-                            style: { animationDelay: '0.1s' }
-                          })
-                        )
-                      : hasResolved ? (() => {
-                          return shownSources
-                            .map(({ resolverId, source, dim }) => {
-                              const resolver = allResolvers.find(r => r.id === resolverId);
-                              if (!resolver || !resolver.play) return null;
-                              return React.createElement('button', {
-                                key: resolverId,
-                                className: 'no-drag',
-                                onClick: (e) => {
-                                  e.stopPropagation();
-                                  const tracksAfter = filteredTracks.slice(index + 1);
-                                  const context = { type: 'search', name: searchQuery };
-                                  setQueueWithContext(tracksAfter, context);
-                                  handlePlay({ ...track, preferredResolver: resolverId });
-                                },
-                                style: {
-                                  width: '20px',
-                                  height: '20px',
-                                  borderRadius: '4px',
-                                  backgroundColor: resolver.color,
-                                  border: 'none',
-                                  cursor: 'pointer',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  pointerEvents: 'auto',
-                                  opacity: dim ? 0.6 : 1,
-                                  transition: 'transform 0.1s'
-                                },
-                                onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
-                                onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
-                                'aria-label': `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`, 'data-tooltip': `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
-                              }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
-                            });
-                        })()
-                      :
-                        null
-                    )
-                  );
+                      onOpenArtist: () => fetchArtistData(track.artist, trackArtistOpenOptions(track)),
+                      onContextMenu: () => window.showItemMenu({ type: 'track', track }),
+                      cells: [{ key: 'album', content: track.album || '', onClick: track.album ? () => openChartsAlbum({ artist: track.artist, title: track.album, albumArt: track.albumArt }) : undefined }]
+                    });
                   }
                 });
               })(),

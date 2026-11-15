@@ -26,9 +26,9 @@ describe('Search: Playlists', () => {
 describe('History: Recent', () => {
   test('each listen row is keyed by track id plus when it was played', () => {
     // Two listens of one song share the ListenBrainz recording_msid.
-    const at = app.indexOf("'data-track-id': track.id,\n                        ref: (el) => {\n                          if (el) {\n                            historyTrackRowRefs");
+    const at = app.indexOf('rowRef: observedRowRef(historyTrackRowRefs,');
     expect(at).toBeGreaterThan(-1);
-    const block = app.slice(at - 200, at);
+    const block = app.slice(at - 600, at);
     expect(block).toMatch(/key: `\$\{track\.id\}\|\$\{track\.playedAt \?\? index\}`,/);
   });
 });

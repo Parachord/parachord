@@ -1314,9 +1314,8 @@ const prefetchInProgress = window._prefetchInProgress;
 // lib/visible-sources.js, the same rule as the queue and the pages.
 const Icons = require('./components/icons');
 const {
-  VirtualizedQueueList, VirtualizedTrackList,
+  VirtualizedQueueList, VirtualizedTrackList, TrackRow,
 } = require('./components/track-lists');
-const { sourceRowState } = require('./lib/visible-sources');
 const { countOf } = require('./lib/plural');
 const { movePriority, priorityMoves } = require('./lib/priority-order');
 const { timeAgo } = require('./lib/time-ago');
@@ -33499,6 +33498,35 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // Fetch top tracks for an artist from Last.fm API
   // An artist card's Play (components/artist-card.js): their top 10, with
   // the rest queued after the first, in the artist's context.
+  // Track rows (components/track-lists.js TrackRow): what every page list
+  // does with one. Play queues what follows the row in its list under the
+  // list's context, then plays it (from one source when its icon was picked).
+  const playTrackRow = (track, tracksAfter, context, resolverId) => {
+    setQueueWithContext(tracksAfter, context);
+    handlePlay(resolverId ? { ...track, preferredResolver: resolverId } : track);
+  };
+  // A row dragged onto a playlist in the sidebar or the queue.
+  const trackRowDrag = (track, payload) => ({
+    draggable: true,
+    onDragStart: (e) => {
+      setDraggingTrackForPlaylist(track);
+      e.dataTransfer.effectAllowed = 'copy';
+      e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'track', track: payload || track }));
+    },
+    onDragEnd: () => handlePlaylistDragEnd()
+  });
+  // A row's ref, registered with its page's visibility observer (which
+  // resolves the rows on screen).
+  const observedRowRef = (rowRefs, observerRef, id) => (el) => {
+    if (!id || !rowRefs.current) return;
+    if (el) {
+      rowRefs.current.set(id, el);
+      if (observerRef.current) observerRef.current.observe(el);
+    } else {
+      rowRefs.current.delete(id);
+    }
+  };
+
   // An album card's overlay actions (components/album-card.js): get the
   // album's tracks (each grid says how), then play, queue or add them.
   const albumCardActions = ({ title, artist, id, getTracks, context }) => {
@@ -39112,166 +39140,32 @@ useEffect(() => {
 
               return React.createElement('div', { role: 'list', className: 'space-y-0' },
                 filtered.map((track, index) => {
-                  // Look up resolved sources from trackSources state
-                  // The row's sources, one rule for every list (lib/visible-sources):
-                  // resolving (shimmer), unplayable (dimmed, no icons) or playable.
-                  const { shown: shownSources, state: sourceState } = sourceRowState(track, { trackSources, playbackResolvers, resolverOrder });
-                  const hasResolved = sourceState === 'playable';
-                  const isResolving = sourceState === 'resolving';
-                  const isUnplayable = sourceState === 'unplayable';
                   const isCurrentTrack = currentTrack?.title === track.title && currentTrack?.artist === track.artist;
                   const isNowPlaying = isCurrentTrack && isPlaying;
 
-                  return React.createElement(CardButton, { role: 'listitem', label: `${track.title} by ${track.artist}`, more: `More actions for ${track.title}`,
-                  current: isNowPlaying,
+                  return React.createElement(TrackRow, {
+                    role: 'listitem',
                     key: track.id,
-                    'data-track-id': track.id,
-                    ref: (el) => {
-                      if (el) {
-                        // Register for intersection observer to trigger resolution
-                        if (lastfmChartsRowRefs.current) {
-                          lastfmChartsRowRefs.current.set(track.id, el);
-                        }
-                        if (lastfmChartsObserverRef.current) {
-                          lastfmChartsObserverRef.current.observe(el);
-                        }
-                      } else if (lastfmChartsRowRefs.current) {
-                        lastfmChartsRowRefs.current.delete(track.id);
-                      }
-                    },
-                    className: `flex items-center gap-4 py-3 px-4 cursor-pointer transition-all group ${
-                      isResolving || isUnplayable ? 'opacity-60' : ''
-                    } ${isNowPlaying ? 'bg-accent-tint' : 'hover:bg-surface-hover'}`,
-                    style: { borderRadius: '8px', marginBottom: '2px' },
-                    onActivate: () => {
-                      const tracksAfter = filtered.slice(index + 1);
-                      const contextName = chartsSongsSource === 'apple' ? 'Apple Music Charts' : 'Last.fm Charts';
-                      const context = { type: 'songs-charts', name: contextName };
-                      // Include sources (resolved or empty) to trigger proper playback/resolution flow
-                      setQueueWithContext(tracksAfter.map(t => ({
-                        id: t.id, title: t.title, artist: t.artist, album: '',
-                        sources: trackSources[t.id] || {}
-                      })), context);
-                      handlePlay({
-                        id: track.id, title: track.title, artist: track.artist, album: '',
-                        sources: trackSources[track.id] || {}
-                      });
-                    },
-                    onContextMenu: (e) => {
-                      e.preventDefault();
-                      if (window.electron?.contextMenu?.showTrackMenu) {
-                        window.showItemMenu({
-                          type: 'track',
-                          track: { id: track.id, title: track.title, artist: track.artist, album: '' }
-                        });
-                      }
-                    }
-                  },
-                    // Track number (matches Recommended Songs: 32px width)
-                    React.createElement('span', {
-                      className: 'flex-shrink-0 text-right',
-                      style: {
-                        pointerEvents: 'none',
-                        width: '32px',
-                        fontSize: '12px',
-                        fontWeight: '500',
-                        color: isNowPlaying ? 'var(--accent-secondary)' : 'var(--text-tertiary)'
-                      }
-                    }, isNowPlaying ? '▶' : String(track.rank).padStart(2, '0')),
-
-                    // Track title - flexible column
-                    React.createElement('span', {
-                      className: 'truncate transition-colors',
-                      style: {
-                        pointerEvents: 'none',
-                        flex: '1 1 0',
-                        minWidth: 0,
-                        fontSize: '13px',
-                        fontWeight: isNowPlaying ? '500' : '400',
-                        color: isNowPlaying ? 'var(--accent-primary)' : hasResolved ? 'var(--text-primary)' : 'var(--text-tertiary)'
-                      }
-                    }, track.title),
-
-                    // Artist name - flexible column, clickable
-                    React.createElement('button', { type: 'button',
-                      className: 'text-left truncate hover:text-accent hover:underline cursor-pointer transition-colors',
-                      style: {
-                        flex: '0.7 1 0',
-                        minWidth: 0,
-                        fontSize: '12px',
-                        color: 'var(--text-secondary)'
-                      },
-                      onClick: (e) => {
-                        e.stopPropagation();
-                        fetchArtistData(track.artist);
-                      }
-                    }, track.artist),
-
-                    // Listeners count (in place of duration)
-                    track.listeners > 0 && React.createElement('span', {
-                      className: 'flex-shrink-0 tabular-nums text-right',
-                      style: {
-                        pointerEvents: 'none',
-                        width: '90px',
-                        fontSize: '12px',
-                        color: 'var(--text-tertiary)'
-                      }
-                    }, `${(track.listeners / 1000).toFixed(0)}K listeners`),
-
-                    // Resolver icons (matches Recommended Songs: 140px width)
-                    React.createElement('div', {
-                      className: 'flex items-center gap-1 justify-end',
-                      style: { width: '140px', flexShrink: 0, minHeight: '24px' }
-                    },
-                      isResolving ?
-                        React.createElement('div', { className: 'flex items-center gap-1' },
-                          React.createElement('div', {
-                            className: 'w-5 h-5 rounded shimmer-light animate-shimmer',
-                            title: 'Resolving track…'
-                          }),
-                          React.createElement('div', {
-                            className: 'w-5 h-5 rounded shimmer-light animate-shimmer',
-                            style: { animationDelay: '0.1s' }
-                          })
-                        )
-                      : hasResolved ? (() => {
-                          // The shared source-icon rule (lib/visible-sources).
-                          return shownSources.map(({ resolverId, source, dim }) => {
-                              const resolver = allResolvers.find(r => r.id === resolverId);
-                              if (!resolver || !resolver.play) return null;
-                              return React.createElement('button', {
-                                key: resolverId,
-                                className: 'no-drag',
-                                onClick: (e) => {
-                                  e.stopPropagation();
-                                  const tracksAfter = filtered.slice(index + 1);
-                                  const context = { type: 'lastfm-charts', name: 'Last.fm Charts' };
-                                  setQueueWithContext(tracksAfter.map(t => ({ id: t.id, title: t.title, artist: t.artist, album: '' })), context);
-                                  handlePlay({ ...track, id: track.id, title: track.title, artist: track.artist, album: '', preferredResolver: resolverId });
-                                },
-                                style: {
-                                  width: '20px',
-                                  height: '20px',
-                                  borderRadius: '4px',
-                                  backgroundColor: resolver.color,
-                                  border: 'none',
-                                  cursor: 'pointer',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  pointerEvents: 'auto',
-                                  opacity: dim ? 0.6 : 1,
-                                  transition: 'transform 0.1s'
-                                },
-                                onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
-                                onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
-                                'aria-label': `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`, 'data-tooltip': `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
-                              }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
-                            });
-                        })()
-                      : null
-                    )
-                  );
+                    track,
+                    number: String(track.rank).padStart(2, '0'),
+                    isNowPlaying,
+                    sources: { trackSources, playbackResolvers, resolverOrder },
+                    allResolvers,
+                    rowRef: observedRowRef(lastfmChartsRowRefs, lastfmChartsObserverRef, track.id),
+                    // Sources (resolved or empty) go along so playback resolves
+                    // what isn't yet; the source buttons share the row's context.
+                    onPlay: (resolverId) => playTrackRow(
+                      { id: track.id, title: track.title, artist: track.artist, album: '', sources: trackSources[track.id] || {} },
+                      filtered.slice(index + 1).map(t => ({ id: t.id, title: t.title, artist: t.artist, album: '', sources: trackSources[t.id] || {} })),
+                      { type: 'songs-charts', name: chartsSongsSource === 'apple' ? 'Apple Music Charts' : 'Last.fm Charts' },
+                      resolverId),
+                    onOpenArtist: fetchArtistData,
+                    onContextMenu: () => window.showItemMenu({
+                      type: 'track',
+                      track: { id: track.id, title: track.title, artist: track.artist, album: '' }
+                    }),
+                    cells: track.listeners > 0 ? [{ key: 'listeners', content: `${(track.listeners / 1000).toFixed(0)}K listeners`, width: '90px', align: 'right' }] : []
+                  });
                 })
               );
             })()
@@ -41133,12 +41027,6 @@ useEffect(() => {
             // the whole remainder, like the flat page, not just the visible tail.
             const songRow = (item, index, allSongs, section) => {
               const track = item.track;
-              // The row's sources, one rule for every list (lib/visible-sources):
-              // resolving (shimmer), unplayable (dimmed, no icons) or playable.
-              const { shown: shownSources, state: sourceState } = sourceRowState(track, { trackSources, playbackResolvers, resolverOrder });
-              const hasResolved = sourceState === 'playable';
-              const isResolving = sourceState === 'resolving';
-              const isUnplayable = sourceState === 'unplayable';
               // The row playing now: this track, played from THIS row (the
               // context a row click sets), the playlist view's rule with the
               // row's key standing in for the playlist id. The key, not the
@@ -41149,117 +41037,24 @@ useEffect(() => {
               const contextName = section.title || 'Recommendations';
               const isNowPlaying = isPlaying && currentTrack?.id === track.id
                 && playbackContext?.type === 'recommendations' && playbackContext?.rowKey === section.key;
-              const queueTail = (playResolverId) => {
-                const tracksAfter = allSongs.slice(index + 1).map(i => i.track);
-                const context = { type: 'recommendations', name: contextName, rowKey: section.key };
-                setQueueWithContext(tracksAfter, context);
-                handlePlay(playResolverId ? { ...track, preferredResolver: playResolverId } : track);
-              };
-              return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`, more: `More actions for ${track.title}`,
-              current: isNowPlaying,
+              return React.createElement(TrackRow, Object.assign({
                 key: track.id,
-                'data-track-id': track.id,
-                ref: (el) => {
-                  if (el) {
-                    recommendationsTrackRowRefs.current.set(track.id, el);
-                    if (recommendationsObserverRef.current) {
-                      recommendationsObserverRef.current.observe(el);
-                    }
-                  } else {
-                    recommendationsTrackRowRefs.current.delete(track.id);
-                  }
-                },
-                draggable: true,
-                onDragStart: (e) => {
-                  setDraggingTrackForPlaylist(track);
-                  e.dataTransfer.effectAllowed = 'copy';
-                  e.dataTransfer.setData('text/plain', JSON.stringify({
-                    type: 'track',
-                    track: { id: track.id, title: track.title, artist: track.artist, duration: track.duration, sources: track.sources || {} }
-                  }));
-                },
-                onDragEnd: () => handlePlaylistDragEnd(),
-                className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group no-drag ${
-                  isResolving || isUnplayable ? 'opacity-60' : ''
-                } ${isNowPlaying ? 'bg-accent-tint' : (isResolving ? '' : 'hover:bg-surface-hover')}`,
-                style: { borderRadius: '8px', marginBottom: '2px' },
-                onActivate: () => queueTail(),
-                onContextMenu: (e) => {
-                  e.preventDefault();
-                  if (window.electron?.contextMenu?.showTrackMenu) {
-                    window.showItemMenu({
-                      type: 'track',
-                      track,
-                      sourceType: 'recommendations',
-                      sourceName: section.title || 'Recommendations'
-                    });
-                  }
-                }
-              },
-                React.createElement('span', {
-                  className: 'flex-shrink-0 text-right',
-                  style: { pointerEvents: 'none', width: '32px', fontSize: '12px', fontWeight: '500', color: isNowPlaying ? 'var(--accent-secondary)' : 'var(--text-tertiary)' }
-                }, isNowPlaying ? '▶' : String(index + 1).padStart(2, '0')),
-                React.createElement('span', {
-                  className: 'truncate transition-colors',
-                  style: { pointerEvents: 'none', flex: '1 1 0', minWidth: 0, fontSize: '13px', fontWeight: isNowPlaying ? '500' : '400', color: isNowPlaying ? 'var(--accent-primary)' : hasResolved ? 'var(--text-primary)' : 'var(--text-tertiary)' }
-                }, track.title),
-                React.createElement('button', { type: 'button',
-                  className: 'text-left truncate hover:text-accent hover:underline cursor-pointer transition-colors',
-                  style: { flex: '0.7 1 0', minWidth: 0, fontSize: '12px', color: 'var(--text-secondary)' },
-                  onClick: (e) => {
-                    e.stopPropagation();
-                    fetchArtistData(track.artist);
-                  }
-                }, track.artist),
-                React.createElement('span', {
-                  className: 'text-right tabular-nums flex-shrink-0',
-                  style: { pointerEvents: 'none', width: '50px', fontSize: '12px', color: 'var(--text-tertiary)' }
-                }, trackDurationLabel(track, { trackSources, resolverOrder })),
-                React.createElement('div', {
-                  className: 'flex items-center gap-1 justify-end',
-                  style: { width: '140px', flexShrink: 0, minHeight: '24px' }
-                },
-                  isResolving
-                    ? React.createElement('div', { className: 'flex items-center gap-1' },
-                        React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', title: 'Resolving track…' }),
-                        React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: '0.1s' } })
-                      )
-                    : hasResolved ? (() => {
-                        // The shared source-icon rule (lib/visible-sources).
-                        return shownSources.map(({ resolverId, source, dim }) => {
-                            const resolver = allResolvers.find(r => r.id === resolverId);
-                            if (!resolver || !resolver.play) return null;
-                            return React.createElement('button', {
-                              key: resolverId,
-                              className: 'no-drag',
-                              onClick: (e) => {
-                                e.stopPropagation();
-                                queueTail(resolverId);
-                              },
-                              style: {
-                                width: '20px',
-                                height: '20px',
-                                borderRadius: '4px',
-                                backgroundColor: resolver.color,
-                                border: 'none',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                pointerEvents: 'auto',
-                                opacity: dim ? 0.6 : 1,
-                                transition: 'transform 0.1s'
-                              },
-                              onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
-                              onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
-                              'aria-label': `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`, 'data-tooltip': `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
-                            }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
-                          });
-                      })()
-                    : null
-                )
-              );
+                track,
+                number: String(index + 1).padStart(2, '0'),
+                isNowPlaying,
+                sources: { trackSources, playbackResolvers, resolverOrder },
+                allResolvers,
+                duration: true,
+                rowRef: observedRowRef(recommendationsTrackRowRefs, recommendationsObserverRef, track.id),
+                onPlay: (resolverId) => playTrackRow(track, allSongs.slice(index + 1).map(i => i.track), { type: 'recommendations', name: contextName, rowKey: section.key }, resolverId),
+                onOpenArtist: fetchArtistData,
+                onContextMenu: () => window.showItemMenu({
+                  type: 'track',
+                  track,
+                  sourceType: 'recommendations',
+                  sourceName: section.title || 'Recommendations'
+                })
+              }, trackRowDrag(track, { id: track.id, title: track.title, artist: track.artist, duration: track.duration, sources: track.sources || {} })));
             };
 
             // ── Friends ───────────────────────────────────────────────────
@@ -41792,109 +41587,25 @@ useEffect(() => {
 
                   return React.createElement('div', { role: 'list', className: 'space-y-0' },
                     ...sorted.map((track, index) => {
-                      // Use track.id to look up resolved sources from trackSources state
-                      // The row's sources, one rule for every list (lib/visible-sources):
-                      // resolving (shimmer), unplayable (dimmed, no icons) or playable.
-                      const { shown: shownSources, state: sourceState } = sourceRowState(track, { trackSources, playbackResolvers, resolverOrder });
-                      const hasResolved = sourceState === 'playable';
-                      const isResolving = sourceState === 'resolving';
-                      const isUnplayable = sourceState === 'unplayable';
 
-                      return React.createElement(CardButton, { role: 'listitem', label: `${track.title} by ${track.artist}`, more: `More actions for ${track.title}`,
-                        // One song listened to twice is two rows with one
-                        // track.id (ListenBrainz's recording_msid); the listen
-                        // time tells them apart. track.id itself stays the
-                        // trackSources key.
+                      return React.createElement(TrackRow, Object.assign({
+                        role: 'listitem',
+                        // Two listens of one song share an id (ListenBrainz's recording_msid).
                         key: `${track.id}|${track.playedAt ?? index}`,
-                        'data-track-id': track.id,
-                        ref: (el) => {
-                          if (el) {
-                            historyTrackRowRefs.current.set(track.id, el);
-                            if (historyObserverRef.current) {
-                              historyObserverRef.current.observe(el);
-                            }
-                          } else {
-                            historyTrackRowRefs.current.delete(track.id);
-                          }
-                        },
-                        draggable: true,
-                        onDragStart: (e) => {
-                          setDraggingTrackForPlaylist(track);
-                          e.dataTransfer.effectAllowed = 'copy';
-                          e.dataTransfer.setData('text/plain', JSON.stringify({
-                            type: 'track',
-                            track: { id: track.id, title: track.title, artist: track.artist, album: track.album, duration: track.duration, sources: track.sources || {} }
-                          }));
-                        },
-                        onDragEnd: () => {
-                          handlePlaylistDragEnd();
-                        },
-                        className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${isResolving || isUnplayable ? 'opacity-60' : 'hover:bg-surface-hover'}`,
-                        style: {
-                          borderRadius: '8px',
-                          marginBottom: '2px'
-                        },
-                        onActivate: () => {
-                          const tracksAfter = sorted.slice(index + 1);
-                          const context = { type: 'history', name: 'History' };
-                          setQueueWithContext(tracksAfter, context);
-                          handlePlay(track);
-                        },
-                        onContextMenu: (e) => {
-                          e.preventDefault();
-                          if (window.electron?.contextMenu?.showTrackMenu) {
-                            window.showItemMenu({ type: 'track', track: track });
-                          }
-                        }
-                      },
-                        React.createElement('span', {
-                          className: 'flex-shrink-0 text-right',
-                          style: { pointerEvents: 'none', width: '32px', fontSize: '12px', fontWeight: '500', color: track.nowPlaying ? 'var(--accent-secondary)' : 'var(--text-tertiary)' }
-                        }, track.nowPlaying ? '▶' : String(index + 1).padStart(2, '0')),
-                        React.createElement('span', {
-                          className: 'truncate transition-colors',
-                          style: { pointerEvents: 'none', flex: '1 1 0', minWidth: 0, fontSize: '13px', fontWeight: track.nowPlaying ? '500' : '400', color: track.nowPlaying ? 'var(--accent-primary)' : hasResolved ? 'var(--text-primary)' : 'var(--text-tertiary)' }
-                        }, track.title),
-                        React.createElement('button', { type: 'button',
-                          className: 'text-left truncate hover:text-accent hover:underline cursor-pointer transition-colors',
-                          style: { flex: '0.7 1 0', minWidth: 0, fontSize: '12px', color: 'var(--text-secondary)' },
-                          onClick: (e) => { e.stopPropagation(); fetchArtistData(track.artist); }
-                        }, track.artist),
-                        React.createElement('span', {
-                          className: 'truncate',
-                          style: { pointerEvents: 'none', flex: '0.5 1 0', minWidth: 0, fontSize: '12px', color: 'var(--text-tertiary)' }
-                        }, track.album || ''),
-                        React.createElement('span', {
-                          className: 'text-right tabular-nums flex-shrink-0',
-                          style: { pointerEvents: 'none', width: '80px', fontSize: '12px', color: 'var(--text-tertiary)' }
-                        }, track.timestamp ? formatTimeAgo(track.timestamp) : ''),
-                        React.createElement('div', {
-                          className: 'flex items-center gap-1 justify-end',
-                          style: { width: '140px', flexShrink: 0, minHeight: '24px' }
-                        },
-                          isResolving ?
-                            React.createElement('div', { className: 'flex items-center gap-1' },
-                              React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', title: 'Resolving track…' }),
-                              React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: '0.1s' } })
-                            )
-                          : hasResolved ? (() => {
-                              // The shared source-icon rule (lib/visible-sources).
-                              return shownSources.map(({ resolverId, source, dim }) => {
-                                const resolver = allResolvers.find(r => r.id === resolverId);
-                                if (!resolver || !resolver.play) return null;
-                                return React.createElement('button', {
-                                  key: resolverId,
-                                  className: 'no-drag transition-transform hover:scale-110',
-                                  onClick: (e) => { e.stopPropagation(); const tracksAfter = sorted.slice(index + 1); const context = { type: 'history', name: 'History' }; setQueueWithContext(tracksAfter, context); handlePlay({ ...track, preferredResolver: resolverId }); },
-                                  style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', opacity: dim ? 0.6 : 1, transition: 'transform 0.1s' },
-                                  'aria-label': `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`, 'data-tooltip': `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
-                                }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
-                              });
-                            })()
-                          :
-                            null
-                        )
-                      );
+                        track,
+                        number: String(index + 1).padStart(2, '0'),
+                        isNowPlaying: !!track.nowPlaying,
+                        sources: { trackSources, playbackResolvers, resolverOrder },
+                        allResolvers,
+                        rowRef: observedRowRef(historyTrackRowRefs, historyObserverRef, track.id),
+                        onPlay: (resolverId) => playTrackRow(track, sorted.slice(index + 1), { type: 'history', name: 'History' }, resolverId),
+                        onOpenArtist: fetchArtistData,
+                        onContextMenu: () => window.showItemMenu({ type: 'track', track }),
+                        cells: [
+                          { key: 'album', content: track.album || '' },
+                          { key: 'when', content: track.timestamp ? formatTimeAgo(track.timestamp) : '', width: '80px', align: 'right' }
+                        ]
+                      }, trackRowDrag(track, { id: track.id, title: track.title, artist: track.artist, album: track.album, duration: track.duration, sources: track.sources || {} })));
                     })
                   );
                 })()
@@ -41931,69 +41642,22 @@ useEffect(() => {
 
                   return React.createElement('div', { role: 'list', className: 'space-y-0' },
                     ...filtered.map((track, index) => {
-                      // Use track.id to look up resolved sources from trackSources state
-                      // The row's sources, one rule for every list (lib/visible-sources):
-                      // resolving (shimmer), unplayable (dimmed, no icons) or playable.
-                      const { shown: shownSources, state: sourceState } = sourceRowState(track, { trackSources, playbackResolvers, resolverOrder });
-                      const hasResolved = sourceState === 'playable';
-                      const isResolving = sourceState === 'resolving';
-                      const isUnplayable = sourceState === 'unplayable';
-                      return React.createElement(CardButton, { role: 'listitem', label: `${track.title} by ${track.artist}`, more: `More actions for ${track.title}`,
+                      return React.createElement(TrackRow, Object.assign({
+                        role: 'listitem',
                         key: track.id,
-                        'data-track-id': track.id,
-                        ref: (el) => {
-                          if (el) {
-                            topTracksRowRefs.current.set(track.id, el);
-                            if (topTracksObserverRef.current) {
-                              topTracksObserverRef.current.observe(el);
-                            }
-                          } else {
-                            topTracksRowRefs.current.delete(track.id);
-                          }
-                        },
-                        draggable: true,
-                        onDragStart: (e) => {
-                          setDraggingTrackForPlaylist(track);
-                          e.dataTransfer.effectAllowed = 'copy';
-                          e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'track', track }));
-                        },
-                        onDragEnd: () => { handlePlaylistDragEnd(); },
-                        className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${!hasResolved ? 'opacity-60' : 'hover:bg-surface-hover'}`,
-                        style: { borderRadius: '8px', marginBottom: '2px' },
-                        onActivate: () => { const tracksAfter = filtered.slice(index + 1); const context = { type: 'history', name: 'Top Tracks' }; setQueueWithContext(tracksAfter, context); handlePlay(track); },
-                        onContextMenu: (e) => { e.preventDefault(); if (window.electron?.contextMenu?.showTrackMenu) window.showItemMenu({ type: 'track', track }); }
-                      },
-                        React.createElement('span', { className: 'flex-shrink-0 text-right', style: { width: '32px', fontSize: '12px', fontWeight: '500', color: 'var(--text-tertiary)' } }, `#${track.rank}`),
-                        React.createElement('span', { className: 'truncate transition-colors', style: { flex: '1 1 0', minWidth: 0, fontSize: '13px', fontWeight: '400', color: hasResolved ? 'var(--text-primary)' : 'var(--text-tertiary)' } }, track.title),
-                        React.createElement('button', { type: 'button',
-                          className: 'text-left truncate hover:text-accent hover:underline cursor-pointer transition-colors',
-                          style: { flex: '0.7 1 0', minWidth: 0, fontSize: '12px', color: 'var(--text-secondary)' },
-                          onClick: (e) => { e.stopPropagation(); fetchArtistData(track.artist); }
-                        }, track.artist),
-                        React.createElement('span', {
-                          className: 'truncate',
-                          style: { pointerEvents: 'none', flex: '0.5 1 0', minWidth: 0, fontSize: '12px', color: 'var(--text-tertiary)' }
-                        }, track.album || ''),
-                        React.createElement('span', { className: 'text-right tabular-nums flex-shrink-0', style: { width: '80px', fontSize: '12px', color: 'var(--text-tertiary)' } }, `${track.playCount} plays`),
-                        React.createElement('div', { className: 'flex items-center gap-1 justify-end', style: { width: '140px', flexShrink: 0, minHeight: '24px' } },
-                          hasResolved ? (() => {
-                              // The shared source-icon rule (lib/visible-sources).
-                              return shownSources.map(({ resolverId, source, dim }) => {
-                                const resolver = allResolvers.find(r => r.id === resolverId);
-                                if (!resolver || !resolver.play) return null;
-                                return React.createElement('button', {
-                                  key: resolverId,
-                                  className: 'no-drag transition-transform hover:scale-110',
-                                  onClick: (e) => { e.stopPropagation(); const tracksAfter = filtered.slice(index + 1); const context = { type: 'history', name: 'Top Tracks' }; setQueueWithContext(tracksAfter, context); handlePlay({ ...track, preferredResolver: resolverId }); },
-                                  style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: dim ? 0.6 : 1, transition: 'transform 0.1s' },
-                                  'aria-label': `Play from ${resolver.name}`, 'data-tooltip': `Play from ${resolver.name}`
-                                }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
-                              });
-                            })()
-                          :
-                            null
-                        )
-                      );
+                        track,
+                        number: `#${track.rank}`,
+                        sources: { trackSources, playbackResolvers, resolverOrder },
+                        allResolvers,
+                        rowRef: observedRowRef(topTracksRowRefs, topTracksObserverRef, track.id),
+                        onPlay: (resolverId) => playTrackRow(track, filtered.slice(index + 1), { type: 'history', name: 'Top Tracks' }, resolverId),
+                        onOpenArtist: fetchArtistData,
+                        onContextMenu: () => window.showItemMenu({ type: 'track', track }),
+                        cells: [
+                          { key: 'album', content: track.album || '' },
+                          { key: 'plays', content: `${track.playCount} plays`, width: '80px', align: 'right' }
+                        ]
+                      }, trackRowDrag(track)));
                     })
                   );
                 })()
@@ -42365,100 +42029,24 @@ useEffect(() => {
                   }
                   return React.createElement('div', { role: 'list', className: 'space-y-0' },
                     ...sorted.map((track, index) => {
-                      // Use track.id to look up resolved sources from trackSources state
-                      // The row's sources, one rule for every list (lib/visible-sources):
-                      // resolving (shimmer), unplayable (dimmed, no icons) or playable.
-                      const { shown: shownSources, state: sourceState } = sourceRowState(track, { trackSources, playbackResolvers, resolverOrder });
-                      const hasResolved = sourceState === 'playable';
-                      const isResolving = sourceState === 'resolving';
-                      const isUnplayable = sourceState === 'unplayable';
-                      const tracksAfterRecent = sorted.slice(index + 1);
 
-                      return React.createElement(CardButton, { role: 'listitem', label: `${track.title} by ${track.artist}`, more: `More actions for ${track.title}`,
+                      return React.createElement(TrackRow, Object.assign({
+                        role: 'listitem',
                         key: track.id || index,
-                        'data-track-id': track.id,
-                        ref: (el) => {
-                          if (el && track.id) {
-                            friendHistoryTrackRowRefs.current.set(track.id, el);
-                            if (friendHistoryObserverRef.current) {
-                              friendHistoryObserverRef.current.observe(el);
-                            }
-                          } else if (track.id) {
-                            friendHistoryTrackRowRefs.current.delete(track.id);
-                          }
-                        },
-                        draggable: true,
-                        onDragStart: (e) => {
-                          setDraggingTrackForPlaylist(track);
-                          e.dataTransfer.effectAllowed = 'copy';
-                          e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'track', track }));
-                        },
-                        onDragEnd: () => {
-                          handlePlaylistDragEnd();
-                        },
-                        className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${isResolving || isUnplayable ? 'opacity-60' : 'hover:bg-surface-hover'}`,
-                        style: { borderRadius: '8px', marginBottom: '2px' },
-                        onActivate: () => {
-                          const tracksAfter = sorted.slice(index + 1);
-                          const context = { type: 'friend', name: currentFriend?.name || 'Friend', tab: 'recent' };
-                          setQueueWithContext(tracksAfter, context);
-                          handlePlay(track);
-                        },
-                          onContextMenu: (e) => {
-                            e.preventDefault();
-                            if (window.electron?.contextMenu?.showTrackMenu) {
-                              window.showItemMenu({ type: 'track', track });
-                            }
-                          }
-                        },
-                          React.createElement('span', {
-                            className: 'flex-shrink-0 text-right',
-                            style: { pointerEvents: 'none', width: '32px', fontSize: '12px', fontWeight: '500', color: track.nowPlaying ? 'var(--accent-secondary)' : 'var(--text-tertiary)' }
-                          }, track.nowPlaying ? '▶' : String(index + 1).padStart(2, '0')),
-                          React.createElement('span', {
-                            className: 'truncate transition-colors',
-                            style: { pointerEvents: 'none', flex: '1 1 0', minWidth: 0, fontSize: '13px', fontWeight: track.nowPlaying ? '500' : '400', color: track.nowPlaying ? 'var(--accent-primary)' : hasResolved ? 'var(--text-primary)' : 'var(--text-tertiary)' }
-                          }, track.title),
-                          React.createElement('button', { type: 'button',
-                            className: 'text-left truncate hover:text-accent hover:underline cursor-pointer transition-colors',
-                            style: { flex: '0.7 1 0', minWidth: 0, fontSize: '12px', color: 'var(--text-secondary)' },
-                            onClick: (e) => { e.stopPropagation(); fetchArtistData(track.artist); }
-                          }, track.artist),
-                          React.createElement('span', {
-                            className: 'truncate',
-                            style: { pointerEvents: 'none', flex: '0.5 1 0', minWidth: 0, fontSize: '12px', color: 'var(--text-tertiary)' }
-                          }, track.album || ''),
-                          React.createElement('span', {
-                            className: 'text-right tabular-nums flex-shrink-0',
-                            style: { pointerEvents: 'none', width: '80px', fontSize: '12px', color: 'var(--text-tertiary)' }
-                          }, track.timestamp ? formatTimeAgo(track.timestamp) : ''),
-                          React.createElement('div', {
-                            className: 'flex items-center gap-1 justify-end',
-                            style: { width: '140px', flexShrink: 0, minHeight: '24px' }
-                          },
-                            isResolving ?
-                              React.createElement('div', { className: 'flex items-center gap-1' },
-                                React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', title: 'Resolving track…' }),
-                                React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: '0.1s' } })
-                              )
-                            : hasResolved ? (() => {
-                                // The shared source-icon rule (lib/visible-sources).
-                                return shownSources.map(({ resolverId, source, dim }) => {
-                                  const resolver = allResolvers.find(r => r.id === resolverId);
-                                  if (!resolver || !resolver.play) return null;
-                                  return React.createElement('button', {
-                                    key: resolverId,
-                                    className: 'no-drag transition-transform hover:scale-110',
-                                    onClick: (e) => { e.stopPropagation(); const context = { type: 'friend', name: currentFriend?.name || 'Friend', tab: 'recent' }; setQueueWithContext(tracksAfterRecent, context); handlePlay({ ...track, preferredResolver: resolverId }); },
-                                    style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', opacity: dim ? 0.6 : 1, transition: 'transform 0.1s' },
-                                    'aria-label': `Play from ${resolver.name}`, 'data-tooltip': `Play from ${resolver.name}`
-                                  }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
-                                });
-                              })()
-                            :
-                              null
-                          )
-                      );
+                        track,
+                        number: String(index + 1).padStart(2, '0'),
+                        isNowPlaying: !!track.nowPlaying,
+                        sources: { trackSources, playbackResolvers, resolverOrder },
+                        allResolvers,
+                        rowRef: observedRowRef(friendHistoryTrackRowRefs, friendHistoryObserverRef, track.id),
+                        onPlay: (resolverId) => playTrackRow(track, sorted.slice(index + 1), { type: 'friend', name: currentFriend?.name || 'Friend', tab: 'recent' }, resolverId),
+                        onOpenArtist: fetchArtistData,
+                        onContextMenu: () => window.showItemMenu({ type: 'track', track }),
+                        cells: [
+                          { key: 'album', content: track.album || '' },
+                          { key: 'when', content: track.timestamp ? formatTimeAgo(track.timestamp) : '', width: '80px', align: 'right' }
+                        ]
+                      }, trackRowDrag(track)));
                     })
                   );
                 })(),
@@ -42467,99 +42055,22 @@ useEffect(() => {
                   friendHistoryData.topTracks.length === 0
                     ? React.createElement('p', { className: 'text-center text-ink-tertiary py-8' }, 'No top tracks data')
                     : friendHistoryData.topTracks.map((track, index) => {
-                        // Use track.id to look up resolved sources from trackSources state
-                        // The row's sources, one rule for every list (lib/visible-sources):
-                        // resolving (shimmer), unplayable (dimmed, no icons) or playable.
-                        const { shown: shownSources, state: sourceState } = sourceRowState(track, { trackSources, playbackResolvers, resolverOrder });
-                        const hasResolved = sourceState === 'playable';
-                        const isResolving = sourceState === 'resolving';
-                        const isUnplayable = sourceState === 'unplayable';
 
-                        return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`, more: `More actions for ${track.title}`,
+                        return React.createElement(TrackRow, Object.assign({
                           key: track.id || index,
-                          'data-track-id': track.id,
-                          ref: (el) => {
-                            if (el && track.id) {
-                              friendHistoryTrackRowRefs.current.set(track.id, el);
-                              if (friendHistoryObserverRef.current) {
-                                friendHistoryObserverRef.current.observe(el);
-                              }
-                            } else if (track.id) {
-                              friendHistoryTrackRowRefs.current.delete(track.id);
-                            }
-                          },
-                          draggable: true,
-                          onDragStart: (e) => {
-                            setDraggingTrackForPlaylist(track);
-                            e.dataTransfer.effectAllowed = 'copy';
-                            e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'track', track }));
-                          },
-                          onDragEnd: () => {
-                            handlePlaylistDragEnd();
-                          },
-                          className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${isResolving || isUnplayable ? 'opacity-60' : 'hover:bg-surface-hover'}`,
-                          style: { borderRadius: '8px', marginBottom: '2px' },
-                          onActivate: () => {
-                            const tracksAfter = friendHistoryData.topTracks.slice(index + 1);
-                            const context = { type: 'friend', name: currentFriend?.name || 'Friend', tab: 'topTracks' };
-                            setQueueWithContext(tracksAfter, context);
-                            handlePlay(track);
-                          },
-                          onContextMenu: (e) => {
-                            e.preventDefault();
-                            if (window.electron?.contextMenu?.showTrackMenu) {
-                              window.showItemMenu({ type: 'track', track });
-                            }
-                          }
-                        },
-                          React.createElement('span', {
-                            className: 'flex-shrink-0 text-right',
-                            style: { width: '32px', fontSize: '12px', fontWeight: '500', color: 'var(--text-tertiary)' }
-                          }, `#${track.rank || index + 1}`),
-                          React.createElement('span', {
-                            className: 'truncate transition-colors',
-                            style: { flex: '1 1 0', minWidth: 0, fontSize: '13px', fontWeight: '400', color: hasResolved ? 'var(--text-primary)' : 'var(--text-tertiary)' }
-                          }, track.title),
-                          React.createElement('button', { type: 'button',
-                            className: 'text-left truncate hover:text-accent hover:underline cursor-pointer transition-colors',
-                            style: { flex: '0.7 1 0', minWidth: 0, fontSize: '12px', color: 'var(--text-secondary)' },
-                            onClick: (e) => { e.stopPropagation(); fetchArtistData(track.artist); }
-                          }, track.artist),
-                          React.createElement('span', {
-                            className: 'truncate',
-                            style: { pointerEvents: 'none', flex: '0.5 1 0', minWidth: 0, fontSize: '12px', color: 'var(--text-tertiary)' }
-                          }, track.album || ''),
-                          React.createElement('span', {
-                            className: 'text-right tabular-nums flex-shrink-0',
-                            style: { width: '80px', fontSize: '12px', color: 'var(--text-tertiary)' }
-                          }, `${track.playCount} plays`),
-                          React.createElement('div', {
-                            className: 'flex items-center gap-1 justify-end',
-                            style: { width: '140px', flexShrink: 0, minHeight: '24px' }
-                          },
-                            isResolving ?
-                              React.createElement('div', { className: 'flex items-center gap-1' },
-                                React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', title: 'Resolving track…' }),
-                                React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: '0.1s' } })
-                              )
-                            : hasResolved ? (() => {
-                                // The shared source-icon rule (lib/visible-sources).
-                                return shownSources.map(({ resolverId, source, dim }) => {
-                                  const resolver = allResolvers.find(r => r.id === resolverId);
-                                  if (!resolver || !resolver.play) return null;
-                                  return React.createElement('button', {
-                                    key: resolverId,
-                                    className: 'no-drag transition-transform hover:scale-110',
-                                    onClick: (e) => { e.stopPropagation(); const context = { type: 'friend', name: currentFriend?.name || 'Friend', tab: 'topTracks' }; setQueueWithContext(friendHistoryData.topTracks.slice(index + 1), context); handlePlay({ ...track, preferredResolver: resolverId }); },
-                                    style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', opacity: dim ? 0.6 : 1, transition: 'transform 0.1s' },
-                                    'aria-label': `Play from ${resolver.name}`, 'data-tooltip': `Play from ${resolver.name}`
-                                  }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
-                                });
-                              })()
-                            :
-                              null
-                          )
-                        );
+                          track,
+                          number: `#${track.rank || index + 1}`,
+                          sources: { trackSources, playbackResolvers, resolverOrder },
+                          allResolvers,
+                          rowRef: observedRowRef(friendHistoryTrackRowRefs, friendHistoryObserverRef, track.id),
+                          onPlay: (resolverId) => playTrackRow(track, friendHistoryData.topTracks.slice(index + 1), { type: 'friend', name: currentFriend?.name || 'Friend', tab: 'topTracks' }, resolverId),
+                          onOpenArtist: fetchArtistData,
+                          onContextMenu: () => window.showItemMenu({ type: 'track', track }),
+                          cells: [
+                            { key: 'album', content: track.album || '' },
+                            { key: 'plays', content: `${track.playCount} plays`, width: '80px', align: 'right' }
+                          ]
+                        }, trackRowDrag(track)));
                       })
                 ),
                 // Top albums tab content

@@ -41,7 +41,9 @@ test('the playlist view\'s art and icon columns follow the content area, and so 
   expect(pv.PLAYLIST_ART_COLUMN).toBe('clamp(184px, 26%, 240px)');
   expect(pv.PLAYLIST_ICON_COLUMN).toBe('clamp(72px, 14%, 140px)');
   const src = fs.readFileSync(path.join(ROOT, 'src/renderer/components/playlist-view-page.js'), 'utf8');
-  expect((src.match(/width: PLAYLIST_ICON_COLUMN/g) || []).length).toBe(2);
+  // The rows' icon column (the shared TrackRow's sourcesWidth) and the skeleton's.
+  expect(src).toMatch(/sourcesWidth: PLAYLIST_ICON_COLUMN,/);
+  expect((src.match(/width: PLAYLIST_ICON_COLUMN/g) || []).length).toBe(1);
   expect(src).toMatch(/width: PLAYLIST_ART_COLUMN, overflowY: 'auto'/);
   const app = fs.readFileSync(path.join(ROOT, 'src/renderer/app.js'), 'utf8');
   expect(app).toMatch(/style: \{ width: PLAYLIST_ART_COLUMN \}/);

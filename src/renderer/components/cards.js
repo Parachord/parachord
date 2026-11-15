@@ -9,8 +9,7 @@
 // app.js for the in-component call sites; PlayTop10Icon is
 // cards-only (the playtop-10 / queue-top-10 affordances).
 const { ResolverIcon, PlaybackProgress, ShareButton } = require('./ui-atoms');
-const { sourceRowState } = require('../lib/visible-sources');
-const { trackDurationLabel } = require('../lib/track-duration');
+const { TrackRow } = require('./track-lists');
 const Icons = require('./icons');
 const { EmptyState, ErrorState } = require('./states');
 const { Menu } = require('./menu');
@@ -1197,19 +1196,6 @@ const ReleasePage = ({
             // Build track ID first, then use it to look up resolved sources
             const trackId = trackSlug(release.artist.name || 'unknown', track.title || 'untitled', release.title || 'noalbum');
             const sources = trackSources[trackId] || {};
-            // The shared source-icon rule (lib/visible-sources), with
-            // activeResolvers = playbackResolvers from app.js and `resolvers`
-            // already in the user's resolver order.
-            const { shown: shownSources, state: sourceState } = sourceRowState({ id: trackId }, { trackSources, playbackResolvers: activeResolvers, resolverOrder: resolvers.map(r => r.id) });
-            const availableResolvers = shownSources.map(s => s.resolverId);
-            // Tri-state for badge area: still-loading vs resolved-with-nothing-playable
-            // (no match anywhere, or only on services the plan can't play) vs
-            // playable. Drives gray-out + skip-shimmer below.
-            const hasNoMatches = sourceState === 'unplayable';
-            const durationText = trackDurationLabel(
-              { id: trackId, duration: track.length ? track.length / 1000 : null },
-              { trackSources, resolverOrder: resolvers.map(r => r.id) }
-            );
 
             // Build track object for drag/drop and playback
             const trackForDrag = {
@@ -1225,216 +1211,49 @@ const ReleasePage = ({
             const isCurrentTrack = currentTrack?.id === trackId;
             const isNowPlaying = isCurrentTrack && playbackContext?.type === 'album' && playbackContext?.id === release.id;
 
-            return React.createElement(CardButton, { role: 'listitem', label: track.title, more: `More actions for ${track.title}`,
-            current: isNowPlaying,
+            return React.createElement(TrackRow, {
+              role: 'listitem',
               key: index,
-              'data-track-id': trackId,
-              ref: (el) => {
-                if (releaseTrackRowRefs) {
-                  if (el) {
-                    releaseTrackRowRefs.current.set(trackId, el);
-                    if (releaseObserverRef?.current) {
-                      releaseObserverRef.current.observe(el);
-                    }
-                  } else {
-                    releaseTrackRowRefs.current.delete(trackId);
-                  }
+              label: track.title,
+              // MusicBrainz's length (ms) first, then the resolved sources'.
+              track: { ...trackForDrag, duration: track.length ? track.length / 1000 : null },
+              number: String(track.position).padStart(2, '0'),
+              isNowPlaying,
+              sources: { trackSources, playbackResolvers: activeResolvers, resolverOrder: resolvers.map(r => r.id) },
+              allResolvers: resolvers,
+              showArtist: false,
+              duration: true,
+              // No flash of "unavailable" before the lookup finishes.
+              dimResolving: false,
+              rowRef: (el) => {
+                if (!releaseTrackRowRefs) return;
+                if (el) {
+                  releaseTrackRowRefs.current.set(trackId, el);
+                  if (releaseObserverRef?.current) releaseObserverRef.current.observe(el);
+                } else {
+                  releaseTrackRowRefs.current.delete(trackId);
                 }
               },
               draggable: true,
               onDragStart: (e) => {
                 e.dataTransfer.effectAllowed = 'copy';
                 e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'track', track: trackForDrag }));
-                if (onDragStart) {
-                  onDragStart(trackForDrag);
-                }
+                if (onDragStart) onDragStart(trackForDrag);
               },
-              onDragEnd: () => {
-                if (onDragEnd) {
-                  onDragEnd();
-                }
-              },
-              className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all no-drag group ${isNowPlaying ? 'bg-accent-tint' : 'hover:bg-surface-hover'}`,
-              style: {
-                borderRadius: '8px',
-                marginBottom: '2px'
-              },
-              onActivate: () => {
-                console.log('Track row clicked:', track.title);
-
-                // Play it, resolved or not. A row the page hasn't resolved yet
-                // resolves on demand in handlePlay, in the resolver queues'
-                // priority lane, ahead of the page's other rows. It used to
-                // open a Search for the track instead, so an album track could
-                // only be played once its row finished resolving behind the rest.
-                // Build queue from remaining tracks (after this one)
-                const tracksAfter = release.tracks.slice(index + 1).map((t, i) => {
+              onDragEnd: () => { if (onDragEnd) onDragEnd(); },
+              // Play it, resolved or not: a row the page hasn't resolved yet
+              // resolves on demand in handlePlay, in the priority lane.
+              onPlay: (resolverId) => {
+                const toPlay = resolverId ? { ...trackForDrag, preferredResolver: resolverId } : trackForDrag;
+                const tracksAfter = release.tracks.slice(index + 1).map((t) => {
                   const tId = trackSlug(release.artist.name || 'unknown', t.title || 'untitled', release.title || 'noalbum');
-                  const tSources = trackSources[tId] || {};
-                  return {
-                    ...t,
-                    id: tId,
-                    artist: release.artist.name,
-                    album: release.title,
-                    albumArt: release.albumArt,
-                    sources: tSources
-                  };
+                  return { ...t, id: tId, artist: release.artist.name, album: release.title, albumArt: release.albumArt, sources: trackSources[tId] || {} };
                 });
-
-                if (onTrackPlay) {
-                  onTrackPlay(trackForDrag, tracksAfter);
-                } else {
-                  handlePlay(trackForDrag);
-                }
+                if (onTrackPlay) onTrackPlay(toPlay, tracksAfter);
+                else handlePlay(toPlay);
               },
-              onContextMenu: (e) => {
-                e.preventDefault();
-                if (onTrackContextMenu) {
-                  onTrackContextMenu(trackForDrag);
-                }
-              }
-            },
-              // Track number or playing indicator
-              React.createElement('span', {
-                className: 'w-6 flex-shrink-0 text-right',
-                style: {
-                  pointerEvents: 'none',
-                  fontSize: '12px',
-                  fontWeight: '500',
-                  color: isNowPlaying ? 'var(--accent-secondary)' : 'var(--text-tertiary)'
-                }
-              }, isNowPlaying ? '▶' : String(track.position).padStart(2, '0')),
-
-              // Track title — grays out when resolution definitively
-              // completed with no matches on any enabled service. Stays
-              // full-color while loading (sources empty but no __noMatchAll
-              // marker) so the user doesn't see a flash of "unavailable"
-              // before resolution finishes.
-              React.createElement('span', {
-                className: 'flex-1 truncate transition-colors',
-                style: {
-                  pointerEvents: 'none',
-                  fontSize: '13px',
-                  fontWeight: isNowPlaying ? '500' : '400',
-                  color: isNowPlaying
-                    ? 'var(--accent-primary)'
-                    : (hasNoMatches ? 'var(--text-tertiary)' : 'var(--text-primary)'),
-                  opacity: hasNoMatches ? 0.6 : 1
-                }
-              }, track.title),
-
-              // Duration — also dims for unavailable rows so the whole row
-              // reads as "not playable" at a glance. MusicBrainz's length (ms)
-              // first, then the resolved sources' (lib/track-duration); blank
-              // when nothing knows it.
-              durationText && React.createElement('span', {
-                className: 'flex-shrink-0 tabular-nums',
-                style: {
-                  pointerEvents: 'none',
-                  fontSize: '12px',
-                  color: 'var(--text-tertiary)',
-                  opacity: hasNoMatches ? 0.6 : 1
-                }
-              }, durationText),
-              
-              // Resolver icons (sources available for this track)
-              React.createElement('div', {
-                className: 'flex items-center gap-1 flex-shrink-0 ml-auto',
-                style: { pointerEvents: 'none', minHeight: '24px', width: '140px', justifyContent: 'flex-end' }
-              },
-                (() => {
-                  // Use availableResolvers from outer scope (already looked up via trackId)
-                  const availableResolverIds = availableResolvers;
-
-                  if (availableResolverIds.length === 0) {
-                    // Resolution definitively completed with no matches →
-                    // render nothing in the badge area. The grayed-out track
-                    // title in the row already conveys "this track isn't
-                    // playable from any enabled service" — a redundant label
-                    // would just add noise.
-                    if (hasNoMatches) return null;
-                    // Otherwise: still resolving — show shimmer skeletons.
-                    return React.createElement('div', {
-                      className: 'flex items-center gap-1'
-                    },
-                      React.createElement('div', {
-                        className: 'w-5 h-5 rounded animate-shimmer',
-                        style: {
-                          background: 'linear-gradient(to right, var(--shimmer-from), var(--shimmer-via), var(--shimmer-to))',
-                          backgroundSize: '200% 100%'
-                        },
-                        title: 'Resolving track…'
-                      }),
-                      React.createElement('div', {
-                        className: 'w-5 h-5 rounded animate-shimmer',
-                        style: {
-                          background: 'linear-gradient(to right, var(--shimmer-from), var(--shimmer-via), var(--shimmer-to))',
-                          backgroundSize: '200% 100%',
-                          animationDelay: '0.1s'
-                        }
-                      })
-                    );
-                  }
-
-                  // Show resolver icons for available sources (only if they support playback)
-                  return shownSources.map(({ resolverId, source, dim }) => {
-                    const resolver = resolvers.find(r => r.id === resolverId);
-                    if (!resolver || !resolver.play) return null;
-
-                    const confidence = source.confidence || 0;
-
-                    return React.createElement('button', {
-                      key: resolverId,
-                      className: 'no-drag',
-                      onClick: (e) => {
-                        e.stopPropagation(); // Don't trigger row click
-                        console.log(`Playing from ${resolver.name}:`, source);
-
-                        // Create track with preferred resolver
-                        const trackWithResolver = { ...trackForDrag, preferredResolver: resolverId };
-
-                        // Build queue from remaining tracks (after this one)
-                        const tracksAfter = release.tracks.slice(index + 1).map((t, i) => {
-                          const tId = trackSlug(release.artist.name || 'unknown', t.title || 'untitled', release.title || 'noalbum');
-                          const tSources = trackSources[tId] || {};
-                          return {
-                            ...t,
-                            id: tId,
-                            artist: release.artist.name,
-                            album: release.title,
-                            albumArt: release.albumArt,
-                            sources: tSources
-                          };
-                        });
-
-                        if (onTrackPlay) {
-                          onTrackPlay(trackWithResolver, tracksAfter);
-                        } else {
-                          handlePlay(trackWithResolver);
-                        }
-                      },
-                      style: {
-                        width: '20px',
-                        height: '20px',
-                        borderRadius: '4px',
-                        backgroundColor: resolver.color,
-                        border: 'none',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        pointerEvents: 'auto',
-                        opacity: dim ? 0.6 : 1,
-                        transition: 'transform 0.1s'
-                      },
-                      onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
-                      onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
-                      'aria-label': `Play from ${resolver.name} (${Math.round(confidence * 100)}% match)`, 'data-tooltip': `Play from ${resolver.name} (${Math.round(confidence * 100)}% match)`
-                    }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
-                  });
-                })()
-              )
-            );
+              onContextMenu: () => { if (onTrackContextMenu) onTrackContextMenu(trackForDrag); }
+            });
           })
         )
       :

@@ -73,13 +73,27 @@ describe('Recommendations skeletons match the sectioned page', () => {
   });
 
   test('same song row padding and columns', () => {
-    expect(songRow).toMatch(/flex items-center gap-4 py-3 px-4/);
+    // The song rows are the shared TrackRow (with a duration column): render
+    // one and compare its box and columns with the skeleton's.
+    expect(songRow).toMatch(/React\.createElement\(TrackRow,[\s\S]*duration: true/);
+    global.React = require('react');
+    const { renderToStaticMarkup } = require('react-dom/server');
+    const { TrackRow } = require('../../src/renderer/components/track-lists');
+    const row = renderToStaticMarkup(React.createElement(TrackRow, {
+      track: { id: 'a', title: 'T', artist: 'A', duration: 200 }, number: '01', duration: true,
+      sources: { trackSources: {}, playbackResolvers: [], resolverOrder: [] }, allResolvers: [], onPlay() {}, onOpenArtist() {},
+    }));
+    expect(row).toMatch(/class="card-button flex items-center gap-4 py-3 px-4 /);
     expect(skel).toMatch(/className: 'flex items-center gap-4 py-3 px-4'/);
-    expect(songRow).toMatch(/style: \{ borderRadius: '8px', marginBottom: '2px' \}/);
+    expect(row).toContain('border-radius:8px;margin-bottom:2px');
     expect(skel).toMatch(/style: \{ borderRadius: '8px', marginBottom: '2px' \}/);
-    for (const col of ["width: '32px'", "flex: '1 1 0', minWidth: 0", "flex: '0.7 1 0', minWidth: 0", "width: '50px'", "width: '140px', flexShrink: 0, minHeight: '24px'"]) {
-      expect(songRow).toContain(col);
-      expect(skel).toContain(col);
+    const cols = [
+      ["width: '32px'", 'width:32px'], ["flex: '1 1 0', minWidth: 0", 'flex:1 1 0;min-width:0'], ["flex: '0.7 1 0', minWidth: 0", 'flex:0.7 1 0;min-width:0'],
+      ["width: '50px'", 'width:50px'], ["width: '140px', flexShrink: 0, minHeight: '24px'", 'width:140px;flex-shrink:0;min-height:24px'],
+    ];
+    for (const [src, css] of cols) {
+      expect(row).toContain(css);
+      expect(skel).toContain(src);
     }
   });
 

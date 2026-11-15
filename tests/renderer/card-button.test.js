@@ -139,6 +139,9 @@ describe('the visible More button (#1386)', () => {
     const fs = require('fs'); const path = require('path');
     const src = ['src/renderer/app.js', 'src/renderer/components/playlist-view-page.js', 'src/renderer/components/search-page.js', 'src/renderer/components/collection-page.js', 'src/renderer/components/track-lists.js', 'src/renderer/components/cards.js']
       .map((f) => fs.readFileSync(path.join(__dirname, '../..', f), 'utf8')).join('\n');
-    expect((src.match(/more: `More actions for \$\{track\.title\}`/g) || []).length).toBe(11);
+    // The shared TrackRow (track-lists.js) opts in for every list that uses
+    // it; the lists not yet on it still pass `more` themselves.
+    expect(src).toMatch(/more: onContextMenu \? `More actions for \$\{track\.title\}` : undefined/);
+    expect((src.match(/more: `More actions for \$\{track\.title\}`/g) || []).length).toBe(1);
   });
 });

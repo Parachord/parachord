@@ -170,7 +170,9 @@ describe('Search rows hold still as sources answer', () => {
 
   test('cards are keyed by the display key, the resolution scheduler by the real id', () => {
     expect(page).not.toMatch(/key: (artist|album|track)\.id,/);
-    expect(page).toMatch(/'data-track-id': track\.id,/);
+    // The row is the shared TrackRow, which sets data-track-id from track.id.
+    expect(page).toMatch(/key: track\._rowKey \|\| track\.id,\s*track,/);
+    expect(fs.readFileSync(path.join(__dirname, '../../src/renderer/components/track-lists.js'), 'utf8')).toMatch(/'data-track-id': track\.id,/);
   });
 
   test('covers are keyed by the display key and survive a re-published row', () => {

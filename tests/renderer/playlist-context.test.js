@@ -91,7 +91,8 @@ describe('call sites', () => {
   test('the playlist view builds every play context with playlistPlaybackContext', () => {
     const src = read('components/playlist-view-page.js');
     expect(src).not.toMatch(/const context = \{ type: 'playlist'/);
-    expect(src.match(/playlistPlaybackContext\(selectedPlaylist\)/g).length).toBeGreaterThanOrEqual(4);
+    // The row and its source icons share one onPlay (the shared TrackRow).
+    expect(src.match(/playlistPlaybackContext\(selectedPlaylist\)/g).length).toBeGreaterThanOrEqual(3);
   });
 
   test("the queue's context bar opens contextPlaylistTarget, and the weekly play button carries the ref", () => {

@@ -99,12 +99,15 @@ describe('recommendations wiring', () => {
     const row = app.slice(start, app.indexOf('// ── Friends', start));
     expect(row).toMatch(/const contextName = section\.title \|\| 'Recommendations';/);
     expect(row).toMatch(/const isNowPlaying = isPlaying && currentTrack\?\.id === track\.id\s*&& playbackContext\?\.type === 'recommendations' && playbackContext\?\.rowKey === section\.key;/);
-    expect(row).toMatch(/const context = \{ type: 'recommendations', name: contextName, rowKey: section\.key \};/);
+    expect(row).toMatch(/\{ type: 'recommendations', name: contextName, rowKey: section\.key \}/);
     expect(row).not.toMatch(/playbackContext\?\.name === contextName/);
-    // the playlist view's marks: tinted row, a play glyph for the number, accent title
-    expect(row).toMatch(/isNowPlaying \? 'bg-accent-tint'/);
-    expect(row).toMatch(/isNowPlaying \? '▶' : String\(index \+ 1\)\.padStart\(2, '0'\)/);
-    expect(row).toMatch(/color: isNowPlaying \? 'var\(--accent-primary\)'/);
+    // the shared TrackRow's now-playing marks: tinted row, a play glyph for
+    // the number, accent title
+    expect(row).toMatch(/number: String\(index \+ 1\)\.padStart\(2, '0'\),\s*isNowPlaying,/);
+    const shared = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/components/track-lists.js'), 'utf8');
+    expect(shared).toMatch(/isNowPlaying \? 'bg-accent-tint'/);
+    expect(shared).toMatch(/isNowPlaying \? '▶' : number/);
+    expect(shared).toMatch(/color: isNowPlaying \? 'var\(--accent-primary\)'/);
   });
 
   test('"load more" is guarded by a ref and appends from the functional update (review round 2)', () => {

@@ -16,17 +16,13 @@
 // from props under their old names.
 
 const Icons = require('./icons');
-const { CardButton } = require('./card-button');
 const { EmptyState, ErrorState } = require('./states');
 const { SortMenu } = require('./sort-menu');
 const { Menu } = require('./menu');
 const { HeroTabs } = require('./hero-tabs');
-const { VirtualizedTrackList } = require('./track-lists');
-const { sourceRowState } = require('../lib/visible-sources');
+const { VirtualizedTrackList, TrackRow } = require('./track-lists');
 const { slug } = require('../lib/track-slug');
 const { artistMenu } = require('../lib/item-menus');
-const { trackDurationLabel } = require('../lib/track-duration');
-const { ResolverIcon } = require('./ui-atoms');
 const { PlayTop10Icon } = require('./cards');
 const { AlbumCard } = require('./album-card');
 const { ArtistCard } = require('./artist-card');
@@ -514,275 +510,56 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                   );
                   const isCurrentTrack = currentTrack?.id === track.id || (currentTrack?.filePath && track.filePath && currentTrack.filePath === track.filePath);
                   const isNowPlaying = isCurrentTrack && playbackContext?.type === 'library';
-                  // The row's sources, one rule for every list (lib/visible-sources):
-                  // resolving (shimmer), unplayable (dimmed, no icons) or playable.
-                  // A local file always plays, so it is never unplayable.
-                  const { shown: shownSources, state: sourceState } = sourceRowState(track, { trackSources, playbackResolvers: activeResolvers, resolverOrder });
-                  const isResolving = sourceState === 'resolving';
-                  const isUnplayable = sourceState === 'unplayable' && !track.filePath;
 
-                  return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`, more: `More actions for ${track.title}`,
-                  current: isNowPlaying,
-                    ref: (el) => {
+                  return React.createElement(TrackRow, {
+                    key: track.id || track.filePath || index,
+                    track,
+                    number: String(index + 1).padStart(2, '0'),
+                    isNowPlaying: isNowPlaying && isPlaying,
+                    // A local file's Local Files is one more source, shown and
+                    // ordered by the user's source order like the rest.
+                    sources: { trackSources, playbackResolvers: activeResolvers, resolverOrder },
+                    allResolvers,
+                    duration: true,
+                    rowRef: (el) => {
                       if (el) {
                         collectionTrackRowRefs.current.set(track.id, el);
-                        // Also observe if observer exists
-                        if (collectionObserverRef.current) {
-                          collectionObserverRef.current.observe(el);
-                        }
+                        if (collectionObserverRef.current) collectionObserverRef.current.observe(el);
                       } else {
                         collectionTrackRowRefs.current.delete(track.id);
                       }
                     },
-                    'data-track-id': track.id,
-                    key: track.id || track.filePath || index,
                     draggable: true,
                     onDragStart: (e) => {
                       setDraggingTrackForPlaylist(track);
                       e.dataTransfer.effectAllowed = 'copy';
                       e.dataTransfer.setData('text/plain', JSON.stringify({
                         type: 'track',
-                        track: {
-                          id: track.id,
-                          title: track.title,
-                          artist: track.artist,
-                          album: track.album,
-                          duration: track.duration,
-                          albumArt: track.albumArt,
-                          sources: track.sources || {}
-                        }
+                        track: { id: track.id, title: track.title, artist: track.artist, album: track.album, duration: track.duration, albumArt: track.albumArt, sources: track.sources || {} }
                       }));
                     },
-                    onDragEnd: () => {
-                      handlePlaylistDragEnd();
+                    onDragEnd: () => handlePlaylistDragEnd(),
+                    onPlay: (resolverId) => {
+                      setQueueWithContext(sorted.slice(index + 1), { type: 'library', name: 'Collection' });
+                      // The merged sources (original + resolved), so handlePlay can use every resolver.
+                      handlePlay(resolverId ? { ...track, preferredResolver: resolverId } : { ...track, sources: effectiveSources });
                     },
-                    className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all no-drag group ${
-                      isNowPlaying && isPlaying ? 'bg-accent-tint' : 'hover:bg-surface-hover'
-                    } ${isUnplayable ? 'opacity-60' : ''}`,
-                    style: {
-                      borderRadius: '8px',
-                      marginBottom: '2px'
+                    onOpenArtist: fetchArtistData,
+                    onContextMenu: () => {
+                      // This tab lists local-library tracks too, and those are
+                      // not in the collection: claiming they were offered
+                      // "Remove from Collection", which could only fail with
+                      // "not in your collection" (#1002).
+                      const inCollection = collectionData.tracks.some(t => t.id === track.id);
+                      window.showItemMenu({
+                        type: 'track',
+                        track: track,
+                        isInCollection: inCollection,
+                        isLibraryTrack: !inCollection && !!(track.filePath || track.sources?.localfiles?.filePath)
+                      });
                     },
-                    onActivate: () => {
-                      const tracksAfter = sorted.slice(index + 1);
-                      const context = { type: 'library', name: 'Collection' };
-                      setQueueWithContext(tracksAfter, context);
-                      // Pass track with merged sources (original + resolved) so handlePlay can use all available resolvers
-                      handlePlay({ ...track, sources: effectiveSources });
-                    },
-                    onContextMenu: (e) => {
-                      e.preventDefault();
-                      if (window.electron?.contextMenu?.showTrackMenu) {
-                        // This tab lists local-library tracks too, and those are
-                        // not in the collection: claiming they were offered
-                        // "Remove from Collection", which could only fail with
-                        // "not in your collection" (#1002).
-                        const inCollection = collectionData.tracks.some(t => t.id === track.id);
-                        window.showItemMenu({
-                          type: 'track',
-                          track: track,
-                          isInCollection: inCollection,
-                          isLibraryTrack: !inCollection && !!(track.filePath || track.sources?.localfiles?.filePath)
-                        });
-                      }
-                    }
-                  },
-                    // Track number or playing indicator
-                    React.createElement('span', {
-                      className: 'w-6 flex-shrink-0 text-right',
-                      style: {
-                        pointerEvents: 'none',
-                        fontSize: '12px',
-                        fontWeight: '500',
-                        color: isNowPlaying && isPlaying ? 'var(--accent-secondary)' : 'var(--text-tertiary)'
-                      }
-                    }, isNowPlaying && isPlaying ? '▶' : String(index + 1).padStart(2, '0')),
-
-                    // Track title - flexible column
-                    React.createElement('span', {
-                      className: 'truncate transition-colors',
-                      style: {
-                        pointerEvents: 'none',
-                        flex: '1 1 0',
-                        minWidth: 0,
-                        fontSize: '13px',
-                        fontWeight: isNowPlaying && isPlaying ? '500' : '400',
-                        color: isNowPlaying && isPlaying ? 'var(--accent-primary)' : 'var(--text-primary)'
-                      }
-                    }, track.title),
-
-                    // Artist name - flexible column, clickable
-                    React.createElement('button', { type: 'button',
-                      className: 'text-left truncate hover:text-accent hover:underline cursor-pointer transition-colors',
-                      style: {
-                        flex: '0.7 1 0',
-                        minWidth: 0,
-                        fontSize: '13px',
-                        color: 'var(--text-secondary)'
-                      },
-                      onClick: (e) => {
-                        e.stopPropagation();
-                        fetchArtistData(track.artist);
-                      }
-                    }, track.artist || 'Unknown Artist'),
-
-                    // Album name - flexible column, clickable
-                    track.album ? React.createElement('button', { type: 'button',
-                      className: 'text-left truncate hover:text-accent hover:underline cursor-pointer transition-colors',
-                      style: {
-                        flex: '0.5 1 0',
-                        minWidth: 0,
-                        fontSize: '13px',
-                        color: 'var(--text-secondary)'
-                      },
-                      onClick: (e) => {
-                        e.stopPropagation();
-                        openChartsAlbum({ artist: track.artist, title: track.album, albumArt: track.albumArt });
-                      }
-                    }, track.album) : React.createElement('span', {
-                      className: 'truncate',
-                      style: {
-                        pointerEvents: 'none',
-                        flex: '0.5 1 0',
-                        minWidth: 0,
-                        fontSize: '13px',
-                        color: 'var(--text-secondary)'
-                      }
-                    }, ''),
-
-                    // Duration - right-justified before resolver icons
-                    React.createElement('span', {
-                      className: 'flex-shrink-0 tabular-nums',
-                      style: {
-                        pointerEvents: 'none',
-                        width: '50px',
-                        marginRight: '16px',
-                        fontSize: '12px',
-                        color: 'var(--text-tertiary)',
-                        textAlign: 'right'
-                      }
-                    }, trackDurationLabel(track, { trackSources, resolverOrder })),
-
-                    // Resolver icons - fixed width column (last column)
-                    React.createElement('div', {
-                      className: 'flex items-center gap-1 flex-shrink-0',
-                      style: { pointerEvents: 'none', minHeight: '20px', width: '140px', justifyContent: 'flex-end' }
-                    },
-                      (() => {
-                        const hasExternalSources = shownSources.some(s => s.resolverId !== 'localfiles');
-
-                        if (hasExternalSources) {
-                          return shownSources
-                            .map(({ resolverId, source, dim }) => {
-                              const resolver = allResolvers.find(r => r.id === resolverId);
-                              if (!resolver) return null;
-                              return React.createElement('button', {
-                                key: resolverId,
-                                className: 'no-drag',
-                                onClick: (e) => {
-                                  e.stopPropagation();
-                                  const tracksAfter = sorted.slice(index + 1);
-                                  const context = { type: 'library', name: 'Collection' };
-                                  setQueueWithContext(tracksAfter, context);
-                                  handlePlay({ ...track, preferredResolver: resolverId });
-                                },
-                                style: {
-                                  width: '20px',
-                                  height: '20px',
-                                  borderRadius: '4px',
-                                  backgroundColor: resolver.color,
-                                  border: 'none',
-                                  cursor: 'pointer',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  pointerEvents: 'auto',
-                                  opacity: dim ? 0.6 : 1,
-                                  transition: 'transform 0.1s'
-                                },
-                                onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
-                                onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
-                                'aria-label': `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`, 'data-tooltip': `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
-                              }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
-                            });
-                        } else if (isResolving) {
-                          // Show shimmer skeletons while resolving (for both local and collection tracks)
-                          const localFilesResolver = allResolvers.find(r => r.id === 'localfiles');
-                          return React.createElement('div', { className: 'flex items-center gap-1' },
-                            // Local files icon for local files
-                            track.filePath && localFilesResolver && React.createElement('button', {
-                              key: 'localfiles',
-                              className: 'no-drag',
-                              onClick: (e) => {
-                                e.stopPropagation();
-                                const tracksAfter = sorted.slice(index + 1);
-                                const context = { type: 'library', name: 'Collection' };
-                                setQueueWithContext(tracksAfter, context);
-                                handlePlay({ ...track, preferredResolver: 'localfiles' });
-                              },
-                              style: {
-                                width: '20px',
-                                height: '20px',
-                                borderRadius: '4px',
-                                backgroundColor: localFilesResolver.color,
-                                border: 'none',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                pointerEvents: 'auto',
-                                transition: 'transform 0.1s'
-                              },
-                              onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
-                              onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
-                              'aria-label': 'Play from Local Files', 'data-tooltip': 'Play from Local Files'
-                            }, React.createElement(ResolverIcon, { resolverId: 'localfiles', size: 12 })),
-                            // Shimmer skeletons
-                            React.createElement('div', {
-                              className: 'w-5 h-5 rounded shimmer-light animate-shimmer',
-                              title: 'Resolving…'
-                            }),
-                            React.createElement('div', {
-                              className: 'w-5 h-5 rounded shimmer-light animate-shimmer',
-                              style: { animationDelay: '0.1s' }
-                            })
-                          );
-                        } else if (track.filePath) {
-                          // Show just the local files icon for local tracks that finished resolving without finding external sources
-                          const localFilesResolver = allResolvers.find(r => r.id === 'localfiles');
-                          if (!localFilesResolver) return null;
-                          return React.createElement('button', {
-                            key: 'localfiles',
-                            className: 'no-drag',
-                            onClick: (e) => {
-                              e.stopPropagation();
-                              const tracksAfter = sorted.slice(index + 1);
-                              const context = { type: 'library', name: 'Collection' };
-                              setQueueWithContext(tracksAfter, context);
-                              handlePlay({ ...track, preferredResolver: 'localfiles' });
-                            },
-                            style: {
-                              width: '20px',
-                              height: '20px',
-                              borderRadius: '4px',
-                              backgroundColor: localFilesResolver.color,
-                              border: 'none',
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              pointerEvents: 'auto',
-                              transition: 'transform 0.1s'
-                            },
-                            onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
-                            onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
-                            'aria-label': 'Play from Local Files', 'data-tooltip': 'Play from Local Files'
-                          }, React.createElement(ResolverIcon, { resolverId: 'localfiles', size: 12 }));
-                        }
-                        return null;
-                      })()
-                    )
-                  );
+                    cells: [{ key: 'album', content: track.album || '', onClick: track.album ? () => openChartsAlbum({ artist: track.artist, title: track.album, albumArt: track.albumArt }) : undefined }]
+                  });
                 }
               });
             })(),

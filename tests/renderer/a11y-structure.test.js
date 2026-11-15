@@ -35,8 +35,10 @@ test('the playing row is aria-current', () => {
   const { CardButton } = require('../../src/renderer/components/card-button');
   expect(renderToStaticMarkup(React.createElement(CardButton, { label: 'x', current: true }))).toContain('aria-current="true"');
   expect(renderToStaticMarkup(React.createElement(CardButton, { label: 'x' }))).not.toContain('aria-current');
+  // The page lists are the shared TrackRow, which marks the playing row.
+  expect(read('src/renderer/components/track-lists.js')).toContain('current: isNowPlaying,');
   for (const f of ['src/renderer/components/collection-page.js', 'src/renderer/components/playlist-view-page.js', 'src/renderer/components/search-page.js', 'src/renderer/components/cards.js']) {
-    expect([f, read(f).includes('current: isNowPlaying,')]).toEqual([f, true]);
+    expect([f, /React\.createElement\(TrackRow, \{[\s\S]{0,400}isNowPlaying/.test(read(f))]).toEqual([f, true]);
   }
   expect(read('src/renderer/components/track-lists.js')).toContain('current: isCurrentTrack,');
 });
