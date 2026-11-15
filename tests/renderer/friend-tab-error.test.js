@@ -18,7 +18,7 @@ describe('friend page tab errors', () => {
   const loaders = [
     ['loadFriendRecentTracks', 'recent'],
     ['loadFriendTopTracks', 'topTracks'],
-    ['loadFriendTopTracksListenBrainz', 'topTracks'],
+    // Both services: loadFriendTopTracks wraps fetchFriendTopTracksList.
     ['loadFriendTopArtists', 'topArtists'],
     ['loadFriendTopAlbums', 'topAlbums']
   ];

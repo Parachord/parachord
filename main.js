@@ -4631,6 +4631,20 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
     });
   }
 
+  // An artist's top tracks go to the queue from its menu (the cards' hover
+  // keeps only Play).
+  if (data.type === 'artist' && data.artist?.name) {
+    menuItems.push({
+      label: 'Add Top 10 to Queue',
+      click: () => {
+        safeSendToRenderer('track-context-menu-action', {
+          action: 'queue-artist-top-tracks',
+          artist: data.artist
+        });
+      }
+    });
+  }
+
   // Home's recent-loves tile: Add to Queue, and Open in Collection
   // (Collection's songs, newest loved first).
   if (data.type === 'loves') {

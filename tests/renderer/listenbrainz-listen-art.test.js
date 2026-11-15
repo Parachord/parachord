@@ -50,7 +50,7 @@ describe('app.js wiring', () => {
   });
 
   test('a friend\'s Recent tab takes each listen\'s cover', () => {
-    const body = sliceFrom('const loadFriendRecentTracks = async', 'const loadFriendTopTracks = async');
+    const body = sliceFrom('const loadFriendRecentTracks = async', 'const fetchFriendTopTracksList = async');
     expect(body).toMatch(LISTEN_COVER);
     expect(body).not.toMatch(/albumArt: null/);
   });

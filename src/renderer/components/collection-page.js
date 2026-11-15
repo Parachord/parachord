@@ -23,6 +23,8 @@ const { Menu } = require('./menu');
 const { HeroTabs } = require('./hero-tabs');
 const { VirtualizedTrackList } = require('./track-lists');
 const { sourceRowState } = require('../lib/visible-sources');
+const { slug } = require('../lib/track-slug');
+const { artistMenu } = require('../lib/item-menus');
 const { trackDurationLabel } = require('../lib/track-duration');
 const { ResolverIcon } = require('./ui-atoms');
 const { CollectionArtistCard, CollectionAlbumCard } = require('./cards');
@@ -805,6 +807,9 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                     artist: { ...artist, trackCount: 0 },
                     getArtistImage: getArtistImage,
                     onNavigate: () => fetchArtistData(artist.name),
+                    // The artist menu Search's cards use (Remove from
+                    // Collection, Copy Link, View on Achordion).
+                    onContextMenu: () => window.showItemMenu(artistMenu({ id: slug(artist.name || 'unknown'), name: artist.name, image: artist.image || null })),
                     onPlayTopTracks: async (artist) => {
                       setTrackLoading(true);
                       const tracks = await getArtistTopTracks(artist.name);
@@ -817,15 +822,6 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                         handlePlay(taggedFirstTrack);
                       } else {
                         setTrackLoading(false);
-                        showToast(`No top tracks found for ${artist.name}`, 'error');
-                      }
-                    },
-                    onAddToQueue: async (artist) => {
-                      const tracks = await getArtistTopTracks(artist.name);
-                      if (tracks.length > 0) {
-                        addToQueue(tracks, { type: 'artist', name: artist.name });
-                        showToast(`Added ${countOf(tracks.length, 'track')} from ${artist.name}`, 'success');
-                      } else {
                         showToast(`No top tracks found for ${artist.name}`, 'error');
                       }
                     },

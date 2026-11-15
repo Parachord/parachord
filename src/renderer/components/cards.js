@@ -115,9 +115,10 @@ const PlayTop10Icon = ({ size = 24, className = '' }) => {
     fill: 'none',
     className
   },
-    // Play triangle (slightly offset left to make room for badge)
+    // Play triangle, centred by its centroid (x 12) like the other play
+    // buttons' nudged triangle; the badge sits over its lower-right corner.
     React.createElement('path', {
-      d: 'M6 4.75L17.5 12L6 19.25V4.75Z',
+      d: 'M8.17 4.75L19.67 12L8.17 19.25V4.75Z',
       fill: 'currentColor',
       stroke: 'currentColor',
       strokeWidth: 1.5,
@@ -126,15 +127,15 @@ const PlayTop10Icon = ({ size = 24, className = '' }) => {
     }),
     // Badge circle background
     React.createElement('circle', {
-      cx: 19,
-      cy: 17,
-      r: 6,
+      cx: 18.5,
+      cy: 18.5,
+      r: 5.5,
       fill: 'var(--success)'
     }),
     // "10" text in badge
     React.createElement('text', {
-      x: 19,
-      y: 17,
+      x: 18.5,
+      y: 18.5,
       textAnchor: 'middle',
       dominantBaseline: 'central',
       fill: 'white',
@@ -442,7 +443,7 @@ const SearchHistoryItem = ({ entry, onQueryClick, onResultClick, onRemove }) => 
 };
 
 // CollectionArtistCard component - Square card design with rounded corners
-const CollectionArtistCard = ({ artist, getArtistImage, onNavigate, onPlayTopTracks, onAddToQueue, animationDelay = 0 }) => {
+const CollectionArtistCard = ({ artist, getArtistImage, onNavigate, onPlayTopTracks, onAddToQueue, onContextMenu, animationDelay = 0 }) => {
   // States: undefined (fetching), null (no image found), string (URL)
   const [imageUrl, setImageUrl] = React.useState(undefined);
 
@@ -465,6 +466,7 @@ const CollectionArtistCard = ({ artist, getArtistImage, onNavigate, onPlayTopTra
   return React.createElement(CardButton, {
     label: artist.name,
     onActivate: onNavigate,
+    onContextMenu: onContextMenu ? (e) => { e.preventDefault(); onContextMenu(e, artist); } : undefined,
     className: 'rounded-lg overflow-hidden group release-card card-fade-up',
     style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)', animationDelay: `${animationDelay}ms` }
   },
@@ -511,7 +513,7 @@ const CollectionArtistCard = ({ artist, getArtistImage, onNavigate, onPlayTopTra
           },
           className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
           style: { border: 'none', cursor: 'pointer' },
-          'aria-label': 'Play top 10 tracks', 'data-tooltip': 'Play top 10 tracks'
+          'aria-label': `Play ${artist.name}’s top 10 tracks`, 'data-tooltip': 'Play top 10 tracks'
         },
           React.createElement(PlayTop10Icon, { size: 26, className: 'text-gray-800' })
         ),

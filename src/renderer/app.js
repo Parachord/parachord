@@ -14989,6 +14989,15 @@ ${trackListXml}
         } else if (data.action === 'move-in-queue' && Number.isInteger(data.from) && Number.isInteger(data.to)) {
           // Play Sooner / Play Later (#1386): drag's keyboard path.
           moveInQueueRef.current(data.from, data.to);
+        } else if (data.action === 'queue-artist-top-tracks' && data.artist?.name) {
+          const name = data.artist.name;
+          const tracks = await getArtistTopTracksRef.current(name);
+          if (tracks.length > 0) {
+            addToQueue(tracks, { type: 'artist', name });
+            showToast(`Added ${countOf(tracks.length, 'track')} from ${name}`, 'success');
+          } else {
+            showToast(`No top tracks found for ${name}`, 'error');
+          }
         } else if (data.action === 'add-to-queue' && data.tracks) {
           // Build context from source info if available
           let context = null;
@@ -31350,25 +31359,18 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   };
 
   // Load friend's top tracks
-  const loadFriendTopTracks = async (friend, period = friendHistoryPeriod) => {
-    if (friend.service !== 'lastfm') {
-      return loadFriendTopTracksListenBrainz(friend, period);
-    }
-
-    setFriendHistoryLoading(true);
-
-    try {
+  // A listener's top tracks for a period, most played first (Last.fm or
+  // ListenBrainz). Throws when the service fails; [] when it has none. The
+  // profile's Top tracks tab and the Listener cards' Play both use it.
+  const fetchFriendTopTracksList = async (friend, period, limit = 50) => {
+    if (friend.service === 'lastfm') {
       const apiKey = getLastfmApiKey();
       if (!apiKey) throw new Error('Last.fm API key not configured');
-
-      const url = `https://ws.audioscrobbler.com/2.0/?method=user.gettoptracks&user=${encodeURIComponent(friend.username)}&api_key=${apiKey}&format=json&period=${period}&limit=50`;
+      const url = `https://ws.audioscrobbler.com/2.0/?method=user.gettoptracks&user=${encodeURIComponent(friend.username)}&api_key=${apiKey}&format=json&period=${period}&limit=${limit}`;
       const response = await lastfmFetch(url);
       if (!response.ok) throw new Error(`Failed to fetch top tracks: ${response.status}`);
-
       const data = await response.json();
-      const topTracksList = data.toptracks?.track || [];
-
-      const tracks = topTracksList.map((track, index) => ({
+      return (data.toptracks?.track || []).map((track, index) => ({
         id: `friend-top-track-${index}-${track.name}`.replace(/\s+/g, '-'),
         title: track.name,
         artist: track.artist?.name || 'Unknown Artist',
@@ -31377,7 +31379,29 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         rank: index + 1,
         sources: {}
       }));
+    }
+    const range = period === 'overall' ? 'all_time' : period === '7day' ? 'week' : period === '1month' ? 'month' : period === '3month' ? 'quarter' : period === '6month' ? 'half_yearly' : 'year';
+    const url = `https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(friend.username)}/recordings?range=${range}&count=${limit}`;
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`Failed to fetch top recordings: ${response.status}`);
+    // 204 No Content: no stats for this period.
+    if (response.status === 204) return [];
+    const data = await response.json();
+    return (data.payload?.recordings || []).map((rec, index) => ({
+      id: `friend-top-track-${index}-${rec.track_name}`.replace(/\s+/g, '-'),
+      title: rec.track_name || 'Unknown Track',
+      artist: rec.artist_name || 'Unknown Artist',
+      albumArt: null,
+      playCount: rec.listen_count || 0,
+      rank: index + 1,
+      sources: {}
+    }));
+  };
 
+  const loadFriendTopTracks = async (friend, period = friendHistoryPeriod) => {
+    setFriendHistoryLoading(true);
+    try {
+      const tracks = await fetchFriendTopTracksList(friend, period);
       // Resolution handled by scheduler via IntersectionObserver
       setFriendHistoryData(prev => ({ ...prev, topTracks: tracks, errors: { ...(prev.errors || {}), topTracks: false } }));
     } catch (error) {
@@ -31390,45 +31414,27 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     }
   };
 
-  // ListenBrainz version
-  const loadFriendTopTracksListenBrainz = async (friend, period) => {
-    setFriendHistoryLoading(true);
-
+  // A Listener card's Play: their top 10 of the past week (the past month
+  // when the week has none), played like a top-tracks row.
+  const playListenerTopTracks = async (listener) => {
+    const friend = { service: listener.service, username: listener.name };
+    setTrackLoading(true);
     try {
-      const range = period === 'overall' ? 'all_time' : period === '7day' ? 'week' : period === '1month' ? 'month' : period === '3month' ? 'quarter' : period === '6month' ? 'half_yearly' : 'year';
-      const url = `https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(friend.username)}/recordings?range=${range}&count=50`;
-      const response = await fetch(url);
-      if (!response.ok) throw new Error(`Failed to fetch top recordings: ${response.status}`);
-
-      // Handle 204 No Content (no stats available for this period)
-      if (response.status === 204) {
-        setFriendHistoryData(prev => ({ ...prev, topTracks: [], errors: { ...(prev.errors || {}), topTracks: false } }));
-        setFriendHistoryLoading(false);
+      let tracks = await fetchFriendTopTracksList(friend, '7day', 10);
+      if (tracks.length === 0) tracks = await fetchFriendTopTracksList(friend, '1month', 10);
+      if (tracks.length === 0) {
+        setTrackLoading(false);
+        showToast(`${listener.name} has no recent top tracks`, 'error');
         return;
       }
-
-      const data = await response.json();
-      const recordings = data.payload?.recordings || [];
-
-      const tracks = recordings.map((rec, index) => ({
-        id: `friend-top-track-${index}-${rec.track_name}`.replace(/\s+/g, '-'),
-        title: rec.track_name || 'Unknown Track',
-        artist: rec.artist_name || 'Unknown Artist',
-        albumArt: null,
-        playCount: rec.listen_count || 0,
-        rank: index + 1,
-        sources: {}
-      }));
-
-      // Resolution handled by scheduler via IntersectionObserver
-      setFriendHistoryData(prev => ({ ...prev, topTracks: tracks, errors: { ...(prev.errors || {}), topTracks: false } }));
+      const context = { type: 'friend', name: listener.name, tab: 'topTracks' };
+      const [first, ...rest] = tracks;
+      setQueueWithContext(rest, context, true);
+      handlePlay({ ...first, _playbackContext: context });
     } catch (error) {
-      console.error('Failed to load friend top tracks:', error);
-      // Shown in the tab, with Try again, instead of an empty list that
-      // reads as "they have none" (renderer: friendTabError).
-      setFriendHistoryData(prev => ({ ...prev, topTracks: [], errors: { ...(prev.errors || {}), topTracks: true } }));
-    } finally {
-      setFriendHistoryLoading(false);
+      console.error('Failed to play listener top tracks:', error);
+      setTrackLoading(false);
+      showToast(`Couldn’t load ${listener.name}’s top tracks. Try again in a moment.`, 'error');
     }
   };
 
@@ -41503,8 +41509,19 @@ useEffect(() => {
               const pct = Number.isFinite(item.similarity)
                 ? Math.round(Math.min(1, Math.max(0, item.similarity)) * 100)
                 : null;
-              return React.createElement('button', { type: 'button',
+              const openListener = () => navigateToFriend({
+                id: `similar:${item.service}:${item.name}`,
+                username: item.name,
+                service: item.service,
+                displayName: item.name,
+                avatarUrl: item.avatarUrl || null
+              });
+              // A CardButton, so it can hold Play: their recent top 10.
+              return React.createElement(CardButton, {
                 key: item.id,
+                label: `Open ${item.name}’s profile`,
+                tooltip: `Open ${item.name}’s profile`,
+                onActivate: openListener,
                 className: 'w-full flex flex-col items-center cursor-pointer group release-card card-fade-up',
                 style: {
                   padding: '14px 12px',
@@ -41513,16 +41530,23 @@ useEffect(() => {
                   boxShadow: 'var(--card-shadow)',
                   animationDelay: `${Math.min(index * 30, 300)}ms`
                 },
-                'data-tooltip': `Open ${item.name}'s profile`,
-                onClick: () => navigateToFriend({
-                  id: `similar:${item.service}:${item.name}`,
-                  username: item.name,
-                  service: item.service,
-                  displayName: item.name,
-                  avatarUrl: item.avatarUrl || null
-                })
               },
                 React.createElement('div', { className: 'relative', style: { width: '100px', height: '100px' } },
+                  // Play their recent top 10: shown on hover or keyboard focus.
+                  React.createElement('div', {
+                    className: 'card-actions absolute inset-0 flex items-center justify-center',
+                    style: { zIndex: 2 }
+                  },
+                    React.createElement('button', {
+                      type: 'button',
+                      onClick: (e) => { e.stopPropagation(); playListenerTopTracks(item); },
+                      className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
+                      style: { border: 'none', cursor: 'pointer', padding: 0 },
+                      'aria-label': `Play ${item.name}’s recent top 10 tracks`, 'data-tooltip': 'Play their recent top 10 tracks'
+                    },
+                      React.createElement(PlayTop10Icon, { size: 26, className: 'text-ink-primary' })
+                    )
+                  ),
                   // Outer hexagon ring
                   React.createElement('div', {
                     className: 'group-hover:scale-105',

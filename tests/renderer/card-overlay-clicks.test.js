@@ -78,3 +78,36 @@ describe("Home's album and playlist cards open from anywhere on the card", () =>
     expect(home).toMatch(/pointerEvents: shown \? 'auto' : 'none', zIndex: 2,/);
   });
 });
+
+test("Collection's artist cards open the artist menu, like Search's", () => {
+  const fs = require('fs');
+  const path = require('path');
+  const cards = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/cards.js'), 'utf8');
+  const page = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/collection-page.js'), 'utf8');
+  const card = cards.slice(cards.indexOf('const CollectionArtistCard'), cards.indexOf('const CollectionAlbumCard'));
+  expect(card).toMatch(/onContextMenu: onContextMenu \? \(e\) => \{ e\.preventDefault\(\); onContextMenu\(e, artist\); \}/);
+  expect(page).toMatch(/CollectionArtistCard, \{[\s\S]{0,400}onContextMenu: \(\) => window\.showItemMenu\(artistMenu\(/);
+});
+
+test("an artist's top tracks queue from its menu; Collection's cards hover with Play only", () => {
+  const fs = require('fs');
+  const path = require('path');
+  const main = fs.readFileSync(path.join(__dirname, '../../main.js'), 'utf8');
+  const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  const page = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/collection-page.js'), 'utf8');
+  expect(main).toMatch(/label: 'Add Top 10 to Queue',[\s\S]{0,200}action: 'queue-artist-top-tracks'/);
+  expect(app).toMatch(/data\.action === 'queue-artist-top-tracks' && data\.artist\?\.name/);
+  const card = page.slice(page.indexOf('React.createElement(CollectionArtistCard, {'), page.indexOf("collectionTab === 'albums'"));
+  expect(card).not.toContain('onAddToQueue');
+  expect(card).toContain('onPlayTopTracks');
+});
+
+test('Listener cards are CardButtons with Play for their recent top 10', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  const card = app.slice(app.indexOf('const friendCard = '), app.indexOf('// ── The section header'));
+  expect(card).toMatch(/return React\.createElement\(CardButton, \{/);
+  expect(card).toMatch(/className: 'card-actions [^']*'[\s\S]{0,300}playListenerTopTracks\(item\)/);
+  expect(app).toMatch(/const playListenerTopTracks = async[\s\S]{0,400}fetchFriendTopTracksList\(friend, '7day', 10\)/);
+});
