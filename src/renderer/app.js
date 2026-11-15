@@ -16117,6 +16117,14 @@ ${trackListXml}
       const searchBoxEscape = e.key === 'Escape' && activeElement === searchInputRef.current;
       if (isTyping && !searchBoxEscape) return;
 
+      // Escape closes the queue drawer first (it's the open panel), unless a
+      // dialog or menu above it, or a control, handled the key already.
+      if (e.key === 'Escape' && !e.defaultPrevented && queueDrawerOpen &&
+          !document.querySelector('[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]')) {
+        setQueueDrawerOpen(false);
+        return;
+      }
+
       if (e.key === 'Escape' && activeView === 'search') {
         navigateBack();
       }
@@ -16146,7 +16154,7 @@ ${trackListXml}
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeView]);
+  }, [activeView, queueDrawerOpen]);
 
 
   // Listeners attach once, whichever path creates the element. Each one

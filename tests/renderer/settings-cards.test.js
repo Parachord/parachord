@@ -26,3 +26,9 @@ test('every Settings › General section uses it, Playback Quality included', ()
   }
   expect(app).not.toMatch(/backgroundColor: 'var\(--hover-bg-default\)',\s*borderRadius: '12px'\s*\}\s*\},\s*React\.createElement\('div', \{ style: \{ marginBottom: '16px' \} \},\s*React\.createElement\('h3', \{\s*style: \{ fontSize: '15px'/);
 });
+
+test('Escape closes the queue drawer (it had no way but its ✕)', () => {
+  const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  expect(app).toMatch(/if \(e\.key === 'Escape' && !e\.defaultPrevented && queueDrawerOpen &&[\s\S]{0,200}setQueueDrawerOpen\(false\);\s*return;/);
+  expect(app).toContain('}, [activeView, queueDrawerOpen]);');
+});
