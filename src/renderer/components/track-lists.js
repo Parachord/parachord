@@ -474,7 +474,7 @@ const VirtualizedQueueList = React.memo(({
             React.createElement('div', {
               className: 'rounded shimmer-light animate-shimmer',
               style: { width: '20px', height: '20px' },
-              title: 'Resolving track...'
+              title: 'Resolving track…'
             }),
             React.createElement('div', {
               className: 'rounded shimmer-light animate-shimmer',

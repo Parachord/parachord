@@ -2874,24 +2874,24 @@ class AIChatService {
       for (const call of deduplicatedCalls) {
         // Report progress to UI
         const toolLabels = {
-          search: 'Searching...',
-          play: 'Playing track...',
-          queue_add: 'Adding to queue...',
-          queue_remove: 'Removing from queue...',
-          queue_clear: 'Clearing queue...',
-          control: call.arguments?.action === 'pause' ? 'Pausing...' : call.arguments?.action === 'skip' ? 'Skipping...' : 'Controlling playback...',
-          create_playlist: 'Creating playlist...',
-          shuffle: call.arguments?.enabled ? 'Enabling shuffle...' : 'Disabling shuffle...',
-          collection_radio: 'Starting Collection Radio...',
-          get_playlists: 'Looking at playlists...',
-          get_playlist_tracks: 'Reading playlist...',
-          add_to_playlist: 'Adding to playlist...',
-          remove_from_playlist: 'Removing from playlist...',
-          reorder_playlist: 'Reordering playlist...',
-          rename_playlist: 'Renaming playlist...',
-          delete_playlist: 'Deleting playlist...'
+          search: 'Searching…',
+          play: 'Playing track…',
+          queue_add: 'Adding to queue…',
+          queue_remove: 'Removing from queue…',
+          queue_clear: 'Clearing queue…',
+          control: call.arguments?.action === 'pause' ? 'Pausing…' : call.arguments?.action === 'skip' ? 'Skipping…' : 'Controlling playback…',
+          create_playlist: 'Creating playlist…',
+          shuffle: call.arguments?.enabled ? 'Enabling shuffle…' : 'Disabling shuffle…',
+          collection_radio: 'Starting Collection Radio…',
+          get_playlists: 'Looking at playlists…',
+          get_playlist_tracks: 'Reading playlist…',
+          add_to_playlist: 'Adding to playlist…',
+          remove_from_playlist: 'Removing from playlist…',
+          reorder_playlist: 'Reordering playlist…',
+          rename_playlist: 'Renaming playlist…',
+          delete_playlist: 'Deleting playlist…'
         };
-        this._reportProgress(toolLabels[call.name] || `Running ${call.name}...`);
+        this._reportProgress(toolLabels[call.name] || `Running ${call.name}…`);
 
         const result = await executeDjTool(call.name, call.arguments, this.toolContext);
         toolResults.push({ tool: call.name, arguments: call.arguments, result });
@@ -3151,7 +3151,7 @@ class AIChatService {
       if (endpoint.includes('localhost:11434') || this.provider.id === 'ollama') {
         // Mark this as an Ollama connection error for auto-start handling
         this._lastErrorType = 'ollama_connection';
-        return "Can't connect to Ollama. Attempting to start it...";
+        return "Can't connect to Ollama. Attempting to start it…";
       }
       if (this.provider.id === 'customllm') {
         return "Can't connect to your custom LLM endpoint. Check that the server is running and the Base URL is correct.";
@@ -3196,7 +3196,7 @@ class AIChatService {
     }
 
     // Generic error - truncate long messages
-    const shortMessage = message.length > 100 ? message.substring(0, 100) + '...' : message;
+    const shortMessage = message.length > 100 ? message.substring(0, 100) + '…' : message;
     return `Error: ${shortMessage}`;
   }
 
@@ -9231,7 +9231,7 @@ const Parachord = () => {
                        domain.includes('bandcamp') ? 'Bandcamp' : domain;
 
     // Show toast notification
-    showToast(`Adding ${serviceName} to queue...`, 'info');
+    showToast(`Adding ${serviceName} to queue…`, 'info');
 
     // Always add to queue - handleUrlDrop will insert at position 1 (next up)
     // If queue is empty, it will play immediately
@@ -9250,7 +9250,7 @@ const Parachord = () => {
     const playlistUrl = playlist.url || null;
     console.log(`📋 Processing scraped playlist: "${playlistName}" with ${playlist.tracks.length} tracks from ${playlistUrl}`);
 
-    showToast(`Adding ${playlist.tracks.length} tracks from "${playlistName}"...`, 'info');
+    showToast(`Adding ${playlist.tracks.length} tracks from "${playlistName}"…`, 'info');
 
     // Convert scraped tracks to our track format
     const context = { type: 'playlist', name: playlistName, url: playlistUrl };
@@ -9295,7 +9295,7 @@ const Parachord = () => {
 
     const { artist, album, score, url } = albumData;
     console.log(`🎵 Looking up album: "${artist}" - "${album}"${score ? ` (score: ${score})` : ''}`);
-    showToast(`Looking up "${album}" by ${artist}...`, 'info');
+    showToast(`Looking up "${album}" by ${artist}…`, 'info');
 
     try {
       // MusicBrainz and the services' catalogs race for the track list
@@ -10968,7 +10968,7 @@ const Parachord = () => {
           requestShuffleRef.current?.('toggle');
           break;
         case 'check-for-updates':
-          showToast('Checking for updates...');
+          showToast('Checking for updates…');
           window.electron.updater?.check();
           break;
         case 'copy-diagnostic-log':
@@ -13313,7 +13313,7 @@ ${trackListXml}
       return;
     }
 
-    showToast(openInBrowser ? 'Opening Achordion…' : 'Copying link...', 'info', null, { persistent: true });
+    showToast(openInBrowser ? 'Opening Achordion…' : 'Copying link…', 'info', null, { persistent: true });
 
     // Kick off submit and entity-link fetch in parallel. We AWAIT both before
     // copying the URL to the clipboard so Achordion's cache is guaranteed to
@@ -13394,7 +13394,7 @@ ${trackListXml}
       showToast('Achordion plugin not loaded', 'error');
       return;
     }
-    showToast('Creating embed code...', 'info', null, { persistent: true });
+    showToast('Creating embed code…', 'info', null, { persistent: true });
     const result = await window.achordion.fetchEmbedCode(track, { entity: 'track' });
     if (!result.ok) {
       const reason = result.reason === 'no-mbid'
@@ -13506,7 +13506,7 @@ ${trackListXml}
       return;
     }
 
-    showToast(openInBrowser ? 'Opening Achordion…' : 'Copying link...', 'info', null, { persistent: true });
+    showToast(openInBrowser ? 'Opening Achordion…' : 'Copying link…', 'info', null, { persistent: true });
 
     // Try entity-link if we have any MBID; otherwise fall through to
     // /release-group/lookup. Order: explicit release-group MBID, then
@@ -13597,7 +13597,7 @@ ${trackListXml}
       return;
     }
 
-    showToast(openInBrowser ? 'Opening Achordion…' : 'Copying link...', 'info', null, { persistent: true });
+    showToast(openInBrowser ? 'Opening Achordion…' : 'Copying link…', 'info', null, { persistent: true });
 
     let url = null;
     const cachedMbid = typeof getArtistMbidFromMapperCache === 'function'
@@ -13658,7 +13658,7 @@ ${trackListXml}
       return;
     }
 
-    showToast('Creating embed code...', 'info', null, { persistent: true });
+    showToast('Creating embed code…', 'info', null, { persistent: true });
 
     // Resolve a usable MBID. Same precedence as publishCollectionSmartLink.
     let mbid = collection.releaseGroupMbid
@@ -16824,7 +16824,7 @@ ${trackListXml}
     // Open sidebar immediately with loading state
     setResultsSidebar({
       title: '✨ AI Playlist',
-      subtitle: `"${prompt.length > 50 ? prompt.substring(0, 50) + '...' : prompt}"`,
+      subtitle: `"${prompt.length > 50 ? prompt.substring(0, 50) + '…' : prompt}"`,
       tracks: [],
       source: 'ai',
       prompt: prompt,
@@ -16859,7 +16859,7 @@ ${trackListXml}
       // Update sidebar with the generated tracks
       setResultsSidebar({
         title: '✨ AI Playlist',
-        subtitle: `"${prompt.length > 50 ? prompt.substring(0, 50) + '...' : prompt}"`,
+        subtitle: `"${prompt.length > 50 ? prompt.substring(0, 50) + '…' : prompt}"`,
         tracks: tracks.map((t, i) => ({
           id: `ai-${Date.now()}-${i}`,
           title: t.title,
@@ -18157,7 +18157,7 @@ ${trackListXml}
       // If Ollama is unavailable, try to auto-start it
       if (response.ollamaUnavailable && window.electron?.ollama) {
         // Update UI to show we're trying to start Ollama
-        setAiChatMessages([...updatedMessages, { role: 'assistant', content: 'Starting Ollama...' }]);
+        setAiChatMessages([...updatedMessages, { role: 'assistant', content: 'Starting Ollama…' }]);
 
         try {
           const startResult = await window.electron.ollama.start();
@@ -26214,11 +26214,11 @@ ${tracks}
           limit: '50'
         });
         url = `https://ws.audioscrobbler.com/2.0/?${params}`;
-        logMessage = `📊 Loading Last.fm Charts (${countryName})...`;
+        logMessage = `📊 Loading Last.fm Charts (${countryName})…`;
       } else {
         // Global charts
         url = `https://ws.audioscrobbler.com/2.0/?method=chart.gettoptracks&api_key=${apiKey}&format=json&limit=50`;
-        logMessage = '📊 Loading Last.fm Global Charts...';
+        logMessage = '📊 Loading Last.fm Global Charts…';
       }
 
       console.log(logMessage);
@@ -32597,7 +32597,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
           const bioSummary = data.artist.bio.summary || data.artist.bio.content || '';
           // Strip HTML tags and limit to ~200 chars for preview
           const cleanBio = bioSummary.replace(/<[^>]*>/g, '').trim();
-          const truncatedBio = cleanBio.length > 200 ? cleanBio.substring(0, 200) + '...' : cleanBio;
+          const truncatedBio = cleanBio.length > 200 ? cleanBio.substring(0, 200) + '…' : cleanBio;
           setSearchPreviewArtistBio(truncatedBio);
         } else {
           setSearchPreviewArtistBio(null);
@@ -37505,7 +37505,7 @@ useEffect(() => {
                 letterSpacing: '0.08em',
                 textTransform: 'uppercase'
               }
-            }, pendingPlaylistLoad?.title || 'Loading...')
+            }, pendingPlaylistLoad?.title || 'Loading…')
           )
         ),
         // Content area with sticky bar and loading skeletons
@@ -37740,7 +37740,7 @@ useEffect(() => {
                   onChange: (e) => setPlaylistsSearch(e.target.value),
                   onBlur: () => { if (!playlistsSearch.trim()) setPlaylistsSearchOpen(false); },
                   autoFocus: true,
-                  placeholder: 'Filter...',
+                  placeholder: 'Filter…',
                   className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none',
                   style: { width: '150px' }, 'aria-label': 'Filter'
                 }),
@@ -38544,7 +38544,7 @@ useEffect(() => {
                       onChange: (e) => setChartsSearch(e.target.value),
                       onBlur: () => { if (!chartsSearch.trim()) setChartsSearchOpen(false); },
                       autoFocus: true,
-                      placeholder: 'Filter...',
+                      placeholder: 'Filter…',
                       className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none',
                       style: { width: '150px' }, 'aria-label': 'Filter'
                     }),
@@ -39017,7 +39017,7 @@ useEffect(() => {
                         React.createElement('div', { className: 'flex items-center gap-1' },
                           React.createElement('div', {
                             className: 'w-5 h-5 rounded shimmer-light animate-shimmer',
-                            title: 'Resolving track...'
+                            title: 'Resolving track…'
                           }),
                           React.createElement('div', {
                             className: 'w-5 h-5 rounded shimmer-light animate-shimmer',
@@ -39192,7 +39192,7 @@ useEffect(() => {
                     onChange: (e) => setNewReleasesSearch(e.target.value),
                     onBlur: () => { if (!newReleasesSearch.trim()) setNewReleasesSearchOpen(false); },
                     autoFocus: true,
-                    placeholder: 'Filter...',
+                    placeholder: 'Filter…',
                     className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none',
                     style: { width: '150px' }, 'aria-label': 'Filter'
                   }),
@@ -39388,7 +39388,7 @@ useEffect(() => {
                               e.stopPropagation();
                               let tracks = prefetchedReleases[release.id]?.tracks;
                               if (!tracks?.length) {
-                                showToast(`Loading ${release.title} tracks...`, 'info');
+                                showToast(`Loading ${release.title} tracks…`, 'info');
                                 tracks = await fetchAlbumTracksFromMusicBrainz(release.artist, release.title, release.albumArt);
                               }
                               if (tracks?.length > 0) {
@@ -39416,7 +39416,7 @@ useEffect(() => {
                               e.stopPropagation();
                               let tracks = prefetchedReleases[release.id]?.tracks;
                               if (!tracks?.length) {
-                                showToast(`Loading ${release.title}...`, 'info');
+                                showToast(`Loading ${release.title}…`, 'info');
                                 tracks = await fetchAlbumTracksFromMusicBrainz(release.artist, release.title, release.albumArt);
                               }
                               if (tracks?.length > 0) {
@@ -39437,7 +39437,7 @@ useEffect(() => {
                               e.stopPropagation();
                               let tracks = prefetchedReleases[release.id]?.tracks;
                               if (!tracks?.length) {
-                                showToast(`Loading ${release.title} tracks...`, 'info');
+                                showToast(`Loading ${release.title} tracks…`, 'info');
                                 tracks = await fetchAlbumTracksFromMusicBrainz(release.artist, release.title, release.albumArt);
                               }
                               if (tracks?.length > 0) {
@@ -39603,7 +39603,7 @@ useEffect(() => {
                       onChange: (e) => setCriticsSearch(e.target.value),
                       onBlur: () => { if (!criticsSearch.trim()) setCriticsSearchOpen(false); },
                       autoFocus: true,
-                      placeholder: 'Filter...',
+                      placeholder: 'Filter…',
                       className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none',
                       style: { width: '150px' }, 'aria-label': 'Filter'
                     }),
@@ -40157,7 +40157,7 @@ useEffect(() => {
                       }
                     },
                     autoFocus: true,
-                    placeholder: 'City or region...',
+                    placeholder: 'City or region…',
                     className: 'flex-1 text-sm outline-none transition-colors',
                     style: { backgroundColor: 'var(--bg-inset)', color: 'var(--text-primary)', border: '1px solid var(--border-default)', borderRadius: '10px', padding: '8px 14px' },
                     onFocus: (e) => { e.currentTarget.style.borderColor = PAGE_COLORS.concerts.color; e.currentTarget.style.boxShadow = `0 0 0 3px ${pageTint('concerts')}`; },
@@ -40275,7 +40275,7 @@ useEffect(() => {
                     },
                     disabled: concertsGeocodingLoading,
                     style: { fontSize: '13px', fontWeight: '500', padding: '6px 16px', borderRadius: '8px', backgroundColor: PAGE_COLORS.concerts.fill, color: 'var(--on-accent)' }
-                  }, concertsGeocodingLoading ? 'Looking up...' : 'Apply')
+                  }, concertsGeocodingLoading ? 'Looking up…' : 'Apply')
                 )
               )
             ),
@@ -40290,7 +40290,7 @@ useEffect(() => {
                     onChange: (e) => setConcertsSearch(e.target.value),
                     onBlur: () => { if (!concertsSearch.trim()) setConcertsSearchOpen(false); },
                     autoFocus: true,
-                    placeholder: 'Filter...',
+                    placeholder: 'Filter…',
                     className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none',
                     style: { width: '150px' }, 'aria-label': 'Filter'
                   }),
@@ -40629,7 +40629,7 @@ useEffect(() => {
                   className: 'flex items-center justify-center py-4'
                 },
                   React.createElement(Icons.Spinner, { className: 'w-5 h-5 text-teal-500 mr-2' }),
-                  React.createElement('span', { className: 'text-sm text-ink-tertiary' }, 'Refreshing concerts...')
+                  React.createElement('span', { className: 'text-sm text-ink-tertiary' }, 'Refreshing concerts…')
                 )
               );
             })()
@@ -40926,7 +40926,7 @@ useEffect(() => {
                   .filter(t => t.artist === item.artist && t.album === item.name)
                   .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
                 if (albumTracks.length === 0) {
-                  showToast(`Loading ${item.name}...`, 'info');
+                  showToast(`Loading ${item.name}…`, 'info');
                   albumTracks = await fetchAlbumTracksFromMusicBrainz(item.artist, item.name, art);
                 }
                 return albumTracks;
@@ -41379,7 +41379,7 @@ useEffect(() => {
                 },
                   isResolving
                     ? React.createElement('div', { className: 'flex items-center gap-1' },
-                        React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', title: 'Resolving track...' }),
+                        React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', title: 'Resolving track…' }),
                         React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: '0.1s' } })
                       )
                     : hasResolved ? (() => {
@@ -41903,7 +41903,7 @@ useEffect(() => {
                     onChange: (e) => setHistorySearch(e.target.value),
                     onBlur: () => { if (!historySearch.trim()) setHistorySearchOpen(false); },
                     autoFocus: true,
-                    placeholder: 'Filter...',
+                    placeholder: 'Filter…',
                     className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none',
                     style: { width: '150px' }, 'aria-label': 'Filter'
                   }),
@@ -42073,7 +42073,7 @@ useEffect(() => {
                         },
                           isResolving ?
                             React.createElement('div', { className: 'flex items-center gap-1' },
-                              React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', title: 'Resolving track...' }),
+                              React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', title: 'Resolving track…' }),
                               React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: '0.1s' } })
                             )
                           : hasResolved ? (() => {
@@ -42947,7 +42947,7 @@ useEffect(() => {
                           },
                             isResolving ?
                               React.createElement('div', { className: 'flex items-center gap-1' },
-                                React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', title: 'Resolving track...' }),
+                                React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', title: 'Resolving track…' }),
                                 React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: '0.1s' } })
                               )
                             : hasResolved ? (() => {
@@ -43050,7 +43050,7 @@ useEffect(() => {
                           },
                             isResolving ?
                               React.createElement('div', { className: 'flex items-center gap-1' },
-                                React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', title: 'Resolving track...' }),
+                                React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', title: 'Resolving track…' }),
                                 React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: '0.1s' } })
                               )
                             : hasResolved ? (() => {
@@ -43524,7 +43524,7 @@ useEffect(() => {
                   React.createElement(Icons.Search, { className: 'absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-tertiary' }),
                   React.createElement('input', {
                     type: 'text',
-                    placeholder: 'Search plug-ins...',
+                    placeholder: 'Search plug-ins…',
                     value: marketplaceSearchQuery,
                     onChange: (e) => setMarketplaceSearchQuery(e.target.value),
                     className: 'w-64 pl-9 pr-4 py-2 bg-surface-subtle border border-line rounded-full text-sm text-ink-primary placeholder-ink-tertiary focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent', 'aria-label': 'Search plug-ins'
@@ -44845,7 +44845,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                             )
                           ),
                           cleanupDuplicatesState.loading && cleanupDuplicatesState.providerId === pid
-                            ? `Cleaning ${config.name}...`
+                            ? `Cleaning ${config.name}…`
                             : `Clean Up ${config.name} Duplicates`
                         )
                       ),
@@ -45444,7 +45444,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
               React.createElement('div', { className: 'flex items-center text-xs text-gray-400 min-w-0' },
                 (() => {
                   const bioPreview = playbarArtistBio && playbarArtistBio.bio
-                    ? playbarArtistBio.bio.split('\n').slice(0, 2).join(' ').substring(0, 200).trim() + (playbarArtistBio.bio.length > 200 ? '...' : '')
+                    ? playbarArtistBio.bio.split('\n').slice(0, 2).join(' ').substring(0, 200).trim() + (playbarArtistBio.bio.length > 200 ? '…' : '')
                     : null;
 
                   const artistButton = React.createElement('button', {
@@ -46537,7 +46537,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                         }
                       }
                     },
-                    placeholder: 'Ask Shuffleupagus...',
+                    placeholder: 'Ask Shuffleupagus…',
                     disabled: aiChatLoading,
                     style: {
                       flex: 1,
@@ -47788,7 +47788,7 @@ React.createElement('div', {
                       marginBottom: '4px'
                     }
                   }, 'MusicKit Developer Token (JWT)'),
-                  React.createElement(SecretField, { value: appleMusicDeveloperToken, onChange: (_v, e) => setAppleMusicDeveloperToken(e.target.value), placeholder: 'eyJ...', 'aria-label': 'Apple Music developer token', className: 'w-full' })
+                  React.createElement(SecretField, { value: appleMusicDeveloperToken, onChange: (_v, e) => setAppleMusicDeveloperToken(e.target.value), placeholder: 'eyJ…', 'aria-label': 'Apple Music developer token', className: 'w-full' })
                 ),
                 React.createElement('p', {
                   style: {
@@ -48122,7 +48122,7 @@ React.createElement('div', {
                       cursor: lastfmConnecting || !lastfmUsernameInput.trim() ? 'not-allowed' : 'pointer',
                       opacity: lastfmConnecting || !lastfmUsernameInput.trim() ? 0.6 : 1
                     }
-                  }, lastfmConnecting ? 'Connecting...' : 'Connect')
+                  }, lastfmConnecting ? 'Connecting…' : 'Connect')
                 )
           ),
 
@@ -48336,7 +48336,7 @@ React.createElement('div', {
                       cursor: listenbrainzConnecting || !listenbrainzUsernameInput.trim() ? 'not-allowed' : 'pointer',
                       opacity: listenbrainzConnecting || !listenbrainzUsernameInput.trim() ? 0.6 : 1
                     }
-                  }, listenbrainzConnecting ? 'Connecting...' : 'Connect')
+                  }, listenbrainzConnecting ? 'Connecting…' : 'Connect')
                 )
           ),
 
@@ -48507,7 +48507,7 @@ React.createElement('div', {
                       fetchDynamicModels(resolver, { ...metaServiceConfigs[selectedResolver.id], [authFieldKey]: e.target.value });
                     }
                   }, 100);
-                }, placeholder: authFieldSettings.placeholder || (selectedResolver.id === 'chatgpt' ? 'sk-...' : selectedResolver.id === 'gemini' ? 'AIza...' : selectedResolver.id === 'claude' ? 'sk-ant-...' : ''), 'aria-label': `${selectedResolver.name} API key`, className: 'w-full' }),
+                }, placeholder: authFieldSettings.placeholder || (selectedResolver.id === 'chatgpt' ? 'sk-…' : selectedResolver.id === 'gemini' ? 'AIza…' : selectedResolver.id === 'claude' ? 'sk-ant-…' : ''), 'aria-label': `${selectedResolver.name} API key`, className: 'w-full' }),
               selectedResolver.homepage && React.createElement('a', {
                 href: '#',
                 onClick: (e) => {
@@ -48642,7 +48642,7 @@ React.createElement('div', {
                   }
                 },
                   isLoading
-                    ? React.createElement('option', { value: '' }, 'Loading models...')
+                    ? React.createElement('option', { value: '' }, 'Loading models…')
                     : options.map(opt =>
                         React.createElement('option', { key: opt.value, value: opt.value }, opt.label)
                       )
@@ -48932,7 +48932,7 @@ React.createElement('div', {
                   }
                 },
                   isLoading
-                    ? React.createElement('option', { value: '' }, 'Loading models...')
+                    ? React.createElement('option', { value: '' }, 'Loading models…')
                     : options.map(opt =>
                         React.createElement('option', { key: opt.value, value: opt.value }, opt.label)
                       )
@@ -49215,7 +49215,7 @@ React.createElement('div', {
                     fontSize: '13px',
                     color: 'var(--text-secondary)'
                   }
-                }, 'Scanning...')
+                }, 'Scanning…')
               ),
               React.createElement('div', {
                 style: {
@@ -49243,7 +49243,7 @@ React.createElement('div', {
                   marginTop: '6px'
                 }
               },
-                scanProgress.file || 'Preparing...'
+                scanProgress.file || 'Preparing…'
               )
             ),
 
@@ -49352,7 +49352,7 @@ React.createElement('div', {
                     cursor: installingResolvers.has(selectedResolver.id) ? 'not-allowed' : 'pointer',
                     opacity: installingResolvers.has(selectedResolver.id) ? 0.6 : 1
                   }
-                }, installingResolvers.has(selectedResolver.id) ? 'Updating...' : `Update to v${marketplaceResolver.version}`);
+                }, installingResolvers.has(selectedResolver.id) ? 'Updating…' : `Update to v${marketplaceResolver.version}`);
               }
               return null;
             })(),
@@ -49575,7 +49575,7 @@ React.createElement('div', {
                     apiKey: e.target.value,
                     enabled: !!e.target.value.trim()
                   });
-                }, placeholder: selectedMarketplaceItem.id === 'chatgpt' ? 'sk-...' : 'AIza...', 'aria-label': `${selectedMarketplaceItem.name} API key`, className: 'w-full' }),
+                }, placeholder: selectedMarketplaceItem.id === 'chatgpt' ? 'sk-…' : 'AIza…', 'aria-label': `${selectedMarketplaceItem.name} API key`, className: 'w-full' }),
               React.createElement('a', {
                 href: '#',
                 onClick: (e) => {
@@ -49676,7 +49676,7 @@ React.createElement('div', {
                         cursor: installingResolvers.has(selectedMarketplaceItem.id) ? 'not-allowed' : 'pointer',
                         opacity: installingResolvers.has(selectedMarketplaceItem.id) ? 0.6 : 1
                       }
-                    }, installingResolvers.has(selectedMarketplaceItem.id) ? 'Updating...' : 'Update'),
+                    }, installingResolvers.has(selectedMarketplaceItem.id) ? 'Updating…' : 'Update'),
                   // Done button
                   React.createElement(Button, { variant: 'secondary', onClick: () => setSelectedMarketplaceItem(null) }, 'Done')
                 )
@@ -50440,7 +50440,7 @@ React.createElement('div', {
                   onChange: (e) => setAddToPlaylistSearch(e.target.value),
                   onBlur: () => { if (!addToPlaylistSearch.trim()) setAddToPlaylistSearchOpen(false); },
                   autoFocus: true,
-                  placeholder: 'Filter...',
+                  placeholder: 'Filter…',
                   className: 'bg-transparent text-ink-secondary text-xs placeholder-ink-tertiary outline-none',
                   style: { width: '120px' }, 'aria-label': 'Filter'
                 }),
@@ -50592,7 +50592,7 @@ React.createElement('div', {
                       setNewPlaylistName('');
                       setDroppedTrackForNewPlaylist(null); // Clear dropped track
                     }
-                  }, placeholder: 'Playlist name...', autoFocus: true, 'aria-label': 'Playlist name', className: 'flex-1' }),
+                  }, placeholder: 'Playlist name…', autoFocus: true, 'aria-label': 'Playlist name', className: 'flex-1' }),
                 React.createElement('button', {
                   onClick: () => {
                     if (!newPlaylistName.trim()) return;
@@ -50978,7 +50978,7 @@ React.createElement('div', { style: { marginTop: '12px' } },
                 }
               },
                 React.createElement(Icons.Spinner, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }),
-                'Searching...'
+                'Searching…'
               )
             ),
 
@@ -51412,7 +51412,7 @@ React.createElement('div', {
               },
                 syncSetupModal.step === 'options' && 'Choose what to sync',
                 syncSetupModal.step === 'playlists' && 'Select playlists to sync',
-                syncSetupModal.step === 'syncing' && 'Syncing your library...',
+                syncSetupModal.step === 'syncing' && 'Syncing your library…',
                 syncSetupModal.step === 'complete' && 'Your library has been synced'
               )
             )
@@ -51954,11 +51954,11 @@ React.createElement('div', {
                       React.createElement('div', {
                         style: { fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }
                       }, isInProgress
-                        ? (progress?.phase === 'tracks' ? `Syncing tracks... ${progress.current || 0}/${progress.total || '?'}` :
-                           progress?.phase === 'albums' ? `Syncing albums... ${progress.current || 0}/${progress.total || '?'}` :
-                           progress?.phase === 'artists' ? `Syncing artists... ${progress.current || 0}/${progress.total || '?'}` :
-                           progress?.phase === 'playlists' ? `Syncing playlists... ${progress.current || 0}/${progress.total || '?'}` :
-                           'Syncing...')
+                        ? (progress?.phase === 'tracks' ? `Syncing tracks… ${progress.current || 0}/${progress.total || '?'}` :
+                           progress?.phase === 'albums' ? `Syncing albums… ${progress.current || 0}/${progress.total || '?'}` :
+                           progress?.phase === 'artists' ? `Syncing artists… ${progress.current || 0}/${progress.total || '?'}` :
+                           progress?.phase === 'playlists' ? `Syncing playlists… ${progress.current || 0}/${progress.total || '?'}` :
+                           'Syncing…')
                         : 'Last sync: ' + (settings.lastSyncAt
                           ? new Date(settings.lastSyncAt).toLocaleString()
                           : 'Never'))
@@ -52072,7 +52072,7 @@ React.createElement('div', {
             },
             onMouseEnter: (e) => { if (!Object.values(syncStatus).some(s => s?.inProgress)) e.currentTarget.style.backgroundColor = 'var(--fill-success)'; },
             onMouseLeave: (e) => { if (!Object.values(syncStatus).some(s => s?.inProgress)) e.currentTarget.style.backgroundColor = 'var(--fill-success)'; }
-          }, Object.values(syncStatus).some(s => s?.inProgress) ? 'Syncing...' : 'Sync Now')
+          }, Object.values(syncStatus).some(s => s?.inProgress) ? 'Syncing…' : 'Sync Now')
         )),
 
     // Stop Sync Confirmation Dialog - Cinematic Light design

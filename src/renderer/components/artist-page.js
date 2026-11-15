@@ -840,7 +840,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                       }
                     },
                     autoFocus: true,
-                    placeholder: 'Filter...',
+                    placeholder: 'Filter…',
                     className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none',
                     style: { width: '150px' }, 'aria-label': 'Filter'
                   }),
@@ -1799,7 +1799,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                 className: 'flex flex-col items-center justify-center py-12'
               },
                 React.createElement(Icons.Spinner, { className: 'w-8 h-8 text-teal-500 mb-3' }),
-                React.createElement('p', { className: `text-sm text-ink-tertiary` }, 'Loading concerts...')
+                React.createElement('p', { className: `text-sm text-ink-tertiary` }, 'Loading concerts…')
               ),
 
               // Month-grouped event list

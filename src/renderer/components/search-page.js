@@ -209,7 +209,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       onChange: (e) => setSearchResultsFilter(e.target.value),
                       onBlur: () => { if (!searchResultsFilter.trim()) setSearchResultsFilterOpen(false); },
                       autoFocus: true,
-                      placeholder: 'Filter...',
+                      placeholder: 'Filter…',
                       className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none no-drag',
                       style: { width: '150px' }, 'aria-label': 'Filter'
                     }),
@@ -254,7 +254,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       onChange: (e) => setSearchResultsFilter(e.target.value),
                       onBlur: () => { if (!searchResultsFilter.trim()) setSearchResultsFilterOpen(false); },
                       autoFocus: true,
-                      placeholder: 'Filter...',
+                      placeholder: 'Filter…',
                       className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none no-drag',
                       style: { width: '150px' }, 'aria-label': 'Filter'
                     }),
@@ -299,7 +299,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       onChange: (e) => setSearchResultsFilter(e.target.value),
                       onBlur: () => { if (!searchResultsFilter.trim()) setSearchResultsFilterOpen(false); },
                       autoFocus: true,
-                      placeholder: 'Filter...',
+                      placeholder: 'Filter…',
                       className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none no-drag',
                       style: { width: '150px' }, 'aria-label': 'Filter'
                     }),
@@ -851,7 +851,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                         },
                           React.createElement('div', {
                             className: 'w-5 h-5 rounded shimmer-light animate-shimmer',
-                            title: 'Resolving track...'
+                            title: 'Resolving track…'
                           }),
                           React.createElement('div', {
                             className: 'w-5 h-5 rounded shimmer-light animate-shimmer',
@@ -1690,7 +1690,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                           // Get prefetched tracks for playlist, or fetch them
                           let prefetched = prefetchedReleasesRef.current[album.id];
                           if (!prefetched?.tracks?.length) {
-                            showToast('Loading album...', 'info');
+                            showToast('Loading album…', 'info');
                             await fetchSearchAlbumTracksAsync(album);
                             prefetched = prefetchedReleasesRef.current[album.id];
                           }
@@ -1727,7 +1727,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                           // Play the album - fetch tracks if needed
                           let prefetched = prefetchedReleasesRef.current[album.id];
                           if (!prefetched?.tracks?.length) {
-                            showToast('Loading album...', 'info');
+                            showToast('Loading album…', 'info');
                             await fetchSearchAlbumTracksAsync(album);
                             prefetched = prefetchedReleasesRef.current[album.id];
                           }
@@ -1754,7 +1754,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                           // Fetch album tracks and add to queue
                           let prefetched = prefetchedReleasesRef.current[album.id];
                           if (!prefetched?.tracks?.length) {
-                            showToast('Loading album...', 'info');
+                            showToast('Loading album…', 'info');
                             await fetchSearchAlbumTracksAsync(album);
                             prefetched = prefetchedReleasesRef.current[album.id];
                           }

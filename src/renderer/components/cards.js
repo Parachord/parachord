@@ -1903,7 +1903,7 @@ const ReleasePage = ({
                           background: 'linear-gradient(to right, var(--shimmer-from), var(--shimmer-via), var(--shimmer-to))',
                           backgroundSize: '200% 100%'
                         },
-                        title: 'Resolving track...'
+                        title: 'Resolving track…'
                       }),
                       React.createElement('div', {
                         className: 'w-5 h-5 rounded animate-shimmer',

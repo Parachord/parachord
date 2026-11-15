@@ -461,7 +461,7 @@ const ScrobblerSettingsCard = React.memo(({
         React.createElement('div', { className: 'flex items-center justify-center gap-2 text-ink-secondary mb-2' },
           // Spinning indicator
           React.createElement(Icons.Spinner, { className: 'h-4 w-4' }),
-          React.createElement('span', { className: 'text-sm' }, 'Waiting for authorization...')
+          React.createElement('span', { className: 'text-sm' }, 'Waiting for authorization…')
         ),
         React.createElement('p', { className: 'text-xs text-ink-tertiary mb-2' },
           'Complete authorization in your browser. This will auto-detect when done.'
@@ -478,7 +478,7 @@ const ScrobblerSettingsCard = React.memo(({
         onClick: handleCompleteAuth,
         disabled: connecting,
         className: 'w-full py-2 px-4 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 transition-colors'
-      }, connecting ? 'Completing...' : 'Complete Authorization')
+      }, connecting ? 'Completing…' : 'Complete Authorization')
     ) : (
       // Connected state: the import action, love-push controls + Disconnect
       React.createElement('div', { className: 'space-y-3' },

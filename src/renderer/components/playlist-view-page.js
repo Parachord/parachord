@@ -1228,7 +1228,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                           },
                             React.createElement('div', {
                               className: 'w-5 h-5 rounded shimmer-light animate-shimmer',
-                              title: 'Resolving track...'
+                              title: 'Resolving track…'
                             }),
                             React.createElement('div', {
                               className: 'w-5 h-5 rounded shimmer-light animate-shimmer',

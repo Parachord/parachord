@@ -260,7 +260,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                       }
                     },
                     autoFocus: true,
-                    placeholder: 'Filter...',
+                    placeholder: 'Filter…',
                     className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none',
                     style: { width: '150px' }, 'aria-label': 'Filter'
                   }),
@@ -728,7 +728,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                             // Shimmer skeletons
                             React.createElement('div', {
                               className: 'w-5 h-5 rounded shimmer-light animate-shimmer',
-                              title: 'Resolving...'
+                              title: 'Resolving…'
                             }),
                             React.createElement('div', {
                               className: 'w-5 h-5 rounded shimmer-light animate-shimmer',
