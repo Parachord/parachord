@@ -39263,15 +39263,6 @@ useEffect(() => {
               onChange: setNewReleasesFilter,
               label: 'Filter releases by type'
             }),
-            // Refresh button
-            React.createElement('button', {
-              onClick: () => loadNewReleases(true),
-              disabled: newReleasesLoading,
-              className: `ml-2 p-1.5 transition-colors ${newReleasesLoading ? 'text-emerald-500' : 'text-ink-tertiary hover:text-ink-secondary'}`,
-              'aria-label': newReleasesLoading ? 'Loading…' : 'Refresh', 'data-tooltip': newReleasesLoading ? 'Loading…' : 'Refresh'
-            },
-              React.createElement(Icons.RefreshCw, { className: `w-4 h-4 ${newReleasesLoading ? 'animate-spin' : ''}` })
-            ),
             React.createElement('div', { className: 'flex-1' }),
             // Search
             React.createElement('div', { className: 'flex items-center' },
