@@ -595,6 +595,7 @@ window.musicbrainzLimiter = window.createLimiter({
 const { mbFetchWithRetries, describeMusicBrainzError } = require('./lib/musicbrainz-fetch');
 const { CardButton } = require('./components/card-button');
 const { createIpv4Fallback } = require('./lib/metabrainz-ipv4');
+const { pluginMatchesQuery } = require('./lib/plugin-search');
 const {
   isMusicBrainzId, resolverIdFromReleaseId, pickCatalogAlbum, orderCatalogResolvers,
   catalogAlbumToRelease, catalogAlbumToSearchResult, sameAlbumIdentity,
@@ -1190,7 +1191,11 @@ window.appleMusicLookupPlaylist = async (playlistId, storefront = 'us') => {
       sources: ['applemusic'],
       appleMusicId: String(song.id),
       appleMusicUrl: song.attributes.url,
-      albumArt: song.attributes.artwork?.url?.replace('{w}', '500').replace('{h}', '500') || playlistArt,
+      // Only the track's OWN artwork — never the playlist's cover (that is
+      // `albumArt` on the playlist result below; a playlist cover stamped on
+      // a track masquerades as the track's album art — the 4×-tiled-mosaic
+      // bug).
+      albumArt: song.attributes.artwork?.url?.replace('{w}', '500').replace('{h}', '500') || null,
       previewUrl: song.attributes.previews?.[0]?.url || null
     }));
 
@@ -1314,6 +1319,8 @@ const { countOf } = require('./lib/plural');
 const { movePriority, priorityMoves } = require('./lib/priority-order');
 const { timeAgo } = require('./lib/time-ago');
 const { userError, errorText } = require('./lib/error-copy');
+const { trackDurationLabel } = require('./lib/track-duration');
+const { contextPlaylistTarget, playlistRef } = require('./lib/playlist-context');
 const { Play, Pause, SkipForward, SkipBack, Volume2, Search, List, Settings, Plus, Music, Radio, Users, Heart, X } = Icons;
 
 
@@ -2029,6 +2036,7 @@ const {
 // The Collection page (Track 2b state-domain split): a React.memo'd module
 // fed stable props, so it no longer re-renders on every Parachord setState.
 const { CollectionPage } = require('./components/collection-page');
+const { PlaylistCoverImage } = require('./components/playlist-cover');
 const { useVolume } = require('./hooks/use-volume');
 const { usePlaybackQueue } = require('./hooks/use-playback-queue');
 const { usePlaybackEngine } = require('./hooks/use-playback-engine');
@@ -6634,7 +6642,8 @@ const Parachord = () => {
       title: trackMeta.title,
       artist: trackMeta.artist,
       album,
-      duration: trackMeta.duration || 180,
+      // Unknown is null, never a made-up length a track list would show.
+      duration: trackMeta.duration > 0 ? trackMeta.duration : null,
       albumArt: trackMeta.albumArt,
       sourceUrl: sourceUrl,
       sources: {}
@@ -9280,7 +9289,7 @@ const Parachord = () => {
       title: track.title,
       artist: track.artist,
       album: track.album || '',
-      duration: track.duration || 180, // Default to 3 minutes if duration not scraped
+      duration: track.duration > 0 ? track.duration : null, // unknown if not scraped
       // These will be resolved by the resolution system
       source: null,
       resolvedBy: null,
@@ -11441,6 +11450,12 @@ const Parachord = () => {
         .map(t => {
           const out = { artist: t.artist, title: t.title };
           if (t.album) out.album = t.album;
+          // The track's own album cover, when the provider sent one — never
+          // the playlist's cover (that is `albumArt` on the lookup result,
+          // one level up, and belongs on the playlist record, not on a
+          // track: a playlist cover stamped on every track is the 4×-tiled
+          // mosaic bug).
+          if (t.albumArt) out.albumArt = t.albumArt;
           if (t.spotifyId) out.spotifyId = t.spotifyId;
           if (t.appleMusicId) out.appleMusicId = t.appleMusicId;
           if (t.amazonAsin) out.amazonAsin = t.amazonAsin;
@@ -19221,10 +19236,17 @@ ${trackListXml}
 
       // Load playlist cover cache
       if (playlistCoverData) {
-        // Filter out expired entries
-        const validEntries = Object.entries(playlistCoverData).filter(
-          ([_, entry]) => now - entry.timestamp < CACHE_TTL.playlistCover
-        );
+        // Filter out expired entries, and dedupe each entry's cover URLs:
+        // entries written before the URL-dedupe fix (getPlaylistCovers) can
+        // hold the same URL four times — a playlist cover once stamped on
+        // every track's albumArt tiled one image across the whole 2x2 grid.
+        // Deduped (fewer than 4 covers), the entry no longer satisfies the
+        // cache-hit check and the next view recomputes real per-album covers.
+        const dedupeCovers = (entry) =>
+          (entry && Array.isArray(entry.covers)) ? [...new Set(entry.covers)] : entry;
+        const validEntries = Object.entries(playlistCoverData)
+          .filter(([_, entry]) => now - entry.timestamp < CACHE_TTL.playlistCover)
+          .map(([id, entry]) => [id, { ...entry, covers: dedupeCovers(entry) }]);
         playlistCoverCache.current = Object.fromEntries(validEntries);
         console.log(`📦 Loaded ${validEntries.length} playlist cover entries from cache`);
       }
@@ -23206,7 +23228,7 @@ ${trackListXml}
               title: track.title,
               artist: artistName,
               album: track.album || '',
-              duration: track.duration || 210,
+              duration: track.duration > 0 ? track.duration : null,
               sources: ['bandcamp'],
               bandcampUrl: track.sourceUrl
             };
@@ -23348,7 +23370,7 @@ ${trackListXml}
             title: track.title,
             artist: artistName,
             album: track.album || '',
-            duration: track.duration || 210,
+            duration: track.duration > 0 ? track.duration : null,
             sources: ['bandcamp'],
             bandcampUrl: track.sourceUrl
           };
@@ -33477,8 +33499,13 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     // If cache has fewer than 4 covers, always try to get more - artist images may be
     // available from artistImageCache even if Spotify isn't currently connected
 
-    // Collect unique covers from tracks
+    // Collect unique covers from tracks. Two uniqueness dimensions: the album
+    // (a distinct album deserves its own tile) and the cover URL (four
+    // tracks from four albums sharing one image — a playlist cover stamped on
+    // every track, or one art URL serving several album names — must not tile
+    // the same image four times).
     const seenAlbums = new Set(); // Albums we've already tried
+    const seenCoverUrls = new Set(); // Cover URLs already in the grid
     const seenArtists = new Set(); // Artists we've successfully used for images
     const triedArtists = new Set(); // Artists we've attempted (including failures)
     const covers = [];
@@ -33496,14 +33523,16 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
           seenAlbums.add(albumKey);
 
           // If track already has albumArt, use it
-          if (track.albumArt) {
+          if (track.albumArt && !seenCoverUrls.has(track.albumArt)) {
+            seenCoverUrls.add(track.albumArt);
             covers.push(track.albumArt);
             seenArtists.add(track.artist.toLowerCase()); // Mark artist as used
             foundCover = true;
-          } else {
+          } else if (!track.albumArt) {
             // Try to fetch album art
             const artUrl = await getAlbumArt(track.artist, track.album);
-            if (artUrl) {
+            if (artUrl && !seenCoverUrls.has(artUrl)) {
+              seenCoverUrls.add(artUrl);
               covers.push(artUrl);
               seenArtists.add(track.artist.toLowerCase()); // Mark artist as used
               foundCover = true;
@@ -33519,7 +33548,8 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
           triedArtists.add(artistKey);
 
           const artistResult = await getArtistImage(track.artist);
-          if (artistResult?.url) {
+          if (artistResult?.url && !seenCoverUrls.has(artistResult.url)) {
+            seenCoverUrls.add(artistResult.url);
             covers.push(artistResult.url);
             seenArtists.add(artistKey);
           }
@@ -33539,7 +33569,8 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
         triedArtists.add(artistKey);
         const artistResult = await getArtistImage(track.artist);
-        if (artistResult?.url) {
+        if (artistResult?.url && !seenCoverUrls.has(artistResult.url)) {
+          seenCoverUrls.add(artistResult.url);
           covers.push(artistResult.url);
           seenArtists.add(artistKey);
         }
@@ -34309,12 +34340,6 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     // === SYNC END ===
   };
 
-  // Import playlist from URL (hosted XSPF, Spotify, or Apple Music)
-  // skipStorageUpdate: true when loading from storage on app start (to avoid duplicates)
-  // metadataOverrides: { title, creator } - stored local edits to apply instead of fetched values
-  // Import playlist from URL (hosted XSPF, Spotify, or Apple Music)
-  // skipStorageUpdate: true when loading from storage on app start (to avoid duplicates)
-  // metadataOverrides: { title, creator } - stored local edits to apply instead of fetched values
   // Fetch a hosted playlist document with the public-URL guard and body cap
   // (parachord#1011). Shared by the URL import below and the 5-minute poller
   // so neither can fetch a private address or parse an unbounded body.
@@ -34334,6 +34359,9 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // background: true from the startup reload list and the 5-minute poller —
   // a zero-track parse throws (logged by the caller) instead of showing a
   // modal dialog. Background work must never modal-error.
+  // metadataOverrides: { title?, creator?, coverArt? } — local edits (title /
+  // creator) or the cover the ephemeral view is showing (coverArt; wins over
+  // the resolver's own so the image never swaps on save).
   const handleImportPlaylistFromUrl = async (url, skipStorageUpdate = false, storedAddedAt = null, metadataOverrides = null, { background = false, quiet = false, provider = false } = {}) => {
     try {
       console.log('🌐 Importing playlist from URL:', url);
@@ -34358,11 +34386,24 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         const playlist = result.playlist;
         console.log(`🎵 Loaded ${playlist.tracks.length} tracks via ${resolverId}`);
 
+        // The playlist's own cover, as the resolver reported it (the
+        // `albumArt` field of the lookupPlaylist contract — Spotify, Amazon
+        // and Apple Music all fill it; `image`/`artwork` are accepted
+        // aliases). It rides on the saved record so the Playlists page, the
+        // playlist view and the share link show the provider's cover instead
+        // of a mosaic generated from the tracks — the same image the
+        // Recommendations page showed for a recommended playlist. It is NOT
+        // written onto any track (that is the 4×-tiled-mosaic bug) and not
+        // into albumArtCache (it is playlist art, not album art).
+        const playlistCoverArt = [playlist.albumArt, playlist.image, playlist.artwork]
+          .find(a => typeof a === 'string' && a.trim()) || null;
+
         // Convert resolver result to internal format
         parsed = {
           title: playlist.name || 'Untitled Playlist',
           creator: playlist.owner || playlist.artist || resolverId,
           date: null,
+          ...(playlistCoverArt ? { coverArt: playlistCoverArt } : {}),
           tracks: playlist.tracks.map(t => ({
             title: t.title || 'Unknown Track',
             artist: t.artist || 'Unknown Artist',
@@ -34419,9 +34460,19 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       };
       const id = 'hosted-' + hashCode(url);
 
-      // Apply metadata overrides if provided (from stored local edits)
+      // Apply metadata overrides if provided (from stored local edits, or the
+      // playlist being saved — the ephemeral SAVE passes the cover it is
+      // showing so the saved record never swaps the image the user was
+      // looking at)
       const playlistTitle = metadataOverrides?.title || parsed.title;
       const playlistCreator = metadataOverrides?.creator ?? parsed.creator;
+      // The cover for the saved record: the override (what the view is
+      // showing), else the resolver's, else whatever the existing record
+      // already carries (a hosted-XSPF re-import parses no cover, so the
+      // previous one survives). Null means no playlist cover — the mosaic.
+      const playlistCover = (typeof metadataOverrides?.coverArt === 'string' && metadataOverrides.coverArt.trim())
+        || parsed.coverArt
+        || null;
 
       // Look up the on-disk record FIRST — disk is the source of truth for
       // `syncedTo` / `syncedFrom` / `syncSources` even when React state is
@@ -34471,6 +34522,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
             xspf: content,
             title: playlistTitle,
             creator: playlistCreator,
+            ...(playlistCover ? { coverArt: playlistCover } : {}),
             tracks: parsed.tracks || [],
             lastUpdated: Date.now(),
             ...(contentChanged ? { locallyModified: true, lastModified: Date.now() } : {})
@@ -34495,7 +34547,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
           console.warn('Failed to persist updated hosted playlist:', e);
         }
         console.log(`🔄 Updated hosted playlist: ${playlistTitle} (${parsed.tracks?.length || 0} tracks)`);
-        return { updated: true, playlist: { ...parsed, title: playlistTitle, creator: playlistCreator } };
+        return { updated: true, playlist: { ...parsed, title: playlistTitle, creator: playlistCreator, ...(playlistCover ? { coverArt: playlistCover } : {}) } };
       }
 
       // Add new hosted playlist
@@ -34506,6 +34558,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         filename: null,  // No local file for hosted playlists
         title: playlistTitle,
         creator: playlistCreator,
+        ...(playlistCover ? { coverArt: playlistCover } : {}),
         tracks: parsed.tracks || [],
         xspf: content,
         source: importSource,
@@ -34610,7 +34663,16 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         });
         setPlaylistTracks(tracksWithIds);
         setSelectedPlaylist(prev => prev && prev.id === playlistId
-          ? { ...prev, title: result.playlist.title, creator: result.playlist.creator, tracks: tracksWithIds }
+          ? {
+              ...prev,
+              title: result.playlist.title,
+              creator: result.playlist.creator,
+              // A refreshed playlist cover swaps in when the lookup returned
+              // one (a hosted-XSPF refresh parses no cover, so the existing
+              // one survives — never blanked by a refresh).
+              ...(result.playlist.coverArt ? { coverArt: result.playlist.coverArt } : {}),
+              tracks: tracksWithIds
+            }
           : prev);
       }
 
@@ -36387,13 +36449,18 @@ useEffect(() => {
   };
   const recommendationPlaylistTracks = async (item) => {
     const resolved = await lookupRecommendationPlaylist(item);
-    const art = recommendationImageFor(item);
     return resolved.tracks.map((t) => ({
       id: trackSlug(t.artist || '', t.title || ''),
       title: t.title,
       artist: t.artist,
       album: t.album || null,
-      albumArt: resolved.albumArt || art || null,
+      // The lookup's own per-track art (the track's album cover, when the
+      // provider sent one) — never the playlist's cover, which rides on the
+      // playlist record (openServicePlaylist's coverArt) and must not
+      // masquerade as a track's album art: stamped on every track it tiled
+      // one image across the whole 2x2 mosaic ("Playlist covers" in
+      // docs/architecture/album-art.md).
+      ...(t.albumArt ? { albumArt: t.albumArt } : {}),
       duration: t.duration || null,
       sources: {},
       // The lookup's own ids and ISRC ride along: resolveTrack marks a
@@ -36457,7 +36524,13 @@ useEffect(() => {
   // The click opens the playlist view at once (its skeleton rows stand in),
   // and the tracks fill in when the lookup lands (loadPlaylist's fetchTracks
   // branch): a click changes the view before its lookup. The Recommendations
-  // page and Home both call this one function.
+  // page and Home both call this one function. coverArt is the image the
+  // card showed (recommendationImageFor: the provider's own imageUrl, else
+  // the art pipeline's answer), so the playlist view shows the exact cover
+  // the card showed — not a mosaic built from the tracks. A card with no
+  // image opens with no coverArt and the view's mosaic fallback shows, the
+  // same art the card's placeholder stood in for ("Playlist covers" in
+  // docs/architecture/album-art.md).
   const openServicePlaylist = (item, sourceName) => {
     if (!item || !item.url) return;
     cancelRecommendationPlaylistPrefetch(item);
@@ -36469,6 +36542,7 @@ useEffect(() => {
       // A history mix brings its own line ("Your most played, ..."); a
       // recommended playlist has none.
       description: item.description || `Recommended by ${resolverName}`,
+      ...(recommendationImageFor(item) ? { coverArt: recommendationImageFor(item) } : {}),
       tracks: [],
       tracksLoaded: false,
       isExternal: true,
@@ -37476,7 +37550,7 @@ useEffect(() => {
     // Search Page - Full page search view
     activeView === 'search' ? (
       React.createElement(SearchPage, {
-          activeResolvers: playbackResolvers, activeView, allResolvers, artistImageCache, currentTrack, filteredHistoryMatches, formatTime, handleSearchDetailScroll, handleSearchScrollContainerRef, isPlaying, isSearching, playbackContext, playlists, prefetchedReleasesRef, resolverOrder, searchContainerWidth, searchDetailCategory, searchHeaderCollapsed, searchHistory, searchInputRef, searchQuery, searchResults, searchResultsContainerRef, searchResultsFilter, searchResultsFilterOpen, searchResultsSort, searchScrollContainerRef, searchTracksObserverRef, searchTracksRowRefs, setAddToPlaylistPanel, setDraggingTrackForPlaylist, setSearchDetailCategory, setSearchPreviewItem, setSearchResultsFilter, setSearchResultsFilterOpen, setSearchResultsSort, setTrackLoading, showToast, trackSources,
+          activeResolvers: playbackResolvers, activeView, allResolvers, artistImageCache, currentTrack, filteredHistoryMatches, handleSearchDetailScroll, handleSearchScrollContainerRef, isPlaying, isSearching, playbackContext, playlists, prefetchedReleasesRef, resolverOrder, searchContainerWidth, searchDetailCategory, searchHeaderCollapsed, searchHistory, searchInputRef, searchQuery, searchResults, searchResultsContainerRef, searchResultsFilter, searchResultsFilterOpen, searchResultsSort, searchScrollContainerRef, searchTracksObserverRef, searchTracksRowRefs, setAddToPlaylistPanel, setDraggingTrackForPlaylist, setSearchDetailCategory, setSearchPreviewItem, setSearchResultsFilter, setSearchResultsFilterOpen, setSearchResultsSort, setTrackLoading, showToast, trackSources,
           ...searchPageHandlers
         }) // end main view
     ) : // end activeView === 'search' ternary
@@ -37652,7 +37726,7 @@ useEffect(() => {
 
       // Main content area - Playlist Page (new design matching album page layout)
       : activeView === 'playlist-view' && selectedPlaylist ? React.createElement(PlaylistViewPage, {
-          activeResolvers: playbackResolvers, allPlaylistCovers, allResolvers, currentTrack, draggedPlaylistTrack, editedPlaylistData, emptyPlaylistId, formatTime, handlePlaylistTracksScrollRef, isPlaying, playbackContext, playlistCoverArt, playlistDropTarget, playlistEditMode, playlistObserverRef, playlistScrollContainerReady, playlistScrollContainerRef, playlistTrackRowRefs, playlistTracks, playlistTracksScrollRef, publishCollectionSmartLink, refreshingPlaylist, resolverLoaderRef, resolverOrder, selectedPlaylist, setAddToPlaylistPanel, setDraggedPlaylistTrack, setDraggingTrackForPlaylist, setEditedPlaylistData, setPlaylistCoverArt, setPlaylistDropTarget, setPlaylistEditMode, setPlaylistScrollContainerReady, setPlaylistTracks, setPlaylists, setRefreshingPlaylist, setSelectedPlaylist, setSelectedPlaylistsForAdd, setSyncDeleteDialog, setTrackLoading, showToast, trackSources,
+          activeResolvers: playbackResolvers, allPlaylistCovers, allResolvers, currentTrack, draggedPlaylistTrack, editedPlaylistData, emptyPlaylistId, handlePlaylistTracksScrollRef, isPlaying, playbackContext, playlistCoverArt, playlistDropTarget, playlistEditMode, playlistObserverRef, playlistScrollContainerReady, playlistScrollContainerRef, playlistTrackRowRefs, playlistTracks, playlistTracksScrollRef, publishCollectionSmartLink, refreshingPlaylist, resolverLoaderRef, resolverOrder, selectedPlaylist, setAddToPlaylistPanel, setDraggedPlaylistTrack, setDraggingTrackForPlaylist, setEditedPlaylistData, setPlaylistCoverArt, setPlaylistDropTarget, setPlaylistEditMode, setPlaylistScrollContainerReady, setPlaylistTracks, setPlaylists, setRefreshingPlaylist, setSelectedPlaylist, setSelectedPlaylistsForAdd, setSyncDeleteDialog, setTrackLoading, showToast, trackSources,
           ...playlistViewPageHandlers
         })
 
@@ -37960,6 +38034,14 @@ useEffect(() => {
                     React.createElement('div', {
                       className: 'relative aspect-square rounded-lg overflow-hidden mb-2 album-art-container',
                     },
+                      // The mosaic/placeholder; the playlist's own cover
+                      // (a provider import's coverArt) comes AFTER it in DOM
+                      // order — the cover img and the tiles are both
+                      // positioned, and positioned siblings paint in DOM order,
+                      // so before the mosaic the tiles painted over the cover.
+                      // The badges and hover overlay after the cover stay on
+                      // top; a dead cover URL removes itself and the mosaic
+                      // shows again.
                       hasCachedCovers ?
                         React.createElement('div', { className: 'grid grid-cols-2 grid-rows-2 w-full h-full' },
                           [0, 1, 2, 3].map(idx => {
@@ -37993,6 +38075,9 @@ useEffect(() => {
                             React.createElement('path', { d: 'M15 13.5v6l5.5-3-5.5-3z' })
                           )
                         ),
+                      // The playlist's own cover, over the mosaic/placeholder
+                      // (DOM order = paint order; see the comment above).
+                      playlist.coverArt && React.createElement(PlaylistCoverImage, { url: playlist.coverArt }),
 
                       // Refresh for hosted XSPF (auto-polled) and provider snapshots
                       // (manual only — startup reload of a provider page is the
@@ -38227,7 +38312,9 @@ useEffect(() => {
                   },
                   className: `group flex items-center gap-4 py-3 px-4 cursor-pointer hover:bg-surface-hover transition-colors ${index > 0 ? 'border-t border-line-light' : ''}`
                 },
-                  // Thumbnail (small mosaic or placeholder)
+                  // Thumbnail (the mosaic/placeholder, with the playlist's
+                  // own cover AFTER it — the cover img and the tiles are both
+                  // positioned, and positioned siblings paint in DOM order)
                   React.createElement('div', {
                     className: 'relative w-12 h-12 rounded overflow-hidden flex-shrink-0'
                   },
@@ -38272,7 +38359,9 @@ useEffect(() => {
                           React.createElement('rect', { x: 3, y: 17, width: 7, height: 2, rx: 1 }),
                           React.createElement('path', { d: 'M15 13.5v6l5.5-3-5.5-3z' })
                         )
-                      )
+                      ),
+                    // The playlist's own cover, over the mosaic/placeholder
+                    playlist.coverArt && React.createElement(PlaylistCoverImage, { url: playlist.coverArt })
                   ),
                   // Playlist name
                   React.createElement('div', { className: 'flex-1 min-w-0' },
@@ -38418,7 +38507,7 @@ useEffect(() => {
 
         // Library view with collapsible hero header (matching Recommendations pattern)
         activeView === 'library' && React.createElement(CollectionPage, {
-          activeResolvers: playbackResolvers, allResolvers, autoPinnedFriendIds, collectionData, collectionHeaderCollapsed, collectionLoading, collectionObserverRef, collectionScrollContainerRef, collectionSearch, collectionSearchOpen, collectionSongsSorted, collectionSort, collectionTab, collectionTrackRowRefs, currentTrack, filterCollectionItems, formatTime, friendSyncInProgress, friends, handleCollectionScrollContainerRef, isPlaying, library, libraryLoading, metaServiceConfigs, pinnedFriendIds, playbackContext, resolverOrder, resolverSyncSettings, setAddFriendModalOpen, setAddToPlaylistPanel, setCollectionHeaderCollapsed, setCollectionSearch, setCollectionSearchOpen, setCollectionSort, setCollectionTab, setDraggingTrackForPlaylist, setSyncStatusModal, setTrackLoading, showToast, sortCollectionItems, syncProviderConfig, syncStatus, trackSources,
+          activeResolvers: playbackResolvers, allResolvers, autoPinnedFriendIds, collectionData, collectionHeaderCollapsed, collectionLoading, collectionObserverRef, collectionScrollContainerRef, collectionSearch, collectionSearchOpen, collectionSongsSorted, collectionSort, collectionTab, collectionTrackRowRefs, currentTrack, filterCollectionItems, friendSyncInProgress, friends, handleCollectionScrollContainerRef, isPlaying, library, libraryLoading, metaServiceConfigs, pinnedFriendIds, playbackContext, resolverOrder, resolverSyncSettings, setAddFriendModalOpen, setAddToPlaylistPanel, setCollectionHeaderCollapsed, setCollectionSearch, setCollectionSearchOpen, setCollectionSort, setCollectionTab, setDraggingTrackForPlaylist, setSyncStatusModal, setTrackLoading, showToast, sortCollectionItems, syncProviderConfig, syncStatus, trackSources,
           ...collectionPageHandlers
         }),
 
@@ -40847,11 +40936,10 @@ useEffect(() => {
 
             // Open a recommended playlist in the playlist view (the same
             // ephemeral external-playlist flow the Home page's Weekly Jams
-            // use). Provider-neutral: creator/source come from the item's
-            // resolver and the section's resolverName, and the track ids are
-            // trackSlug(artist, title) — the id every no-album track context
-            // keys session state on — so these tracks share resolution state
-            // with the rest of the app (renderer-patterns.md).
+            // use), through the shared openServicePlaylist: the card's image
+            // rides on the playlist record as coverArt there, so the view
+            // shows the exact cover the Recommendations page showed — not a
+            // mosaic built from the tracks.
             // The service an item came from, by name: its row's source entry
             // (rows are blended, so the row itself names no single provider).
             const itemSourceName = (item, row) => {
@@ -41214,7 +41302,7 @@ useEffect(() => {
               const entry = (homeData[field] || []).find(j => j.id === item.weekly.id) || null;
               return { field, entry };
             };
-            const playWeeklyPlaylist = async (item) => {
+            const playWeeklyPlaylist = async (item, playlist) => {
               const { field, entry } = weeklyEntryFor(item);
               let tracks = (entry && entry.tracks) || [];
               if (!entry || !entry.tracksLoaded || tracks.length === 0) {
@@ -41228,7 +41316,9 @@ useEffect(() => {
               }
               if (tracks.length > 0) {
                 const name = `${item.weekly.weekLabel}'s ${item.weekly.label}`;
-                playTrackCollection(tracks, { type: item.weekly.contextType, name });
+                // The playlist rides along so the queue's context bar can
+                // reopen it (lib/playlist-context).
+                playTrackCollection(tracks, { type: item.weekly.contextType, name, playlist: playlistRef(playlist) });
                 showToast(`Playing ${name}`, 'success');
               }
             };
@@ -41296,7 +41386,7 @@ useEffect(() => {
                     React.createElement('button', {
                       onClick: (e) => {
                         e.stopPropagation();
-                        playWeeklyPlaylist(item);
+                        playWeeklyPlaylist(item, record);
                       },
                       className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
                       style: { border: 'none', cursor: 'pointer' },
@@ -41409,7 +41499,7 @@ useEffect(() => {
                 React.createElement('span', {
                   className: 'text-right tabular-nums flex-shrink-0',
                   style: { pointerEvents: 'none', width: '50px', fontSize: '12px', color: 'var(--text-tertiary)' }
-                }, formatTime(track.duration)),
+                }, trackDurationLabel(track, { trackSources, resolverOrder })),
                 React.createElement('div', {
                   className: 'flex items-center gap-1 justify-end',
                   style: { width: '140px', flexShrink: 0, minHeight: '24px' }
@@ -43698,10 +43788,7 @@ useEffect(() => {
                       .filter(resolver => {
                         // Search filter
                         if (marketplaceSearchQuery) {
-                          const query = marketplaceSearchQuery.toLowerCase();
-                          const matchesName = resolver.name.toLowerCase().includes(query);
-                          const matchesDesc = (resolver.description || '').toLowerCase().includes(query);
-                          if (!matchesName && !matchesDesc) return false;
+                          if (!pluginMatchesQuery(resolver, marketplaceSearchQuery)) return false;
                         }
                         // Install status filter
                         const isEnabled = activeResolvers.includes(resolver.id);
@@ -43858,10 +43945,7 @@ useEffect(() => {
                       .filter(service => {
                         // Search filter
                         if (marketplaceSearchQuery) {
-                          const query = marketplaceSearchQuery.toLowerCase();
-                          const matchesName = service.name.toLowerCase().includes(query);
-                          const matchesDesc = (service.description || '').toLowerCase().includes(query);
-                          if (!matchesName && !matchesDesc) return false;
+                          if (!pluginMatchesQuery(service, marketplaceSearchQuery)) return false;
                         }
                         // Install status filter - based on active state, not loaded state
                         const config = metaServiceConfigs[service.id];
@@ -50809,16 +50893,17 @@ React.createElement('div', {
               },
                 // Playlist thumbnail (gray square)
                 React.createElement('div', {
-                  className: 'w-10 h-10 rounded bg-surface-placeholder flex-shrink-0 flex items-center justify-center overflow-hidden'
+                  className: 'relative w-10 h-10 rounded bg-surface-placeholder flex-shrink-0 flex items-center justify-center overflow-hidden'
                 },
-                  // Could show playlist cover here if available
                   allPlaylistCovers[playlist.id]?.[0] ?
                     React.createElement('img', {
                       src: allPlaylistCovers[playlist.id][0],
                       className: 'w-full h-full object-cover'
                     })
                   :
-                    React.createElement(Music, { size: 16, className: 'text-ink-tertiary' })
+                    React.createElement(Music, { size: 16, className: 'text-ink-tertiary' }),
+                  // The playlist's own cover, over the first mosaic tile
+                  playlist.coverArt && React.createElement(PlaylistCoverImage, { url: playlist.coverArt })
                 ),
                 // Playlist name
                 React.createElement('span', {
@@ -52572,7 +52657,6 @@ firstRunTutorial.step === 'complete' && (() => {
             fetchArtistData: stableFetchArtistData,
             removeFromQueue,
             handleUrlDrop: stableHandleUrlDrop,
-            formatTime,
             // Resolution scheduler integration
             onVisibilityChange: updateQueueVisibility,
             onTrackHover: setQueueHoverTrack,
@@ -52593,16 +52677,20 @@ firstRunTutorial.step === 'complete' && (() => {
             setQueueDrawerOpen(false);
             return;
           }
-          // Navigate to the context source (skip if already on target page)
-          if (playbackContext.type === 'playlist' && playbackContext.id) {
-            const playlist = playlists.find(p => p.id === playbackContext.id);
-            if (playlist) {
-              if (activeView === 'playlist-view' && selectedPlaylist?.id === playlist.id) {
-                // Already viewing this playlist - just close the drawer
-              } else {
-                loadPlaylist(playlist);
-              }
+          // Navigate to the context source (skip if already on target page).
+          // A playlist context opens its playlist: a saved one by id, an
+          // ephemeral one (Weekly Jams, ...) from the reference the context
+          // carries (lib/playlist-context).
+          const contextPlaylist = contextPlaylistTarget(playbackContext, playlists);
+          if (contextPlaylist) {
+            if (activeView === 'playlist-view' && selectedPlaylist?.id === contextPlaylist.id) {
+              // Already viewing this playlist - just close the drawer
+            } else {
+              loadPlaylist(contextPlaylist);
             }
+          } else if (playbackContext.type === 'playlist' && playbackContext.playlist) {
+            // A recommended playlist that can't be reopened: where it lives.
+            navigateTo('recommendations');
           } else if (playbackContext.type === 'album' && playbackContext.artist) {
             // handleCollectionAlbumClick has its own "already viewing" check
             handleCollectionAlbumClick({

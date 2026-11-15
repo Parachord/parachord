@@ -492,9 +492,12 @@ describe('the five-section page render', () => {
     const card = between('const weeklyCard = (item, index, sub) => {', 'const cardFor = ');
     expect(card).toMatch(/weeklyJamCovers\[item\.weekly\.id\]/);
     expect(card).toMatch(/loadPlaylist\(\{[\s\S]*?listenbrainzId: item\.weekly\.id,[\s\S]*?isEphemeral: true,[\s\S]*?\}\)/);
-    const play = view.slice(view.indexOf('const playWeeklyPlaylist = async (item) => {'));
+    const play = view.slice(view.indexOf('const playWeeklyPlaylist = async (item, playlist) => {'));
     expect(play.slice(0, 1400)).toMatch(/tracks = await loadWeeklyJamTracks\(item\.weekly\.id\);/);
     expect(play.slice(0, 1400)).toMatch(/playTrackCollection\(tracks, \{ type: item\.weekly\.contextType, name/);
+    // The context carries the playlist so the queue's context bar reopens it.
+    expect(play.slice(0, 1600)).toMatch(/playlist: playlistRef\(playlist\)/);
+    expect(card).toMatch(/playWeeklyPlaylist\(item, record\)/);
     // Titled with the playlist's full name, its source under it, as on every
     // playlist card (only the newest week is on the page).
     expect(card).toContain("React.createElement('p', { className: 'font-medium text-ink-primary truncate text-sm transition-colors' }, item.weekly.label)");

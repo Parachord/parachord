@@ -31,7 +31,7 @@
     {
       "id": "bandcamp",
       "name": "Bandcamp",
-      "version": "1.4.4",
+      "version": "1.4.5",
       "author": "Parachord Team",
       "description": "Find and purchase music on Bandcamp. Opens tracks in browser for streaming.",
       "icon": "🎸",
@@ -93,7 +93,7 @@
     {
       "id": "youtube",
       "name": "YouTube",
-      "version": "1.0.2",
+      "version": "1.0.4",
       "author": "Parachord Team",
       "description": "Search and play music videos from YouTube. Free with ads. Opens videos in your browser.",
       "icon": "🎥",

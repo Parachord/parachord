@@ -2,8 +2,10 @@
 // Props-driven; hooks are qualified and the module loads under plain Node.
 //
 // Art comes in as props (imageUrl, or a mosaic array for playlists); this
-// module never resolves art itself. A cover that fails to load calls
-// onArtError(item), which the page wires to window.reportBrokenAlbumArt.
+// module never resolves art itself. An album cover that fails to load calls
+// onArtError(item), which the page wires to window.reportBrokenAlbumArt; a
+// playlist's own cover (its record's coverArt) drops out instead and the
+// mosaic/placeholder shows — it never reaches the album-art pipeline.
 //
 // Card actions show on hover and on focus-within (tracked in state, so a
 // keyboard user reaches them without a Tailwind variant). The sizes of the
@@ -127,11 +129,24 @@ const PlaylistGlyph = () => e('svg', {
 // glyph rather than an empty box.
 function ArtBox({ imageUrl, mosaic, item, onArtError, children, style, placeholder, zoom }) {
   const tiles = Array.isArray(mosaic) ? mosaic.filter(Boolean).slice(0, 4) : [];
-  const fail = () => { if (onArtError) onArtError(item); };
+  // A cover that failed to load drops out and the mosaic (or the placeholder)
+  // below shows — a dead cover degrades, never blanks; a fresh URL (a refresh
+  // swapped the image) retries. Same contract as PlaylistCoverImage on the
+  // layered surfaces ("Playlist covers" in docs/architecture/album-art.md).
+  const [deadCoverUrl, setDeadCoverUrl] = React.useState(null);
+  React.useEffect(() => { setDeadCoverUrl(null); }, [imageUrl]);
+  const cover = imageUrl && deadCoverUrl !== imageUrl ? imageUrl : null;
+  // A playlist's cover never reports into the album-art pipeline: it is not
+  // any album's art (reportBroken needs the artist and album the playlist
+  // does not carry, so the report would be a no-op — but it must not reach
+  // the pipeline at all). Album art keeps reporting: that retry is how a
+  // dead album cover heals.
+  const fail = () => { if (placeholder !== 'playlist' && onArtError) onArtError(item); };
   let art;
-  if (imageUrl) {
+  if (cover) {
     art = e('img', {
-      src: imageUrl, alt: '', loading: 'lazy', onError: fail,
+      src: cover, alt: '', loading: 'lazy',
+      onError: () => { setDeadCoverUrl(imageUrl); fail(); },
       style: { width: '100%', height: '100%', objectFit: 'cover', display: 'block' },
     });
   } else if (tiles.length >= 4) {
@@ -704,5 +719,5 @@ function AskShuffleupagus({ initialPrompt, chatAvailable, onAsk, onSetup }) {
 
 module.exports = {
   JumpBackIn, AlbumCard, PlaylistCard, SourceFilter, MixesRow, PlaylistsRow, AlbumsRow,
-  FreshCriticalRow, ConcertsRow, AskShuffleupagus, __TicketsLink: TicketsLink,
+  FreshCriticalRow, ConcertsRow, AskShuffleupagus, __TicketsLink: TicketsLink, ArtBox,
 };

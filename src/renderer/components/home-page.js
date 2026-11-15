@@ -282,7 +282,11 @@ const HomePage = React.memo(function HomePage(props) {
     ? { imageUrl: coverFor(loves[0].artist, loves[0].album, loves[0].albumArt), artist: loves[0].artist, title: loves[0].album }
     : null), [loves, art]);
   const tiles = React.useMemo(() => tilesRaw.map((tile) => {
-    if (tile.kind === 'playlist') return { ...tile, mosaic: allPlaylistCovers[tile.item.id] || null };
+    if (tile.kind === 'playlist') {
+      // The playlist's own cover (a provider import's coverArt) wins over the
+      // track mosaic (ArtBox prefers imageUrl); the mosaic stays the fallback.
+      return { ...tile, imageUrl: tile.item.coverArt || null, mosaic: allPlaylistCovers[tile.item.id] || null };
+    }
     if (tile.kind === 'loves') return { ...tile, imageUrl: lovesCover && lovesCover.imageUrl };
     if (tile.kind === 'album') {
       const { album, artist } = tile.item;
@@ -313,6 +317,9 @@ const HomePage = React.memo(function HomePage(props) {
       ...p,
       badge: changeBadge(p, now),
       subtitle: playlistSubtitle(p, now),
+      // The playlist's own cover (a provider import's coverArt) wins over the
+      // track mosaic (ArtBox prefers imageUrl); the mosaic stays the fallback.
+      imageUrl: p.coverArt || null,
       mosaic: allPlaylistCovers[p.id] || null,
     }));
   }, [playlists, allPlaylistCovers]);

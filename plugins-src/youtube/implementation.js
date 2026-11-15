@@ -1,4 +1,4 @@
-// Source of truth for plugins/youtube.axe v1.0.1.
+// Source of truth for plugins/youtube.axe v1.0.4.
 // Imported from the .axe by `node scripts/build-axes.js --import`.
 // Edit here, bump manifest.version in manifest.json, then run `node scripts/build-axes.js`.
 // The functions materialize fully isolated (resolver-loader.js uses
@@ -24,6 +24,24 @@ module.exports = {
       const videoDataMatches = html.matchAll(
         /"videoId":"([^"]+)","thumbnail".*?"title":\{"runs":\[\{"text":"([^"]+)"\}\].*?"ownerText":\{"runs":\[\{"text":"([^"]+)"/g,
       );
+      // A video's length is its renderer's lengthText ("3:57", "1:02:03"),
+      // which sits between its videoId and the next video's renderer (today
+      // between title and ownerText, so inside the match above). Live streams
+      // and premieres have none, so their length is unknown (null), never a
+      // made-up 180 that track lists would show as the track's length.
+      const lengthAfter = function (from) {
+        const next = html.indexOf('"videoRenderer":{', from);
+        const end = next === -1 ? Math.min(html.length, from + 20000) : next;
+        const chunk = html.slice(from, end);
+        const at = chunk.indexOf('"lengthText":');
+        if (at === -1) return null;
+        const m = chunk.slice(at, at + 400).match(/"simpleText":"(\d+(?::\d{1,2}){1,2})"/);
+        if (!m) return null;
+        const parts = m[1].split(':').map(Number);
+        let seconds = 0;
+        for (const part of parts) seconds = seconds * 60 + part;
+        return seconds > 0 ? seconds : null;
+      };
       let count = 0;
       for (const match of videoDataMatches) {
         if (count >= 20) break;
@@ -33,7 +51,7 @@ module.exports = {
             id: `youtube-${videoId}`,
             title: title,
             artist: channel,
-            duration: 180,
+            duration: lengthAfter(match.index),
             sources: ['youtube'],
             youtubeId: videoId,
             youtubeUrl: `https://www.youtube.com/watch?v=${videoId}`,
@@ -104,7 +122,8 @@ module.exports = {
       return {
         title: title || 'Unknown Title',
         artist,
-        duration: 180,
+        // oEmbed carries no length, and the watch page is a megabyte: unknown.
+        duration: null,
         albumArt: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,
         sourceUrl: url,
         youtubeId: videoId,
@@ -116,6 +135,13 @@ module.exports = {
     }
   },
   lookupPlaylist: async function (url, config) {
+    // The playlist page embeds its first page of videos (up to 100) in the
+    // ytInitialData JSON. Since 2026 each video is a lockupViewModel
+    // (contentId, title.content, the channel in the first metadata row, the
+    // length in the thumbnail badge); older pages used playlistVideoRenderer
+    // (videoId, title.runs, shortBylineText.runs, lengthSeconds). The regex
+    // this replaced matched only the old shape, so every import came back
+    // empty. Both shapes are read, by walking the parsed JSON, not by regex.
     try {
       const listMatch = url.match(/[?&]list=([a-zA-Z0-9_-]+)/);
       if (!listMatch) return null;
@@ -127,43 +153,108 @@ module.exports = {
       });
       if (!response.ok) return null;
       const html = await response.text();
-      const tracks = [];
-      let playlistName = 'YouTube Playlist';
-      const titleMatch = html.match(/"title":\s*"([^"]+)",\s*"playlistId":/);
-      if (titleMatch) {
-        playlistName = titleMatch[1];
+      const marker = html.indexOf('ytInitialData = ');
+      if (marker === -1) return null;
+      const start = html.indexOf('{', marker);
+      const end = html.indexOf(';</script>', start);
+      if (start === -1 || end === -1) return null;
+      let data;
+      try {
+        data = JSON.parse(html.slice(start, end));
+      } catch (e) {
+        console.error('YouTube playlist page data did not parse');
+        return null;
       }
-      const videoMatches = html.matchAll(
-        /"videoId":"([^"]+)".*?"title":\{"runs":\[\{"text":"([^"]+)"\}\].*?"shortBylineText":\{"runs":\[\{"text":"([^"]+)"/g,
-      );
-      let count = 0;
-      for (const match of videoMatches) {
-        if (count >= 100) break;
-        const [, videoId, title, channel] = match;
-        if (videoId && title) {
-          let trackTitle = title;
-          let artist = channel || 'Unknown Artist';
-          const dashMatch = title.match(/^(.+?)\s*[-–—]\s*(.+)$/);
-          if (dashMatch) {
-            artist = dashMatch[1].trim();
-            trackTitle = dashMatch[2].trim();
+      const textOf = function (t) {
+        if (!t) return '';
+        if (typeof t === 'string') return t;
+        if (typeof t.content === 'string') return t.content;
+        if (typeof t.simpleText === 'string') return t.simpleText;
+        if (Array.isArray(t.runs)) return t.runs.map(function (r) { return r.text || ''; }).join('');
+        return '';
+      };
+      // "3:57" / "1:02:03" → seconds; anything else (a live badge) → null.
+      const clockSeconds = function (text) {
+        if (!/^\d+(?::\d{1,2}){1,2}$/.test(text || '')) return null;
+        let seconds = 0;
+        const parts = text.split(':');
+        for (let p = 0; p < parts.length; p++) seconds = seconds * 60 + Number(parts[p]);
+        return seconds > 0 ? seconds : null;
+      };
+      const videos = [];
+      const seen = {};
+      const add = function (videoId, title, channel, duration) {
+        if (!videoId || !title || seen[videoId]) return;
+        seen[videoId] = true;
+        videos.push({ videoId: videoId, title: title, channel: channel, duration: duration });
+      };
+      const fromLockup = function (l) {
+        if (l.contentType && l.contentType !== 'LOCKUP_CONTENT_TYPE_VIDEO') return;
+        const md = (l.metadata && l.metadata.lockupMetadataViewModel) || {};
+        const rows =
+          (md.metadata && md.metadata.contentMetadataViewModel && md.metadata.contentMetadataViewModel.metadataRows) || [];
+        const firstPart = rows[0] && rows[0].metadataParts && rows[0].metadataParts[0];
+        let duration = null;
+        const overlays = (l.contentImage && l.contentImage.thumbnailViewModel && l.contentImage.thumbnailViewModel.overlays) || [];
+        for (let o = 0; o < overlays.length && duration === null; o++) {
+          const badges = (overlays[o].thumbnailBottomOverlayViewModel && overlays[o].thumbnailBottomOverlayViewModel.badges) || [];
+          for (let b = 0; b < badges.length && duration === null; b++) {
+            duration = clockSeconds(badges[b].thumbnailBadgeViewModel && badges[b].thumbnailBadgeViewModel.text);
           }
-          tracks.push({
-            title: trackTitle,
-            artist: artist,
-            duration: 180,
-            albumArt: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,
-            youtubeId: videoId,
-            youtubeUrl: `https://www.youtube.com/watch?v=${videoId}`,
-          });
-          count++;
+        }
+        add(l.contentId, textOf(md.title), firstPart ? textOf(firstPart.text) : '', duration);
+      };
+      const fromRenderer = function (r) {
+        const seconds = Number(r.lengthSeconds);
+        add(
+          r.videoId,
+          textOf(r.title),
+          textOf(r.shortBylineText),
+          seconds > 0 ? seconds : clockSeconds(textOf(r.lengthText)),
+        );
+      };
+      // Only the page's main list: the sidebar and menus can hold lockups too.
+      const tabs =
+        (data.contents && data.contents.twoColumnBrowseResultsRenderer && data.contents.twoColumnBrowseResultsRenderer.tabs) || [];
+      const root = tabs.length ? tabs : data;
+      const stack = [root];
+      while (stack.length && videos.length < 100) {
+        const node = stack.pop();
+        if (!node || typeof node !== 'object') continue;
+        if (node.lockupViewModel) fromLockup(node.lockupViewModel);
+        else if (node.playlistVideoRenderer) fromRenderer(node.playlistVideoRenderer);
+        else {
+          const keys = Object.keys(node);
+          // Reverse so the stack pops children in page order.
+          for (let k = keys.length - 1; k >= 0; k--) stack.push(node[keys[k]]);
         }
       }
-      if (tracks.length === 0) return null;
+      if (videos.length === 0) return null;
+      const playlistName =
+        (data.metadata && data.metadata.playlistMetadataRenderer && data.metadata.playlistMetadataRenderer.title) ||
+        'YouTube Playlist';
+      const tracks = videos.map(function (v) {
+        let trackTitle = v.title;
+        // An auto-generated "Artist - Topic" channel is the artist's.
+        let artist = (v.channel || '').replace(/\s+-\s+Topic$/, '') || 'Unknown Artist';
+        const dashMatch = v.title.match(/^(.+?)\s*[-–—]\s*(.+)$/);
+        if (dashMatch) {
+          artist = dashMatch[1].trim();
+          trackTitle = dashMatch[2].trim();
+        }
+        return {
+          title: trackTitle,
+          artist: artist,
+          duration: v.duration,
+          albumArt: `https://i.ytimg.com/vi/${v.videoId}/mqdefault.jpg`,
+          youtubeId: v.videoId,
+          youtubeUrl: `https://www.youtube.com/watch?v=${v.videoId}`,
+        };
+      });
       return {
         type: 'playlist',
         name: playlistName,
-        albumArt: tracks[0]?.albumArt,
+        albumArt: tracks[0].albumArt,
         tracks: tracks,
       };
     } catch (error) {

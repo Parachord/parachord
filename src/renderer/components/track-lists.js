@@ -19,6 +19,7 @@ const { Music, Pause, Play, X } = Icons;
 // The shared source-icon rule (and the 0.95 dim threshold) lives in
 // lib/visible-sources.js.
 const { sourceRowState } = require('../lib/visible-sources');
+const { trackDurationLabel } = require('../lib/track-duration');
 
 // TrackRow component - defined outside to prevent recreation on every render
 const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick, onContextMenu, allResolvers, resolverOrder, activeResolvers }) => {
@@ -129,7 +130,7 @@ const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick, onCo
     ),
     React.createElement('div', { className: 'text-xs text-gray-500 truncate max-w-[200px]' }, track.album),
     React.createElement('div', { className: 'text-xs text-gray-500 w-12 text-right' },
-      `${Math.floor(track.duration / 60)}:${(track.duration % 60).toString().padStart(2, '0')}`
+      trackDurationLabel(track, { resolverOrder })
     )
   );
 });
@@ -173,7 +174,6 @@ const VirtualizedQueueList = React.memo(({
   fetchArtistData,
   removeFromQueue,
   handleUrlDrop,
-  formatTime,
   // New props for resolution scheduler
   onVisibilityChange,
   onTrackHover,
@@ -407,7 +407,7 @@ const VirtualizedQueueList = React.memo(({
       React.createElement('span', {
         className: 'text-right tabular-nums',
         style: { width: '50px', flexShrink: 0, fontSize: '12px', color: 'var(--on-dark-tertiary)' }
-      }, !isLoading && !isError ? formatTime(track.duration || 0) : ''),
+      }, !isLoading && !isError ? trackDurationLabel(track, { trackSources, resolverOrder }) : ''),
       // Resolver icons
       React.createElement('div', {
         className: 'flex items-center gap-1 justify-end',
