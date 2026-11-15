@@ -45019,7 +45019,9 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
               className: `relative p-2 ml-1 rounded hover:bg-white/10 transition-colors ${queueDrawerOpen ? 'bg-white/20 text-white' : 'text-gray-400'} ${queueAnimating ? 'queue-pulse' : ''}`,
               style: { display: 'flex', alignItems: 'center', justifyContent: 'center' }
             },
-              React.createElement(List, { size: 15 }),
+              // Listening along, your queue is on hold: only the icon dims,
+              // never the friend's avatar beside it.
+              React.createElement(List, { size: 15, style: listenAlongFriend ? { opacity: 0.4 } : undefined }),
               // Listening along: the friend's avatar (or initial) in the
               // badge's place, since their queue, not yours, decides what's
               // next. Otherwise the count (gray in spinoff mode).
@@ -45030,7 +45032,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                     className: 'absolute -top-1.5 -right-1.5 rounded-full flex items-center justify-center overflow-hidden',
                     style: Object.assign({
                       width: '18px', height: '18px', fontSize: '11px', fontWeight: 600,
-                      boxShadow: '0 0 0 2px var(--accent-fill)', color: 'var(--on-accent)'
+                      boxShadow: '0 0 0 2px var(--accent-fill)', color: 'var(--on-accent)', opacity: 1
                     }, listenAlongFriend.avatarUrl
                       ? { backgroundImage: `url(${JSON.stringify(listenAlongFriend.avatarUrl)})`, backgroundSize: 'cover', backgroundPosition: 'center' }
                       : { backgroundColor: 'var(--accent-fill)' })
