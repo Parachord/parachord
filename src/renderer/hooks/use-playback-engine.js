@@ -1762,6 +1762,14 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     // license bytes relayed the same way, variant per the global quality
     // setting. The .axe never touches audio (same host-owned shape as
     // html5Stream above it).
+    // The plugin-mediated path (#1356 M4): a resolver that implements
+    // getPlaybackManifest + relayLicense supplies that DRM plumbing itself,
+    // renderer-side — the engine passes the WHOLE track (the plugin extracts
+    // its own identifier; the host stops pre-digesting it here) plus the
+    // resolver config, then hands the manifest UP via playPlugin so main
+    // opens the licence session under its existing gates. No shipped plugin
+    // implements the pair yet — Amazon keeps the provider path below until
+    // its dmls moves.
     if (isWidevineResolver(resolverId)) {
       const streamLabel = resolver.name || resolverId;
       console.log(`🔐 Playing ${streamLabel} track via Widevine:`, sourceToPlay.title);
@@ -1802,30 +1810,64 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         }
       }
 
-      const asin = trackOrSource.amazonAsin
-        || trackOrSource.sources?.[resolverId]?.amazonAsin
-        || trackOrSource.sources?.amazonmusic?.amazonAsin
-        || trackOrSource.asin;
-      if (!asin) {
-        console.error(`❌ ${streamLabel}: track carries no playable identifier`);
-        if (autoSkipIfAdvancing(`${streamLabel}: no stream identifier`)) return;
-        setTrackLoading(false);
-        return;
+      // The plugin path needs BOTH methods (checked by presence, like every
+      // other capability gate): a half-implemented resolver falls back to the
+      // provider path rather than opening a session whose licences cannot
+      // relay.
+      const pluginWidevine = typeof resolver.getPlaybackManifest === 'function'
+        && typeof resolver.relayLicense === 'function';
+
+      // The provider path's identifier, dug out host-side (the plugin path
+      // digs its own out of the whole track below — the host stops
+      // pre-extracting there).
+      let asin = null;
+      if (!pluginWidevine) {
+        asin = trackOrSource.amazonAsin
+          || trackOrSource.sources?.[resolverId]?.amazonAsin
+          || trackOrSource.sources?.amazonmusic?.amazonAsin
+          || trackOrSource.asin;
+        if (!asin) {
+          console.error(`❌ ${streamLabel}: track carries no playable identifier`);
+          if (autoSkipIfAdvancing(`${streamLabel}: no stream identifier`)) return;
+          setTrackLoading(false);
+          return;
+        }
       }
 
       let widevinePlayToken = null;
       const startWidevine = async () => {
         // Tag the stream owner like html5Stream does (error dialogs key on it).
         ensureSharedAudioElement({ ...trackOrSource, _streamOwner: resolverId });
-        const wvResult = await window.__parachordWidevine.play(audioRef.current, {
-          resolverId,
-          startTime: startAt,
-          entity: { asin },
-          trackContext: {
-            albumAsin: sourceToPlay.albumAsin || trackOrSource.albumAsin || null,
-            durationMs: (sourceToPlay.duration || trackOrSource.duration || 0) * 1000
-          }
-        });
+        let wvResult;
+        if (pluginWidevine) {
+          // The plugin's manifest fetch is a DIRECT renderer call — the thrown
+          // error fields (reason/plan on plan-ineligible, not-signed-in, …)
+          // survive the plugin boundary because no IPC serializes them, so
+          // the catch below routes them through the same handlers the
+          // provider path's bridge replies feed.
+          const pluginConfig = await getResolverConfig(resolverId);
+          const manifestResult = await resolver.getPlaybackManifest({ ...trackOrSource }, pluginConfig);
+          wvResult = await window.__parachordWidevine.playPlugin(audioRef.current, {
+            resolverId,
+            manifestResult,
+            relayLicense: resolver.relayLicense,
+            startTime: startAt,
+            trackContext: {
+              albumAsin: sourceToPlay.albumAsin || trackOrSource.albumAsin || null,
+              durationMs: (sourceToPlay.duration || trackOrSource.duration || 0) * 1000
+            }
+          });
+        } else {
+          wvResult = await window.__parachordWidevine.play(audioRef.current, {
+            resolverId,
+            startTime: startAt,
+            entity: { asin },
+            trackContext: {
+              albumAsin: sourceToPlay.albumAsin || trackOrSource.albumAsin || null,
+              durationMs: (sourceToPlay.duration || trackOrSource.duration || 0) * 1000
+            }
+          });
+        }
         widevinePlayToken = (wvResult && wvResult.token) || null;
         const volumeToApply = isMutedRef.current ? 0 : volumeRef.current;
         const effectiveVolume = getEffectiveVolume(volumeToApply, resolverId, sourceToPlay.id || trackOrSource.id);
