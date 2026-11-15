@@ -3957,95 +3957,14 @@ registerBandcampEmbedIpc({
 const { registerPublicFetchIpc } = require('./main-process/ipc/public-fetch');
 registerPublicFetchIpc({ ipcMain });
 
-// Proxy fetch handler - bypasses CORS for resolvers that need to fetch external content
-ipcMain.handle('proxy-fetch', async (event, url, options = {}) => {
-  console.log('=== Proxy Fetch ===');
-  console.log('URL:', url);
-  console.log('Method:', options.method || 'GET');
-
-  // Validate URL to prevent SSRF attacks
-  try {
-    const urlObj = new URL(url);
-    if (urlObj.protocol !== 'http:' && urlObj.protocol !== 'https:') {
-      return { success: false, error: 'Only HTTP and HTTPS URLs are allowed' };
-    }
-    // Block requests to private/internal networks
-    const hostname = urlObj.hostname;
-    if (hostname === 'localhost' ||
-        hostname === '127.0.0.1' ||
-        hostname === '0.0.0.0' ||
-        hostname === '::1' ||
-        hostname.startsWith('10.') ||
-        hostname.startsWith('192.168.') ||
-        hostname.match(/^172\.(1[6-9]|2\d|3[01])\./) ||
-        hostname === '169.254.169.254' ||
-        hostname.endsWith('.local') ||
-        hostname.endsWith('.internal')) {
-      return { success: false, error: 'Requests to private/internal networks are not allowed' };
-    }
-  } catch (e) {
-    return { success: false, error: `Invalid URL: ${e.message}` };
-  }
-
-  try {
-    const fetchOptions = {
-      method: options.method || 'GET',
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-        ...options.headers
-      }
-    };
-    // MetaBrainz hosts require a meaningful, contactable UA — override whatever
-    // the caller passed (often the generic browser default above or the dead
-    // github.com/harmonix string) with the canonical one. See METABRAINZ_UA.
-    if (isMetaBrainzHost(url)) {
-      fetchOptions.headers['User-Agent'] = METABRAINZ_UA;
-    }
-
-    // Include body for POST/PUT requests
-    if (options.body) {
-      fetchOptions.body = options.body;
-    }
-
-    const response = await fetch(url, fetchOptions);
-
-    console.log('Proxy fetch response status:', response.status);
-
-    if (!response.ok) {
-      console.log('Proxy fetch failed with status:', response.status);
-      const errorText = await response.text();
-      console.log('Error response body:', errorText.substring(0, 500));
-      return { success: false, status: response.status, error: `HTTP ${response.status}`, text: errorText, finalUrl: response.url };
-    }
-
-    // Handle arraybuffer response type (for audio/binary data)
-    if (options.responseType === 'arraybuffer') {
-      const arrayBuffer = await response.arrayBuffer();
-      console.log('Proxy fetch got arraybuffer, size:', arrayBuffer.byteLength);
-      // Convert ArrayBuffer to base64 for IPC transfer
-      const base64 = Buffer.from(arrayBuffer).toString('base64');
-      return { success: true, status: response.status, data: base64, finalUrl: response.url };
-    }
-
-    const text = await response.text();
-    console.log('Proxy fetch got text, length:', text.length);
-
-    // Check if track_id is in the response (may be HTML-encoded as &quot;)
-    const trackIdMatch = text.match(/track_id(?:"|&quot;):(\d+)/);
-    if (trackIdMatch) {
-      console.log('Found track_id in response:', trackIdMatch[1]);
-    } else {
-      console.log('No track_id found in response');
-    }
-
-    // finalUrl exposes the post-redirect URL (Node fetch follows redirects by
-    // default) so callers can resolve short links — e.g. on.soundcloud.com →
-    // canonical soundcloud.com/.../sets/... for parachord://play/playlist (#930).
-    return { success: true, status: response.status, text, finalUrl: response.url };
-  } catch (error) {
-    console.error('Proxy fetch error:', error);
-    return { success: false, error: error.message };
-  }
+// Proxy fetch: the CORS-bypass fetch for the scrobblers and a few lookups.
+// Every redirect hop is checked like the first URL, and the body is capped
+// (main-process/ipc/proxy-fetch.js).
+const { registerProxyFetchIpc } = require('./main-process/ipc/proxy-fetch');
+registerProxyFetchIpc({
+  ipcMain,
+  isMetaBrainzHost,
+  metabrainzUserAgent: METABRAINZ_UA,
 });
 
 // Plugin marketplace configuration
