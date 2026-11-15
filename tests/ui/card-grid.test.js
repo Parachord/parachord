@@ -32,7 +32,9 @@ test('page hero titles scale with the content area (.hero-title), not a fixed te
   expect(html).toMatch(/\.hero-title \{ font-size: clamp\(28px, calc\(\(100vw - 256px\) \* 0\.055\), 48px\); line-height: 1; \}/);
   const src = files.map((f) => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n');
   expect(src).not.toMatch(/className: 'text-5xl font-light text-white'/);
-  expect((src.match(/className: 'hero-title font-light text-white'/g) || []).length).toBe(9);
+  // The page heroes are the shared PageHero; the artist page's photo hero is the other.
+  expect((src.match(/className: 'hero-title font-light text-white'/g) || []).length).toBe(2);
+  expect(fs.readFileSync(path.join(ROOT, 'src/renderer/components/page-hero.js'), 'utf8')).toContain("className: 'hero-title font-light text-white'");
 });
 
 test('the playlist view\'s art and icon columns follow the content area, and so does its loading placeholder', () => {
@@ -55,6 +57,7 @@ test('collapsed page headers share .hero-bar: titles truncate, tabs scroll, one 
   expect(html).toContain('.hero-bar > h1, .hero-bar > h2 { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }');
   expect(html).toContain('.hero-bar > [role="tablist"], .hero-bar > div:has([role="tablist"]) { flex-shrink: 1; min-width: 0; overflow-x: auto;');
   const src = files.map((f) => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n');
-  expect((src.match(/className: 'hero-bar absolute inset-0 flex items-center px-6 z-10'/g) || []).length).toBe(11);
+  // PageHero's bar, plus the artist page's photo hero (its two bars).
+  expect((src.match(/className: 'hero-bar absolute inset-0 flex items-center px-6 z-10'/g) || []).length).toBe(3);
   expect(src).not.toMatch(/absolute inset-0 flex items-center px-16 z-10/);
 });

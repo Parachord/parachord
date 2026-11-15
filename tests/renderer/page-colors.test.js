@@ -28,9 +28,15 @@ test('no two heroes start in the same colour family', () => {
 
 test('the sidebar, heroes and section links read the map, not their own copies', () => {
   const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  // The heroes are the shared PageHero, which reads the page's gradient and
+  // pattern from the map.
   for (const view of ['history', 'new-releases', 'discover', 'critics-picks', 'concerts', 'recommendations', 'playlists']) {
-    expect(app).toContain(`\${PAGE_COLORS['${view}'].hero}`);
+    expect(app).toContain(`page: '${view}'`);
   }
+  const hero = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/page-hero.js'), 'utf8');
+  expect(hero).toContain('const colors = PAGE_COLORS[page] || PAGE_COLORS.home;');
+  expect(hero).toContain("className: `absolute inset-0 ${colors.hero}`");
+  expect(app).not.toMatch(/backgroundImage: 'url\("data:image\/svg\+xml/);
   expect(app).not.toMatch(/'#10b981' : 'var\(--nav-inactive\)'/);
   expect(app).not.toMatch(/linear-gradient\(135deg, #9333ea 0%, #c026d3 50%, #e11d48 100%\)/);
 });

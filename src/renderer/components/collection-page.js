@@ -17,6 +17,7 @@
 
 const Icons = require('./icons');
 const { FilterBox } = require('./filter-box');
+const { PageHero } = require('./page-hero');
 const { EmptyState, ErrorState } = require('./states');
 const { SortMenu } = require('./sort-menu');
 const { Menu } = require('./menu');
@@ -124,49 +125,13 @@ const CollectionPage = React.memo(function CollectionPage(props) {
           style: { overflow: 'hidden', minHeight: 0 }
         },
           // Header section (outside scrollable area)
-          React.createElement('div', {
-            className: 'relative',
-            style: {
-              height: collectionHeaderCollapsed ? '80px' : '320px',
-              flexShrink: 0,
-              transition: 'height 300ms cubic-bezier(0.4, 0, 0.2, 1)',
-              overflow: 'hidden',
-              willChange: 'height',
-              contain: 'layout style'
-            }
-          },
-              // Gradient background
-              React.createElement('div', {
-                className: `absolute inset-0 ${require('../lib/page-colors').PAGE_COLORS.library.hero}`
-              }),
-              // Vinyl pattern overlay
-              React.createElement('div', {
-                className: 'absolute inset-0',
-                style: {
-                  opacity: 0.08,
-                  backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'60\' height=\'60\' viewBox=\'0 0 60 60\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'%23ffffff\'%3E%3Ccircle cx=\'30\' cy=\'30\' r=\'20\' fill=\'none\' stroke=\'%23fff\' stroke-width=\'2\'/%3E%3Ccircle cx=\'30\' cy=\'30\' r=\'12\' fill=\'none\' stroke=\'%23fff\' stroke-width=\'1\'/%3E%3Ccircle cx=\'30\' cy=\'30\' r=\'4\'/%3E%3C/g%3E%3C/svg%3E")'
-                }
-              }),
-              // EXPANDED STATE - Centered content
-            !collectionHeaderCollapsed && React.createElement('div', {
-              className: 'absolute inset-0 flex flex-col items-center justify-center text-center px-6 z-10',
-              style: {
-                opacity: collectionHeaderCollapsed ? 0 : 1,
-                transition: 'opacity 300ms ease-out'
-              }
-            },
-                // Title
-                React.createElement('h1', {
-                  className: 'hero-title font-light text-white',
-                  style: {
-                    textShadow: '0 2px 20px rgba(0,0,0,0.5)',
-                    letterSpacing: '0.3em',
-                    textTransform: 'uppercase'
-                  },
-                  onContextMenu: copyParachordLink
-                }, 'COLLECTION'),
-                // Stats row as tabs (matching Artist page styling)
-                React.createElement('div', {
+          React.createElement(PageHero, {
+collapsed: collectionHeaderCollapsed,
+page: 'library',
+title: 'Collection',
+onTitleContextMenu: copyParachordLink,
+expanded: React.createElement(React.Fragment, null,
+React.createElement('div', {
                   className: 'flex items-center gap-1 mt-6',
                   style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
                 },
@@ -180,8 +145,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                       tab.staticLabel
                     ), label: 'Collection' })
                 ),
-                // Buttons row
-                React.createElement('div', {
+React.createElement('div', {
                   className: 'mt-6 flex items-center gap-3'
                 },
                   // Start Collection Station button (pink, matching Artist page)
@@ -193,28 +157,9 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                       boxShadow: '0 4px 15px rgba(233, 30, 99, 0.4)'
                     }
                   }, 'Start Collection Radio')
-                )
-              ),
-            // COLLAPSED STATE - Inline layout matching Recommendations
-            collectionHeaderCollapsed && React.createElement('div', {
-              className: 'hero-bar absolute inset-0 flex items-center px-6 z-10',
-              style: {
-                opacity: collectionHeaderCollapsed ? 1 : 0,
-                transition: 'opacity 300ms ease-out'
-              }
-            },
-                // Left: Title
-                React.createElement('h1', {
-                  className: 'text-2xl font-light text-white mr-6',
-                  style: {
-                    textShadow: '0 2px 10px rgba(0,0,0,0.5)',
-                    letterSpacing: '0.2em',
-                    textTransform: 'uppercase'
-                  },
-                  onContextMenu: copyParachordLink
-                }, 'COLLECTION'),
-                // Tabs (next to title, like artist page)
-                React.createElement('div', {
+                )),
+collapsedContent: React.createElement(React.Fragment, null,
+React.createElement('div', {
                   className: 'flex items-center gap-1',
                   style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
                 },
@@ -228,16 +173,14 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                       tab.staticLabel
                     ), label: 'Collection' })
                 ),
-                // Right: Start Collection Station button
-                React.createElement('button', {
+React.createElement('button', {
                   onClick: handleStartCollectionStation,
                   className: 'ml-auto px-4 py-1.5 rounded-full text-sm font-medium text-white transition-colors hover:opacity-90 no-drag',
                   style: {
                     backgroundColor: '#E91E63'
                   }
-                }, 'Start Radio')
-              )
-          ),
+                }, 'Start Radio'))
+}),
           // Filter bar — promoted out of scroll container so the virtualized
           // collection-tracks list inside can be a direct child of the
           // scroll element at scrollTop=0, eliminating the scrollMargin

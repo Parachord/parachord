@@ -161,7 +161,8 @@ describe('render', () => {
   test('Home opens with the collapsed page hero, in its sidebar colour, above the scroller', () => {
     // Other pages' collapsed heroes (80px, the uppercase light title and shadow)
     // and Home's sidebar colour (the accent, #7c3aed: Tailwind violet-600).
-    expect(app).toMatch(/className: 'text-2xl font-light text-white',\s*style: \{\s*textShadow: '0 2px 10px rgba\(0,0,0,0\.5\)',\s*letterSpacing: '0\.2em',/);
+    // The pages' heroes are the shared PageHero (components/page-hero.js).
+    expect(require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/components/page-hero.js'), 'utf8')).toContain("const COLLAPSED_TITLE_STYLE = { textShadow: '0 2px 10px rgba(0,0,0,0.5)', letterSpacing: '0.2em', textTransform: 'uppercase' };");
     expect(app).toContain("color: activeView === 'home' ? 'var(--accent-primary)' : 'var(--nav-inactive)',");
     expect(fs.readFileSync(path.join(__dirname, '../../index.html'), 'utf8')).toMatch(/--accent-primary: #7c3aed;/);
     const html = render({});

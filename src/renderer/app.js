@@ -2054,6 +2054,7 @@ const { SectionHeader, SECTION_HEADER_GAP } = require('./components/section-head
 // The app's filter buttons (Home's source filter style).
 const { FilterChips, Chip } = require('./components/filter-chips');
 const { FilterBox, StickyBar } = require('./components/filter-box');
+const { PageHero } = require('./components/page-hero');
 const {
   RecommendationCardSkeleton,
   RecommendationSongRowSkeleton,
@@ -38147,45 +38148,13 @@ useEffect(() => {
         onDrop: handlePlaylistDrop
       },
         // Header section (outside scrollable area)
-        React.createElement('div', {
-          className: 'relative',
-          style: {
-            height: playlistsHeaderCollapsed ? '80px' : '320px',
-            flexShrink: 0,
-            transition: 'height 300ms ease-out',
-            overflow: 'hidden'
-          }
-        },
-          // Gradient background
-          React.createElement('div', {
-            className: `absolute inset-0 ${PAGE_COLORS['playlists'].hero}`
-          }),
-          // Background pattern
-          React.createElement('div', {
-            className: 'absolute inset-0',
-            style: {
-              opacity: 0.15,
-              backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'60\' height=\'60\' viewBox=\'0 0 60 60\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'none\' stroke=\'%23ffffff\' stroke-width=\'2\'%3E%3Cpath d=\'M5 15h50M5 30h35M5 45h45\'/%3E%3Ccircle cx=\'50\' cy=\'30\' r=\'5\' fill=\'%23ffffff\'/%3E%3C/g%3E%3C/svg%3E")'
-            }
-          }),
-          // EXPANDED STATE - Centered content
-          !playlistsHeaderCollapsed && React.createElement('div', {
-            className: 'absolute inset-0 flex flex-col items-center justify-center text-center px-6 z-10',
-            style: {
-              opacity: playlistsHeaderCollapsed ? 0 : 1,
-              transition: 'opacity 300ms ease-out'
-            }
-          },
-            React.createElement('h1', {
-              className: 'hero-title font-light text-white',
-              style: {
-                textShadow: '0 2px 20px rgba(0,0,0,0.5)',
-                letterSpacing: '0.3em',
-                textTransform: 'uppercase'
-              },
-              onContextMenu: copyParachordLink
-            }, 'PLAYLISTS'),
-            React.createElement('div', {
+        React.createElement(PageHero, {
+collapsed: playlistsHeaderCollapsed,
+page: 'playlists',
+title: 'Playlists',
+onTitleContextMenu: copyParachordLink,
+expanded: React.createElement(React.Fragment, null,
+React.createElement('div', {
               className: 'flex items-center gap-1 mt-6',
               style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
             },
@@ -38196,27 +38165,9 @@ useEffect(() => {
                 : React.createElement('span', {
                     className: 'px-2 py-1 text-sm font-medium uppercase tracking-wider text-white'
                   }, `${playlists.length} Playlist${playlists.length !== 1 ? 's' : ''}`)
-            ),
-          ),
-          // COLLAPSED STATE - Inline layout
-          playlistsHeaderCollapsed && React.createElement('div', {
-            className: 'hero-bar absolute inset-0 flex items-center px-6 z-10',
-            style: {
-              opacity: playlistsHeaderCollapsed ? 1 : 0,
-              transition: 'opacity 300ms ease-out'
-            }
-          },
-            React.createElement('h1', {
-              className: 'text-2xl font-light text-white',
-              style: {
-                textShadow: '0 2px 10px rgba(0,0,0,0.5)',
-                letterSpacing: '0.2em',
-                textTransform: 'uppercase'
-              },
-              onContextMenu: copyParachordLink
-            }, 'PLAYLISTS')
-          )
-        ),
+            )),
+collapsedContent: null
+}),
         // Filter bar (outside scrollable area)
         React.createElement('div', {
           className: 'flex items-center px-6 py-3',
@@ -38631,46 +38582,13 @@ useEffect(() => {
           style: { overflow: 'hidden', minHeight: 0 }
         },
           // Header section (outside scrollable area)
-          React.createElement('div', {
-            className: 'relative',
-            style: {
-              height: chartsHeaderCollapsed ? '80px' : '320px',
-              flexShrink: 0,
-              transition: 'height 300ms ease-out',
-              overflow: 'hidden'
-            }
-          },
-              // Gradient background
-              React.createElement('div', {
-                className: `absolute inset-0 ${PAGE_COLORS['discover'].hero}`
-              }),
-              // Background pattern
-              React.createElement('div', {
-                className: 'absolute inset-0',
-                style: {
-                  opacity: 0.15,
-                  backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'60\' height=\'60\' viewBox=\'0 0 60 60\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'none\' fill-rule=\'evenodd\'%3E%3Cg fill=\'%23ffffff\' fill-opacity=\'0.4\'%3E%3Cpath d=\'M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z\'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")'
-                }
-              }),
-              // EXPANDED STATE - Centered content
-              !chartsHeaderCollapsed && React.createElement('div', {
-                className: 'absolute inset-0 flex flex-col items-center justify-center text-center px-6 z-10',
-                style: {
-                  opacity: chartsHeaderCollapsed ? 0 : 1,
-                  transition: 'opacity 300ms ease-out'
-                }
-              },
-                React.createElement('h1', {
-                  className: 'hero-title font-light text-white',
-                  style: {
-                    textShadow: '0 2px 20px rgba(0,0,0,0.5)',
-                    letterSpacing: '0.3em',
-                    textTransform: 'uppercase'
-                  },
-                  onContextMenu: copyParachordLink
-                }, 'POP OF THE TOPS'),
-                // Tab switcher (Albums | Songs)
-                React.createElement('div', {
+          React.createElement(PageHero, {
+collapsed: chartsHeaderCollapsed,
+page: 'discover',
+title: 'Pop of the Tops',
+onTitleContextMenu: copyParachordLink,
+expanded: React.createElement(React.Fragment, null,
+React.createElement('div', {
                   className: 'flex items-center gap-1 mt-4',
                   style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
                 },
@@ -38686,34 +38604,16 @@ useEffect(() => {
                         }
                       }, renderLabel: (tab) => (tab === 'songs' ? 'Tracks' : 'Albums'), label: 'Charts' })
                 ),
-                React.createElement('p', {
+React.createElement('p', {
                   className: 'mt-4 text-white/80 text-sm'
                 }, chartsTab === 'albums'
                   ? 'Top 50 most played albums on Apple Music'
                   : chartsSongsSource === 'apple'
                     ? 'Top 50 most played tracks on Apple Music'
-                    : 'Top 50 most played tracks on Last.fm')
-              ),
-              // COLLAPSED STATE - Inline layout
-              chartsHeaderCollapsed && React.createElement('div', {
-                className: 'hero-bar absolute inset-0 flex items-center px-6 z-10',
-                style: {
-                  opacity: chartsHeaderCollapsed ? 1 : 0,
-                  transition: 'opacity 300ms ease-out'
-                }
-              },
-                React.createElement('h1', {
-                  className: 'text-2xl font-light text-white',
-                  style: {
-                    textShadow: '0 2px 10px rgba(0,0,0,0.5)',
-                    letterSpacing: '0.2em',
-                    textTransform: 'uppercase'
-                  },
-                  onContextMenu: copyParachordLink
-                }, 'POP OF THE TOPS'),
-                // Inline tab switcher
-                React.createElement('div', {
-                  className: 'flex items-center gap-1 ml-6'
+                    : 'Top 50 most played tracks on Last.fm')),
+collapsedContent: React.createElement(React.Fragment, null,
+React.createElement('div', {
+                  className: 'flex items-center gap-1'
                 },
                   React.createElement(HeroTabs, { items: ['albums', 'songs'], isSelected: (tab) => chartsTab === tab, onSelect: (tab) => {
                         setChartsTab(tab);
@@ -38726,14 +38626,13 @@ useEffect(() => {
                         }
                       }, renderLabel: (tab) => (tab === 'songs' ? 'Tracks' : 'Albums'), label: 'Charts' })
                 ),
-                React.createElement('div', { className: 'flex-1' }),
-                React.createElement('span', {
+React.createElement('div', { className: 'flex-1' }),
+React.createElement('span', {
                   className: 'text-sm font-medium uppercase tracking-wider text-white/80'
                 }, chartsTab === 'albums'
                   ? `${charts.length} Albums`
-                  : `${chartsSongsSource === 'apple' ? appleMusicSongsCharts.length : lastfmCharts.length} Tracks`)
-              )
-          ),
+                  : `${chartsSongsSource === 'apple' ? appleMusicSongsCharts.length : lastfmCharts.length} Tracks`))
+}),
           // Filter bar (outside scrollable area)
           React.createElement('div', {
             className: 'flex items-center px-6 py-3',
@@ -38956,45 +38855,13 @@ useEffect(() => {
           style: { overflow: 'hidden', minHeight: 0 }
         },
           // Header section (outside scrollable area)
-          React.createElement('div', {
-            className: 'relative',
-            style: {
-              height: newReleasesHeaderCollapsed ? '80px' : '320px',
-              flexShrink: 0,
-              transition: 'height 300ms ease-out',
-              overflow: 'hidden'
-            }
-          },
-              // Gradient background
-              React.createElement('div', {
-                className: `absolute inset-0 ${PAGE_COLORS['new-releases'].hero}`
-              }),
-              // Background pattern - droplets
-              React.createElement('div', {
-                className: 'absolute inset-0',
-                style: {
-                  opacity: 0.2,
-                  backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'100\' height=\'100\' viewBox=\'0 0 100 100\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'%23ffffff\'%3E%3Ccircle cx=\'25\' cy=\'25\' r=\'2\'/%3E%3Ccircle cx=\'75\' cy=\'25\' r=\'1.5\'/%3E%3Ccircle cx=\'50\' cy=\'50\' r=\'2.5\'/%3E%3Ccircle cx=\'25\' cy=\'75\' r=\'1.5\'/%3E%3Ccircle cx=\'75\' cy=\'75\' r=\'2\'/%3E%3Ccircle cx=\'10\' cy=\'50\' r=\'1\'/%3E%3Ccircle cx=\'90\' cy=\'50\' r=\'1\'/%3E%3C/g%3E%3C/svg%3E")'
-                }
-              }),
-              // EXPANDED STATE - Centered content
-              !newReleasesHeaderCollapsed && React.createElement('div', {
-                className: 'absolute inset-0 flex flex-col items-center justify-center text-center px-6 z-10',
-                style: {
-                  opacity: newReleasesHeaderCollapsed ? 0 : 1,
-                  transition: 'opacity 300ms ease-out'
-                }
-              },
-                React.createElement('h1', {
-                  className: 'hero-title font-light text-white',
-                  style: {
-                    textShadow: '0 2px 20px rgba(0,0,0,0.5)',
-                    letterSpacing: '0.3em',
-                    textTransform: 'uppercase'
-                  },
-                  onContextMenu: copyParachordLink
-                }, 'FRESH DROPS'),
-                React.createElement('div', {
+          React.createElement(PageHero, {
+collapsed: newReleasesHeaderCollapsed,
+page: 'new-releases',
+title: 'Fresh Drops',
+onTitleContextMenu: copyParachordLink,
+expanded: React.createElement(React.Fragment, null,
+React.createElement('div', {
                   className: 'flex items-center gap-1 mt-6',
                   style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
                 },
@@ -39002,33 +38869,15 @@ useEffect(() => {
                     className: 'px-2 py-1 text-sm font-medium uppercase tracking-wider text-white'
                   }, newReleases.length > 0 ? `${newReleases.length} Releases` : '')
                 ),
-                React.createElement('p', {
+React.createElement('p', {
                   className: 'mt-2 text-white/80 text-sm'
-                }, 'New music from artists in your collection and listening history')
-              ),
-              // COLLAPSED STATE - Inline layout
-              newReleasesHeaderCollapsed && React.createElement('div', {
-                className: 'hero-bar absolute inset-0 flex items-center px-6 z-10',
-                style: {
-                  opacity: newReleasesHeaderCollapsed ? 1 : 0,
-                  transition: 'opacity 300ms ease-out'
-                }
-              },
-                React.createElement('h1', {
-                  className: 'text-2xl font-light text-white',
-                  style: {
-                    textShadow: '0 2px 10px rgba(0,0,0,0.5)',
-                    letterSpacing: '0.2em',
-                    textTransform: 'uppercase'
-                  },
-                  onContextMenu: copyParachordLink
-                }, 'FRESH DROPS'),
-                React.createElement('div', { className: 'flex-1' }),
-                React.createElement('span', {
+                }, 'New music from artists in your collection and listening history')),
+collapsedContent: React.createElement(React.Fragment, null,
+React.createElement('div', { className: 'flex-1' }),
+React.createElement('span', {
                   className: 'text-sm font-medium uppercase tracking-wider text-white/80'
-                }, newReleases.length > 0 ? `${newReleases.length} Releases` : '')
-              )
-          ),
+                }, newReleases.length > 0 ? `${newReleases.length} Releases` : ''))
+}),
           // Filter bar (outside scrollable area)
           React.createElement('div', {
             className: 'flex items-center px-6 py-3',
@@ -39190,45 +39039,13 @@ useEffect(() => {
           style: { overflow: 'hidden', minHeight: 0 }
         },
           // Header section (outside scrollable area)
-          React.createElement('div', {
-            className: 'relative',
-            style: {
-              height: criticsHeaderCollapsed ? '80px' : '320px',
-              flexShrink: 0,
-              transition: 'height 300ms ease-out',
-              overflow: 'hidden'
-            }
-          },
-              // Gradient background
-              React.createElement('div', {
-                className: `absolute inset-0 ${PAGE_COLORS['critics-picks'].hero}`
-              }),
-              // Background pattern
-              React.createElement('div', {
-                className: 'absolute inset-0',
-                style: {
-                  opacity: 0.15,
-                  backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'80\' height=\'80\' viewBox=\'0 0 80 80\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'%23ffffff\'%3E%3Cpath d=\'M40 5l4.5 13.8h14.5l-11.7 8.5 4.5 13.8L40 32.6l-11.8 8.5 4.5-13.8-11.7-8.5h14.5z\'/%3E%3C/g%3E%3C/svg%3E")'
-                }
-              }),
-              // EXPANDED STATE - Centered content
-              !criticsHeaderCollapsed && React.createElement('div', {
-                className: 'absolute inset-0 flex flex-col items-center justify-center text-center px-6 z-10',
-                style: {
-                  opacity: criticsHeaderCollapsed ? 0 : 1,
-                  transition: 'opacity 300ms ease-out'
-                }
-              },
-                React.createElement('h1', {
-                  className: 'hero-title font-light text-white',
-                  style: {
-                    textShadow: '0 2px 20px rgba(0,0,0,0.5)',
-                    letterSpacing: '0.3em',
-                    textTransform: 'uppercase'
-                  },
-                  onContextMenu: copyParachordLink
-                }, 'CRITICAL DARLINGS'),
-                React.createElement('div', {
+          React.createElement(PageHero, {
+collapsed: criticsHeaderCollapsed,
+page: 'critics-picks',
+title: 'Critical Darlings',
+onTitleContextMenu: copyParachordLink,
+expanded: React.createElement(React.Fragment, null,
+React.createElement('div', {
                   className: 'flex items-center gap-1 mt-6',
                   style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
                 },
@@ -39236,33 +39053,15 @@ useEffect(() => {
                     className: 'px-2 py-1 text-sm font-medium uppercase tracking-wider text-white'
                   }, `${criticsPicks.length} Albums`)
                 ),
-                React.createElement('p', {
+React.createElement('p', {
                   className: 'mt-2 text-white/80 text-sm'
-                }, 'Top-rated albums from leading music publications')
-              ),
-              // COLLAPSED STATE - Inline layout
-              criticsHeaderCollapsed && React.createElement('div', {
-                className: 'hero-bar absolute inset-0 flex items-center px-6 z-10',
-                style: {
-                  opacity: criticsHeaderCollapsed ? 1 : 0,
-                  transition: 'opacity 300ms ease-out'
-                }
-              },
-                React.createElement('h1', {
-                  className: 'text-2xl font-light text-white',
-                  style: {
-                    textShadow: '0 2px 10px rgba(0,0,0,0.5)',
-                    letterSpacing: '0.2em',
-                    textTransform: 'uppercase'
-                  },
-                  onContextMenu: copyParachordLink
-                }, 'CRITICAL DARLINGS'),
-                React.createElement('div', { className: 'flex-1' }),
-                React.createElement('span', {
+                }, 'Top-rated albums from leading music publications')),
+collapsedContent: React.createElement(React.Fragment, null,
+React.createElement('div', { className: 'flex-1' }),
+React.createElement('span', {
                   className: 'text-sm font-medium uppercase tracking-wider text-white/80'
-                }, `${criticsPicks.length} Albums`)
-              )
-          ),
+                }, `${criticsPicks.length} Albums`))
+}),
           // Filter bar (outside scrollable area)
           React.createElement('div', {
             className: 'flex items-center px-6 py-3',
@@ -39601,45 +39400,13 @@ useEffect(() => {
           style: { overflow: 'hidden', minHeight: 0 }
         },
           // Header section (outside scrollable area)
-          React.createElement('div', {
-            className: 'relative',
-            style: {
-              height: concertsHeaderCollapsed ? '80px' : '320px',
-              flexShrink: 0,
-              transition: 'height 300ms ease-out',
-              overflow: 'hidden'
-            }
-          },
-              // Gradient background
-              React.createElement('div', {
-                className: `absolute inset-0 ${PAGE_COLORS['concerts'].hero}`
-              }),
-              // Background pattern - musical notes
-              React.createElement('div', {
-                className: 'absolute inset-0',
-                style: {
-                  opacity: 0.15,
-                  backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'80\' height=\'80\' viewBox=\'0 0 80 80\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'%23ffffff\' fill-opacity=\'0.4\'%3E%3Ccircle cx=\'20\' cy=\'20\' r=\'3\'/%3E%3Ccircle cx=\'60\' cy=\'20\' r=\'2\'/%3E%3Ccircle cx=\'40\' cy=\'40\' r=\'2.5\'/%3E%3Ccircle cx=\'20\' cy=\'60\' r=\'2\'/%3E%3Ccircle cx=\'60\' cy=\'60\' r=\'3\'/%3E%3Cpath d=\'M10 45l4-15v12\' stroke=\'%23ffffff\' stroke-width=\'1\' fill=\'none\'/%3E%3Cpath d=\'M65 35l4-15v12\' stroke=\'%23ffffff\' stroke-width=\'1\' fill=\'none\'/%3E%3C/g%3E%3C/svg%3E")'
-                }
-              }),
-              // EXPANDED STATE - Centered content
-              !concertsHeaderCollapsed && React.createElement('div', {
-                className: 'absolute inset-0 flex flex-col items-center justify-center text-center px-6 z-10',
-                style: {
-                  opacity: concertsHeaderCollapsed ? 0 : 1,
-                  transition: 'opacity 300ms ease-out'
-                }
-              },
-                React.createElement('h1', {
-                  className: 'hero-title font-light text-white',
-                  style: {
-                    textShadow: '0 2px 20px rgba(0,0,0,0.5)',
-                    letterSpacing: '0.3em',
-                    textTransform: 'uppercase'
-                  },
-                  onContextMenu: copyParachordLink
-                }, 'CONCERTS'),
-                React.createElement('div', {
+          React.createElement(PageHero, {
+collapsed: concertsHeaderCollapsed,
+page: 'concerts',
+title: 'Concerts',
+onTitleContextMenu: copyParachordLink,
+expanded: React.createElement(React.Fragment, null,
+React.createElement('div', {
                   className: 'flex items-center gap-1 mt-6',
                   style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
                 },
@@ -39647,33 +39414,15 @@ useEffect(() => {
                     className: 'px-2 py-1 text-sm font-medium uppercase tracking-wider text-white'
                   }, filteredConcertsCount > 0 ? `${filteredConcertsCount} Upcoming Shows` : '')
                 ),
-                React.createElement('p', {
+React.createElement('p', {
                   className: 'mt-2 text-white/80 text-sm'
-                }, 'Upcoming concerts from artists you love')
-              ),
-              // COLLAPSED STATE - Inline layout
-              concertsHeaderCollapsed && React.createElement('div', {
-                className: 'hero-bar absolute inset-0 flex items-center px-6 z-10',
-                style: {
-                  opacity: concertsHeaderCollapsed ? 1 : 0,
-                  transition: 'opacity 300ms ease-out'
-                }
-              },
-                React.createElement('h1', {
-                  className: 'text-2xl font-light text-white',
-                  style: {
-                    textShadow: '0 2px 10px rgba(0,0,0,0.5)',
-                    letterSpacing: '0.2em',
-                    textTransform: 'uppercase'
-                  },
-                  onContextMenu: copyParachordLink
-                }, 'CONCERTS'),
-                React.createElement('div', { className: 'flex-1' }),
-                React.createElement('span', {
+                }, 'Upcoming concerts from artists you love')),
+collapsedContent: React.createElement(React.Fragment, null,
+React.createElement('div', { className: 'flex-1' }),
+React.createElement('span', {
                   className: 'text-sm font-medium uppercase tracking-wider text-white/80'
-                }, filteredConcertsCount > 0 ? `${filteredConcertsCount} Upcoming Shows` : '')
-              )
-          ),
+                }, filteredConcertsCount > 0 ? `${filteredConcertsCount} Upcoming Shows` : ''))
+}),
           // Filter bar (outside scrollable area)
           (() => {
             return React.createElement('div', {
@@ -40238,48 +39987,13 @@ useEffect(() => {
           style: { overflow: 'hidden', minHeight: 0 }
         },
           // Header section (outside scrollable area)
-          React.createElement('div', {
-            className: 'relative',
-            style: {
-              height: recommendationsHeaderCollapsed ? '80px' : '320px',
-              flexShrink: 0,
-              transition: 'height 300ms ease-out',
-              overflow: 'hidden'
-            }
-          },
-            // Gradient background - purple/indigo theme for recommendations
-            React.createElement('div', {
-              className: `absolute inset-0 ${PAGE_COLORS['recommendations'].hero}`
-            }),
-            // Background pattern - stars for recommendations
-            React.createElement('div', {
-              className: 'absolute inset-0',
-              style: {
-                opacity: 0.15,
-                backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'80\' height=\'80\' viewBox=\'0 0 80 80\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'%23ffffff\'%3E%3Cpath d=\'M40 5l4.5 13.8h14.5l-11.7 8.5 4.5 13.8L40 32.6l-11.8 8.5 4.5-13.8-11.7-8.5h14.5z\'/%3E%3C/g%3E%3C/svg%3E")'
-              }
-            }),
-            // EXPANDED STATE - Centered content
-            !recommendationsHeaderCollapsed && React.createElement('div', {
-              className: 'absolute inset-0 flex flex-col items-center justify-center text-center px-6 z-10',
-              style: {
-                opacity: recommendationsHeaderCollapsed ? 0 : 1,
-                transition: 'opacity 300ms ease-out'
-              }
-            },
-              React.createElement('h1', {
-                className: 'hero-title font-light text-white',
-                style: {
-                  textShadow: '0 2px 20px rgba(0,0,0,0.5)',
-                  letterSpacing: '0.3em',
-                  textTransform: 'uppercase'
-                },
-                onContextMenu: copyParachordLink
-              }, 'RECOMMENDATIONS'),
-              // The hero's two lines, as Fresh Drops and Critical Darlings set
-              // them: an uppercase white line (text-shadowed) and a softer
-              // description under it.
-              React.createElement('div', {
+          React.createElement(PageHero, {
+collapsed: recommendationsHeaderCollapsed,
+page: 'recommendations',
+title: 'Recommendations',
+onTitleContextMenu: copyParachordLink,
+expanded: React.createElement(React.Fragment, null,
+React.createElement('div', {
                 className: 'flex items-center gap-1 mt-6',
                 style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
               },
@@ -40291,33 +40005,15 @@ useEffect(() => {
                     ? `Personalized picks for ${metaServiceConfigs.lastfm.username}`
                     : 'Personalized picks from your services')
               ),
-              React.createElement('p', {
+React.createElement('p', {
                 className: 'mt-2 text-white/80 text-sm'
-              }, 'From your connected services and Shuffleupagus')
-            ),
-            // COLLAPSED STATE - Inline layout matching artist page
-            recommendationsHeaderCollapsed && React.createElement('div', {
-              className: 'hero-bar absolute inset-0 flex items-center px-6 z-10',
-              style: {
-                opacity: recommendationsHeaderCollapsed ? 1 : 0,
-                transition: 'opacity 300ms ease-out'
-              }
-            },
-              React.createElement('h1', {
-                className: 'text-2xl font-light text-white mr-6',
-                style: {
-                  textShadow: '0 2px 10px rgba(0,0,0,0.5)',
-                  letterSpacing: '0.2em',
-                  textTransform: 'uppercase'
-                },
-                onContextMenu: copyParachordLink
-              }, 'RECOMMENDATIONS'),
-              React.createElement('p', {
+              }, 'From your connected services and Shuffleupagus')),
+collapsedContent: React.createElement(React.Fragment, null,
+React.createElement('p', {
                 className: 'text-white/70 text-sm truncate',
                 style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
-              }, 'Personalized picks from your services and Shuffleupagus')
-            )
-          ),
+              }, 'Personalized picks from your services and Shuffleupagus'))
+}),
           // Filter bar (outside scrollable area), as on the other tabs (Fresh
           // Drops, the artist page): the app's filter chips (FilterChips), All
           // then one per source on the page, no counts. All is neutral; a
@@ -40962,46 +40658,13 @@ useEffect(() => {
           style: { overflow: 'hidden', minHeight: 0 }
         },
           // Header section (outside scrollable area)
-          React.createElement('div', {
-            className: 'relative',
-            style: {
-              height: historyHeaderCollapsed ? '80px' : '320px',
-              flexShrink: 0,
-              transition: 'height 300ms ease-out',
-              overflow: 'hidden'
-            }
-          },
-            // Gradient background - blue/cyan theme for history
-            React.createElement('div', {
-              className: `absolute inset-0 ${PAGE_COLORS['history'].hero}`
-            }),
-            // Background pattern - clock/time icons
-            React.createElement('div', {
-              className: 'absolute inset-0',
-              style: {
-                opacity: 0.15,
-                backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'60\' height=\'60\' viewBox=\'0 0 60 60\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'none\' stroke=\'%23ffffff\' stroke-width=\'1.5\'%3E%3Ccircle cx=\'30\' cy=\'30\' r=\'12\'/%3E%3Cpath d=\'M30 22v8l5 5\'/%3E%3C/g%3E%3C/svg%3E")'
-              }
-            }),
-            // EXPANDED STATE - Centered content with tabs
-            !historyHeaderCollapsed && React.createElement('div', {
-              className: 'absolute inset-0 flex flex-col items-center justify-center text-center px-6 z-10',
-              style: {
-                opacity: historyHeaderCollapsed ? 0 : 1,
-                transition: 'opacity 300ms ease-out'
-              }
-            },
-              React.createElement('h1', {
-                className: 'hero-title font-light text-white',
-                style: {
-                  textShadow: '0 2px 20px rgba(0,0,0,0.5)',
-                  letterSpacing: '0.3em',
-                  textTransform: 'uppercase'
-                },
-                onContextMenu: copyParachordLink
-              }, 'HISTORY'),
-              // Tabs in expanded state
-              React.createElement('div', {
+          React.createElement(PageHero, {
+collapsed: historyHeaderCollapsed,
+page: 'history',
+title: 'History',
+onTitleContextMenu: copyParachordLink,
+expanded: React.createElement(React.Fragment, null,
+React.createElement('div', {
                 className: 'flex items-center gap-1 mt-6',
                 style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
               },
@@ -41018,33 +40681,16 @@ useEffect(() => {
                       else if (tab.key === 'topAlbums') loadTopAlbums();
                     }, renderLabel: (tab) => tab.label, label: 'History' })
               ),
-              React.createElement('p', {
+React.createElement('p', {
                 className: 'mt-4 text-white/80 text-sm'
               }, metaServiceConfigs.listenbrainz?.username && metaServiceConfigs.lastfm?.username
                 ? 'Your listening activity from ListenBrainz & Last.fm'
                 : metaServiceConfigs.listenbrainz?.username
                   ? 'Your listening activity from ListenBrainz'
                   : 'Your listening activity from Last.fm'
-              )
-            ),
-            // COLLAPSED STATE - Inline layout with tabs
-            historyHeaderCollapsed && React.createElement('div', {
-              className: 'hero-bar absolute inset-0 flex items-center px-6 z-10',
-              style: {
-                opacity: historyHeaderCollapsed ? 1 : 0,
-                transition: 'opacity 300ms ease-out'
-              }
-            },
-              React.createElement('h1', {
-                className: 'text-2xl font-light text-white mr-6',
-                style: {
-                  textShadow: '0 2px 10px rgba(0,0,0,0.5)',
-                  letterSpacing: '0.2em',
-                  textTransform: 'uppercase'
-                },
-                onContextMenu: copyParachordLink
-              }, 'HISTORY'),
-              React.createElement('div', {
+              )),
+collapsedContent: React.createElement(React.Fragment, null,
+React.createElement('div', {
                 className: 'flex items-center gap-1',
                 style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
               },
@@ -41060,9 +40706,8 @@ useEffect(() => {
                       else if (tab.key === 'topArtists') loadTopArtists();
                       else if (tab.key === 'topAlbums') loadTopAlbums();
                     }, renderLabel: (tab) => tab.label, label: 'History' })
-              )
-            )
-          ),
+              ))
+}),
           // Filter bar (outside scrollable area)
           React.createElement('div', {
             className: 'flex items-center px-6 py-3',
@@ -41364,37 +41009,11 @@ useEffect(() => {
             style: { overflow: 'hidden', minHeight: 0 }
           },
             // Header section (outside scrollable area) - matching History pattern
-            React.createElement('div', {
-              className: 'relative',
-              style: {
-                height: historyHeaderCollapsed ? '80px' : '320px',
-                flexShrink: 0,
-                transition: 'height 300ms ease-out',
-                overflow: 'hidden'
-              }
-            },
-              React.createElement('div', {
-                // A friend's history is a History page: History's gradient.
-                className: `absolute inset-0 ${PAGE_COLORS.history.hero}`
-              }),
-              // Background pattern - hexagon pattern for friends
-              React.createElement('div', {
-                className: 'absolute inset-0',
-                style: {
-                  opacity: 0.1,
-                  backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'60\' height=\'60\' viewBox=\'0 0 60 60\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cpolygon fill=\'none\' stroke=\'%23ffffff\' stroke-width=\'1.5\' points=\'30,5 55,20 55,50 30,65 5,50 5,20\'/%3E%3C/svg%3E")'
-                }
-              }),
-              // EXPANDED STATE - Centered content with tabs (matching History exactly)
-              !historyHeaderCollapsed && React.createElement('div', {
-                className: 'absolute inset-0 flex flex-col items-center justify-center text-center px-6 z-10',
-                style: {
-                  opacity: historyHeaderCollapsed ? 0 : 1,
-                  transition: 'opacity 300ms ease-out'
-                }
-              },
-                // Hexagonal avatar centered
-                React.createElement('div', {
+            React.createElement(PageHero, {
+collapsed: historyHeaderCollapsed,
+page: 'history',
+expanded: React.createElement(React.Fragment, null,
+React.createElement('div', {
                   className: 'w-24 h-24 mb-4 overflow-hidden',
                   style: {
                     clipPath: 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)'
@@ -41410,8 +41029,7 @@ useEffect(() => {
                         className: 'w-full h-full flex items-center justify-center text-3xl font-medium bg-white/20 text-white'
                       }, currentFriend.displayName.charAt(0).toUpperCase())
                 ),
-                // Name with badges
-                React.createElement('div', { className: 'flex items-center gap-3 mb-2' },
+React.createElement('div', { className: 'flex items-center gap-3 mb-2' },
                   React.createElement('h1', {
                     className: 'text-4xl font-light text-white',
                     style: {
@@ -41431,8 +41049,7 @@ useEffect(() => {
                     'On air'
                   )
                 ),
-                // Tabs in expanded state (matching History)
-                React.createElement('div', {
+React.createElement('div', {
                   className: 'flex items-center gap-1 mt-4',
                   style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
                 },
@@ -41449,21 +41066,11 @@ useEffect(() => {
                         else if (tab.key === 'topArtists') loadFriendTopArtists(currentFriend);
                       }, renderLabel: (tab) => tab.label, label: 'Friend history' })
                 ),
-                // Service subtitle
-                React.createElement('p', {
+React.createElement('p', {
                   className: 'mt-4 text-white/80 text-sm'
-                }, `Listening activity from ${currentFriend.service === 'lastfm' ? 'Last.fm' : 'ListenBrainz'}`)
-              ),
-              // COLLAPSED STATE - Inline layout with tabs (matching History)
-              historyHeaderCollapsed && React.createElement('div', {
-                className: 'hero-bar absolute inset-0 flex items-center px-6 z-10',
-                style: {
-                  opacity: historyHeaderCollapsed ? 1 : 0,
-                  transition: 'opacity 300ms ease-out'
-                }
-              },
-                // Small avatar
-                React.createElement('div', {
+                }, `Listening activity from ${currentFriend.service === 'lastfm' ? 'Last.fm' : 'ListenBrainz'}`)),
+collapsedContent: React.createElement(React.Fragment, null,
+React.createElement('div', {
                   className: 'w-10 h-10 mr-4 overflow-hidden flex-shrink-0',
                   style: {
                     clipPath: 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)'
@@ -41479,7 +41086,7 @@ useEffect(() => {
                         className: 'w-full h-full flex items-center justify-center text-sm font-medium bg-white/20 text-white'
                       }, currentFriend.displayName.charAt(0).toUpperCase())
                 ),
-                React.createElement('h1', {
+React.createElement('h1', {
                   className: 'text-2xl font-light text-white mr-6',
                   style: {
                     textShadow: '0 2px 10px rgba(0,0,0,0.5)',
@@ -41488,13 +41095,11 @@ useEffect(() => {
                   },
                   onContextMenu: copyParachordLink
                 }, currentFriend.displayName),
-                // On-air dot
-                isOnAir(currentFriend) && React.createElement('span', {
+isOnAir(currentFriend) && React.createElement('span', {
                   className: 'w-2.5 h-2.5 rounded-full mr-4',
                   style: { backgroundColor: 'var(--success)' }
                 }),
-                // Tabs in collapsed mode
-                React.createElement('div', {
+React.createElement('div', {
                   className: 'flex items-center gap-1',
                   style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
                 },
@@ -41510,9 +41115,8 @@ useEffect(() => {
                         else if (tab.key === 'topAlbums') loadFriendTopAlbums(currentFriend);
                         else if (tab.key === 'topArtists') loadFriendTopArtists(currentFriend);
                       }, renderLabel: (tab) => tab.label, label: 'Friend history' })
-                )
-              )
-            ),
+                ))
+}),
             // Filter bar (outside scrollable area - matching History exactly)
             React.createElement('div', {
               className: 'flex items-center px-6 py-3',

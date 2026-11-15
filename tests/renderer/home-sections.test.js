@@ -366,9 +366,10 @@ describe('Rows', () => {
   test('each half opens with a hero band copied from its page\'s hero', () => {
     const app = fs.readFileSync(path.join(COMP, '..', 'app.js'), 'utf8');
     // The pages' own hero gradients and collapsed-title style, which the bands copy.
-    expect(app).toContain("className: `absolute inset-0 ${PAGE_COLORS['new-releases'].hero}`");
-    expect(app).toContain("className: `absolute inset-0 ${PAGE_COLORS['critics-picks'].hero}`");
-    expect(app).toMatch(/className: 'text-2xl font-light text-white',\s*style: \{\s*textShadow: '0 2px 10px rgba\(0,0,0,0\.5\)',\s*letterSpacing: '0\.2em',/);
+    expect(app).toContain("page: 'new-releases'");
+    expect(app).toContain("page: 'critics-picks'");
+    // The pages' heroes are the shared PageHero (components/page-hero.js).
+    expect(require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/components/page-hero.js'), 'utf8')).toContain("const COLLAPSED_TITLE_STYLE = { textShadow: '0 2px 10px rgba(0,0,0,0.5)', letterSpacing: '0.2em', textTransform: 'uppercase' };");
     const html = h(S.FreshCriticalRow, { fresh: [{ title: 'T', artist: 'A' }], critical: [{ title: 'U', artist: 'B' }], navigateTo: () => {} });
     const sections = html.split('<section').slice(1);
     expect(sections).toHaveLength(2);
