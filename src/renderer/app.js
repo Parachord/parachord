@@ -41587,8 +41587,8 @@ useEffect(() => {
               }
             },
                 // Loading state
-                friendHistoryLoading && React.createElement('div', { className: 'flex items-center justify-center py-12' },
-                  React.createElement('div', { className: 'w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin' })
+                friendHistoryLoading && React.createElement('div', { className: 'flex items-center justify-center py-12 text-accent' },
+                  React.createElement(Icons.Spinner, { size: 32, label: 'Loading…' })
                 ),
                 // A tab whose load failed (the service unreachable): say so,
                 // with Try again, rather than an empty list that reads as
@@ -44461,10 +44461,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
           onMouseLeave: (e) => { if (aiPrompt.trim() && !aiLoading) e.currentTarget.style.backgroundColor = 'var(--accent-primary)'; }
         },
           aiLoading
-            ? React.createElement('svg', { className: 'w-4 h-4 animate-spin', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
-                React.createElement('circle', { cx: 12, cy: 12, r: 10, strokeOpacity: 0.25 }),
-                React.createElement('path', { d: 'M12 2a10 10 0 0 1 10 10', strokeLinecap: 'round' })
-              )
+            ? React.createElement(Icons.Spinner, { size: 16 })
             : React.createElement(Icons.ArrowRight, { className: 'w-4 h-4', strokeWidth: 2 })
         )
       ),
@@ -44909,10 +44906,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                     }
                   },
                     aiChatLoading
-                      ? React.createElement('svg', { className: 'w-4 h-4 animate-spin', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
-                          React.createElement('circle', { cx: 12, cy: 12, r: 10, strokeOpacity: 0.25 }),
-                          React.createElement('path', { d: 'M12 2a10 10 0 0 1 10 10', strokeLinecap: 'round' })
-                        )
+                      ? React.createElement(Icons.Spinner, { size: 16 })
                       : React.createElement(Icons.ArrowRight, { className: 'w-4 h-4', strokeWidth: 2 })
                   )
                 ),
@@ -47606,16 +47600,7 @@ React.createElement('div', {
             // Scan progress
             isScanning && React.createElement('div', { style: { marginTop: '16px' } },
               React.createElement('div', { className: 'flex items-center gap-2', style: { marginBottom: '8px' } },
-                React.createElement('div', {
-                  className: 'animate-spin',
-                  style: {
-                    width: '14px',
-                    height: '14px',
-                    border: '2px solid var(--accent-primary)',
-                    borderTopColor: 'transparent',
-                    borderRadius: '50%'
-                  }
-                }),
+                React.createElement(Icons.Spinner, { size: 14, style: { color: 'var(--accent-primary)' } }),
                 React.createElement('span', {
                   style: {
                     fontSize: '13px',
