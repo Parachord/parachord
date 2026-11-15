@@ -128,6 +128,8 @@
 - **Playlists deleted on ListenBrainz get noticed sooner.** They were only spotted if you edited the playlist, so one could sit there for months. Each sync now checks, and the playlist's page offers to delete your copy, stop syncing or create it again.
 - **Stop syncing on a deleted playlist stays stopped.** If the playlist was also synced to another service, the next sync could create it again on the one you'd stopped.
 - **A playlist you import from a URL while sync setup finishes stays in your list.** Setting up sync could take minutes, and a hosted playlist imported during that time could disappear from your playlists until they next reloaded. Thanks to @theli-ua for finding and fixing it.
+- **Playlists that left your Spotify library come back when you add them again.** If a playlist you'd imported from Spotify disappeared from your Spotify library, Parachord dropped its link on each sync and restored it on each launch, and logged it as gone every time. It now keeps the link, so the next sync picks the playlist up once it's back in your library.
+- **Synced playlists keep all their links.** Saving a playlist could drop its link to another service, such as Apple Music or Spotify, and the next sync then had to find it again. Nothing was created twice, but the playlist's sync links were often out of date. A save now keeps every link that's still live.
 
 ## AI DJ
 
