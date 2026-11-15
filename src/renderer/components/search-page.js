@@ -31,6 +31,7 @@ const { visibleSources, sourceRowState } = require('../lib/visible-sources');
 const { trackDurationLabel } = require('../lib/track-duration');
 const { generateArtistPattern, PlayTop10Icon, SearchHistoryItem } = require('./cards');
 const { ArtistCard } = require('./artist-card');
+const { heroTabClass } = require('./hero-tabs');
 const { trackSlug, slug } = require('../lib/track-slug');
 const { releaseMenu, artistMenu } = require('../lib/item-menus');
 const { countOf } = require('../lib/plural');
@@ -178,9 +179,8 @@ const SearchPage = React.memo(function SearchPage(props) {
                     onClick: () => {
                       setSearchDetailCategory(tab.key);
                     },
-                    className: `px-2 py-1 text-sm font-medium uppercase tracking-wider transition-colors no-drag ${
-                      searchDetailCategory === tab.key ? 'text-white' : 'text-white/60 hover:text-white'
-                    }`
+                    // The hero tab look (heroTabClass).
+                    className: `px-2 py-1 text-sm uppercase tracking-wider transition-colors no-drag ${heroTabClass(searchDetailCategory === tab.key)}`
                   }, `${tab.count} ${tab.label}`)
                 ))
               )

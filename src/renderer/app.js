@@ -608,7 +608,7 @@ const {
 const { carriedReleaseArt, withArchiveCover, createReleaseGroupPicks } = require('./lib/release-open');
 const { firstNonEmptyList, entriesFromMusicBrainzRelease, entriesFromCatalogRelease, pickReleaseGroup } = require('./lib/album-track-list');
 const { pickRelease } = require('./lib/release-pick');
-const { uniqueReleases } = require('./lib/fresh-drops-releases');
+const { uniqueReleases, freshDropsWindow, withinFreshDropsWindow } = require('./lib/fresh-drops-releases');
 const { uniqueConcerts, concertSourceKeys, concertMatchesSource } = require('./lib/concert-events');
 const { createReleaseLookup, releaseFormats, hasCurrentAlias } = require('./lib/release-lookup');
 const { artistLookupPlan, loadArtistReleaseGroups, musicBrainzHttpError, discographyOutcome } = require('./lib/artist-discography');
@@ -1262,7 +1262,9 @@ const { pickTrackMatch } = require('../../sync-providers/track-match');
 const { stampPlaylist } = require('../../playlist-freshness');
 const { checkSpinoffAvailable, lastfmJsonFetcher } = require('./lib/spinoff-pool');
 const { discogsRefIds, normalizeDiscogsProfile, REF_PATH: DISCOGS_REF_PATH, MAX_REF_LOOKUPS: DISCOGS_MAX_REF_LOOKUPS } = require('./lib/discogs-markup');
-const { playlistShareTarget, notSyncedSharePrompt } = require('./lib/playlist-share');
+const { playlistShareTarget, notSyncedSharePrompt, playlistListenbrainzMbid, lbMbidOf } = require('./lib/playlist-share');
+// A ListenBrainz user's Achordion profile (every ListenBrainz user has one).
+const achordionUserUrl = (username) => `https://achordion.xyz/user/${encodeURIComponent(username)}`;
 const { emptyRecommendationsMessage } = require('./lib/recommendations-empty');
 const {
   blockedItemPick, normalizeRecommendationSections, buildRecommendationPage, buildRecommendationViews, flattenRecommendationItems, homeRecommendationAlbums,
@@ -2065,7 +2067,7 @@ const { PlaylistUpdateDialog, UpdateModeChoice } = require('./components/playlis
 const { KeyboardShortcutsDialog } = require('./components/keyboard-shortcuts');
 const { WhatsNewDialog } = require('./components/whats-new-dialog');
 const { ArtistCard, RankBadge } = require('./components/artist-card');
-const { ListenerCard } = require('./components/listener-card');
+const { ListenerCard, LISTENER_HEXAGON } = require('./components/listener-card');
 const { Button } = require('./components/button');
 const { HeaderControl } = require('./components/header-control');
 const { ToastRegion, NowPlayingAnnouncer } = require('./components/toast');
@@ -5991,6 +5993,7 @@ const Parachord = () => {
   const getResolverConfigRef = useRef(null);
   // Friend function refs (for use in early useEffects before functions are defined)
   const navigateToFriendRef = useRef(null);
+  const followListenerRef = useRef(null);
   const loadPlaylistRef = useRef(null);
   const pinFriendRef = useRef(null);
   const unpinFriendRef = useRef(null);
@@ -6209,9 +6212,18 @@ const Parachord = () => {
   useEffect(() => { collectionDataRef.current = collectionData; }, [collectionData]);
   // Every native item menu goes through here, so a track, album or artist
   // already in the collection is offered "Remove", not "Add".
-  window.showItemMenu = (data) => window.electron?.contextMenu?.showTrackMenu
-    ? window.electron.contextMenu.showTrackMenu(withCollectionState(data, collectionDataRef.current))
-    : Promise.resolve();
+  // A playlist on ListenBrainz is on Achordion: its MBID (from the menu
+  // builder, else the stored playlist's sync fields) lets main.js offer View
+  // on Achordion.
+  window.showItemMenu = (data) => {
+    if (!window.electron?.contextMenu?.showTrackMenu) return Promise.resolve();
+    let out = withCollectionState(data, collectionDataRef.current);
+    if (out && out.type === 'playlist' && !out.listenbrainzMbid) {
+      const lbMbid = playlistListenbrainzMbid(out, playlistsRef.current);
+      if (lbMbid) out = { ...out, listenbrainzMbid: lbMbid };
+    }
+    return window.electron.contextMenu.showTrackMenu(out);
+  };
   useEffect(() => { collectionLoadingRef.current = collectionLoading; }, [collectionLoading]);
   useEffect(() => { pinnedFriendIdsRef.current = pinnedFriendIds; }, [pinnedFriendIds]);
   useEffect(() => { autoPinnedFriendIdsRef.current = autoPinnedFriendIds; }, [autoPinnedFriendIds]);
@@ -10562,6 +10574,7 @@ const Parachord = () => {
       console.log('➕ Embed queue request:', track?.title);
       if (track) {
         setCurrentQueue(prev => [...prev, track]);
+        triggerQueueAnimation();
       }
     });
 
@@ -12459,6 +12472,7 @@ ${trackListXml}
                       if (saveResult?.success) {
                         setPlaylists(prev => [newPlaylist, ...prev]);
                         fetchPlaylistCovers(id, newPlaylist.tracks);
+                        showSidebarBadge('playlists');
                         showToast(`Imported playlist: ${title}`);
                         setActiveView('playlists');
                       } else {
@@ -15230,6 +15244,17 @@ ${trackListXml}
           }
         } else if (data.action === 'view-friend-history' && data.friend) {
           if (navigateToFriendRef.current) navigateToFriendRef.current(data.friend);
+        } else if (data.action === 'view-on-achordion-user' && data.username) {
+          // Every ListenBrainz user has an Achordion profile.
+          window.electron?.shell?.openExternal?.(achordionUserUrl(data.username));
+        } else if (data.action === 'open-listener' && data.listener) {
+          const l = data.listener;
+          if (navigateToFriendRef.current) navigateToFriendRef.current({
+            id: `similar:${l.service}:${l.username}`, username: l.username, service: l.service,
+            displayName: l.username, avatarUrl: l.avatarUrl || null
+          });
+        } else if (data.action === 'follow-listener' && data.listener) {
+          if (followListenerRef.current) followListenerRef.current(data.listener);
         } else if (data.action === 'pin-friend' && data.friendId) {
           if (pinFriendRef.current) pinFriendRef.current(data.friendId);
         } else if (data.action === 'unpin-friend' && data.friendId) {
@@ -16601,7 +16626,7 @@ ${trackListXml}
 
     // Close dialog
     setQueueSaveDialogOpen(false);
-    showToast(`Saved playlist: ${queueSavePlaylistName.trim()}`);
+    showSidebarBadge('playlists');
   };
 
   // "Save to file" in the same dialog: write the queue as an .xspf without
@@ -17104,6 +17129,7 @@ ${trackListXml}
     const saveResult = await window.electron.playlists.save(newPlaylist);
     if (saveResult.success) {
       setPlaylists(prev => [newPlaylist, ...prev]);
+      showSidebarBadge('playlists');
       fetchPlaylistCovers(playlistId, tracks);
     }
 
@@ -19294,17 +19320,13 @@ ${trackListXml}
       // Load new releases cache and show instantly on Home
       if (newReleasesData && newReleasesData.releases && newReleasesData.timestamp != null) {
         // Filter out broadcasts that may have been cached before the filter was
-        // added, and drop releases dated more than 2 weeks out — pre-existing
-        // caches written before the +14d upper bound (fetchReleasesForArtists)
-        // may carry months-out announcements that the user doesn't want to see.
-        const upperFuture = new Date();
-        upperFuture.setDate(upperFuture.getDate() + 14);
-        const upperCutoffDate = upperFuture.toISOString().split('T')[0];
-        // uniqueReleases also heals a cache saved with a collaboration twice
+        // added, and keep only the Fresh Drops window (three months back, two
+        // weeks ahead): releases that aged out since the last save leave here,
+        // as do months-out announcements in older caches. uniqueReleases also
+        // heals a cache saved with a collaboration twice
         // (lib/fresh-drops-releases.js).
-        const filteredReleases = uniqueReleases(newReleasesData.releases.filter(r =>
+        const filteredReleases = uniqueReleases(withinFreshDropsWindow(newReleasesData.releases).filter(r =>
           r.releaseType !== 'broadcast' && !(r.secondaryTypes || []).includes('broadcast')
-          && (!r.date || r.date <= upperCutoffDate)
         ));
         const now = Date.now();
         if (now - newReleasesData.timestamp < CACHE_TTL.newReleases) {
@@ -21566,14 +21588,18 @@ ${trackListXml}
   };
 
   // Prefetch release tracks on hover (for context menu "Add All to Queue")
+  // Resolves to the tracks (null when there are none or it's the open
+  // album), so a click that waited on it can play them without reading a
+  // render that predates the fetch.
   const prefetchReleaseTracks = async (release, artist) => {
-    // Skip if already prefetched or currently loaded
-    if (prefetchedReleases[release.id] || currentRelease?.id === release.id) {
-      return;
+    const have = prefetchedReleasesRef.current[release.id]?.tracks || prefetchedReleases[release.id]?.tracks;
+    if (have?.length) return have;
+    if (currentRelease?.id === release.id) {
+      return null;
     }
     // An artist-page card built from a service (spotify-…, lastfm-…) has an
     // id MusicBrainz will never know: don't spend a MusicBrainz slot on it.
-    if (!isMusicBrainzId(release.id)) return;
+    if (!isMusicBrainzId(release.id)) return null;
 
     try {
       console.log('🔍 Prefetching tracks for:', release.title);
@@ -21591,7 +21617,7 @@ ${trackListXml}
       });
       if (prefetchedEdition?.kind === 'catalog' && prefetchedEdition.resolverId && prefetchedEdition.url) {
         const found = await lookupAlbumEditionCached(prefetchedEdition.resolverId, prefetchedEdition.url);
-        if (!found) return;
+        if (!found) return null;
         // The same shape every catalog track list takes (disc and track
         // order, the entries' fields), via the shared conversion.
         const editionRelease = catalogAlbumToRelease(found.album, {
@@ -21615,14 +21641,14 @@ ${trackListXml}
           [release.id]: { tracks, title: release.title, albumArt: release.albumArt, artist: artist?.name }
         }));
         console.log(`✅ Prefetched ${tracks.length} tracks (picked edition) for ${release.title}`);
-        return;
+        return tracks;
       }
       let releaseId = release.id;
       const releaseDetailsResponse = await releaseLookupRef.current.loadRelease({
         id: (prefetchedEdition?.kind === 'mb' && prefetchedEdition.releaseId) || release.id,
         isReleaseGroup: (prefetchedEdition?.kind === 'mb' && prefetchedEdition.releaseId) ? false : release.isReleaseGroup
       }, bgFetch);
-      if (!releaseDetailsResponse.ok) return;
+      if (!releaseDetailsResponse.ok) return null;
 
       // It was a release group: remember the pick for openers by name
       if (releaseDetailsResponse.releaseId && releaseDetailsResponse.releaseId !== release.id) {
@@ -21634,7 +21660,7 @@ ${trackListXml}
         });
       }
 
-      if (!releaseDetailsResponse.ok) return;
+      if (!releaseDetailsResponse.ok) return null;
       releaseId = releaseDetailsResponse.releaseId || releaseId;
 
       const releaseData = await releaseDetailsResponse.json();
@@ -21674,8 +21700,10 @@ ${trackListXml}
       }));
 
       console.log(`✅ Prefetched ${tracks.length} tracks for ${release.title}`);
+      return tracks;
     } catch (error) {
       console.error('Error prefetching release tracks:', error);
+      return null;
     }
   };
 
@@ -25807,7 +25835,7 @@ ${tracks}
     // Close dialogs
     setAiSaveDialogOpen(false);
     closeSidebarAnimated();
-    showToast(`Saved playlist: ${aiSavePlaylistName.trim()}`);
+    showSidebarBadge('playlists');
   };
 
   // Save playlist to local storage (electron-store)
@@ -26611,7 +26639,19 @@ ${tracks}
   // card: the Fresh Drops / charts scroll stutter.
   const HOVER_PREFETCH_DWELL_MS = 250;
   const hoverPrefetchTimerRef = useRef(null);
-  const prefetchInFlightRef = useRef(new Set());
+  // id -> the running fetch's promise (it resolves to the tracks)
+  const prefetchInFlightRef = useRef(new Map());
+  // One fetch per album id: the tracks already prefetched, else the fetch
+  // already running, else a new one (run resolves to the tracks or null).
+  const sharedReleasePrefetch = (id, run) => {
+    const have = prefetchedReleasesRef.current[id]?.tracks || prefetchedReleases[id]?.tracks;
+    if (have?.length) return Promise.resolve(have);
+    const running = prefetchInFlightRef.current.get(id);
+    if (running) return running;
+    const p = Promise.resolve().then(run).finally(() => prefetchInFlightRef.current.delete(id));
+    prefetchInFlightRef.current.set(id, p);
+    return p;
+  };
   const scheduleHoverPrefetch = (album) => {
     cancelHoverPrefetch();
     if (!album || prefetchedReleases[album.id] || prefetchInFlightRef.current.has(album.id)) return;
@@ -26636,14 +26676,12 @@ ${tracks}
     }
   };
 
-  const prefetchChartsTracks = async (album) => {
-    // Skip if already prefetched, or already being fetched (the state check
-    // alone is stale until the next render, so quick re-hovers double-fetched)
-    if (prefetchedReleases[album.id] || prefetchInFlightRef.current.has(album.id)) {
-      return;
-    }
-    prefetchInFlightRef.current.add(album.id);
-
+  // Resolves to the album's tracks (null if MusicBrainz has none), so a
+  // click can play them: a caller that awaited this and then read
+  // prefetchedReleases read the render before the fetch, found nothing, and
+  // the album only played on a second click. A fetch already running (a
+  // hover prefetch) is joined, not skipped.
+  const prefetchChartsTracks = (album) => sharedReleasePrefetch(album.id, async () => {
     try {
       // Background lane of the MusicBrainz limiter: a prefetch must never make
       // a click's lookup wait behind it (two requests per hovered card did).
@@ -26654,17 +26692,17 @@ ${tracks}
         { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
       );
 
-      if (!mbResponse.ok) return;
+      if (!mbResponse.ok) return null;
 
       const mbData = await mbResponse.json();
-      if (!mbData.releases || mbData.releases.length === 0) return;
+      if (!mbData.releases || mbData.releases.length === 0) return null;
 
       const releaseId = mbData.releases[0].id;
 
       // Fetch release details with tracks
       const releaseDetailsResponse = await fetchReleaseDetails(releaseId, bgFetch);
 
-      if (!releaseDetailsResponse.ok) return;
+      if (!releaseDetailsResponse.ok) return null;
 
       const releaseData = await releaseDetailsResponse.json();
       const tracks = [];
@@ -26691,12 +26729,12 @@ ${tracks}
           }
         }));
       }
+      return tracks.length > 0 ? tracks : null;
     } catch (error) {
       // Silent fail for prefetch
-    } finally {
-      prefetchInFlightRef.current.delete(album.id);
+      return null;
     }
-  };
+  });
 
   // Add all tracks from a Charts album to the queue
   const addChartsToQueue = async (album) => {
@@ -26889,9 +26927,8 @@ ${tracks}
     // announcement feed" that pushed actually-fresh releases off the top.
     // 2 weeks is enough to surface upcoming drops the user might want to
     // pre-save without including reveals for things 6 months out.
-    const upperFuture = new Date();
-    upperFuture.setDate(upperFuture.getDate() + 14);
-    const upperCutoffDate = upperFuture.toISOString().split('T')[0];
+    // (lib/fresh-drops-releases.js owns the window.)
+    const { to: upperCutoffDate } = freshDropsWindow();
 
     // Fetch with a timeout to prevent a single hanging request from stalling the loop
     const fetchWithTimeout = (url, options, timeoutMs = 10000) => {
@@ -27091,18 +27128,22 @@ ${tracks}
           return true;
         });
 
-        if (brandNew.length > 0) {
-          console.log(`✨ Found ${brandNew.length} new releases to add`);
+        // Releases that aged out of the window since the last scan leave too,
+        // so the list never only grows.
+        const inWindow = withinFreshDropsWindow(newReleases);
+        if (brandNew.length > 0 || inWindow.length < newReleases.length) {
+          console.log(`✨ Found ${brandNew.length} new releases to add; ${newReleases.length - inWindow.length} aged out`);
           // Prepend new releases and re-sort
-          const merged = uniqueReleases([...brandNew, ...newReleases]).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+          const merged = uniqueReleases(withinFreshDropsWindow([...brandNew, ...newReleases])).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
           setNewReleases(merged);
           newReleasesCache.current = { releases: merged, timestamp: Date.now(), lastFullScan: newReleasesCache.current.lastFullScan || 0 };
 
-          const hash = generateDiscoveryHash(merged);
-          checkDiscoveryUnread('newReleases', hash);
-
-          // Fetch art only for the new ones
-          fetchNewReleasesAlbumArt(brandNew);
+          // Only new releases light the unread dot, not ones aging out.
+          if (brandNew.length > 0) {
+            checkDiscoveryUnread('newReleases', generateDiscoveryHash(merged));
+            // Fetch art only for the new ones
+            fetchNewReleasesAlbumArt(brandNew);
+          }
           saveCacheToStore();
         } else {
           console.log(`✨ No new releases found (checked ${artistsProcessed} artists)`);
@@ -27142,13 +27183,13 @@ ${tracks}
         return;
       }
 
-      const sixMonthsAgo = new Date();
-      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-      const cutoffDate = sixMonthsAgo.toISOString().split('T')[0];
+      const { from: cutoffDate } = freshDropsWindow();
 
       // Snapshot existing cached releases BEFORE the fetch starts, so the
-      // progress callback (which updates the cache ref) can't overwrite them
-      const priorCachedReleases = [...(newReleasesCache.current.releases || [])];
+      // progress callback (which updates the cache ref) can't overwrite them.
+      // Only those still in the window carry over: the merge used to keep
+      // every release ever found, so the list only grew.
+      const priorCachedReleases = withinFreshDropsWindow(newReleasesCache.current.releases || []);
 
       const { releases: allNewReleases, artistsProcessed } = await fetchReleasesForArtists(
         artistList,
@@ -30572,6 +30613,16 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     setFriends(prev => [...prev, newFriend]);
     // Auto-pin the friend to sidebar (they're not saved to collection yet)
     setPinnedFriendIds(prev => prev.includes(newFriend.id) ? prev : [...prev, newFriend.id]);
+    // Slide them into the sidebar (the friend-entry animation), as a pin does:
+    // that is what says they were added.
+    setNewlyPinnedFriendIds(prev => new Set([...prev, newFriend.id]));
+    setTimeout(() => {
+      setNewlyPinnedFriendIds(prev => {
+        const next = new Set(prev);
+        next.delete(newFriend.id);
+        return next;
+      });
+    }, 300);
     // Mark as auto-pinned so they get auto-unpinned when offline
     // (only manually pinned friends via context menu/drag stay permanently)
     setAutoPinnedFriendIds(prev => prev.includes(newFriend.id) ? prev : [...prev, newFriend.id]);
@@ -30618,11 +30669,10 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         }
       }
 
-      const newFriend = await addFriendCore({ service: finalService, username });
+      await addFriendCore({ service: finalService, username });
 
       setAddFriendModalOpen(false);
       setAddFriendInput('');
-      showToast(`${newFriend.displayName} pinned to sidebar`);
     } catch (error) {
       console.error('Failed to add friend:', error);
       showToast(errorText(error, 'Couldn’t add that friend. Check the name and try again.'), 'error');
@@ -30633,13 +30683,24 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
   // Follow a person opened from Recommendations (not yet in `friends`).
   const [followingRecommended, setFollowingRecommended] = useState(false);
+  // A Listener card's Follow (its menu): add them as a friend where you are;
+  // they slide into the sidebar.
+  const followListener = async (person) => {
+    try {
+      await addFriendCore({ service: person.service, username: person.username });
+    } catch (error) {
+      console.error('Failed to follow:', error);
+      showToast(errorText(error, 'Couldn’t follow them. Try again.'), 'error');
+    }
+  };
+  followListenerRef.current = followListener;
+
   const followRecommendedFriend = async (person) => {
     if (followingRecommended) return;
     setFollowingRecommended(true);
     try {
       const newFriend = await addFriendCore({ service: person.service, username: person.username });
       setCurrentFriend(newFriend);
-      showToast(`Following ${newFriend.displayName}`);
     } catch (error) {
       console.error('Failed to follow:', error);
       showToast(errorText(error, 'Couldn’t follow them. Try again.'), 'error');
@@ -30693,10 +30754,6 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
           return next;
         });
       }, 300); // Match animation duration
-      const friend = friends.find(f => f.id === friendId);
-      if (friend) {
-        showToast(`${friend.displayName} pinned to sidebar`);
-      }
     }
     // If friend was auto-pinned, remove from auto-pinned list (now manually pinned)
     if (autoPinnedFriendIds.includes(friendId)) {
@@ -31965,12 +32022,8 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   });
 
   // Prefetch Critic's Picks album tracks on hover (for Add to Queue)
-  const prefetchCriticsPicksTracks = async (album) => {
-    // Skip if already prefetched
-    if (prefetchedReleases[album.id]) {
-      return;
-    }
-
+  // Resolves to the tracks, like prefetchChartsTracks (sharedReleasePrefetch).
+  const prefetchCriticsPicksTracks = (album) => sharedReleasePrefetch(album.id, async () => {
     try {
       console.log('🔍 Prefetching Critic\'s Pick tracks for:', album.title);
 
@@ -31983,17 +32036,17 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
       );
 
-      if (!mbResponse.ok) return;
+      if (!mbResponse.ok) return null;
 
       const mbData = await mbResponse.json();
-      if (!mbData.releases || mbData.releases.length === 0) return;
+      if (!mbData.releases || mbData.releases.length === 0) return null;
 
       const releaseId = mbData.releases[0].id;
 
       // Fetch release details with tracks
       const releaseDetailsResponse = await fetchReleaseDetails(releaseId, bgFetch);
 
-      if (!releaseDetailsResponse.ok) return;
+      if (!releaseDetailsResponse.ok) return null;
 
       const releaseData = await releaseDetailsResponse.json();
 
@@ -32032,10 +32085,12 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       }));
 
       console.log(`✅ Prefetched ${tracks.length} tracks for ${album.title}`);
+      return tracks.length > 0 ? tracks : null;
     } catch (error) {
       console.error('Error prefetching Critic\'s Pick tracks:', error);
+      return null;
     }
-  };
+  });
 
   // Add Critic's Picks album to queue
   const addCriticsPicksToQueue = async (album) => {
@@ -32050,10 +32105,9 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     }
 
     // Otherwise, fetch and add
-    await prefetchCriticsPicksTracks(album);
-    const newPrefetched = prefetchedReleases[album.id];
-    if (newPrefetched?.tracks?.length > 0) {
-      addToQueue(newPrefetched.tracks, context);
+    const tracks = await prefetchCriticsPicksTracks(album);
+    if (tracks?.length > 0) {
+      addToQueue(tracks, context);
     }
   };
 
@@ -34049,6 +34103,28 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         };
       }
     }
+    // A ListenBrainz user's profile, and a playlist that's on ListenBrainz,
+    // are on Achordion too.
+    if (activeView === 'friendHistory' && currentFriend?.service === 'listenbrainz' && currentFriend.username) {
+      const url = achordionUserUrl(currentFriend.username);
+      achordionShare = {
+        run: () => navigator.clipboard.writeText(url).then(() => showToast('Link copied to clipboard!')),
+        runView: () => window.electron?.shell?.openExternal?.(url)
+      };
+    } else if (activeView === 'playlist-view' && selectedPlaylist && lbMbidOf(selectedPlaylist)) {
+      const collection = {
+        playlistId: selectedPlaylist.id,
+        listenbrainzMbid: lbMbidOf(selectedPlaylist),
+        title: selectedPlaylist.title,
+        creator: selectedPlaylist.creator || null,
+        type: 'playlist',
+        tracks: []
+      };
+      achordionShare = {
+        run: () => publishCollectionSmartLink(collection),
+        runView: () => publishCollectionSmartLink(collection, { openInBrowser: true })
+      };
+    }
     setParachordLinkMenu({ x: e.clientX, y: e.clientY, link, achordionShare });
   };
 
@@ -34304,6 +34380,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       fetchPlaylistCovers(id, parsed.tracks || []);
 
       console.log(`✅ Imported playlist: ${parsed.title} (${newPlaylist.tracks.length} tracks)`);
+      showSidebarBadge('playlists');
       showToast(`Imported “${parsed.title}”`, 'success');
     } catch (error) {
       console.error('Import error:', error);
@@ -34653,6 +34730,9 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       }
 
       console.log(`✅ Imported hosted playlist: ${parsed.title}`);
+      // A new playlist (not the startup reload of a saved one) badges the
+      // sidebar, like every other way a playlist arrives.
+      if (!skipStorageUpdate) showSidebarBadge('playlists');
       return { updated: false, playlist: parsed };
     } catch (error) {
       console.error('URL import error:', error);
@@ -37444,7 +37524,8 @@ useEffect(() => {
                             : 'text-ink-tertiary hover:text-ink-secondary hover:bg-surface-hover opacity-0 group-hover:opacity-100 card-reveal'
                         }`
                       },
-                      React.createElement(Icons.Link, { className: 'w-4 h-4', strokeWidth: 2 })
+                      // Headphones: listening (a link read as "copy link").
+                      React.createElement(Icons.Headphones, { className: 'w-4 h-4', strokeWidth: 2 })
                     )
                     ) // Close Tooltip
                   ),
@@ -39020,11 +39101,9 @@ useEffect(() => {
                         onClick: async (e) => {
                           e.stopPropagation();
                           setTrackLoading(true);
-                          let tracks = prefetchedReleases[item.id]?.tracks;
-                          if (!tracks?.length) {
-                            await prefetchChartsTracks(item);
-                            tracks = prefetchedReleases[item.id]?.tracks;
-                          }
+                          // The fetch's own result: prefetchedReleases here is
+                          // the render before it (a second click was needed).
+                          const tracks = await prefetchChartsTracks(item);
                           if (tracks?.length > 0) {
                             const context = { type: 'album', id: item.id, name: item.title, artist: item.artist };
                             const [firstTrack, ...remainingTracks] = tracks;
@@ -39505,11 +39584,11 @@ useEffect(() => {
             ),
 
             // Empty state (no artists in collection)
-            !newReleasesError && !newReleasesLoading && newReleasesLoaded && newReleases.length === 0 && !newReleasesError && !newReleasesLoading && newReleasesLoaded && newReleases.length === 0 && React.createElement(EmptyState, {
+            !newReleasesError && !newReleasesLoading && newReleasesLoaded && newReleases.length === 0 && React.createElement(EmptyState, {
               title: 'Nothing in Fresh Drops yet',
               body: collectionData.artists?.length === 0 && collectionData.tracks?.length === 0
                 ? 'Add artists to your Collection or listen to some music to see new releases from artists you like.'
-                : 'None of your artists have released new music in the last 6 months. Check back later.'
+                : 'None of your artists have released new music in the last 3 months. Check back later.'
             }),
 
             // Release grid
@@ -40081,11 +40160,7 @@ useEffect(() => {
                       onClick: async (e) => {
                         e.stopPropagation();
                         setTrackLoading(true);
-                        let tracks = prefetchedReleases[album.id]?.tracks;
-                        if (!tracks?.length) {
-                          await prefetchCriticsPicksTracks(album);
-                          tracks = prefetchedReleases[album.id]?.tracks;
-                        }
+                        const tracks = await prefetchCriticsPicksTracks(album);
                         if (tracks?.length > 0) {
                           const context = { type: 'album', id: album.id, name: album.title, artist: album.artist };
                           const [firstTrack, ...remainingTracks] = tracks;
@@ -41250,12 +41325,14 @@ useEffect(() => {
                 onActivate: () => openRecommendationPlaylist(item, section),
                 onMouseEnter: () => prefetchRecommendationPlaylist(item),
                 onMouseLeave: () => cancelRecommendationPlaylistPrefetch(item),
+                // No right-click action. This used to open the playlist's
+                // service page in the web browser with no menu and no label,
+                // so a right-click (the hover had already started the lookup)
+                // looked like a failed lookup opening the browser by itself.
+                // Nothing opens a browser unless the control says it will.
                 onContextMenu: (e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  if (item.url && window.electron?.shell?.openExternal) {
-                    window.electron.shell.openExternal(item.url);
-                  }
                 }
               },
                 React.createElement('div', {
@@ -41607,6 +41684,17 @@ useEffect(() => {
                   avatarUrl: item.avatarUrl || null
                 }),
                 onPlay: () => playListenerTopTracks(item),
+                // A friend already gets the friend menu; anyone else the
+                // Listener menu (View History, Follow, and View on Achordion
+                // for a ListenBrainz user).
+                onContextMenu: () => {
+                  const friend = friends.find(f => f.service === item.service && (f.username || '').toLowerCase() === (item.name || '').toLowerCase());
+                  if (friend) {
+                    window.showItemMenu({ type: 'friend', friend, isPinned: pinnedFriendIds.includes(friend.id), isSavedToCollection: friend.savedToCollection });
+                  } else {
+                    window.showItemMenu({ type: 'listener', listener: { service: item.service, username: item.name, avatarUrl: item.avatarUrl || null } });
+                  }
+                },
                 // The similarity score, a badge over the hexagon's foot.
                 badge: pct != null && React.createElement('span', {
                   'data-similarity-badge': 'true',
@@ -43423,7 +43511,7 @@ useEffect(() => {
               // Uses the shared shimmer-light + animate-shimmer classes with a
               // staggered delay (matches the search-page skeletons).
               marketplaceLoading && React.createElement('div', {
-                className: 'card-grid gap-6'
+                className: 'tile-grid gap-6'
               },
                 ...Array(10).fill(null).map((_, i) =>
                   React.createElement('div', {
@@ -43486,7 +43574,7 @@ useEffect(() => {
                 ),
                 // Resolver grid - combines installed and marketplace
                 React.createElement('div', {
-                  className: 'card-grid gap-6'
+                  className: 'tile-grid gap-6'
                 },
                   (() => {
                     // Get all content resolvers from marketplace (non-meta-service)
@@ -43672,7 +43760,7 @@ useEffect(() => {
                 ),
                 // Meta services grid - combines installed and marketplace
                 React.createElement('div', {
-                  className: 'card-grid gap-6'
+                  className: 'tile-grid gap-6'
                 },
                   (() => {
                     // Get all meta services from marketplace
@@ -43806,7 +43894,7 @@ useEffect(() => {
                 ),
                 // Extensions grid
                 React.createElement('div', {
-                  className: 'card-grid gap-6'
+                  className: 'tile-grid gap-6'
                 },
                   // Browser Extension tile
                   React.createElement('div', {
@@ -44457,8 +44545,9 @@ React.createElement(Switch, { checked: skipExternalPrompt, onToggle: async () =>
                         onChange: (v) => setAuthPortInput(v),
                         style: { width: '96px' },
                       }),
-                      React.createElement(Button, { type: 'submit', size: 'sm' }, 'Save'),
-                      React.createElement(Button, { variant: 'secondary', size: 'sm', onClick: () => setAuthPortInput('8888') }, 'Default')
+                      // Secondary first, the primary last (the app's button order).
+                      React.createElement(Button, { variant: 'secondary', size: 'sm', onClick: () => setAuthPortInput('8888') }, 'Default'),
+                      React.createElement(Button, { type: 'submit', size: 'sm' }, 'Save')
                     )
                   ),
                   authServerStatus && authServerStatus.configuredPort !== authServerStatus.port && React.createElement('p', {
@@ -44652,33 +44741,19 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                       lineHeight: '1.6'
                     }
                   }, 'Scan a connected service for duplicate playlists and orphaned local playlists. Unambiguous local playlists get re-linked to their matching remote copy first, then duplicates are removed — the copy your local is already linked to is kept (or the copy with the most tracks, if none are linked).'),
-                  // Cleanup buttons for each enabled sync provider
-                  React.createElement('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap' } },
+                  // One row per synced service: its logo and name, then the
+                  // action (the shared Button). The buttons used to wrap into
+                  // a ragged two-and-one, in Title Case.
+                  React.createElement('div', { style: { display: 'flex', flexDirection: 'column' } },
                     Object.entries(syncProviderConfig)
                       .filter(([pid]) => resolverSyncSettings[pid]?.enabled)
                       .map(([pid, config]) =>
-                        React.createElement('button', {
+                        React.createElement('div', {
                           key: pid,
-                          onClick: () => handleCleanupDuplicatePlaylists(pid),
-                          disabled: cleanupDuplicatesState.loading,
-                          style: {
-                            padding: '10px 16px',
-                            backgroundColor: cleanupDuplicatesState.loading && cleanupDuplicatesState.providerId === pid ? 'var(--hover-bg-subtle)' : 'var(--hover-bg-default)',
-                            color: 'var(--text-primary)',
-                            fontSize: '13px',
-                            fontWeight: '500',
-                            borderRadius: '8px',
-                            border: '1px solid var(--border-subtle)',
-                            cursor: cleanupDuplicatesState.loading ? 'wait' : 'pointer',
-                            transition: 'background-color 150ms ease',
-                            opacity: cleanupDuplicatesState.loading && cleanupDuplicatesState.providerId !== pid ? 0.5 : 1,
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px'
-                          },
-                          onMouseEnter: (e) => { if (!cleanupDuplicatesState.loading) e.currentTarget.style.backgroundColor = 'var(--hover-bg-subtle)'; },
-                          onMouseLeave: (e) => { if (!cleanupDuplicatesState.loading || cleanupDuplicatesState.providerId !== pid) e.currentTarget.style.backgroundColor = 'var(--hover-bg-default)'; }
+                          className: 'flex items-center justify-between',
+                          style: { gap: '12px', padding: '10px 0', borderTop: '1px solid var(--border-subtle)' }
                         },
+                          React.createElement('div', { className: 'flex items-center', style: { gap: '10px', minWidth: 0 } },
                           React.createElement('div', {
                             style: {
                               width: '20px', height: '20px', borderRadius: '6px',
@@ -44702,9 +44777,14 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                                 : React.createElement('path', { d: 'M47.76,86.16v-38.4c0-1.44,0.8-2.32,2.4-2.64l33.12-6.72c1.76-0.32,2.72,0.48,2.88,2.4v29.28c0,2.4-3.6,4-10.8,4.8c-13.68,2.16-11.52,25.2,7.2,18.96c7.2-2.64,8.4-9.6,8.4-16.56V21.12c0,0,0-4.8-4.08-3.6l-40.8,8.4c0,0-3.12,0.48-3.12,4.32v48.72c0,2.4-3.6,4-10.8,4.8c-13.68,2.16-11.52,25.2,7.2,18.96C46.56,100.08,47.76,93.12,47.76,86.16z' })
                             )
                           ),
-                          cleanupDuplicatesState.loading && cleanupDuplicatesState.providerId === pid
-                            ? `Cleaning ${config.name}…`
-                            : `Clean Up ${config.name} Duplicates`
+                            React.createElement('span', { className: 'text-sm font-medium text-ink-primary' }, config.name)
+                          ),
+                          React.createElement(Button, {
+                            variant: 'secondary', size: 'sm',
+                            onClick: () => handleCleanupDuplicatePlaylists(pid),
+                            disabled: cleanupDuplicatesState.loading,
+                            'aria-label': `Clean up ${config.name} duplicates`
+                          }, cleanupDuplicatesState.loading && cleanupDuplicatesState.providerId === pid ? 'Cleaning…' : 'Clean up duplicates')
                         )
                       ),
                     // Nothing synced yet: offer each service's sync setup here.
@@ -44768,11 +44848,10 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                         : 'Preview the new sync engine and switch this device over')
                     ),
                     nwayEngineMode === 'new'
-                      ? React.createElement('button', {
-                          onClick: () => revertNwayMigration(),
-                          className: 'px-3 py-1.5 text-xs font-medium text-ink-secondary bg-surface-inset rounded-lg hover:bg-surface-hover transition-colors'
-                        }, 'Switch back to classic')
-                      : React.createElement(Button, { variant: 'text', size: 'sm', onClick: () => startNwayMigration() }, 'Preview')
+                      // Both are buttons (secondary): "Preview" was a text link
+                      // and "Switch back" a hand-styled pill.
+                      ? React.createElement(Button, { variant: 'secondary', size: 'sm', onClick: () => revertNwayMigration() }, 'Switch back to classic')
+                      : React.createElement(Button, { variant: 'secondary', size: 'sm', onClick: () => startNwayMigration() }, 'Preview…')
                   )
                 ),
 
@@ -45078,18 +45157,42 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
             }, React.createElement(SkipForward, { size: 18 }))
           ),
           // Queue button (hamburger style)
-          React.createElement(Tooltip, { content: 'Queue', position: 'top', variant: 'dark' },
+          React.createElement(Tooltip, { content: listenAlongFriend ? `Queue (listening along with ${listenAlongFriend.displayName || listenAlongFriend.username})` : 'Queue', position: 'top', variant: 'dark' },
             React.createElement('button', {
               'aria-label': 'Queue',
+              // Who decides what's next while listening along.
+              'aria-description': listenAlongFriend ? `Listening along with ${listenAlongFriend.displayName || listenAlongFriend.username}` : undefined,
               onClick: () => setQueueDrawerOpen(!queueDrawerOpen),
               className: `relative p-2 ml-1 rounded hover:bg-white/10 transition-colors ${queueDrawerOpen ? 'bg-white/20 text-white' : 'text-gray-400'} ${queueAnimating ? 'queue-pulse' : ''}`,
               style: { display: 'flex', alignItems: 'center', justifyContent: 'center' }
             },
-              React.createElement(List, { size: 15 }),
-              // Show queue badge (gray when in spinoff or listen-along mode)
-              currentQueue.length > 0 && React.createElement('span', {
+              // Listening along, your queue is on hold: only the icon dims,
+              // never the friend's avatar beside it.
+              React.createElement(List, { size: 15, style: listenAlongFriend ? { opacity: 0.4 } : undefined }),
+              // Listening along: the friend's avatar (or initial) in the
+              // badge's place, since their queue, not yours, decides what's
+              // next. Otherwise the count (gray in spinoff mode).
+              listenAlongFriend
+                // A hexagon, like every user avatar: an accent hexagon as the
+                // ring, the avatar (or initial) in a smaller one inside it.
+                ? React.createElement('span', {
+                    'data-listen-along-badge': '',
+                    'aria-hidden': 'true',
+                    className: 'absolute -top-1.5 -right-1.5 flex items-center justify-center',
+                    style: { width: '20px', height: '20px', clipPath: LISTENER_HEXAGON, backgroundColor: 'var(--accent-fill)', opacity: 1 }
+                  },
+                    React.createElement('span', {
+                      className: 'flex items-center justify-center',
+                      style: Object.assign({
+                        width: '16px', height: '16px', clipPath: LISTENER_HEXAGON,
+                        fontSize: '11px', fontWeight: 600, color: 'var(--on-accent)'
+                      }, listenAlongFriend.avatarUrl
+                        ? { backgroundImage: `url(${JSON.stringify(listenAlongFriend.avatarUrl)})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+                        : { backgroundColor: 'var(--accent-fill)' })
+                    }, !listenAlongFriend.avatarUrl && (listenAlongFriend.displayName || listenAlongFriend.username || '?').charAt(0).toUpperCase()))
+                : currentQueue.length > 0 && React.createElement('span', {
                 className: `absolute -top-1 -right-1 text-white rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1 font-medium ${queueAnimating ? 'badge-flash' : ''}`,
-                style: { fontSize: '10px', backgroundColor: (spinoffMode || listenAlongFriend) ? '#6b7280' : 'var(--accent-fill)' }
+                style: { fontSize: '10px', backgroundColor: spinoffMode ? '#6b7280' : 'var(--accent-fill)' }
               }, currentQueue.length > 99 ? '99+' : currentQueue.length)
             )
           ),

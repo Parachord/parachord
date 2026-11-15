@@ -18,6 +18,7 @@
 // from props under their old names.
 
 const Icons = require('./icons');
+const { lbMbidOf } = require('../lib/playlist-share');
 const { HeaderControl } = require('./header-control');
 const { Button } = require('./button');
 const { CardButton } = require('./card-button');
@@ -1007,7 +1008,24 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
               // Share button (outside space-y-1 metadata div for independent spacing)
               React.createElement('div', { className: 'relative mt-5 flex justify-start', style: { width: '100%' } },
                 // Share menu (components/menu.js).
-                React.createElement(Menu, {
+                (() => {
+                  // What Copy link and View on Achordion both send.
+                  const playlistLink = () => ({
+                    playlistId: selectedPlaylist.id,
+                    listenbrainzMbid: lbMbidOf(selectedPlaylist),
+                    title: selectedPlaylist.title,
+                    artist: null,
+                    creator: selectedPlaylist.creator || null,
+                    albumArt: playlistCover || playlistCoverArt?.[0] || null,
+                    type: 'playlist',
+                    tracks: (playlistTracks || []).map((t, i) => ({
+                      title: t.title || 'Unknown',
+                      artist: t.artist || null,
+                      duration: t.duration || null,
+                      trackNumber: t.trackNumber || (i + 1)
+                    }))
+                  });
+                  return React.createElement(Menu, {
                   label: 'Share',
                   renderTrigger: (t) => React.createElement(ShareButton, t),
                   items: [
@@ -1015,21 +1033,15 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                       key: 'copy-link',
                       label: 'Copy link',
                       icon: React.createElement(Icons.Link, { size: 16 }),
-                      onSelect: () => publishCollectionSmartLink({
-                        playlistId: selectedPlaylist.id,
-                        title: selectedPlaylist.title,
-                        artist: null,
-                        creator: selectedPlaylist.creator || null,
-                        albumArt: playlistCover || playlistCoverArt?.[0] || null,
-                        type: 'playlist',
-                        tracks: (playlistTracks || []).map((t, i) => ({
-                          title: t.title || 'Unknown',
-                          artist: t.artist || null,
-                          duration: t.duration || null,
-                          trackNumber: t.trackNumber || (i + 1)
-                        }))
-                      }),
+                      onSelect: () => publishCollectionSmartLink(playlistLink()),
                     },
+                    // On Achordion when it's on ListenBrainz.
+                    ...(lbMbidOf(selectedPlaylist) ? [{
+                      key: 'view-on-achordion',
+                      label: 'View on Achordion',
+                      icon: React.createElement(Icons.ExternalLink, { size: 16 }),
+                      onSelect: () => publishCollectionSmartLink(playlistLink(), { openInBrowser: true }),
+                    }] : []),
                     {
                       key: 'export-xspf',
                       label: 'Export as XSPF…',
@@ -1042,7 +1054,8 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                       }),
                     },
                   ],
-                })
+                  });
+                })()
               )
             ),
 

@@ -46,9 +46,11 @@ describe('wiring', () => {
 
   test('the playlist page Share button and the context menu pass the playlist id', () => {
     const page = read('src/renderer/components/playlist-view-page.js');
-    const i = page.indexOf('onSelect: () => publishCollectionSmartLink({');
+    // Copy link and View on Achordion build the same summary (playlistLink).
+    const i = page.indexOf('const playlistLink = () => ({');
     expect(i).toBeGreaterThan(-1);
     expect(page.slice(i, i + 300)).toMatch(/playlistId: selectedPlaylist\.id/);
+    expect(page).toContain('onSelect: () => publishCollectionSmartLink(playlistLink()),');
     const main = read('main.js');
     const j = main.indexOf("action: 'publish-collection-smart-link'");
     expect(main.slice(j - 1600, j)).toMatch(/playlistId: isPlaylist \? \(data\.playlistId \|\| null\) : undefined/);

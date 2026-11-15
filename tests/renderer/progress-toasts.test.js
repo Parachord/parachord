@@ -32,3 +32,46 @@ test('no toast repeats what the queue and Collection animations already say', ()
   const bulk = app.slice(app.indexOf('const addTracksToCollection = useCallback('), app.indexOf('const handleCollectionDrop = useCallback('));
   expect(bulk).toContain("showSidebarBadge('collection', addedCount);");
 });
+
+// Every way something arrives plays its animation: the queue pulse, the
+// Collection and Playlists sidebar badges, a friend sliding into the sidebar.
+test('each arrival path plays its animation', () => {
+  const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  const fn = (name) => { const i = app.indexOf(`const ${name} = `); expect(i).toBeGreaterThan(-1); return app.slice(i, app.indexOf('\n  };\n', i)); };
+  // The embed's "add to queue".
+  expect(app).toMatch(/embed\.onQueue\([\s\S]{0,200}setCurrentQueue\(prev => \[\.\.\.prev, track\]\);\s*triggerQueueAnimation\(\);/);
+  // Every new playlist badges Playlists.
+  for (const name of ['handleSaveQueueConfirm', 'handleAiSavePlaylistConfirm', 'createPlaylistFromChat', 'handleImportPlaylistFromUrl']) {
+    expect([name, fn(name).includes("showSidebarBadge('playlists')")]).toEqual([name, true]);
+  }
+  // Adding a friend slides them in.
+  expect(fn('addFriendCore')).toContain('setNewlyPinnedFriendIds(prev => new Set([...prev, newFriend.id]));');
+  // And no toast says it again.
+  expect(app).not.toMatch(/showToast\(`[^`]*(pinned to sidebar|Following \$\{|Saved playlist: )/);
+});
+
+// A Play / Add to queue that has to fetch an album's tracks first uses what
+// the fetch returns. Reading prefetchedReleases after awaiting it read the
+// render before the fetch, so Pop of the Tops (Charts) and Critics Picks
+// albums only played on a second click.
+test('album actions play what the fetch returned, not the pre-fetch render', () => {
+  const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  const page = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/artist-page.js'), 'utf8');
+  for (const src of [app, page]) {
+    expect(src).not.toMatch(/await prefetch\w+\([^)]*\);\s*\n\s*(?:let |const )?\w+ = prefetchedReleases(?:Ref\.current)?\[/);
+  }
+  expect(app).toContain('const tracks = await prefetchChartsTracks(item);');
+  expect(app).toMatch(/const prefetchChartsTracks = \(album\) => sharedReleasePrefetch\(album\.id,/);
+  expect(app).toMatch(/const prefetchCriticsPicksTracks = \(album\) => sharedReleasePrefetch\(album\.id,/);
+  expect(page).toContain('const newPrefetched = { tracks: await prefetchReleaseTracks(rel, currentArtist) };');
+});
+
+// Listening along, the queue button's badge is the friend's avatar (their
+// queue decides what's next), not a grayed-out count.
+test('the queue badge shows the listen-along friend', () => {
+  const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  expect(app).toMatch(/\? React\.createElement\('span', \{\s*'data-listen-along-badge': ''/);
+  // A hexagon, like every user avatar.
+  expect(app).toMatch(/'data-listen-along-badge'[\s\S]{0,300}clipPath: LISTENER_HEXAGON/);
+  expect(app).toContain("backgroundColor: spinoffMode ? '#6b7280' : 'var(--accent-fill)'");
+});

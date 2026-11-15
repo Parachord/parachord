@@ -227,8 +227,8 @@ describe('card click opens the release page before the lookup', () => {
 
   test('every hover prefetch uses the background lane of the MusicBrainz limiter', () => {
     const prefetchers = [
-      'const prefetchChartsTracks = async (album) => {',
-      'const prefetchCriticsPicksTracks = async (album) => {',
+      'const prefetchChartsTracks = (album) => sharedReleasePrefetch(album.id, async () => {',
+      'const prefetchCriticsPicksTracks = (album) => sharedReleasePrefetch(album.id, async () => {',
       'const prefetchReleaseTracks = async (release, artist) => {',
       'const prefetchSearchAlbumTracks = (album) => {',
       'const prefetchTopAlbumTracks = (artistName, albumName, albumArt = null) => {'
@@ -236,7 +236,8 @@ describe('card click opens the release page before the lookup', () => {
     for (const marker of prefetchers) {
       const s = app.indexOf(marker);
       expect(s).toBeGreaterThan(-1);
-      const b = app.slice(s, app.indexOf('\n  };', s));
+      // A body ends at "\n  };" (or "\n  });" for a sharedReleasePrefetch run).
+      const b = app.slice(s, app.indexOf('\n  }', s + marker.length));
       expect(b).toMatch(/mbBackground: true/);
       // the album page's lookup (loadRelease) or a release lookup, in the background lane
       expect(b).toMatch(/fetchReleaseDetails\(releaseId, bgFetch\)|loadRelease\(\{\s*id: \(prefetchedEdition\?\.kind === 'mb' && prefetchedEdition\??\.releaseId\) \|\| release\.id,\s*isReleaseGroup: \(prefetchedEdition\?\.kind === 'mb' && prefetchedEdition\??\.releaseId\) \? false : release\.isReleaseGroup\s*\}, bgFetch\)/);

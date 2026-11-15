@@ -26,7 +26,7 @@ const Icons = require('./icons');
 const { EmptyState, ErrorState } = require('./states');
 const { SortMenu } = require('./sort-menu');
 const { Menu } = require('./menu');
-const { HeroTabs } = require('./hero-tabs');
+const { HeroTabs, heroTabClass } = require('./hero-tabs');
 const { SectionHeader } = require('./section-header');
 const { FilterChips } = require('./filter-chips');
 const { ReleasePage, ReleaseCard, generateArtistPattern, PlayTop10Icon } = require('./cards');
@@ -299,11 +299,9 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                           if (related.length > 0) { setRelatedArtists(related); resolveRelatedArtistImages(related); }
                         }
                       },
-                      className: `py-1 text-sm font-medium uppercase tracking-wider transition-colors no-drag ${
-                        artistPageTab === tab
-                          ? 'text-white'
-                          : 'text-white/80 hover:text-white'
-                      }`,
+                      // The hero tab look (heroTabClass): the selected tab is
+                      // semibold and underlined.
+                      className: `py-1 text-sm uppercase tracking-wider transition-colors no-drag ${heroTabClass(artistPageTab === tab)}`,
                       style: isOnTour ? {
                         opacity: showOnTour ? 1 : 0,
                         maxWidth: showOnTour ? '200px' : '0px',
@@ -445,11 +443,9 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                           if (related.length > 0) { setRelatedArtists(related); resolveRelatedArtistImages(related); }
                         }
                       },
-                      className: `py-1 text-sm font-medium uppercase tracking-wider transition-colors no-drag ${
-                        artistPageTab === tab
-                          ? 'text-white'
-                          : 'text-white/80 hover:text-white'
-                      }`,
+                      // The hero tab look (heroTabClass): the selected tab is
+                      // semibold and underlined.
+                      className: `py-1 text-sm uppercase tracking-wider transition-colors no-drag ${heroTabClass(artistPageTab === tab)}`,
                       style: isOnTour ? {
                         opacity: showOnTour ? 1 : 0,
                         maxWidth: showOnTour ? '200px' : '0px',
@@ -1047,8 +1043,8 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                       handlePlay(taggedFirstTrack);
                     } else {
                       // Fetch and play if no tracks cached
-                      await prefetchReleaseTracks(rel, currentArtist);
-                      const newPrefetched = prefetchedReleasesRef.current[rel.id];
+                      // Its own result: the ref is only synced after the next render.
+                      const newPrefetched = { tracks: await prefetchReleaseTracks(rel, currentArtist) };
                       if (newPrefetched?.tracks?.length > 0) {
                         const context = { type: 'album', name: rel.title, id: rel.id };
                         const [firstTrack, ...remainingTracks] = newPrefetched.tracks;
@@ -1081,8 +1077,8 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                       addToQueue(tracks, { type: 'album', name: rel.title, id: rel.id });
                     } else {
                       // Fetch and add if no tracks cached
-                      await prefetchReleaseTracks(rel, currentArtist);
-                      const newPrefetched = prefetchedReleasesRef.current[rel.id];
+                      // Its own result: the ref is only synced after the next render.
+                      const newPrefetched = { tracks: await prefetchReleaseTracks(rel, currentArtist) };
                       if (newPrefetched?.tracks?.length > 0) {
                         addToQueue(newPrefetched.tracks, { type: 'album', name: rel.title, id: rel.id });
                       }
@@ -1116,8 +1112,8 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                       setSelectedPlaylistsForAdd([]);
                     } else {
                       // Fetch and show panel if no tracks cached
-                      await prefetchReleaseTracks(rel, currentArtist);
-                      const newPrefetched = prefetchedReleasesRef.current[rel.id];
+                      // Its own result: the ref is only synced after the next render.
+                      const newPrefetched = { tracks: await prefetchReleaseTracks(rel, currentArtist) };
                       if (newPrefetched?.tracks?.length > 0) {
                         setAddToPlaylistPanel({
                           open: true,

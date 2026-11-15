@@ -745,6 +745,9 @@
        keeps 3 columns at the minimum and 5 on a typical laptop; the grid's
        own gap class sets the spacing. Skeleton grids use the same class. */
     .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
+    /* Plug-in tiles (ResolverCard, 120px): narrower columns than album cards,
+       or a 120px tile sits alone in a 180px+ cell (#1389 made them 3 wide). */
+    .tile-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); justify-items: center; }
     /* Collapsed page headers (#1389): the title, the tabs and the actions
        share one row. On a narrow window the title truncates and the tabs
        scroll sideways; buttons keep their size. */

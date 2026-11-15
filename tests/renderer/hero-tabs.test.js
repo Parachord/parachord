@@ -29,3 +29,16 @@ test('every hero tab row uses HeroTabs or tab roles', () => {
   expect(artist.match(/role: 'tablist',/g)).toHaveLength(2);
   expect(app).toContain("'aria-current': settingsTab === 'plugins' ? 'page' : undefined,");
 });
+
+test('the selected tab stands out: semibold and underlined, not only brighter', () => {
+  const src = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/components/hero-tabs.js'), 'utf8');
+  expect(src).toContain("const HERO_TAB_SELECTED = 'text-white font-semibold underline decoration-2 underline-offset-[6px]';");
+  expect(src).toContain("const HERO_TAB_IDLE = 'text-white/80 font-medium hover:text-white';");
+  expect(src).toContain('heroTabClass(i === selectedIndex),');
+});
+
+test('rows that build their own tabs use the shared look (artist page, Search results)', () => {
+  const read = (p) => require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer', p), 'utf8');
+  expect((read('components/artist-page.js').match(/heroTabClass\(artistPageTab === tab\)/g) || []).length).toBe(2);
+  expect(read('components/search-page.js')).toContain('heroTabClass(searchDetailCategory === tab.key)');
+});

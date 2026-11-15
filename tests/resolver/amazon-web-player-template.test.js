@@ -96,7 +96,7 @@ describe('specSearch template replay', () => {
     if (amazonWebPlayer.searchViewParkTimer) clearTimeout(amazonWebPlayer.searchViewParkTimer);
     amazonWebPlayer.searchViewParkTimer = savedTimer;
     // The chain must be drained between tests (its jobs capture this suite's mocks).
-    amazonWebPlayer.searchChain = Promise.resolve();
+    amazonWebPlayer.searchQueue = require('../../amazon-music-logic').createLaneQueue();
   });
 
   const run = (over = {}) => amazonWebPlayer.specSearch({
@@ -439,7 +439,7 @@ describe('specSearch template replay', () => {
 
 describe('signOut template hygiene', () => {
   test('signOut drops the template and the park fuse', async () => {
-    const savedChain = amazonWebPlayer.searchChain;
+    const savedChain = amazonWebPlayer.searchQueue;
     amazonWebPlayer.specSearchTemplate = { url: 'x', headers: {}, body: {}, capturedAt: Date.now() };
     amazonWebPlayer.scheduleParkSearchView();
     expect(amazonWebPlayer.searchViewParkTimer).not.toBeNull();
@@ -448,6 +448,6 @@ describe('signOut template hygiene', () => {
     expect(amazonWebPlayer.specSearchTemplate).toBeNull();
     expect(amazonWebPlayer.searchViewParkTimer).toBeNull();
     destroyView.mockRestore();
-    amazonWebPlayer.searchChain = savedChain;
+    amazonWebPlayer.searchQueue = savedChain;
   });
 });
