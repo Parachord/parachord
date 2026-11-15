@@ -387,7 +387,7 @@ Props: `size` (default 24; a `w-*`/`h-*` class or `style` overrides it), `classN
 
 **Sizes:** 16px (`w-4 h-4`) in rows, chips and inline with text; 20px (`w-5 h-5`) in buttons and dialogs; stroke 2.
 
-**The set:** Play, Pause, SkipForward, SkipBack, Volume2, Music, List, Users, Radio, Heart, Search, Settings, Plus, X, Check, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Info, MoreHorizontal, AlertTriangle, RefreshCw, ExternalLink, Trash2, and **Spinner** (the one loading spinner). To add an icon, copy its shapes from lucide.dev into `SHAPES` in `icons.js`.
+**The set:** Play, Pause, SkipForward, SkipBack, Volume2, Music, List, QueueAdd (add to queue), Users, User, Radio, Heart, Star, Search, Settings, Plus, X, Check, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ArrowRight, Info, MoreHorizontal, AlertTriangle, RefreshCw, ExternalLink, Link, Download, Upload, Folder, FilePlus, Copy, Trash2, Bookmark, Clock, Home, Droplet, Trophy, Ticket, MapPin, Shuffle, Zap, and **Spinner** (the one loading spinner). To add an icon, copy its shapes from lucide.dev into `SHAPES` in `icons.js`.
 
 ### Service Logos
 

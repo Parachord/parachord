@@ -625,9 +625,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                             onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
                             'aria-label': 'Add to queue', 'data-tooltip': 'Add to queue'
                           },
-                            React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
-                            )
+                            React.createElement(Icons.QueueAdd, { className: 'w-5 h-5', strokeWidth: 2 })
                           )
                         )
                       ),
@@ -942,19 +940,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       React.createElement('div', {
                         className: 'absolute inset-0 flex items-center justify-center'
                       },
-                        React.createElement('svg', {
-                          className: 'w-12 h-12 text-ink-tertiary',
-                          fill: 'none',
-                          viewBox: '0 0 24 24',
-                          stroke: 'currentColor',
-                          strokeWidth: 1.5
-                        },
-                          React.createElement('path', {
-                            strokeLinecap: 'round',
-                            strokeLinejoin: 'round',
-                            d: 'M9 9l10.5-3m0 6.553v3.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 11-.99-3.467l2.31-.66a2.25 2.25 0 001.632-2.163zm0 0V4.5L9 7.5v9.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 01-.99-3.467l2.31-.66A2.25 2.25 0 009 13.125V9'
-                          })
-                        )
+                        React.createElement(Icons.Music, { className: 'w-12 h-12 text-ink-tertiary', strokeWidth: 1.5 })
                       ),
                       // Hover overlay with action buttons
                       React.createElement('div', {
@@ -1032,9 +1018,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                           onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
                           'aria-label': 'Add to queue', 'data-tooltip': 'Add to queue'
                         },
-                          React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                            React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
-                          )
+                          React.createElement(Icons.QueueAdd, { className: 'w-5 h-5', strokeWidth: 2 })
                         )
                       )
                     ),
@@ -1535,9 +1519,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                         onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
                         'aria-label': 'Add to queue', 'data-tooltip': 'Add to queue'
                       },
-                        React.createElement('svg', { className: 'w-3.5 h-3.5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
-                        )
+                        React.createElement(Icons.QueueAdd, { className: 'w-3.5 h-3.5', strokeWidth: 2 })
                       )
                     ),
                     // Source dots - bottom right corner (hidden on hover): the
@@ -1772,9 +1754,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                         onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
                         'aria-label': 'Add to queue', 'data-tooltip': 'Add to queue'
                       },
-                        React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
-                        )
+                        React.createElement(Icons.QueueAdd, { className: 'w-4 h-4', strokeWidth: 2 })
                       )
                     )
                   ),
@@ -1847,19 +1827,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                     className: 'w-full aspect-square rounded-lg mb-2 flex items-center justify-center',
                     style: { background: 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)' }
                   },
-                    React.createElement('svg', {
-                      className: 'w-10 h-10 text-ink-tertiary',
-                      fill: 'none',
-                      viewBox: '0 0 24 24',
-                      stroke: 'currentColor',
-                      strokeWidth: 1.5
-                    },
-                      React.createElement('path', {
-                        strokeLinecap: 'round',
-                        strokeLinejoin: 'round',
-                        d: 'M9 9l10.5-3m0 6.553v3.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 11-.99-3.467l2.31-.66a2.25 2.25 0 001.632-2.163zm0 0V4.5L9 7.5v9.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 01-.99-3.467l2.31-.66A2.25 2.25 0 009 13.125V9'
-                      })
-                    )
+                    React.createElement(Icons.Music, { className: 'w-10 h-10 text-ink-tertiary', strokeWidth: 1.5 })
                   ),
                   // Playlist title
                   React.createElement('div', {

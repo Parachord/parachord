@@ -1132,14 +1132,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                           className: ''
                         }, friend.displayName),
                         // Pin icon for manually pinned friends (not auto-pinned)
-                        isPinned && !autoPinnedFriendIds.includes(friend.id) && React.createElement('svg', {
-                          style: { width: '12px', height: '12px', color: 'var(--accent-soft)', flexShrink: 0 },
-                          fill: 'currentColor',
-                          viewBox: '0 0 24 24',
-                          title: 'Pinned to sidebar'
-                        },
-                          React.createElement('path', { d: 'M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z' })
-                        )
+                        isPinned && !autoPinnedFriendIds.includes(friend.id) && React.createElement(Icons.Bookmark, { style: { width: '12px', height: '12px', color: 'var(--accent-soft)', flexShrink: 0 } })
                       ),
                       // Service badge - refined
                       React.createElement('div', {

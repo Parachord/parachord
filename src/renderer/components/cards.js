@@ -687,9 +687,7 @@ const CollectionAlbumCard = ({ album, getAlbumArt, onNavigate, onAddToPlaylist, 
           onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
           'aria-label': 'Add album to queue', 'data-tooltip': 'Add album to queue'
         },
-          React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-            React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
-          )
+          React.createElement(Icons.QueueAdd, { className: 'w-5 h-5', strokeWidth: 2 })
         )
       )
     ),
@@ -856,24 +854,12 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, 
       }),
 
       // Music icon placeholder - refined dark style
-      (art === null || imageFailed) && React.createElement('svg', {
-        style: {
+      (art === null || imageFailed) && React.createElement(Icons.Music, { style: {
           width: '36px',
           height: '36px',
           color: 'rgba(255, 255, 255, 0.2)',
           pointerEvents: 'none'
-        },
-        fill: 'none',
-        viewBox: '0 0 24 24',
-        stroke: 'currentColor',
-        strokeWidth: 1.5
-      },
-        React.createElement('path', {
-          strokeLinecap: 'round',
-          strokeLinejoin: 'round',
-          d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3'
-        })
-      ),
+        }, strokeWidth: 1.5 }),
 
       // Hover overlay with action buttons (Add to Playlist, Play, Queue)
       (onPlay || onAddToQueue || onAddToPlaylist) && React.createElement('div', {
@@ -918,9 +904,7 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, 
           onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
           'aria-label': 'Add to queue', 'data-tooltip': 'Add to queue'
         },
-          React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-            React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
-          )
+          React.createElement(Icons.QueueAdd, { className: 'w-5 h-5', strokeWidth: 2 })
         )
       )
     ),
@@ -1482,24 +1466,12 @@ const ReleasePage = ({
               }
             }),
             // Placeholder icon (always behind) - dark theme
-            React.createElement('svg', {
-              style: {
+            React.createElement(Icons.Music, { style: {
                 width: '36px',
                 height: '36px',
                 color: 'rgba(255, 255, 255, 0.2)',
                 pointerEvents: 'none'
-              },
-              fill: 'none',
-              viewBox: '0 0 24 24',
-              stroke: 'currentColor',
-              strokeWidth: 1.5
-            },
-              React.createElement('path', {
-                strokeLinecap: 'round',
-                strokeLinejoin: 'round',
-                d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3'
-              })
-            ),
+              }, strokeWidth: 1.5 }),
 
             // Hover overlay with action buttons (Add to Playlist, Play, Queue)
             (onAlbumPlay || onAlbumAddToQueue || onAlbumAddToPlaylist) && React.createElement('div', {
@@ -1544,9 +1516,7 @@ const ReleasePage = ({
                 onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
                 'aria-label': 'Add to queue', 'data-tooltip': 'Add to queue'
               },
-                React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
-                )
+                React.createElement(Icons.QueueAdd, { className: 'w-5 h-5', strokeWidth: 2 })
               )
             )
           ),

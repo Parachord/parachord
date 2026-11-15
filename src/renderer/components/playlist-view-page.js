@@ -653,9 +653,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                     onClick: handlePull,
                     className: 'flex items-center gap-1.5 px-3 py-1.5 bg-surface-inset text-ink-secondary text-xs font-medium rounded-full hover:bg-surface-hover transition-colors'
                   },
-                    React.createElement('svg', { className: 'w-3.5 h-3.5', fill: 'none', stroke: 'currentColor', viewBox: '0 0 24 24' },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4' })
-                    ),
+                    React.createElement(Icons.Download, { className: 'w-3.5 h-3.5' }),
                     `Use ${providerName}`
                   ),
 
@@ -842,9 +840,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                         onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
                         'aria-label': 'Add to queue', 'data-tooltip': 'Add to queue'
                       },
-                        React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
-                        )
+                        React.createElement(Icons.QueueAdd, { className: 'w-5 h-5', strokeWidth: 2 })
                       )
                     )
                   ),

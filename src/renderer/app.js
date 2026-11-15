@@ -17639,13 +17639,7 @@ ${trackListXml}
               transition: 'transform 0.2s'
             }
           },
-            React.createElement('svg', {
-              style: { width: '14px', height: '14px', marginLeft: '2px', color: 'var(--text-primary)' },
-              fill: 'currentColor',
-              viewBox: '0 0 24 24'
-            },
-              React.createElement('path', { d: 'M8 5v14l11-7z' })
-            )
+            React.createElement(Icons.Play, { style: { width: '14px', height: '14px', marginLeft: '2px', color: 'var(--text-primary)' } })
           )
         )
       ),
@@ -36813,9 +36807,7 @@ useEffect(() => {
                 cursor: viewHistory.length <= 1 ? 'not-allowed' : 'pointer'
               }
             },
-              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M15 19l-7-7 7-7' })
-              )
+              React.createElement(Icons.ChevronLeft, { className: 'w-4 h-4' })
             )
           ),
           React.createElement(Tooltip, { content: 'Forward', position: 'bottom' },
@@ -36829,9 +36821,7 @@ useEffect(() => {
                 cursor: forwardHistory.length === 0 ? 'not-allowed' : 'pointer'
               }
             },
-              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M9 5l7 7-7 7' })
-              )
+              React.createElement(Icons.ChevronRight, { className: 'w-4 h-4' })
             )
           )
         ),
@@ -36871,9 +36861,7 @@ useEffect(() => {
             }
           },
             // Home icon
-            React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: activeView === 'home' ? 2.5 : 2 },
-              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' })
-            ),
+            React.createElement(Icons.Home, { className: 'w-5 h-5', strokeWidth: activeView === 'home' ? 2.5 : 2 }),
             'Home'
           ),
 
@@ -36971,9 +36959,7 @@ useEffect(() => {
                 fontWeight: activeView === 'history' ? '500' : '400'
               }
             },
-              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' })
-              ),
+              React.createElement(Icons.Clock, { className: 'w-4 h-4' }),
               'History'
             )
           ),
@@ -37003,9 +36989,7 @@ useEffect(() => {
               }
             },
               // Droplet icon for New Releases (Fresh Drops)
-              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M12 22a7 7 0 0 0 7-7c0-5-7-13-7-13S5 10 5 15a7 7 0 0 0 7 7z' })
-              ),
+              React.createElement(Icons.Droplet, { className: 'w-4 h-4' }),
               React.createElement('span', { className: 'flex items-center gap-1.5' },
                 'Fresh Drops',
                 showDiscoveryBadges && discoveryUnread.newReleases && React.createElement('span', {
@@ -37023,9 +37007,7 @@ useEffect(() => {
               }
             },
               // Star icon for Recommendations
-              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z' })
-              ),
+              React.createElement(Icons.Star, { className: 'w-4 h-4' }),
               React.createElement('span', { className: 'flex items-center gap-1.5' },
                 "Recommendations",
                 showDiscoveryBadges && discoveryUnread.recommendations && React.createElement('span', {
@@ -37070,9 +37052,7 @@ useEffect(() => {
               }
             },
               // Award/trophy icon for Critical Darlings
-              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 2h12v6a6 6 0 01-12 0V2zM9 21h6M12 14v7M6 4H3v2a3 3 0 003 3M18 4h3v2a3 3 0 01-3 3' })
-              ),
+              React.createElement(Icons.Trophy, { className: 'w-4 h-4' }),
               React.createElement('span', { className: 'flex items-center gap-1.5' },
                 "Critical Darlings",
                 showDiscoveryBadges && discoveryUnread.criticsPicks && React.createElement('span', {
@@ -37092,9 +37072,7 @@ useEffect(() => {
               }
             },
               // Ticket icon for Concerts
-              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z' })
-              ),
+              React.createElement(Icons.Ticket, { className: 'w-4 h-4' }),
               React.createElement('span', { className: 'flex items-center gap-1.5' },
                 'Concerts',
                 showDiscoveryBadges && discoveryUnread.concerts && React.createElement('span', {
@@ -37299,19 +37277,7 @@ useEffect(() => {
                             : 'text-ink-tertiary hover:text-ink-secondary hover:bg-surface-hover opacity-0 group-hover:opacity-100 card-reveal'
                         }`
                       },
-                      React.createElement('svg', {
-                        className: 'w-3.5 h-3.5',
-                        fill: 'none',
-                        viewBox: '0 0 24 24',
-                        stroke: 'currentColor',
-                        strokeWidth: 2
-                      },
-                        React.createElement('path', {
-                          strokeLinecap: 'round',
-                          strokeLinejoin: 'round',
-                          d: 'M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1'
-                        })
-                      )
+                      React.createElement(Icons.Link, { className: 'w-3.5 h-3.5', strokeWidth: 2 })
                     )
                     ) // Close Tooltip
                   ),
@@ -37873,9 +37839,7 @@ useEffect(() => {
           // Import Playlist button: the outlined secondary style of the album
           // and playlist Share button (theme variables, card-style border and
           // hover), sized to sit level with the filled New button beside it.
-          React.createElement(Button, { variant: 'secondary', size: 'sm', type: 'button', onClick: () => setShowUrlImportDialog(true), className: 'ml-3 no-drag' }, React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4 -4l-4 4m0 0l-4-4m4 4V4' })
-            ), 'Import'),
+          React.createElement(Button, { variant: 'secondary', size: 'sm', type: 'button', onClick: () => setShowUrlImportDialog(true), className: 'ml-3 no-drag' }, React.createElement(Icons.Download, { className: 'w-4 h-4' }), 'Import'),
           // Create New Playlist button
           React.createElement('button', {
             onClick: () => {
@@ -38190,9 +38154,7 @@ useEffect(() => {
                           onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
                           'aria-label': 'Add to queue', 'data-tooltip': 'Add to queue'
                         },
-                          React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                            React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
-                          )
+                          React.createElement(Icons.QueueAdd, { className: 'w-5 h-5', strokeWidth: 2 })
                         )
                       )
                     ),
@@ -38920,9 +38882,7 @@ useEffect(() => {
                         onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
                         'aria-label': 'Add to queue', 'data-tooltip': 'Add to queue'
                       },
-                        React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
-                        )
+                        React.createElement(Icons.QueueAdd, { className: 'w-5 h-5', strokeWidth: 2 })
                       ),
                     )
                   ),
@@ -39579,9 +39539,7 @@ useEffect(() => {
                             onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
                             'aria-label': 'Add album to queue', 'data-tooltip': 'Add album to queue'
                           },
-                            React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
-                            )
+                            React.createElement(Icons.QueueAdd, { className: 'w-5 h-5', strokeWidth: 2 })
                           )
                         )
                       ),
@@ -39996,9 +39954,7 @@ useEffect(() => {
                       onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
                       'aria-label': 'Add to queue', 'data-tooltip': 'Add to queue'
                     },
-                      React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
-                      )
+                      React.createElement(Icons.QueueAdd, { className: 'w-5 h-5', strokeWidth: 2 })
                     ),
                   )
                 ),
@@ -40215,9 +40171,7 @@ useEffect(() => {
                 style: { backgroundColor: pageTint('concerts'), color: PAGE_COLORS.concerts.color },
                 'data-tooltip': `${concertsLocation} (${concertsLocationRadius} mi radius)`
               },
-                React.createElement('svg', { className: 'w-3.5 h-3.5 flex-shrink-0', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2.5, d: 'M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z' })
-                ),
+                React.createElement(Icons.MapPin, { className: 'w-3.5 h-3.5 flex-shrink-0' }),
                 React.createElement('span', { className: 'max-w-[120px] truncate' }, concertsLocation),
                 React.createElement('span', { style: { opacity: 0.7 } }, `${concertsLocationRadius}mi`),
                 // X to clear
@@ -40236,10 +40190,7 @@ useEffect(() => {
                 style: { color: concertsLocation ? PAGE_COLORS.concerts.color : 'var(--text-tertiary)' },
                 'aria-label': concertsLocation ? `Filtered: ${concertsLocation}` : 'Filter by location', 'data-tooltip': concertsLocation ? `Filtered: ${concertsLocation}` : 'Filter by location'
               },
-                React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z' }),
-                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M15 11a3 3 0 11-6 0 3 3 0 016 0z' })
-                )
+                React.createElement(Icons.MapPin, { className: 'w-4 h-4' })
               ),
               // Location dropdown panel
               concertsLocationOpen && React.createElement('div', {
@@ -40338,9 +40289,7 @@ useEffect(() => {
                       onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = 'var(--hover-bg-default)'; },
                       onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'transparent'; }
                     },
-                      React.createElement('svg', { className: 'w-3.5 h-3.5 flex-shrink-0', style: { color: 'var(--text-tertiary)' }, fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z' })
-                      ),
+                      React.createElement(Icons.MapPin, { className: 'w-3.5 h-3.5 flex-shrink-0', style: { color: 'var(--text-tertiary)' } }),
                       React.createElement('span', { className: 'truncate' }, suggestion.region)
                     )
                   )
@@ -40487,9 +40436,7 @@ useEffect(() => {
               React.createElement('div', {
                 className: 'w-16 h-16 rounded-full bg-teal-100 flex items-center justify-center mb-4'
               },
-                React.createElement('svg', { className: 'w-8 h-8 text-teal-400', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z' })
-                )
+                React.createElement(Icons.Ticket, { className: 'w-8 h-8 text-teal-400' })
               ),
               React.createElement('h3', {
                 className: 'text-lg font-medium text-ink-primary mb-2'
@@ -40643,9 +40590,7 @@ useEffect(() => {
                               : React.createElement('div', {
                                   className: 'w-full h-full flex items-center justify-center text-ink-tertiary'
                                 },
-                                  React.createElement('svg', { className: 'w-8 h-8', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' })
-                                  )
+                                  React.createElement(Icons.User, { className: 'w-8 h-8' })
                                 )
                           ),
 
@@ -41195,9 +41140,7 @@ useEffect(() => {
                       style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
                       'aria-label': 'Add album to queue', 'data-tooltip': 'Add album to queue'
                     },
-                      React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
-                      )
+                      React.createElement(Icons.QueueAdd, { className: 'w-5 h-5', strokeWidth: 2 })
                     )
                   )
                 ),
@@ -41277,9 +41220,7 @@ useEffect(() => {
                       style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
                       'aria-label': 'Add to queue', 'data-tooltip': 'Add to queue'
                     },
-                      React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
-                      )
+                      React.createElement(Icons.QueueAdd, { className: 'w-5 h-5', strokeWidth: 2 })
                     )
                   )
                 ),
@@ -42716,9 +42657,7 @@ useEffect(() => {
                             onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
                             'aria-label': 'Add album to queue', 'data-tooltip': 'Add album to queue'
                           },
-                            React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-            React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
-          )
+                            React.createElement(Icons.QueueAdd, { className: 'w-5 h-5', strokeWidth: 2 })
                           )
                         )
                       ),
@@ -42941,14 +42880,7 @@ useEffect(() => {
                   ? { backgroundColor: '#8b5cf6', color: '#ffffff' }
                   : { backgroundColor: 'var(--hover-bg-default)', color: 'var(--text-secondary)' }
               },
-                React.createElement('svg', {
-                  className: 'w-4 h-4',
-                  fill: pinnedFriendIds.includes(currentFriend.id) ? 'currentColor' : 'none',
-                  viewBox: '0 0 24 24',
-                  stroke: 'currentColor'
-                },
-                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z' })
-                ),
+                React.createElement(Icons.Bookmark, { className: 'w-4 h-4', fill: pinnedFriendIds.includes(currentFriend.id) ? 'currentColor' : 'none' }),
                 pinnedFriendIds.includes(currentFriend.id) ? 'Pinned' : 'Pin to Sidebar'
               )
             ),
@@ -43347,9 +43279,7 @@ useEffect(() => {
                                 onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
                                 'aria-label': 'Add album to queue', 'data-tooltip': 'Add album to queue'
                               },
-                                React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-            React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
-          )
+                                React.createElement(Icons.QueueAdd, { className: 'w-5 h-5', strokeWidth: 2 })
                               )
                             )
                           ),
@@ -43591,9 +43521,7 @@ useEffect(() => {
                   )
                 ),
                 // Add from file button
-                React.createElement(Button, { variant: 'secondary', size: 'sm', onClick: handleInstallResolver }, React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' })
-                  ), 'Add from file')
+                React.createElement(Button, { variant: 'secondary', size: 'sm', onClick: handleInstallResolver }, React.createElement(Icons.FilePlus, { className: 'w-4 h-4' }), 'Add from file')
               ),
 
               // How Plug-Ins works (#1387: replaced a developer-facing
@@ -44114,15 +44042,7 @@ useEffect(() => {
                       onClick: () => setRaycastInfoOpen(true)
                     },
                       // Raycast icon (simplified lightning bolt)
-                      React.createElement('svg', {
-                        className: 'w-12 h-12',
-                        fill: 'white',
-                        viewBox: '0 0 24 24'
-                      },
-                        React.createElement('path', {
-                          d: 'M13 2L3 14h9l-1 8 10-12h-9l1-8z'
-                        })
-                      ),
+                      React.createElement(Icons.Zap, { className: 'w-12 h-12', style: { color: 'white' }, fill: 'currentColor' }),
                       // Info badge
                       React.createElement('div', {
                         className: 'absolute flex items-center justify-center',
@@ -44330,9 +44250,7 @@ useEffect(() => {
                       }
 
                       showToast('Cache cleared');
-                    } }, React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16' })
-                    ), 'Clear cache')
+                    } }, React.createElement(Icons.Trash2, { className: 'w-4 h-4' }), 'Clear cache')
                 ),
 
                 // Playback Quality Section (global for Widevine/stream resolvers)
@@ -45903,19 +45821,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                 },
                 className: `p-1.5 rounded-full transition-colors ${isInCollection ? 'text-red-500 hover:text-red-400' : 'text-gray-400 hover:text-white'}`
               },
-                React.createElement('svg', {
-                  className: 'w-5 h-5',
-                  viewBox: '0 0 24 24',
-                  fill: isInCollection ? 'currentColor' : 'none',
-                  stroke: 'currentColor',
-                  strokeWidth: isInCollection ? 0 : 2
-                },
-                  React.createElement('path', {
-                    strokeLinecap: 'round',
-                    strokeLinejoin: 'round',
-                    d: 'M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z'
-                  })
-                )
+                React.createElement(Icons.Heart, { className: 'w-5 h-5', strokeWidth: isInCollection ? 0 : 2, fill: isInCollection ? 'currentColor' : 'none' })
               )
             );
           })(),
@@ -45959,9 +45865,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                   cursor: shuffleDisabled ? 'not-allowed' : 'pointer'
                 }
               },
-                React.createElement('svg', { className: 'w-4 h-4', viewBox: '0 0 24 24', fill: 'currentColor' },
-                  React.createElement('path', { d: 'M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z' })
-                )
+                React.createElement(Icons.Shuffle, { className: 'w-4 h-4' })
               )
             );
           })(),
@@ -46228,9 +46132,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                 React.createElement('circle', { cx: 12, cy: 12, r: 10, strokeOpacity: 0.25 }),
                 React.createElement('path', { d: 'M12 2a10 10 0 0 1 10 10', strokeLinecap: 'round' })
               )
-            : React.createElement('svg', { className: 'w-4 h-4', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
-                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M14 5l7 7m0 0l-7 7m7-7H3' })
-              )
+            : React.createElement(Icons.ArrowRight, { className: 'w-4 h-4', strokeWidth: 2 })
         )
       ),
 
@@ -46675,9 +46577,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                           React.createElement('circle', { cx: 12, cy: 12, r: 10, strokeOpacity: 0.25 }),
                           React.createElement('path', { d: 'M12 2a10 10 0 0 1 10 10', strokeLinecap: 'round' })
                         )
-                      : React.createElement('svg', { className: 'w-4 h-4', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
-                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M14 5l7 7m0 0l-7 7m7-7H3' })
-                        )
+                      : React.createElement(Icons.ArrowRight, { className: 'w-4 h-4', strokeWidth: 2 })
                   )
                 ),
                 // Bottom row: Clear chat + Share my data toggle
@@ -46875,9 +46775,7 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                   onMouseLeave: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks && resultsSidebar.tracks.length > 0) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'; },
                   'aria-label': 'Add to queue', 'data-tooltip': 'Add to queue'
                 },
-                  React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
-                  )
+                  React.createElement(Icons.QueueAdd, { className: 'w-5 h-5', strokeWidth: 2 })
                 )
               )
             )
@@ -50035,15 +49933,7 @@ React.createElement('div', {
               justifyContent: 'center'
             }
           },
-            React.createElement('svg', {
-              className: 'w-8 h-8',
-              fill: 'white',
-              viewBox: '0 0 24 24'
-            },
-              React.createElement('path', {
-                d: 'M13 2L3 14h9l-1 8 10-12h-9l1-8z'
-              })
-            )
+            React.createElement(Icons.Zap, { className: 'w-8 h-8', style: { color: 'white' }, fill: 'currentColor' })
           ),
           // Title
           React.createElement('div', null,
@@ -50226,15 +50116,7 @@ React.createElement('div', {
               justifyContent: 'center'
             }
           },
-            React.createElement('svg', {
-              className: 'w-8 h-8',
-              fill: 'white',
-              viewBox: '0 0 24 24'
-            },
-              React.createElement('path', {
-                d: 'M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z'
-              })
-            )
+            React.createElement(Icons.Star, { className: 'w-8 h-8', style: { color: 'white' }, fill: 'currentColor' })
           ),
           // Title
           React.createElement('div', null,
@@ -52657,9 +52539,7 @@ firstRunTutorial.step === 'complete' && (() => {
               gap: '4px'
             }
           },
-            React.createElement('svg', { width: '12', height: '12', viewBox: '0 0 24 24', fill: 'currentColor' },
-              React.createElement('path', { d: 'M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z' })
-            ),
+            React.createElement(Icons.Shuffle, { size: 12 }),
             'shuffled'
           )
         ),
