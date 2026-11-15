@@ -22,6 +22,7 @@ const { Badge } = require('./badge');
 const { lbMbidOf } = require('../lib/playlist-share');
 const { HeaderControl } = require('./header-control');
 const { Button } = require('./button');
+const { TextField } = require('./fields');
 const { CardButton } = require('./card-button');
 const { ResolverIcon, ShareButton } = require('./ui-atoms');
 const { Menu } = require('./menu');
@@ -258,10 +259,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                     navigateTo('playlists');
                   }
                 },
-                className: 'transition-colors uppercase',
-                style: { color: 'var(--text-tertiary)' },
-                onMouseEnter: (e) => { e.currentTarget.style.color = 'var(--text-secondary)'; },
-                onMouseLeave: (e) => { e.currentTarget.style.color = 'var(--text-tertiary)'; }
+                className: 'transition-colors uppercase text-ink-tertiary hover:text-ink-secondary'
               }, selectedPlaylist?.isEphemeral && selectedPlaylist.origin !== 'chat' ? 'Recommendations' : 'Playlists'),
               React.createElement('span', { style: { color: 'var(--text-tertiary)' } }, '/'),
               React.createElement('span', { className: 'uppercase', style: { color: 'var(--text-secondary)' } },
@@ -470,14 +468,18 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
             if (!banner) return null;
 
             const provider = playlist.syncedFrom.resolver;
-            const providerName = provider === 'spotify' ? 'Spotify' : provider;
+            // The service's name from its plugin (anything not Spotify showed
+            // its raw id: "applemusic", "listenbrainz").
+            const providerName = (allResolvers || []).find(r => r.id === provider)?.name || provider;
             const syncState = banner.state; // 'push' | 'conflict'
             const localIsNewer = banner.localIsNewer;
 
             // Colors based on state
+            // The status tokens (both themes), tinted.
+            const tint = (token, pct) => `color-mix(in srgb, var(${token}) ${pct}%, transparent)`;
             const colors = {
-              push: { bg: 'rgba(34, 197, 94, 0.12)', border: 'rgba(34, 197, 94, 0.25)', text: 'text-ink-success', iconBg: 'rgba(34, 197, 94, 0.2)' },
-              conflict: { bg: 'rgba(234, 179, 8, 0.12)', border: 'rgba(234, 179, 8, 0.25)', text: 'text-ink-warning', iconBg: 'rgba(234, 179, 8, 0.2)' }
+              push: { bg: tint('--success', 12), border: tint('--success', 25), text: 'text-ink-success', iconBg: tint('--success', 20) },
+              conflict: { bg: tint('--warning', 12), border: tint('--warning', 25), text: 'text-ink-warning', iconBg: tint('--warning', 20) }
             };
             const c = colors[syncState];
 
@@ -601,63 +603,36 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                     className: 'flex items-center justify-center w-8 h-8 rounded-full',
                     style: { background: c.iconBg }
                   },
-                    React.createElement('svg', {
-                      className: `w-4 h-4 ${c.text}`,
-                      fill: 'none',
-                      stroke: 'currentColor',
-                      viewBox: '0 0 24 24'
-                    },
-                      syncState === 'push'
-                        ? React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12' })
-                        : React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z' })
-                    )
+                    React.createElement(syncState === 'push' ? Icons.Upload : Icons.AlertTriangle, { size: 16, className: c.text })
                   ),
+                  // Plain words, not git's ("Push Local", "Pull Remote",
+                  // an uppercase SYNC CONFLICT label).
                   React.createElement('div', { className: 'flex flex-col' },
                     React.createElement('span', {
-                      className: `text-xs font-medium tracking-widest uppercase ${c.text}`
-                    }, syncState === 'push' ? 'Local Changes' : 'Sync Conflict'),
+                      className: 'text-ink-primary', style: { fontSize: '13px', fontWeight: 600 }
+                    }, syncState === 'push' ? 'You changed this playlist' : `This playlist changed here and on ${providerName}`),
                     React.createElement('span', {
-                      className: 'text-sm text-ink-secondary'
+                      className: 'text-ink-secondary', style: { fontSize: '13px' }
                     }, syncState === 'push'
-                      ? `Push your changes to ${providerName}`
+                      ? `Send your changes to ${providerName}?`
                       : localIsNewer
-                      ? `Your local changes are newer`
-                      : `${providerName} version is newer`)
+                      ? 'Your version is newer.'
+                      : `${providerName}’s version is newer.`)
                   )
                 ),
-                // Right side: action buttons
+                // The choices (the shared Button), the newer version as the
+                // primary. A conflict offered "Use X" twice when X was newer.
                 React.createElement('div', { className: 'flex items-center gap-2' },
-                  React.createElement('button', {
-                    onClick: handleDismiss,
-                    className: 'px-3 py-1.5 text-xs font-medium text-ink-tertiary hover:text-ink-secondary transition-colors'
-                  }, 'Dismiss'),
-
-                  // For conflict state, show both options
-                  syncState === 'conflict' && React.createElement('button', {
-                    onClick: handlePull,
-                    className: 'flex items-center gap-1.5 px-3 py-1.5 bg-surface-inset text-ink-secondary text-xs font-medium rounded-full hover:bg-surface-hover transition-colors'
-                  },
-                    React.createElement(Icons.Download, { className: 'w-4 h-4' }),
-                    `Use ${providerName}`
-                  ),
-
-                  // Primary action button
-                  React.createElement('button', {
-                    onClick: syncState === 'push' || (syncState === 'conflict' && localIsNewer) ? handlePush : handlePull,
-                    className: `flex items-center gap-1.5 px-4 py-1.5 text-white text-xs font-medium rounded-full transition-colors ${
-                      syncState === 'push' ? 'bg-green-600 hover:bg-green-700' :
-                      localIsNewer ? 'bg-green-600 hover:bg-green-700' : 'bg-accent-fill hover:bg-accent-fill-hover'
-                    }`,
-                    style: { boxShadow: `0 2px 8px ${syncState === 'push' || (syncState === 'conflict' && localIsNewer) ? 'rgba(34, 197, 94, 0.3)' : 'rgba(147, 51, 234, 0.3)'}` }
-                  },
-                    React.createElement('svg', { className: 'w-3.5 h-3.5', fill: 'none', stroke: 'currentColor', viewBox: '0 0 24 24' },
-                      syncState === 'push' || (syncState === 'conflict' && localIsNewer)
-                        ? React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12' })
-                        : React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4' })
-                    ),
-                    syncState === 'push' ? `Push to ${providerName}` :
-                    localIsNewer ? 'Push Local' : 'Pull Remote'
-                  )
+                  React.createElement(Button, { variant: 'text', size: 'sm', onClick: handleDismiss }, 'Dismiss'),
+                  syncState === 'push'
+                    ? React.createElement(Button, { variant: 'primary', size: 'sm', onClick: handlePush },
+                        React.createElement(Icons.Upload, { size: 14 }), `Send to ${providerName}`)
+                    : [
+                        React.createElement(Button, { key: 'mine', variant: localIsNewer ? 'primary' : 'secondary', size: 'sm', onClick: handlePush },
+                          React.createElement(Icons.Upload, { size: 14 }), 'Keep my version'),
+                        React.createElement(Button, { key: 'theirs', variant: localIsNewer ? 'secondary' : 'primary', size: 'sm', onClick: handlePull },
+                          React.createElement(Icons.Download, { size: 14 }), `Use ${providerName}’s version`)
+                      ]
                 )
               )
             );
@@ -772,10 +747,8 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                             setSelectedPlaylistsForAdd([]);
                           }
                         },
-                        className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
-                        style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-                        onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
-                        onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
+                        className: 'w-10 h-10 rounded-full flex items-center justify-center transition-transform hover:scale-110 bg-white/15 hover:bg-white/25 text-white',
+                        style: { border: 'none', cursor: 'pointer' },
                         'aria-label': 'Add to playlist', 'data-tooltip': 'Add to playlist'
                       },
                         React.createElement(Icons.Plus, { className: 'w-5 h-5' })
@@ -820,10 +793,8 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                             addToQueue(tracksWithIds, context);
                           }
                         },
-                        className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
-                        style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-                        onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
-                        onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
+                        className: 'w-10 h-10 rounded-full flex items-center justify-center transition-transform hover:scale-110 bg-white/15 hover:bg-white/25 text-white',
+                        style: { border: 'none', cursor: 'pointer' },
                         'aria-label': 'Add to queue', 'data-tooltip': 'Add to queue'
                       },
                         React.createElement(Icons.QueueAdd, { className: 'w-5 h-5', strokeWidth: 2 })
@@ -863,14 +834,11 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
               React.createElement('div', { className: 'mt-3 space-y-1', style: { maxWidth: '212px' } },
                 // Creator - editable for imported and hosted playlists in edit mode
                 playlistEditMode && editedPlaylistData && (selectedPlaylist.id?.startsWith('imported-') || selectedPlaylist.sourceUrl)
-                  ? React.createElement('input', {
-                      type: 'text',
+                  ? React.createElement(TextField, {
                       value: editedPlaylistData.creator,
-                      onChange: (e) => setEditedPlaylistData(prev => ({ ...prev, creator: e.target.value })),
-                      className: 'text-sm rounded px-2 py-1 w-full focus:outline-none',
-                      style: { backgroundColor: 'var(--bg-inset)', color: 'var(--text-secondary)', border: '1px solid var(--border-default)' },
-                      onFocus: (e) => { e.currentTarget.style.borderColor = 'var(--accent-primary)'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(124, 58, 237, 0.15)'; },
-                      onBlur: (e) => { e.currentTarget.style.borderColor = 'var(--border-default)'; e.currentTarget.style.boxShadow = 'none'; },
+                      onChange: (v) => setEditedPlaylistData(prev => ({ ...prev, creator: v })),
+                      size: 'sm', className: 'w-full',
+                      onKeyDown: (e) => e.stopPropagation(),
                       placeholder: 'Creator name', 'aria-label': 'Creator name'
                     })
                   : React.createElement('p', {
@@ -895,9 +863,9 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                   } else if (source === 'youtube-import' || source === 'youtube') {
                     sourceLabel = 'YouTube';
                   } else if (source === 'hosted-xspf' || (sourceUrl && !source)) {
-                    sourceLabel = 'Hosted XSPF';
+                    sourceLabel = 'A playlist link';
                   } else if (source === 'imported-xspf') {
-                    sourceLabel = 'Imported XSPF';
+                    sourceLabel = 'An imported file';
                   } else if (source === 'web') {
                     sourceLabel = 'Web';
                   }
@@ -959,14 +927,12 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                   }, selectedPlaylist.localOnly ? 'Resume syncing' : 'Keep local only')
                 ),
                 // Edit mode: Title input
-                playlistEditMode && editedPlaylistData && React.createElement('input', {
-                  type: 'text',
+                // The shared TextField (its focus ring and dark-mode colours).
+                playlistEditMode && editedPlaylistData && React.createElement(TextField, {
                   value: editedPlaylistData.title,
-                  onChange: (e) => setEditedPlaylistData(prev => ({ ...prev, title: e.target.value })),
-                  className: 'font-bold text-sm leading-tight rounded px-2 py-1 w-full focus:outline-none',
-                  style: { backgroundColor: 'var(--bg-inset)', color: 'var(--text-primary)', border: '1px solid var(--border-default)' },
-                  onFocus: (e) => { e.currentTarget.style.borderColor = 'var(--accent-primary)'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(124, 58, 237, 0.15)'; },
-                  onBlur: (e) => { e.currentTarget.style.borderColor = 'var(--border-default)'; e.currentTarget.style.boxShadow = 'none'; },
+                  onChange: (v) => setEditedPlaylistData(prev => ({ ...prev, title: v })),
+                  size: 'sm', className: 'w-full',
+                  onKeyDown: (e) => e.stopPropagation(),
                   placeholder: 'Playlist name', 'aria-label': 'Playlist name'
                 }),
                 // Created date
@@ -979,8 +945,10 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                   className: 'text-xs',
                   style: { color: 'var(--text-tertiary)' }
                 }, `Modified: ${new Date(selectedPlaylist.lastModified).toLocaleDateString()}`),
-                // Delete Playlist button (only in edit mode)
-                playlistEditMode && React.createElement('button', {
+                // Delete (edit mode only): the shared destructive Button; it asks
+                // first, so the label ends in an ellipsis.
+                playlistEditMode && React.createElement(Button, {
+                  variant: 'destructive', size: 'sm', className: 'mt-2 w-full',
                   onClick: async () => {
                     // Ask about mirrors when the playlist syncs to/from ANY remote
                     // (source OR push targets, incl. a hosted XSPF mirrored to
@@ -1001,11 +969,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                       }
                     }
                   },
-                  className: 'mt-2 flex items-center gap-2 px-3 py-2 text-sm rounded transition-colors no-drag w-full justify-center',
-                  style: { color: 'var(--text-danger)', border: '1px solid rgba(239, 68, 68, 0.3)' },
-                  onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'; e.currentTarget.style.color = 'var(--text-danger)'; },
-                  onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-danger)'; }
-                }, 'Delete Playlist')
+                }, 'Delete playlist…')
               ),
               // Share button (outside space-y-1 metadata div for independent spacing)
               React.createElement('div', { className: 'relative mt-5 flex justify-start', style: { width: '100%' } },
@@ -1270,7 +1234,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                                 if (!resolver || !resolver.play) return null;
                                 return React.createElement('button', {
                                   key: resolverId,
-                                  className: 'no-drag',
+                                  className: 'no-drag hover:scale-110',
                                   onClick: (e) => {
                                     e.stopPropagation();
                                     const tracksAfter = playlistTracks.slice(index + 1);
@@ -1290,10 +1254,8 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                                     justifyContent: 'center',
                                     pointerEvents: 'auto',
                                     opacity: dim ? 0.6 : 1,
-                                    transition: 'transform 0.1s'
+                                    transition: 'transform 100ms'
                                   },
-                                  onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
-                                  onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
                                   'aria-label': `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`, 'data-tooltip': `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
                                 }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
                               });

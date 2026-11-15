@@ -64,3 +64,17 @@ test('a failed chat save is a failure, never a playlist id nothing can open', ()
   expect(app).toContain("if (!playlist) return { success: false, error: 'The playlist could not be saved.");
   expect(page).toContain("selectedPlaylist?.isEphemeral && selectedPlaylist.origin !== 'chat' ? 'Recommendations' : 'Playlists'");
 });
+
+test("a playlist's page: shared sync banner, fields and Delete; the breadcrumb stays", () => {
+  expect(page).not.toMatch(/'Push Local'|'Pull Remote'|'Sync Conflict'|'Local Changes'/);
+  expect(page).toMatch(/'Keep my version'/);
+  expect(page).toMatch(/`Use \$\{providerName\}’s version`/);
+  expect(page).toContain("const providerName = (allResolvers || []).find(r => r.id === provider)?.name || provider;");
+  expect(page).not.toContain('bg-green-600');
+  expect(page).toContain("}, 'Delete playlist…')");
+  expect(page).not.toContain("'Hosted XSPF'");
+  expect(page).not.toContain("'Imported XSPF'");
+  expect(page).not.toMatch(/onMouseEnter/);
+  // The breadcrumb: Playlists (or Recommendations) / the playlist.
+  expect(page).toContain("selectedPlaylist?.isEphemeral && selectedPlaylist.origin !== 'chat' ? 'Recommendations' : 'Playlists'");
+});
