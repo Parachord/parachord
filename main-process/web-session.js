@@ -14,6 +14,9 @@
 //   load(url, opts)          → { finalUrl, captures? }   — a budgeted page
 //                               navigation, serialized per session, with the
 //                               requests the page fired captured for the caller
+//                               (a load superseded by clear() rejects with
+//                               reason 'superseded' — its captures belong to
+//                               the old account)
 //   pageFetch(request)       → { status, text } | { error } — a fetch from
 //                               inside the page world (its origin, cookies,
 //                               CORS), parallel-safe
@@ -143,47 +146,6 @@ function chromeUserAgent() {
       ? 'X11; Linux x86_64'
       : 'Macintosh; Intel Mac OS X 10_15_7';
   return `Mozilla/5.0 (${platform}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chrome} Safari/537.36`;
-}
-
-// Parse one Set-Cookie header line into a ses.cookies.set() entry — the jar
-// write that makes the host's hand-built Cookie header honest: because the
-// HOST builds the request's Cookie header itself (Electron's net does not
-// attach a partition jar reliably), Chromium does not save response cookies
-// either, so a service that rotates a session cookie on these calls would
-// rot the session (review on #1399, verified against a live server). The
-// values are written to the jar host-side and NEVER returned to the caller —
-// the response's set-cookie header is reported as cookie NAMES only.
-function parseSetCookie(header, fallbackUrl) {
-  const parts = String(header).split(';');
-  const first = parts.shift();
-  const eq = first.indexOf('=');
-  if (eq <= 0) return null;
-  const cookie = {
-    url: fallbackUrl,
-    name: first.slice(0, eq).trim(),
-    value: first.slice(eq + 1).trim()
-  };
-  for (const part of parts) {
-    const i = part.indexOf('=');
-    const key = (i === -1 ? part : part.slice(0, i)).trim().toLowerCase();
-    const value = i === -1 ? '' : part.slice(i + 1).trim();
-    if (key === 'domain') {
-      cookie.domain = value;
-      cookie.url = `https://${value.replace(/^\./, '')}/`;
-    } else if (key === 'path') {
-      cookie.path = value;
-    } else if (key === 'secure') {
-      cookie.secure = true;
-    } else if (key === 'httponly') {
-      cookie.httpOnly = true;
-    } else if (key === 'max-age' && /^\d+$/.test(value)) {
-      cookie.expirationDate = Math.floor(Date.now() / 1000) + Number(value);
-    } else if (key === 'expires') {
-      const at = Date.parse(value);
-      if (!Number.isNaN(at)) cookie.expirationDate = Math.floor(at / 1000);
-    }
-  }
-  return cookie;
 }
 
 // One web session: a hidden persistent view (partition), a visible sign-in
@@ -478,8 +440,11 @@ function createWebSessionHost(config = {}) {
       // is still the current one: a superseded load's finally (the old load
       // outlives a clear() that cut the chain) must never remove the
       // capture a NEWER load attached — it would return captures: [] with
-      // the page's requests silently dropped (#1399 review).
-      const state = { captured, detached: false };
+      // the page's requests silently dropped (#1399 review). The
+      // registration carries its own detach so clear() can release the
+      // CURRENT one (the sign-in window shares this partition — a stale
+      // listener would record ITS requests into a dead array).
+      const registration = { captured, detached: false, detach: null, snapshot: null };
       const onRequest = (details, callback) => {
         try {
           let body = null;
@@ -505,21 +470,16 @@ function createWebSessionHost(config = {}) {
       };
       try { ses.webRequest.onBeforeRequest(filter, onRequest); } catch { /* a second registration replaces */ }
       try { ses.webRequest.onBeforeSendHeaders(filter, onSendHeaders); } catch { /* a second registration replaces */ }
-      const detach = () => {
-        if (this._capture !== state || state.detached) return; // a newer registration owns the slot
-        state.detached = true;
+      registration.detach = () => {
+        if (this._capture !== registration || registration.detached) return; // a newer registration owns the slot
+        registration.detached = true;
         this._capture = null;
         try { ses.webRequest.onBeforeRequest(filter, null); } catch { /* none */ }
         try { ses.webRequest.onBeforeSendHeaders(filter, null); } catch { /* none */ }
       };
-      this._capture = state;
-      return {
-        captured,
-        detach,
-        snapshot() {
-          return captured.map(({ _id, ...rest }) => ({ ...rest }));
-        }
-      };
+      registration.snapshot = () => captured.map(({ _id, ...rest }) => ({ ...rest }));
+      this._capture = registration;
+      return registration;
     },
 
     // The quiet window (rule 5): after the navigation settles, keep capturing
@@ -588,6 +548,12 @@ function createWebSessionHost(config = {}) {
             this.endNavigation();
           }
           if (captureState) await this.awaitCaptureQuiet(captureState, opts.capture, generation);
+          // A clear() superseded this load: its captures belong to the OLD
+          // account (a caller could mint a session-template from them) — the
+          // load rejects, the plugin treats it as failed.
+          if (this._generation !== generation) {
+            throw notReady('superseded', `[web-session ${cfg.id}] the session was cleared while this load ran`);
+          }
           const finalUrl = this.alive(view) ? view.webContents.getURL() : '';
           return {
             finalUrl,
@@ -663,28 +629,26 @@ function createWebSessionHost(config = {}) {
     },
 
     // fetch({ url, method, headers, body, timeoutMs }) → { status, headers, text }
-    // — a request outside any page carrying the session's cookies. The host
-    // owns cookies on this path in BOTH directions: the request's Cookie
-    // header is built from the jar (Electron's net does not attach a
-    // partition jar reliably; a caller's own Cookie header is dropped), and
-    // the response's Set-Cookie is written INTO the jar — the host building
-    // the request header means Chromium does not save response cookies, so
-    // without this a service that rotates its session cookie on these calls
-    // would rot the session. The returned headers carry set-cookie NAMES
-    // only; values never cross the boundary in either direction. Budgeted
-    // like every other wait (default loadTimeoutMs), and the request is
-    // ABORTED when the budget fires — a stalled call never runs on.
+    // — a request outside any page carrying the session's cookies. CHROMINIUM
+    // OWNS THE JAR: useSessionCookies makes net.request attach the partition's
+    // cookies on every hop (redirects included) and save/delete/reject
+    // response cookies by browser rules — the host does not parse Set-Cookie
+    // and does not build a Cookie header (the old "net does not attach a
+    // partition jar reliably" note was this: useSessionCookies defaults to
+    // false; verified against a live Electron 44 + local server, review on
+    // #1399). The boundary rules stay: a caller's own Cookie header is
+    // dropped (the host owns what is sent), and the returned headers carry
+    // set-cookie NAMES only — values never cross the boundary in either
+    // direction. Budgeted like every other wait (default loadTimeoutMs), and
+    // the request is ABORTED when the budget fires.
     async fetch(request = {}) {
       if (!request.url || typeof request.url !== 'string') throw notReady('invalid', 'web-session fetch needs a url');
       const { net } = electron();
       const ses = this.session();
-      const jar = await this.jarCookies(request.url);
-      const cookieHeader = jar.filter((c) => c.value).map((c) => `${c.name}=${c.value}`).join('; ');
       const headers = { ...(request.headers || {}) };
-      // The host owns the request's cookies. (Cookie values cannot contain
-      // CRLF — Chromium enforces it on set — so this cannot smuggle headers.)
+      // The host owns what is sent. (Cookie values cannot contain CRLF —
+      // Chromium enforces it on set — so this cannot smuggle headers.)
       delete headers.Cookie; delete headers.cookie; delete headers.Cookie2; delete headers.cookie2;
-      if (cookieHeader) headers.Cookie = cookieHeader;
       const method = request.method || 'GET';
       const body = request.body === undefined || request.body === null
         ? undefined
@@ -693,7 +657,7 @@ function createWebSessionHost(config = {}) {
       return await new Promise((resolve) => {
         let req;
         try {
-          req = net.request({ method, url: request.url, session: ses });
+          req = net.request({ method, url: request.url, session: ses, useSessionCookies: true });
         } catch (error) {
           resolve({ status: -1, headers: {}, text: String((error && (error.message || error)) || error) });
           return;
@@ -703,29 +667,21 @@ function createWebSessionHost(config = {}) {
         }
         const chunks = [];
         let settled = false;
-        const finish = async (out) => {
+        const finish = (out) => {
           if (settled) return;
           settled = true;
           if (timer) clearTimeout(timer);
-          // Response cookies go INTO the jar, values never out (the jar write
-          // is best-effort: a bad cookie must not fail an otherwise-good
-          // response).
+          // Chromium already saved the response cookies (it owns the jar);
+          // names only out, never values.
           if (out.headers) {
             const setCookie = out.headers['set-cookie'] || out.headers['Set-Cookie'];
             if (setCookie) {
-              const lines = Array.isArray(setCookie) ? setCookie : [setCookie];
-              const names = [];
-              const writes = [];
-              for (const line of lines) {
-                const cookie = parseSetCookie(line, request.url);
-                if (!cookie) continue;
-                names.push(cookie.name);
-                writes.push(ses.cookies.set(cookie).catch(() => {}));
-              }
+              const names = (Array.isArray(setCookie) ? setCookie : [setCookie])
+                .map((line) => String(line).split('=')[0].trim())
+                .filter(Boolean);
               delete out.headers['set-cookie'];
               delete out.headers['Set-Cookie'];
-              if (names.length) out.headers['set-cookie'] = names; // names only, never values
-              await Promise.all(writes);
+              if (names.length) out.headers['set-cookie'] = names;
             }
           }
           resolve(out);
@@ -913,8 +869,11 @@ function createWebSessionHost(config = {}) {
       this._chain = Promise.resolve(); // cut the queue: a new account starts clean
       // Supersede everything a load still in flight holds: the next
       // generation's captures are not its to detach, its fuse is not the
-      // one to arm.
+      // one to arm. The CURRENT registration is released here (not just
+      // forgotten): a stale listener would keep recording the partition's
+      // requests — the sign-in window shares it — into a dead array.
       this._generation += 1;
+      if (this._capture) this._capture.detach();
       this._capture = null;
       this.cancelPark();
       try {

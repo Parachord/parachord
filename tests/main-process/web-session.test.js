@@ -535,11 +535,7 @@ describe('fetch — the outside-page request with the session jar', () => {
     jest.useRealTimers();
   });
 
-  test('the host owns the Cookie header: built from the jar, caller-supplied ones dropped', async () => {
-    mockJarCookies = [
-      { name: 'at-main', value: 'SECRET', domain: '.testsvc.com' },
-      { name: 'empty', value: '', domain: '.testsvc.com' }
-    ];
+  test('a caller-supplied Cookie header is dropped — the host owns what is sent', async () => {
     const host = newSession();
     mockNetHandlers.push(() => ({ status: 200, text: '{"ok":true}' }));
     const out = await host.fetch({
@@ -549,9 +545,8 @@ describe('fetch — the outside-page request with the session jar', () => {
       body: '{"x":1}'
     });
     expect(out).toEqual({ status: 200, headers: expect.objectContaining({ 'content-type': 'application/json' }), text: '{"ok":true}' });
-    expect(mockNetRequests.length).toBe(1);
     const record = mockNetRequests[0];
-    expect(record.headers.Cookie).toBe('at-main=SECRET'); // jar value, not the smuggled one
+    expect(record.headers.Cookie).toBeUndefined(); // dropped, never forwarded
     expect(record.headers.cookie).toBeUndefined();
     expect(record.opts.method).toBe('POST');
     expect(record.body).toBe('{"x":1}');
@@ -574,8 +569,7 @@ describe('fetch — response cookies and the budget (review on #1399)', () => {
     jest.useRealTimers();
   });
 
-  test('Set-Cookie is written INTO the jar and returned as names only, never values', async () => {
-    mockJarCookies = [{ name: 'session-token', value: 'OLD', domain: '.testsvc.com' }];
+  test('Chromium owns the jar: useSessionCookies, no hand-built Cookie header, set-cookie as names only', async () => {
     const host = newSession();
     mockNetHandlers.push(() => ({
       status: 200,
@@ -583,19 +577,16 @@ describe('fetch — response cookies and the budget (review on #1399)', () => {
       headers: { 'content-type': 'application/json', 'set-cookie': ['session-token=ROTATED; Domain=.testsvc.com; Path=/; Secure; HttpOnly'] }
     }));
     const out = await host.fetch({ url: 'https://music.testsvc.com/api/thing' });
-    // Names only — the value never crosses the boundary.
+    // The request rides the session's own cookie handling — attach on every
+    // hop (redirects included) and response cookies saved by browser rules.
+    // (The old note that net does not attach a partition jar was this:
+    // useSessionCookies defaults to false.)
+    expect(mockNetRequests[0].opts.useSessionCookies).toBe(true);
+    // The host builds NO Cookie header, and never parses Set-Cookie.
+    expect(mockNetRequests[0].headers.Cookie).toBeUndefined();
+    expect(theSession().cookies.set).not.toHaveBeenCalled();
+    // Names only — the value never crosses the boundary in either direction.
     expect(out.headers['set-cookie']).toEqual(['session-token']);
-    // The write landed in the jar (the host builds the request Cookie header
-    // itself, so Chromium does not save response cookies — without this, a
-    // service that rotates its session cookie on these calls rots the session).
-    const ses = theSession();
-    expect(ses.cookies.set).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'session-token', value: 'ROTATED', domain: '.testsvc.com', path: '/', secure: true, httpOnly: true
-    }));
-    // And the NEXT fetch sends the rotated value.
-    mockNetHandlers.push(() => ({ status: 200, text: '{}' }));
-    await host.fetch({ url: 'https://music.testsvc.com/api/next' });
-    expect(mockNetRequests[1].headers.Cookie).toBe('session-token=ROTATED');
   });
 
   test('a default budget with a real abort: a stalled fetch never runs on', async () => {
@@ -630,8 +621,9 @@ describe('clear() during a load (review on #1399)', () => {
     // NOT re-arm the park fuse (B, still in flight, owns the fuse now — its
     // own re-arm on settle is correct and expected).
     await jest.advanceTimersByTimeAsync(3000);
-    const aOut = await a;
-    expect(aOut.finalUrl).toBe(''); // its view died with the clear
+    // A REJECTS with superseded: its captures belong to the old account, and
+    // a caller must never mint a template from them.
+    await expect(a).rejects.toMatchObject({ reason: 'superseded' });
     expect(host._parkTimer).toBeNull(); // neither A (superseded) nor B (mid-flight) armed one
 
     // B's capture is intact: the page fires its request and B returns it.
@@ -652,6 +644,20 @@ describe('clear() during a load (review on #1399)', () => {
     expect(second.captured.length).toBe(1);
     second.detach(); // current: clears the slot
     expect(webRequest.onBeforeRequest).toHaveBeenLastCalledWith(expect.anything(), null);
+  });
+
+  test('clear() DETACHES the current registration — no stale listener records the sign-in window', async () => {
+    const { host } = await warmSession();
+    const webRequest = theSession().webRequest;
+    const registration = host.attachCapture(['https://gql.testsvc.com/*']);
+    await host.clear();
+    // The listener is released, not just forgotten: the sign-in window shares
+    // this partition, and a stale registration would record its requests —
+    // bodies included — into an array nothing reads.
+    expect(webRequest.onBeforeRequest).toHaveBeenLastCalledWith(expect.anything(), null);
+    expect(webRequest.onBeforeSendHeaders).toHaveBeenLastCalledWith(expect.anything(), null);
+    expect(registration.captured.length).toBe(0);
+    expect(host._capture).toBeNull();
   });
 });
 
