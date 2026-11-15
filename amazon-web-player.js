@@ -495,37 +495,43 @@ const amazonWebPlayer = {
           typeof h['csrf-token'] === 'string' && h['csrf-token'].length >= 20 &&
           /^\d+$/.test(String(h['csrf-rnd'] || '')) && /^\d+$/.test(String(h['csrf-ts'] || ''));
         let loadError = null;
+        let headers = null;
         // The writer side of the host's gate, like every other load here
         // (playlist imports, recommendations, the plugin's bridge loads): a
         // real navigation — this one included, which since the searches
         // moved into the plugin (#1356 M5/M6) is the mint's only path —
         // waits out in-flight pageFetch replays rather than tearing their
         // frame mid-fetch, and tells replays arriving meanwhile that a
-        // navigation holds the gate.
-        await webSession.beginNavigation();
-        let headers = null;
-        try {
-          const load = webSession.loadURLBudgeted(win, `https://music.amazon.com/search/${encodeURIComponent(q)}/songs`)
-            .catch((error) => { loadError = error; return null; });
-          for (let i = 0; i < 40 && !headers && !loadError; i++) {
-            await new Promise((resolve) => setTimeout(resolve, 250));
-            for (const entry of captured) {
-              const h = entry.headers;
-              if (h && h['csrf-token'] && tokenLooksReal(h)) {
-                headers = {
-                  csrfToken: h['csrf-token'],
-                  csrfRnd: h['csrf-rnd'] || null,
-                  csrfTs: h['csrf-ts'] || null,
-                  deviceId: h['x-amzn-device-id'] || null
-                };
-                break;
-              }
+        // navigation holds the gate. The gate covers the NAVIGATION only
+        // (like every other flow here): the capture poll after it runs
+        // off-gate, so it never answers replays busy for the whole 10s
+        // window.
+        const navigation = (async () => {
+          await webSession.beginNavigation();
+          try {
+            await webSession.loadURLBudgeted(win, `https://music.amazon.com/search/${encodeURIComponent(q)}/songs`);
+          } catch (error) {
+            loadError = error;
+          } finally {
+            webSession.endNavigation();
+          }
+        })();
+        for (let i = 0; i < 40 && !headers && !loadError; i++) {
+          await new Promise((resolve) => setTimeout(resolve, 250));
+          for (const entry of captured) {
+            const h = entry.headers;
+            if (h && h['csrf-token'] && tokenLooksReal(h)) {
+              headers = {
+                csrfToken: h['csrf-token'],
+                csrfRnd: h['csrf-rnd'] || null,
+                csrfTs: h['csrf-ts'] || null,
+                deviceId: h['x-amzn-device-id'] || null
+              };
+              break;
             }
           }
-          await load;
-        } finally {
-          webSession.endNavigation();
         }
+        await navigation;
         // Park on the warm fuse (template replays need an Amazon-origin page
         // world; parkSearchView's immediate blank only happens on real restarts).
         this.scheduleParkSearchView();

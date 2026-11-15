@@ -941,6 +941,10 @@ describe('amazonSongSearchUrl', () => {
   test('returns null when there is nothing to search', () => {
     expect(lib.amazonSongSearchUrl({ query: '   ' })).toBeNull();
     expect(lib.amazonSongSearchUrl({})).toBeNull();
+    // A lone surrogate in metadata is a miss, not an exception (the callers'
+    // catch would cache the throw as a noMatch); a well-formed pair searches.
+    expect(lib.amazonSongSearchUrl({ title: 'AC\uD83DDC', artist: 'X' })).toBeNull();
+    expect(lib.amazonSongSearchUrl({ title: 'AC\uD83D\uDE00DC', artist: 'X' })).not.toBeNull();
   });
 });
 

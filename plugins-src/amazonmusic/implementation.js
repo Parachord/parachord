@@ -72,8 +72,10 @@ module.exports = {
     // purpose (#1135) — the plugin cannot read the renderer constant.
     const ALBUM_JOB_STALE_MS = 8000;
 
-    // #1220: the plan is read from config.json and cached 30 min (1 min when
-    // unknown), the same TTLs the host's dmls gate uses.
+    // #1220: the plan is read from config.json. The TTLs are the host dmls
+    // gate's (30 min / 1 min) — but only an UNLIMITED reading earns the long
+    // one: getPlan explains why (the plugin cannot hear the plan-changed
+    // event that refreshes the host's dmls cache).
     const PLAN_TTL_MS = 30 * 60 * 1000;
     const PLAN_UNKNOWN_TTL_MS = 60 * 1000;
 
@@ -161,7 +163,16 @@ module.exports = {
         q = String(query || '').trim();
       }
       if (!q) return null;
-      return { url: 'https://music.amazon.com/search/' + encodeURIComponent(q) + '/songs', searchText: q };
+      let url;
+      try {
+        url = 'https://music.amazon.com/search/' + encodeURIComponent(q) + '/songs';
+      } catch (e) {
+        // A lone surrogate in metadata makes encodeURIComponent throw; a query
+        // that malformed is garbage, not a search — miss, never an exception
+        // (the callers' catch would cache it as a noMatch).
+        return null;
+      }
+      return { url, searchText: q };
     }
 
     // The search request the page fired for OUR query — matched on
