@@ -707,7 +707,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                     const isCurrentTrack = currentTrack?.id === track.id;
                     const isNowPlaying = isCurrentTrack && playbackContext?.type === 'search';
 
-                    return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`,
+                    return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`, more: `More actions for ${track.title}`,
                     current: isNowPlaying,
                       key: track._rowKey || track.id,
                       'data-track-id': track.id,

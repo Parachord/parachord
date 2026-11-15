@@ -22,10 +22,15 @@
 // Props: label (the card's name, read by screen readers), current (the
 // playing row: aria-current on its button, so a screen reader says so),
 // tooltip (a note for the whole card, on the stretched button), onActivate,
-// onContextMenu, className, style, children, and anything else for the root
+// onContextMenu, more ("More actions for X": adds the visible More button
+// that opens onContextMenu; rows opt in), moreTone ('dark' on the queue),
+// className, style, children, and anything else for the root
 // (draggable, onDragStart, onMouseEnter, ...), and a ref, which lands on the
 // root. Props-driven; no hooks. React must be global when it loads (as for
 // ui-atoms' React.memo).
+
+const { Button } = require('./button');
+const Icons = require('./icons');
 
 // A keydown handler that opens onContextMenu on Shift+F10 or the Menu key
 // (Chromium on macOS fires no contextmenu event for them). Shared with any
@@ -41,9 +46,20 @@ function menuKeyHandler(onContextMenu) {
   };
 }
 
-function renderCardButton({ label, current, tooltip, onActivate, onContextMenu, className, style, children, ...rest }, ref) {
+function renderCardButton({ label, current, tooltip, onActivate, onContextMenu, more, moreTone, className, style, children, ...rest }, ref) {
   const e = React.createElement;
   const openMenu = menuKeyHandler(onContextMenu);
+  // The visible "More" button (#1386): a row's right-click menu, for anyone
+  // who doesn't right-click. Opt-in (`more` is its accessible name, "More
+  // actions for X"); the last item in the row's own flex layout, so it holds
+  // a slot instead of covering the duration; shown on hover or keyboard focus.
+  const moreButton = more && onContextMenu
+    ? e('div', { className: 'card-actions flex-shrink-0', style: { position: 'relative' } },
+      e(Button, {
+        variant: 'icon', size: 'sm', tone: moreTone, 'aria-label': more, 'data-tooltip': 'More',
+        onClick: (ev) => { ev.stopPropagation(); onContextMenu(ev); },
+      }, e(Icons.MoreHorizontal, { className: 'w-4 h-4' })))
+    : null;
   return e('div', Object.assign({}, rest, {
     ref,
     className: ['card-button', className].filter(Boolean).join(' '),
@@ -66,7 +82,9 @@ function renderCardButton({ label, current, tooltip, onActivate, onContextMenu, 
     'data-tooltip-position': tooltip ? 'bottom' : undefined,
     onClick: onActivate,
     onKeyDown: openMenu,
-  }));
+  }),
+  // After the stretched button: Tab reaches the row, then its More.
+  moreButton);
 }
 
 // forwardRef: rows hand CardButton a ref (the resolution scheduler's

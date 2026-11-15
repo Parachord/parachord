@@ -39038,7 +39038,7 @@ useEffect(() => {
                   const isCurrentTrack = currentTrack?.title === track.title && currentTrack?.artist === track.artist;
                   const isNowPlaying = isCurrentTrack && isPlaying;
 
-                  return React.createElement(CardButton, { role: 'listitem', label: `${track.title} by ${track.artist}`,
+                  return React.createElement(CardButton, { role: 'listitem', label: `${track.title} by ${track.artist}`, more: `More actions for ${track.title}`,
                   current: isNowPlaying,
                     key: track.id,
                     'data-track-id': track.id,
@@ -41439,7 +41439,7 @@ useEffect(() => {
                 setQueueWithContext(tracksAfter, context);
                 handlePlay(playResolverId ? { ...track, preferredResolver: playResolverId } : track);
               };
-              return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`,
+              return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`, more: `More actions for ${track.title}`,
               current: isNowPlaying,
                 key: track.id,
                 'data-track-id': track.id,
@@ -42126,7 +42126,7 @@ useEffect(() => {
                       const isResolving = sourceState === 'resolving';
                       const isUnplayable = sourceState === 'unplayable';
 
-                      return React.createElement(CardButton, { role: 'listitem', label: `${track.title} by ${track.artist}`,
+                      return React.createElement(CardButton, { role: 'listitem', label: `${track.title} by ${track.artist}`, more: `More actions for ${track.title}`,
                         // One song listened to twice is two rows with one
                         // track.id (ListenBrainz's recording_msid); the listen
                         // time tells them apart. track.id itself stays the
@@ -42266,7 +42266,7 @@ useEffect(() => {
                       const hasResolved = sourceState === 'playable';
                       const isResolving = sourceState === 'resolving';
                       const isUnplayable = sourceState === 'unplayable';
-                      return React.createElement(CardButton, { role: 'listitem', label: `${track.title} by ${track.artist}`,
+                      return React.createElement(CardButton, { role: 'listitem', label: `${track.title} by ${track.artist}`, more: `More actions for ${track.title}`,
                         key: track.id,
                         'data-track-id': track.id,
                         ref: (el) => {
@@ -43010,7 +43010,7 @@ useEffect(() => {
                       const isUnplayable = sourceState === 'unplayable';
                       const tracksAfterRecent = sorted.slice(index + 1);
 
-                      return React.createElement(CardButton, { role: 'listitem', label: `${track.title} by ${track.artist}`,
+                      return React.createElement(CardButton, { role: 'listitem', label: `${track.title} by ${track.artist}`, more: `More actions for ${track.title}`,
                         key: track.id || index,
                         'data-track-id': track.id,
                         ref: (el) => {
@@ -43113,7 +43113,7 @@ useEffect(() => {
                         const isResolving = sourceState === 'resolving';
                         const isUnplayable = sourceState === 'unplayable';
 
-                        return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`,
+                        return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`, more: `More actions for ${track.title}`,
                           key: track.id || index,
                           'data-track-id': track.id,
                           ref: (el) => {

@@ -1103,7 +1103,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                     const isCurrentTrack = currentTrack?.id === track.id;
                     const isNowPlaying = isCurrentTrack && playbackContext?.type === 'playlist' && playbackContext?.id === selectedPlaylist?.id;
 
-                    return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`,
+                    return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`, more: `More actions for ${track.title}`,
                     current: isNowPlaying,
                       key: track.id || index,
                       'data-track-id': track.id,

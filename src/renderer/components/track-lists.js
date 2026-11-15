@@ -270,7 +270,7 @@ const VirtualizedQueueList = React.memo(({
     const isInserted = insertedTrackId === track.id;
     const isFallingDown = droppingFromIndex !== null && index <= droppingFromIndex;
 
-    return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`,
+    return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`, more: `More actions for ${track.title}`, moreTone: 'dark',
     current: isCurrentTrack,
       key: track.id,
       'data-index': index,

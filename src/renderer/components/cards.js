@@ -1764,7 +1764,7 @@ const ReleasePage = ({
             const isCurrentTrack = currentTrack?.id === trackId;
             const isNowPlaying = isCurrentTrack && playbackContext?.type === 'album' && playbackContext?.id === release.id;
 
-            return React.createElement(CardButton, { role: 'listitem', label: track.title,
+            return React.createElement(CardButton, { role: 'listitem', label: track.title, more: `More actions for ${track.title}`,
             current: isNowPlaying,
               key: index,
               'data-track-id': trackId,

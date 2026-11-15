@@ -510,7 +510,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                   const isResolving = sourceState === 'resolving';
                   const isUnplayable = sourceState === 'unplayable' && !track.filePath;
 
-                  return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`,
+                  return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`, more: `More actions for ${track.title}`,
                   current: isNowPlaying,
                     ref: (el) => {
                       if (el) {

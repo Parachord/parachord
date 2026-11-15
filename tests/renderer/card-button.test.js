@@ -111,3 +111,29 @@ test('a draggable card drags from its stretched button too', () => {
   expect(CardButton.render({ label: 'x' }, null).props.children[1].props.draggable).toBeUndefined();
 });
 
+
+describe('the visible More button (#1386)', () => {
+  const { renderToStaticMarkup } = require('react-dom/server');
+  const { CardButton } = require('../../src/renderer/components/card-button');
+  test('opt-in: a labelled button that opens the row menu, after the stretched button', () => {
+    const calls = [];
+    const el = CardButton.render({ label: 'Song by A', more: 'More actions for Song', onContextMenu: (ev) => calls.push(ev), children: 'x' }, null);
+    const more = el.props.children[2];
+    expect(more.props.className).toMatch(/card-actions/);
+    const btn = more.props.children;
+    expect(btn.props['aria-label']).toBe('More actions for Song');
+    btn.props.onClick({ stopPropagation() {} });
+    expect(calls).toHaveLength(1);
+    expect(renderToStaticMarkup(React.createElement(CardButton, { label: 'Song', more: 'More', onContextMenu() {} }, 'x'))).toMatch(/aria-label="More"/);
+  });
+  test('no more prop, or no menu, no button', () => {
+    expect(CardButton.render({ label: 'A', onContextMenu() {}, children: 'x' }, null).props.children[2]).toBeNull();
+    expect(CardButton.render({ label: 'A', more: 'More', children: 'x' }, null).props.children[2]).toBeNull();
+  });
+  test('every track list opts in', () => {
+    const fs = require('fs'); const path = require('path');
+    const src = ['src/renderer/app.js', 'src/renderer/components/playlist-view-page.js', 'src/renderer/components/search-page.js', 'src/renderer/components/collection-page.js', 'src/renderer/components/track-lists.js', 'src/renderer/components/cards.js']
+      .map((f) => fs.readFileSync(path.join(__dirname, '../..', f), 'utf8')).join('\n');
+    expect((src.match(/more: `More actions for \$\{track\.title\}`/g) || []).length).toBe(11);
+  });
+});
