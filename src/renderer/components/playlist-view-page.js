@@ -9,9 +9,10 @@
 // React.memo, fed only stable props: state values, useState setters, refs,
 // useCallback results, and Parachord's plain functions as stable wrappers
 // (useStableHandlers in app.js; the list is PLAYLIST_VIEW_PAGE_HANDLERS).
-// The one ref read during render, resolverLoaderRef (the hosted / imported
-// playlist check), changes only when resolvers load, which also changes the
-// allResolvers prop. tests/renderer/page-memo.test.js checks the call site.
+// The hosted / imported playlist check (linkUpdateMode, a stable wrapper)
+// reads resolverLoaderRef during render; it changes only when resolvers load,
+// which also changes the allResolvers prop. tests/renderer/page-memo.test.js
+// checks the call site.
 //
 // The body is the original render expression, unchanged: it reads its inputs
 // from props under their old names.
@@ -31,6 +32,8 @@ const { trackDurationLabel } = require('../lib/track-duration');
 const { playlistPlaybackContext } = require('../lib/playlist-context');
 const { trackSlug } = require('../lib/track-slug');
 const { countOf } = require('../lib/plural');
+const { syncBannerState } = require('../lib/playlist-sync-banner');
+const { tracksFingerprint } = require('../../../sync-engine/auto-pull');
 
 // Column widths that follow the content area (#1389). At the 1000px minimum
 // window the content is 744px: a fixed 240px art column and 140px of source
@@ -51,11 +54,13 @@ const PLAYLIST_VIEW_PAGE_HANDLERS = [
   'handleImportPlaylistFromUrl',
   'handlePlay',
   'handlePlaylistDragEnd',
+  'linkUpdateMode',
   'markPlaylistAsLocallyModified',
   'moveInEditedPlaylist',
   'navigateTo',
   'refreshHostedPlaylist',
   'savePlaylistToStore',
+  'setPlaylistUpdateMode',
   'setQueueWithContext',
 ];
 
@@ -78,6 +83,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
     handlePlaylistDragEnd,
     handlePlaylistTracksScrollRef,
     isPlaying,
+    linkUpdateMode,
     markPlaylistAsLocallyModified,
     moveInEditedPlaylist,
     navigateTo,
@@ -94,7 +100,6 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
     publishCollectionSmartLink,
     refreshHostedPlaylist,
     refreshingPlaylist,
-    resolverLoaderRef,
     resolverOrder,
     savePlaylistToStore,
     handleImportPlaylistFromUrl,
@@ -108,6 +113,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
     setPlaylistEditMode,
     setPlaylistScrollContainerReady,
     setPlaylistTracks,
+    setPlaylistUpdateMode,
     setPlaylists,
     setQueueWithContext,
     setRefreshingPlaylist,
@@ -303,18 +309,36 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                   // Switch to viewing the saved playlist
                   setSelectedPlaylist({ ...newPlaylist, isEphemeral: false });
                 } }, React.createElement(Icons.Check, { className: 'w-4 h-4' }), 'Save'),
-              // Manual refresh. Provider URL imports are snapshots — they are not
-              // re-fetched at launch (that path parsed the provider page as XSPF
-              // and dialoged). Hosted XSPF still auto-updates; this is the
-              // on-demand path for both.
-              !selectedPlaylist?.isEphemeral && !playlistEditMode && selectedPlaylist?.sourceUrl
-                && (selectedPlaylist.source === 'hosted-xspf' || window.isProviderImportedPlaylist(selectedPlaylist, resolverLoaderRef.current))
-                && React.createElement(HeaderControl, { onClick: async () => {
-                    if (refreshingPlaylist === selectedPlaylist.id) return;
-                    setRefreshingPlaylist(selectedPlaylist.id);
-                    try { await refreshHostedPlaylist(selectedPlaylist.id); }
-                    finally { setRefreshingPlaylist(null); }
-                  }, 'data-tooltip': 'Re-import from the source URL. This does not run at launch.' }, refreshingPlaylist === selectedPlaylist.id ? 'Refreshing…' : 'Refresh'),
+              // A playlist imported from a link is kept updated from it or a
+              // snapshot (lib/playlist-update-mode.js). Kept updated: check
+              // now, or stop. A snapshot never changes, so it has no refresh;
+              // "Keep updated" turns updating on (and updates it now).
+              (() => {
+                if (selectedPlaylist?.isEphemeral || playlistEditMode) return null;
+                const mode = linkUpdateMode(selectedPlaylist);
+                if (!mode) return null;
+                const id = selectedPlaylist.id;
+                if (mode === 'snapshot') {
+                  return React.createElement(HeaderControl, {
+                    onClick: () => setPlaylistUpdateMode(id, 'auto'),
+                    'data-tooltip': 'A snapshot of its link. Keep it updated from the link instead'
+                  }, 'Keep updated');
+                }
+                return React.createElement(React.Fragment, null,
+                  React.createElement(HeaderControl, {
+                    onClick: async () => {
+                      if (refreshingPlaylist === id) return;
+                      setRefreshingPlaylist(id);
+                      try { await refreshHostedPlaylist(id); }
+                      finally { setRefreshingPlaylist(null); }
+                    },
+                    'data-tooltip': 'Updates on its own from its link. This checks now'
+                  }, refreshingPlaylist === id ? 'Checking…' : 'Check now'),
+                  React.createElement(HeaderControl, {
+                    onClick: () => setPlaylistUpdateMode(id, 'snapshot'),
+                    'data-tooltip': 'Keep it as it is now and stop updating it'
+                  }, 'Stop updating'));
+              })(),
               // Edit / Cancel+Done buttons (only for non-ephemeral playlists)
               !selectedPlaylist?.isEphemeral && (playlistEditMode ? React.createElement(React.Fragment, null,
                 // Cancel button
@@ -432,73 +456,24 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
             });
           })(),
 
-          // Playlist sync banner (shown when playlist needs sync - push, pull, or conflict)
+          // Playlist sync banner: local edits to push, or a conflict. A
+          // remote change alone shows nothing, because the next sync pulls it
+          // (sync-engine/auto-pull.js; states in lib/playlist-sync-banner.js).
+          // Hosted XSPF playlists only ever show push: the XSPF poller is
+          // their upstream, so a pull from the service would be reverted.
           (() => {
             const playlist = selectedPlaylist;
-            if (!playlist?.syncedFrom) return null;
+            const banner = syncBannerState(playlist);
+            if (!banner) return null;
 
-            const hasRemoteUpdates = playlist.hasUpdates;
             const provider = playlist.syncedFrom.resolver;
             const providerName = provider === 'spotify' ? 'Spotify' : provider;
-
-            // `locallyModified: true` has two triggers: (a) the user edited
-            // local content, and (b) handlePull on a multi-mirror playlist
-            // sets it so the next push loop propagates the pull to OTHER
-            // mirrors. The push banner here targets the source provider
-            // (syncedFrom.resolver), so showing it for case (b) is a lie —
-            // pushing back to the source we just pulled from is a no-op
-            // (the push loop's provider-scoped syncedFrom guard correctly
-            // skips it). Gate on actual divergence from the source: local
-            // content is newer than the last time we agreed with it.
-            const sourceSyncedAt = playlist.syncSources?.[provider]?.syncedAt || 0;
-            const localLastModified = playlist.lastModified || 0;
-            const hasLocalChanges = !!playlist.locallyModified && localLastModified > sourceSyncedAt;
-
-            // No sync needed
-            if (!hasRemoteUpdates && !hasLocalChanges) return null;
-
-            // Hosted XSPF playlists have a stronger upstream than the remote
-            // provider: the hosted URL poller runs every 5 minutes and will
-            // revert any pulled tracks by re-applying the XSPF. Pull on a
-            // hosted playlist is therefore a no-op (or worse — the
-            // subsequent push would overwrite the remote changes anyway).
-            // Suppress the pull UI entirely and treat conflict as push-only.
-            // Provider URL imports also carry sourceUrl, but nothing polls them.
-            // Treating them as hosted hides a real pull. Hosted means the XSPF
-            // poller is still the upstream.
-            const isProviderSnapshot = typeof playlist.source === 'string' && playlist.source.endsWith('-import');
-            const isHosted = !!playlist.sourceUrl && !isProviderSnapshot;
-            if (isHosted && !hasLocalChanges) {
-              // Pure pull state would be meaningless — the XSPF poller wins.
-              return null;
-            }
-
-            // Determine sync state and which version is newer
-            const localModTime = playlist.lastModified || 0;
-            const lastSyncTime = playlist.syncSources?.[provider]?.syncedAt || 0;
-
-            // For conflicts, local wins if modified after last sync
-            const localIsNewer = localModTime > lastSyncTime;
-
-            // Sync state: 'push' | 'pull' | 'conflict'
-            let syncState;
-            if (isHosted) {
-              // Hosted playlists always express state as push: the XSPF is
-              // canonical, so remote changes (even concurrent with local)
-              // will be overwritten by the next push from the XSPF.
-              syncState = 'push';
-            } else if (hasLocalChanges && hasRemoteUpdates) {
-              syncState = 'conflict';
-            } else if (hasLocalChanges) {
-              syncState = 'push';
-            } else {
-              syncState = 'pull';
-            }
+            const syncState = banner.state; // 'push' | 'conflict'
+            const localIsNewer = banner.localIsNewer;
 
             // Colors based on state
             const colors = {
               push: { bg: 'rgba(34, 197, 94, 0.12)', border: 'rgba(34, 197, 94, 0.25)', text: 'text-ink-success', iconBg: 'rgba(34, 197, 94, 0.2)' },
-              pull: { bg: 'rgba(147, 51, 234, 0.12)', border: 'rgba(147, 51, 234, 0.25)', text: 'text-accent', iconBg: 'rgba(147, 51, 234, 0.2)' },
               conflict: { bg: 'rgba(234, 179, 8, 0.12)', border: 'rgba(234, 179, 8, 0.25)', text: 'text-ink-warning', iconBg: 'rgba(234, 179, 8, 0.2)' }
             };
             const c = colors[syncState];
@@ -522,7 +497,9 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                     hasUpdates: false,
                     syncedFrom: {
                       ...prev.syncedFrom,
-                      snapshotId: result.snapshotId
+                      snapshotId: result.snapshotId,
+                      // The source now has these tracks (sync-engine/auto-pull.js).
+                      tracksFingerprint: tracksFingerprint(playlist.tracks)
                     },
                     syncSources: {
                       ...prev.syncSources,
@@ -566,7 +543,8 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                     locallyModified: hasOtherMirrors,
                     syncedFrom: {
                       ...prev.syncedFrom,
-                      snapshotId: result.snapshotId
+                      snapshotId: result.snapshotId,
+                      tracksFingerprint: tracksFingerprint(result.tracks)
                     },
                     syncSources: {
                       ...prev.syncSources,
@@ -628,21 +606,17 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                     },
                       syncState === 'push'
                         ? React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12' })
-                        : syncState === 'pull'
-                        ? React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4' })
                         : React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z' })
                     )
                   ),
                   React.createElement('div', { className: 'flex flex-col' },
                     React.createElement('span', {
                       className: `text-xs font-medium tracking-widest uppercase ${c.text}`
-                    }, syncState === 'push' ? 'Local Changes' : syncState === 'pull' ? 'Remote Changes' : 'Sync Conflict'),
+                    }, syncState === 'push' ? 'Local Changes' : 'Sync Conflict'),
                     React.createElement('span', {
                       className: 'text-sm text-ink-secondary'
                     }, syncState === 'push'
                       ? `Push your changes to ${providerName}`
-                      : syncState === 'pull'
-                      ? `Updated on ${providerName}`
                       : localIsNewer
                       ? `Your local changes are newer`
                       : `${providerName} version is newer`)
@@ -669,7 +643,6 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                     onClick: syncState === 'push' || (syncState === 'conflict' && localIsNewer) ? handlePush : handlePull,
                     className: `flex items-center gap-1.5 px-4 py-1.5 text-white text-xs font-medium rounded-full transition-colors ${
                       syncState === 'push' ? 'bg-green-600 hover:bg-green-700' :
-                      syncState === 'pull' ? 'bg-accent-fill hover:bg-accent-fill-hover' :
                       localIsNewer ? 'bg-green-600 hover:bg-green-700' : 'bg-accent-fill hover:bg-accent-fill-hover'
                     }`,
                     style: { boxShadow: `0 2px 8px ${syncState === 'push' || (syncState === 'conflict' && localIsNewer) ? 'rgba(34, 197, 94, 0.3)' : 'rgba(147, 51, 234, 0.3)'}` }
@@ -680,7 +653,6 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                         : React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4' })
                     ),
                     syncState === 'push' ? `Push to ${providerName}` :
-                    syncState === 'pull' ? 'Pull Changes' :
                     localIsNewer ? 'Push Local' : 'Pull Remote'
                   )
                 )

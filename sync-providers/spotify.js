@@ -264,6 +264,23 @@ const transformArtist = (artist) => {
 };
 
 /**
+ * The playlist's own cover, or null. Spotify answers a playlist with no
+ * uploaded image with a generated 2x2 mosaic of its first albums
+ * (mosaic.scdn.co); that's the same thing our own mosaic shows, and ours
+ * follows local edits, so it isn't taken as a cover.
+ */
+const playlistCoverArt = (images) => {
+  const url = images?.[0]?.url;
+  if (typeof url !== 'string' || !url) return null;
+  try {
+    if (new URL(url).hostname === 'mosaic.scdn.co') return null;
+  } catch {
+    return null;
+  }
+  return url;
+};
+
+/**
  * Transform Spotify playlist object to SyncPlaylist
  */
 const transformPlaylist = (playlist, folderId = null, folderName = null) => {
@@ -273,6 +290,9 @@ const transformPlaylist = (playlist, folderId = null, folderName = null) => {
     name: playlist.name,
     description: playlist.description || '',
     image: playlist.images?.[0]?.url || null,
+    // The playlist's cover for the local record (sync-start.js stores it as
+    // coverArt; see "Playlist covers" in docs/architecture/album-art.md).
+    coverArt: playlistCoverArt(playlist.images),
     trackCount: playlist.tracks?.total ?? playlist.items?.total ?? 0,
     snapshotId: playlist.snapshot_id,
     folderId,
@@ -936,5 +956,6 @@ const SpotifySyncProvider = {
 // Persistence wiring for the §2b abuse-mode breaker (main.js calls this once at
 // startup with electron-store-backed load/save).
 SpotifySyncProvider._setBreakerStore = _setBreakerStore;
+SpotifySyncProvider.transformPlaylist = transformPlaylist;
 
 module.exports = SpotifySyncProvider;

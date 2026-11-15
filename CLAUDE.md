@@ -91,6 +91,7 @@ Summary; the full text, with the incidents behind each rule, is in [renderer-pat
 - **Source icons come from `visibleSources`** (`src/renderer/lib/visible-sources.js`): a row's service icons, order and dimming are one rule (real sources, `playbackResolvers` only, `resolverOrder`), never a per-list copy.
 - **Track lengths come from `trackDurationLabel`** (`src/renderer/lib/track-duration.js`): the track's own duration, else its best source's (same merge as `visibleSources`), else a blank cell, never "0:00".
 - **Filter buttons come from `FilterChips`** (`src/renderer/components/filter-chips.js`, Home's source filter style): a row of pick-one chips never carries its own pill classes.
+- **A playlist link's "keep it updated or snapshot" question comes from `PlaylistUpdateDialog` / `UpdateModeChoice`** (`src/renderer/components/playlist-update-dialog.js`, on `Modal` and `RadioGroup`): every way of importing a playlist from a link asks it the same way. What each mode does: "Link imports" in [sync.md](docs/architecture/sync.md).
 - **Artist cards come from `ArtistCard`** (`src/renderer/components/artist-card.js`): every artist grid (Collection, Search, Recommendations, top artists, related artists) is this card, with Play (`playArtistTopTracks`) on hover and the artist menu, whose Add Top 10 to Queue replaces a hover queue button. Seven hand-built copies had drifted.
 - **Person cards come from `ListenerCard`** (`src/renderer/components/listener-card.js`): Collection's Friends and Recommendations' Listeners share it; each page passes its own menu and lines, and Play (`playListenerTopTracks`) plays their recent top 10.
 - **Counts in UI text come from `countOf`** (`src/renderer/lib/plural.js`): `countOf(n, 'track')` gives "1 track" / "2 tracks"; never write `${n} tracks`, which reads "1 tracks". `tests/renderer/plural.test.js` fails on a hard-coded one (console lines and AI-prompt text excepted).
@@ -217,6 +218,7 @@ Anything that creates a shared invariant or data shape that Android also has to 
 - Resolver scoring / confidence model changes — `confidence-scoring.js` ↔ `ResolverScoring.kt` byte-equivalence is the strictest mirror requirement
 - Achordion-facing endpoints (writer endpoints that the desktop calls and Android should also call, or where Android's submit semantics need to match)
 - Protocol surface additions (`parachord://` deep links — see "Android Parity Requirements (protocol play handlers)" in [android-parity.md](docs/architecture/android-parity.md))
+- Playlist import link types: mobile imports a playlist from every link desktop does, routed through the plugin registry on both (see "Android Parity Requirements (playlist link import)" in [android-parity.md](docs/architecture/android-parity.md))
 
 ### When this does NOT apply
 

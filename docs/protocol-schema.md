@@ -537,6 +537,8 @@ parachord://playlist/abc123
 Import a playlist into Parachord from an external source. Supports hosted XSPF URLs or inline track data. This is the primary mechanism used by the embeddable "Send to Parachord" button.
 
 > **User confirmation required.** Because this command can be triggered by external sources, Parachord shows a confirmation dialog before fetching a remote URL or saving imported tracks. See [Security Considerations](#security-considerations).
+>
+> For `url=`, that dialog also asks whether to keep the playlist updated from the URL or import a snapshot of it as it is today; Cancel imports nothing. A URL the person already imported is refreshed after a plain confirmation and keeps its earlier choice. Nothing in the link sets the choice.
 
 **From hosted XSPF URL:**
 ```
