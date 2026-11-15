@@ -24,6 +24,10 @@ const mockNetHandlers = [];
 let mockJarCookies = [];
 
 jest.mock('electron', () => {
+  function hostOf(url) {
+    try { return '.' + new URL(url).hostname.split('.').slice(-2).join('.'); } catch (e) { return null; }
+  }
+
   function makeWebContents({ startUrl = 'about:blank' } = {}) {
     const pending = [];
     const wc = {
@@ -105,6 +109,14 @@ jest.mock('electron', () => {
             try { host = new URL(url).hostname; } catch (e) { host = null; }
             return mockJarCookies.filter((c) =>
               host && (c.domain === host || c.domain === '.' + host || host.endsWith(c.domain.replace(/^\\./, ''))));
+          }),
+          // The jar write path for response cookies (the host builds the
+          // request Cookie header itself, so Chromium does not save them).
+          set: jest.fn(async (cookie) => {
+            const key = cookie.name + '|' + (cookie.domain || '');
+            const i = mockJarCookies.findIndex((c) => c.name + '|' + (c.domain || '') === key);
+            if (i >= 0) mockJarCookies.splice(i, 1);
+            mockJarCookies.push({ name: cookie.name, value: cookie.value, domain: cookie.domain || hostOf(cookie.url) });
           })
         },
         setPermissionRequestHandler: jest.fn(),
@@ -122,18 +134,22 @@ jest.mock('electron', () => {
     net: {
       request: (opts) => {
         const headers = {};
-        const record = { opts, headers, body: null, handlers: {} };
+        const record = { opts, headers, body: null, handlers: {}, aborted: false };
         mockNetRequests.push(record);
         const req = {
           setHeader: (k, v) => { headers[k] = v; },
+          abort: () => { record.aborted = true; },
           on: (event, cb) => { record.handlers[event] = cb; return req; },
           end: (body) => {
             record.body = body;
             const handler = mockNetHandlers.shift() || (() => ({ status: 200, text: '{}' }));
-            const { status, text } = handler({ url: opts.url, headers, body });
+            const out = handler({ url: opts.url, headers, body });
+            // A handler returning nothing hangs the request (the timeout path).
+            if (!out) return;
+            const { status, text, headers: resHeaders } = out;
             const res = {
               statusCode: status,
-              headers: { 'content-type': 'application/json' },
+              headers: resHeaders || { 'content-type': 'application/json' },
               on: (ev, cb) => {
                 if (ev === 'data') setImmediate(() => cb(Buffer.from(text)));
                 if (ev === 'end') setImmediate(() => cb());
@@ -548,6 +564,125 @@ describe('fetch — the outside-page request with the session jar', () => {
     expect(mockNetRequests[0].body).toBe('{"a":1}');
     mockNetHandlers.push(() => ({ status: 500, text: 'no' }));
     await expect(host.fetch({ url: 'https://music.testsvc.com/b' })).resolves.toMatchObject({ status: 500 });
+  });
+});
+
+describe('fetch — response cookies and the budget (review on #1399)', () => {
+  beforeEach(() => {
+    // The net mock delivers responses over setImmediate, which fake timers
+    // starve; fetch itself has no timers to fake.
+    jest.useRealTimers();
+  });
+
+  test('Set-Cookie is written INTO the jar and returned as names only, never values', async () => {
+    mockJarCookies = [{ name: 'session-token', value: 'OLD', domain: '.testsvc.com' }];
+    const host = newSession();
+    mockNetHandlers.push(() => ({
+      status: 200,
+      text: '{"ok":true}',
+      headers: { 'content-type': 'application/json', 'set-cookie': ['session-token=ROTATED; Domain=.testsvc.com; Path=/; Secure; HttpOnly'] }
+    }));
+    const out = await host.fetch({ url: 'https://music.testsvc.com/api/thing' });
+    // Names only — the value never crosses the boundary.
+    expect(out.headers['set-cookie']).toEqual(['session-token']);
+    // The write landed in the jar (the host builds the request Cookie header
+    // itself, so Chromium does not save response cookies — without this, a
+    // service that rotates its session cookie on these calls rots the session).
+    const ses = theSession();
+    expect(ses.cookies.set).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'session-token', value: 'ROTATED', domain: '.testsvc.com', path: '/', secure: true, httpOnly: true
+    }));
+    // And the NEXT fetch sends the rotated value.
+    mockNetHandlers.push(() => ({ status: 200, text: '{}' }));
+    await host.fetch({ url: 'https://music.testsvc.com/api/next' });
+    expect(mockNetRequests[1].headers.Cookie).toBe('session-token=ROTATED');
+  });
+
+  test('a default budget with a real abort: a stalled fetch never runs on', async () => {
+    const host = newSession({ loadTimeoutMs: 60 });
+    mockNetHandlers.push(() => null); // hang: no response ever
+    const out = await host.fetch({ url: 'https://music.testsvc.com/stall' });
+    expect(out.status).toBe(-1);
+    expect(out.text).toMatch(/exceeded 60ms/);
+    expect(mockNetRequests[0].aborted).toBe(true);
+  });
+});
+
+describe('clear() during a load (review on #1399)', () => {
+  test("the old load's detach never removes the new load's capture; it never re-arms the park", async () => {
+    const { host } = await warmSession({ warmMs: 60000 });
+    const a = host.load('https://music.testsvc.com/first', {
+      capture: { urlPrefixes: ['https://gql.testsvc.com/*'], quietMs: 5000, budgetMs: 20000 }
+    });
+    await jest.advanceTimersByTimeAsync(0); // navigation done; A is in its quiet window
+
+    await host.clear(); // cuts the chain, destroys the view, bumps the generation
+    // B starts immediately — the chain was cut — and attaches its capture.
+    // B's quiet window is long: B must still be MID-FLIGHT when A's teardown
+    // runs, so a wrongly-armed fuse would be visible.
+    const b = host.load('https://music.testsvc.com/second', {
+      capture: { urlPrefixes: ['https://gql.testsvc.com/*'], quietMs: 6000, budgetMs: 30000 }
+    });
+    await jest.advanceTimersByTimeAsync(0);
+
+    // A's quiet window sees the generation change and returns; its finally
+    // must NOT detach B's capture (the registration identity guard) and must
+    // NOT re-arm the park fuse (B, still in flight, owns the fuse now — its
+    // own re-arm on settle is correct and expected).
+    await jest.advanceTimersByTimeAsync(3000);
+    const aOut = await a;
+    expect(aOut.finalUrl).toBe(''); // its view died with the clear
+    expect(host._parkTimer).toBeNull(); // neither A (superseded) nor B (mid-flight) armed one
+
+    // B's capture is intact: the page fires its request and B returns it.
+    fireCaptured({ id: 42, body: '{"b":1}' });
+    await jest.advanceTimersByTimeAsync(7000);
+    const bOut = await b;
+    expect(bOut.captures).toEqual([expect.objectContaining({ body: '{"b":1}' })]);
+  });
+
+  test('attachCapture is identity-guarded directly: only the current registration detaches', async () => {
+    const { host } = await warmSession();
+    const webRequest = theSession().webRequest;
+    const first = host.attachCapture(['https://gql.testsvc.com/*']);
+    const second = host.attachCapture(['https://gql.testsvc.com/*']); // replaces as current
+    first.detach(); // superseded: must NOT clear the slot
+    expect(webRequest.onBeforeRequest).toHaveBeenLastCalledWith(expect.anything(), expect.any(Function));
+    fireCaptured({ id: 1, body: '{"x":1}' });
+    expect(second.captured.length).toBe(1);
+    second.detach(); // current: clears the slot
+    expect(webRequest.onBeforeRequest).toHaveBeenLastCalledWith(expect.anything(), null);
+  });
+});
+
+describe('signIn — one ticker per open window (review on #1399)', () => {
+  test('a second signIn while the window is open joins the pending promise (no double ticking)', async () => {
+    const { host } = await warmSession();
+    const decide = jest.fn(() => false);
+    const first = host.signIn('https://music.testsvc.com/', { decide });
+    await jest.advanceTimersByTimeAsync(0);
+    const auth = mockAuthWindows[mockAuthWindows.length - 1];
+    await jest.advanceTimersByTimeAsync(2000);
+    expect(decide).toHaveBeenCalledTimes(2);
+
+    const second = host.signIn('https://music.testsvc.com/', { decide });
+    expect(auth.focused).toBe(true); // the second call focuses the open window
+    await jest.advanceTimersByTimeAsync(2000);
+    expect(decide).toHaveBeenCalledTimes(4); // still one decide per second — no second interval
+
+    auth.close();
+    // Both callers settle with the same verdict from the same one ticker.
+    expect(await first).toEqual({ signedIn: false });
+    expect(await second).toEqual({ signedIn: false });
+  });
+});
+
+describe('pageFetch — the verb default (review on #1399)', () => {
+  test('defaults to GET, same as fetch (one verb per omitted method)', async () => {
+    const { host, view } = await warmSession();
+    view.webContents.executeJavaScript.mockResolvedValue({ status: 200, text: '{}' });
+    await host.pageFetch({ url: 'https://gql.testsvc.com/', headers: {} });
+    expect(view.webContents.executeJavaScript.mock.calls[0][0]).toContain('"GET"');
   });
 });
 
