@@ -44593,33 +44593,19 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                       lineHeight: '1.6'
                     }
                   }, 'Scan a connected service for duplicate playlists and orphaned local playlists. Unambiguous local playlists get re-linked to their matching remote copy first, then duplicates are removed — the copy your local is already linked to is kept (or the copy with the most tracks, if none are linked).'),
-                  // Cleanup buttons for each enabled sync provider
-                  React.createElement('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap' } },
+                  // One row per synced service: its logo and name, then the
+                  // action (the shared Button). The buttons used to wrap into
+                  // a ragged two-and-one, in Title Case.
+                  React.createElement('div', { style: { display: 'flex', flexDirection: 'column' } },
                     Object.entries(syncProviderConfig)
                       .filter(([pid]) => resolverSyncSettings[pid]?.enabled)
                       .map(([pid, config]) =>
-                        React.createElement('button', {
+                        React.createElement('div', {
                           key: pid,
-                          onClick: () => handleCleanupDuplicatePlaylists(pid),
-                          disabled: cleanupDuplicatesState.loading,
-                          style: {
-                            padding: '10px 16px',
-                            backgroundColor: cleanupDuplicatesState.loading && cleanupDuplicatesState.providerId === pid ? 'var(--hover-bg-subtle)' : 'var(--hover-bg-default)',
-                            color: 'var(--text-primary)',
-                            fontSize: '13px',
-                            fontWeight: '500',
-                            borderRadius: '8px',
-                            border: '1px solid var(--border-subtle)',
-                            cursor: cleanupDuplicatesState.loading ? 'wait' : 'pointer',
-                            transition: 'background-color 150ms ease',
-                            opacity: cleanupDuplicatesState.loading && cleanupDuplicatesState.providerId !== pid ? 0.5 : 1,
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px'
-                          },
-                          onMouseEnter: (e) => { if (!cleanupDuplicatesState.loading) e.currentTarget.style.backgroundColor = 'var(--hover-bg-subtle)'; },
-                          onMouseLeave: (e) => { if (!cleanupDuplicatesState.loading || cleanupDuplicatesState.providerId !== pid) e.currentTarget.style.backgroundColor = 'var(--hover-bg-default)'; }
+                          className: 'flex items-center justify-between',
+                          style: { gap: '12px', padding: '10px 0', borderTop: '1px solid var(--border-subtle)' }
                         },
+                          React.createElement('div', { className: 'flex items-center', style: { gap: '10px', minWidth: 0 } },
                           React.createElement('div', {
                             style: {
                               width: '20px', height: '20px', borderRadius: '6px',
@@ -44643,9 +44629,14 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                                 : React.createElement('path', { d: 'M47.76,86.16v-38.4c0-1.44,0.8-2.32,2.4-2.64l33.12-6.72c1.76-0.32,2.72,0.48,2.88,2.4v29.28c0,2.4-3.6,4-10.8,4.8c-13.68,2.16-11.52,25.2,7.2,18.96c7.2-2.64,8.4-9.6,8.4-16.56V21.12c0,0,0-4.8-4.08-3.6l-40.8,8.4c0,0-3.12,0.48-3.12,4.32v48.72c0,2.4-3.6,4-10.8,4.8c-13.68,2.16-11.52,25.2,7.2,18.96C46.56,100.08,47.76,93.12,47.76,86.16z' })
                             )
                           ),
-                          cleanupDuplicatesState.loading && cleanupDuplicatesState.providerId === pid
-                            ? `Cleaning ${config.name}…`
-                            : `Clean Up ${config.name} Duplicates`
+                            React.createElement('span', { className: 'text-sm font-medium text-ink-primary' }, config.name)
+                          ),
+                          React.createElement(Button, {
+                            variant: 'secondary', size: 'sm',
+                            onClick: () => handleCleanupDuplicatePlaylists(pid),
+                            disabled: cleanupDuplicatesState.loading,
+                            'aria-label': `Clean up ${config.name} duplicates`
+                          }, cleanupDuplicatesState.loading && cleanupDuplicatesState.providerId === pid ? 'Cleaning…' : 'Clean up duplicates')
                         )
                       ),
                     // Nothing synced yet: offer each service's sync setup here.
@@ -44709,11 +44700,10 @@ React.createElement(Switch, { checked: scrobblingEnabled, onToggle: async () => 
                         : 'Preview the new sync engine and switch this device over')
                     ),
                     nwayEngineMode === 'new'
-                      ? React.createElement('button', {
-                          onClick: () => revertNwayMigration(),
-                          className: 'px-3 py-1.5 text-xs font-medium text-ink-secondary bg-surface-inset rounded-lg hover:bg-surface-hover transition-colors'
-                        }, 'Switch back to classic')
-                      : React.createElement(Button, { variant: 'text', size: 'sm', onClick: () => startNwayMigration() }, 'Preview')
+                      // Both are buttons (secondary): "Preview" was a text link
+                      // and "Switch back" a hand-styled pill.
+                      ? React.createElement(Button, { variant: 'secondary', size: 'sm', onClick: () => revertNwayMigration() }, 'Switch back to classic')
+                      : React.createElement(Button, { variant: 'secondary', size: 'sm', onClick: () => startNwayMigration() }, 'Preview…')
                   )
                 ),
 
