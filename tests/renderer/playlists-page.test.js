@@ -36,3 +36,11 @@ test('Create and Cmd+N open the New playlist dialog', () => {
   expect(app).toMatch(/newPlaylistDialogName !== null && \(\(\) => \{[\s\S]{0,1600}title: 'New playlist'/);
   expect(app).not.toContain("bg-green-600 hover:bg-green-700");
 });
+
+test("a chat playlist card finds its playlist when clicked, not from the render's list", () => {
+  const i = app.indexOf('const handlePlaylistCardClick = () => {');
+  const fn = app.slice(i, app.indexOf('\n        };', i));
+  expect(fn).toContain('const all = playlistsRef.current || [];');
+  expect(fn).not.toMatch(/\bplaylists\.find\(/);
+  expect(fn).toMatch(/showToast\('Couldn’t find that playlist/);
+});

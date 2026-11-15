@@ -18013,12 +18013,22 @@ ${trackListXml}
       } else if (type === 'playlist') {
         // Playlist card: {{playlist|name|id|trackCount}}
         const [playlistName, playlistId, trackCount] = parts;
+        // Looked up when clicked, from the ref: the message was drawn before
+        // the playlist it names existed, so the render's `playlists` never had
+        // it and the click did nothing. The model sometimes garbles the id, so
+        // the name is the fallback.
         const handlePlaylistCardClick = () => {
-          closeAiChat();
-          const playlist = playlists.find(p => p.id === playlistId);
-          if (playlist) {
-            loadPlaylist(playlist);
+          const all = playlistsRef.current || [];
+          const wanted = (playlistName || '').trim().toLowerCase();
+          const playlist = all.find(p => p.id === playlistId)
+            || all.find(p => (p.title || '').trim().toLowerCase() === wanted && p.creator === 'Shuffleupagus')
+            || all.find(p => (p.title || '').trim().toLowerCase() === wanted);
+          if (!playlist) {
+            showToast('Couldn’t find that playlist. It may not have been saved; look in Playlists.', 'error');
+            return;
           }
+          closeAiChat();
+          loadPlaylist(playlist);
         };
         return React.createElement('button', { type: 'button', className: 'w-full text-left',
           key,
