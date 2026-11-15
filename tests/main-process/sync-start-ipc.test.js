@@ -448,6 +448,79 @@ describe('sync:start pulls a changed import without asking', () => {
     expect(saved('listenbrainz-abc').coverArt).toBe('https://img/own.jpg');
   });
 
+  test('a legacy edited import survives an unchanged sync, then comes out of a remote change as a conflict', async () => {
+    // Imported before the fingerprint: only the old timestamp rule knows it
+    // was edited, and an unchanged sync moves syncedAt past the edit.
+    const legacy = imported('abc', {
+      tracks: [],
+      syncedFrom: { resolver: 'listenbrainz', externalId: 'abc', snapshotId: 'snap-1' },
+      syncSources: { listenbrainz: { syncedAt: 50 } },
+      locallyModified: true,
+      lastModified: 100,
+    });
+    let snapshot = 'snap-1';
+    const fetched = [];
+    const harness = makeHarness({
+      shortCircuit: ({ localPlaylist, remotePlaylist }) => localPlaylist.syncedFrom?.snapshotId === remotePlaylist.snapshotId,
+      provider: {
+        fetchPlaylists: async () => ({ playlists: [{ ...remote('abc'), snapshotId: snapshot }] }),
+        fetchPlaylistTracks: async (externalId) => { fetched.push(externalId); return NEW; },
+      },
+      storeData: { ...LB, local_playlists: [legacy] },
+    });
+    const sync = () => harness.handlers.get('sync:start')(event, 'listenbrainz', { settings: { syncPlaylists: true } });
+    const saved = () => harness.store.data.local_playlists.find((p) => p.id === 'listenbrainz-abc');
+
+    await sync(); // unchanged: short-circuits, moves syncedAt
+    expect(saved().syncSources.listenbrainz.syncedAt).toBeGreaterThan(100);
+    // The push loop clears the flag once other mirrors catch up.
+    harness.store.data.local_playlists = harness.store.data.local_playlists.map((p) => ({ ...p, locallyModified: false }));
+
+    snapshot = 'snap-2';
+    await sync();
+    expect(fetched).toEqual([]);
+    expect(saved().tracks).toEqual([]);
+    expect(saved().syncedFrom.snapshotId).toBe('snap-1');
+    expect(saved().hasUpdates).toBe(true);
+  });
+
+  test('a legacy unedited import is seeded on its first sync and pulled on a later change', async () => {
+    const legacy = imported('abc', { syncedFrom: { resolver: 'listenbrainz', externalId: 'abc', snapshotId: 'snap-1' } });
+    const { tracksFingerprint } = require('../../sync-engine/auto-pull');
+    const { saved } = await run({ local: [legacy], remotes: [{ ...remote('abc'), snapshotId: 'snap-1' }] });
+    expect(saved('listenbrainz-abc').syncedFrom.tracksFingerprint).toBe(tracksFingerprint(OLD));
+  });
+
+  test('a fetch the service refuses (429 after retries) fails that playlist and leaves it for the next sync', async () => {
+    const { result, saved } = await run({
+      local: [imported('abc', { hasUpdates: true })],
+      remotes: [remote('abc')],
+      fetchPlaylistTracks: () => { throw new Error('Spotify API rate limit exceeded after maximum retries'); },
+    });
+    expect(result.success).toBe(true);
+    expect(result.results.playlists.failed).toBe(1);
+    const pl = saved('listenbrainz-abc');
+    expect(pl.tracks).toEqual(OLD);
+    expect(pl.syncedFrom.snapshotId).toBe('snap-1');
+  });
+
+  test('a save during the sync that only moved lastModified (the sources flush) still takes the pull', async () => {
+    const { saved } = await run({
+      local: [imported('abc'), imported('def')],
+      remotes: [remote('abc'), remote('def')],
+      fetchPlaylistTracks: (externalId, harness) => {
+        if (externalId === 'def') {
+          harness.store.data.local_playlists = harness.store.data.local_playlists.map((p) => (p.id === 'listenbrainz-abc'
+            ? { ...p, lastModified: 3000, tracks: p.tracks.map((t) => ({ ...t, sources: { x: {} } })) }
+            : p));
+        }
+        return NEW;
+      },
+    });
+    expect(saved('listenbrainz-abc').tracks).toEqual(NEW);
+    expect(saved('listenbrainz-abc').hasUpdates).toBe(false);
+  });
+
   test('a hosted XSPF is never pulled from the service', async () => {
     const hosted = imported('abc', { sourceUrl: 'https://example.com/list.xspf', source: 'hosted' });
     const { saved, fetched } = await run({ local: [hosted], remotes: [remote('abc')] });

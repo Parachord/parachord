@@ -12,6 +12,8 @@ const {
   remoteUpdateAction,
   applyPulledTracks,
   keepEditsMadeDuringPull,
+  seedTracksFingerprint,
+  UNKNOWN_FINGERPRINT,
 } = require('../../sync-engine/auto-pull');
 
 const imported = (over = {}) => ({
@@ -180,23 +182,78 @@ describe('applyPulledTracks', () => {
 });
 
 describe('keepEditsMadeDuringPull', () => {
-  const pulled = imported({ tracks: [{ title: 'New', artist: 'B' }], lastModified: 5000, syncedFrom: { resolver: 'spotify', externalId: 'abc', snapshotId: 'snap-2' } });
+  const OLD = [{ title: 'Old', artist: 'A' }];
+  const NEW = [{ title: 'New', artist: 'B' }];
+  const pulled = imported({
+    tracks: NEW,
+    lastModified: 5000,
+    hasUpdates: false,
+    syncedFrom: { resolver: 'spotify', externalId: 'abc', snapshotId: 'snap-2', tracksFingerprint: tracksFingerprint(NEW) },
+    syncSources: { spotify: { syncedAt: 5000 } },
+  });
+  const base = { lastModified: 1000, tracksFingerprint: tracksFingerprint(OLD) };
 
-  test('with no edit since the pull read the playlist, the pull is saved', () => {
-    const latest = imported();
-    expect(keepEditsMadeDuringPull(pulled, latest, 1000)).toBe(pulled);
+  test('with no save since the pull read the playlist, the pull is saved', () => {
+    expect(keepEditsMadeDuringPull(pulled, imported(), base)).toBe(pulled);
   });
 
   test('an edit saved while the sync ran wins, and the playlist is left as a conflict', () => {
     const latest = imported({ tracks: [], locallyModified: true, lastModified: 3000 });
-    const out = keepEditsMadeDuringPull(pulled, latest, 1000);
+    const out = keepEditsMadeDuringPull(pulled, latest, base);
     expect(out.tracks).toEqual([]);
     expect(out.lastModified).toBe(3000);
     expect(out.syncedFrom.snapshotId).toBe('snap-1');
     expect(out.hasUpdates).toBe(true);
   });
 
+  test('a save that moved lastModified but not the tracks (the resolved-sources flush, a rename) takes the pull on top', () => {
+    const latest = imported({ title: 'Renamed', lastModified: 3000, tracks: OLD.map((t) => ({ ...t, sources: { spotify: { id: 'x' } } })) });
+    const out = keepEditsMadeDuringPull(pulled, latest, base);
+    expect(out.title).toBe('Renamed');
+    expect(out.tracks).toEqual(NEW);
+    expect(out.syncedFrom).toEqual(pulled.syncedFrom);
+    expect(out.hasUpdates).toBe(false);
+    expect(out.syncSources.spotify.syncedAt).toBe(5000);
+  });
+
   test('no stored record means nothing to keep', () => {
-    expect(keepEditsMadeDuringPull(pulled, undefined, 1000)).toBe(pulled);
+    expect(keepEditsMadeDuringPull(pulled, undefined, base)).toBe(pulled);
+  });
+});
+
+describe('seedTracksFingerprint (imports from before the fingerprint)', () => {
+  const OLD = [{ title: 'Old', artist: 'A' }];
+  const legacy = (over = {}) => imported({ tracks: OLD, syncedFrom: { resolver: 'spotify', externalId: 'abc', snapshotId: 'snap-1' }, ...over });
+
+  test('an unedited one is taken as agreeing with its source', () => {
+    const out = seedTracksFingerprint(legacy(), 'spotify');
+    expect(out.syncedFrom.tracksFingerprint).toBe(tracksFingerprint(OLD));
+    expect(hasRealLocalEdits(out, 'spotify')).toBe(false);
+  });
+
+  test('one flagged as edited is seeded with a fingerprint that never matches', () => {
+    const out = seedTracksFingerprint(legacy({ locallyModified: true, lastModified: 2000 }), 'spotify');
+    expect(out.syncedFrom.tracksFingerprint).toBe(UNKNOWN_FINGERPRINT);
+    expect(hasRealLocalEdits(out, 'spotify')).toBe(true);
+  });
+
+  test('even a flag the old rule would discount counts: when in doubt it reads as edited', () => {
+    const out = seedTracksFingerprint(legacy({ locallyModified: true, lastModified: 500 }), 'spotify');
+    expect(out.syncedFrom.tracksFingerprint).toBe(UNKNOWN_FINGERPRINT);
+  });
+
+  test('the seed outlives a later sync that moves syncedAt (the old rule would forget it)', () => {
+    const seeded = seedTracksFingerprint(legacy({ locallyModified: true, lastModified: 100, syncSources: { spotify: { syncedAt: 50 } } }), 'spotify');
+    const afterUnchangedSync = { ...seeded, locallyModified: false, syncSources: { spotify: { syncedAt: 200 } } };
+    expect(remoteUpdateAction(afterUnchangedSync, 'spotify')).toBe('conflict');
+  });
+
+  test('a record that has one, or another provider\'s import, is left alone', () => {
+    const withOne = imported({ syncedFrom: { resolver: 'spotify', externalId: 'abc', tracksFingerprint: 'x' } });
+    expect(seedTracksFingerprint(withOne, 'spotify')).toBe(withOne);
+    const other = legacy();
+    expect(seedTracksFingerprint(other, 'applemusic')).toBe(other);
+    const notImported = { id: 'p', tracks: [] };
+    expect(seedTracksFingerprint(notImported, 'spotify')).toBe(notImported);
   });
 });
