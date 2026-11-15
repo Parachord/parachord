@@ -11,7 +11,7 @@ The three OAuth-based scrobblers (Last.fm, ListenBrainz, Libre.fm) live **inline
 1. **Code shape doesn't fit `.axe`.** A `.axe` is a JSON file whose `implementation.init` is a stringified function. That works for additive, mostly-stateless logic (Achordion's submit flow, AI providers). It's awkward for stateful 600-line classes with retry queues, OAuth state machines, persisted tokens, and protocol-callback wiring.
 
 2. **Privileged-path coupling.** Each scrobbler needs:
-   - `window.electron.proxyFetch` for token-exchange CORS bypass
+   - `window.electron.proxyFetch` for token-exchange CORS bypass (`main-process/ipc/proxy-fetch.js`: it accepts the same addresses it always has, checks every redirect hop the same way before requesting it, so a public URL can't redirect to the local network, drops credentials on a cross-origin hop, and caps the body at 50 MB)
    - `electron.store` for persisted user tokens (key per provider)
    - Protocol-handler registration for `parachord://lastfm-callback` (and friends)
    - Polling for OAuth-completion detection (commit `a380040`)

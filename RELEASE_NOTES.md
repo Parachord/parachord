@@ -119,6 +119,7 @@
 - **A Listen Along link keeps your queue.** Starting Listen Along from a `parachord://listen-along` link cleared your queue, so there was nothing to go back to when the session ended. It now keeps it, as starting Listen Along in the app does. A link to someone who isn't listening leaves your playback alone; it used to leave "Connecting to…" in the playbar.
 - **An album or playlist link that fails gives your song back.** While an album or playlist link loads, its placeholder now remembers the song you were on. If the link finds nothing to play or fails, your song comes back to the playbar; before, the placeholder stayed or the playbar went blank. When the link does play, Previous goes back to your song, not to "Loading album…".
 - **YouTube playlist links import again.** YouTube changed how its playlist pages list videos, so opening or importing a YouTube playlist came back empty. Parachord reads the new page and the old one, with each video's title, channel and length, up to 100 tracks. This needs the latest YouTube plugin, which updates itself.
+- **Links and services can't lead Parachord onto your home network.** A playlist link, a `parachord://play` link or a service Parachord talks to could redirect it to an address on your local network, such as your router, and Parachord would follow. It now checks every step of a redirect before following it, refuses one that leads to your local network, and stops reading a reply that's far too large.
 
 ## Sync
 
@@ -134,6 +135,10 @@
 - **A playlist you import from a URL while sync setup finishes stays in your list.** Setting up sync could take minutes, and a hosted playlist imported during that time could disappear from your playlists until they next reloaded. Thanks to @theli-ua for finding and fixing it.
 - **Playlists that left your Spotify library come back when you add them again.** If a playlist you'd imported from Spotify disappeared from your Spotify library, Parachord dropped its link on each sync and restored it on each launch, and logged it as gone every time. It now keeps the link, so the next sync picks the playlist up once it's back in your library.
 - **Synced playlists keep all their links.** Saving a playlist could drop its link to another service, such as Apple Music or Spotify, and the next sync then had to find it again. Nothing was created twice, but the playlist's sync links were often out of date. A save now keeps every link that's still live.
+- **Synced playlists update on their own.** A playlist you imported from Spotify, Apple Music or ListenBrainz now takes the latest version on the next sync, instead of waiting for you to click Pull Changes. If you've edited it in Parachord, your edits stay, and the playlist's page lets you choose which version to keep.
+- **Synced playlists show their own cover.** A playlist imported by sync from Spotify or Apple Music now shows the cover it has there, and follows it when it changes. One with no cover of its own, and one from ListenBrainz, still shows its grid of album covers.
+- **Your edits to a shared ListenBrainz playlist don't come back as a conflict.** When Parachord sent your edits back to a ListenBrainz playlist you share, the next sync could take its own change for someone else's and ask which version to keep.
+- **Edits to a hosted playlist stay until the playlist itself changes.** Parachord can only read a hosted playlist from its server, but you can edit your copy, and your edits now reach the services it's synced to and stay until the playlist at its link changes. They used to disappear the next time you opened Parachord. Edits made with Edit on any synced playlist also reach its other services now.
 
 ## AI DJ
 

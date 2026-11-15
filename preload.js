@@ -155,6 +155,10 @@ contextBridge.exposeInMainWorld('electron', {
 
   // Proxy fetch - bypasses CORS for resolvers
   proxyFetch: (url, options) => ipcRenderer.invoke('proxy-fetch', url, options),
+  // A URL a user or link supplied (hosted playlist, protocol tracklist,
+  // SoundCloud short link): every redirect hop checked, body capped
+  // (main-process/public-fetch.js). profile is a name, never limits.
+  publicFetch: (url, profile, options) => ipcRenderer.invoke('public-fetch', url, profile, options),
 
   // MusicBrainz / Cover Art Archive over IPv4, the fallback when their IPv6
   // endpoint fails (src/renderer/lib/metabrainz-ipv4.js)

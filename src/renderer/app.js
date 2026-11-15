@@ -1325,6 +1325,8 @@ const { trackDurationLabel } = require('./lib/track-duration');
 const { contextPlaylistTarget, playlistRef } = require('./lib/playlist-context');
 const { pulledOpenPlaylist } = require('./lib/playlist-sync-banner');
 const { SERVICE_REFRESH_MS, playlistUpdateMode, isPolledHostedXspf, serviceRefreshDue, hostedListForMode } = require('./lib/playlist-update-mode');
+const { refreshedTracks } = require('./lib/hosted-refresh');
+const { shouldPushToSource, recordPushToSource } = require('../../sync-engine/auto-pull');
 const { Play, Pause, SkipForward, SkipBack, Volume2, Search, List, Settings, Plus, Music, Radio, Users, Heart, X } = Icons;
 
 
@@ -4374,10 +4376,9 @@ const Parachord = () => {
                   {
                     const sourceProvider = playlist.syncedFrom?.resolver;
                     if (sourceProvider === providerId) {
-                      const sourceSyncedAt = playlist.syncSources?.[sourceProvider]?.syncedAt || 0;
-                      const hasGenuineLocalEdits = playlist.locallyModified
-                        && (playlist.lastModified || 0) > sourceSyncedAt;
-                      if (!hasGenuineLocalEdits) continue;
+                      // Real edits by the tracks fingerprint, never with a
+                      // conflict pending (sync-engine/auto-pull.js).
+                      if (!shouldPushToSource(playlist, providerId)) continue;
                       // Fall through: push back to source IS warranted (collaborative case).
                     }
                   }
@@ -4396,10 +4397,15 @@ const Parachord = () => {
                   {
                     const idImpliesThisProvider = playlist.id?.startsWith(`${providerId}-`);
                     if (idImpliesThisProvider) {
-                      const sourceSyncedAt = playlist.syncSources?.[providerId]?.syncedAt || 0;
-                      const hasGenuineLocalEdits = playlist.locallyModified
-                        && (playlist.lastModified || 0) > sourceSyncedAt;
-                      if (!hasGenuineLocalEdits) continue;
+                      // A playlist whose syncedFrom is this provider was decided by
+                      // shouldPushToSource above; the timestamp rule here is only for
+                      // one whose syncedFrom is missing or points elsewhere.
+                      if (playlist.syncedFrom?.resolver !== providerId) {
+                        const sourceSyncedAt = playlist.syncSources?.[providerId]?.syncedAt || 0;
+                        const hasGenuineLocalEdits = playlist.locallyModified
+                          && (playlist.lastModified || 0) > sourceSyncedAt;
+                        if (!hasGenuineLocalEdits) continue;
+                      }
                       // Fall through: push back to source IS warranted (collaborative case).
                     }
                   }
@@ -4481,6 +4487,8 @@ const Parachord = () => {
                             pendingAction: null
                           }
                         };
+                        // Linked to (and pushed to) the playlist's own source.
+                        Object.assign(playlist, recordPushToSource(playlist, providerId, { externalId: result.externalId, snapshotId: result.snapshotId, tracks: playlist.tracks || [], now: Date.now() }));
                         playlistsChanged = true;
                         modifiedPlaylistIds.add(playlist.id);
                         createOk = true;
@@ -4493,7 +4501,7 @@ const Parachord = () => {
                     }
                     if (noteLbOutcome(createOk)) break;
                     await breathe();
-                  } else if (playlist.locallyModified) {
+                  } else if (playlist.locallyModified || shouldPushToSource(playlist, providerId)) {
                     // CHANNEL gate for the EDIT branch (parachord#911). SYNC:
                     // sync-engine/playlist-push-candidate.js channelOverrideExcludes.
                     // An already-linked mirror must STOP receiving edits the moment
@@ -4533,6 +4541,10 @@ const Parachord = () => {
                           snapshotId: pushResult.snapshotId,
                           syncedAt: Date.now()
                         };
+                        // Pushed to the playlist's own source: record the source's new
+                        // snapshot and these tracks as agreed, or the next sync reads our
+                        // own push as a conflict (sync-engine/auto-pull.js).
+                        Object.assign(playlist, recordPushToSource(playlist, providerId, { externalId: syncInfo.externalId, snapshotId: pushResult.snapshotId, tracks: playlist.tracks || [], now: Date.now() }));
                         playlistsChanged = true;
                         modifiedPlaylistIds.add(playlist.id);
                         pushOk = true;
@@ -9942,10 +9954,9 @@ const Parachord = () => {
               {
                 const sourceProvider = playlist.syncedFrom?.resolver;
                 if (sourceProvider === providerId) {
-                  const sourceSyncedAt = playlist.syncSources?.[sourceProvider]?.syncedAt || 0;
-                  const hasGenuineLocalEdits = playlist.locallyModified
-                    && (playlist.lastModified || 0) > sourceSyncedAt;
-                  if (!hasGenuineLocalEdits) continue;
+                  // Real edits by the tracks fingerprint, never with a
+                  // conflict pending (sync-engine/auto-pull.js).
+                  if (!shouldPushToSource(playlist, providerId)) continue;
                   // Fall through: push back to source IS warranted (collaborative case).
                 }
               }
@@ -9954,10 +9965,15 @@ const Parachord = () => {
               {
                 const idImpliesThisProvider = playlist.id?.startsWith(`${providerId}-`);
                 if (idImpliesThisProvider) {
-                  const sourceSyncedAt = playlist.syncSources?.[providerId]?.syncedAt || 0;
-                  const hasGenuineLocalEdits = playlist.locallyModified
-                    && (playlist.lastModified || 0) > sourceSyncedAt;
-                  if (!hasGenuineLocalEdits) continue;
+                  // A playlist whose syncedFrom is this provider was decided by
+                  // shouldPushToSource above; the timestamp rule here is only for
+                  // one whose syncedFrom is missing or points elsewhere.
+                  if (playlist.syncedFrom?.resolver !== providerId) {
+                    const sourceSyncedAt = playlist.syncSources?.[providerId]?.syncedAt || 0;
+                    const hasGenuineLocalEdits = playlist.locallyModified
+                      && (playlist.lastModified || 0) > sourceSyncedAt;
+                    if (!hasGenuineLocalEdits) continue;
+                  }
                   // Fall through: push back to source IS warranted (collaborative case).
                 }
               }
@@ -10033,6 +10049,8 @@ const Parachord = () => {
                         pendingAction: null
                       }
                     };
+                    // Linked to (and pushed to) the playlist's own source.
+                    Object.assign(playlist, recordPushToSource(playlist, providerId, { externalId: createResult.externalId, snapshotId: createResult.snapshotId, tracks: playlist.tracks || [], now: Date.now() }));
                     playlistsChanged = true;
                     modifiedPlaylistIds.add(playlist.id);
                     createOk = true;
@@ -10042,7 +10060,7 @@ const Parachord = () => {
                 }
                 if (noteLbOutcome(createOk)) break;
                 await breathe();
-              } else if (playlist.locallyModified) {
+              } else if (playlist.locallyModified || shouldPushToSource(playlist, providerId)) {
                 // CHANNEL gate for the EDIT branch (parachord#911) — lockstep with
                 // the background-sync loop. An already-linked mirror stops getting
                 // edits the moment the user's override excludes its provider.
@@ -10078,6 +10096,10 @@ const Parachord = () => {
                       snapshotId: pushResult.snapshotId,
                       syncedAt: Date.now()
                     };
+                    // Pushed to the playlist's own source: record the source's new
+                    // snapshot and these tracks as agreed, or the next sync reads our
+                    // own push as a conflict (sync-engine/auto-pull.js).
+                    Object.assign(playlist, recordPushToSource(playlist, providerId, { externalId: syncInfo.externalId, snapshotId: pushResult.snapshotId, tracks: playlist.tracks || [], now: Date.now() }));
                     playlistsChanged = true;
                     modifiedPlaylistIds.add(playlist.id);
                     pushOk = true;
@@ -11508,8 +11530,9 @@ const Parachord = () => {
     if (classified.kind === 'soundcloud-short') {
       let canonical = null;
       try {
-        const res = await window.electron.proxyFetch(rawUrl, { method: 'HEAD' });
-        canonical = res && res.finalUrl;
+        // Every hop checked: public and on SoundCloud (main-process/public-fetch.js).
+        const res = await window.electron.publicFetch(rawUrl, 'soundcloud-short');
+        canonical = res && res.success && res.ok ? res.finalUrl : null;
       } catch { /* leave canonical null → throw below */ }
       let canonHost = '';
       try { canonHost = new URL(canonical).hostname.toLowerCase(); } catch { canonHost = ''; }
@@ -11674,16 +11697,15 @@ const Parachord = () => {
           const fromProvider = await resolveProviderPlaylistUrl(params.url);
           if (fromProvider) return fromProvider;
         }
-        const resp = await fetch(params.url, {
-          redirect: 'error',
+        // No redirects and a 100 KB cap, both enforced while fetching
+        // (main-process/public-fetch.js, the protocol-tracklist profile).
+        const result = await window.electron.publicFetch(params.url, 'protocol-tracklist', {
           headers: buildProtocolFetchHeaders(params.url),
         });
-        if (!resp.ok) throw new Error(`Fetch failed: ${resp.status}`);
-        const ct = resp.headers.get('content-type') || '';
-        const body = await resp.text();
-        if (body.length > 100 * 1024) {
-          throw new Error('Tracklist response too large (max 100KB)');
-        }
+        if (!result || !result.success) throw new Error(result?.error || 'Fetch failed');
+        if (!result.ok) throw new Error(`Fetch failed: ${result.status}`);
+        const ct = result.contentType || '';
+        const body = result.text;
         return window.parseProtocolTracklist(body, ct);
       }
 
@@ -25927,15 +25949,15 @@ ${tracks}
   const savePlaylistToStore = async (playlist) => {
     if (!playlist || !playlist.id) return;
 
-    // Hosted XSPF only: the poller is canonical, so track edits are not the
-    // saved copy — title and creator overrides live on the reload list.
-    // A provider URL import is a snapshot. It also has sourceUrl, but its
-    // edits must persist through playlists.save, and it must not be written
-    // back into hosted_playlists (that list is what re-imported the Amazon
-    // page at launch and showed "Failed to parse XSPF").
-    // A snapshot of an XSPF (autoUpdate: false) isn't polled, so its edits
-    // persist like any playlist's (lib/playlist-update-mode.js).
-    if (playlist.sourceUrl && isPolledHostedXspf(playlist, { providerImported: window.isProviderImportedPlaylist(playlist, resolverLoaderRef.current) })) {
+    // Hosted XSPF: title and creator overrides also go on the reload list, so
+    // the launch reload keeps them. Track edits are saved like any playlist's
+    // (below): Parachord can't write the XSPF back to its server, but an edit
+    // here stays, and reaches the playlist's mirrors, until the link's
+    // tracklist changes (lib/hosted-refresh.js).
+    // A provider URL import is a snapshot. It also has sourceUrl, but it must
+    // not be written into hosted_playlists (that list is what re-imported the
+    // Amazon page at launch and showed "Failed to parse XSPF").
+    if (playlist.sourceUrl && !window.isProviderImportedPlaylist(playlist, resolverLoaderRef.current)) {
       try {
         const hostedPlaylists = await window.electron?.store?.get('hosted_playlists') || [];
         const updatedHosted = hostedPlaylists.map(item =>
@@ -25948,7 +25970,6 @@ ${tracks}
       } catch (error) {
         console.error(`❌ Error saving hosted playlist metadata:`, error);
       }
-      return;
     }
 
     // Freshness (Home's "Your playlists, freshest first" and its "+N"):
@@ -34564,17 +34585,20 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // Fetch a hosted playlist document with the public-URL guard and body cap
   // (parachord#1011). Shared by the URL import below and the 5-minute poller
   // so neither can fetch a private address or parse an unbounded body.
+  // Through the main process (main-process/public-fetch.js): each redirect
+  // hop is checked before it is requested and the body stops at the cap. A
+  // renderer fetch could only check afterwards, once the redirect to a
+  // private address had been requested and the whole body read.
   const fetchHostedPlaylistText = async (url) => {
     const problem = window.hostedPlaylistFetchProblem(url, null, 0);
     if (problem) throw new Error(problem);
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch: ${response.status} ${response.statusText}`);
-    }
-    const text = await response.text();
-    const afterProblem = window.hostedPlaylistFetchProblem(url, response.url, text.length);
+    const result = await window.electron.publicFetch(url, 'hosted-playlist');
+    if (!result || !result.success) throw new Error(result?.error || 'Failed to fetch the playlist');
+    if (!result.ok) throw new Error(`Failed to fetch: ${result.status}`);
+    // Belt and braces: the main process already enforced both.
+    const afterProblem = window.hostedPlaylistFetchProblem(url, result.finalUrl, result.text.length);
     if (afterProblem) throw new Error(afterProblem);
-    return text;
+    return result.text;
   };
 
   // background: true from the startup reload list and the 5-minute poller —
@@ -34731,10 +34755,15 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         const existing = existingIndex >= 0 ? prev[existingIndex] : existingOnDisk;
         if (existing) {
           didUpdate = true;
-          // Mark as locally modified only if the XSPF content actually changed —
-          // so the sync loop pushes XSPF-driven updates to providers, but startup
-          // reloads with unchanged content don't trigger spurious pushes.
-          const contentChanged = existing.xspf !== content;
+          // Keep the local tracks (edits included) unless the link's
+          // tracklist changed since the last import; a change replaces them
+          // and is flagged so the sync loop pushes it to the mirrors. An
+          // unchanged reload or poll leaves the edits, and their flag, alone
+          // (lib/hosted-refresh.js).
+          let previousLinkTracks = null;
+          try { previousLinkTracks = existing.xspf ? (parseXSPF(existing.xspf)?.tracks || null) : null; } catch { previousLinkTracks = null; }
+          const refreshed = refreshedTracks(existing, { previousLinkTracks, linkTracks: parsed.tracks || [] });
+          const contentChanged = refreshed.changed;
           // Freshness: a refresh that brought different tracks is a change
           // (tracksChangedAt, lastChangeAdded); a re-poll with the same
           // tracks keeps the existing stamp.
@@ -34744,7 +34773,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
             title: playlistTitle,
             creator: playlistCreator,
             ...(playlistCover ? { coverArt: playlistCover } : {}),
-            tracks: parsed.tracks || [],
+            tracks: refreshed.tracks,
             lastUpdated: Date.now(),
             ...(contentChanged ? { locallyModified: true, lastModified: Date.now() } : {})
           }, Date.now());
@@ -34767,8 +34796,10 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         } catch (e) {
           console.warn('Failed to persist updated hosted playlist:', e);
         }
-        console.log(`🔄 Updated hosted playlist: ${playlistTitle} (${parsed.tracks?.length || 0} tracks)`);
-        return { updated: true, playlist: { ...parsed, title: playlistTitle, creator: playlistCreator, ...(playlistCover ? { coverArt: playlistCover } : {}) } };
+        console.log(`🔄 Updated hosted playlist: ${playlistTitle} (${updatedPlaylist?.tracks?.length || 0} tracks)`);
+        // The tracks the record kept, so an open playlist shows the edits
+        // when the link hadn't changed.
+        return { updated: true, playlist: { ...parsed, tracks: updatedPlaylist?.tracks || parsed.tracks || [], title: playlistTitle, creator: playlistCreator, ...(playlistCover ? { coverArt: playlistCover } : {}) } };
       }
 
       // Add new hosted playlist

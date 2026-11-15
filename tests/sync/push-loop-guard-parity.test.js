@@ -77,10 +77,18 @@ const PARITY_GUARDS = [
     ],
   },
   {
-    name: 'collaborative push-back exemption (genuine local edits pass the source guard) — once in the syncedFrom block, once in the id-prefix block',
+    name: 'collaborative push-back exemption: the syncedFrom block asks shouldPushToSource (real edits by fingerprint, never with a conflict pending); the id-prefix block keeps the timestamp rule only for a playlist whose syncedFrom is not this provider',
     markers: [
-      { text: 'const hasGenuineLocalEdits = playlist.locallyModified', count: 2 },
-      { text: '(playlist.lastModified || 0) > sourceSyncedAt', count: 2 },
+      'if (!shouldPushToSource(playlist, providerId)) continue;',
+      { text: 'const hasGenuineLocalEdits = playlist.locallyModified', count: 1 },
+      { text: '(playlist.lastModified || 0) > sourceSyncedAt', count: 1 },
+      "if (playlist.syncedFrom?.resolver !== providerId) {",
+    ],
+  },
+  {
+    name: 'a push to the source records it (syncedFrom snapshot + fingerprint) on both the update push and a create that linked to the source',
+    markers: [
+      { text: 'recordPushToSource(playlist, providerId,', count: 2 },
     ],
   },
   {
@@ -116,7 +124,7 @@ const PARITY_GUARDS = [
     name: 'create-vs-update branch structure (syncInfo absent → create; locallyModified → update push)',
     markers: [
       'const syncInfo = playlist.syncedTo?.[providerId];',
-      'else if (playlist.locallyModified) {',
+      'else if (playlist.locallyModified || shouldPushToSource(playlist, providerId)) {',
       // The 404 handling on a failed update push flags pendingAction so the
       // UI can surface a remote deletion instead of re-pushing forever.
       { text: "playlist.syncedTo[providerId].pendingAction = 'remote-deleted';", count: 2 },

@@ -186,7 +186,56 @@ function keepEditsMadeDuringPull(pulled, latest, base = {}) {
   return { ...latest, hasUpdates: true };
 }
 
+/**
+ * The renderer push loops send a playlist's edits back to its own source (the
+ * collaborative case: a ListenBrainz playlist with collaborators, an owned
+ * playlist linked by the create gateway). Push when the tracks really differ
+ * from what the source last agreed on, whatever the flags and timestamps say,
+ * and never while a conflict is pending (`hasUpdates`): the source changed
+ * too, and the person picks on the playlist page. A seed of
+ * UNKNOWN_FINGERPRINT proves nothing, so it (and a record with no
+ * fingerprint) keeps the old rule: flagged and edited since the last sync.
+ */
+function shouldPushToSource(playlist, providerId) {
+  const from = playlist && playlist.syncedFrom;
+  if (!from || from.resolver !== providerId) return false;
+  if (playlist.hasUpdates) return false;
+  if (typeof from.tracksFingerprint === 'string' && from.tracksFingerprint !== UNKNOWN_FINGERPRINT) {
+    return tracksFingerprint(playlist.tracks) !== from.tracksFingerprint;
+  }
+  const syncedAt = (playlist.syncSources && playlist.syncSources[providerId] && playlist.syncSources[providerId].syncedAt) || 0;
+  return !!playlist.locallyModified && (playlist.lastModified || 0) > syncedAt;
+}
+
+/**
+ * After a successful push to the playlist's own source: the source now has
+ * these tracks, so record them as agreed and take the push's snapshot, or the
+ * next sync reads our own push as a remote change plus local edits (a false
+ * conflict). Same fields the playlist page's Push writes. A push to any other
+ * provider is a mirror push and changes nothing here.
+ */
+function recordPushToSource(playlist, providerId, { externalId, snapshotId, tracks, now }) {
+  const from = playlist && playlist.syncedFrom;
+  if (!from || from.resolver !== providerId) return playlist;
+  // Pushed to another remote on the same service (an owned copy), not the source.
+  if (externalId && from.externalId && externalId !== from.externalId) return playlist;
+  return {
+    ...playlist,
+    syncedFrom: {
+      ...from,
+      snapshotId: snapshotId || from.snapshotId,
+      tracksFingerprint: tracksFingerprint(tracks),
+    },
+    syncSources: {
+      ...playlist.syncSources,
+      [providerId]: { ...(playlist.syncSources && playlist.syncSources[providerId]), syncedAt: now },
+    },
+  };
+}
+
 module.exports = {
+  shouldPushToSource,
+  recordPushToSource,
   UNKNOWN_FINGERPRINT,
   seedTracksFingerprint,
   tracksFingerprint,

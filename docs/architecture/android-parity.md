@@ -383,3 +383,4 @@ Not at parity (Parachord/parachord-mobile#693):
 - **Android can forget an edit and pull over it.** An edit to a playlist whose source refuses the push (a followed Spotify playlist) keeps `locallyModified` only until `clearLocallyModifiedFlags` runs at the end of the cycle, which clears it for a playlist with no other mirrors. The next remote change then pulls over the edit. Desktop's fix for the same failure is the tracks fingerprint (`sync-engine/auto-pull.js`).
 - Conflicts: Android uses last write wins, desktop asks. A product decision; the ticket lays out both.
 - Covers: Android keeps its generated mosaic over the service's cover and takes Spotify's generated mosaic as a cover; desktop does the reverse (Parachord/parachord-mobile#676).
+
