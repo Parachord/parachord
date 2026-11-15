@@ -111,13 +111,13 @@ describe('AlbumCard', () => {
 
 describe('PlaylistCard', () => {
   test('with an add-to-playlist handler it shows the full app trio, as the Playlists page does', () => {
-    const html = h(S.PlaylistCard, { playlist: { id: 'p', title: 'Pl', imageUrl: 'https://img/p.jpg' }, onAddToPlaylist: () => {} });
+    const html = h(S.PlaylistCard, { playlist: { id: 'p', title: 'Pl', imageUrl: 'https://img/p.jpg' }, onAddToPlaylist: () => {}, onPlay() {}, onQueue() {} });
     const add = html.indexOf('Add Pl to a playlist');
     expect(add).toBeGreaterThan(-1);
     expect(add).toBeLessThan(html.indexOf('aria-label="Play Pl"'));
   });
   test('takes the same app hover as albums: Play, then Add to Queue (Home has no add-to-playlist for a playlist)', () => {
-    const html = h(S.PlaylistCard, { playlist: { id: 'p', title: 'Pl', imageUrl: 'https://img/p.jpg' } });
+    const html = h(S.PlaylistCard, { playlist: { id: 'p', title: 'Pl', imageUrl: 'https://img/p.jpg' }, onPlay() {}, onQueue() {} });
     expect(html).toMatch(/data-art-actions[^>]*class="absolute inset-0 bg-black\/50 transition-opacity duration-200 flex items-center justify-center gap-3"/);
     expect(html).toMatch(/aria-label="Play Pl"[^>]*class="w-12 h-12 bg-white rounded-full/);
     expect(html.indexOf('aria-label="Play Pl"')).toBeLessThan(html.indexOf('Add Pl to the queue'));
@@ -125,7 +125,8 @@ describe('PlaylistCard', () => {
   });
   const playlist = { id: 'p1', title: 'Daily Brew', mosaic: ['https://a/1.jpg', 'https://a/2.jpg'] };
   test('has Play and Add to Queue only', () => {
-    const html = h(S.PlaylistCard, { playlist, badge: 'Δ 12', subtitle: 'Refreshed 2h ago' });
+    // Each action shows when its handler is passed (Home passes Play and Queue).
+    const html = h(S.PlaylistCard, { playlist, badge: 'Δ 12', subtitle: 'Refreshed 2h ago', onPlay() {}, onQueue() {} });
     expect(html).toContain('aria-label="Play Daily Brew"');
     expect(html).toContain('aria-label="Add Daily Brew to the queue"');
     expect(html).not.toContain('to a playlist');

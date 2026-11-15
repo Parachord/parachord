@@ -197,8 +197,13 @@ describe('every playlist-cover surface renders the record\'s cover over the mosa
     // INSIDE the mosaic map (between positioned tiles, where later tiles paint
     // over it) fails too, not just one moved before the ternary.
     const lastBeforeCover = 'M15 13.5v6l5.5-3-5.5-3z';
-    orderAfter(app, '// The mosaic/placeholder; the playlist\'s own cover',
-      '// Refresh for hosted XSPF (auto-polled)', lastBeforeCover);
+    // The grid card is the shared PlaylistCard: its ArtBox draws the
+    // record's cover (coverArt) over the mosaic and drops back to it.
+    const grid = app.slice(app.indexOf("React.createElement(PlaylistCard, Object.assign({\n                    role: 'listitem',\n                    key: playlist.id,"));
+    expect(grid.slice(0, 400)).toMatch(/playlist,\s*mosaic: allPlaylistCovers\[playlist\.id\] \|\| null,/);
+    const card = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/components/playlist-card.js'), 'utf8');
+    expect(card).toContain('const imageUrl = playlist.imageUrl || playlist.coverArt || null;');
+    expect(card).toMatch(/e\(ArtBox, \{ imageUrl, mosaic: tiles,/);
     orderAfter(app, '// Thumbnail (the mosaic/placeholder', '// Playlist name', lastBeforeCover);
     // Add-to-playlist panel thumbnail: after the first-tile image.
     orderAfter(app, '// Playlist thumbnail (gray square)', '// Playlist name', 'allPlaylistCovers[playlist.id]?.[0]');

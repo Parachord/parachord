@@ -34,6 +34,7 @@ const { heroTabClass } = require('./hero-tabs');
 const { trackSlug, slug } = require('../lib/track-slug');
 const { releaseMenu, artistMenu } = require('../lib/item-menus');
 const { countOf } = require('../lib/plural');
+const { PlaylistCard } = require('./playlist-card');
 
 const { Play } = Icons;
 // The in-flight album prefetch set app.js keeps on window, shared so a
@@ -61,6 +62,7 @@ const SEARCH_PAGE_HANDLERS = [
   'handleSearchInput',
   'navigateBack',
   'openChartsAlbum',
+  'playlistCardActions',
   'prefetchSearchAlbumTracks',
   'saveSearchHistory',
   'setQueueWithContext',
@@ -72,6 +74,7 @@ const SearchPage = React.memo(function SearchPage(props) {
     activeView,
     addToQueue,
     albumCardActions,
+    allPlaylistCovers,
     allResolvers,
     artistImageCache,
     clearSearchHistory,
@@ -96,6 +99,7 @@ const SearchPage = React.memo(function SearchPage(props) {
     isSearching,
     navigateBack,
     openChartsAlbum,
+    playlistCardActions,
     playbackContext,
     playlists,
     prefetchSearchAlbumTracks,
@@ -536,130 +540,17 @@ const SearchPage = React.memo(function SearchPage(props) {
                 className: 'card-grid gap-x-4 gap-y-5 pb-6'
               },
                 searchResults.playlists.map((playlist, index) => {
-                  const animationDelay = Math.min(index * 30, 300);
-                  return React.createElement(CardButton, { role: 'listitem', label: playlist.title,
+                  return React.createElement(PlaylistCard, Object.assign({
+                    role: 'listitem',
                     key: playlist.id || `${playlist.title}-${index}`,
-                    className: 'cursor-pointer group release-card card-fade-up',
-                    style: {
-                      padding: '10px',
-                      borderRadius: '10px',
-                      backgroundColor: 'var(--card-bg)',
-                      boxShadow: 'var(--card-shadow)',
-                      animationDelay: `${animationDelay}ms`
-                    },
-                    onActivate: () => handlePlaylistClick(playlist)
-                  },
-                    // Playlist icon square with hover overlay
-                    React.createElement('div', {
-                      className: 'w-full aspect-square rounded-lg mb-2 relative overflow-hidden',
-                      style: { background: 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)' }
-                    },
-                      // Playlist icon
-                      React.createElement('div', {
-                        className: 'absolute inset-0 flex items-center justify-center'
-                      },
-                        React.createElement(Icons.Music, { className: 'w-12 h-12 text-ink-tertiary', strokeWidth: 1.5 })
-                      ),
-                      // Hover overlay with action buttons
-                      React.createElement('div', {
-                        className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 card-reveal transition-opacity duration-200 flex items-center justify-center gap-3'
-                      },
-                        // Add to Playlist button
-                        React.createElement('button', {
-                          onClick: (e) => {
-                            e.stopPropagation();
-                            if (playlist.tracks?.length > 0) {
-                              const tracksWithIds = playlist.tracks.map(track => ({
-                                ...track,
-                                id: trackSlug(track.artist || 'unknown', track.title || 'untitled'),
-                                sources: {}
-                              }));
-                              setAddToPlaylistPanel({
-                                open: true,
-                                tracks: tracksWithIds,
-                                sourceName: playlist.title,
-                                sourceType: 'playlist'
-                              });
-                            }
-                          },
-                          className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
-                          style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff' },
-                          onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
-                          onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                          'aria-label': 'Add to playlist', 'data-tooltip': 'Add to playlist'
-                        },
-                          React.createElement(Icons.Plus, { className: 'w-5 h-5' })
-                        ),
-                        // Play button (center, larger)
-                        React.createElement('button', {
-                          onClick: (e) => {
-                            e.stopPropagation();
-                            setTrackLoading(true);
-                            if (playlist.tracks?.length > 0) {
-                              const tracksWithIds = playlist.tracks.map(track => ({
-                                ...track,
-                                id: trackSlug(track.artist || 'unknown', track.title || 'untitled'),
-                                sources: {}
-                              }));
-                              const context = { type: 'playlist', id: playlist.title, name: playlist.title };
-                              const [firstTrack, ...remainingTracks] = tracksWithIds;
-                              // Tag the first track with context so queue navigation works correctly
-                              const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
-                              setQueueWithContext(remainingTracks, context, true);
-                              handlePlay(taggedFirstTrack);
-                            } else {
-                              setTrackLoading(false);
-                            }
-                          },
-                          className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
-                          'aria-label': 'Play', 'data-tooltip': 'Play'
-                        },
-                          React.createElement(Play, { size: 22, className: 'text-ink-primary ml-0.5' })
-                        ),
-                        // Add to Queue button
-                        React.createElement('button', {
-                          onClick: (e) => {
-                            e.stopPropagation();
-                            if (playlist.tracks?.length > 0) {
-                              const tracksWithIds = playlist.tracks.map(track => ({
-                                ...track,
-                                id: trackSlug(track.artist || 'unknown', track.title || 'untitled'),
-                                sources: {}
-                              }));
-                              const context = { type: 'playlist', id: playlist.title, name: playlist.title };
-                              addToQueue(tracksWithIds, context);
-                            }
-                          },
-                          className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
-                          style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff' },
-                          onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
-                          onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                          'aria-label': 'Add to queue', 'data-tooltip': 'Add to queue'
-                        },
-                          React.createElement(Icons.QueueAdd, { className: 'w-5 h-5', strokeWidth: 2 })
-                        )
-                      )
-                    ),
-                    // Playlist title
-                    React.createElement('div', {
-                      className: 'truncate transition-colors',
-                      style: {
-                        fontSize: '13px',
-                        fontWeight: '500',
-                        color: 'var(--text-primary)',
-                        marginTop: '6px'
-                      }
-                    }, playlist.title),
-                    // Creator and track count
-                    React.createElement('div', {
-                      className: 'truncate',
-                      style: {
-                        fontSize: '11px',
-                        color: 'var(--text-secondary)',
-                        marginTop: '2px'
-                      }
-                    }, `${playlist.creator || 'Unknown'} • ${countOf(playlist.tracks?.length || 0, 'track')}`)
-                  );
+                    // The playlist's own cover over its tracks' covers, as on
+                    // the Playlists page (components/playlist-card.js).
+                    playlist,
+                    mosaic: allPlaylistCovers[playlist.id] || null,
+                    subtitle: countOf(playlist.tracks?.length || 0, 'track'),
+                    animationDelay: Math.min(index * 30, 300),
+                    onOpen: () => handlePlaylistClick(playlist)
+                  }, playlistCardActions(playlist)));
                 })
               )
             )
@@ -1236,10 +1127,14 @@ const SearchPage = React.memo(function SearchPage(props) {
               className: 'flex gap-4 overflow-hidden'
             },
               ...searchResults.playlists.slice(0, 20).map((playlist, index) => {
-                const animationDelay = Math.min(index * 40, 300);
-                return React.createElement('button', { type: 'button',
+                return React.createElement(PlaylistCard, Object.assign({
                   key: playlist.id || `${playlist.title}-${index}`,
-                  onClick: () => {
+                  playlist,
+                  mosaic: allPlaylistCovers[playlist.id] || null,
+                  subtitle: countOf(playlist.tracks?.length || 0, 'track'),
+                  width: '160px',
+                  animationDelay: Math.min(index * 40, 300),
+                  onOpen: () => {
                     saveSearchHistory(searchQuery, {
                       type: 'playlist',
                       id: playlist.id,
@@ -1247,45 +1142,8 @@ const SearchPage = React.memo(function SearchPage(props) {
                       imageUrl: null
                     });
                     handlePlaylistClick(playlist);
-                  },
-                  className: 'text-left flex-shrink-0 cursor-pointer group release-card card-fade-up',
-                  style: {
-                    width: '160px',
-                    padding: '12px',
-                    borderRadius: '10px',
-                    backgroundColor: 'var(--card-bg)',
-                    boxShadow: 'var(--card-shadow)',
-                    animationDelay: `${animationDelay}ms`
                   }
-                },
-                  // Playlist icon
-                  React.createElement('div', {
-                    className: 'w-full aspect-square rounded-lg mb-2 flex items-center justify-center',
-                    style: { background: 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)' }
-                  },
-                    React.createElement(Icons.Music, { className: 'w-10 h-10 text-ink-tertiary', strokeWidth: 1.5 })
-                  ),
-                  // Playlist title
-                  React.createElement('div', {
-                    className: 'truncate',
-                    style: {
-                      fontSize: '13px',
-                      fontWeight: '500',
-                      color: 'var(--text-primary)'
-                    }
-                  }, playlist.title),
-                  // Track count
-                  React.createElement('div', {
-                    className: 'truncate',
-                    style: {
-                      fontSize: '11px',
-                      color: 'var(--text-secondary)',
-                      marginTop: '2px'
-                    }
-                  },
-                    `${countOf(playlist.tracks?.length || 0, 'track')}`
-                  )
-                );
+                }, playlistCardActions(playlist)));
               })
             )
           )

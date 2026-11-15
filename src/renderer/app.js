@@ -2069,6 +2069,7 @@ const { KeyboardShortcutsDialog } = require('./components/keyboard-shortcuts');
 const { WhatsNewDialog } = require('./components/whats-new-dialog');
 const { ArtistCard, RankBadge } = require('./components/artist-card');
 const { AlbumCard, AlbumRankBadge } = require('./components/album-card');
+const { PlaylistCard } = require('./components/playlist-card');
 const { ListenerCard, LISTENER_HEXAGON } = require('./components/listener-card');
 const { Badge } = require('./components/badge');
 const { Button } = require('./components/button');
@@ -15993,7 +15994,8 @@ ${trackListXml}
     }
   };
 
-  // Fetch playlist covers when viewing playlists page or home page.
+  // Fetch playlist covers when viewing the playlists page, Home or Search
+  // (whose playlist results are the same saved playlists).
   // First, every cover set the cache already holds goes on screen in one state
   // write, before any network work. Then the missing ones are fetched
   // freshest first (Home's order; hosted XSPF playlists sit at the end of
@@ -16005,7 +16007,7 @@ ${trackListXml}
   // (src/renderer/lib/playlist-cover-queue.js)
   const playlistCoverLoopRef = useRef({ running: false, again: false, tried: new Set() });
   useEffect(() => {
-    if ((activeView !== 'playlists' && activeView !== 'home') || playlists.length === 0) return;
+    if ((activeView !== 'playlists' && activeView !== 'home' && activeView !== 'search') || playlists.length === 0) return;
 
     const seed = cachedCoversToSeed(playlists, playlistCoverCache.current, allPlaylistCovers);
     if (seed) {
@@ -33527,6 +33529,44 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     }
   };
 
+  // A saved playlist card's overlay actions and drag (components/
+  // playlist-card.js), the Playlists page's and Search's: play it from the
+  // top, queue it, or add its tracks to another playlist.
+  const playlistTracksWithIds = (playlist) => (playlist.tracks || []).map(track => ({
+    ...track,
+    id: trackSlug(track.artist || 'unknown', track.title || 'untitled'),
+    sources: {}
+  }));
+  const playlistCardActions = (playlist) => ({
+    onPlay: () => {
+      const tracks = playlistTracksWithIds(playlist);
+      if (tracks.length === 0) return;
+      setTrackLoading(true);
+      const context = { type: 'playlist', id: playlist.id, name: playlist.title };
+      const [first, ...rest] = tracks;
+      // The first track carries the context so queue navigation works.
+      setQueueWithContext(rest, context, true);
+      handlePlay({ ...first, _playbackContext: context });
+    },
+    onQueue: () => {
+      const tracks = playlistTracksWithIds(playlist);
+      if (tracks.length > 0) addToQueue(tracks, { type: 'playlist', id: playlist.id, name: playlist.title });
+    },
+    onAddToPlaylist: () => {
+      const tracks = playlistTracksWithIds(playlist);
+      if (tracks.length > 0) setAddToPlaylistPanel({ open: true, tracks, sourceName: playlist.title, sourceType: 'playlist' });
+    }
+  });
+  const playlistCardDrag = (playlist) => () => ({
+    type: 'playlist',
+    playlist: {
+      id: playlist.id,
+      title: playlist.title,
+      creator: playlist.creator,
+      tracks: (playlist.tracks || []).map(track => ({ ...track, id: trackSlug(track.artist || 'unknown', track.title || 'untitled', track.album || 'noalbum'), sources: {} }))
+    }
+  });
+
   // An album card's overlay actions (components/album-card.js): get the
   // album's tracks (each grid says how), then play, queue or add them.
   const albumCardActions = ({ title, artist, id, getTracks, context }) => {
@@ -36770,7 +36810,7 @@ useEffect(() => {
     getArtistImage, getArtistTopTracks, getCachedAlbumArt, getItemsPerRow,
     handleAlbumClick, handlePlay, handlePlaylistClick, handlePlaylistDragEnd,
     handleSearchArtBroken, handleSearchInput, navigateBack, openChartsAlbum, playArtistTopTracks, prefetchSearchAlbumTracks,
-    saveSearchHistory, setQueueWithContext,
+    playlistCardActions, saveSearchHistory, setQueueWithContext,
   });
 
   // Stable function props for the memo'd ArtistPage (keys must match
@@ -37917,7 +37957,7 @@ useEffect(() => {
     // Search Page - Full page search view
     activeView === 'search' ? (
       React.createElement(SearchPage, {
-          activeResolvers: playbackResolvers, activeView, allResolvers, artistImageCache, currentTrack, filteredHistoryMatches, handleSearchDetailScroll, handleSearchScrollContainerRef, isPlaying, isSearching, playbackContext, playlists, prefetchedReleasesRef, resolverOrder, searchContainerWidth, searchDetailCategory, searchHeaderCollapsed, searchHistory, searchInputRef, searchQuery, searchResults, searchResultsContainerRef, searchResultsFilter, searchResultsFilterOpen, searchResultsSort, searchScrollContainerRef, searchTracksObserverRef, searchTracksRowRefs, setAddToPlaylistPanel, setDraggingTrackForPlaylist, setSearchDetailCategory, setSearchPreviewItem, setSearchResultsFilter, setSearchResultsFilterOpen, setSearchResultsSort, setTrackLoading, showToast, trackSources,
+          activeResolvers: playbackResolvers, activeView, allPlaylistCovers, allResolvers, artistImageCache, currentTrack, filteredHistoryMatches, handleSearchDetailScroll, handleSearchScrollContainerRef, isPlaying, isSearching, playbackContext, playlists, prefetchedReleasesRef, resolverOrder, searchContainerWidth, searchDetailCategory, searchHeaderCollapsed, searchHistory, searchInputRef, searchQuery, searchResults, searchResultsContainerRef, searchResultsFilter, searchResultsFilterOpen, searchResultsSort, searchScrollContainerRef, searchTracksObserverRef, searchTracksRowRefs, setAddToPlaylistPanel, setDraggingTrackForPlaylist, setSearchDetailCategory, setSearchPreviewItem, setSearchResultsFilter, setSearchResultsFilterOpen, setSearchResultsSort, setTrackLoading, showToast, trackSources,
           ...searchPageHandlers
         }) // end main view
     ) : // end activeView === 'search' ternary
@@ -38323,238 +38363,45 @@ useEffect(() => {
                 className: 'card-grid gap-x-4 gap-y-5'
               },
                 sorted.map((playlist, index) => {
-                  const covers = allPlaylistCovers[playlist.id] || [];
-                  const hasCachedCovers = covers.length > 0;
-                  const animationDelay = Math.min(index * 30, 300);
-
-                  return React.createElement(CardButton, { role: 'listitem', label: playlist.title,
+                  return React.createElement(PlaylistCard, Object.assign({
+                    role: 'listitem',
                     key: playlist.id,
-                    // The card is the drag source: under CardButton's stretched
-                    // button an inner draggable can't start a drag.
-                    draggable: true,
-                    onDragStart: (e) => {
-                      const tracksWithIds = (playlist.tracks || []).map(track => {
-                        const trackId = trackSlug(track.artist || 'unknown', track.title || 'untitled', track.album || 'noalbum');
-                        return { ...track, id: trackId, sources: {} };
-                      });
-                      e.dataTransfer.effectAllowed = 'copy';
-                      e.dataTransfer.setData('text/plain', JSON.stringify({
-                        type: 'playlist',
-                        playlist: {
-                          id: playlist.id,
-                          title: playlist.title,
-                          creator: playlist.creator,
-                          tracks: tracksWithIds
-                        }
-                      }));
-                    },
-                    onActivate: (e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      loadPlaylist(playlist);
-                    },
-                    onContextMenu: (e) => {
-                      e.preventDefault();
-                      if (window.electron?.contextMenu?.showTrackMenu) {
-                        const tracksWithIds = (playlist.tracks || []).map((track, idx) => {
-                          const trackId = trackSlug(track.artist || 'unknown', track.title || 'untitled', track.album || 'noalbum');
-                          return { ...track, id: trackId, sources: {} };
-                        });
-                        window.showItemMenu(playlistMenu(playlist, tracksWithIds));
-                      }
-                    },
-                    className: 'group cursor-pointer release-card card-fade-up',
-                    style: {
-                      padding: '10px',
-                      borderRadius: '10px',
-                      backgroundColor: 'var(--card-bg)',
-                      boxShadow: 'var(--card-shadow)',
-                      animationDelay: `${animationDelay}ms`
-                    }
-                  },
-                    // Album art mosaic or placeholder (the card is the drag source)
-                    React.createElement('div', {
-                      className: 'relative aspect-square rounded-lg overflow-hidden mb-2 album-art-container',
-                    },
-                      // The mosaic/placeholder; the playlist's own cover
-                      // (a provider import's coverArt) comes AFTER it in DOM
-                      // order — the cover img and the tiles are both
-                      // positioned, and positioned siblings paint in DOM order,
-                      // so before the mosaic the tiles painted over the cover.
-                      // The badges and hover overlay after the cover stay on
-                      // top; a dead cover URL removes itself and the mosaic
-                      // shows again.
-                      hasCachedCovers ?
-                        React.createElement('div', { className: 'grid grid-cols-2 grid-rows-2 w-full h-full' },
-                          [0, 1, 2, 3].map(idx => {
-                            return React.createElement('div', {
-                              key: idx,
-                              className: 'relative w-full h-full flex items-center justify-center',
-                              style: { background: 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)' }
+                    // The playlist's own cover (a provider's coverArt) over the
+                    // mosaic of its tracks' covers (components/playlist-card.js).
+                    playlist,
+                    mosaic: allPlaylistCovers[playlist.id] || null,
+                    subtitle: playlist.creator || countOf(playlist.tracks?.length || 0, 'track'),
+                    animationDelay: Math.min(index * 30, 300),
+                    dragData: playlistCardDrag(playlist),
+                    onOpen: () => loadPlaylist(playlist),
+                    onContextMenu: () => window.showItemMenu(playlistMenu(playlist, playlistTracksWithIds(playlist))),
+                    titleBadge: playlist.syncedFrom?.isCollaborator === true && React.createElement('span', { className: 'shared-playlist-badge', style: { display: 'inline-flex' } },
+                      React.createElement(Badge, { tone: 'accent', icon: Icons.Users, tooltip: 'You’re a collaborator on this playlist: your edits sync to the other collaborators' }, 'Shared')),
+                    // A playlist kept updated from its link: the Hosted badge
+                    // (XSPF) and a check-now button. A snapshot shows neither:
+                    // it never changes (lib/playlist-update-mode.js). An AI
+                    // playlist says who made it.
+                    cornerBadges: linkUpdateMode(playlist) === 'auto'
+                      ? React.createElement(React.Fragment, null,
+                          playlist.source === 'hosted-xspf' && React.createElement(Badge, { tone: 'surface', icon: Icons.Globe, tooltip: 'Hosted playlist: updates from its link' }, 'Hosted'),
+                          React.createElement('button', {
+                            type: 'button',
+                            onClick: async (e) => {
+                              e.stopPropagation();
+                              if (refreshingPlaylist === playlist.id) return;
+                              setRefreshingPlaylist(playlist.id);
+                              try { await refreshHostedPlaylist(playlist.id); }
+                              finally { setRefreshingPlaylist(null); }
                             },
-                              !covers[idx] && React.createElement(Music, { size: 20, className: 'text-ink-secondary' }),
-                              covers[idx] && React.createElement('img', {
-                                src: covers[idx],
-                                alt: '',
-                                className: 'absolute inset-0 w-full h-full object-cover transition-opacity duration-300',
-                                style: { opacity: 0 },
-                                ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
-                                onLoad: (e) => { e.target.style.opacity = '1'; }
-                              })
-                            );
-                          })
-                        )
-                      :
-                        React.createElement('div', {
-                          className: 'w-full h-full flex items-center justify-center',
-                          style: { background: 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)' }
-                        },
-                          // Playlist icon (three lines with play triangle)
-                          React.createElement('svg', { className: 'w-12 h-12 text-ink-tertiary', viewBox: '0 0 24 24', fill: 'currentColor' },
-                            React.createElement('rect', { x: 3, y: 5, width: 18, height: 2, rx: 1 }),
-                            React.createElement('rect', { x: 3, y: 11, width: 10, height: 2, rx: 1 }),
-                            React.createElement('rect', { x: 3, y: 17, width: 7, height: 2, rx: 1 }),
-                            React.createElement('path', { d: 'M15 13.5v6l5.5-3-5.5-3z' })
-                          )
-                        ),
-                      // The playlist's own cover, over the mosaic/placeholder
-                      // (DOM order = paint order; see the comment above).
-                      playlist.coverArt && React.createElement(PlaylistCoverImage, { url: playlist.coverArt }),
-
-                      // A playlist kept updated from its link: the Hosted badge
-                      // (XSPF) and a check-now button. A snapshot shows neither:
-                      // it never changes (lib/playlist-update-mode.js).
-                      linkUpdateMode(playlist) === 'auto' && React.createElement('div', {
-                        className: 'absolute top-2 right-2 flex items-center gap-1'
-                      },
-                        playlist.source === 'hosted-xspf' && React.createElement(Badge, { tone: 'surface', icon: Icons.Globe, tooltip: 'Hosted playlist: updates from its link' }, 'Hosted'),
-                        React.createElement('button', {
-                          onClick: async (e) => {
-                            e.stopPropagation();
-                            if (refreshingPlaylist === playlist.id) return;
-                            setRefreshingPlaylist(playlist.id);
-                            try { await refreshHostedPlaylist(playlist.id); }
-                            finally { setRefreshingPlaylist(null); }
+                            className: 'p-1 bg-surface-card rounded-full hover:bg-surface-hover transition-colors',
+                            'aria-label': 'Check for updates now', 'data-tooltip': 'Updates on its own from its link. Check now'
                           },
-                          className: `p-1 bg-white/90 backdrop-blur-sm rounded-full hover:bg-white transition-colors ${refreshingPlaylist === playlist.id ? 'animate-spin' : ''}`,
-                          'aria-label': 'Check for updates now', 'data-tooltip': 'Updates on its own from its link. Check now'
-                        },
-                          React.createElement(Icons.RefreshCw, { className: 'w-3 h-3 text-ink-secondary' })
-                        )
-                      ),
-
-                      // AI indicator
-                      playlist.isAiPlaylist && !playlist.sourceUrl && React.createElement('div', {
-                        className: 'absolute top-2 right-2'
-                      },
-                        React.createElement(Badge, { tone: 'surface', icon: Icons.Sparkles, tooltip: `Made by ${playlist.creator || 'Shuffleupagus'}` }, 'AI')
-                      ),
-
-                      // Hover overlay with action buttons (Add to Playlist, Play, Queue)
-                      React.createElement('div', {
-                        className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 card-reveal transition-opacity duration-200 flex items-center justify-center gap-3'
-                      },
-                        // Add to Playlist button
-                        React.createElement('button', {
-                          onClick: (e) => {
-                            e.stopPropagation();
-                            const tracksWithIds = (playlist.tracks || []).map(track => ({
-                              ...track,
-                              id: trackSlug(track.artist || 'unknown', track.title || 'untitled'),
-                              sources: {}
-                            }));
-                            if (tracksWithIds.length > 0) {
-                              setAddToPlaylistPanel({
-                                open: true,
-                                tracks: tracksWithIds,
-                                sourceName: playlist.title,
-                                sourceType: 'playlist'
-                              });
-                            }
-                          },
-                          className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
-                          style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff' },
-                          onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
-                          onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                          'aria-label': 'Add to playlist', 'data-tooltip': 'Add to playlist'
-                        },
-                          React.createElement(Icons.Plus, { className: 'w-5 h-5' })
-                        ),
-                        // Play button (center, larger)
-                        React.createElement('button', {
-                          onClick: (e) => {
-                            e.stopPropagation();
-                            setTrackLoading(true);
-                            const tracksWithIds = (playlist.tracks || []).map(track => ({
-                              ...track,
-                              id: trackSlug(track.artist || 'unknown', track.title || 'untitled'),
-                              sources: {}
-                            }));
-                            if (tracksWithIds.length > 0) {
-                              const context = { type: 'playlist', id: playlist.id, name: playlist.title };
-                              const [firstTrack, ...remainingTracks] = tracksWithIds;
-                              // Tag the first track with context so queue navigation works correctly
-                              const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
-                              setQueueWithContext(remainingTracks, context, true);
-                              handlePlay(taggedFirstTrack);
-                            } else {
-                              setTrackLoading(false);
-                            }
-                          },
-                          className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
-                          'aria-label': 'Play', 'data-tooltip': 'Play'
-                        },
-                          React.createElement(Play, { size: 22, className: 'text-ink-primary ml-0.5' })
-                        ),
-                        // Add to Queue button
-                        React.createElement('button', {
-                          onClick: (e) => {
-                            e.stopPropagation();
-                            const tracksWithIds = (playlist.tracks || []).map(track => ({
-                              ...track,
-                              id: trackSlug(track.artist || 'unknown', track.title || 'untitled'),
-                              sources: {}
-                            }));
-                            if (tracksWithIds.length > 0) {
-                              const context = { type: 'playlist', id: playlist.id, name: playlist.title };
-                              addToQueue(tracksWithIds, context);
-                            }
-                          },
-                          className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
-                          style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff' },
-                          onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
-                          onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                          'aria-label': 'Add to queue', 'data-tooltip': 'Add to queue'
-                        },
-                          React.createElement(Icons.QueueAdd, { className: 'w-5 h-5', strokeWidth: 2 })
-                        )
-                      )
-                    ),
-                    // Playlist info - refined typography
-                    React.createElement('div', {
-                      className: 'truncate transition-colors',
-                      style: {
-                        fontSize: '13px',
-                        fontWeight: '500',
-                        color: 'var(--text-primary)',
-                        marginTop: '6px'
-                      }
-                    },
-                      playlist.title,
-                      playlist.syncedFrom?.isCollaborator === true && React.createElement('span', { className: 'shared-playlist-badge', style: { marginLeft: '6px', verticalAlign: 'middle', display: 'inline-flex' } },
-                        React.createElement(Badge, { tone: 'accent', icon: Icons.Users, tooltip: 'You’re a collaborator on this playlist: your edits sync to the other collaborators' }, 'Shared'))
-                    ),
-                    React.createElement('div', {
-                      className: 'truncate',
-                      style: {
-                        fontSize: '11px',
-                        color: 'var(--text-secondary)',
-                        marginTop: '2px'
-                      }
-                    },
-                      playlist.creator || countOf(playlist.tracks?.length || 0, 'track')
-                    )
-                  );
+                            React.createElement(Icons.RefreshCw, { className: `w-3 h-3 text-ink-secondary ${refreshingPlaylist === playlist.id ? 'animate-spin' : ''}` })
+                          ))
+                      : (playlist.isAiPlaylist && !playlist.sourceUrl
+                          ? React.createElement(Badge, { tone: 'surface', icon: Icons.Sparkles, tooltip: `Made by ${playlist.creator || 'Shuffleupagus'}` }, 'AI')
+                          : null)
+                  }, playlistCardActions(playlist)));
                 }),
                 // Trailing skeletons while hosted playlists are still loading
                 ...(playlistsLoading ? Array.from({ length: 4 }).map((_, i) =>

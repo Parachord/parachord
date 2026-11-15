@@ -342,15 +342,16 @@ describe('Home skeletons match the Home rows', () => {
 
   test('Home\'s album and playlist cards are the app\'s card, and so are their skeletons', () => {
     const app = fs.readFileSync(path.join(dir, '..', 'app.js'), 'utf8');
-    // The Playlists page's card, which Home copies.
-    expect(app).toMatch(/className: 'group cursor-pointer release-card card-fade-up',\s*style: \{\s*padding: '10px',\s*borderRadius: '10px',\s*backgroundColor: 'var\(--card-bg\)',\s*boxShadow: 'var\(--card-shadow\)',/);
+    // The Playlists page's grid is the shared PlaylistCard too.
+    expect(app).toMatch(/React\.createElement\(PlaylistCard, Object\.assign\(\{\s*role: 'listitem',\s*key: playlist\.id,/);
     expect(app).toContain("className: 'card-grid gap-x-4 gap-y-5'");
     expect(sk.HOME_CARD_BOX).toEqual({ padding: '10px', borderRadius: '10px', backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)' });
     expect(sk.HOME_CARD_ART_RADIUS).toBe(8);
     // Both cards and the skeleton card use the box; the cards get the hover lift.
-    // The playlist card (home-sections) and the shared album card use the box.
-    expect((sections.match(/className: 'release-card', style: Object\.assign\(\{\}, HOME_CARD_BOX/g) || []).length).toBe(1);
-    expect(fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'components', 'album-card.js'), 'utf8')).toMatch(/style: Object\.assign\(\{\}, HOME_CARD_BOX/);
+    // The shared playlist and album cards use the box.
+    for (const f of ['album-card.js', 'playlist-card.js']) {
+      expect(fs.readFileSync(path.join(dir, f), 'utf8')).toMatch(/style: Object\.assign\(\{\}, HOME_CARD_BOX/);
+    }
     expect(skeletons).toContain('style: Object.assign({}, HOME_CARD_BOX');
     expect(skeletons).toContain('borderRadius: `${HOME_CARD_ART_RADIUS}px`');
   });
@@ -371,7 +372,9 @@ describe('Home skeletons match the Home rows', () => {
     expect(sk.HOME_CARD_TEXT_GAP).toBe(10);
     expect(sections).toContain('${HOME_ROW_GAP}px');
     expect(skeletons).toContain('${HOME_ROW_GAP}px');
-    expect(sections).toContain('${HOME_CARD_TEXT_GAP}px');
+    for (const f of ['album-card.js', 'playlist-card.js']) {
+      expect(fs.readFileSync(path.join(dir, f), 'utf8')).toContain('${HOME_CARD_TEXT_GAP}px');
+    }
     expect(skeletons).toContain('${HOME_CARD_TEXT_GAP}px');
     expect(sections).not.toMatch(/minmax\(0, 1fr\)\)`, '16px'\)/);
   });

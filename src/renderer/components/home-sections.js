@@ -15,15 +15,14 @@
 const { filterBySource } = require('../lib/home-model');
 const { ReasonBadge, ReasonMark, shuffleupagusIcon } = require('./reason-badge');
 const { Play } = require('./icons');
-const { CardButton } = require('./card-button');
 const { useReveal, ArtOverlay, ArtBox, releaseBadge } = require('./card-art');
 const { AlbumCard } = require('./album-card');
+const { PlaylistCard } = require('./playlist-card');
 const { FilterChips } = require('./filter-chips');
 const { PAGE_COLORS } = require('../lib/page-colors');
 const { SectionHeader, PAGE_COLOR, SECTION_TITLE_STYLE: H2_STYLE, SECTION_SUB_STYLE: SUB_STYLE } = require('./section-header');
 const {
-  HOME_TILE_HEIGHT, HOME_ROW_CARDS, HOME_HALF_ROW_CARDS, HOME_CONCERT_CARDS, HOME_ROW_GAP, HOME_CARD_TEXT_GAP,
-  HOME_CARD_BOX, HOME_CARD_ART_RADIUS,
+  HOME_TILE_HEIGHT, HOME_ROW_CARDS, HOME_HALF_ROW_CARDS, HOME_CONCERT_CARDS, HOME_ROW_GAP,
   HOME_JUMP_GRID, HOME_JUMP_GAP, HOME_HALF_FLEX, HOME_HALF_GAP, CardRowSkeleton,
 } = require('./home-skeletons');
 
@@ -42,7 +41,6 @@ const HERO_TEXT_SHADOW = '0 2px 10px rgba(0,0,0,0.5)';
 // Inner padding of the Fresh Drops / Critical Darlings panels.
 const HOME_HALF_PANEL_PAD = 20;
 const SECTION_STYLE = { display: 'flex', flexDirection: 'column', gap: '14px' };
-const CLAMP2 = { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' };
 const ELLIPSIS = { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
 
 // Only http(s) ticket links reach an href.
@@ -168,46 +166,6 @@ function HomeAlbumCard(props) {
     reason: album ? artBadge(album) : null,
     releaseType: album && album.homeRow === 'fresh' ? album.releaseType : null,
   }));
-}
-
-// "Refreshed 18m ago · since 2023" shows as two lines: the age, then "Since 2023".
-function subtitleLines(subtitle) {
-  return String(subtitle).split(' · ').filter(Boolean)
-    .map((l, i) => (i === 0 ? l : l.charAt(0).toUpperCase() + l.slice(1)));
-}
-
-function PlaylistCard({ playlist, badge, subtitle, onOpen, onPlay, onQueue, onAddToPlaylist, onContextMenu, onArtError }) {
-  const reveal = useReveal();
-  if (!playlist) return null;
-  const title = playlist.title;
-  const open = () => onOpen && onOpen(playlist);
-  // The whole card opens the playlist (CardButton), the text lines included.
-  return e(CardButton, Object.assign({
-    label: `Open ${title}`, onActivate: open,
-    onContextMenu: (ev) => { if (onContextMenu) { ev.preventDefault(); onContextMenu(ev, playlist); } },
-    // The app's card (HOME_CARD_BOX), with its release-card hover lift.
-    className: 'release-card', style: Object.assign({}, HOME_CARD_BOX, { display: 'flex', flexDirection: 'column', gap: `${HOME_CARD_TEXT_GAP}px`, minWidth: 0, cursor: 'pointer' }),
-  }, reveal.props),
-    e('div', null,
-      e(ArtBox, { imageUrl: playlist.imageUrl, mosaic: playlist.mosaic, item: playlist, onArtError, placeholder: 'playlist', zoom: reveal.shown, style: { borderRadius: `${HOME_CARD_ART_RADIUS}px` } },
-        badge && e('span', {
-          style: {
-            position: 'absolute', top: '8px', left: '8px', fontSize: '11px', fontWeight: 700, borderRadius: '999px',
-            padding: '3px 8px', backgroundColor: 'var(--bg-primary)', color: 'var(--text-primary)',
-          },
-        }, badge),
-        // The app's overlay: Add to Playlist, Play, Add to Queue.
-        e(ArtOverlay, {
-          shown: reveal.shown, title, onClick: open,
-          onAddToPlaylist: onAddToPlaylist && (() => onAddToPlaylist(playlist)),
-          onPlay: () => onPlay && onPlay(playlist),
-          onQueue: () => onQueue && onQueue(playlist),
-        }))),
-    e('div', {
-      style: Object.assign({ fontWeight: 500, fontSize: '13px', color: 'var(--text-primary)' }, ELLIPSIS),
-    }, title),
-    subtitle && e('div', { style: { fontSize: '12px', color: 'var(--text-secondary)', marginTop: '-6px' } },
-      subtitleLines(subtitle).map((line, i) => e('div', { key: i, style: i === 0 ? CLAMP2 : ELLIPSIS }, line))));
 }
 
 // --------------------------------------------------------------------- Filters
