@@ -144,6 +144,7 @@ Inside a service's own plugin panel (its header, Connect, Save and sync buttons)
 
 | Token | Value | Usage |
 |-------|-------|-------|
+| `--z-scroll-edge` | `15` | The scroll-edge shadow (`.scroll-edge`): above the content and sticky bars (10), below dropdowns, so it never paints over an open menu |
 | `--z-dropdown` | `20` | Sort menus and other in-page dropdowns |
 | `--z-popover` | `9999` | `Menu` (context and "More" menus), above the playbar |
 | `--z-toast` | `99999` | Toasts, above dialogs |
@@ -194,13 +195,13 @@ Components use `React.createElement()` (no JSX) and live in `src/renderer/compon
 | A menu (right-click or "More") | `Menu`, items from `lib/item-menus.js` | `menu.js` | Portalled, keyboard and typeahead, flips up near the bottom; the dark 12px look |
 | A sort control | `SortMenu` | `sort-menu.js` | |
 | A clickable card or row | `CardButton` | `card-button.js` | A stretched `<button>` under the card; inner buttons sit above it; `onContextMenu` also opens on Shift+F10 / the Menu key; `tooltip` for a whole-card note. Use the cards and `TrackRow` below first; `CardButton` is what they are built on |
-| An album card (any grid of albums, or a track shown as a card) | `AlbumCard` (`AlbumRankBadge` for a rank) | `album-card.js` | The inset card: `HOME_CARD_BOX`, rounded art, title, artist (or `onOpenArtist` for a link), `subtitle`. `releaseType` badge, `reason` badge, `cornerBadge`; `onHoverPrefetch` dwells 250ms; `getAlbumArt` to look up its own cover; `label` when a click doesn't open |
+| An album card (any grid of albums, or a track shown as a card) | `AlbumCard` (`AlbumRankBadge` for a rank) | `album-card.js` | The inset card: `HOME_CARD_BOX`, rounded art, title, artist (or `onOpenArtist` for a link), `subtitle`. `releaseType` badge, `reason` badge, `cornerBadge`; `onHoverPrefetch` dwells 250ms; `getAlbumArt` to look up its own cover; `label` when a click doesn't open; `hidden` for a card a filter hides but keeps mounted (a class can't hide it: the card sets its display inline) |
 | A playlist card | `PlaylistCard` | `playlist-card.js` | The playlist's own cover (`coverArt`) over the mosaic of its tracks' covers, or the playlist glyph; `titleBadge` (Shared), `badge`, `cornerBadges` (Hosted, AI); a saved playlist's actions from `playlistCardActions` in app.js |
 | An artist card | `ArtistCard` (`RankBadge` for a rank) | `artist-card.js` | Play on hover (the top tracks), queue in the artist menu |
 | A person (friend, recommended listener) | `ListenerCard` | `listener-card.js` | The hexagon avatar (`LISTENER_HEXAGON`); user avatars are always hexagons |
 | A cover's hover actions (Add to playlist, Play, Add to queue) | `ArtOverlay` + `useReveal` | `card-art.js` | Shown on hover and keyboard focus. Without `shown`, CSS reveals it (`.card-actions`) for a card drawn in a list. `ArtBox` is the square art (cover, mosaic or placeholder, reporting a dead cover) |
 | A track list row | `TrackRow` | `track-lists.js` | number · title · artist · `cells` · `duration` · source icons. `lead` (edit-mode handles), `showArtist`, `resolving`, `dimResolving`; `onPlay(resolverId?)` covers the row and each icon |
-| A service's play button (a source icon) | `SourceIconButton` (`TrackSources` for the column) | `track-lists.js` | The plug-in's colour and logo, "Play from X (95% match)"; `quiet` on the dark queue drawer |
+| A service's play button (a source icon) | `SourceIconButton` (`TrackSources` for the column) | `track-lists.js` | The plug-in's colour and logo, "Play from X (95% match)"; `quiet` on the dark queue drawer (`.source-quiet`: faded and desaturated at rest, full on hover or focus) |
 | A page's coloured header | `PageHero` | `page-hero.js` | 320px, collapsing to 80px; gradient and pattern from `PAGE_COLORS`; the page passes `expanded` and `collapsedContent`. The artist page's photo hero is the one other design |
 | A page's Filter… box | `FilterBox` | `filter-box.js` | Opens focused; an empty box closes on blur; ✕ or Escape empties and closes it (and its Escape doesn't close a dialog around it) |
 | The strip that stays at the top of a page's scroll area | `StickyBar` | `filter-box.js` | `variant` 'filter' or 'header' |

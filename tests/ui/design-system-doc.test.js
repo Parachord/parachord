@@ -47,6 +47,12 @@ test('the doc lists the icon set as icons.js has it', () => {
   for (const name of Icons.ICON_NAMES) expect([name, doc.includes(name)]).toEqual([name, true]);
 });
 
+test('the doc names the layers and props the shared pieces rely on', () => {
+  expect(doc).toContain('`--z-scroll-edge`');
+  expect(doc).toContain('`hidden` for a card a filter hides');
+  expect(doc).toContain('`.source-quiet`');
+});
+
 test('the doc no longer describes the old copies', () => {
   expect(doc).not.toMatch(/Nothing renders `TrackRow`/);
   expect(doc).not.toMatch(/CollectionAlbumCard|RelatedArtistCard|SearchArtistCard|CollectionArtistCard/);
