@@ -134,7 +134,8 @@
 - **A playlist you import from a URL while sync setup finishes stays in your list.** Setting up sync could take minutes, and a hosted playlist imported during that time could disappear from your playlists until they next reloaded. Thanks to @theli-ua for finding and fixing it.
 - **Playlists that left your Spotify library come back when you add them again.** If a playlist you'd imported from Spotify disappeared from your Spotify library, Parachord dropped its link on each sync and restored it on each launch, and logged it as gone every time. It now keeps the link, so the next sync picks the playlist up once it's back in your library.
 - **Synced playlists keep all their links.** Saving a playlist could drop its link to another service, such as Apple Music or Spotify, and the next sync then had to find it again. Nothing was created twice, but the playlist's sync links were often out of date. A save now keeps every link that's still live.
-
+- **Synced playlists update on their own.** A playlist you imported from Spotify, Apple Music or ListenBrainz now takes the latest version on the next sync, instead of waiting for you to click Pull Changes. If you've edited it in Parachord, your edits stay, and the playlist's page lets you choose which version to keep.
+- **Synced playlists show their own cover.** A playlist imported by sync from Spotify or Apple Music now shows the cover it has there, and follows it when it changes. One with no cover of its own, and one from ListenBrainz, still shows its grid of album covers.
 ## AI DJ
 
 - **A request to queue tracks starts playing even if the first one can't be found.** With nothing playing, a missing first track used to leave the rest queued and the app silent. The AI DJ and MCP clients now start with the first track found and are told what was skipped.
