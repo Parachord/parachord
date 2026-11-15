@@ -58,8 +58,8 @@ test('nothing turns pointer-events back on with group-hover', () => {
 });
 
 test("Home's art overlay opens the card once (stops the click)", () => {
-  const home = fs.readFileSync(path.join(ROOT, 'src/renderer/components/home-sections.js'), 'utf8');
-  expect(home).toMatch(/onClick: onClick && \(\(ev\) => \{ ev\.stopPropagation\(\); onClick\(ev\); \}\)/);
+  const art = fs.readFileSync(path.join(ROOT, 'src/renderer/components/card-art.js'), 'utf8');
+  expect(art).toMatch(/onClick: onClick && \(\(ev\) => \{ ev\.stopPropagation\(\); onClick\(ev\); \}\)/);
 });
 
 describe("Home's album and playlist cards open from anywhere on the card", () => {
@@ -74,8 +74,8 @@ describe("Home's album and playlist cards open from anywhere on the card", () =>
     }
   });
   test("the art overlay sits above the stretched button while shown (zIndex 2), under the reason badge (3)", () => {
-    const home = fs.readFileSync(path.join(ROOT, 'src/renderer/components/home-sections.js'), 'utf8');
-    expect(home).toMatch(/pointerEvents: shown \? 'auto' : 'none', zIndex: 2,/);
+    const art = fs.readFileSync(path.join(ROOT, 'src/renderer/components/card-art.js'), 'utf8');
+    expect(art).toMatch(/pointerEvents: shown \? 'auto' : 'none', zIndex: 2,/);
   });
 });
 

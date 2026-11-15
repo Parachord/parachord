@@ -16,28 +16,31 @@ const count = (html, re) => (html.match(re) || []).length;
 
 describe('AlbumCard', () => {
   const album = { title: 'Frog', artist: 'Hovvdy', imageUrl: 'https://x/y.jpg', tag: 'Out Friday' };
+  // The shared card shows an action only when its handler is passed (Home's rows pass all three).
+  const acts = { onPlay() {}, onQueue() {}, onAddToPlaylist() {} };
   test('has the three labelled actions', () => {
-    const html = h(S.AlbumCard, { album });
+    const html = h(S.AlbumCard, { album, ...acts });
     expect(html).toContain('aria-label="Add Frog to a playlist"');
     expect(html).toContain('aria-label="Play Frog"');
     expect(html).toContain('aria-label="Add Frog to the queue"');
     expect(count(html, /<button/g)).toBeGreaterThanOrEqual(3);
   });
   test('the hover is the app\'s card hover: the same overlay and buttons as CollectionAlbumCard, in its order', () => {
-    const cards = fs.readFileSync(path.join(COMP, 'cards.js'), 'utf8');
+    const cards = fs.readFileSync(path.join(COMP, 'card-art.js'), 'utf8');
     const overlay = 'absolute inset-0 bg-black/50';
     const side = 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110';
     const play = 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110';
     for (const cls of [overlay, side, play, 'transition-opacity duration-200 flex items-center justify-center gap-3']) expect(cards).toContain(cls);
-    const html = h(S.AlbumCard, { album });
+    const html = h(S.AlbumCard, { album, ...acts });
     expect(html).toMatch(/data-art-actions[^>]*class="absolute inset-0 bg-black\/50 transition-opacity duration-200 flex items-center justify-center gap-3"[^>]*opacity:0/);
-    expect(html).toMatch(new RegExp(`aria-label="Add Frog to a playlist"[^>]*class="${side}"[^>]*background-color:rgba\\(255, 255, 255, 0\\.15\\)`));
+    // The side buttons' tint and hover are classes now (not JS hover).
+    expect(html).toMatch(new RegExp(`aria-label="Add Frog to a playlist"[^>]*class="${side} bg-white/15 hover:bg-white/25 text-white"`));
     expect(html).toMatch(new RegExp(`aria-label="Play Frog"[^>]*class="${play}"`));
     expect(html.indexOf('Add Frog to a playlist')).toBeLessThan(html.indexOf('aria-label="Play Frog"'));
     expect(html.indexOf('aria-label="Play Frog"')).toBeLessThan(html.indexOf('Add Frog to the queue'));
   });
   test('on a narrow card the buttons shrink in proportion and stay round, the overlay padded 8px', () => {
-    const html = h(S.AlbumCard, { album });
+    const html = h(S.AlbumCard, { album, ...acts });
     expect(count(html, /flex-shrink:1;min-width:0;height:auto;aspect-ratio:1/g)).toBe(3);
     expect(html).toMatch(/data-art-actions[^>]*padding:8px;box-sizing:border-box/);
   });

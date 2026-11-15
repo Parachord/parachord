@@ -48,8 +48,9 @@ describe('Recommendations cards carry it', () => {
     expect(app.match(/tooltip: item\.reason && !shuffleupagusBadgeProps\(item\) \? item\.reason : undefined,/g)).toHaveLength(2);
   });
   test('Home uses the same component', () => {
-    const home = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/home-sections.js'), 'utf8');
-    expect(home).toMatch(/badge && e\(ReasonBadge, badge\)/);
+    // Home's albums are the shared AlbumCard, which draws the badge.
+    const card = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/album-card.js'), 'utf8');
+    expect(card).toMatch(/reason && e\(ReasonBadge, reason\)/);
   });
   test("Home's Ask Shuffleupagus heading carries the mark", () => {
     const home = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/home-sections.js'), 'utf8');

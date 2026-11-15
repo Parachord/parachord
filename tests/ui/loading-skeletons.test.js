@@ -334,7 +334,9 @@ describe('Home skeletons match the Home rows', () => {
     expect(sk.HOME_CARD_BOX).toEqual({ padding: '10px', borderRadius: '10px', backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)' });
     expect(sk.HOME_CARD_ART_RADIUS).toBe(8);
     // Both cards and the skeleton card use the box; the cards get the hover lift.
-    expect((sections.match(/className: 'release-card', style: Object\.assign\(\{\}, HOME_CARD_BOX/g) || []).length).toBe(2);
+    // The playlist card (home-sections) and the shared album card use the box.
+    expect((sections.match(/className: 'release-card', style: Object\.assign\(\{\}, HOME_CARD_BOX/g) || []).length).toBe(1);
+    expect(fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'components', 'album-card.js'), 'utf8')).toMatch(/style: Object\.assign\(\{\}, HOME_CARD_BOX/);
     expect(skeletons).toContain('style: Object.assign({}, HOME_CARD_BOX');
     expect(skeletons).toContain('borderRadius: `${HOME_CARD_ART_RADIUS}px`');
   });
@@ -406,7 +408,7 @@ describe('Home skeletons match the Home rows', () => {
   test('the tile and card box match the real ones', () => {
     expect(sections).toContain('height: `${HOME_TILE_HEIGHT}px`');
     expect(skeletons).toContain('height: `${HOME_TILE_HEIGHT}px`');
-    expect(sections).toMatch(/aspectRatio: '1'/);
+    expect(fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'components', 'card-art.js'), 'utf8')).toMatch(/aspectRatio: '1'/);
     expect(skeletons).toContain('aspect-square');
   });
 

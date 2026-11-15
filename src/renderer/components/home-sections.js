@@ -16,6 +16,8 @@ const { filterBySource } = require('../lib/home-model');
 const { ReasonBadge, ReasonMark, shuffleupagusIcon } = require('./reason-badge');
 const { Play } = require('./icons');
 const { CardButton } = require('./card-button');
+const { useReveal, ArtOverlay, ArtBox, releaseBadge } = require('./card-art');
+const { AlbumCard } = require('./album-card');
 const { FilterChips } = require('./filter-chips');
 const { PAGE_COLORS } = require('../lib/page-colors');
 const { SectionHeader, PAGE_COLOR, SECTION_TITLE_STYLE: H2_STYLE, SECTION_SUB_STYLE: SUB_STYLE } = require('./section-header');
@@ -46,145 +48,10 @@ const ELLIPSIS = { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'elli
 // Only http(s) ticket links reach an href.
 const isHttpUrl = (u) => typeof u === 'string' && /^https?:\/\//i.test(u.trim());
 
-// Hover or keyboard focus anywhere inside the card reveals its actions.
-function useReveal() {
-  const [hover, setHover] = React.useState(false);
-  const [focus, setFocus] = React.useState(false);
-  return {
-    shown: hover || focus,
-    props: {
-      onMouseEnter: () => setHover(true),
-      onMouseLeave: () => setHover(false),
-      onFocus: () => setFocus(true),
-      onBlur: (ev) => {
-        if (!ev.currentTarget.contains(ev.relatedTarget)) setFocus(false);
-      },
-    },
-  };
-}
-
 const svg = (size, children, extra) => e('svg', Object.assign({
   'aria-hidden': 'true', width: size, height: size, viewBox: '0 0 24 24',
   fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
 }, extra), children);
-
-
-// A round action over art. `primary` is the filled play button.
-// The app's art hover, copied from CollectionAlbumCard (cards.js) and the
-// Playlists grid so Home looks like every other page: the art dims, Add to
-// Playlist and Add to Queue flank a larger white Play, and the cover scales up
-// a little. The class strings are the app's own; only the reveal is ours (state,
-// so keyboard focus shows the buttons too). A card passes only the actions its
-// type has, as the app's cards do.
-const APP_OVERLAY = 'absolute inset-0 bg-black/50 transition-opacity duration-200 flex items-center justify-center gap-3';
-const APP_SIDE_BTN = 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110';
-const APP_PLAY_BTN = 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110';
-const APP_SIDE_BG = 'rgba(255, 255, 255, 0.15)'; // on-art
-const APP_SIDE_BG_HOVER = 'rgba(255, 255, 255, 0.25)'; // on-art
-const APP_SIDE_FG = '#ffffff'; // on-art
-const APP_ART_ZOOM = 'scale(1.05)';
-// The app's sizes (40/48/40px) need 152px of art. Home's half-row cards can be
-// narrower, so the buttons may shrink in proportion and stay round instead
-// of clipping; at the app's usual widths they are its exact sizes.
-const SHRINK = { flexShrink: 1, minWidth: 0, height: 'auto', aspectRatio: '1' };
-// The icons shrink with their buttons, in the app's proportions (a 20px icon
-// in a 40px side button, 22px in the 48px play button, nudged right 2px to
-// look centred), so a smaller circle never holds a full-size triangle.
-const SIDE_ICON = { width: '50%', height: '50%' };
-const PLAY_ICON = { width: '46%', height: '46%', marginLeft: '4%' };
-
-function SideButton({ label, onClick, path }) {
-  return e('button', {
-    type: 'button', 'aria-label': label, title: label,
-    onClick: (ev) => { ev.stopPropagation(); if (onClick) onClick(ev); },
-    className: APP_SIDE_BTN,
-    style: Object.assign({ backgroundColor: APP_SIDE_BG, color: APP_SIDE_FG, border: 'none', cursor: 'pointer', padding: 0 }, SHRINK),
-    onMouseEnter: (ev) => { ev.currentTarget.style.backgroundColor = APP_SIDE_BG_HOVER; },
-    onMouseLeave: (ev) => { ev.currentTarget.style.backgroundColor = APP_SIDE_BG; },
-  }, e('svg', { style: SIDE_ICON, fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2, 'aria-hidden': 'true' },
-    e('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: path })));
-}
-
-function ArtOverlay({ shown, title, onClick, onPlay, onQueue, onAddToPlaylist }) {
-  return e('div', {
-    // The click opens the card once: stop it at the overlay, or a card whose
-    // art is also wrapped in an opener (PlaylistCard) opened twice.
-    'data-art-actions': '', onClick: onClick && ((ev) => { ev.stopPropagation(); onClick(ev); }), className: APP_OVERLAY,
-    // Above CardButton's stretched button (1) while shown, so its buttons and
-    // its own open-on-click work; under the reason badge (3).
-    style: { opacity: shown ? 1 : 0, pointerEvents: shown ? 'auto' : 'none', zIndex: 2, padding: '8px', boxSizing: 'border-box' },
-  },
-    onAddToPlaylist && e(SideButton, { label: `Add ${title} to a playlist`, onClick: onAddToPlaylist, path: 'M12 4v16m8-8H4' }),
-    onPlay && e('button', {
-      type: 'button', 'aria-label': `Play ${title}`, title: `Play ${title}`,
-      onClick: (ev) => { ev.stopPropagation(); onPlay(ev); },
-      className: APP_PLAY_BTN,
-      style: Object.assign({ border: 'none', cursor: 'pointer', padding: 0 }, SHRINK),
-    }, e(Play, { size: 22, className: 'text-gray-800', style: PLAY_ICON })),
-    onQueue && e(SideButton, { label: `Add ${title} to the queue`, onClick: onQueue, path: 'M4 6h16M4 12h16M4 18h7' }));
-}
-
-// The Playlists page's placeholder glyph: three lines and a play triangle.
-const PlaylistGlyph = () => e('svg', {
-  'aria-hidden': 'true', 'data-playlist-glyph': '', viewBox: '0 0 24 24', fill: 'currentColor',
-  style: { width: '40%', height: '40%', maxWidth: '48px', maxHeight: '48px', color: 'var(--text-secondary)' },
-},
-  e('rect', { x: 3, y: 5, width: 18, height: 2, rx: 1 }),
-  e('rect', { x: 3, y: 11, width: 10, height: 2, rx: 1 }),
-  e('rect', { x: 3, y: 17, width: 7, height: 2, rx: 1 }),
-  e('path', { d: 'M15 13.5v6l5.5-3-5.5-3z' }));
-
-// Square art: a mosaic (2x2), one cover, or a placeholder block. A playlist
-// with no covers yet (`placeholder: 'playlist'`) shows the Playlists page's
-// glyph rather than an empty box.
-function ArtBox({ imageUrl, mosaic, item, onArtError, children, style, placeholder, zoom }) {
-  const tiles = Array.isArray(mosaic) ? mosaic.filter(Boolean).slice(0, 4) : [];
-  // A cover that failed to load drops out and the mosaic (or the placeholder)
-  // below shows — a dead cover degrades, never blanks; a fresh URL (a refresh
-  // swapped the image) retries. Same contract as PlaylistCoverImage on the
-  // layered surfaces ("Playlist covers" in docs/architecture/album-art.md).
-  const [deadCoverUrl, setDeadCoverUrl] = React.useState(null);
-  React.useEffect(() => { setDeadCoverUrl(null); }, [imageUrl]);
-  const cover = imageUrl && deadCoverUrl !== imageUrl ? imageUrl : null;
-  // A playlist's cover never reports into the album-art pipeline: it is not
-  // any album's art (reportBroken needs the artist and album the playlist
-  // does not carry, so the report would be a no-op — but it must not reach
-  // the pipeline at all). Album art keeps reporting: that retry is how a
-  // dead album cover heals.
-  const fail = () => { if (placeholder !== 'playlist' && onArtError) onArtError(item); };
-  let art;
-  if (cover) {
-    art = e('img', {
-      src: cover, alt: '', loading: 'lazy',
-      onError: () => { setDeadCoverUrl(imageUrl); fail(); },
-      style: { width: '100%', height: '100%', objectFit: 'cover', display: 'block' },
-    });
-  } else if (tiles.length >= 4) {
-    art = e('div', { style: { width: '100%', height: '100%', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' } },
-      tiles.map((u, i) => e('img', {
-        key: i, src: u, alt: '', loading: 'lazy', onError: fail,
-        style: { width: '100%', height: '100%', objectFit: 'cover', display: 'block' },
-      })));
-  } else if (tiles.length > 0) {
-    art = e('img', {
-      src: tiles[0], alt: '', loading: 'lazy', onError: fail,
-      style: { width: '100%', height: '100%', objectFit: 'cover', display: 'block' },
-    });
-  } else if (placeholder === 'playlist') {
-    art = e('div', { style: { width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' } },
-      PlaylistGlyph());
-  }
-  // `zoom` scales the art the way the app's cards do on hover.
-  const zoomed = art && e('div', {
-    style: { width: '100%', height: '100%', transition: 'transform 0.3s ease', transform: zoom ? APP_ART_ZOOM : 'none' },
-  }, art);
-  return e('div', {
-    style: Object.assign({
-      position: 'relative', aspectRatio: '1', borderRadius: '10px', overflow: 'hidden',
-      backgroundColor: 'var(--accent-surface)',
-    }, style),
-  }, zoomed, children);
-}
 
 // ---------------------------------------------------------------- Jump back in
 
@@ -293,64 +160,14 @@ function artBadge(album) {
   return null;
 }
 
-// The Fresh Drops page's release-type badge (app.js; the .release-badge class
-// in index.html): top right, Album indigo, EP purple, anything else pink.
-const RELEASE_BADGE_BG = { album: 'rgba(99, 102, 241, 0.9)', ep: 'rgba(168, 85, 247, 0.9)', other: 'rgba(236, 72, 153, 0.9)' }; // on-art
-function releaseBadge(type) {
-  if (typeof type !== 'string' || !type) return null;
-  const t = type.toLowerCase();
-  return e('div', { style: { position: 'absolute', top: '8px', right: '8px' } },
-    e('span', {
-      className: 'release-badge',
-      style: { backgroundColor: RELEASE_BADGE_BG[t] || RELEASE_BADGE_BG.other, color: 'white' }, // on-art
-    }, t === 'ep' ? 'EP' : t.charAt(0).toUpperCase() + t.slice(1)));
-}
-
-function AlbumCard({ album, onOpen, onPlay, onQueue, onAddToPlaylist, onContextMenu, onHoverPrefetch, onArtError }) {
-  const reveal = useReveal();
-  const timer = React.useRef(null);
-  React.useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
-  if (!album) return null;
-  const title = album.title;
-  const open = () => onOpen && onOpen(album);
-  const badge = artBadge(album);
-  const enter = reveal.props.onMouseEnter;
-  const leave = reveal.props.onMouseLeave;
-  const dwell = {
-    onMouseEnter: () => {
-      enter();
-      if (onHoverPrefetch) {
-        if (timer.current) clearTimeout(timer.current);
-        timer.current = setTimeout(() => { timer.current = null; onHoverPrefetch(album); }, 250);
-      }
-    },
-    onMouseLeave: () => { leave(); if (timer.current) { clearTimeout(timer.current); timer.current = null; } },
-  };
-  // The whole card opens the album (CardButton: a stretched button under the
-  // card), the title and artist lines included.
-  return e(CardButton, Object.assign({
-    label: `Open ${title}`, onActivate: open,
-    onContextMenu: (ev) => { if (onContextMenu) { ev.preventDefault(); onContextMenu(ev, album); } },
-    // The app's card (HOME_CARD_BOX), with its release-card hover lift.
-    className: 'release-card', style: Object.assign({}, HOME_CARD_BOX, { display: 'flex', flexDirection: 'column', gap: `${HOME_CARD_TEXT_GAP}px`, minWidth: 0, cursor: 'pointer' }),
-  }, reveal.props, dwell),
-    e(ArtBox, { imageUrl: album.imageUrl, item: album, onArtError, zoom: reveal.shown, style: { borderRadius: `${HOME_CARD_ART_RADIUS}px` } },
-      album.homeRow === 'fresh' && releaseBadge(album.releaseType),
-      e(ArtOverlay, {
-        shown: reveal.shown, title, onClick: open,
-        onAddToPlaylist: () => onAddToPlaylist && onAddToPlaylist(album),
-        onPlay: () => onPlay && onPlay(album),
-        onQueue: () => onQueue && onQueue(album),
-      }),
-      // Why it's here (components/reason-badge.js).
-      badge && e(ReasonBadge, badge)),
-    e('div', {
-      style: Object.assign({ fontWeight: 500, fontSize: '13px', color: 'var(--text-primary)' }, ELLIPSIS),
-    }, title),
-    // An album names no source (only a playlist card does: a playlist is
-    // the service's own). Shuffleupagus and Critical Darlings say why in the
-    // badge on the art.
-    album.artist && e('div', { style: Object.assign({ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '-6px' }, ELLIPSIS) }, album.artist));
+// Home's album card: the shared one (./album-card) with Home's reason badge
+// (Shuffleupagus, Critical Darlings) and Fresh Drops' release type.
+function HomeAlbumCard(props) {
+  const album = props.album;
+  return e(AlbumCard, Object.assign({}, props, {
+    reason: album ? artBadge(album) : null,
+    releaseType: album && album.homeRow === 'fresh' ? album.releaseType : null,
+  }));
 }
 
 // "Refreshed 18m ago · since 2023" shows as two lines: the age, then "Since 2023".
@@ -487,7 +304,7 @@ function AlbumsRow(props) {
     }),
     chips.length > 1 && e(SourceFilter, { sources: chips, value: source, onChange: setSource }),
     e('div', { style: grid(`repeat(${cards}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
-      shown.map((a, i) => e(AlbumCard, Object.assign({ key: a.id || `${a.artist}-${a.title}-${i}`, album: a }, albumHandlers(props))))));
+      shown.map((a, i) => e(HomeAlbumCard, Object.assign({ key: a.id || `${a.artist}-${a.title}-${i}`, album: a }, albumHandlers(props))))));
 }
 
 // Two halves side by side. Each is its own column at a fixed basis (half the
@@ -527,7 +344,7 @@ function FreshCriticalRow(props) {
       loading
         ? e(CardRowSkeleton, { count: HOME_HALF_ROW_CARDS, lines: 1 })
         : e('div', { style: grid(`repeat(${HOME_HALF_ROW_CARDS}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
-          items.slice(0, HOME_HALF_ROW_CARDS).map((a, i) => e(AlbumCard, Object.assign({ key: a.id || `${a.artist}-${a.title}-${i}`, album: a }, albumHandlers(props)))))));
+          items.slice(0, HOME_HALF_ROW_CARDS).map((a, i) => e(HomeAlbumCard, Object.assign({ key: a.id || `${a.artist}-${a.title}-${i}`, album: a }, albumHandlers(props)))))));
   const f = Array.isArray(fresh) ? fresh : [];
   const c = Array.isArray(critical) ? critical : [];
   const showF = f.length > 0 || !!freshLoading;
@@ -733,6 +550,6 @@ function AskShuffleupagus({ initialPrompt, chatAvailable, onAsk, onSetup }) {
 }
 
 module.exports = {
-  JumpBackIn, AlbumCard, PlaylistCard, SourceFilter, MixesRow, PlaylistsRow, AlbumsRow,
+  JumpBackIn, AlbumCard: HomeAlbumCard, PlaylistCard, SourceFilter, MixesRow, PlaylistsRow, AlbumsRow,
   FreshCriticalRow, ConcertsRow, AskShuffleupagus, __TicketsLink: TicketsLink, ArtBox,
 };
