@@ -607,7 +607,7 @@ const {
 const { carriedReleaseArt, withArchiveCover, createReleaseGroupPicks } = require('./lib/release-open');
 const { firstNonEmptyList, entriesFromMusicBrainzRelease, entriesFromCatalogRelease, pickReleaseGroup } = require('./lib/album-track-list');
 const { pickRelease } = require('./lib/release-pick');
-const { uniqueReleases } = require('./lib/fresh-drops-releases');
+const { uniqueReleases, freshDropsWindow, withinFreshDropsWindow } = require('./lib/fresh-drops-releases');
 const { uniqueConcerts, concertSourceKeys, concertMatchesSource } = require('./lib/concert-events');
 const { createReleaseLookup, releaseFormats, hasCurrentAlias } = require('./lib/release-lookup');
 const { artistLookupPlan, loadArtistReleaseGroups, musicBrainzHttpError, discographyOutcome } = require('./lib/artist-discography');
@@ -19262,17 +19262,13 @@ ${trackListXml}
       // Load new releases cache and show instantly on Home
       if (newReleasesData && newReleasesData.releases && newReleasesData.timestamp != null) {
         // Filter out broadcasts that may have been cached before the filter was
-        // added, and drop releases dated more than 2 weeks out — pre-existing
-        // caches written before the +14d upper bound (fetchReleasesForArtists)
-        // may carry months-out announcements that the user doesn't want to see.
-        const upperFuture = new Date();
-        upperFuture.setDate(upperFuture.getDate() + 14);
-        const upperCutoffDate = upperFuture.toISOString().split('T')[0];
-        // uniqueReleases also heals a cache saved with a collaboration twice
+        // added, and keep only the Fresh Drops window (three months back, two
+        // weeks ahead): releases that aged out since the last save leave here,
+        // as do months-out announcements in older caches. uniqueReleases also
+        // heals a cache saved with a collaboration twice
         // (lib/fresh-drops-releases.js).
-        const filteredReleases = uniqueReleases(newReleasesData.releases.filter(r =>
+        const filteredReleases = uniqueReleases(withinFreshDropsWindow(newReleasesData.releases).filter(r =>
           r.releaseType !== 'broadcast' && !(r.secondaryTypes || []).includes('broadcast')
-          && (!r.date || r.date <= upperCutoffDate)
         ));
         const now = Date.now();
         if (now - newReleasesData.timestamp < CACHE_TTL.newReleases) {
@@ -26858,9 +26854,8 @@ ${tracks}
     // announcement feed" that pushed actually-fresh releases off the top.
     // 2 weeks is enough to surface upcoming drops the user might want to
     // pre-save without including reveals for things 6 months out.
-    const upperFuture = new Date();
-    upperFuture.setDate(upperFuture.getDate() + 14);
-    const upperCutoffDate = upperFuture.toISOString().split('T')[0];
+    // (lib/fresh-drops-releases.js owns the window.)
+    const { to: upperCutoffDate } = freshDropsWindow();
 
     // Fetch with a timeout to prevent a single hanging request from stalling the loop
     const fetchWithTimeout = (url, options, timeoutMs = 10000) => {
@@ -27060,18 +27055,22 @@ ${tracks}
           return true;
         });
 
-        if (brandNew.length > 0) {
-          console.log(`✨ Found ${brandNew.length} new releases to add`);
+        // Releases that aged out of the window since the last scan leave too,
+        // so the list never only grows.
+        const inWindow = withinFreshDropsWindow(newReleases);
+        if (brandNew.length > 0 || inWindow.length < newReleases.length) {
+          console.log(`✨ Found ${brandNew.length} new releases to add; ${newReleases.length - inWindow.length} aged out`);
           // Prepend new releases and re-sort
-          const merged = uniqueReleases([...brandNew, ...newReleases]).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+          const merged = uniqueReleases(withinFreshDropsWindow([...brandNew, ...newReleases])).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
           setNewReleases(merged);
           newReleasesCache.current = { releases: merged, timestamp: Date.now(), lastFullScan: newReleasesCache.current.lastFullScan || 0 };
 
-          const hash = generateDiscoveryHash(merged);
-          checkDiscoveryUnread('newReleases', hash);
-
-          // Fetch art only for the new ones
-          fetchNewReleasesAlbumArt(brandNew);
+          // Only new releases light the unread dot, not ones aging out.
+          if (brandNew.length > 0) {
+            checkDiscoveryUnread('newReleases', generateDiscoveryHash(merged));
+            // Fetch art only for the new ones
+            fetchNewReleasesAlbumArt(brandNew);
+          }
           saveCacheToStore();
         } else {
           console.log(`✨ No new releases found (checked ${artistsProcessed} artists)`);
@@ -27111,13 +27110,13 @@ ${tracks}
         return;
       }
 
-      const sixMonthsAgo = new Date();
-      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-      const cutoffDate = sixMonthsAgo.toISOString().split('T')[0];
+      const { from: cutoffDate } = freshDropsWindow();
 
       // Snapshot existing cached releases BEFORE the fetch starts, so the
-      // progress callback (which updates the cache ref) can't overwrite them
-      const priorCachedReleases = [...(newReleasesCache.current.releases || [])];
+      // progress callback (which updates the cache ref) can't overwrite them.
+      // Only those still in the window carry over: the merge used to keep
+      // every release ever found, so the list only grew.
+      const priorCachedReleases = withinFreshDropsWindow(newReleasesCache.current.releases || []);
 
       const { releases: allNewReleases, artistsProcessed } = await fetchReleasesForArtists(
         artistList,
@@ -39934,7 +39933,7 @@ useEffect(() => {
               React.createElement('div', { className: 'text-gray-400 text-sm max-w-md mx-auto' },
                 collectionData.artists?.length === 0 && collectionData.tracks?.length === 0
                   ? 'Add artists to your collection or listen to some music to see new releases from artists you like.'
-                  : 'None of your artists have released new music in the last 6 months. Check back later!'
+                  : 'None of your artists have released new music in the last 3 months. Check back later!'
               )
             ),
 
