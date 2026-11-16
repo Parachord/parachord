@@ -61,7 +61,7 @@ describe('amazonmusic .axe structure', () => {
       expect(typeof new Function('return ' + src)()).toBe('function');
     }
     expect(Object.keys(axe.implementation).sort()).toEqual(
-      ['_lib', 'assertPlanPlays', 'cleanup', 'expandRecommendationSection', 'getPlan', 'getRecommendations', 'init', 'isSignedIn', 'lookupAlbum', 'lookupPlaylist', 'play', 'replayGql', 'requireLib', 'resolve', 'search', 'searchAlbums', 'searchArtistImage', 'specSearch', 'specSearchPageFlow', 'specStructuralError', 'trySpecReplay'].sort()
+      ['_lib', 'assertPlanPlays', 'cleanup', 'expandRecommendationSection', 'getPlan', 'getRecommendations', 'init', 'isSignedIn', 'lookupAlbum', 'lookupPlaylist', 'play', 'replayGql', 'requireLib', 'resolve', 'search', 'searchAlbums', 'searchArtistImage', 'sessionState', 'specSearch', 'specSearchPageFlow', 'specStructuralError', 'trySpecReplay'].sort()
     );
   });
 });

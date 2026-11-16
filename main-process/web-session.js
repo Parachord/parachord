@@ -32,9 +32,14 @@
 //                               returned headers carry set-cookie NAMES
 //                               only), it is budgeted like every other wait,
 //                               and the request aborts when the budget fires
-//   state()                  → { url, signInUrl, cookieNames } — the facts a
-//                               plugin composes its signed-in/wall verdicts
-//                               from (names only, never values)
+//   state()                  → { url, signInUrl, cookieNames, generation }
+//                               — the facts a plugin composes its
+//                               signed-in/wall verdicts from (names only,
+//                               never values); the generation is the
+//                               clear()-bumped session counter, a plugin's
+//                               only window onto a sign-out it cannot see
+//                               the event of (a cache minted under one
+//                               generation must not serve the next)
 //   signIn(url, { decide })  → { signedIn } — a visible window (title from
 //                               host config, never a caller choice) ticked at
 //                               the host; decide({url, cookieNames, stableTicks})
@@ -949,12 +954,15 @@ function createWebSessionHost(config = {}) {
       });
     },
 
-    // state() → { url, signInUrl, cookieNames } — the facts, nothing judged.
-    // url is the hidden view's current page (its last navigation — a plugin
-    // reads walls from it); signInUrl the sign-in window's (null when closed);
-    // cookieNames the names of the session's cookies under its declared
-    // domains, empty-valued entries dropped (an empty value is a deletion in
-    // flight, not a session).
+    // state() → { url, signInUrl, cookieNames, generation } — the facts,
+    // nothing judged. url is the hidden view's current page (its last
+    // navigation — a plugin reads walls from it); signInUrl the sign-in
+    // window's (null when closed); cookieNames the names of the session's
+    // cookies under its declared domains, empty-valued entries dropped (an
+    // empty value is a deletion in flight, not a session); generation the
+    // clear()-bumped session counter — the plugin cannot see the sign-out
+    // event, so this is how it detects one and drops the caches it minted
+    // under the old account.
     async state() {
       const url = this.viewUrl();
       let signInUrl = null;
@@ -962,7 +970,7 @@ function createWebSessionHost(config = {}) {
         try { signInUrl = this._authWindow.webContents.getURL(); } catch { /* destroyed */ }
       }
       const cookieNames = await this.cookieNames();
-      return { url, signInUrl, cookieNames };
+      return { url, signInUrl, cookieNames, generation: this._generation };
     },
 
     // Cookie names for the session's declared domains (a shared-cookie-store
@@ -1117,7 +1125,10 @@ function createWebSessionHost(config = {}) {
       // generation's captures are not its to detach, its fuse is not the
       // one to arm. The CURRENT registration is released here (not just
       // forgotten): a stale listener would keep recording the partition's
-      // requests — the sign-in window shares it — into a dead array.
+      // requests — the sign-in window shares it — into a dead array. The
+      // bump is also state()'s sign-out signal: a plugin holding
+      // session-scoped caches (a plan reading, a request template) compares
+      // the generation it cached state against.
       this._generation += 1;
       if (this._capture) this._capture.detach();
       this._capture = null;

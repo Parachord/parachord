@@ -16,7 +16,9 @@
 // page flow with the capture window inside the load (the quiet-bounded
 // returned captures replace the old in-flow poll; our own replay traffic
 // arrives as echo-flagged captures and is never trusted), and state()
-// supplies the facts the signed-in verdict composes. The album/artist spec
+// supplies the facts the signed-in verdict composes — and the session
+// generation whose change (a sign-out the plugin cannot see the event of)
+// drops its session-scoped caches. The album/artist spec
 // searches still run host-side (their milestone hasn't come): they drive the
 // same host instance through amazon-web-player.js's copy of the runner, and
 // the matchers agree because they are copies of the same pure helpers in
@@ -38,10 +40,21 @@ module.exports = {
     const CONFIG_URL = 'https://music.amazon.com/config.json';
 
     // The page flow's capture window: the bridge's load returns its
-    // captures once the page's request burst goes quiet (quietMs, the host's
-    // default), never later than this budget after the load finishes — the
-    // same 15s window the old in-flow poll (60 × 250ms) allowed a slow page.
+    // captures once the page's request burst goes quiet, never later than
+    // this budget after the load finishes — the same 15s window the old
+    // in-flow poll (60 × 250ms) allowed a slow page.
     const PAGE_CAPTURE_BUDGET_MS = 15000;
+    // The quiet window is explicit, NOT the host's 1000ms default: a COLD
+    // view's first gql fires well after load-finish (boot + query is ~1-3s
+    // on a warm view — amazon-web-player.js's old poll comment — and a cold
+    // view pays the view mint and its config fetch first), and the host's
+    // awaitCaptureQuiet returns ~quietMs after load-finish when ZERO captures
+    // exist. Under the default a cold view whose first gql lands >1s after
+    // load-finish comes back captures: [] — "the page never fired the
+    // search", a breaker tick. 2500ms past load-finish keeps that late
+    // first request inside the window — the gap the old poll's
+    // unconditional 15s coverage existed to close.
+    const PAGE_CAPTURE_QUIET_MS = 2500;
 
     // #1220: the plan is read from config.json and cached 30 min (1 min when
     // unknown), the same TTLs the host's dmls gate uses.
@@ -396,7 +409,7 @@ module.exports = {
 
     return {
       SESSION, GQL_URL, CONFIG_URL,
-      PAGE_CAPTURE_BUDGET_MS, PLAN_TTL_MS, PLAN_UNKNOWN_TTL_MS,
+      PAGE_CAPTURE_BUDGET_MS, PAGE_CAPTURE_QUIET_MS, PLAN_TTL_MS, PLAN_UNKNOWN_TTL_MS,
       notReady,
       pageBlocksPlayback,
       amazonAuthCookieState,
@@ -532,16 +545,16 @@ module.exports = {
   // capture.
   trySpecReplay: async function ({ searchText, specType, parse, noun }) {
     const lib = this.requireLib();
-    const ws = window.electron && window.electron.webSession;
-    if (!ws) return null;
     const template = this._specSearchTemplate;
     if (!lib.specTemplateIsFresh(template, Date.now())) return null;
     // A replay needs an Amazon-origin page world (cookies, CORS): a parked
     // or never-loaded view means the page flow runs instead, and a wall URL
     // means the session died mid-flight (the same URL re-check every load
-    // does).
-    const state = await ws.state(lib.SESSION);
-    if (!state || !state.success) return null;
+    // does). The state read also runs the session-generation check (see
+    // sessionState): a template minted under the previous account is
+    // dropped before it can replay into this one.
+    const state = await this.sessionState();
+    if (!state) return null;
     const href = state.url;
     if (!href || !lib.isAmazonMusicPage(href)) return null;
     if (lib.pageBlocksPlayback(href)) {
@@ -593,8 +606,9 @@ module.exports = {
   // template the fast path replays. The load is serialized on the host's
   // chain (it waits out in-flight replays rather than tearing their frame
   // down mid-fetch) and its captures come back when the page's request burst
-  // goes quiet — never later than PAGE_CAPTURE_BUDGET_MS, the old in-flow
-  // poll's 15s window.
+  // goes quiet (PAGE_CAPTURE_QUIET_MS — sized for a cold view's late first
+  // request, not the host's 1000ms default — never later than
+  // PAGE_CAPTURE_BUDGET_MS, the old in-flow poll's 15s window).
   specSearchPageFlow: async function ({ url, searchText, specType, parse, noun }) {
     const lib = this.requireLib();
     const ws = window.electron && window.electron.webSession;
@@ -605,7 +619,11 @@ module.exports = {
     const warmed = await this.trySpecReplay({ searchText, specType, parse, noun });
     if (warmed !== null) return warmed;
     const load = await ws.load(lib.SESSION, url, {
-      capture: { urlPrefixes: [lib.GQL_URL + '*'], budgetMs: lib.PAGE_CAPTURE_BUDGET_MS }
+      capture: {
+        urlPrefixes: [lib.GQL_URL + '*'],
+        quietMs: lib.PAGE_CAPTURE_QUIET_MS,
+        budgetMs: lib.PAGE_CAPTURE_BUDGET_MS
+      }
     });
     if (!load || !load.success) {
       // A refused load: 'load-failed' (the page never finished), 'superseded'
@@ -696,20 +714,47 @@ module.exports = {
     return rows;
   },
 
+  // ── The session generation (the sign-out the plugin cannot see) ───────────
+  // The host's clear() bumps a session generation and state() carries it:
+  // the plugin cannot see the sign-out EVENT, but every state read can
+  // compare the generation against the one this instance cached under. Sign
+  // out → sign in as another account with no search between would otherwise
+  // serve account A's plan reading (up to 30 min) and spec-search template
+  // (up to 24h — its headers embed the OLD session's csrf tokens, the same
+  // reason amazon-web-player.js's signOut nulls its own templates). Every
+  // state read goes through here (isSignedIn, trySpecReplay), so the drop
+  // lands on the first read after the switch — before any cache is served.
+  sessionState: async function () {
+    const lib = this.requireLib();
+    const ws = window.electron && window.electron.webSession;
+    if (!ws) return null;
+    const state = await ws.state(lib.SESSION);
+    if (!state || !state.success) return null;
+    if (typeof state.generation === 'number') {
+      if (this._sessionGeneration === undefined) {
+        this._sessionGeneration = state.generation;
+      } else if (state.generation !== this._sessionGeneration) {
+        this._sessionGeneration = state.generation;
+        this._planState = null;
+        this._specSearchTemplate = null;
+      }
+    }
+    return state;
+  },
+
   // ── The signed-in verdict ──────────────────────────────────────────────────
   // The plugin's composition of the host's facts (webSession.state() →
-  // { url, signInUrl, cookieNames }) with Amazon's pure predicates — the
-  // same composition amazon-web-player.js's isSignedIn runs for the host's
+  // { url, signInUrl, cookieNames } — read through sessionState, which also
+  // runs the generation check) with Amazon's pure predicates — the same
+  // composition amazon-web-player.js's isSignedIn runs for the host's
   // flows. Ready means signed in AND a profile chosen (a window still on the
   // profile picker is not ready, even with a cookie set); a page is never
   // proof of a session, and only the sign-in window's URL is authoritative
   // (the hidden view keeps whatever URL its last navigation left behind).
   isSignedIn: async function () {
     const lib = this.requireLib();
-    const ws = window.electron && window.electron.webSession;
-    if (!ws) return false;
-    const state = await ws.state(lib.SESSION);
-    if (!state || !state.success) return false;
+    const state = await this.sessionState();
+    if (!state) return false;
     const cookies = lib.amazonAuthCookieState(state.cookieNames);
     if (cookies === 'none') return false;
     // The auth-cookie names are an implementation detail Amazon can rotate.

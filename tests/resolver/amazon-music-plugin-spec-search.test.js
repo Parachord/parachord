@@ -158,6 +158,10 @@ describe('the page flow (webSession.load with the capture window inside it)', ()
     // The same capture lens and the same 15s window the old in-flow poll had.
     expect(opts.capture.urlPrefixes).toEqual(['https://gql.music.amazon.com/*']);
     expect(opts.capture.budgetMs).toBe(15000);
+    // The quiet window is explicit, not the host's 1000ms default: the host
+    // returns ~quietMs after load-finish when ZERO captures exist, so the
+    // default would close before a cold view's first gql ever fired.
+    expect(opts.capture.quietMs).toBeGreaterThanOrEqual(2500);
     // The page's own request was replayed verbatim to the captured URL.
     expect(ws.pageFetch).toHaveBeenCalledTimes(1);
     const [rid, request] = ws.pageFetch.mock.calls[0];
@@ -167,6 +171,29 @@ describe('the page flow (webSession.load with the capture window inside it)', ()
     expect(body.variables.searchText).toBe('"around the world" by "daft punk" OR "around the world" "daft punk" OR "daft punk" "around the world"');
     expect(body.variables.specType).toBe('track');
     expect(body.extensions.persistedQuery.sha256Hash).toBe('deadbeefhash');
+  });
+
+  test('a cold view whose first gql lands after the host default quiet window is still captured and matched', async () => {
+    // The review fix: the host's awaitCaptureQuiet returns ~quietMs after
+    // load-finish when ZERO captures exist, so a cold view whose first gql
+    // lands >1s after load-finish under the host default (1000ms) would read
+    // as "the page never fired the search" — a structural failure and a
+    // breaker tick. The plugin's explicit window (2500ms) keeps the late
+    // request inside it.
+    const ws = amazonWebSessionMock({ tracks: TRACKS, captureDelayMs: 1200 });
+    const resolver = instantiateAmazonPlugin(axe);
+    const rows = await search(resolver, 'daft punk');
+    expect(rows).toHaveLength(2);
+    // The late capture was returned AND matched — the flow replayed it.
+    expect(ws.pageFetch).toHaveBeenCalledTimes(1);
+    // The mock simulates the window honestly: the SAME 1200ms-late capture
+    // under the host's default 1000ms window is not returned — the window
+    // closed before the request fired. The wider window the plugin passes
+    // is the only reason the capture above survived.
+    const late = await ws.load('amazon-music', 'https://music.amazon.com/search/x/songs', {
+      capture: { urlPrefixes: ['https://gql.music.amazon.com/*'], quietMs: 1000 }
+    });
+    expect(late.captures).toEqual([]);
   });
 
   test('a refused load surfaces its reason — never cached as a miss, never a sign-in prompt', async () => {
@@ -474,6 +501,75 @@ describe('the fast path (template replay via webSession.pageFetch)', () => {
       replies.forEach(resolve => resolve({ success: true, status: 200, text: JSON.stringify(amazonSpecEnvelope([])) }));
       await Promise.allSettled([p1, p2]);
     }
+  });
+});
+
+describe('the session generation (a sign-out the plugin cannot see the event of)', () => {
+  test('a sign-out and sign-in as another account between searches serves no stale plan or template', async () => {
+    // clear() bumps the host's session generation and state() carries it;
+    // the plugin cannot see the sign-out EVENT, but its next state read (the
+    // first thing every search does) observes the bump and drops the caches
+    // minted under the old account: the plan reading (the next account's
+    // may differ) and the spec-search template (its headers embed the old
+    // session's csrf tokens).
+    const ws = amazonWebSessionMock({ tracks: TRACKS });
+    const resolver = instantiateAmazonPlugin(axe);
+    await search(resolver, 'daft punk'); // mints the template, caches the plan
+    const minted = resolver._specSearchTemplate;
+    expect(minted).toBeTruthy();
+    expect(ws.fetch).toHaveBeenCalledTimes(1);
+
+    // Sign out (clear() — the generation bumps) and sign in as another
+    // account, with NO search between the two.
+    ws.state.mockResolvedValue({
+      success: true,
+      url: 'https://music.amazon.com/search/x/songs',
+      signInUrl: null,
+      cookieNames: ['at-main', 'sess-at-main'],
+      generation: 1
+    });
+    ws.load.mockClear();
+    ws.pageFetch.mockClear();
+    const rows = await search(resolver, 'daft punk');
+    expect(rows).toHaveLength(2);
+    // The plan was re-read under the new session (the cache dropped)...
+    expect(ws.fetch).toHaveBeenCalledTimes(2);
+    // ...and the template was dropped: the fast path missed (its csrf headers
+    // belong to account A) and the page flow re-minted a fresh one.
+    expect(ws.load).toHaveBeenCalledTimes(1);
+    expect(resolver._specSearchTemplate).not.toBe(minted);
+    expect(Date.now() - resolver._specSearchTemplate.capturedAt).toBeLessThan(5000);
+  });
+
+  test('a same-generation state read serves the caches as before (no needless re-mint)', async () => {
+    const ws = amazonWebSessionMock({ tracks: TRACKS });
+    const resolver = instantiateAmazonPlugin(axe);
+    await search(resolver, 'daft punk');
+    const minted = resolver._specSearchTemplate;
+    ws.load.mockClear();
+    ws.pageFetch.mockClear();
+    const rows = await search(resolver, 'daft punk');
+    expect(rows).toHaveLength(2);
+    // Same generation, live session: the fast path answered from the cached
+    // template and the cached plan — no load, no config re-read.
+    expect(ws.load).not.toHaveBeenCalled();
+    expect(ws.fetch).toHaveBeenCalledTimes(1);
+    expect(resolver._specSearchTemplate).toBe(minted);
+  });
+
+  test('a state read with no generation (an older host) changes nothing', async () => {
+    const ws = amazonWebSessionMock({ tracks: TRACKS });
+    const resolver = instantiateAmazonPlugin(axe);
+    await search(resolver, 'daft punk');
+    const minted = resolver._specSearchTemplate;
+    ws.state.mockResolvedValue({ success: true, url: 'https://music.amazon.com/search/x/songs', signInUrl: null, cookieNames: ['at-main'] });
+    ws.load.mockClear();
+    const rows = await search(resolver, 'daft punk');
+    expect(rows).toHaveLength(2);
+    // Nothing to compare — the caches stand and the fast path serves them.
+    expect(ws.load).not.toHaveBeenCalled();
+    expect(ws.fetch).toHaveBeenCalledTimes(1);
+    expect(resolver._specSearchTemplate).toBe(minted);
   });
 });
 

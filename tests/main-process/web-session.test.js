@@ -980,7 +980,7 @@ describe('the hidden view — the will-redirect leash (#1432 advisory, 2026-11-1
 });
 
 describe('state — the facts, nothing judged', () => {
-  test('url + signInUrl + cookie names (values never; empties dropped)', async () => {
+  test('url + signInUrl + cookie names + generation (values never; empties dropped)', async () => {
     mockJarCookies = [
       { name: 'at-main', value: 'SECRET', domain: '.testsvc.com' },
       { name: 'session-id', value: 'SID', domain: '.testsvc.com' },
@@ -993,8 +993,23 @@ describe('state — the facts, nothing judged', () => {
     expect(state).toEqual({
       url: 'https://music.testsvc.com/search/x/songs',
       signInUrl: null,
-      cookieNames: ['at-main', 'session-id']
+      cookieNames: ['at-main', 'session-id'],
+      generation: 0
     });
+  });
+
+  test('clear() bumps the generation state() carries — the sign-out signal a plugin compares', async () => {
+    // A plugin cannot see the host's sign-out event; the generation is how
+    // it detects one — sign out, sign in as another account with no search
+    // between, and the next state read observes the bump and drops the
+    // caches minted under the old account (the plugin's plan reading and
+    // request template).
+    const { host } = await warmSession();
+    expect((await host.state()).generation).toBe(0);
+    await host.clear();
+    expect((await host.state()).generation).toBe(1);
+    await host.clear();
+    expect((await host.state()).generation).toBe(2);
   });
 });
 

@@ -116,6 +116,12 @@ function amazonSpecEnvelope(tracks) {
 //   finalUrl         — the load's final URL (a wall redirect)
 //   loadResult       — the load's whole outcome ({ success: false, reason } for
 //                      the failure paths)
+//   captureDelayMs   — the ms after load-finish the page's first capture fires
+//                      (default 0): the load returns it only when it fired
+//                      BEFORE the quiet window closed (see load below)
+//   generation       — the session generation state() carries (default 0;
+//                      a bumped value after a sign-out→sign-in drops the
+//                      plugin's session-scoped caches)
 function amazonWebSessionMock(opts = {}) {
   const envelope = opts.envelope !== undefined ? opts.envelope : amazonSpecEnvelope(opts.tracks || []);
   const replayOutcome = Object.assign(
@@ -133,7 +139,8 @@ function amazonWebSessionMock(opts = {}) {
       signInUrl: opts.signInUrl || null,
       cookieNames: opts.signedIn === false
         ? ['session-id', 'ubid-main']
-        : ['at-main', 'sess-at-main']
+        : ['at-main', 'sess-at-main'],
+      generation: 'generation' in opts ? opts.generation : 0
     }),
     fetch: jest.fn().mockResolvedValue(
       opts.configResult !== undefined
@@ -143,7 +150,18 @@ function amazonWebSessionMock(opts = {}) {
     load: jest.fn().mockImplementation(async (id, url, o) => {
       if (id !== 'amazon-music') throw new Error('the plugin must drive its own session id');
       if (opts.loadResult) return opts.loadResult;
-      return { success: true, finalUrl: 'finalUrl' in opts ? opts.finalUrl : url, captures: capturesFor(url, o) };
+      // The host's quiet window, simulated at the decision point (the host
+      // polls in real time; a test computes the same verdict): the window
+      // closes quietMs after load-finish with no new captured request, so a
+      // page whose first capture fires captureDelayMs after load-finish is
+      // inside the returned captures only when it fired before the close
+      // (captureDelayMs < quietMs) — a request after the close is not among
+      // them, exactly the captures: [] the host returns. The host's
+      // DEFAULTS.captureQuietMs (1000) applies when the caller passes none.
+      const quietMs = o && o.capture && Number.isFinite(o.capture.quietMs) ? o.capture.quietMs : 1000;
+      const delayMs = Number.isFinite(opts.captureDelayMs) ? opts.captureDelayMs : 0;
+      const captures = delayMs < quietMs ? capturesFor(url, o) : [];
+      return { success: true, finalUrl: 'finalUrl' in opts ? opts.finalUrl : url, captures };
     }),
     pageFetch: jest.fn().mockImplementation(async (id, request) => {
       if (id !== 'amazon-music') throw new Error('the plugin must drive its own session id');
