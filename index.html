@@ -1018,80 +1018,50 @@
       text-align: left;
     }
 
-    /* Progress slider styling */
-    .progress-slider {
+    /* Slider (components/fields.js Slider): one range-input look. A 4px
+       track and a 12px thumb; light by default (the control track, the
+       accent or the page's colour via --slider-fill), .slider-dark on the
+       playbar (the on-dark track, the playbar accent). The seek bar and
+       volume had their own copies (.progress-slider, .volume-slider). */
+    .slider {
+      --slider-track: var(--control-off);
+      --slider-fill: var(--accent-fill);
+      --slider-fill-hover: var(--slider-fill);
+      --slider-disabled: var(--text-tertiary);
+      --slider-track-disabled: var(--border-default);
       -webkit-appearance: none;
       appearance: none;
       background: transparent;
+      height: 16px;
+      cursor: pointer;
     }
-
-    .progress-slider::-webkit-slider-runnable-track {
+    .slider-dark {
+      --slider-track: var(--on-dark-track);
+      --slider-fill: var(--playbar-accent);
+      --slider-fill-hover: var(--playbar-accent-hover);
+      --slider-disabled: var(--on-dark-disabled);
+      --slider-track-disabled: var(--on-dark-track-disabled);
+    }
+    .slider::-webkit-slider-runnable-track {
       height: 4px;
       border-radius: 2px;
-      background: var(--on-dark-track);
+      background: var(--slider-track);
     }
-
-    .progress-slider::-webkit-slider-thumb {
+    .slider::-webkit-slider-thumb {
       -webkit-appearance: none;
       appearance: none;
       width: 12px;
       height: 12px;
       border-radius: 50%;
-      background: var(--playbar-accent);
+      background: var(--slider-fill);
       margin-top: -4px;
       cursor: pointer;
       transition: background-color 0.15s ease;
     }
-
-    .progress-slider:hover::-webkit-slider-thumb {
-      background: var(--playbar-accent-hover);
-    }
-
-    .progress-slider:disabled::-webkit-slider-thumb {
-      background: var(--on-dark-disabled);
-      cursor: not-allowed;
-    }
-
-    .progress-slider:disabled::-webkit-slider-runnable-track {
-      background: var(--on-dark-track-disabled);
-    }
-
-    /* Volume slider styling */
-    .volume-slider {
-      -webkit-appearance: none;
-      appearance: none;
-      background: transparent;
-    }
-
-    .volume-slider::-webkit-slider-runnable-track {
-      height: 4px;
-      border-radius: 2px;
-      background: var(--on-dark-track);
-    }
-
-    .volume-slider::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      appearance: none;
-      width: 12px;
-      height: 12px;
-      border-radius: 50%;
-      background: var(--playbar-accent);
-      margin-top: -4px;
-      cursor: pointer;
-    }
-
-    .volume-slider:hover::-webkit-slider-thumb {
-      background: var(--playbar-accent-hover);
-    }
-
-    .volume-slider.disabled::-webkit-slider-thumb {
-      background: var(--on-dark-disabled) !important;
-      cursor: not-allowed;
-    }
-
-    .volume-slider.disabled::-webkit-slider-runnable-track {
-      background: var(--on-dark-track-disabled);
-    }
+    .slider:hover::-webkit-slider-thumb { background: var(--slider-fill-hover); }
+    .slider:disabled { cursor: not-allowed; }
+    .slider:disabled::-webkit-slider-thumb { background: var(--slider-disabled); cursor: not-allowed; }
+    .slider:disabled::-webkit-slider-runnable-track { background: var(--slider-track-disabled); }
 
     /* Release card hover lift animation. The hover shadow is !important
        because cards set their resting shadow inline (var(--card-shadow)),

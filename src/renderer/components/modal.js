@@ -29,6 +29,7 @@
 
 const Icons = require('./icons');
 const { Button } = require('./button');
+const { Checkbox } = require('./fields');
 
 const WIDTHS = { sm: '380px', md: '480px', lg: '640px' };
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -210,11 +211,10 @@ function DontShowAgain({ checked, onChange, label }) {
     className: 'flex items-start gap-2 cursor-pointer text-ink-secondary',
     style: { marginTop: '14px', fontSize: '13px', lineHeight: 1.4 },
   },
-  e('input', {
-    type: 'checkbox',
-    checked: checked === undefined ? undefined : !!checked,
-    onChange: (ev) => onChange && onChange(ev.target.checked),
-    style: { marginTop: '2px', accentColor: 'var(--accent-primary)' },
+  e(Checkbox, {
+    checked,
+    onChange: (on) => onChange && onChange(on),
+    style: { marginTop: '2px' },
   }),
   label || 'Don’t show this again');
 }

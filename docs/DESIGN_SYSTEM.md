@@ -257,7 +257,8 @@ Components use `React.createElement()` (no JSX) and live in `src/renderer/compon
 | Pick-one filter buttons | `FilterChips` | `filter-chips.js` | Home's source filter style |
 | Tabs in a hero | `HeroTabs` | `hero-tabs.js` | `role="tablist"`, arrow keys |
 | A section of Settings (its card and heading) | `SettingsSection` | `settings-cards.js` | The card, the small-capitals heading (written in Title Case), an optional line under it |
-| A setting row, text field, secret field, select, switch or radio group | `SettingRow`, `TextField`, `SecretField`, `Select`, `Switch`, `RadioGroup` | `fields.js` | Every field has a label; on/off is always a `Switch` |
+| A setting row, text field, secret field, select, checkbox, slider, switch or radio group | `SettingRow`, `TextField`, `SecretField`, `Select`, `Checkbox`, `Slider`, `Switch`, `RadioGroup` | `fields.js` | Every field has a label; on/off in a setting is a `Switch`; `tone: 'dark'` on the dark panels; no raw `<input>` / `<select>` (`inputCopies` 0) |
+| The AI provider picker | `ProviderMenu` | `provider-menu.js` | The shared `Menu` of AI plug-ins, on both Shuffleupagus panels |
 | A pick-one row of equal tiles, each with an icon (Settings' theme) | `SegmentedChoice` | `fields.js` | `role="radiogroup"`; the current tile has an accent border and tint |
 | Nothing to show yet / a load that failed | `EmptyState` / `ErrorState` | `states.js` | `ErrorState` has "Try again" (`onRetry`); `tone: 'dark'` on the dark panels, `icon: null` for none |
 | A loading placeholder | `CardSkeleton` (one card, any grid; `CardRowSkeleton` for Home's rows), `ArtistCardSkeleton` (an artist card), `TrackRowSkeleton` (a track row, `TrackRow`'s own columns), `ConcertListSkeleton` (a month of concert rows: `photo: true` for the Concerts page's row, without for an artist's On tour), the page's skeletons | `home-skeletons.js`, `track-lists.js`, `recommendation-skeletons.js`, `concert-skeletons.js` | Same box and columns as the content (see Shimmer classes), so nothing jumps when it lands |
@@ -276,7 +277,7 @@ Components use `React.createElement()` (no JSX) and live in `src/renderer/compon
 
 | Module | Exports |
 |--------|---------|
-| `button.js`, `header-control.js`, `modal.js`, `toast.js`, `menu.js`, `sort-menu.js`, `card-button.js`, `section-header.js`, `filter-chips.js` (`FilterChips`, `Chip`), `filter-box.js` (`FilterBox`, `StickyBar`), `hero-tabs.js`, `page-hero.js`, `badge.js`, `fields.js`, `states.js`, `reason-badge.js`, `keyboard-shortcuts.js`, `whats-new-dialog.js` | The shared controls in the table above, the keyboard shortcuts dialog and What's New |
+| `button.js`, `header-control.js`, `modal.js`, `toast.js`, `menu.js`, `provider-menu.js`, `sort-menu.js`, `card-button.js`, `section-header.js`, `filter-chips.js` (`FilterChips`, `Chip`), `filter-box.js` (`FilterBox`, `StickyBar`), `hero-tabs.js`, `page-hero.js`, `badge.js`, `fields.js`, `states.js`, `reason-badge.js`, `keyboard-shortcuts.js`, `whats-new-dialog.js` | The shared controls in the table above, the keyboard shortcuts dialog and What's New |
 | `album-card.js`, `playlist-card.js`, `artist-card.js`, `listener-card.js`, `card-art.js` | The cards, and the art and overlay they share |
 | `ui-atoms.js` | `Tooltip`, `FixedTooltip`, `TooltipLayer`, `placeTooltip`, `ResolverIcon`, `SERVICE_LOGOS` (and its paths and images), `ParachordWordmark`, `PlaybackProgress`, `ShareButton` |
 | `icons.js` | `Icons`, the one icon set |
@@ -604,15 +605,12 @@ All scrollbars use rounded thumbs (`border-radius: 10px` or `3px`) with transpar
 
 ## Slider Controls
 
-### Progress Slider (`.progress-slider`)
+Every slider is `Slider` (`fields.js`) on one class, `.slider` in `index.html` (the seek bar's and volume's own copies, `.progress-slider` and `.volume-slider`, are gone):
 
-- Track: 4px height, `#4b5563`, rounded
-- Thumb: 12px circle, `#3b82f6` (hover: `#60a5fa`, disabled: `#6b7280`)
-
-### Volume Slider (`.volume-slider`)
-
-- Same dimensions as progress slider
-- Disabled state uses `.disabled` class modifier
+- Track: 4px, 2px radius, `--slider-track` (`--control-off`; `--on-dark-track` in `.slider-dark`)
+- Thumb: 12px circle, `--slider-fill` (`--accent-fill`, or the `color` prop: Concerts' radius is the page's teal; `--playbar-accent` in `.slider-dark`), its hover `--slider-fill-hover`
+- Disabled: `--slider-disabled` thumb on `--slider-track-disabled`
+- `tone: 'dark'` on the playbar (seek and volume); `onChange` gets a number
 
 ---
 

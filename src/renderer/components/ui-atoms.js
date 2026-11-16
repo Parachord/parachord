@@ -10,6 +10,7 @@
 
 const { Button } = require('./button');
 const Icons = require('./icons');
+const { Slider } = require('./fields');
 
 // Tooltip (#1385 step 9): the one tooltip. There used to be two: a
 // CSS-only Tooltip (hover only, clipped by any overflow:hidden parent, shown
@@ -282,9 +283,9 @@ const PlaybackProgress = React.memo(function PlaybackProgress({
   React.useEffect(() => subscribe(setValue), [subscribe]);
 
   const shown = hasTrack && !browserPlaybackActive ? value : 0;
-  const slider = React.createElement('input', {
-    type: 'range',
-    min: '0',
+  const slider = React.createElement(Slider, {
+    tone: 'dark',
+    min: 0,
     max: duration || 100,
     value: shown,
     disabled: seekDisabled,
@@ -292,8 +293,8 @@ const PlaybackProgress = React.memo(function PlaybackProgress({
     'aria-label': 'Seek',
     'aria-valuetext': hasTrack && !browserPlaybackActive && duration
       ? `${formatTime(shown)} of ${formatTime(duration)}` : 'Nothing playing',
-    onChange: (e) => onSeek(Number(e.target.value)),
-    className: `progress-slider w-full h-1 rounded-full ${seekDisabled ? 'opacity-50' : ''}`
+    onChange: (v) => onSeek(v),
+    className: `w-full ${seekDisabled ? 'opacity-50' : ''}`
   });
   // Shrinks to 120px in a narrow window (was a 200px minimum, which pushed
   // the playbar's right-hand controls off-screen below ~1120px).
