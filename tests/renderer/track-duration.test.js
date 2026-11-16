@@ -96,13 +96,10 @@ describe('formatDuration / trackDurationLabel', () => {
 // track.duration straight into a formatter (that printed 0:00).
 describe('call sites', () => {
   const read = (rel) => fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', rel), 'utf8');
+  // The page lists are the shared TrackRow, whose duration column is the
+  // helper (a list asks for it with `duration: true`).
   const files = [
     'components/track-lists.js',
-    'components/playlist-view-page.js',
-    'components/collection-page.js',
-    'components/search-page.js',
-    'components/cards.js',
-    'app.js',
   ];
 
   test.each(files)('%s renders durations through trackDurationLabel', (rel) => {
@@ -111,6 +108,16 @@ describe('call sites', () => {
     expect(src).not.toMatch(/formatTime\(track\.duration/);
     expect(src).not.toMatch(/Math\.floor\(track\.duration \/ 60\)/);
     expect(src).not.toMatch(/formatDuration\(track\.length\)/);
+  });
+
+  // app.js's lists are the shared TrackRow (track-lists.js), whose duration
+  // column is the helper; a list asks for it with `duration: true`.
+  test.each(['app.js', 'components/playlist-view-page.js', 'components/collection-page.js', 'components/search-page.js', 'components/cards.js'])('%s lists use the shared row for durations', (rel) => {
+    const src = read(rel);
+    expect(src).not.toMatch(/formatTime\(track\.duration/);
+    expect(src).not.toMatch(/formatDuration\(track\.length\)/);
+    expect(src).toMatch(/React\.createElement\(TrackRow,[\s\S]{0,4000}duration: true/);
+    expect(read('components/track-lists.js')).toMatch(/trackDurationLabel\(track, sources \|\| \{\}\)/);
   });
 
   test('the queue row passes the live trackSources', () => {

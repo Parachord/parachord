@@ -89,7 +89,7 @@ describe('ResolverCard status label', () => {
       resolver, isActive: true, needsConfiguration: false,
       statusLabel: 'Prime: no playback', statusTitle: 'Amazon Prime: needs Music Unlimited.'
     }));
-    expect(html).toContain('title="Amazon Prime: needs Music Unlimited."');
+    expect(html).toContain('data-tooltip="Amazon Prime: needs Music Unlimited."');
     expect(html).toContain('>Prime: no playback<');
     expect(html).not.toContain('Setup required');
   });
@@ -101,4 +101,15 @@ describe('ResolverCard status label', () => {
     expect(html).toContain('Setup required');
     expect(html).not.toContain('Prime: no playback');
   });
+});
+
+test('an enabled card shows a problem one way: the line under its name, no "!" on the tile', () => {
+  global.React = global.React || require('react');
+  const { renderToStaticMarkup } = require('react-dom/server');
+  const { ResolverCard } = require('../../src/renderer/components/settings-cards');
+  const resolver = { id: 'applemusic', name: 'Apple Music', color: '#fa243c' };
+  const html = renderToStaticMarkup(React.createElement(ResolverCard, { resolver, isActive: true, needsConfiguration: true }));
+  expect(html).toContain('>Setup required<');
+  expect(html).not.toContain('>!<');
+  expect(html).not.toContain('Needs configuration');
 });

@@ -57,12 +57,14 @@ describe('saved recommendations', () => {
 
   test('each album card\'s release date is looked up on MusicBrainz in the background, once a week, never stored on failure', () => {
     const effect = app.slice(app.indexOf('const recommendationReleaseDateFetchesRef = useRef(new Set());'), app.indexOf('// Fetch artist biography from Last.fm'));
+    // One lookup helper (queueReleaseDateLookups) for every page that shows
+    // album dates; Recommendations hands it its album cards.
     expect(effect).toContain("if (activeView !== 'recommendations') return;");
-    expect(effect).toContain("if (item.type !== 'album' || !item.artist || !item.name) continue;");
+    expect(effect).toContain("if (!artist || !title) continue;");
     // A provider's own date (Apple Music) needs no lookup.
-    expect(effect).toContain('if (item.releaseDate) continue;');
+    expect(effect).toContain(".filter(item => item.type === 'album' && !item.releaseDate)");
     expect(effect).toContain('if (known && (now - known.at) < RELEASE_DATE_TTL_MS) continue;');
-    expect(effect).toContain('fetch(releaseGroupSearchUrl(item.artist, item.name), { mbBackground: true, queuedTimeoutMs: 15000 })');
+    expect(effect).toContain('fetch(releaseGroupSearchUrl(artist, title), { mbBackground: true, queuedTimeoutMs: 15000 })');
     expect(effect).toContain('.catch(() => { /* nothing stored: a later visit asks again */ })');
     expect(effect).toContain('}, [activeView, recommendations.sections]);');
   });
@@ -86,7 +88,9 @@ describe('saved recommendations', () => {
     // button (zIndex 1), below the badge (3).
     expect(card).toContain('reason: shuffleupagusBadgeProps(item) || null,');
     const comp = (f) => fs.readFileSync(require('path').join(__dirname, '../../src/renderer/components', f), 'utf8');
-    expect(comp('card-art.js')).toMatch(/style: \{ opacity: shown \? 1 : 0, pointerEvents: shown \? 'auto' : 'none', zIndex: 2,/);
+    const art = comp('card-art.js');
+    expect(art).toContain("style: Object.assign({ zIndex: 2, padding: '8px', boxSizing: 'border-box' },");
+    expect(art).toContain("css ? null : { opacity: shown ? 1 : 0, pointerEvents: shown ? 'auto' : 'none' }),");
     expect(comp('album-card.js')).toMatch(/reason && e\(ReasonBadge, reason\)/);
     expect(comp('reason-badge.js')).toContain('zIndex: 3');
   });
@@ -178,8 +182,10 @@ describe('recommended playlist cards', () => {
   const card = app.slice(app.indexOf('const playlistCard = (item, index, section) => {'), app.indexOf('// ── Weekly playlists (moved from Home)'));
 
   test('carry the standard playlist hover set: Add to playlist, Play, Add to queue', () => {
-    const titles = [...card.matchAll(/'data-tooltip': '([^']+)'/g)].map(m => m[1]);
-    expect(titles).toEqual(['Add to playlist', 'Play', 'Add to queue']);
+    // The shared PlaylistCard draws the overlay (Add to playlist, Play, Add
+    // to queue, in that order) from the three handlers.
+    expect(card).toMatch(/React\.createElement\(PlaylistCard, \{/);
+    expect(card).toMatch(/onAddToPlaylist: \(\) => addRecommendationPlaylistToPlaylist\(item\),\s*onPlay: \(\) => playRecommendationPlaylist\(item\),\s*onQueue: \(\) => queueRecommendationPlaylist\(item\)/);
     expect(card).toMatch(/addRecommendationPlaylistToPlaylist\(item\)/);
     expect(card).toMatch(/playRecommendationPlaylist\(item\)/);
     expect(card).toMatch(/queueRecommendationPlaylist\(item\)/);

@@ -5840,6 +5840,15 @@ async function runNwayShadowReconcile(options = {}) {
   for (const localId of Object.keys(states)) {
     for (const pid of Object.keys(mirrorsOf(localId))) neededProviders.add(pid);
   }
+  // A provider the user switched off (the Sync menu's pause) is never called:
+  // its mirrors are skipped exactly as a provider with no token is.
+  const providerSyncSettings = store.get('resolver_sync_settings') || {};
+  for (const pid of [...neededProviders]) {
+    if (providerSyncSettings[pid] && providerSyncSettings[pid].enabled === false) {
+      console.log(`[nway-shadow] ${pid} sync is off; skipping its mirrors`);
+      neededProviders.delete(pid);
+    }
+  }
 
   // Acquire tokens, bind providers, fetch authoritative remote playlist
   // metadata (snapshotId + trackCount — the partial-fetch floor's count source).

@@ -5,6 +5,7 @@
 //
 // Props-driven; loads under plain Node (no window at module scope).
 
+const { Button } = require('./button');
 const Icons = require('./icons');
 const { BANNER_SEVERITY_COLORS } = require('../lib/home-banners');
 
@@ -39,7 +40,7 @@ function HomeBanner({ items, onDismiss, onCta }) {
     className: 'flex items-start gap-3 px-4 py-2.5 flex-shrink-0',
     style: {
       backgroundColor: bg,
-      color: '#ffffff', // on-color
+      color: 'var(--on-accent)', // on-color
       fontSize: '13px'
     }
   },
@@ -48,37 +49,8 @@ function HomeBanner({ items, onDismiss, onCta }) {
       React.createElement('div', { style: { fontWeight: 600 } }, item.title),
       item.body && React.createElement('div', { style: { opacity: 0.9, marginTop: '2px' } }, item.body)
     ),
-    ctaOk && React.createElement('button', {
-      onClick: () => onCta && onCta(item),
-      style: {
-        padding: '4px 12px',
-        backgroundColor: 'rgba(255, 255, 255, 0.2)',
-        border: '1px solid rgba(255, 255, 255, 0.35)',
-        borderRadius: '6px',
-        color: '#ffffff', // on-color
-        fontSize: '12px',
-        fontWeight: 600,
-        cursor: 'pointer',
-        whiteSpace: 'nowrap',
-        flexShrink: 0
-      }
-    }, ctaLabel),
-    React.createElement('button', {
-      onClick: () => onDismiss && onDismiss(item),
-      'aria-label': 'Dismiss announcement',
-      'data-tooltip': 'Dismiss',
-      style: {
-        background: 'transparent',
-        border: 'none',
-        color: '#ffffff', // on-color
-        opacity: 0.85,
-        cursor: 'pointer',
-        padding: '0 4px',
-        fontSize: '18px',
-        lineHeight: 1,
-        flexShrink: 0
-      }
-    }, React.createElement(Icons.X, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }))
+    ctaOk && React.createElement(Button, { variant: 'secondary', size: 'sm', tone: 'dark', onClick: () => onCta && onCta(item) }, ctaLabel),
+    React.createElement(Button, { variant: 'icon', size: 'sm', tone: 'dark', onClick: () => onDismiss && onDismiss(item), 'aria-label': 'Dismiss announcement', 'data-tooltip': 'Dismiss' }, React.createElement(Icons.X, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }))
   );
 }
 

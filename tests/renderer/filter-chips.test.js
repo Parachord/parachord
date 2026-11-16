@@ -42,14 +42,14 @@ describe('FilterChips', () => {
     const idle = h({ chips, value: 'ep' });
     expect(idle).toMatch(/aria-pressed="false"[^>]*background-color:var\(--bg-secondary\);color:var\(--text-primary\)"[^>]*>All</);
     const picked = h({ chips, value: 'all' });
-    expect(picked).toMatch(/aria-pressed="true"[^>]*background-color:var\(--accent-fill\);color:#fff"[^>]*>All</);
+    expect(picked).toMatch(/aria-pressed="true"[^>]*background-color:var\(--accent-fill\);color:var\(--on-accent\)"[^>]*>All</);
     expect(picked.match(/data-chip-dot/g)).toHaveLength(1); // the idle EPs chip's
   });
 
   test('a coloured chip shows a dot idle and fills picked, its text readable on the fill', () => {
     expect(h({ chips, value: 'all' })).toMatch(/data-chip-dot[^>]*background-color:#25D1DA/);
     const picked = h({ chips, value: 'ep' });
-    expect(picked).toMatch(/aria-pressed="true"[^>]*background-color:#25D1DA;color:#111827/);
+    expect(picked).toMatch(/aria-pressed="true"[^>]*background-color:#25D1DA;color:var\(--on-art-ink\)/);
     expect(picked).not.toContain('data-chip-dot');
   });
 
@@ -57,7 +57,7 @@ describe('FilterChips', () => {
     const g = 'linear-gradient(to right, #f97316, #dc2626)';
     const both = [{ id: 'all', label: 'All' }, { id: 'both', label: 'Both', color: '#dc2626', gradient: g }];
     expect(h({ chips: both, value: 'all' })).toMatch(/data-chip-dot[^>]*background-image:linear-gradient/);
-    expect(h({ chips: both, value: 'both' })).toMatch(/aria-pressed="true"[^>]*background-color:#dc2626;background-image:linear-gradient\(to right, #f97316, #dc2626\);color:#fff/);
+    expect(h({ chips: both, value: 'both' })).toMatch(/aria-pressed="true"[^>]*background-color:#dc2626;background-image:linear-gradient\(to right, #f97316, #dc2626\);color:var\(--on-accent\)/);
   });
 
   test('clicking a chip picks it', () => {
@@ -77,7 +77,7 @@ describe('every page draws the shared chips', () => {
 
   test('Fresh Drops, Recommendations, the plugin marketplace and the artist page use it', () => {
     const app = read('app.js');
-    expect(app).toContain("const { FilterChips } = require('./components/filter-chips');");
+    expect(app).toContain("const { FilterChips, Chip } = require('./components/filter-chips');");
     for (const call of ['onChange: setNewReleasesFilter', 'onChange: setRecommendationSourceFilter', 'onChange: setMarketplaceCategory']) {
       expect(app).toContain(call);
     }
@@ -106,6 +106,26 @@ test('a picked neutral chip takes the page colour when one is given', () => {
 
 test('Fresh Drops and Recommendations pass their page colour', () => {
   const app = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/app.js'), 'utf8');
-  expect(app).toContain("pageColor: PAGE_COLORS['new-releases'].fill,");
-  expect(app).toContain('pageColor: PAGE_COLORS.recommendations.fill,');
+  // The picked All chip is the page's hero colour, as on Concerts.
+  expect(app).toContain("pageColor: PAGE_COLORS['new-releases'].color,");
+  expect(app).toContain('pageColor: PAGE_COLORS.recommendations.color,');
+  expect(app).toContain('pageColor: PAGE_COLORS.concerts.color,');
+});
+
+describe('Chip', () => {
+  const { renderToStaticMarkup } = require('react-dom/server');
+  const { Chip } = require('../../src/renderer/components/filter-chips');
+
+  test('one button in the chips\' style', () => {
+    const html = renderToStaticMarkup(React.createElement(Chip, { label: 'Radiohead', onClick() {} }));
+    expect(html.match(/<button/g)).toHaveLength(1);
+    expect(html).toContain('border-radius:999px');
+    expect(html).toContain('Radiohead');
+  });
+
+  test('a removable chip puts its ✕ beside the chip\'s button, never inside it', () => {
+    const html = renderToStaticMarkup(React.createElement(Chip, { label: 'Brooklyn', onClick() {}, onRemove() {}, removeLabel: 'Clear location' }));
+    expect(html).toMatch(/^<span[^>]*><button[^>]*>(?:(?!<button).)*<\/button><button[^>]*aria-label="Clear location"/);
+    expect(html).toContain('data-icon="X"');
+  });
 });

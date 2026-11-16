@@ -12,9 +12,9 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..', '..');
-// The logo kit moved to its own module (Track 2b, presentational slice 1); the
+// The logo kit lives in components/brand-logos.js (from ui-atoms.js); the
 // source of truth is the module, not the bundle.
-const app = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'components', 'ui-atoms.js'), 'utf8');
+const app = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'components', 'brand-logos.js'), 'utf8');
 
 function block(startMarker) {
   const s = app.indexOf(startMarker);

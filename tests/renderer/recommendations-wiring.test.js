@@ -99,12 +99,15 @@ describe('recommendations wiring', () => {
     const row = app.slice(start, app.indexOf('// ── Friends', start));
     expect(row).toMatch(/const contextName = section\.title \|\| 'Recommendations';/);
     expect(row).toMatch(/const isNowPlaying = isPlaying && currentTrack\?\.id === track\.id\s*&& playbackContext\?\.type === 'recommendations' && playbackContext\?\.rowKey === section\.key;/);
-    expect(row).toMatch(/const context = \{ type: 'recommendations', name: contextName, rowKey: section\.key \};/);
+    expect(row).toMatch(/\{ type: 'recommendations', name: contextName, rowKey: section\.key \}/);
     expect(row).not.toMatch(/playbackContext\?\.name === contextName/);
-    // the playlist view's marks: tinted row, a play glyph for the number, accent title
-    expect(row).toMatch(/isNowPlaying \? 'bg-accent-tint'/);
-    expect(row).toMatch(/isNowPlaying \? '▶' : String\(index \+ 1\)\.padStart\(2, '0'\)/);
-    expect(row).toMatch(/color: isNowPlaying \? 'var\(--accent-primary\)'/);
+    // the shared TrackRow's now-playing marks: tinted row, a play glyph for
+    // the number, accent title
+    expect(row).toMatch(/number: String\(index \+ 1\)\.padStart\(2, '0'\),\s*isNowPlaying,/);
+    const shared = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/components/track-lists.js'), 'utf8');
+    expect(shared).toMatch(/isNowPlaying \? 'bg-accent-tint'/);
+    expect(shared).toMatch(/isNowPlaying \? '▶' : number/);
+    expect(shared).toMatch(/color: isNowPlaying \? 'var\(--accent-primary\)'/);
   });
 
   test('"load more" is guarded by a ref and appends from the functional update (review round 2)', () => {
@@ -204,8 +207,10 @@ describe('opening a recommended playlist is responsive', () => {
     expect(prefetch).toMatch(/\}, 250\)\);/);
     expect(prefetch).toContain('clearTimeout(timer);');
     const card = app.slice(app.indexOf('const playlistCard = (item, index, section) => {'));
-    expect(card.slice(0, 800)).toContain('onMouseEnter: () => prefetchRecommendationPlaylist(item),');
-    expect(card.slice(0, 800)).toContain('onMouseLeave: () => cancelRecommendationPlaylistPrefetch(item),');
+    // The shared PlaylistCard: onHoverStart on enter (the prefetch keeps its
+    // own dwell), onHoverEnd on leave.
+    expect(card.slice(0, 1400)).toContain('onHoverStart: () => prefetchRecommendationPlaylist(item),');
+    expect(card.slice(0, 1400)).toContain('onHoverEnd: () => cancelRecommendationPlaylistPrefetch(item),');
   });
 });
 
@@ -462,10 +467,10 @@ describe('the five-section page render', () => {
     // its name and no count.
     expect(bar).toContain("const chips = [{ id: 'all', label: 'All' }, ...sources.map(src => ({ id: src.id, label: src.name, color: colorFor(src.id) }))];");
     expect(bar).not.toMatch(/\$\{(name|src\.name)\} \(/);
-    expect(bar).toContain("React.createElement(FilterChips, { chips, value: active, onChange: setRecommendationSourceFilter, pageColor: PAGE_COLORS.recommendations.fill, label: 'Filter recommendations by source' })");
+    expect(bar).toContain("React.createElement(FilterChips, { chips, value: active, onChange: setRecommendationSourceFilter, pageColor: PAGE_COLORS.recommendations.color, label: 'Filter recommendations by source' })");
     // A source's colour is Home's (the plugins' manifest colours), Shuffleupagus
     // the fixed accent, a source with none the grey.
-    expect(bar).toContain("const colorFor = (id) => (id === 'shuffleupagus' ? '#7c3aed' : (homeSourceColors && homeSourceColors[id]) || 'var(--text-secondary)');");
+    expect(bar).toContain("const colorFor = (id) => (id === 'shuffleupagus' ? 'var(--accent-fill)' : (homeSourceColors && homeSourceColors[id]) || 'var(--text-secondary)');");
     // Fresh Drops' bar, verbatim; no page-local pill classes.
     expect(bar).toContain("className: 'flex items-center px-6 py-3'");
     expect(bar).toContain("style: { flexShrink: 0, backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }");
@@ -500,11 +505,12 @@ describe('the five-section page render', () => {
     expect(card).toMatch(/playWeeklyPlaylist\(item, record\)/);
     // Titled with the playlist's full name, its source under it, as on every
     // playlist card (only the newest week is on the page).
-    expect(card).toContain("React.createElement('p', { className: 'font-medium text-ink-primary truncate text-sm transition-colors' }, item.weekly.label)");
-    expect(card).toContain("React.createElement('p', { className: 'text-xs text-ink-tertiary truncate mt-0.5' }, creator || '')");
+    // Both are the shared PlaylistCard: the title, then the subtitle.
+    expect(card).toMatch(/playlist: \{ id: record\.id, title: item\.weekly\.label \},\s*mosaic: covers \|\| null,/);
+    expect(card).toContain("subtitle: creator || '',");
     const plain = between('const playlistCard = (item, index, section) => {', '// ── Weekly playlists');
-    expect(plain).toContain("React.createElement('p', { className: 'text-xs text-ink-tertiary truncate mt-0.5' }, itemSourceName(item, section) || '')");
-    expect(view).toContain("const cardLines = sub.type === 'album' || sub.type === 'playlist' ? 2 : 1;");
+    expect(plain).toContain("subtitle: itemSourceName(item, section) || '',");
+    expect(view).toContain("const cardLines = sub.type === 'album' ? 3 : sub.type === 'playlist' ? 2 : 1;");
     // Routed by the item's field, never by provider name.
     expect(view).toMatch(/item\.weekly \? weeklyCard\(item, index, sub\)/);
     expect(card).not.toMatch(/'listenbrainz'|'ListenBrainz'/);
@@ -560,8 +566,8 @@ describe('the five-section page render', () => {
     expect(app).toContain("const viewingRecommendedPlaylist = activeView === 'playlist-view' && !!selectedPlaylist?.isEphemeral;");
     expect(app).toContain("const playlistsNavActive = activeView === 'playlists' || (activeView === 'playlist-view' && !viewingRecommendedPlaylist);");
     expect(app).toContain("const recommendationsNavActive = activeView === 'recommendations' || viewingRecommendedPlaylist;");
-    expect(app).toContain("backgroundColor: playlistsNavActive ? pageTint('playlists') : 'transparent',");
-    expect(app).toContain("backgroundColor: recommendationsNavActive ? pageTint('recommendations') : 'transparent',");
+    expect(app).toContain("page: 'playlists', label: 'Playlists', icon: Icons.ListMusic, active: playlistsNavActive,");
+    expect(app).toContain("page: 'recommendations', label: 'Recommendations', icon: Icons.Star, active: recommendationsNavActive,");
     expect(app).not.toContain("(activeView === 'playlists' || activeView === 'playlist-view') ? '#ec4899'");
   });
 

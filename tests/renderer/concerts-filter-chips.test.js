@@ -9,7 +9,7 @@ const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), '
 
 describe("Concerts' source filter", () => {
   test('is FilterChips, labelled, on the page colour', () => {
-    expect(app).toContain("pageColor: PAGE_COLORS.concerts.fill, label: 'Filter concerts by source',");
+    expect(app).toContain("pageColor: PAGE_COLORS.concerts.color, label: 'Filter concerts by source',");
   });
   test('each source chip takes its plugin colour', () => {
     // Every service that lists a show (lib/concert-events.js concertSourceKeys).

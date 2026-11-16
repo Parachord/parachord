@@ -52,6 +52,7 @@ const SHAPES = {
     ['circle', { cx: 12, cy: 12, r: 3 }],
   ],
   Plus: [['path', { d: 'M5 12h14' }], ['path', { d: 'M12 5v14' }]],
+  ListPlus: [['path', { d: 'M11 12H3' }], ['path', { d: 'M16 6H3' }], ['path', { d: 'M16 18H3' }], ['path', { d: 'M18 9v6' }], ['path', { d: 'M21 12h-6' }]],
   X: [['path', { d: 'M18 6 6 18' }], ['path', { d: 'm6 6 12 12' }]],
   Check: [['path', { d: 'M20 6 9 17l-5-5' }]],
   ChevronDown: [['path', { d: 'm6 9 6 6 6-6' }]],
@@ -121,6 +122,11 @@ const SHAPES = {
     ['path', { d: 'M9 15h6' }], ['path', { d: 'M12 18v-6' }],
   ],
   Globe: [['circle', { cx: 12, cy: 12, r: 10 }], ['path', { d: 'M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20' }], ['path', { d: 'M2 12h20' }]],
+  // The card overlay's add-to-queue: three lines, the last short (the queue).
+  AddToQueue: [['path', { d: 'M4 6h16M4 12h16M4 18h7' }]],
+  ShoppingCart: [['circle', { cx: 8, cy: 21, r: 1 }], ['circle', { cx: 19, cy: 21, r: 1 }], ['path', { d: 'M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12' }]],
+  AppWindow: [['rect', { x: 2, y: 4, width: 20, height: 16, rx: 2 }], ['path', { d: 'M10 4v4' }], ['path', { d: 'M2 8h20' }], ['path', { d: 'M6 4v4' }]],
+  Dices: [['rect', { width: 12, height: 12, x: 2, y: 10, rx: 2, ry: 2 }], ['path', { d: 'm17.92 14 3.5-3.5a2.24 2.24 0 0 0 0-3l-5-4.92a2.24 2.24 0 0 0-3 0L10 6' }], ['path', { d: 'M6 18h.01' }], ['path', { d: 'M10 14h.01' }], ['path', { d: 'M15 6h.01' }], ['path', { d: 'M18 9h.01' }]],
   Sparkles: [
     ['path', { d: 'M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z' }],
     ['path', { d: 'M20 3v4' }], ['path', { d: 'M22 5h-4' }],
@@ -132,6 +138,19 @@ const SHAPES = {
     ['line', { x1: 10, x2: 10, y1: 11, y2: 17 }],
     ['line', { x1: 14, x2: 14, y1: 11, y2: 17 }],
   ],
+  // Added 2026-11-15 for the icons pasted into app.js (the sidebar, the
+  // playbar's volume, Share, the welcome screen).
+  ListMusic: [['path', { d: 'M21 15V6' }], ['path', { d: 'M18.5 18a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z' }], ['path', { d: 'M12 12H3' }], ['path', { d: 'M16 6H3' }], ['path', { d: 'M12 18H3' }]],
+  Library: [['path', { d: 'm16 6 4 14' }], ['path', { d: 'M12 6v14' }], ['path', { d: 'M8 8v12' }], ['path', { d: 'M4 4v16' }]],
+  // A ranked list (Pop of the Tops): 1, 2, 3.
+  ListOrdered: [['line', { x1: 10, x2: 21, y1: 6, y2: 6 }], ['line', { x1: 10, x2: 21, y1: 12, y2: 12 }], ['line', { x1: 10, x2: 21, y1: 18, y2: 18 }], ['path', { d: 'M4 6h1v4' }], ['path', { d: 'M4 10h2' }], ['path', { d: 'M6 18H4c0-1 2-2 2-3s-1-1.5-2-1' }]],
+  LocateFixed: [['line', { x1: 2, x2: 5, y1: 12, y2: 12 }], ['line', { x1: 19, x2: 22, y1: 12, y2: 12 }], ['line', { x1: 12, x2: 12, y1: 2, y2: 5 }], ['line', { x1: 12, x2: 12, y1: 19, y2: 22 }], ['circle', { cx: 12, cy: 12, r: 7 }], ['circle', { cx: 12, cy: 12, r: 3 }]],
+  Share: [['path', { d: 'M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8' }], ['polyline', { points: '16 6 12 2 8 6' }], ['line', { x1: 12, x2: 12, y1: 2, y2: 15 }]],
+  FileText: [['path', { d: 'M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z' }], ['path', { d: 'M14 2v4a2 2 0 0 0 2 2h4' }], ['path', { d: 'M10 9H8' }], ['path', { d: 'M16 13H8' }], ['path', { d: 'M16 17H8' }]],
+  ArrowLeft: [['path', { d: 'm12 19-7-7 7-7' }], ['path', { d: 'M19 12H5' }]],
+  Repeat: [['path', { d: 'm17 2 4 4-4 4' }], ['path', { d: 'M3 11v-1a4 4 0 0 1 4-4h14' }], ['path', { d: 'm7 22-4-4 4-4' }], ['path', { d: 'M21 13v1a4 4 0 0 1-4 4H3' }]],
+  Repeat1: [['path', { d: 'm17 2 4 4-4 4' }], ['path', { d: 'M3 11v-1a4 4 0 0 1 4-4h14' }], ['path', { d: 'm7 22-4-4 4-4' }], ['path', { d: 'M21 13v1a4 4 0 0 1-4 4H3' }], ['path', { d: 'M11 10h1v4' }]],
+  VolumeX: [['polygon', { points: '11 5 6 9 2 9 2 15 6 15 11 19 11 5' }], ['line', { x1: 22, x2: 16, y1: 9, y2: 15 }], ['line', { x1: 16, x2: 22, y1: 9, y2: 15 }]],
 };
 
 function makeIcon(name, shapes) {
@@ -174,6 +193,39 @@ Icons.Spinner = ({ size = 20, className, style, label }) => {
 };
 Icons.Spinner.displayName = 'Icon(Spinner)';
 
-Icons.ICON_NAMES = Object.keys(SHAPES).concat('Spinner');
+// Spinoff: the playbar's Spinoff fork (IBM Carbon's branch glyph, solid, in
+// its own 32x32 box): kept over Lucide's GitFork, which reads differently.
+Icons.Spinoff = ({ size = 20, className, style }) => React.createElement('svg', {
+  xmlns: 'http://www.w3.org/2000/svg', width: size, height: size, viewBox: '0 0 32 32', fill: 'currentColor',
+  className, style, 'aria-hidden': 'true', 'data-icon': 'Spinoff',
+}, React.createElement('path', { d: 'M26,18a3.9955,3.9955,0,0,0-3.858,3H18a3.0033,3.0033,0,0,1-3-3V14a4.9514,4.9514,0,0,0-1.0256-3H22.142a4,4,0,1,0,0-2H9.858a4,4,0,1,0,0,2H10a3.0033,3.0033,0,0,1,3,3v4a5.0059,5.0059,0,0,0,5,5h4.142A3.9935,3.9935,0,1,0,26,18ZM26,8a2,2,0,1,1-2,2A2.0023,2.0023,0,0,1,26,8ZM6,12a2,2,0,1,1,2-2A2.002,2.002,0,0,1,6,12ZM26,24a2,2,0,1,1,2-2A2.0027,2.0027,0,0,1,26,24Z' }));
+Icons.Spinoff.displayName = 'Icon(Spinoff)';
+
+// Playlist: the Playlists page's placeholder glyph (three bars and a play
+// triangle), solid and stroke-free, for a playlist with no covers yet.
+Icons.Playlist = ({ size = 24, className, style, ...rest }) => {
+  const e = React.createElement;
+  return e('svg', Object.assign({ xmlns: 'http://www.w3.org/2000/svg', width: size, height: size, viewBox: '0 0 24 24', fill: 'currentColor', className, style, 'aria-hidden': 'true', 'data-icon': 'Playlist' }, rest),
+    e('rect', { x: 3, y: 5, width: 18, height: 2, rx: 1 }),
+    e('rect', { x: 3, y: 11, width: 10, height: 2, rx: 1 }),
+    e('rect', { x: 3, y: 17, width: 7, height: 2, rx: 1 }),
+    e('path', { d: 'M15 13.5v6l5.5-3-5.5-3z' }));
+};
+Icons.Playlist.displayName = 'Icon(Playlist)';
+
+// PlayTop10: Play an artist's top 10 (artist and listener cards): a play
+// triangle with a green "10" badge over its lower right.
+Icons.PlayTop10 = ({ size = 24, className = '' }) => {
+  const e = React.createElement;
+  return e('svg', { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', className, 'aria-hidden': 'true', 'data-icon': 'PlayTop10' },
+    // Play triangle, centred by its centroid (x 12) like the other play
+    // buttons' nudged triangle; the badge sits over its lower-right corner.
+    e('path', { d: 'M8.17 4.75L19.67 12L8.17 19.25V4.75Z', fill: 'currentColor', stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round', strokeLinejoin: 'round' }),
+    e('circle', { cx: 18.5, cy: 18.5, r: 5.5, fill: 'var(--success)' }),
+    e('text', { x: 18.5, y: 18.5, textAnchor: 'middle', dominantBaseline: 'central', fill: 'white', fontSize: 7, fontWeight: 'bold', fontFamily: 'var(--font-sans)' }, '10'));
+};
+Icons.PlayTop10.displayName = 'Icon(PlayTop10)';
+
+Icons.ICON_NAMES = Object.keys(SHAPES).concat('Spinner', 'Spinoff', 'Playlist', 'PlayTop10');
 
 module.exports = Icons;

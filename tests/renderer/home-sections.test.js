@@ -92,16 +92,21 @@ describe('AlbumCard', () => {
     // shared AlbumCard, which draws card-art.js's releaseBadge, the badge
     // Home's Fresh Drops row wears too.
     const freshDrops = app.slice(app.indexOf("activeView === 'new-releases' && React.createElement"));
-    expect(freshDrops.slice(0, 60000)).toMatch(/React\.createElement\(AlbumCard, Object\.assign\(\{[\s\S]{0,400}?releaseType: release\.releaseType,/);
+    expect(freshDrops.slice(0, 60000)).toMatch(/React\.createElement\(AlbumCard, Object\.assign\(\{[\s\S]{0,600}?releaseType: release\.releaseType,/);
     const { RELEASE_BADGE_BG } = require('../../src/renderer/components/card-art');
-    expect(RELEASE_BADGE_BG).toEqual({ album: 'rgba(99, 102, 241, 0.9)', ep: 'rgba(168, 85, 247, 0.9)', other: 'rgba(236, 72, 153, 0.9)' });
+    // The album page's palette (lib/release-types.js) at 90%, every type.
+    expect(RELEASE_BADGE_BG.album).toBe('color-mix(in srgb, rgb(99, 102, 241) 90%, transparent)');
+    expect(RELEASE_BADGE_BG.live).toBe('color-mix(in srgb, #d97706 90%, transparent)');
+    expect(RELEASE_BADGE_BG.compilation).toBe('color-mix(in srgb, #0eb3a0 90%, transparent)');
     const badge = (releaseType) => {
       const html = h(S.AlbumCard, { album: { ...album, homeRow: 'fresh', releaseType } });
       return (html.match(/<div style="position:absolute;top:8px;right:8px"><span class="release-badge" style="([^"]*)">([^<]*)<\/span>/) || []).slice(1);
     };
-    expect(badge('album')).toEqual(['background-color:rgba(99, 102, 241, 0.9);color:white', 'Album']);
-    expect(badge('ep')).toEqual(['background-color:rgba(168, 85, 247, 0.9);color:white', 'EP']);
-    expect(badge('single')).toEqual(['background-color:rgba(236, 72, 153, 0.9);color:white', 'Single']);
+    expect(badge('album')).toEqual(['background-color:color-mix(in srgb, rgb(99, 102, 241) 90%, transparent);color:white', 'Album']);
+    expect(badge('ep')).toEqual(['background-color:color-mix(in srgb, #a855f7 90%, transparent);color:white', 'EP']);
+    expect(badge('single')).toEqual(['background-color:color-mix(in srgb, #db2777 90%, transparent);color:white', 'Single']);
+    // Live has its own colour (it wore Single's pink before).
+    expect(badge('live')).toEqual(['background-color:color-mix(in srgb, #d97706 90%, transparent);color:white', 'Live']);
     // No date chip, and no badge outside Fresh Drops or without a type.
     expect(h(S.AlbumCard, { album: { ...album, homeRow: 'fresh', releaseType: 'album' } })).not.toContain('Out Friday');
     expect(h(S.AlbumCard, { album: { ...album, releaseType: 'album' } })).not.toContain('release-badge');
@@ -111,13 +116,13 @@ describe('AlbumCard', () => {
 
 describe('PlaylistCard', () => {
   test('with an add-to-playlist handler it shows the full app trio, as the Playlists page does', () => {
-    const html = h(S.PlaylistCard, { playlist: { id: 'p', title: 'Pl', imageUrl: 'https://img/p.jpg' }, onAddToPlaylist: () => {} });
+    const html = h(S.PlaylistCard, { playlist: { id: 'p', title: 'Pl', imageUrl: 'https://img/p.jpg' }, onAddToPlaylist: () => {}, onPlay() {}, onQueue() {} });
     const add = html.indexOf('Add Pl to a playlist');
     expect(add).toBeGreaterThan(-1);
     expect(add).toBeLessThan(html.indexOf('aria-label="Play Pl"'));
   });
   test('takes the same app hover as albums: Play, then Add to Queue (Home has no add-to-playlist for a playlist)', () => {
-    const html = h(S.PlaylistCard, { playlist: { id: 'p', title: 'Pl', imageUrl: 'https://img/p.jpg' } });
+    const html = h(S.PlaylistCard, { playlist: { id: 'p', title: 'Pl', imageUrl: 'https://img/p.jpg' }, onPlay() {}, onQueue() {} });
     expect(html).toMatch(/data-art-actions[^>]*class="absolute inset-0 bg-black\/50 transition-opacity duration-200 flex items-center justify-center gap-3"/);
     expect(html).toMatch(/aria-label="Play Pl"[^>]*class="w-12 h-12 bg-white rounded-full/);
     expect(html.indexOf('aria-label="Play Pl"')).toBeLessThan(html.indexOf('Add Pl to the queue'));
@@ -125,7 +130,8 @@ describe('PlaylistCard', () => {
   });
   const playlist = { id: 'p1', title: 'Daily Brew', mosaic: ['https://a/1.jpg', 'https://a/2.jpg'] };
   test('has Play and Add to Queue only', () => {
-    const html = h(S.PlaylistCard, { playlist, badge: 'Δ 12', subtitle: 'Refreshed 2h ago' });
+    // Each action shows when its handler is passed (Home passes Play and Queue).
+    const html = h(S.PlaylistCard, { playlist, badge: 'Δ 12', subtitle: 'Refreshed 2h ago', onPlay() {}, onQueue() {} });
     expect(html).toContain('aria-label="Play Daily Brew"');
     expect(html).toContain('aria-label="Add Daily Brew to the queue"');
     expect(html).not.toContain('to a playlist');
@@ -154,7 +160,7 @@ describe('SourceFilter colours', () => {
   });
   test('the selected chip fills with the colour and reads on it', () => {
     const html = h(S.SourceFilter, { sources, value: 'amazonmusic' });
-    expect(html).toMatch(/aria-pressed="true"[^>]*background-color:#25D1DA;color:#111827/);
+    expect(html).toMatch(/aria-pressed="true"[^>]*background-color:#25D1DA;color:var\(--on-art-ink\)/);
     expect(html).not.toMatch(/data-chip-dot[^>]*#25D1DA/);
   });
   test('All stays neutral and has no dot', () => {
@@ -308,16 +314,16 @@ describe('Rows', () => {
     // The sidebar's colours for those pages, which the links copy.
     // The sidebar and the links read the same map (lib/page-colors.js).
     const { PAGE_COLORS } = require('../../src/renderer/lib/page-colors');
-    expect(PAGE_COLORS.playlists.color).toBe('#ec4899');
-    expect(PAGE_COLORS.recommendations.color).toBe('#f59e0b');
-    expect(PAGE_COLORS.concerts.color).toBe('#10c9b4');
-    expect(app).toContain("color: playlistsNavActive ? PAGE_COLORS.playlists.color : 'var(--nav-inactive)',");
-    expect(app).toContain("color: recommendationsNavActive ? PAGE_COLORS.recommendations.color : 'var(--nav-inactive)',");
-    expect(app).toContain("color: activeView === 'concerts' ? PAGE_COLORS['concerts'].color : 'var(--nav-inactive)',");
-    const link = (html, page) => (html.match(new RegExp(`aria-label="See all in ${page}"[^>]*style="[^"]*color:(#[0-9a-f]{6})`)) || [])[1];
-    expect(link(h(S.PlaylistsRow, { playlists: [{ id: 'a', title: 'A' }], navigateTo: () => {} }), 'Playlists')).toBe('#ec4899');
-    expect(link(h(S.AlbumsRow, { albums: [{ title: 'T', artist: 'A', resolverId: 'lastfm' }], navigateTo: () => {} }), 'Recommendations')).toBe('#f59e0b');
-    expect(link(h(S.ConcertsRow, { concerts: [{ id: 'c', artist: 'A', date: '2099-01-01', venue: { name: 'V', city: 'C' } }], navigateTo: () => {} }), 'Concerts')).toBe('#10c9b4');
+    expect(PAGE_COLORS.playlists.color).toBe('var(--page-playlists)');
+    expect(PAGE_COLORS.recommendations.color).toBe('var(--page-recommendations)');
+    expect(PAGE_COLORS.concerts.color).toBe('var(--page-concerts)');
+    // The sidebar's NavItem colours its current page from the same map.
+    expect(fs.readFileSync(path.join(COMP, 'nav-item.js'), 'utf8')).toContain("color: active ? colors.color : 'var(--nav-inactive)',");
+    for (const key of ['playlists', 'recommendations', 'concerts']) expect(app).toMatch(new RegExp(`React\\.createElement\\(NavItem, \\{\\s*page: '${key}'`));
+    const link = (html, page) => (html.match(new RegExp(`aria-label="See all in ${page}"[^>]*style="[^"]*color:(var\\(--page-[a-z-]+\\))`)) || [])[1];
+    expect(link(h(S.PlaylistsRow, { playlists: [{ id: 'a', title: 'A' }], navigateTo: () => {} }), 'Playlists')).toBe('var(--page-playlists)');
+    expect(link(h(S.AlbumsRow, { albums: [{ title: 'T', artist: 'A', resolverId: 'lastfm' }], navigateTo: () => {} }), 'Recommendations')).toBe('var(--page-recommendations)');
+    expect(link(h(S.ConcertsRow, { concerts: [{ id: 'c', artist: 'A', date: '2099-01-01', venue: { name: 'V', city: 'C' } }], navigateTo: () => {} }), 'Concerts')).toBe('var(--page-concerts)');
   });
   test('Albums row see-all goes to Recommendations', () => {
     const html = h(S.AlbumsRow, { albums: [{ title: 'T', artist: 'A', resolverId: 'lastfm' }], navigateTo: () => {} });
@@ -365,9 +371,10 @@ describe('Rows', () => {
   test('each half opens with a hero band copied from its page\'s hero', () => {
     const app = fs.readFileSync(path.join(COMP, '..', 'app.js'), 'utf8');
     // The pages' own hero gradients and collapsed-title style, which the bands copy.
-    expect(app).toContain("className: `absolute inset-0 ${PAGE_COLORS['new-releases'].hero}`");
-    expect(app).toContain("className: `absolute inset-0 ${PAGE_COLORS['critics-picks'].hero}`");
-    expect(app).toMatch(/className: 'text-2xl font-light text-white',\s*style: \{\s*textShadow: '0 2px 10px rgba\(0,0,0,0\.5\)',\s*letterSpacing: '0\.2em',/);
+    expect(app).toContain("page: 'new-releases'");
+    expect(app).toContain("page: 'critics-picks'");
+    // The pages' heroes are the shared PageHero (components/page-hero.js).
+    expect(require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/components/page-hero.js'), 'utf8')).toContain("const COLLAPSED_TITLE_STYLE = { textShadow: 'var(--hero-text-shadow-bar)', letterSpacing: '0.2em', textTransform: 'uppercase' };");
     const html = h(S.FreshCriticalRow, { fresh: [{ title: 'T', artist: 'A' }], critical: [{ title: 'U', artist: 'B' }], navigateTo: () => {} });
     const sections = html.split('<section').slice(1);
     expect(sections).toHaveLength(2);
@@ -378,8 +385,8 @@ describe('Rows', () => {
     for (const sec of sections) {
       // A bordered card on the page background; the cards sit below the band.
       expect(sec).toMatch(/^[^>]*border-radius:16px;overflow:hidden;border:1px solid var\(--border-default\);background-color:var\(--bg-primary\)/);
-      expect(sec).toMatch(/<h2 id="home-(fresh|critical)" style="[^"]*font-weight:300;letter-spacing:0\.2em;text-transform:uppercase;color:#fff;text-shadow:0 2px 10px rgba\(0,0,0,0\.5\)"/);
-      expect(sec).toMatch(/aria-label="See all in (Fresh Drops|Critical Darlings)"[^>]*color:#fff[^>]*>See all</);
+      expect(sec).toMatch(/<h2 id="home-(fresh|critical)" style="[^"]*font-weight:300;letter-spacing:0\.2em;text-transform:uppercase;color:var\(--on-accent\);text-shadow:var\(--hero-text-shadow-bar\)"/);
+      expect(sec).toMatch(/aria-label="See all in (Fresh Drops|Critical Darlings)"[^>]*color:var\(--on-accent\)[^>]*>See all</);
       expect(sec.indexOf('data-home-hero')).toBeLessThan(sec.indexOf('Open '));
     }
     expect(sections[0]).toContain('Fresh Drops');
@@ -457,11 +464,15 @@ describe('Concert cards', () => {
     const html = h(S.ConcertsRow, { concerts: [{ ...base, ticketSources: [sellers2[0]] }] });
     expect(html).toMatch(/<a href="https:\/\/s"[^>]*>Tickets<\/a>/);
   });
-  test('several sellers: Tickets is a disclosure button, the list starts closed', () => {
+  test('several sellers: Tickets opens the shared menu, closed to start', () => {
     const html = h(S.ConcertsRow, { concerts: [{ ...base, ticketSources: sellers2 }] });
-    expect(html).toMatch(/<button[^>]*aria-expanded="false"[^>]*aria-controls="[^"]+"[^>]*>Tickets<\/button>/);
-    expect(html).not.toContain('aria-haspopup');
+    expect(html).toMatch(/<button[^>]*aria-haspopup="menu"[^>]*aria-expanded="false"[^>]*>Tickets/);
     expect(html).not.toContain('Songkick');
+  });
+  test('Tickets is the shared teal button (components/tickets-button.js)', () => {
+    const html = h(S.ConcertsRow, { concerts: [{ ...base, ticketSources: [sellers2[0]] }] });
+    expect(html).toContain('background-color:var(--page-concerts);color:var(--on-accent)');
+    expect(html).not.toContain('text-decoration:underline');
   });
   test('only http(s) ticket links reach an href', () => {
     const bad = [{ source: 'x', ticketUrl: 'javascript:alert(1)' }, { source: 'y', ticketUrl: 'data:text/html,hi' }];
@@ -469,115 +480,6 @@ describe('Concert cards', () => {
     const one = h(S.ConcertsRow, { concerts: [{ ...base, ticketSources: [bad[0], sellers2[0]] }] });
     expect(one).toMatch(/<a href="https:\/\/s"[^>]*>Tickets<\/a>/);
     expect(one).not.toContain('javascript:');
-  });
-
-  // A small hook harness for TicketsLink: one instance, state writes land at
-  // once, document listeners captured, a fake focusable trigger.
-  function ticketsHarness() {
-    const slots = [];
-    let i = 0;
-    const real = global.React;
-    const listeners = {};
-    const doc = {
-      activeElement: null,
-      addEventListener: (t, f) => { listeners[t] = f; },
-      removeEventListener: (t) => { delete listeners[t]; },
-    };
-    let effect = null;
-    const fake = {
-      ...real,
-      useState: (init) => { const k = i++; if (!slots[k]) { slots[k] = [init, (v) => { slots[k][0] = typeof v === 'function' ? v(slots[k][0]) : v; }]; } return [slots[k][0], slots[k][1]]; },
-      useRef: (init) => { const k = i++; if (!slots[k]) slots[k] = { current: init }; return slots[k]; },
-      useId: () => 'r1',
-      useEffect: (fn) => { effect = fn; },
-    };
-    const refs = () => slots.filter((x) => x && !Array.isArray(x)); // [wrap, trigger]
-    const render = () => {
-      global.React = fake;
-      global.document = doc;
-      try { i = 0; return S.__TicketsLink({ sellers: sellers2, artist: 'Hovvdy' }); } finally { global.React = real; }
-    };
-    const runEffect = () => { global.document = doc; effect(); };
-    const cleanup = () => { delete global.document; };
-    return { render, runEffect, listeners, doc, refs, cleanup };
-  }
-  const links = (tree) => walk(tree).filter((n) => n.type === 'a');
-  const trigger = (tree) => walk(tree).find((n) => n.type === 'button');
-
-  test('the trigger controls the list it opens; the list is plain links (no menu roles)', () => {
-    const t = ticketsHarness();
-    try {
-      trigger(t.render()).props.onClick();
-      const tree = t.render();
-      const list = walk(tree).find((n) => n.props.id === trigger(tree).props['aria-controls']);
-      expect(list).toBeTruthy();
-      expect(trigger(tree).props['aria-expanded']).toBe(true);
-      expect(links(tree).map((n) => n.props.href)).toEqual(['https://s', 'https://g']);
-      expect(walk(tree).some((n) => n.props.role === 'menu' || n.props.role === 'menuitem')).toBe(false);
-    } finally { t.cleanup(); }
-  });
-
-  test('Escape closes it and returns focus to Tickets when focus was inside', () => {
-    const t = ticketsHarness();
-    try {
-      trigger(t.render()).props.onClick();
-      t.render();
-      const [wrap, trig] = t.refs();
-      const focused = { id: 'a link' };
-      const focus = jest.fn();
-      wrap.current = { contains: (el) => el === focused };
-      trig.current = { focus };
-      t.doc.activeElement = focused;
-      t.runEffect();
-      t.listeners.keydown({ key: 'Escape' });
-      expect(links(t.render())).toHaveLength(0);
-      expect(focus).toHaveBeenCalled();
-    } finally { t.cleanup(); }
-  });
-
-  test('Escape with focus elsewhere closes it without moving focus', () => {
-    const t = ticketsHarness();
-    try {
-      trigger(t.render()).props.onClick();
-      t.render();
-      const [wrap, trig] = t.refs();
-      const focus = jest.fn();
-      wrap.current = { contains: () => false };
-      trig.current = { focus };
-      t.doc.activeElement = { id: 'elsewhere' };
-      t.runEffect();
-      t.listeners.keydown({ key: 'Escape' });
-      expect(links(t.render())).toHaveLength(0);
-      expect(focus).not.toHaveBeenCalled();
-    } finally { t.cleanup(); }
-  });
-
-  test('an outside click closes it', () => {
-    const t = ticketsHarness();
-    try {
-      trigger(t.render()).props.onClick();
-      t.render();
-      t.refs()[0].current = { contains: () => false };
-      t.runEffect();
-      t.listeners.mousedown({ target: {} });
-      expect(links(t.render())).toHaveLength(0);
-    } finally { t.cleanup(); }
-  });
-
-  test('focus leaving the wrapper closes it; moving between its links does not', () => {
-    const t = ticketsHarness();
-    try {
-      let tree = t.render();
-      trigger(tree).props.onClick();
-      tree = t.render();
-      const wrapEl = walk(tree).find((n) => typeof n.props.onBlur === 'function');
-      const inside = { id: 'link 2' };
-      const currentTarget = { contains: (el) => el === inside };
-      wrapEl.props.onBlur({ currentTarget, relatedTarget: inside });
-      expect(links(t.render())).toHaveLength(2);
-      wrapEl.props.onBlur({ currentTarget, relatedTarget: { id: 'outside' } });
-      expect(links(t.render())).toHaveLength(0);
-    } finally { t.cleanup(); }
   });
 });
 
@@ -650,5 +552,16 @@ describe('theme: no hard-coded neutrals in the Home modules', () => {
     const lines = fs.readFileSync(path.join(COMP, file), 'utf8').split('\n');
     const bad = lines.map((l, i) => [i + 1, l]).filter(([, l]) => NEUTRAL.test(l) && !MARK.test(l));
     expect(bad).toEqual([]);
+  });
+});
+
+describe('a card with no cover', () => {
+  test('an album card shows a music note, a playlist card the playlist glyph', () => {
+    const { AlbumCard } = require('../../src/renderer/components/album-card');
+    const album = h(AlbumCard, { album: { title: 'A', artist: 'B' } });
+    expect(album).toContain('data-album-glyph');
+    expect(album).toContain('data-icon="Music"');
+    expect(h(S.PlaylistCard, { playlist: { id: 'p', title: 'P' } })).toContain('data-playlist-glyph');
+    expect(h(AlbumCard, { album: { title: 'A', artist: 'B', imageUrl: 'https://x/a.jpg' } })).not.toContain('data-album-glyph');
   });
 });

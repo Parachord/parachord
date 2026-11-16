@@ -12,8 +12,8 @@
 const { FixedTooltip, SERVICE_LOGOS } = require('./ui-atoms');
 
 // Drawn over album art: the same in both themes.
-const BADGE_BG = 'rgba(255,255,255,.94)'; // on-art
-const BADGE_FG = '#111827'; // on-art
+const BADGE_BG = 'var(--on-color-chip)'; // on-art
+const BADGE_FG = 'var(--on-art-ink)'; // on-art
 
 // Read by screen readers, not drawn.
 const VISUALLY_HIDDEN = {

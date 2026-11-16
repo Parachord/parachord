@@ -9,16 +9,18 @@
 // app.js for the in-component call sites; PlayTop10Icon is
 // cards-only (the playtop-10 / queue-top-10 affordances).
 const { ResolverIcon, PlaybackProgress, ShareButton } = require('./ui-atoms');
-const { sourceRowState } = require('../lib/visible-sources');
-const { trackDurationLabel } = require('../lib/track-duration');
+const { TrackRow, TrackRowSkeleton } = require('./track-lists');
+const { AlbumCard } = require('./album-card');
+const { useReveal, ArtOverlay } = require('./card-art');
 const Icons = require('./icons');
 const { EmptyState, ErrorState } = require('./states');
 const { Menu } = require('./menu');
 const { CardButton } = require('./card-button');
+const { OptionTile } = require('./option-tile');
 const { artistMenu } = require('../lib/item-menus');
 const { Play } = Icons;
-// hashString (module scope in app.js) is used by generateArtistPattern;
-// exported back so app.js's own call sites keep the same binding.
+// hashString is exported back so app.js's own call sites keep the same
+// binding (generateArtistPattern, now lib/artist-pattern.js, has its own).
 const hashString = require('../lib/hash-string');
 const { trackSlug, slug } = require('../lib/track-slug');
 const { formatCalendarDate } = require('../lib/calendar-date');
@@ -32,119 +34,16 @@ const { regionName } = require('../lib/mb-region');
 // Release-type badge colours, shared by the release cards and the release
 // page (the filter chips use the same colours). The release page had EP and
 // Single swapped (audit bug 4).
-const RELEASE_BADGE_STYLES = {
-  album: { bg: 'rgba(99, 102, 241, 0.08)', color: 'rgb(99, 102, 241)' },
-  ep: { bg: 'rgba(168, 85, 247, 0.08)', color: '#a855f7' },
-  single: { bg: 'rgba(236, 72, 153, 0.08)', color: '#db2777' },
-  live: { bg: 'rgba(245, 158, 11, 0.08)', color: '#d97706' },
-  compilation: { bg: 'rgba(16, 201, 180, 0.08)', color: '#0eb3a0' },
-};
+// The colours are lib/release-types.js (one palette for every badge and chip).
+const { RELEASE_TYPE_COLORS } = require('../lib/release-types');
+const RELEASE_BADGE_STYLES = Object.fromEntries(Object.entries(RELEASE_TYPE_COLORS)
+  .map(([type, color]) => [type, { bg: `color-mix(in srgb, ${color} 8%, transparent)`, color }]));
 
-const generateArtistPattern = (artistName) => {
-  const hash = hashString(artistName.toLowerCase());
-
-  // Color palettes - warm, cool, earthy, vibrant, muted - avoiding generic purple/pink
-  const palettes = [
-    ['#1a1a2e', '#16213e', '#0f3460', '#e94560'], // Deep blue/red
-    ['#2d3436', '#636e72', '#b2bec3', '#dfe6e9'], // Slate monochrome
-    ['#0c0c0c', '#1c1c1c', '#2d2d2d', '#ff6b35'], // Dark with orange
-    ['#1e3a5f', '#3d5a80', '#98c1d9', '#e0fbfc'], // Ocean blues
-    ['#2b2d42', '#8d99ae', '#edf2f4', '#ef233c'], // Navy/red
-    ['#003049', '#d62828', '#f77f00', '#fcbf49'], // French flag warm
-    ['#0a0908', '#22333b', '#eae0d5', '#c6ac8f'], // Coffee tones
-    ['#10002b', '#240046', '#3c096c', '#5a189a'], // Deep purple (different from old)
-    ['#1b4332', '#2d6a4f', '#40916c', '#52b788'], // Forest green
-    ['#212529', '#343a40', '#495057', '#adb5bd'], // Cool gray
-    ['#003459', '#007ea7', '#00a8e8', '#ffffff'], // Bright blue
-    ['#1d3557', '#457b9d', '#a8dadc', '#f1faee'], // Teal slate
-    ['#283618', '#606c38', '#dda15e', '#bc6c25'], // Earth tones
-    ['#231942', '#5e548e', '#9f86c0', '#be95c4'], // Lavender depth
-    ['#0b090a', '#161a1d', '#660708', '#a4161a'], // Dark red
-  ];
-
-  const paletteIndex = hash % palettes.length;
-  const palette = palettes[paletteIndex];
-
-  // Different gradient patterns based on hash
-  const patternType = (hash >> 4) % 6;
-  const angle = ((hash >> 8) % 12) * 30; // 0, 30, 60, ... 330 degrees
-
-  let gradient;
-  switch (patternType) {
-    case 0: // Linear gradient
-      gradient = `linear-gradient(${angle}deg, ${palette[0]} 0%, ${palette[1]} 50%, ${palette[2]} 100%)`;
-      break;
-    case 1: // Radial gradient
-      gradient = `radial-gradient(circle at ${30 + (hash % 40)}% ${30 + ((hash >> 2) % 40)}%, ${palette[2]} 0%, ${palette[1]} 40%, ${palette[0]} 100%)`;
-      break;
-    case 2: // Diagonal split
-      gradient = `linear-gradient(${angle}deg, ${palette[0]} 0%, ${palette[0]} 45%, ${palette[2]} 45%, ${palette[2]} 55%, ${palette[1]} 55%, ${palette[1]} 100%)`;
-      break;
-    case 3: // Soft radial
-      gradient = `radial-gradient(ellipse at ${(hash % 80) + 10}% ${((hash >> 3) % 80) + 10}%, ${palette[3] || palette[2]} 0%, ${palette[1]} 50%, ${palette[0]} 100%)`;
-      break;
-    case 4: // Corner gradient
-      const corners = ['top left', 'top right', 'bottom left', 'bottom right'];
-      const corner = corners[(hash >> 6) % 4];
-      gradient = `radial-gradient(circle at ${corner}, ${palette[2]} 0%, ${palette[1]} 40%, ${palette[0]} 100%)`;
-      break;
-    default: // Mesh-like
-      gradient = `linear-gradient(${angle}deg, ${palette[0]} 0%, ${palette[1]} 25%, ${palette[2]} 50%, ${palette[1]} 75%, ${palette[0]} 100%)`;
-  }
-
-  // Generate initials for overlay
-  const initials = artistName.split(' ')
-    .map(word => word.charAt(0).toUpperCase())
-    .slice(0, 2)
-    .join('');
-
-  return {
-    gradient,
-    initials,
-    textColor: palette[3] || palette[2], // Lighter color for text
-    accentColor: palette[3] || palette[2]
-  };
-};
+const { generateArtistPattern } = require('../lib/artist-pattern');
 
 // Custom PlayTop10Icon - Play button with "10" badge for artist top tracks
-const PlayTop10Icon = ({ size = 24, className = '' }) => {
-  return React.createElement('svg', {
-    width: size,
-    height: size,
-    viewBox: '0 0 24 24',
-    fill: 'none',
-    className
-  },
-    // Play triangle, centred by its centroid (x 12) like the other play
-    // buttons' nudged triangle; the badge sits over its lower-right corner.
-    React.createElement('path', {
-      d: 'M8.17 4.75L19.67 12L8.17 19.25V4.75Z',
-      fill: 'currentColor',
-      stroke: 'currentColor',
-      strokeWidth: 1.5,
-      strokeLinecap: 'round',
-      strokeLinejoin: 'round'
-    }),
-    // Badge circle background
-    React.createElement('circle', {
-      cx: 18.5,
-      cy: 18.5,
-      r: 5.5,
-      fill: 'var(--success)'
-    }),
-    // "10" text in badge
-    React.createElement('text', {
-      x: 18.5,
-      y: 18.5,
-      textAnchor: 'middle',
-      dominantBaseline: 'central',
-      fill: 'white',
-      fontSize: 7,
-      fontWeight: 'bold',
-      fontFamily: 'var(--font-sans)'
-    }, '10')
-  );
-};
+// Play Top 10's icon lives in icons.js (Icons.PlayTop10); exported here as before.
+const PlayTop10Icon = Icons.PlayTop10;
 
 // Artist cards live in components/artist-card.js (ArtistCard).
 
@@ -162,7 +61,7 @@ const SearchHistoryItem = ({ entry, onQueryClick, onResultClick, onRemove }) => 
   };
 
   return React.createElement(CardButton, { label: selectedResult ? selectedResult.name : `Search for ${query}`,
-    className: 'flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 group transition-colors cursor-pointer',
+    className: 'flex items-center gap-3 p-3 rounded-lg hover:bg-surface-hover group transition-colors cursor-pointer',
     onActivate: handleRowClick
   },
     // Result thumbnail or search icon
@@ -173,20 +72,20 @@ const SearchHistoryItem = ({ entry, onQueryClick, onResultClick, onRemove }) => 
         onError: (e) => { e.target.style.display = 'none'; }
       }) :
       React.createElement('div', {
-        className: 'w-12 h-12 rounded bg-gray-100 flex items-center justify-center'
+        className: 'w-12 h-12 rounded bg-surface-subtle flex items-center justify-center'
       },
-        React.createElement(Icons.Search, { className: 'w-5 h-5 text-gray-400' })
+        React.createElement(Icons.Search, { className: 'w-5 h-5 text-ink-tertiary' })
       ),
 
     // Query and result info
     React.createElement('div', { className: 'flex-1 min-w-0' },
       React.createElement('button', {
         onClick: (e) => { e.stopPropagation(); onQueryClick(query); },
-        className: 'text-sm font-medium text-gray-900 hover:text-blue-600 truncate block text-left w-full'
+        className: 'text-sm font-medium text-ink-primary hover:text-accent truncate block text-left w-full'
       }, `"${query}"`),
       selectedResult && React.createElement('button', {
         onClick: (e) => { e.stopPropagation(); onResultClick(selectedResult); },
-        className: 'text-xs text-gray-500 hover:text-blue-600 truncate block text-left w-full'
+        className: 'text-xs text-ink-secondary hover:text-accent truncate block text-left w-full'
       },
         `${selectedResult.type}: ${selectedResult.name}${selectedResult.artist ? ` • ${selectedResult.artist}` : ''}`
       )
@@ -195,7 +94,7 @@ const SearchHistoryItem = ({ entry, onQueryClick, onResultClick, onRemove }) => 
     // Remove button
     React.createElement('button', {
       onClick: (e) => { e.stopPropagation(); onRemove(query); },
-      className: 'opacity-0 group-hover:opacity-100 card-reveal p-1 text-gray-400 hover:text-red-500 transition-opacity'
+      className: 'opacity-0 group-hover:opacity-100 card-reveal p-1 text-ink-tertiary hover:text-ink-danger transition-opacity'
     },
       React.createElement(Icons.X, { className: 'w-4 h-4' })
     )
@@ -208,7 +107,6 @@ const SearchHistoryItem = ({ entry, onQueryClick, onResultClick, onRemove }) => 
 const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, onHoverFetch, isVisible = true, animationDelay = 0, onPlay, onAddToQueue, onAddToPlaylist, prefetchedReleasesRef, onCardRef }) => {
   const year = release.date ? release.date.split('-')[0] : '';
   const [imageFailed, setImageFailed] = React.useState(false);
-  const [imageLoaded, setImageLoaded] = React.useState(false);
   // A fresh cover found after the cached one failed to load (see onArtError).
   const [replacementArt, setReplacementArt] = React.useState(null);
   const art = replacementArt || release.albumArt;
@@ -216,7 +114,6 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, 
   // Reset image states when album art URL changes
   React.useEffect(() => {
     setImageFailed(false);
-    setImageLoaded(false);
     setReplacementArt(null);
   }, [release.albumArt]);
 
@@ -231,211 +128,42 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, 
       if (!url) return;
       setReplacementArt(url);
       setImageFailed(false);
-      setImageLoaded(false);
     });
   };
 
-  const handleDragStart = (e) => {
-    e.dataTransfer.effectAllowed = 'copy';
-    const albumData = {
-      type: 'album',
-      album: {
+  // The shared album card (components/album-card.js): the cover (a
+  // placeholder when there is none, a shimmer while it is looked up), the
+  // release-type badge, the year under the title, the overlay. It was a
+  // <button> holding the overlay's buttons, which HTML doesn't allow.
+  return React.createElement(AlbumCard, {
+    album: { id: release.id, title: release.title, imageUrl: imageFailed ? null : art },
+    imageLoading: art === undefined,
+    releaseType: release.releaseType,
+    subtitle: year,
+    animationDelay,
+    // A card the type filter hides stays mounted (its art and ref keep).
+    hidden: !isVisible,
+    cardRef: onCardRef,
+    cardProps: { 'data-release-id': release.id },
+    dragData: () => {
+      const albumData = { type: 'album', album: {
         id: trackSlug(currentArtist?.name || release.artist?.name || 'unknown', release.title || 'untitled'),
         title: release.title,
         artist: currentArtist?.name || release.artist?.name,
         year: year ? parseInt(year) : null,
         art,
         trackCount: release.tracks?.length || null
-      }
-    };
-    e.dataTransfer.setData('text/plain', JSON.stringify(albumData));
-  };
-
-  const handleClick = () => {
-    console.log('🎵 Card clicked:', release.title);
-    fetchReleaseData(release, currentArtist);
-  };
-
-  const badgeStyles = RELEASE_BADGE_STYLES;
-  const badge = badgeStyles[release.releaseType] || badgeStyles.album;
-
-  return React.createElement('button', {
-    className: `no-drag release-card card-fade-up`,
-    draggable: true,
-    onDragStart: handleDragStart,
-    'data-release-id': release.id,
-    ref: onCardRef,
-    style: {
-      width: '100%',
-      textAlign: 'left',
-      display: isVisible ? 'block' : 'none',
-      backgroundColor: 'var(--card-bg)',
-      borderRadius: '10px',
-      padding: '10px',
-      cursor: 'grab',
-      border: 'none',
-      boxShadow: 'var(--card-shadow)',
-      animationDelay: `${animationDelay}ms`
+      } };
+      return albumData;
     },
-    onClick: handleClick,
-    onContextMenu: (e) => {
-      e.preventDefault();
-      if (onContextMenu) {
-        onContextMenu(release);
-      }
-    },
-    onMouseEnter: (e) => {
-      // Prefetch release tracks on hover
-      if (onHoverFetch) {
-        onHoverFetch(release);
-      }
-    }
-  },
-    // Album art container with inner shadow overlay
-    React.createElement('div', {
-      className: `album-art-container group/art ${(art === null || imageFailed || imageLoaded) ? '' : 'animate-shimmer'}`,
-      style: {
-        width: '100%',
-        aspectRatio: '1',
-        borderRadius: '6px',
-        background: art === null || imageFailed
-          ? 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)'
-          : imageLoaded
-            ? 'var(--placeholder-bg-light)'
-            : 'linear-gradient(to right, var(--shimmer-from), var(--shimmer-via), var(--shimmer-to))',
-        backgroundSize: (art === null || imageFailed || imageLoaded) ? undefined : '200% 100%',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginBottom: '10px',
-        overflow: 'hidden',
-        position: 'relative'
-      }
-    },
-      // Album art image with fade-in
-      art && !imageFailed && React.createElement('img', {
-        src: art,
-        alt: release.title,
-        style: {
-          width: '100%',
-          height: '100%',
-          objectFit: 'cover',
-          pointerEvents: 'none',
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          opacity: imageLoaded ? 1 : 0,
-          transition: 'opacity 0.35s ease-out'
-        },
-        ref: (el) => {
-          if (el && el.complete && el.naturalWidth > 0 && !imageLoaded) {
-            setImageLoaded(true);
-          }
-        },
-        onLoad: () => setImageLoaded(true),
-        onError: onArtError
-      }),
-
-      // Music icon placeholder - refined dark style
-      (art === null || imageFailed) && React.createElement(Icons.Music, { style: {
-          width: '36px',
-          height: '36px',
-          color: 'rgba(255, 255, 255, 0.2)',
-          pointerEvents: 'none'
-        }, strokeWidth: 1.5 }),
-
-      // Hover overlay with action buttons (Add to Playlist, Play, Queue)
-      (onPlay || onAddToQueue || onAddToPlaylist) && React.createElement('div', {
-        className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-3',
-        style: { pointerEvents: 'auto' }
-      },
-        // Add to Playlist button
-        onAddToPlaylist && React.createElement('button', {
-          onClick: (e) => {
-            e.stopPropagation();
-            onAddToPlaylist(release);
-          },
-          className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
-          style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-          onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
-          onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-          'aria-label': 'Add to playlist', 'data-tooltip': 'Add to playlist'
-        },
-          React.createElement(Icons.Plus, { className: 'w-5 h-5' })
-        ),
-        // Play button (center, larger)
-        onPlay && React.createElement('button', {
-          onClick: (e) => {
-            e.stopPropagation();
-            onPlay(release);
-          },
-          className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
-          style: { border: 'none', cursor: 'pointer' },
-          'aria-label': 'Play', 'data-tooltip': 'Play'
-        },
-          React.createElement(Play, { size: 22, className: 'text-gray-800 ml-0.5' })
-        ),
-        // Add to Queue button
-        onAddToQueue && React.createElement('button', {
-          onClick: (e) => {
-            e.stopPropagation();
-            onAddToQueue(release);
-          },
-          className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
-          style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-          onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
-          onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-          'aria-label': 'Add to queue', 'data-tooltip': 'Add to queue'
-        },
-          React.createElement(Icons.QueueAdd, { className: 'w-5 h-5', strokeWidth: 2 })
-        )
-      )
-    ),
-
-    // Title - refined typography
-    React.createElement('h3', {
-      style: {
-        fontWeight: '500',
-        fontSize: '13px',
-        lineHeight: '1.4',
-        marginBottom: '3px',
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-        whiteSpace: 'nowrap',
-        color: 'var(--text-primary)',
-        letterSpacing: '0.005em',
-        pointerEvents: 'none'
-      },
-      title: release.title
-    }, release.title),
-
-    // Year and badge row
-    React.createElement('div', {
-      style: {
-        display: 'flex',
-        alignItems: 'center',
-        gap: '6px',
-        pointerEvents: 'none'
-      }
-    },
-      // Year
-      year && React.createElement('span', {
-        style: {
-          fontSize: '11px',
-          color: 'var(--text-tertiary)',
-          fontWeight: '400'
-        }
-      }, year),
-      // Badge - refined style
-      React.createElement('span', {
-        className: 'release-badge',
-        style: {
-          backgroundColor: badge.bg,
-          color: badge.color
-        }
-      }, release.releaseType.toUpperCase())
-    )
-  );
+    onOpen: () => fetchReleaseData(release, currentArtist),
+    onContextMenu: () => { if (onContextMenu) onContextMenu(release); },
+    onHoverPrefetch: onHoverFetch ? () => onHoverFetch(release) : undefined,
+    onArtError,
+    onPlay: onPlay ? () => onPlay(release) : undefined,
+    onQueue: onAddToQueue ? () => onAddToQueue(release) : undefined,
+    onAddToPlaylist: onAddToPlaylist ? () => onAddToPlaylist(release) : undefined
+  });
 };
 
 // ── The album page's source picker (#1238) ──
@@ -470,7 +198,7 @@ const detailShimmer = (kind) => React.createElement('span', {
 const editionServiceBadge = (resolverId, color, size = 18) => React.createElement('span', {
   style: {
     width: `${size}px`, height: `${size}px`, borderRadius: '4px', flexShrink: 0,
-    backgroundColor: color || '#555',
+    backgroundColor: color || 'var(--fill-neutral)',
     display: 'inline-flex', alignItems: 'center', justifyContent: 'center'
   }
 }, React.createElement(ResolverIcon, { resolverId, size: Math.round(size * 0.66) }));
@@ -482,10 +210,10 @@ const editionMusicBrainzBadge = (size = 18, onDark = false) => React.createEleme
     width: `${size}px`, height: `${size}px`, borderRadius: '4px', flexShrink: 0,
     boxSizing: 'border-box',
     backgroundColor: onDark ? 'transparent' : 'var(--card-bg)',
-    border: onDark ? '1px solid rgba(255, 255, 255, 0.3)' : '1px solid var(--border-default)',
+    border: onDark ? '1px solid var(--on-color-border)' : '1px solid var(--border-default)',
     display: 'inline-flex', alignItems: 'center', justifyContent: 'center'
   }
-}, React.createElement(ResolverIcon, { resolverId: 'musicbrainz', size: Math.round(size * 0.66), fill: onDark ? 'rgba(255, 255, 255, 0.75)' : 'var(--text-secondary)' }));
+}, React.createElement(ResolverIcon, { resolverId: 'musicbrainz', size: Math.round(size * 0.66), fill: onDark ? 'var(--on-dark-secondary)' : 'var(--text-secondary)' }));
 
 // The MusicBrainz edition list folds after this many rows behind a
 // "N more editions" row — a busy classical group can have dozens, and an
@@ -538,11 +266,11 @@ const AlbumVersionsMenu = ({ release, versions, resolvers = [], onSelect, onClos
     React.createElement('span', { className: 'min-w-0', style: { flex: '1 1 0', overflowWrap: 'anywhere' } },
       React.createElement('span', {
         className: 'block',
-        style: { fontWeight: 500, color: current ? 'var(--accent-soft)' : '#ffffff' }
+        style: { fontWeight: 500, color: current ? 'var(--accent-soft)' : 'var(--on-dark-primary)' }
       }, main),
       secondary && React.createElement('span', {
         className: 'block',
-        style: { fontSize: '10.5px', color: 'rgba(255, 255, 255, 0.55)', marginTop: '1px' }
+        style: { fontSize: '11px', color: 'var(--on-dark-tertiary)', marginTop: '1px' }
       }, secondary)
     ),
     current && React.createElement('span', {
@@ -552,7 +280,7 @@ const AlbumVersionsMenu = ({ release, versions, resolvers = [], onSelect, onClos
   const sectionHeader = (title, key) => React.createElement('div', {
     key,
     className: 'px-3 pt-2 pb-1',
-    style: { fontSize: '10px', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'rgba(255, 255, 255, 0.5)' }
+    style: { fontSize: '11px', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--on-dark-tertiary)' }
   }, title);
   const shimmerRows = (key) => [0, 1].map((i) => React.createElement('div', {
     key: `${key}-shimmer-${i}`,
@@ -582,7 +310,7 @@ const AlbumVersionsMenu = ({ release, versions, resolvers = [], onSelect, onClos
   // its own edition, or every row would read the same.
   const servicesRows = [];
   catalogSections.forEach((section) => {
-    const color = resolvers.find(r => r.id === section.resolverId)?.color || '#555';
+    const color = resolvers.find(r => r.id === section.resolverId)?.color || 'var(--fill-neutral)';
     section.albums.forEach((album, i) => {
       const isCurrent = release._catalogSource?.resolverId === section.resolverId
         && release._catalogSource?.url && release._catalogSource.url === album.url;
@@ -684,7 +412,7 @@ const AlbumVersionsMenu = ({ release, versions, resolvers = [], onSelect, onClos
               key: 'mb-more-editions',
               onClick: (e) => { e.stopPropagation(); setShowAllMbEditions(true); },
               className: 'w-full px-3 py-1.5 text-left no-drag text-white hover:bg-white/10',
-              style: { fontSize: '11px', border: 'none', backgroundColor: 'transparent', color: 'rgba(255, 255, 255, 0.55)' }
+              style: { fontSize: '11px', border: 'none', backgroundColor: 'transparent', color: 'var(--on-dark-tertiary)' }
             }, `${hiddenCount} more ${hiddenCount === 1 ? 'edition' : 'editions'}`)]
           : [])
       ];
@@ -700,11 +428,11 @@ const AlbumVersionsMenu = ({ release, versions, resolvers = [], onSelect, onClos
     : (versions.loading && (catalogSections.length > 0 || (versions.mb && versions.mb.releases)) ? shimmerRows('more') : []);
 
   const emptyNote = nothingLoaded
-    ? [React.createElement('div', {
-        key: 'no-versions',
-        className: 'px-3 py-2.5',
-        style: { fontSize: '11px', color: 'rgba(255, 255, 255, 0.55)' }
-      }, 'No other versions found')]
+    ? [React.createElement(EmptyState, {
+        key: 'no-versions', tone: 'dark', compact: true, icon: null,
+        title: 'No other editions',
+        body: 'MusicBrainz and your services have no other edition of this album.'
+      })]
     : [];
 
   // Searches that failed or timed out (versions.failures, or a failed
@@ -715,15 +443,17 @@ const AlbumVersionsMenu = ({ release, versions, resolvers = [], onSelect, onClos
     ? [React.createElement('div', {
         key: 'failures-hint',
         className: 'px-3 py-1.5',
-        style: { fontSize: '11px', color: 'rgba(255, 255, 255, 0.45)' }
+        style: { fontSize: '11px', color: 'var(--on-dark-tertiary)' }
       }, "Some services didn't answer — reopen to retry")]
     : [];
 
   return React.createElement('div', {
+    // The editions panel: its clicks stay in it.
+    role: 'dialog', 'aria-label': 'Other editions',
     className: 'absolute left-0 top-full mt-1 rounded-lg py-1 z-30 no-drag scrollable-content',
     style: {
       backgroundColor: 'var(--tooltip-bg)',
-      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+      boxShadow: 'var(--shadow-popover)',
       // The card's own width (#1312): the album column hides anything wider
       // (overflow-x: hidden), so a 280px panel under a 160-192px card had
       // its right side cut off. Rows wrap instead (versionRow).
@@ -781,6 +511,9 @@ const ReleasePage = ({
   const [replacementArt, setReplacementArt] = React.useState(null);
   React.useEffect(() => { setReplacementArt(null); }, [release.albumArt]);
   const headerArt = replacementArt || release.albumArt;
+
+  // The cover's actions show on hover or keyboard focus (card-art useReveal).
+  const coverReveal = useReveal();
 
   // Use a ref to track container width for responsive layout
   const [containerWidth, setContainerWidth] = React.useState(800);
@@ -857,7 +590,7 @@ const ReleasePage = ({
   const albumArtSize = isCompact ? 160 : 192; // 160px or 192px (w-40 or w-48)
   const columnWidth = isCompact ? 180 : 240;
 
-  return React.createElement('div', { ref: containerRef, className: 'flex gap-0 px-6 pb-6', style: { flex: 1, minHeight: 0 } },
+  return React.createElement('div', { ref: containerRef, className: 'flex gap-0 pl-6', style: { flex: 1, minHeight: 0 } },
     // LEFT COLUMN: Album card - matching ReleaseCard styling
     (() => {
       const year = release.date ? release.date.split('-')[0] : '';
@@ -866,7 +599,7 @@ const ReleasePage = ({
       const badge = badgeStyles[releaseType] || badgeStyles.album;
 
       return React.createElement('div', {
-        className: 'flex-shrink-0 pr-4 md:pr-8 pt-6 scrollable-content',
+        className: 'flex-shrink-0 pr-4 md:pr-8 pt-6 pb-6 scrollable-content',
         style: {
           width: `${columnWidth}px`,
           transition: 'width 300ms ease',
@@ -907,13 +640,13 @@ const ReleasePage = ({
           } : undefined
         },
           // Album art container
-          React.createElement('div', {
-            className: 'album-art-container group/art',
+          React.createElement('div', Object.assign({
+            className: 'album-art-container',
             style: {
               width: '100%',
               aspectRatio: '1',
               borderRadius: '6px',
-              background: 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)',
+              background: 'var(--placeholder-bg)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -921,7 +654,7 @@ const ReleasePage = ({
               overflow: 'hidden',
               position: 'relative'
             }
-          },
+          }, coverReveal.props),
             // Image (absolute positioned, fades in on load, hides on error)
             headerArt && React.createElement('img', {
               key: headerArt,
@@ -948,98 +681,51 @@ const ReleasePage = ({
                 if (report) report(headerArt, { artist: artistName, album: release.title, releaseId: release.id }).then((url) => { if (url) setReplacementArt(url); });
               }
             }),
-            // Placeholder icon (always behind) - dark theme
+            // Placeholder icon (always behind)
             React.createElement(Icons.Music, { style: {
                 width: '36px',
                 height: '36px',
-                color: 'rgba(255, 255, 255, 0.2)',
+                color: 'var(--text-tertiary)',
                 pointerEvents: 'none'
               }, strokeWidth: 1.5 }),
 
-            // Hover overlay with action buttons (Add to Playlist, Play, Queue)
-            (onAlbumPlay || onAlbumAddToQueue || onAlbumAddToPlaylist) && React.createElement('div', {
-              className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-3',
-              style: { pointerEvents: 'auto' }
-            },
-              // Add to Playlist button
-              onAlbumAddToPlaylist && React.createElement('button', {
-                onClick: (e) => {
-                  e.stopPropagation();
-                  onAlbumAddToPlaylist(release);
-                },
-                className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
-                style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-                onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
-                onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                'aria-label': 'Add to playlist', 'data-tooltip': 'Add to playlist'
-              },
-                React.createElement(Icons.Plus, { className: 'w-5 h-5' })
-              ),
-              // Play button (center, larger)
-              onAlbumPlay && React.createElement('button', {
-                onClick: (e) => {
-                  e.stopPropagation();
-                  onAlbumPlay(release);
-                },
-                className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
-                style: { border: 'none', cursor: 'pointer' },
-                'aria-label': 'Play', 'data-tooltip': 'Play'
-              },
-                React.createElement(Play, { size: 22, className: 'text-gray-800 ml-0.5' })
-              ),
-              // Add to Queue button
-              onAlbumAddToQueue && React.createElement('button', {
-                onClick: (e) => {
-                  e.stopPropagation();
-                  onAlbumAddToQueue(release);
-                },
-                className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
-                style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-                onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
-                onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
-                'aria-label': 'Add to queue', 'data-tooltip': 'Add to queue'
-              },
-                React.createElement(Icons.QueueAdd, { className: 'w-5 h-5', strokeWidth: 2 })
-              )
-            )
+            // The app's art overlay (card-art ArtOverlay): Add to playlist,
+            // Play, Add to queue, on hover or keyboard focus.
+            (onAlbumPlay || onAlbumAddToQueue || onAlbumAddToPlaylist) && React.createElement(ArtOverlay, {
+              shown: coverReveal.shown,
+              title: release.title,
+              onAddToPlaylist: onAlbumAddToPlaylist ? () => onAlbumAddToPlaylist(release) : undefined,
+              onPlay: onAlbumPlay ? () => onAlbumPlay(release) : undefined,
+              onQueue: onAlbumAddToQueue ? () => onAlbumAddToQueue(release) : undefined
+            })
           ),
 
-          // Title - matching ReleaseCard typography, with the release-type
-          // badge beside it (#1238): the source card below carries the year
-          // now, and "Album" isn't worth a badge — only the other types
-          // (Live, EP, Single, Compilation) say what they are.
+          // The title, up to two lines (it was cut off beside the badge in
+          // the narrow column), then the release-type badge under it
+          // (#1238): the source card below carries the year, and "Album"
+          // isn't worth a badge; only Live, EP, Single and Compilation say
+          // what they are. The badge's class draws the capitals.
           React.createElement('div', {
-            style: {
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              marginBottom: '3px',
-              pointerEvents: 'none'
-            }
+            style: { display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px', marginBottom: '3px', pointerEvents: 'none' }
           },
             React.createElement('h3', {
               style: {
-                fontWeight: '500',
+                fontWeight: 500,
                 fontSize: '13px',
                 lineHeight: '1.4',
+                display: '-webkit-box',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical',
                 overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                minWidth: 0,
                 color: 'var(--text-primary)',
                 letterSpacing: '0.005em'
               },
-              title: release.title
+              'data-tooltip': release.title
             }, release.title),
-            // Badge - matching ReleaseCard style
             releaseType !== 'album' && React.createElement('span', {
               className: 'release-badge',
-              style: {
-                backgroundColor: badge.bg,
-                color: badge.color,
-                flexShrink: 0
-              }
-            }, releaseType.toUpperCase())
+              style: { backgroundColor: badge.bg, color: badge.color }
+            }, releaseType === 'ep' ? 'EP' : releaseType)
           )
         ),
 
@@ -1052,21 +738,10 @@ const ReleasePage = ({
           // another official release of the MusicBrainz release group, or an
           // edition one of the user's services carries. Sits above Share.
           React.createElement('div', { className: 'relative', style: { width: `${albumArtSize}px`, transition: 'width 300ms ease' } },
-            React.createElement('button', {
+            React.createElement(OptionTile, {
+              compact: true,
               onClick: toggleSourceOpen,
-              className: 'w-full text-left no-drag',
               'aria-expanded': sourceOpen,
-              style: {
-                display: 'block',
-                border: '1px solid var(--border-default)',
-                borderRadius: '8px',
-                backgroundColor: 'var(--card-bg)',
-                padding: '8px 10px',
-                cursor: 'pointer',
-                transition: 'border-color 150ms ease'
-              },
-              onMouseEnter: (e) => { e.currentTarget.style.borderColor = 'var(--text-tertiary)'; },
-              onMouseLeave: (e) => { e.currentTarget.style.borderColor = 'var(--border-default)'; },
               'data-tooltip': 'Pick another edition of this album (MusicBrainz releases, or an edition your services carry)'
             },
               // First line: the source's badge and name, chevron at the right
@@ -1080,7 +755,7 @@ const ReleasePage = ({
                   title: sourceLine
                 }, sourceLine),
                 React.createElement('span', {
-                  style: { fontSize: '9px', color: 'var(--text-tertiary)', flexShrink: 0 }
+                  style: { fontSize: '11px', color: 'var(--text-tertiary)', flexShrink: 0 }
                 }, sourceOpen ? React.createElement(Icons.ChevronUp, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }) : React.createElement(Icons.ChevronDown, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }))
               ),
               // Then one line per detail, aligned under the name
@@ -1159,36 +834,15 @@ const ReleasePage = ({
       );
     })(),
 
-    // RIGHT COLUMN: Tracklist
-    React.createElement('div', { className: 'flex-1 min-w-0 pt-6 scrollable-content', style: { overflowY: 'auto' } },
+    // RIGHT COLUMN: Tracklist. It carries the right and bottom padding itself
+    // (the wrapper has only the left), so its scrollbar sits at the window edge.
+    React.createElement('div', { className: 'flex-1 min-w-0 pt-6 pr-6 pb-6 scrollable-content', style: { overflowY: 'auto' } },
       // A load that failed: the reason and a retry, in place of the skeleton
       !release.tracks && release._loadError ? React.createElement(ErrorState, { align: 'start', compact: true, title: 'Couldn’t load this album’s tracks', body: release._loadError, onRetry: onRetryLoad || undefined }) :
       // Show skeleton while tracks are loading
       !release.tracks ? React.createElement('div', { className: 'space-y-0' },
         [75, 60, 85, 55, 70, 80, 50, 65, 90, 58].map((width, i) =>
-          React.createElement('div', {
-            key: `track-skeleton-${i}`,
-            className: 'flex items-center gap-4 py-3 px-4',
-            style: { borderRadius: '8px', marginBottom: '2px' }
-          },
-            // Track number
-            React.createElement('div', {
-              className: 'w-6 h-4 rounded shimmer-light animate-shimmer',
-              style: { backgroundSize: '200% 100%' }
-            }),
-            // Track title
-            React.createElement('div', { className: 'flex-1' },
-              React.createElement('div', {
-                className: 'h-4 rounded shimmer-light animate-shimmer',
-                style: { width: `${width}%`, backgroundSize: '200% 100%' }
-              })
-            ),
-            // Duration
-            React.createElement('div', {
-              className: 'w-10 h-4 rounded shimmer-light animate-shimmer',
-              style: { backgroundSize: '200% 100%' }
-            })
-          )
+          React.createElement(TrackRowSkeleton, { key: `track-skeleton-${i}`, index: i, duration: true, showArtist: false })
         )
       ) :
       release.tracks.length > 0 ?
@@ -1197,19 +851,6 @@ const ReleasePage = ({
             // Build track ID first, then use it to look up resolved sources
             const trackId = trackSlug(release.artist.name || 'unknown', track.title || 'untitled', release.title || 'noalbum');
             const sources = trackSources[trackId] || {};
-            // The shared source-icon rule (lib/visible-sources), with
-            // activeResolvers = playbackResolvers from app.js and `resolvers`
-            // already in the user's resolver order.
-            const { shown: shownSources, state: sourceState } = sourceRowState({ id: trackId }, { trackSources, playbackResolvers: activeResolvers, resolverOrder: resolvers.map(r => r.id) });
-            const availableResolvers = shownSources.map(s => s.resolverId);
-            // Tri-state for badge area: still-loading vs resolved-with-nothing-playable
-            // (no match anywhere, or only on services the plan can't play) vs
-            // playable. Drives gray-out + skip-shimmer below.
-            const hasNoMatches = sourceState === 'unplayable';
-            const durationText = trackDurationLabel(
-              { id: trackId, duration: track.length ? track.length / 1000 : null },
-              { trackSources, resolverOrder: resolvers.map(r => r.id) }
-            );
 
             // Build track object for drag/drop and playback
             const trackForDrag = {
@@ -1225,222 +866,56 @@ const ReleasePage = ({
             const isCurrentTrack = currentTrack?.id === trackId;
             const isNowPlaying = isCurrentTrack && playbackContext?.type === 'album' && playbackContext?.id === release.id;
 
-            return React.createElement(CardButton, { role: 'listitem', label: track.title, more: `More actions for ${track.title}`,
-            current: isNowPlaying,
+            return React.createElement(TrackRow, {
+              role: 'listitem',
               key: index,
-              'data-track-id': trackId,
-              ref: (el) => {
-                if (releaseTrackRowRefs) {
-                  if (el) {
-                    releaseTrackRowRefs.current.set(trackId, el);
-                    if (releaseObserverRef?.current) {
-                      releaseObserverRef.current.observe(el);
-                    }
-                  } else {
-                    releaseTrackRowRefs.current.delete(trackId);
-                  }
+              label: track.title,
+              // MusicBrainz's length (ms) first, then the resolved sources'.
+              track: { ...trackForDrag, duration: track.length ? track.length / 1000 : null },
+              number: String(track.position).padStart(2, '0'),
+              isNowPlaying,
+              sources: { trackSources, playbackResolvers: activeResolvers, resolverOrder: resolvers.map(r => r.id) },
+              allResolvers: resolvers,
+              showArtist: false,
+              duration: true,
+              // No flash of "unavailable" before the lookup finishes.
+              dimResolving: false,
+              rowRef: (el) => {
+                if (!releaseTrackRowRefs) return;
+                if (el) {
+                  releaseTrackRowRefs.current.set(trackId, el);
+                  if (releaseObserverRef?.current) releaseObserverRef.current.observe(el);
+                } else {
+                  releaseTrackRowRefs.current.delete(trackId);
                 }
               },
               draggable: true,
               onDragStart: (e) => {
                 e.dataTransfer.effectAllowed = 'copy';
                 e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'track', track: trackForDrag }));
-                if (onDragStart) {
-                  onDragStart(trackForDrag);
-                }
+                if (onDragStart) onDragStart(trackForDrag);
               },
-              onDragEnd: () => {
-                if (onDragEnd) {
-                  onDragEnd();
-                }
-              },
-              className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all no-drag group ${isNowPlaying ? 'bg-accent-tint' : 'hover:bg-surface-hover'}`,
-              style: {
-                borderRadius: '8px',
-                marginBottom: '2px'
-              },
-              onActivate: () => {
-                console.log('Track row clicked:', track.title);
-
-                // Play it, resolved or not. A row the page hasn't resolved yet
-                // resolves on demand in handlePlay, in the resolver queues'
-                // priority lane, ahead of the page's other rows. It used to
-                // open a Search for the track instead, so an album track could
-                // only be played once its row finished resolving behind the rest.
-                // Build queue from remaining tracks (after this one)
-                const tracksAfter = release.tracks.slice(index + 1).map((t, i) => {
+              onDragEnd: () => { if (onDragEnd) onDragEnd(); },
+              // Play it, resolved or not: a row the page hasn't resolved yet
+              // resolves on demand in handlePlay, in the priority lane.
+              onPlay: (resolverId) => {
+                const toPlay = resolverId ? { ...trackForDrag, preferredResolver: resolverId } : trackForDrag;
+                const tracksAfter = release.tracks.slice(index + 1).map((t) => {
                   const tId = trackSlug(release.artist.name || 'unknown', t.title || 'untitled', release.title || 'noalbum');
-                  const tSources = trackSources[tId] || {};
-                  return {
-                    ...t,
-                    id: tId,
-                    artist: release.artist.name,
-                    album: release.title,
-                    albumArt: release.albumArt,
-                    sources: tSources
-                  };
+                  return { ...t, id: tId, artist: release.artist.name, album: release.title, albumArt: release.albumArt, sources: trackSources[tId] || {} };
                 });
-
-                if (onTrackPlay) {
-                  onTrackPlay(trackForDrag, tracksAfter);
-                } else {
-                  handlePlay(trackForDrag);
-                }
+                if (onTrackPlay) onTrackPlay(toPlay, tracksAfter);
+                else handlePlay(toPlay);
               },
-              onContextMenu: (e) => {
-                e.preventDefault();
-                if (onTrackContextMenu) {
-                  onTrackContextMenu(trackForDrag);
-                }
-              }
-            },
-              // Track number or playing indicator
-              React.createElement('span', {
-                className: 'w-6 flex-shrink-0 text-right',
-                style: {
-                  pointerEvents: 'none',
-                  fontSize: '12px',
-                  fontWeight: '500',
-                  color: isNowPlaying ? 'var(--accent-secondary)' : 'var(--text-tertiary)'
-                }
-              }, isNowPlaying ? '▶' : String(track.position).padStart(2, '0')),
-
-              // Track title — grays out when resolution definitively
-              // completed with no matches on any enabled service. Stays
-              // full-color while loading (sources empty but no __noMatchAll
-              // marker) so the user doesn't see a flash of "unavailable"
-              // before resolution finishes.
-              React.createElement('span', {
-                className: 'flex-1 truncate transition-colors',
-                style: {
-                  pointerEvents: 'none',
-                  fontSize: '13px',
-                  fontWeight: isNowPlaying ? '500' : '400',
-                  color: isNowPlaying
-                    ? 'var(--accent-primary)'
-                    : (hasNoMatches ? 'var(--text-tertiary)' : 'var(--text-primary)'),
-                  opacity: hasNoMatches ? 0.6 : 1
-                }
-              }, track.title),
-
-              // Duration — also dims for unavailable rows so the whole row
-              // reads as "not playable" at a glance. MusicBrainz's length (ms)
-              // first, then the resolved sources' (lib/track-duration); blank
-              // when nothing knows it.
-              durationText && React.createElement('span', {
-                className: 'flex-shrink-0 tabular-nums',
-                style: {
-                  pointerEvents: 'none',
-                  fontSize: '12px',
-                  color: 'var(--text-tertiary)',
-                  opacity: hasNoMatches ? 0.6 : 1
-                }
-              }, durationText),
-              
-              // Resolver icons (sources available for this track)
-              React.createElement('div', {
-                className: 'flex items-center gap-1 flex-shrink-0 ml-auto',
-                style: { pointerEvents: 'none', minHeight: '24px', width: '140px', justifyContent: 'flex-end' }
-              },
-                (() => {
-                  // Use availableResolvers from outer scope (already looked up via trackId)
-                  const availableResolverIds = availableResolvers;
-
-                  if (availableResolverIds.length === 0) {
-                    // Resolution definitively completed with no matches →
-                    // render nothing in the badge area. The grayed-out track
-                    // title in the row already conveys "this track isn't
-                    // playable from any enabled service" — a redundant label
-                    // would just add noise.
-                    if (hasNoMatches) return null;
-                    // Otherwise: still resolving — show shimmer skeletons.
-                    return React.createElement('div', {
-                      className: 'flex items-center gap-1'
-                    },
-                      React.createElement('div', {
-                        className: 'w-5 h-5 rounded animate-shimmer',
-                        style: {
-                          background: 'linear-gradient(to right, var(--shimmer-from), var(--shimmer-via), var(--shimmer-to))',
-                          backgroundSize: '200% 100%'
-                        },
-                        title: 'Resolving track…'
-                      }),
-                      React.createElement('div', {
-                        className: 'w-5 h-5 rounded animate-shimmer',
-                        style: {
-                          background: 'linear-gradient(to right, var(--shimmer-from), var(--shimmer-via), var(--shimmer-to))',
-                          backgroundSize: '200% 100%',
-                          animationDelay: '0.1s'
-                        }
-                      })
-                    );
-                  }
-
-                  // Show resolver icons for available sources (only if they support playback)
-                  return shownSources.map(({ resolverId, source, dim }) => {
-                    const resolver = resolvers.find(r => r.id === resolverId);
-                    if (!resolver || !resolver.play) return null;
-
-                    const confidence = source.confidence || 0;
-
-                    return React.createElement('button', {
-                      key: resolverId,
-                      className: 'no-drag',
-                      onClick: (e) => {
-                        e.stopPropagation(); // Don't trigger row click
-                        console.log(`Playing from ${resolver.name}:`, source);
-
-                        // Create track with preferred resolver
-                        const trackWithResolver = { ...trackForDrag, preferredResolver: resolverId };
-
-                        // Build queue from remaining tracks (after this one)
-                        const tracksAfter = release.tracks.slice(index + 1).map((t, i) => {
-                          const tId = trackSlug(release.artist.name || 'unknown', t.title || 'untitled', release.title || 'noalbum');
-                          const tSources = trackSources[tId] || {};
-                          return {
-                            ...t,
-                            id: tId,
-                            artist: release.artist.name,
-                            album: release.title,
-                            albumArt: release.albumArt,
-                            sources: tSources
-                          };
-                        });
-
-                        if (onTrackPlay) {
-                          onTrackPlay(trackWithResolver, tracksAfter);
-                        } else {
-                          handlePlay(trackWithResolver);
-                        }
-                      },
-                      style: {
-                        width: '20px',
-                        height: '20px',
-                        borderRadius: '4px',
-                        backgroundColor: resolver.color,
-                        border: 'none',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        pointerEvents: 'auto',
-                        opacity: dim ? 0.6 : 1,
-                        transition: 'transform 0.1s'
-                      },
-                      onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
-                      onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
-                      'aria-label': `Play from ${resolver.name} (${Math.round(confidence * 100)}% match)`, 'data-tooltip': `Play from ${resolver.name} (${Math.round(confidence * 100)}% match)`
-                    }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
-                  });
-                })()
-              )
-            );
+              onContextMenu: () => { if (onTrackContextMenu) onTrackContextMenu(trackForDrag); }
+            });
           })
         )
       :
-        React.createElement('div', { className: 'text-center py-12 text-gray-400' },
-          'No track information available'
-        )
+        React.createElement(EmptyState, {
+          title: 'No tracklist for this album',
+          body: 'Its tracks couldn’t be found.'
+        })
     )
   );
 };

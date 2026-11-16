@@ -13,14 +13,17 @@
 //
 // Props (both): title, body (string or node), icon (an Icons component),
 // actions ([{ label, onClick, variant }]), align ('center' | 'start'),
-// compact (less padding, for a section rather than a page).
+// compact (less padding, for a section rather than a page), tone ('dark' on
+// the always-dark panels: the AI panels, the album edition menu). Pass
+// icon: null for a state with no icon.
 // ErrorState also takes onRetry and retryLabel ("Try again").
 // Props-driven; loads under plain Node.
 
 const Icons = require('./icons');
 const { Button } = require('./button');
 
-function StateBlock({ role, icon, iconTone, title, body, actions, align = 'center', compact = false }) {
+function StateBlock({ role, icon, iconTone, title, body, actions, align = 'center', compact = false, tone }) {
+  const dark = tone === 'dark';
   const e = React.createElement;
   const center = align === 'center';
   const Icon = icon;
@@ -31,13 +34,13 @@ function StateBlock({ role, icon, iconTone, title, body, actions, align = 'cente
   },
   Icon && e('div', {
     'aria-hidden': 'true',
-    className: `flex items-center justify-center rounded-full bg-surface-inset ${iconTone}`,
+    className: `flex items-center justify-center rounded-full ${dark ? 'bg-white/5' : 'bg-surface-inset'} ${dark ? 'text-on-dark-tertiary' : iconTone}`,
     style: { width: compact ? '44px' : '56px', height: compact ? '44px' : '56px' },
   }, e(Icon, { className: compact ? 'w-5 h-5' : 'w-6 h-6', strokeWidth: 1.75 })),
-  title && e('div', { className: 'text-ink-primary', style: { fontSize: compact ? '14px' : '16px', fontWeight: 600 } }, title),
-  body && e('div', { className: 'text-ink-secondary', style: { fontSize: '14px', lineHeight: 1.5, maxWidth: '32rem' } }, body),
+  title && e('div', { className: dark ? 'text-on-dark-primary' : 'text-ink-primary', style: { fontSize: compact ? '14px' : '16px', fontWeight: 600 } }, title),
+  body && e('div', { className: dark ? 'text-on-dark-secondary' : 'text-ink-secondary', style: { fontSize: '14px', lineHeight: 1.5, maxWidth: '32rem' } }, body),
   actions && actions.length > 0 && e('div', { className: 'flex flex-wrap gap-2', style: { marginTop: '4px', justifyContent: center ? 'center' : 'flex-start' } },
-    actions.map((a, i) => e(Button, { key: a.label || i, variant: a.variant || (i === 0 ? 'primary' : 'secondary'), size: 'sm', onClick: a.onClick }, a.label))));
+    actions.map((a, i) => e(Button, { key: a.label || i, variant: a.variant || (i === 0 ? 'primary' : 'secondary'), size: 'sm', tone, onClick: a.onClick }, a.label))));
 }
 
 function EmptyState(props) {

@@ -73,13 +73,23 @@ describe('Recommendations skeletons match the sectioned page', () => {
   });
 
   test('same song row padding and columns', () => {
-    expect(songRow).toMatch(/flex items-center gap-4 py-3 px-4/);
-    expect(skel).toMatch(/className: 'flex items-center gap-4 py-3 px-4'/);
-    expect(songRow).toMatch(/style: \{ borderRadius: '8px', marginBottom: '2px' \}/);
-    expect(skel).toMatch(/style: \{ borderRadius: '8px', marginBottom: '2px' \}/);
-    for (const col of ["width: '32px'", "flex: '1 1 0', minWidth: 0", "flex: '0.7 1 0', minWidth: 0", "width: '50px'", "width: '140px', flexShrink: 0, minHeight: '24px'"]) {
-      expect(songRow).toContain(col);
-      expect(skel).toContain(col);
+    // The song rows are the shared TrackRow (with a duration column), and
+    // their placeholder is its own TrackRowSkeleton: render both and compare.
+    expect(songRow).toMatch(/React\.createElement\(TrackRow,[\s\S]*duration: true/);
+    expect(skel).toContain('return React.createElement(TrackRowSkeleton, { index, duration: true });');
+    global.React = require('react');
+    const { renderToStaticMarkup } = require('react-dom/server');
+    const { TrackRow, TrackRowSkeleton } = require('../../src/renderer/components/track-lists');
+    const row = renderToStaticMarkup(React.createElement(TrackRow, {
+      track: { id: 'a', title: 'T', artist: 'A', duration: 200 }, number: '01', duration: true,
+      sources: { trackSources: {}, playbackResolvers: [], resolverOrder: [] }, allResolvers: [], onPlay() {}, onOpenArtist() {},
+    }));
+    const ph = renderToStaticMarkup(React.createElement(TrackRowSkeleton, { duration: true }));
+    expect(row).toMatch(/class="card-button flex items-center gap-4 py-3 px-4 /);
+    expect(ph).toMatch(/class="flex items-center gap-4 py-3 px-4"/);
+    for (const css of ['border-radius:8px;margin-bottom:2px', 'width:32px', 'flex:1 1 0;min-width:0', 'flex:0.7 1 0;min-width:0', 'width:50px', 'width:var(--source-col, 140px);flex-shrink:0;min-height:24px']) {
+      expect([css, row.includes(css)]).toEqual([css, true]);
+      expect([css, ph.includes(css)]).toEqual([css, true]);
     }
   });
 
@@ -139,7 +149,7 @@ describe('Recommendations skeletons match the sectioned page', () => {
     expect(view).toMatch(/const llmPlaceholder = llmLoading && !filteringOne && !allSections\.some\(s => s\.type === 'album'\) && !allSubsections\.some\(s => LLM_TAIL_ROWS\.has\(s\.key\)\);/);
     // The slot is a whole section under the Albums heading its picks will
     // bring, placed after Songs.
-    expect(view).toMatch(/llmPlaceholder && React\.createElement\(RecommendationSectionSkeleton, \{ key: 'type:album-pending', kind: 'cards', lines: 2, title: 'Albums', count: SECTION_PREVIEW \}\)/);
+    expect(view).toMatch(/llmPlaceholder && React\.createElement\(RecommendationSectionSkeleton, \{ key: 'type:album-pending', kind: 'cards', lines: 3, title: 'Albums', count: SECTION_PREVIEW \}\)/);
     expect(view.match(/contentBlocks\.push\(llmSlot\)/g) || []).toHaveLength(2);
   });
 
@@ -151,7 +161,7 @@ describe('Recommendations skeletons match the sectioned page', () => {
     // The real cards' grid, one row of cards (what each category row shows
     // when Albums has several), album cards' two text lines.
     expect(pending).toContain("gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))'");
-    expect(pending).toMatch(/Array\.from\(\{ length: \(recommendationsGridColumns\.cards \|\| 6\) \* 1 \}, \(_, i\) => React\.createElement\(RecommendationCardSkeleton, \{ key: `rec-llm-\$\{i\}`, index: i, lines: 2 \}\)\)/);
+    expect(pending).toMatch(/Array\.from\(\{ length: \(recommendationsGridColumns\.cards \|\| 6\) \* 1 \}, \(_, i\) => React\.createElement\(RecommendationCardSkeleton, \{ key: `rec-llm-\$\{i\}`, index: i, lines: 3 \}\)\)/);
     // It counts as a row: the section's rows show one row of cards each.
     expect(typeSection).toContain('const rowCount = visibleRows.length + (llmPersonalPending ? 1 : 0);');
     expect(typeSection).toContain('if (llmPersonalPending) rows.splice(newAt + 1, 0, llmPersonalPendingRow);');
@@ -328,27 +338,28 @@ describe('Home skeletons match the Home rows', () => {
 
   test('Home\'s album and playlist cards are the app\'s card, and so are their skeletons', () => {
     const app = fs.readFileSync(path.join(dir, '..', 'app.js'), 'utf8');
-    // The Playlists page's card, which Home copies.
-    expect(app).toMatch(/className: 'group cursor-pointer release-card card-fade-up',\s*style: \{\s*padding: '10px',\s*borderRadius: '10px',\s*backgroundColor: 'var\(--card-bg\)',\s*boxShadow: 'var\(--card-shadow\)',/);
+    // The Playlists page's grid is the shared PlaylistCard too.
+    expect(app).toMatch(/React\.createElement\(PlaylistCard, Object\.assign\(\{\s*role: 'listitem',\s*key: playlist\.id,/);
     expect(app).toContain("className: 'card-grid gap-x-4 gap-y-5'");
     expect(sk.HOME_CARD_BOX).toEqual({ padding: '10px', borderRadius: '10px', backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)' });
     expect(sk.HOME_CARD_ART_RADIUS).toBe(8);
     // Both cards and the skeleton card use the box; the cards get the hover lift.
-    // The playlist card (home-sections) and the shared album card use the box.
-    expect((sections.match(/className: 'release-card', style: Object\.assign\(\{\}, HOME_CARD_BOX/g) || []).length).toBe(1);
-    expect(fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'components', 'album-card.js'), 'utf8')).toMatch(/style: Object\.assign\(\{\}, HOME_CARD_BOX/);
+    // The shared playlist and album cards use the box.
+    for (const f of ['album-card.js', 'playlist-card.js']) {
+      expect(fs.readFileSync(path.join(dir, f), 'utf8')).toMatch(/style: Object\.assign\(\{\}, HOME_CARD_BOX/);
+    }
     expect(skeletons).toContain('style: Object.assign({}, HOME_CARD_BOX');
     expect(skeletons).toContain('borderRadius: `${HOME_CARD_ART_RADIUS}px`');
   });
 
-  test('album card skeletons have one subtitle line (the artist), playlist card skeletons two', () => {
+  test('album card skeletons have two subtitle lines (the artist and the year), as playlist card skeletons do', () => {
     const React = require('react');
     const { renderToStaticMarkup } = require('react-dom/server');
     const bars = (props) => (renderToStaticMarkup(React.createElement(sk.CardRowSkeleton, Object.assign({ count: 1 }, props))).match(/h-3[ "]/g) || []).length;
     expect(bars({})).toBe(2);
     expect(bars({ lines: 1 })).toBe(1);
     const page = fs.readFileSync(path.join(dir, 'home-page.js'), 'utf8');
-    expect(page).toContain("skeletonSection('albums', 'Albums you might love', React.createElement(CardRowSkeleton, { count: rowCards, lines: 1 }))");
+    expect(page).toContain("skeletonSection('albums', 'Albums you might love', React.createElement(CardRowSkeleton, { count: rowCards, lines: 2 }))");
     expect(page).toContain("skeletonSection('playlists', 'Your playlists, freshest first', React.createElement(CardRowSkeleton, { count: rowCards }))");
   });
 
@@ -357,7 +368,9 @@ describe('Home skeletons match the Home rows', () => {
     expect(sk.HOME_CARD_TEXT_GAP).toBe(10);
     expect(sections).toContain('${HOME_ROW_GAP}px');
     expect(skeletons).toContain('${HOME_ROW_GAP}px');
-    expect(sections).toContain('${HOME_CARD_TEXT_GAP}px');
+    for (const f of ['album-card.js', 'playlist-card.js']) {
+      expect(fs.readFileSync(path.join(dir, f), 'utf8')).toContain('${HOME_CARD_TEXT_GAP}px');
+    }
     expect(skeletons).toContain('${HOME_CARD_TEXT_GAP}px');
     expect(sections).not.toMatch(/minmax\(0, 1fr\)\)`, '16px'\)/);
   });
@@ -421,5 +434,191 @@ describe('Home skeletons match the Home rows', () => {
     expect(renderToStaticMarkup(React.createElement(sk.ConcertRowSkeleton))).toContain('shimmer');
     // The card's 72px photo box, padding 10 (home-sections.js ConcertCard).
     expect(renderToStaticMarkup(React.createElement(sk.ConcertRowSkeleton))).toContain('flex:0 0 72px;height:72px');
+  });
+});
+
+describe('Recommendations card skeletons match the shared cards', () => {
+  global.React = require('react');
+  const { renderToStaticMarkup } = require('react-dom/server');
+  const { RecommendationCardSkeleton } = require('../../src/renderer/components/recommendation-skeletons');
+  const sk = require('../../src/renderer/components/home-skeletons');
+
+  test('an album or playlist row (lines 2) gets the inset card: the card box and rounded art', () => {
+    const html = renderToStaticMarkup(React.createElement(RecommendationCardSkeleton, { lines: 2 }));
+    expect(html).toContain(`padding:${sk.HOME_CARD_BOX.padding};border-radius:${sk.HOME_CARD_BOX.borderRadius}`);
+    expect(html).toContain(`gap:${sk.HOME_CARD_TEXT_GAP}px`);
+    expect(html).toContain(`border-radius:${sk.HOME_CARD_ART_RADIUS}px`);
+  });
+
+  test('an artist row (lines 1) keeps the full-bleed card', () => {
+    const html = renderToStaticMarkup(React.createElement(RecommendationCardSkeleton, { lines: 1 }));
+    expect(html).toContain('class="rounded-lg overflow-hidden"');
+    expect(html).toContain('class="p-3"');
+  });
+});
+
+describe('Recommendations album cards show the release year', () => {
+  test('the year is the third line, always reserved, and the album skeleton has it', () => {
+    const app = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
+    const card = app.slice(app.indexOf('const albumCard = (item, index) => {'), app.indexOf('const playlistCard = (item, index, section) => {'));
+    expect(card).toContain("const year = entry && entry.date ? String(entry.date).slice(0, 4) : '';");
+    expect(card).toContain("subtitle: year || '\\u00a0',");
+    global.React = require('react');
+    const { renderToStaticMarkup } = require('react-dom/server');
+    const { RecommendationCardSkeleton } = require('../../src/renderer/components/recommendation-skeletons');
+    const bars = (lines) => (renderToStaticMarkup(React.createElement(RecommendationCardSkeleton, { lines })).match(/shimmer-light/g) || []).length;
+    expect(bars(3)).toBe(bars(2) + 1);
+  });
+});
+
+describe('Pop of the Tops', () => {
+  const app = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
+  test('album cards show the release year, from Apple\'s date text', () => {
+    expect(app).toContain("subtitle: chartAlbumYear(item) || '\\u00a0',");
+    expect(app).toContain('releaseDate: item.releaseDate || null,');
+    expect(app).toMatch(/if \(item\.releaseDate\) return String\(item\.releaseDate\)\.slice\(0, 4\);/);
+    expect(app).toMatch(/d\.getUTCFullYear\(\)/);
+  });
+  test('its placeholders are the shared ones, in the real layout', () => {
+    expect(app).toContain("React.createElement(CardSkeleton, { key: `skeleton-${i}`, index: i, lines: 2 })");
+    expect(app).toMatch(/React\.createElement\(TrackRowSkeleton, \{\s*key: `skeleton-row-\$\{i\}`, index: i, duration: true,/);
+    // The rows and their placeholder share the Last.fm listeners column.
+    expect(app).toMatch(/cells: chartsSongsSource === 'lastfm' \? \[\{ key: 'listeners', width: '90px', align: 'right' \}\] : \[\]/);
+  });
+});
+
+describe('TrackRowSkeleton has TrackRow\'s columns', () => {
+  global.React = require('react');
+  const { renderToStaticMarkup } = require('react-dom/server');
+  const { TrackRow, TrackRowSkeleton } = require('../../src/renderer/components/track-lists');
+  test('number, title, artist, a cell, duration and the icon column match', () => {
+    const cells = [{ key: 'x', width: '90px', align: 'right', content: 'x' }];
+    const row = renderToStaticMarkup(React.createElement(TrackRow, { track: { id: 'a', title: 'T', artist: 'A' }, number: '01', duration: true, cells, sources: {}, allResolvers: [] }));
+    const skel = renderToStaticMarkup(React.createElement(TrackRowSkeleton, { duration: true, cells }));
+    for (const css of ['width:32px', 'flex:1 1 0;min-width:0', 'flex:0.7 1 0;min-width:0', 'width:90px', 'width:50px', 'width:var(--source-col, 140px);flex-shrink:0;min-height:24px']) {
+      expect([css, row.includes(css)]).toEqual([css, true]);
+      expect([css, skel.includes(css)]).toEqual([css, true]);
+    }
+  });
+});
+
+describe('Critical Darlings and Concerts', () => {
+  const app = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
+  test('a Critical Darlings card shows the album\'s release date, from MusicBrainz, its line always kept', () => {
+    expect(app).toMatch(/if \(activeView !== 'critics-picks'\) return;\s*queueReleaseDateLookups\(criticsPicks\.map\(album => \(\{ artist: album\.artist, title: album\.title \}\)\)\);/);
+    expect(app).toContain("return (known && known.date && formatCalendarDate(known.date, 'long')) || '\\u00a0';");
+  });
+  test('a concert row has no reason column; the reason is its tooltip', () => {
+    expect(app).not.toMatch(/\/\/ Reason column/);
+    expect(app).toContain("'data-tooltip': reasonText || undefined,");
+  });
+});
+
+describe('a track row\'s duration sits against its source icons', () => {
+  global.React = require('react');
+  const { renderToStaticMarkup } = require('react-dom/server');
+  const { TrackRow, TrackRowSkeleton } = require('../../src/renderer/components/track-lists');
+  test('the icons sit right-aligned against the duration, which is the last column', () => {
+    const row = renderToStaticMarkup(React.createElement(TrackRow, {
+      track: { id: 'a', title: 'T', artist: 'A', duration: 200, sources: { spotify: { confidence: 1 } } }, number: '01', duration: true,
+      sources: { trackSources: {}, playbackResolvers: ['spotify'], resolverOrder: ['spotify'] },
+      allResolvers: [{ id: 'spotify', name: 'Spotify', color: '#1db954', play() {} }],
+    }));
+    // The icons (right-aligned in their column), then the duration last.
+    expect(row).toMatch(/<div class="flex items-center gap-1 justify-end"[^>]*>(?:(?!<\/div>).)*<\/button><\/div><span class="text-right tabular-nums flex-shrink-0"[^>]*>3:20<\/span>/);
+    const ph = renderToStaticMarkup(React.createElement(TrackRowSkeleton, { duration: true }));
+    expect(ph.indexOf('gap-1 justify-end')).toBeLessThan(ph.lastIndexOf('width:50px'));
+  });
+});
+
+describe('the source icon column fits the user\'s services', () => {
+  const { sourceColumnWidth, SOURCE_COLUMN } = require('../../src/renderer/components/track-lists');
+  test('24px per playable service, at least two, at most 140', () => {
+    expect(sourceColumnWidth(['spotify', 'soundcloud'])).toBe(44);
+    expect(sourceColumnWidth(['a', 'b', 'c'])).toBe(68);
+    expect(sourceColumnWidth([])).toBe(44);
+    expect(sourceColumnWidth(['a', 'b', 'c', 'd', 'e', 'f', 'g'])).toBe(140);
+    expect(SOURCE_COLUMN).toBe('var(--source-col, 140px)');
+    const app = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
+    expect(app).toContain("style: { '--source-col': `${sourceColumnWidth(playbackResolvers)}px` }");
+  });
+});
+
+describe('every track list and card grid loads with the shared placeholders', () => {
+  const read = (f) => fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', f), 'utf8');
+  const app = read('app.js');
+  test('track lists: TrackRowSkeleton, in the rows\' columns', () => {
+    expect(app).toMatch(/TrackRowSkeleton, \{ key: `history-skeleton-\$\{i\}`, index: i, duration: true, cells: \[\{ key: 'album' \}, \{ key: 'when', width: '80px', align: 'right' \}\] \}/);
+    expect(app).toMatch(/TrackRowSkeleton, \{ key: `top-track-skeleton-\$\{i\}`, index: i, duration: true, cells: \[\{ key: 'album' \}, \{ key: 'plays', width: '80px', align: 'right' \}\] \}/);
+    expect(app).toMatch(/TrackRowSkeleton, \{ key: `track-skeleton-\$\{i\}`, index: i, duration: true \}/); // the pending playlist view
+    expect(read('components/cards.js')).toMatch(/TrackRowSkeleton, \{ key: `track-skeleton-\$\{i\}`, index: i, duration: true, showArtist: false \}/); // an album's tracklist
+  });
+  test('card grids: CardSkeleton, in the real grid and count', () => {
+    expect(app).toMatch(/CardSkeleton, \{ key: `album-skeleton-\$\{i\}`, index: i, lines: 2 \}/); // History's top albums
+    expect(app).toMatch(/CardSkeleton, \{ key: `playlist-skeleton-\$\{i\}`, index: i, lines: 1 \}/);
+    expect(app).toMatch(/CardSkeleton, \{ key: `trailing-skeleton-\$\{i\}`, index: i, lines: 1 \}/);
+    expect(app).toMatch(/CardSkeleton, \{ key: `skeleton-\$\{i\}`, index: i, lines: 2 \}/); // Fresh Drops
+    expect(read('components/artist-page.js')).toMatch(/className: 'card-grid gap-x-4 gap-y-5'\s*\},\s*Array\.from\(\{ length: 10 \}\)\.map\(\(_, i\) =>\s*React\.createElement\(CardSkeleton/);
+    const search = read('components/search-page.js');
+    expect(search).toMatch(/Array\(getItemsPerRow\(140\)\)\.fill\(null\)/); // the tracks row's real count
+    expect(search).not.toMatch(/getItemsPerRow\(110\)|getItemsPerRow\(150\)/);
+  });
+  test('History reads when a listen was played from the field it carries', () => {
+    expect(app).toContain("formatTimeAgo(track.playedAt || track.timestamp)");
+    expect(app).not.toContain('formatTimeAgo(track.timestamp)');
+  });
+});
+
+describe('artist grids load with the shared artist card placeholder', () => {
+  global.React = require('react');
+  const { renderToStaticMarkup } = require('react-dom/server');
+  const { ArtistCard, ArtistCardSkeleton } = require('../../src/renderer/components/artist-card');
+  test('ArtistCardSkeleton has the card\'s box, photo and name line', () => {
+    const card = renderToStaticMarkup(React.createElement(ArtistCard, { artist: { id: 'a', name: 'A' } }));
+    const ph = renderToStaticMarkup(React.createElement(ArtistCardSkeleton, {}));
+    for (const css of ['background-color:var(--card-bg);box-shadow:var(--card-shadow)']) {
+      expect(card).toContain(css);
+      expect(ph).toContain(css);
+    }
+    expect(ph).toContain('class="aspect-square shimmer-light animate-shimmer"');
+    expect(ph).toContain('class="p-3"');
+  });
+  test('the artist page\'s related artists, History\'s top artists and Search use it', () => {
+    const read = (f) => fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', f), 'utf8');
+    expect(read('components/artist-page.js')).toMatch(/loadingRelated && filteredArtists\.length === 0 && React\.createElement\('div'[\s\S]{0,300}ArtistCardSkeleton/);
+    expect(read('app.js')).toMatch(/ArtistCardSkeleton, \{ key: `artist-skeleton-\$\{i\}`, index: i, lines: 2 \}/);
+    expect(read('components/search-page.js')).toMatch(/ArtistCardSkeleton, \{ key: `artist-skeleton-\$\{i\}`, index: i \}/);
+  });
+});
+
+test('a friend\'s page loads with each tab\'s own placeholders, not a lone spinner', () => {
+  const app = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
+  const i = app.indexOf('friendHistoryLoading && (friendHistoryTab');
+  expect(i).toBeGreaterThan(-1);
+  const block = app.slice(i, i + 1200);
+  expect(block).toContain('CardSkeleton');
+  expect(block).toContain('ArtistCardSkeleton');
+  expect(block).toContain('TrackRowSkeleton');
+  expect(app).not.toMatch(/friendHistoryLoading && React\.createElement\('div', \{ className: 'flex items-center justify-center py-12/);
+});
+
+describe('concert list skeletons match their rows (components/concert-skeletons.js)', () => {
+  const skel = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'components', 'concert-skeletons.js'), 'utf8');
+  const artist = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'components', 'artist-page.js'), 'utf8');
+  test("the Concerts page's row: 100px date column, 100×100 photo, 100px Tickets column", () => {
+    expect(app).toMatch(/className: 'flex flex-col items-center justify-center text-center flex-shrink-0 px-4',\s*style: \{ minWidth: '100px' \}/);
+    expect(app).toContain("style: { width: '100px', height: '100px', alignSelf: 'stretch' }");
+    expect(skel).toContain("style: { minWidth: '100px' } }, e(DateBars)");
+    expect(skel).toContain("style: { width: '100px', height: '100px', borderRadius: 0 }");
+    expect(skel).toContain("style: { width: '100px' } },");
+    expect(app).toContain("React.createElement(ConcertListSkeleton, { count: 8, photo: true })");
+  });
+  test("an artist's On tour row: padded, 56px date column; no lone spinner, no \"0 upcoming concerts\" while loading", () => {
+    expect(artist).toContain("className: 'flex items-center gap-4 p-4 rounded-xl border cursor-default group bg-surface-card border-line-light'");
+    expect(artist).toMatch(/style: \{ minWidth: '56px' \}/);
+    expect(skel).toContain("style: { minWidth: '56px' } }, e(DateBars)");
+    expect(artist).toContain("events.length === 0 && (artistConcertsLoading || !artistConcertsLoaded) && React.createElement(ConcertListSkeleton, { count: 4 })");
+    expect(artist).not.toContain("'Loading concerts…'");
+    expect(artist).toContain("events.length === 0 ? 'Upcoming concerts' : countOf(events.length, 'upcoming concert')");
   });
 });

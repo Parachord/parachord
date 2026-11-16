@@ -30,6 +30,11 @@
 //   dragData      an object (or a function returning one, read at drag time)
 //                 dragged as text/plain JSON ({ type: 'album', ... })
 //   role, animationDelay (ms, the fade-up), className, width (a row's fixed width)
+//   label         the card's name, when a click doesn't open ("Play X by Y")
+//   hidden        true: kept mounted but not shown (a filtered-out card; the
+//                 card's inline display wins over a class, so it's a prop)
+//   cardRef       the card element (a page's visibility observer)
+//   cardProps     data-* attributes for the card (data-release-id)
 // Props-driven; hooks are qualified; loads under plain Node.
 
 const { CardButton } = require('./card-button');
@@ -43,6 +48,7 @@ const ELLIPSIS = { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'elli
 function AlbumCard({
   album, onOpen, onPlay, onQueue, onAddToPlaylist, onContextMenu, onHoverPrefetch, onArtError, onOpenArtist, getAlbumArt,
   imageLoading = false, releaseType, reason, cornerBadge, subtitle, tooltip, dragData, role, animationDelay, className, width,
+  cardRef, cardProps, label, hidden = false,
 }) {
   const reveal = useReveal();
   const timer = React.useRef(null);
@@ -96,7 +102,8 @@ function AlbumCard({
     onMouseLeave: () => { leave(); if (timer.current) { clearTimeout(timer.current); timer.current = null; } },
   };
   return e(CardButton, Object.assign({
-    label: `Open ${title}`,
+    label: label || `Open ${title}`,
+    ref: cardRef,
     role,
     tooltip,
     onActivate: open,
@@ -107,13 +114,14 @@ function AlbumCard({
       display: 'flex', flexDirection: 'column', gap: `${HOME_CARD_TEXT_GAP}px`, minWidth: 0, cursor: 'pointer',
     }, animationDelay != null ? { animationDelay: `${animationDelay}ms` } : null,
       // A fixed width, for a horizontal row (Search's overview).
-      width ? { width, flexShrink: 0 } : null),
+      width ? { width, flexShrink: 0 } : null,
+      hidden ? { display: 'none' } : null),
     draggable: dragData ? true : undefined,
     onDragStart: dragData ? (ev) => {
       ev.dataTransfer.effectAllowed = 'copy';
       ev.dataTransfer.setData('text/plain', JSON.stringify(typeof dragData === 'function' ? dragData() : dragData));
     } : undefined,
-  }, reveal.props, dwell),
+  }, cardProps, reveal.props, dwell),
     e(ArtBox, { imageUrl: coverUrl, item: album, onArtError: reportArt, zoom: reveal.shown, style: { borderRadius: `${HOME_CARD_ART_RADIUS}px` } },
       coverLoading && !coverUrl && e('div', { className: 'absolute inset-0 shimmer-strong animate-shimmer', style: { backgroundSize: '200% 100%' } }),
       cornerBadge,

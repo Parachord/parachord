@@ -346,14 +346,17 @@ describe('ReleasePage: the source card', () => {
     expect(html).not.toContain('1 song');
   });
 
-  test('the release type shows beside the title only when it isn\'t a plain album', () => {
+  test('the release type shows under the title only when it isn\'t a plain album', () => {
     const live = render({ ...release, releaseType: 'live' });
     const titleAt = live.indexOf('Absolute Elsewhere</h3>');
     expect(titleAt).toBeGreaterThan(-1);
-    // the badge sits right beside the title, under the album cover
-    expect(live.indexOf('>LIVE</span>')).toBeGreaterThan(titleAt);
+    // the badge sits under the title (the title wraps to two lines instead
+    // of being cut off beside it); its class draws the capitals
+    expect(live.indexOf('class="release-badge"')).toBeGreaterThan(titleAt);
+    expect(live).toMatch(/class="release-badge"[^>]*>live<\/span>/);
+    expect(live).toMatch(/-webkit-line-clamp:2/);
     // a plain album: no badge at all
-    expect(render(release)).not.toContain('>ALBUM</span>');
+    expect(render(release)).not.toMatch(/class="release-badge"[^>]*>album<\/span>/);
   });
 });
 
@@ -459,7 +462,7 @@ describe('AlbumVersionsMenu', () => {
     expect(html).toContain('animate-shimmer');
     expect(html).not.toContain('MusicBrainz editions');
     expect(html).not.toContain('Your services');
-    expect(html).not.toContain('No other versions found');
+    expect(html).not.toContain('No other editions');
   });
 
   test('nothing else to pick says so', () => {
@@ -468,7 +471,7 @@ describe('AlbumVersionsMenu', () => {
       versions: { key: albumVersionsKey(release), loading: false, mb: { releaseGroupId: RG, releases: [] }, catalogs: [] },
       resolvers: []
     });
-    expect(html).toContain('No other versions found');
+    expect(html).toContain('No other editions');
     expect(html).not.toContain('>MusicBrainz editions<');
     expect(html).not.toContain('>Your services<');
   });
@@ -481,14 +484,14 @@ describe('AlbumVersionsMenu', () => {
     expect(loading).not.toContain('Some services');
   });
 
-  test('a failed MusicBrainz browse leaves the retry hint, not "No other versions found"', () => {
+  test('a failed MusicBrainz browse leaves the retry hint, not "No other editions"', () => {
     const html = render({
       release,
       versions: { key: albumVersionsKey(release), loading: false, mb: { releaseGroupId: RG, releases: [], failed: true }, catalogs: [], failures: [] },
       resolvers: []
     });
     expect(html).toContain('Some services didn&#x27;t answer — reopen to retry');
-    expect(html).not.toContain('No other versions found');
+    expect(html).not.toContain('No other editions');
   });
 
   test('a panel whose only answers are failures shows the hint alone', () => {
@@ -498,7 +501,7 @@ describe('AlbumVersionsMenu', () => {
       resolvers: []
     });
     expect(html).toContain('Some services didn&#x27;t answer — reopen to retry');
-    expect(html).not.toContain('No other versions found');
+    expect(html).not.toContain('No other editions');
   });
 
   test('a long MusicBrainz list folds behind a "N more editions" row', () => {

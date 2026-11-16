@@ -20,7 +20,7 @@
 // Props:
 //   label         names the menu for screen readers ("Share", "Tickets for X")
 //   items         [{ key, label, icon?, dot?, trailing?, href?, onSelect?, disabled?,
-//                    checked?, onContextMenu? }]
+//                    checked?, onContextMenu?, toggle? }]
 //                 An item with `href` is a link that opens in the browser
 //                 (target _blank) and shows the external-link mark; `dot` is
 //                 a colour for a small swatch (a ticket seller's brand);
@@ -29,7 +29,12 @@
 //                 with `checked` (true or false) is a menuitemradio: a choice
 //                 among the others (the playbar's "Play from"), with a check
 //                 on the current one. `onContextMenu` is passed through (a
-//                 right-click menu for that item).
+//                 right-click menu for that item). `toggle: { checked,
+//                 onChange(next), label }` adds an on/off switch at the row's
+//                 end: a menuitemcheckbox of its own beside the item (never a
+//                 control inside it), so a click on the row still runs
+//                 onSelect and the switch flips without closing the menu.
+//                 Arrow keys reach both; Space or Enter flips the switch.
 //   heading       a small label over the items ("Play from")
 //   renderTrigger (props) => element. Spread `props` onto the trigger
 //                 button; `props.open` says whether the menu is showing (for
@@ -48,7 +53,7 @@ const MENU_STYLE = {
   position: 'fixed', zIndex: 'var(--z-popover)', maxHeight: '60vh', overflowY: 'auto',
   minWidth: '160px', margin: 0, padding: '4px', listStyle: 'none', borderRadius: '8px',
   border: '1px solid var(--tooltip-border)', backgroundColor: 'var(--tooltip-bg)', color: 'var(--tooltip-text)',
-  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+  boxShadow: 'var(--shadow-popover)',
 };
 const ITEM_CLASS = 'menu-item no-drag w-full flex items-center gap-2 px-3 py-2 text-left rounded-md';
 const ITEM_STYLE = { border: 'none', cursor: 'pointer', textDecoration: 'none', font: 'inherit', fontSize: '12px', fontWeight: 500 };
@@ -173,7 +178,7 @@ function Menu({ label, items, renderTrigger, align = 'left', minWidth = 160, hea
     }, heading),
     list.map((item, i) => {
       if (item.separator) {
-        return e('div', { key: item.key || `sep-${i}`, role: 'separator', style: { height: '1px', margin: '4px 0', backgroundColor: 'rgba(255, 255, 255, 0.12)' } });
+        return e('div', { key: item.key || `sep-${i}`, role: 'separator', style: { height: '1px', margin: '4px 0', backgroundColor: 'var(--on-dark-hover)' } });
       }
       const body = [
         item.dot && e('span', { key: 'dot', 'aria-hidden': 'true', style: { width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0, backgroundColor: item.dot } }),
@@ -193,6 +198,26 @@ function Menu({ label, items, renderTrigger, align = 'left', minWidth = 160, hea
         onClick: (ev) => run(item, ev),
         onContextMenu: item.onContextMenu,
       };
+      if (item.toggle) {
+        const on = !!item.toggle.checked;
+        return e('div', { key: item.key || i, role: 'none', className: 'flex items-center' },
+          e('button', Object.assign(common, { key: 'item', type: 'button', className: `${ITEM_CLASS} flex-1 min-w-0` }), body),
+          e('button', {
+            key: 'switch', type: 'button', role: 'menuitemcheckbox', 'aria-checked': on ? 'true' : 'false',
+            'aria-label': item.toggle.label || item.label, tabIndex: -1,
+            className: 'menu-item no-drag flex-shrink-0 flex items-center rounded-md px-2 py-2',
+            style: { border: 'none', cursor: 'pointer', background: 'transparent' },
+            // Flips in place: the menu stays open on the switch.
+            onClick: (ev) => { ev.stopPropagation(); item.toggle.onChange(!on); },
+          }, e('span', {
+            'aria-hidden': 'true', 'data-menu-switch': on ? 'on' : 'off',
+            style: { position: 'relative', width: '28px', height: '16px', borderRadius: '9999px', transition: 'background-color 150ms ease',
+              backgroundColor: on ? 'var(--accent-fill)' : 'var(--on-dark-track)' },
+          }, e('span', {
+            style: { position: 'absolute', top: '2px', left: on ? '14px' : '2px', width: '12px', height: '12px', borderRadius: '9999px',
+              backgroundColor: 'var(--on-dark-primary)', transition: 'left 150ms ease' },
+          }))));
+      }
       return item.href
         ? e('a', Object.assign(common, { href: item.href, target: '_blank', rel: 'noopener noreferrer' }), body)
         : e('button', Object.assign(common, { type: 'button' }), body);

@@ -1,4 +1,6 @@
 /** @type {import('tailwindcss').Config} */
+// The pages' colours, from their one source (src/renderer/lib/page-colors.js).
+const { PAGE_COLORS } = require('./src/renderer/lib/page-colors');
 module.exports = {
   darkMode: 'class',
   // Scan the renderer SOURCES, never the generated root app.js: that bundle
@@ -54,14 +56,32 @@ module.exports = {
           'tint-hover': 'var(--accent-primary-alpha-15)',
         },
         control: { off: 'var(--control-off)', knob: 'var(--control-knob)' },
+        // Text and fills on the always-dark surfaces (the playbar, the queue
+        // drawer, the AI panels): the same in both themes.
+        'on-dark': {
+          primary: 'var(--on-dark-primary)',
+          secondary: 'var(--on-dark-secondary)',
+          tertiary: 'var(--on-dark-tertiary)',
+          disabled: 'var(--on-dark-disabled)',
+          love: 'var(--on-dark-love)',
+          'love-hover': 'var(--on-dark-love-hover)',
+          success: 'var(--on-dark-success)',
+          info: 'var(--on-dark-info)',
+          star: 'var(--on-dark-star)',
+          'star-hover': 'var(--on-dark-star-hover)',
+        },
+        'surface-dark': { placeholder: 'var(--surface-dark-placeholder)' },
+        // A page's colour as a class (text-page-concerts): the hex lives
+        // only in lib/page-colors.js.
+        page: { concerts: PAGE_COLORS.concerts.color },
         // Faint status backgrounds behind status text (bg-tint-danger with
         // text-ink-danger): the status colour at 12%, or 20% for hover.
         tint: {
-          danger: 'color-mix(in srgb, var(--text-danger) 12%, transparent)',
-          'danger-hover': 'color-mix(in srgb, var(--text-danger) 20%, transparent)',
-          success: 'color-mix(in srgb, var(--text-success) 12%, transparent)',
-          warning: 'color-mix(in srgb, var(--text-warning) 12%, transparent)',
-          info: 'color-mix(in srgb, var(--text-info) 12%, transparent)',
+          danger: 'var(--tint-danger)',
+          'danger-hover': 'var(--tint-danger-hover)',
+          success: 'var(--tint-success)',
+          warning: 'var(--tint-warning)',
+          info: 'var(--tint-info)',
         },
         status: {
           error: 'var(--fill-error)',

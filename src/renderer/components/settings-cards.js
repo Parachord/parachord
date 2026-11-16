@@ -6,6 +6,7 @@
 // ScrobblerSettingsCard the MCP + scrobbler settings surfaces; FriendMiniPlaybar
 // the friends' now-playing mini bar. All props-driven (config, callbacks and
 // the app's config-mutation functions arrive via props); no app state.
+const { FriendMiniPlaybar } = require('./friend-mini-playbar');
 const Icons = require('./icons');
 const { Button } = require('./button');
 const { TextField, SecretField, Switch } = require('./fields');
@@ -15,7 +16,7 @@ const { menuKeyHandler } = require('./card-button');
 // ResolverCard component - Tomahawk-style colored card with centered logo
 // Four user-facing states:
 //   1. Enabled (full color, checkmark, priority number)
-//   2. Enabled + needs setup (full color, checkmark, orange "!", "Setup required")
+//   2. Enabled + needs setup (checkmark, "Setup required" under the name)
 //   3. Not enabled (grayed, "Available")
 //   4. Installing (spinner overlay)
 // statusLabel (with statusTitle as its tooltip) replaces "Setup required" for
@@ -23,6 +24,9 @@ const { menuKeyHandler } = require('./card-button');
 // unplayable: enabled but left out of playback (a playback limit: Amazon
 // without Music Unlimited, Apple Music not signed in). Grayed like an
 // available card, keeping its checkmark and label.
+// An enabled card's problem shows one way, as the warning line under its
+// name ("Setup required" or the statusLabel); there was also an orange "!" on
+// the tile for setup alone, so Apple Music and Amazon read differently.
 const ResolverCard = React.memo(({
   resolver,
   isActive,
@@ -66,7 +70,7 @@ const ResolverCard = React.memo(({
       className: 'absolute -left-3 top-0 bottom-6 w-1 rounded-full',
       style: {
         backgroundColor: 'var(--accent-primary)',
-        boxShadow: '0 0 8px rgba(124, 58, 237, 0.6)',
+        boxShadow: '0 0 8px var(--accent-primary-alpha-60)',
         zIndex: 10
       }
     }),
@@ -77,11 +81,11 @@ const ResolverCard = React.memo(({
         width: '120px',
         height: '120px',
         borderRadius: '16px',
-        backgroundColor: resolver.color || '#6B7280',
+        backgroundColor: resolver.color || 'var(--fill-neutral)',
         opacity: isGrayed ? 0.5 : 1,
         boxShadow: isDragOver
-          ? '0 0 0 3px var(--accent-primary), 0 4px 12px rgba(0, 0, 0, 0.15)'
-          : '0 2px 8px rgba(0, 0, 0, 0.1), 0 4px 16px rgba(0, 0, 0, 0.05)'
+          ? '0 0 0 3px var(--accent-primary), var(--shadow-popover)'
+          : 'var(--shadow-tile)'
       },
       onClick: onClick,
       // Shift+F10 / the Menu key: the tile's menu (Raise / Lower Priority,
@@ -96,12 +100,12 @@ const ResolverCard = React.memo(({
           left: '8px',
           width: '22px',
           height: '22px',
-          backgroundColor: 'rgba(255, 255, 255, 0.95)',
+          backgroundColor: 'var(--on-color-chip)',
           borderRadius: '6px',
           fontSize: '11px',
           fontWeight: '600',
-          color: '#111827',
-          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)'
+          color: 'var(--on-art-ink)',
+          boxShadow: 'var(--shadow-sm)'
         }
       }, priorityNumber),
       // Centered logo or emoji fallback
@@ -116,41 +120,24 @@ const ResolverCard = React.memo(({
           right: '8px',
           width: '22px',
           height: '22px',
-          backgroundColor: hasUpdate ? '#f97316' : 'rgba(255, 255, 255, 0.95)',
+          backgroundColor: hasUpdate ? 'var(--fill-warning)' : 'var(--on-color-chip)',
           borderRadius: '6px',
           fontSize: '11px',
           fontWeight: '600',
-          color: hasUpdate ? '#ffffff' : 'var(--text-success)'
+          color: hasUpdate ? 'var(--on-accent)' : 'var(--text-success)'
         },
-        title: hasUpdate ? 'Update available' : 'Enabled'
+        'data-tooltip': hasUpdate ? 'Update available' : 'Enabled'
       }, hasUpdate ? '↑' : React.createElement(Icons.Check, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } })),
       // Installing spinner
       isInstalling && React.createElement('div', {
         className: 'absolute inset-0 flex items-center justify-center',
         style: {
-          backgroundColor: 'rgba(0, 0, 0, 0.4)',
+          backgroundColor: 'var(--scrim-soft)',
           borderRadius: '16px'
         }
       },
         React.createElement(Icons.Spinner, { className: 'text-white w-6 h-6' })
-      ),
-      // Needs configuration warning badge (bottom-right) - only for enabled resolvers
-      needsConfiguration && isEnabled && !isInstalling && React.createElement('div', {
-        className: 'absolute flex items-center justify-center',
-        style: {
-          bottom: '8px',
-          right: '8px',
-          width: '22px',
-          height: '22px',
-          backgroundColor: 'var(--warning)',
-          borderRadius: '6px',
-          fontSize: '12px',
-          fontWeight: '600',
-          color: '#78350f',
-          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.2)'
-        },
-        title: 'Needs configuration'
-      }, '!')
+      )
     ),
     // Name below card
     React.createElement('span', {
@@ -168,16 +155,16 @@ const ResolverCard = React.memo(({
     }, resolver.name),
     // "Setup required" label - enabled but needs configuration
     needsConfiguration && isEnabled && React.createElement('span', {
-      style: { fontSize: '10px', fontWeight: '500', color: 'var(--text-warning)', marginTop: '2px' }
+      style: { fontSize: '11px', fontWeight: '500', color: 'var(--text-warning)', marginTop: '2px' }
     }, 'Setup required'),
     // A limit the resolver is set up under (statusTitle explains it)
     !needsConfiguration && isEnabled && statusLabel && React.createElement('span', {
-      style: { fontSize: '10px', fontWeight: '500', color: 'var(--text-warning)', marginTop: '2px' },
-      title: statusTitle || undefined
+      style: { fontSize: '11px', fontWeight: '500', color: 'var(--text-warning)', marginTop: '2px' },
+      'data-tooltip': statusTitle || undefined
     }, statusLabel),
     // "Available" label - not enabled
     isAvailable && React.createElement('span', {
-      style: { fontSize: '10px', fontWeight: '500', color: 'var(--text-tertiary)', marginTop: '2px' }
+      style: { fontSize: '11px', fontWeight: '500', color: 'var(--text-tertiary)', marginTop: '2px' }
     }, 'Available')
   );
 });
@@ -239,23 +226,7 @@ const McpSettingsSection = () => {
           wordBreak: 'break-all'
         }
       }, configSnippet),
-      React.createElement('button', {
-        onClick: handleCopy,
-        style: {
-          position: 'absolute',
-          top: '8px',
-          right: '8px',
-          padding: '4px 10px',
-          fontSize: '11px',
-          fontWeight: '500',
-          color: copied ? 'var(--text-success)' : 'var(--text-secondary)',
-          backgroundColor: copied ? '#ecfdf5' : 'var(--placeholder-bg-light)',
-          border: '1px solid ' + (copied ? '#a7f3d0' : 'var(--border-default)'),
-          borderRadius: '6px',
-          cursor: 'pointer',
-          transition: 'background-color 0.15s, color 0.15s, border-color 0.15s'
-        }
-      }, copied ? 'Copied!' : 'Copy')
+      React.createElement(Button, { variant: 'secondary', size: 'sm', className: 'absolute top-2 right-2', onClick: handleCopy }, copied ? 'Copied!' : 'Copy')
     ),
     React.createElement('p', {
       className: 'text-xs text-ink-tertiary mt-3',
@@ -266,7 +237,7 @@ const McpSettingsSection = () => {
 
 // ScrobblerSettingsCard component - Settings card for individual scrobbler services
 const ScrobblerSettingsCard = React.memo(({
-  scrobbler, config, onConfigChange,
+  scrobbler, config, onConfigChange, color,
   lovePushEnabled = false,
   onSetLovePushEnabled = null,
   onRunBackfill = null,
@@ -379,14 +350,6 @@ const ScrobblerSettingsCard = React.memo(({
   };
 
   // Get scrobbler-specific styling
-  const getScrobblerColor = () => {
-    switch (scrobbler.id) {
-      case 'lastfm': return 'bg-red-500';
-      case 'listenbrainz': return 'bg-orange-500';
-      case 'librefm': return 'bg-green-500';
-      default: return 'bg-gray-500';
-    }
-  };
 
   return React.createElement('div', {
     className: 'bg-surface-card rounded-xl p-4 shadow-sm border border-line hover:shadow-md hover:border-line-strong transition-all'
@@ -396,7 +359,9 @@ const ScrobblerSettingsCard = React.memo(({
       React.createElement('div', { className: 'flex items-center gap-3' },
         // Service icon
         React.createElement('div', {
-          className: `w-10 h-10 rounded-lg flex items-center justify-center ${getScrobblerColor()}`
+          // The plugin's own colour (its manifest's color), never a per-id copy.
+          className: 'w-10 h-10 rounded-lg flex items-center justify-center',
+          style: { backgroundColor: color || 'var(--fill-neutral)' }
         },
           React.createElement('span', { className: 'text-white text-lg font-bold' },
             scrobbler.name[0]
@@ -478,11 +443,7 @@ const ScrobblerSettingsCard = React.memo(({
       ),
 
       // Complete Authorization button (fallback for pending token without polling)
-      config?.pendingToken && !isPolling && React.createElement('button', {
-        onClick: handleCompleteAuth,
-        disabled: connecting,
-        className: 'w-full py-2 px-4 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 transition-colors'
-      }, connecting ? 'Completing…' : 'Complete Authorization')
+      config?.pendingToken && !isPolling && React.createElement(Button, { variant: 'primary', pageColor: 'var(--fill-success)', className: 'w-full', onClick: handleCompleteAuth, disabled: connecting }, connecting ? 'Completing…' : 'Complete authorization')
     ) : (
       // Connected state: the import action, love-push controls + Disconnect
       React.createElement('div', { className: 'space-y-3' },
@@ -492,26 +453,12 @@ const ScrobblerSettingsCard = React.memo(({
         // onRunLoveImport).
         onRunLoveImport && (scrobbler.id === 'lastfm' || scrobbler.id === 'listenbrainz') &&
           React.createElement('div', { className: 'space-y-2' },
-            React.createElement('button', {
-              onClick: onRunLoveImport,
-              disabled: loveImportRunning,
-              className: 'w-full py-1.5 px-3 text-sm rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors',
-              style: {
-                // The tint token, not a palette class (design-drift ratchet
-                // #1380) and not --accent-soft (a text colour — it left the
-                // label at ~2:1 contrast; --accent-surface is the tint).
-                color: 'var(--accent-primary)',
-                backgroundColor: 'var(--accent-surface)',
-                border: '1px solid var(--border-default)'
-              }
-            },
-              loveImportRunning && loveImportProgress
+            React.createElement(Button, { variant: 'secondary', size: 'sm', className: 'w-full', onClick: onRunLoveImport, disabled: loveImportRunning }, loveImportRunning && loveImportProgress
                 ? (loveImportProgress.phase === 'confirm' ? 'Waiting for confirmation…'
                   : loveImportProgress.phase === 'lookup'
                     ? `Looking up names… ${loveImportProgress.done}/${loveImportProgress.total}`
                     : `Importing… ${loveImportProgress.done}/${loveImportProgress.total}`)
-                : hasImportedLoves ? 'Import new loves' : 'Import loved tracks'
-            )
+                : hasImportedLoves ? 'Import new loves' : 'Import loved tracks')
           ),
         // Love-push toggle + backfill button (only for services that support it)
         (scrobbler.id === 'lastfm' || scrobbler.id === 'listenbrainz') && onSetLovePushEnabled &&
@@ -537,108 +484,32 @@ const ScrobblerSettingsCard = React.memo(({
             )
           ),
         // Disconnect
-        React.createElement('button', {
-          onClick: handleDisconnect,
-          className: 'w-full py-2 px-4 bg-surface-inset text-ink-secondary rounded-lg font-medium hover:bg-surface-hover transition-colors'
-        }, 'Disconnect')
+        React.createElement(Button, { variant: 'secondary', className: 'w-full', onClick: handleDisconnect }, 'Disconnect')
       )
     )
   );
 });
 
-// FriendMiniPlaybar component - shows friend's current track with album art lookup
-const FriendMiniPlaybar = ({ track, getAlbumArt, onPlay, onContextMenu }) => {
-  // States: undefined (fetching), null (no art found), string (URL)
-  // Don't use Last.fm placeholder art as initial state - only use our cache
-  const [artUrl, setArtUrl] = React.useState(undefined);
-  const [isOverflowing, setIsOverflowing] = React.useState(false);
-  const textRef = React.useRef(null);
-  const containerRef = React.useRef(null);
+// FriendMiniPlaybar lives in components/friend-mini-playbar.js (re-exported).
 
-  React.useEffect(() => {
-    // Always try our cache system - never use Last.fm placeholder art
-    if (!track.album || !track.artist) {
-      // No album/artist info - show generic placeholder
-      setArtUrl(null);
-      return;
-    }
-
-    let cancelled = false;
-    const loadArt = async () => {
-      const fetchedArt = await getAlbumArt(track.artist, track.album);
-      if (!cancelled) {
-        // Only use our cached art, show generic placeholder if not found
-        setArtUrl(fetchedArt || null);
-      }
-    };
-    loadArt();
-    return () => { cancelled = true; };
-  }, [track.name, track.artist, track.album]);
-
-  // Check if text overflows container (after render completes)
-  React.useEffect(() => {
-    // Use requestAnimationFrame to ensure DOM is fully rendered and measured
-    const checkOverflow = () => {
-      if (textRef.current && containerRef.current) {
-        const textWidth = textRef.current.scrollWidth;
-        const containerWidth = containerRef.current.clientWidth;
-        setIsOverflowing(textWidth > containerWidth);
-      }
-    };
-
-    // Run after paint to get accurate measurements
-    const rafId = requestAnimationFrame(() => {
-      requestAnimationFrame(checkOverflow);
-    });
-
-    return () => cancelAnimationFrame(rafId);
-  }, [track.name, track.artist]);
-
-  return React.createElement('button', { type: 'button',
-    className: 'text-left mt-1 flex items-center rounded cursor-pointer transition-colors pr-2',
-    style: { maxWidth: '180px', height: '20px', backgroundColor: 'var(--surface-dark)', color: '#d1d5db' },
-    onClick: onPlay,
-    onContextMenu: onContextMenu
-  },
-    // Mini album art
-    React.createElement('div', {
-      className: 'flex-shrink-0',
-      style: { width: '20px', height: '20px' }
-    },
-      artUrl
-        ? React.createElement('img', {
-            src: artUrl,
-            alt: '',
-            className: 'w-full h-full object-cover rounded-l'
-          })
-        : React.createElement('div', {
-            className: 'w-full h-full rounded-l flex items-center justify-center',
-            style: { backgroundColor: 'rgba(255, 255, 255, 0.1)' } // on-dark
-          },
-            React.createElement('span', { 'aria-hidden': 'true', style: { fontSize: '11px', color: 'var(--on-dark-tertiary)' } }, '\u266A')
-          )
-    ),
-    // Track info - only scrolls if overflowing
-    React.createElement('div', {
-      ref: containerRef,
-      className: `flex-1 min-w-0 pl-2 flex items-center ${isOverflowing ? 'marquee-container' : ''}`,
-      style: { overflow: 'hidden', height: '100%' }
-    },
-      React.createElement('span', {
-        ref: textRef,
-        className: `whitespace-nowrap inline-block ${isOverflowing ? 'animate-marquee' : ''}`,
-        style: { fontSize: '11px', lineHeight: '20px' }
-      },
-        React.createElement('span', { className: 'text-white font-medium' }, track.name),
-        // The pill is always dark (--surface-dark): a fixed on-dark colour,
-        // never the theme's ink (text-ink-tertiary was 2.6:1 in light mode).
-        React.createElement('span', { style: { color: 'var(--on-dark-secondary)' } }, ` - ${track.artist}`)
-      )
-    )
-  );
-};
+// A Settings section: the card (the card colour, a subtle border, the card
+// shadow) with its heading (small capitals; the words are written in Title
+// Case, as Settings headings are) and an optional line under it. Every
+// section of Settings › General is one (there was a copy per section, and
+// Playback Quality had drifted to a grey card with a large heading).
+function SettingsSection({ title, description, children, ...rest }) {
+  const e = React.createElement;
+  return e('div', Object.assign({
+    style: { backgroundColor: 'var(--card-bg)', border: '1px solid var(--border-subtle)', borderRadius: '12px', padding: '24px', boxShadow: 'var(--card-shadow)' },
+  }, rest),
+    e('div', { style: { marginBottom: '16px' } },
+      e('h3', { style: { fontSize: '11px', fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: 0 } }, title),
+      description && e('p', { style: { fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '4px', marginBottom: 0 } }, description)),
+    children);
+}
 
 module.exports = {
+  SettingsSection,
   ResolverCard,
   McpSettingsSection,
   ScrobblerSettingsCard,

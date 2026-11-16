@@ -35,8 +35,10 @@ test('the playing row is aria-current', () => {
   const { CardButton } = require('../../src/renderer/components/card-button');
   expect(renderToStaticMarkup(React.createElement(CardButton, { label: 'x', current: true }))).toContain('aria-current="true"');
   expect(renderToStaticMarkup(React.createElement(CardButton, { label: 'x' }))).not.toContain('aria-current');
+  // The page lists are the shared TrackRow, which marks the playing row.
+  expect(read('src/renderer/components/track-lists.js')).toContain('current: isNowPlaying,');
   for (const f of ['src/renderer/components/collection-page.js', 'src/renderer/components/playlist-view-page.js', 'src/renderer/components/search-page.js', 'src/renderer/components/cards.js']) {
-    expect([f, read(f).includes('current: isNowPlaying,')]).toEqual([f, true]);
+    expect([f, /React\.createElement\(TrackRow, \{[\s\S]{0,400}isNowPlaying/.test(read(f))]).toEqual([f, true]);
   }
   expect(read('src/renderer/components/track-lists.js')).toContain('current: isCurrentTrack,');
 });
@@ -61,4 +63,11 @@ test('landmarks and headings', () => {
   expect(app).toMatch(/React\.createElement\('h1', \{\n\s*\/\/ The page's heading \(#1386\)[\s\S]{0,400}\}, 'Settings'\)/);
   expect(read('src/renderer/components/search-page.js')).toMatch(/React\.createElement\('h1', \{\n\s*\/\/ The page's heading \(#1386\)[\s\S]{0,400}\}, 'Search'\)/);
   expect(read('src/renderer/components/artist-page.js')).toMatch(/React\.createElement\('h2', \{[^}]*\}, className: 'uppercase' \},\n\s*currentRelease\?\.title/);
+});
+
+test('the playbar source line is a fixed 20px, so the picker turning into a menu never grows the bar', () => {
+  const i = app.indexOf('// A fixed 20px line: the picker turning from a label into a');
+  expect(i).toBeGreaterThan(-1);
+  expect(app.slice(i, i + 400)).toContain("React.createElement('div', { className: 'flex items-center gap-1.5', style: { height: '20px' } },");
+  expect(app).toContain("return React.createElement('div', { className: 'no-drag flex items-center' },\n                        React.createElement(Menu, {\n                          label: 'Play from',");
 });

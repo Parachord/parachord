@@ -65,7 +65,7 @@ describe('source', () => {
     expect(page).not.toContain("navigateTo('search')");
     // With nothing synced, the card is a way forward, not a dead-end sentence.
     const card = app.slice(app.indexOf('// Nothing synced yet: offer each service'), app.indexOf('// Nothing synced yet: offer each service') + 1800);
-    expect(card).toContain('onClick: () => openSyncSetupModal(pid),');
+    expect(card).toContain('onClick: () => openSyncSetupModal(pid) }');
     expect(card).toContain('`Set up ${config.name} sync`');
     expect(app).not.toContain('No sync providers connected.');
   });
@@ -161,16 +161,19 @@ describe('render', () => {
   test('Home opens with the collapsed page hero, in its sidebar colour, above the scroller', () => {
     // Other pages' collapsed heroes (80px, the uppercase light title and shadow)
     // and Home's sidebar colour (the accent, #7c3aed: Tailwind violet-600).
-    expect(app).toMatch(/className: 'text-2xl font-light text-white',\s*style: \{\s*textShadow: '0 2px 10px rgba\(0,0,0,0\.5\)',\s*letterSpacing: '0\.2em',/);
-    expect(app).toContain("color: activeView === 'home' ? 'var(--accent-primary)' : 'var(--nav-inactive)',");
-    expect(fs.readFileSync(path.join(__dirname, '../../index.html'), 'utf8')).toMatch(/--accent-primary: #7c3aed;/);
+    // The pages' heroes are the shared PageHero (components/page-hero.js).
+    expect(require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/components/page-hero.js'), 'utf8')).toContain("const COLLAPSED_TITLE_STYLE = { textShadow: 'var(--hero-text-shadow-bar)', letterSpacing: '0.2em', textTransform: 'uppercase' };");
+    expect(app).toContain("React.createElement(NavItem, { page: 'home', label: 'Home', icon: Icons.Home, prominent: true, active: activeView === 'home'");
+    expect(require('../../src/renderer/lib/page-colors').PAGE_COLORS.home.color).toBe('var(--page-home)');
+    expect(fs.readFileSync(path.join(__dirname, '../../index.html'), 'utf8')).toContain('--page-home: var(--accent-primary);');
+    expect(fs.readFileSync(path.join(__dirname, '../../index.html'), 'utf8')).toMatch(/--accent-base: #7c3aed;[\s\S]*--accent-primary: var\(--accent-base\);/);
     const html = render({});
     const hero = html.slice(html.indexOf('data-home-hero-banner'), html.indexOf('scrollable-content'));
     expect(html.indexOf('data-home-hero-banner')).toBeGreaterThan(-1);
     expect(html.indexOf('data-home-hero-banner')).toBeLessThan(html.indexOf('scrollable-content'));
     expect(hero).toMatch(/^data-home-hero-banner=""[^>]*style="height:80px;flex-shrink:0;overflow:hidden"/);
-    expect(hero).toContain('class="absolute inset-0 bg-gradient-to-br from-purple-500 via-violet-600 to-indigo-600"');
-    expect(hero).toMatch(/<h1 class="text-2xl font-light text-white" style="text-shadow:0 2px 10px rgba\(0,0,0,0\.5\);letter-spacing:0\.2em;text-transform:uppercase">Home<\/h1>/);
+    expect(hero).toContain('class="absolute inset-0 page-hero-bg-home"');
+    expect(hero).toMatch(/<h1 class="text-2xl font-light text-white" style="text-shadow:var\(--hero-text-shadow-bar\);letter-spacing:0\.2em;text-transform:uppercase">Home<\/h1>/);
     // The hero replaces the macOS title-bar band, and the greeting is no longer a second h1.
     expect(html).not.toContain('data-home-titlebar');
     expect(html.match(/<h1/g)).toHaveLength(1);
@@ -266,7 +269,10 @@ describe("Home's recommended albums (app.js recommendationAlbums)", () => {
   });
 
   test('app.js builds the row with homeRecommendationAlbums', () => {
-    expect(app).toMatch(/const recommendationAlbums = useMemo\(\(\) => homeRecommendationAlbums\(\{\s*sections: recommendations\.sections,\s*aiAlbums: homeData\.aiRecommendations\?\.albums,\s*imageFor: recommendationImageFor\s*\}\), \[recommendations\.sections, homeData\.aiRecommendations, recommendationImages\]\);/);
+    expect(app).toMatch(/const recommendationAlbums = useMemo\(\(\) => homeRecommendationAlbums\(\{\s*sections: recommendations\.sections,\s*aiAlbums: homeData\.aiRecommendations\?\.albums,\s*imageFor: recommendationImageFor\s*\}\)\.map\(a => \{/);
+    // Each carries its release year (the release-date store), as on Recommendations.
+    expect(app).toContain("}), [recommendations.sections, homeData.aiRecommendations, recommendationImages, recommendationReleaseDates]);");
+    expect(app).toMatch(/if \(activeView !== 'home'\) return;\s*queueReleaseDateLookups\(recommendationAlbums/);
   });
 
   test('takes albums from every category row of the Albums section', () => {
@@ -377,8 +383,9 @@ describe('design-audit bug fixes (#1382)', () => {
   test('Add-to-Playlist "Done" is readable, and the stop-sync option keeps its box after a hover', () => {
     // Button (components/button.js): secondary until something is picked.
     expect(app).toContain("React.createElement(Button, { variant: selectedPlaylistsForAdd.length > 0 ? 'primary' : 'secondary',");
-    // The stop-sync options are tiles with CSS hover, no JS that clears them.
-    expect(app).toContain("'bg-surface-inset border-line hover:bg-surface-hover'");
+    // The stop-sync options are OptionTiles (CSS hover, no JS that clears them).
+    expect(app).toContain("React.createElement(OptionTile, {");
+    expect(read('src/renderer/components/option-tile.js')).toContain("'bg-surface-inset border-line hover:bg-surface-hover'");
   });
 });
 

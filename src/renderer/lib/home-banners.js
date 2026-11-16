@@ -3,15 +3,9 @@
 // normalises, keeping their given order. The slot is only for announcements
 // created on the backend; release notes live in the setup element.
 
-// Same in both themes; each has at least 4.5:1 contrast with white text.
-// The fills, as index.html's --fill-* tokens. The hex values are kept here
-// for the contrast test, which checks index.html defines the same ones.
-const BANNER_SEVERITY_HEX = {
-  info: '#2563eb',
-  success: '#15803d',
-  warn: '#b45309',
-  error: '#b91c1c',
-};
+// The fills, index.html's --fill-* tokens: the same in both themes, each at
+// least 4.5:1 with white text (tests/renderer/home-banners.test.js reads the
+// values there).
 const BANNER_SEVERITY_COLORS = {
   info: 'var(--fill-info)',
   success: 'var(--fill-success)',
@@ -43,4 +37,4 @@ function bannerViewId(items) {
   return top && top.kind === 'announcement' && top.id ? top.id : null;
 }
 
-module.exports = { homeBannerItems, bannerViewId, BANNER_SEVERITY_COLORS, BANNER_SEVERITY_HEX };
+module.exports = { homeBannerItems, bannerViewId, BANNER_SEVERITY_COLORS };

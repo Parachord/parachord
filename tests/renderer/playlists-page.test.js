@@ -54,7 +54,8 @@ test('chat cards say what they are in their second line; the chat panel uses on-
   expect(app).not.toMatch(/textTransform: 'uppercase' \}\s*\}, (type|'playlist')\)/);
   expect(app).toContain("'Powered by')");
   expect(app).not.toContain("'powered by:'");
-  expect(app).toContain("backgroundColor: aiChatLoading || aiChatInput.trim() ? 'var(--accent-fill)'");
+  // Send is the shared primary button (the fill accent, never --accent-primary).
+  expect(app).toMatch(/React\.createElement\(Button, \{ variant: 'primary', size: 'sm', className: 'w-10 h-10 !p-0 !rounded-full[^}]*disabled: !aiChatInput\.trim\(\) \|\| aiChatLoading, 'aria-label': 'Send'/);
 });
 
 test('a failed chat save is a failure, never a playlist id nothing can open', () => {
@@ -83,7 +84,7 @@ test('the artist page: shared Play and Tickets buttons, plugin colours, no click
   const artist = read('src/renderer/components/artist-page.js');
   expect(artist).not.toMatch(/#E91E63|#10c9b4|#9333ea/);
   expect(artist).toMatch(/isCompactHeader \? 'Play' : 'Play top tracks'/);
-  expect(artist).toContain("style: { backgroundColor: PAGE_COLORS.concerts.fill }");
+  expect(artist).toContain("React.createElement(TicketsButton, { sources: event.ticketSources");
   expect(artist).toContain("const serviceColor = (id) => getServiceColor(id) || 'var(--accent-primary)';");
   expect(artist).not.toMatch(/value: 'both', label: 'Both'/);
   expect(artist).not.toMatch(/React\.createElement\('h1', \{\s*className: '[^']*cursor-pointer/);
@@ -92,7 +93,8 @@ test('the artist page: shared Play and Tickets buttons, plugin colours, no click
 
 test("the artist page's On Tour header is a sticky bar, in sentence case", () => {
   const artist = read('src/renderer/components/artist-page.js');
-  expect(artist).toMatch(/className: 'sticky top-0 z-10 flex items-center px-6 py-3'[\s\S]{0,400}countOf\(events\.length, 'upcoming concert'\)/);
+  // The shared StickyBar (components/filter-box.js).
+  expect(artist).toMatch(/React\.createElement\(StickyBar, null,[\s\S]{0,400}countOf\(events\.length, 'upcoming concert'\)/);
   expect(artist).not.toMatch(/Upcoming Concert\$\{/);
   expect(artist).not.toContain('text-teal-500');
 });
@@ -108,7 +110,8 @@ test('sort and period menus are sentence case, with en dashes in A–Z', () => {
 test('the artist page shares its Achordion link: a Share menu, and right-click anywhere on the hero', () => {
   const artist = read('src/renderer/components/artist-page.js');
   expect(artist).toMatch(/React\.createElement\(Menu, \{\s*label: 'Share',\s*renderTrigger: \(t\) => React\.createElement\(ShareButton, t\),[\s\S]{0,700}publishArtistSmartLink\([\s\S]{0,300}\{ openInBrowser: true \}\)/);
-  expect(artist).toMatch(/cursor: isHeaderCollapsed \? 'pointer' : 'default',[\s\S]{0,500}onContextMenu: copyParachordLink/);
+  // The shared PageHero, its photo option, the menu on the whole hero.
+  expect(artist).toMatch(/React\.createElement\(PageHero, \{[\s\S]{0,400}photo: \{ url: artistImage \|\| null, position: artistImagePosition \},[\s\S]{0,200}onContextMenu: copyParachordLink/);
 });
 
 test('page scroll areas share one scroll edge: a shadow once content scrolls under the bar above', () => {

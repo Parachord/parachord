@@ -134,11 +134,11 @@ describe('callers', () => {
   const fs = require('fs');
   const path = require('path');
   const read = (p) => fs.readFileSync(path.join(__dirname, '../..', p), 'utf8');
-  test('Share (album and playlist pages) and the two ticket menus use it', () => {
+  test('Share (album and playlist pages) and the Tickets menu use it', () => {
     expect(read('src/renderer/components/cards.js')).toMatch(/React\.createElement\(Menu, \{\n\s*label: 'Share'/);
     expect(read('src/renderer/components/playlist-view-page.js')).toMatch(/React\.createElement\(Menu, \{\n\s*label: 'Share'/);
-    expect(read('src/renderer/app.js')).toMatch(/return React\.createElement\(Menu, \{\n\s*label: 'Tickets'/);
-    expect(read('src/renderer/components/artist-page.js')).toMatch(/return React\.createElement\(Menu, \{\n\s*label: 'Tickets'/);
+    // Every Tickets button is TicketsButton (tests/renderer/tickets-button.test.js).
+    expect(read('src/renderer/components/tickets-button.js')).toMatch(/return e\(Menu, \{\n\s*label: 'Tickets'/);
   });
   test('Sync (Collection) uses it, with a separator after the status item', () => {
     const page = read('src/renderer/components/collection-page.js');

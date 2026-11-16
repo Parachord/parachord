@@ -35,7 +35,12 @@ test('counts in item menus and the repair toast pluralise (bug 38)', () => {
 
 test('the release page and release cards share one release-type palette (bug 4)', () => {
   const cards = fs.readFileSync(path.join(root, 'src/renderer/components/cards.js'), 'utf8');
-  expect(cards.match(/const badgeStyles = RELEASE_BADGE_STYLES;/g)).toHaveLength(2);
+  // The release page reads RELEASE_BADGE_STYLES; the cards (the shared
+  // AlbumCard's on-art badge) and the filter chips read the same palette,
+  // lib/release-types.js.
+  expect(cards.match(/const badgeStyles = RELEASE_BADGE_STYLES;/g)).toHaveLength(1);
+  expect(cards).toContain("const { RELEASE_TYPE_COLORS } = require('../lib/release-types');");
+  expect(fs.readFileSync(path.join(root, 'src/renderer/components/card-art.js'), 'utf8')).toContain("require('../lib/release-types')");
   global.React = require('react');
   const { RELEASE_BADGE_STYLES: B } = require('../../src/renderer/components/cards');
   expect(B.ep.color).toBe('#a855f7');

@@ -18,19 +18,18 @@
 // from props under their old names.
 
 const Icons = require('./icons');
+const { StickyBar } = require('./filter-box');
+const { useReveal, ArtOverlay } = require('./card-art');
 const { Badge } = require('./badge');
 const { lbMbidOf } = require('../lib/playlist-share');
 const { HeaderControl } = require('./header-control');
 const { Button } = require('./button');
 const { TextField } = require('./fields');
-const { CardButton } = require('./card-button');
-const { ResolverIcon, ShareButton } = require('./ui-atoms');
+const { ShareButton } = require('./ui-atoms');
 const { Menu } = require('./menu');
 const { playlistMenu } = require('../lib/item-menus');
 const { PlaylistCoverImage } = require('./playlist-cover');
-const { VirtualizedTrackList } = require('./track-lists');
-const { sourceRowState } = require('../lib/visible-sources');
-const { trackDurationLabel } = require('../lib/track-duration');
+const { VirtualizedTrackList, TrackRow, TrackRowSkeleton } = require('./track-lists');
 const { playlistPlaybackContext } = require('../lib/playlist-context');
 const { trackSlug } = require('../lib/track-slug');
 const { countOf } = require('../lib/plural');
@@ -41,7 +40,9 @@ const { tracksFingerprint } = require('../../../sync-engine/auto-pull');
 // window the content is 744px: a fixed 240px art column and 140px of source
 // icons left track titles about 190px. The icon column's skeleton uses it too.
 const PLAYLIST_ART_COLUMN = 'clamp(184px, 26%, 240px)';
-const PLAYLIST_ICON_COLUMN = 'clamp(72px, 14%, 140px)';
+// The icon column: the app's --source-col (one icon per playable service),
+// narrowing with the content area like the art column.
+const PLAYLIST_ICON_COLUMN = 'min(var(--source-col, 140px), clamp(72px, 14%, 140px))';
 
 const { Play, Music } = Icons;
 
@@ -132,6 +133,8 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
   // 2x2 mosaic everywhere this view renders a cover: the blurred hero
   // background, the 192px card and the share link.
   const playlistCover = (typeof selectedPlaylist?.coverArt === 'string' && selectedPlaylist.coverArt.trim()) || null;
+  // The cover's actions show on hover or keyboard focus (card-art useReveal).
+  const coverReveal = useReveal();
   return React.createElement('div', {
         className: 'flex-1 flex flex-col',
         style: { overflow: 'hidden' }
@@ -154,7 +157,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
             style: {
               backgroundImage: playlistCoverArt[0]
                 ? `url(${playlistCoverArt[0]})`
-                : 'linear-gradient(to bottom right, #f43f5e, #ec4899, #c026d3)',
+                : 'var(--playlists-gradient)',
               backgroundSize: 'cover',
               backgroundPosition: 'center',
               filter: 'blur(20px) brightness(0.7)',
@@ -167,7 +170,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
           React.createElement('div', {
             className: 'absolute inset-0',
             style: {
-              background: 'linear-gradient(to bottom, rgba(0,0,0,0.3) 0%, rgba(17,17,17,0.95) 100%)'
+              background: 'var(--cover-shade)'
             }
           }),
           // Header content
@@ -186,7 +189,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
             React.createElement('h1', {
               className: 'text-2xl font-bold text-white',
               style: {
-                textShadow: '0 2px 10px rgba(0,0,0,0.5)',
+                textShadow: 'var(--hero-text-shadow-bar)',
                 letterSpacing: '0.08em',
                 textTransform: 'uppercase'
               },
@@ -201,7 +204,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                 fontSize: '11px',
                 padding: '2px 6px',
                 borderRadius: '4px',
-                backgroundColor: 'var(--accent-secondary, #6366f1)',
+                backgroundColor: 'var(--accent-secondary)',
                 color: 'var(--accent-secondary-fg)',
                 fontWeight: 600,
                 marginLeft: '6px',
@@ -232,10 +235,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
           }
         },
           // PLAYLIST DETAILS section header with breadcrumb and Edit buttons (sticky)
-          React.createElement('div', {
-            className: 'sticky top-0 z-10 flex items-center justify-between px-6 py-4',
-            style: { backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
-          },
+          React.createElement(StickyBar, { variant: 'header' },
             // Breadcrumb navigation: Playlists > Playlist Name (or Recommendations for ephemeral)
             React.createElement('div', {
               className: 'flex items-center gap-2 text-xs font-medium tracking-widest uppercase'
@@ -410,24 +410,19 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
               return React.createElement('div', {
                 key: `remote-deleted-${providerId}`,
                 className: `mx-4 mt-3 p-3 rounded-lg border`,
-                style: { background: 'rgba(234, 179, 8, 0.12)', borderColor: 'rgba(234, 179, 8, 0.25)' }
+                style: { background: 'var(--tint-warning)', borderColor: 'var(--border-warning)' }
               },
                 React.createElement('div', { className: 'text-sm font-medium text-ink-warning mb-2' },
                   `"${playlist.title}" was deleted on ${providerName}`
                 ),
                 React.createElement('div', { className: 'flex gap-2' },
-                  React.createElement('button', {
-                    className: 'text-xs px-3 py-1.5 rounded-md bg-tint-danger text-ink-danger hover:bg-tint-danger-hover transition-colors',
-                    onClick: async () => {
+                  React.createElement(Button, { variant: 'destructive', size: 'sm', onClick: async () => {
                       // Delete locally too (remote already gone) — via the helper
                       // so a hosted XSPF is cleared from BOTH stores.
                       await deletePlaylistLocally(playlist);
                       setSelectedPlaylist(null);
-                    }
-                  }, 'Delete locally too'),
-                  React.createElement('button', {
-                    className: 'text-xs px-3 py-1.5 rounded-md bg-surface-inset text-ink-secondary hover:bg-surface-hover transition-colors',
-                    onClick: async () => {
+                    } }, 'Delete locally too'),
+                  React.createElement(Button, { variant: 'secondary', size: 'sm', onClick: async () => {
                       // Keep local, stop syncing to this provider. Through the
                       // Sync menu's path, not by editing syncedTo here: with no
                       // channel override, a playlist with another mirror looks
@@ -441,8 +436,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                       const fresh = await window.electron.playlists.load();
                       setPlaylists(fresh);
                       setSelectedPlaylist(fresh.find(p => p.id === playlist.id) || null);
-                    }
-                  }, 'Stop syncing'),
+                    } }, 'Stop syncing'),
                   React.createElement(Button, { variant: 'text', size: 'sm', onClick: async () => {
                       // Re-create on service — clear syncedTo for this provider
                       const updatedSyncedTo = { ...playlist.syncedTo };
@@ -643,10 +637,13 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
           })(),
 
           // Two-column layout: playlist cover + metadata on left, tracklist on right
-          React.createElement('div', { className: 'flex gap-0 px-6 pb-6', style: { flex: 1, minHeight: 0 } },
+          // Left padding only: the tracklist's own scroll area carries the
+          // right and bottom padding, so its scrollbar sits at the window edge
+          // (the wrapper's px-6 inset it 24px since #1089).
+          React.createElement('div', { className: 'flex gap-0 pl-6', style: { flex: 1, minHeight: 0 } },
             // LEFT COLUMN: 2x2 album art grid and metadata (fixed, scrolls independently)
             React.createElement('div', {
-              className: 'flex-shrink-0 pr-8 pt-8 scrollable-content',
+              className: 'flex-shrink-0 pr-8 pt-8 pb-6 scrollable-content',
               // Scales with the content area (#1389): 240px on a normal
               // window, down to 184px at the minimum, so the tracklist keeps
               // room for titles. The card and cover fill it.
@@ -684,20 +681,20 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                   // Recommendations page's card showed — sits above the tiles,
                   // and a dead URL removes itself so the mosaic shows again.
                   // The hover overlay after it stays on top.
-                  React.createElement('div', {
-                    className: 'rounded-lg overflow-hidden album-art-container group/art relative',
+                  React.createElement('div', Object.assign({
+                    className: 'rounded-lg overflow-hidden album-art-container relative',
                     style: {
                       width: '100%',
                       aspectRatio: '1 / 1'
                     }
-                  },
+                  }, coverReveal.props),
                     hasCachedCovers ?
                       React.createElement('div', { className: 'grid grid-cols-2 grid-rows-2 w-full h-full' },
                         [0, 1, 2, 3].map(idx => {
                           return React.createElement('div', {
                             key: idx,
                             className: 'relative w-full h-full flex items-center justify-center',
-                            style: { background: 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)' }
+                            style: { background: 'var(--placeholder-bg)' }
                           },
                             !covers[idx] && React.createElement(Music, { size: 20, className: 'text-ink-secondary' }),
                             covers[idx] && React.createElement('img', {
@@ -714,29 +711,20 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                     :
                       React.createElement('div', {
                         className: 'w-full h-full flex items-center justify-center',
-                        style: { background: 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)' }
+                        style: { background: 'var(--placeholder-bg)' }
                       },
-                        // Playlist icon (three lines with play triangle)
-                        React.createElement('svg', { className: 'w-12 h-12 text-ink-tertiary', viewBox: '0 0 24 24', fill: 'currentColor' },
-                          React.createElement('rect', { x: 3, y: 5, width: 18, height: 2, rx: 1 }),
-                          React.createElement('rect', { x: 3, y: 11, width: 10, height: 2, rx: 1 }),
-                          React.createElement('rect', { x: 3, y: 17, width: 7, height: 2, rx: 1 }),
-                          React.createElement('path', { d: 'M15 13.5v6l5.5-3-5.5-3z' })
-                        )
+                        // The Playlists page's glyph (icons.js)
+                        React.createElement(Icons.Playlist, { className: 'w-12 h-12 text-ink-tertiary' })
                       ),
                     // The playlist's own cover, over the mosaic/placeholder
                     // (DOM order = paint order here; see the comment above).
                     playlistCover && React.createElement(PlaylistCoverImage, { url: playlistCover }),
                     // Hover overlay with action buttons
-                    React.createElement('div', {
-                      className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-3',
-                      style: { pointerEvents: 'auto' }
-                    },
-                      // Add to Playlist button
-                      React.createElement('button', {
-                        onClick: (e) => {
-                          e.stopPropagation();
-                          const tracksWithIds = (playlistTracks || []).map(track => ({
+                    React.createElement(ArtOverlay, {
+shown: coverReveal.shown,
+title: selectedPlaylist.title,
+onAddToPlaylist: () => {
+const tracksWithIds = (playlistTracks || []).map(track => ({
                             ...track,
                             id: track.id || trackSlug(track.artist || 'unknown', track.title || 'untitled'),
                             sources: trackSources[track.id] || {}
@@ -751,17 +739,8 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                             setSelectedPlaylistsForAdd([]);
                           }
                         },
-                        className: 'w-10 h-10 rounded-full flex items-center justify-center transition-transform hover:scale-110 bg-white/15 hover:bg-white/25 text-white',
-                        style: { border: 'none', cursor: 'pointer' },
-                        'aria-label': 'Add to playlist', 'data-tooltip': 'Add to playlist'
-                      },
-                        React.createElement(Icons.Plus, { className: 'w-5 h-5' })
-                      ),
-                      // Play button (center, larger)
-                      React.createElement('button', {
-                        onClick: (e) => {
-                          e.stopPropagation();
-                          setTrackLoading(true);
+onPlay: () => {
+setTrackLoading(true);
                           const tracksWithIds = (playlistTracks || []).map(track => ({
                             ...track,
                             id: track.id || trackSlug(track.artist || 'unknown', track.title || 'untitled'),
@@ -777,17 +756,8 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                             setTrackLoading(false);
                           }
                         },
-                        className: 'w-12 h-12 bg-surface-card rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
-                        style: { border: 'none', cursor: 'pointer' },
-                        'aria-label': 'Play', 'data-tooltip': 'Play'
-                      },
-                        React.createElement(Play, { size: 22, className: 'text-ink-primary ml-0.5' })
-                      ),
-                      // Add to Queue button
-                      React.createElement('button', {
-                        onClick: (e) => {
-                          e.stopPropagation();
-                          const tracksWithIds = (playlistTracks || []).map(track => ({
+onQueue: () => {
+const tracksWithIds = (playlistTracks || []).map(track => ({
                             ...track,
                             id: track.id || trackSlug(track.artist || 'unknown', track.title || 'untitled'),
                             sources: trackSources[track.id] || {}
@@ -796,14 +766,8 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                             const context = playlistPlaybackContext(selectedPlaylist);
                             addToQueue(tracksWithIds, context);
                           }
-                        },
-                        className: 'w-10 h-10 rounded-full flex items-center justify-center transition-transform hover:scale-110 bg-white/15 hover:bg-white/25 text-white',
-                        style: { border: 'none', cursor: 'pointer' },
-                        'aria-label': 'Add to queue', 'data-tooltip': 'Add to queue'
-                      },
-                        React.createElement(Icons.QueueAdd, { className: 'w-5 h-5', strokeWidth: 2 })
-                      )
-                    )
+                        }
+})
                   ),
                   // Playlist title inside card - matching grid typography (13px/500)
                   React.createElement('div', {
@@ -1032,7 +996,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
             // RIGHT COLUMN: Tracklist (scrolls independently)
             React.createElement('div', {
               ref: handlePlaylistTracksScrollRef,
-              className: 'flex-1 min-w-0 pt-8 scrollable-content scroll-edge',
+              className: 'flex-1 min-w-0 pt-8 pr-6 pb-6 scrollable-content scroll-edge',
               style: { overflowY: 'auto' }
             },
               // Use edited tracks when in edit mode, otherwise use playlistTracks
@@ -1052,32 +1016,47 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                   tracks: displayTracks,
                   parentRef: playlistTracksScrollRef,
                   renderRow: (track, index) => {
-                    // Use track.id to look up resolved sources from trackSources state
-                    // The row's sources, one rule for every list (lib/visible-sources):
-                    // resolving (shimmer), unplayable (dimmed, no icons) or playable.
-                    const { shown: shownSources, state: sourceState } = sourceRowState(track, { trackSources, playbackResolvers: activeResolvers, resolverOrder });
-                    const hasResolved = sourceState === 'playable';
-                    const isResolving = sourceState === 'resolving';
-                    const isUnplayable = sourceState === 'unplayable';
                     const isDraggedOver = playlistEditMode && playlistDropTarget === index;
                     const isDragging = playlistEditMode && draggedPlaylistTrack === index;
                     const isCurrentTrack = currentTrack?.id === track.id;
                     const isNowPlaying = isCurrentTrack && playbackContext?.type === 'playlist' && playbackContext?.id === selectedPlaylist?.id;
 
-                    return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`, more: `More actions for ${track.title}`,
-                    current: isNowPlaying,
+                    return React.createElement(TrackRow, {
                       key: track.id || index,
-                      'data-track-id': track.id,
-                      ref: (el) => {
+                      track,
+                      number: String(index + 1).padStart(2, '0'),
+                      isNowPlaying: isNowPlaying && isPlaying,
+                      // In edit mode the number is the drag handle with Move up /
+                      // Move down, for the keyboard and anyone who can't drag (#1386).
+                      lead: playlistEditMode ? React.createElement('span', {
+                        className: 'text-ink-tertiary flex-shrink-0 flex items-center',
+                        style: { gap: '2px' }
+                      },
+                        React.createElement(Button, {
+                          variant: 'icon', size: 'sm', 'aria-label': `Move ${track.title} up`, 'data-tooltip': 'Move up',
+                          disabled: index === 0,
+                          onClick: (e) => { e.stopPropagation(); moveInEditedPlaylist(index, index - 1); }
+                        }, React.createElement(Icons.ChevronUp, { className: 'w-4 h-4' })),
+                        React.createElement(Button, {
+                          variant: 'icon', size: 'sm', 'aria-label': `Move ${track.title} down`, 'data-tooltip': 'Move down',
+                          disabled: index >= displayTracks.length - 1,
+                          onClick: (e) => { e.stopPropagation(); moveInEditedPlaylist(index, index + 1); }
+                        }, React.createElement(Icons.ChevronDown, { className: 'w-4 h-4' }))
+                      ) : null,
+                      sources: { trackSources, playbackResolvers: activeResolvers, resolverOrder },
+                      allResolvers,
+                      duration: true,
+                      sourcesWidth: PLAYLIST_ICON_COLUMN,
+                      rowRef: (el) => {
                         if (el && track.id) {
                           playlistTrackRowRefs.current.set(track.id, el);
-                          if (playlistObserverRef.current) {
-                            playlistObserverRef.current.observe(el);
-                          }
+                          if (playlistObserverRef.current) playlistObserverRef.current.observe(el);
                         } else if (track.id) {
                           playlistTrackRowRefs.current.delete(track.id);
                         }
                       },
+                      // The row being dragged, and the one it would drop above.
+                      className: `${isDragging ? 'opacity-50 bg-surface-inset' : ''} ${isDraggedOver ? 'border-t-2 border-accent' : ''}`,
                       draggable: true,
                       onDragStart: (e) => {
                         // Always allow dragging to other playlists
@@ -1085,9 +1064,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                         e.dataTransfer.effectAllowed = 'move';
                         e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'track', track }));
                         // Only track index for reordering in edit mode
-                        if (playlistEditMode) {
-                          setDraggedPlaylistTrack(index);
-                        }
+                        if (playlistEditMode) setDraggedPlaylistTrack(index);
                       },
                       onDragEnd: () => {
                         if (playlistEditMode) {
@@ -1099,220 +1076,37 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                       onDragOver: playlistEditMode ? (e) => {
                         e.preventDefault();
                         e.dataTransfer.dropEffect = 'move';
-                        if (draggedPlaylistTrack !== null && draggedPlaylistTrack !== index) {
-                          setPlaylistDropTarget(index);
-                        }
+                        if (draggedPlaylistTrack !== null && draggedPlaylistTrack !== index) setPlaylistDropTarget(index);
                       } : undefined,
-                      onDragLeave: playlistEditMode ? () => {
-                        setPlaylistDropTarget(null);
-                      } : undefined,
+                      onDragLeave: playlistEditMode ? () => setPlaylistDropTarget(null) : undefined,
                       onDrop: playlistEditMode ? (e) => {
                         e.preventDefault();
-                        if (draggedPlaylistTrack !== null && draggedPlaylistTrack !== index) {
-                          moveInEditedPlaylist(draggedPlaylistTrack, index);
-                        }
+                        if (draggedPlaylistTrack !== null && draggedPlaylistTrack !== index) moveInEditedPlaylist(draggedPlaylistTrack, index);
                         setDraggedPlaylistTrack(null);
                         setPlaylistDropTarget(null);
                       } : undefined,
-                      className: `flex items-center gap-4 py-3 px-4 transition-all no-drag group ${
-                        playlistEditMode ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
-                      } ${isResolving || isUnplayable ? 'opacity-60' : ''} ${isDragging ? 'opacity-50 bg-surface-inset' : ''} ${isDraggedOver ? 'border-t-2 border-t-purple-500' : ''} ${isNowPlaying && isPlaying ? 'bg-accent-tint' : 'hover:bg-surface-hover'}`,
-                      style: {
-                        borderRadius: '8px',
-                        marginBottom: '2px'
-                      },
-                      onActivate: () => {
+                      onPlay: (resolverId) => {
                         if (draggedPlaylistTrack !== null) return; // Don't play if dragging
-                        const tracksAfter = playlistTracks.slice(index + 1);
-                        const context = playlistPlaybackContext(selectedPlaylist);
-                        setQueueWithContext(tracksAfter, context);
-                        handlePlay(track);
+                        setQueueWithContext(playlistTracks.slice(index + 1), playlistPlaybackContext(selectedPlaylist));
+                        handlePlay(resolverId ? { ...track, preferredResolver: resolverId } : track);
                       },
-                      onContextMenu: (e) => {
-                        e.preventDefault();
-                        if (window.electron?.contextMenu?.showTrackMenu) {
-                          window.showItemMenu({
-                            type: 'track',
-                            track: track,
-                            // Pass playlist context for "Remove from Playlist" option
-                            inPlaylist: true,
-                            playlistId: selectedPlaylist.id,
-                            trackIndex: index
-                          });
-                        }
-                      }
-                    },
-                      // Track number, or in edit mode the drag handle with
-                      // Move up / Move down for the keyboard and anyone who
-                      // can't drag (#1386).
-                      playlistEditMode
-                        ? React.createElement('span', {
-                            className: 'text-ink-tertiary flex-shrink-0 flex items-center',
-                            style: { gap: '2px' }
-                          },
-                            React.createElement(Button, {
-                              variant: 'icon', size: 'sm', 'aria-label': `Move ${track.title} up`, 'data-tooltip': 'Move up',
-                              disabled: index === 0,
-                              onClick: (e) => { e.stopPropagation(); moveInEditedPlaylist(index, index - 1); }
-                            }, React.createElement(Icons.ChevronUp, { className: 'w-4 h-4' })),
-                            React.createElement(Button, {
-                              variant: 'icon', size: 'sm', 'aria-label': `Move ${track.title} down`, 'data-tooltip': 'Move down',
-                              disabled: index >= displayTracks.length - 1,
-                              onClick: (e) => { e.stopPropagation(); moveInEditedPlaylist(index, index + 1); }
-                            }, React.createElement(Icons.ChevronDown, { className: 'w-4 h-4' }))
-                          )
-                        : React.createElement('span', {
-                            className: 'flex-shrink-0 text-right',
-                            style: {
-                              pointerEvents: 'none',
-                              width: '32px',
-                              fontSize: '12px',
-                              fontWeight: '500',
-                              color: isNowPlaying && isPlaying ? 'var(--accent-secondary)' : 'var(--text-tertiary)'
-                            }
-                          }, isNowPlaying && isPlaying ? '▶' : String(index + 1).padStart(2, '0')),
-
-                      // Track title - flexible column
-                      React.createElement('span', {
-                        className: 'truncate transition-colors',
-                        style: {
-                          pointerEvents: 'none',
-                          flex: '1 1 0',
-                          minWidth: 0,
-                          fontSize: '13px',
-                          fontWeight: isNowPlaying && isPlaying ? '500' : '400',
-                          color: isNowPlaying && isPlaying ? 'var(--accent-primary)' : hasResolved ? 'var(--text-primary)' : 'var(--text-tertiary)'
-                        }
-                      }, track.title),
-
-                      // Artist name - flexible column, clickable
-                      React.createElement('button', { type: 'button',
-                        className: 'text-left truncate hover:text-accent hover:underline cursor-pointer transition-colors',
-                        style: {
-                          flex: '0.7 1 0',
-                          minWidth: 0,
-                          fontSize: '12px',
-                          color: 'var(--text-secondary)'
-                        },
-                        onClick: (e) => {
-                          e.stopPropagation();
-                          fetchArtistData(track.artist);
-                        }
-                      }, track.artist),
-
-                      // Duration - fixed width column (before resolver icons)
-                      React.createElement('span', {
-                        className: 'text-right tabular-nums flex-shrink-0',
-                        style: {
-                          pointerEvents: 'none',
-                          width: '50px',
-                          fontSize: '12px',
-                          color: 'var(--text-tertiary)'
-                        }
-                      }, trackDurationLabel(track, { trackSources, resolverOrder })),
-
-                      // Resolver icons - fixed width column (last column)
-                      React.createElement('div', {
-                        className: 'flex items-center gap-1 justify-end',
-                        style: { width: PLAYLIST_ICON_COLUMN, flexShrink: 0, minHeight: '24px', overflow: 'hidden' }
-                      },
-                        isResolving ?
-                          React.createElement('div', {
-                            className: 'flex items-center gap-1'
-                          },
-                            React.createElement('div', {
-                              className: 'w-5 h-5 rounded shimmer-light animate-shimmer',
-                              title: 'Resolving track…'
-                            }),
-                            React.createElement('div', {
-                              className: 'w-5 h-5 rounded shimmer-light animate-shimmer',
-                              style: { animationDelay: '0.1s' }
-                            })
-                          )
-                        : hasResolved ? (() => {
-                            // The shared source-icon rule (lib/visible-sources), with
-                            // activeResolvers = playbackResolvers from app.js.
-                            return shownSources
-                              .map(({ resolverId, source, dim }) => {
-                                const resolver = allResolvers.find(r => r.id === resolverId);
-                                if (!resolver || !resolver.play) return null;
-                                return React.createElement('button', {
-                                  key: resolverId,
-                                  className: 'no-drag hover:scale-110',
-                                  onClick: (e) => {
-                                    e.stopPropagation();
-                                    const tracksAfter = playlistTracks.slice(index + 1);
-                                    const context = playlistPlaybackContext(selectedPlaylist);
-                                    setQueueWithContext(tracksAfter, context);
-                                    handlePlay({ ...track, preferredResolver: resolverId });
-                                  },
-                                  style: {
-                                    width: '20px',
-                                    height: '20px',
-                                    borderRadius: '4px',
-                                    backgroundColor: resolver.color,
-                                    border: 'none',
-                                    cursor: 'pointer',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    pointerEvents: 'auto',
-                                    opacity: dim ? 0.6 : 1,
-                                    transition: 'transform 100ms'
-                                  },
-                                  'aria-label': `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`, 'data-tooltip': `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
-                                }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
-                              });
-                          })()
-                        :
-                          // Unplayable: no icons; the row is dimmed.
-                          null
-                      )
-                    );
+                      onOpenArtist: fetchArtistData,
+                      // The playlist context, for "Remove from playlist".
+                      onContextMenu: () => window.showItemMenu({
+                        type: 'track',
+                        track: track,
+                        inPlaylist: true,
+                        playlistId: selectedPlaylist.id,
+                        trackIndex: index
+                      })
+                    });
                   }
                 })
               :
-                // Skeleton loaders while tracks are loading
+                // The shared track row's placeholder, in the rows' columns.
                 React.createElement('div', { className: 'space-y-0' },
                   Array.from({ length: 8 }).map((_, index) =>
-                    React.createElement('div', {
-                      key: `skeleton-${index}`,
-                      className: 'flex items-center gap-4 py-3 px-4',
-                      style: { borderRadius: '8px', marginBottom: '2px' }
-                    },
-                      // Track number skeleton
-                      React.createElement('div', {
-                        className: 'w-6 h-4 rounded shimmer-light animate-shimmer',
-                        style: { width: '32px', animationDelay: `${index * 50}ms` }
-                      }),
-                      // Track title skeleton - flexible
-                      React.createElement('div', {
-                        className: 'h-4 rounded shimmer-light animate-shimmer',
-                        style: { flex: '1 1 0', minWidth: 0, animationDelay: `${index * 50 + 25}ms` }
-                      }),
-                      // Artist name skeleton - flexible
-                      React.createElement('div', {
-                        className: 'h-4 rounded shimmer-light animate-shimmer',
-                        style: { flex: '0.7 1 0', minWidth: 0, animationDelay: `${index * 50 + 50}ms` }
-                      }),
-                      // Duration skeleton
-                      React.createElement('div', {
-                        className: 'h-4 rounded shimmer-light animate-shimmer flex-shrink-0',
-                        style: { width: '40px', animationDelay: `${index * 50 + 75}ms` }
-                      }),
-                      // Resolver icons skeleton
-                      React.createElement('div', { className: 'flex items-center gap-1', style: { width: PLAYLIST_ICON_COLUMN, flexShrink: 0 } },
-                        React.createElement('div', {
-                          className: 'w-5 h-5 rounded shimmer-light animate-shimmer',
-                          style: { animationDelay: `${index * 50 + 100}ms` }
-                        }),
-                        React.createElement('div', {
-                          className: 'w-5 h-5 rounded shimmer-light animate-shimmer',
-                          style: { animationDelay: `${index * 50 + 125}ms` }
-                        })
-                      )
-                    )
-                  )
+                    React.createElement(TrackRowSkeleton, { key: `skeleton-${index}`, index, duration: true, sourcesWidth: PLAYLIST_ICON_COLUMN }))
                 );
               })()
             )

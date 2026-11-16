@@ -32,22 +32,65 @@ const RADII = new Set([0, 4, 6, 8, 10, 12, 16, 999, 9999]);
 
 const NON_INTERACTIVE = new Set(['div', 'span', 'li', 'img', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'tr', 'td', 'section', 'article', 'header']);
 const HEX = /#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b/g;
+const RGB = /rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})/g;
 const PALETTE_CLASS = /(?:^|[\s:"'`])(?:text|bg|border|ring|from|via|to|fill|stroke|divide|placeholder|accent|outline|decoration)-(?:gray|slate|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d{2,3}\b/g;
 const THEME_TERNARY = /\bisDark\s*\?|effectiveTheme\s*===\s*['"](?:dark|light)['"]\s*\?/g;
 
 const METRICS = {
   hexColors: 'Hard-coded hex colours in the renderer. Use a CSS variable from index.html (add one, with a .dark value, if none fits).',
+  rgbColors: 'Hard-coded coloured rgb()/rgba() values (a status green, the accent purple…). Use the token, or color-mix(in srgb, var(--token) N%, transparent) for a faint one.',
+  rgbNeutrals: 'Hard-coded black / white / grey rgba() values (shadows, scrims, lines on dark panels). Use --on-dark-*, --shadow-* / --scrim tokens.',
   paletteClasses: 'Tailwind palette colour classes (text-gray-500, bg-red-50, purple-600…). Most have no dark-mode remap; use CSS variables.',
   themeTernaries: 'isDark / effectiveTheme ternaries. Theme through CSS variables instead.',
   clickableNonInteractive: 'div/span/li/img… with onClick and no role: unreachable by keyboard. Use a <button> (or role, tabIndex and Enter/Space).',
   inlineOutlineNone: "Inline outline: 'none', which hides the global :focus-visible ring.",
   nativeDialogs: 'alert()/confirm()/prompt(). Use showToast or a dialog component.',
   asciiEllipsis: 'Strings with "..." (three dots). Use the "…" character.',
-  svgPaths: 'Hand-written <path> elements. Use the shared icon set (src/renderer/components/icons.js).',
+  svgPaths: 'Hand-written <path> elements. Use the shared icon set (components/icons.js) for a glyph, the brand logo kit (components/brand-logos.js) for a logo.',
   offScaleFontSizes: 'Inline font sizes off the type scale (11, 12, 13, 14, 16, 20, 24, 28, 48px).',
   offScaleRadii: 'Inline border radii off the radius scale (4, 6, 8, 10, 12, 16px, full).',
   jsHover: 'onMouseEnter handlers that change style (hover styling done in JS). Use CSS :hover / Tailwind hover: classes.',
   roleButtonDivs: 'div/span/li… with role="button" (lib/activate-on-key.js, a stopgap). Use a <button>, or CardButton for a card or row that holds buttons.',
+
+  // Copies: a hand-built version of something a shared component already
+  // draws. The audit counted colours and classes but not these, so a page
+  // could keep its own track row or empty state while every colour in it
+  // was a token (2026-11-15). Each counts places outside the shared
+  // component's own file (COPY_HOMES).
+  trackRowCopies: 'Hand-built track rows (a sourceRowState() call outside components/track-lists.js). Use the shared TrackRow.',
+  sourceButtonCopies: 'Hand-built "Play from <service>" source buttons. Use the shared source-icon button.',
+  spinnerCopies: 'Hand-drawn spinners (an element with animate-spin or a border-t-transparent ring). Use Icons.Spinner.',
+  emptyStateCopies: 'Hand-built empty states ("No …" / "Nothing …" text in a plain element). Use EmptyState (components/states.js).',
+  filterPillCopies: 'Hand-built pill buttons (rounded-full px-3 py-1…). Use FilterChips.',
+  heroCopies: 'Hand-built page heroes (a 320px block collapsing to 80px). Use PageHero (components/page-hero.js); the artist page\'s photo hero is the one other design.',
+  stickyBarCopies: 'Hand-built sticky bars (sticky top-0 classes). Use StickyBar (components/filter-box.js).',
+  handBuiltButtons: 'Buttons and links styled as buttons by hand (their own padding plus a fill, border or radius, in classes or inline style). Use Button / buttonClassName (components/button.js), or the shared component for that control.',
+};
+
+// The file each copy metric's shared component (or canonical data) lives in:
+// its own uses don't count.
+const COPY_HOMES = {
+  trackRowCopies: ['components/track-lists.js'],
+  sourceButtonCopies: ['components/track-lists.js', 'components/menu.js', 'components/source-icon-button.js'],
+  spinnerCopies: ['components/icons.js'],
+  emptyStateCopies: ['components/states.js'],
+  filterPillCopies: ['components/filter-chips.js'],
+  stickyBarCopies: ['components/filter-box.js'],
+  heroCopies: ['components/page-hero.js'],
+  // The canonical colour data: each page's colour (CLAUDE.md "A page's colour
+  // comes from PAGE_COLORS"), the artist stand-in art's palettes, and the
+  // brands' own colours in their logos, and each release type's colour
+  // (lib/release-types.js, one palette for every badge and chip).
+  hexColors: ['lib/page-colors.js', 'lib/artist-pattern.js', 'components/brand-logos.js', 'lib/release-types.js'],
+  rgbColors: ['lib/page-colors.js', 'lib/artist-pattern.js', 'components/brand-logos.js', 'lib/release-types.js'],
+  paletteClasses: ['lib/page-colors.js'],
+  // Shared components whose own buttons are the one look for their control.
+  handBuiltButtons: ['components/button.js', 'components/header-control.js', 'components/card-button.js', 'components/filter-chips.js',
+    'components/menu.js', 'components/sort-menu.js', 'components/fields.js', 'components/collection-radio-button.js',
+    'components/tickets-button.js', 'components/hero-tabs.js', 'components/toast.js', 'components/reason-badge.js',
+    'components/album-card.js', 'components/artist-card.js', 'components/listener-card.js', 'components/card-art.js',
+    'components/nav-item.js', 'components/option-tile.js', 'components/list-row.js',
+    'components/source-icon-button.js', 'components/queue-context-bar.js', 'components/friend-mini-playbar.js'],
 };
 
 function rendererFiles(dir = RENDERER, out = []) {
@@ -92,6 +135,7 @@ function pxValue(node) {
 function scanSource(src) {
   const counts = Object.fromEntries(Object.keys(METRICS).map((k) => [k, 0]));
   const cssVars = new Set();
+  const svgUnits = new WeakSet();
   const ast = parse(src, { sourceType: 'script', allowReturnOutsideFunction: true, errorRecovery: true, plugins: [] });
 
   const visit = (node, inConsole) => {
@@ -103,6 +147,10 @@ function scanSource(src) {
     if (strings && !consoleHere) {
       for (const s of strings) {
         counts.hexColors += (s.match(HEX) || []).length;
+        for (const m of s.matchAll(RGB)) {
+          const [r, g, b] = [m[1], m[2], m[3]].map(Number);
+          if (r === g && g === b) counts.rgbNeutrals += 1; else counts.rgbColors += 1;
+        }
         counts.paletteClasses += (s.match(PALETTE_CLASS) || []).length;
         if (s.includes('...')) counts.asciiEllipsis += 1;
         for (const v of s.match(/var\(\s*(--[a-zA-Z0-9-]+)/g) || []) cssVars.add(v.replace(/var\(\s*/, ''));
@@ -114,12 +162,42 @@ function scanSource(src) {
       const name = c.type === 'Identifier' ? c.name
         : (c.type === 'MemberExpression' && c.object.name === 'window' ? c.property.name : null);
       if (name === 'alert' || name === 'confirm' || name === 'prompt') counts.nativeDialogs += 1;
+      if (name === 'sourceRowState') counts.trackRowCopies += 1;
 
       if (isCreateElement(c) && node.arguments[0] && node.arguments[0].type === 'StringLiteral') {
         const tag = node.arguments[0].value;
         const props = node.arguments[1] && node.arguments[1].type === 'ObjectExpression' ? node.arguments[1].properties : [];
         const keys = props.map(propKey);
         if (tag === 'path') counts.svgPaths += 1;
+        const cls = props.find((p) => propKey(p) === 'className');
+        const classText = cls && cls.value ? src.slice(cls.value.start, cls.value.end) : '';
+        if (/\banimate-spin\b|\bborder-t-transparent\b/.test(classText)) counts.spinnerCopies += 1;
+        if (tag === 'button' && /\brounded-full\b/.test(classText) && /\bpx-3\b/.test(classText) && /\bpy-1(?:\.5)?\b/.test(classText)) counts.filterPillCopies += 1;
+        if (tag === 'button' || tag === 'a') {
+          // A Menu trigger spreads its props: Object.assign({}, t, { ... }).
+          const arg = node.arguments[1];
+          const own = arg && arg.type === 'CallExpression' && arg.arguments.length ? arg.arguments[arg.arguments.length - 1] : arg;
+          const ps = own && own.type === 'ObjectExpression' ? own.properties : [];
+          const c = ps.find((p) => propKey(p) === 'className');
+          const cText = c && c.value ? src.slice(c.value.start, c.value.end) : '';
+          const st = ps.find((p) => propKey(p) === 'style');
+          const sText = st && st.value ? src.slice(st.value.start, st.value.end) : '';
+          const byClass = /(?:^|[\s`'"])(?:p|px|py|pl|pr|pt|pb)-\d/.test(cText) && /(?:^|[\s`'"])(?:rounded(?:-\w+)?|bg-[\w[]|border(?:-\w+)?)(?=[\s`'"]|$)/.test(cText);
+          // A text link drawn as a button (no padding, no fill, no border)
+          // isn't a button look: "See all", an artist name, Advanced.
+          const bare = /\bpadding:\s*(?:'0(?:px)?'|0)(?=[\s,}])/.test(sText)
+            && !/\bbackground(?:Color)?:\s*(?!\s|'(?:none|transparent)')/.test(sText)
+            && !/\bborder(?:Radius)?:\s*(?!\s|'none')/.test(sText);
+          const byStyle = !bare && /\bpadding\b/.test(sText) && /\b(?:backgroundColor|background|borderRadius|border)\b/.test(sText);
+          if ((byClass || byStyle) && !/buttonClassName\(|APP_PLAY_BTN|card-button-hit/.test(cText)) counts.handBuiltButtons += 1;
+        }
+        if (/\bsticky\b/.test(classText) && /\btop-0\b/.test(classText)) counts.stickyBarCopies += 1;
+        const aria = props.find((p) => propKey(p) === 'aria-label');
+        const ariaText = aria && aria.value ? (aria.value.type === 'StringLiteral' ? aria.value.value : aria.value.type === 'TemplateLiteral' ? aria.value.quasis[0].value.cooked : '') : '';
+        if (/^Play from \S?/.test(ariaText) && ariaText.length > 'Play from'.length) counts.sourceButtonCopies += 1;
+        for (const kid of node.arguments.slice(2)) {
+          if (kid.type === 'StringLiteral' && /^(?:No|Nothing) /.test(kid.value)) counts.emptyStateCopies += 1;
+        }
         if (NON_INTERACTIVE.has(tag) && keys.includes('onClick') && !keys.includes('role')) counts.clickableNonInteractive += 1;
         const roleProp = props.find((p) => propKey(p) === 'role');
         if (NON_INTERACTIVE.has(tag) && roleProp && roleProp.value && roleProp.value.value === 'button') counts.roleButtonDivs += 1;
@@ -130,10 +208,18 @@ function scanSource(src) {
       }
     }
 
+    // An SVG <text>'s fontSize is in viewBox units (the "10" on the Play
+    // Top 10 icon), not a CSS size: it is not on the type scale's terms.
+    if (node.type === 'CallExpression' && node.arguments[0] && node.arguments[0].type === 'StringLiteral'
+      && node.arguments[0].value === 'text' && node.arguments[1] && node.arguments[1].type === 'ObjectExpression') {
+      for (const p of node.arguments[1].properties) if (propKey(p) === 'fontSize') svgUnits.add(p);
+    }
+
     if (node.type === 'ObjectProperty') {
       const key = propKey(node);
       if (key === 'outline' && node.value.type === 'StringLiteral' && node.value.value === 'none') counts.inlineOutlineNone += 1;
-      if (key === 'fontSize') {
+      if (key === 'height' && /\? '80px' : '320px'/.test(src.slice(node.value.start, node.value.end))) counts.heroCopies += 1;
+      if (key === 'fontSize' && !svgUnits.has(node)) {
         const px = pxValue(node.value);
         if (px != null && !FONT_SIZES.has(px)) counts.offScaleFontSizes += 1;
       }
@@ -164,8 +250,13 @@ function scan() {
   for (const file of rendererFiles()) {
     const rel = path.relative(ROOT, file);
     const { counts, cssVars } = scanSource(fs.readFileSync(file, 'utf8'));
-    // The shared icon set is where paths belong; svgPaths counts the copies.
-    if (rel === path.join('src', 'renderer', 'components', 'icons.js')) counts.svgPaths = 0;
+    // The shared icon set and the brand logo kit are where paths belong;
+    // svgPaths counts the copies.
+    if (rel === path.join('src', 'renderer', 'components', 'icons.js')
+      || rel === path.join('src', 'renderer', 'components', 'brand-logos.js')) counts.svgPaths = 0;
+    for (const [metric, homes] of Object.entries(COPY_HOMES)) {
+      if (homes.some((h) => rel === path.join('src', 'renderer', ...h.split('/')))) counts[metric] = 0;
+    }
     byFile[rel] = counts;
     for (const k of Object.keys(totals)) totals[k] += counts[k];
     for (const v of cssVars) used.add(v);

@@ -2,7 +2,8 @@
 // extracted from app.js's module scope (maintainability plan Track 2b,
 // presentational slice 2).
 //
-// TrackRow is the single track row; VirtualizedQueueList / VirtualizedTrackList
+// TrackRow is the single page-list track row (TrackSources / SourceIconButton
+// its source column, also used by rows with their own layout); VirtualizedQueueList / VirtualizedTrackList
 // are the windowed lists (ReactVirtual is the vendor global). Which source
 // icons a row shows, their order and dimming come from lib/visible-sources.js
 // (one rule for the queue and the page lists, see docs/architecture/playback.md
@@ -11,129 +12,186 @@
 // All props-driven, no app state; memoized exactly as before. React via the
 // vendor global; ResolverIcon via the ui-atoms module; icons via the icons
 // module's own destructure below.
+const { Button } = require('./button');
 const { ResolverIcon } = require('./ui-atoms');
 const { CardButton } = require('./card-button');
+const { SourceIconButton } = require('./source-icon-button');
 const Icons = require('./icons');
-const { Music, Pause, Play, X } = Icons;
+const { X } = Icons;
 
 // The shared source-icon rule (and the 0.95 dim threshold) lives in
 // lib/visible-sources.js.
 const { sourceRowState } = require('../lib/visible-sources');
 const { trackDurationLabel } = require('../lib/track-duration');
 
-// TrackRow component - defined outside to prevent recreation on every render
-const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick, onContextMenu, allResolvers, resolverOrder, activeResolvers }) => {
-  // Get available sources (track.sources is an object with resolver IDs as keys)
-  // Sort by priority order (left to right = highest to lowest priority)
-  const availableSources = track.sources && typeof track.sources === 'object' && !Array.isArray(track.sources)
-    ? Object.keys(track.sources).filter(id => !track.sources[id]?.noMatch).sort((a, b) => {
-        const aIndex = resolverOrder?.indexOf(a) ?? 999;
-        const bIndex = resolverOrder?.indexOf(b) ?? 999;
-        return aIndex - bIndex;
-      })
-    : [];
+// The track row every page list uses (History, a friend's history,
+// Recommendations, Charts, the playlist page, Collection, Search and an
+// album's tracklist). Each page had its own copy of the same row, so they had
+// drifted (JS hover on the source buttons in some, a missing title colour in
+// others); this is that row once:
+//
+//   number · title · artist · [cells…] · source icons · [duration]
+//
+// The whole row plays the track (CardButton's stretched button); the artist
+// is a link; each source icon plays the track from that service. Which icons
+// show, their order and dimming come from lib/visible-sources.js, so a row
+// that is still resolving shows a shimmer and an unplayable one is dimmed.
+//
+// Props:
+//   track          { id, title, artist, … }
+//   number         what the first column shows ("01", "#3"); ▶ while playing
+//   lead           a node in place of the number (the playlist page's
+//                  Move up / Move down in edit mode)
+//   isNowPlaying   this row is the one playing: accent title and ▶
+//   sources        { trackSources, playbackResolvers, resolverOrder }
+//   allResolvers   the plugin list (each icon's name, colour and play)
+//   onPlay         (resolverId?) => void: a row click, or one source's icon
+//   onOpenArtist   (artist) => void: the artist name is a link
+//   onContextMenu  (event) => void: the track menu (and the More button)
+//   cells          [{ key, content, width | flex, align, onClick }]: columns
+//                  between the artist and the duration (album, "2h ago",
+//                  "12 plays"); onClick makes the cell a link (the album)
+//   showArtist     false: no artist column (an album's own tracklist)
+//                  (A local file's Local Files is one more source: it shows
+//                  and sorts by the user's source order like any other.)
+//   resolving      false: the row isn't being resolved now (Search before
+//                  its lookup reaches it), so no shimmer and no dimming
+//   dimResolving   false: a resolving row stays full colour (the album page:
+//                  no flash of "unavailable" before the lookup finishes)
+//   duration       true: a duration column (lib/track-duration.js)
+//   sourcesWidth   the icon column's width (140px)
+//   rowRef         the row element, for the page's visibility observer
+//   className      extra classes (a drop target, a dragged row)
+//   …rest          passed to CardButton (draggable, onDragStart, onDrop…)
+// Props-driven; loads under plain Node.
+const ROW_CELL = { pointerEvents: 'none', fontSize: '12px', color: 'var(--text-tertiary)' };
 
-  // Resolver metadata for badge display
-  const resolverMeta = {
-    spotify: { label: 'Spotify', bgColor: 'bg-green-600/20', textColor: 'text-green-400' },
-    youtube: { label: 'YouTube', bgColor: 'bg-red-600/20', textColor: 'text-red-400' },
-    bandcamp: { label: 'Bandcamp', bgColor: 'bg-cyan-600/20', textColor: 'text-cyan-400' },
-    soundcloud: { label: 'SoundCloud', bgColor: 'bg-orange-600/20', textColor: 'text-orange-400' },
-    subsonic: { label: 'Subsonic', bgColor: 'bg-teal-600/20', textColor: 'text-teal-400' }
+function cellStyle(cell) {
+  return Object.assign({}, ROW_CELL,
+    cell.width ? { width: cell.width, flexShrink: 0 } : { flex: cell.flex || '0.5 1 0', minWidth: 0 },
+    cell.align === 'right' ? { textAlign: 'right' } : null,
+    cell.style || null);
+}
+
+// The source icon column's width: room for one icon per service the user can
+// play from (24px each: a 20px icon and the 4px gap), at least two, at most
+// 140px. The app root sets it as --source-col (app.js), and every icon
+// column and its skeleton reads SOURCE_COLUMN, so a list has no dead space
+// right of its icons and its rows and placeholders still line up.
+const SOURCE_ICON_STEP = 24;
+function sourceColumnWidth(playbackResolvers) {
+  const n = Array.isArray(playbackResolvers) ? playbackResolvers.length : 0;
+  return Math.min(140, Math.max(2, n) * SOURCE_ICON_STEP - 4);
+}
+const SOURCE_COLUMN = 'var(--source-col, 140px)';
+
+// A service's play button lives in components/source-icon-button.js.
+
+// The source column: a shimmer while resolving, the icons when playable,
+// nothing when unplayable (the row is dimmed). The icons sit at the
+// column's right edge, right up against the duration (the row's last
+// column), whatever their number; the column's spare room is on their left.
+function TrackSources({ state, shown, allResolvers, onPlay, width = SOURCE_COLUMN }) {
+  const e = React.createElement;
+  const icon = ({ resolverId, source, dim }) => {
+    const resolver = (allResolvers || []).find((r) => r.id === resolverId);
+    if (!resolver || !resolver.play) return null;
+    return e(SourceIconButton, { key: resolverId, resolver, confidence: source && source.confidence, dim, onClick: () => onPlay(resolverId) });
   };
-
-  // Determine which resolver will be used (based on priority)
-  const getPrimaryResolver = () => {
-    if (!availableSources.length || !resolverOrder || !activeResolvers || !allResolvers) return null;
-
-    const sortedSources = availableSources
-      .map(resId => ({
-        resolverId: resId,
-        priority: resolverOrder.indexOf(resId)
-      }))
-      .filter(s => activeResolvers.includes(s.resolverId))
-      .sort((a, b) => a.priority - b.priority);
-
-    if (sortedSources.length === 0) return null;
-
-    const primaryResolverId = sortedSources[0].resolverId;
-    return allResolvers.find(r => r.id === primaryResolverId);
-  };
-
-  const primaryResolver = getPrimaryResolver();
-
-  return React.createElement('div', {
-    className: 'group flex items-center gap-4 p-3 rounded-lg hover:bg-gray-100 transition-colors no-drag',
-    onContextMenu: (e) => {
-      e.preventDefault();
-      if (onContextMenu) {
-        onContextMenu(track);
-      }
-    }
+  return e('div', {
+    className: 'flex items-center gap-1 justify-end',
+    style: { width: typeof width === 'number' ? `${width}px` : width, flexShrink: 0, minHeight: '24px', overflow: 'hidden' },
   },
-    // Album art or play button
-    React.createElement('div', { className: 'relative w-12 h-12 flex-shrink-0' },
-      React.createElement('div', {
-        className: 'w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-500 rounded flex items-center justify-center overflow-hidden'
-      },
-        track.albumArt && React.createElement('img', {
-          src: track.albumArt,
-          alt: track.album,
-          className: 'absolute inset-0 w-full h-full object-cover transition-opacity duration-300',
-          style: { opacity: 0 },
-          ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
-          onLoad: (e) => { e.target.style.opacity = '1'; },
-          onError: (e) => { e.target.style.display = 'none'; }
-        }),
-        React.createElement(Music)
-      ),
-      React.createElement('button', {
-        onClick: () => handlePlay(track),
-        className: 'absolute inset-0 flex items-center justify-center rounded bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity'
-      },
-        React.createElement('div', { className: 'w-8 h-8 flex items-center justify-center rounded-full bg-purple-600 text-sm' },
-          isPlaying ? React.createElement(Pause) : React.createElement(Play)
-        )
-      )
-    ),
-    React.createElement('div', { className: 'flex-1 min-w-0' },
-      React.createElement('div', { className: `text-xs font-medium truncate ${isPlaying ? 'text-purple-600' : 'text-gray-900'}` }, track.title),
-      React.createElement('div', { className: 'flex items-center gap-2' },
-        React.createElement('button', {
-          onClick: (e) => {
-            e.stopPropagation();
-            if (onArtistClick) {
-              onArtistClick(track.artist);
-            }
-          },
-          className: 'text-xs text-gray-500 truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
-          'data-tooltip': `View ${track.artist}'s discography`
-        }, track.artist),
-        // Resolver badges - clickable for manual override
-        ...availableSources.map(resolverId => {
-          const meta = resolverMeta[resolverId];
-          if (!meta) return null;
+  state === 'playable'
+    ? shown.map(icon)
+    : state === 'resolving'
+      ? e('div', { className: 'flex items-center gap-1', role: 'status', 'aria-label': 'Finding sources…' },
+          e('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer' }),
+          e('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: '0.1s' } }))
+      : null);
+}
 
-          return React.createElement('button', {
-            key: resolverId,
-            onClick: (e) => {
-              e.stopPropagation();
-              // Play from this specific resolver
-              handlePlay(track.sources[resolverId]);
-            },
-            className: `text-xs px-2 py-0.5 ${meta.bgColor} ${meta.textColor} rounded-full hover:opacity-80 transition-opacity cursor-pointer`,
-            'data-tooltip': `Play from ${meta.label} (manual override)`
-          }, meta.label);
-        }),
-      ),
-      primaryResolver && React.createElement('div', { className: 'text-xs text-gray-400 mt-0.5' }, `via ${primaryResolver.name}`)
-    ),
-    React.createElement('div', { className: 'text-xs text-gray-500 truncate max-w-[200px]' }, track.album),
-    React.createElement('div', { className: 'text-xs text-gray-500 w-12 text-right' },
-      trackDurationLabel(track, { resolverOrder })
-    )
-  );
-});
+// A track row's placeholder: the same box and columns as TrackRow (number,
+// title, artist, `cells`' widths, the duration, the source icons), so the
+// list doesn't jump when the rows land. `cells` as TrackRow's (only width /
+// flex are read).
+function TrackRowSkeleton({ index = 0, cells = [], duration = false, showArtist = true, sourcesWidth = SOURCE_COLUMN }) {
+  const e = React.createElement;
+  const delay = (n) => `${Math.min(index * 30, 300) + n}ms`;
+  const bar = (style) => e('div', { className: 'h-3.5 rounded shimmer-light animate-shimmer', style: Object.assign({ backgroundSize: '200% 100%' }, style) });
+  return e('div', {
+    'aria-hidden': 'true', className: 'flex items-center gap-4 py-3 px-4',
+    style: { borderRadius: '8px', marginBottom: '2px' },
+  },
+    e('div', { className: 'flex-shrink-0 flex justify-end', style: { width: '32px' } }, bar({ width: '16px', animationDelay: delay(0) })),
+    e('div', { style: { flex: '1 1 0', minWidth: 0 } }, bar({ width: '60%', animationDelay: delay(15) })),
+    showArtist && e('div', { style: { flex: '0.7 1 0', minWidth: 0 } }, bar({ width: '50%', animationDelay: delay(30) })),
+    cells.map((cell, i) => e('div', { key: cell.key || i, style: cell.width ? { width: cell.width, flexShrink: 0 } : { flex: cell.flex || '0.5 1 0', minWidth: 0 } },
+      bar({ width: '60%', marginLeft: cell.align === 'right' ? 'auto' : 0, animationDelay: delay(40) }))),
+    e('div', { className: 'flex items-center gap-1 justify-end', style: { width: typeof sourcesWidth === 'number' ? `${sourcesWidth}px` : sourcesWidth, flexShrink: 0, minHeight: '24px' } },
+      e('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: delay(60) } }),
+      e('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: delay(75) } })),
+    duration && e('div', { className: 'flex-shrink-0 flex justify-end', style: { width: '50px' } }, bar({ width: '32px', animationDelay: delay(45) })));
+}
+
+function TrackRow({
+  track, number, lead, isNowPlaying = false, sources, allResolvers, onPlay, onOpenArtist, onContextMenu,
+  cells = [], duration = false, sourcesWidth = SOURCE_COLUMN, rowRef, className,
+  showArtist = true, resolving, dimResolving = true, ...rest
+}) {
+  const e = React.createElement;
+  const rule = sourceRowState(track, sources || {});
+  const shown = rule.shown;
+  // Not being resolved now: neither a shimmer nor "unavailable".
+  const state = rule.state === 'resolving' && resolving === false ? 'idle' : rule.state;
+  const playable = state === 'playable';
+  const muted = (state === 'resolving' && dimResolving) || state === 'unplayable';
+  return e(CardButton, Object.assign({
+    label: `${track.title} by ${track.artist}`,
+    more: onContextMenu ? `More actions for ${track.title}` : undefined,
+    current: isNowPlaying,
+    ref: rowRef,
+    'data-track-id': track.id,
+    className: ['flex items-center gap-4 py-3 px-4 group no-drag', rest.draggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer',
+      muted ? 'opacity-60' : '', isNowPlaying ? 'bg-accent-tint' : (state === 'resolving' ? '' : 'hover:bg-surface-hover'), className].filter(Boolean).join(' '),
+    style: { borderRadius: '8px', marginBottom: '2px' },
+    onActivate: () => onPlay && onPlay(),
+    onContextMenu: onContextMenu ? (ev) => { ev.preventDefault(); onContextMenu(ev); } : undefined,
+  }, rest),
+    lead || e('span', {
+      className: 'flex-shrink-0 text-right tabular-nums',
+      style: { pointerEvents: 'none', width: '32px', fontSize: '12px', fontWeight: 500, color: isNowPlaying ? 'var(--accent-secondary)' : 'var(--text-tertiary)' },
+    }, isNowPlaying ? '▶' : number),
+    e('span', {
+      className: 'truncate',
+      style: { pointerEvents: 'none', flex: '1 1 0', minWidth: 0, fontSize: '13px', fontWeight: isNowPlaying ? 500 : 400, color: isNowPlaying ? 'var(--accent-primary)' : (playable || state === 'idle' || (state === 'resolving' && !dimResolving)) ? 'var(--text-primary)' : 'var(--text-tertiary)' },
+    }, track.title),
+    !showArtist ? null : onOpenArtist
+      ? e('button', {
+          type: 'button',
+          className: 'text-left truncate hover:text-accent hover:underline cursor-pointer transition-colors',
+          style: { flex: '0.7 1 0', minWidth: 0, fontSize: '12px', color: 'var(--text-secondary)', background: 'none', border: 'none', padding: 0 },
+          onClick: (ev) => { ev.stopPropagation(); onOpenArtist(track.artist); },
+        }, track.artist || 'Unknown artist')
+      : e('span', { className: 'truncate', style: { pointerEvents: 'none', flex: '0.7 1 0', minWidth: 0, fontSize: '12px', color: 'var(--text-secondary)' } }, track.artist || 'Unknown artist'),
+    cells.map((cell, i) => (cell.onClick && cell.content
+      // A link cell (the album): above the row's stretched button.
+      ? e('button', {
+          key: cell.key || i, type: 'button',
+          className: 'text-left truncate hover:text-accent hover:underline cursor-pointer transition-colors',
+          style: Object.assign(cellStyle(cell), { pointerEvents: 'auto', color: 'var(--text-secondary)', background: 'none', border: 'none', padding: 0 }),
+          onClick: (ev) => { ev.stopPropagation(); cell.onClick(); },
+        }, cell.content)
+      : e('span', { key: cell.key || i, className: `truncate${cell.align === 'right' ? ' tabular-nums' : ''}`, style: cellStyle(cell) }, cell.content))),
+    e(TrackSources, { state, shown, allResolvers, onPlay: (id) => onPlay && onPlay(id), width: sourcesWidth }),
+    // The duration is the last column, right-aligned, with the source icons
+    // right up against it (right-aligned in theirs): durations line up down
+    // the row's end and nothing is left empty after them.
+    duration && e('span', {
+      className: 'text-right tabular-nums flex-shrink-0',
+      style: Object.assign({}, ROW_CELL, { width: '50px' }),
+    }, trackDurationLabel(track, sources || {})));
+}
 
 // VirtualizedQueueList component - Renders queue tracks efficiently using windowing
 // Only renders visible tracks + overscan buffer, dramatically reducing DOM nodes for large queues
@@ -331,17 +389,18 @@ const VirtualizedQueueList = React.memo(({
       onMouseLeave: () => {
         if (onTrackHoverEnd) onTrackHoverEnd();
       },
+      // On the always-dark drawer: the accent fill for the playing row, the
+      // on-dark tints for hover and drag, the soft accent for a drop line.
       className: `group flex items-center gap-3 py-1.5 px-3 hover:bg-white/10 transition-all duration-300 ${
-        isCurrentTrack ? 'bg-purple-900/40' : ''
-      } ${isDragging ? 'opacity-50 bg-gray-700/50' : ''} ${
+        isDragging ? 'opacity-50 bg-white/5' : ''} ${
         isError || isUnplayable ? 'opacity-50' : ''
-      } ${isDraggedOver ? 'border-t-2 border-t-purple-400' : ''} ${
+      } ${isDraggedOver ? 'border-t-2' : ''} ${
         isLoading || isError ? 'cursor-default' : 'cursor-pointer'} ${
         isFallingDown ? 'queue-track-drop' : ''} ${
         isInserted ? 'queue-track-insert' : ''} ${
         (spinoffMode || playbackContext?.type === 'spinoff' || playbackContext?.type === 'friend') && !isCurrentTrack ? 'opacity-50' : ''} ${
         listenAlongFriend ? 'opacity-40 pointer-events-none' : ''}`,
-      style: virtualRow ? {
+      style: Object.assign(virtualRow ? {
         position: 'absolute',
         top: 0,
         left: 0,
@@ -352,7 +411,9 @@ const VirtualizedQueueList = React.memo(({
       } : {
         borderRadius: '6px',
         marginBottom: '1px'
-      }
+      },
+      isCurrentTrack ? { backgroundColor: 'color-mix(in srgb, var(--accent-fill) 35%, transparent)' } : null,
+      isDraggedOver ? { borderTopColor: 'var(--accent-soft)' } : null)
     },
       // Track number
       React.createElement('span', {
@@ -381,8 +442,8 @@ const VirtualizedQueueList = React.memo(({
           fontSize: '13px',
           fontWeight: index === 0 ? '500' : '400',
           color: isLoading ? 'var(--on-dark-tertiary)' :
-                 isError ? '#f87171' :
-                 isCurrentTrack ? 'var(--accent-soft)' : 'rgba(229, 231, 235, 0.9)'
+                 isError ? 'var(--error)' :
+                 isCurrentTrack ? 'var(--accent-soft)' : 'var(--on-dark-primary)'
         }
       },
         isLoading ? 'Loading…' :
@@ -391,7 +452,7 @@ const VirtualizedQueueList = React.memo(({
       ),
       // Artist name
       React.createElement('button', { type: 'button',
-        className: 'text-left truncate hover:text-purple-400 hover:underline cursor-pointer transition-colors',
+        className: 'text-left truncate hover:text-white hover:underline cursor-pointer transition-colors',
         // On the always-dark drawer: the fixed on-dark colour (#1386 contrast).
         style: { flex: '0.7 1 0', minWidth: 0, fontSize: '12px', color: 'var(--on-dark-secondary)' },
         onClick: (e) => {
@@ -403,28 +464,20 @@ const VirtualizedQueueList = React.memo(({
         isError ? (track.errorMessage || 'Unknown error') :
         track.artist
       ),
-      // Duration
-      React.createElement('span', {
-        className: 'text-right tabular-nums',
-        style: { width: '50px', flexShrink: 0, fontSize: '12px', color: 'var(--on-dark-tertiary)' }
-      }, !isLoading && !isError ? trackDurationLabel(track, { trackSources, resolverOrder }) : ''),
-      // Resolver icons
+      // Resolver icons, right up against the duration after them (as in the
+      // page lists)
       React.createElement('div', {
         className: 'flex items-center gap-1 justify-end',
-        style: { width: '140px', flexShrink: 0, minHeight: '20px' }
+        style: { width: SOURCE_COLUMN, flexShrink: 0, minHeight: '20px' }
       },
         isError ?
-          React.createElement('button', {
-            onClick: (e) => {
+          React.createElement(Button, { variant: 'icon', size: 'sm', tone: 'dark', onClick: (e) => {
               e.stopPropagation();
               if (track.sourceUrl) {
                 removeFromQueue(track.id);
                 handleUrlDrop(track.sourceUrl, 'queue');
               }
-            },
-            className: 'px-2 py-0.5 text-xs text-gray-400 hover:text-white hover:bg-white/10 rounded transition-colors',
-            'data-tooltip': 'Retry'
-          }, '↻')
+            }, 'aria-label': 'Try again', 'data-tooltip': 'Try again' }, React.createElement(Icons.RefreshCw, { size: 14 }))
         : isLoading ?
           React.createElement('div', { className: 'flex items-center gap-1' },
             React.createElement('div', {
@@ -437,36 +490,14 @@ const VirtualizedQueueList = React.memo(({
             })
           )
         : shownSources.length > 0 ?
+          // The shared source button, quiet on the dark drawer.
           shownSources.map(({ resolverId, source, dim }) => {
               const resolver = allResolvers.find(r => r.id === resolverId);
               if (!resolver) return null;
-              const confidence = source?.confidence || 0;
-              const restingOpacity = dim ? 0.5 : 0.7;
-              return React.createElement('button', {
-                key: resolverId,
-                onClick: (e) => {
-                  e.stopPropagation();
-                  handlePlay({ ...track, preferredResolver: resolverId });
-                },
-                className: 'no-drag',
-                style: {
-                  width: '20px',
-                  height: '20px',
-                  borderRadius: '4px',
-                  backgroundColor: resolver.color,
-                  border: 'none',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  opacity: restingOpacity,
-                  filter: 'saturate(0.7)',
-                  transition: 'opacity 0.15s, filter 0.15s, transform 0.1s'
-                },
-                onMouseEnter: (e) => { e.currentTarget.style.transform = 'scale(1.1)'; e.currentTarget.style.opacity = '1'; e.currentTarget.style.filter = 'saturate(1)'; },
-                onMouseLeave: (e) => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.opacity = String(restingOpacity); e.currentTarget.style.filter = 'saturate(0.7)'; },
-                'aria-label': `Play via ${resolver.name}${confidence ? ` (${Math.round(confidence * 100)}% match)` : ''}`, 'data-tooltip': `Play via ${resolver.name}${confidence ? ` (${Math.round(confidence * 100)}% match)` : ''}`
-              }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
+              return React.createElement(SourceIconButton, {
+                key: resolverId, resolver, confidence: source?.confidence || 0, dim, quiet: true,
+                onClick: () => handlePlay({ ...track, preferredResolver: resolverId })
+              });
             })
         : sourceState === 'unplayable' ? null
         :
@@ -482,16 +513,17 @@ const VirtualizedQueueList = React.memo(({
             })
           )
       ),
+      // Duration: the last column before Remove
+      React.createElement('span', {
+        className: 'text-right tabular-nums',
+        style: { width: '50px', flexShrink: 0, fontSize: '12px', color: 'var(--on-dark-tertiary)' }
+      }, !isLoading && !isError ? trackDurationLabel(track, { trackSources, resolverOrder }) : ''),
       // Remove button
-      React.createElement('button', {
-        onClick: (e) => {
+      React.createElement(Button, { variant: 'icon', size: 'sm', tone: 'dark', className: 'flex-shrink-0 opacity-0 group-hover:opacity-100 card-reveal', onClick: (e) => {
           e.stopPropagation();
           // This row only: the same song may be queued more than once.
           removeFromQueue(track.id, index);
-        },
-        className: 'flex-shrink-0 p-1 text-gray-500 hover:text-red-400 hover:bg-white/10 rounded transition-colors opacity-0 group-hover:opacity-100 card-reveal',
-        'aria-label': isLoading ? 'Cancel' : 'Remove from queue', 'data-tooltip': isLoading ? 'Cancel' : 'Remove from queue'
-      }, React.createElement(X, { size: 14 }))
+        }, 'aria-label': isLoading ? 'Cancel' : 'Remove from queue', 'data-tooltip': isLoading ? 'Cancel' : 'Remove from queue' }, React.createElement(X, { size: 14 }))
     );
   };
 
@@ -649,6 +681,11 @@ const VirtualizedTrackList = React.memo(({
 
 module.exports = {
   TrackRow,
+  TrackRowSkeleton,
+  sourceColumnWidth,
+  SOURCE_COLUMN,
+  TrackSources,
+  SourceIconButton,
   VirtualizedQueueList,
   VirtualizedTrackList,
 };

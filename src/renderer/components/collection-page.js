@@ -16,22 +16,25 @@
 // from props under their old names.
 
 const Icons = require('./icons');
-const { CardButton } = require('./card-button');
+const { FilterBox } = require('./filter-box');
+const { PageHero } = require('./page-hero');
 const { EmptyState, ErrorState } = require('./states');
 const { SortMenu } = require('./sort-menu');
 const { Menu } = require('./menu');
+const { ResolverIcon } = require('./ui-atoms');
+const { Badge } = require('./badge');
 const { HeroTabs } = require('./hero-tabs');
-const { VirtualizedTrackList } = require('./track-lists');
-const { sourceRowState } = require('../lib/visible-sources');
+const { VirtualizedTrackList, TrackRow, TrackRowSkeleton } = require('./track-lists');
 const { slug } = require('../lib/track-slug');
 const { artistMenu } = require('../lib/item-menus');
-const { trackDurationLabel } = require('../lib/track-duration');
-const { ResolverIcon } = require('./ui-atoms');
 const { PlayTop10Icon } = require('./cards');
 const { AlbumCard } = require('./album-card');
 const { ArtistCard } = require('./artist-card');
 const { ListenerCard } = require('./listener-card');
 const { countOf } = require('../lib/plural');
+const { PAGE_COLORS } = require('../lib/page-colors');
+const { CollectionRadioButton } = require('./collection-radio-button');
+const { Button, buttonClassName } = require('./button');
 
 // Plain functions from Parachord, passed as stable wrappers.
 const COLLECTION_PAGE_HANDLERS = [
@@ -53,6 +56,7 @@ const COLLECTION_PAGE_HANDLERS = [
   'openSyncSetupModal',
   'playArtistTopTracks',
   'playListenerTopTracks',
+  'setProviderSyncEnabled',
   'setQueueWithContext',
   'syncFriendsFromServices',
 ];
@@ -104,6 +108,8 @@ const CollectionPage = React.memo(function CollectionPage(props) {
     playbackContext,
     resolverOrder,
     resolverSyncSettings,
+    syncSignedOut,
+    setProviderSyncEnabled,
     setAddFriendModalOpen,
     setAddToPlaylistPanel,
     setCollectionHeaderCollapsed,
@@ -127,51 +133,15 @@ const CollectionPage = React.memo(function CollectionPage(props) {
           style: { overflow: 'hidden', minHeight: 0 }
         },
           // Header section (outside scrollable area)
-          React.createElement('div', {
-            className: 'relative',
-            style: {
-              height: collectionHeaderCollapsed ? '80px' : '320px',
-              flexShrink: 0,
-              transition: 'height 300ms cubic-bezier(0.4, 0, 0.2, 1)',
-              overflow: 'hidden',
-              willChange: 'height',
-              contain: 'layout style'
-            }
-          },
-              // Gradient background
-              React.createElement('div', {
-                className: `absolute inset-0 ${require('../lib/page-colors').PAGE_COLORS.library.hero}`
-              }),
-              // Vinyl pattern overlay
-              React.createElement('div', {
-                className: 'absolute inset-0',
-                style: {
-                  opacity: 0.08,
-                  backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'60\' height=\'60\' viewBox=\'0 0 60 60\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'%23ffffff\'%3E%3Ccircle cx=\'30\' cy=\'30\' r=\'20\' fill=\'none\' stroke=\'%23fff\' stroke-width=\'2\'/%3E%3Ccircle cx=\'30\' cy=\'30\' r=\'12\' fill=\'none\' stroke=\'%23fff\' stroke-width=\'1\'/%3E%3Ccircle cx=\'30\' cy=\'30\' r=\'4\'/%3E%3C/g%3E%3C/svg%3E")'
-                }
-              }),
-              // EXPANDED STATE - Centered content
-            !collectionHeaderCollapsed && React.createElement('div', {
-              className: 'absolute inset-0 flex flex-col items-center justify-center text-center px-6 z-10',
-              style: {
-                opacity: collectionHeaderCollapsed ? 0 : 1,
-                transition: 'opacity 300ms ease-out'
-              }
-            },
-                // Title
-                React.createElement('h1', {
-                  className: 'hero-title font-light text-white',
-                  style: {
-                    textShadow: '0 2px 20px rgba(0,0,0,0.5)',
-                    letterSpacing: '0.3em',
-                    textTransform: 'uppercase'
-                  },
-                  onContextMenu: copyParachordLink
-                }, 'COLLECTION'),
-                // Stats row as tabs (matching Artist page styling)
-                React.createElement('div', {
+          React.createElement(PageHero, {
+collapsed: collectionHeaderCollapsed,
+page: 'library',
+title: 'Collection',
+onTitleContextMenu: copyParachordLink,
+expanded: React.createElement(React.Fragment, null,
+React.createElement('div', {
                   className: 'flex items-center gap-1 mt-6',
-                  style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
+                  style: { textShadow: 'var(--hero-text-shadow-line)' }
                 },
                   React.createElement(HeroTabs, { items: [
                     { key: 'artists', label: collectionLoading ? null : countOf(collectionData.artists.length, 'Artist'), staticLabel: 'Artists' },
@@ -183,43 +153,16 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                       tab.staticLabel
                     ), label: 'Collection' })
                 ),
-                // Buttons row
-                React.createElement('div', {
+React.createElement('div', {
                   className: 'mt-6 flex items-center gap-3'
                 },
-                  // Start Collection Station button (pink, matching Artist page)
-                  React.createElement('button', {
-                    onClick: handleStartCollectionStation,
-                    className: 'px-6 py-2 rounded-full font-medium text-white no-drag transition-all hover:scale-105',
-                    style: {
-                      backgroundColor: '#E91E63',
-                      boxShadow: '0 4px 15px rgba(233, 30, 99, 0.4)'
-                    }
-                  }, 'Start Collection Radio')
-                )
-              ),
-            // COLLAPSED STATE - Inline layout matching Recommendations
-            collectionHeaderCollapsed && React.createElement('div', {
-              className: 'hero-bar absolute inset-0 flex items-center px-6 z-10',
-              style: {
-                opacity: collectionHeaderCollapsed ? 1 : 0,
-                transition: 'opacity 300ms ease-out'
-              }
-            },
-                // Left: Title
-                React.createElement('h1', {
-                  className: 'text-2xl font-light text-white mr-6',
-                  style: {
-                    textShadow: '0 2px 10px rgba(0,0,0,0.5)',
-                    letterSpacing: '0.2em',
-                    textTransform: 'uppercase'
-                  },
-                  onContextMenu: copyParachordLink
-                }, 'COLLECTION'),
-                // Tabs (next to title, like artist page)
-                React.createElement('div', {
+                  // Home's button (components/collection-radio-button.js).
+                  React.createElement(CollectionRadioButton, { onClick: handleStartCollectionStation })
+                )),
+collapsedContent: React.createElement(React.Fragment, null,
+React.createElement('div', {
                   className: 'flex items-center gap-1',
-                  style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
+                  style: { textShadow: 'var(--hero-text-shadow-line)' }
                 },
                   React.createElement(HeroTabs, { items: [
                     { key: 'artists', label: collectionLoading ? null : countOf(collectionData.artists.length, 'Artist'), staticLabel: 'Artists' },
@@ -231,16 +174,9 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                       tab.staticLabel
                     ), label: 'Collection' })
                 ),
-                // Right: Start Collection Station button
-                React.createElement('button', {
-                  onClick: handleStartCollectionStation,
-                  className: 'ml-auto px-4 py-1.5 rounded-full text-sm font-medium text-white transition-colors hover:opacity-90 no-drag',
-                  style: {
-                    backgroundColor: '#E91E63'
-                  }
-                }, 'Start Radio')
-              )
-          ),
+React.createElement('div', { className: 'ml-auto' },
+                  React.createElement(CollectionRadioButton, { onClick: handleStartCollectionStation, compact: true })))
+}),
           // Filter bar — promoted out of scroll container so the virtualized
           // collection-tracks list inside can be a direct child of the
           // scroll element at scrollTop=0, eliminating the scrollMargin
@@ -259,41 +195,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
             // Spacer
             React.createElement('div', { className: 'flex-1' }),
             // Search toggle/field
-            React.createElement('div', { className: 'flex items-center' },
-              collectionSearchOpen ?
-                React.createElement('div', { className: 'flex items-center border border-line-strong rounded-full px-3 py-[5px] filter-pill' },
-                  React.createElement('input', {
-                    type: 'text',
-                    value: collectionSearch,
-                    onChange: (e) => setCollectionSearch(e.target.value),
-                    onBlur: () => {
-                      if (!collectionSearch.trim()) {
-                        setCollectionSearchOpen(false);
-                      }
-                    },
-                    autoFocus: true,
-                    placeholder: 'Filter…',
-                    className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none',
-                    style: { width: '150px' }, 'aria-label': 'Filter'
-                  }),
-                  collectionSearch && React.createElement('button', { type: 'button', 'aria-label': 'Clear filter', 'data-tooltip': 'Clear filter',
-                    onClick: () => {
-                      setCollectionSearch('');
-                      setCollectionSearchOpen(false);
-                    },
-                    className: 'ml-2 text-ink-tertiary hover:text-ink-secondary'
-                  },
-                    React.createElement(Icons.X, { className: 'w-4 h-4' })
-                  )
-                )
-              :
-                React.createElement('button', { type: 'button', 'aria-label': 'Filter', 'data-tooltip': 'Filter',
-                  onClick: () => setCollectionSearchOpen(true),
-                  className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors'
-                },
-                  React.createElement(Icons.Search, { className: 'w-5 h-5' })
-                )
-            ),
+            React.createElement(FilterBox, { value: collectionSearch, onChange: setCollectionSearch, open: collectionSearchOpen, onOpenChange: setCollectionSearchOpen }),
             // Sync Collection button and its menu (components/menu.js): the
             // sync status and Sync Now (parachord#1009: the Library Sync modal
             // existed since 2026-01 but nothing opened it), then one item per
@@ -312,7 +214,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                   items.push({
                     key: 'sync-status',
                     label: Object.values(syncStatus).some(s => s?.inProgress) ? 'Syncing…' : 'Library sync…',
-                    icon: tile('#06b6d4', React.createElement(Icons.RefreshCw, { size: 16, style: { color: '#ffffff' } })),
+                    icon: tile(PAGE_COLORS.library.fill, React.createElement(Icons.RefreshCw, { size: 16, style: { color: 'var(--on-accent)' } })),
                     onSelect: () => setSyncStatusModal({ open: true }),
                   });
                   items.push({ separator: true, key: 'sep' });
@@ -321,43 +223,32 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                   items.push({
                     key: pid,
                     label: config.name,
-                    icon: tile(config.color,
-                      React.createElement('svg', {
-                        style: { width: '16px', height: '16px' },
-                        viewBox: pid === 'spotify' ? '0 0 24 24' : pid === 'listenbrainz' ? '0 0 146 160' : '0 0 122.88 122.88',
-                        fill: '#ffffff'
-                      },
-                        pid === 'spotify'
-                          ? React.createElement('path', { d: 'M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z' })
-                          : pid === 'listenbrainz'
-                          ? [
-                              React.createElement('path', { key: 'r', d: 'm75.354 7.823v144l61-35v-74z' }),
-                              React.createElement('path', { key: 'l', d: 'm70.354 7.823-61 35v74l61 35z' })
-                            ]
-                          : React.createElement('path', { d: 'M47.76,86.16v-38.4c0-1.44,0.8-2.32,2.4-2.64l33.12-6.72c1.76-0.32,2.72,0.48,2.88,2.4v29.28c0,2.4-3.6,4-10.8,4.8c-13.68,2.16-11.52,25.2,7.2,18.96c7.2-2.64,8.4-9.6,8.4-16.56V21.12c0,0,0-4.8-4.08-3.6l-40.8,8.4c0,0-3.12,0.48-3.12,4.32v48.72c0,2.4-3.6,4-10.8,4.8c-13.68,2.16-11.52,25.2,7.2,18.96C46.56,100.08,47.76,93.12,47.76,86.16z' })
-                      )
-                    ),
-                    trailing: resolverSyncSettings[pid]?.enabled && React.createElement('span', {
-                      'aria-label': 'Sync on', role: 'img',
-                      style: { width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--success)' }
-                    }),
+                    // The plug-in's colour and the shared logo kit.
+                    icon: tile(config.color || 'var(--accent-fill)', React.createElement(ResolverIcon, { resolverId: pid, size: 16, fill: 'var(--on-accent)' })),
+                    // The row opens Manage sync; the switch beside it turns
+                    // this service's sync on or off (off pauses it: nothing
+                    // synced is removed).
                     onSelect: () => openSyncSetupModal(pid),
+                    // Signed out: nothing syncs, so the switch shows off
+                    // (its saved setting stays, and it resumes once signed in).
+                    trailing: syncSignedOut?.[pid] && React.createElement('span', { style: { fontSize: '11px', opacity: 0.7 } }, 'Signed out'),
+                    toggle: {
+                      checked: !!resolverSyncSettings[pid]?.enabled && !syncSignedOut?.[pid],
+                      label: `Sync ${config.name}`,
+                      onChange: (next) => setProviderSyncEnabled(pid, next),
+                    },
                   });
                 }
                 return React.createElement(Menu, {
                   label: 'Sync',
                   align: 'right',
-                  minWidth: 220,
+                  minWidth: 280,
                   items,
+                  // The shared small secondary button (components/button.js), as
+                  // Playlists' Import is.
                   renderTrigger: (t) => React.createElement('button', Object.assign({}, t, {
                     type: 'button',
-                    className: 'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5',
-                    style: {
-                      backgroundColor: syncOn ? '#06b6d4' : 'var(--nav-inactive)',
-                      color: '#ffffff',
-                      border: 'none',
-                      cursor: 'pointer'
-                    },
+                    className: buttonClassName({ variant: 'secondary', size: 'sm' }),
                     'data-tooltip': 'Sync your music library'
                   }),
                     React.createElement(Icons.RefreshCw, { className: 'w-4 h-4' }),
@@ -374,7 +265,9 @@ const CollectionPage = React.memo(function CollectionPage(props) {
               const lastfmConfig = metaServiceConfigs.lastfm;
               const listenbrainzConfig = metaServiceConfigs.listenbrainz;
               const hasCreds = !!(lastfmConfig?.username || listenbrainzConfig?.username);
-              return React.createElement('button', {
+              // The shared icon button (components/button.js).
+              return React.createElement(Button, {
+                variant: 'icon', size: 'sm', className: 'ml-3',
                 onClick: () => syncFriendsFromServices({ silent: false }),
                 disabled: friendSyncInProgress || !hasCreds,
                 'aria-label': hasCreds
@@ -382,22 +275,17 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                   : 'Connect Last.fm or ListenBrainz in Settings to sync friends', 'data-tooltip': hasCreds
                   ? 'Sync friends from Last.fm and ListenBrainz'
                   : 'Connect Last.fm or ListenBrainz in Settings to sync friends',
-                className: 'ml-3 p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors',
-                style: { opacity: friendSyncInProgress || !hasCreds ? 0.4 : 1, cursor: hasCreds ? 'pointer' : 'not-allowed' }
               },
                 friendSyncInProgress
-                  ? React.createElement(Icons.Spinner, { className: 'w-5 h-5' })
-                  : React.createElement('svg', {
-                      className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor'
-                    },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15' })
-                    )
+                  ? React.createElement(Icons.Spinner, { className: 'w-4 h-4' })
+                  : React.createElement(Icons.RefreshCw, { className: 'w-4 h-4' })
               );
             })(),
             // Add Friend button in header (only on friends tab)
-            collectionTab === 'friends' && React.createElement('button', {
-              onClick: () => setAddFriendModalOpen(true),
-              className: 'ml-3 px-3 py-1.5 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5'
+            // The shared small primary button, in Collection's colour.
+            collectionTab === 'friends' && React.createElement(Button, {
+              variant: 'primary', size: 'sm', pageColor: PAGE_COLORS.library.fill, className: 'ml-3',
+              onClick: () => setAddFriendModalOpen(true)
             },
               React.createElement(Icons.Plus, { className: 'w-4 h-4' }),
               'Add friend'
@@ -437,55 +325,11 @@ const CollectionPage = React.memo(function CollectionPage(props) {
             // wrapper below for their padding.
             collectionTab === 'tracks' && (() => {
               if (libraryLoading || collectionLoading) {
-                // Skeleton loaders while loading - matches new rounded row style
+                // The shared track row's placeholder, in the rows' columns
+                // (the album cell and the duration).
                 return React.createElement('div', { className: 'space-y-0' },
                   Array.from({ length: 8 }).map((_, index) =>
-                    React.createElement('div', {
-                      key: `skeleton-${index}`,
-                      className: 'flex items-center gap-4 py-3 px-4',
-                      style: { borderRadius: '8px', marginBottom: '2px' }
-                    },
-                      // Track number skeleton
-                      React.createElement('div', {
-                        className: 'h-3 shimmer-light rounded animate-shimmer',
-                        style: { width: '24px', flexShrink: 0 }
-                      }),
-                      // Title skeleton - flexible
-                      React.createElement('div', {
-                        className: 'h-3.5 shimmer-light rounded animate-shimmer',
-                        style: { flex: '1 1 0', minWidth: 0, animationDelay: '0.1s' }
-                      }),
-                      // Artist skeleton - flexible
-                      React.createElement('div', {
-                        className: 'h-3.5 shimmer-light rounded animate-shimmer',
-                        style: { flex: '0.7 1 0', minWidth: 0, animationDelay: '0.2s' }
-                      }),
-                      // Album skeleton - flexible
-                      React.createElement('div', {
-                        className: 'h-3.5 shimmer-light rounded animate-shimmer',
-                        style: { flex: '0.5 1 0', minWidth: 0, animationDelay: '0.3s' }
-                      }),
-                      // Duration skeleton
-                      React.createElement('div', {
-                        className: 'h-3 shimmer-light rounded animate-shimmer flex-shrink-0',
-                        style: { width: '50px', marginRight: '16px', animationDelay: '0.4s' }
-                      }),
-                      // Resolver icons skeleton
-                      React.createElement('div', {
-                        className: 'flex items-center gap-1 justify-end',
-                        style: { width: '140px', flexShrink: 0 }
-                      },
-                        React.createElement('div', {
-                          className: 'w-5 h-5 shimmer-light rounded animate-shimmer',
-                          style: { animationDelay: '0.5s' }
-                        }),
-                        React.createElement('div', {
-                          className: 'w-5 h-5 shimmer-light rounded animate-shimmer',
-                          style: { animationDelay: '0.6s' }
-                        })
-                      )
-                    )
-                  )
+                    React.createElement(TrackRowSkeleton, { key: `skeleton-${index}`, index, duration: true, cells: [{ key: 'album' }] }))
                 );
               }
 
@@ -514,275 +358,56 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                   );
                   const isCurrentTrack = currentTrack?.id === track.id || (currentTrack?.filePath && track.filePath && currentTrack.filePath === track.filePath);
                   const isNowPlaying = isCurrentTrack && playbackContext?.type === 'library';
-                  // The row's sources, one rule for every list (lib/visible-sources):
-                  // resolving (shimmer), unplayable (dimmed, no icons) or playable.
-                  // A local file always plays, so it is never unplayable.
-                  const { shown: shownSources, state: sourceState } = sourceRowState(track, { trackSources, playbackResolvers: activeResolvers, resolverOrder });
-                  const isResolving = sourceState === 'resolving';
-                  const isUnplayable = sourceState === 'unplayable' && !track.filePath;
 
-                  return React.createElement(CardButton, { label: `${track.title} by ${track.artist}`, more: `More actions for ${track.title}`,
-                  current: isNowPlaying,
-                    ref: (el) => {
+                  return React.createElement(TrackRow, {
+                    key: track.id || track.filePath || index,
+                    track,
+                    number: String(index + 1).padStart(2, '0'),
+                    isNowPlaying: isNowPlaying && isPlaying,
+                    // A local file's Local Files is one more source, shown and
+                    // ordered by the user's source order like the rest.
+                    sources: { trackSources, playbackResolvers: activeResolvers, resolverOrder },
+                    allResolvers,
+                    duration: true,
+                    rowRef: (el) => {
                       if (el) {
                         collectionTrackRowRefs.current.set(track.id, el);
-                        // Also observe if observer exists
-                        if (collectionObserverRef.current) {
-                          collectionObserverRef.current.observe(el);
-                        }
+                        if (collectionObserverRef.current) collectionObserverRef.current.observe(el);
                       } else {
                         collectionTrackRowRefs.current.delete(track.id);
                       }
                     },
-                    'data-track-id': track.id,
-                    key: track.id || track.filePath || index,
                     draggable: true,
                     onDragStart: (e) => {
                       setDraggingTrackForPlaylist(track);
                       e.dataTransfer.effectAllowed = 'copy';
                       e.dataTransfer.setData('text/plain', JSON.stringify({
                         type: 'track',
-                        track: {
-                          id: track.id,
-                          title: track.title,
-                          artist: track.artist,
-                          album: track.album,
-                          duration: track.duration,
-                          albumArt: track.albumArt,
-                          sources: track.sources || {}
-                        }
+                        track: { id: track.id, title: track.title, artist: track.artist, album: track.album, duration: track.duration, albumArt: track.albumArt, sources: track.sources || {} }
                       }));
                     },
-                    onDragEnd: () => {
-                      handlePlaylistDragEnd();
+                    onDragEnd: () => handlePlaylistDragEnd(),
+                    onPlay: (resolverId) => {
+                      setQueueWithContext(sorted.slice(index + 1), { type: 'library', name: 'Collection' });
+                      // The merged sources (original + resolved), so handlePlay can use every resolver.
+                      handlePlay(resolverId ? { ...track, preferredResolver: resolverId } : { ...track, sources: effectiveSources });
                     },
-                    className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all no-drag group ${
-                      isNowPlaying && isPlaying ? 'bg-accent-tint' : 'hover:bg-surface-hover'
-                    } ${isUnplayable ? 'opacity-60' : ''}`,
-                    style: {
-                      borderRadius: '8px',
-                      marginBottom: '2px'
+                    onOpenArtist: fetchArtistData,
+                    onContextMenu: () => {
+                      // This tab lists local-library tracks too, and those are
+                      // not in the collection: claiming they were offered
+                      // "Remove from Collection", which could only fail with
+                      // "not in your collection" (#1002).
+                      const inCollection = collectionData.tracks.some(t => t.id === track.id);
+                      window.showItemMenu({
+                        type: 'track',
+                        track: track,
+                        isInCollection: inCollection,
+                        isLibraryTrack: !inCollection && !!(track.filePath || track.sources?.localfiles?.filePath)
+                      });
                     },
-                    onActivate: () => {
-                      const tracksAfter = sorted.slice(index + 1);
-                      const context = { type: 'library', name: 'Collection' };
-                      setQueueWithContext(tracksAfter, context);
-                      // Pass track with merged sources (original + resolved) so handlePlay can use all available resolvers
-                      handlePlay({ ...track, sources: effectiveSources });
-                    },
-                    onContextMenu: (e) => {
-                      e.preventDefault();
-                      if (window.electron?.contextMenu?.showTrackMenu) {
-                        // This tab lists local-library tracks too, and those are
-                        // not in the collection: claiming they were offered
-                        // "Remove from Collection", which could only fail with
-                        // "not in your collection" (#1002).
-                        const inCollection = collectionData.tracks.some(t => t.id === track.id);
-                        window.showItemMenu({
-                          type: 'track',
-                          track: track,
-                          isInCollection: inCollection,
-                          isLibraryTrack: !inCollection && !!(track.filePath || track.sources?.localfiles?.filePath)
-                        });
-                      }
-                    }
-                  },
-                    // Track number or playing indicator
-                    React.createElement('span', {
-                      className: 'w-6 flex-shrink-0 text-right',
-                      style: {
-                        pointerEvents: 'none',
-                        fontSize: '12px',
-                        fontWeight: '500',
-                        color: isNowPlaying && isPlaying ? 'var(--accent-secondary)' : 'var(--text-tertiary)'
-                      }
-                    }, isNowPlaying && isPlaying ? '▶' : String(index + 1).padStart(2, '0')),
-
-                    // Track title - flexible column
-                    React.createElement('span', {
-                      className: 'truncate transition-colors',
-                      style: {
-                        pointerEvents: 'none',
-                        flex: '1 1 0',
-                        minWidth: 0,
-                        fontSize: '13px',
-                        fontWeight: isNowPlaying && isPlaying ? '500' : '400',
-                        color: isNowPlaying && isPlaying ? 'var(--accent-primary)' : 'var(--text-primary)'
-                      }
-                    }, track.title),
-
-                    // Artist name - flexible column, clickable
-                    React.createElement('button', { type: 'button',
-                      className: 'text-left truncate hover:text-accent hover:underline cursor-pointer transition-colors',
-                      style: {
-                        flex: '0.7 1 0',
-                        minWidth: 0,
-                        fontSize: '13px',
-                        color: 'var(--text-secondary)'
-                      },
-                      onClick: (e) => {
-                        e.stopPropagation();
-                        fetchArtistData(track.artist);
-                      }
-                    }, track.artist || 'Unknown Artist'),
-
-                    // Album name - flexible column, clickable
-                    track.album ? React.createElement('button', { type: 'button',
-                      className: 'text-left truncate hover:text-accent hover:underline cursor-pointer transition-colors',
-                      style: {
-                        flex: '0.5 1 0',
-                        minWidth: 0,
-                        fontSize: '13px',
-                        color: 'var(--text-secondary)'
-                      },
-                      onClick: (e) => {
-                        e.stopPropagation();
-                        openChartsAlbum({ artist: track.artist, title: track.album, albumArt: track.albumArt });
-                      }
-                    }, track.album) : React.createElement('span', {
-                      className: 'truncate',
-                      style: {
-                        pointerEvents: 'none',
-                        flex: '0.5 1 0',
-                        minWidth: 0,
-                        fontSize: '13px',
-                        color: 'var(--text-secondary)'
-                      }
-                    }, ''),
-
-                    // Duration - right-justified before resolver icons
-                    React.createElement('span', {
-                      className: 'flex-shrink-0 tabular-nums',
-                      style: {
-                        pointerEvents: 'none',
-                        width: '50px',
-                        marginRight: '16px',
-                        fontSize: '12px',
-                        color: 'var(--text-tertiary)',
-                        textAlign: 'right'
-                      }
-                    }, trackDurationLabel(track, { trackSources, resolverOrder })),
-
-                    // Resolver icons - fixed width column (last column)
-                    React.createElement('div', {
-                      className: 'flex items-center gap-1 flex-shrink-0',
-                      style: { pointerEvents: 'none', minHeight: '20px', width: '140px', justifyContent: 'flex-end' }
-                    },
-                      (() => {
-                        const hasExternalSources = shownSources.some(s => s.resolverId !== 'localfiles');
-
-                        if (hasExternalSources) {
-                          return shownSources
-                            .map(({ resolverId, source, dim }) => {
-                              const resolver = allResolvers.find(r => r.id === resolverId);
-                              if (!resolver) return null;
-                              return React.createElement('button', {
-                                key: resolverId,
-                                className: 'no-drag',
-                                onClick: (e) => {
-                                  e.stopPropagation();
-                                  const tracksAfter = sorted.slice(index + 1);
-                                  const context = { type: 'library', name: 'Collection' };
-                                  setQueueWithContext(tracksAfter, context);
-                                  handlePlay({ ...track, preferredResolver: resolverId });
-                                },
-                                style: {
-                                  width: '20px',
-                                  height: '20px',
-                                  borderRadius: '4px',
-                                  backgroundColor: resolver.color,
-                                  border: 'none',
-                                  cursor: 'pointer',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  pointerEvents: 'auto',
-                                  opacity: dim ? 0.6 : 1,
-                                  transition: 'transform 0.1s'
-                                },
-                                onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
-                                onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
-                                'aria-label': `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`, 'data-tooltip': `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
-                              }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
-                            });
-                        } else if (isResolving) {
-                          // Show shimmer skeletons while resolving (for both local and collection tracks)
-                          const localFilesResolver = allResolvers.find(r => r.id === 'localfiles');
-                          return React.createElement('div', { className: 'flex items-center gap-1' },
-                            // Local files icon for local files
-                            track.filePath && localFilesResolver && React.createElement('button', {
-                              key: 'localfiles',
-                              className: 'no-drag',
-                              onClick: (e) => {
-                                e.stopPropagation();
-                                const tracksAfter = sorted.slice(index + 1);
-                                const context = { type: 'library', name: 'Collection' };
-                                setQueueWithContext(tracksAfter, context);
-                                handlePlay({ ...track, preferredResolver: 'localfiles' });
-                              },
-                              style: {
-                                width: '20px',
-                                height: '20px',
-                                borderRadius: '4px',
-                                backgroundColor: localFilesResolver.color,
-                                border: 'none',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                pointerEvents: 'auto',
-                                transition: 'transform 0.1s'
-                              },
-                              onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
-                              onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
-                              'aria-label': 'Play from Local Files', 'data-tooltip': 'Play from Local Files'
-                            }, React.createElement(ResolverIcon, { resolverId: 'localfiles', size: 12 })),
-                            // Shimmer skeletons
-                            React.createElement('div', {
-                              className: 'w-5 h-5 rounded shimmer-light animate-shimmer',
-                              title: 'Resolving…'
-                            }),
-                            React.createElement('div', {
-                              className: 'w-5 h-5 rounded shimmer-light animate-shimmer',
-                              style: { animationDelay: '0.1s' }
-                            })
-                          );
-                        } else if (track.filePath) {
-                          // Show just the local files icon for local tracks that finished resolving without finding external sources
-                          const localFilesResolver = allResolvers.find(r => r.id === 'localfiles');
-                          if (!localFilesResolver) return null;
-                          return React.createElement('button', {
-                            key: 'localfiles',
-                            className: 'no-drag',
-                            onClick: (e) => {
-                              e.stopPropagation();
-                              const tracksAfter = sorted.slice(index + 1);
-                              const context = { type: 'library', name: 'Collection' };
-                              setQueueWithContext(tracksAfter, context);
-                              handlePlay({ ...track, preferredResolver: 'localfiles' });
-                            },
-                            style: {
-                              width: '20px',
-                              height: '20px',
-                              borderRadius: '4px',
-                              backgroundColor: localFilesResolver.color,
-                              border: 'none',
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              pointerEvents: 'auto',
-                              transition: 'transform 0.1s'
-                            },
-                            onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
-                            onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
-                            'aria-label': 'Play from Local Files', 'data-tooltip': 'Play from Local Files'
-                          }, React.createElement(ResolverIcon, { resolverId: 'localfiles', size: 12 }));
-                        }
-                        return null;
-                      })()
-                    )
-                  );
+                    cells: [{ key: 'album', content: track.album || '', onClick: track.album ? () => openChartsAlbum({ artist: track.artist, title: track.album, albumArt: track.albumArt }) : undefined }]
+                  });
                 }
               });
             })(),
@@ -998,15 +623,11 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                       },
                       details: [
                       // Service badge - refined
-                      React.createElement('div', {
-                        key: 'service',
-                        className: 'release-badge',
-                        style: {
-                          marginTop: '4px',
-                          backgroundColor: friend.service === 'lastfm' ? 'rgba(239, 68, 68, 0.08)' : 'rgba(249, 115, 22, 0.08)',
-                          color: friend.service === 'lastfm' ? '#dc2626' : '#ea580c'
-                        }
-                      }, friend.service === 'lastfm' ? 'Last.fm' : 'ListenBrainz'),
+                      // The service the friend listens on: a neutral Badge (its
+                      // name says which; the danger / warning colours it wore
+                      // said nothing about Last.fm or ListenBrainz).
+                      React.createElement('span', { key: 'service', style: { display: 'inline-flex', marginTop: '4px' } },
+                        React.createElement(Badge, null, friend.service === 'lastfm' ? 'Last.fm' : 'ListenBrainz')),
                       // Current track if on-air
                       onAir && friend.cachedRecentTrack && React.createElement('div', {
                         key: 'now',

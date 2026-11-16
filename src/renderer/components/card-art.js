@@ -6,7 +6,8 @@
 // (hover or keyboard focus shows the overlay) and the release-type badge.
 // Props-driven; hooks are qualified; loads under plain Node.
 
-const { Play } = require('./icons');
+const Icons = require('./icons');
+const { Play, Music } = Icons;
 
 const e = React.createElement;
 
@@ -49,44 +50,46 @@ const SHRINK = { flexShrink: 1, minWidth: 0, height: 'auto', aspectRatio: '1' };
 const SIDE_ICON = { width: '50%', height: '50%' };
 const PLAY_ICON = { width: '46%', height: '46%', marginLeft: '4%' };
 
-function SideButton({ label, onClick, path }) {
+function SideButton({ label, onClick, icon: Icon }) {
   return e('button', {
     type: 'button', 'aria-label': label, 'data-tooltip': label,
     onClick: (ev) => { ev.stopPropagation(); if (onClick) onClick(ev); },
     className: `${APP_SIDE_BTN} bg-white/15 hover:bg-white/25 text-white`,
     style: Object.assign({ border: 'none', cursor: 'pointer', padding: 0 }, SHRINK),
-  }, e('svg', { style: SIDE_ICON, fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2, 'aria-hidden': 'true' },
-    e('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: path })));
+  }, e(Icon, { style: SIDE_ICON }));
 }
 
+// `shown` undefined: CSS shows it (.card-actions, index.html: the CardButton
+// it sits in is hovered or holds keyboard focus), for a card drawn in a list
+// that can't call useReveal per card (Critical Darlings).
 function ArtOverlay({ shown, title, onClick, onPlay, onQueue, onAddToPlaylist }) {
+  const css = shown === undefined;
   return e('div', {
     // The click opens the card once: stop it at the overlay, or a card whose
     // art is also wrapped in an opener (PlaylistCard) opened twice.
-    'data-art-actions': '', onClick: onClick && ((ev) => { ev.stopPropagation(); onClick(ev); }), className: APP_OVERLAY,
+    // Not a control of its own: the card's button is what a keyboard opens.
+    'data-art-actions': '', role: 'presentation', onClick: onClick && ((ev) => { ev.stopPropagation(); onClick(ev); }),
+    className: css ? `${APP_OVERLAY} card-actions` : APP_OVERLAY,
     // Above CardButton's stretched button (1) while shown, so its buttons and
     // its own open-on-click work; under the reason badge (3).
-    style: { opacity: shown ? 1 : 0, pointerEvents: shown ? 'auto' : 'none', zIndex: 2, padding: '8px', boxSizing: 'border-box' },
+    style: Object.assign({ zIndex: 2, padding: '8px', boxSizing: 'border-box' },
+      css ? null : { opacity: shown ? 1 : 0, pointerEvents: shown ? 'auto' : 'none' }),
   },
-    onAddToPlaylist && e(SideButton, { label: `Add ${title} to a playlist`, onClick: onAddToPlaylist, path: 'M12 4v16m8-8H4' }),
+    onAddToPlaylist && e(SideButton, { label: `Add ${title} to a playlist`, onClick: onAddToPlaylist, icon: Icons.Plus }),
     onPlay && e('button', {
       type: 'button', 'aria-label': `Play ${title}`, 'data-tooltip': 'Play',
       onClick: (ev) => { ev.stopPropagation(); onPlay(ev); },
       className: APP_PLAY_BTN,
       style: Object.assign({ border: 'none', cursor: 'pointer', padding: 0 }, SHRINK),
-    }, e(Play, { size: 22, className: 'text-gray-800', style: PLAY_ICON })),
-    onQueue && e(SideButton, { label: `Add ${title} to the queue`, onClick: onQueue, path: 'M4 6h16M4 12h16M4 18h7' }));
+    }, e(Play, { size: 22, style: Object.assign({ color: 'var(--on-art-ink)' }, PLAY_ICON) })),
+    onQueue && e(SideButton, { label: `Add ${title} to the queue`, onClick: onQueue, icon: Icons.AddToQueue }));
 }
 
 // The Playlists page's placeholder glyph: three lines and a play triangle.
-const PlaylistGlyph = () => e('svg', {
-  'aria-hidden': 'true', 'data-playlist-glyph': '', viewBox: '0 0 24 24', fill: 'currentColor',
+const PlaylistGlyph = () => e(Icons.Playlist, {
+  'data-playlist-glyph': '',
   style: { width: '40%', height: '40%', maxWidth: '48px', maxHeight: '48px', color: 'var(--text-secondary)' },
-},
-  e('rect', { x: 3, y: 5, width: 18, height: 2, rx: 1 }),
-  e('rect', { x: 3, y: 11, width: 10, height: 2, rx: 1 }),
-  e('rect', { x: 3, y: 17, width: 7, height: 2, rx: 1 }),
-  e('path', { d: 'M15 13.5v6l5.5-3-5.5-3z' }));
+});
 
 // Square art: a mosaic (2x2), one cover, or a placeholder block. A playlist
 // with no covers yet (`placeholder: 'playlist'`) shows the Playlists page's
@@ -127,6 +130,11 @@ function ArtBox({ imageUrl, mosaic, item, onArtError, children, style, placehold
   } else if (placeholder === 'playlist') {
     art = e('div', { style: { width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' } },
       PlaylistGlyph());
+  } else {
+    // No cover (yet, or at all): a music note, as the old album cards
+    // showed, so an empty square doesn't read as broken.
+    art = e('div', { 'data-album-glyph': '', style: { width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' } },
+      e(Music, { 'aria-hidden': 'true', strokeWidth: 1.5, style: { width: '32%', height: '32%', maxWidth: '40px', maxHeight: '40px', color: 'var(--text-tertiary)' } }));
   }
   // `zoom` scales the art the way the app's cards do on hover.
   const zoomed = art && e('div', {
@@ -135,7 +143,9 @@ function ArtBox({ imageUrl, mosaic, item, onArtError, children, style, placehold
   return e('div', {
     style: Object.assign({
       position: 'relative', aspectRatio: '1', borderRadius: '10px', overflow: 'hidden',
-      backgroundColor: 'var(--accent-surface)',
+      // The neutral placeholder grey, as the skeletons: an empty cover box
+      // is not an accent (it read as pale purple on every grid).
+      backgroundColor: 'var(--placeholder-bg)',
     }, style),
   }, zoomed, children);
 }
@@ -143,16 +153,19 @@ function ArtBox({ imageUrl, mosaic, item, onArtError, children, style, placehold
 
 // The Fresh Drops page's release-type badge (app.js; the .release-badge class
 // in index.html): top right, Album indigo, EP purple, anything else pink.
-const RELEASE_BADGE_BG = { album: 'rgba(99, 102, 241, 0.9)', ep: 'rgba(168, 85, 247, 0.9)', other: 'rgba(236, 72, 153, 0.9)' }; // on-art
+// The type's colour (lib/release-types.js, the album page's palette) at 90%.
+const { RELEASE_TYPE_COLORS, releaseTypeColor } = require('../lib/release-types');
+const RELEASE_BADGE_BG = Object.fromEntries(Object.entries(RELEASE_TYPE_COLORS)
+  .map(([type, color]) => [type, `color-mix(in srgb, ${color} 90%, transparent)`]));
 function releaseBadge(type) {
   if (typeof type !== 'string' || !type) return null;
   const t = type.toLowerCase();
   return e('div', { style: { position: 'absolute', top: '8px', right: '8px' } },
     e('span', {
       className: 'release-badge',
-      style: { backgroundColor: RELEASE_BADGE_BG[t] || RELEASE_BADGE_BG.other, color: 'white' }, // on-art
+      style: { backgroundColor: `color-mix(in srgb, ${releaseTypeColor(t)} 90%, transparent)`, color: 'white' }, // on-art
     }, t === 'ep' ? 'EP' : t.charAt(0).toUpperCase() + t.slice(1)));
 }
 
 
-module.exports = { useReveal, ArtOverlay, ArtBox, releaseBadge, RELEASE_BADGE_BG, APP_ART_ZOOM };
+module.exports = { useReveal, ArtOverlay, ArtBox, releaseBadge, RELEASE_BADGE_BG, APP_ART_ZOOM, PlaylistGlyph };

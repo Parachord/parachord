@@ -136,3 +136,18 @@ describe("a list's cover (onArtError)", () => {
     cleanup();
   });
 });
+
+describe('a filtered-out card (the artist page discography filter)', () => {
+  const { renderToStaticMarkup } = require('react-dom/server');
+  test('hidden really hides it: display none wins over the card\'s inline flex', () => {
+    global.React = global.React || require('react');
+    const { AlbumCard } = require('../../src/renderer/components/album-card');
+    const html = renderToStaticMarkup(React.createElement(AlbumCard, { album: { title: 'A', artist: 'B' }, hidden: true }));
+    expect(html).toMatch(/style="[^"]*display:flex[^"]*display:none|style="[^"]*display:none/);
+    const { ReleaseCard } = require('../../src/renderer/components/cards');
+    const off = renderToStaticMarkup(React.createElement(ReleaseCard, { release: { id: 'r', title: 'T', releaseType: 'ep' }, currentArtist: { name: 'X' }, fetchReleaseData() {}, isVisible: false }));
+    expect(off).toContain('display:none');
+    const on = renderToStaticMarkup(React.createElement(ReleaseCard, { release: { id: 'r', title: 'T', releaseType: 'ep' }, currentArtist: { name: 'X' }, fetchReleaseData() {}, isVisible: true }));
+    expect(on).not.toContain('display:none');
+  });
+});

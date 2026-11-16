@@ -57,14 +57,38 @@ Secondary and tertiary both pass 4.5:1 on the page and on cards in both themes, 
 
 #### Accent (Purple)
 
+**The accent is one colour: `--accent-base` (`#7c3aed`, violet-600).** Every other accent token in both themes, and the playbar's, is mixed from it with `color-mix(in srgb, …)`: darker with black for hover, lighter with white for dark mode and the playbar, with `transparent` for the alphas (mixed from `--accent-primary`, so they follow the theme). A different accent, a theme's or a user's, is that one value; never write a purple, or an `rgba()` of one, anywhere else (`tests/ui/theme-tokens.test.js` fails on an accent token that isn't mixed from the base, and checks contrast on the mixed values).
+
 | Token | Tailwind | Light | Dark | Usage |
 |-------|----------|-------|------|-------|
-| `--accent-primary` | `text-accent`, `ring-accent` | `#7c3aed` | `#a78bfa` | Accent text, icons, focus rings, slider `accent-color` |
-| `--accent-fill` | `bg-accent-fill` | `#7c3aed` | `#7c3aed` | **Fills with white text on them** |
-| `--accent-fill-hover` | `hover:bg-accent-fill-hover` | `#6d28d9` | `#6d28d9` | Their hover |
+| `--accent-base` | — | `#7c3aed` | (same) | The one accent value; nothing reads it directly but the tokens below |
+| `--accent-primary` | `text-accent`, `ring-accent` | the base | base 61% + white (≈ `#af87f4`) | Accent text, icons, focus rings, slider `accent-color` |
+| `--accent-fill` | `bg-accent-fill` | the base | the base | **Fills with white text on them** |
+| `--accent-fill-hover` | `hover:bg-accent-fill-hover` | base 90% + black | the same | Their hover |
 | `--on-accent` | `text-ink-on-accent` | `#ffffff` | `#ffffff` | Text on a fill |
 | `--accent-primary-alpha-10` | `bg-accent-tint` | 10% | 10% | Selected and now-playing rows, accent chips |
 | `--accent-primary-alpha-15` | `bg-accent-tint-hover` | 15% | 15% | Their hover |
+
+#### Status tints and photo shades
+
+| Token | Usage |
+|-------|-------|
+| `--tint-success` / `-warning` / `-danger` / `-info` (`bg-tint-*`) | A status note's faint background: its status text colour at 12% (`--tint-danger-hover` 20%), so it follows the theme |
+| `--border-success` / `-warning` / `-info` | Its border: the status text colour at 30% (`--border-danger` is its own pair) |
+| `--photo-shade` / `-bar` / `-empty` | The darkening over an artist photo in a hero, the collapsed 80px bar, and no photo (same in both themes) |
+
+Never write a colour as `rgba(…)` in the renderer: the drift script's `rgbColors` (coloured) and `rgbNeutrals` (black, white, grey) both count them, and both are 0.
+
+#### Neutral roles (same in both themes)
+
+| Token | Usage |
+|-------|-------|
+| `--on-color-secondary` / `-fill` / `-border` / `-chip` | White on a coloured header or tile: secondary text, a pill's fill, a border, a corner chip |
+| `--on-dark-faint` / `-line` / `-border` / `-hover` / `-fill` / `-inset` | The always-dark panels: a faint fill, a divider, a border, a hover, a stronger fill, a darker well |
+| `--scrim-soft` / `--scrim` / `--scrim-strong` | Darkening over content (a busy tile, a backdrop, art) at 40 / 50 / 80% |
+| `--cover-shade`, `--shimmer-on-dark` | The playlist cover's shade; a loading shimmer on a dark panel |
+| `--shadow-xs` / `-tile` / `-popover` / `-panel` / `-dialog` / `-dialog-dark` / `-drawer` | Shadows by role, with `--shadow-sm/md/lg` and `--card-shadow` |
+| `--hero-text-shadow` / `-bar` / `-line`, `--photo-text-shadow`, `--text-shadow-soft`, `--icon-shadow` | Text and icons over a hero, a photo or art |
 
 **The fill-accent convention.** `--accent-primary` turns light purple in dark mode, where white text on it is 2.72:1. So a button, badge or switch track with white text uses `--accent-fill` / `--on-accent`, and `--accent-primary` is for accent-coloured text, icons and outlines. Other accent tokens (`--accent-secondary`, `--accent-soft`, `--accent-surface`, alpha variants at 6–60%) are in `index.html`.
 
@@ -96,6 +120,8 @@ A switch is an `--accent-fill` track when on, `--control-off` when off, and alwa
 #### Page colours
 
 Each page has one colour, in `src/renderer/lib/page-colors.js` (`PAGE_COLORS`): the sidebar item's active text and 10% tint (`pageTint(view)`), the hero gradient, links to the page (`SectionHeader`'s `pageColor`), Home's panels that preview it, and the page's own controls (Concerts' location and radius). Each entry has `color`, `rgb`, `fill` (a darker shade for white-text buttons, ≥ 4.5:1) and `hero` (full Tailwind gradient classes, so Tailwind's scan generates them).
+
+The values are CSS variables in `index.html`: `--page-<id>` (text, icons, the tint), `--page-<id>-fill` (a white-text fill, at least 4.5:1) and `--page-<id>-hero` (the hero gradient, painted by the `.page-hero-bg-<id>` class that `PAGE_COLORS[id].hero` names). A theme or a user recolours a page by setting those. Home's are the accent's, and its hero gradient is mixed from `--accent-base`, so it follows the accent. `pageTint(view)` is the page colour at 10% (`color-mix`).
 
 | Page | Colour | Hero |
 |------|--------|------|
@@ -144,6 +170,7 @@ Inside a service's own plugin panel (its header, Connect, Save and sync buttons)
 
 | Token | Value | Usage |
 |-------|-------|-------|
+| `--z-scroll-edge` | `15` | The scroll-edge shadow (`.scroll-edge`): above the content and sticky bars (10), below dropdowns, so it never paints over an open menu |
 | `--z-dropdown` | `20` | Sort menus and other in-page dropdowns |
 | `--z-popover` | `9999` | `Menu` (context and "More" menus), above the playbar |
 | `--z-toast` | `99999` | Toasts, above dialogs |
@@ -166,6 +193,20 @@ Certain UI elements (player bar, queue drawer, AI chat panels) remain dark regar
 | `--surface-dark-border` | `#374151` | `rgba(255,255,255,0.1)` |
 
 In dark mode these surfaces are lifted slightly above `--bg-primary` so they still read as separate panels (values from `index.html`).
+
+What sits on them uses the `--on-dark-*` tokens, the same in both themes, never the page tokens (`--text-secondary` is 2.2:1 there) or palette classes. As Tailwind colours they are `text-on-dark-*` and `bg-surface-dark-placeholder` (`tailwind.config.js`).
+
+| Token | Value | For |
+|-------|-------|-----|
+| `--on-dark-primary` / `-secondary` / `-tertiary` | white at 0.95 / 0.7 / 0.55 | Text and icons: titles and active controls / idle controls and labels / hints |
+| `--on-dark-disabled` | white at 0.3 | A control that can't be used now |
+| `--on-dark-track` / `--on-dark-track-disabled` | white at 0.2 / 0.1 | A slider's track (the playbar's scrubber and volume) |
+| `--surface-dark-placeholder` | white at 0.1 | An art or text placeholder before the track loads |
+| `--on-dark-fill-muted` | white at 0.25 | A muted fill behind white text (the queue badge in Spinoff) |
+| `--on-dark-love` / `-love-hover` | `#f87171` / `#fca5a5` | The playbar's heart when the track is in the Collection |
+| `--on-dark-success` | `#4ade80` | Buy on hover |
+| `--on-dark-info` | `#a5b4fc` | The "playing in the browser" pill |
+| `--playbar-accent` / `-hover` | `#a78bfa` / `#c4b5fd` | Slider handles, and Shuffle, Repeat and Spinoff when on (the dark-mode accent, in both themes) |
 
 ---
 
@@ -191,20 +232,43 @@ Components use `React.createElement()` (no JSX) and live in `src/renderer/compon
 | A page or drawer header's Close / Edit / Save / Cancel | `HeaderControl` | `header-control.js` | The shared `Button`, small and sentence case; `close` is an icon-only ✕ with its label as name and tooltip; tones default / primary / dark |
 | A dialog | `Modal` | `modal.js` | Focus moves in and comes back, Escape and the scrim close it, one title size and three widths. `ConfirmModal` for confirm/cancel (the confirm button named for its action, `destructive` for red); `DontShowAgain` for the checkbox |
 | A success, info or error message | `showToast(message, type, action, options)` | `toast.js` (`ToastRegion`) | Success is a toast, never a dialog |
-| A menu (right-click or "More") | `Menu`, items from `lib/item-menus.js` | `menu.js` | Portalled, keyboard and typeahead, flips up near the bottom; the dark 12px look |
+| A menu (right-click or "More") | `Menu`, items from `lib/item-menus.js` | `menu.js` | Portalled, keyboard and typeahead, flips up near the bottom; the dark 12px look. An item's `toggle` puts an on/off switch (a `menuitemcheckbox`) beside it |
 | A sort control | `SortMenu` | `sort-menu.js` | |
-| A clickable card or row | `CardButton` | `card-button.js` | A stretched `<button>` under the card; inner buttons sit above it; `onContextMenu` also opens on Shift+F10 / the Menu key; `tooltip` for a whole-card note |
+| A clickable card or row | `CardButton` | `card-button.js` | A stretched `<button>` under the card; inner buttons sit above it; `onContextMenu` also opens on Shift+F10 / the Menu key; `tooltip` for a whole-card note. Use the cards and `TrackRow` below first; `CardButton` is what they are built on |
+| An album card (any grid of albums, or a track shown as a card) | `AlbumCard` (`AlbumRankBadge` for a rank) | `album-card.js` | The inset card: `HOME_CARD_BOX`, rounded art, title, artist (or `onOpenArtist` for a link), `subtitle`. `releaseType` badge, `reason` badge, `cornerBadge`; `onHoverPrefetch` dwells 250ms; `getAlbumArt` to look up its own cover; `label` when a click doesn't open; `hidden` for a card a filter hides but keeps mounted (a class can't hide it: the card sets its display inline) |
+| A playlist card | `PlaylistCard` | `playlist-card.js` | The playlist's own cover (`coverArt`) over the mosaic of its tracks' covers, or the playlist glyph; `titleBadge` (Shared), `badge`, `cornerBadges` (Hosted, AI); a saved playlist's actions from `playlistCardActions` in app.js |
+| An artist card | `ArtistCard` (`RankBadge` for a rank) | `artist-card.js` | Play on hover (the top tracks), queue in the artist menu |
+| A person (friend, recommended listener) | `ListenerCard` | `listener-card.js` | The hexagon avatar (`LISTENER_HEXAGON`); user avatars are always hexagons |
+| A concert's Tickets (Concerts page, Home's concert cards, an artist's On tour) | `TicketsButton` | `tickets-button.js` | The primary button in the Concerts hero's teal (`PAGE_COLORS.concerts.color`) with white text; one seller is a link, several open `Menu` with a link per seller |
+| Starting Collection Radio (Home's greeting, the Collection hero and its collapsed header) | `CollectionRadioButton` | `collection-radio-button.js` | The accent fill with a round Play mark; `compact` for a collapsed header |
+| A link to a page in the sidebar, or a section in Settings | `NavItem` | `nav-item.js` | The page's colour and tint when current (`aria-current`), a hover tint otherwise; `unread` dot and `count` badge |
+| A choice shown as a bordered tile (a title and a line under it) | `OptionTile` | `option-tile.js` | `tone: 'danger'` for the destructive choice; `compact` for the album page's edition card |
+| A row in a list you pick from (suggestions, Add to playlist) | `ListRow` | `list-row.js` | `size`, `divider`, `state`: `added` / `drop` / `current` |
+| A cover's hover actions (Add to playlist, Play, Add to queue) | `ArtOverlay` + `useReveal` | `card-art.js` | Shown on hover and keyboard focus. Without `shown`, CSS reveals it (`.card-actions`) for a card drawn in a list. `ArtBox` is the square art (cover, mosaic or placeholder, reporting a dead cover) |
+| A track list row | `TrackRow` | `track-lists.js` | number · title · artist · `cells` · source icons · `duration` (the last column, the icons right up against it). `lead` (edit-mode handles), `showArtist`, `resolving`, `dimResolving`; `onPlay(resolverId?)` covers the row and each icon |
+| A service's play button (a source icon) | `SourceIconButton` (`TrackSources` for the column) | `track-lists.js` | The plug-in's colour and logo, "Play from X (95% match)"; `quiet` on the dark queue drawer (`.source-quiet`: faded and desaturated at rest, full on hover or focus) |
+| A page's coloured header | `PageHero` | `page-hero.js` | 320px, collapsing to 80px; gradient and pattern from `PAGE_COLORS`; the page passes `expanded` and `collapsedContent`. The artist page's photo hero is the one other design |
+| A page's Filter… box | `FilterBox` | `filter-box.js` | Opens focused; an empty box closes on blur; ✕ or Escape empties and closes it (and its Escape doesn't close a dialog around it) |
+| The strip that stays at the top of a page's scroll area | `StickyBar` | `filter-box.js` | `variant` 'filter' or 'header' |
+| An action pill (a suggestion, an active location) | `Chip` | `filter-chips.js` | The filter chips' style; `onRemove` puts a ✕ button beside it, never inside |
+| A small label on a card or row (Shared, Hosted, AI, a service) | `Badge` | `badge.js` | Tones neutral, info, accent, surface, or a service colour |
+| A spinner | `Icons.Spinner` | `icons.js` | The one loading spinner |
 | A heading over a row or grid | `SectionHeader` | `section-header.js` | Home's style, with the optional "See all" link |
 | Pick-one filter buttons | `FilterChips` | `filter-chips.js` | Home's source filter style |
 | Tabs in a hero | `HeroTabs` | `hero-tabs.js` | `role="tablist"`, arrow keys |
+| A section of Settings (its card and heading) | `SettingsSection` | `settings-cards.js` | The card, the small-capitals heading (written in Title Case), an optional line under it |
 | A setting row, text field, secret field, select, switch or radio group | `SettingRow`, `TextField`, `SecretField`, `Select`, `Switch`, `RadioGroup` | `fields.js` | Every field has a label; on/off is always a `Switch` |
-| Nothing to show yet / a load that failed | `EmptyState` / `ErrorState` | `states.js` | `ErrorState` has "Try again" (`onRetry`) |
-| A loading placeholder | the page's skeletons | `home-skeletons.js`, `recommendation-skeletons.js` | Same box as the content (see Shimmer classes) |
+| A pick-one row of equal tiles, each with an icon (Settings' theme) | `SegmentedChoice` | `fields.js` | `role="radiogroup"`; the current tile has an accent border and tint |
+| Nothing to show yet / a load that failed | `EmptyState` / `ErrorState` | `states.js` | `ErrorState` has "Try again" (`onRetry`); `tone: 'dark'` on the dark panels, `icon: null` for none |
+| A loading placeholder | `CardSkeleton` (one card, any grid; `CardRowSkeleton` for Home's rows), `ArtistCardSkeleton` (an artist card), `TrackRowSkeleton` (a track row, `TrackRow`'s own columns), `ConcertListSkeleton` (a month of concert rows: `photo: true` for the Concerts page's row, without for an artist's On tour), the page's skeletons | `home-skeletons.js`, `track-lists.js`, `recommendation-skeletons.js`, `concert-skeletons.js` | Same box and columns as the content (see Shimmer classes), so nothing jumps when it lands |
 | A tooltip | `Tooltip`, or `data-tooltip` on a control | `ui-atoms.js` | Never a native `title` (below) |
 | A "why it's here" badge on a cover | `ReasonBadge` (`ReasonMark` for a heading) | `reason-badge.js` | Shuffleupagus picks, Critical Darlings summaries |
 | A service's icon or logo | `ResolverIcon`, `SERVICE_LOGOS` | `ui-atoms.js` | The colour comes from the plug-in's `manifest.color` |
 | An icon | `Icons.*` | `icons.js` | Real SVGs from one set (see Icons); never a pasted path or a text glyph |
-| A track's source icons | `visibleSources` / `sourceRowState` | `lib/visible-sources.js` | One rule for every list |
+| A track's source icons | `visibleSources` / `sourceRowState` | `lib/visible-sources.js` | One rule for every list (`TrackRow` runs it) |
+| A page's colour, gradient or hero pattern | `PAGE_COLORS`, `pageTint` | `lib/page-colors.js` | |
+| A release type's colour | `RELEASE_TYPE_COLORS`, `releaseTypeColor` | `lib/release-types.js` | The album page's badge, the cards' badge and the type chips |
+| A hover prefetch on an element that isn't a shared card | `hoverDwell` | `lib/hover-dwell.js` | Runs after a 250ms rest, so a scroll past doesn't fetch |
 | Share | `ShareButton` | `ui-atoms.js` | |
 | A count, a relative time or an error message | `countOf`, `timeAgo`, `errorText` | `lib/plural.js`, `lib/time-ago.js`, `lib/error-copy.js` | See Copy |
 
@@ -212,11 +276,12 @@ Components use `React.createElement()` (no JSX) and live in `src/renderer/compon
 
 | Module | Exports |
 |--------|---------|
-| `button.js`, `header-control.js`, `modal.js`, `toast.js`, `menu.js`, `sort-menu.js`, `card-button.js`, `section-header.js`, `filter-chips.js`, `hero-tabs.js`, `fields.js`, `states.js`, `reason-badge.js`, `keyboard-shortcuts.js` | The shared controls in the table above, and the keyboard shortcuts dialog |
+| `button.js`, `header-control.js`, `modal.js`, `toast.js`, `menu.js`, `sort-menu.js`, `card-button.js`, `section-header.js`, `filter-chips.js` (`FilterChips`, `Chip`), `filter-box.js` (`FilterBox`, `StickyBar`), `hero-tabs.js`, `page-hero.js`, `badge.js`, `fields.js`, `states.js`, `reason-badge.js`, `keyboard-shortcuts.js`, `whats-new-dialog.js` | The shared controls in the table above, the keyboard shortcuts dialog and What's New |
+| `album-card.js`, `playlist-card.js`, `artist-card.js`, `listener-card.js`, `card-art.js` | The cards, and the art and overlay they share |
 | `ui-atoms.js` | `Tooltip`, `FixedTooltip`, `TooltipLayer`, `placeTooltip`, `ResolverIcon`, `SERVICE_LOGOS` (and its paths and images), `ParachordWordmark`, `PlaybackProgress`, `ShareButton` |
 | `icons.js` | `Icons`, the one icon set |
-| `track-lists.js` | `TrackRow`, `VirtualizedQueueList`, `VirtualizedTrackList` |
-| `cards.js` | `ReleaseCard`, `ReleasePage`, `RelatedArtistCard`, `SearchArtistCard`, `SearchHistoryItem`, `CollectionArtistCard`, `CollectionAlbumCard`, `AlbumVersionsMenu`, `PlayTop10Icon`, `QueueTop10Icon`, `generateArtistPattern` |
+| `track-lists.js` | `TrackRow`, `TrackSources`, `SourceIconButton`, `VirtualizedQueueList`, `VirtualizedTrackList` |
+| `cards.js` | `ReleasePage` (the album page), `ReleaseCard` (the artist page's discography card, an `AlbumCard`), `AlbumVersionsMenu`, `SearchHistoryItem`, `PlayTop10Icon`, `RELEASE_BADGE_STYLES`, `generateArtistPattern` |
 | `settings-cards.js` | `ResolverCard` (the plug-in tile), `McpSettingsSection`, `ScrobblerSettingsCard`, `FriendMiniPlaybar` |
 | `home-sections.js`, `home-banner.js`, `home-setup.js`, `home-skeletons.js`, `recommendation-skeletons.js` | Home's rows and both pages' skeletons |
 | `home-page.js`, `collection-page.js`, `artist-page.js`, `playlist-view-page.js`, `search-page.js` | Whole pages, each `React.memo`'d and fed stable props |
@@ -249,10 +314,14 @@ FixedTooltip({ children, content, id })
 ### TrackRow
 
 ```
-TrackRow({ track, isPlaying, handlePlay, onArtistClick, onContextMenu, allResolvers, resolverOrder, activeResolvers })
+TrackRow({ track, number, lead, isNowPlaying, sources, allResolvers, onPlay, onOpenArtist, onContextMenu,
+           cells, duration, sourcesWidth, rowRef, showArtist, resolving, dimResolving, ...CardButton props })
 ```
 
-- Nothing renders `TrackRow` any more; the track lists render their own rows. Its source icons and dimming would come from `sourceRowState` (`lib/visible-sources.js`), like every list's.
+- The row every page list renders: History, a friend's history, Recommendations, Charts, the playlist page, Collection, Search and an album's tracklist (10 copies until 2026-11-15). The queue drawer's row has its own layout.
+- `sources` is `{ trackSources, playbackResolvers, resolverOrder }`; the row runs `sourceRowState` on it, so a row resolving shows a shimmer and an unplayable one is dimmed. A local file's Local Files icon is one more source, in the user's source order.
+- `onPlay(resolverId?)` is both the row click and each source icon's, so they can't disagree about the queue or the context.
+- Columns: `number` (or `lead`) 32px · title (flex 1) · artist (flex 0.7, a link when `onOpenArtist`) · `cells` (`{ content, width | flex, align, onClick }`) · icons, right-aligned (`--source-col`: one 24px slot per playable service, at most 140px; `sourcesWidth` overrides) · `duration` 50px, right-aligned, last. The icons always touch the duration and the durations line up down the row's end. `TrackRowSkeleton` has the same columns.
 
 ### VirtualizedQueueList
 
@@ -283,27 +352,26 @@ ScrobblerSettingsCard({ scrobbler, config, onConfigChange })
 - `React.memo` wrapped
 - Configuration card for scrobbling services (Last.fm, ListenBrainz, Libre.fm)
 
-### ReleaseCard
+### Cards
 
-```
-ReleaseCard({ release, currentArtist, fetchReleaseData, onContextMenu, onHoverFetch, isVisible, animationDelay, ... })
-```
+`AlbumCard`, `PlaylistCard`, `ArtistCard` and `ListenerCard` are every card in the app (2026-11-15: one copy per page before). They share the box (`HOME_CARD_BOX` from `home-skeletons.js`: 10px padding, 10px radius, `--card-bg`, `--card-shadow`), the rounded art (`HOME_CARD_ART_RADIUS`), the text gap (`HOME_CARD_TEXT_GAP`), the `release-card` hover lift and the `card-fade-up` entry. Every page's card skeleton uses those same constants.
 
-- Album/single/EP card with cover art, title, year, and release type badge
-- Hover effect: `translateY(-6px)` lift with enhanced shadow
-- Active state: `translateY(-2px)` with reduced shadow
-- Entry animation: `cardFadeUp` with staggered delays
+- **`ReleaseCard`** (`cards.js`) is the artist page's discography card: an `AlbumCard` with the year as its subtitle and the type badge on the art. It keeps its own replacement-art state for the broken-art retry.
+- **Critical Darlings** keeps its wide review-card layout (art beside the text), with the shared `ArtOverlay`.
 
 ### Recommendation rows
 
-The Recommendations page reuses Home's and the other tabs' pieces. Each section (Tracks, Albums, Artists, Playlists, Friends) sits under a `SectionHeader`, Home's heading; its **"See all" / "Show less"** link is the header's link (accent text, right-aligned on the heading's line), and sections carry no item counts. Sources are filtered for the whole page by `FilterChips` under the hero: All, then one chip per source, no counts, one pick at a time. Collapsed, a card section shows two full rows. Cards are `CardButton`s; a Shuffleupagus pick carries the `ReasonBadge` (its reason as the tooltip), and any other pick's reason is the card's tooltip. Items carry no source badges.
+The Recommendations page reuses Home's and the other tabs' pieces. Each section (Tracks, Albums, Artists, Playlists, Friends) sits under a `SectionHeader`, Home's heading; its **"See all" / "Show less"** link is the header's link (accent text, right-aligned on the heading's line), and sections carry no item counts. Sources are filtered for the whole page by `FilterChips` under the hero: All, then one chip per source, no counts, one pick at a time. Collapsed, a card section shows two full rows. Cards are the shared `AlbumCard`, `PlaylistCard`, `ArtistCard` and `ListenerCard`, and songs are `TrackRow`s; a Shuffleupagus pick carries the `ReasonBadge` (its reason as the tooltip), and any other pick's reason is the card's tooltip. Items carry no source badges.
 
-### Artist Cards
+### PageHero
 
-- **`RelatedArtistCard`** — Related artist display on artist pages
-- **`SearchArtistCard`** — Artist cards in search results (responsive width via `itemWidth` prop)
-- **`CollectionArtistCard`** — Artist cards in Collection
-- **`CollectionAlbumCard`** — Album cards in Collection
+```
+PageHero({ collapsed, page, title, onTitleContextMenu, expanded, collapsedContent })
+```
+
+- The coloured header of Collection, Playlists, History (and a friend's), Recommendations, Pop of the Tops, Fresh Drops, Critical Darlings and Concerts.
+- The gradient and pattern come from `PAGE_COLORS[page]` (`hero`, `pattern`, `patternOpacity`). The title is written in words; CSS draws the tracked capitals. Right-clicking it copies the page's link.
+- `title: null` for a page that draws its own (a friend's page leads with the avatar).
 
 ### FriendMiniPlaybar
 
@@ -387,7 +455,9 @@ Props: `size` (default 24; a `w-*`/`h-*` class or `style` overrides it), `classN
 
 **Sizes:** 16px (`w-4 h-4`) in rows, chips, small buttons and inline with text; 20px (`w-5 h-5`) in buttons and dialog titles; 12px (`w-3 h-3`) only inside a text badge or a 16px control; 32–48px only for an empty state's illustration. Stroke 2 (1.5 on the large illustrations); a heavier stroke only marks a state, like the active sidebar item.
 
-**The set:** Play, Pause, SkipForward, SkipBack, Volume2, Music, List, QueueAdd (add to queue), Users, User, Radio, Heart, Star, Search, Settings, Plus, X, Check, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ArrowRight, Info, MoreHorizontal, AlertTriangle, RefreshCw, ExternalLink, Link, Download, Upload, Folder, FilePlus, Copy, Trash2, Bookmark, Clock, Home, Droplet, Trophy, Ticket, MapPin, Shuffle, Zap, and **Spinner** (the one loading spinner). To add an icon, copy its shapes from lucide.dev into `SHAPES` in `icons.js`.
+**The set:** Play, Pause, SkipForward, SkipBack, Volume2, Music, Headphones, List, Users, Radio, Heart, Search, Settings, Plus, ListPlus, X, Check, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Info, MoreHorizontal, AlertTriangle, RefreshCw, ExternalLink, Link, Download, Folder, Copy, QueueAdd, ArrowRight, MapPin, Bookmark, Zap, Star, Ticket, Shuffle, Home, Clock, User, Droplet, Trophy, Upload, FilePlus, Globe, AddToQueue, ShoppingCart, AppWindow, Dices, Sparkles, Trash2, ListMusic, Library, ListOrdered, LocateFixed, Share, FileText, ArrowLeft, Repeat, Repeat1, VolumeX, and **Spinner** (the one loading spinner). To add an icon, copy its shapes from lucide.dev into `SHAPES` in `icons.js`. `Spinoff` is the playbar's fork, solid in its own 32px box (like `Spinner`, outside the 24px grid). `Playlist` (the Playlists placeholder: three bars and a play triangle, solid) and `PlayTop10` (a play triangle with a green "10" badge) are custom, like `Spinner`.
+
+**Logos are not icons.** A service's, a brand's or Parachord's own logo comes from `components/brand-logos.js`: `ResolverIcon` for a service badge, `BrandMark` (`id`: `shuffleupagus`, `chrome`, `x`, `instagram`, `facebook`, `youtube`) for the rest, `ParachordWordmark`. Never paste a logo's `<path>`; the drift script counts pasted paths outside icons.js and brand-logos.js.
 
 ### Service Logos
 
@@ -437,7 +507,7 @@ Every animation is a `@keyframes` rule in `index.html`, and every one listed her
 | `queue-pulse` | `.queue-pulse` | The queue button when something is added |
 | `badge-flash` | `.badge-flash` | The queue count badge |
 | `queue-track-drop` | `.queue-track-drop` | A track leaving the queue |
-| `queue-track-insert` | `.queue-track-insert` | A track entering the queue |
+| `queue-track-insert` | `.queue-track-insert` | A track entering the queue: a 1s accent glow, the one deliberate exception to the 100–400ms rule (it is the only "added to queue" signal) |
 
 ### Navigation, cards and friends
 

@@ -17,7 +17,7 @@ test('.card-grid is defined once, as auto-fill over the content width', () => {
   const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
   expect(html.match(/\.card-grid \{ display: grid; grid-template-columns: repeat\(auto-fill, minmax\(180px, 1fr\)\); \}/g)).toHaveLength(1);
   const uses = files.map((f) => (fs.readFileSync(path.join(ROOT, f), 'utf8').match(/'card-grid /g) || []).length).reduce((a, b) => a + b, 0);
-  expect(uses).toBe(16);
+  expect(uses).toBe(17); // a friend's page placeholder grid joined (2026-11-15)
 });
 
 test('plug-in tiles use .tile-grid, sized for a 120px tile', () => {
@@ -32,16 +32,21 @@ test('page hero titles scale with the content area (.hero-title), not a fixed te
   expect(html).toMatch(/\.hero-title \{ font-size: clamp\(28px, calc\(\(100vw - 256px\) \* 0\.055\), 48px\); line-height: 1; \}/);
   const src = files.map((f) => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n');
   expect(src).not.toMatch(/className: 'text-5xl font-light text-white'/);
-  expect((src.match(/className: 'hero-title font-light text-white'/g) || []).length).toBe(9);
+  // The page heroes are the shared PageHero; the artist page's photo hero is the other.
+  expect((src.match(/className: 'hero-title font-light text-white'/g) || []).length).toBe(2);
+  expect(fs.readFileSync(path.join(ROOT, 'src/renderer/components/page-hero.js'), 'utf8')).toContain("className: 'hero-title font-light text-white'");
 });
 
 test('the playlist view\'s art and icon columns follow the content area, and so does its loading placeholder', () => {
   global.React = global.React || require('react');
   const pv = require('../../src/renderer/components/playlist-view-page');
   expect(pv.PLAYLIST_ART_COLUMN).toBe('clamp(184px, 26%, 240px)');
-  expect(pv.PLAYLIST_ICON_COLUMN).toBe('clamp(72px, 14%, 140px)');
+  expect(pv.PLAYLIST_ICON_COLUMN).toBe('min(var(--source-col, 140px), clamp(72px, 14%, 140px))');
   const src = fs.readFileSync(path.join(ROOT, 'src/renderer/components/playlist-view-page.js'), 'utf8');
-  expect((src.match(/width: PLAYLIST_ICON_COLUMN/g) || []).length).toBe(2);
+  // The rows' icon column (the shared TrackRow's sourcesWidth) and the skeleton's.
+  expect(src).toMatch(/sourcesWidth: PLAYLIST_ICON_COLUMN,/);
+  // The skeleton is the shared TrackRowSkeleton, given the same column.
+  expect(src).toMatch(/React\.createElement\(TrackRowSkeleton, \{ key: `skeleton-\$\{index\}`, index, duration: true, sourcesWidth: PLAYLIST_ICON_COLUMN \}\)/);
   expect(src).toMatch(/width: PLAYLIST_ART_COLUMN, overflowY: 'auto'/);
   const app = fs.readFileSync(path.join(ROOT, 'src/renderer/app.js'), 'utf8');
   expect(app).toMatch(/style: \{ width: PLAYLIST_ART_COLUMN \}/);
@@ -53,6 +58,25 @@ test('collapsed page headers share .hero-bar: titles truncate, tabs scroll, one 
   expect(html).toContain('.hero-bar > h1, .hero-bar > h2 { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }');
   expect(html).toContain('.hero-bar > [role="tablist"], .hero-bar > div:has([role="tablist"]) { flex-shrink: 1; min-width: 0; overflow-x: auto;');
   const src = files.map((f) => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n');
-  expect((src.match(/className: 'hero-bar absolute inset-0 flex items-center px-6 z-10'/g) || []).length).toBe(11);
+  // PageHero's bar (the artist page's hero is PageHero now), plus the
+  // release page's artist bar.
+  expect((src.match(/className: 'hero-bar absolute inset-0 flex items-center px-6 z-10'/g) || []).length).toBe(2);
   expect(src).not.toMatch(/absolute inset-0 flex items-center px-16 z-10/);
+});
+
+test('the playlist and album pages\' tracklists scroll to the window edge (the padding is inside the scroller)', () => {
+  const pv = fs.readFileSync(path.join(ROOT, 'src/renderer/components/playlist-view-page.js'), 'utf8');
+  const cards = fs.readFileSync(path.join(ROOT, 'src/renderer/components/cards.js'), 'utf8');
+  for (const src of [pv, cards]) {
+    expect(src).not.toMatch(/className: 'flex gap-0 px-6 pb-6'/);
+    expect(src).toMatch(/className: 'flex gap-0 pl-6'/);
+  }
+  expect(pv).toContain("className: 'flex-1 min-w-0 pt-8 pr-6 pb-6 scrollable-content scroll-edge'");
+  expect(cards).toContain("className: 'flex-1 min-w-0 pt-6 pr-6 pb-6 scrollable-content'");
+});
+
+test("Settings › Plug-Ins' notice fits its columns to the panel (one column at the 1000px minimum)", () => {
+  const app = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  expect(app).toContain("gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))'");
+  expect(app).not.toContain("className: 'grid grid-cols-3 gap-4'");
 });

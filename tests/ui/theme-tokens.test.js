@@ -13,7 +13,36 @@ const block = (selector) => {
 };
 const root = block(':root');
 const dark = block('.dark');
-const value = (css, name) => (css.match(new RegExp(`${name}:\\s*(#[0-9a-fA-F]{6})`)) || [])[1];
+// A token's declared text in one block, or undefined.
+const raw = (css, name) => { const m = css.match(new RegExp(`\\s${name}:\\s*([^;]+);`)); return m ? m[1].trim() : undefined; };
+// A token's colour as #rrggbb, resolving var() and color-mix(in srgb, …)
+// the way the browser does: .dark falls back to :root, and a var() inside
+// either resolves in the block being asked about (.dark is on <html>, the
+// same element as :root). The accent is mixed from --accent-base.
+const hex2 = (c) => '#' + c.map((v) => Math.round(v).toString(16).padStart(2, '0')).join('');
+const rgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+const value = (css, name) => {
+  const scopes = css === dark ? [dark, root] : [root];
+  const lookup = (n) => { for (const sc of scopes) { const v = raw(sc, n); if (v !== undefined) return v; } return undefined; };
+  const resolve = (expr) => {
+    if (expr === undefined) return undefined;
+    expr = expr.trim();
+    if (/^#[0-9a-fA-F]{6}$/.test(expr)) return expr.toLowerCase();
+    if (expr === 'white') return '#ffffff';
+    if (expr === 'black') return '#000000';
+    let m = expr.match(/^var\((--[\w-]+)\)$/);
+    if (m) return resolve(lookup(m[1]));
+    m = expr.match(/^color-mix\(in srgb,\s*(.+?)\s+(\d+(?:\.\d+)?)%,\s*(.+)\)$/);
+    if (m) {
+      const a = resolve(m[1]); const b = resolve(m[3]); const p = Number(m[2]) / 100;
+      if (!a || !b) return undefined; // a mix with transparent has no solid colour
+      const [x, y] = [rgb(a), rgb(b)];
+      return hex2(x.map((v, i) => v * p + y[i] * (1 - p)));
+    }
+    return undefined;
+  };
+  return resolve(lookup(name));
+};
 
 const lum = (hex) => {
   const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
@@ -34,6 +63,7 @@ describe('theme tokens', () => {
   test.each(['--success', '--warning', '--error', '--info', '--text-success', '--text-warning', '--text-danger', '--text-info', '--accent-secondary-fg'])(
     '%s has a light and a dark value', (name) => {
       expect(value(root, name)).toBeDefined();
+      expect(raw(dark, name)).toBeDefined();
       expect(value(dark, name)).toBeDefined();
     });
 
@@ -45,7 +75,7 @@ describe('theme tokens', () => {
 
   test('the fill accent takes white text at 4.5:1 and is the same in both themes', () => {
     expect(contrast(value(root, '--accent-fill'), value(root, '--on-accent'))).toBeGreaterThanOrEqual(4.5);
-    expect(value(dark, '--accent-fill')).toBeUndefined();
+    expect(raw(dark, '--accent-fill')).toBeUndefined();
   });
 
   test('SHARED badge text reads on --accent-secondary in both themes', () => {
@@ -122,7 +152,9 @@ test('every .dark palette remap is for a class the renderer still uses', () => {
   const src = glob(path4.join(root4, 'src/renderer')).map((f) => fs4.readFileSync(f, 'utf8')).join('\n');
   const html4 = fs4.readFileSync(path4.join(root4, 'index.html'), 'utf8');
   const rules = [...html4.matchAll(/^\s*\.dark \.((?:hover\\:)?(?:text|bg|border|divide|placeholder)-(?:gray|purple|violet)-[\w\\/]+)/gm)].map((m) => m[1]);
-  expect(rules.length).toBeGreaterThan(0);
+  // None are left (2026-11-15: every gray/purple class moved to tokens); a
+  // new remap would mean a palette class came back.
+  expect(rules).toEqual([]);
   const unused = rules
     .map((r) => r.replace(/\\/g, '').replace(/:(hover|placeholder)$/, ''))
     .filter((cls) => !new RegExp(`(?<![\\w:/-])${cls.replace(/[/:]/g, (c) => `\\${c}`)}(?![\\w/-])`).test(src));
@@ -148,4 +180,36 @@ test('no hard-coded success / warning / error hex in the page modules', () => {
   for (const f of ['artist-page.js', 'cards.js', 'collection-page.js', 'playlist-view-page.js', 'settings-cards.js']) {
     expect([f, fs5.readFileSync(path5.join(dir, f), 'utf8').match(status)]).toEqual([f, null]);
   }
+});
+
+test('the scroll-edge shadow sits below dropdowns, so it never paints over an open menu', () => {
+  const css = require('fs').readFileSync(require('path').join(__dirname, '../../index.html'), 'utf8');
+  const edge = Number((css.match(/--z-scroll-edge: (\d+);/) || [])[1]);
+  const dropdown = Number((css.match(/--z-dropdown: (\d+);/) || [])[1]);
+  expect(edge).toBeGreaterThan(10); // above sticky bars (z-10)
+  expect(edge).toBeLessThan(dropdown);
+  expect(css).toMatch(/\.scroll-edge::before \{\s*content: ''; display: block; position: sticky; height: 0; z-index: var\(--z-scroll-edge\);/);
+});
+
+describe('the accent is one colour (--accent-base)', () => {
+  test('every accent token in both themes is mixed from --accent-base, none written out', () => {
+    for (const css of [root, dark]) {
+      for (const m of css.matchAll(/\s(--(?:accent|playbar-accent)[\w-]*):\s*([^;]+);/g)) {
+        // --accent-base is the one value; a -fg token is text ON the accent.
+        if (m[1] === '--accent-base' || m[1].endsWith('-fg')) continue;
+        expect([m[1], /var\(--accent-(?:base|primary)\)/.test(m[2])]).toEqual([m[1], true]);
+      }
+    }
+    expect(raw(root, '--accent-base')).toBe('#7c3aed');
+    expect(raw(dark, '--accent-base')).toBeUndefined();
+  });
+
+  test('the derived shades stay close to the purples they replaced', () => {
+    const near = (a, b) => Math.hypot(...rgb(a).map((v, i) => v - rgb(b)[i]));
+    expect(value(root, '--accent-primary')).toBe('#7c3aed');
+    expect(near(value(root, '--accent-primary-hover'), '#6d28d9')).toBeLessThan(16);
+    expect(near(value(dark, '--accent-primary'), '#a78bfa')).toBeLessThan(16);
+    expect(near(value(root, '--playbar-accent'), '#a78bfa')).toBeLessThan(16);
+    expect(near(value(root, '--accent-surface'), '#ede9fe')).toBeLessThan(8);
+  });
 });

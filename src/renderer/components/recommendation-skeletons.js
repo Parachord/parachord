@@ -12,6 +12,8 @@
  */
 
 const { SectionHeader, SECTION_HEADER_GAP } = require('./section-header');
+const { TrackRowSkeleton } = require('./track-lists');
+const { HOME_CARD_BOX, HOME_CARD_ART_RADIUS, HOME_CARD_TEXT_GAP } = require('./home-skeletons');
 
 // The row grid the real cards use (app.js renderSubsection).
 const GRID_STYLE = { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' };
@@ -31,8 +33,33 @@ const bar = (className, style) => React.createElement('div', {
   style: { backgroundSize: '200% 100%', ...style }
 });
 
-/** A card: square art, then one text line (artist, playlist) or two (album: title and artist). */
+/**
+ * A card. `lines` 3 is an album card (title, artist, year), 2 a playlist
+ * card (title, source); both: the shared inset card
+ * (AlbumCard / PlaylistCard: the app's card box, rounded art, then the title
+ * and the subtitle lines). `lines` 1 is an artist card: full-bleed art, then
+ * the name.
+ */
 function RecommendationCardSkeleton({ index = 0, lines = 1 } = {}) {
+  if (lines > 1) {
+    return React.createElement('div', {
+      style: Object.assign({}, HOME_CARD_BOX, { display: 'flex', flexDirection: 'column', gap: `${HOME_CARD_TEXT_GAP}px` }),
+      'aria-hidden': 'true'
+    },
+      React.createElement('div', {
+        className: 'aspect-square shimmer-strong animate-shimmer',
+        style: { borderRadius: `${HOME_CARD_ART_RADIUS}px`, backgroundSize: '200% 100%', animationDelay: stagger(index) }
+      }),
+      // The title (13px) and the subtitle (12px, pulled up 6px like the cards').
+      React.createElement('div', { style: { height: '18px', display: 'flex', alignItems: 'center' } },
+        bar('h-3.5', { width: TITLE_WIDTHS[index % TITLE_WIDTHS.length], animationDelay: stagger(index, 50) })),
+      React.createElement('div', { style: { height: '16px', marginTop: '-6px', display: 'flex', alignItems: 'center' } },
+        bar('h-3', { width: ARTIST_WIDTHS[index % ARTIST_WIDTHS.length], animationDelay: stagger(index, 100) })),
+      // An album card's year line (lines 3).
+      lines > 2 && React.createElement('div', { style: { height: '16px', marginTop: '-6px', display: 'flex', alignItems: 'center' } },
+        bar('h-3', { width: '28px', animationDelay: stagger(index, 150) }))
+    );
+  }
   return React.createElement('div', {
     className: 'rounded-lg overflow-hidden',
     style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)' },
@@ -52,30 +79,9 @@ function RecommendationCardSkeleton({ index = 0, lines = 1 } = {}) {
   );
 }
 
-/** A song row: number, title, artist, duration and the source icons, in the real row's columns. */
+/** A song row: the shared TrackRow's placeholder (number, title, artist, the source icons, the duration). */
 function RecommendationSongRowSkeleton({ index = 0 } = {}) {
-  const delay = stagger(index);
-  return React.createElement('div', {
-    className: 'flex items-center gap-4 py-3 px-4',
-    style: { borderRadius: '8px', marginBottom: '2px' },
-    'aria-hidden': 'true'
-  },
-    React.createElement('div', { className: 'flex-shrink-0 flex justify-end', style: { width: '32px' } },
-      bar('h-3', { width: '16px', animationDelay: delay })),
-    React.createElement('div', { style: { flex: '1 1 0', minWidth: 0 } },
-      bar('h-3.5', { width: TITLE_WIDTHS[index % TITLE_WIDTHS.length], animationDelay: delay })),
-    React.createElement('div', { style: { flex: '0.7 1 0', minWidth: 0 } },
-      bar('h-3', { width: ARTIST_WIDTHS[index % ARTIST_WIDTHS.length], animationDelay: delay })),
-    React.createElement('div', { className: 'flex-shrink-0 flex justify-end', style: { width: '50px' } },
-      bar('h-3', { width: '32px', animationDelay: delay })),
-    React.createElement('div', {
-      className: 'flex items-center gap-1 justify-end',
-      style: { width: '140px', flexShrink: 0, minHeight: '24px' }
-    },
-      bar('w-5 h-5', { animationDelay: delay }),
-      bar('w-5 h-5', { animationDelay: stagger(index, 100) })
-    )
-  );
+  return React.createElement(TrackRowSkeleton, { index, duration: true });
 }
 
 // Collection -> Friends' hexagon and grid (collection-page.js), which the
@@ -155,7 +161,7 @@ function RecommendationSectionSkeleton({ kind = 'cards', lines = 1, count, title
 function RecommendationsPageSkeleton({ cardCount } = {}) {
   return React.createElement('div', { 'aria-hidden': 'true' },
     React.createElement(RecommendationSectionSkeleton, { kind: 'songs' }),
-    React.createElement(RecommendationSectionSkeleton, { kind: 'cards', lines: 2, count: cardCount })
+    React.createElement(RecommendationSectionSkeleton, { kind: 'cards', lines: 3, count: cardCount })
   );
 }
 

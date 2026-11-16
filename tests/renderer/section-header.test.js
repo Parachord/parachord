@@ -26,18 +26,18 @@ describe('section header style', () => {
   });
 
   test('links take the destination page\'s sidebar colour, else the accent', () => {
-    expect(H.PAGE_COLOR).toEqual({ playlists: '#ec4899', recommendations: '#f59e0b', concerts: '#10c9b4' });
-    expect(H.sectionLinkColor('#ec4899')).toBe('#ec4899');
+    expect(H.PAGE_COLOR).toEqual({ playlists: 'var(--page-playlists)', recommendations: 'var(--page-recommendations)', concerts: 'var(--page-concerts)' });
+    expect(H.sectionLinkColor('var(--page-playlists)')).toBe('var(--page-playlists)');
     expect(H.sectionLinkColor()).toBe('var(--accent-primary)');
   });
 });
 
 describe('SectionHeader size', () => {
-  test('a subsection title is a 15px semibold h3; the default is the 20px h2', () => {
-    expect(H.SUBSECTION_TITLE_STYLE).toEqual({ margin: 0, fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)' });
+  test('a subsection title is a 16px semibold h3; the default is the 20px h2', () => {
+    expect(H.SUBSECTION_TITLE_STYLE).toEqual({ margin: 0, fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)' });
     expect(h({ title: 'Made for you', size: 'sub' }))
-      .toContain('<h3 style="margin:0;font-size:15px;font-weight:600;color:var(--text-primary)">Made for you</h3>');
-    expect(h({ title: 'Made for you', size: 'sub', as: 'h4' })).toContain('<h4 style="margin:0;font-size:15px');
+      .toContain('<h3 style="margin:0;font-size:16px;font-weight:600;color:var(--text-primary)">Made for you</h3>');
+    expect(h({ title: 'Made for you', size: 'sub', as: 'h4' })).toContain('<h4 style="margin:0;font-size:16px');
     expect(h({ title: 'Playlists' })).toContain('<h2 style="margin:0;font-size:20px;font-weight:700;color:var(--text-primary)">Playlists</h2>');
   });
 });
@@ -54,7 +54,7 @@ describe('SectionHeader', () => {
     const opened = [];
     const el = H.SectionHeader({ title: 'Your playlists', page: 'Playlists', view: 'playlists', navigateTo: (v) => opened.push(v), pageColor: H.PAGE_COLOR.playlists });
     const html = renderToStaticMarkup(el);
-    expect(html).toMatch(/aria-label="See all in Playlists"[^>]*style="[^"]*font-size:13px;font-weight:600[^"]*color:#ec4899"[^>]*>See all in Playlists</);
+    expect(html).toMatch(/aria-label="See all in Playlists"[^>]*style="[^"]*font-size:13px;font-weight:600[^"]*color:var\(--page-playlists\)"[^>]*>See all in Playlists</);
     // The button is the last child of the right-hand group.
     const button = el.props.children[1].props.children[1];
     button.props.onClick();
@@ -103,7 +103,7 @@ describe('every page draws the shared header', () => {
     // suggestion labels above the results keep theirs).
     expect(search).not.toMatch(/uppercase tracking-wider[^']*' \}, '(ARTISTS|SONGS|ALBUMS|PLAYLISTS)'/);
 
-    expect(read('artist-page.js')).toMatch(/React\.createElement\(SectionHeader, \{\s*title: React\.createElement\(React\.Fragment, null,\s*countOf\(events\.length, 'upcoming concert'\)/);
+    expect(read('artist-page.js')).toMatch(/React\.createElement\(SectionHeader, \{\s*title: React\.createElement\(React\.Fragment, null,[\s\S]{0,200}countOf\(events\.length, 'upcoming concert'\)/);
   });
 
   test('the old Recommendations title and link classes are gone', () => {

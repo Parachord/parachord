@@ -21,18 +21,25 @@
 
 const { sellerColor, sellerTextColor, sellerBadgeBg, sellerShortName, sellerName } = require('../lib/ticket-sellers');
 const { Tooltip, ShareButton } = require('./ui-atoms');
+const { BrandMark } = require('./brand-logos');
 const { CardButton } = require('./card-button');
 const Icons = require('./icons');
+const { CardSkeleton } = require('./home-skeletons');
+const { RELEASE_TYPE_COLORS } = require('../lib/release-types');
+const { FilterBox, StickyBar } = require('./filter-box');
 const { Button, buttonClassName } = require('./button');
 const { PAGE_COLORS } = require('../lib/page-colors');
 const { EmptyState, ErrorState } = require('./states');
 const { SortMenu } = require('./sort-menu');
 const { Menu } = require('./menu');
+const { PageHero } = require('./page-hero');
+const { TicketsButton } = require('./tickets-button');
+const { ConcertListSkeleton } = require('./concert-skeletons');
 const { HeroTabs, heroTabClass } = require('./hero-tabs');
 const { SectionHeader } = require('./section-header');
 const { FilterChips } = require('./filter-chips');
 const { ReleasePage, ReleaseCard, generateArtistPattern, PlayTop10Icon } = require('./cards');
-const { ArtistCard } = require('./artist-card');
+const { ArtistCard, ArtistCardSkeleton } = require('./artist-card');
 const { trackSlug, slug } = require('../lib/track-slug');
 const { releaseMenu, artistMenu } = require('../lib/item-menus');
 const { formatCalendarDate } = require('../lib/calendar-date');
@@ -161,55 +168,17 @@ const ArtistPage = React.memo(function ArtistPage(props) {
       },
         // Artist page hero header (not inside scrollable area) - only show when NOT viewing or loading a release
         // Clickable to toggle collapse state
-        !currentRelease && !loadingRelease && React.createElement('div', {
-          className: 'relative',
-          style: {
-            height: isHeaderCollapsed ? '80px' : '320px',
-            flexShrink: 0,
-            overflow: 'hidden',
-            cursor: isHeaderCollapsed ? 'pointer' : 'default',
-            transition: 'height 300ms ease-out'
-          },
+        // The shared page hero (components/page-hero.js), with the artist's
+        // photo for its background.
+        !currentRelease && !loadingRelease && React.createElement(PageHero, {
+          collapsed: isHeaderCollapsed,
+          photo: { url: artistImage || null, position: artistImagePosition },
           // Right-click anywhere on the hero (not only the name): Copy link /
           // View on Achordion.
-          onContextMenu: copyParachordLink
-        },
-          // Clickable overlay to expand collapsed header (sits behind content)
-          isHeaderCollapsed && React.createElement('button', { type: 'button', 'aria-label': 'Expand header',
-            className: 'absolute inset-0 z-0',
-            style: { cursor: 'pointer' },
-            onClick: () => setIsHeaderCollapsed(false),           }),
-          // Background image with gradient overlay
-          artistImage && React.createElement('div', {
-            className: 'absolute inset-0',
-            style: {
-              backgroundImage: `url(${artistImage})`,
-              backgroundSize: 'cover',
-              backgroundPosition: artistImagePosition,
-              filter: 'blur(0px)',
-              pointerEvents: 'none'
-            }
-          }),
-          // Gradient overlay for readability
-          React.createElement('div', {
-            className: 'absolute inset-0',
-            style: {
-              background: artistImage
-                ? isHeaderCollapsed
-                  ? 'linear-gradient(to bottom, rgba(0,0,0,0.7) 0%, rgba(17,17,17,0.95) 100%)'
-                  : 'linear-gradient(to bottom, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.6) 50%, rgba(17,17,17,1) 100%)'
-                : 'linear-gradient(to bottom, rgba(60,60,80,0.4) 0%, rgba(17,17,17,1) 100%)',
-              pointerEvents: 'none'
-            }
-          }),
-          // EXPANDED STATE - Artist info overlay (centered)
-          !loadingRelease && currentArtist && !isHeaderCollapsed && React.createElement('div', {
-            className: 'absolute inset-0 flex flex-col items-center justify-center text-center px-6 z-10',
-            style: {
-              opacity: isHeaderCollapsed ? 0 : 1,
-              transition: 'opacity 300ms ease-out'
-            }
-          },
+          onContextMenu: copyParachordLink,
+          onExpand: () => setIsHeaderCollapsed(false),
+          title: null,
+          expanded: currentArtist && React.createElement(React.Fragment, null,
             // Artist name with star button (star positioned absolutely to not affect centering)
             React.createElement('div', {
               className: 'relative inline-flex items-center'
@@ -217,7 +186,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
               React.createElement('h1', {
                 className: 'hero-title font-light text-white',
                 style: {
-                  textShadow: '0 2px 20px rgba(0,0,0,0.5)',
+                  textShadow: 'var(--hero-text-shadow)',
                   letterSpacing: '0.3em',
                   textTransform: 'uppercase'
                 },
@@ -235,20 +204,14 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                     position: 'top',
                     variant: 'dark'
                   },
-                    React.createElement('button', {
-                      'aria-label': isInCollection ? 'Remove from collection' : 'Add to collection',
-                      onClick: (e) => {
+                    React.createElement(Button, { variant: 'icon', size: 'sm', tone: 'dark', className: isInCollection ? '!text-on-dark-star hover:!text-on-dark-star-hover' : '', style: { filter: 'var(--icon-shadow)' }, 'aria-label': isInCollection ? 'Remove from collection' : 'Add to collection', onClick: (e) => {
                         e.stopPropagation();
                         if (!isInCollection) {
                           addArtistToCollection({ name: currentArtist.name, image: artistImage });
                         } else {
                           removeArtistFromCollection({ name: currentArtist.name });
                         }
-                      },
-                      className: `p-1.5 rounded-full transition-colors no-drag ${isInCollection ? 'text-yellow-400 hover:text-yellow-300' : 'text-white/70 hover:text-white'}`,
-                      style: { filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.5))' }
-                    },
-                      React.createElement('svg', {
+                      } }, React.createElement('svg', {
                         className: 'w-6 h-6',
                         viewBox: '0 0 24 24',
                         fill: isInCollection ? 'currentColor' : 'none',
@@ -260,8 +223,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                         React.createElement('polygon', {
                           points: '12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26'
                         })
-                      )
-                    )
+                      ))
                   )
                 );
               })()
@@ -271,10 +233,12 @@ const ArtistPage = React.memo(function ArtistPage(props) {
               role: 'tablist',
               'aria-label': 'Artist',
               className: 'flex items-center gap-1 mt-6',
-              style: { textShadow: '0 2px 12px rgba(0,0,0,0.8), 0 0 20px rgba(0,0,0,0.4)' }
+              style: { textShadow: 'var(--photo-text-shadow)' }
             },
               (() => {
-                const showOnTour = (artistConcertsLoaded && artistConcerts.length > 0) || artistPageTab === 'on-tour';
+                // On Tour only for an artist with upcoming concerts; while they load, an
+                // open On Tour (a deep link, a restored page) keeps its tab.
+                const showOnTour = artistConcerts.length > 0 || (artistPageTab === 'on-tour' && !artistConcertsLoaded);
                 return ['music', 'biography', 'related', 'on-tour'].map((tab, index) => {
                   const isOnTour = tab === 'on-tour';
                   const hidden = isOnTour && !showOnTour;
@@ -353,14 +317,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
               })
             )
           ),
-          // COLLAPSED STATE - Inline layout
-          !loadingRelease && currentArtist && isHeaderCollapsed && React.createElement('div', {
-            className: 'hero-bar absolute inset-0 flex items-center px-6 z-10',
-            style: {
-              opacity: isHeaderCollapsed ? 1 : 0,
-              transition: 'opacity 300ms ease-out'
-            }
-          },
+          collapsedContent: currentArtist && React.createElement(React.Fragment, null,
             // Left side: Artist name with star button - clickable to expand header
             React.createElement('div', {
               className: 'hero-bar-title flex items-center gap-2 mr-6',
@@ -371,7 +328,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
               React.createElement('button', { type: 'button',
                 className: 'text-left text-2xl font-light text-white cursor-pointer hover:text-white/80 transition-colors no-drag',
                 style: {
-                  textShadow: '0 2px 10px rgba(0,0,0,0.5)',
+                  textShadow: 'var(--hero-text-shadow-bar)',
                   letterSpacing: '0.2em',
                   textTransform: 'uppercase',
                   lineHeight: '1.2'
@@ -389,20 +346,14 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                   position: 'top',
                   variant: 'dark'
                 },
-                  React.createElement('button', {
-                    'aria-label': isInCollection ? 'Remove from collection' : 'Add to collection',
-                    onClick: (e) => {
+                  React.createElement(Button, { variant: 'icon', size: 'sm', tone: 'dark', className: isInCollection ? '!text-on-dark-star hover:!text-on-dark-star-hover' : '', style: { filter: 'var(--icon-shadow)' }, 'aria-label': isInCollection ? 'Remove from collection' : 'Add to collection', onClick: (e) => {
                       e.stopPropagation();
                       if (!isInCollection) {
                         addArtistToCollection({ name: currentArtist.name, image: artistImage });
                       } else {
                         removeArtistFromCollection({ name: currentArtist.name });
                       }
-                    },
-                    className: `p-1 rounded-full transition-colors no-drag ${isInCollection ? 'text-yellow-400 hover:text-yellow-300' : 'text-white/70 hover:text-white'}`,
-                    style: { filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.5))' }
-                  },
-                    React.createElement('svg', {
+                    } }, React.createElement('svg', {
                       className: 'w-5 h-5',
                       viewBox: '0 0 24 24',
                       fill: isInCollection ? 'currentColor' : 'none',
@@ -414,8 +365,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                       React.createElement('polygon', {
                         points: '12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26'
                       })
-                    )
-                  )
+                    ))
                 );
               })()
             ),
@@ -424,10 +374,12 @@ const ArtistPage = React.memo(function ArtistPage(props) {
               role: 'tablist',
               'aria-label': 'Artist',
               className: 'flex items-center gap-1',
-              style: { textShadow: '0 2px 12px rgba(0,0,0,0.8), 0 0 20px rgba(0,0,0,0.4)' }
+              style: { textShadow: 'var(--photo-text-shadow)' }
             },
               (() => {
-                const showOnTour = (artistConcertsLoaded && artistConcerts.length > 0) || artistPageTab === 'on-tour';
+                // On Tour only for an artist with upcoming concerts; while they load, an
+                // open On Tour (a deep link, a restored page) keeps its tab.
+                const showOnTour = artistConcerts.length > 0 || (artistPageTab === 'on-tour' && !artistConcertsLoaded);
                 return ['music', 'biography', 'related', 'on-tour'].map((tab, index) => {
                   const isOnTour = tab === 'on-tour';
                   const hidden = isOnTour && !showOnTour;
@@ -483,7 +435,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
               className: 'ml-auto'
             }, React.createElement(Icons.Play, { size: 14 }), isCompactHeader ? 'Play' : 'Play top tracks')
           )
-        ),
+        }),
         
         // Release page - artist header (shows artist image/name/tabs at top)
         currentRelease && React.createElement('div', {
@@ -509,8 +461,8 @@ const ArtistPage = React.memo(function ArtistPage(props) {
             className: 'absolute inset-0',
             style: {
               background: artistImage
-                ? 'linear-gradient(to bottom, rgba(0,0,0,0.5) 0%, rgba(17,17,17,0.95) 100%)'
-                : 'linear-gradient(to bottom, rgba(60,60,80,0.4) 0%, rgba(17,17,17,1) 100%)'
+                ? 'var(--photo-shade-bar)'
+                : 'var(--photo-shade-empty)'
             }
           }),
           // Artist info overlay (inline layout for release page - matches collapsed artist header)
@@ -523,7 +475,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
               React.createElement('button', { type: 'button',
               className: 'text-left text-2xl font-light mr-6 text-white cursor-pointer hover:text-white/80 transition-colors no-drag flex-shrink-0',
               style: {
-                textShadow: '0 2px 10px rgba(0,0,0,0.5)',
+                textShadow: 'var(--hero-text-shadow-bar)',
                 letterSpacing: '0.2em',
                 textTransform: 'uppercase',
                 maxWidth: '40%',
@@ -542,9 +494,9 @@ const ArtistPage = React.memo(function ArtistPage(props) {
             // Center: Navigation tabs
             React.createElement('div', {
               className: 'flex items-center gap-1',
-              style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
+              style: { textShadow: 'var(--hero-text-shadow-line)' }
             },
-              React.createElement(HeroTabs, { items: ['music', 'biography', 'related', ...((artistConcertsLoaded && artistConcerts.length > 0) || artistPageTab === 'on-tour' ? ['on-tour'] : [])], isSelected: (tab) => tab === 'music', onSelect: async (tab) => {
+              React.createElement(HeroTabs, { items: ['music', 'biography', 'related', ...(artistConcerts.length > 0 || (artistPageTab === 'on-tour' && !artistConcertsLoaded) ? ['on-tour'] : [])], isSelected: (tab) => tab === 'music', onSelect: async (tab) => {
                     // Go back to artist page and switch to the selected tab
                     const artistName = currentRelease?.artist?.name || currentArtist?.name;
                     setCurrentRelease(null);
@@ -607,9 +559,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                   }
                 },
                 style: { color: 'var(--text-tertiary)', transition: 'color 0.15s' },
-                className: 'hover:text-ink-secondary transition-colors uppercase',
-                onMouseEnter: (e) => e.currentTarget.style.color = 'var(--text-secondary)',
-                onMouseLeave: (e) => e.currentTarget.style.color = 'var(--text-tertiary)'
+                className: 'hover:text-ink-secondary transition-colors uppercase hover:!text-[var(--text-secondary)]',
               }, currentArtist?.name || currentRelease?.artist?.name || 'Artist'),
               React.createElement('span', { style: { color: 'var(--border-default)' } }, '/'),
               // The album's heading (#1386), drawn as the breadcrumb's last part.
@@ -761,24 +711,12 @@ const ArtistPage = React.memo(function ArtistPage(props) {
               style: { backgroundSize: '200% 100%' }
             }),
             // Skeleton album grid
+            // The shared card's placeholder, in the discography's grid.
             React.createElement('div', {
-              className: 'card-grid gap-4'
+              className: 'card-grid gap-x-4 gap-y-5'
             },
               Array.from({ length: 10 }).map((_, i) =>
-                React.createElement('div', { key: `album-skeleton-${i}` },
-                  React.createElement('div', {
-                    className: 'aspect-square shimmer-light rounded-lg mb-3 animate-shimmer',
-                    style: { backgroundSize: '200% 100%', animationDelay: `${i * 50}ms` }
-                  }),
-                  React.createElement('div', {
-                    className: 'h-4 shimmer-light rounded w-3/4 mb-2 animate-shimmer',
-                    style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 25}ms` }
-                  }),
-                  React.createElement('div', {
-                    className: 'h-3 shimmer-light rounded w-1/2 animate-shimmer',
-                    style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 50}ms` }
-                  })
-                )
+                React.createElement(CardSkeleton, { key: `album-skeleton-${i}`, index: i, lines: 1 })
               )
             )
           )
@@ -797,21 +735,18 @@ const ArtistPage = React.memo(function ArtistPage(props) {
           onScroll: handleArtistPageScroll
         },
           // Sticky filter bar (Music tab only) - refined styling
-          artistPageTab === 'music' && React.createElement('div', {
-            className: 'sticky top-0 z-10 flex items-center px-6 py-3',
-            style: { backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
-          },
+          artistPageTab === 'music' && React.createElement(StickyBar, null,
             // Release type filters: the app's filter chips (FilterChips), All
             // neutral, each type in its colour.
             (() => {
               const searchFiltered = filterArtistReleases(artistReleases);
               const chips = [
                 { value: 'all', label: 'All' },
-                { value: 'album', label: 'Studio Albums', color: 'rgb(99, 102, 241)' },
-                { value: 'ep', label: 'EPs', color: '#a855f7' },
-                { value: 'single', label: 'Singles', color: '#db2777' },
-                { value: 'live', label: 'Live', color: '#d97706' },
-                { value: 'compilation', label: 'Compilations', color: '#0eb3a0' }
+                { value: 'album', label: 'Studio Albums', color: RELEASE_TYPE_COLORS.album },
+                { value: 'ep', label: 'EPs', color: RELEASE_TYPE_COLORS.ep },
+                { value: 'single', label: 'Singles', color: RELEASE_TYPE_COLORS.single },
+                { value: 'live', label: 'Live', color: RELEASE_TYPE_COLORS.live },
+                { value: 'compilation', label: 'Compilations', color: RELEASE_TYPE_COLORS.compilation }
               ].map(({ value, label, color }) => {
                 const count = value === 'all'
                   ? searchFiltered.length
@@ -829,41 +764,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
               React.createElement(SortMenu, { value: artistSort, options: artistSortOptions, onChange: setArtistSort, label: 'Sort releases', align: 'right' })
             ),
             // Search toggle/field
-            React.createElement('div', { className: 'flex items-center' },
-              artistSearchOpen ?
-                React.createElement('div', { className: 'flex items-center border border-line-strong rounded-full px-3 py-[5px] filter-pill' },
-                  React.createElement('input', {
-                    type: 'text',
-                    value: artistSearch,
-                    onChange: (e) => setArtistSearch(e.target.value),
-                    onBlur: () => {
-                      if (!artistSearch.trim()) {
-                        setArtistSearchOpen(false);
-                      }
-                    },
-                    autoFocus: true,
-                    placeholder: 'Filter…',
-                    className: 'bg-transparent text-ink-secondary text-sm placeholder-ink-tertiary outline-none',
-                    style: { width: '150px' }, 'aria-label': 'Filter'
-                  }),
-                  artistSearch && React.createElement('button', { type: 'button', 'aria-label': 'Clear filter', 'data-tooltip': 'Clear filter',
-                    onClick: () => {
-                      setArtistSearch('');
-                      setArtistSearchOpen(false);
-                    },
-                    className: 'ml-2 text-ink-tertiary hover:text-ink-secondary'
-                  },
-                    React.createElement(Icons.X, { className: 'w-4 h-4' })
-                  )
-                )
-              :
-                React.createElement('button', { type: 'button', 'aria-label': 'Filter', 'data-tooltip': 'Filter',
-                  onClick: () => setArtistSearchOpen(true),
-                  className: 'p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors'
-                },
-                  React.createElement(Icons.Search, { className: 'w-5 h-5' })
-                )
-            )
+            React.createElement(FilterBox, { value: artistSearch, onChange: setArtistSearch, open: artistSearchOpen, onOpenChange: setArtistSearchOpen })
           ),
           // MUSIC TAB - Discography
           artistPageTab === 'music' && React.createElement('div', {
@@ -1332,9 +1233,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                         'aria-label': 'Twitter/X', 'data-tooltip': 'Twitter/X',
                         className: 'social-link'
                       },
-                        React.createElement('svg', { style: { width: '14px', height: '14px', color: 'var(--nav-inactive)' }, viewBox: '0 0 24 24', fill: 'currentColor' },
-                          React.createElement('path', { d: 'M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z' })
-                        )
+                        React.createElement(BrandMark, { id: 'x', size: 14, style: { color: 'var(--nav-inactive)' } })
                       ),
                       // Instagram
                       artistExtendedInfo.urls.instagram && React.createElement('a', {
@@ -1352,9 +1251,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                         'aria-label': 'Instagram', 'data-tooltip': 'Instagram',
                         className: 'social-link'
                       },
-                        React.createElement('svg', { style: { width: '14px', height: '14px', color: 'var(--nav-inactive)' }, viewBox: '0 0 24 24', fill: 'currentColor' },
-                          React.createElement('path', { d: 'M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z' })
-                        )
+                        React.createElement(BrandMark, { id: 'instagram', size: 14, style: { color: 'var(--nav-inactive)' } })
                       ),
                       // Facebook
                       artistExtendedInfo.urls.facebook && React.createElement('a', {
@@ -1372,9 +1269,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                         'aria-label': 'Facebook', 'data-tooltip': 'Facebook',
                         className: 'social-link'
                       },
-                        React.createElement('svg', { style: { width: '14px', height: '14px', color: 'var(--nav-inactive)' }, viewBox: '0 0 24 24', fill: 'currentColor' },
-                          React.createElement('path', { d: 'M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z' })
-                        )
+                        React.createElement(BrandMark, { id: 'facebook', size: 14, style: { color: 'var(--nav-inactive)' } })
                       ),
                       // YouTube
                       artistExtendedInfo.urls.youtube && React.createElement('a', {
@@ -1392,9 +1287,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                         'aria-label': 'YouTube', 'data-tooltip': 'YouTube',
                         className: 'social-link'
                       },
-                        React.createElement('svg', { style: { width: '14px', height: '14px', color: 'var(--nav-inactive)' }, viewBox: '0 0 24 24', fill: 'currentColor' },
-                          React.createElement('path', { d: 'M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z' })
-                        )
+                        React.createElement(BrandMark, { id: 'youtube', size: 14, style: { color: 'var(--nav-inactive)' } })
                       )
                     )
                   ),
@@ -1483,14 +1376,11 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                 ),
 
                 // No extended info found
-                !loadingExtendedInfo && artistExtendedInfo === false && React.createElement('div', {
-                  style: {
-                    fontSize: '11px',
-                    color: 'var(--text-tertiary)',
-                    textAlign: 'center',
-                    padding: '16px 0'
-                  }
-                }, 'No additional info available')
+                !loadingExtendedInfo && artistExtendedInfo === false && React.createElement(EmptyState, {
+                  compact: true, icon: null,
+                  title: 'No more details',
+                  body: 'MusicBrainz has no members or links for this artist yet.'
+                })
               )
             ),
 
@@ -1548,9 +1438,10 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                 )
               ),
               // No bio found (artistBio === false means we fetched but found nothing)
-              !loadingBio && artistBio === false && React.createElement('div', {
-                className: 'text-center py-12 text-ink-tertiary'
-              }, 'No biography available for this artist.')
+              !loadingBio && artistBio === false && React.createElement(EmptyState, {
+                title: 'No biography for this artist',
+                body: 'None of your services has one yet.'
+              })
             )
           ),
 
@@ -1596,10 +1487,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
 
             return React.createElement(React.Fragment, null,
               // Sticky filter bar - show when both services are configured
-              hasBothServicesConfigured && React.createElement('div', {
-                className: 'sticky top-0 z-10 flex items-center px-6 py-3',
-              style: { backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
-              },
+              hasBothServicesConfigured && React.createElement(StickyBar, null,
                 // The app's filter chips (FilterChips): All neutral, each source
                 // in the colour it had (orange-500, red-600, and Both the two
                 // as a gradient).
@@ -1630,14 +1518,15 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                     onContextMenu: () => window.showItemMenu(artistMenu({ id: slug(artist.name || 'unknown'), name: artist.name, image: artist.image }))
                   }))
                 ),
-                // Cards will appear with their own shimmer animations when data is ready
-                // No related artists found (or filtered to none)
-                !loadingRelated && filteredArtists.length === 0 && React.createElement('div', {
-                  className: 'text-center py-12 text-ink-tertiary'
-                }, relatedArtists.length === 0
-                  ? 'No related artists found.'
-                  : `No artists from ${sourceFilter === 'listenbrainz' ? 'ListenBrainz' : sourceFilter === 'lastfm' ? 'Last.fm' : 'both sources'}.`
-                )
+                // Still looking: the cards' placeholders, in the real grid.
+                loadingRelated && filteredArtists.length === 0 && React.createElement('div', {
+                  className: 'grid gap-4', 'aria-hidden': 'true',
+                  style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
+                }, Array.from({ length: 12 }).map((_, i) => React.createElement(ArtistCardSkeleton, { key: i, index: i }))),
+                // None found (or filtered to none): the shared empty state.
+                !loadingRelated && filteredArtists.length === 0 && React.createElement(EmptyState, relatedArtists.length === 0
+                  ? { title: 'No related artists yet', body: 'ListenBrainz and Last.fm don’t list any for this artist.' }
+                  : { title: `No related artists from ${sourceFilter === 'listenbrainz' ? 'ListenBrainz' : 'Last.fm'}`, body: 'Pick All to see the rest.' })
               )
             );
           })(),
@@ -1664,13 +1553,11 @@ const ArtistPage = React.memo(function ArtistPage(props) {
               // A sticky bar (like Related artists' filter bar): the count, a
               // spinner beside it while loading, and refresh on the right; the
               // months scroll beneath it.
-              React.createElement('div', {
-                className: 'sticky top-0 z-10 flex items-center px-6 py-3',
-                style: { backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
-              },
+              React.createElement(StickyBar, null,
                 React.createElement(SectionHeader, {
                   title: React.createElement(React.Fragment, null,
-                    countOf(events.length, 'upcoming concert'),
+                    // No count until there's one to give (it read "0 upcoming concerts" while loading).
+                    events.length === 0 ? 'Upcoming concerts' : countOf(events.length, 'upcoming concert'),
                     artistConcertsLoading && React.createElement(Icons.Spinner, { className: 'w-4 h-4', style: { display: 'inline-block', verticalAlign: 'middle', marginLeft: '12px', color: concertsColor } })),
                   style: { marginBottom: 0, alignItems: 'center', width: '100%' },
                   extra: React.createElement(Button, {
@@ -1685,18 +1572,10 @@ const ArtistPage = React.memo(function ArtistPage(props) {
               ),
               React.createElement('div', { className: 'p-6' },
 
-              // Empty state
-              events.length === 0 && !artistConcertsLoading && React.createElement(EmptyState, {
-                icon: Icons.Ticket, title: 'No upcoming concerts', body: 'Nothing announced yet. Check back later.'
-              }),
-
-              // Loading state
-              events.length === 0 && artistConcertsLoading && React.createElement('div', {
-                className: 'flex flex-col items-center justify-center py-12'
-              },
-                React.createElement(Icons.Spinner, { className: 'w-8 h-8 mb-3', style: { color: concertsColor } }),
-                React.createElement('p', { className: `text-sm text-ink-tertiary` }, 'Loading concerts…')
-              ),
+              // No empty state: On Tour never shows with no concerts (the page
+              // goes back to Music). Until they arrive, the On tour row's
+              // skeleton (components/concert-skeletons.js).
+              events.length === 0 && (artistConcertsLoading || !artistConcertsLoaded) && React.createElement(ConcertListSkeleton, { count: 4 }),
 
               // Month-grouped event list
               sortedMonths.map(monthKey =>
@@ -1762,7 +1641,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                               if (hasAiSource) {
                                 badges.push(React.createElement('span', {
                                   key: 'ai-disclaimer',
-                                  className: 'text-xs text-teal-400 italic flex-shrink-0',
+                                  className: 'text-xs text-page-concerts italic flex-shrink-0',
                                   title: 'AI-generated results may not be accurate. Verify event details before purchasing tickets.'
                                 }, 'AI generated results may be hallucinations'));
                               }
@@ -1780,37 +1659,8 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                           }, 'with ' + event.lineup.filter(a => a.toLowerCase() !== (currentArtist?.name || '').toLowerCase()).join(', '))
                         ),
 
-                        // Ticket button with provider flyout
-                        (() => {
-                          const sources = (event.ticketSources || []).filter(s => s.ticketUrl);
-                          const eventId = event.id || `${monthKey}-${eventIdx}`;
-                          if (sources.length === 0) return null;
-                          if (sources.length === 1) {
-                            return React.createElement('a', {
-                              href: sources[0].ticketUrl,
-                              target: '_blank',
-                              rel: 'noopener noreferrer',
-                              // The shared primary button look, in the Concerts page's fill.
-                              className: buttonClassName({ variant: 'primary', size: 'md', className: 'flex-shrink-0' }),
-                              style: { backgroundColor: PAGE_COLORS.concerts.fill },
-                              onClick: (e) => e.stopPropagation()
-                            }, 'Tickets');
-                          }
-                          // The sellers' menu (components/menu.js): one link per seller.
-                          return React.createElement(Menu, {
-                            label: 'Tickets',
-                            align: 'right',
-                            items: sources.map((src, si) => ({ key: si, label: src.label, dot: sellerColor(src.source), href: src.ticketUrl })),
-                            renderTrigger: (t) => React.createElement('button', Object.assign({}, t, {
-                              type: 'button',
-                              className: buttonClassName({ variant: 'primary', size: 'md', className: 'flex-shrink-0' }),
-                              style: { backgroundColor: PAGE_COLORS.concerts.fill }
-                            }),
-                              'Tickets',
-                              React.createElement(Icons.ChevronDown, { className: `w-3 h-3 transition-transform ${t.open ? 'rotate-180' : ''}`, strokeWidth: 2.5 })
-                            ),
-                          });
-                        })()
+                        // The shared teal Tickets button (components/tickets-button.js).
+                        React.createElement(TicketsButton, { sources: event.ticketSources, artist: currentArtist?.name })
                       );
                     })
                   )

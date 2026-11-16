@@ -1,9 +1,13 @@
 // Pick the text colour that reads best on a brand-coloured fill: white or
 // near-black, whichever has the higher WCAG contrast. A colour that is not a
 // hex string (a CSS variable, nothing) gets white, the accent's text colour.
+// It returns the theme tokens (both the same in either theme); the RGB
+// values are only for the contrast sums and must match index.html's.
 
-const LIGHT = '#ffffff';
-const DARK = '#111827';
+const LIGHT = 'var(--on-accent)'; // white
+const DARK = 'var(--on-art-ink)'; // gray-900
+const LIGHT_RGB = [255, 255, 255];
+const DARK_RGB = [17, 24, 39];
 
 function parseHex(hex) {
   if (typeof hex !== 'string') return null;
@@ -31,7 +35,7 @@ function readableTextOn(hex) {
   const rgb = parseHex(hex);
   if (!rgb) return LIGHT;
   const l = luminance(rgb);
-  return contrast(1, l) >= contrast(l, luminance(parseHex(DARK))) ? LIGHT : DARK;
+  return contrast(luminance(LIGHT_RGB), l) >= contrast(l, luminance(DARK_RGB)) ? LIGHT : DARK;
 }
 
-module.exports = { readableTextOn };
+module.exports = { readableTextOn, LIGHT_RGB, DARK_RGB };

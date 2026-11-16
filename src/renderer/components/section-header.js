@@ -2,7 +2,7 @@
 // heading over a row or grid of content (Home's rows, the Recommendations
 // rows, the search results, an artist's concerts). Home's style (#1361),
 // shared so every page's sections read alike; change it here, never in a
-// copy. A subsection title (`size: 'sub'`, 15px semibold) sits under a section
+// copy. A subsection title (`size: 'sub'`, 16px semibold) sits under a section
 // title when one section holds several titled rows: the Recommendations
 // playlist categories. Page heroes, dialog titles, settings headings and the small
 // uppercase group labels (text-xs ... uppercase tracking-wider) are other
@@ -24,8 +24,8 @@ const PAGE_COLOR = {
 // with this style), so the two are the same height.
 const SECTION_TITLE_STYLE = { margin: 0, fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)' };
 // A row's title under a section title (the Recommendations playlist
-// categories under "Playlists"): a step down, 15px semibold.
-const SUBSECTION_TITLE_STYLE = { margin: 0, fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)' };
+// categories under "Playlists"): a step down, 16px semibold.
+const SUBSECTION_TITLE_STYLE = { margin: 0, fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)' };
 const SECTION_SUB_STYLE = { fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' };
 // The link's look; its colour is the destination page's sidebar colour, else
 // the accent (sectionLinkColor).
@@ -51,7 +51,7 @@ const sectionLinkColor = (color) => color || 'var(--accent-primary)';
  * (`action: { label, onClick, ariaLabel, expanded }`, e.g. a row's See all /
  * Show less). `pageColor` colours either one; omitted, the link is the accent.
  *
- * `size` is 'section' (default, 20px, an h2) or 'sub' (15px, an h3 unless `as`
+ * `size` is 'section' (default, 20px, an h2) or 'sub' (16px, an h3 unless `as`
  * says otherwise). `as` is the heading level; `className` and `style` go on
  * the row, for the page's own spacing around it.
  */

@@ -74,7 +74,8 @@ test('every row that passes a ref passes it to CardButton, which forwards it', (
 // queue drawer couldn't be resized, and reason tooltips never showed.
 describe('nothing inside a card depends on the pointer unless it is lifted', () => {
   const { parse } = require('@babel/parser');
-  const LIFTED = new Set(['button', 'a', 'input', 'select', 'textarea', 'label']);
+  // Button (components/button.js) renders a <button>.
+  const LIFTED = new Set(['button', 'Button', 'a', 'input', 'select', 'textarea', 'label']);
   const files = ['src/renderer/app.js', ...fs.readdirSync(path.join(root, 'src/renderer/components')).filter((f) => f.endsWith('.js')).map((f) => `src/renderer/components/${f}`)];
   test.each(files)('%s', (file) => {
     const src = read(file);
@@ -139,6 +140,9 @@ describe('the visible More button (#1386)', () => {
     const fs = require('fs'); const path = require('path');
     const src = ['src/renderer/app.js', 'src/renderer/components/playlist-view-page.js', 'src/renderer/components/search-page.js', 'src/renderer/components/collection-page.js', 'src/renderer/components/track-lists.js', 'src/renderer/components/cards.js']
       .map((f) => fs.readFileSync(path.join(__dirname, '../..', f), 'utf8')).join('\n');
-    expect((src.match(/more: `More actions for \$\{track\.title\}`/g) || []).length).toBe(11);
+    // The shared TrackRow (track-lists.js) opts in for every list that uses
+    // it; the lists not yet on it still pass `more` themselves.
+    expect(src).toMatch(/more: onContextMenu \? `More actions for \$\{track\.title\}` : undefined/);
+    expect((src.match(/more: `More actions for \$\{track\.title\}`/g) || []).length).toBe(1);
   });
 });

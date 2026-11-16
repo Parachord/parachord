@@ -16,6 +16,7 @@
 // requestIdleCallback, and covers resolve after paint through getAlbumArt
 // (background lane) into one coalesced map.
 
+const { CollectionRadioButton } = require('./collection-radio-button');
 const { HomeBanner } = require('./home-banner');
 const { HomeSetupButton } = require('./home-setup');
 // (Single-line destructures above the props one: page-memo.test.js reads
@@ -64,8 +65,6 @@ const HOME_PAGE_HANDLERS = [
 // Playing recent loves from Home: the context isActiveContext matches.
 const LOVES_CONTEXT = { type: 'loves', name: 'Recent Loves' };
 
-const PLAY_FILL = 'var(--accent-fill)'; // fill-accent
-const ON_FILL = '#fff'; // on-color
 
 const artKey = (artist, album) => `${artist || ''}\u0000${album || ''}`.toLowerCase();
 
@@ -523,26 +522,8 @@ const HomePage = React.memo(function HomePage(props) {
         onDismiss: dismissHomeSetupItem,
         onOpenWhatsNew: openWhatsNew,
       }),
-      hasCollection && React.createElement('button', {
-        type: 'button',
-        className: 'no-drag',
-        onClick: handleStartCollectionStation,
-        style: {
-          font: 'inherit', fontSize: '14px', fontWeight: 600, border: 'none', borderRadius: '999px', cursor: 'pointer',
-          display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 16px 6px 6px', minHeight: '40px',
-          backgroundColor: PLAY_FILL, color: ON_FILL,
-        },
-      },
-        React.createElement('span', {
-          'aria-hidden': 'true',
-          style: {
-            width: '28px', height: '28px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            backgroundColor: ON_FILL, color: PLAY_FILL,
-          },
-        },
-          React.createElement('svg', { width: 12, height: 12, viewBox: '0 0 24 24', fill: 'currentColor' },
-            React.createElement('path', { d: 'M7 4v16l13-8z' }))),
-        'Play Collection Radio')));
+      // The shared button (components/collection-radio-button.js).
+      hasCollection && React.createElement(CollectionRadioButton, { onClick: handleStartCollectionStation })));
 
   return React.createElement('div', {
     className: 'flex-1 flex flex-col h-full',
@@ -562,7 +543,7 @@ const HomePage = React.memo(function HomePage(props) {
       React.createElement('div', { className: 'absolute inset-0 flex items-center px-6 z-10' },
         React.createElement('h1', {
           className: 'text-2xl font-light text-white',
-          style: { textShadow: '0 2px 10px rgba(0,0,0,0.5)', letterSpacing: '0.2em', textTransform: 'uppercase' },
+          style: { textShadow: 'var(--hero-text-shadow-bar)', letterSpacing: '0.2em', textTransform: 'uppercase' },
           onContextMenu: copyParachordLink,
         }, 'Home'))),
     React.createElement('div', { className: 'flex-1 overflow-y-auto scrollable-content scroll-edge', style: { minHeight: 0 } },
@@ -591,7 +572,7 @@ const HomePage = React.memo(function HomePage(props) {
           ? React.createElement(AlbumsRow, {
             albums, sourceColors, navigateTo, cards: rowCards, ...albumActions, onOpen: openAlbum,
           })
-          : albumsLoading && skeletonSection('albums', 'Albums you might love', React.createElement(CardRowSkeleton, { count: rowCards, lines: 1 })),
+          : albumsLoading && skeletonSection('albums', 'Albums you might love', React.createElement(CardRowSkeleton, { count: rowCards, lines: 2 })),
 
         // One row for both halves, loaded or not: a half still loading draws
         // its skeleton in its own place, so nothing moves when it lands.
