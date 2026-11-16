@@ -24,6 +24,11 @@
 // title, close button and footer stay the dialog's own until it's redone.
 // scrimClassName replaces the scrim's z-index class (default z-[60]).
 //
+// SidePanel is the same dialog behaviour for a panel that slides out
+// beside the sidebar instead of sitting in the middle (Add to playlist):
+// focus in, trapped and returned, Escape, aria-modal and a label, over a
+// soft scrim that leaves the sidebar uncovered.
+//
 // ConfirmModal is the confirm dialog on top of it. Props-driven; hooks are
 // qualified; loads under plain Node.
 
@@ -40,8 +45,10 @@ function focusables(root) {
 }
 
 // Focus in, trap, Escape, return. Exported for the dialogs that can't use
-// the shell yet.
-function useDialogFocus(open, panelRef, { onClose, dismissible = true, initialFocus } = {}) {
+// the shell yet. escapeInside: Escape is left to the panel's own keydown
+// (SidePanel), so a field inside that handles Escape (a filter box empties
+// and closes) gets it first; otherwise it's taken at the document.
+function useDialogFocus(open, panelRef, { onClose, dismissible = true, initialFocus, escapeInside = false } = {}) {
   const closeRef = React.useRef(onClose);
   closeRef.current = onClose;
   React.useEffect(() => {
@@ -53,7 +60,7 @@ function useDialogFocus(open, panelRef, { onClose, dismissible = true, initialFo
     const first = (initialFocus && initialFocus.current) || focusables(panel)[0] || panel;
     if (first && first.focus) first.focus();
     const onKey = (ev) => {
-      if (ev.key === 'Escape' && dismissible) {
+      if (ev.key === 'Escape' && dismissible && !escapeInside) {
         ev.stopPropagation();
         if (closeRef.current) closeRef.current();
         return;
@@ -122,6 +129,43 @@ function Modal(props) {
     description && e('div', { id: descId, className: 'text-ink-secondary', style: { fontSize: '14px', lineHeight: 1.5, whiteSpace: 'pre-line', overflowWrap: 'anywhere', userSelect: 'text' } }, description),
     children),
   footer && e('div', { className: 'flex items-center justify-end gap-2 flex-wrap', style: { padding: '0 24px 24px' } }, footer)));
+}
+
+// SidePanel props: open, onClose, label (its aria-label), children, and the
+// panel's place and look (panelClassName, panelStyle: where it sits, its
+// width, surface and radius), scrimStyle (where the scrim starts: it leaves
+// the sidebar uncovered), panelProps / scrimProps (drag handlers and such).
+function SidePanel(props) {
+  const {
+    open = true, onClose, label, children, panelClassName, panelStyle, panelProps, scrimStyle, scrimProps,
+    zClassName = 'z-50', dismissible = true,
+  } = props;
+  const panelRef = React.useRef(null);
+  useDialogFocus(open, panelRef, { onClose, dismissible, escapeInside: true });
+  if (!open) return null;
+  const e = React.createElement;
+  const pp = panelProps || {};
+  return e('div', { className: `fixed inset-0 ${zClassName}`, style: { pointerEvents: 'none' } },
+    e('div', Object.assign({}, scrimProps, {
+      role: 'presentation', 'aria-hidden': 'true',
+      className: 'absolute inset-0 transition-opacity',
+      style: Object.assign({ pointerEvents: 'auto', backgroundColor: 'var(--scrim-soft)' }, scrimStyle),
+      onClick: () => { if (dismissible && onClose) onClose(); },
+    })),
+    e('div', Object.assign({}, pp, {
+      ref: panelRef,
+      role: 'dialog',
+      'aria-modal': 'true',
+      'aria-label': label,
+      tabIndex: -1,
+      // Escape closes it unless a field inside handled it first.
+      onKeyDown: (ev) => {
+        if (pp.onKeyDown) pp.onKeyDown(ev);
+        if (ev.key === 'Escape' && dismissible && !ev.defaultPrevented) { ev.stopPropagation(); if (onClose) onClose(); }
+      },
+      className: ['absolute flex flex-col focus:outline-none', panelClassName].filter(Boolean).join(' '),
+      style: Object.assign({ pointerEvents: 'auto' }, panelStyle),
+    }), children));
 }
 
 const TYPE_ICON = {
@@ -219,4 +263,4 @@ function DontShowAgain({ checked, onChange, label }) {
   label || 'Don’t show this again');
 }
 
-module.exports = { Modal, ConfirmModal, ConfirmModalBody, DontShowAgain, useDialogFocus, MODAL_WIDTHS: WIDTHS };
+module.exports = { Modal, SidePanel, ConfirmModal, ConfirmModalBody, DontShowAgain, useDialogFocus, MODAL_WIDTHS: WIDTHS };

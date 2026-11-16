@@ -485,6 +485,18 @@
     :focus:not(:focus-visible) {
       outline: none;
     }
+    /* Rings are for the keyboard. After a click, code that moves focus (a
+       dialog, a menu, a panel opening) makes Chromium match :focus-visible
+       anyway; lib/input-modality.js marks <html data-input="pointer"> while
+       the last input was the pointer, and no ring shows then: no outline,
+       no Tailwind ring, no menu-item inset. A text field keeps its accent
+       border. The next key press brings the rings back. */
+    html[data-input="pointer"] :focus-visible {
+      outline: none !important;
+      --tw-ring-offset-shadow: 0 0 #0000 !important;
+      --tw-ring-shadow: 0 0 #0000 !important;
+    }
+    html[data-input="pointer"] .menu-item:focus-visible { box-shadow: none; }
     /* On the always-dark surfaces (.on-dark: the playbar, the queue drawer,
        the AI prompt and chat panel) the accent ring is hard to see in light
        mode (#7c3aed on #1f2937); they get a light ring instead. */

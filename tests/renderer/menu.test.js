@@ -39,6 +39,8 @@ function harness(props, { open = false } = {}) {
       useState: (init) => {
         const k = s++;
         if (k === 0) return [state.open, (v) => { state.open = typeof v === 'function' ? v(state.open) : v; }];
+        // The menu's position, as if measured: focus moves in once it's placed.
+        if (k === 1) return [state.open ? { left: 10, top: 10 } : null, () => {}];
         return [init, () => {}];
       },
       useRef: () => {

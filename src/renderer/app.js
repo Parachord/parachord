@@ -2111,7 +2111,7 @@ const { capabilityLabel } = require('./lib/capability-labels');
 // The colour resolver-loader.js gives a plug-in whose manifest names none: a
 // marker to test against ("this plug-in has no colour"), never drawn.
 const NO_PLUGIN_COLOR = '#888888';
-const { Modal, ConfirmModal, DontShowAgain } = require('./components/modal');
+const { Modal, SidePanel, ConfirmModal, DontShowAgain } = require('./components/modal');
 const { PlaylistUpdateDialog, UpdateModeChoice } = require('./components/playlist-update-dialog');
 const { KeyboardShortcutsDialog } = require('./components/keyboard-shortcuts');
 const { WhatsNewDialog } = require('./components/whats-new-dialog');
@@ -2131,7 +2131,7 @@ const { PlaybarLineSkeleton } = require('./components/playbar-skeleton');
 const { HeaderControl } = require('./components/header-control');
 const { ToastRegion, NowPlayingAnnouncer } = require('./components/toast');
 const { SortMenu } = require('./components/sort-menu');
-const { Menu } = require('./components/menu');
+const { Menu, ContextMenu } = require('./components/menu');
 const { ProviderMenu } = require('./components/provider-menu');
 const { HeroTabs } = require('./components/hero-tabs');
 const { SettingRow, Select, TextField, SecretField, Switch, Checkbox, Slider, RadioGroup, SegmentedChoice } = require('./components/fields');
@@ -2144,6 +2144,9 @@ const { releaseMenu, artistMenu, playlistMenu } = require('./lib/item-menus');
 const { runPlaybackControl } = require('../../tools/playback-control');
 const { runQueueAdd } = require('../../tools/queue-add');
 const { EMBED_PLAYER_KINDS } = require('./lib/embed-players');
+// Focus rings show after keyboard use only (lib/input-modality.js).
+const { installInputModality } = require('./lib/input-modality');
+installInputModality();
 
 
 
@@ -3690,12 +3693,6 @@ const Parachord = () => {
   const [playlistEditMode, setPlaylistEditMode] = useState(false); // Edit mode for playlist detail view
   const [editedPlaylistData, setEditedPlaylistData] = useState(null); // Buffered changes: { title, creator, tracks }
   const [parachordLinkMenu, setParachordLinkMenu] = useState(null); // { x, y, link } — right-click "Copy link" menu
-  useEffect(() => {
-    if (!parachordLinkMenu) return;
-    const dismiss = (e) => { if (e.key === 'Escape') setParachordLinkMenu(null); };
-    window.addEventListener('keydown', dismiss);
-    return () => window.removeEventListener('keydown', dismiss);
-  }, [parachordLinkMenu]);
   const [currentArtist, setCurrentArtist] = useState(null); // Artist page data
   const [artistImage, setArtistImage] = useState(null); // Artist image from Spotify
   const [artistImagePosition, setArtistImagePosition] = useState('center 25%'); // Face-centered position
@@ -5776,19 +5773,6 @@ const Parachord = () => {
   const [addToPlaylistSort, setAddToPlaylistSort] = useState('added'); // Sort option for add-to-playlist panel
   const [addToPlaylistSearch, setAddToPlaylistSearch] = useState(''); // Search filter for add-to-playlist panel
   const [addToPlaylistSearchOpen, setAddToPlaylistSearchOpen] = useState(false); // Search input expanded state
-  // The Add to playlist panel is a dialog: focus moves into it when it opens
-  // and goes back where it was when it closes; Escape closes it.
-  const addPanelReturnFocusRef = useRef(null);
-  const addPanelRef = useCallback((el) => {
-    if (el) {
-      addPanelReturnFocusRef.current = document.activeElement;
-      el.focus();
-    } else {
-      const prev = addPanelReturnFocusRef.current;
-      addPanelReturnFocusRef.current = null;
-      if (prev && typeof prev.focus === 'function' && document.contains(prev)) prev.focus();
-    }
-  }, []);
   const closeAddToPlaylistPanel = () => {
     setAddToPlaylistPanel(prev => ({ ...prev, open: false }));
     setSelectedPlaylistsForAdd([]);
@@ -46574,58 +46558,35 @@ React.createElement('div', {
       }
     }),
 
-    // Add to Playlist Slide-out Panel - refined styling
-    addToPlaylistPanel.open && React.createElement('div', {
-      className: 'fixed inset-0 z-50',
-      style: { pointerEvents: 'none' }
-    },
-      // Backdrop (only covers area outside sidebar)
-      React.createElement('div', { role: 'presentation', 'aria-hidden': 'true',
-        className: 'absolute inset-0 transition-opacity',
-        style: {
-          left: '256px',
-          pointerEvents: 'auto',
-          backgroundColor: 'var(--scrim-soft)'
-        },
-        onClick: closeAddToPlaylistPanel,
-        onDragOver: (e) => {
-          e.preventDefault();
-        },
-        onDrop: (e) => {
-          e.preventDefault();
-        }
-      }),
-
-      // Panel - positioned at right edge of sidebar, full height above playbar.
-      // A dialog: it takes focus, Escape closes it (an inner field that
-      // handles Escape itself stops it first).
-      React.createElement('div', {
-        ref: addPanelRef,
-        role: 'dialog',
-        'aria-modal': 'true',
-        'aria-label': 'Add to playlist',
-        tabIndex: -1,
-        onKeyDown: (e) => { if (e.key === 'Escape' && !e.defaultPrevented) { e.stopPropagation(); closeAddToPlaylistPanel(); } },
-        className: 'absolute flex flex-col',
-        style: {
-          left: '256px',
-          top: '0',
-          bottom: '85px',
-          width: '384px',
-          pointerEvents: 'auto',
-          backgroundColor: 'var(--card-bg)',
-          borderRadius: '0 16px 16px 0',
-          boxShadow: 'var(--shadow-dialog)',
-          overflow: 'hidden'
-        },
-        onDragOver: (e) => {
-          // Allow drag events to pass through to children
-          e.preventDefault();
-        },
-        onDrop: (e) => {
-          e.preventDefault();
-        }
+    // Add to Playlist slide-out: the shared SidePanel (components/modal.js),
+    // a dialog beside the sidebar. Focus moves in, is trapped and comes back;
+    // Escape closes it (an inner field that handles Escape stops it first).
+    addToPlaylistPanel.open && React.createElement(SidePanel, {
+      onClose: closeAddToPlaylistPanel,
+      label: 'Add to playlist',
+      // The scrim leaves the sidebar uncovered (drag a track onto it).
+      scrimStyle: { left: '256px' },
+      scrimProps: {
+        onDragOver: (e) => { e.preventDefault(); },
+        onDrop: (e) => { e.preventDefault(); }
       },
+      // Positioned at the right edge of the sidebar, full height above the playbar.
+      panelStyle: {
+        left: '256px',
+        top: '0',
+        bottom: '85px',
+        width: '384px',
+        backgroundColor: 'var(--card-bg)',
+        borderRadius: '0 16px 16px 0',
+        boxShadow: 'var(--shadow-dialog)',
+        overflow: 'hidden'
+      },
+      panelProps: {
+        // Allow drag events to pass through to children
+        onDragOver: (e) => { e.preventDefault(); },
+        onDrop: (e) => { e.preventDefault(); }
+      }
+    },
         // Header with title - matches Playlists view header gradient
         React.createElement('div', {
           style: {
@@ -47126,7 +47087,6 @@ React.createElement('div', {
             });
           })()
         )
-      )
     ),
 
     // ID3 Tag Editor Modal
@@ -47398,87 +47358,45 @@ React.createElement('div', { style: { marginTop: '12px' } },
     // Page-header context menu (power-user feature, tooltip-styled).
     // Always offers "Copy parachord:// link"; when the current view maps to
     // an Achordion entity (artist or album), shows "Copy link" first.
-    parachordLinkMenu && (() => {
-      const itemStyle = {
-        padding: '8px 14px',
-        fontSize: '12px',
-        fontWeight: '500',
-        color: 'var(--on-accent)',
-        whiteSpace: 'nowrap',
-        cursor: 'pointer',
-        userSelect: 'none',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '8px'
-      };
-      const copyIcon = () => React.createElement(Icons.Copy, { size: 14 });
-      const items = [];
-      if (parachordLinkMenu.achordionShare) {
-        items.push(
-          React.createElement('button', { type: 'button', className: 'w-full text-left hover:!opacity-[0.85]',
-            key: 'achordion',
-            onClick: (e) => {
-              e.stopPropagation();
-              try { parachordLinkMenu.achordionShare.run(); } catch (err) { console.warn('[CopyLink] menu run failed:', err); }
-              setParachordLinkMenu(null);
-            },
-            style: itemStyle,
-          }, copyIcon(), 'Copy Link')
-        );
-        if (parachordLinkMenu.achordionShare.runView) {
-          items.push(
-            React.createElement('button', { type: 'button', className: 'w-full text-left hover:!opacity-[0.85]',
-              key: 'achordion-view',
-              onClick: (e) => {
-                e.stopPropagation();
-                try { parachordLinkMenu.achordionShare.runView(); } catch (err) { console.warn('[ViewAchordion] menu run failed:', err); }
-                setParachordLinkMenu(null);
-              },
-              style: itemStyle,
-            },
-              React.createElement(Icons.ExternalLink, { size: 14 }),
-              'View on Achordion'
-            )
-          );
-        }
-      }
-      items.push(
-        React.createElement('button', { type: 'button', className: 'w-full text-left hover:!opacity-[0.85]',
-          key: 'parachord',
-          onClick: (e) => {
-            e.stopPropagation();
-            navigator.clipboard.writeText(parachordLinkMenu.link).then(() => {
-              showToast(`Copied ${parachordLinkMenu.link}`, 'success');
-            }).catch(() => {
-              showToast('Failed to copy link', 'error');
-            });
-            setParachordLinkMenu(null);
-          },
-          style: itemStyle,
-        }, copyIcon(), 'Copy parachord:// Link')
-      );
-      return React.createElement('div', {
-        // The scrim: a click outside closes the menu (Escape does too).
-        role: 'presentation',
-        className: 'fixed inset-0 z-[70]',
-        onClick: () => setParachordLinkMenu(null),
-        onContextMenu: (e) => { e.preventDefault(); setParachordLinkMenu(null); },
-        style: { cursor: 'default' }
-      },
-        React.createElement('div', {
-          style: {
-            position: 'fixed',
-            left: `${parachordLinkMenu.x}px`,
-            top: `${parachordLinkMenu.y}px`,
-            backgroundColor: 'var(--tooltip-bg)',
-            borderRadius: '8px',
-            boxShadow: 'var(--shadow-popover)',
-            overflow: 'hidden',
-            zIndex: 9999
+    parachordLinkMenu && React.createElement(ContextMenu, {
+      // The shared menu at the pointer (components/menu.js): its look,
+      // keyboard handling and placement.
+      label: 'Link',
+      at: { x: parachordLinkMenu.x, y: parachordLinkMenu.y },
+      onClose: () => setParachordLinkMenu(null),
+      items: [
+        parachordLinkMenu.achordionShare && {
+          key: 'achordion',
+          label: 'Copy link',
+          icon: React.createElement(Icons.Copy, { size: 14 }),
+          onSelect: () => {
+            try { parachordLinkMenu.achordionShare.run(); } catch (err) { console.warn('[CopyLink] menu run failed:', err); }
           }
-        }, ...items)
-      );
-    })(),
+        },
+        parachordLinkMenu.achordionShare && parachordLinkMenu.achordionShare.runView && {
+          key: 'achordion-view',
+          label: 'View on Achordion',
+          icon: React.createElement(Icons.ExternalLink, { size: 14 }),
+          onSelect: () => {
+            try { parachordLinkMenu.achordionShare.runView(); } catch (err) { console.warn('[ViewAchordion] menu run failed:', err); }
+          }
+        },
+        {
+          key: 'parachord',
+          label: 'Copy parachord:// link',
+          icon: React.createElement(Icons.Copy, { size: 14 }),
+          onSelect: () => {
+            const link = parachordLinkMenu.link;
+            navigator.clipboard.writeText(link).then(() => {
+              showToast(`Copied ${link}`, 'success');
+            }).catch((err) => {
+              console.error('Copy link failed:', err);
+              showToast('Couldn’t copy the link. Try again.', 'error');
+            });
+          }
+        }
+      ]
+    }),
 
     // Confirmation Dialog Modal - refined styling
     // The confirm dialog (showConfirmDialog), on the shared Modal (#1385).
