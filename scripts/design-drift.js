@@ -128,6 +128,7 @@ function pxValue(node) {
 function scanSource(src) {
   const counts = Object.fromEntries(Object.keys(METRICS).map((k) => [k, 0]));
   const cssVars = new Set();
+  const svgUnits = new WeakSet();
   const ast = parse(src, { sourceType: 'script', allowReturnOutsideFunction: true, errorRecovery: true, plugins: [] });
 
   const visit = (node, inConsole) => {
@@ -196,11 +197,18 @@ function scanSource(src) {
       }
     }
 
+    // An SVG <text>'s fontSize is in viewBox units (the "10" on the Play
+    // Top 10 icon), not a CSS size: it is not on the type scale's terms.
+    if (node.type === 'CallExpression' && node.arguments[0] && node.arguments[0].type === 'StringLiteral'
+      && node.arguments[0].value === 'text' && node.arguments[1] && node.arguments[1].type === 'ObjectExpression') {
+      for (const p of node.arguments[1].properties) if (propKey(p) === 'fontSize') svgUnits.add(p);
+    }
+
     if (node.type === 'ObjectProperty') {
       const key = propKey(node);
       if (key === 'outline' && node.value.type === 'StringLiteral' && node.value.value === 'none') counts.inlineOutlineNone += 1;
       if (key === 'height' && /\? '80px' : '320px'/.test(src.slice(node.value.start, node.value.end))) counts.heroCopies += 1;
-      if (key === 'fontSize') {
+      if (key === 'fontSize' && !svgUnits.has(node)) {
         const px = pxValue(node.value);
         if (px != null && !FONT_SIZES.has(px)) counts.offScaleFontSizes += 1;
       }

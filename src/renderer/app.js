@@ -35437,7 +35437,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         hasData: !!tokenData,
         hasToken: !!tokenData?.token,
         tokenLength: tokenData?.token?.length,
-        tokenPreview: tokenData?.token ? tokenData.token.substring(0, 20) + '...' : 'null',
+        tokenPreview: tokenData?.token ? tokenData.token.substring(0, 20) + '…' : 'null',
         expiry: tokenData?.expiry,
         hasRefresh: !!tokenData?.refreshToken
       });
@@ -35564,7 +35564,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         hasData: !!tokenData,
         hasToken: !!tokenData?.token,
         tokenLength: tokenData?.token?.length,
-        tokenPreview: tokenData?.token ? tokenData.token.substring(0, 20) + '...' : 'null',
+        tokenPreview: tokenData?.token ? tokenData.token.substring(0, 20) + '…' : 'null',
         expiry: tokenData?.expiresAt
       });
       if (tokenData && tokenData.token) {
@@ -36459,7 +36459,7 @@ useEffect(() => {
       console.log('Spotify auth success!', {
         hasToken: !!data.token,
         tokenLength: data.token?.length,
-        tokenPreview: data.token ? data.token.substring(0, 20) + '...' : 'null'
+        tokenPreview: data.token ? data.token.substring(0, 20) + '…' : 'null'
       });
       setSpotifyToken(data.token);
       setSpotifyConnected(true);
@@ -36563,7 +36563,7 @@ useEffect(() => {
       console.log('SoundCloud auth success!', {
         hasToken: !!data.token,
         tokenLength: data.token?.length,
-        tokenPreview: data.token ? data.token.substring(0, 20) + '...' : 'null'
+        tokenPreview: data.token ? data.token.substring(0, 20) + '…' : 'null'
       });
       setSoundcloudToken(data.token);
       setSoundcloudConnected(true);
