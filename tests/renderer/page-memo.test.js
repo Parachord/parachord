@@ -31,6 +31,7 @@ const { HistoryPage, HISTORY_PAGE_HANDLERS } = require('../../src/renderer/compo
 const { FriendHistoryPage, FRIEND_HISTORY_PAGE_HANDLERS } = require('../../src/renderer/components/friend-history-page');
 const { ResultsPanel, RESULTS_PANEL_HANDLERS } = require('../../src/renderer/components/results-panel');
 const { QueueDrawer, QUEUE_DRAWER_HANDLERS } = require('../../src/renderer/components/queue-drawer');
+const { AddToPlaylistPanel, ADD_TO_PLAYLIST_PANEL_HANDLERS } = require('../../src/renderer/components/add-to-playlist-panel');
 const { useStableHandlers } = require('../../src/renderer/lib/stable-handlers');
 
 const PAGES = [
@@ -48,6 +49,7 @@ const PAGES = [
   { component: 'FriendHistoryPage', file: 'friend-history-page.js', handlersVar: 'friendHistoryPageHandlers', handlers: FRIEND_HISTORY_PAGE_HANDLERS, memo: FriendHistoryPage },
   { component: 'ResultsPanel', file: 'results-panel.js', handlersVar: 'resultsPanelHandlers', handlers: RESULTS_PANEL_HANDLERS, memo: ResultsPanel },
   { component: 'QueueDrawer', file: 'queue-drawer.js', handlersVar: 'queueDrawerHandlers', handlers: QUEUE_DRAWER_HANDLERS, memo: QueueDrawer },
+  { component: 'AddToPlaylistPanel', file: 'add-to-playlist-panel.js', handlersVar: 'addToPlaylistPanelHandlers', handlers: ADD_TO_PLAYLIST_PANEL_HANDLERS, memo: AddToPlaylistPanel },
 ];
 
 describe.each(PAGES)('$component', ({ memo }) => {

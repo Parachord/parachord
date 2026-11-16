@@ -19,6 +19,7 @@ const PAGE_MODULES = [
   'components/results-panel.js',
   'components/queue-drawer.js',
   'components/drop-zone-overlay.js',
+  'components/add-to-playlist-panel.js',
 ];
 
 function read(rel) {
