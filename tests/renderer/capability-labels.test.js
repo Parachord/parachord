@@ -22,3 +22,12 @@ test('Settings and the marketplace use it, as the shared pill', () => {
   expect(app.split("enabled ? React.createElement(Badge, { key: cap, tone: 'accent' }, capabilityLabel(cap)) : null)").length - 1).toBe(2);
   expect(app).not.toContain("urlLookup: 'URL Lookup'");
 });
+
+test('the scrobbling services say so: Last.fm, ListenBrainz and Libre.fm declare scrobbling', () => {
+  const { capabilityLabel } = require('../../src/renderer/lib/capability-labels');
+  expect(capabilityLabel('scrobbling')).toBe('Scrobbling');
+  for (const id of ['lastfm', 'listenbrainz', 'librefm']) {
+    const m = require(`../../plugins-src/${id}/manifest.json`);
+    expect([id, (m.capabilities || m.manifest.capabilities).scrobbling]).toEqual([id, true]);
+  }
+});

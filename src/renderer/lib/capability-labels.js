@@ -22,7 +22,7 @@ const LABELS = {
   embedPlayer: 'Embedded player',
   resolvePicks: 'Picks resolution',
   concerts: 'Concerts',
-  scrobble: 'Scrobbling',
+  scrobbling: 'Scrobbling',
 };
 
 function capabilityLabel(cap) {
