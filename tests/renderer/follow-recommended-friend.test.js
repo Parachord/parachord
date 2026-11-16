@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const src = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+const src = require('../helpers/renderer-source').appWithPages() /* app.js and the pages moved out of it (#1451) */;
 
 const body = (start, endMarker) => {
   const a = src.indexOf(start);

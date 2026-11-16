@@ -29,7 +29,7 @@ describe('listenBrainzCoverUrl', () => {
 });
 
 describe('app.js wiring', () => {
-  const src = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  const src = require('../helpers/renderer-source').appWithPages() /* app.js and the pages moved out of it (#1451) */;
   const sliceFrom = (marker, endMarker) => {
     const start = src.indexOf(marker);
     expect(start).toBeGreaterThan(-1);

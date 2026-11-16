@@ -123,7 +123,7 @@ test('page scroll areas share one scroll edge: a shadow once content scrolls und
   expect(app).toMatch(/el\.style\.setProperty\('--edge-top', cs\.paddingTop\);/);
   expect(html).toMatch(/\.scroll-edge\[data-scrolled\]::before \{ box-shadow:/);
   expect(app).toMatch(/document\.addEventListener\('scroll', onScroll, \{ capture: true, passive: true \}\)/);
-  const uses = { 'src/renderer/app.js': 6, 'src/renderer/components/history-page.js': 1, 'src/renderer/components/critics-picks-page.js': 1, 'src/renderer/components/charts-page.js': 1, 'src/renderer/components/recommendations-page.js': 1, 'src/renderer/components/concerts-page.js': 1, 'src/renderer/components/artist-page.js': 1, 'src/renderer/components/collection-page.js': 1, 'src/renderer/components/home-page.js': 1, 'src/renderer/components/search-page.js': 1, 'src/renderer/components/playlist-view-page.js': 1 };
+  const uses = { 'src/renderer/app.js': 5, 'src/renderer/components/friend-history-page.js': 1, 'src/renderer/components/history-page.js': 1, 'src/renderer/components/critics-picks-page.js': 1, 'src/renderer/components/charts-page.js': 1, 'src/renderer/components/recommendations-page.js': 1, 'src/renderer/components/concerts-page.js': 1, 'src/renderer/components/artist-page.js': 1, 'src/renderer/components/collection-page.js': 1, 'src/renderer/components/home-page.js': 1, 'src/renderer/components/search-page.js': 1, 'src/renderer/components/playlist-view-page.js': 1 };
   for (const [f, n] of Object.entries(uses)) {
     expect([f, (read(f).match(/scroll-edge[ ']/g) || []).length >= n]).toEqual([f, true]);
   }
@@ -137,9 +137,8 @@ test('History restored at launch waits for the Last.fm key before loading', () =
 });
 
 test("History and a friend's page: tokens and shared buttons, no JS hover", () => {
-  const S = app.indexOf("activeView === 'history' && React");
-  const E = app.indexOf("activeView === 'settings' && React.createElement", S);
-  const seg = app.slice(S, E);
+  // Both pages are their own modules (#1451).
+  const seg = read('src/renderer/components/history-page.js') + read('src/renderer/components/friend-history-page.js');
   expect(seg).not.toMatch(/onMouseEnter: \(e\) => e\.currentTarget\.style/);
   expect(seg).not.toMatch(/bg-green-(400|500)|#8b5cf6/);
   expect(seg).toContain("'Pin to sidebar'");
