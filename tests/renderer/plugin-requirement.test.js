@@ -26,7 +26,7 @@ test('meta-services that take a key or token say so', () => {
 
 test('the loader carries it; the tour and the panels show it', () => {
   expect(fs.readFileSync(path.join(ROOT, 'resolver-loader.js'), 'utf8')).toMatch(/requirement: typeof manifest\.requirement === 'string'/);
-  const app = fs.readFileSync(path.join(ROOT, 'src/renderer/app.js'), 'utf8');
+  const app = require('../helpers/renderer-source').appWithPages();
   expect(app).toMatch(/resolver\.requirement && React\.createElement\('p', \{\s*id: `tour-req-\$\{resolver\.id\}`/);
   expect(app).toMatch(/: React\.createElement\(Button, \{ variant: 'text', size: 'sm', className: 'mt-1', onClick: \(\) => handleAddWatchFolder\(\) \}, 'Choose folder…'\)/);
   expect(app).toMatch(/selectedResolver\.requirement && React\.createElement\('p'/);

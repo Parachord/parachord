@@ -1,5 +1,6 @@
 // The renderer's page markup for source-marker tests: src/renderer/app.js
-// plus the pages moved out of it into their own modules (#1451). A test that
+// plus the pages, panels and helpers moved out of it into their own modules
+// (#1451). A test that
 // reads a page's markup from app.js reads this instead, so moving the page
 // (verbatim) doesn't move it out of the test's sight. Each extraction PR adds
 // its module here.
@@ -25,6 +26,9 @@ const PAGE_MODULES = [
   'components/settings-page.js',
   'components/playbar.js',
   'components/sidebar.js',
+  'components/plugin-settings-dialog.js',
+  // Module-level code moved out of app.js with them.
+  'lib/resolver-order.js',
 ];
 
 function read(rel) {
