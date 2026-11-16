@@ -20,7 +20,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const app = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
+const app = require('../helpers/renderer-source').appWithPages(); // app.js and the pages moved out of it (#1451)
 const storeIpc = fs.readFileSync(path.join(__dirname, '..', '..', 'main-process', 'ipc', 'store.js'), 'utf8');
 
 const load = app.slice(app.indexOf('const loadRecommendations = async (opts = {}) => {'), app.indexOf('// "Load more" for a titled section whose provider can paginate'));

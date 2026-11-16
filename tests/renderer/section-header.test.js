@@ -90,7 +90,7 @@ describe('every page draws the shared header', () => {
   });
 
   test('Recommendations rows and their skeleton, search results and the artist\'s concerts use SectionHeader', () => {
-    const app = fs.readFileSync(path.join(ROOT, 'app.js'), 'utf8');
+    const app = require('../helpers/renderer-source').appWithPages(); // app.js and the pages moved out of it (#1451)
     expect(app).toContain("const { SectionHeader, SECTION_HEADER_GAP } = require('./components/section-header');");
     expect(app).toMatch(/const subsectionHeader = \(sub, \{ expanded, showToggle \}\) => React\.createElement\(SectionHeader, \{/);
     expect(read('recommendation-skeletons.js')).toMatch(/React\.createElement\(SectionHeader, \{/);
@@ -107,7 +107,7 @@ describe('every page draws the shared header', () => {
   });
 
   test('the old Recommendations title and link classes are gone', () => {
-    const app = fs.readFileSync(path.join(ROOT, 'app.js'), 'utf8');
+    const app = require('../helpers/renderer-source').appWithPages(); // app.js and the pages moved out of it (#1451)
     const header = app.slice(app.indexOf('const subsectionHeader = '), app.indexOf("// ── One section's row"));
     expect(header).not.toMatch(/text-lg font-semibold|text-purple-600/);
     expect(read('recommendation-skeletons.js')).not.toMatch(/text-lg font-semibold/);

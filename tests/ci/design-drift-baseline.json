@@ -1,7 +1,7 @@
 {
   "_readme": "Counts from scripts/design-drift.js. Lower is better; rewrite with `npm run design-drift -- --write` only when a count falls, or rises for a reason the PR explains.",
   "metrics": {
-    "hexColors": 1,
+    "hexColors": 0,
     "rgbColors": 0,
     "rgbNeutrals": 0,
     "paletteClasses": 0,

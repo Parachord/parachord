@@ -96,7 +96,7 @@ describe('call sites', () => {
   });
 
   test("the queue's context bar opens contextPlaylistTarget, and the weekly play button carries the ref", () => {
-    const app = read('app.js');
+    const app = require('../helpers/renderer-source').appWithPages(); // app.js and the pages moved out of it (#1451)
     expect(app).toMatch(/const contextPlaylist = contextPlaylistTarget\(playbackContext, playlists\);/);
     expect(app).toMatch(/playTrackCollection\(tracks, \{ type: item\.weekly\.contextType, name, playlist: playlistRef\(playlist\) \}\)/);
   });

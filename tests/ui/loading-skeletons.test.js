@@ -19,11 +19,12 @@
 const fs = require('fs');
 const path = require('path');
 
-const app = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
+const app = require('../helpers/renderer-source').appWithPages(); // app.js and the pages moved out of it (#1451)
 
 describe('Recommendations skeletons match the sectioned page', () => {
   const skel = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'components', 'recommendation-skeletons.js'), 'utf8');
-  const view = app.slice(app.indexOf("activeView === 'recommendations' && React.createElement"));
+  // The Recommendations page (components/recommendations-page.js, #1451).
+  const view = app.slice(app.indexOf('const RecommendationsPage = React.memo('));
   const loading = view.slice(view.indexOf('recommendations.loading && allSections.length === 0 ?'), view.indexOf(": recommendations.error === 'not_configured' ?"));
   const renderSubsection = view.slice(view.indexOf('const renderSubsection = (sub, { cardRows = CARD_ROWS } = {}) => {'));
   const songRow = view.slice(view.indexOf('const songRow = (item, index, allSongs, section) => {'), view.indexOf('// ── Friends'));
@@ -337,7 +338,7 @@ describe('Home skeletons match the Home rows', () => {
   });
 
   test('Home\'s album and playlist cards are the app\'s card, and so are their skeletons', () => {
-    const app = fs.readFileSync(path.join(dir, '..', 'app.js'), 'utf8');
+    const app = require('../helpers/renderer-source').appWithPages(); // app.js and the pages moved out of it (#1451)
     // The Playlists page's grid is the shared PlaylistCard too.
     expect(app).toMatch(/React\.createElement\(PlaylistCard, Object\.assign\(\{\s*role: 'listitem',\s*key: playlist\.id,/);
     expect(app).toContain("className: 'card-grid gap-x-4 gap-y-5'");
@@ -459,7 +460,7 @@ describe('Recommendations card skeletons match the shared cards', () => {
 
 describe('Recommendations album cards show the release year', () => {
   test('the year is the third line, always reserved, and the album skeleton has it', () => {
-    const app = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
+    const app = require('../helpers/renderer-source').appWithPages(); // app.js and the pages moved out of it (#1451)
     const card = app.slice(app.indexOf('const albumCard = (item, index) => {'), app.indexOf('const playlistCard = (item, index, section) => {'));
     expect(card).toContain("const year = entry && entry.date ? String(entry.date).slice(0, 4) : '';");
     expect(card).toContain("subtitle: year || '\\u00a0',");
@@ -472,7 +473,7 @@ describe('Recommendations album cards show the release year', () => {
 });
 
 describe('Pop of the Tops', () => {
-  const app = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
+  const app = require('../helpers/renderer-source').appWithPages(); // app.js and the pages moved out of it (#1451)
   test('album cards show the release year, from Apple\'s date text', () => {
     expect(app).toContain("subtitle: chartAlbumYear(item) || '\\u00a0',");
     expect(app).toContain('releaseDate: item.releaseDate || null,');
@@ -503,7 +504,7 @@ describe('TrackRowSkeleton has TrackRow\'s columns', () => {
 });
 
 describe('Critical Darlings and Concerts', () => {
-  const app = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
+  const app = require('../helpers/renderer-source').appWithPages(); // app.js and the pages moved out of it (#1451)
   test('a Critical Darlings card shows the album\'s release date, from MusicBrainz, its line always kept', () => {
     expect(app).toMatch(/if \(activeView !== 'critics-picks'\) return;\s*queueReleaseDateLookups\(criticsPicks\.map\(album => \(\{ artist: album\.artist, title: album\.title \}\)\)\);/);
     expect(app).toContain("return (known && known.date && formatCalendarDate(known.date, 'long')) || '\\u00a0';");
@@ -539,14 +540,14 @@ describe('the source icon column fits the user\'s services', () => {
     expect(sourceColumnWidth([])).toBe(44);
     expect(sourceColumnWidth(['a', 'b', 'c', 'd', 'e', 'f', 'g'])).toBe(140);
     expect(SOURCE_COLUMN).toBe('var(--source-col, 140px)');
-    const app = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
+    const app = require('../helpers/renderer-source').appWithPages(); // app.js and the pages moved out of it (#1451)
     expect(app).toContain("style: { '--source-col': `${sourceColumnWidth(playbackResolvers)}px` }");
   });
 });
 
 describe('every track list and card grid loads with the shared placeholders', () => {
   const read = (f) => fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', f), 'utf8');
-  const app = read('app.js');
+  const app = require('../helpers/renderer-source').appWithPages(); // app.js and the pages moved out of it (#1451)
   test('track lists: TrackRowSkeleton, in the rows\' columns', () => {
     expect(app).toMatch(/TrackRowSkeleton, \{ key: `history-skeleton-\$\{i\}`, index: i, duration: true, cells: \[\{ key: 'album' \}, \{ key: 'when', width: '80px', align: 'right' \}\] \}/);
     expect(app).toMatch(/TrackRowSkeleton, \{ key: `top-track-skeleton-\$\{i\}`, index: i, duration: true, cells: \[\{ key: 'album' \}, \{ key: 'plays', width: '80px', align: 'right' \}\] \}/);
@@ -592,7 +593,7 @@ describe('artist grids load with the shared artist card placeholder', () => {
 });
 
 test('a friend\'s page loads with each tab\'s own placeholders, not a lone spinner', () => {
-  const app = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
+  const app = require('../helpers/renderer-source').appWithPages(); // app.js and the pages moved out of it (#1451)
   const i = app.indexOf('friendHistoryLoading && (friendHistoryTab');
   expect(i).toBeGreaterThan(-1);
   const block = app.slice(i, i + 1200);
@@ -627,7 +628,7 @@ describe("the playbar's now-playing block keeps its three lines' height", () => 
   global.React = global.React || require('react');
   const { renderToStaticMarkup } = require('react-dom/server');
   const { PlaybarLineSkeleton, PLAYBAR_LINES } = require('../../src/renderer/components/playbar-skeleton');
-  const app = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  const app = require('../helpers/renderer-source').appWithPages(); // app.js and the pages moved out of it (#1451)
 
   test('each line is its real height: title 20px, artist 16px, source 20px', () => {
     expect(PLAYBAR_LINES.title.height).toBe(20);

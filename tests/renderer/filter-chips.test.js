@@ -76,7 +76,7 @@ describe('every page draws the shared chips', () => {
   });
 
   test('Fresh Drops, Recommendations, the plugin marketplace and the artist page use it', () => {
-    const app = read('app.js') + read('components/fresh-drops-page.js');
+    const app = require('../helpers/renderer-source').appWithPages(); // app.js and the pages moved out of it (#1451)
     expect(app).toContain("const { FilterChips, Chip } = require('./components/filter-chips');");
     for (const call of ['onChange: setNewReleasesFilter', 'onChange: setRecommendationSourceFilter', 'onChange: setMarketplaceCategory']) {
       expect(app).toContain(call);
@@ -105,7 +105,7 @@ test('a picked neutral chip takes the page colour when one is given', () => {
 });
 
 test('Fresh Drops and Recommendations pass their page colour', () => {
-  const app = read('app.js') + read('components/fresh-drops-page.js');
+  const app = require('../helpers/renderer-source').appWithPages(); // app.js and the pages moved out of it (#1451)
   // The picked All chip is the page's hero colour, as on Concerts.
   expect(app).toContain("pageColor: PAGE_COLORS['new-releases'].color,");
   expect(app).toContain('pageColor: PAGE_COLORS.recommendations.color,');

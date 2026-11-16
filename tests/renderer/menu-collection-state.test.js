@@ -38,7 +38,7 @@ describe('withCollectionState', () => {
 
 describe('menu wiring', () => {
   const main = read('main.js');
-  const app = read('src/renderer/app.js');
+  const app = require('../helpers/renderer-source').appWithPages(); // app.js and the pages moved out of it (#1451)
 
   test('every renderer menu request goes through window.showItemMenu', () => {
     for (const dir of ['src/renderer', 'src/renderer/components', 'src/renderer/hooks']) {

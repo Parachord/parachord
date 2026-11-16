@@ -8,7 +8,7 @@ const fs = require('fs');
 const path = require('path');
 
 const root = path.join(__dirname, '../..');
-const app = fs.readFileSync(path.join(root, 'src/renderer/app.js'), 'utf8');
+const app = require('../helpers/renderer-source').appWithPages(); // app.js and the pages moved out of it (#1451)
 const config = require(path.join(root, 'tailwind.config.js'));
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 
@@ -61,8 +61,8 @@ const PAGES = [
   // Fresh Drops is its own module (#1451): the whole page component.
   ['Fresh Drops', 'const FreshDropsPage = React.memo(', 'module.exports', 'components/fresh-drops-page.js'],
   ['Critical Darlings', "activeView === 'critics-picks' && React.createElement('div', {", "activeView === 'concerts' && (() => {", null],
-  ['Concerts', "activeView === 'concerts' && (() => {", "activeView === 'recommendations' && React.createElement('div', {", null],
-  ['Recommendations', "activeView === 'recommendations' && React.createElement('div', {", "activeView === 'history' && React.createElement('div', {", null],
+  ['Concerts', "activeView === 'concerts' && (() => {", "activeView === 'recommendations' && React.createElement(RecommendationsPage, {", null],
+  ['Recommendations', 'const RecommendationsPage = React.memo(', 'module.exports', 'components/recommendations-page.js'],
   ['History', "activeView === 'history' && React.createElement('div', {", "activeView === 'settings' && React.createElement('div', {", null],
 ];
 test.each(PAGES)('%s uses no grey/purple text, border or fill classes, and no theme ternaries for them', (_name, from, to, file) => {
@@ -89,7 +89,7 @@ test('every switch has role="switch", its state and a name', () => {
   const read = (f) => fs.readFileSync(path.join(root, f), 'utf8');
   const fields = read('src/renderer/components/fields.js');
   expect(fields).toMatch(/role: 'switch',\n\s*'aria-checked': checked \? 'true' : 'false',/);
-  const app = read('src/renderer/app.js');
+  const app = require('../helpers/renderer-source').appWithPages(); // app.js and the pages moved out of it (#1451)
   // Plugin panels name their switch; General's are named by their SettingRow.
   expect(app).toMatch(/React\.createElement\(Switch, \{ checked: activeResolvers\.includes\(selectedResolver\.id\), onToggle: [^\n]*'aria-label': `Use \$\{selectedResolver\.name\}`/);
   expect(read('src/renderer/components/settings-cards.js')).toMatch(/React\.createElement\(Switch, \{ checked: config\?\.enabled, onToggle: handleToggleEnabled, 'aria-label': `Scrobble to \$\{scrobbler\.name\}`/);

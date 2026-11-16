@@ -21,7 +21,7 @@ const {
 } = require('../../src/renderer/lib/playback-limits');
 
 const read = (p) => fs.readFileSync(path.join(__dirname, '../..', p), 'utf8');
-const app = read('src/renderer/app.js');
+const app = require('../helpers/renderer-source').appWithPages(); // app.js and the pages moved out of it (#1451)
 const engine = read('src/renderer/hooks/use-playback-engine.js');
 
 const between = (src, start, end) => {
