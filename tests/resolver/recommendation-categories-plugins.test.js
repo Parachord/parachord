@@ -47,7 +47,29 @@ describe('Amazon Music sends playlist categories', () => {
     expect(sections[0].seedArtist).toBeUndefined();
     expect(sections[1].seedArtist).toBeUndefined();
     expect(sections[2].seedArtist).toBe('FIDLAR');
-    expect(axe.manifest.version).toBe('1.12.1');
+    expect(axe.manifest.version).toBe('1.13.0');
+  });
+
+  test('Amazon files its other shelves too, and drops only Featured', async () => {
+    const editorial = 'uri:///recommendations/browse-home/';
+    const { sections } = await runAmazon([
+      { id: 'uri:///recommendations/music-home/music-home_mp3YourHeaviestListeningStrategy', title: 'Your Frequent Plays', items: [album('X')] },
+      { id: 'uri:///recommendations/music-home/music-home_newReleasesForYouStrategy', title: 'New Releases for You', items: [album('Y')] },
+      { id: albumBase + 'mp3GenreForYouStrategy', title: 'Soundtracks', items: [album('Z')] },
+      { id: editorial + 'f5c621d6-7ba8-4d44-9e72-433921bb5203', title: 'Recently Played', items: [album('W')] },
+      { id: editorial + '6a0d8250-d85c-42c0-868a-01dc91991473', title: 'Top Playlists', items: [album('V')] },
+      { id: editorial + 'GET_STARTED', title: "Let's Get Started", items: [album('U')] },
+      { id: editorial + '3cdd6257-e173-4d3b-bd27-e5e7b400492e', title: 'Featured This Week', items: [album('T')] },
+      { id: editorial + '11111111-2222-3333-4444-555555555555', title: '  featured artists  ', items: [album('S')] }
+    ]);
+    expect(sections.map(s => [s.title, s.category])).toEqual([
+      ['Your Frequent Plays', 'personal'],
+      ['New Releases for You', 'new'],
+      ['Soundtracks', 'editorial'],
+      ['Recently Played', 'personal'],
+      ['Top Playlists', 'editorial'],
+      ["Let's Get Started", 'editorial']
+    ]);
   });
 
   test('Amazon artist shelf with blank artists has no seed', async () => {

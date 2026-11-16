@@ -564,29 +564,45 @@ module.exports = {
         }
         return { sections: [] };
       }
-      // Only the personal sections. Amazon's personal shelves are named
-      // strategies ("…mp3YmlRecentPlaybackStrategy", "…playlistStrategy");
-      // its editorial ones ("Top Playlists", "Featured This Week", "Amazon
-      // Music Live", "Recently Played") carry UUID ids and the onboarding
-      // shelf is GET_STARTED. The genre shelf ("Soundtracks") is a strategy
-      // but a promo, so it is named out. Live-captured 2026-11-12.
-      var EDITORIAL_STRATEGIES = { mp3GenreForYouStrategy: true };
+      // Every shelf but "Featured This Week" (a promo), each filed under one
+      // of the Recommendations page's categories. Amazon's personal shelves
+      // are named strategies ("…mp3YmlRecentPlaybackStrategy",
+      // "…playlistStrategy"); its editorial ones ("Top Playlists", "A Whole
+      // Mood", "On-Demand Albums This Week", "Amazon Music Live", "Recently
+      // Played") carry UUID ids, the onboarding shelf is GET_STARTED, and the
+      // genre shelf ("Soundtracks") is a strategy but a promo. Live-captured
+      // 2026-11-12. The UUID shelves have no other mark, so the two that need
+      // telling apart ("Featured This Week", "Recently Played") go by title.
       var strategyName = function (id) {
         return String(id || '').split('/').pop().replace(/^(browse|music)-home_/, '');
       };
-      var isPersonal = function (id) {
-        var last = strategyName(id);
-        return /Strategy$/.test(last) && !EDITORIAL_STRATEGIES[last];
+      var isStrategy = function (id) {
+        return /Strategy$/.test(strategyName(id));
       };
-      // The category the Recommendations page files a playlist section under.
-      // The playlist strategies and the album strategies say; the rest send none.
-      var categoryOf = function (id) {
-        var last = strategyName(id);
-        if (last === 'playlistStrategy') return 'personal';
-        if (last === 'mp3YmlRecentPlaybackStrategy' || last === 'mp3PrimeAlbumsStrategy') return 'personal';
-        if (last === 'mp3ByArtistStrategy') return 'artist';
-        if (last === 'mp3CommunityPlaylistsStrategy') return 'community';
-        return undefined;
+      var isFeatured = function (s) {
+        return /^\s*featured\b/i.test(String((s && s.title) || ''));
+      };
+      // The category the Recommendations page files a section under (its
+      // albums and playlists; songs and artists have no categories). A
+      // strategy it doesn't know sends none, so the page files it under
+      // "More …"; a shelf that isn't a strategy is Amazon's editors' pick.
+      var STRATEGY_CATEGORIES = {
+        playlistStrategy: 'personal',
+        mp3YmlRecentPlaybackStrategy: 'personal',
+        mp3PrimeAlbumsStrategy: 'personal',
+        mp3YourHeaviestListeningStrategy: 'personal',
+        newReleasesForYouStrategy: 'new',
+        mp3ByArtistStrategy: 'artist',
+        mp3CommunityPlaylistsStrategy: 'community',
+        mp3GenreForYouStrategy: 'editorial'
+      };
+      var categoryOf = function (s) {
+        if (isStrategy(s.id)) {
+          var last = strategyName(s.id);
+          return Object.prototype.hasOwnProperty.call(STRATEGY_CATEGORIES, last) ? STRATEGY_CATEGORIES[last] : undefined;
+        }
+        if (/^\s*recently played\s*$/i.test(String(s.title || ''))) return 'personal';
+        return 'editorial';
       };
       // The artist a "by artist" shelf is seeded on: the one artist every
       // album shares (trimmed, case-insensitive, first spelling). Never read
@@ -602,12 +618,12 @@ module.exports = {
         return seed === null ? undefined : seed;
       };
       var sections = (result.sections || []).filter(function (s) {
-        return s && Array.isArray(s.items) && s.items.length > 0 && isPersonal(s.id);
+        return s && Array.isArray(s.items) && s.items.length > 0 && !isFeatured(s);
       }).map(function (s) {
         // The bridge's synthesized "Playlists for You" section carries its
         // first page's continuation cursor — pass it through so the page's
         // first "Load more" starts from it.
-        var category = categoryOf(s.id);
+        var category = categoryOf(s);
         var out = s;
         if (s.nextCursor != null) {
           out = { id: s.id, title: s.title, description: s.description, items: s.items, nextCursor: String(s.nextCursor) };
@@ -650,6 +666,11 @@ module.exports = {
       }
       var id = (sectionId || '').trim();
       if (!id) return { items: [], nextCursor: null };
+      // Only a strategy shelf has a see-more page (the route is keyed on the
+      // strategy name). The editorial shelves (UUID ids, GET_STARTED) show
+      // what the home page sent, so their "Load more" is at its end at once,
+      // instead of loading a page that isn't there in the hidden view.
+      if (!/Strategy$/.test(id.split('?')[0].split('/').pop())) return { items: [], nextCursor: null };
       var result = await window.electron.amazonMusic.expandRecommendationSection(id, afterCursor || null);
       if (!result || !result.success) {
         var reason = result && result.reason;

@@ -42,7 +42,7 @@ function instantiate(axeContent) {
 describe('amazonmusic .axe structure', () => {
   test('manifest identifies the resolver', () => {
     expect(axe.manifest.id).toBe('amazonmusic');
-    expect(axe.manifest.version).toBe('1.12.1');
+    expect(axe.manifest.version).toBe('1.13.0');
   });
 
   test('declares streaming capabilities without auth', () => {
@@ -876,11 +876,11 @@ describe('amazonmusic recommendations (the recommendations capability)', () => {
     expect(out.sections[0].items[0]).toMatchObject({ type: 'album', id: 'B0G2TSTWXD', name: 'Tempelschlaf', artist: 'The Ruins Of Beverast' });
   });
 
-  test('keeps only the personal strategy sections, never Amazon\'s editorial shelves', async () => {
+  test('keeps every shelf but Featured This Week, each under a category', async () => {
     // Live 2026-11-12, a Prime account's BrowseHomePage: the personal sections
     // are named strategies; editorial shelves carry UUID ids, the onboarding
     // shelf is GET_STARTED, and the genre shelf ("Soundtracks") is a strategy
-    // but a promo.
+    // but a promo. All of them come back except Featured This Week.
     const item = { type: 'album', id: 'B0G2TSTWXD', name: 'Tempelschlaf', artist: 'The Ruins Of Beverast' };
     const pl = { type: 'playlist', id: 'PP1', name: 'A Mix' };
     const base = 'uri:///recommendations/browse-home/';
@@ -903,8 +903,20 @@ describe('amazonmusic recommendations (the recommendations capability)', () => {
     ] }) } } };
     const resolver = instantiate(axe);
     const out = await resolver.getRecommendations({});
-    expect(out.sections.map(s => s.title)).toEqual([
-      'Based on Your Recents', 'Albums for You', 'FIDLAR', 'Playlists for You', 'Community Playlists', 'New Releases for You'
+    expect(out.sections.map(s => [s.title, s.category])).toEqual([
+      ["Let's Get Started", 'editorial'],
+      ['Based on Your Recents', 'personal'],
+      ['Albums for You', 'personal'],
+      ['Recently Played', 'personal'],
+      ['FIDLAR', 'artist'],
+      ['Playlists for You', 'personal'],
+      ['Community Playlists', 'community'],
+      ['Top Playlists', 'editorial'],
+      ['On-Demand Albums This Week', 'editorial'],
+      ['Soundtracks', 'editorial'],
+      ['A Whole Mood', 'editorial'],
+      ['Amazon Music Live', 'editorial'],
+      ['New Releases for You', 'new']
     ]);
   });
 
@@ -957,6 +969,15 @@ describe('amazonmusic recommendations (the recommendations capability)', () => {
     global.window = { electron: { amazonMusic: { expandRecommendationSection: jest.fn().mockResolvedValue({ success: true, items: [], nextCursor: null }) } } };
     const resolver = instantiate(axe);
     await expect(resolver.expandRecommendationSection('uri:///x/aStrategy', 'aStrategy.20', {})).resolves.toEqual({ items: [], nextCursor: null });
+  });
+
+  test('expandRecommendationSection: an editorial shelf (no strategy, no see-more page) is at its end without loading anything', async () => {
+    global.window = { electron: { amazonMusic: { expandRecommendationSection: jest.fn() } } };
+    const resolver = instantiate(axe);
+    for (const id of ['uri:///recommendations/browse-home/6a0d8250-d85c-42c0-868a-01dc91991473', 'uri:///recommendations/browse-home/GET_STARTED']) {
+      await expect(resolver.expandRecommendationSection(id, null, {})).resolves.toEqual({ items: [], nextCursor: null });
+    }
+    expect(global.window.electron.amazonMusic.expandRecommendationSection).not.toHaveBeenCalled();
   });
 
   test('expandRecommendationSection: notReady on readiness failures, and unknown failure reasons are notReady too (never a cached miss)', async () => {
