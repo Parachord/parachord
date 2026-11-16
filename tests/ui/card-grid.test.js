@@ -60,7 +60,7 @@ test('collapsed page headers share .hero-bar: titles truncate, tabs scroll, one 
   const src = files.map((f) => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n');
   // PageHero's bar (the artist page's hero is PageHero now), plus the
   // release page's artist bar.
-  expect((src.match(/className: 'hero-bar absolute inset-0 flex items-center px-6 z-10'/g) || []).length).toBe(2);
+  expect((src.match(/className: 'hero-bar (?:motion-fade-in )?absolute inset-0 flex items-center px-6 z-10'/g) || []).length).toBe(2);
   expect(src).not.toMatch(/absolute inset-0 flex items-center px-16 z-10/);
 });
 

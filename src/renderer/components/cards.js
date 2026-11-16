@@ -9,6 +9,7 @@
 // app.js for the in-component call sites; PlayTop10Icon is
 // cards-only (the playtop-10 / queue-top-10 affordances).
 const { ResolverIcon, PlaybackProgress, ShareButton } = require('./ui-atoms');
+const { transition } = require('../lib/motion');
 const { TrackRow, TrackRowSkeleton } = require('./track-lists');
 const { AlbumCard } = require('./album-card');
 const { useReveal, ArtOverlay } = require('./card-art');
@@ -602,7 +603,7 @@ const ReleasePage = ({
         className: 'flex-shrink-0 pr-4 md:pr-8 pt-6 pb-6 scrollable-content',
         style: {
           width: `${columnWidth}px`,
-          transition: 'width 300ms ease',
+          transition: transition('width', 'slow'),
           overflowY: 'auto',
           overflowX: 'hidden'
         }
@@ -632,7 +633,7 @@ const ReleasePage = ({
             borderRadius: '10px',
             padding: '10px',
             boxShadow: 'var(--card-shadow)',
-            transition: 'width 300ms ease'
+            transition: transition('width', 'slow')
           },
           onContextMenu: onAlbumContextMenu ? (e) => {
             e.preventDefault();
@@ -669,7 +670,7 @@ const ReleasePage = ({
                 top: 0,
                 left: 0,
                 opacity: 0,
-                transition: 'opacity 0.35s ease-out'
+                transition: transition('opacity', 'slow', 'out')
               },
               ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
               onLoad: (e) => { e.target.style.opacity = '1'; },
@@ -737,7 +738,7 @@ const ReleasePage = ({
           // Album source card (#1238): pick another edition of this album —
           // another official release of the MusicBrainz release group, or an
           // edition one of the user's services carries. Sits above Share.
-          React.createElement('div', { className: 'relative', style: { width: `${albumArtSize}px`, transition: 'width 300ms ease' } },
+          React.createElement('div', { className: 'relative', style: { width: `${albumArtSize}px`, transition: transition('width', 'slow') } },
             React.createElement(OptionTile, {
               compact: true,
               onClick: toggleSourceOpen,
