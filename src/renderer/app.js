@@ -21605,7 +21605,14 @@ ${trackListXml}
       console.log('Release data loaded:', tracks.length, 'tracks');
       // An edition switch is in flight (#1238): its skeleton waits for the
       // picked edition, and this load's default release must not displace it.
-      setCurrentRelease(prev => (prev && prev._pickingEdition ? prev : releaseInfo));
+      // The fastest list stays: a service's list for this album that the
+      // catalogs' race already put on screen is not replaced by MusicBrainz's
+      // (replacing it flickered the page's source from the service to
+      // MusicBrainz, 2026-11-15). MusicBrainz's editions stay in the source
+      // dropdown.
+      const keepsFirstList = (prev) => !!(prev && prev._catalogSource && prev.tracks
+        && sameAlbumIdentity(prev, { title: release.title, artist: artistNameForLookup }));
+      setCurrentRelease(prev => (prev && (prev._pickingEdition || keepsFirstList(prev)) ? prev : releaseInfo));
       setLoadingRelease(false);
 
       // Update collection album's track count if album is in collection
@@ -22514,12 +22521,11 @@ ${trackListXml}
   // other lookups, while a service's albumSearch + lookupAlbum usually answers
   // in well under a second. So as soon as a page is waiting for its track
   // list, the catalogs are asked too, and their list shows if it lands first.
-  // (Until 2026-11 they were asked only after the page had waited 5s.) When
-  // MusicBrainz answers, fetchReleaseData's success path replaces it, so
-  // MusicBrainz stays the canonical list (track ids, recording ids); rows are
-  // keyed by position, so a matching list just gains MusicBrainz's data in
-  // place. Until then fetchReleaseData's own load does not blank the catalog
-  // list. Skipped when MusicBrainz's answer is already cached (it lands at
+  // (Until 2026-11 they were asked only after the page had waited 5s.) Whichever
+  // list lands first stays: when MusicBrainz answers after a catalog list is
+  // on screen, fetchReleaseData's success path keeps the catalog list (it
+  // used to replace it, which flickered the page's source), and
+  // fetchReleaseData's own load does not blank it. Skipped when MusicBrainz's answer is already cached (it lands at
   // once). Keyed on the album, not the id: a page moves from a release-group
   // id to a release id while it loads.
   const waitingAlbumKey = (currentRelease && !currentRelease.tracks && !currentRelease._loadError
