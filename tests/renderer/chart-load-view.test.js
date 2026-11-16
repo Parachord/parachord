@@ -10,7 +10,7 @@ const fs = require('fs');
 const path = require('path');
 const { chartLoadView } = require('../../src/renderer/lib/chart-load-view');
 
-const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+const app = require('../helpers/renderer-source').appWithPages(); // app.js and the pages moved out of it (#1451)
 
 describe('chartLoadView', () => {
   test('a load in flight is the skeleton, even after an earlier error', () => {
