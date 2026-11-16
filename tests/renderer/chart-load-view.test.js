@@ -1,8 +1,10 @@
 /**
- * Pop of the Tops › Tracks › Apple Music: a failed chart fetch (Apple's 504,
- * 2026-11-16) settled `loading` but never `loaded`, so the tab kept its
- * skeleton forever and showed no error. The error now wins over "not loaded"
- * and the tab shows ErrorState with Try again.
+ * Pop of the Tops › Tracks: a failed chart fetch (Apple's 504, 2026-11-16)
+ * settled `loading` but never `loaded`, so the tab kept its skeleton forever
+ * and showed no error. Last.fm had the same bug, and with no Last.fm key it
+ * never started. A click on Tracks before the cache was ready started no
+ * load at all. The error now wins over "not loaded", each source shows
+ * ErrorState with Try again, and an effect starts the load once it can.
  */
 const fs = require('fs');
 const path = require('path');
@@ -48,5 +50,46 @@ describe('the Apple Music tracks chart in app.js', () => {
     expect(app).toContain("onRetry: () => loadAppleMusicSongsCharts({ country: chartsCountry, forceReload: true })");
     expect(app).not.toContain('appleMusicSongsChartsLoading || !appleMusicSongsChartsLoaded');
     expect(app).toMatch(/chartsSongsSource === 'apple' && chartLoadView\(\{[^}]*\}\) === 'skeleton'/);
+  });
+});
+
+describe('the Last.fm tracks chart in app.js', () => {
+  const loader = app.slice(
+    app.indexOf('const loadLastfmCharts = async'),
+    app.indexOf('const loadAppleMusicSongsCharts = async')
+  );
+
+  test('no key and a failure with no cache both settle with an error, not a dialog', () => {
+    expect(loader).toMatch(/if \(!apiKey\) \{[\s\S]*?setLastfmChartsError\(userError\([\s\S]*?return;/);
+    expect(loader).toContain('setLastfmChartsError(error);');
+    expect(loader).not.toMatch(/type: 'error'/);
+    expect(loader).toMatch(/setLastfmChartsLoading\(true\);[\s\S]*?setLastfmChartsError\(null\);/);
+  });
+
+  test('the Tracks tab shows ErrorState with Try again, and the skeleton only by chartLoadView', () => {
+    expect(app).toContain("title: 'Couldn’t load the Last.fm chart'");
+    expect(app).toMatch(/body: errorText\(lastfmChartsError, /);
+    expect(app).toContain("onRetry: () => loadLastfmCharts({ country: chartsCountry, forceReload: true })");
+    expect(app).not.toContain('lastfmChartsLoading || !lastfmChartsLoaded');
+    expect(app).toMatch(/chartsSongsSource === 'lastfm' && chartLoadView\(\{[^}]*\}\) === 'skeleton'/);
+  });
+});
+
+describe('the Tracks tab starts its own load', () => {
+  const start = app.indexOf("// Load the Tracks tab's chart once it's showing");
+  const effect = app.slice(start, app.indexOf(']);', start) + 3);
+
+  test('an effect loads the shown source once the cache (Apple) or key (Last.fm) is ready', () => {
+    expect(start).toBeGreaterThan(-1);
+    expect(effect).toMatch(/cacheLoaded && !appleMusicSongsChartsLoaded && !appleMusicSongsChartsLoading && !appleMusicSongsChartsError/);
+    expect(effect).toMatch(/lastfmKeyLoaded && !lastfmChartsLoaded && !lastfmChartsLoading && !lastfmChartsError/);
+    // It re-runs when the cache or key lands, so an early click still loads.
+    expect(effect).toMatch(/\[activeView, chartsTab, chartsSongsSource, cacheLoaded, lastfmKeyLoaded,/);
+  });
+
+  test('the tab and source pickers no longer start loads themselves (no double fetch)', () => {
+    const hero = app.slice(app.indexOf("title: 'Pop of the Tops'"), app.indexOf("label: 'Chart region'"));
+    expect(hero).not.toContain('loadAppleMusicSongsCharts(');
+    expect(hero).not.toContain('loadLastfmCharts(');
   });
 });
