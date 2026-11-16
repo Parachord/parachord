@@ -633,6 +633,25 @@ class ResolverLoader {
   }
 
   /**
+   * A status read gets this long, in the spirit of RESOLVE_BUDGET_MS
+   * (resolver-limiter.js): a getStatus can be a network call, and the app
+   * reads every status-capable plugin in one batch (refreshPluginStatuses),
+   * so one read that never settles would stall the whole sweep — the batch
+   * never lands, and every id in it stays "in flight", skipped by every
+   * later read. Past the budget the read answers the failed marker below,
+   * the same "no verdict" every other status failure maps to.
+   */
+  static STATUS_BUDGET_MS = 8000;
+
+  // What a failed status read answers: the plugin threw, answered nothing
+  // object-shaped, or ran past STATUS_BUDGET_MS. The limit map reads it as
+  // no verdict (lib/playback-limits.js pluginStatusLimit — the marker carries
+  // no playbackLimit), and the Settings row reads it as "couldn't check"
+  // (pluginStatusRow) instead of "Checking…" forever. Frozen: one shared
+  // object, never mistaken for a plugin's own reply.
+  static STATUS_READ_FAILED = Object.freeze({ failed: true });
+
+  /**
    * Ask one resolver for its status.
    * @param {string} resolverId
    * @param {object} configOverride - Optional config to override resolver's stored config
@@ -640,27 +659,43 @@ class ResolverLoader {
    *          playbackLimit: { blocked, planKey, label, message, searchesHeldBack }|null,
    *          statusLabel: string|null, statusMessage: string|null } (docs/
    *          architecture/plugins.md, "Status and playback limits") — or
-   *          null when the resolver lacks the capability or answers nothing
-   *          object-shaped. A plugin that THROWS answers null too, logged
-   *          here: this is the one accessor that swallows a plugin error on
-   *          purpose. A status outage must not read as a blocked resolver and
-   *          unplug playback, and "unknown" is the safe reading for every
-   *          consumer (lib/playback-limits.js maps the reply and drops a
-   *          missing one), so no caller ever needs to tell a miss from a
-   *          failure — which is what every other accessor rejects for.
+   *          STATUS_READ_FAILED when the read happened but yielded no reply:
+   *          the plugin threw (logged here — this is the one accessor that
+   *          swallows a plugin error on purpose), answered nothing
+   *          object-shaped, or ran past STATUS_BUDGET_MS. A status outage
+   *          must not read as a blocked resolver and unplug playback, and
+   *          "unknown" is the safe reading for every consumer (lib/
+   *          playback-limits.js maps the reply and drops a missing one), so
+   *          no caller ever needs to tell a miss from a failure — which is
+   *          what every other accessor rejects for. Null is only for a
+   *          resolver that was never asked (no such resolver, or it lacks
+   *          the capability).
    */
   async getStatus(resolverId, configOverride = null) {
     const resolver = this.resolvers.get(resolverId);
     if (!resolver || !resolver.capabilities?.status || typeof resolver.getStatus !== 'function') {
       return null;
     }
+    // The budget races the call: a hung getStatus settles the race (the
+    // call itself keeps running — a promise can't be cancelled — but its
+    // answer, whenever it lands, is dropped).
+    let timer = null;
+    const budget = new Promise((resolve) => {
+      timer = setTimeout(() => resolve(ResolverLoader.STATUS_READ_FAILED), ResolverLoader.STATUS_BUDGET_MS);
+      if (timer && typeof timer.unref === 'function') timer.unref();
+    });
     try {
-      const status = await resolver.getStatus(configOverride || resolver.config || {});
-      return status && typeof status === 'object' ? status : null;
+      const status = await Promise.race([
+        Promise.resolve().then(() => resolver.getStatus(configOverride || resolver.config || {})),
+        budget
+      ]);
+      return status && typeof status === 'object' ? status : ResolverLoader.STATUS_READ_FAILED;
     } catch (error) {
       // The message only: a config can carry a token.
       console.error(`Status error for ${resolverId}:`, error?.message || error);
-      return null;
+      return ResolverLoader.STATUS_READ_FAILED;
+    } finally {
+      clearTimeout(timer);
     }
   }
 

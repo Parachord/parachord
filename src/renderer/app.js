@@ -6151,11 +6151,12 @@ const Parachord = () => {
   // state (capabilities.status, the generic surface of #1356):
   // { [resolverId]: reply }. One reply feeds every consumer — the limit map
   // below, the resolver tile (tileStatus) and the Settings sign-in row
-  // (pluginStatusRow). A null entry is "no verdict" (the plugin threw or
-  // answered nothing shaped), never a blocked resolver. No shipped plugin
-  // declares the capability yet; Amazon keeps its own IPC status
-  // (amazonMusicStatus) until its plugin migration moves it onto this
-  // surface.
+  // (pluginStatusRow). A failed read is the loader's marker
+  // (resolver-loader.js STATUS_READ_FAILED — the plugin threw, answered
+  // nothing shaped, or ran past the read budget): no verdict for the limit
+  // map, an honest "couldn't check" for the row. No shipped plugin declares
+  // the capability yet; Amazon keeps its own IPC status (amazonMusicStatus)
+  // until its plugin migration moves it onto this surface.
   const [pluginStatuses, setPluginStatuses] = useState({});
   // Resolvers that are enabled but can't play on the account's plan (Amazon
   // off Music Unlimited, #1220). Each service reports its limit into one map
@@ -6170,13 +6171,16 @@ const Parachord = () => {
   // map: the plugin is the authority for its service, so its entry wins
   // where a per-service mapper still exists — the migration order (a
   // service's plugin entry takes over the moment it starts declaring the
-  // capability).
+  // capability). But only when it actually gives a verdict: the plugin
+  // entries go through pluginStatusLimits, which DROPS a no-verdict one
+  // (a failed read, a reply with no playbackLimit), so it lands after the
+  // mappers without overriding them — a plugin that can't answer never
+  // removes the host's own verdict (a Prime amazonmusic stays blocked while
+  // its plugin's read is down).
   const playbackLimits = useMemo(() => ({
     amazonmusic: PlaybackLimits.amazonPlaybackLimit(amazonMusicStatus),
     applemusic: PlaybackLimits.appleMusicPlaybackLimit({ checked: appleMusicAuthChecked, connected: appleMusicConnected }),
-    ...Object.fromEntries(Object.entries(pluginStatuses).map(
-      ([id, status]) => [id, PlaybackLimits.pluginStatusLimit(status)]
-    ))
+    ...PlaybackLimits.pluginStatusLimits(pluginStatuses)
   }), [amazonMusicStatus, appleMusicAuthChecked, appleMusicConnected, pluginStatuses]);
   const planBlockedResolverIds = useMemo(() => PlaybackLimits.planBlockedIds(playbackLimits), [playbackLimits]);
   // For the plug-in tile menu's Raise / Lower Priority handler, registered once.
@@ -7615,10 +7619,13 @@ const Parachord = () => {
   // stays on its own IPC status above until its plugin migration; no shipped
   // plugin declares the capability yet, so nothing below runs for one.
 
-  // One plugin's status read. The loader logs and swallows a throwing
-  // getStatus (a status outage must not unplug playback), so the reply here
-  // is a verdict or "none"; a null is stored as-is — no verdict is the safe
-  // reading (lib/playback-limits.js pluginStatusLimit maps it to no limit).
+  // One plugin's status read. The loader logs and swallows a throwing or
+  // hung getStatus and bounds the read (STATUS_BUDGET_MS — a status outage
+  // must not unplug playback, and one hung read must not stall the sweep
+  // below), so the reply here is a verdict, the loader's failed marker, or
+  // null; each is stored as-is — a failure is no verdict for the limit map
+  // (lib/playback-limits.js pluginStatusLimit) and the honest error row
+  // (pluginStatusRow), and a null (never asked) stays "Checking…".
   const refreshPluginStatus = (resolverId) => {
     const loader = resolverLoaderRef.current;
     if (!loader || typeof loader.getStatus !== 'function') return;
@@ -7631,13 +7638,15 @@ const Parachord = () => {
   // plugin's status has no reader (its tile is inactive, and playback never
   // asks it). One sweep is ONE setPluginStatuses, the whole batch landing
   // together (every setState is a full-app render — coalesce the burst); a
-  // throwing getStatus never rejects it, because the loader has already
-  // logged it and answered null, which is stored as-is like the single read
-  // above (a real rejection is the loader itself failing, and that resolver
-  // gets no entry). The reads in flight are held per resolver
-  // (pluginStatusReadsRef), so a re-run while one is still pending — a
-  // startup dep changed, or a read hung — reads only what nothing is
-  // reading: no pending call is re-issued.
+  // throwing or hung getStatus never rejects it, because the loader has
+  // already logged the throw and answers its failed marker (a hung one
+  // settles at the read budget, STATUS_BUDGET_MS — one plugin's hang can't
+  // stall the batch, which is why the reads can be batched at all), stored
+  // as-is like the single read above (a real rejection is the loader itself
+  // failing, and that resolver gets no entry). The reads in flight are held
+  // per resolver (pluginStatusReadsRef), so a re-run while one is still
+  // pending — a startup dep changed — reads only what nothing is reading: no
+  // pending call is re-issued.
   const pluginStatusReadsRef = useRef(new Set());
   const refreshPluginStatuses = () => {
     const loader = resolverLoaderRef.current;
@@ -25765,6 +25774,17 @@ ${trackListXml}
       }
       setResolverOrder(prev => prev.filter(id => id !== resolverId));
       setActiveResolvers(prev => prev.filter(id => id !== resolverId));
+      // Drop its status reply too (a status-capable plugin): the entry is
+      // the last read's answer, and a reinstalled plugin starts fresh — the
+      // entry it left behind is neither its verdict nor anyone else's.
+      // (playbackResolverIds filters active ids anyway, so this is honesty,
+      // not correctness.)
+      setPluginStatuses(prev => {
+        if (!(resolverId in prev)) return prev;
+        const next = { ...prev };
+        delete next[resolverId];
+        return next;
+      });
 
       // Save the uninstalled resolver ID so it doesn't reappear on restart
       const uninstalledResolvers = await window.electron.store.get('uninstalled_resolvers') || [];

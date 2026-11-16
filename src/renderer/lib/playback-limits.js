@@ -106,15 +106,40 @@ function limitMessage(limits, id) {
   return limit && limit.blocked ? limit.message || null : null;
 }
 
+// The plugin entries for the limit map: every status reply mapped through
+// pluginStatusLimit, with the no-verdict ones (null) DROPPED. app.js spreads
+// this after the per-service mappers, and the drop is the point: a plugin
+// wins only when it actually gives a verdict. A plugin whose read failed (the
+// loader's failed marker, resolver-loader.js STATUS_READ_FAILED) or whose
+// reply carries no playbackLimit never overrides the host's own verdict for
+// its service — while Amazon's status still comes from its own IPC path
+// (amazonPlaybackLimit), an amazonmusic plugin that can't answer must not
+// remove the host's block (a Prime account would go back into playback).
+// A status outage must not read as a blocked resolver, and it must not
+// remove the host's block either.
+function pluginStatusLimits(pluginStatuses) {
+  return Object.fromEntries(Object.entries(pluginStatuses || {})
+    .map(([id, status]) => [id, pluginStatusLimit(status)])
+    .filter(([, limit]) => limit !== null));
+}
+
 // The Settings sign-in row for a status-capable plugin (capabilities.status,
 // #1356): its getStatus reply's own two lines. statusLabel is the row's
 // primary line; without one, signedIn carries it (a plugin that reports
-// only sign-in needs no label of its own), and no reply yet — still loading,
-// or the plugin threw (no verdict) — is "Checking…", the Amazon row's own
-// loading line. statusMessage is the second line, or '' when the plugin has
-// none. Pure: the row's rendering stays in app.js.
+// only sign-in needs no label of its own). No reply yet — still loading —
+// is "Checking…", the Amazon row's own loading line. A FAILED read is the
+// loader's marker (resolver-loader.js STATUS_READ_FAILED — the plugin threw
+// or ran past the read budget), and the row says what happened and what to
+// do, not "Checking…" forever. statusMessage is the second line, or ''
+// when the plugin has none. Pure: the row's rendering stays in app.js.
 function pluginStatusRow(status) {
   const reply = status && typeof status === 'object' ? status : null;
+  if (reply && reply.failed === true) {
+    return {
+      label: "Couldn't check",
+      message: "Parachord couldn't check this plug-in's status. Try opening this panel again."
+    };
+  }
   const label = reply && typeof reply.statusLabel === 'string' && reply.statusLabel ? reply.statusLabel
     : reply && reply.signedIn === true ? 'Signed in'
     : reply && reply.signedIn === false ? 'Not signed in'
@@ -144,6 +169,7 @@ module.exports = {
   amazonPlaybackLimit,
   appleMusicPlaybackLimit,
   pluginStatusLimit,
+  pluginStatusLimits,
   pluginStatusRow,
   planBlockedIds,
   playbackResolverIds,

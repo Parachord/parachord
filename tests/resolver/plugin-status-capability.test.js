@@ -56,29 +56,59 @@ describe('ResolverLoader status', () => {
     expect(await flagOnly.getStatus('oldplugin', {})).toBeNull();
   });
 
-  test('an answer that is not an object is no status', async () => {
+  test('an answer that is not an object is a failed read — the marker, not the plugin\u2019s reply', async () => {
     for (const answer of [null, 'signed-in', 42]) {
       const loader = loaderWith([fake('awesomemusic', { capabilities: { status: true }, getStatus: async () => answer })]);
-      expect(await loader.getStatus('awesomemusic', {})).toBeNull();
+      expect(await loader.getStatus('awesomemusic', {})).toBe(ResolverLoader.STATUS_READ_FAILED);
     }
   });
 
-  test('a throwing getStatus is logged and answered null — never a blocked resolver', async () => {
+  test('a throwing getStatus is logged and answered the failed marker — never a blocked resolver', async () => {
     const error = jest.spyOn(console, 'error').mockImplementation(() => {});
     try {
       const loader = loaderWith([fake('awesomemusic', {
         capabilities: { status: true },
         getStatus: async () => { throw new Error('503 from the service'); },
       })]);
-      expect(await loader.getStatus('awesomemusic', {})).toBeNull();
+      expect(await loader.getStatus('awesomemusic', {})).toBe(ResolverLoader.STATUS_READ_FAILED);
       // The message only: a config can carry a token.
       expect(error).toHaveBeenCalledWith('Status error for awesomemusic:', '503 from the service');
-      // No status is not a limit: the resolver stays in playback.
-      const limits = { awesomemusic: PlaybackLimits.pluginStatusLimit(null) };
+      // A failed read is not a limit: the resolver stays in playback.
+      const limits = { awesomemusic: PlaybackLimits.pluginStatusLimit(ResolverLoader.STATUS_READ_FAILED) };
       expect(PlaybackLimits.planBlockedIds(limits)).toEqual([]);
       expect(PlaybackLimits.playbackResolverIds(['awesomemusic', 'bandcamp'], [])).toEqual(['awesomemusic', 'bandcamp']);
     } finally {
       error.mockRestore();
+    }
+  });
+
+  test('a getStatus that never settles answers the failed marker at the budget, while a sibling that answers lands normally', async () => {
+    // One hung read must not stall the batch that read it: the budget races
+    // the call (resolver-limiter.js RESOLVE_BUDGET_MS's status-side twin), so
+    // the app's Promise.allSettled sweep always lands.
+    jest.useFakeTimers();
+    try {
+      expect(ResolverLoader.STATUS_BUDGET_MS).toBe(8000);
+      const reply = { signedIn: true, playbackLimit: { blocked: false, planKey: 'premium', searchesHeldBack: false } };
+      const loader = loaderWith([
+        fake('hungmusic', { capabilities: { status: true }, getStatus: () => new Promise(() => {}) }),
+        fake('awesomemusic', { capabilities: { status: true }, getStatus: async () => reply }),
+      ]);
+      // The sibling answers well within the budget, untouched by the hang.
+      await expect(loader.getStatus('awesomemusic')).resolves.toBe(reply);
+      // The hung one: nothing before the budget, the failed marker at it.
+      let settled = null;
+      loader.getStatus('hungmusic').then((status) => { settled = status; });
+      await jest.advanceTimersByTimeAsync(ResolverLoader.STATUS_BUDGET_MS - 1);
+      expect(settled).toBeNull();
+      await jest.advanceTimersByTimeAsync(1);
+      expect(settled).toBe(ResolverLoader.STATUS_READ_FAILED);
+      // The marker is a failed read, not a verdict: no limit for the map,
+      // the honest error line for the Settings row.
+      expect(PlaybackLimits.pluginStatusLimit(settled)).toBeNull();
+      expect(PlaybackLimits.pluginStatusRow(settled).label).toBe("Couldn't check");
+    } finally {
+      jest.useRealTimers();
     }
   });
 
@@ -112,13 +142,12 @@ describe('ResolverLoader status', () => {
 });
 
 describe('a status reply feeds the playback limit map and the tile', () => {
-  // The app-side aggregation: the per-service mappers plus every
-  // plugin-reported status, exactly as app.js builds playbackLimits.
+  // The app-side aggregation, exactly as app.js builds playbackLimits: the
+  // per-service mappers (soundcloud: null stands in for "no mapper") plus
+  // every plugin-reported status through the null-dropping helper.
   const aggregate = (pluginStatuses) => ({
     soundcloud: null,
-    ...Object.fromEntries(Object.entries(pluginStatuses).map(
-      ([id, status]) => [id, PlaybackLimits.pluginStatusLimit(status)]
-    )),
+    ...PlaybackLimits.pluginStatusLimits(pluginStatuses)
   });
 
   const blockedReply = {
@@ -166,6 +195,51 @@ describe('a status reply feeds the playback limit map and the tile', () => {
     const none = aggregate({ awesomemusic: { signedIn: true, playbackLimit: null, statusLabel: 'Signed in', statusMessage: null } });
     expect(PlaybackLimits.planBlockedIds(none)).toEqual([]);
   });
+
+  test('an amazonmusic plugin with no verdict never removes the Amazon IPC status\u2019s block', async () => {
+    // The migration window: a plugin declares capabilities.status for
+    // amazonmusic while the host still reads its own IPC status
+    // (amazonMusicStatus → amazonPlaybackLimit, the Prime block). The
+    // plugin's read gives no verdict — it threw, or answered without a
+    // playbackLimit — and the host's verdict stays: a Prime account must not
+    // go back into playbackResolvers because its plugin's status read is
+    // down (#1433 review, finding 1).
+    const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const amazonMusicStatus = { success: true, web: { cdm: true, signedIn: true }, plan: 'prime' };
+      const threw = loaderWith([fake('amazonmusic', {
+        capabilities: { status: true },
+        getStatus: async () => { throw new Error('503 from the service'); },
+      })]);
+      const noVerdict = loaderWith([fake('amazonmusic', {
+        capabilities: { status: true },
+        getStatus: async () => ({ signedIn: true, playbackLimit: null, statusLabel: 'Signed in', statusMessage: null }),
+      })]);
+      for (const loader of [threw, noVerdict]) {
+        const reply = await loader.getStatus('amazonmusic');
+        expect(reply).toBeTruthy(); // the reply or the loader's failed marker — a no-verdict entry is dropped, never spread over the mapper
+        const limits = {
+          amazonmusic: PlaybackLimits.amazonPlaybackLimit(amazonMusicStatus),
+          ...PlaybackLimits.pluginStatusLimits({ amazonmusic: reply })
+        };
+        expect(PlaybackLimits.planBlockedIds(limits)).toEqual(['amazonmusic']);
+        expect(PlaybackLimits.playbackResolverIds(['amazonmusic', 'spotify'], ['amazonmusic'])).toEqual(['spotify']);
+      }
+      // A plugin that DOES give a verdict still wins — the migration order:
+      // the plugin is the authority for its service.
+      const plugin = loaderWith([fake('amazonmusic', {
+        capabilities: { status: true },
+        getStatus: async () => ({ signedIn: true, playbackLimit: { blocked: false, planKey: 'unlimited', searchesHeldBack: true } }),
+      })]);
+      const limits = {
+        amazonmusic: PlaybackLimits.amazonPlaybackLimit(amazonMusicStatus),
+        ...PlaybackLimits.pluginStatusLimits({ amazonmusic: await plugin.getStatus('amazonmusic') })
+      };
+      expect(PlaybackLimits.planBlockedIds(limits)).toEqual([]);
+    } finally {
+      error.mockRestore();
+    }
+  });
 });
 
 describe('wiring', () => {
@@ -194,10 +268,19 @@ describe('wiring', () => {
   test('one reply feeds the limit map: plugin entries merge with the per-service mappers', () => {
     const memo = app.slice(app.indexOf('const playbackLimits = useMemo(() => ({'), app.indexOf('}), [amazonMusicStatus'));
     expect(memo).toContain('amazonmusic: PlaybackLimits.amazonPlaybackLimit(amazonMusicStatus)');
-    expect(memo).toMatch(/Object\.fromEntries\(Object\.entries\(pluginStatuses\)\.map\(/);
-    expect(memo).toContain('PlaybackLimits.pluginStatusLimit(status)');
+    // The plugin entries spread AFTER the mappers, through the
+    // null-dropping helper: a plugin wins only when it actually gives a
+    // verdict (the tests above); a no-verdict entry never lands over a
+    // mapper's own.
+    expect(memo).toMatch(/\.\.\.PlaybackLimits\.pluginStatusLimits\(pluginStatuses\)/);
     // The memo recomputes when a reply lands.
     expect(app).toMatch(/\}\), \[amazonMusicStatus, appleMusicAuthChecked, appleMusicConnected, pluginStatuses\]\);/);
+  });
+
+  test('an uninstall drops the plugin\u2019s status entry', () => {
+    const uninstall = between(app, 'const handleUninstallResolver = async (resolverId) => {', "showToast(`Removed ${displayName}`, 'success');");
+    expect(uninstall).toMatch(/setPluginStatuses\(prev => \{/);
+    expect(uninstall).toMatch(/delete next\[resolverId\];/);
   });
 
   test('the trigger set is the Amazon status\u2019s own: startup, Settings, the panel, a plan refusal', () => {

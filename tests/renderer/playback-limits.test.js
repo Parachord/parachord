@@ -9,10 +9,12 @@
 
 const fs = require('fs');
 const path = require('path');
+const ResolverLoader = require('../../resolver-loader');
 const {
   amazonPlaybackLimit,
   appleMusicPlaybackLimit,
   pluginStatusLimit,
+  pluginStatusLimits,
   pluginStatusRow,
   planBlockedIds,
   playbackResolverIds,
@@ -147,8 +149,9 @@ describe('plugins that report their own status (capabilities.status, #1356)', ()
     // Signed in with nothing to say: no limit, like Amazon before the status loads.
     expect(pluginStatusLimit({ signedIn: true, playbackLimit: null, statusLabel: 'Signed in', statusMessage: null })).toBeNull();
     // Malformed playbackLimit: no verdict, never a guess — a status outage
-    // must not unplug playback (resolver-loader.js getStatus answers null
-    // for a throwing plugin; this is the same rule for a shaped one).
+    // must not unplug playback (resolver-loader.js getStatus answers its
+    // failed marker for a throwing plugin; this is the same rule for a
+    // shaped one).
     expect(pluginStatusLimit({ playbackLimit: { blocked: 'yes' } })).toBeNull();
     expect(pluginStatusLimit({ playbackLimit: 'blocked' })).toBeNull();
     expect(pluginStatusLimit({ playbackLimit: {} })).toBeNull();
@@ -161,12 +164,65 @@ describe('plugins that report their own status (capabilities.status, #1356)', ()
     expect(pluginStatusRow({ signedIn: true }).label).toBe('Signed in');
     expect(pluginStatusRow({ signedIn: false }).label).toBe('Not signed in');
     expect(pluginStatusRow({ signedIn: null }).label).toBe('Checking…');
-    // No reply yet — still loading, or the plugin threw (no verdict) — and a
-    // malformed reply: the row degrades, never a crash in the panel.
+    // No reply yet — still loading — and a malformed reply: the row degrades,
+    // never a crash in the panel.
     expect(pluginStatusRow(undefined)).toEqual({ label: 'Checking…', message: '' });
     expect(pluginStatusRow(null)).toEqual({ label: 'Checking…', message: '' });
     expect(pluginStatusRow('signed-in')).toEqual({ label: 'Checking…', message: '' });
     expect(pluginStatusRow({ statusLabel: 'Signed in', statusMessage: 42 })).toEqual({ label: 'Signed in', message: '' });
+  });
+
+  test('the Settings sign-in row: a failed read says what happened and what to do, not \u201cChecking\u2026\u201d forever', () => {
+    // The loader's failed-read marker (resolver-loader.js STATUS_READ_FAILED):
+    // the plugin threw, answered nothing shaped, or ran past the read budget.
+    // No verdict for the limit map — but the row is honest about the failure.
+    expect(pluginStatusRow(ResolverLoader.STATUS_READ_FAILED)).toEqual({
+      label: "Couldn't check",
+      message: "Parachord couldn't check this plug-in's status. Try opening this panel again."
+    });
+  });
+});
+
+describe('plugin entries: a plugin wins only when it actually gives a verdict', () => {
+  // Finding 1 of the #1433 review: app.js spreads these entries AFTER the
+  // per-service mappers, so a null entry would REPLACE a mapper's verdict —
+  // an amazonmusic plugin with a failed read would un-block a Prime account.
+  // The drop is the rule: no verdict, no entry.
+  test('a no-verdict reply is dropped — null, the loader\u2019s failed marker, a reply without a playbackLimit', () => {
+    const noVerdict = {
+      hung: ResolverLoader.STATUS_READ_FAILED,
+      threw: ResolverLoader.STATUS_READ_FAILED,
+      unsigned: null,
+      nothingToSay: { signedIn: true, playbackLimit: null, statusLabel: 'Signed in', statusMessage: null },
+      malformed: { playbackLimit: { blocked: 'yes' } }
+    };
+    expect(pluginStatusLimits(noVerdict)).toEqual({});
+    expect(pluginStatusLimits(undefined)).toEqual({});
+  });
+
+  test('a verdict stays, keyed by the resolver that gave it', () => {
+    const blocked = { blocked: true, planKey: 'free', label: 'Free: no playback', message: 'Needs Premium.', searchesHeldBack: true };
+    const entries = pluginStatusLimits({
+      awesomemusic: { playbackLimit: blocked },
+      applemusic: { playbackLimit: { blocked: false, planKey: 'connected' } }
+    });
+    expect(entries).toEqual({
+      awesomemusic: { blocked: true, planKey: 'free', label: 'Free: no playback', message: 'Needs Premium.', searchesHeldBack: true },
+      applemusic: { blocked: false, planKey: 'connected', label: null, message: null, searchesHeldBack: false }
+    });
+  });
+
+  test('the Amazon IPC status\u2019s block survives an amazonmusic plugin that can\u2019t answer', () => {
+    // The migration window: the host still owns the verdict
+    // (amazonPlaybackLimit of amazonMusicStatus) while the plugin's read is
+    // down — the map stays blocked.
+    const amazonMusicStatus = { success: true, web: { cdm: true, signedIn: true }, plan: 'prime' };
+    const limits = {
+      amazonmusic: amazonPlaybackLimit(amazonMusicStatus),
+      ...pluginStatusLimits({ amazonmusic: ResolverLoader.STATUS_READ_FAILED })
+    };
+    expect(limits.amazonmusic.blocked).toBe(true);
+    expect(planBlockedIds(limits)).toEqual(['amazonmusic']);
   });
 });
 
