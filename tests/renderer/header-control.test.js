@@ -30,7 +30,8 @@ test('no uppercase header-control style is left, and labels stay sentence case',
 });
 
 test('the page headers and the queue drawer use it', () => {
-  expect((read('src/renderer/app.js').match(/React\.createElement\(HeaderControl, \{/g) || []).length).toBeGreaterThanOrEqual(6);
+  // app.js and the panels moved out of it (#1451): the queue drawer's are in queue-drawer.js.
+  expect((require('../helpers/renderer-source').appWithPages().match(/React\.createElement\(HeaderControl, \{/g) || []).length).toBeGreaterThanOrEqual(6);
   // 8: Refresh became Keep updated / Check now + Stop updating (a playlist
   // link kept updated or a snapshot).
   expect((read('src/renderer/components/playlist-view-page.js').match(/React\.createElement\(HeaderControl, \{/g) || []).length).toBe(8);

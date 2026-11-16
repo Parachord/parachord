@@ -59,5 +59,5 @@ test('the lists and tiles use them', () => {
 });
 
 test('the queue bar reopens an album by its title (not a tooltip)', () => {
-  expect(src('app.js')).toMatch(/handleCollectionAlbumClick\(\{\s*title: playbackContext\.name,\s*artist: playbackContext\.artist/);
+  expect(require('../helpers/renderer-source').appWithPages()).toMatch(/handleCollectionAlbumClick\(\{\s*title: playbackContext\.name,\s*artist: playbackContext\.artist/);
 });
