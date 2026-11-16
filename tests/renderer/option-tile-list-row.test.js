@@ -48,7 +48,7 @@ test('ListRow: a full-width row with a hover tint, a divider and its states', ()
 });
 
 test('the lists and tiles use them', () => {
-  const app = src('app.js');
+  const app = require('../helpers/renderer-source').appWithPages() /* app.js and the pages moved out of it (#1451) */;
   expect(app).toMatch(/React\.createElement\(OptionTile, \{\s*key, onClick, title, description: sub, tone: danger \? 'danger' : undefined/);
   expect(app).toContain("title: 'Chrome Web Store'");
   expect(app).toContain("title: 'Firefox Add-ons'");

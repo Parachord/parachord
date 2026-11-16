@@ -5,7 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+const app = require('../helpers/renderer-source').appWithPages() /* app.js and the pages moved out of it (#1451) */;
 
 describe("Concerts' source filter", () => {
   test('is FilterChips, labelled, on the page colour', () => {

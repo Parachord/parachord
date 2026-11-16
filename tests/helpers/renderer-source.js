@@ -10,6 +10,7 @@ const RENDERER = path.join(__dirname, '..', '..', 'src', 'renderer');
 const PAGE_MODULES = [
   'components/fresh-drops-page.js',
   'components/recommendations-page.js',
+  'components/concerts-page.js',
 ];
 
 function read(rel) {

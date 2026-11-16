@@ -7,7 +7,7 @@
  */
 const fs = require('fs');
 const path = require('path');
-const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+const app = require('../helpers/renderer-source').appWithPages() /* app.js and the pages moved out of it (#1451) */;
 
 test('no Refresh button in the Concerts filter bar', () => {
   const bar = app.slice(app.indexOf("label: 'Filter concerts by source'"), app.indexOf("placeholder: 'City or region…'"));
