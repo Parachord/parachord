@@ -37400,7 +37400,7 @@ useEffect(() => {
             className: 'rounded-lg transition-colors',
             style: friendDragOverSidebar ? {
               backgroundColor: 'var(--accent-primary-alpha-06)',
-              boxShadow: 'inset 0 0 0 2px rgba(167, 139, 250, 0.5)'
+              boxShadow: 'inset 0 0 0 2px var(--accent-primary-alpha-50)'
             } : {},
             onDragOver: (e) => {
               if (e.dataTransfer.types.includes('friendid')) {
@@ -39750,7 +39750,7 @@ React.createElement('p', {
                   React.createElement('span', {
                     className: 'release-badge',
                     'data-upcoming-badge': 'true',
-                    style: { backgroundColor: 'rgba(124, 58, 237, 0.9)', color: 'white', whiteSpace: 'nowrap' }
+                    style: { backgroundColor: 'color-mix(in srgb, var(--accent-fill) 90%, transparent)', color: 'var(--on-accent)', whiteSpace: 'nowrap' }
                   }, upcoming)),
                 animationDelay: Math.min(index * 30, 300),
                 dragData: { type: 'album', album: { title: item.name, artist: item.artist, art } },
@@ -42634,10 +42634,10 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                     isExternalPlayback && React.createElement('span', {
                       className: 'inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium tracking-wide uppercase',
                       style: {
-                        background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(139, 92, 246, 0.15) 100%)',
+                        background: 'color-mix(in srgb, var(--playbar-accent) 15%, transparent)',
                         color: 'var(--on-dark-info)',
-                        border: '1px solid rgba(139, 92, 246, 0.3)',
-                        boxShadow: '0 0 8px rgba(139, 92, 246, 0.15), inset 0 1px 0 rgba(255,255,255,0.05)'
+                        border: '1px solid color-mix(in srgb, var(--playbar-accent) 30%, transparent)',
+                        boxShadow: '0 0 8px color-mix(in srgb, var(--playbar-accent) 15%, transparent), inset 0 1px 0 rgba(255,255,255,0.05)'
                       },
                       title: 'Playing in browser'
                     },
@@ -43042,7 +43042,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
             color: 'var(--on-dark-primary)',
             opacity: aiLoading ? '0.5' : '1'
           },
-          onFocus: (e) => { e.target.style.borderColor = 'rgba(167, 139, 250, 0.5)'; e.target.style.boxShadow = '0 0 0 3px rgba(167, 139, 250, 0.1)'; },
+          onFocus: (e) => { e.target.style.borderColor = 'color-mix(in srgb, var(--playbar-accent) 50%, transparent)'; e.target.style.boxShadow = '0 0 0 3px color-mix(in srgb, var(--playbar-accent) 10%, transparent)'; },
           onBlur: (e) => { e.target.style.borderColor = 'rgba(255, 255, 255, 0.1)'; e.target.style.boxShadow = 'none'; }, 'aria-label': 'What do you want to listen to?'
         }),
         React.createElement(Button, { variant: 'primary', size: 'sm', className: 'absolute right-2 top-1/2 -translate-y-1/2 !px-2', 'aria-label': "Generate", onClick: () => aiPrompt.trim() && !aiLoading && handleAiGenerate(aiPrompt.trim()), disabled: !aiPrompt.trim() || aiLoading }, aiLoading
@@ -47545,7 +47545,7 @@ React.createElement('div', { style: { marginTop: '12px' } },
             // but not the others leaves the user in mixed mode on shared remotes until
             // all match. Shown in every summary case (changes, no-changes, protected),
             // before Accept.
-            rows.push(React.createElement('div', { key: 'xdevice', style: { marginTop: '8px', padding: '9px 11px', borderRadius: '8px', backgroundColor: 'rgba(124,58,237,0.07)', border: '1px solid rgba(124,58,237,0.25)' } },
+            rows.push(React.createElement('div', { key: 'xdevice', style: { marginTop: '8px', padding: '9px 11px', borderRadius: '8px', backgroundColor: 'var(--accent-primary-alpha-06)', border: '1px solid color-mix(in srgb, var(--accent-primary) 25%, transparent)' } },
               React.createElement('span', { style: { fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.45' } },
                 'Using Parachord on another device (mobile, etc.)? Switch it to new sync too — running the old and new engines on the same playlists can churn them until all your devices match.')
             ));

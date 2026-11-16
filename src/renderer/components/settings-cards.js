@@ -69,7 +69,7 @@ const ResolverCard = React.memo(({
       className: 'absolute -left-3 top-0 bottom-6 w-1 rounded-full',
       style: {
         backgroundColor: 'var(--accent-primary)',
-        boxShadow: '0 0 8px rgba(124, 58, 237, 0.6)',
+        boxShadow: '0 0 8px var(--accent-primary-alpha-60)',
         zIndex: 10
       }
     }),

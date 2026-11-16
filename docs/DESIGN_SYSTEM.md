@@ -57,11 +57,14 @@ Secondary and tertiary both pass 4.5:1 on the page and on cards in both themes, 
 
 #### Accent (Purple)
 
+**The accent is one colour: `--accent-base` (`#7c3aed`, violet-600).** Every other accent token in both themes, and the playbar's, is mixed from it with `color-mix(in srgb, …)`: darker with black for hover, lighter with white for dark mode and the playbar, with `transparent` for the alphas (mixed from `--accent-primary`, so they follow the theme). A different accent, a theme's or a user's, is that one value; never write a purple, or an `rgba()` of one, anywhere else (`tests/ui/theme-tokens.test.js` fails on an accent token that isn't mixed from the base, and checks contrast on the mixed values).
+
 | Token | Tailwind | Light | Dark | Usage |
 |-------|----------|-------|------|-------|
-| `--accent-primary` | `text-accent`, `ring-accent` | `#7c3aed` | `#a78bfa` | Accent text, icons, focus rings, slider `accent-color` |
-| `--accent-fill` | `bg-accent-fill` | `#7c3aed` | `#7c3aed` | **Fills with white text on them** |
-| `--accent-fill-hover` | `hover:bg-accent-fill-hover` | `#6d28d9` | `#6d28d9` | Their hover |
+| `--accent-base` | — | `#7c3aed` | (same) | The one accent value; nothing reads it directly but the tokens below |
+| `--accent-primary` | `text-accent`, `ring-accent` | the base | base 61% + white (≈ `#af87f4`) | Accent text, icons, focus rings, slider `accent-color` |
+| `--accent-fill` | `bg-accent-fill` | the base | the base | **Fills with white text on them** |
+| `--accent-fill-hover` | `hover:bg-accent-fill-hover` | base 90% + black | the same | Their hover |
 | `--on-accent` | `text-ink-on-accent` | `#ffffff` | `#ffffff` | Text on a fill |
 | `--accent-primary-alpha-10` | `bg-accent-tint` | 10% | 10% | Selected and now-playing rows, accent chips |
 | `--accent-primary-alpha-15` | `bg-accent-tint-hover` | 15% | 15% | Their hover |
