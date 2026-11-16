@@ -593,6 +593,7 @@ window.musicbrainzLimiter = window.createLimiter({
   isThrottleError: (err) => !!(err && (err.mbThrottled || err.mbUnreachable))
 });
 const { mbFetchWithRetries, describeMusicBrainzError } = require('./lib/musicbrainz-fetch');
+const { transition } = require('./lib/motion');
 const { CardButton } = require('./components/card-button');
 const { createIpv4Fallback } = require('./lib/metabrainz-ipv4');
 const { pluginMatchesQuery } = require('./lib/plugin-search');
@@ -17887,7 +17888,7 @@ ${trackListXml}
             alignItems: 'center',
             justifyContent: 'center',
             opacity: isHovered ? 1 : 0,
-            transition: 'opacity 0.2s',
+            transition: transition('opacity', 'base'),
             pointerEvents: isHovered ? 'auto' : 'none'
           }
         },
@@ -17902,7 +17903,7 @@ ${trackListXml}
               justifyContent: 'center',
               boxShadow: 'var(--shadow-lg)',
               transform: isHovered ? 'scale(1)' : 'scale(0.9)',
-              transition: 'transform 0.2s'
+              transition: transition('transform', 'base')
             }
           },
             React.createElement(Icons.Play, { style: { width: '14px', height: '14px', marginLeft: '2px', color: 'var(--text-primary)' } })
@@ -37646,7 +37647,7 @@ useEffect(() => {
                 }
               },
               'data-friend-id': friend.id,
-              className: `px-3 py-1 rounded cursor-pointer group transition-all duration-300 ease-in-out flex items-center ${isNewlyPinned ? 'friend-entry' : ''} ${wasMoved ? 'friend-moved' : ''}`,
+              className: `px-3 py-1 rounded cursor-pointer group transition-colors flex items-center ${isNewlyPinned ? 'friend-entry' : ''} ${wasMoved ? 'friend-moved' : ''}`,
               style: {
                 height: '56px',
                 backgroundColor: isSelected ? 'var(--hover-bg-default)' : 'transparent',
@@ -38341,7 +38342,7 @@ collapsedContent: null
                             covers[idx] && React.createElement('img', {
                               src: covers[idx],
                               alt: '',
-                              className: 'absolute inset-0 w-full h-full object-cover transition-opacity duration-300',
+                              className: 'absolute inset-0 w-full h-full object-cover transition-opacity duration-slow',
                               style: { opacity: 0 },
                               ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
                               onLoad: (e) => { e.target.style.opacity = '1'; }
@@ -39087,7 +39088,7 @@ React.createElement('span', {
                       height: '100%',
                       objectFit: 'cover',
                       opacity: 0,
-                      transition: 'opacity 0.35s ease-out, transform 0.3s ease'
+                      transition: transition([['opacity', 'slow', 'out'], ['transform', 'slow']])
                     },
                     className: 'group-hover:scale-105',
                     ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
@@ -39143,7 +39144,7 @@ addCriticsPicksToQueue(album);
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
                       whiteSpace: 'nowrap',
-                      transition: 'color 0.2s ease'
+                      transition: transition('color', 'fast')
                     }
                   }, album.title),
                   React.createElement('button', { type: 'button',
@@ -39155,7 +39156,7 @@ addCriticsPicksToQueue(album);
                       whiteSpace: 'nowrap',
                       marginTop: '2px',
                       cursor: 'pointer',
-                      transition: 'color 0.2s ease'
+                      transition: transition('color', 'fast')
                     },
                     className: 'block max-w-full text-left hover:text-accent',
                     onClick: (e) => {
@@ -41499,7 +41500,7 @@ React.createElement('div', {
                     className: 'flex flex-col items-center'
                   },
                     React.createElement('button', { type: 'button', 'aria-label': 'About the browser extension',
-                      className: 'relative flex items-center justify-center cursor-pointer transition-all hover:scale-105',
+                      className: 'relative flex items-center justify-center cursor-pointer transition-transform hover:scale-105',
                       style: {
                         width: '120px',
                         height: '120px',
@@ -41545,7 +41546,7 @@ React.createElement('div', {
                     className: 'flex flex-col items-center'
                   },
                     React.createElement('button', { type: 'button', 'aria-label': 'About the Raycast extension',
-                      className: 'relative flex items-center justify-center cursor-pointer transition-all hover:scale-105',
+                      className: 'relative flex items-center justify-center cursor-pointer transition-transform hover:scale-105',
                       style: {
                         width: '120px',
                         height: '120px',
@@ -41896,7 +41897,7 @@ React.createElement('p', {
 
                 // Dialogs Section - Reset "Don't show again" preferences
                 React.createElement('div', {
-                  className: 'bg-surface-card border border-line rounded-xl p-6 hover:shadow-sm hover:border-line-strong transition-all'
+                  className: 'bg-surface-card border border-line rounded-xl p-6 hover:shadow-sm hover:border-line-strong transition-[box-shadow,border-color]'
                 },
                   React.createElement('div', { className: 'mb-5' },
                     React.createElement('h3', {
@@ -41943,7 +41944,7 @@ React.createElement('p', {
 
                 // Queue Settings Section
                 React.createElement('div', {
-                  className: 'bg-surface-card border border-line rounded-xl p-6 hover:shadow-sm hover:border-line-strong transition-all'
+                  className: 'bg-surface-card border border-line rounded-xl p-6 hover:shadow-sm hover:border-line-strong transition-[box-shadow,border-color]'
                 },
                   React.createElement('div', { className: 'mb-5' },
                     React.createElement('h3', {
@@ -41971,7 +41972,7 @@ React.createElement(Switch, { checked: rememberQueue, onToggle: async () => {
 
                 // Discover Settings Section
                 React.createElement('div', {
-                  className: 'bg-surface-card border border-line rounded-xl p-6 hover:shadow-sm hover:border-line-strong transition-all'
+                  className: 'bg-surface-card border border-line rounded-xl p-6 hover:shadow-sm hover:border-line-strong transition-[box-shadow,border-color]'
                 },
                   React.createElement('div', { className: 'mb-5' },
                     React.createElement('h3', {
@@ -42004,7 +42005,7 @@ React.createElement(Switch, { checked: homeSuggestionsAutoRefresh, onToggle: asy
 
                 // Scrobbling Section
                 React.createElement('div', {
-                  className: 'bg-surface-card border border-line rounded-xl p-6 hover:shadow-sm hover:border-line-strong transition-all'
+                  className: 'bg-surface-card border border-line rounded-xl p-6 hover:shadow-sm hover:border-line-strong transition-[box-shadow,border-color]'
                 },
                   React.createElement('div', { className: 'mb-5' },
                     React.createElement('h3', {
@@ -42093,7 +42094,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
 
                 // Developer Settings Section
                 React.createElement('div', {
-                  className: 'bg-surface-card border border-line rounded-xl p-6 hover:shadow-sm hover:border-line-strong transition-all'
+                  className: 'bg-surface-card border border-line rounded-xl p-6 hover:shadow-sm hover:border-line-strong transition-[box-shadow,border-color]'
                 },
                   React.createElement('div', { className: 'mb-5' },
                     React.createElement('h3', {
@@ -42127,7 +42128,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
 
                 // Reset Application Section
                 React.createElement('div', {
-                  className: 'bg-surface-card border border-line-danger rounded-xl p-6 hover:shadow-sm hover:border-line-danger-hover transition-all'
+                  className: 'bg-surface-card border border-line-danger rounded-xl p-6 hover:shadow-sm hover:border-line-danger-hover transition-[box-shadow,border-color]'
                 },
                   React.createElement('div', { className: 'mb-5' },
                     React.createElement('h3', {
@@ -42563,7 +42564,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                     className: 'absolute inset-0 w-full h-full object-cover',
                     style: {
                       opacity: playbarAlbumArt.isLoaded ? 0 : 1,
-                      transition: 'opacity 0.3s ease-out'
+                      transition: transition('opacity', 'slow', 'out')
                     }
                   }),
                   // Current album art (fading in) - use stable key to prevent DOM remounting flash
@@ -42575,7 +42576,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                     className: 'absolute inset-0 w-full h-full object-cover',
                     style: {
                       opacity: playbarAlbumArt.isLoaded ? 1 : 0,
-                      transition: 'opacity 0.3s ease-in'
+                      transition: transition('opacity', 'slow', 'in')
                     },
                     onLoad: () => setPlaybarAlbumArt(prev => ({ ...prev, isLoaded: true })),
                     onError: (e) => { e.target.style.display = 'none'; }
@@ -43138,7 +43139,8 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
 
     // AI Prompt Input Panel (floating above playbar, aligned with AI button on left) - Refined dark theme
     aiPromptOpen && React.createElement('div', {
-      className: 'on-dark fixed bottom-24 left-4 z-50',
+      // Rises in above the playbar like a toast (.motion-rise-in).
+      className: 'on-dark motion-rise-in fixed bottom-24 left-4 z-50',
       style: {
         width: '380px',
         backgroundColor: 'var(--surface-dark-solid)',
@@ -43294,7 +43296,8 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
           backgroundColor: 'var(--surface-dark-solid)',
           borderLeft: '1px solid var(--surface-dark-border)',
           boxShadow: 'var(--shadow-drawer)',
-          animation: sidebarClosing ? 'slideOutRight 0.2s ease-out forwards' : 'slideInRight 0.2s ease-out'
+          // The motion tokens (index.html); closeSidebarAnimated waits --motion-base (200ms).
+          animation: sidebarClosing ? 'slideOutRight var(--motion-base) var(--ease-in) forwards' : 'slideInRight var(--motion-base) var(--ease-out)'
         }
       },
         // Header
@@ -43438,7 +43441,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                       }
                     },
                       // Copy as Parachord link button (user messages only, before the bubble)
-                      msg.role === 'user' && React.createElement(Button, { variant: 'icon', size: 'sm', tone: 'dark', className: 'chat-copy-link-btn', style: { opacity: 0, transition: 'opacity 0.15s', marginRight: '2px' }, 'aria-label': 'Share prompt', 'data-tooltip': 'Share prompt', onClick: () => {
+                      msg.role === 'user' && React.createElement(Button, { variant: 'icon', size: 'sm', tone: 'dark', className: 'chat-copy-link-btn', style: { opacity: 0, transition: transition('opacity', 'fast'), marginRight: '2px' }, 'aria-label': 'Share prompt', 'data-tooltip': 'Share prompt', onClick: () => {
                           const text = typeof msg.content === 'string' ? msg.content : '';
                           const truncated = text.slice(0, 500);
                           const uri = `parachord://chat?prompt=${encodeURIComponent(truncated)}`;
@@ -45960,7 +45963,7 @@ React.createElement('div', {
                     backgroundColor: 'var(--accent-primary)',
                     height: '6px',
                     borderRadius: '4px',
-                    transition: 'width 0.3s ease'
+                    transition: transition('width', 'slow')
                   }
                 })
               ),
@@ -46919,7 +46922,7 @@ React.createElement('div', {
                 setDropTargetNewPlaylist(false);
               }
             },
-            className: `flex items-center gap-3 px-5 py-2.5 cursor-pointer transition-all border-b border-line-light ${
+            className: `flex items-center gap-3 px-5 py-2.5 cursor-pointer transition-colors border-b border-line-light ${
               dropTargetNewPlaylist
                 ? 'bg-accent-tint border-l-4 border-l-accent pl-4'
                 : newPlaylistFormOpen
@@ -48060,7 +48063,7 @@ React.createElement('div', {
                   height: '100%',
                   backgroundColor: syncProviderConfig[syncSetupModal.providerId]?.color || 'var(--accent-fill)',
                   borderRadius: '9999px',
-                  transition: 'width 300ms ease-out',
+                  transition: transition('width', 'slow', 'out'),
                   width: `${(syncSetupModal.progress.current / syncSetupModal.progress.total) * 100}%`
                 }
               })
@@ -48287,7 +48290,7 @@ React.createElement('div', {
                         height: '100%',
                         backgroundColor: 'var(--fill-info)',
                         borderRadius: '9999px',
-                        transition: 'width 300ms ease-out',
+                        transition: transition('width', 'slow', 'out'),
                         width: `${Math.round((progress.current / progress.total) * 100)}%`
                       }
                     })
@@ -48510,7 +48513,7 @@ firstRunTutorial.step === 'sources' && React.createElement(React.Fragment, null,
                 },
                 React.createElement('button', { type: 'button', 'aria-pressed': isActive,
                   'aria-describedby': resolver.requirement ? `tour-req-${resolver.id}` : undefined,
-                  className: `flex flex-col items-center cursor-pointer transition-all ${!isActive ? 'opacity-50 grayscale' : ''}`,
+                  className: `flex flex-col items-center cursor-pointer transition-[opacity,filter] ${!isActive ? 'opacity-50 grayscale' : ''}`,
                   style: { width: '100%' },
                   onClick: () => {
                     if (isActive) {
@@ -48723,12 +48726,17 @@ firstRunTutorial.step === 'complete' && (() => {
     // Queue Drawer - slides up above the playbar with matching dark theme
     // Gradient transparency: more opaque near playbar, more transparent at top
     React.createElement('div', {
-      className: 'on-dark fixed left-0 right-0 backdrop-blur-md shadow-2xl transition-all duration-300 ease-in-out z-40',
+      // It slides on transform only (motion tokens, #1450): its height isn't
+      // animated, so dragging the handle resizes it under the cursor (with
+      // every property animated, the resize lagged behind the pointer).
+      className: 'on-dark fixed left-0 right-0 backdrop-blur-md shadow-2xl transition-transform duration-slow ease-out z-40',
       // Closed, it's off-screen but was still in the Tab order (audit bug 24).
       inert: queueDrawerOpen ? undefined : '',
       'aria-hidden': queueDrawerOpen ? undefined : 'true',
       style: {
-        bottom: queueDrawerOpen ? '85px' : -queueDrawerHeight, // Position above the playbar (85px height)
+        bottom: '85px', // Above the playbar (85px tall)
+        // Closed, it slides down past the window's bottom edge.
+        transform: queueDrawerOpen ? 'translateY(0)' : 'translateY(calc(100% + 85px))',
         // Never taller than the window above the playbar, so a short window
         // can't push the drawer's header off the top (audit bug 24).
         height: Math.min(queueDrawerHeight, Math.max(200, (typeof window !== 'undefined' ? window.innerHeight : 900) - 85 - QUEUE_DRAWER_TOP_GAP)) + 'px',

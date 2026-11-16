@@ -263,6 +263,23 @@
       --z-popover: 9999;
       --z-toast: 99999;
 
+      /* Motion (#1450). Durations on the 100–400ms rule: fast for colour and
+         small state changes (hover, a switch), base for things appearing
+         (menus, a fade), slow for movement across the screen (a drawer, a
+         panel, the hero's collapse), deliberate for the one long settle
+         (the artist hero). Easings: standard for a change in place, out for
+         something arriving, in for something leaving. Use them through
+         Tailwind (transition-colors, duration-slow, ease-out) or
+         lib/motion.js's transition() in an inline style. Reduced motion
+         zeroes the durations below. */
+      --motion-fast: 150ms;
+      --motion-base: 200ms;
+      --motion-slow: 300ms;
+      --motion-deliberate: 400ms;
+      --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+      --ease-out: cubic-bezier(0, 0, 0.2, 1);
+      --ease-in: cubic-bezier(0.4, 0, 1, 1);
+
       /* Always-dark surfaces (player bar, queue drawer, AI panels) */
       --surface-dark: rgba(31, 41, 55, 0.95);
       --surface-dark-solid: rgba(17, 24, 39, 0.98);
@@ -440,18 +457,38 @@
        renderer has none left (they became <button>s and CardButton). */
     [role="button"]:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
     /* The shared Modal (components/modal.js): one scrim, one entrance. */
-    .modal-scrim { background-color: rgba(0, 0, 0, 0.45); backdrop-filter: blur(4px); animation: modalScrimIn 150ms ease-out; }
-    .modal-panel { animation: modalPanelIn 150ms cubic-bezier(0, 0, 0.2, 1); }
+    .modal-scrim { background-color: rgba(0, 0, 0, 0.45); backdrop-filter: blur(4px); animation: modalScrimIn var(--motion-fast) var(--ease-out); }
+    .modal-panel { animation: modalPanelIn var(--motion-fast) var(--ease-out); }
     @keyframes modalScrimIn { from { opacity: 0; } to { opacity: 1; } }
     @keyframes modalPanelIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
     @media (prefers-reduced-motion: reduce) { .modal-scrim, .modal-panel { animation: none; } }
     /* Toasts (components/toast.js) rise in. */
-    .toast-enter { animation: toastIn 150ms cubic-bezier(0, 0, 0.2, 1); }
+    .toast-enter { animation: toastIn var(--motion-fast) var(--ease-out); }
     @keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
     @media (prefers-reduced-motion: reduce) { .toast-enter { animation: none; } }
+    /* Menus and side panels arrive like the dialogs (#1450): a short fade
+       and rise for a menu or a pick list, a slide from the sidebar for a
+       side panel (a dialog that isn't Modal's centred panel). */
+    [role="menu"], [role="listbox"] { animation: menuIn var(--motion-base) var(--ease-out); }
+    @keyframes menuIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+    [role="dialog"][aria-modal="true"]:not(.modal-panel) { animation: sidePanelIn var(--motion-slow) var(--ease-out); }
+    @keyframes sidePanelIn { from { opacity: 0; transform: translateX(-16px); } to { opacity: 1; transform: none; } }
+    /* Content that swaps as it mounts (the hero's full and collapsed sides). */
+    .motion-fade-in { animation: motionFadeIn var(--motion-slow) var(--ease-out); }
+    /* A panel that opens over the playbar (the Shuffleupagus prompt). */
+    .motion-rise-in { animation: toastIn var(--motion-base) var(--ease-out); }
+    @keyframes motionFadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @media (prefers-reduced-motion: reduce) {
+      [role="menu"], [role="listbox"], [role="dialog"][aria-modal="true"]:not(.modal-panel), .motion-fade-in, .motion-rise-in { animation: none; }
+    }
     .dark .shadow-sm { box-shadow: var(--shadow-sm) !important; }
     .dark .shadow-md { box-shadow: var(--shadow-md) !important; }
     .dark .shadow-lg { box-shadow: var(--shadow-lg) !important; }
+
+    /* Reduced motion: every transition on the motion tokens settles at once. */
+    @media (prefers-reduced-motion: reduce) {
+      :root { --motion-fast: 0.01ms; --motion-base: 0.01ms; --motion-slow: 0.01ms; --motion-deliberate: 0.01ms; }
+    }
 
     /* ========== End Design Tokens ========== */
 
@@ -680,7 +717,7 @@
       inset: 0;
       z-index: 10000;
       opacity: 1;
-      transition: opacity 500ms ease-out;
+      transition: opacity var(--motion-deliberate) var(--ease-out);
       /* No flex centering — the SVG positions itself via position:fixed
          + transform (see .loading-wordmark-svg). #parachord-splash just
          provides the gradient background (via .loading-screen class)
@@ -709,7 +746,7 @@
     }
 
     .queue-pulse {
-      animation: queue-pulse 0.3s ease-out;
+      animation: queue-pulse var(--motion-slow) var(--ease-out);
     }
 
     /* Queue badge flash */
@@ -720,7 +757,7 @@
     }
 
     .badge-flash {
-      animation: badge-flash 0.3s ease-out;
+      animation: badge-flash var(--motion-slow) var(--ease-out);
     }
 
     /* Skeleton shimmer animation */
@@ -810,7 +847,7 @@
     }
 
     .queue-track-drop {
-      animation: queue-track-drop 0.3s ease-in forwards;
+      animation: queue-track-drop var(--motion-slow) var(--ease-in) forwards;
       background: linear-gradient(to bottom, color-mix(in srgb, var(--accent-fill) 30%, transparent), color-mix(in srgb, var(--accent-fill) 50%, transparent)) !important;
     }
 
@@ -864,7 +901,7 @@
     /* A quiet source button (the queue drawer, components/track-lists.js
        SourceIconButton quiet): faded and desaturated at rest (--rest, set
        per button: lower for a low-confidence match), full on hover or focus. */
-    .source-quiet { opacity: var(--rest, 0.7); filter: saturate(0.7); transition: opacity 150ms, filter 150ms, transform 100ms; }
+    .source-quiet { opacity: var(--rest, 0.7); filter: saturate(0.7); transition: opacity var(--motion-fast), filter var(--motion-fast), transform var(--motion-fast); }
     .source-quiet:hover, .source-quiet:focus-visible { opacity: 1; filter: none; }
 
     .scroll-edge::before {
@@ -873,12 +910,12 @@
          inside it, so these pull the marker to the true top and sides. */
       top: calc(-1 * var(--edge-top, 0px));
       margin-left: calc(-1 * var(--edge-left, 0px)); margin-right: calc(-1 * var(--edge-right, 0px));
-      pointer-events: none; box-shadow: none; transition: box-shadow 200ms ease;
+      pointer-events: none; box-shadow: none; transition: box-shadow var(--motion-base) var(--ease-standard);
     }
     .scroll-edge[data-scrolled]::before { box-shadow: 0 0 14px 6px rgba(0, 0, 0, 0.18); }
 
     /* The artist page bio's social links: hover in CSS, not JS. */
-    .social-link { background-color: var(--placeholder-bg-light); transition: background-color 150ms ease; }
+    .social-link { background-color: var(--placeholder-bg-light); transition: background-color var(--motion-fast) var(--ease-standard); }
     .social-link:hover, .social-link:focus-visible { background-color: var(--placeholder-bg); }
 
     /* Card grids (#1389): as many columns as the CONTENT area holds, never
@@ -915,7 +952,7 @@
     }
     .card-button-hit:focus { outline: none; }
     .card-button-hit:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: -2px; }
-    .card-button .card-actions { z-index: 2; opacity: 0; pointer-events: none; transition: opacity 200ms ease; }
+    .card-button .card-actions { z-index: 2; opacity: 0; pointer-events: none; transition: opacity var(--motion-base) var(--ease-standard); }
     /* A link in a card's text (an album card's artist): always shown, above the stretched button. */
     .card-button .card-link { position: relative; z-index: 2; }
     .card-button .card-actions button { pointer-events: none; }
@@ -937,7 +974,7 @@
     :where(.card-button) :where(button, a, input, select, textarea, label, [data-tooltip], .card-above):not(:where(.card-button-hit)) { position: relative; z-index: 2; }
     /* A part shown on hover (group-hover:opacity-100) also shows on keyboard focus. */
     .card-button:has(:focus-visible) .card-reveal { opacity: 1; }
-    .card-button .card-zoom { transition: transform 300ms ease, opacity 300ms ease; }
+    .card-button .card-zoom { transition: transform var(--motion-slow) var(--ease-standard), opacity var(--motion-slow) var(--ease-standard); }
     .card-button:hover .card-zoom { transform: scale(1.05); }
 
     /* Menu items (components/menu.js): the dark menu panel's rows. */
@@ -983,7 +1020,7 @@
       border-radius: 8px;
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15), 0 2px 4px rgba(0, 0, 0, 0.1);
       pointer-events: none;
-      animation: tooltip-in 150ms ease-out;
+      animation: tooltip-in var(--motion-fast) var(--ease-out);
     }
     @keyframes tooltip-in {
       from { opacity: 0; }
@@ -1040,7 +1077,7 @@
       background: var(--playbar-accent);
       margin-top: -4px;
       cursor: pointer;
-      transition: background-color 0.15s ease;
+      transition: background-color var(--motion-fast) var(--ease-standard);
     }
 
     .progress-slider:hover::-webkit-slider-thumb {
@@ -1097,8 +1134,8 @@
        because cards set their resting shadow inline (var(--card-shadow)),
        which otherwise wins. */
     .release-card {
-      transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1),
-                  box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      transition: transform var(--motion-base) var(--ease-standard),
+                  box-shadow var(--motion-base) var(--ease-standard);
     }
 
     .release-card:hover {
@@ -1155,7 +1192,7 @@
        beats every normal rule, so .release-card:hover could never lift the
        card (design audit bug 12). */
     .card-fade-up {
-      animation: cardFadeUp 0.4s cubic-bezier(0.4, 0, 0.2, 1) backwards;
+      animation: cardFadeUp var(--motion-deliberate) var(--ease-standard) backwards;
     }
 
     /* Concert rows (Concerts page, artist On Tour) stagger in with this. It
@@ -1188,7 +1225,7 @@
     }
 
     .friend-entry {
-      animation: friendSlideIn 0.3s ease-out forwards;
+      animation: friendSlideIn var(--motion-slow) var(--ease-out) forwards;
     }
 
     /* Friend move/reorder animation - subtle scale pulse */
@@ -1208,7 +1245,7 @@
     }
 
     .friend-moved {
-      animation: friendMoved 0.4s ease-out forwards;
+      animation: friendMoved var(--motion-deliberate) var(--ease-out) forwards;
     }
 
     /* Reduced motion (#1386), one block for the whole app. With the system

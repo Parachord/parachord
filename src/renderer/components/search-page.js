@@ -19,6 +19,7 @@
 // from props under their old names.
 
 const Icons = require('./icons');
+const { transition } = require('../lib/motion');
 const { FilterBox, StickyBar } = require('./filter-box');
 const { HeaderControl } = require('./header-control');
 const { CardButton } = require('./card-button');
@@ -147,7 +148,7 @@ const SearchPage = React.memo(function SearchPage(props) {
             style: {
               height: searchHeaderCollapsed ? '70px' : '120px',
               flexShrink: 0,
-              transition: 'height 300ms ease-out',
+              transition: transition('height', 'slow', 'out'),
               overflow: 'hidden'
             }
           },
