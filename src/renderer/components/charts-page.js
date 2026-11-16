@@ -19,6 +19,8 @@ const { HeroTabs } = require('./hero-tabs');
 const { EmptyState, ErrorState } = require('./states');
 const { releaseMenu } = require('../lib/item-menus');
 const { CHARTS_COUNTRIES } = require('../lib/charts-countries');
+const { chartLoadView } = require('../lib/chart-load-view');
+const { errorText } = require('../lib/error-copy');
 
 const CHARTS_PAGE_HANDLERS = [
   'albumCardActions',
@@ -41,9 +43,9 @@ const ChartsPage = React.memo(function ChartsPage(props) {
     albumCardActions,
     allResolvers,
     appleMusicSongsCharts,
+    appleMusicSongsChartsError,
     appleMusicSongsChartsLoaded,
     appleMusicSongsChartsLoading,
-    cacheLoaded,
     chartAlbumYear,
     charts,
     chartsCountry,
@@ -62,6 +64,7 @@ const ChartsPage = React.memo(function ChartsPage(props) {
     handleChartsScroll,
     isPlaying,
     lastfmCharts,
+    lastfmChartsError,
     lastfmChartsLoaded,
     lastfmChartsLoading,
     lastfmChartsObserverRef,
@@ -105,15 +108,8 @@ React.createElement('div', {
                   style: { textShadow: 'var(--hero-text-shadow-line)' }
                 },
                   React.createElement(HeroTabs, { items: ['albums', 'songs'], isSelected: (tab) => chartsTab === tab, onSelect: (tab) => {
+                        // The Tracks chart loads from an effect once it can.
                         setChartsTab(tab);
-                        // Load charts based on selected source when switching to songs tab
-                        if (tab === 'songs' && cacheLoaded) {
-                          if (chartsSongsSource === 'apple' && !appleMusicSongsChartsLoaded && !appleMusicSongsChartsLoading) {
-                            loadAppleMusicSongsCharts({ country: chartsCountry });
-                          } else if (chartsSongsSource === 'lastfm' && !lastfmChartsLoaded && !lastfmChartsLoading) {
-                            loadLastfmCharts({ country: chartsCountry });
-                          }
-                        }
                       }, renderLabel: (tab) => (tab === 'songs' ? 'Tracks' : 'Albums'), label: 'Charts' })
                 ),
 React.createElement('p', {
@@ -129,13 +125,6 @@ React.createElement('div', {
                 },
                   React.createElement(HeroTabs, { items: ['albums', 'songs'], isSelected: (tab) => chartsTab === tab, onSelect: (tab) => {
                         setChartsTab(tab);
-                        if (tab === 'songs' && cacheLoaded) {
-                          if (chartsSongsSource === 'apple' && !appleMusicSongsChartsLoaded && !appleMusicSongsChartsLoading) {
-                            loadAppleMusicSongsCharts({ country: chartsCountry });
-                          } else if (chartsSongsSource === 'lastfm' && !lastfmChartsLoaded && !lastfmChartsLoading) {
-                            loadLastfmCharts({ country: chartsCountry });
-                          }
-                        }
                       }, renderLabel: (tab) => (tab === 'songs' ? 'Tracks' : 'Albums'), label: 'Charts' })
                 ),
 React.createElement('div', { className: 'flex-1' }),
@@ -156,15 +145,8 @@ React.createElement('span', {
                 options: [{ value: 'apple', label: 'Apple Music' }, { value: 'lastfm', label: 'Last.fm' }],
                 label: 'Chart source',
                 prefix: 'Source:',
-                onChange: (v) => {
-                  setChartsSongsSource(v);
-                  if (v === 'apple' && cacheLoaded && !appleMusicSongsChartsLoaded && !appleMusicSongsChartsLoading) {
-                    loadAppleMusicSongsCharts({ country: chartsCountry });
-                  }
-                  if (v === 'lastfm' && !lastfmChartsLoaded && !lastfmChartsLoading) {
-                    loadLastfmCharts({ country: chartsCountry });
-                  }
-                },
+                // The picked source's chart loads from an effect once it can.
+                onChange: (v) => setChartsSongsSource(v),
               }),
               // Region (components/sort-menu.js). Apple Music has no global
               // chart, so an empty region means the US there; Last.fm offers Global.
@@ -256,10 +238,26 @@ React.createElement('span', {
               );
             })(),
 
+            // SONGS TAB: a failed load shows its error with Try again.
+            chartsTab === 'songs' && chartsSongsSource === 'apple' &&
+              chartLoadView({ loading: appleMusicSongsChartsLoading, loaded: appleMusicSongsChartsLoaded, error: appleMusicSongsChartsError }) === 'error' &&
+              React.createElement(ErrorState, {
+                title: 'Couldn’t load the Apple Music chart',
+                body: errorText(appleMusicSongsChartsError, 'Apple Music’s chart didn’t load. Check your connection and try again.'),
+                onRetry: () => loadAppleMusicSongsCharts({ country: chartsCountry, forceReload: true })
+              }),
+            chartsTab === 'songs' && chartsSongsSource === 'lastfm' &&
+              chartLoadView({ loading: lastfmChartsLoading, loaded: lastfmChartsLoaded, error: lastfmChartsError }) === 'error' &&
+              React.createElement(ErrorState, {
+                title: 'Couldn’t load the Last.fm chart',
+                body: errorText(lastfmChartsError, 'Last.fm’s chart didn’t load. Check your connection and try again.'),
+                onRetry: () => loadLastfmCharts({ country: chartsCountry, forceReload: true })
+              }),
+
             // SONGS TAB: the shared track row's placeholder, in its columns.
             chartsTab === 'songs' && (
-              (chartsSongsSource === 'apple' && (appleMusicSongsChartsLoading || !appleMusicSongsChartsLoaded)) ||
-              (chartsSongsSource === 'lastfm' && (lastfmChartsLoading || !lastfmChartsLoaded))
+              (chartsSongsSource === 'apple' && chartLoadView({ loading: appleMusicSongsChartsLoading, loaded: appleMusicSongsChartsLoaded, error: appleMusicSongsChartsError }) === 'skeleton') ||
+              (chartsSongsSource === 'lastfm' && chartLoadView({ loading: lastfmChartsLoading, loaded: lastfmChartsLoaded, error: lastfmChartsError }) === 'skeleton')
             ) && React.createElement('div', { className: 'space-y-0' },
               Array.from({ length: 20 }).map((_, i) => React.createElement(TrackRowSkeleton, {
                 key: `skeleton-row-${i}`, index: i, duration: true,
