@@ -58,7 +58,8 @@ test('Settings > General uses the field set', () => {
   const a = app.indexOf("settingsTab === 'general' && ");
   const general = app.slice(a, app.indexOf("settingsTab === 'about' && ", a));
   expect((general.match(/React\.createElement\(SettingRow, \{/g) || []).length).toBeGreaterThanOrEqual(10);
-  expect((general.match(/React\.createElement\(Select, \{/g) || []).length).toBe(1);
+  // Playback quality, and the window's Size (#1452).
+  expect((general.match(/React\.createElement\(Select, \{/g) || []).length).toBe(2);
   expect(general).toContain("React.createElement(RadioGroup, {");
   expect(general).toContain("React.createElement('form', {");
   expect(general).not.toMatch(/React\.createElement\('select', \{/);
@@ -91,4 +92,64 @@ test('Playback Quality names the services it applies to, and on/off is a switch'
   const app = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/app.js'), 'utf8');
   expect(app).toContain("'Amazon Music and Apple Music use these settings right now. Other services choose their own quality.'");
   expect(app).toMatch(/label: 'Adjust to your connection'[^\n]*\n\s*React\.createElement\(Switch, \{ checked: playbackAbr === true/);
+});
+
+describe('#1448: one set of form controls', () => {
+  test('TextField: dark tone, sizes, pill, no JS focus styling', () => {
+    const dark = html(h(F.TextField, { tone: 'dark', value: '', 'aria-label': 'Ask' }));
+    expect(dark).toContain('bg-[var(--on-dark-faint)]');
+    expect(dark).toContain('focus-visible:ring-[var(--playbar-accent)]');
+    expect(dark).not.toMatch(/onfocus|onblur/i);
+    expect(html(h(F.TextField, { size: 'lg', value: '', 'aria-label': 'x' }))).toMatch(/h-12[^"]*rounded-xl/);
+    expect(html(h(F.TextField, { pill: true, value: '', 'aria-label': 'x' }))).toContain('rounded-full');
+  });
+
+  test('TextField with an icon and a trailing button wraps them around the input', () => {
+    const out = html(h(F.TextField, { value: '', 'aria-label': 'Search', icon: h('i', null), trailing: h('button', null, 'Go'), wrapClassName: 'w-64' }));
+    expect(out).toMatch(/^<div class="relative flex items-center w-64">/);
+    expect(out).toMatch(/<span aria-hidden="true"[^>]*><i><\/i><\/span><input[^>]*class="[^"]*pl-9[^"]*pr-12/);
+    expect(out).toMatch(/<button>Go<\/button><\/span><\/div>$/);
+  });
+
+  test('TextField muted reads as a placeholder; bare drops the box', () => {
+    expect(html(h(F.TextField, { muted: true, value: 'x', 'aria-label': 'x' }))).toContain('!text-ink-tertiary');
+    const bare = html(h(F.TextField, { bare: true, value: 'x', 'aria-label': 'x' }));
+    expect(bare).toContain('border-none');
+    expect(bare).not.toContain('rounded-lg');
+  });
+
+  test('Checkbox: a native checkbox in the accent or a service colour, with the focus ring', () => {
+    const out = html(h(F.Checkbox, { checked: true, color: 'var(--x)' }));
+    expect(out).toMatch(/<input[^>]*type="checkbox"/);
+    expect(out).toContain('checked=""');
+    expect(out).toContain('accent-color:var(--x)');
+    expect(out).toContain('focus-visible:ring-accent');
+    expect(html(h(F.Checkbox, { checked: false }))).toContain('accent-color:var(--accent-fill)');
+  });
+
+  test('Slider: the one .slider look; dark tone; a colour sets the thumb', () => {
+    const out = html(h(F.Slider, { value: 5, min: 0, max: 10, 'aria-label': 'Radius' }));
+    expect(out).toMatch(/<input[^>]*type="range"/);
+    expect(out).toMatch(/class="slider"/);
+    expect(html(h(F.Slider, { value: 5, tone: 'dark', 'aria-label': 'Volume' }))).toContain('slider slider-dark');
+    expect(html(h(F.Slider, { value: 5, color: 'var(--page-concerts)', 'aria-label': 'Radius' }))).toContain('--slider-fill:var(--page-concerts)');
+  });
+
+  test('Slider hands onChange a number', () => {
+    let got;
+    const el = F.Slider({ value: 1, onChange: (v) => { got = v; } });
+    el.props.onChange({ target: { value: '7' } });
+    expect(got).toBe(7);
+  });
+
+  test('Switch has a dark tone', () => {
+    const out = html(h(F.Switch, { checked: false, tone: 'dark', 'aria-label': 'Share' }));
+    expect(out).toContain('bg-[var(--on-dark-fill)]');
+  });
+
+  test('the slider CSS is one class, not a copy per slider', () => {
+    const css = require('fs').readFileSync(require('path').join(__dirname, '../../index.html'), 'utf8');
+    expect(css).toContain('.slider::-webkit-slider-thumb');
+    expect(css).not.toMatch(/\.(progress|volume)-slider\s*\{/);
+  });
 });
