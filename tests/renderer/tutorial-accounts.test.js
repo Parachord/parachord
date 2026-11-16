@@ -2,10 +2,10 @@
  * #1387: the welcome tour's accounts step. The welcome screen promises
  * Last.fm and ListenBrainz; this step connects them, optionally.
  */
-const fs = require('fs');
-const path = require('path');
+const { appWithPages } = require('../helpers/renderer-source');
 
-const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+// The tour itself is components/first-run-tutorial.js; its state is in app.js.
+const app = appWithPages();
 const step = app.slice(app.indexOf("firstRunTutorial.step === 'accounts' && (() => {"), app.indexOf("firstRunTutorial.step === 'complete' && (() => {"));
 
 test('sources → accounts → complete, and Back goes the same way', () => {
