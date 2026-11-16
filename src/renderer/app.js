@@ -2132,8 +2132,9 @@ const { HeaderControl } = require('./components/header-control');
 const { ToastRegion, NowPlayingAnnouncer } = require('./components/toast');
 const { SortMenu } = require('./components/sort-menu');
 const { Menu } = require('./components/menu');
+const { ProviderMenu } = require('./components/provider-menu');
 const { HeroTabs } = require('./components/hero-tabs');
-const { SettingRow, Select, TextField, SecretField, Switch, RadioGroup, SegmentedChoice, FIELD_CLASS } = require('./components/fields');
+const { SettingRow, Select, TextField, SecretField, Switch, Checkbox, Slider, RadioGroup, SegmentedChoice } = require('./components/fields');
 const { EmptyState, ErrorState } = require('./components/states');
 // Room the queue drawer leaves above it: the title bar and a little air.
 const QUEUE_DRAWER_TOP_GAP = 48;
@@ -39353,11 +39354,9 @@ React.createElement('span', {
                 React.createElement('div', { style: { fontSize: '13px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '12px' } }, 'Filter by location'),
                 // Text input row
                 React.createElement('div', { className: 'flex items-center gap-2 mb-3' },
-                  React.createElement('input', {
-                    type: 'text',
+                  React.createElement(TextField, {
                     value: concertsLocation,
-                    onChange: (e) => {
-                      const val = e.target.value;
+                    onChange: (val) => {
                       setConcertsLocation(val);
                       if (!val.trim()) {
                         setConcertsLocationCoords(null);
@@ -39387,7 +39386,7 @@ React.createElement('span', {
                     autoFocus: true,
                     placeholder: 'City or region…',
                     // The shared text field (components/fields.js): one focus ring.
-                    className: `${FIELD_CLASS} flex-1 min-w-0`,
+                    className: 'flex-1 min-w-0',
                     'aria-label': 'City or region'
                   }),
                   // "Use my location" button
@@ -39444,15 +39443,16 @@ React.createElement('span', {
                     React.createElement('span', { style: { fontSize: '13px', color: 'var(--text-tertiary)' } }, 'Radius'),
                     React.createElement('span', { style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' } }, `${concertsLocationRadius} mi`)
                   ),
-                  React.createElement('input', {
-                    type: 'range',
+                  React.createElement(Slider, {
                     min: 10,
                     max: 500,
                     step: 10,
                     value: concertsLocationRadius,
-                    onChange: (e) => setConcertsLocationRadius(parseInt(e.target.value)),
+                    onChange: (v) => setConcertsLocationRadius(v),
+                    color: PAGE_COLORS.concerts.color,
                     className: 'w-full',
-                    style: { accentColor: PAGE_COLORS.concerts.color, height: '4px' }
+                    'aria-label': 'Radius',
+                    'aria-valuetext': `${concertsLocationRadius} miles`
                   })
                 ),
                 // Action buttons row
@@ -41102,16 +41102,16 @@ React.createElement('div', {
               // Search and filter bar
               React.createElement('div', { className: 'flex flex-col gap-3 mb-6' },
                 // Top row: Search input
-                React.createElement('div', { className: 'relative', style: { width: 'fit-content' } },
-                  React.createElement(Icons.Search, { className: 'absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-tertiary' }),
-                  React.createElement('input', {
-                    type: 'text',
-                    placeholder: 'Search plug-ins…',
-                    value: marketplaceSearchQuery,
-                    onChange: (e) => setMarketplaceSearchQuery(e.target.value),
-                    className: 'w-64 pl-9 pr-4 py-2 bg-surface-subtle border border-line rounded-full text-sm text-ink-primary placeholder-ink-tertiary focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent', 'aria-label': 'Search plug-ins'
-                  })
-                ),
+                // The shared text field (components/fields.js), a pill with the search glyph.
+                React.createElement(TextField, {
+                  pill: true,
+                  icon: React.createElement(Icons.Search, { className: 'w-4 h-4' }),
+                  wrapClassName: 'w-64',
+                  placeholder: 'Search plug-ins…',
+                  value: marketplaceSearchQuery,
+                  onChange: setMarketplaceSearchQuery,
+                  'aria-label': 'Search plug-ins'
+                }),
                 // Bottom row: Dropdown + Category pills together
                 React.createElement('div', { className: 'flex items-center gap-3 flex-wrap' },
                   // Install status dropdown filter
@@ -41754,16 +41754,16 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column', 
                               color: isVolumeDisabled ? 'var(--text-tertiary)' : 'var(--text-primary)'
                             }
                           }, resolver.name),
-                          React.createElement('input', {
-                            type: 'range',
-                            min: '-12',
-                            max: '6',
-                            step: '1',
+                          React.createElement(Slider, {
+                            min: -12,
+                            max: 6,
+                            step: 1,
                             value: offset,
-                            onChange: (e) => setResolverVolumeOffsets(prev => ({ ...prev, [resolver.id]: Number(e.target.value) })),
-                            className: `flex-1 h-2 bg-control-off rounded-full appearance-none ${isVolumeDisabled ? 'cursor-not-allowed' : 'cursor-pointer accent-[var(--accent-fill)]'}`,
+                            onChange: (v) => setResolverVolumeOffsets(prev => ({ ...prev, [resolver.id]: v })),
+                            className: 'flex-1',
                             disabled: isVolumeDisabled,
-                            'aria-label': isVolumeDisabled ? (resolver.id === 'applemusic' ? 'Use system volume to control Apple Music' : 'Browser playback - volume control not available') : undefined, 'data-tooltip': isVolumeDisabled ? (resolver.id === 'applemusic' ? 'Use system volume to control Apple Music' : 'Browser playback - volume control not available') : undefined
+                            'aria-valuetext': `${offset > 0 ? '+' : ''}${offset} dB`,
+                            'aria-label': isVolumeDisabled ? (resolver.id === 'applemusic' ? 'Use system volume to control Apple Music' : 'Browser playback - volume control not available') : `${resolver.name} volume`, 'data-tooltip': isVolumeDisabled ? (resolver.id === 'applemusic' ? 'Use system volume to control Apple Music' : 'Browser playback - volume control not available') : undefined
                           }),
                           React.createElement('span', {
                             style: {
@@ -43142,16 +43142,15 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                 position: 'top-end',
                 variant: 'dark'
               },
-                React.createElement('input', {
+                React.createElement(Slider, {
+                  tone: 'dark',
                   'aria-label': 'Volume',
                   'aria-valuetext': isMuted ? 'Muted' : `${Math.round(effectiveVolume)}%`,
-                  type: 'range',
-                  min: '0',
-                  max: '100',
+                  min: 0,
+                  max: 100,
                   value: effectiveVolume,
                   disabled: isDisabled,
-                  onChange: (e) => {
-                    const newVolume = Number(e.target.value);
+                  onChange: (newVolume) => {
                     // If user moves slider while muted, unmute
                     if (isMuted && newVolume > 0) {
                       setIsMuted(false);
@@ -43173,7 +43172,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                       window._appleMusicPreviewAudio.volume = effectiveVol / 100;
                     }
                   },
-                className: `volume-slider w-20 h-1 rounded-full ${isDisabled ? 'disabled cursor-not-allowed opacity-50' : 'cursor-pointer'}`
+                className: `w-20 ${isDisabled ? 'opacity-50' : ''}`
                 })
               )
             );
@@ -43209,67 +43208,48 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
       ),
 
       // Input
-      React.createElement('div', { className: 'relative' },
-        React.createElement('input', {
-          type: 'text',
-          value: aiPrompt,
-          onChange: (e) => setAiPrompt(e.target.value),
-          onKeyDown: (e) => {
-            // Prevent global shortcuts from interfering while typing
-            e.stopPropagation();
-            if (e.key === 'Enter' && aiPrompt.trim() && !aiLoading) {
-              handleAiGenerate(aiPrompt.trim());
-            }
-            if (e.key === 'Escape') {
-              setAiPromptOpen(false);
-              setAiPrompt('');
-              setAiError(null);
-            }
-          },
-          placeholder: 'What do you want to listen to?',
-          disabled: aiLoading,
-          autoFocus: true,
-          style: {
-            width: '100%',
-            backgroundColor: 'var(--on-dark-faint)',
-            border: '1px solid var(--on-dark-border)',
-            borderRadius: '10px',
-            padding: '12px 48px 12px 16px',
-            fontSize: '14px',
-            color: 'var(--on-dark-primary)',
-            opacity: aiLoading ? '0.5' : '1'
-          },
-          onFocus: (e) => { e.target.style.borderColor = 'color-mix(in srgb, var(--playbar-accent) 50%, transparent)'; e.target.style.boxShadow = '0 0 0 3px color-mix(in srgb, var(--playbar-accent) 10%, transparent)'; },
-          onBlur: (e) => { e.target.style.borderColor = 'var(--on-dark-border)'; e.target.style.boxShadow = 'none'; }, 'aria-label': 'What do you want to listen to?'
-        }),
-        React.createElement(Button, { variant: 'primary', size: 'sm', className: 'absolute right-2 top-1/2 -translate-y-1/2 !px-2', 'aria-label': "Generate", onClick: () => aiPrompt.trim() && !aiLoading && handleAiGenerate(aiPrompt.trim()), disabled: !aiPrompt.trim() || aiLoading }, aiLoading
+      // The shared text field (components/fields.js), dark tone, with
+      // Generate inside it: the field's own focus ring, no JS styling.
+      React.createElement(TextField, {
+        tone: 'dark',
+        size: 'lg',
+        wrapClassName: 'w-full',
+        value: aiPrompt,
+        onChange: setAiPrompt,
+        onKeyDown: (e) => {
+          // Prevent global shortcuts from interfering while typing
+          e.stopPropagation();
+          if (e.key === 'Enter' && aiPrompt.trim() && !aiLoading) {
+            handleAiGenerate(aiPrompt.trim());
+          }
+          if (e.key === 'Escape') {
+            setAiPromptOpen(false);
+            setAiPrompt('');
+            setAiError(null);
+          }
+        },
+        placeholder: 'What do you want to listen to?',
+        disabled: aiLoading,
+        autoFocus: true,
+        'aria-label': 'What do you want to listen to?',
+        trailing: React.createElement(Button, { variant: 'primary', size: 'sm', className: '!px-2', 'aria-label': "Generate", onClick: () => aiPrompt.trim() && !aiLoading && handleAiGenerate(aiPrompt.trim()), disabled: !aiPrompt.trim() || aiLoading }, aiLoading
             ? React.createElement(Icons.Spinner, { size: 16 })
             : React.createElement(Icons.ArrowRight, { className: 'w-4 h-4', strokeWidth: 2 }))
-      ),
+      }),
 
       // Provider selector row (right-aligned)
       (() => {
         const aiResolvers = getAiServices();
         if (aiResolvers.length <= 1) return null;
         return React.createElement('div', { className: 'mt-3 flex items-center justify-end gap-2' },
-          React.createElement('span', { style: { fontSize: '12px', color: 'var(--on-dark-secondary)' } }, 'Provider:'),
-          React.createElement('select', {
-            'aria-label': 'AI provider',
+          React.createElement('span', { style: { fontSize: '12px', color: 'var(--on-dark-secondary)' } }, 'Provider'),
+          // The same picker as the chat panel's (components/provider-menu.js).
+          React.createElement(ProviderMenu, {
+            label: 'AI provider',
+            services: aiResolvers,
             value: selectedAiResolver || aiResolvers[0]?.id || '',
-            onChange: (e) => setSelectedAiResolver(e.target.value),
-            style: {
-              backgroundColor: 'var(--on-dark-faint)',
-              border: '1px solid var(--on-dark-border)',
-              borderRadius: '6px',
-              padding: '4px 8px',
-              fontSize: '12px',
-              color: 'var(--on-dark-primary)'
-            }
-          },
-            aiResolvers.map(r =>
-              React.createElement('option', { key: r.id, value: r.id }, r.name)
-            )
-          )
+            onChange: (id) => setSelectedAiResolver(id)
+          })
         );
       })(),
 
@@ -43372,59 +43352,32 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                 // Custom dropdown button
                 (() => {
                   const enabledServices = getChatServices().filter(isServiceEnabled);
-                  const currentService = enabledServices.find(s => s.id === selectedChatProvider);
 
-                  // The chat provider picker (components/menu.js): a choice
-                  // among the enabled chat plug-ins, with a check on the
-                  // current one.
-                  return React.createElement(Menu, {
+                  // The AI provider picker (components/provider-menu.js),
+                  // the same control as the prompt panel's.
+                  return React.createElement(ProviderMenu, {
                     label: 'Chat provider',
-                    align: 'right',
-                    minWidth: 140,
-                    items: enabledServices.map(service => ({
-                      key: service.id,
-                      label: service.name || service.manifest?.name,
-                      icon: (SERVICE_LOGOS[service.id]
-                        ? React.createElement('span', { style: { width: '14px', height: '14px', display: 'inline-flex', flexShrink: 0 } },
-                            React.cloneElement(SERVICE_LOGOS[service.id], { className: '', style: { width: '14px', height: '14px' } }))
-                        : React.createElement('span', { style: { fontSize: '12px' } }, service.icon || service.manifest?.icon || '🤖')),
-                      checked: service.id === selectedChatProvider,
-                      onSelect: () => {
-                        const newProvider = service.id;
-                        // Picking the current one changes nothing.
-                        if (newProvider === selectedChatProvider) return;
-                        // Save current provider's history before switching
-                        if (selectedChatProvider && selectedChatProvider !== newProvider && aiChatMessages.length > 0) {
-                          aiChatHistoriesRef.current[selectedChatProvider] = aiChatMessages;
-                        }
-                        setSelectedChatProvider(newProvider);
-                        // Clear current chat service so it recreates with new provider
-                        aiChatServiceRef.current = null;
-                        // Load saved chat history for this provider (or empty if none)
-                        const savedHistory = aiChatHistoriesRef.current[newProvider] || [];
-                        setAiChatMessages(savedHistory);
-                        // Update sidebar with new provider and loaded messages
-                        setResultsSidebar(prev => ({
-                          ...prev,
-                          subtitle: service.name || service.manifest?.name,
-                          provider: { id: service.id, name: service.name || service.manifest?.name, icon: service.icon || service.manifest?.icon },
-                          messages: savedHistory
-                        }));
-                      },
-                    })),
-                    renderTrigger: (t) => React.createElement('button', Object.assign({}, t, {
-                      type: 'button',
-                      'aria-label': `Chat provider: ${currentService?.name || currentService?.manifest?.name || 'none'}`,
-                      // The shared small secondary button, dark tone.
-                      className: buttonClassName({ variant: 'secondary', size: 'sm', tone: 'dark' })
-                    }),
-                      currentService ? (SERVICE_LOGOS[currentService.id]
-                        ? React.createElement('span', { style: { width: '14px', height: '14px', display: 'inline-flex', flexShrink: 0 } },
-                            React.cloneElement(SERVICE_LOGOS[currentService.id], { className: '', style: { width: '14px', height: '14px' } }))
-                        : React.createElement('span', { style: { fontSize: '12px' } }, currentService.icon || currentService.manifest?.icon || '🤖')) : null,
-                      currentService?.name || currentService?.manifest?.name || 'Select',
-                      React.createElement(Icons.ChevronDown, { size: 10, style: { transform: t.open ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' } })
-                    )
+                    services: enabledServices,
+                    value: selectedChatProvider,
+                    onChange: (newProvider, service) => {
+                      // Save current provider's history before switching
+                      if (selectedChatProvider && selectedChatProvider !== newProvider && aiChatMessages.length > 0) {
+                        aiChatHistoriesRef.current[selectedChatProvider] = aiChatMessages;
+                      }
+                      setSelectedChatProvider(newProvider);
+                      // Clear current chat service so it recreates with new provider
+                      aiChatServiceRef.current = null;
+                      // Load saved chat history for this provider (or empty if none)
+                      const savedHistory = aiChatHistoriesRef.current[newProvider] || [];
+                      setAiChatMessages(savedHistory);
+                      // Update sidebar with new provider and loaded messages
+                      setResultsSidebar(prev => ({
+                        ...prev,
+                        subtitle: service.name || service.manifest?.name,
+                        provider: { id: service.id, name: service.name || service.manifest?.name, icon: service.icon || service.manifest?.icon },
+                        messages: savedHistory
+                      }));
+                    },
                   });
                 })()
               )
@@ -43557,10 +43510,14 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                 style: { padding: '12px', borderTop: '1px solid var(--on-dark-line)' }
               },
                 React.createElement('div', { className: 'flex gap-2' },
-                  React.createElement('input', {
-                    type: 'text',
+                  // The shared text field (components/fields.js), dark tone.
+                  React.createElement(TextField, {
+                    tone: 'dark',
+                    pill: true,
+                    wrapClassName: 'flex-1 min-w-0',
+                    className: 'w-full',
                     value: aiChatInput,
-                    onChange: (e) => setAiChatInput(e.target.value),
+                    onChange: setAiChatInput,
                     onKeyDown: (e) => {
                       e.stopPropagation();
                       if (e.key === 'Enter' && aiChatInput.trim() && !aiChatLoading) {
@@ -43575,19 +43532,9 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                     },
                     placeholder: 'Ask Shuffleupagus…',
                     disabled: aiChatLoading,
-                    style: {
-                      flex: 1,
-                      backgroundColor: 'var(--on-dark-faint)',
-                      border: '1px solid var(--on-dark-border)',
-                      borderRadius: '16px',
-                      padding: '10px 16px',
-                      fontSize: '14px',
-                      color: 'var(--on-dark-primary)'
-                    },
-                    onFocus: (e) => { e.target.style.borderColor = 'var(--accent-primary-alpha-50)'; },
-                    onBlur: (e) => { e.target.style.borderColor = 'var(--on-dark-border)'; }, 'aria-label': 'Ask Shuffleupagus'
+                    'aria-label': 'Ask Shuffleupagus'
                   }),
-                  React.createElement(Button, { variant: 'primary', size: 'sm', className: 'w-10 h-10 !p-0 !rounded-full transition-transform hover:scale-105', onClick: () => aiChatInput.trim() && !aiChatLoading && handleAiChatSend(aiChatInput), disabled: !aiChatInput.trim() || aiChatLoading, 'aria-label': 'Send', 'data-tooltip': 'Send' }, aiChatLoading
+                  React.createElement(Button, { variant: 'primary', size: 'sm', className: 'w-9 h-9 !p-0 !rounded-full transition-transform hover:scale-105', onClick: () => aiChatInput.trim() && !aiChatLoading && handleAiChatSend(aiChatInput), disabled: !aiChatInput.trim() || aiChatLoading, 'aria-label': 'Send', 'data-tooltip': 'Send' }, aiChatLoading
                       ? React.createElement(Icons.Spinner, { size: 16 })
                       : React.createElement(Icons.ArrowRight, { className: 'w-4 h-4', strokeWidth: 2 }))
                 ),
@@ -43599,47 +43546,21 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                   resultsSidebar.messages && resultsSidebar.messages.length > 0
                     ? React.createElement(Button, { variant: 'text', size: 'sm', tone: 'dark', onClick: clearAiChatHistory }, 'Clear conversation')
                     : React.createElement('div'),
-                  // Share my data toggle (right)
-                  React.createElement('label', {
-                    style: { display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', userSelect: 'none', padding: '4px 8px' },
-                    title: aiIncludeHistory ? 'Sharing your data with AI' : 'Not sharing your data with AI'
-                  },
-                    React.createElement('span', {
+                  // Share my data toggle (right): the shared switch, dark tone.
+                  React.createElement('div', { className: 'flex items-center', style: { gap: '8px', padding: '4px 8px' } },
+                    React.createElement('label', {
+                      htmlFor: 'ai-chat-share-data',
+                      className: 'cursor-pointer select-none',
                       style: { fontSize: '12px', color: 'var(--on-dark-secondary)', whiteSpace: 'nowrap' }
                     }, 'Share my data'),
-                    React.createElement('input', {
-                      type: 'checkbox',
+                    React.createElement(Switch, {
+                      id: 'ai-chat-share-data',
+                      size: 'sm',
+                      tone: 'dark',
                       checked: aiIncludeHistory,
-                      onChange: (e) => setAiIncludeHistory(e.target.checked),
-                      style: { position: 'absolute', opacity: 0, width: 0, height: 0 }
-                    }),
-                    // Toggle track
-                    React.createElement('div', {
-                      style: {
-                        position: 'relative',
-                        width: '28px',
-                        height: '16px',
-                        borderRadius: '8px',
-                        backgroundColor: aiIncludeHistory ? 'var(--accent-fill)' : 'var(--on-dark-fill)',
-                        transition: 'background-color 0.2s',
-                        flexShrink: 0
-                      }
-                    },
-                      // Toggle knob
-                      React.createElement('div', {
-                        style: {
-                          position: 'absolute',
-                          top: '2px',
-                          left: aiIncludeHistory ? '14px' : '2px',
-                          width: '12px',
-                          height: '12px',
-                          borderRadius: '50%',
-                          backgroundColor: 'var(--card-bg)',
-                          boxShadow: 'var(--shadow-xs)',
-                          transition: 'left 0.2s'
-                        }
-                      })
-                    )
+                      onToggle: () => setAiIncludeHistory(!aiIncludeHistory),
+                      'data-tooltip': aiIncludeHistory ? 'Sharing your listening with Shuffleupagus' : 'Not sharing your listening with Shuffleupagus'
+                    })
                   )
                 )
               )
@@ -45449,34 +45370,20 @@ React.createElement('div', {
                   options = [];
                 }
 
-                return React.createElement('select', {
+                // The shared select (components/fields.js).
+                return React.createElement(Select, {
                   'aria-label': 'Model',
                   value: metaServiceConfigs[selectedResolver.id]?.model || modelSetting?.default || '',
-                  onChange: (e) => {
+                  onChange: (model) => {
                     saveMetaServiceConfig(selectedResolver.id, {
                       ...metaServiceConfigs[selectedResolver.id],
-                      model: e.target.value
+                      model
                     });
                   },
                   disabled: isLoading,
-                  style: {
-                    width: '100%',
-                    padding: '10px 12px',
-                    fontSize: '13px',
-                    color: 'var(--text-primary)',
-                    backgroundColor: 'var(--card-bg)',
-                    border: '1px solid var(--border-subtle)',
-                    borderRadius: '8px',
-                    cursor: isLoading ? 'wait' : 'pointer',
-                    opacity: isLoading ? 0.6 : 1
-                  }
-                },
-                  isLoading
-                    ? React.createElement('option', { value: '' }, 'Loading models…')
-                    : options.map(opt =>
-                        React.createElement('option', { key: opt.value, value: opt.value }, opt.label)
-                      )
-                );
+                  className: 'w-full',
+                  options: isLoading ? [{ value: '', label: 'Loading models…' }] : options
+                });
               })()
             ),
             // Additional configurable fields (API dialect, base URL, token limits, ...)
@@ -45488,15 +45395,6 @@ React.createElement('div', {
               .filter(([fieldKey, fieldSetting]) => fieldSetting && fieldKey !== 'model' && fieldKey !== authFieldKey)
               .map(([fieldKey, fieldSetting]) => {
                 const savedValue = metaServiceConfigs[selectedResolver.id]?.[fieldKey];
-                const fieldInputStyle = {
-                  width: '100%',
-                  padding: '10px 12px',
-                  fontSize: '13px',
-                  color: 'var(--text-primary)',
-                  backgroundColor: 'var(--card-bg)',
-                  border: '1px solid var(--border-subtle)',
-                  borderRadius: '8px'
-                };
                 // Changing the endpoint or dialect can change the model list — refresh it
                 const refetchModels = (fieldKey === 'baseUrl' || fieldKey === 'endpoint' || fieldKey === 'api')
                   ? (newValue) => {
@@ -45529,22 +45427,19 @@ React.createElement('div', {
                     }
                   }, fieldSetting.description),
                   fieldSetting.type === 'select'
-                    ? React.createElement('select', {
+                    ? React.createElement(Select, {
                         'aria-label': fieldSetting.label || fieldKey,
                         value: savedValue || fieldSetting.default || (fieldSetting.options?.[0]?.value ?? ''),
-                        onChange: (e) => {
+                        onChange: (v) => {
                           saveMetaServiceConfig(selectedResolver.id, {
                             ...metaServiceConfigs[selectedResolver.id],
-                            [fieldKey]: e.target.value
+                            [fieldKey]: v
                           });
-                          if (refetchModels) refetchModels(e.target.value);
+                          if (refetchModels) refetchModels(v);
                         },
-                        style: { ...fieldInputStyle, cursor: 'pointer' }
-                      },
-                        (fieldSetting.options || []).map(opt =>
-                          React.createElement('option', { key: opt.value, value: opt.value }, opt.label)
-                        )
-                      )
+                        className: 'w-full',
+                        options: fieldSetting.options || []
+                      })
                     : React.createElement(TextField, { defaultValue: savedValue || fieldSetting.default || '', placeholder: fieldSetting.placeholder || '', onBlur: (e) => {
                           saveMetaServiceConfig(selectedResolver.id, {
                             ...metaServiceConfigs[selectedResolver.id],
@@ -45727,34 +45622,20 @@ React.createElement('div', {
                   ];
                 }
 
-                return React.createElement('select', {
+                // The shared select (components/fields.js).
+                return React.createElement(Select, {
                   'aria-label': 'Model',
                   value: metaServiceConfigs[selectedResolver.id]?.model || modelSetting?.default || 'llama3.1',
-                  onChange: (e) => {
+                  onChange: (model) => {
                     saveMetaServiceConfig(selectedResolver.id, {
                       ...metaServiceConfigs[selectedResolver.id],
-                      model: e.target.value
+                      model
                     });
                   },
                   disabled: isLoading,
-                  style: {
-                    width: '100%',
-                    padding: '10px 12px',
-                    fontSize: '13px',
-                    color: 'var(--text-primary)',
-                    backgroundColor: 'var(--card-bg)',
-                    border: '1px solid var(--border-subtle)',
-                    borderRadius: '8px',
-                    cursor: isLoading ? 'wait' : 'pointer',
-                    opacity: isLoading ? 0.6 : 1
-                  }
-                },
-                  isLoading
-                    ? React.createElement('option', { value: '' }, 'Loading models…')
-                    : options.map(opt =>
-                        React.createElement('option', { key: opt.value, value: opt.value }, opt.label)
-                      )
-                );
+                  className: 'w-full',
+                  options: isLoading ? [{ value: '', label: 'Loading models…' }] : options
+                });
               })()
             ),
             // Enable toggle
@@ -46323,22 +46204,22 @@ React.createElement('div', {
             // model list is the plugin's (the marketplace entry has none).
             metaServices.some(m => m.id === selectedMarketplaceItem.id) && React.createElement('div', { className: 'mt-4 space-y-2' },
               React.createElement('label', { className: 'block text-sm text-ink-secondary' }, 'Model'),
-              React.createElement('select', {
+              // The shared select (components/fields.js).
+              React.createElement(Select, {
                 'aria-label': 'Model',
                 defaultValue: metaServiceConfigs[selectedMarketplaceItem.id]?.model
                   || (metaServices.find(m => m.id === selectedMarketplaceItem.id) || selectedMarketplaceItem).settings?.configurable?.model?.default,
-                onChange: (e) => {
+                onChange: (model) => {
                   saveMetaServiceConfig(selectedMarketplaceItem.id, {
                     ...metaServiceConfigs[selectedMarketplaceItem.id],
-                    model: e.target.value
+                    model
                   });
                 },
-                className: 'w-full px-3 py-2 border border-line-strong rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent bg-surface-card'
-              },
+                className: 'w-full',
                 // The plugin's own model list (audit bug 30): the models it
                 // fetched, else its manifest's fallbackOptions. This used to
                 // be a hard-coded list that drifted from the plugins.
-                (() => {
+                options: (() => {
                   const plugin = metaServices.find(m => m.id === selectedMarketplaceItem.id) || selectedMarketplaceItem;
                   const modelSetting = plugin.settings?.configurable?.model || plugin.manifest?.settings?.configurable?.model;
                   const fetched = dynamicModelOptions[selectedMarketplaceItem.id]?.options;
@@ -46346,9 +46227,9 @@ React.createElement('div', {
                     .map(o => (typeof o === 'string' ? { value: o, label: o } : o));
                   const current = metaServiceConfigs[selectedMarketplaceItem.id]?.model;
                   if (current && !options.some(o => o.value === current)) options.unshift({ value: current, label: current });
-                  return options.map(o => React.createElement('option', { key: o.value, value: o.value }, o.label || o.value));
+                  return options.map(o => ({ value: o.value, label: o.label || o.value }));
                 })()
-              )
+              })
             )
           ),
 
@@ -47870,24 +47751,19 @@ React.createElement('div', {
                   className: 'flex items-center gap-3 cursor-pointer transition-colors',
                   style: {
                     padding: '14px 16px',
-                    backgroundColor: syncSetupModal.settings[option.key] ? `${providerColor}10` : 'var(--hover-bg-default)',
+                    backgroundColor: syncSetupModal.settings[option.key] ? `color-mix(in srgb, ${providerColor} 6%, transparent)` : 'var(--hover-bg-default)',
                     borderRadius: '12px',
-                    border: syncSetupModal.settings[option.key] ? `1px solid ${providerColor}4D` : '1px solid var(--border-subtle)'
+                    border: syncSetupModal.settings[option.key] ? `1px solid color-mix(in srgb, ${providerColor} 30%, transparent)` : '1px solid var(--border-subtle)'
                   }
                 },
-                  React.createElement('input', {
-                    type: 'checkbox',
+                  React.createElement(Checkbox, {
+                    size: 'md',
+                    color: providerColor,
                     checked: syncSetupModal.settings[option.key],
-                    onChange: (e) => setSyncSetupModal(prev => ({
+                    onChange: (checked) => setSyncSetupModal(prev => ({
                       ...prev,
-                      settings: { ...prev.settings, [option.key]: e.target.checked }
-                    })),
-                    style: {
-                      width: '18px',
-                      height: '18px',
-                      accentColor: providerColor,
-                      cursor: 'pointer'
-                    }
+                      settings: { ...prev.settings, [option.key]: checked }
+                    }))
                   }),
                   React.createElement('div', null,
                     React.createElement('div', { style: { fontSize: '14px', fontWeight: '500', color: 'var(--text-primary)' } }, option.label),
@@ -47994,18 +47870,17 @@ React.createElement('div', {
                             backgroundColor: syncSetupModal.selectedPlaylists.includes(playlist.externalId) ? `color-mix(in srgb, ${syncProviderConfig[syncSetupModal.providerId]?.color || 'var(--accent-fill)'} 6%, transparent)` : 'transparent'
                           },
                         },
-                          React.createElement('input', {
-                            type: 'checkbox',
+                          React.createElement(Checkbox, {
+                            color: syncProviderConfig[syncSetupModal.providerId]?.color,
                             checked: syncSetupModal.selectedPlaylists.includes(playlist.externalId),
-                            onChange: (e) => {
+                            onChange: (checked) => {
                               setSyncSetupModal(prev => ({
                                 ...prev,
-                                selectedPlaylists: e.target.checked
+                                selectedPlaylists: checked
                                   ? [...prev.selectedPlaylists, playlist.externalId]
                                   : prev.selectedPlaylists.filter(id => id !== playlist.externalId)
                               }));
-                            },
-                            style: { width: '16px', height: '16px', accentColor: syncProviderConfig[syncSetupModal.providerId]?.color || 'var(--accent-fill)', cursor: 'pointer' }
+                            }
                           }),
                           playlist.image && React.createElement('img', {
                             src: playlist.image,
@@ -48047,21 +47922,15 @@ React.createElement('div', {
                 border: syncSetupModal.settings.pushLocalPlaylists ? `1px solid color-mix(in srgb, ${syncProviderConfig.listenbrainz?.color || 'var(--accent-fill)'} 30%, transparent)` : '1px solid var(--border-subtle)'
               }
             },
-              React.createElement('input', {
-                type: 'checkbox',
+              React.createElement(Checkbox, {
+                size: 'md',
+                color: syncProviderConfig.listenbrainz?.color,
                 checked: !!syncSetupModal.settings.pushLocalPlaylists,
-                onChange: (e) => setSyncSetupModal(prev => ({
+                onChange: (checked) => setSyncSetupModal(prev => ({
                   ...prev,
-                  settings: { ...prev.settings, pushLocalPlaylists: e.target.checked }
+                  settings: { ...prev.settings, pushLocalPlaylists: checked }
                 })),
-                style: {
-                  width: '18px',
-                  height: '18px',
-                  marginTop: '2px',
-                  accentColor: syncProviderConfig.listenbrainz?.color || 'var(--accent-fill)',
-                  cursor: 'pointer',
-                  flexShrink: 0
-                }
+                style: { marginTop: '2px' }
               }),
               React.createElement('div', null,
                 React.createElement('div', { style: { fontSize: '14px', fontWeight: '500', color: 'var(--text-primary)' } }, 'Push my Parachord playlists to ListenBrainz'),

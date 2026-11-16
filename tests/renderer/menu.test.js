@@ -149,8 +149,11 @@ describe('callers', () => {
     const app = read('src/renderer/app.js');
     expect(app).toMatch(/React\.createElement\(Menu, \{\n\s*label: 'Play from',\n\s*heading: 'Play from',/);
     expect(app).toContain('checked: resId === currentResolverId,');
-    expect(app).toMatch(/return React\.createElement\(Menu, \{\n\s*label: 'Chat provider',/);
-    expect(app).toContain('checked: service.id === selectedChatProvider,');
+    // The chat provider picker is ProviderMenu (components/provider-menu.js), a Menu of choices.
+    expect(app).toMatch(/return React\.createElement\(ProviderMenu, \{\n\s*label: 'Chat provider',/);
+    const pm = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/components/provider-menu.js'), 'utf8');
+    expect(pm).toContain('return e(Menu, {');
+    expect(pm).toContain('checked: service.id === value,');
   });
   test('the chat panel is no longer a button that closes the picker', () => {
     expect(read('src/renderer/app.js')).not.toContain("data-provider-dropdown");

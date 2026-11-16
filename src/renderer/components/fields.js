@@ -14,9 +14,16 @@
 //   Switch       role="switch", aria-checked, the control tokens; onToggle
 //                runs on click (the caller works out the next value).
 //   RadioGroup   a role="radiogroup" of options with a label and a hint.
+//   Checkbox     a native checkbox in the accent (or a service's colour)
+//                with the focus ring; the caller's <label> holds its text.
+//   Slider       a native range input on one track-and-thumb look
+//                (.slider in index.html); onChange gets a number.
 //
-// The field look: 36px tall (32 for size="sm"), 13px text, 8px radius,
-// --bg-elevated on a 1px --border-default line, the accent on focus.
+// The field look: 36px tall (32 for size="sm", 48 for size="lg"), 13px text
+// (16 for lg), 8px radius (12 for lg, full for `pill`), --bg-elevated on a
+// 1px --border-default line, the accent ring on keyboard focus, never JS
+// focus styling. tone="dark" is the same field on the always-dark panels
+// (the Shuffleupagus prompt and chat), in the --on-dark-* tokens.
 // Props-driven; hooks are qualified; loads under plain Node.
 
 const Icons = require('./icons');
@@ -25,6 +32,32 @@ const FIELD = 'h-9 px-3 text-[13px] rounded-lg bg-surface-card text-ink-primary 
   + 'transition-colors hover:border-line-strong focus:outline-none focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent '
   + 'disabled:opacity-50 disabled:cursor-not-allowed';
 const FIELD_SM = FIELD.replace('h-9 px-3', 'h-8 px-2.5');
+
+const SIZES = { sm: 'h-8 px-2.5 text-[13px]', md: 'h-9 px-3 text-[13px]', lg: 'h-12 px-3.5 text-base' };
+const TONES = {
+  light: 'bg-surface-card text-ink-primary border border-line placeholder-ink-tertiary hover:border-line-strong '
+    + 'focus-visible:border-accent focus-visible:ring-accent',
+  dark: 'bg-[var(--on-dark-faint)] text-on-dark-primary border border-[var(--on-dark-border)] placeholder-on-dark-tertiary '
+    + 'hover:border-[var(--on-dark-fill)] focus-visible:border-[var(--playbar-accent)] focus-visible:ring-[var(--playbar-accent)]',
+};
+
+// The class list for a field: size, tone, shape. `bare` drops the box (the
+// Search page's big type, where the caret is the focus sign).
+function fieldClassName({ size = 'md', tone = 'light', pill = false, bare = false, muted = false, invalid = false, className } = {}) {
+  if (bare) {
+    return ['bg-transparent border-none outline-none focus-visible:outline-none text-ink-primary placeholder-ink-tertiary', className].filter(Boolean).join(' ');
+  }
+  return [
+    SIZES[size] || SIZES.md,
+    pill ? 'rounded-full' : size === 'lg' ? 'rounded-xl' : 'rounded-lg',
+    TONES[tone] || TONES.light,
+    muted ? (tone === 'dark' ? '!text-on-dark-tertiary' : '!text-ink-tertiary') : '',
+    'transition-colors focus:outline-none focus-visible:outline-none focus-visible:ring-2',
+    'disabled:opacity-50 disabled:cursor-not-allowed',
+    invalid ? '!border-line-danger' : '',
+    className,
+  ].filter(Boolean).join(' ');
+}
 
 function SettingRow({ label, hint, id, children, className, style }) {
   const e = React.createElement;
@@ -62,22 +95,41 @@ function Select({ value, onChange, options, size = 'md', className, style, ...re
     e(Icons.ChevronDown, { className: 'w-4 h-4 text-ink-tertiary absolute right-2.5 pointer-events-none' }));
 }
 
-function TextField({ value, onChange, type = 'text', size = 'md', invalid = false, error, className, style, id, ...rest }) {
+// TextField props beyond an <input>'s own: size ('sm' | 'md' | 'lg'), tone
+// ('light' | 'dark'), pill, bare, muted (placeholder-coloured text: an
+// example prompt), invalid + error, icon (a node at the left: a search
+// glyph), trailing (a node inside at the right: a Send button), and
+// wrapClassName (the wrapper's classes when icon / trailing / error wrap it:
+// 'flex-1', 'w-full').
+function TextField({ value, onChange, type = 'text', size = 'md', tone = 'light', pill = false, bare = false, muted = false,
+  invalid = false, error, icon, trailing, wrapClassName, className, style, id, inputRef, ...rest }) {
   const e = React.createElement;
   const auto = React.useId();
   const errId = error ? `${id || auto}-error` : undefined;
   const input = e('input', Object.assign({}, rest, {
     id,
+    ref: inputRef,
     type,
     value,
     onChange: (ev) => onChange && onChange(ev.target.value, ev),
     'aria-invalid': invalid || error ? 'true' : undefined,
     'aria-describedby': [rest['aria-describedby'], errId].filter(Boolean).join(' ') || undefined,
-    className: [size === 'sm' ? FIELD_SM : FIELD, invalid || error ? 'border-line-danger' : '', className].filter(Boolean).join(' '),
+    className: fieldClassName({
+      size, tone, pill, bare, muted, invalid: invalid || !!error,
+      className: [icon ? (size === 'lg' ? 'pl-11' : 'pl-9') : '', trailing ? 'pr-12' : '', icon || trailing ? 'w-full' : '', className].filter(Boolean).join(' '),
+    }),
     style,
   }));
-  if (!error) return input;
-  return e('div', null, input,
+  if (!error && !icon && !trailing) return input;
+  const iconTone = tone === 'dark' ? 'text-on-dark-tertiary' : 'text-ink-tertiary';
+  const field = icon || trailing
+    ? e('div', { className: ['relative flex items-center', wrapClassName].filter(Boolean).join(' ') },
+      icon && e('span', { 'aria-hidden': 'true', className: `absolute ${size === 'lg' ? 'left-4' : 'left-3'} flex items-center pointer-events-none ${iconTone}` }, icon),
+      input,
+      trailing && e('span', { className: 'absolute right-2 flex items-center' }, trailing))
+    : input;
+  if (!error) return field;
+  return e('div', { className: wrapClassName }, field,
     e('div', { id: errId, role: 'alert', className: 'text-ink-danger', style: { fontSize: '12px', marginTop: '4px' } }, error));
 }
 
@@ -102,7 +154,7 @@ function SecretField(props) {
     }, shown ? 'Hide' : 'Show'));
 }
 
-function Switch({ checked, onToggle, disabled = false, size = 'md', className, ...rest }) {
+function Switch({ checked, onToggle, disabled = false, size = 'md', tone = 'light', className, ...rest }) {
   const e = React.createElement;
   const sm = size === 'sm';
   return e('button', Object.assign({}, rest, {
@@ -114,8 +166,10 @@ function Switch({ checked, onToggle, disabled = false, size = 'md', className, .
     className: [
       'relative inline-flex flex-shrink-0 rounded-full transition-colors no-drag',
       sm ? 'w-9 h-5' : 'w-11 h-6',
-      checked ? 'bg-accent-fill' : 'bg-control-off',
-      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface-page',
+      checked ? 'bg-accent-fill' : tone === 'dark' ? 'bg-[var(--on-dark-fill)]' : 'bg-control-off',
+      tone === 'dark'
+        ? 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--playbar-accent)]'
+        : 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface-page',
       'disabled:opacity-50 disabled:cursor-not-allowed',
       className,
     ].filter(Boolean).join(' '),
@@ -124,6 +178,34 @@ function Switch({ checked, onToggle, disabled = false, size = 'md', className, .
     'aria-hidden': 'true',
     className: `absolute top-0.5 left-0.5 rounded-full bg-control-knob shadow transition-transform ${sm ? 'w-4 h-4' : 'w-5 h-5'}`,
     style: { transform: checked ? `translateX(${sm ? 16 : 20}px)` : 'translateX(0)' },
+  }));
+}
+
+// Checkbox: a native checkbox, 16px (18 for size="md"), in the accent or
+// `color` (a service's colour in the sync dialog), with the focus ring.
+// onChange(checked, ev). Put it in a <label> with its text.
+function Checkbox({ checked, onChange, color, size = 'sm', className, style, ...rest }) {
+  const px = size === 'md' ? '18px' : '16px';
+  return React.createElement('input', Object.assign({}, rest, {
+    type: 'checkbox',
+    checked: checked === undefined ? undefined : !!checked,
+    onChange: (ev) => onChange && onChange(ev.target.checked, ev),
+    className: ['flex-shrink-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded', className].filter(Boolean).join(' '),
+    style: Object.assign({ width: px, height: px, accentColor: color || 'var(--accent-fill)' }, style),
+  }));
+}
+
+// Slider: a native range input on the one slider look (.slider in
+// index.html: a 4px track, a 12px thumb). tone="dark" is the playbar's
+// (the --on-dark track, the playbar accent); `color` sets the thumb (the
+// Concerts page's teal). onChange(number, ev).
+function Slider({ value, onChange, min = 0, max = 100, step = 1, tone = 'light', color, disabled = false, className, style, ...rest }) {
+  return React.createElement('input', Object.assign({}, rest, {
+    type: 'range',
+    min, max, step, value, disabled,
+    onChange: (ev) => onChange && onChange(Number(ev.target.value), ev),
+    className: ['slider', tone === 'dark' ? 'slider-dark' : '', className].filter(Boolean).join(' '),
+    style: Object.assign({}, color ? { '--slider-fill': color } : null, style),
   }));
 }
 
@@ -172,4 +254,4 @@ function SegmentedChoice({ value, options, onChange, label }) {
     }));
 }
 
-module.exports = { SettingRow, Select, TextField, SecretField, Switch, RadioGroup, SegmentedChoice, FIELD_CLASS: FIELD };
+module.exports = { SettingRow, Select, TextField, SecretField, Switch, Checkbox, Slider, RadioGroup, SegmentedChoice, fieldClassName, FIELD_CLASS: FIELD };

@@ -49,7 +49,7 @@ const METRICS = {
   svgPaths: 'Hand-written <path> elements. Use the shared icon set (components/icons.js) for a glyph, the brand logo kit (components/brand-logos.js) for a logo.',
   offScaleFontSizes: 'Inline font sizes off the type scale (11, 12, 13, 14, 16, 20, 24, 28, 48px).',
   offScaleRadii: 'Inline border radii off the radius scale (4, 6, 8, 10, 12, 16px, full).',
-  jsHover: 'onMouseEnter handlers that change style (hover styling done in JS). Use CSS :hover / Tailwind hover: classes.',
+  jsHover: 'onMouseEnter / onFocus handlers that change style (hover or focus styling done in JS). Use CSS :hover / Tailwind hover: classes, and the shared fields\' focus-visible ring.',
   roleButtonDivs: 'div/span/li… with role="button" (lib/activate-on-key.js, a stopgap). Use a <button>, or CardButton for a card or row that holds buttons.',
 
   // Copies: a hand-built version of something a shared component already
@@ -64,6 +64,7 @@ const METRICS = {
   filterPillCopies: 'Hand-built pill buttons (rounded-full px-3 py-1…). Use FilterChips.',
   heroCopies: 'Hand-built page heroes (a 320px block collapsing to 80px). Use PageHero (components/page-hero.js); the artist page\'s photo hero is the one other design.',
   stickyBarCopies: 'Hand-built sticky bars (sticky top-0 classes). Use StickyBar (components/filter-box.js).',
+  inputCopies: 'Raw <input> / <select> / <textarea> elements. Use TextField, Select, Checkbox, Slider, Switch or RadioGroup (components/fields.js).',
   handBuiltButtons: 'Buttons and links styled as buttons by hand (their own padding plus a fill, border or radius, in classes or inline style). Use Button / buttonClassName (components/button.js), or the shared component for that control.',
 };
 
@@ -77,6 +78,8 @@ const COPY_HOMES = {
   filterPillCopies: ['components/filter-chips.js'],
   stickyBarCopies: ['components/filter-box.js'],
   heroCopies: ['components/page-hero.js'],
+  // The field components, and FilterBox's own borderless input inside its pill.
+  inputCopies: ['components/fields.js', 'components/filter-box.js'],
   // The canonical colour data: each page's colour (CLAUDE.md "A page's colour
   // comes from PAGE_COLORS"), the artist stand-in art's palettes, and the
   // brands' own colours in their logos, and each release type's colour
@@ -169,6 +172,7 @@ function scanSource(src) {
         const props = node.arguments[1] && node.arguments[1].type === 'ObjectExpression' ? node.arguments[1].properties : [];
         const keys = props.map(propKey);
         if (tag === 'path') counts.svgPaths += 1;
+        if (tag === 'input' || tag === 'select' || tag === 'textarea') counts.inputCopies += 1;
         const cls = props.find((p) => propKey(p) === 'className');
         const classText = cls && cls.value ? src.slice(cls.value.start, cls.value.end) : '';
         if (/\banimate-spin\b|\bborder-t-transparent\b/.test(classText)) counts.spinnerCopies += 1;
@@ -203,8 +207,12 @@ function scanSource(src) {
         if (NON_INTERACTIVE.has(tag) && roleProp && roleProp.value && roleProp.value.value === 'button') counts.roleButtonDivs += 1;
         // Hover styling only: a handler that prefetches or shows a tooltip
         // on enter is behaviour, not drift.
-        const enter = props.find((p) => propKey(p) === 'onMouseEnter');
-        if (enter && enter.value && /\.style\b/.test(src.slice(enter.value.start, enter.value.end))) counts.jsHover += 1;
+        // Focus styling in JS too: a field's focus look is the shared
+        // focus-visible ring (components/fields.js).
+        for (const handler of ['onMouseEnter', 'onFocus']) {
+          const h = props.find((p) => propKey(p) === handler);
+          if (h && h.value && /\.style\b/.test(src.slice(h.value.start, h.value.end))) counts.jsHover += 1;
+        }
       }
     }
 
