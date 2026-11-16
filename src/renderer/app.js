@@ -3671,6 +3671,7 @@ const Parachord = () => {
   const [artistConcerts, setArtistConcerts] = useState([]);
   const [artistConcertsLoading, setArtistConcertsLoading] = useState(false);
   const [artistConcertsLoaded, setArtistConcertsLoaded] = useState(false);
+  const artistConcertsAskedEarlyRef = useRef(null); // the artist whose concerts were asked for before a concert plug-in was ready
   const artistConcertsCache = useRef({}); // { normalizedArtistName: { events: [], timestamp } }
   const [currentRelease, setCurrentRelease] = useState(null); // Release/Album page data
   // The release on screen now, for timers and async callbacks (the album
@@ -28101,10 +28102,16 @@ Return ONLY the JSON array, no other text.`;
 
     const concertServices = getConcertServices();
     if (concertServices.length === 0) {
+      // No concert plug-in, or none ready yet: a restored artist page asks
+      // before the plug-ins and their settings load. Remember who asked, so
+      // the effect below asks again once a concert plug-in is ready.
+      // Not an answer, so not "loaded": an open On Tour keeps its tab and
+      // skeleton until the real one.
+      artistConcertsAskedEarlyRef.current = normalizedName;
       setArtistConcerts([]);
-      setArtistConcertsLoaded(true);
       return;
     }
+    artistConcertsAskedEarlyRef.current = null;
 
     setArtistConcertsLoading(true);
     console.log(`🎸 Loading concerts for ${artistName} from ${concertServices.length} service(s)...`);
@@ -28210,6 +28217,25 @@ Return ONLY the JSON array, no other text.`;
       setArtistConcertsLoading(false);
     }
   };
+
+  // An artist's concerts asked for before a concert plug-in was ready (a
+  // restored artist page) read as none; ask again once one is. And On Tour
+  // never shows an artist with no upcoming concerts: once the answer is none,
+  // the page goes back to Music.
+  const concertServiceCount = useMemo(() => getConcertServices().length, [loadedResolvers, metaServiceConfigs]);
+  useEffect(() => {
+    const name = currentArtist?.name;
+    if (!name || concertServiceCount === 0) return;
+    if (artistConcertsAskedEarlyRef.current === name.trim().toLowerCase()) {
+      artistConcertsAskedEarlyRef.current = null;
+      loadArtistConcerts(name);
+    }
+  }, [concertServiceCount, currentArtist?.name]);
+  useEffect(() => {
+    if (artistPageTab === 'on-tour' && artistConcertsLoaded && !artistConcertsLoading && artistConcerts.length === 0) {
+      setArtistPageTab('music');
+    }
+  }, [artistPageTab, artistConcertsLoaded, artistConcertsLoading, artistConcerts.length]);
 
   // Handle scroll for Concerts header collapse
   const handleConcertsScroll = (e) => {

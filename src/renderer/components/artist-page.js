@@ -279,7 +279,9 @@ const ArtistPage = React.memo(function ArtistPage(props) {
               style: { textShadow: '0 2px 12px rgba(0,0,0,0.8), 0 0 20px rgba(0,0,0,0.4)' }
             },
               (() => {
-                const showOnTour = (artistConcertsLoaded && artistConcerts.length > 0) || artistPageTab === 'on-tour';
+                // On Tour only for an artist with upcoming concerts; while they load, an
+                // open On Tour (a deep link, a restored page) keeps its tab.
+                const showOnTour = artistConcerts.length > 0 || (artistPageTab === 'on-tour' && !artistConcertsLoaded);
                 return ['music', 'biography', 'related', 'on-tour'].map((tab, index) => {
                   const isOnTour = tab === 'on-tour';
                   const hidden = isOnTour && !showOnTour;
@@ -432,7 +434,9 @@ const ArtistPage = React.memo(function ArtistPage(props) {
               style: { textShadow: '0 2px 12px rgba(0,0,0,0.8), 0 0 20px rgba(0,0,0,0.4)' }
             },
               (() => {
-                const showOnTour = (artistConcertsLoaded && artistConcerts.length > 0) || artistPageTab === 'on-tour';
+                // On Tour only for an artist with upcoming concerts; while they load, an
+                // open On Tour (a deep link, a restored page) keeps its tab.
+                const showOnTour = artistConcerts.length > 0 || (artistPageTab === 'on-tour' && !artistConcertsLoaded);
                 return ['music', 'biography', 'related', 'on-tour'].map((tab, index) => {
                   const isOnTour = tab === 'on-tour';
                   const hidden = isOnTour && !showOnTour;
@@ -549,7 +553,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
               className: 'flex items-center gap-1',
               style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
             },
-              React.createElement(HeroTabs, { items: ['music', 'biography', 'related', ...((artistConcertsLoaded && artistConcerts.length > 0) || artistPageTab === 'on-tour' ? ['on-tour'] : [])], isSelected: (tab) => tab === 'music', onSelect: async (tab) => {
+              React.createElement(HeroTabs, { items: ['music', 'biography', 'related', ...(artistConcerts.length > 0 || (artistPageTab === 'on-tour' && !artistConcertsLoaded) ? ['on-tour'] : [])], isSelected: (tab) => tab === 'music', onSelect: async (tab) => {
                     // Go back to artist page and switch to the selected tab
                     const artistName = currentRelease?.artist?.name || currentArtist?.name;
                     setCurrentRelease(null);
@@ -1623,7 +1627,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                 React.createElement(SectionHeader, {
                   title: React.createElement(React.Fragment, null,
                     // No count until there's one to give (it read "0 upcoming concerts" while loading).
-                    events.length === 0 && artistConcertsLoading ? 'Upcoming concerts' : countOf(events.length, 'upcoming concert'),
+                    events.length === 0 ? 'Upcoming concerts' : countOf(events.length, 'upcoming concert'),
                     artistConcertsLoading && React.createElement(Icons.Spinner, { className: 'w-4 h-4', style: { display: 'inline-block', verticalAlign: 'middle', marginLeft: '12px', color: concertsColor } })),
                   style: { marginBottom: 0, alignItems: 'center', width: '100%' },
                   extra: React.createElement(Button, {
@@ -1638,13 +1642,10 @@ const ArtistPage = React.memo(function ArtistPage(props) {
               ),
               React.createElement('div', { className: 'p-6' },
 
-              // Empty state
-              events.length === 0 && !artistConcertsLoading && React.createElement(EmptyState, {
-                icon: Icons.Ticket, title: 'No upcoming concerts', body: 'Nothing announced yet. Check back later.'
-              }),
-
-              // Loading: the On tour row's skeleton (components/concert-skeletons.js).
-              events.length === 0 && artistConcertsLoading && React.createElement(ConcertListSkeleton, { count: 4 }),
+              // No empty state: On Tour never shows with no concerts (the page
+              // goes back to Music). Until they arrive, the On tour row's
+              // skeleton (components/concert-skeletons.js).
+              events.length === 0 && (artistConcertsLoading || !artistConcertsLoaded) && React.createElement(ConcertListSkeleton, { count: 4 }),
 
               // Month-grouped event list
               sortedMonths.map(monthKey =>

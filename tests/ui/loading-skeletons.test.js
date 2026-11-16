@@ -617,8 +617,8 @@ describe('concert list skeletons match their rows (components/concert-skeletons.
     expect(artist).toContain("className: 'flex items-center gap-4 p-4 rounded-xl border cursor-default group bg-surface-card border-line-light'");
     expect(artist).toMatch(/style: \{ minWidth: '56px' \}/);
     expect(skel).toContain("style: { minWidth: '56px' } }, e(DateBars)");
-    expect(artist).toContain('React.createElement(ConcertListSkeleton, { count: 4 })');
+    expect(artist).toContain("events.length === 0 && (artistConcertsLoading || !artistConcertsLoaded) && React.createElement(ConcertListSkeleton, { count: 4 })");
     expect(artist).not.toContain("'Loading concerts…'");
-    expect(artist).toContain("events.length === 0 && artistConcertsLoading ? 'Upcoming concerts' : countOf(events.length, 'upcoming concert')");
+    expect(artist).toContain("events.length === 0 ? 'Upcoming concerts' : countOf(events.length, 'upcoming concert')");
   });
 });

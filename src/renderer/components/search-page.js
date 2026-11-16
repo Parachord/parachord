@@ -522,7 +522,7 @@ const SearchPage = React.memo(function SearchPage(props) {
               style: {
                 caretColor: 'var(--text-tertiary)',
                 fontFamily: 'var(--font-sans)'
-              }, 'aria-label': ''
+              }, 'aria-label': 'Search'
             })
           ),
 
