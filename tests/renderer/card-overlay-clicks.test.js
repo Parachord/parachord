@@ -88,7 +88,7 @@ test('every artist grid uses ArtistCard: Play on hover, queue in the artist menu
   const app = require('../helpers/renderer-source').appWithPages(); // app.js and the pages moved out of it (#1451)
   expect(main).toMatch(/label: 'Add Top 10 to Queue',[\s\S]{0,200}action: 'queue-artist-top-tracks'/);
   expect(app).toMatch(/data\.action === 'queue-artist-top-tracks' && data\.artist\?\.name/);
-  const uses = { 'src/renderer/app.js': 1, 'src/renderer/components/history-page.js': 1, 'src/renderer/components/recommendations-page.js': 1, 'src/renderer/components/search-page.js': 2, 'src/renderer/components/collection-page.js': 1, 'src/renderer/components/artist-page.js': 1 };
+  const uses = { 'src/renderer/components/friend-history-page.js': 1, 'src/renderer/components/history-page.js': 1, 'src/renderer/components/recommendations-page.js': 1, 'src/renderer/components/search-page.js': 2, 'src/renderer/components/collection-page.js': 1, 'src/renderer/components/artist-page.js': 1 };
   for (const [file, n] of Object.entries(uses)) {
     const src = read(file);
     expect([file, (src.match(/React\.createElement\(ArtistCard, \{/g) || []).length]).toEqual([file, n]);

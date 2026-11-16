@@ -28,6 +28,7 @@ const { ConcertsPage, CONCERTS_PAGE_HANDLERS } = require('../../src/renderer/com
 const { ChartsPage, CHARTS_PAGE_HANDLERS } = require('../../src/renderer/components/charts-page');
 const { CriticsPicksPage, CRITICS_PICKS_PAGE_HANDLERS } = require('../../src/renderer/components/critics-picks-page');
 const { HistoryPage, HISTORY_PAGE_HANDLERS } = require('../../src/renderer/components/history-page');
+const { FriendHistoryPage, FRIEND_HISTORY_PAGE_HANDLERS } = require('../../src/renderer/components/friend-history-page');
 const { useStableHandlers } = require('../../src/renderer/lib/stable-handlers');
 
 const PAGES = [
@@ -42,6 +43,7 @@ const PAGES = [
   { component: 'ChartsPage', file: 'charts-page.js', handlersVar: 'chartsPageHandlers', handlers: CHARTS_PAGE_HANDLERS, memo: ChartsPage },
   { component: 'CriticsPicksPage', file: 'critics-picks-page.js', handlersVar: 'criticsPicksPageHandlers', handlers: CRITICS_PICKS_PAGE_HANDLERS, memo: CriticsPicksPage },
   { component: 'HistoryPage', file: 'history-page.js', handlersVar: 'historyPageHandlers', handlers: HISTORY_PAGE_HANDLERS, memo: HistoryPage },
+  { component: 'FriendHistoryPage', file: 'friend-history-page.js', handlersVar: 'friendHistoryPageHandlers', handlers: FRIEND_HISTORY_PAGE_HANDLERS, memo: FriendHistoryPage },
 ];
 
 describe.each(PAGES)('$component', ({ memo }) => {

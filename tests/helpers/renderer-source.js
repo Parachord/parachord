@@ -14,6 +14,7 @@ const PAGE_MODULES = [
   'components/charts-page.js',
   'components/critics-picks-page.js',
   'components/history-page.js',
+  'components/friend-history-page.js',
 ];
 
 function read(rel) {

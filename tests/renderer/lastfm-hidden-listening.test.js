@@ -27,7 +27,7 @@ describe('isLastfmHiddenListening', () => {
   });
 });
 
-const src = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+const src = require('../helpers/renderer-source').appWithPages() /* app.js and the pages moved out of it (#1451) */;
 const collectionPage = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/collection-page.js'), 'utf8');
 
 const body = (startMarker, endMarker) => {

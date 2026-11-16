@@ -112,7 +112,8 @@ describe('call sites', () => {
 
   // app.js's lists are the shared TrackRow (track-lists.js), whose duration
   // column is the helper; a list asks for it with `duration: true`.
-  test.each(['app.js', 'components/playlist-view-page.js', 'components/collection-page.js', 'components/search-page.js', 'components/cards.js'])('%s lists use the shared row for durations', (rel) => {
+  // app.js's lists moved out with their pages (#1451).
+  test.each(['components/history-page.js', 'components/friend-history-page.js', 'components/charts-page.js', 'components/recommendations-page.js', 'components/playlist-view-page.js', 'components/collection-page.js', 'components/search-page.js', 'components/cards.js'])('%s lists use the shared row for durations', (rel) => {
     const src = read(rel);
     expect(src).not.toMatch(/formatTime\(track\.duration/);
     expect(src).not.toMatch(/formatDuration\(track\.length\)/);
