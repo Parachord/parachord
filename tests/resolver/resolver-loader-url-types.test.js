@@ -62,7 +62,12 @@ const CASES = [
   // pattern.
   ['amazonmusic', 'https://music.amazon.com/albums/B07558DQJL?ref=dm_sh&trackAsin=B0H7NZ97KH', 'track'],
   ['amazonmusic', 'https://music.amazon.com/albums/B07558DQJL?ref=dm_sh', 'album'],
-  ['amazonmusic', 'https://music.amazon.com/tracks/B000SNWG5Q', 'track'],
+  // A /tracks/<ASIN> URL never routes (no urlPatterns entry — the plugin
+  // resolves tracks by search, not by ASIN path), so no caller can reach it:
+  // the old arm's '/tracks/' substring answer was an unreachable guess, and
+  // under the routed-resolver scoping the honest answer is 'unknown' — the
+  // manifest carries no /tracks/ typed pattern for a URL it cannot route.
+  ['amazonmusic', 'https://music.amazon.com/tracks/B000SNWG5Q', 'unknown'],
   ['amazonmusic', 'https://music.amazon.com/playlists/PP6417A00A9C99470BBC8834FF3BF6009A', 'playlist'],
   ['amazonmusic', 'https://music.amazon.com/my/playlists/PP6417A00A9C99470BBC8834FF3BF6009A?ref=dm_sh', 'playlist'],
   // /user-playlists/<id> does NOT contain the literal /playlists/ substring —
@@ -80,6 +85,11 @@ const CASES = [
   ['soundcloud', 'https://soundcloud.com/jherskowitz/sets/frozen-in-time-2026', 'playlist'],
   ['soundcloud', 'https://soundcloud.com/jherskowitz/night-heron', 'track'],
   ['soundcloud', 'https://m.soundcloud.com/jherskowitz/sets/frozen-in-time-2026', 'playlist'],
+  // The on.soundcloud.com share links are short links to a TRACK (the
+  // `*.soundcloud.com/*` artist pattern would otherwise claim the one
+  // segment) — the pattern sits in the track group, before the artist
+  // patterns (#1441 review, note 3).
+  ['soundcloud', 'https://on.soundcloud.com/4uLU6hMCjMI7', 'track'],
   // ListenBrainz.
   ['listenbrainz', 'https://listenbrainz.org/playlist/abc-123', 'playlist'],
   ['listenbrainz', 'https://listenbrainz.org/playlist/abc-123/', 'playlist'],
@@ -120,6 +130,44 @@ describe('getUrlType (the urlTypes manifest data)', () => {
     expect(loader.getUrlType('https://sometype.example/track/abc')).toBe('unknown');
   });
 
+  test('only the ROUTED resolver\'s typed patterns classify (the scoping of #1441 review, note 2)', () => {
+    // getUrlType resolves the routing resolver first (findResolverForUrl —
+    // the urlPatterns), then matches only THAT resolver\'s typed patterns: a
+    // broad typed pattern in a plugin loaded EARLIER can never classify
+    // another service\'s URLs, so the type can never disagree with the
+    // routing. Broad here on purpose: `*.example/track/*` matches the URL
+    // the second resolver routes and types.
+    const loader = new ResolverLoader();
+    loader.loadResolver({
+      manifest: { id: 'broad', name: 'Broad', version: '1.0.0' },
+      capabilities: {},
+      urlPatterns: ['broad.example/*'],
+      urlTypes: { track: ['*.example/track/*'] },
+    }); // async; the pattern registrations happen synchronously inside
+    loader.loadResolver({
+      manifest: { id: 'narrow', name: 'Narrow', version: '1.0.0' },
+      capabilities: {},
+      urlPatterns: ['narrow.example/track/*'],
+      urlTypes: { album: ['narrow.example/track/*'] },
+    });
+    // A URL routed to `narrow`: broad's earlier-registered track pattern
+    // matches it too, but the scoping means only narrow's own patterns —
+    // which type it album — decide.
+    expect(loader.findResolverForUrl('https://narrow.example/track/abc')).toBe('narrow');
+    expect(loader.getUrlType('https://narrow.example/track/abc')).toBe('album');
+    // And a resolver whose URL routes but whose typed patterns miss is
+    // unknown, never the other plugin's answer.
+    loader.loadResolver({
+      manifest: { id: 'untyped', name: 'Untyped', version: '1.0.0' },
+      capabilities: {},
+      urlPatterns: ['untyped.example/track/*'],
+    });
+    expect(loader.findResolverForUrl('https://untyped.example/track/abc')).toBe('untyped');
+    expect(loader.getUrlType('https://untyped.example/track/abc')).toBe('unknown');
+    // broad's own URLs still classify by broad's patterns.
+    expect(loader.getUrlType('https://broad.example/track/abc')).toBe('track');
+  });
+
   test('first match wins in the manifest\'s own key order (most-specific first)', () => {
     // A synthetic declaration with overlapping patterns: the track pattern is
     // more specific than the album one, so the manifest lists "track" first —
@@ -128,6 +176,9 @@ describe('getUrlType (the urlTypes manifest data)', () => {
     loader.loadResolver({
       manifest: { id: 'ordered', name: 'Ordered', version: '1.0.0' },
       capabilities: {},
+      // urlPatterns route the URL to this resolver — getUrlType classifies
+      // only the routed resolver's own typed patterns.
+      urlPatterns: ['ordered.example/*'],
       urlTypes: {
         track: ['ordered.example/album/*?track=*'],
         album: ['ordered.example/album/*'],
@@ -141,6 +192,7 @@ describe('getUrlType (the urlTypes manifest data)', () => {
     reversed.loadResolver({
       manifest: { id: 'reversed', name: 'Reversed', version: '1.0.0' },
       capabilities: {},
+      urlPatterns: ['reversed.example/*'],
       urlTypes: {
         album: ['reversed.example/album/*'],
         track: ['reversed.example/album/*?track=*'],

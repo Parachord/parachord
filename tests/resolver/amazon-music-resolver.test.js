@@ -62,11 +62,14 @@ describe('amazonmusic .axe structure', () => {
     // URL as, manifest data since the per-service arms died. "track" first —
     // the ?trackAsin= song share link must beat the bare album pattern, in
     // BOTH query positions (leading, and after other params like ref=dm_sh&).
+    // No /tracks/* pattern: the URL never routes (no urlPatterns entry), so
+    // under the routed-resolver scoping (#1441 review, note 2) it could only
+    // ever answer 'unknown' — the plugin resolves tracks by search, never by
+    // ASIN path.
     expect(axe.urlTypes).toEqual({
       track: [
         'music.amazon.com/albums/*?trackAsin=*',
-        'music.amazon.com/albums/*?*trackAsin=*',
-        'music.amazon.com/tracks/*'
+        'music.amazon.com/albums/*?*trackAsin=*'
       ],
       album: ['music.amazon.com/albums/*'],
       playlist: [
@@ -872,8 +875,12 @@ describe('playlist URL routing', () => {
 
   test('track pages do not match the playlist or album patterns (the resolver has no lookupUrl)', () => {
     const l = loader();
+    // A /tracks/<ASIN> URL never routes (no urlPatterns entry), so under the
+    // routed-resolver scoping (#1441 review, note 2) it answers 'unknown' —
+    // the old arm's '/tracks/' substring answer was a guess no caller could
+    // reach (they all check for a resolver first).
     expect(l.findResolverForUrl('https://music.amazon.com/tracks/B000SNWG5Q')).toBeNull();
-    expect(l.getUrlType('https://music.amazon.com/tracks/B000SNWG5Q')).toBe('track');
+    expect(l.getUrlType('https://music.amazon.com/tracks/B000SNWG5Q')).toBe('unknown');
   });
 });
 

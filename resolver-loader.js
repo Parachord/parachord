@@ -11,7 +11,8 @@ class ResolverLoader {
     // TYPED patterns ("urlTypes" in a manifest): { pattern: string, type:
     // 'track'|'album'|'playlist'|'artist', resolverId: string }, flattened in
     // registration order (the manifest's own key order — most-specific first)
-    // and matched by getUrlType first-match-wins over matchUrlPattern.
+    // and matched by getUrlType first-match-wins over matchUrlPattern — scoped
+    // by getUrlType to the resolver findResolverForUrl routes the URL to.
     this.urlTypedPatterns = [];
   }
 
@@ -795,32 +796,39 @@ class ResolverLoader {
   /**
    * Detect URL type (track, album, playlist, or artist) — MANIFEST DATA
    * (#1356 M11): a plugin's "urlTypes" declaration (see loadResolver), the
-   * per-service arms this method used to hardcode. First-match-wins over the
-   * registered typed patterns in registration order — a manifest lists its
-   * most-specific patterns first (Amazon's `albums/*?trackAsin=*` before
-   * `albums/*`; YouTube's `watch?v=*&list=*` before `watch?v=*`; SoundCloud's
-   * sets pattern before its two-segment track pattern before its one-segment
-   * artist pattern). The pattern language is matchUrlPattern's glob: a
-   * pattern containing `?` matches the query string, which is how the
-   * query-param cases are expressed — Apple's
-   * `?i=` and Amazon's `?trackAsin=` (one track of the album, never the
-   * album) and YouTube's `&list=` (a video in a playlist). A URL whose
-   * resolver declares no typed patterns (or matches none of them) is
-   * 'unknown'. Note the glob's exactness bounds, inherited from urlPatterns:
-   * a query-param pattern matches the param in the position the pattern
-   * spells — a service whose share links put the param after other params
-   * declares each position its own pattern (Amazon carries both
-   * `albums/*?trackAsin=*` and `albums/*?*trackAsin=`, the
-   * `?ref=dm_sh&trackAsin=` song-share shape, both listed before its album
-   * pattern) — and the host must be spelled as the pattern spells it (no
-   * implicit www./m. aliases — urlPatterns routing never accepted those
-   * either, so a host-shape typed miss is a URL no resolver was found for
-   * in the first place).
+   * per-service arms this method used to hardcode. SCOPED TO THE ROUTED
+   * RESOLVER (#1441 review, note 2): findResolverForUrl(url) picks the
+   * resolver first, then only THAT resolver's typed patterns classify — the
+   * type can never disagree with the routing (a broad typed pattern in a
+   * plugin loaded earlier classifies only its own resolver's URLs). Within
+   * the routed resolver, first-match-wins over its registered patterns in
+   * registration order — a manifest lists its most-specific patterns first
+   * (Amazon's `albums/*?trackAsin=*` before `albums/*`; YouTube's
+   * `watch?v=*&list=*` before `watch?v=*`; SoundCloud's sets pattern before
+   * its two-segment track pattern before its one-segment artist pattern).
+   * The pattern language is matchUrlPattern's glob: a pattern containing `?`
+   * matches the query string, which is how the query-param cases are
+   * expressed — Apple's `?i=` and Amazon's `?trackAsin=` (one track of the
+   * album, never the album) and YouTube's `&list=` (a video in a playlist).
+   * A URL no resolver routes, or one whose resolver declares no typed
+   * patterns (or matches none of them), is 'unknown'. Note the glob's
+   * exactness bounds, inherited from urlPatterns: a query-param pattern
+   * matches the param in the position the pattern spells — a service whose
+   * share links put the param after other params declares each position its
+   * own pattern (Amazon carries both `albums/*?trackAsin=*` and
+   * `albums/*?*trackAsin=`, the `?ref=dm_sh&trackAsin=` song-share shape,
+   * both listed before its album pattern) — and the host must be spelled as
+   * the pattern spells it (no implicit www./m. aliases — urlPatterns routing
+   * never accepted those either, so a host-shape typed miss is a URL no
+   * resolver was found for in the first place).
    * @param {string} url - The URL to analyze
    * @returns {string} - 'track', 'album', 'playlist', 'artist', or 'unknown'
    */
   getUrlType(url) {
-    for (const { pattern, type } of this.urlTypedPatterns) {
+    const routedTo = this.findResolverForUrl(url);
+    if (!routedTo) return 'unknown';
+    for (const { pattern, type, resolverId } of this.urlTypedPatterns) {
+      if (resolverId !== routedTo) continue;
       if (this.matchUrlPattern(url, pattern)) return type;
     }
     return 'unknown';

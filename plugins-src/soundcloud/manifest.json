@@ -36,6 +36,7 @@
       "*.soundcloud.com/*/sets/*"
     ],
     "track": [
+      "on.soundcloud.com/*",
       "soundcloud.com/*/*",
       "*.soundcloud.com/*/*"
     ],
