@@ -231,7 +231,9 @@ Components use `React.createElement()` (no JSX) and live in `src/renderer/compon
 | A button | `Button` | `button.js` | `variant`: primary (one per view), secondary, destructive, text, icon (needs `aria-label`); `size` sm/md; `busy`; `tone: 'dark'` on the always-dark surfaces; `pageColor` for a hero's fill |
 | A page or drawer header's Close / Edit / Save / Cancel | `HeaderControl` | `header-control.js` | The shared `Button`, small and sentence case; `close` is an icon-only ✕ with its label as name and tooltip; tones default / primary / dark |
 | A dialog | `Modal` | `modal.js` | Focus moves in and comes back, Escape and the scrim close it, one title size and three widths. `ConfirmModal` for confirm/cancel (the confirm button named for its action, `destructive` for red); `DontShowAgain` for the checkbox |
+| A panel that slides out beside the sidebar (Add to playlist) | `SidePanel` | `modal.js` | `Modal`'s focus handling and labelling; Escape goes to an inner field first; its scrim can leave the sidebar uncovered |
 | A success, info or error message | `showToast(message, type, action, options)` | `toast.js` (`ToastRegion`) | Success is a toast, never a dialog |
+| A menu at the pointer whose actions run in the page (the header's Copy link) | `ContextMenu` | `menu.js` | `Menu`'s panel, keys and look at `{ x, y }`, kept inside the window |
 | A menu (right-click or "More") | `Menu`, items from `lib/item-menus.js` | `menu.js` | Portalled, keyboard and typeahead, flips up near the bottom; the dark 12px look. An item's `toggle` puts an on/off switch (a `menuitemcheckbox`) beside it |
 | A sort control | `SortMenu` | `sort-menu.js` | |
 | A clickable card or row | `CardButton` | `card-button.js` | A stretched `<button>` under the card; inner buttons sit above it; `onContextMenu` also opens on Shift+F10 / the Menu key; `tooltip` for a whole-card note. Use the cards and `TrackRow` below first; `CardButton` is what they are built on |
@@ -596,6 +598,7 @@ All scrollbars use rounded thumbs (`border-radius: 10px` or `3px`) with transpar
 
 - **Keyboard focus:** `:focus-visible` shows a `2px solid var(--accent-primary)` outline with `2px` offset
 - **Mouse focus:** `:focus:not(:focus-visible)` suppresses the outline
+- **After a click, no ring at all:** `lib/input-modality.js` sets `<html data-input="pointer">` on pointer down and `"keyboard"` on a key (a modifier alone doesn't count); `html[data-input="pointer"] :focus-visible` drops the outline, Tailwind's ring and the menu items' inset. Chromium matches `:focus-visible` when code moves focus after a click on something that can't hold it (a right-click menu, a dialog, the Add to playlist panel), which lit the ring for mouse users. A text field keeps its accent border
 - **Filter pill focus:** `.filter-pill:focus-within` highlights the outer border, suppressing inner input outline
 - **Text selection:** `.no-select` disables user selection in non-editable areas
 - **Window dragging:** `.drag` / `.no-drag` control Electron's window drag regions
