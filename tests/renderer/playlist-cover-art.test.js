@@ -31,7 +31,7 @@ const { PlaylistViewPage } = require('../../src/renderer/components/playlist-vie
 
 const ROOT = path.join(__dirname, '..', '..');
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
-const app = read('src/renderer/app.js');
+const app = require('../helpers/renderer-source').appWithPages(); // app.js and the pages / panels moved out of it (#1451)
 const view = read('src/renderer/components/playlist-view-page.js');
 const home = read('src/renderer/components/home-page.js');
 

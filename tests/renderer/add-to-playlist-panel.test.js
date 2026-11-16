@@ -1,13 +1,19 @@
 /**
- * The Add to playlist panel (app.js) follows the dialog rules and the tokens
+ * The Add to playlist panel (components/add-to-playlist-panel.js, moved out
+ * of app.js in #1451) follows the dialog rules and the tokens
  * (2026-11-15 page pass).
  */
 const fs = require('fs');
 const path = require('path');
 
 const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
-const start = app.indexOf('addToPlaylistPanel.open && React.createElement(SidePanel, {');
-const panel = app.slice(start, start + 30000);
+const module_ = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/add-to-playlist-panel.js'), 'utf8');
+const start = module_.indexOf('React.createElement(SidePanel, {');
+const panel = module_.slice(start, start + 30000);
+
+test('app.js renders the memo\'d panel while it is open', () => {
+  expect(app).toContain('addToPlaylistPanel.open && React.createElement(AddToPlaylistPanel, {');
+});
 
 test('it is the shared SidePanel: focus goes in, is trapped and comes back, and Escape closes it', () => {
   expect(start).toBeGreaterThan(0);
