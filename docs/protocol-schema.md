@@ -362,7 +362,7 @@ parachord://artist/{name}/{tab?}
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `name` | Yes | Artist name |
-| `tab` | No | Tab to open: `music`, `biography`, `related`, `on-tour` (concert dates) |
+| `tab` | No | Tab to open: `music`, `biography`, `related`, `on-tour` (concert dates; an artist with no upcoming concerts opens on `music`, since On Tour only shows for one with concerts) |
 
 **Examples:**
 ```
