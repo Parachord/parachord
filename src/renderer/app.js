@@ -3911,6 +3911,15 @@ const Parachord = () => {
   const waitingForBrowserPlaybackRef = useRef(false); // True when we're waiting for browser to connect after opening external track
   const [settingsTab, setSettingsTab] = useState('plugins'); // 'plugins' | 'general' | 'about'
   const [themePref, setThemePref] = useState('system'); // 'light' | 'dark' | 'system'
+  // The window's size (main-process/ui-zoom.js, #1452): Settings' Size and
+  // the View menu's zoom steps; main applies and stores it.
+  const [uiZoom, setUiZoom] = useState(1);
+  useEffect(() => {
+    const api = window.electron?.ui;
+    if (!api) return undefined;
+    api.getZoom().then((z) => { if (z) setUiZoom(z); }).catch(() => {});
+    return api.onZoomChanged ? api.onZoomChanged((z) => setUiZoom(z)) : undefined;
+  }, []);
   // Resolved 'light' | 'dark'. Seeded from the class index.html set before the
   // first paint, so the first render never strips .dark (a light flash).
   const [effectiveTheme, setEffectiveTheme] = useState(() => (
@@ -41637,7 +41646,7 @@ React.createElement('div', {
               // Settings sections - refined
               React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '24px' } },
                 // Appearance Section
-                React.createElement(SettingsSection, { title: 'Appearance', description: 'Choose your preferred color theme' },
+                React.createElement(SettingsSection, { title: 'Appearance', description: 'Choose your color theme and how big things are' },
                   React.createElement(SegmentedChoice, {
                     label: 'Theme',
                     options: [
@@ -41647,7 +41656,21 @@ React.createElement('div', {
                     ],
                     value: themePref,
                     onChange: (v) => handleThemeChange(v)
-                  })),
+                  }),
+                  // The window's size: text, art and controls together
+                  // (main-process/ui-zoom.js). View › Zoom In / Out step it.
+                  React.createElement(SettingRow, { label: 'Size', hint: 'Makes text, art and controls bigger or smaller together. View › Zoom In and Zoom Out change it too.', style: { marginTop: '12px' } },
+                    React.createElement(Select, {
+                      value: String(uiZoom),
+                      onChange: (v) => { const z = Number(v); setUiZoom(z); window.electron?.ui?.setZoom(z); },
+                      options: [
+                        { value: '0.9', label: 'Small (90%)' },
+                        { value: '1', label: 'Default (100%)' },
+                        { value: '1.1', label: 'Large (110%)' },
+                        { value: '1.25', label: 'Larger (125%)' },
+                        { value: '1.5', label: 'Largest (150%)' }
+                      ]
+                    }))),
                 // Cache Management Section - refined card
                 React.createElement(SettingsSection, { title: 'Cache Management', description: 'Clear cached data to free up space or fix display issues' },
 React.createElement(SettingRow, { label: 'Clear cache', hint: 'Removes cached artist images, album art and service responses. Pages load more slowly until they’re fetched again.' },
