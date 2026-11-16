@@ -123,7 +123,7 @@ test('page scroll areas share one scroll edge: a shadow once content scrolls und
   expect(app).toMatch(/el\.style\.setProperty\('--edge-top', cs\.paddingTop\);/);
   expect(html).toMatch(/\.scroll-edge\[data-scrolled\]::before \{ box-shadow:/);
   expect(app).toMatch(/document\.addEventListener\('scroll', onScroll, \{ capture: true, passive: true \}\)/);
-  const uses = { 'src/renderer/app.js': 8, 'src/renderer/components/charts-page.js': 1, 'src/renderer/components/recommendations-page.js': 1, 'src/renderer/components/concerts-page.js': 1, 'src/renderer/components/artist-page.js': 1, 'src/renderer/components/collection-page.js': 1, 'src/renderer/components/home-page.js': 1, 'src/renderer/components/search-page.js': 1, 'src/renderer/components/playlist-view-page.js': 1 };
+  const uses = { 'src/renderer/app.js': 7, 'src/renderer/components/critics-picks-page.js': 1, 'src/renderer/components/charts-page.js': 1, 'src/renderer/components/recommendations-page.js': 1, 'src/renderer/components/concerts-page.js': 1, 'src/renderer/components/artist-page.js': 1, 'src/renderer/components/collection-page.js': 1, 'src/renderer/components/home-page.js': 1, 'src/renderer/components/search-page.js': 1, 'src/renderer/components/playlist-view-page.js': 1 };
   for (const [f, n] of Object.entries(uses)) {
     expect([f, (read(f).match(/scroll-edge[ ']/g) || []).length >= n]).toEqual([f, true]);
   }

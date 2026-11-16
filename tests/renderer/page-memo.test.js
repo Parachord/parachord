@@ -26,6 +26,7 @@ const { FreshDropsPage, FRESH_DROPS_PAGE_HANDLERS } = require('../../src/rendere
 const { RecommendationsPage, RECOMMENDATIONS_PAGE_HANDLERS } = require('../../src/renderer/components/recommendations-page');
 const { ConcertsPage, CONCERTS_PAGE_HANDLERS } = require('../../src/renderer/components/concerts-page');
 const { ChartsPage, CHARTS_PAGE_HANDLERS } = require('../../src/renderer/components/charts-page');
+const { CriticsPicksPage, CRITICS_PICKS_PAGE_HANDLERS } = require('../../src/renderer/components/critics-picks-page');
 const { useStableHandlers } = require('../../src/renderer/lib/stable-handlers');
 
 const PAGES = [
@@ -38,6 +39,7 @@ const PAGES = [
   { component: 'RecommendationsPage', file: 'recommendations-page.js', handlersVar: 'recommendationsPageHandlers', handlers: RECOMMENDATIONS_PAGE_HANDLERS, memo: RecommendationsPage },
   { component: 'ConcertsPage', file: 'concerts-page.js', handlersVar: 'concertsPageHandlers', handlers: CONCERTS_PAGE_HANDLERS, memo: ConcertsPage },
   { component: 'ChartsPage', file: 'charts-page.js', handlersVar: 'chartsPageHandlers', handlers: CHARTS_PAGE_HANDLERS, memo: ChartsPage },
+  { component: 'CriticsPicksPage', file: 'critics-picks-page.js', handlersVar: 'criticsPicksPageHandlers', handlers: CRITICS_PICKS_PAGE_HANDLERS, memo: CriticsPicksPage },
 ];
 
 describe.each(PAGES)('$component', ({ memo }) => {
