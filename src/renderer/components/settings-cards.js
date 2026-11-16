@@ -15,7 +15,7 @@ const { menuKeyHandler } = require('./card-button');
 // ResolverCard component - Tomahawk-style colored card with centered logo
 // Four user-facing states:
 //   1. Enabled (full color, checkmark, priority number)
-//   2. Enabled + needs setup (full color, checkmark, orange "!", "Setup required")
+//   2. Enabled + needs setup (checkmark, "Setup required" under the name)
 //   3. Not enabled (grayed, "Available")
 //   4. Installing (spinner overlay)
 // statusLabel (with statusTitle as its tooltip) replaces "Setup required" for
@@ -23,6 +23,9 @@ const { menuKeyHandler } = require('./card-button');
 // unplayable: enabled but left out of playback (a playback limit: Amazon
 // without Music Unlimited, Apple Music not signed in). Grayed like an
 // available card, keeping its checkmark and label.
+// An enabled card's problem shows one way, as the warning line under its
+// name ("Setup required" or the statusLabel); there was also an orange "!" on
+// the tile for setup alone, so Apple Music and Amazon read differently.
 const ResolverCard = React.memo(({
   resolver,
   isActive,
@@ -122,7 +125,7 @@ const ResolverCard = React.memo(({
           fontWeight: '600',
           color: hasUpdate ? 'var(--on-accent)' : 'var(--text-success)'
         },
-        title: hasUpdate ? 'Update available' : 'Enabled'
+        'data-tooltip': hasUpdate ? 'Update available' : 'Enabled'
       }, hasUpdate ? '↑' : React.createElement(Icons.Check, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } })),
       // Installing spinner
       isInstalling && React.createElement('div', {
@@ -133,24 +136,7 @@ const ResolverCard = React.memo(({
         }
       },
         React.createElement(Icons.Spinner, { className: 'text-white w-6 h-6' })
-      ),
-      // Needs configuration warning badge (bottom-right) - only for enabled resolvers
-      needsConfiguration && isEnabled && !isInstalling && React.createElement('div', {
-        className: 'absolute flex items-center justify-center',
-        style: {
-          bottom: '8px',
-          right: '8px',
-          width: '22px',
-          height: '22px',
-          backgroundColor: 'var(--warning)',
-          borderRadius: '6px',
-          fontSize: '12px',
-          fontWeight: '600',
-          color: 'var(--on-art-ink)',
-          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.2)'
-        },
-        title: 'Needs configuration'
-      }, '!')
+      )
     ),
     // Name below card
     React.createElement('span', {
@@ -173,7 +159,7 @@ const ResolverCard = React.memo(({
     // A limit the resolver is set up under (statusTitle explains it)
     !needsConfiguration && isEnabled && statusLabel && React.createElement('span', {
       style: { fontSize: '11px', fontWeight: '500', color: 'var(--text-warning)', marginTop: '2px' },
-      title: statusTitle || undefined
+      'data-tooltip': statusTitle || undefined
     }, statusLabel),
     // "Available" label - not enabled
     isAvailable && React.createElement('span', {

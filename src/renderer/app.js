@@ -2084,7 +2084,7 @@ const { ConcertListSkeleton } = require('./components/concert-skeletons');
 const { PlaylistCard } = require('./components/playlist-card');
 const { ListenerCard, LISTENER_HEXAGON } = require('./components/listener-card');
 const { Badge } = require('./components/badge');
-const { Button } = require('./components/button');
+const { Button, buttonClassName } = require('./components/button');
 const { HeaderControl } = require('./components/header-control');
 const { ToastRegion, NowPlayingAnnouncer } = require('./components/toast');
 const { SortMenu } = require('./components/sort-menu');
@@ -42673,41 +42673,24 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
             // end of the queue clears the track, and Previous brings it back
             // (#1319). The ref read is current here: handleNext pushes to the
             // history before the setCurrentTrack(null) that re-renders this.
-            React.createElement('button', {
-              'aria-label': 'Previous',
-              onClick: handlePrevious,
-              disabled: !currentTrack && playHistoryRef.current.length === 0,
-              className: 'p-2 rounded hover:bg-white/10 transition-colors',
-              style: { display: 'flex', alignItems: 'center', justifyContent: 'center', color: (!currentTrack && playHistoryRef.current.length === 0) ? 'var(--on-dark-disabled)' : 'var(--on-dark-primary)', cursor: (!currentTrack && playHistoryRef.current.length === 0) ? 'not-allowed' : 'pointer' }
-            }, React.createElement(SkipBack, { size: 18 }))
+            React.createElement(Button, { variant: 'icon', tone: 'dark', style: { color: (!currentTrack && playHistoryRef.current.length === 0) ? 'var(--on-dark-disabled)' : 'var(--on-dark-primary)' }, 'aria-label': 'Previous', onClick: handlePrevious, disabled: !currentTrack && playHistoryRef.current.length === 0 }, React.createElement(SkipBack, { size: 18 }))
           ),
           React.createElement(Tooltip, { content: isPlaying ? 'Pause' : (playStartPending({ currentTrack, isPlaying, trackLoading, loadingTrack, resumePending }) ? 'Starting…' : 'Play'), position: 'top', variant: 'dark' },
-            React.createElement('button', {
-              'aria-label': isPlaying ? 'Pause' : 'Play',
-              onClick: handlePlayPause,
-              disabled: !currentTrack,
-              className: 'p-2 rounded hover:bg-white/10 transition-colors',
-              style: { width: '38px', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: !currentTrack ? 'var(--on-dark-disabled)' : 'var(--on-dark-primary)', cursor: !currentTrack ? 'not-allowed' : 'pointer' }
-            }, isPlaying ? React.createElement(Pause, { size: 22 }) : React.createElement(Play, { size: 22 }))
+            React.createElement(Button, { variant: 'icon', tone: 'dark', style: { color: !currentTrack ? 'var(--on-dark-disabled)' : 'var(--on-dark-primary)' }, 'aria-label': isPlaying ? 'Pause' : 'Play', onClick: handlePlayPause, disabled: !currentTrack }, isPlaying ? React.createElement(Pause, { size: 22 }) : React.createElement(Play, { size: 22 }))
           ),
           React.createElement(Tooltip, { content: 'Next', position: 'top', variant: 'dark' },
-            React.createElement('button', {
-              'aria-label': 'Next',
-              onClick: () => handleNext(true),
-              disabled: !currentTrack,
-              className: 'p-2 rounded hover:bg-white/10 transition-colors',
-              style: { display: 'flex', alignItems: 'center', justifyContent: 'center', color: !currentTrack ? 'var(--on-dark-disabled)' : 'var(--on-dark-primary)', cursor: !currentTrack ? 'not-allowed' : 'pointer' }
-            }, React.createElement(SkipForward, { size: 18 }))
+            React.createElement(Button, { variant: 'icon', tone: 'dark', style: { color: !currentTrack ? 'var(--on-dark-disabled)' : 'var(--on-dark-primary)' }, 'aria-label': 'Next', onClick: () => handleNext(true), disabled: !currentTrack }, React.createElement(SkipForward, { size: 18 }))
           ),
           // Queue button (hamburger style)
           React.createElement(Tooltip, { content: listenAlongFriend ? `Queue (listening along with ${listenAlongFriend.displayName || listenAlongFriend.username})` : 'Queue', position: 'top', variant: 'dark' },
-            React.createElement('button', {
-              'aria-label': 'Queue',
+            // The shared dark icon button; open reads as pressed.
+            React.createElement(Button, {
+              variant: 'icon', size: 'sm', tone: 'dark',
+              'aria-label': 'Queue', 'aria-pressed': queueDrawerOpen ? 'true' : 'false',
               // Who decides what's next while listening along.
               'aria-description': listenAlongFriend ? `Listening along with ${listenAlongFriend.displayName || listenAlongFriend.username}` : undefined,
               onClick: () => setQueueDrawerOpen(!queueDrawerOpen),
-              className: `relative p-2 ml-1 rounded hover:bg-white/10 transition-colors ${queueDrawerOpen ? 'bg-white/20 text-white' : 'text-on-dark-secondary'} ${queueAnimating ? 'queue-pulse' : ''}`,
-              style: { display: 'flex', alignItems: 'center', justifyContent: 'center' }
+              className: `relative ml-1 ${queueDrawerOpen ? '!bg-white/20 !text-white' : ''} ${queueAnimating ? 'queue-pulse' : ''}`
             },
               // Listening along, your queue is on hold: only the icon dims,
               // never the friend's avatar beside it.
@@ -42776,18 +42759,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
               position: 'top',
               variant: 'dark'
             },
-              React.createElement('button', {
-                'aria-label': hasEnabledChat ? 'Shuffleupagus' : hasEnabledGenerate ? 'AI Playlist' : 'Enable AI in Settings',
-                onClick: handleClick,
-                disabled: !hasAnyAi,
-                className: 'p-2 ml-1 rounded transition-colors',
-                style: {
-                  color: isActive ? 'var(--playbar-accent-hover)' : hasAnyAi ? 'var(--on-dark-secondary)' : 'var(--on-dark-disabled)',
-                  backgroundColor: isActive ? 'rgba(168, 85, 247, 0.3)' : 'transparent',
-                  cursor: !hasAnyAi ? 'not-allowed' : 'pointer'
-                }
-              },
-                React.createElement('svg', {
+              React.createElement(Button, { variant: 'icon', size: 'sm', tone: 'dark', className: 'ml-1', style: { color: isActive ? 'var(--playbar-accent-hover)' : hasAnyAi ? 'var(--on-dark-secondary)' : 'var(--on-dark-disabled)', backgroundColor: isActive ? 'rgba(168, 85, 247, 0.3)' : undefined }, 'aria-label': hasEnabledChat ? 'Shuffleupagus' : hasEnabledGenerate ? 'AI Playlist' : 'Enable AI in Settings', onClick: handleClick, disabled: !hasAnyAi }, React.createElement('svg', {
                   className: 'w-4 h-4',
                   viewBox: '0 0 56 56',
                   fill: 'currentColor'
@@ -42796,8 +42768,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                   React.createElement('path', {
                     d: 'M 26.6875 12.6602 C 26.9687 12.6602 27.1094 12.4961 27.1797 12.2383 C 27.9062 8.3242 27.8594 8.2305 31.9375 7.4570 C 32.2187 7.4102 32.3828 7.2461 32.3828 6.9648 C 32.3828 6.6836 32.2187 6.5195 31.9375 6.4726 C 27.8828 5.6524 28.0000 5.5586 27.1797 1.6914 C 27.1094 1.4336 26.9687 1.2695 26.6875 1.2695 C 26.4062 1.2695 26.2656 1.4336 26.1953 1.6914 C 25.3750 5.5586 25.5156 5.6524 21.4375 6.4726 C 21.1797 6.5195 20.9922 6.6836 20.9922 6.9648 C 20.9922 7.2461 21.1797 7.4102 21.4375 7.4570 C 25.5156 8.2774 25.4687 8.3242 26.1953 12.2383 C 26.2656 12.4961 26.4062 12.6602 26.6875 12.6602 Z M 15.3438 28.7852 C 15.7891 28.7852 16.0938 28.5039 16.1406 28.0821 C 16.9844 21.8242 17.1953 21.8242 23.6641 20.5821 C 24.0860 20.5117 24.3906 20.2305 24.3906 19.7852 C 24.3906 19.3633 24.0860 19.0586 23.6641 18.9883 C 17.1953 18.0977 16.9609 17.8867 16.1406 11.5117 C 16.0938 11.0899 15.7891 10.7852 15.3438 10.7852 C 14.9219 10.7852 14.6172 11.0899 14.5703 11.5352 C 13.7969 17.8164 13.4687 17.7930 7.0469 18.9883 C 6.6250 19.0821 6.3203 19.3633 6.3203 19.7852 C 6.3203 20.2539 6.6250 20.5117 7.1406 20.5821 C 13.5156 21.6133 13.7969 21.7774 14.5703 28.0352 C 14.6172 28.5039 14.9219 28.7852 15.3438 28.7852 Z M 31.2344 54.7305 C 31.8438 54.7305 32.2891 54.2852 32.4062 53.6524 C 34.0703 40.8086 35.8750 38.8633 48.5781 37.4570 C 49.2344 37.3867 49.6797 36.8945 49.6797 36.2852 C 49.6797 35.6758 49.2344 35.2070 48.5781 35.1133 C 35.8750 33.7070 34.0703 31.7617 32.4062 18.9180 C 32.2891 18.2852 31.8438 17.8633 31.2344 17.8633 C 30.6250 17.8633 30.1797 18.2852 30.0860 18.9180 C 28.4219 31.7617 26.5938 33.7070 13.9140 35.1133 C 13.2344 35.2070 12.7891 35.6758 12.7891 36.2852 C 12.7891 36.8945 13.2344 37.3867 13.9140 37.4570 C 26.5703 39.1211 28.3281 40.8321 30.0860 53.6524 C 30.1797 54.2852 30.6250 54.7305 31.2344 54.7305 Z'
                   })
-                )
-              )
+                ))
             );
           })()
         ),
@@ -43248,26 +43219,15 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
             position: 'top',
             variant: 'dark'
           },
-            React.createElement('button', {
-              'aria-label': spinoffMode ? 'Exit spinoff mode' : 'Spinoff',
-              onClick: () => {
+            React.createElement(Button, { variant: 'icon', size: 'sm', tone: 'dark', style: { color: !currentTrack || spinoffAvailable === false ? 'var(--on-dark-disabled)' :
+                  spinoffLoading || spinoffAvailable === null ? 'var(--on-dark-secondary)' :
+                  spinoffMode ? 'var(--playbar-accent)' : 'var(--on-dark-secondary)' }, 'aria-label': spinoffMode ? 'Exit spinoff mode' : 'Spinoff', onClick: () => {
                 if (spinoffMode) {
                   exitSpinoff();
                 } else if (currentTrack && spinoffAvailable) {
                   startSpinoff(currentTrack);
                 }
-              },
-              disabled: !currentTrack || spinoffLoading || spinoffAvailable === false || spinoffAvailable === null,
-              className: 'p-1.5 rounded-full transition-colors',
-              style: {
-                color: !currentTrack || spinoffAvailable === false ? 'var(--on-dark-disabled)' :
-                  spinoffLoading || spinoffAvailable === null ? 'var(--on-dark-secondary)' :
-                  spinoffMode ? 'var(--playbar-accent)' : 'var(--on-dark-secondary)',
-                cursor: !currentTrack || spinoffAvailable === false ? 'not-allowed' : 'pointer',
-                opacity: !currentTrack || spinoffAvailable === false ? 0.5 : 1
-              }
-            },
-              spinoffLoading
+              }, disabled: !currentTrack || spinoffLoading || spinoffAvailable === false || spinoffAvailable === null }, spinoffLoading
                 ? React.createElement(Icons.Spinner, { className: 'w-5 h-5' })
                 : React.createElement('svg', {
                     className: 'w-5 h-5',
@@ -43278,8 +43238,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                     React.createElement('path', {
                       d: 'M26,18a3.9955,3.9955,0,0,0-3.858,3H18a3.0033,3.0033,0,0,1-3-3V14a4.9514,4.9514,0,0,0-1.0256-3H22.142a4,4,0,1,0,0-2H9.858a4,4,0,1,0,0,2H10a3.0033,3.0033,0,0,1,3,3v4a5.0059,5.0059,0,0,0,5,5h4.142A3.9935,3.9935,0,1,0,26,18ZM26,8a2,2,0,1,1-2,2A2.0023,2.0023,0,0,1,26,8ZM6,12a2,2,0,1,1,2-2A2.002,2.002,0,0,1,6,12ZM26,24a2,2,0,1,1,2-2A2.0027,2.0027,0,0,1,26,24Z'
                     })
-                  )
-            )
+                  ))
           ),
           // Heart/favorite button
           (() => {
@@ -43290,9 +43249,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
               position: 'top',
               variant: 'dark'
             },
-              React.createElement('button', {
-                'aria-label': isInCollection ? 'Remove from collection' : 'Save to collection',
-                onClick: () => {
+              React.createElement(Button, { variant: 'icon', size: 'sm', tone: 'dark', className: isInCollection ? '!text-on-dark-love hover:!text-on-dark-love-hover' : '', 'aria-label': isInCollection ? 'Remove from collection' : 'Save to collection', onClick: () => {
                   if (!isInCollection) {
                     // Get sources from trackSources state as fallback (keyed by track.id)
                     const stateSources = currentTrack.id ? trackSources[currentTrack.id] : undefined;
@@ -43308,11 +43265,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                     // Remove from collection (unheart)
                     removeTrackFromCollection(currentTrack);
                   }
-                },
-                className: `p-1.5 rounded-full transition-colors ${isInCollection ? 'text-on-dark-love hover:text-on-dark-love-hover' : 'text-on-dark-secondary hover:text-white'}`
-              },
-                React.createElement(Icons.Heart, { className: 'w-5 h-5', strokeWidth: isInCollection ? 0 : 2, fill: isInCollection ? 'currentColor' : 'none' })
-              )
+                } }, React.createElement(Icons.Heart, { className: 'w-5 h-5', strokeWidth: isInCollection ? 0 : 2, fill: isInCollection ? 'currentColor' : 'none' }))
             );
           })(),
           // Progress section — isolated leaf so playback progress ticks re-render
@@ -43345,18 +43298,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
               position: 'top',
               variant: 'dark'
             },
-              React.createElement('button', {
-                'aria-label': tooltipContent,
-                onClick: shuffleDisabled ? undefined : () => requestShuffle('toggle'),
-                disabled: shuffleDisabled,
-                className: 'p-2 rounded transition-colors',
-                style: {
-                  color: shuffleDisabled ? 'var(--on-dark-disabled)' : shuffleMode ? 'var(--playbar-accent)' : 'var(--on-dark-secondary)',
-                  cursor: shuffleDisabled ? 'not-allowed' : 'pointer'
-                }
-              },
-                React.createElement(Icons.Shuffle, { className: 'w-4 h-4' })
-              )
+              React.createElement(Button, { variant: 'icon', size: 'sm', tone: 'dark', style: { color: shuffleDisabled ? 'var(--on-dark-disabled)' : shuffleMode ? 'var(--playbar-accent)' : 'var(--on-dark-secondary)' }, 'aria-label': tooltipContent, onClick: shuffleDisabled ? undefined : () => requestShuffle('toggle'), disabled: shuffleDisabled }, React.createElement(Icons.Shuffle, { className: 'w-4 h-4' }))
             );
           })(),
           // Repeat button (#1319): off, all, one. Disabled during a spinoff or
@@ -43373,18 +43315,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
               position: 'top',
               variant: 'dark'
             },
-              React.createElement('button', {
-                onClick: repeatDisabled ? undefined : () => requestRepeat('cycle'),
-                disabled: repeatDisabled,
-                'aria-label': repeatMode === 'off' ? 'Repeat off' : repeatMode === 'all' ? 'Repeat all' : 'Repeat one',
-                className: 'p-2 rounded transition-colors',
-                style: {
-                  color: repeatDisabled ? 'var(--on-dark-disabled)' : repeatMode !== 'off' ? 'var(--playbar-accent)' : 'var(--on-dark-secondary)',
-                  cursor: repeatDisabled ? 'not-allowed' : 'pointer'
-                }
-              },
-                React.createElement(repeatMode === 'one' ? Icons.Repeat1 : Icons.Repeat, { className: 'w-4 h-4' })
-              )
+              React.createElement(Button, { variant: 'icon', size: 'sm', tone: 'dark', style: { color: repeatDisabled ? 'var(--on-dark-disabled)' : repeatMode !== 'off' ? 'var(--playbar-accent)' : 'var(--on-dark-secondary)' }, onClick: repeatDisabled ? undefined : () => requestRepeat('cycle'), disabled: repeatDisabled, 'aria-label': repeatMode === 'off' ? 'Repeat off' : repeatMode === 'all' ? 'Repeat all' : 'Repeat one' }, React.createElement(repeatMode === 'one' ? Icons.Repeat1 : Icons.Repeat, { className: 'w-4 h-4' }))
             );
           })(),
           // Volume - only enabled for local files and Spotify on Computer devices
@@ -43585,24 +43516,9 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
           onFocus: (e) => { e.target.style.borderColor = 'rgba(167, 139, 250, 0.5)'; e.target.style.boxShadow = '0 0 0 3px rgba(167, 139, 250, 0.1)'; },
           onBlur: (e) => { e.target.style.borderColor = 'rgba(255, 255, 255, 0.1)'; e.target.style.boxShadow = 'none'; }, 'aria-label': 'What do you want to listen to?'
         }),
-        React.createElement('button', {
-          onClick: () => aiPrompt.trim() && !aiLoading && handleAiGenerate(aiPrompt.trim()),
-          disabled: !aiPrompt.trim() || aiLoading,
-          className: 'absolute right-2 top-1/2 -translate-y-1/2 transition-colors enabled:hover:!bg-[var(--accent-fill-hover)]',
-          style: {
-            padding: '8px',
-            borderRadius: '8px',
-            // White text sits on the fill accent, never --accent-primary.
-            backgroundColor: !aiPrompt.trim() || aiLoading ? 'var(--accent-primary-alpha-30)' : 'var(--accent-fill)',
-            color: 'var(--on-accent)',
-            cursor: !aiPrompt.trim() || aiLoading ? 'not-allowed' : 'pointer',
-            opacity: !aiPrompt.trim() || aiLoading ? '0.5' : '1'
-          },
-        },
-          aiLoading
+        React.createElement(Button, { variant: 'primary', size: 'sm', className: 'absolute right-2 top-1/2 -translate-y-1/2 !px-2', 'aria-label': "Generate", onClick: () => aiPrompt.trim() && !aiLoading && handleAiGenerate(aiPrompt.trim()), disabled: !aiPrompt.trim() || aiLoading }, aiLoading
             ? React.createElement(Icons.Spinner, { size: 16 })
-            : React.createElement(Icons.ArrowRight, { className: 'w-4 h-4', strokeWidth: 2 })
-        )
+            : React.createElement(Icons.ArrowRight, { className: 'w-4 h-4', strokeWidth: 2 }))
       ),
 
       // Provider selector row (right-aligned)
@@ -43635,22 +43551,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
       aiIncludeHistory && React.createElement('div', {
         className: 'mt-3'
       },
-        React.createElement('button', {
-          onClick: () => !aiLoading && handleAiGenerate('Surprise me! Based on my listening history, create a playlist of songs I might love but haven\'t discovered yet. Mix familiar vibes with fresh discoveries.'),
-          disabled: aiLoading,
-          className: 'w-full transition-all enabled:hover:!opacity-90',
-          style: {
-            padding: '10px 12px',
-            borderRadius: '10px',
-            fontSize: '14px',
-            fontWeight: '500',
-            background: aiLoading ? 'rgba(255, 255, 255, 0.05)' : 'var(--ai-gradient)',
-            color: aiLoading ? 'var(--on-dark-secondary)' : 'var(--on-accent)',
-            cursor: aiLoading ? 'not-allowed' : 'pointer',
-            opacity: aiLoading ? '0.6' : '1'
-          },
-        },
-          React.createElement('span', { className: 'flex items-center justify-center gap-2' },
+        React.createElement(Button, { variant: 'primary', className: 'w-full', style: { background: aiLoading ? 'rgba(255, 255, 255, 0.05)' : 'var(--ai-gradient)' }, onClick: () => !aiLoading && handleAiGenerate('Surprise me! Based on my listening history, create a playlist of songs I might love but haven\'t discovered yet. Mix familiar vibes with fresh discoveries.'), disabled: aiLoading }, React.createElement('span', { className: 'flex items-center justify-center gap-2' },
             React.createElement('svg', {
               className: 'w-4 h-4',
               viewBox: '0 0 482 511.93',
@@ -43663,8 +43564,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
               })
             ),
             'Surprise Me'
-          )
-        )
+          ))
       ),
 
       // Scrobbler not connected - show link to plug-ins settings
@@ -43742,20 +43642,13 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                 : React.createElement('span', { style: { color: 'var(--playbar-accent-hover)' } }, '✨'),
               React.createElement('h3', { style: { fontSize: '16px', fontWeight: '600', color: 'var(--on-dark-primary)' } }, resultsSidebar.title)
             ),
-            React.createElement('button', {
-              onClick: () => {
+            React.createElement(Button, { variant: 'icon', size: 'sm', tone: 'dark', onClick: () => {
                 if (resultsSidebar.mode === 'chat') {
                   closeAiChat();
                 } else {
                   closeSidebarAnimated();
                 }
-              },
-              'aria-label': 'Close', 'data-tooltip': 'Close',
-              className: 'transition-colors text-white/70 hover:text-white hover:bg-white/10',
-              style: { padding: '6px', borderRadius: '8px' }
-            },
-              React.createElement(Icons.X, { className: 'w-5 h-5' })
-            )
+              }, 'aria-label': 'Close', 'data-tooltip': 'Close' }, React.createElement(Icons.X, { className: 'w-5 h-5' }))
           ),
           // Provider selector for chat mode, subtitle for other modes
           resultsSidebar.mode === 'chat'
@@ -43808,18 +43701,8 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                     renderTrigger: (t) => React.createElement('button', Object.assign({}, t, {
                       type: 'button',
                       'aria-label': `Chat provider: ${currentService?.name || currentService?.manifest?.name || 'none'}`,
-                      style: {
-                        backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                        border: '1px solid rgba(255, 255, 255, 0.1)',
-                        borderRadius: '6px',
-                        padding: '4px 8px',
-                        fontSize: '12px',
-                        color: 'var(--on-dark-primary)',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px'
-                      }
+                      // The shared small secondary button, dark tone.
+                      className: buttonClassName({ variant: 'secondary', size: 'sm', tone: 'dark' })
                     }),
                       currentService ? (SERVICE_LOGOS[currentService.id]
                         ? React.createElement('span', { style: { width: '14px', height: '14px', display: 'inline-flex', flexShrink: 0 } },
@@ -43889,10 +43772,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                       }
                     },
                       // Copy as Parachord link button (user messages only, before the bubble)
-                      msg.role === 'user' && React.createElement('button', {
-                        className: 'chat-copy-link-btn',
-                        'aria-label': 'Share prompt', 'data-tooltip': 'Share prompt',
-                        onClick: () => {
+                      msg.role === 'user' && React.createElement(Button, { variant: 'icon', size: 'sm', tone: 'dark', className: 'chat-copy-link-btn', style: { opacity: 0, transition: 'opacity 0.15s', marginRight: '2px' }, 'aria-label': 'Share prompt', 'data-tooltip': 'Share prompt', onClick: () => {
                           const text = typeof msg.content === 'string' ? msg.content : '';
                           const truncated = text.slice(0, 500);
                           const uri = `parachord://chat?prompt=${encodeURIComponent(truncated)}`;
@@ -43902,24 +43782,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                           }).catch(() => {
                             showCopyFallback('Copy this link', link);
                           });
-                        },
-                        style: {
-                          background: 'none',
-                          border: 'none',
-                          cursor: 'pointer',
-                          opacity: 0,
-                          transition: 'opacity 0.15s',
-                          padding: '6px',
-                          marginRight: '2px',
-                          borderRadius: '4px',
-                          color: 'rgba(255, 255, 255, 0.4)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          flexShrink: 0
-                        }
-                      },
-                        React.createElement(Icons.Share, { size: 14 })
-                      ),
+                        } }, React.createElement(Icons.Share, { size: 14 })),
                       React.createElement('div', {
                         style: {
                           maxWidth: '85%',
@@ -44012,32 +43875,9 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                     onFocus: (e) => { e.target.style.borderColor = 'var(--accent-primary-alpha-50)'; },
                     onBlur: (e) => { e.target.style.borderColor = 'rgba(255, 255, 255, 0.1)'; }, 'aria-label': 'Ask Shuffleupagus'
                   }),
-                  React.createElement('button', {
-                    onClick: () => aiChatInput.trim() && !aiChatLoading && handleAiChatSend(aiChatInput),
-                    disabled: !aiChatInput.trim() || aiChatLoading,
-                    'aria-label': 'Send', 'data-tooltip': 'Send',
-                    className: 'transition-transform hover:scale-105',
-                    // The fixed fill accent (white never sits on --accent-primary,
-                    // light purple in dark mode). Empty, it's a quiet circle with
-                    // a dimmed arrow, not a dark purple that read as broken.
-                    style: {
-                      width: '40px',
-                      height: '40px',
-                      borderRadius: '50%',
-                      backgroundColor: aiChatLoading || aiChatInput.trim() ? 'var(--accent-fill)' : 'rgba(255, 255, 255, 0.08)',
-                      color: aiChatLoading || aiChatInput.trim() ? 'var(--on-accent)' : 'var(--on-dark-tertiary)',
-                      border: 'none',
-                      cursor: !aiChatInput.trim() || aiChatLoading ? 'not-allowed' : 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0
-                    }
-                  },
-                    aiChatLoading
+                  React.createElement(Button, { variant: 'primary', size: 'sm', className: 'w-10 h-10 !p-0 !rounded-full transition-transform hover:scale-105', onClick: () => aiChatInput.trim() && !aiChatLoading && handleAiChatSend(aiChatInput), disabled: !aiChatInput.trim() || aiChatLoading, 'aria-label': 'Send', 'data-tooltip': 'Send' }, aiChatLoading
                       ? React.createElement(Icons.Spinner, { size: 16 })
-                      : React.createElement(Icons.ArrowRight, { className: 'w-4 h-4', strokeWidth: 2 })
-                  )
+                      : React.createElement(Icons.ArrowRight, { className: 'w-4 h-4', strokeWidth: 2 }))
                 ),
                 // Bottom row: Clear chat + Share my data toggle
                 React.createElement('div', {
@@ -44045,17 +43885,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                 },
                   // Clear chat button (left)
                   resultsSidebar.messages && resultsSidebar.messages.length > 0
-                    ? React.createElement('button', {
-                        onClick: clearAiChatHistory,
-                        className: 'text-white/70 hover:text-white transition-colors',
-                        style: {
-                          fontSize: '12px',
-                          background: 'none',
-                          border: 'none',
-                          cursor: 'pointer',
-                          padding: '4px 8px'
-                        }
-                      }, 'Clear conversation')
+                    ? React.createElement(Button, { variant: 'text', size: 'sm', tone: 'dark', onClick: clearAiChatHistory }, 'Clear conversation')
                     : React.createElement('div'),
                   // Share my data toggle (right)
                   React.createElement('label', {
@@ -44149,18 +43979,12 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                         ),
 
                         // Remove button
-                        React.createElement('button', {
-                          onClick: () => {
+                        React.createElement(Button, { variant: 'icon', size: 'sm', tone: 'dark', className: 'opacity-0 group-hover:opacity-100 hover:!text-[var(--on-dark-danger)]', 'aria-label': "Remove from the list", onClick: () => {
                             setResultsSidebar(prev => ({
                               ...prev,
                               tracks: prev.tracks.filter((_, i) => i !== index)
                             }));
-                          },
-                          className: 'opacity-0 group-hover:opacity-100 transition-all hover:!bg-[rgba(239,68,68,0.15)] hover:!text-[var(--on-dark-danger)]',
-                          style: { padding: '4px', borderRadius: '6px', color: 'var(--on-dark-secondary)' },
-                        },
-                          React.createElement(Icons.X, { className: 'w-4 h-4' })
-                        )
+                          } }, React.createElement(Icons.X, { className: 'w-4 h-4' }))
                       )
                     )
               ),
@@ -44178,52 +44002,11 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                 style: { padding: '16px', borderTop: '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '16px' }
               },
                 // Add to Playlist button
-                React.createElement('button', {
-                  onClick: handleAiAddToPlaylist,
-                  disabled: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0,
-                  className: 'w-11 h-11 rounded-full flex items-center justify-center transition-all enabled:hover:scale-110 enabled:hover:!bg-[rgba(255,255,255,0.2)]',
-                  style: {
-                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                    color: 'var(--on-dark-primary)',
-                    border: 'none',
-                    cursor: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0 ? 'not-allowed' : 'pointer',
-                    opacity: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0 ? '0.4' : '1'
-                  },
-                  'aria-label': 'Add to playlist', 'data-tooltip': 'Add to playlist'
-                },
-                  React.createElement(Icons.Plus, { className: 'w-5 h-5' })
-                ),
+                React.createElement(Button, { variant: 'icon', tone: 'dark', className: 'w-11 h-11 !rounded-full bg-white/10 enabled:hover:scale-110', onClick: handleAiAddToPlaylist, disabled: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0, 'aria-label': 'Add to playlist', 'data-tooltip': 'Add to playlist' }, React.createElement(Icons.Plus, { className: 'w-5 h-5' })),
                 // Play button (center, larger)
-                React.createElement('button', {
-                  onClick: handleAiPlay,
-                  disabled: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0,
-                  className: 'w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all enabled:hover:scale-110',
-                  style: {
-                    backgroundColor: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0 ? 'rgba(255, 255, 255, 0.3)' : 'var(--on-dark-primary)',
-                    border: 'none',
-                    cursor: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0 ? 'not-allowed' : 'pointer',
-                    opacity: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0 ? '0.4' : '1'
-                  },
-                  'aria-label': 'Play now', 'data-tooltip': 'Play now'
-                },
-                  React.createElement(Play, { size: 24, className: 'ml-0.5', style: { color: 'var(--surface-dark-solid)' } })
-                ),
+                React.createElement(Button, { variant: 'icon', tone: 'dark', className: 'w-14 h-14 !rounded-full shadow-lg enabled:hover:scale-110', style: { backgroundColor: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0 ? 'rgba(255, 255, 255, 0.3)' : 'var(--on-dark-primary)' }, onClick: handleAiPlay, disabled: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0, 'aria-label': 'Play now', 'data-tooltip': 'Play now' }, React.createElement(Play, { size: 24, className: 'ml-0.5', style: { color: 'var(--surface-dark-solid)' } })),
                 // Add to Queue button
-                React.createElement('button', {
-                  onClick: handleAiAddToQueue,
-                  disabled: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0,
-                  className: 'w-11 h-11 rounded-full flex items-center justify-center transition-all enabled:hover:scale-110 enabled:hover:!bg-[rgba(255,255,255,0.2)]',
-                  style: {
-                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                    color: 'var(--on-dark-primary)',
-                    border: 'none',
-                    cursor: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0 ? 'not-allowed' : 'pointer',
-                    opacity: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0 ? '0.4' : '1'
-                  },
-                  'aria-label': 'Add to queue', 'data-tooltip': 'Add to queue'
-                },
-                  React.createElement(Icons.QueueAdd, { className: 'w-5 h-5', strokeWidth: 2 })
-                )
+                React.createElement(Button, { variant: 'icon', tone: 'dark', className: 'w-11 h-11 !rounded-full bg-white/10 enabled:hover:scale-110', onClick: handleAiAddToQueue, disabled: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0, 'aria-label': 'Add to queue', 'data-tooltip': 'Add to queue' }, React.createElement(Icons.QueueAdd, { className: 'w-5 h-5', strokeWidth: 2 }))
               )
             )
       )

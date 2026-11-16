@@ -54,7 +54,8 @@ test('chat cards say what they are in their second line; the chat panel uses on-
   expect(app).not.toMatch(/textTransform: 'uppercase' \}\s*\}, (type|'playlist')\)/);
   expect(app).toContain("'Powered by')");
   expect(app).not.toContain("'powered by:'");
-  expect(app).toContain("backgroundColor: aiChatLoading || aiChatInput.trim() ? 'var(--accent-fill)'");
+  // Send is the shared primary button (the fill accent, never --accent-primary).
+  expect(app).toMatch(/React\.createElement\(Button, \{ variant: 'primary', size: 'sm', className: 'w-10 h-10 !p-0 !rounded-full[^}]*disabled: !aiChatInput\.trim\(\) \|\| aiChatLoading, 'aria-label': 'Send'/);
 });
 
 test('a failed chat save is a failure, never a playlist id nothing can open', () => {

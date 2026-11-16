@@ -81,6 +81,6 @@ describe('the engine wiring', () => {
   });
 
   test('the Previous button stays enabled after the queue ends, while there is history', () => {
-    expect(app).toMatch(/onClick: handlePrevious,\s*disabled: !currentTrack && playHistoryRef\.current\.length === 0,/);
+    expect(app).toMatch(/onClick: handlePrevious,\s*disabled: !currentTrack && playHistoryRef\.current\.length === 0\b/);
   });
 });
