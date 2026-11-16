@@ -519,6 +519,13 @@ const amazonWebPlayer = {
     }
     return this.enqueueSearch(async () => {
       const win = await this.ensureWindow();
+      // The bounds are deliberate, not inherited: the host's ensureView keeps a
+      // LIVE view's layout, so without this the mint's load would run at
+      // whatever the last flow left — offscreen after a recent flow, 0×0 on a
+      // fresh view. A 0×0 view is the one where the search page's own
+      // requests never fire (SPAs collapse widgets to max-width: 0), so the
+      // mint lays its view out explicitly like every other flow.
+      await this.layoutSearch(this.searchView);
       const q = String(query || 'the').slice(0, 120);
       console.log(`[Amazon] session-headers mint: page flow for "${q}"`);
       // The registration is the host's — webRequest has a single listener
