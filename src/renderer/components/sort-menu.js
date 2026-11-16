@@ -58,7 +58,7 @@ function SortMenu({ value, options, onChange, label, placeholder = 'Sort', align
     else if (ev.key === 'Tab') setOpen(false);
   };
 
-  return e('div', { ref: rootRef, className: 'relative inline-block' },
+  return e('div', { ref: rootRef, className: 'relative inline-block flex-shrink-0' },
     e('button', {
       ref: buttonRef,
       type: 'button',
@@ -67,7 +67,7 @@ function SortMenu({ value, options, onChange, label, placeholder = 'Sort', align
       'aria-label': label ? `${label}: ${current ? current.label : placeholder}` : undefined,
       onClick: (ev) => { ev.stopPropagation(); setOpen((o) => !o); },
       onKeyDown: (ev) => { if (ev.key === 'ArrowDown' && !open) { ev.preventDefault(); setOpen(true); } },
-      className: ['no-drag flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg text-ink-tertiary hover:text-ink-secondary transition-colors',
+      className: ['no-drag flex items-center gap-1 whitespace-nowrap px-3 py-1.5 text-sm rounded-lg text-ink-tertiary hover:text-ink-secondary transition-colors',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent', className].filter(Boolean).join(' '),
     },
     prefix && e('span', { className: 'text-ink-tertiary mr-1' }, prefix),

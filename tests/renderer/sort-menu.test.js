@@ -40,3 +40,9 @@ test('Collection, Search, the artist page and Charts use SortMenu too', () => {
 test('a prefix shows before the value', () => {
   expect(renderToStaticMarkup(h(SortMenu, { value: 'az', options: opts, onChange() {}, prefix: 'Source:' }))).toMatch(/Source:<\/span><span>A–Z/);
 });
+
+test('the trigger never wraps or shrinks in a narrow window ("Newest first" broke onto two lines at 1000px)', () => {
+  const src = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/components/sort-menu.js'), 'utf8');
+  expect(src).toContain("className: 'relative inline-block flex-shrink-0'");
+  expect(src).toContain('no-drag flex items-center gap-1 whitespace-nowrap px-3');
+});
