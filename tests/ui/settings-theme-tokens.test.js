@@ -48,7 +48,7 @@ test('every switch is the shared Switch, with a white knob on the control tokens
   }
   const fields = read('src/renderer/components/fields.js');
   expect(fields).toMatch(/bg-control-knob/);
-  expect(fields).toMatch(/checked \? 'bg-accent-fill' : 'bg-control-off'/);
+  expect(fields).toMatch(/checked \? 'bg-accent-fill' : tone === 'dark' \? 'bg-\[var\(--on-dark-fill\)\]' : 'bg-control-off'/);
   expect(html).toMatch(/--control-knob: #ffffff;/);
   const dark = html.slice(html.indexOf('.dark {'));
   expect(dark).toMatch(/--control-off: #707070;/);

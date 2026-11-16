@@ -25,9 +25,9 @@ test('the playbar has no hard-coded colour (but the "no plug-in colour" sentinel
 
 test("the scrubber's labels and track, and both sliders' CSS, are tokens", () => {
   expect(atoms).not.toMatch(/text-gray-400|bg-gray-600/);
-  const css = html.slice(html.indexOf('/* Progress slider styling */'), html.indexOf('/* Release card hover lift animation'));
+  const css = html.slice(html.indexOf('/* Slider (components/fields.js Slider)'), html.indexOf('/* Release card hover lift animation'));
   expect(css.match(HEX) || []).toEqual([]);
-  expect(css).toContain('background: var(--on-dark-track);');
+  expect(css).toContain('--slider-track: var(--on-dark-track);');
 });
 
 test('the on-dark tokens are defined in both themes', () => {
