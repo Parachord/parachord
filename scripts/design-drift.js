@@ -75,8 +75,9 @@ const COPY_HOMES = {
   stickyBarCopies: ['components/filter-box.js'],
   heroCopies: ['components/page-hero.js'],
   // The canonical colour data: each page's colour (CLAUDE.md "A page's colour
-  // comes from PAGE_COLORS") and the artist stand-in art's palettes.
-  hexColors: ['lib/page-colors.js', 'lib/artist-pattern.js'],
+  // comes from PAGE_COLORS"), the artist stand-in art's palettes, and the
+  // brands' own colours in their logos.
+  hexColors: ['lib/page-colors.js', 'lib/artist-pattern.js', 'components/brand-logos.js'],
   paletteClasses: ['lib/page-colors.js'],
   // Shared components whose own buttons are the one look for their control.
   handBuiltButtons: ['components/button.js', 'components/header-control.js', 'components/card-button.js', 'components/filter-chips.js',
