@@ -45,7 +45,7 @@ describe('Amazon Music sends playlist categories', () => {
     expect(sections[3].seedArtist).toBeUndefined();
   });
 
-  test('Amazon maps its album strategies, and a synthesized playlists section carries its cursor', async () => {
+  test('Amazon maps its album strategies', async () => {
     const { sections } = await runAmazon([
       section('mp3YmlRecentPlaybackStrategy', 'Recent', [album('X')]),
       section('mp3PrimeAlbumsStrategy', 'Prime', [album('Y')]),
