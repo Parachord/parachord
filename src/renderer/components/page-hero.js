@@ -26,6 +26,7 @@
 // Props-driven; loads under plain Node.
 
 const { PAGE_COLORS } = require('../lib/page-colors');
+const { transition } = require('../lib/motion');
 
 const EXPANDED_TITLE_STYLE = { textShadow: 'var(--hero-text-shadow)', letterSpacing: '0.3em', textTransform: 'uppercase' };
 const COLLAPSED_TITLE_STYLE = { textShadow: 'var(--hero-text-shadow-bar)', letterSpacing: '0.2em', textTransform: 'uppercase' };
@@ -46,7 +47,7 @@ function PageHero({ collapsed, page, title, onTitleContextMenu, expanded, collap
   return e('div', {
     className: 'relative',
     onContextMenu,
-    style: { height: `${collapsed ? HERO_COLLAPSED_HEIGHT : HERO_HEIGHT}px`, flexShrink: 0, transition: 'height 300ms ease-out', overflow: 'hidden' },
+    style: { height: `${collapsed ? HERO_COLLAPSED_HEIGHT : HERO_HEIGHT}px`, flexShrink: 0, transition: transition('height', 'slow', 'out'), overflow: 'hidden' },
   },
     // A collapsed bar that expands on a click (behind its content).
     collapsed && onExpand && e('button', { type: 'button', 'aria-label': 'Expand header', className: 'absolute inset-0 z-0', style: { cursor: 'pointer' }, onClick: onExpand }),
@@ -57,11 +58,13 @@ function PageHero({ collapsed, page, title, onTitleContextMenu, expanded, collap
       : e(React.Fragment, null,
           e('div', { className: `absolute inset-0 ${colors.hero}` }),
           colors.pattern && e('div', { className: 'absolute inset-0', style: { opacity: colors.patternOpacity, backgroundImage: colors.pattern } })),
+    // Each side fades in as it mounts (.motion-fade-in), so the content
+    // doesn't pop while the height animates.
     collapsed
-      ? e('div', { className: 'hero-bar absolute inset-0 flex items-center px-6 z-10' },
+      ? e('div', { key: 'bar', className: 'hero-bar motion-fade-in absolute inset-0 flex items-center px-6 z-10' },
           title && e('h1', { className: 'text-2xl font-light text-white mr-6', style: COLLAPSED_TITLE_STYLE, onContextMenu: onTitleContextMenu }, title),
           collapsedContent)
-      : e('div', { className: 'absolute inset-0 flex flex-col items-center justify-center text-center px-6 z-10' },
+      : e('div', { key: 'full', className: 'motion-fade-in absolute inset-0 flex flex-col items-center justify-center text-center px-6 z-10' },
           title && e('h1', { className: 'hero-title font-light text-white', style: EXPANDED_TITLE_STYLE, onContextMenu: onTitleContextMenu }, title),
           expanded));
 }

@@ -22,6 +22,8 @@
     "filterPillCopies": 0,
     "heroCopies": 0,
     "stickyBarCopies": 0,
+    "rawTransitions": 0,
+    "inputCopies": 0,
     "handBuiltButtons": 0
   },
   "undefinedCssVars": []

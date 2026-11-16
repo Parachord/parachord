@@ -28,11 +28,11 @@ describe('AlbumCard', () => {
   test('the hover is the app\'s card hover: the overlay and buttons the old CollectionAlbumCard had, in its order', () => {
     const cards = fs.readFileSync(path.join(COMP, 'card-art.js'), 'utf8');
     const overlay = 'absolute inset-0 bg-black/50';
-    const side = 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110';
-    const play = 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110';
-    for (const cls of [overlay, side, play, 'transition-opacity duration-200 flex items-center justify-center gap-3']) expect(cards).toContain(cls);
+    const side = 'w-10 h-10 rounded-full flex items-center justify-center transition-transform hover:scale-110';
+    const play = 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-transform hover:scale-110';
+    for (const cls of [overlay, side, play, 'transition-opacity duration-base flex items-center justify-center gap-3']) expect(cards).toContain(cls);
     const html = h(S.AlbumCard, { album, ...acts });
-    expect(html).toMatch(/data-art-actions[^>]*class="absolute inset-0 bg-black\/50 transition-opacity duration-200 flex items-center justify-center gap-3"[^>]*opacity:0/);
+    expect(html).toMatch(/data-art-actions[^>]*class="absolute inset-0 bg-black\/50 transition-opacity duration-base flex items-center justify-center gap-3"[^>]*opacity:0/);
     // The side buttons' tint and hover are classes now (not JS hover).
     expect(html).toMatch(new RegExp(`aria-label="Add Frog to a playlist"[^>]*class="${side} bg-white/15 hover:bg-white/25 text-white"`));
     expect(html).toMatch(new RegExp(`aria-label="Play Frog"[^>]*class="${play}"`));
@@ -123,7 +123,7 @@ describe('PlaylistCard', () => {
   });
   test('takes the same app hover as albums: Play, then Add to Queue (Home has no add-to-playlist for a playlist)', () => {
     const html = h(S.PlaylistCard, { playlist: { id: 'p', title: 'Pl', imageUrl: 'https://img/p.jpg' }, onPlay() {}, onQueue() {} });
-    expect(html).toMatch(/data-art-actions[^>]*class="absolute inset-0 bg-black\/50 transition-opacity duration-200 flex items-center justify-center gap-3"/);
+    expect(html).toMatch(/data-art-actions[^>]*class="absolute inset-0 bg-black\/50 transition-opacity duration-base flex items-center justify-center gap-3"/);
     expect(html).toMatch(/aria-label="Play Pl"[^>]*class="w-12 h-12 bg-white rounded-full/);
     expect(html.indexOf('aria-label="Play Pl"')).toBeLessThan(html.indexOf('Add Pl to the queue'));
     expect(html).not.toContain('to a playlist');
@@ -534,7 +534,7 @@ describe('AskShuffleupagus', () => {
   test('once the user types, a new example never overwrites it', () => {
     const render = askHarness();
     const input = render({ initialPrompt: 'Make me a playlist', chatAvailable: true });
-    input.props.onChange({ target: { value: 'my own words' } });
+    input.props.onChange('my own words');
     expect(render({ initialPrompt: 'Make me a playlist', chatAvailable: true }).props.value).toBe('my own words');
     expect(render({ initialPrompt: 'Songs that sound like Frog', chatAvailable: true }).props.value).toBe('my own words');
   });
