@@ -87,7 +87,7 @@ describe('AlbumCard', () => {
     expect(h(S.AlbumCard, { album })).toContain('Hovvdy');
   });
   test('a Fresh Drops card wears the Fresh Drops page\'s release-type badge, top right', () => {
-    const app = fs.readFileSync(path.join(COMP, '..', 'app.js'), 'utf8');
+    const app = require('../helpers/renderer-source').appWithPages(); // app.js and the pages / panels moved out of it (#1451)
     // One badge for both: the Fresh Drops page hands its release type to the
     // shared AlbumCard, which draws card-art.js's releaseBadge, the badge
     // Home's Fresh Drops row wears too.
@@ -311,7 +311,7 @@ describe('Rows', () => {
     expect(two.match(/ListenBrainz/g)).toHaveLength(1);
   });
   test('each See all takes its page\'s sidebar colour', () => {
-    const app = fs.readFileSync(path.join(COMP, '..', 'app.js'), 'utf8');
+    const app = require('../helpers/renderer-source').appWithPages(); // app.js and the pages / panels moved out of it (#1451)
     // The sidebar's colours for those pages, which the links copy.
     // The sidebar and the links read the same map (lib/page-colors.js).
     const { PAGE_COLORS } = require('../../src/renderer/lib/page-colors');
@@ -370,7 +370,7 @@ describe('Rows', () => {
     expect(sk.homeHalvesStacked(0)).toBe(false);
   });
   test('each half opens with a hero band copied from its page\'s hero', () => {
-    const app = fs.readFileSync(path.join(COMP, '..', 'app.js'), 'utf8');
+    const app = require('../helpers/renderer-source').appWithPages(); // app.js and the pages / panels moved out of it (#1451)
     // The pages' own hero gradients and collapsed-title style, which the bands copy.
     expect(app).toContain("page: 'new-releases'");
     expect(app).toContain("page: 'critics-picks'");

@@ -26,7 +26,7 @@ test('a photo is the image; sizes are the sidebar, a collapsed hero and a profil
 
 test('the sidebar and the profile page use it; no translucent-white initial is left', () => {
   const root = path.join(__dirname, '../../src/renderer');
-  const app = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
+  const app = require('../helpers/renderer-source').appWithPages(); // the sidebar is components/sidebar.js (#1451)
   const page = fs.readFileSync(path.join(root, 'components/friend-history-page.js'), 'utf8');
   expect(app).toContain("React.createElement(FriendAvatar, { name: friend.displayName, avatarUrl: friend.avatarUrl, size: 'sm' })");
   expect((page.match(/React\.createElement\(FriendAvatar, \{ name: currentFriend\.displayName/g) || []).length).toBe(2);

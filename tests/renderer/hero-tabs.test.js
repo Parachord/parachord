@@ -22,7 +22,7 @@ test('every hero tab row uses HeroTabs or tab roles', () => {
   const path = require('path');
   const read = (f) => fs.readFileSync(path.join(__dirname, '../../src/renderer', f), 'utf8');
   const app = require('../helpers/renderer-source').appWithPages() /* app.js and the pages moved out of it (#1451) */;
-  for (const l of ['Charts', 'History', 'Friend history']) expect(app.match(new RegExp(`createElement\\(HeroTabs, \\{[\\s\\S]*?label: '${l}'`, 'g'))).toHaveLength(2);
+  for (const l of ['Charts', 'History', 'Friend history']) expect(app.match(new RegExp(`createElement\\(HeroTabs, \\{[\\s\\S]{0,1200}?label: '${l}'`, 'g'))).toHaveLength(2);
   expect(read('components/collection-page.js').match(/createElement\(HeroTabs, \{/g)).toHaveLength(2);
   const artist = read('components/artist-page.js');
   expect(artist.match(/role: 'tab',/g)).toHaveLength(2);
