@@ -28,6 +28,7 @@ const UrlImportDialog = React.memo(function UrlImportDialog(props) {
   const {
     handleImportPlaylist,
     handleImportPlaylistFromUrl,
+    importSourcesLabel,
     isPlaylistLinkImported,
     playlistLinkService,
     setShowUrlImportDialog,
@@ -72,7 +73,7 @@ const UrlImportDialog = React.memo(function UrlImportDialog(props) {
               React.createElement(Icons.Link, { size: 20 })),
             React.createElement('div', { className: 'flex-1' },
               React.createElement('label', { htmlFor: 'import-playlist-url', className: 'block text-ink-primary', style: { fontSize: '14px', fontWeight: 600, marginBottom: '4px' } }, 'Import from URL'),
-              React.createElement('p', { className: 'text-ink-secondary', style: { fontSize: '13px', lineHeight: 1.4 } }, 'Spotify, Apple Music, Amazon Music, or hosted .xspf'))
+              React.createElement('p', { className: 'text-ink-secondary', style: { fontSize: '13px', lineHeight: 1.4 } }, importSourcesLabel))
           ),
           React.createElement('div', { className: 'flex gap-2' },
             React.createElement(TextField, {

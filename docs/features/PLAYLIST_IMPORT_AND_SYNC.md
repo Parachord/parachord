@@ -30,7 +30,7 @@ Not supported anywhere: Bandcamp playlist URLs (no `lookupPlaylist` in `bandcamp
 
 Code: `handleImportPlaylistFromUrl`.
 
-Entry points: the Import Playlist modal (URL card labelled "Spotify, Apple Music, Amazon Music, or hosted .xspf"), the Import button on the Playlists page, File menu "Import Playlist..." (main.js application menu, menu action `import-playlist`), dropping a URL (next section), `parachord://import?url=`, and the hosted-playlist reload and poller.
+Entry points: the Import Playlist modal (the URL card names the plug-ins that can import a playlist link, from the registry: every loaded plug-in with `lookupPlaylist`, then hosted XSPF; `src/renderer/lib/playlist-import-sources.js`), the Import button on the Playlists page, File menu "Import Playlist..." (main.js application menu, menu action `import-playlist`), dropping a URL (next section), `parachord://import?url=`, and the hosted-playlist reload and poller.
 
 How a URL is handled:
 1. `findResolverForUrl` (resolver-loader.js) asks every loaded `.axe` whether its `urlPatterns` match. If one does and `getUrlType` says `playlist`, that resolver's `lookupPlaylist` runs and the result is converted to XSPF with `generateXSPF`.
