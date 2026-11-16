@@ -127,7 +127,8 @@ describe('the pages use the mitigations', () => {
     // Charts and Fresh Drops, and Recommendations' albums, are the shared
     // AlbumCard: they hand it the prefetch (onHoverPrefetch), and the card
     // runs it only after its own 250ms dwell.
-    expect((app.match(/onHoverPrefetch: \(\) => prefetchChartsTracks\((item|release)\),/g) || []).length).toBe(2);
+    const fresh = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'components', 'fresh-drops-page.js'), 'utf8');
+    expect(((app + fresh).match(/onHoverPrefetch: \(\) => prefetchChartsTracks\((item|release)\),/g) || []).length).toBe(2);
     expect((app.match(/onHoverPrefetch: \(\) => prefetchTopAlbumTracks\(item\.artist, item\.name, art\),/g) || []).length).toBe(1);
     const card = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'components', 'album-card.js'), 'utf8');
     expect(card).toContain('timer.current = setTimeout(() => { timer.current = null; onHoverPrefetch(album); }, 250);');

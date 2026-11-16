@@ -2094,6 +2094,7 @@ const { FilterChips, Chip } = require('./components/filter-chips');
 const { FilterBox, StickyBar } = require('./components/filter-box');
 const { PageHero } = require('./components/page-hero');
 const { CardSkeleton } = require('./components/home-skeletons');
+const { FreshDropsPage } = require('./components/fresh-drops-page');
 const { ArtOverlay, PlaylistGlyph } = require('./components/card-art');
 const { hoverDwell } = require('./lib/hover-dwell');
 const { RELEASE_TYPE_COLORS } = require('./lib/release-types');
@@ -37042,6 +37043,14 @@ useEffect(() => {
 
   // Stable function props for the memo'd SearchPage (keys must match
   // SEARCH_PAGE_HANDLERS in search-page.js).
+  // Stable function props for the memo'd FreshDropsPage (keys must match
+  // FRESH_DROPS_PAGE_HANDLERS in fresh-drops-page.js).
+  const freshDropsPageHandlers = useStableHandlers({
+    albumCardActions, copyParachordLink, fetchAlbumTracksFromMusicBrainz, fetchArtistData,
+    handleNewReleasesScroll, loadNewReleases, openChartsAlbum, prefetchChartsTracks,
+    retryBrokenListArt, showToast,
+  });
+
   const searchPageHandlers = useStableHandlers({
     addToQueue, albumCardActions, clearSearchHistory, fetchArtistData, fetchSearchAlbumTracksAsync,
     getArtistImage, getArtistTopTracks, getCachedAlbumArt, getItemsPerRow,
@@ -38734,171 +38743,27 @@ React.createElement('span', {
           )
         ),
 
-        // New Releases (Fresh Drops) view with collapsible hero header
-        activeView === 'new-releases' && React.createElement('div', {
-          className: 'flex-1 flex flex-col h-full',
-          style: { overflow: 'hidden', minHeight: 0 }
-        },
-          // Header section (outside scrollable area)
-          React.createElement(PageHero, {
-collapsed: newReleasesHeaderCollapsed,
-page: 'new-releases',
-title: 'Fresh Drops',
-onTitleContextMenu: copyParachordLink,
-expanded: React.createElement(React.Fragment, null,
-React.createElement('div', {
-                  className: 'flex items-center gap-1 mt-6',
-                  style: { textShadow: 'var(--hero-text-shadow-line)' }
-                },
-                  React.createElement('span', {
-                    className: 'px-2 py-1 text-sm font-medium uppercase tracking-wider text-white'
-                  }, newReleases.length > 0 ? `${newReleases.length} Releases` : '')
-                ),
-React.createElement('p', {
-                  className: 'mt-2 text-white/80 text-sm'
-                }, 'New music from artists in your collection and listening history')),
-collapsedContent: React.createElement(React.Fragment, null,
-React.createElement('div', { className: 'flex-1' }),
-React.createElement('span', {
-                  className: 'text-sm font-medium uppercase tracking-wider text-white/80'
-                }, newReleases.length > 0 ? `${newReleases.length} Releases` : ''))
-}),
-          // Filter bar (outside scrollable area)
-          React.createElement('div', {
-            className: 'flex items-center px-6 py-3',
-            style: { flexShrink: 0, backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
-          },
-            // Type filters: the app's filter chips (FilterChips), All
-            // neutral, each type in its colour.
-            React.createElement(FilterChips, {
-              pageColor: PAGE_COLORS['new-releases'].color,
-              chips: [
-                { value: 'all', label: 'All' },
-                { value: 'album', label: 'Albums', color: RELEASE_TYPE_COLORS.album },
-                { value: 'ep', label: 'EPs', color: RELEASE_TYPE_COLORS.ep },
-                { value: 'single', label: 'Singles', color: RELEASE_TYPE_COLORS.single }
-              ].map(({ value, label, color }) => {
-                const count = value === 'all'
-                  ? newReleases.length
-                  : newReleases.filter(r => r.releaseType === value).length;
-                if (count === 0 && value !== 'all') return null;
-                return { id: value, label: `${label} (${count})`, color };
-              }).filter(Boolean),
-              value: newReleasesFilter,
-              onChange: setNewReleasesFilter,
-              label: 'Filter releases by type'
-            }),
-            React.createElement('div', { className: 'flex-1' }),
-            // Search
-            React.createElement(FilterBox, { value: newReleasesSearch, onChange: setNewReleasesSearch, open: newReleasesSearchOpen, onOpenChange: setNewReleasesSearchOpen })
-          ),
-          // Content area (scrollable)
-          React.createElement('div', {
-            className: 'scrollable-content scroll-edge',
-            style: {
-              flex: 1,
-              overflowY: 'scroll',
-              pointerEvents: 'auto',
-              padding: '24px'
-            },
-            onScroll: handleNewReleasesScroll
-          },
-            // Error state
-            newReleasesError && !newReleasesLoading && newReleasesError && !newReleasesLoading && React.createElement(ErrorState, { title: 'Couldn’t load Fresh Drops', body: newReleasesError, onRetry: () => { setNewReleasesError(null); setNewReleasesLoaded(false); loadNewReleases(true); } }),
-
-            // Skeleton loading state
-            !newReleasesError && (newReleasesLoading || !cacheLoaded) && newReleases.length === 0 && React.createElement('div', {
-              className: 'card-grid gap-4'
-            },
-              Array.from({ length: 12 }).map((_, i) =>
-                React.createElement(CardSkeleton, { key: `skeleton-${i}`, index: i, lines: 2 })
-              )
-            ),
-
-            // Empty state (no artists in collection)
-            !newReleasesError && !newReleasesLoading && newReleasesLoaded && newReleases.length === 0 && React.createElement(EmptyState, {
-              title: 'Nothing in Fresh Drops yet',
-              body: collectionData.artists?.length === 0 && collectionData.tracks?.length === 0
-                ? 'Add artists to your Collection or listen to some music to see new releases from artists you like.'
-                : 'None of your artists have released new music in the last 3 months. Check back later.'
-            }),
-
-            // Release grid
-            !newReleasesError && newReleases.length > 0 && (() => {
-              // Filter releases
-              let filtered = newReleases;
-              if (newReleasesFilter !== 'all') {
-                filtered = filtered.filter(r => r.releaseType === newReleasesFilter);
-              }
-              if (newReleasesSearch.trim()) {
-                const q = newReleasesSearch.toLowerCase();
-                filtered = filtered.filter(r =>
-                  r.title.toLowerCase().includes(q) ||
-                  r.artist.toLowerCase().includes(q)
-                );
-              }
-
-              if (filtered.length === 0 && (newReleasesFilter !== 'all' || newReleasesSearch.trim())) {
-                return React.createElement(EmptyState, { compact: true, icon: Icons.Search, title: 'No releases match your filters' });
-              }
-
-              return React.createElement('div', null,
-                // Grid
-                React.createElement('div', { role: 'list',
-                  className: 'card-grid gap-4'
-                },
-                  // The shared album card (components/album-card.js).
-                  filtered.map((release, index) => {
-                    const dateLine = release.date && (() => {
-                      const d = new Date(release.date + 'T00:00:00');
-                      const today = new Date(); today.setHours(0, 0, 0, 0);
-                      const isFuture = d > today;
-                      const formatted = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-                      return React.createElement('span', { style: { color: isFuture ? 'var(--accent-secondary)' : 'var(--text-tertiary)' } }, isFuture ? `Coming ${formatted}` : formatted);
-                    })();
-                    return React.createElement(AlbumCard, Object.assign({
-                      key: release.id,
-                      role: 'listitem',
-                      album: { id: release.id, title: release.title, artist: release.artist, imageUrl: release.albumArt },
-                      // undefined: its cover isn't looked up yet (a shimmer);
-                      // null: it has none (the placeholder).
-                      imageLoading: release.albumArt === undefined,
-                      releaseType: release.releaseType,
-                      subtitle: dateLine,
-                      // Why it is in Fresh Drops.
-                      tooltip: release.artistSource === 'collection' ? `${release.artist} is in your Collection` : release.artistSource === 'history' ? `Based on your listening history of ${release.artist}` : `${release.artist} is in your library`,
-                      animationDelay: Math.min(index, 20) * 30,
-                      // The card waits 250ms before this (its own dwell).
-                      onHoverPrefetch: () => prefetchChartsTracks(release),
-                      onOpen: () => {
-                        openChartsAlbum({ artist: release.artist, title: release.title, albumArt: release.albumArt, releaseGroupId: release.id, date: release.date, releaseType: release.releaseType });
-                      },
-                      onOpenArtist: () => fetchArtistData(release.artist),
-                      onContextMenu: () => {
-                        const prefetched = prefetchedReleases[release.id];
-                        window.showItemMenu(releaseMenu({ ...release, releaseGroupMbid: release.id }, { tracks: prefetched?.tracks }));
-                      },
-                      // A dead cached cover: retry once and patch the release,
-                      // the persisted copy (cache_new_releases) included.
-                      onArtError: () => retryBrokenListArt(release.albumArt, { artist: release.artist, album: release.title, id: release.id, cacheId: release.id }, (id, fresh) => {
-                        newReleasesArtWriterRef.current.queue(id, fresh);
-                        newReleasesArtWriterRef.current.flush();
-                      })
-                    }, albumCardActions({
-                      title: release.title, artist: release.artist,
-                      getTracks: async () => {
-                        const have = prefetchedReleases[release.id]?.tracks;
-                        if (have?.length) return have;
-                        showToast(`Loading ${release.title}…`);
-                        return fetchAlbumTracksFromMusicBrainz(release.artist, release.title, release.albumArt);
-                      }
-                    })));
-                  })
-                )
-              );
-            })()
-          )
-        ),
+        // Fresh Drops (components/fresh-drops-page.js), a memo'd page.
+        activeView === 'new-releases' && React.createElement(FreshDropsPage, {
+          cacheLoaded,
+          collectionData,
+          newReleases,
+          newReleasesArtWriterRef,
+          newReleasesError,
+          newReleasesFilter,
+          newReleasesHeaderCollapsed,
+          newReleasesLoaded,
+          newReleasesLoading,
+          newReleasesSearch,
+          newReleasesSearchOpen,
+          prefetchedReleases,
+          setNewReleasesError,
+          setNewReleasesFilter,
+          setNewReleasesLoaded,
+          setNewReleasesSearch,
+          setNewReleasesSearchOpen,
+          ...freshDropsPageHandlers
+        }),
 
         // Critic's Picks view with collapsible hero header (matching Artist page pattern)
         activeView === 'critics-picks' && React.createElement('div', {
