@@ -2113,6 +2113,7 @@ const { capabilityLabel } = require('./lib/capability-labels');
 // marker to test against ("this plug-in has no colour"), never drawn.
 const NO_PLUGIN_COLOR = '#888888';
 const { Modal, SidePanel, ConfirmModal, DontShowAgain } = require('./components/modal');
+const { AddFriendDialog } = require('./components/add-friend-dialog');
 const { PlaylistUpdateDialog, UpdateModeChoice } = require('./components/playlist-update-dialog');
 const { KeyboardShortcutsDialog } = require('./components/keyboard-shortcuts');
 const { WhatsNewDialog } = require('./components/whats-new-dialog');
@@ -4962,8 +4963,6 @@ const Parachord = () => {
   const [friendHistorySort, setFriendHistorySort] = useState('recent');
   const [friendHistoryLoading, setFriendHistoryLoading] = useState(false);
   const [addFriendModalOpen, setAddFriendModalOpen] = useState(false);
-  const [addFriendInput, setAddFriendInput] = useState('');
-  const [addFriendLoading, setAddFriendLoading] = useState(false);
   const [friendDragOverSidebar, setFriendDragOverSidebar] = useState(false);
   const friendPollIntervalRef = useRef(null);
   const sidebarFriendsSortRef = useRef({ fingerprint: '', sorted: [] }); // Stable sort cache for sidebar pinned friends
@@ -11157,7 +11156,6 @@ const Parachord = () => {
           break;
         case 'add-friend':
           setAddFriendModalOpen(true);
-          setAddFriendInput('');
           break;
         case 'import-playlist':
           // Open Import Playlist dialog (URL or file import)
@@ -30950,8 +30948,9 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     return newFriend;
   };
 
+  // A profile link from the browser extension (the dialog adds through
+  // addFriendCore with the service it shows).
   const addFriend = async (input) => {
-    setAddFriendLoading(true);
 
     try {
       const { service, username } = parseFriendInput(input);
@@ -30980,13 +30979,9 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
       await addFriendCore({ service: finalService, username });
 
-      setAddFriendModalOpen(false);
-      setAddFriendInput('');
     } catch (error) {
       console.error('Failed to add friend:', error);
       showToast(errorText(error, 'Couldn’t add that friend. Check the name and try again.'), 'error');
-    } finally {
-      setAddFriendLoading(false);
     }
   };
 
@@ -43827,41 +43822,12 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
       );
     })(),
 
-    // Add Friend Modal - Cinematic Light styling
-    // The standard dialog (components/modal.js), a real form: Enter adds.
-    addFriendModalOpen && (() => {
-      const close = () => { setAddFriendModalOpen(false); setAddFriendInput(''); };
-      return React.createElement(Modal, {
-        size: 'md',
-        title: 'Add friend',
-        description: 'Enter a Last.fm or ListenBrainz username, or paste a profile URL.',
-        onClose: close,
-        footer: [
-          React.createElement(Button, { key: 'cancel', variant: 'secondary', onClick: close }, 'Cancel'),
-          React.createElement(Button, { key: 'add', variant: 'primary', type: 'submit', form: 'add-friend-form', busy: addFriendLoading, disabled: !addFriendInput.trim() }, 'Add friend')
-        ]
-      },
-        React.createElement('form', {
-          id: 'add-friend-form',
-          style: { marginTop: '12px' },
-          onSubmit: (e) => { e.preventDefault(); if (addFriendInput.trim() && !addFriendLoading) addFriend(addFriendInput); }
-        },
-          React.createElement(TextField, {
-            value: addFriendInput, onChange: (v) => setAddFriendInput(v),
-            // Global shortcuts stay out of the way while typing.
-            onKeyDown: (e) => e.stopPropagation(),
-            placeholder: 'Username or profile URL', autoFocus: true, 'aria-label': 'Username or profile URL', className: 'w-full'
-          })
-        ),
-        // Examples
-        React.createElement('div', { className: 'text-ink-tertiary', style: { marginTop: '12px', fontSize: '12px' } },
-          React.createElement('p', null, 'Examples:'),
-          React.createElement('p', { style: { marginTop: '4px' } }, '• username'),
-          React.createElement('p', null, '• https://www.last.fm/user/username'),
-          React.createElement('p', null, '• https://listenbrainz.org/user/username')
-        )
-      );
-    })(),
+    // Add a friend (components/add-friend-dialog.js): the service, then
+    // the username; a profile link fills both; errors under the field.
+    addFriendModalOpen && React.createElement(AddFriendDialog, {
+      onClose: () => setAddFriendModalOpen(false),
+      onAdd: (service, username) => addFriendCore({ service, username })
+    }),
 
     // Resolver Detail Modal
     selectedResolver && React.createElement(Modal, { bare: true, label: "Plugin settings", scrimClassName: 'z-50', onClose: () => { setSelectedResolver(null); }, panelProps: { style: {

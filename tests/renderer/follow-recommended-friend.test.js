@@ -37,10 +37,14 @@ describe('follow a recommended listener', () => {
     expect(fn).toMatch(/\.filter\(r => FRIEND_SERVICES\.includes\(r\.id\)\)/);
   });
 
-  test('addFriend delegates to addFriendCore and keeps its modal behavior', () => {
+  test('addFriend (the browser extension\'s link) delegates to addFriendCore; the dialog closes itself', () => {
     const fn = body('const addFriend = async', 'const followRecommendedFriend');
     expect(fn).toMatch(/addFriendCore\(/);
-    expect(fn).toMatch(/setAddFriendModalOpen\(false\)/);
+    // The Add a friend dialog (components/add-friend-dialog.js) adds through
+    // addFriendCore and closes on success; addFriend no longer drives it.
+    expect(fn).not.toMatch(/setAddFriendModalOpen/);
+    const dialog = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/components/add-friend-dialog.js'), 'utf8');
+    expect(dialog).toMatch(/await onAdd\(service, name\);\s*onClose\(\);/);
     // The friend sliding into the sidebar says it (addFriendCore), not a toast.
     expect(fn).not.toMatch(/pinned to sidebar/);
   });
