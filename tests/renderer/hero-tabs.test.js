@@ -21,7 +21,7 @@ test('every hero tab row uses HeroTabs or tab roles', () => {
   const fs = require('fs');
   const path = require('path');
   const read = (f) => fs.readFileSync(path.join(__dirname, '../../src/renderer', f), 'utf8');
-  const app = read('app.js');
+  const app = require('../helpers/renderer-source').appWithPages() /* app.js and the pages moved out of it (#1451) */;
   for (const l of ['Charts', 'History', 'Friend history']) expect(app.match(new RegExp(`createElement\\(HeroTabs, \\{[\\s\\S]*?label: '${l}'`, 'g'))).toHaveLength(2);
   expect(read('components/collection-page.js').match(/createElement\(HeroTabs, \{/g)).toHaveLength(2);
   const artist = read('components/artist-page.js');
@@ -45,7 +45,7 @@ test('rows that build their own tabs use the shared look (artist page, Search re
 });
 
 test('a line under hero tabs sits 16px below them (clear of the selected underline)', () => {
-  const app = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  const app = require('../helpers/renderer-source').appWithPages() /* app.js and the pages moved out of it (#1451) */;
   // Pop of the Tops, History, a friend's page: the line after the tabs. (A
   // subtitle right under a title, with no tabs, keeps mt-2.)
   const afterTabs = [...app.matchAll(/React\.createElement\(HeroTabs, \{[\s\S]{0,1500}?className: '(mt-\d) text-white\/80 text-sm'/g)].map(m => m[1]);

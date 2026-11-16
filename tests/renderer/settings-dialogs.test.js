@@ -4,7 +4,7 @@
  */
 const fs = require('fs');
 const path = require('path');
-const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+const app = require('../helpers/renderer-source').appWithPages() /* app.js and the pages moved out of it (#1451) */;
 
 test('the three prompts are switches that write their store keys', () => {
   expect(app).toContain("checked: !skipped,");
@@ -22,7 +22,5 @@ test('no Hidden / Showing badges, and the Home checklist has its own Reset', () 
 test('the tracks lists are lists (#1386)', () => {
   const lists = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/track-lists.js'), 'utf8');
   expect(lists).toContain("role: 'listitem',\n        ref: virtualizer.measureElement,");
-  // Fresh Drops' grid is in its own module now (#1451).
-  const fresh = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/fresh-drops-page.js'), 'utf8');
-  expect(((app + fresh).match(/role: 'list',/g) || []).length).toBeGreaterThanOrEqual(11);
+  expect((app.match(/role: 'list',/g) || []).length).toBeGreaterThanOrEqual(11);
 });

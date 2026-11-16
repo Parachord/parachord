@@ -28,7 +28,7 @@ test('no toast repeats what the queue and Collection animations already say', ()
     for (const m of src.matchAll(/showToast\(`Added [^`]*`|showToast\(`[^`]*saved to collection`/g)) bad.push(`${f}: ${m[0]}`);
   }
   expect(bad).toEqual([]);
-  const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  const app = require('../helpers/renderer-source').appWithPages() /* app.js and the pages moved out of it (#1451) */;
   const bulk = app.slice(app.indexOf('const addTracksToCollection = useCallback('), app.indexOf('const handleCollectionDrop = useCallback('));
   expect(bulk).toContain("showSidebarBadge('collection', addedCount);");
 });
@@ -36,7 +36,7 @@ test('no toast repeats what the queue and Collection animations already say', ()
 // Every way something arrives plays its animation: the queue pulse, the
 // Collection and Playlists sidebar badges, a friend sliding into the sidebar.
 test('each arrival path plays its animation', () => {
-  const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  const app = require('../helpers/renderer-source').appWithPages() /* app.js and the pages moved out of it (#1451) */;
   const fn = (name) => { const i = app.indexOf(`const ${name} = `); expect(i).toBeGreaterThan(-1); return app.slice(i, app.indexOf('\n  };\n', i)); };
   // The embed's "add to queue".
   expect(app).toMatch(/embed\.onQueue\([\s\S]{0,200}setCurrentQueue\(prev => \[\.\.\.prev, track\]\);\s*triggerQueueAnimation\(\);/);
@@ -55,7 +55,7 @@ test('each arrival path plays its animation', () => {
 // render before the fetch, so Pop of the Tops (Charts) and Critics Picks
 // albums only played on a second click.
 test('album actions play what the fetch returned, not the pre-fetch render', () => {
-  const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  const app = require('../helpers/renderer-source').appWithPages() /* app.js and the pages moved out of it (#1451) */;
   const page = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/artist-page.js'), 'utf8');
   for (const src of [app, page]) {
     expect(src).not.toMatch(/await prefetch\w+\([^)]*\);\s*\n\s*(?:let |const )?\w+ = prefetchedReleases(?:Ref\.current)?\[/);
@@ -79,7 +79,7 @@ test('album actions play what the fetch returned, not the pre-fetch render', () 
 // Listening along, the queue button's badge is the friend's avatar (their
 // queue decides what's next), not a grayed-out count.
 test('the queue badge shows the listen-along friend', () => {
-  const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  const app = require('../helpers/renderer-source').appWithPages() /* app.js and the pages moved out of it (#1451) */;
   expect(app).toMatch(/\? React\.createElement\('span', \{\s*'data-listen-along-badge': ''/);
   // A hexagon, like every user avatar.
   expect(app).toMatch(/'data-listen-along-badge'[\s\S]{0,300}clipPath: LISTENER_HEXAGON/);

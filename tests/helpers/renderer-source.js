@@ -11,6 +11,7 @@ const PAGE_MODULES = [
   'components/fresh-drops-page.js',
   'components/recommendations-page.js',
   'components/concerts-page.js',
+  'components/charts-page.js',
 ];
 
 function read(rel) {

@@ -132,8 +132,10 @@ describe('wiring', () => {
   ])('the %s grid retries a dead cover and never reuses a hidden img for the fresh URL', (view, call, img) => {
     const fresh = fs.readFileSync(path.join(root, 'src', 'renderer', 'components', 'fresh-drops-page.js'), 'utf8');
     const start = app.indexOf(`activeView === '${view}' && React.createElement`);
-    expect(start).toBeGreaterThan(-1);
-    const body = view === 'new-releases' ? fresh : app.slice(start, start + 60000);
+    // Fresh Drops and Charts are their own modules (#1451).
+    if (!['new-releases', 'discover'].includes(view)) expect(start).toBeGreaterThan(-1);
+    const charts = fs.readFileSync(path.join(root, 'src', 'renderer', 'components', 'charts-page.js'), 'utf8');
+    const body = view === 'new-releases' ? fresh : view === 'discover' ? charts : app.slice(start, start + 60000);
     expect(body).toMatch(call);
     expect(body).toMatch(img);
   });
