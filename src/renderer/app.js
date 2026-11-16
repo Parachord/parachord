@@ -39371,7 +39371,7 @@ React.createElement('span', {
               const value = chips.some(c => c.id === concertsSourceFilter) ? concertsSourceFilter : 'all';
               return React.createElement(FilterChips, {
                 chips, value, onChange: setConcertsSourceFilter,
-                pageColor: PAGE_COLORS.concerts.fill, label: 'Filter concerts by source',
+                pageColor: PAGE_COLORS.concerts.color, label: 'Filter concerts by source',
               });
             })(),
             // Refresh button
@@ -39565,7 +39565,7 @@ React.createElement('span', {
                       setConcertsLocationOpen(false);
                     },
                     disabled: concertsGeocodingLoading,
-                    style: { fontSize: '13px', fontWeight: '500', padding: '6px 16px', borderRadius: '8px', backgroundColor: PAGE_COLORS.concerts.fill, color: 'var(--on-accent)' }
+                    style: { fontSize: '13px', fontWeight: '500', padding: '6px 16px', borderRadius: '8px', backgroundColor: PAGE_COLORS.concerts.color, color: 'var(--on-accent)' }
                   }, concertsGeocodingLoading ? 'Looking up…' : 'Apply')
                 )
               )

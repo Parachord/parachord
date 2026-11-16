@@ -367,8 +367,8 @@ function ConcertCard({ concert, image }) {
       e('span', { style: Object.assign({ fontSize: '12px', color: 'var(--text-secondary)' }, ELLIPSIS) }, venue.name || 'Venue TBA'),
       city && e('span', { style: Object.assign({ fontSize: '12px', color: 'var(--text-secondary)' }, ELLIPSIS) }, city),
       // In a box of its own, so the card's column doesn't stretch it: one
-      // seller and several are the same width.
-      sellers.length > 0 && e('div', { style: { display: 'flex', marginTop: '4px' } },
+      // seller and several are the same width, on the card's right edge.
+      sellers.length > 0 && e('div', { style: { display: 'flex', justifyContent: 'flex-end', marginTop: '4px' } },
         e(TicketsButton, { sources: sellers, artist: concert.artist, size: 'sm' }))));
 }
 
