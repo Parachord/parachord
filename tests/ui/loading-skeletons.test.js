@@ -601,3 +601,24 @@ test('a friend\'s page loads with each tab\'s own placeholders, not a lone spinn
   expect(block).toContain('TrackRowSkeleton');
   expect(app).not.toMatch(/friendHistoryLoading && React\.createElement\('div', \{ className: 'flex items-center justify-center py-12/);
 });
+
+describe('concert list skeletons match their rows (components/concert-skeletons.js)', () => {
+  const skel = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'components', 'concert-skeletons.js'), 'utf8');
+  const artist = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'components', 'artist-page.js'), 'utf8');
+  test("the Concerts page's row: 100px date column, 100×100 photo, 100px Tickets column", () => {
+    expect(app).toMatch(/className: 'flex flex-col items-center justify-center text-center flex-shrink-0 px-4',\s*style: \{ minWidth: '100px' \}/);
+    expect(app).toContain("style: { width: '100px', height: '100px', alignSelf: 'stretch' }");
+    expect(skel).toContain("style: { minWidth: '100px' } }, e(DateBars)");
+    expect(skel).toContain("style: { width: '100px', height: '100px', borderRadius: 0 }");
+    expect(skel).toContain("style: { width: '100px' } },");
+    expect(app).toContain("React.createElement(ConcertListSkeleton, { count: 8, photo: true })");
+  });
+  test("an artist's On tour row: padded, 56px date column; no lone spinner, no \"0 upcoming concerts\" while loading", () => {
+    expect(artist).toContain("className: 'flex items-center gap-4 p-4 rounded-xl border cursor-default group bg-surface-card border-line-light'");
+    expect(artist).toMatch(/style: \{ minWidth: '56px' \}/);
+    expect(skel).toContain("style: { minWidth: '56px' } }, e(DateBars)");
+    expect(artist).toContain('React.createElement(ConcertListSkeleton, { count: 4 })');
+    expect(artist).not.toContain("'Loading concerts…'");
+    expect(artist).toContain("events.length === 0 && artistConcertsLoading ? 'Upcoming concerts' : countOf(events.length, 'upcoming concert')");
+  });
+});

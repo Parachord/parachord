@@ -32,6 +32,7 @@ const { EmptyState, ErrorState } = require('./states');
 const { SortMenu } = require('./sort-menu');
 const { Menu } = require('./menu');
 const { TicketsButton } = require('./tickets-button');
+const { ConcertListSkeleton } = require('./concert-skeletons');
 const { HeroTabs, heroTabClass } = require('./hero-tabs');
 const { SectionHeader } = require('./section-header');
 const { FilterChips } = require('./filter-chips');
@@ -1621,7 +1622,8 @@ const ArtistPage = React.memo(function ArtistPage(props) {
               React.createElement(StickyBar, null,
                 React.createElement(SectionHeader, {
                   title: React.createElement(React.Fragment, null,
-                    countOf(events.length, 'upcoming concert'),
+                    // No count until there's one to give (it read "0 upcoming concerts" while loading).
+                    events.length === 0 && artistConcertsLoading ? 'Upcoming concerts' : countOf(events.length, 'upcoming concert'),
                     artistConcertsLoading && React.createElement(Icons.Spinner, { className: 'w-4 h-4', style: { display: 'inline-block', verticalAlign: 'middle', marginLeft: '12px', color: concertsColor } })),
                   style: { marginBottom: 0, alignItems: 'center', width: '100%' },
                   extra: React.createElement(Button, {
@@ -1641,13 +1643,8 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                 icon: Icons.Ticket, title: 'No upcoming concerts', body: 'Nothing announced yet. Check back later.'
               }),
 
-              // Loading state
-              events.length === 0 && artistConcertsLoading && React.createElement('div', {
-                className: 'flex flex-col items-center justify-center py-12'
-              },
-                React.createElement(Icons.Spinner, { className: 'w-8 h-8 mb-3', style: { color: concertsColor } }),
-                React.createElement('p', { className: `text-sm text-ink-tertiary` }, 'Loading concerts…')
-              ),
+              // Loading: the On tour row's skeleton (components/concert-skeletons.js).
+              events.length === 0 && artistConcertsLoading && React.createElement(ConcertListSkeleton, { count: 4 }),
 
               // Month-grouped event list
               sortedMonths.map(monthKey =>

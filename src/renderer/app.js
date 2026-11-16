@@ -2077,6 +2077,7 @@ const { WhatsNewDialog } = require('./components/whats-new-dialog');
 const { ArtistCard, ArtistCardSkeleton, RankBadge } = require('./components/artist-card');
 const { AlbumCard, AlbumRankBadge } = require('./components/album-card');
 const { TicketsButton } = require('./components/tickets-button');
+const { ConcertListSkeleton } = require('./components/concert-skeletons');
 const { PlaylistCard } = require('./components/playlist-card');
 const { ListenerCard, LISTENER_HEXAGON } = require('./components/listener-card');
 const { Badge } = require('./components/badge');
@@ -39591,31 +39592,10 @@ React.createElement('span', {
             // Error state - generic error
             concertsError && concertsError !== 'no_services' && !concertsLoading && concertsError && concertsError !== 'no_services' && !concertsLoading && React.createElement(ErrorState, { title: 'Couldn’t load concerts', body: concertsError, onRetry: () => loadConcerts(true) }),
 
-            // Loading skeleton
-            (concertsLoading || !cacheLoaded) && !concertsError && concerts.length === 0 && React.createElement('div', {
-              className: 'p-6 space-y-4'
-            },
-              Array.from({ length: 8 }).map((_, i) =>
-                React.createElement('div', {
-                  key: `concert-skeleton-${i}`,
-                  className: 'flex items-center gap-4 p-4 bg-surface-card rounded-xl border border-line-light',
-                  style: { animation: `pulse 1.5s ease-in-out infinite`, animationDelay: `${i * 100}ms` }
-                },
-                  // Date placeholder
-                  React.createElement('div', { className: 'flex flex-col items-center', style: { minWidth: '56px' } },
-                    React.createElement('div', { className: 'w-10 h-4 bg-surface-placeholder rounded mb-1' }),
-                    React.createElement('div', { className: 'w-8 h-6 bg-surface-placeholder rounded' })
-                  ),
-                  // Content placeholder
-                  React.createElement('div', { className: 'flex-1' },
-                    React.createElement('div', { className: 'w-48 h-4 bg-surface-placeholder rounded mb-2' }),
-                    React.createElement('div', { className: 'w-32 h-3 bg-surface-placeholder rounded mb-1' }),
-                    React.createElement('div', { className: 'w-24 h-3 bg-surface-placeholder rounded' })
-                  ),
-                  // Button placeholder
-                  React.createElement('div', { className: 'w-20 h-8 bg-surface-placeholder rounded-lg' })
-                )
-              )
+            // Loading skeleton: the page's own row, photo included
+            // (components/concert-skeletons.js).
+            (concertsLoading || !cacheLoaded) && !concertsError && concerts.length === 0 && React.createElement('div', { className: 'p-6' },
+              React.createElement(ConcertListSkeleton, { count: 8, photo: true })
             ),
 
             // Empty state
