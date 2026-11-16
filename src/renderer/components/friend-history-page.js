@@ -10,7 +10,7 @@
 // component's, moved as it was; window is read only inside handlers.
 
 const Icons = require('./icons');
-const { TrackRow, TrackRowSkeleton } = require('./track-lists');
+const { TrackRow, TrackRowSkeleton, VirtualizedTrackList } = require('./track-lists');
 const { historySortOptions, historyPeriodOptions } = require('../lib/history-options');
 const { PageHero } = require('./page-hero');
 const { FriendAvatar } = require('./friend-avatar');
@@ -96,6 +96,9 @@ const FriendHistoryPage = React.memo(function FriendHistoryPage(props) {
     trackSources,
     unpinFriend,
   } = props;
+  // The top-tracks album column shows only when the list has albums;
+  // worked out once, not per row.
+  const friendHistoryTopHasAlbums = (friendHistoryData.topTracks || []).some(t => t.album);
 
           return React.createElement('div', {
             className: 'flex-1 flex flex-col h-full',
@@ -266,12 +269,18 @@ React.createElement('div', {
                   if (sorted.length === 0) {
                     return React.createElement(EmptyState, { title: 'No recent listens', body: 'Nothing played lately.' });
                   }
-                  return React.createElement('div', { role: 'list', className: 'space-y-0' },
-                    ...sorted.map((track, index) => {
-
+                  // The album column only when the list has albums (ListenBrainz's top
+                  // tracks carry none, which left a blank column).
+                  const hasAlbums = sorted.some(t => t.album);
+                  // Virtualized past 100 rows (#767). Two listens of one song
+                  // share an id, so rows key by the listen.
+                  return React.createElement(VirtualizedTrackList, {
+                    tracks: sorted,
+                    parentRef: friendHistoryScrollContainerRef,
+                    getKey: (track, index) => `${track.id}|${track.playedAt ?? index}`,
+                    renderRow: (track, index) => {
                       return React.createElement(TrackRow, Object.assign({
-                        role: 'listitem',
-                        key: track.id || index,
+                        key: `${track.id}|${track.playedAt ?? index}`,
                         track,
                         number: String(index + 1).padStart(2, '0'),
                         isNowPlaying: !!track.nowPlaying,
@@ -283,21 +292,22 @@ React.createElement('div', {
                         onContextMenu: () => window.showItemMenu({ type: 'track', track }),
                         duration: true,
                         cells: [
-                          // The album column only when the list has albums (ListenBrainz's top
-                          // tracks carry none, which left a blank column).
-                          ...(sorted.some(t => t.album) ? [{ key: 'album', content: track.album || '' }] : []),
+                          ...(hasAlbums ? [{ key: 'album', content: track.album || '' }] : []),
                           { key: 'when', content: (track.playedAt || track.timestamp) ? formatTimeAgo(track.playedAt || track.timestamp) : '', width: '80px', align: 'right' }
                         ]
                       }, trackRowDrag(track)));
-                    })
-                  );
+                    }
+                  });
                 })(),
                 // Top tracks tab content - matching History page layout
                 !friendHistoryLoading && !friendHistoryData.errors?.topTracks && friendHistoryTab === 'topTracks' && React.createElement('div', { className: 'space-y-0' },
                   friendHistoryData.topTracks.length === 0
                     ? React.createElement(EmptyState, { title: 'No top tracks for this period', body: 'Pick a longer period.' })
-                    : friendHistoryData.topTracks.map((track, index) => {
-
+                    // Virtualized past 100 rows (#767).
+                    : React.createElement(VirtualizedTrackList, {
+                      tracks: friendHistoryData.topTracks,
+                      parentRef: friendHistoryScrollContainerRef,
+                      renderRow: (track, index) => {
                         return React.createElement(TrackRow, Object.assign({
                           key: track.id || index,
                           track,
@@ -309,14 +319,15 @@ React.createElement('div', {
                           onOpenArtist: fetchArtistData,
                           onContextMenu: () => window.showItemMenu({ type: 'track', track }),
                           duration: true,
-                          cells: [
+                            cells: [
                             // The album column only when the list has albums (ListenBrainz's top
                             // tracks carry none, which left a blank column).
-                            ...(friendHistoryData.topTracks.some(t => t.album) ? [{ key: 'album', content: track.album || '' }] : []),
+                            ...(friendHistoryTopHasAlbums ? [{ key: 'album', content: track.album || '' }] : []),
                             { key: 'plays', content: `${track.playCount} plays`, width: '80px', align: 'right' }
                           ]
                         }, trackRowDrag(track)));
-                      })
+                      }
+                    })
                 ),
                 // Top albums tab content
                 !friendHistoryLoading && !friendHistoryData.errors?.topAlbums && friendHistoryTab === 'topAlbums' && React.createElement('div', {

@@ -9,7 +9,7 @@
 // read only inside handlers.
 
 const Icons = require('./icons');
-const { TrackRow, TrackRowSkeleton } = require('./track-lists');
+const { TrackRow, TrackRowSkeleton, VirtualizedTrackList } = require('./track-lists');
 const { FilterBox } = require('./filter-box');
 const { PageHero } = require('./page-hero');
 const { CardSkeleton } = require('./home-skeletons');
@@ -281,13 +281,15 @@ React.createElement('span', {
                 return React.createElement(EmptyState, { title: 'No chart data yet', body: 'The chart didn’t load. Try again in a moment.' });
               }
 
-              return React.createElement('div', { role: 'list', className: 'space-y-0' },
-                filtered.map((track, index) => {
+              // Virtualized past 100 rows (#767); each row is a list item.
+              return React.createElement(VirtualizedTrackList, {
+                tracks: filtered,
+                parentRef: lastfmChartsScrollContainerRef,
+                renderRow: (track, index) => {
                   const isCurrentTrack = currentTrack?.title === track.title && currentTrack?.artist === track.artist;
                   const isNowPlaying = isCurrentTrack && isPlaying;
 
                   return React.createElement(TrackRow, {
-                    role: 'listitem',
                     key: track.id,
                     track,
                     number: String(track.rank).padStart(2, '0'),
@@ -312,8 +314,8 @@ React.createElement('span', {
                     // always there on Last.fm so the rows line up.
                     cells: chartsSongsSource === 'lastfm' ? [{ key: 'listeners', content: track.listeners > 0 ? `${(track.listeners / 1000).toFixed(0)}K listeners` : '', width: '90px', align: 'right' }] : []
                   });
-                })
-              );
+                }
+              });
             })()
           )
         );

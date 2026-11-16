@@ -22,5 +22,8 @@ test('no Hidden / Showing badges, and the Home checklist has its own Reset', () 
 test('the tracks lists are lists (#1386)', () => {
   const lists = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/track-lists.js'), 'utf8');
   expect(lists).toContain("role: 'listitem',\n        ref: virtualizer.measureElement,");
-  expect((app.match(/role: 'list',/g) || []).length).toBeGreaterThanOrEqual(11);
+  // A list is a role="list" container, or a VirtualizedTrackList, which draws
+  // one (Charts and History moved to it in #767).
+  const lists_ = (app.match(/role: 'list',/g) || []).length + (app.match(/React\.createElement\(VirtualizedTrackList, \{/g) || []).length;
+  expect(lists_).toBeGreaterThanOrEqual(11);
 });
