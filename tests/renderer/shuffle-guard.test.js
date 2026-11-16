@@ -10,7 +10,7 @@ const path = require('path');
 
 const { shuffleAllowed, SHUFFLE_UNAVAILABLE_MESSAGE } = require('../../src/renderer/lib/playback-helpers');
 
-const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+const app = require('../helpers/renderer-source').appWithPages();
 
 describe('shuffleAllowed', () => {
   test('refused during a spinoff or Listen Along, allowed otherwise', () => {

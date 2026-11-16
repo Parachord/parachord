@@ -35,6 +35,7 @@ const { AddToPlaylistPanel, ADD_TO_PLAYLIST_PANEL_HANDLERS } = require('../../sr
 const { SyncSetupDialog, SYNC_SETUP_DIALOG_HANDLERS } = require('../../src/renderer/components/sync-setup-dialog');
 const { SyncStatusDialog, SYNC_STATUS_DIALOG_HANDLERS } = require('../../src/renderer/components/sync-status-dialog');
 const { SettingsPage, SETTINGS_PAGE_HANDLERS } = require('../../src/renderer/components/settings-page');
+const { Playbar, PLAYBAR_HANDLERS } = require('../../src/renderer/components/playbar');
 const { useStableHandlers } = require('../../src/renderer/lib/stable-handlers');
 
 const PAGES = [
@@ -56,6 +57,7 @@ const PAGES = [
   { component: 'SyncSetupDialog', file: 'sync-setup-dialog.js', handlersVar: 'syncSetupDialogHandlers', handlers: SYNC_SETUP_DIALOG_HANDLERS, memo: SyncSetupDialog },
   { component: 'SyncStatusDialog', file: 'sync-status-dialog.js', handlersVar: 'syncStatusDialogHandlers', handlers: SYNC_STATUS_DIALOG_HANDLERS, memo: SyncStatusDialog },
   { component: 'SettingsPage', file: 'settings-page.js', handlersVar: 'settingsPageHandlers', handlers: SETTINGS_PAGE_HANDLERS, memo: SettingsPage },
+  { component: 'Playbar', file: 'playbar.js', handlersVar: 'playbarHandlers', handlers: PLAYBAR_HANDLERS, memo: Playbar },
 ];
 
 describe.each(PAGES)('$component', ({ memo }) => {

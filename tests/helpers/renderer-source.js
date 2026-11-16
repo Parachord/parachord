@@ -23,6 +23,7 @@ const PAGE_MODULES = [
   'components/sync-setup-dialog.js',
   'components/sync-status-dialog.js',
   'components/settings-page.js',
+  'components/playbar.js',
 ];
 
 function read(rel) {

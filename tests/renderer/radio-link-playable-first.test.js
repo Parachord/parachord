@@ -13,7 +13,7 @@ const {
 } = require('../../src/renderer/lib/playback-helpers');
 
 const engine = fs.readFileSync(path.join(__dirname, '../../src/renderer/hooks/use-playback-engine.js'), 'utf8');
-const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+const app = require('../helpers/renderer-source').appWithPages();
 
 const between = (src, from, to) => {
   const a = src.indexOf(from);

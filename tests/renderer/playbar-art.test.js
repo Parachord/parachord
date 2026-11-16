@@ -72,7 +72,7 @@ describe('playbarShowsTrack', () => {
 });
 
 describe('the engine and playbar wire it', () => {
-  const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  const app = require('../helpers/renderer-source').appWithPages();
   const engine = fs.readFileSync(path.join(__dirname, '../../src/renderer/hooks/use-playback-engine.js'), 'utf8');
 
   test('handlePlay records the track it starts with the loading flag', () => {
@@ -90,7 +90,7 @@ describe('the engine and playbar wire it', () => {
 });
 
 describe('the playbar uses it', () => {
-  const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  const app = require('../helpers/renderer-source').appWithPages();
 
   test('the crossfade asks instead of always keeping the old cover', () => {
     const start = app.indexOf('// Handle album art crossfade transitions in playbar');

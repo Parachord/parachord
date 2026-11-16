@@ -50,11 +50,11 @@ describe('controls use the shared tooltip, not a native title', () => {
   });
 
   test('TooltipLayer is mounted once at the app root', () => {
-    expect(read('src/renderer/app.js').match(/React\.createElement\(TooltipLayer, null\)/g)).toHaveLength(1);
+    expect(require('../helpers/renderer-source').appWithPages().match(/React\.createElement\(TooltipLayer, null\)/g)).toHaveLength(1);
   });
 
   test('the playbar and its tooltip-wrapped icon buttons have names', () => {
-    const app = read('src/renderer/app.js');
+    const app = require('../helpers/renderer-source').appWithPages();
     for (const name of ['Previous', 'Next', 'Queue', 'Back', 'Forward', 'Volume']) {
       expect(app).toContain(`'aria-label': '${name}'`);
     }
