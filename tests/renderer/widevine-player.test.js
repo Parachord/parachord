@@ -144,13 +144,14 @@ function makeShaka({ loadGate } = {}) {
 function makeElectron({ manifestManifest = '<MPD/>', manifestOk = true, licenseOk = true, licenseDenied = false, storeValues = {} } = {}) {
   const playerEvents = [];
   // The plugin-mediated half, faked as faithfully as the bridge behaves: an
-  // openSession mints the resolver's CURRENT session (its context rides
-  // main-side), a provider manifest rotates it away, and a relayLicense
-  // naming the plugin session forwards the challenge to the router the player
-  // registered (the bridge's widevine:plugin-license push) and returns its
-  // licence or its thrown fields. A provider session answers directly — the
-  // bridge routes by the session record, not the challenge.
-  let pluginSession = null; // { sessionId, context } | null
+  // openSession (called with the manifest's LENGTH — the text never crosses)
+  // mints the resolver's CURRENT session, a provider manifest rotates it
+  // away, and a relayLicense naming the plugin session forwards the challenge
+  // to the router the player registered (the bridge's widevine:plugin-license
+  // push — challenge and ids only, NO context: the plugin's context stays
+  // renderer-side, in the player's relay record). A provider session answers
+  // directly — the bridge routes by the session record, not the challenge.
+  let pluginSession = null; // { sessionId } | null
   let pluginRouter = null; // the player's registered onPluginLicenseRequest callback
   let pluginSessionSeq = 0;
   const bridge = {
@@ -158,9 +159,9 @@ function makeElectron({ manifestManifest = '<MPD/>', manifestOk = true, licenseO
       pluginSession = null; // a provider manifest rotates the resolver's session
       return manifestOk ? { success: true, manifest: manifestManifest, substituteAsin: 'SUB1', cdnType: 'cf-x' } : { success: false, reason: 'not-signed-in', error: 'denied' };
     }),
-    openSession: jest.fn(async (resolverId, manifest, type, drm, context) => {
+    openSession: jest.fn(async (resolverId, manifestLength, type, drm) => {
       pluginSessionSeq += 1;
-      pluginSession = { sessionId: `plug-sess-${pluginSessionSeq}`, context: context === undefined ? null : context };
+      pluginSession = { sessionId: `plug-sess-${pluginSessionSeq}` };
       return { success: true, sessionId: pluginSession.sessionId };
     }),
     onPluginLicenseRequest: (callback) => { pluginRouter = callback; },
@@ -168,7 +169,7 @@ function makeElectron({ manifestManifest = '<MPD/>', manifestOk = true, licenseO
       if (pluginSession && sessionId === pluginSession.sessionId) {
         if (!pluginRouter) return { success: false, reason: 'playback-failed', error: 'no plugin relay registered' };
         try {
-          const license = await pluginRouter({ requestId: 'fake-req', resolverId, sessionId, challenge, context: pluginSession.context });
+          const license = await pluginRouter({ requestId: 'fake-req', resolverId, sessionId, challenge });
           return { success: true, license };
         } catch (error) {
           return {
@@ -298,9 +299,10 @@ describe('playPlugin (the plugin-mediated path, #1356 M4)', () => {
       relayLicense: async () => 'TElDRU5TRQ==',
       trackContext: { albumAsin: 'ALB1', durationMs: 210000 }
     });
-    // The plugin supplied the manifest; the host only opened the session.
+    // The plugin supplied the manifest; the host only opened the session —
+    // by LENGTH (the text never crosses IPC).
     expect(el.bridge.getManifest).not.toHaveBeenCalled();
-    expect(el.bridge.openSession).toHaveBeenCalledWith('amazonmusic', '<MPD the plugin fetched/>', 'dash', 'widevine', { asin: 'B1', csrf: 'tok' });
+    expect(el.bridge.openSession).toHaveBeenCalledWith('amazonmusic', '<MPD the plugin fetched/>'.length, 'dash', 'widevine');
     expect(sh.playerInstances[0].loadedUris).toContain('blob:mock-mpd');
     const drmCfg = sh.playerInstances[0].configureCalls.find((c) => c.drm && c.drm.servers);
     expect(drmCfg.drm.servers['com.widevine.alpha']).toBe('parachord-license://amazonmusic?s=plug-sess-1');
@@ -317,8 +319,9 @@ describe('playPlugin (the plugin-mediated path, #1356 M4)', () => {
     const handler = sh.schemeHandlers.get('parachord-license');
     const bytes = new Uint8Array([1, 2, 3, 4]);
     const response = await handler('parachord-license://amazonmusic?s=plug-sess-1', { body: bytes.buffer, uris: [] });
-    // The plugin saw its own context — the one carried main-side since the
-    // open-session — not the whole track, not the entity.
+    // The plugin saw its own context — the one from ITS manifest reply, held
+    // renderer-side in the player's relay record (never carried main-side,
+    // never on the forward) — not the whole track, not the entity.
     expect(relayLicense).toHaveBeenCalledWith(Buffer.from(bytes.buffer).toString('base64'), { asin: 'B1', csrf: 'tok' });
     // The licence is the PLUGIN's bytes (not the fake provider's).
     expect(new Uint8Array(response.data)).toEqual(new Uint8Array([...Buffer.from('TVBVRElOIExJQ0VOU0U=', 'base64')]));
@@ -376,12 +379,74 @@ describe('playPlugin (the plugin-mediated path, #1356 M4)', () => {
     });
     // A stale session's forward (if one raced through main's gates) finds no
     // router target: the live play is the only session that relays.
-    await expect(el.pluginRouter({ requestId: 'x', resolverId: 'amazonmusic', sessionId: 'not-the-live-one', challenge: 'Q0FRPQ==', context: {} }))
+    await expect(el.pluginRouter({ requestId: 'x', resolverId: 'amazonmusic', sessionId: 'not-the-live-one', challenge: 'Q0FRPQ==' }))
       .rejects.toMatchObject({ reason: 'playback-failed' });
     // And after stop() there is no live plugin play at all.
     await player.stop();
-    await expect(el.pluginRouter({ requestId: 'x', resolverId: 'amazonmusic', sessionId: 'plug-sess-1', challenge: 'Q0FRPQ==', context: {} }))
+    await expect(el.pluginRouter({ requestId: 'x', resolverId: 'amazonmusic', sessionId: 'plug-sess-1', challenge: 'Q0FRPQ==' }))
       .rejects.toMatchObject({ reason: 'playback-failed' });
+  });
+
+  test('a licence request fired MID-LOAD (Shaka asks while load() is still pending) reaches the plugin relay — the FIRST licence of a plugin play is not refused', async () => {
+    // The review's blocker: Shaka sends the licence request during load() (as
+    // soon as the DRM engine has init data), long before loadManifestSession
+    // assigns trackSession — a router that read trackSession refused the
+    // first licence of every plugin play. The router must answer from the
+    // record taken at open-session time, before the load starts.
+    let finishLoad;
+    const loadGate = new Promise((res) => { finishLoad = res; });
+    const { sh, el, player } = load({ shaka: makeShaka({ loadGate }) });
+    const relayLicense = jest.fn(async () => 'TVBVRElOIExJQ0VOU0U=');
+    const audio = makeAudio();
+    const played = player.playPlugin(audio, { resolverId: 'amazonmusic', manifestResult: pluginReply(), relayLicense });
+    await new Promise((r) => setTimeout(r, 25)); // the play parks inside load()
+    const p = sh.playerInstances[0];
+    expect(p.loadedUris).toHaveLength(0); // the gate holds: still mid-load
+    expect(p.configureCalls.some((c) => c.drm && c.drm.servers)).toBe(true); // DRM config is set — Shaka would ask NOW
+    const handler = sh.schemeHandlers.get('parachord-license');
+    const licenceP = handler('parachord-license://amazonmusic?s=plug-sess-1', { body: new ArrayBuffer(4), uris: [] });
+    // The relay answered MID-LOAD, with the plugin's own context from the
+    // renderer-side record.
+    expect(relayLicense).toHaveBeenCalledTimes(1);
+    expect(relayLicense).toHaveBeenCalledWith(Buffer.from(new ArrayBuffer(4)).toString('base64'), { asin: 'B1', csrf: 'tok' });
+    const response = await licenceP;
+    expect(new Uint8Array(response.data)).toEqual(new Uint8Array([...Buffer.from('TVBVRElOIExJQ0VOU0U=', 'base64')]));
+    finishLoad();
+    const result = await played; // and the play proceeds
+    expect(result).toMatchObject({ resolverId: 'amazonmusic' });
+  });
+
+  test('a pre-claimed token (claimPlayToken, taken before the plugin\'s manifest fetch) makes a bare stop() during that fetch supersede the play before it starts', async () => {
+    // The engine claims before the manifest await (the provider path\'s rule):
+    // a stop() with no newer handlePlay must not leave the stopped play
+    // opening a session and loading the element.
+    const { el, player } = load();
+    const token = player.claimPlayToken();
+    await player.stop(); // the bare stop (the sign-out shape)
+    await expect(player.playPlugin(makeAudio(), {
+      resolverId: 'amazonmusic', manifestResult: pluginReply(), relayLicense: async () => 'TElDRU5TRQ==', token
+    })).rejects.toMatchObject({ reason: 'superseded' });
+    expect(el.bridge.openSession).not.toHaveBeenCalled();
+  });
+
+  test('the happy pre-claim: playPlugin runs under the engine\'s token and returns it', async () => {
+    const { el, player } = load();
+    const token = player.claimPlayToken();
+    const result = await player.playPlugin(makeAudio(), {
+      resolverId: 'amazonmusic', manifestResult: pluginReply(), relayLicense: async () => 'TElDRU5TRQ==', token
+    });
+    expect(result).toMatchObject({ resolverId: 'amazonmusic', token });
+    expect(el.bridge.openSession).toHaveBeenCalledTimes(1);
+  });
+
+  test('a licence refusal\'s .reason propagates through the scheme handler (the documented contract)', async () => {
+    const { sh, el, player } = load();
+    el.bridge.relayLicense.mockResolvedValueOnce({ success: false, reason: 'load-failed', error: 'licence host 503' });
+    const audio = makeAudio();
+    await player.play(audio, { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    const handler = sh.schemeHandlers.get('parachord-license');
+    await expect(handler('parachord-license://amazonmusic', { body: new ArrayBuffer(4), uris: [] }))
+      .rejects.toMatchObject({ reason: 'load-failed', message: 'licence host 503' });
   });
 
   test('a provider play after a plugin play takes the session back (supersession both ways)', async () => {
@@ -390,6 +455,11 @@ describe('playPlugin (the plugin-mediated path, #1356 M4)', () => {
     await player.playPlugin(audio, { resolverId: 'amazonmusic', manifestResult: pluginReply(), relayLicense: async () => 'TVBVRElOIExJQ0VOU0U=' });
     const audio2 = makeAudio();
     await player.play(audio2, { resolverId: 'amazonmusic', entity: { asin: 'B2' } });
+    // The provider play superseded the plugin one: a forward still naming the
+    // plugin session (if one raced through main's gates) finds no router
+    // target — the relay record died with the superseded play.
+    await expect(el.pluginRouter({ requestId: 'x', resolverId: 'amazonmusic', sessionId: 'plug-sess-1', challenge: 'Q0FRPQ==' }))
+      .rejects.toMatchObject({ reason: 'playback-failed' });
     // The provider session owns the element now; its licence URL names the
     // provider session, and the provider relay answers.
     const drmCfg = sh.playerInstances[0].configureCalls.filter((c) => c.drm && c.drm.servers).pop();

@@ -685,19 +685,22 @@ contextBridge.exposeInMainWorld('electron', {
   // needs beyond its search/sign-in channels.
   //
   // The plugin-mediated half (#1356 M4): a resolver that implements
-  // getPlaybackManifest supplies the manifest renderer-side and hands it UP
-  // (openSession), and its relayLicense answers main's forwarded license
-  // challenges (onPluginLicenseRequest) — main keeps the sender/session/cap
-  // gates either way.
+  // getPlaybackManifest supplies the manifest renderer-side and declares it
+  // UP (openSession carries only its length — the text stays renderer-side),
+  // and its relayLicense answers main's forwarded license challenges
+  // (onPluginLicenseRequest) — main keeps the sender/session/cap gates
+  // either way. The plugin's context never crosses IPC: the renderer-side
+  // router holds it and hands it back to the plugin's relayLicense.
   widevine: {
     getManifest: (resolverId, entity) => ipcRenderer.invoke('widevine:manifest', { resolverId, entity }),
     relayLicense: (resolverId, challenge, sessionId) => ipcRenderer.invoke('widevine:license', { resolverId, challenge, sessionId }),
     playerEvent: (resolverId, event) => ipcRenderer.invoke('widevine:player-event', { resolverId, event }),
-    openSession: (resolverId, manifest, type, drm, context) =>
-      ipcRenderer.invoke('widevine:open-session', { resolverId, manifest, type, drm, context }),
+    openSession: (resolverId, manifestLength, type, drm) =>
+      ipcRenderer.invoke('widevine:open-session', { resolverId, manifestLength, type, drm }),
     // A plugin-mediated session's license challenges arrive here, one push
     // per relay. The callback gets { requestId, resolverId, sessionId,
-    // challenge, context } and returns the license (base64); a thrown
+    // challenge } and returns the license (base64) — no context rides the
+    // push (the caller holds the plugin's context renderer-side). A thrown
     // error's fields (reason/licenseDenied/denialReason/message) answer in
     // the same shape a provider relayLicense rejection produces. The wrapper
     // ALWAYS answers — main's relay timeout is the net for a callback that

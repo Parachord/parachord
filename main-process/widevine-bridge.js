@@ -17,12 +17,15 @@
 //
 // The plugin-mediated path (#1356 M4) runs ALONGSIDE the provider: a
 // resolver that implements getPlaybackManifest supplies the manifest
-// RENDERER-side and hands it UP via widevine:open-session, which mints the
+// RENDERER-side and declares it UP via widevine:open-session (its length —
+// the rate window's gate; the text stays renderer-side), which mints the
 // licence session under the same gates a provider manifest opens one
 // (sender, per-resolver manifest rate window, supersession). Licence
 // challenges for such a session flow main→renderer (widevine:plugin-license,
-// answered on widevine:plugin-license-answer) so the plugin's relayLicense
-// runs renderer-side while the relay/session/cap gates stay HERE. Plugins
+// answered on widevine:plugin-license-answer) — the challenge and its ids
+// only; the plugin's context stays renderer-side — so the plugin's
+// relayLicense runs renderer-side while the relay/session/cap gates stay
+// HERE. Plugins
 // run in the main window's top frame and pass the sender check like app
 // code (the scope note below), so a plugin-supplied manifest changes no
 // threat model — what it changes is where the service knowledge lives.
@@ -93,10 +96,13 @@ function markManifestForRateLimit(resolverId) {
 }
 
 // pluginRelay (#1356 M4), when the session was opened via
-// widevine:open-session instead of a provider manifest: { type, drm,
-// context } — the plugin's declared stream shape plus the opaque context it
-// sent with its manifest, forwarded back with every licence challenge. Null
-// for provider sessions.
+// widevine:open-session instead of a provider manifest: { type, drm } — the
+// plugin's declared stream shape, carried inertly for the day a second
+// stream system declares itself without main learning wire formats. The
+// plugin's CONTEXT never crosses IPC: the renderer holds it from the
+// plugin's own reply and hands it back to the plugin's relayLicense itself
+// (review: no plugin data rides the widevine:plugin-license push). Null for
+// provider sessions.
 function openSession(resolverId, pluginRelay = null) {
   const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
   sessions.set(resolverId, {
@@ -106,7 +112,29 @@ function openSession(resolverId, pluginRelay = null) {
     closed: false,
     ...(pluginRelay ? { pluginRelay } : {})
   });
+  // Rotation supersedes whatever session this resolver had open (provider
+  // or plugin): its in-flight plugin-relay forwards must not wait out the
+  // timeout — the player that owned them has moved on. Same shape a plugin
+  // rejection answers with; a late renderer answer for a woken request finds
+  // no waiter, which is the invalid reply.
+  failResolverWaiters(resolverId, 'session superseded');
   return id;
+}
+
+// Wake every in-flight plugin-relay forward for a resolver: its session is
+// gone (closed by stop/ended/sign-out, or rotated out by a newer
+// manifest/open-session) — settle the forwards now, bounded and harmless.
+function failResolverWaiters(resolverId, why) {
+  for (const waiter of [...pluginRelayWaiters.values()]) {
+    if (waiter.resolverId !== resolverId) continue;
+    waiter.finish({
+      success: false,
+      reason: 'playback-failed',
+      licenseDenied: false,
+      denialReason: null,
+      error: `${resolverId}: plugin license relay aborted (${why})`
+    });
+  }
 }
 
 function closeSession(resolverId, sessionId) {
@@ -116,22 +144,11 @@ function closeSession(resolverId, sessionId) {
   if (!session) return;
   if (sessionId !== undefined && session.id !== sessionId) return;
   session.closed = true;
-  // A session closed mid-relay (stop/ended, supersession, sign-out) must
-  // not leave its in-flight plugin-relay forwards waiting the full timeout:
-  // the player that owned them has moved on. Wake this resolver's waiters
-  // now, with the same shape a plugin rejection answers with — bounded and
-  // harmless (the newer play owns the licence window; a late renderer
-  // answer for the woken request finds no waiter, which is the invalid reply).
-  for (const waiter of [...pluginRelayWaiters.values()]) {
-    if (waiter.resolverId !== resolverId) continue;
-    waiter.finish({
-      success: false,
-      reason: 'playback-failed',
-      licenseDenied: false,
-      denialReason: null,
-      error: `${resolverId}: plugin license relay aborted (session closed)`
-    });
-  }
+  // A session closed mid-relay (stop/ended, sign-out; rotation wakes them at
+  // mint time in openSession) must not leave its in-flight plugin-relay
+  // forwards waiting the full timeout: the player that owned them has moved
+  // on.
+  failResolverWaiters(resolverId, 'session closed');
 }
 
 function relayAllowed(resolverId, sessionId) {
@@ -164,7 +181,7 @@ function registerWidevineBridgeIpc({ ipcMain, isAllowedSender }) {
   // renderer that never answers is bounded by PLUGIN_RELAY_TIMEOUT_MS, never
   // a hung invoke. The gates have already run (sender, session, cap) — this
   // forward is the renderer-side tail of the same relay, not a new surface.
-  const forwardPluginLicense = (event, resolverId, sessionId, challenge, pluginRelay) => {
+  const forwardPluginLicense = (event, resolverId, sessionId, challenge) => {
     const sender = event && event.sender;
     if (!sender || typeof sender.send !== 'function') {
       return Promise.resolve({ success: false, reason: 'playback-failed', error: 'plugin license relay has no renderer to call' });
@@ -185,7 +202,10 @@ function registerWidevineBridgeIpc({ ipcMain, isAllowedSender }) {
       }, PLUGIN_RELAY_TIMEOUT_MS);
       pluginRelayWaiters.set(requestId, { resolverId, finish });
       try {
-        sender.send('widevine:plugin-license', { requestId, resolverId, sessionId, challenge, context: pluginRelay.context });
+        // Only the challenge and its ids ride the push (review): the
+        // channel is one any renderer code can subscribe to, and the
+        // plugin's context is renderer-side data — the router holds it.
+        sender.send('widevine:plugin-license', { requestId, resolverId, sessionId, challenge });
       } catch (error) {
         finish({ success: false, reason: 'playback-failed', error: `plugin license relay could not reach the renderer: ${String((error && error.message) || error)}` });
       }
@@ -248,36 +268,38 @@ function registerWidevineBridgeIpc({ ipcMain, isAllowedSender }) {
   });
 
   // Plugin-mediated session open (#1356 M4): the renderer (a resolver that
-  // implements getPlaybackManifest) supplies the manifest and hands it UP.
-  // Same gates as a provider manifest — sender, the per-resolver manifest
-  // rate window (SHARED with the provider path: both are the manifest-shaped
-  // oracle cost the window bounds), and supersession (the mint itself
-  // rotates whatever session this resolver had open, provider or plugin). No
-  // provider needs to be registered: the plugin IS the provider half. The
-  // session id allocation rule (mint before any await) holds trivially —
-  // the channel never awaits.
-  ipcMain.handle('widevine:open-session', async (event, { resolverId, manifest, type, drm, context } = {}) => {
+  // implements getPlaybackManifest) declares its manifest UP. Same gates as
+  // a provider manifest — sender, the per-resolver manifest rate window
+  // (SHARED with the provider path: both are the manifest-shaped oracle cost
+  // the window bounds), and supersession (the mint itself rotates whatever
+  // session this resolver had open, provider or plugin). No provider needs
+  // to be registered: the plugin IS the provider half. Only the manifest's
+  // LENGTH crosses IPC (review): the rate window's gate needs non-empty,
+  // nothing more — the manifest text stays renderer-side, where the only
+  // consumer (the renderer player) already holds it. The session id
+  // allocation rule (mint before any await) holds trivially — the channel
+  // never awaits.
+  ipcMain.handle('widevine:open-session', async (event, { resolverId, manifestLength, type, drm } = {}) => {
     if (!senderOk(event)) return { success: false, reason: 'denied', error: 'widevine calls are limited to the app window' };
     if (!resolverId || typeof resolverId !== 'string') {
       return { success: false, reason: 'invalid', error: 'open-session needs a resolverId' };
     }
-    if (typeof manifest !== 'string' || !manifest) {
-      // An empty/missing manifest is the plugin's fetch having failed to
-      // produce one — the same playback-failed a provider manifest response
-      // with no manifest maps to.
+    if (typeof manifestLength !== 'number' || !Number.isFinite(manifestLength) || manifestLength <= 0) {
+      // A zero/missing manifest length is the plugin's fetch having failed
+      // to produce one — the same playback-failed a provider manifest
+      // response with no manifest maps to.
       return { success: false, reason: 'playback-failed', error: `${resolverId}: open-session needs a manifest` };
     }
     if (markManifestForRateLimit(resolverId)) {
       return { success: false, reason: 'rate-limited', error: `${resolverId}: too many manifest requests` };
     }
-    // type/drm/context ride the session record inertly: the renderer player
-    // (the only consumer that loads the manifest) validates type/drm before
-    // opening; the context is opaque plugin data forwarded back with each
-    // challenge, never interpreted here.
+    // type/drm ride the session record inertly: the renderer player (the
+    // only consumer that loads the manifest) validates them before opening.
+    // The plugin's context never crosses IPC at all — the renderer holds it
+    // and hands it back to the plugin's relayLicense itself.
     const id = openSession(resolverId, {
       type: typeof type === 'string' ? type : null,
-      drm: typeof drm === 'string' ? drm : null,
-      context: context && typeof context === 'object' ? context : null
+      drm: typeof drm === 'string' ? drm : null
     });
     return { success: true, sessionId: id };
   });
@@ -297,7 +319,7 @@ function registerWidevineBridgeIpc({ ipcMain, isAllowedSender }) {
       return { success: false, reason: 'invalid', error: 'no live widevine session for this resolver (stale play or cap reached)' };
     }
     if (pluginRelay) {
-      return forwardPluginLicense(event, resolverId, sessionId, challenge, pluginRelay);
+      return forwardPluginLicense(event, resolverId, sessionId, challenge);
     }
     try {
       const license = await providers.get(resolverId).relayLicense(challenge);

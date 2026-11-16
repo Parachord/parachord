@@ -42,15 +42,34 @@ describe('the plugin path gate (checked by presence, like every capability gate)
     expect(arm).not.toContain('trackOrSource.asin');
   });
 
-  test('the plugin arm passes the WHOLE track (with its sources map) plus the resolver config', () => {
+  test('the plugin arm passes the WHOLE track (with its sources map) plus the resolver config, under a time budget', () => {
     expect(engine).toContain('const pluginConfig = await getResolverConfig(resolverId);');
-    expect(engine).toContain('await resolver.getPlaybackManifest({ ...trackOrSource }, pluginConfig);');
+    // The budget (#1356 M4 review): a plugin hung in its manifest fetch must
+    // not leave trackLoading up forever — the fetch runs inside a race that
+    // rejects with a clear playback-failed error past the budget.
+    expect(engine).toContain('const PLUGIN_MANIFEST_BUDGET_MS = 10000;');
+    const arm = engine.indexOf('if (pluginWidevine) {');
+    const race = engine.indexOf('await Promise.race([', arm);
+    const call = engine.indexOf('resolver.getPlaybackManifest({ ...trackOrSource }, pluginConfig)', arm);
+    const budget = engine.indexOf('PLUGIN_MANIFEST_BUDGET_MS', race);
+    expect(race).toBeGreaterThan(-1);
+    expect(call).toBeGreaterThan(race);
+    expect(budget).toBeGreaterThan(call);
+  });
+
+  test('the plugin arm claims the play token BEFORE the manifest fetch (a bare stop() during it is supersession)', () => {
+    const claim = engine.indexOf('window.__parachordWidevine.claimPlayToken();');
+    const fetch = engine.indexOf('resolver.getPlaybackManifest({ ...trackOrSource }, pluginConfig)');
+    expect(claim).toBeGreaterThan(-1);
+    expect(fetch).toBeGreaterThan(claim);
+    // The claimed token rides into playPlugin, which refuses it when stale.
+    expect(engine).toContain('token: claimedToken,');
   });
 
   test('the plugin arm hands the reply to playPlugin with the resolver\'s relayLicense, BOUND to the resolver', () => {
     // Bound because the licence router calls it detached, and plugin methods
     // use `this.` freely (the subsonic plugin does).
-    expect(engine).toContain('window.__parachordWidevine.playPlugin(audioRef.current, {\n            resolverId,\n            manifestResult,\n            // Bound: the router calls it detached later, and plugin methods\n            // use `this.` freely (the subsonic plugin does).\n            relayLicense: resolver.relayLicense.bind(resolver),\n            startTime: startAt,');
+    expect(engine).toContain('window.__parachordWidevine.playPlugin(audioRef.current, {\n            resolverId,\n            manifestResult,\n            // Bound: the router calls it detached later, and plugin methods\n            // use `this.` freely (the subsonic plugin does).\n            relayLicense: resolver.relayLicense.bind(resolver),\n            // The token claimed above the manifest fetch: a play that a\n            // stop() superseded during the fetch is refused here.\n            token: claimedToken,\n            startTime: startAt,');
   });
 
   test('the provider fallback is intact: the provider play call and its entity are unchanged', () => {
@@ -72,14 +91,18 @@ describe('the plugin path gate (checked by presence, like every capability gate)
 });
 
 describe('the seams the engine relies on below it', () => {
-  test('the player exposes playPlugin and registers the licence router through the preload surface', () => {
-    expect(player).toContain('async function playPlugin(audio, { resolverId, manifestResult, relayLicense, trackContext, startTime } = {}) {');
+  test('the player exposes playPlugin + claimPlayToken and registers the licence router through the preload surface', () => {
+    expect(player).toContain('async function playPlugin(audio, { resolverId, manifestResult, relayLicense, trackContext, startTime, token } = {}) {');
     expect(player).toContain('bridge.onPluginLicenseRequest(async (request) => {');
-    expect(player).toContain('session.pluginRelay.relayLicense(request.challenge, request.context)');
+    // The router answers from the record taken at open-session time (before
+    // the load — Shaka asks for the first licence mid-load) and hands the
+    // plugin its own context, held renderer-side.
+    expect(player).toContain('record.relayLicense(request.challenge, record.context)');
+    expect(player).toContain('function claimPlayToken() {');
   });
 
-  test('the preload exposes openSession + onPluginLicenseRequest on window.electron.widevine', () => {
-    expect(preload).toContain("openSession: (resolverId, manifest, type, drm, context) =>");
+  test('the preload exposes openSession (by manifest LENGTH) + onPluginLicenseRequest on window.electron.widevine', () => {
+    expect(preload).toContain('openSession: (resolverId, manifestLength, type, drm) =>');
     expect(preload).toContain('onPluginLicenseRequest: (callback) => {');
     expect(preload).toContain("ipcRenderer.on('widevine:plugin-license', handler);");
   });
@@ -87,7 +110,9 @@ describe('the seams the engine relies on below it', () => {
   test('the bridge opens plugin sessions under the provider gates (rate window shared, minted before any await)', () => {
     expect(bridge).toContain("ipcMain.handle('widevine:open-session'");
     expect(bridge).toContain('markManifestForRateLimit(resolverId)');
-    expect(bridge).toContain("sender.send('widevine:plugin-license'");
+    // The forward carries the challenge and its ids only — no context rides
+    // the broadcast any renderer code can subscribe to.
+    expect(bridge).toContain("sender.send('widevine:plugin-license', { requestId, resolverId, sessionId, challenge })");
   });
 });
 
@@ -111,11 +136,24 @@ function widevineEngineWith(resolver) {
   global.window.ConfidenceScoring = scoring;
 
   const { usePlaybackEngine } = require('../../src/renderer/hooks/use-playback-engine.js');
+  // The stub models the real player's token contract (widevine-player.js):
+  // claimPlayToken mints the play's token, stop() invalidates every
+  // in-flight one, and playPlugin refuses a token a stop has since
+  // invalidated (the engine passes the claimed one through).
+  let liveToken = 0;
   const widevine = {
     play: jest.fn(async () => ({ token: 101 })),
-    playPlugin: jest.fn(async () => ({ token: 202 })),
+    claimPlayToken: jest.fn(() => (liveToken += 1)),
+    playPlugin: jest.fn(async (_el, opts) => {
+      if (opts && typeof opts.token === 'number' && opts.token !== liveToken) {
+        const err = new Error('widevine: play superseded');
+        err.reason = 'superseded';
+        throw err;
+      }
+      return { token: 202 };
+    }),
     untilAudible: () => new Promise(() => {}), // the race resolves via the element's play()
-    stop: jest.fn(async () => ({ stopped: true })),
+    stop: jest.fn(async () => { liveToken += 1; return { stopped: true }; }),
     currentVariantFacts: () => null,
     getState: () => ({ activeResolverId: null })
   };
@@ -264,6 +302,71 @@ describe('handlePlay on the real hook: the plugin branch, behaviourally', () => 
     // playPlugin still sees the resolver as its `this` when invoked bare.
     const handed = widevine.playPlugin.mock.calls[0][1].relayLicense;
     expect(handed.call({}, 'Q0FRPQ==', { n: 2 })).toBe(`RELAYED:${PLUGIN_RESOLVER_ID}:Q0FRPQ==:2`);
+  });
+
+  test('a bare stop() during the plugin\'s manifest fetch supersedes the play — the provider path\'s rule, matched', async () => {
+    // The review's note: the provider path claims the play token before its
+    // manifest mint, so a stop() during the mint is supersession; the plugin
+    // path used to claim only inside playPlugin, after the fetch, so a bare
+    // stop() (the sign-out path — no newer handlePlay, no generation bump)
+    // was lost. The engine claims before the fetch now, and playPlugin
+    // refuses the invalidated token.
+    let releaseManifest;
+    const resolver = {
+      id: PLUGIN_RESOLVER_ID,
+      name: 'Plug',
+      capabilities: { resolve: true, widevine: true },
+      getPlaybackManifest: () => new Promise((resolve) => { releaseManifest = resolve; }),
+      relayLicense: async () => 'TElDRU5TRQ=='
+    };
+    const { handlePlay, widevine, setCurrentTrack, showConfirmDialog } = widevineEngineWith(resolver);
+
+    const playing = handlePlay(track('t4'));
+    await flush(); // the play parks inside getPlaybackManifest
+    expect(widevine.claimPlayToken).toHaveBeenCalledTimes(1); // claimed BEFORE the fetch
+
+    await widevine.stop(); // the bare stop: no newer handlePlay, no generation bump
+    releaseManifest(pluginManifest('stopped'));
+    await playing;
+
+    // The stopped play reached playPlugin with its now-invalid token and was
+    // refused — superseded, not a failure.
+    expect(widevine.playPlugin).toHaveBeenCalledTimes(1);
+    expect(widevine.playPlugin.mock.calls[0][1].token).toBe(1);
+    const committed = committedTrack(setCurrentTrack);
+    expect(committed ? committed.id : null).not.toBe('t4');
+    expect(showConfirmDialog).not.toHaveBeenCalled();
+  });
+
+  test('a plugin hung in its manifest fetch fails the play once the budget passes — trackLoading never sticks', async () => {
+    jest.useFakeTimers();
+    try {
+      const resolver = {
+        id: PLUGIN_RESOLVER_ID,
+        name: 'Plug',
+        capabilities: { resolve: true, widevine: true },
+        getPlaybackManifest: () => new Promise(() => {}), // hung forever
+        relayLicense: async () => 'TElDRU5TRQ=='
+      };
+      const { handlePlay, widevine, showConfirmDialog } = widevineEngineWith(resolver);
+
+      const playing = handlePlay(track('t5'));
+      await jest.advanceTimersByTimeAsync(10000); // the budget passes
+      await playing;
+
+      // The hung fetch never reached a session; the play failed as an
+      // ordinary playback error (the widevine arm's couldn't-start dialog,
+      // the timeout itself logged), not a hang.
+      expect(widevine.playPlugin).not.toHaveBeenCalled();
+      expect(showConfirmDialog).toHaveBeenCalledWith(expect.objectContaining({
+        type: 'error',
+        message: 'This Plug track didn’t start. Try another source, or try again.'
+      }));
+      const logged = console.error.mock.calls.map((args) => args.join(' ')).join('\n');
+      expect(logged).toContain('getPlaybackManifest timed out');
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   test('a widevine resolver WITHOUT the pair drives the provider path (__parachordWidevine.play), never playPlugin', async () => {

@@ -8,9 +8,10 @@
 //     shared per-resolver manifest rate window) and rotates sessions under
 //     the same supersession rule;
 //   - a plugin-mediated relay forwards the challenge to the renderer
-//     (widevine:plugin-license) and pairs the answer by requestId, bounded by
-//     a timeout, while the 30-relay/session cap and matched-close apply
-//     unchanged;
+//     (widevine:plugin-license — the challenge and its ids ONLY: no plugin
+//     context rides the broadcast) and pairs the answer by requestId,
+//     bounded by a timeout, while the 30-relay/session cap, matched-close
+//     and rotation-wakes-waiters apply unchanged;
 //   - a plugin relayLicense rejection carries licenseDenied/denialReason/
 //     reason into the licence reply in exactly the provider path's shape;
 //   - provider sessions never touch the forward (byte-identical relays).
@@ -42,8 +43,8 @@ function makeHarness() {
 const PLUGIN_MANIFEST = '<MPD the plugin fetched/>';
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
-async function openPluginSession(handlers, event, { resolverId, manifest = PLUGIN_MANIFEST, context = { track: 'T1' } }) {
-  const open = await handlers['widevine:open-session'](event, { resolverId, manifest, type: 'dash', drm: 'widevine', context });
+async function openPluginSession(handlers, event, { resolverId, manifest = PLUGIN_MANIFEST }) {
+  const open = await handlers['widevine:open-session'](event, { resolverId, manifestLength: manifest.length, type: 'dash', drm: 'widevine' });
   expect(open).toMatchObject({ success: true });
   expect(typeof open.sessionId).toBe('string');
   return open;
@@ -68,14 +69,14 @@ async function relayPlugin(handlers, event, pushes, { resolverId, sessionId, lic
 describe('widevine:open-session — the plugin-mediated session open', () => {
   test('sender gate: iframes are denied like every other channel', async () => {
     const { handlers, iframeEvent } = makeHarness();
-    const denied = await handlers['widevine:open-session'](iframeEvent, { resolverId: 'plug', manifest: PLUGIN_MANIFEST });
+    const denied = await handlers['widevine:open-session'](iframeEvent, { resolverId: 'plug', manifestLength: PLUGIN_MANIFEST.length });
     expect(denied).toMatchObject({ success: false, reason: 'denied' });
   });
 
   test('an empty or missing manifest is the plugin\'s fetch having failed — playback-failed, no session minted', async () => {
     const { handlers, mainFrameEvent } = makeHarness();
-    for (const manifest of [undefined, null, '', 42]) {
-      const out = await handlers['widevine:open-session'](mainFrameEvent, { resolverId: 'plug', manifest });
+    for (const manifestLength of [undefined, null, 0, -3.5, 'x', {}]) {
+      const out = await handlers['widevine:open-session'](mainFrameEvent, { resolverId: 'plug', manifestLength });
       expect(out).toMatchObject({ success: false, reason: 'playback-failed' });
     }
     // No session was minted: a relay has nothing to ride (and no provider is
@@ -86,7 +87,7 @@ describe('widevine:open-session — the plugin-mediated session open', () => {
 
   test('a missing resolverId is invalid', async () => {
     const { handlers, mainFrameEvent } = makeHarness();
-    const out = await handlers['widevine:open-session'](mainFrameEvent, { manifest: PLUGIN_MANIFEST });
+    const out = await handlers['widevine:open-session'](mainFrameEvent, { manifestLength: PLUGIN_MANIFEST.length });
     expect(out).toMatchObject({ success: false, reason: 'invalid' });
   });
 
@@ -101,7 +102,7 @@ describe('widevine:open-session — the plugin-mediated session open', () => {
       expect(await handlers['widevine:manifest'](mainFrameEvent, { resolverId: 'shared', entity: { asin: String(i) } }))
         .toMatchObject({ success: true });
     }
-    expect(await handlers['widevine:open-session'](mainFrameEvent, { resolverId: 'shared', manifest: PLUGIN_MANIFEST }))
+    expect(await handlers['widevine:open-session'](mainFrameEvent, { resolverId: 'shared', manifestLength: PLUGIN_MANIFEST.length }))
       .toMatchObject({ success: false, reason: 'rate-limited' });
 
     // And the other way: open-sessions fill the window for the provider path.
@@ -109,7 +110,7 @@ describe('widevine:open-session — the plugin-mediated session open', () => {
     // with the sessions.)
     const second = makeHarness();
     for (let i = 0; i < 8; i++) {
-      expect(await second.handlers['widevine:open-session'](second.mainFrameEvent, { resolverId: 'shared', manifest: PLUGIN_MANIFEST, context: { n: i } }))
+      expect(await second.handlers['widevine:open-session'](second.mainFrameEvent, { resolverId: 'shared', manifestLength: PLUGIN_MANIFEST.length }))
         .toMatchObject({ success: true });
     }
     expect(await second.handlers['widevine:manifest'](second.mainFrameEvent, { resolverId: 'shared', entity: {} }))
@@ -148,21 +149,24 @@ describe('widevine:open-session — the plugin-mediated session open', () => {
 });
 
 describe('the plugin-mediated licence relay (widevine:license → forward → answer)', () => {
-  test('the challenge reaches the renderer with the session\'s context; the paired answer returns the license', async () => {
+  test('the forward carries only the challenge and its ids — no plugin context rides the broadcast', async () => {
+    // The review's finding: widevine:plugin-license is a push any renderer
+    // code (any installed plugin) can subscribe to, and the first answer
+    // wins — so nothing a plugin wouldn't publish itself may ride it. The
+    // plugin's context is renderer-side state (the router holds it).
     const { handlers, pushes, mainFrameEvent } = makeHarness();
-    const context = { asin: 'B1', csrf: 'tok' };
-    const open = await openPluginSession(handlers, mainFrameEvent, { resolverId: 'plug', context });
+    const open = await openPluginSession(handlers, mainFrameEvent, { resolverId: 'plug' });
     const relayP = handlers['widevine:license'](mainFrameEvent, { resolverId: 'plug', challenge: 'Q0FRPQ==', sessionId: open.sessionId });
     await flush();
     expect(pushes).toHaveLength(1);
     expect(pushes[0].channel).toBe('widevine:plugin-license');
-    expect(pushes[0].payload).toMatchObject({
+    // toEqual, not toMatchObject: exactly these keys and no others.
+    expect(pushes[0].payload).toEqual({
+      requestId: expect.any(String),
       resolverId: 'plug',
       sessionId: open.sessionId,
-      challenge: 'Q0FRPQ==',
-      context
+      challenge: 'Q0FRPQ=='
     });
-    expect(typeof pushes[0].payload.requestId).toBe('string');
     await handlers['widevine:plugin-license-answer'](mainFrameEvent, { requestId: pushes[0].payload.requestId, ok: true, license: 'UExVR0lO' });
     expect(await relayP).toMatchObject({ success: true, license: 'UExVR0lO' });
   });
@@ -260,6 +264,48 @@ describe('the plugin-mediated licence relay (widevine:license → forward → an
     // The woken waiter is gone: a late answer finds nothing pending.
     expect(await handlers['widevine:plugin-license-answer'](mainFrameEvent, { requestId: pushes[0].payload.requestId, ok: true, license: 'late' }))
       .toMatchObject({ success: false, reason: 'invalid' });
+  });
+
+  test('a session ROTATED mid-relay (a newer open-session, or a provider manifest) fails its in-flight forwards fast too', async () => {
+    // The review's note: rotation never called closeSession, so an in-flight
+    // forward for the rotated-out session used to wait out the full 30s
+    // timeout. The mint wakes them — supersession is teardown for the old
+    // session's forwards, same shape a rejection answers with.
+    const { handlers, pushes, mainFrameEvent } = makeHarness();
+    registerWidevineProvider('plug', {
+      getManifest: async () => ({ manifest: '<MPD/>' }),
+      relayLicense: async () => 'PROVIDER-LIC'
+    });
+    const first = await openPluginSession(handlers, mainFrameEvent, { resolverId: 'plug' });
+    const relayP = handlers['widevine:license'](mainFrameEvent, { resolverId: 'plug', challenge: 'Q0FRPQ==', sessionId: first.sessionId });
+    await flush(); // the forward is out, unanswered
+    expect(pushes).toHaveLength(1);
+    await openPluginSession(handlers, mainFrameEvent, { resolverId: 'plug' });
+    await expect(relayP).resolves.toMatchObject({
+      success: false,
+      reason: 'playback-failed',
+      licenseDenied: false,
+      denialReason: null,
+      error: expect.stringContaining('aborted')
+    });
+    // The woken waiter is gone: a late answer finds nothing pending.
+    expect(await handlers['widevine:plugin-license-answer'](mainFrameEvent, { requestId: pushes[0].payload.requestId, ok: true, license: 'late' }))
+      .toMatchObject({ success: false, reason: 'invalid' });
+    // And a PROVIDER manifest rotating a plugin session wakes the same way.
+    const second = await openPluginSession(handlers, mainFrameEvent, { resolverId: 'plug' });
+    const relay2P = handlers['widevine:license'](mainFrameEvent, { resolverId: 'plug', challenge: 'Q0FRPQ==', sessionId: second.sessionId });
+    await flush();
+    expect(pushes).toHaveLength(2);
+    await handlers['widevine:manifest'](mainFrameEvent, { resolverId: 'plug', entity: {} });
+    await expect(relay2P).resolves.toMatchObject({
+      success: false,
+      reason: 'playback-failed',
+      error: expect.stringContaining('aborted')
+    });
+    // The newest session (the provider one) relays to the provider untouched.
+    const provider = await handlers['widevine:manifest'](mainFrameEvent, { resolverId: 'plug', entity: {} });
+    expect(await handlers['widevine:license'](mainFrameEvent, { resolverId: 'plug', challenge: 'Q0FRPQ==', sessionId: provider.sessionId }))
+      .toMatchObject({ success: true, license: 'PROVIDER-LIC' });
   });
 
   test('the session/cap gates apply unchanged: 30 relays per plugin session, matched close on stopped', async () => {
@@ -374,18 +420,20 @@ describe('the preload wrapper against the bridge (plugin-mediated relay, end to 
     expect(typeof mockWorld.electron.widevine.onPluginLicenseRequest).toBe('function');
   });
 
-  test('a relay round-trips: challenge → plugin relayLicense(challenge, context) → licence, through the real wrapper', async () => {
+  test('a relay round-trips: challenge → plugin relayLicense(challenge) → licence, through the real wrapper', async () => {
     const relayCalls = [];
     const unsubscribe = mockWorld.electron.widevine.onPluginLicenseRequest(async (request) => {
       relayCalls.push([request.challenge, request.context]);
       return 'TElDRU5TRQ==';
     });
-    const open = await mockWorld.electron.widevine.openSession('plugsvc', '<MPD/>', 'dash', 'widevine', { asin: 'B1' });
+    const open = await mockWorld.electron.widevine.openSession('plugsvc', 4096, 'dash', 'widevine');
     expect(open).toMatchObject({ success: true });
     const reply = await mockWorld.electron.widevine.relayLicense('plugsvc', 'Q0FRPQ==', open.sessionId);
     expect(reply).toMatchObject({ success: true, license: 'TElDRU5TRQ==' });
-    // The plugin saw its own context (carried main-side, forwarded back).
-    expect(relayCalls).toEqual([['Q0FRPQ==', { asin: 'B1' }]]);
+    // The plugin saw only its challenge — no context rode the push. Its
+    // context is its own renderer-side state; the host's router hands it
+    // back, and nothing crosses IPC.
+    expect(relayCalls).toEqual([['Q0FRPQ==', undefined]]);
     unsubscribe();
   });
 
@@ -397,7 +445,7 @@ describe('the preload wrapper against the bridge (plugin-mediated relay, end to 
       err.denialReason = 'CUSTOMER_NOT_ELIGIBLE';
       throw err;
     });
-    const open = await mockWorld.electron.widevine.openSession('plugsvc', '<MPD/>', 'dash', 'widevine', {});
+    const open = await mockWorld.electron.widevine.openSession('plugsvc', 4096, 'dash', 'widevine');
     const reply = await mockWorld.electron.widevine.relayLicense('plugsvc', 'Q0FRPQ==', open.sessionId);
     expect(reply).toMatchObject({
       success: false,
@@ -412,7 +460,7 @@ describe('the preload wrapper against the bridge (plugin-mediated relay, end to 
     const unsubscribe = mockWorld.electron.widevine.onPluginLicenseRequest(async () => {
       throw 'plugin bug'; // not an Error — pin what the wrapper does with one
     });
-    const open = await mockWorld.electron.widevine.openSession('plugsvc', '<MPD/>', 'dash', 'widevine', {});
+    const open = await mockWorld.electron.widevine.openSession('plugsvc', 4096, 'dash', 'widevine');
     const reply = await mockWorld.electron.widevine.relayLicense('plugsvc', 'Q0FRPQ==', open.sessionId);
     // The wrapper answers with the string itself as the message and no
     // reason field, so main maps it to a plain playback-failed.

@@ -75,6 +75,14 @@ const widevineErrorToastState = { at: 0 };
 // reason as the throttle above.
 const planRefusalExplained = new Set();
 
+// The plugin manifest budget (#1356 M4 review): getPlaybackManifest is a
+// plugin's own network code, and a plugin hung in it must not leave
+// trackLoading up forever — past the budget the play fails as an ordinary
+// playback error. The resolver limiter's RESOLVE_BUDGET_MS (8 s, one search
+// round trip) spirit, sized for a manifest fetch's heavier sequence
+// (auth, catalog, MPD); documented in plugins.md.
+const PLUGIN_MANIFEST_BUDGET_MS = 10000;
+
 function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
   volume,        // useVolume's return object
   queue,         // usePlaybackQueue's return object
@@ -1766,8 +1774,9 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     // getPlaybackManifest + relayLicense supplies that DRM plumbing itself,
     // renderer-side — the engine passes the WHOLE track (the plugin extracts
     // its own identifier; the host stops pre-digesting it here) plus the
-    // resolver config, then hands the manifest UP via playPlugin so main
-    // opens the licence session under its existing gates. No shipped plugin
+    // resolver config, then declares the reply UP via playPlugin so main
+    // opens the licence session under its existing gates (the manifest text
+    // and the plugin's context stay renderer-side). No shipped plugin
     // implements the pair yet — Amazon keeps the provider path below until
     // its dmls moves.
     if (isWidevineResolver(resolverId)) {
@@ -1840,20 +1849,39 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         ensureSharedAudioElement({ ...trackOrSource, _streamOwner: resolverId });
         let wvResult;
         if (pluginWidevine) {
+          // Claim the play token BEFORE the plugin's manifest fetch (the
+          // provider path's play() claims ahead of its manifest mint): a
+          // bare stop() during the fetch — the sign-out path, which bumps no
+          // playback generation — makes the play superseded instead of
+          // loading onto a stopped engine. The token rides into playPlugin,
+          // which refuses it when stale.
+          const claimedToken = window.__parachordWidevine.claimPlayToken();
           // The plugin's manifest fetch is a DIRECT renderer call — the thrown
           // error fields (reason/planKey on plan-ineligible, not-signed-in, …)
           // survive the plugin boundary because no IPC serializes them, so
           // the catch below routes them through the same handlers the
           // provider path's bridge replies feed.
           const pluginConfig = await getResolverConfig(resolverId);
-          const manifestResult = await resolver.getPlaybackManifest({ ...trackOrSource }, pluginConfig);
+          // The budget above: a hung fetch fails the play instead of leaving
+          // trackLoading up forever.
+          let budgetTimer = null;
+          const manifestResult = await Promise.race([
+            resolver.getPlaybackManifest({ ...trackOrSource }, pluginConfig),
+            new Promise((_resolve, reject) => {
+              budgetTimer = setTimeout(() => {
+                const err = new Error(`${streamLabel}: getPlaybackManifest timed out`);
+                err.reason = 'playback-failed';
+                reject(err);
+              }, PLUGIN_MANIFEST_BUDGET_MS);
+            })
+          ]);
+          clearTimeout(budgetTimer);
           // The manifest fetch can outlive its play: a newer handlePlay may
-          // have started while it was in flight. playPlugin claims the play
-          // token only when it runs, so this older play reaching it would
-          // take the NEWEST token and abort the newer play as superseded
-          // (rotating its session). Abort here instead — the same generation
-          // check every other await in handlePlay carries, before the token
-          // is claimed.
+          // have started while it was in flight. The token claimed above is
+          // this play's OWN, so an older play reaching playPlugin is refused
+          // there as superseded — but abort here anyway, the same generation
+          // check every other await in handlePlay carries, so the dead play
+          // never mints a session at all.
           if (playbackGenerationRef.current !== thisGeneration) {
             const err = new Error('widevine: plugin manifest superseded');
             err.reason = 'superseded';
@@ -1865,6 +1893,9 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
             // Bound: the router calls it detached later, and plugin methods
             // use `this.` freely (the subsonic plugin does).
             relayLicense: resolver.relayLicense.bind(resolver),
+            // The token claimed above the manifest fetch: a play that a
+            // stop() superseded during the fetch is refused here.
+            token: claimedToken,
             startTime: startAt,
             trackContext: {
               albumAsin: sourceToPlay.albumAsin || trackOrSource.albumAsin || null,
