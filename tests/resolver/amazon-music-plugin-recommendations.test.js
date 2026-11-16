@@ -434,6 +434,86 @@ describe('getRecommendations (the music-home walk)', () => {
   });
 });
 
+// ── The page-flow queue lane ─────────────────────────────────────────────
+
+describe('the page-flow queue lane: the recommendations are background work', () => {
+  // The recommendations half of #1423's lane fix (the #1438 review's
+  // before-merge item): a playlist the user opened from Recommendations is
+  // what they are waiting on, and the home page flow, its walk and the
+  // see-more route flow (which withPlaylistsSection also goes through) are
+  // speculative refreshes — so all three queue on the plugin's two-lane
+  // page-flow queue's BACKGROUND lane, and the playlist (lookupPlaylistFlow,
+  // the FOREGROUND lane) goes ahead of every one of them, behind at most the
+  // job already running (a running job is never interrupted). The exact
+  // case #1423 fixed on the host: an opened playlist waited behind a
+  // two-page home refresh.
+  test('a playlist lookup queued behind a recommendations page flow starts first', async () => {
+    const order = [];
+    let releaseFirst;
+    const firstLoad = new Promise((resolve) => { releaseFirst = resolve; });
+    let seenFirst = false;
+    // A home page carrying a playlist item so withPlaylistsSection passes
+    // through (its see-more synthesis is a fourth flow, not this test's
+    // subject).
+    const homeSections = [
+      albumSection(SECTION_ID, 'Albums for You'),
+      { id: 'uri:///recommendations/music-home/music-home_playlistStrategy', name: 'Playlists for You', itemType: 'MIXED', recommendedContent: { edges: [{ node: playlistNode('PP1', 'My Discovery Mix') }] } }
+    ];
+    const ws = amazonRecommendationsMock({
+      homePage: async () => amazonMusicHomeData(homeSections),
+      seeMorePage: oneSeeMorePage([albumNode('B07QYGJGVC', 'Sons of Northern Darkness', 'Immortal')], { hasNextPage: false, token: null })
+    });
+    ws.load.mockImplementation(async (id, url) => {
+      order.push(url);
+      if (!seenFirst) {
+        seenFirst = true; // the RUNNING job: never interrupted
+        await firstLoad;
+      }
+      // The mock's own capture shapes (amazonRecommendationsMock's default
+      // capturesFor): a home capture per home URL, a see-more capture on the
+      // route, nothing for the playlist (its import is not this test's
+      // subject — the load ORDER is).
+      const u = String(url);
+      let captures = [];
+      if (/\/music$/.test(u)) captures = [amazonMusicHomeCapture()];
+      else if (u === 'https://music.amazon.com/') captures = [amazonMusicHomeCapture({ operationName: 'BrowseHomePage' })];
+      else {
+        const route = /\/browse\/music-items\/home\/recommendation\/([^?]+)/.exec(u);
+        if (route) {
+          let strategy;
+          try { strategy = decodeURIComponent(route[1]); } catch (e) { strategy = route[1]; }
+          captures = [amazonSeeMoreCapture({ id: 'uri:///recommendations/browse-home/' + strategy })];
+        }
+      }
+      return { success: true, finalUrl: u, captures };
+    });
+    const resolver = instantiateAmazonPlugin(axe);
+    // The RUNNING job: the home refresh (a cold template queues the page
+    // flow).
+    const homeRefresh = resolver.getRecommendations({});
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // A queued BACKGROUND job: the see-more route flow (a cold see-more
+    // template).
+    const seeMore = resolver.expandRecommendationSection(SECTION_ID, null, {});
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // The FOREGROUND job: a playlist the user opened from Recommendations.
+    const playlist = resolver.lookupPlaylistFlow('https://music.amazon.com/playlists/PP1').catch(() => 'playlist-failed');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    releaseFirst();
+    const refreshed = await homeRefresh;
+    await seeMore;
+    await playlist;
+    // The home refresh ran (it was already running); the playlist went
+    // ahead of the queued see-more flow.
+    expect(order).toEqual([
+      'https://music.amazon.com/music',
+      'https://music.amazon.com/playlists/PP1',
+      'https://music.amazon.com/browse/music-items/home/recommendation/music-home_mp3PrimeAlbumsStrategy'
+    ]);
+    expect(refreshed.sections.map(s => s.id)).toEqual([SECTION_ID, 'uri:///recommendations/music-home/music-home_playlistStrategy']);
+  });
+});
+
 // ── The personal-shelf filter ──────────────────────────────────────────────
 
 describe('the personal-only shelf filter (getRecommendations output)', () => {

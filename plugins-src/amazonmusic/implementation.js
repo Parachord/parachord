@@ -3123,11 +3123,15 @@ module.exports = {
   //   see-more page prefixes browse-home even onto a music-home strategy) —
   //   one template serves all sections.
   //
-  // Chain discipline (the M5 pattern): the page flows (the loads) ride the
-  // per-instance page-flow chain, serialized against the spec-search, catalog
-  // and playlist-import flows so one flow's navigation never interleaves
-  // another's; the replays around them run parallel-safe (pageFetch is reader
-  // traffic; a busy gate is ridden out or read as a miss, never a failure).
+  // Chain discipline (the M5 pattern, the playlist layer's lane split): the
+  // page flows (the loads) ride the per-instance two-lane page-flow queue's
+  // BACKGROUND lane, serialized against the spec-search and catalog flows
+  // so one flow's navigation never interleaves another's, while a playlist
+  // the user opened (lookupPlaylistFlow, the foreground lane) goes ahead of
+  // every job queued here — the recommendations asked for the playlist, so
+  // they cannot be what it waits behind (#1423's case); the replays around
+  // them run parallel-safe (pageFetch is reader traffic; a busy gate is
+  // ridden out or read as a miss, never a failure).
   // NOT plan-gated, like the album catalog and artist images: a Prime
   // account's home page is still its own recommendations — the plan gate stops
   // playback, not discovery. No breaker: recommendations are asked for by a
@@ -3165,23 +3169,27 @@ module.exports = {
       if (fast) {
         sections = fast.sections;
       } else {
-        // The chained page flow (the M5 pattern): the load rides the
-        // per-instance page-flow chain, and the walk's replays after the
-        // mint run inside the same chained job — a whole multi-page walk
-        // must never interleave another flow's navigation.
-        const run = (this._pageFlowChain || Promise.resolve())
-          .then(async () => {
-            // The page flow that ran while this one waited may have
-            // refreshed the template — one refresh heals every walk queued
-            // behind it.
-            const warmed = await this.tryMusicHomeWalk();
-            if (warmed) return warmed.sections;
-            return this.musicHomePageFlow();
-          });
-        this._pageFlowChain = run.then(() => {}, () => {});
+        // The queued page flow (the M5 pattern): the load and the walk's
+        // replays after the mint run inside the same queued job — a whole
+        // multi-page walk must never interleave another flow's navigation.
+        // The BACKGROUND lane of the per-instance two-lane page-flow queue
+        // (#1423's semantics, the playlist layer's lane split): the home
+        // refresh is speculative work the Recommendations page asked for,
+        // while a playlist the user opened from it (lookupPlaylistFlow, the
+        // foreground lane) goes ahead of this whole job — the exact case
+        // #1423 fixed on the host: an opened playlist waited behind a
+        // two-page home refresh.
+        const run = this.enqueuePageFlow(async () => {
+          // The page flow that ran while this one waited may have
+          // refreshed the template — one refresh heals every walk queued
+          // behind it.
+          const warmed = await this.tryMusicHomeWalk();
+          if (warmed) return warmed.sections;
+          return this.musicHomePageFlow();
+        });
         sections = await run;
       }
-      // Outside the chain (the job above has completed): the home page
+      // Outside the queue (the job above has completed): the home page
       // rotates its sections per load and often does not render the
       // playlists one.
       sections = await this.withPlaylistsSection(sections);
@@ -3409,10 +3417,12 @@ module.exports = {
     }
   },
 
-  // The chained page flow behind getRecommendations: load the home page
-  // through the bridge with the capture window inside the load, capture its
-  // own MusicHomePage (or BrowseHomePage) request, mint the template, replay
-  // verbatim, parse pure. The mint prefers the capture with the FRESHEST
+  // The queued page flow behind getRecommendations (the BACKGROUND lane of
+  // the plugin's two-lane page-flow queue — see getRecommendations): load the
+  // home page through the bridge with the capture window inside the load,
+  // capture its own MusicHomePage (or BrowseHomePage) request, mint the
+  // template, replay verbatim, parse pure. The mint prefers the capture with
+  // the FRESHEST
   // csrf-ts among the page's OWN requests: the home request's variables are
   // constant, so our own concurrent template replay echoes into the capture
   // byte-identical to a fresh request (unlike the spec search, where
@@ -3560,16 +3570,19 @@ module.exports = {
     // Cold template: the see-more ROUTE (its first page) mints one. Even for
     // a cursor page — the route always answers page 1, but the minted
     // template then replays any section+cursor. The route flow rides the
-    // per-instance page-flow chain (a page load is a real navigation).
-    const first = (this._pageFlowChain || Promise.resolve())
-      .then(async () => {
-        // The page flow that ran while this one waited may have refreshed
-        // the template — one refresh heals every expansion queued behind it.
-        const warmed = await tryFast('see-more');
-        if (warmed) return warmed;
-        return this.seeMorePageFlow(sectionId);
-      });
-    this._pageFlowChain = first.then(() => {}, () => {});
+    // BACKGROUND lane of the per-instance two-lane page-flow queue (a page
+    // load is a real navigation; #1423's semantics, the playlist layer's
+    // lane split) — a see-more expansion is speculative work a page asked
+    // for, and a playlist the user opened (lookupPlaylistFlow, the
+    // foreground lane) goes ahead of it. withPlaylistsSection's synthesized
+    // "Playlists for You" section rides this same flow.
+    const first = this.enqueuePageFlow(async () => {
+      // The page flow that ran while this one waited may have refreshed
+      // the template — one refresh heals every expansion queued behind it.
+      const warmed = await tryFast('see-more');
+      if (warmed) return warmed;
+      return this.seeMorePageFlow(sectionId);
+    });
     const firstParsed = await first;
     if (!afterCursor) {
       this.cacheSeeMorePage(cacheKey, firstParsed);
@@ -3678,9 +3691,11 @@ module.exports = {
     return parsed;
   },
 
-  // The chained page flow behind expandRecommendationSection: load the
-  // see-more route for the section through the bridge with the capture window
-  // inside the load, capture its own RecommenderSeeMorePage request, mint the
+  // The queued page flow behind expandRecommendationSection (the BACKGROUND
+  // lane of the plugin's two-lane page-flow queue — see
+  // expandRecommendationSectionParsed): load the see-more route for the
+  // section through the bridge with the capture window inside the load,
+  // capture its own RecommenderSeeMorePage request, mint the
   // template (one serves every section+cursor), replay verbatim, parse pure.
   // Only THIS section's request mints or answers: our own concurrent
   // template replay of a DIFFERENT section echoes into the capture with the
@@ -3715,7 +3730,12 @@ module.exports = {
     }
     // The page's OWN requests only (an echo never mints), and only this
     // section's, preferring the freshest csrf-ts (a re-render fires the op
-    // again with fresher headers).
+    // again with fresher headers). The id guard is stricter than the host's
+    // copy was (it skipped a request only when variables.id was present and
+    // different): a see-more request with NO id is skipped too — the route's
+    // own request always carries the see-more id (live-verified), so an
+    // id-less RecommenderSeeMorePage body is some other page's call, never
+    // this section's mint.
     const captured = (load.captures || []).filter(r => r.headers && !r.echo);
     let entry = null;
     let request = null;
@@ -3723,6 +3743,7 @@ module.exports = {
     for (const r of captured) {
       const req = lib.amazonSeeMoreRequest([r.body]);
       if (!req) continue;
+      // No id is not this section's id either: skip, don't guess.
       if (!req.variables || req.variables.id !== seeMoreId) continue;
       const ts = Number(r.headers['csrf-ts'] || r.headers['Csrf-ts']) || 0;
       if (ts >= bestTs) { bestTs = ts; entry = r; request = req; }
