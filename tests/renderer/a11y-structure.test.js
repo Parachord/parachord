@@ -8,7 +8,7 @@ const path = require('path');
 const { renderToStaticMarkup } = require('react-dom/server');
 
 const read = (p) => fs.readFileSync(path.join(__dirname, '../..', p), 'utf8');
-const app = read('src/renderer/app.js');
+const app = require('../helpers/renderer-source').appWithPages() /* app.js and the pages moved out of it (#1451) */;
 const html = read('index.html');
 
 test('one reduced-motion block covers the whole app, spinners excepted', () => {

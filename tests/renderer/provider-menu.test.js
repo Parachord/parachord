@@ -14,7 +14,7 @@ test('the trigger names the menu and the current provider', () => {
 });
 
 test('both panels use it, and neither has a native select', () => {
-  const app = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  const app = require('../helpers/renderer-source').appWithPages() /* app.js and the pages moved out of it (#1451) */;
   expect((app.match(/React\.createElement\(ProviderMenu, \{/g) || []).length).toBe(2);
   expect(app).not.toMatch(/createElement\('select'/);
 });
