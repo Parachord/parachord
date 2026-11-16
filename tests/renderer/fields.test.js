@@ -58,7 +58,8 @@ test('Settings > General uses the field set', () => {
   const a = app.indexOf("settingsTab === 'general' && ");
   const general = app.slice(a, app.indexOf("settingsTab === 'about' && ", a));
   expect((general.match(/React\.createElement\(SettingRow, \{/g) || []).length).toBeGreaterThanOrEqual(10);
-  expect((general.match(/React\.createElement\(Select, \{/g) || []).length).toBe(1);
+  // Playback quality, and the window's Size (#1452).
+  expect((general.match(/React\.createElement\(Select, \{/g) || []).length).toBe(2);
   expect(general).toContain("React.createElement(RadioGroup, {");
   expect(general).toContain("React.createElement('form', {");
   expect(general).not.toMatch(/React\.createElement\('select', \{/);

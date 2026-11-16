@@ -1351,6 +1351,7 @@ const {
 const { countOf } = require('./lib/plural');
 const { movePriority, priorityMoves } = require('./lib/priority-order');
 const { timeAgo } = require('./lib/time-ago');
+const { chartLoadView } = require('./lib/chart-load-view');
 const { userError, errorText } = require('./lib/error-copy');
 const { trackDurationLabel } = require('./lib/track-duration');
 const { contextPlaylistTarget, playlistRef } = require('./lib/playlist-context');
@@ -3911,6 +3912,15 @@ const Parachord = () => {
   const waitingForBrowserPlaybackRef = useRef(false); // True when we're waiting for browser to connect after opening external track
   const [settingsTab, setSettingsTab] = useState('plugins'); // 'plugins' | 'general' | 'about'
   const [themePref, setThemePref] = useState('system'); // 'light' | 'dark' | 'system'
+  // The window's size (main-process/ui-zoom.js, #1452): Settings' Size and
+  // the View menu's zoom steps; main applies and stores it.
+  const [uiZoom, setUiZoom] = useState(1);
+  useEffect(() => {
+    const api = window.electron?.ui;
+    if (!api) return undefined;
+    api.getZoom().then((z) => { if (z) setUiZoom(z); }).catch(() => {});
+    return api.onZoomChanged ? api.onZoomChanged((z) => setUiZoom(z)) : undefined;
+  }, []);
   // Resolved 'light' | 'dark'. Seeded from the class index.html set before the
   // first paint, so the first render never strips .dark (a light flash).
   const [effectiveTheme, setEffectiveTheme] = useState(() => (
@@ -5010,10 +5020,12 @@ const Parachord = () => {
   const [lastfmCharts, setLastfmCharts] = useState([]); // Last.fm top tracks
   const [lastfmChartsLoading, setLastfmChartsLoading] = useState(false);
   const [lastfmChartsLoaded, setLastfmChartsLoaded] = useState(false);
+  const [lastfmChartsError, setLastfmChartsError] = useState(null); // the failed load's error, for ErrorState
   const [chartsSongsSource, setChartsSongsSource] = useState('apple'); // 'apple' | 'lastfm'
   const [appleMusicSongsCharts, setAppleMusicSongsCharts] = useState([]); // Apple Music top songs
   const [appleMusicSongsChartsLoading, setAppleMusicSongsChartsLoading] = useState(false);
   const [appleMusicSongsChartsLoaded, setAppleMusicSongsChartsLoaded] = useState(false);
+  const [appleMusicSongsChartsError, setAppleMusicSongsChartsError] = useState(null); // the failed load's error, for ErrorState
 
   // Critics Picks page state
   const [criticsHeaderCollapsed, setCriticsHeaderCollapsed] = useState(false);
@@ -24593,6 +24605,26 @@ ${trackListXml}
     }
   }, [activeView, chartsTab, chartsSongsSource, appleMusicSongsChartsLoading, lastfmChartsLoading]);
 
+  // Load the Tracks tab's chart once it's showing and the app can load it:
+  // the cache for Apple Music, the Last.fm key for Last.fm. The tab and
+  // source pickers used to start the load themselves and did nothing before
+  // the cache was ready, so a click then left the skeleton up for good. A
+  // failed load waits for Try again; this never retries it.
+  useEffect(() => {
+    if (activeView !== 'discover' || chartsTab !== 'songs') return;
+    if (chartsSongsSource === 'apple') {
+      if (cacheLoaded && !appleMusicSongsChartsLoaded && !appleMusicSongsChartsLoading && !appleMusicSongsChartsError) {
+        loadAppleMusicSongsCharts({ country: chartsCountry });
+      }
+    } else if (chartsSongsSource === 'lastfm') {
+      if (lastfmKeyLoaded && !lastfmChartsLoaded && !lastfmChartsLoading && !lastfmChartsError) {
+        loadLastfmCharts({ country: chartsCountry });
+      }
+    }
+  }, [activeView, chartsTab, chartsSongsSource, cacheLoaded, lastfmKeyLoaded,
+    appleMusicSongsChartsLoaded, appleMusicSongsChartsLoading, appleMusicSongsChartsError,
+    lastfmChartsLoaded, lastfmChartsLoading, lastfmChartsError]);
+
   // IntersectionObserver for songs charts tracks visibility (Apple Music or Last.fm)
   useEffect(() => {
     // Note: Charts (Pop of the Tops) uses activeView === 'discover'
@@ -26587,6 +26619,10 @@ ${tracks}
     const apiKey = getLastfmApiKey();
     if (!apiKey) {
       console.log('📊 No Last.fm API key available for charts');
+      // Settled, so the Tracks tab says why instead of keeping its skeleton.
+      setLastfmCharts([]);
+      setLastfmChartsLoaded(false);
+      setLastfmChartsError(userError('Last.fm’s chart needs a Last.fm API key. Add your own in Settings.'));
       return;
     }
 
@@ -26601,11 +26637,13 @@ ${tracks}
       console.log(`📦 Using cached Last.fm Charts (${country || 'global'}, ${cacheAgeHours}h old)`);
       setLastfmCharts(cached.tracks);
       setLastfmChartsLoaded(true);
+      setLastfmChartsError(null);
       return;
     }
 
     setLastfmChartsLoading(true);
     setLastfmChartsLoaded(false);
+    setLastfmChartsError(null);
     setLastfmChartsScrollContainerReady(false); // Reset to re-trigger observer setup
 
     try {
@@ -26681,11 +26719,9 @@ ${tracks}
           message: `Could not refresh Last.fm charts. Showing cached data from ${cacheAgeHours} hours ago.`
         });
       } else {
-        showConfirmDialog({
-          type: 'error',
-          title: 'Load failed',
-          message: 'Failed to load Last.fm Charts. Please try again.'
-        });
+        // Nothing to fall back on: the Tracks tab shows ErrorState with Try again.
+        setLastfmCharts([]);
+        setLastfmChartsError(error);
       }
     } finally {
       setLastfmChartsLoading(false);
@@ -26733,11 +26769,13 @@ ${tracks}
       console.log(`📦 Using cached Apple Music Songs Charts (${countryName}, ${cacheAgeHours}h old)`);
       setAppleMusicSongsCharts(cached.tracks);
       setAppleMusicSongsChartsLoaded(true);
+      setAppleMusicSongsChartsError(null);
       return;
     }
 
     setAppleMusicSongsChartsLoading(true);
     setAppleMusicSongsChartsLoaded(false);
+    setAppleMusicSongsChartsError(null);
     setLastfmChartsScrollContainerReady(false); // Reset to re-trigger observer setup
 
     try {
@@ -26793,11 +26831,10 @@ ${tracks}
           message: `Could not refresh Apple Music charts. Showing cached data from ${cacheAgeHours} hours ago.`
         });
       } else {
-        showConfirmDialog({
-          type: 'error',
-          title: 'Couldn’t load the charts',
-          message: 'Apple Music’s charts didn’t load. Check your connection and try again.'
-        });
+        // Nothing to fall back on: the Tracks tab shows ErrorState with Try
+        // again (a dialog left the tab on its skeleton behind it).
+        setAppleMusicSongsCharts([]);
+        setAppleMusicSongsChartsError(error);
       }
     } finally {
       setAppleMusicSongsChartsLoading(false);
@@ -38507,15 +38544,8 @@ React.createElement('div', {
                   style: { textShadow: 'var(--hero-text-shadow-line)' }
                 },
                   React.createElement(HeroTabs, { items: ['albums', 'songs'], isSelected: (tab) => chartsTab === tab, onSelect: (tab) => {
+                        // The Tracks chart loads from an effect once it can.
                         setChartsTab(tab);
-                        // Load charts based on selected source when switching to songs tab
-                        if (tab === 'songs' && cacheLoaded) {
-                          if (chartsSongsSource === 'apple' && !appleMusicSongsChartsLoaded && !appleMusicSongsChartsLoading) {
-                            loadAppleMusicSongsCharts({ country: chartsCountry });
-                          } else if (chartsSongsSource === 'lastfm' && !lastfmChartsLoaded && !lastfmChartsLoading) {
-                            loadLastfmCharts({ country: chartsCountry });
-                          }
-                        }
                       }, renderLabel: (tab) => (tab === 'songs' ? 'Tracks' : 'Albums'), label: 'Charts' })
                 ),
 React.createElement('p', {
@@ -38531,13 +38561,6 @@ React.createElement('div', {
                 },
                   React.createElement(HeroTabs, { items: ['albums', 'songs'], isSelected: (tab) => chartsTab === tab, onSelect: (tab) => {
                         setChartsTab(tab);
-                        if (tab === 'songs' && cacheLoaded) {
-                          if (chartsSongsSource === 'apple' && !appleMusicSongsChartsLoaded && !appleMusicSongsChartsLoading) {
-                            loadAppleMusicSongsCharts({ country: chartsCountry });
-                          } else if (chartsSongsSource === 'lastfm' && !lastfmChartsLoaded && !lastfmChartsLoading) {
-                            loadLastfmCharts({ country: chartsCountry });
-                          }
-                        }
                       }, renderLabel: (tab) => (tab === 'songs' ? 'Tracks' : 'Albums'), label: 'Charts' })
                 ),
 React.createElement('div', { className: 'flex-1' }),
@@ -38558,15 +38581,8 @@ React.createElement('span', {
                 options: [{ value: 'apple', label: 'Apple Music' }, { value: 'lastfm', label: 'Last.fm' }],
                 label: 'Chart source',
                 prefix: 'Source:',
-                onChange: (v) => {
-                  setChartsSongsSource(v);
-                  if (v === 'apple' && cacheLoaded && !appleMusicSongsChartsLoaded && !appleMusicSongsChartsLoading) {
-                    loadAppleMusicSongsCharts({ country: chartsCountry });
-                  }
-                  if (v === 'lastfm' && !lastfmChartsLoaded && !lastfmChartsLoading) {
-                    loadLastfmCharts({ country: chartsCountry });
-                  }
-                },
+                // The picked source's chart loads from an effect once it can.
+                onChange: (v) => setChartsSongsSource(v),
               }),
               // Region (components/sort-menu.js). Apple Music has no global
               // chart, so an empty region means the US there; Last.fm offers Global.
@@ -38658,10 +38674,26 @@ React.createElement('span', {
               );
             })(),
 
+            // SONGS TAB: a failed load shows its error with Try again.
+            chartsTab === 'songs' && chartsSongsSource === 'apple' &&
+              chartLoadView({ loading: appleMusicSongsChartsLoading, loaded: appleMusicSongsChartsLoaded, error: appleMusicSongsChartsError }) === 'error' &&
+              React.createElement(ErrorState, {
+                title: 'Couldn’t load the Apple Music chart',
+                body: errorText(appleMusicSongsChartsError, 'Apple Music’s chart didn’t load. Check your connection and try again.'),
+                onRetry: () => loadAppleMusicSongsCharts({ country: chartsCountry, forceReload: true })
+              }),
+            chartsTab === 'songs' && chartsSongsSource === 'lastfm' &&
+              chartLoadView({ loading: lastfmChartsLoading, loaded: lastfmChartsLoaded, error: lastfmChartsError }) === 'error' &&
+              React.createElement(ErrorState, {
+                title: 'Couldn’t load the Last.fm chart',
+                body: errorText(lastfmChartsError, 'Last.fm’s chart didn’t load. Check your connection and try again.'),
+                onRetry: () => loadLastfmCharts({ country: chartsCountry, forceReload: true })
+              }),
+
             // SONGS TAB: the shared track row's placeholder, in its columns.
             chartsTab === 'songs' && (
-              (chartsSongsSource === 'apple' && (appleMusicSongsChartsLoading || !appleMusicSongsChartsLoaded)) ||
-              (chartsSongsSource === 'lastfm' && (lastfmChartsLoading || !lastfmChartsLoaded))
+              (chartsSongsSource === 'apple' && chartLoadView({ loading: appleMusicSongsChartsLoading, loaded: appleMusicSongsChartsLoaded, error: appleMusicSongsChartsError }) === 'skeleton') ||
+              (chartsSongsSource === 'lastfm' && chartLoadView({ loading: lastfmChartsLoading, loaded: lastfmChartsLoaded, error: lastfmChartsError }) === 'skeleton')
             ) && React.createElement('div', { className: 'space-y-0' },
               Array.from({ length: 20 }).map((_, i) => React.createElement(TrackRowSkeleton, {
                 key: `skeleton-row-${i}`, index: i, duration: true,
@@ -41614,7 +41646,7 @@ React.createElement('div', {
               // Settings sections - refined
               React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '24px' } },
                 // Appearance Section
-                React.createElement(SettingsSection, { title: 'Appearance', description: 'Choose your preferred color theme' },
+                React.createElement(SettingsSection, { title: 'Appearance', description: 'Choose your color theme and how big things are' },
                   React.createElement(SegmentedChoice, {
                     label: 'Theme',
                     options: [
@@ -41624,7 +41656,21 @@ React.createElement('div', {
                     ],
                     value: themePref,
                     onChange: (v) => handleThemeChange(v)
-                  })),
+                  }),
+                  // The window's size: text, art and controls together
+                  // (main-process/ui-zoom.js). View › Zoom In / Out step it.
+                  React.createElement(SettingRow, { label: 'Size', hint: 'Makes text, art and controls bigger or smaller together. View › Zoom In and Zoom Out change it too.', style: { marginTop: '12px' } },
+                    React.createElement(Select, {
+                      value: String(uiZoom),
+                      onChange: (v) => { const z = Number(v); setUiZoom(z); window.electron?.ui?.setZoom(z); },
+                      options: [
+                        { value: '0.9', label: 'Small (90%)' },
+                        { value: '1', label: 'Default (100%)' },
+                        { value: '1.1', label: 'Large (110%)' },
+                        { value: '1.25', label: 'Larger (125%)' },
+                        { value: '1.5', label: 'Largest (150%)' }
+                      ]
+                    }))),
                 // Cache Management Section - refined card
                 React.createElement(SettingsSection, { title: 'Cache Management', description: 'Clear cached data to free up space or fix display issues' },
 React.createElement(SettingRow, { label: 'Clear cache', hint: 'Removes cached artist images, album art and service responses. Pages load more slowly until they’re fetched again.' },

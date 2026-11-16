@@ -588,7 +588,7 @@ Navigation history is maintained with `viewHistory` and `forwardHistory` arrays 
 - Main content width is tracked via `ResizeObserver` on the content container
 - Search results grid adjusts item count based on `searchContainerWidth`
 - Artist cards accept `itemWidth` prop for responsive sizing
-- **Card grids use `.card-grid`** (`index.html`): `repeat(auto-fill, minmax(180px, 1fr))`, as many columns as the content area holds; the grid's own gap class sets the spacing, and its skeleton uses the same class. Never Tailwind's `sm:`/`md:`/`lg:`/`xl:` for columns: they measure the **window**, not the content area (at the 1000px minimum window the content is only 744px wide).
+- **Card grids use `.card-grid`** (`index.html`): `repeat(auto-fill, minmax(180px, 1fr))`, as many columns as the content area holds; the grid's own gap class sets the spacing, and its skeleton uses the same class. Never Tailwind's `sm:`/`md:`/`lg:`/`xl:` for columns: they measure the **window**, not the content area (at the 1000px minimum window the content is only 744px wide). The Size setting (zoom, `main-process/ui-zoom.js`) raises the window's minimum with the zoom, so this holds at every size.
 
 ---
 
