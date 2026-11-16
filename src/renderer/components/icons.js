@@ -122,6 +122,9 @@ const SHAPES = {
     ['path', { d: 'M9 15h6' }], ['path', { d: 'M12 18v-6' }],
   ],
   Globe: [['circle', { cx: 12, cy: 12, r: 10 }], ['path', { d: 'M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20' }], ['path', { d: 'M2 12h20' }]],
+  ShoppingCart: [['circle', { cx: 8, cy: 21, r: 1 }], ['circle', { cx: 19, cy: 21, r: 1 }], ['path', { d: 'M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12' }]],
+  AppWindow: [['rect', { x: 2, y: 4, width: 20, height: 16, rx: 2 }], ['path', { d: 'M10 4v4' }], ['path', { d: 'M2 8h20' }], ['path', { d: 'M6 4v4' }]],
+  Dices: [['rect', { width: 12, height: 12, x: 2, y: 10, rx: 2, ry: 2 }], ['path', { d: 'm17.92 14 3.5-3.5a2.24 2.24 0 0 0 0-3l-5-4.92a2.24 2.24 0 0 0-3 0L10 6' }], ['path', { d: 'M6 18h.01' }], ['path', { d: 'M10 14h.01' }], ['path', { d: 'M15 6h.01' }], ['path', { d: 'M18 9h.01' }]],
   Sparkles: [
     ['path', { d: 'M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z' }],
     ['path', { d: 'M20 3v4' }], ['path', { d: 'M22 5h-4' }],
@@ -188,6 +191,14 @@ Icons.Spinner = ({ size = 20, className, style, label }) => {
 };
 Icons.Spinner.displayName = 'Icon(Spinner)';
 
-Icons.ICON_NAMES = Object.keys(SHAPES).concat('Spinner');
+// Spinoff: the playbar's Spinoff fork (IBM Carbon's branch glyph, solid, in
+// its own 32x32 box): kept over Lucide's GitFork, which reads differently.
+Icons.Spinoff = ({ size = 20, className, style }) => React.createElement('svg', {
+  xmlns: 'http://www.w3.org/2000/svg', width: size, height: size, viewBox: '0 0 32 32', fill: 'currentColor',
+  className, style, 'aria-hidden': 'true', 'data-icon': 'Spinoff',
+}, React.createElement('path', { d: 'M26,18a3.9955,3.9955,0,0,0-3.858,3H18a3.0033,3.0033,0,0,1-3-3V14a4.9514,4.9514,0,0,0-1.0256-3H22.142a4,4,0,1,0,0-2H9.858a4,4,0,1,0,0,2H10a3.0033,3.0033,0,0,1,3,3v4a5.0059,5.0059,0,0,0,5,5h4.142A3.9935,3.9935,0,1,0,26,18ZM26,8a2,2,0,1,1-2,2A2.0023,2.0023,0,0,1,26,8ZM6,12a2,2,0,1,1,2-2A2.002,2.002,0,0,1,6,12ZM26,24a2,2,0,1,1,2-2A2.0027,2.0027,0,0,1,26,24Z' }));
+Icons.Spinoff.displayName = 'Icon(Spinoff)';
+
+Icons.ICON_NAMES = Object.keys(SHAPES).concat('Spinner', 'Spinoff');
 
 module.exports = Icons;
