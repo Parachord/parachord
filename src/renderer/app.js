@@ -2025,8 +2025,20 @@ const { RaycastInfoDialog } = require('./components/raycast-info-dialog');
 const { ExtensionInfoDialog } = require('./components/extension-info-dialog');
 const { PluginSettingsDialog } = require('./components/plugin-settings-dialog');
 const { servicesWithCapability, hasScrobblerConnected: hasScrobblerConnectedTo } = require('./lib/ai-services');
+const { PROVIDER_LABEL, getPlaylistMirrorTargets } = require('./lib/playlist-mirrors');
 const { FirstRunTutorial } = require('./components/first-run-tutorial');
 const { AiPromptPanel } = require('./components/ai-prompt-panel');
+const { StopSyncDialog } = require('./components/stop-sync-dialog');
+const { SyncChannelDisableDialog } = require('./components/sync-channel-disable-dialog');
+const { NwayMigrationDialog } = require('./components/nway-migration-dialog');
+const { SyncDeleteDialog } = require('./components/sync-delete-dialog');
+const { AmazonManageDialog } = require('./components/amazon-manage-dialog');
+const { UrlImportDialog } = require('./components/url-import-dialog');
+const { QueueSaveDialog } = require('./components/queue-save-dialog');
+const { NewPlaylistDialog } = require('./components/new-playlist-dialog');
+const { AiSaveDialog } = require('./components/ai-save-dialog');
+const { UnsavedFriendDialog } = require('./components/unsaved-friend-dialog');
+const { ExternalTrackPrompt } = require('./components/external-track-prompt');
 const { Sidebar } = require('./components/sidebar');
 const { Playbar } = require('./components/playbar');
 const { SettingsPage } = require('./components/settings-page');
@@ -2058,9 +2070,9 @@ const { capabilityLabel } = require('./lib/capability-labels');
 // marker to test against ("this plug-in has no colour"), never drawn.
 // The colour a plug-in gets when it declares none (components/brand-logos.js).
 const { NO_PLUGIN_COLOR } = require('./components/brand-logos');
-const { Modal, SidePanel, ConfirmModal, DontShowAgain } = require('./components/modal');
+const { Modal, SidePanel, ConfirmModal } = require('./components/modal');
 const { AddFriendDialog } = require('./components/add-friend-dialog');
-const { PlaylistUpdateDialog, UpdateModeChoice } = require('./components/playlist-update-dialog');
+const { PlaylistUpdateDialog } = require('./components/playlist-update-dialog');
 const { KeyboardShortcutsDialog } = require('./components/keyboard-shortcuts');
 const { WhatsNewDialog } = require('./components/whats-new-dialog');
 const { ArtistCard, ArtistCardSkeleton, RankBadge } = require('./components/artist-card');
@@ -2072,7 +2084,6 @@ const { PlaylistCard } = require('./components/playlist-card');
 const { ListenerCard, LISTENER_HEXAGON } = require('./components/listener-card');
 const { Badge } = require('./components/badge');
 const { Button, buttonClassName } = require('./components/button');
-const { OptionTile } = require('./components/option-tile');
 const { ListRow } = require('./components/list-row');
 const { QueueContextBar } = require('./components/queue-context-bar');
 const { PlaybarLineSkeleton } = require('./components/playbar-skeleton');
@@ -2082,7 +2093,6 @@ const { SortMenu } = require('./components/sort-menu');
 const { Menu, ContextMenu } = require('./components/menu');
 const { ProviderMenu } = require('./components/provider-menu');
 const { HeroTabs } = require('./components/hero-tabs');
-const { SettingRow, Select, TextField, SecretField, Switch, Checkbox, Slider, RadioGroup, SegmentedChoice } = require('./components/fields');
 const { EmptyState, ErrorState } = require('./components/states');
 const { setSellerColorLookup, sellerColor, sellerTextColor, sellerBadgeBg, sellerShortName, sellerName } = require('./lib/ticket-sellers');
 const { withCollectionState } = require('./lib/menu-collection-state');
@@ -5854,22 +5864,6 @@ const Parachord = () => {
     setNwayMigrationDialog({ show: false });
     showToast('Diff copied to clipboard — opening a GitHub issue');
   };
-
-  // The remote services a playlist mirrors to/from (source + push mirrors) that
-  // could be cleaned up on delete. Returns [{ providerId, externalId, role }].
-  const getPlaylistMirrorTargets = (playlist) => {
-    if (!playlist) return [];
-    const out = [];
-    if (playlist.syncedFrom?.resolver && playlist.syncedFrom?.externalId) {
-      out.push({ providerId: playlist.syncedFrom.resolver, externalId: playlist.syncedFrom.externalId, role: 'source' });
-    }
-    for (const [pid, info] of Object.entries(playlist.syncedTo || {})) {
-      if (info?.externalId) out.push({ providerId: pid, externalId: info.externalId, role: 'mirror' });
-    }
-    return out;
-  };
-
-  const PROVIDER_LABEL = { spotify: 'Spotify', applemusic: 'Apple Music', listenbrainz: 'ListenBrainz' };
 
   // Remove a playlist from ALL local persistence. A hosted XSPF lives in BOTH
   // the hosted_playlists URL list AND local_playlists (handleImportPlaylistFromUrl
@@ -37354,6 +37348,60 @@ useEffect(() => {
     handleAiGenerate, navigateTo,
   });
 
+  // Stable function props for the memo'd ExternalTrackPrompt (keys must
+  // match EXTERNAL_TRACK_PROMPT_HANDLERS in external-track-prompt.js).
+  const externalTrackPromptHandlers = useStableHandlers({
+    handleOpenExternalTrack, handleSkipExternalTrack,
+  });
+
+  // Stable function props for the memo'd UnsavedFriendDialog (keys must
+  // match UNSAVED_FRIEND_DIALOG_HANDLERS in unsaved-friend-dialog.js).
+  const unsavedFriendDialogHandlers = useStableHandlers({
+    confirmUnpinFriend, saveFriendToCollection,
+  });
+
+  // Stable function props for the memo'd AiSaveDialog (keys must
+  // match AI_SAVE_DIALOG_HANDLERS in ai-save-dialog.js).
+  const aiSaveDialogHandlers = useStableHandlers({
+    handleAiSavePlaylistConfirm,
+  });
+
+  // Stable function props for the memo'd NewPlaylistDialog (keys must
+  // match NEW_PLAYLIST_DIALOG_HANDLERS in new-playlist-dialog.js).
+  const newPlaylistDialogHandlers = useStableHandlers({
+    savePlaylistToStore,
+  });
+
+  // Stable function props for the memo'd QueueSaveDialog (keys must
+  // match QUEUE_SAVE_DIALOG_HANDLERS in queue-save-dialog.js).
+  const queueSaveDialogHandlers = useStableHandlers({
+    handleSaveQueueConfirm, handleSaveQueueToFile,
+  });
+
+  // Stable function props for the memo'd UrlImportDialog (keys must
+  // match URL_IMPORT_DIALOG_HANDLERS in url-import-dialog.js).
+  const urlImportDialogHandlers = useStableHandlers({
+    handleImportPlaylist, handleImportPlaylistFromUrl, isPlaylistLinkImported, playlistLinkService, showConfirmDialog,
+  });
+
+  // Stable function props for the memo'd SyncDeleteDialog (keys must
+  // match SYNC_DELETE_DIALOG_HANDLERS in sync-delete-dialog.js).
+  const syncDeleteDialogHandlers = useStableHandlers({
+    handleDeleteSyncedPlaylist,
+  });
+
+  // Stable function props for the memo'd NwayMigrationDialog (keys must
+  // match NWAY_MIGRATION_DIALOG_HANDLERS in nway-migration-dialog.js).
+  const nwayMigrationDialogHandlers = useStableHandlers({
+    acceptNwayMigration, reportNwayMigration,
+  });
+
+  // Stable function props for the memo'd StopSyncDialog (keys must
+  // match STOP_SYNC_DIALOG_HANDLERS in stop-sync-dialog.js).
+  const stopSyncDialogHandlers = useStableHandlers({
+    stopSyncing,
+  });
+
   // Stable function props for the memo'd PluginSettingsDialog (keys must
   // match PLUGIN_SETTINGS_DIALOG_HANDLERS in plugin-settings-dialog.js).
   const pluginSettingsDialogHandlers = useStableHandlers({
@@ -37483,95 +37531,32 @@ useEffect(() => {
     // External Track Prompt Modal - refined styling
     // The standard dialog (components/modal.js). Closing it (the X, Escape,
     // the scrim) dismisses the track and pauses, as the old X did.
-    showExternalPrompt && pendingExternalTrack && (() => {
-      const dismiss = () => {
-        // Clear the auto-skip timeout and interval
-        if (externalTrackTimeoutRef.current) {
-          clearTimeout(externalTrackTimeoutRef.current);
-          externalTrackTimeoutRef.current = null;
-        }
-        if (externalTrackIntervalRef.current) {
-          clearInterval(externalTrackIntervalRef.current);
-          externalTrackIntervalRef.current = null;
-        }
-        // Pause playback and dismiss the prompt
-        setIsPlaying(false);
-        setShowExternalPrompt(false);
-        setPendingExternalTrack(null);
-        setPendingExternalResolverId(null);
-        console.log('⏸️ User dismissed external track prompt, pausing playback');
-      };
-      const sourceId = pendingExternalTrack.bandcampUrl ? 'bandcamp'
-        : (pendingExternalTrack.youtubeUrl || pendingExternalTrack.youtubeId ? 'youtube' : null);
-      const source = sourceId ? allResolvers.find(r => r.id === sourceId) : null;
-      return React.createElement(Modal, {
-        size: 'sm',
-        title: 'Open in browser',
-        icon: React.createElement(Icons.ExternalLink, { className: 'w-5 h-5', style: { color: 'var(--accent-primary)' } }),
-        onClose: dismiss,
-        footer: [
-          React.createElement(Button, { key: 'skip', variant: 'secondary', onClick: handleSkipExternalTrack }, 'Skip'),
-          React.createElement(Button, { key: 'open', variant: 'primary', onClick: () => handleOpenExternalTrack(pendingExternalTrack) }, 'Open in browser')
-        ]
-      },
-        // The track, and where it plays (the plug-in's own colour).
-        React.createElement('div', { style: { marginTop: '4px' } },
-          React.createElement('div', { className: 'text-ink-primary', style: { fontSize: '14px', fontWeight: 500 } }, pendingExternalTrack.title),
-          React.createElement('div', { className: 'text-ink-secondary', style: { fontSize: '13px', marginTop: '4px' } }, pendingExternalTrack.artist),
-          React.createElement('div', { className: 'inline-flex items-center gap-1.5 text-ink-secondary', style: { fontSize: '12px', fontWeight: 500, marginTop: '12px' } },
-            React.createElement('span', { 'aria-hidden': 'true', style: { width: '8px', height: '8px', borderRadius: '50%', backgroundColor: source?.color || 'var(--accent-primary)' } }),
-            source?.name || 'External')
-        ),
-        React.createElement('p', { className: 'text-ink-tertiary', role: 'status', style: { fontSize: '12px', marginTop: '12px' } },
-          `Auto-skipping in ${externalTrackCountdown} second${externalTrackCountdown !== 1 ? 's' : ''}…`),
-        React.createElement(DontShowAgain, {
-          onChange: async (checked) => {
-            setSkipExternalPrompt(checked);
-            if (window.electron?.store) {
-              await window.electron.store.set('skip_external_prompt', checked);
-            }
-          }
-        })
-      );
-    })(),
+    /* ExternalTrackPrompt (components/external-track-prompt.js), a memo'd dialog. */ showExternalPrompt && pendingExternalTrack && React.createElement(ExternalTrackPrompt, {
+      allResolvers,
+      externalTrackCountdown,
+      externalTrackIntervalRef,
+      externalTrackTimeoutRef,
+      pendingExternalTrack,
+      setIsPlaying,
+      setPendingExternalResolverId,
+      setPendingExternalTrack,
+      setShowExternalPrompt,
+      setSkipExternalPrompt,
+      ...externalTrackPromptHandlers
+    }),
 
     // Unsaved friend unpin warning dialog - refined styling
     // The standard dialog (components/modal.js): title, close, footer.
-    unsavedFriendWarningOpen && pendingUnpinFriend && React.createElement(Modal, {
-      size: 'sm',
-      title: 'Friend not saved',
-      description: `${pendingUnpinFriend.displayName} isn’t saved to your collection. If you unpin them, you’ll need to add them again to pin them later.`,
-      icon: React.createElement(Icons.AlertTriangle, { className: 'w-5 h-5', style: { color: 'var(--warning)' } }),
-      onClose: () => {
-        setUnsavedFriendWarningOpen(false);
-        setPendingUnpinFriend(null);
-      },
-      footer: [
-        React.createElement(Button, { key: 'unpin', variant: 'secondary', onClick: confirmUnpinFriend }, 'Just unpin'),
-        React.createElement(Button, {
-          key: 'save',
-          variant: 'primary',
-          onClick: () => {
-            // Save to collection, then unpin
-            saveFriendToCollection(pendingUnpinFriend.id);
-            setPinnedFriendIds(prev => prev.filter(id => id !== pendingUnpinFriend.id));
-            setAutoPinnedFriendIds(prev => prev.filter(id => id !== pendingUnpinFriend.id));
-            showToast(`${pendingUnpinFriend.displayName} saved and unpinned`);
-            setUnsavedFriendWarningOpen(false);
-            setPendingUnpinFriend(null);
-          }
-        }, 'Save and unpin')
-      ]
-    },
-      React.createElement(DontShowAgain, {
-        onChange: async (checked) => {
-          setSkipUnsavedFriendWarning(checked);
-          if (window.electron?.store) {
-            await window.electron.store.set('skip_unsaved_friend_warning', checked);
-          }
-        }
-      })
-    ),
+    /* UnsavedFriendDialog (components/unsaved-friend-dialog.js), a memo'd dialog. */ unsavedFriendWarningOpen && pendingUnpinFriend && React.createElement(UnsavedFriendDialog, {
+      pendingUnpinFriend,
+      setAutoPinnedFriendIds,
+      setPendingUnpinFriend,
+      setPinnedFriendIds,
+      setSkipUnsavedFriendWarning,
+      setUnsavedFriendWarningOpen,
+      showToast,
+      ...unsavedFriendDialogHandlers
+    }),
 
     // While the bulk-cache IPC is in flight, render nothing in the main
     // content slot. The body-level #parachord-splash overlay in index.html
@@ -38586,198 +38571,52 @@ collapsedContent: null
 
     // AI Save Playlist Dialog - Refined dark theme
     // The standard dialog (components/modal.js), a real form: Enter saves.
-    aiSaveDialogOpen && React.createElement(Modal, {
-      size: 'sm',
-      title: 'Save playlist',
-      description: resultsSidebar?.provider ? `Generated by ${resultsSidebar.provider.name}` : undefined,
-      onClose: () => setAiSaveDialogOpen(false),
-      footer: [
-        React.createElement(Button, { key: 'cancel', variant: 'secondary', onClick: () => setAiSaveDialogOpen(false) }, 'Cancel'),
-        React.createElement(Button, { key: 'save', variant: 'primary', type: 'submit', form: 'ai-save-form', disabled: !aiSavePlaylistName.trim() }, 'Save')
-      ]
-    },
-      React.createElement('form', {
-        id: 'ai-save-form',
-        style: { marginTop: '12px' },
-        onSubmit: (e) => { e.preventDefault(); if (aiSavePlaylistName.trim()) handleAiSavePlaylistConfirm(); }
-      },
-        React.createElement('label', { htmlFor: 'playlist-name', className: 'block text-ink-secondary', style: { fontSize: '13px', marginBottom: '8px' } }, 'Playlist name'),
-        React.createElement(TextField, {
-          id: 'playlist-name',
-          value: aiSavePlaylistName,
-          onChange: (v) => setAiSavePlaylistName(v),
-          // Global shortcuts stay out of the way while typing.
-          onKeyDown: (e) => e.stopPropagation(),
-          autoFocus: true
-        })
-      )
-    ),
+    /* AiSaveDialog (components/ai-save-dialog.js), a memo'd dialog. */ aiSaveDialogOpen && React.createElement(AiSaveDialog, {
+      aiSavePlaylistName,
+      resultsSidebar,
+      setAiSaveDialogOpen,
+      setAiSavePlaylistName,
+      ...aiSaveDialogHandlers
+    }),
 
     // New Playlist Dialog: a name, then the empty playlist opens.
-    newPlaylistDialogName !== null && (() => {
-      const close = () => setNewPlaylistDialogName(null);
-      const existing = new Set(playlists.map(p => p.title));
-      let fallback = 'New Playlist';
-      for (let n = 2; existing.has(fallback); n++) fallback = `New Playlist ${n}`;
-      const create = () => {
-        const name = newPlaylistDialogName.trim() || fallback;
-        const playlistId = slug(name) + '-' + Date.now();
-        const newPlaylist = {
-          id: playlistId,
-          filename: `${playlistId}.xspf`,
-          title: name,
-          creator: 'Me',
-          tracks: [],
-          createdAt: Date.now(),
-          addedAt: Date.now(),
-          lastModified: Date.now()
-        };
-        setPlaylists(prev => [newPlaylist, ...prev]);
-        savePlaylistToStore(newPlaylist);
-        close();
-        setActiveView('playlists');
-        setSelectedPlaylist(newPlaylist);
-      };
-      return React.createElement(Modal, {
-        size: 'sm',
-        title: 'New playlist',
-        onClose: close,
-        footer: [
-          React.createElement(Button, { key: 'cancel', variant: 'secondary', onClick: close }, 'Cancel'),
-          React.createElement(Button, { key: 'create', variant: 'primary', type: 'submit', form: 'new-playlist-form' }, 'Create')
-        ]
-      },
-        React.createElement('form', {
-          id: 'new-playlist-form',
-          style: { marginTop: '12px' },
-          onSubmit: (e) => { e.preventDefault(); create(); }
-        },
-          React.createElement('label', { htmlFor: 'new-playlist-name', className: 'block text-ink-secondary', style: { fontSize: '13px', marginBottom: '8px' } }, 'Playlist name'),
-          React.createElement(TextField, {
-            id: 'new-playlist-name',
-            value: newPlaylistDialogName,
-            placeholder: fallback,
-            onChange: (v) => setNewPlaylistDialogName(v),
-            // Global shortcuts stay out of the way while typing.
-            onKeyDown: (e) => e.stopPropagation(),
-            autoFocus: true
-          })
-        )
-      );
-    })(),
+    /* NewPlaylistDialog (components/new-playlist-dialog.js), a memo'd dialog. */ newPlaylistDialogName !== null && React.createElement(NewPlaylistDialog, {
+      newPlaylistDialogName,
+      playlists,
+      setActiveView,
+      setNewPlaylistDialogName,
+      setPlaylists,
+      setSelectedPlaylist,
+      ...newPlaylistDialogHandlers
+    }),
 
     // Queue Save Playlist Dialog
     // The standard dialog (components/modal.js), a real form: Enter saves.
-    queueSaveDialogOpen && React.createElement(Modal, {
-      size: 'sm',
-      title: 'Save queue as playlist',
-      description: `${(currentTrack ? 1 : 0) + currentQueue.length} track${((currentTrack ? 1 : 0) + currentQueue.length) !== 1 ? 's' : ''} will be saved`,
-      onClose: () => setQueueSaveDialogOpen(false),
-      footer: [
-        React.createElement(Button, { key: 'cancel', variant: 'secondary', onClick: () => setQueueSaveDialogOpen(false) }, 'Cancel'),
-        React.createElement(Button, {
-          key: 'file', variant: 'secondary', onClick: handleSaveQueueToFile, disabled: !queueSavePlaylistName.trim(),
-          'data-tooltip': 'Write an .xspf file instead of adding to your playlists'
-        }, 'Save to file'),
-        React.createElement(Button, { key: 'save', variant: 'primary', type: 'submit', form: 'queue-save-form', disabled: !queueSavePlaylistName.trim() }, 'Save')
-      ]
-    },
-      React.createElement('form', {
-        id: 'queue-save-form',
-        style: { marginTop: '12px' },
-        onSubmit: (e) => { e.preventDefault(); if (queueSavePlaylistName.trim()) handleSaveQueueConfirm(); }
-      },
-        React.createElement('label', { htmlFor: 'queue-playlist-name', className: 'block text-ink-secondary', style: { fontSize: '13px', marginBottom: '8px' } }, 'Playlist name'),
-        React.createElement(TextField, {
-          id: 'queue-playlist-name',
-          value: queueSavePlaylistName,
-          onChange: (v) => setQueueSavePlaylistName(v),
-          // Global shortcuts stay out of the way while typing.
-          onKeyDown: (e) => e.stopPropagation(),
-          autoFocus: true
-        })
-      )
-    ),
+    /* QueueSaveDialog (components/queue-save-dialog.js), a memo'd dialog. */ queueSaveDialogOpen && React.createElement(QueueSaveDialog, {
+      currentQueue,
+      currentTrack,
+      queueSavePlaylistName,
+      setQueueSaveDialogOpen,
+      setQueueSavePlaylistName,
+      ...queueSaveDialogHandlers
+    }),
 
     // Import Playlist Dialog Modal
     // The standard dialog (components/modal.js): two ways in, each with its
     // own action, so no footer. The URL is a real form: Enter imports.
-    showUrlImportDialog && (() => {
-      const close = () => { setShowUrlImportDialog(false); setUrlImportValue(''); setUrlImportMode('auto'); };
-      const linkService = playlistLinkService(urlImportValue.trim());
-      const importUrl = async () => {
-        if (!urlImportValue.trim() || urlImportLoading) return;
-        setUrlImportLoading(true);
-        try {
-          // The choice below; a link already imported just refreshes.
-          const url = urlImportValue.trim();
-          const autoUpdate = isPlaylistLinkImported(url) ? undefined : urlImportMode === 'auto';
-          const result = await handleImportPlaylistFromUrl(url, false, null, null, { autoUpdate });
-          close();
-          showToast(`${result.updated ? 'Updated' : 'Imported'} “${result.playlist.title}”`, 'success');
-        } catch (error) {
-          console.error('Import from URL failed:', error);
-          showConfirmDialog({ type: 'error', title: 'Couldn’t import the playlist', message: errorText(error, 'Check the link and try again.') });
-        } finally {
-          setUrlImportLoading(false);
-        }
-      };
-      return React.createElement(Modal, { size: 'md', title: 'Import playlist', onClose: close },
-        // From a URL
-        React.createElement('form', {
-          className: 'rounded-xl border border-line bg-surface-inset',
-          style: { padding: '16px', marginTop: '12px', marginBottom: '16px' },
-          onSubmit: (e) => { e.preventDefault(); importUrl(); }
-        },
-          React.createElement('div', { className: 'flex items-start gap-3', style: { marginBottom: '12px' } },
-            React.createElement('div', { className: 'flex items-center justify-center flex-shrink-0 bg-accent-fill text-ink-on-accent', style: { width: '36px', height: '36px', borderRadius: '10px' } },
-              React.createElement(Icons.Link, { size: 20 })),
-            React.createElement('div', { className: 'flex-1' },
-              React.createElement('label', { htmlFor: 'import-playlist-url', className: 'block text-ink-primary', style: { fontSize: '14px', fontWeight: 600, marginBottom: '4px' } }, 'Import from URL'),
-              React.createElement('p', { className: 'text-ink-secondary', style: { fontSize: '13px', lineHeight: 1.4 } }, 'Spotify, Apple Music, Amazon Music, or hosted .xspf'))
-          ),
-          React.createElement('div', { className: 'flex gap-2' },
-            React.createElement(TextField, {
-              id: 'import-playlist-url', type: 'url', value: urlImportValue, onChange: (v) => setUrlImportValue(v),
-              // Global shortcuts stay out of the way while typing.
-              onKeyDown: (e) => e.stopPropagation(),
-              placeholder: 'Paste playlist URL…', disabled: urlImportLoading, autoFocus: true, className: 'flex-1'
-            }),
-            React.createElement(Button, { type: 'submit', variant: 'primary', busy: urlImportLoading, disabled: !urlImportValue.trim() }, 'Import')),
-          // Keep it updated, or a snapshot (the same choice a dropped link asks).
-          React.createElement('div', { style: { marginTop: '12px' } },
-            React.createElement(UpdateModeChoice, {
-              name: 'import-url-update-mode',
-              value: urlImportMode,
-              onChange: setUrlImportMode,
-              isService: linkService.isService,
-              sourceLabel: linkService.sourceLabel
-            }))
-        ),
-        // Divider
-        React.createElement('div', { className: 'flex items-center gap-3', style: { marginBottom: '16px' }, 'aria-hidden': 'true' },
-          React.createElement('div', { className: 'flex-1 bg-line', style: { height: '1px' } }),
-          React.createElement('span', { className: 'text-ink-tertiary', style: { fontSize: '12px', fontWeight: 500 } }, 'or'),
-          React.createElement('div', { className: 'flex-1 bg-line', style: { height: '1px' } })
-        ),
-        // From a file
-        React.createElement('button', {
-          type: 'button',
-          onClick: async () => { setShowUrlImportDialog(false); await handleImportPlaylist(); },
-          disabled: urlImportLoading,
-          className: 'w-full rounded-xl border-2 border-dashed border-line bg-surface-inset hover:bg-surface-hover hover:border-line-strong transition-colors text-center',
-          style: { padding: '20px' }
-        },
-          React.createElement('div', { className: 'flex flex-col items-center gap-2' },
-            React.createElement('div', { className: 'flex items-center justify-center bg-surface-placeholder text-ink-secondary', style: { width: '40px', height: '40px', borderRadius: '10px' } },
-              React.createElement(Icons.Folder, { size: 20 })),
-            React.createElement('div', null,
-              React.createElement('p', { className: 'text-ink-primary', style: { fontSize: '14px', fontWeight: 500, marginBottom: '2px' } }, 'Load from file'),
-              React.createElement('p', { className: 'text-ink-tertiary', style: { fontSize: '12px' } }, 'Choose an .xspf file from your computer'))
-          )
-        )
-      );
-    })(),
+    /* UrlImportDialog (components/url-import-dialog.js), a memo'd dialog. */ showUrlImportDialog && React.createElement(UrlImportDialog, {
+      _allResolvers: allResolvers,
+      _playlists: playlists,
+      setShowUrlImportDialog,
+      setUrlImportLoading,
+      setUrlImportMode,
+      setUrlImportValue,
+      showToast,
+      urlImportLoading,
+      urlImportMode,
+      urlImportValue,
+      ...urlImportDialogHandlers
+    }),
 
     // Add a friend (components/add-friend-dialog.js): the service, then
     // the username; a profile link fills both; errors under the field.
@@ -39011,177 +38850,41 @@ collapsedContent: null
     // Amazon Music sign-in dialog. Opens music.amazon.com inside Parachord.
     // The standard dialog (components/modal.js). While the sign-in window
     // opens it can't be dismissed.
-    amazonManageDialog.show && (() => {
-      const notNow = () => {
-        if (amazonManageDialog.onResolve) amazonManageDialog.onResolve(false);
-        setAmazonManageDialog({ show: false, onResolve: null, relaunching: false });
-      };
-      return React.createElement(Modal, {
-        size: 'sm',
-        title: 'Play Amazon Music in Parachord?',
-        description: 'Sign in, and if Amazon asks, choose a profile. The Amazon Music desktop app is not used.',
-        dismissible: !amazonManageDialog.relaunching,
-        hideClose: amazonManageDialog.relaunching,
-        onClose: () => { if (!amazonManageDialog.relaunching) notNow(); },
-        footer: [
-          !amazonManageDialog.relaunching && React.createElement(Button, { key: 'later', variant: 'secondary', onClick: notNow }, 'Not now'),
-          React.createElement(Button, {
-            key: 'signin', variant: 'primary', busy: amazonManageDialog.relaunching,
-            onClick: () => {
-              if (amazonManageDialog.relaunching) return;
-              if (amazonManageDialog.onResolve) amazonManageDialog.onResolve(true);
-              else setAmazonManageDialog({ show: true, onResolve: null, relaunching: true });
-            }
-          }, amazonManageDialog.relaunching ? 'Opening Amazon Music…' : 'Sign in')
-        ].filter(Boolean)
-      },
-        React.createElement('p', { className: 'text-ink-tertiary', style: { fontSize: '12px', lineHeight: 1.5, marginTop: '8px' } },
-          'You can close the sign-in window to cancel. If the account has more than one profile, pick one before closing — search and play wait for that selection.')
-      );
-    })(),
+    /* AmazonManageDialog (components/amazon-manage-dialog.js), a memo'd dialog. */ amazonManageDialog.show && React.createElement(AmazonManageDialog, {
+      amazonManageDialog,
+      setAmazonManageDialog
+    }),
 
     // Synced Playlist Delete Dialog
     // The standard dialog (components/modal.js). Three choices: the
     // destructive one is red, the safe one primary, Cancel secondary.
-    syncDeleteDialog.show && (() => {
-      const svcs = [...new Set(getPlaylistMirrorTargets(syncDeleteDialog.playlist).map(t => PROVIDER_LABEL[t.providerId] || t.providerId))];
-      const close = () => setSyncDeleteDialog({ show: false, playlist: null });
-      return React.createElement(Modal, {
-        size: 'sm',
-        role: 'alertdialog',
-        title: `Delete “${syncDeleteDialog.playlist?.title}”?`,
-        description: `This playlist is synced with ${svcs.length ? svcs.join(', ') : 'a sync service'}. What would you like to do?`,
-        icon: React.createElement(Icons.Trash2, { className: 'w-5 h-5', style: { color: 'var(--text-danger)' } }),
-        onClose: close,
-        footer: [
-          React.createElement(Button, { key: 'cancel', variant: 'secondary', onClick: close }, 'Cancel'),
-          React.createElement(Button, { key: 'source', variant: 'destructive', onClick: () => handleDeleteSyncedPlaylist('delete-from-source') },
-            `Delete from ${svcs.length ? svcs.join(', ') : 'the service'} too`),
-          React.createElement(Button, { key: 'stop', variant: 'primary', onClick: () => handleDeleteSyncedPlaylist('stop-syncing') }, 'Stop syncing')
-        ]
-      });
-    })(),
+    /* SyncDeleteDialog (components/sync-delete-dialog.js), a memo'd dialog. */ syncDeleteDialog.show && React.createElement(SyncDeleteDialog, {
+      setSyncDeleteDialog,
+      syncDeleteDialog,
+      ...syncDeleteDialogHandlers
+    }),
 
     // N-way migration preview (parachord#911): "switch to new sync?" with the
     // exact dry-run diff and Accept / Report / Cancel.
     // The standard dialog (components/modal.js): title, description,
     // close and footer; the dry-run diff is the body.
-    nwayMigrationDialog.show && React.createElement(Modal, {
-      size: 'lg',
-      title: 'Switch to new sync on this device?',
-      description: React.createElement(React.Fragment, null,
-        'We ran the ',
-        React.createElement('a', {
-          href: '#',
-          onClick: (e) => { e.preventDefault(); if (window.electron?.shell?.openExternal) window.electron.shell.openExternal('https://parachord.com/blog/2026/06/25/keeping-playlists-in-sync/'); },
-          className: 'text-accent font-medium hover:underline'
-        }, 'new sync'),
-        ' against your library without writing anything. Here’s exactly what it would change.'
-      ),
-      dismissible: !nwayMigrationDialog.loading,
-      onClose: () => { if (!nwayMigrationDialog.loading) setNwayMigrationDialog({ show: false }); },
-      footer: [
-        React.createElement('span', { key: 'note', className: 'text-ink-tertiary', style: { fontSize: '11px', marginRight: 'auto' } }, 'Disables the old sync here. Reversible anytime.'),
-        React.createElement(Button, { key: 'cancel', variant: 'secondary', onClick: () => setNwayMigrationDialog({ show: false }) }, 'Cancel'),
-        (nwayMigrationDialog.summary && (nwayMigrationDialog.summary.hasChanges || nwayMigrationDialog.summary.protected.length)) &&
-          React.createElement(Button, { key: 'report', variant: 'secondary', onClick: () => reportNwayMigration() }, 'Report a problem'),
-        React.createElement(Button, {
-          key: 'accept', variant: 'primary', onClick: () => acceptNwayMigration(),
-          disabled: nwayMigrationDialog.loading || !nwayMigrationDialog.summary
-        }, (nwayMigrationDialog.summary && !nwayMigrationDialog.summary.hasChanges) ? 'Switch' : 'Accept changes and switch')
-      ].filter(Boolean)
-    },
-React.createElement('div', { style: { marginTop: '12px' } },
-          (() => {
-            const d = nwayMigrationDialog;
-            if (d.loading) return React.createElement('div', { style: { padding: '30px 0 26px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' } },
-              React.createElement(Icons.Spinner, { style: { color: 'var(--accent-primary)' } }),
-              React.createElement('p', { style: { fontSize: '13px', color: 'var(--text-secondary)', margin: 0 } }, 'Checking your playlists…')
-            );
-            if (d.error) return React.createElement('p', { style: { padding: '8px 0 16px', fontSize: '13px', color: 'var(--text-danger)' } }, `Couldn't run the preview: ${d.error}`);
-            const s = d.summary;
-            if (!s) return null;
-            const banner = (bg, border, color, text) => React.createElement('div', { style: { backgroundColor: bg, border: `1px solid ${border}`, borderRadius: '8px', padding: '9px 11px', marginBottom: '12px' } }, React.createElement('span', { style: { fontSize: '12px', color, lineHeight: '1.45' } }, text));
-            const rows = [];
-            if (d.recomputed) rows.push(banner('var(--tint-warning)', 'var(--border-warning)', 'var(--text-warning)', 'The remote changed since you opened this. This is the updated diff.'));
-            if (s.hasRemoves) rows.push(banner('var(--tint-danger)', 'var(--border-danger)', 'var(--text-danger)', `${s.totalRemoves} track${s.totalRemoves === 1 ? '' : 's'} would be removed. Review the removals before you accept.`));
-            if (!s.hasChanges && !s.protected.length) {
-              rows.push(React.createElement('p', { key: 'noop', style: { fontSize: '13px', color: 'var(--text-secondary)', padding: '4px 0 14px' } }, 'Your playlists are already in sync, so nothing changes. Safe to switch.'));
-            } else if (s.hasChanges) {
-              rows.push(React.createElement('p', { key: 'sum', style: { fontSize: '12px', color: 'var(--text-tertiary)', padding: '2px 0 8px' } }, `${s.noopCount} playlist${s.noopCount === 1 ? '' : 's'} already match. ${s.changed.length} need${s.changed.length === 1 ? 's' : ''} changes:`));
-            }
-            s.changed.forEach((pl, pi) => {
-              const hasRem = pl.providers.some((p) => p.removes.length);
-              const provNodes = [];
-              pl.providers.forEach((p, ppi) => {
-                provNodes.push(React.createElement('div', { key: `h${ppi}`, style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: ppi ? '8px' : '6px' } },
-                  React.createElement('span', { style: { fontSize: '11px', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em' } }, p.providerId),
-                  React.createElement('span', { style: { fontSize: '11px', color: 'var(--text-tertiary)' } }, `${p.adds.length ? '+' + p.adds.length : ''}${p.adds.length && p.removes.length ? ' · ' : ''}${p.removes.length ? '−' + p.removes.length : ''}`)
-                ));
-                p.removes.forEach((t, ti) => provNodes.push(React.createElement('div', { key: `r${ppi}-${ti}`, style: { fontSize: '13px', color: 'var(--text-danger)', padding: '2px 0' } }, `−  ${t.artist}${t.artist && t.title ? ' — ' : ''}${t.title}`)));
-                p.adds.forEach((t, ti) => provNodes.push(React.createElement('div', { key: `a${ppi}-${ti}`, style: { fontSize: '13px', color: 'var(--text-success)', padding: '2px 0' } }, `+  ${t.artist}${t.artist && t.title ? ' — ' : ''}${t.title}`)));
-              });
-              rows.push(React.createElement('div', { key: `pl${pi}`, style: { padding: '10px 12px', marginBottom: '8px', borderRadius: '10px', backgroundColor: hasRem ? 'var(--tint-danger)' : 'var(--hover-bg-default)', borderLeft: hasRem ? '3px solid var(--fill-error)' : '3px solid transparent' } },
-                React.createElement('div', { style: { fontSize: '14px', fontWeight: '500', color: 'var(--text-primary)' } }, pl.displayName),
-                ...provNodes
-              ));
-            });
-            s.protected.forEach((pp, pi) => {
-              rows.push(React.createElement('div', { key: `prot${pi}`, style: { padding: '8px 12px', marginBottom: '8px' } },
-                React.createElement('div', { style: { fontSize: '14px', fontWeight: '500', color: 'var(--text-primary)' } }, `${pp.displayName} — protected`),
-                React.createElement('div', { style: { fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.45' } }, pp.reason === 'total-wipe' ? "New sync declined a full-replace it couldn't verify, and left it untouched. Your tracks are safe." : 'New sync skipped an unverifiable change and left it untouched.')
-              ));
-            });
-            // Cross-device nudge (parachord#946, parity with mobile). `sync_engine_mode`
-            // is per-client with no account-level coordinator, so flipping one device
-            // but not the others leaves the user in mixed mode on shared remotes until
-            // all match. Shown in every summary case (changes, no-changes, protected),
-            // before Accept.
-            rows.push(React.createElement('div', { key: 'xdevice', style: { marginTop: '8px', padding: '9px 11px', borderRadius: '8px', backgroundColor: 'var(--accent-primary-alpha-06)', border: '1px solid color-mix(in srgb, var(--accent-primary) 25%, transparent)' } },
-              React.createElement('span', { style: { fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.45' } },
-                'Using Parachord on another device (mobile, etc.)? Switch it to new sync too — running the old and new engines on the same playlists can churn them until all your devices match.')
-            ));
-            return React.createElement('div', { style: { paddingBottom: '8px' } }, ...rows);
-          })()
-        )
-    ),
+    /* NwayMigrationDialog (components/nway-migration-dialog.js), a memo'd dialog. */ nwayMigrationDialog.show && React.createElement(NwayMigrationDialog, {
+      nwayMigrationDialog,
+      setNwayMigrationDialog,
+      ...nwayMigrationDialogHandlers
+    }),
 
     // Sync Channel Disable Dialog — "stop syncing to <service>?" with the
     // optional "delete from that service too" choice (parachord#911).
     // The standard dialog (components/modal.js).
-    syncChannelDisableDialog.show && (() => {
-      const d = syncChannelDisableDialog;
-      const close = () => setSyncChannelDisableDialog({ show: false });
-      const applyDisable = async (deleteRemote) => {
-        setSyncChannelDisableDialog({ show: false });
-        let res = null;
-        try { res = await window.electron.sync.setChannel(d.playlistId, d.providerId, false, { deleteRemote }); } catch {}
-        try {
-          const fresh = await window.electron.playlists.load();
-          setPlaylists(fresh);
-          if (selectedPlaylist?.id === d.playlistId) { const u = fresh.find(p => p.id === d.playlistId); if (u) setSelectedPlaylist(u); }
-        } catch {}
-        const rd = res && res.remoteDelete;
-        if (deleteRemote && rd && rd.deleted === false && rd.reason === 'unsupported') {
-          showToast(`Stopped syncing — remove it from ${d.providerLabel} manually (the app can't delete library playlists there).`, 'info');
-        } else if (deleteRemote && rd && rd.deleted) {
-          showToast(`Stopped syncing and deleted from ${d.providerLabel}`);
-        } else {
-          showToast(`Stopped syncing this playlist to ${d.providerLabel}`);
-        }
-      };
-      return React.createElement(Modal, {
-        size: 'sm',
-        title: `Stop syncing to ${d.providerLabel}?`,
-        description: `Keep “${d.playlistName}” on ${d.providerLabel} and just stop syncing it, or delete it from ${d.providerLabel} too?`,
-        onClose: close,
-        footer: [
-          React.createElement(Button, { key: 'cancel', variant: 'secondary', onClick: close }, 'Cancel'),
-          React.createElement(Button, { key: 'delete', variant: 'destructive', onClick: () => applyDisable(true) }, `Delete from ${d.providerLabel} too`),
-          React.createElement(Button, { key: 'stop', variant: 'primary', onClick: () => applyDisable(false) }, 'Stop syncing')
-        ]
-      });
-    })(),
+    /* SyncChannelDisableDialog (components/sync-channel-disable-dialog.js), a memo'd dialog. */ syncChannelDisableDialog.show && React.createElement(SyncChannelDisableDialog, {
+      selectedPlaylist,
+      setPlaylists,
+      setSelectedPlaylist,
+      setSyncChannelDisableDialog,
+      showToast,
+      syncChannelDisableDialog
+    }),
 
     // Sync Setup Modal - Cinematic Light design
     // SyncSetupDialog (components/sync-setup-dialog.js), a memo'd dialog.
@@ -39209,24 +38912,11 @@ React.createElement('div', { style: { marginTop: '12px' } },
     // Stop Sync Confirmation Dialog - Cinematic Light design
     // The standard dialog (components/modal.js): the two choices are
     // option tiles in the body (hover in CSS), Cancel in the footer.
-    stopSyncDialog.open && (() => {
-      const close = () => setStopSyncDialog({ open: false, providerId: null });
-      const option = (key, onClick, title, sub, danger) => React.createElement(OptionTile, {
-        key, onClick, title, description: sub, tone: danger ? 'danger' : undefined
-      });
-      return React.createElement(Modal, {
-        size: 'sm',
-        title: 'Stop syncing?',
-        description: 'What would you like to do with your synced items?',
-        onClose: close,
-        footer: React.createElement(Button, { variant: 'secondary', onClick: close }, 'Cancel')
-      },
-        React.createElement('div', { className: 'flex flex-col gap-2.5', style: { marginTop: '16px' } },
-          option('keep', () => stopSyncing(stopSyncDialog.providerId, false), 'Keep imported items', 'Items stay in your Collection as local items'),
-          option('remove', () => stopSyncing(stopSyncDialog.providerId, true), 'Remove synced items', 'Remove everything synced from this provider', true)
-        )
-      );
-    })(),
+    /* StopSyncDialog (components/stop-sync-dialog.js), a memo'd dialog. */ stopSyncDialog.open && React.createElement(StopSyncDialog, {
+      setStopSyncDialog,
+      stopSyncDialog,
+      ...stopSyncDialogHandlers
+    }),
 
     // First-Run Tutorial Modal - Cinematic Light design
     /* FirstRunTutorial (components/first-run-tutorial.js), a memo'd dialog. */ firstRunTutorial.open && React.createElement(FirstRunTutorial, {

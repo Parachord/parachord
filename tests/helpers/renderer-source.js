@@ -29,11 +29,23 @@ const PAGE_MODULES = [
   'components/plugin-settings-dialog.js',
   'components/first-run-tutorial.js',
   'components/ai-prompt-panel.js',
+  'components/external-track-prompt.js',
+  'components/unsaved-friend-dialog.js',
+  'components/ai-save-dialog.js',
+  'components/new-playlist-dialog.js',
+  'components/queue-save-dialog.js',
+  'components/url-import-dialog.js',
+  'components/amazon-manage-dialog.js',
+  'components/sync-delete-dialog.js',
+  'components/nway-migration-dialog.js',
+  'components/sync-channel-disable-dialog.js',
+  'components/stop-sync-dialog.js',
   'components/extension-info-dialog.js',
   'components/raycast-info-dialog.js',
   // Module-level code moved out of app.js with them.
   'lib/resolver-order.js',
   'lib/ai-services.js',
+  'lib/playlist-mirrors.js',
 ];
 
 function read(rel) {

@@ -33,7 +33,8 @@ test("a playlist's sync services come from their plugin, and the local-only swit
 test('Create and Cmd+N open the New playlist dialog', () => {
   expect(app).toContain("onClick: () => setNewPlaylistDialogName('')");
   expect(app).toMatch(/case 'new-playlist':[\s\S]{0,300}setNewPlaylistDialogName\(''\);/);
-  expect(app).toMatch(/newPlaylistDialogName !== null && \(\(\) => \{[\s\S]{0,1600}title: 'New playlist'/);
+  expect(app).toMatch(/newPlaylistDialogName !== null && React\.createElement\(NewPlaylistDialog, \{/);
+  expect(read('src/renderer/components/new-playlist-dialog.js')).toMatch(/return \(\(\) => \{[\s\S]{0,1600}title: 'New playlist'/);
   expect(app).not.toContain("bg-green-600 hover:bg-green-700");
 });
 

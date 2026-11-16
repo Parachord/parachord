@@ -25,6 +25,18 @@ test.each([
   for (const p of props) expect(call).toContain(p);
 });
 
+// The URL import dialog reads the plug-in loader and playlistsRef during
+// render through two stable handlers (playlistLinkService,
+// isPlaylistLinkImported), so their inputs are its invalidators.
+test('UrlImportDialog re-renders when the plug-ins or playlists change', () => {
+  const src = fs.readFileSync(path.join(root, 'components', 'url-import-dialog.js'), 'utf8');
+  expect(src).toMatch(/playlistLinkService\(/);
+  expect(src).toMatch(/isPlaylistLinkImported\(/);
+  const call = callProps('UrlImportDialog');
+  expect(call).toContain('_allResolvers: allResolvers');
+  expect(call).toContain('_playlists: playlists');
+});
+
 test('every moved page that reads resolverLoaderRef at render has an invalidator', () => {
   const pages = fs.readdirSync(path.join(root, 'components')).filter((f) => /-page\.js$|-panel\.js$/.test(f));
   for (const f of pages) {

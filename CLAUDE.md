@@ -193,11 +193,11 @@ Each rule below exists because the audit found its absence. Read the audit's are
 
 ## Dialog Patterns
 
-All dialogs follow the same pattern: state object with `show` boolean, rendered conditionally in the component tree at z-[60].
+Each dialog's open state lives in `src/renderer/app.js` (a `show`/`open` boolean or a state object), and app.js renders the dialog conditionally; the dialog itself is a memo'd module in `src/renderer/components/` on the shared `Modal` (#1451), fed stable props like the pages.
 
-- `confirmDialog` (L6581): Simple OK dialog `{ show, type, title, message, onConfirm }`
-- `syncDeleteDialog` (L6605): Multi-action dialog `{ show, playlist }`
-- `amazonManageDialog`: Promise-based sign-in dialog `{ show, onResolve, relaunching }`
+- `confirmDialog`: simple OK dialog `{ show, type, title, message, onConfirm }`, rendered by `ConfirmModal` (`showConfirmDialog`)
+- `syncDeleteDialog`: multi-action dialog `{ show, playlist }`, rendered by `SyncDeleteDialog` (`sync-delete-dialog.js`); the remote copies it offers to clean up come from `lib/playlist-mirrors.js`
+- `amazonManageDialog`: promise-based sign-in dialog `{ show, onResolve, relaunching }`, rendered by `AmazonManageDialog` (`amazon-manage-dialog.js`)
 
 ## Releasing
 
