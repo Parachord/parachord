@@ -12,6 +12,7 @@
 // rows (HOME_* constants, grid strings, tile height) are shared with
 // home-skeletons.js; change one, change the other.
 
+const { Button } = require('./button');
 const { filterBySource } = require('../lib/home-model');
 const { ReasonBadge, ReasonMark, shuffleupagusIcon } = require('./reason-badge');
 const { Play } = require('./icons');
@@ -124,11 +125,7 @@ function JumpBackIn({ tiles, onOpenTile, onPlayTile, onContextMenu, onImport, on
         e('div', null,
           e('div', { style: { fontWeight: 600, fontSize: '16px', color: 'var(--text-primary)' } }, 'Build your collection'),
           e('div', { style: SUB_STYLE }, 'Import your playlists and loved tracks from the services you use.')),
-        e('button', {
-          type: 'button', onClick: () => onImport && onImport(),
-          className: 'px-4 py-2 rounded-lg text-sm font-semibold',
-          style: { border: 'none', cursor: 'pointer', backgroundColor: PLAY_FILL, color: ON_FILL },
-        }, 'Import')));
+        React.createElement(Button, { variant: 'primary', onClick: () => onImport && onImport() }, 'Import')));
   }
   return e('section', { 'aria-labelledby': 'home-jump', style: SECTION_STYLE },
     e('h2', { id: 'home-jump', style: H2_STYLE }, 'Jump back in'),
@@ -422,11 +419,7 @@ function AskShuffleupagus({ initialPrompt, chatAvailable, onAsk, onSetup }) {
       heading,
       explain,
       e('div', null,
-        e('button', {
-          type: 'button', onClick: () => onSetup && onSetup(),
-          className: 'px-4 py-2 rounded-lg text-sm font-semibold',
-          style: { border: 'none', cursor: 'pointer', backgroundColor: PLAY_FILL, color: ON_FILL },
-        }, 'Set up Shuffleupagus')));
+        React.createElement(Button, { variant: 'primary', onClick: () => onSetup && onSetup() }, 'Set up Shuffleupagus')));
   }
   // The example reads as a suggestion (tertiary text) until it's edited.
   const isExample = !touched.current && !!value && value === (initialPrompt || '');
@@ -452,13 +445,7 @@ function AskShuffleupagus({ initialPrompt, chatAvailable, onAsk, onSetup }) {
           padding: '12px 14px', minHeight: '48px', boxSizing: 'border-box',
         },
       }),
-      e('button', {
-        type: 'submit',
-        style: {
-          font: 'inherit', fontSize: '14px', fontWeight: 600, border: 'none', borderRadius: '999px', cursor: 'pointer',
-          padding: '12px 20px', minHeight: '48px', backgroundColor: PLAY_FILL, color: ON_FILL,
-        },
-      }, 'Ask')),
+      React.createElement(Button, { variant: 'primary', type: 'submit', className: '!rounded-full min-h-[48px] !px-5' }, 'Ask')),
     e('div', { style: { fontSize: '12px', color: 'var(--text-secondary)' } },
       'An example built from what you’ve been playing. Edit it, or ask for anything.'));
 }

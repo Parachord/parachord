@@ -416,18 +416,13 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                   `"${playlist.title}" was deleted on ${providerName}`
                 ),
                 React.createElement('div', { className: 'flex gap-2' },
-                  React.createElement('button', {
-                    className: 'text-xs px-3 py-1.5 rounded-md bg-tint-danger text-ink-danger hover:bg-tint-danger-hover transition-colors',
-                    onClick: async () => {
+                  React.createElement(Button, { variant: 'destructive', size: 'sm', onClick: async () => {
                       // Delete locally too (remote already gone) — via the helper
                       // so a hosted XSPF is cleared from BOTH stores.
                       await deletePlaylistLocally(playlist);
                       setSelectedPlaylist(null);
-                    }
-                  }, 'Delete locally too'),
-                  React.createElement('button', {
-                    className: 'text-xs px-3 py-1.5 rounded-md bg-surface-inset text-ink-secondary hover:bg-surface-hover transition-colors',
-                    onClick: async () => {
+                    } }, 'Delete locally too'),
+                  React.createElement(Button, { variant: 'secondary', size: 'sm', onClick: async () => {
                       // Keep local, stop syncing to this provider. Through the
                       // Sync menu's path, not by editing syncedTo here: with no
                       // channel override, a playlist with another mirror looks
@@ -441,8 +436,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                       const fresh = await window.electron.playlists.load();
                       setPlaylists(fresh);
                       setSelectedPlaylist(fresh.find(p => p.id === playlist.id) || null);
-                    }
-                  }, 'Stop syncing'),
+                    } }, 'Stop syncing'),
                   React.createElement(Button, { variant: 'text', size: 'sm', onClick: async () => {
                       // Re-create on service — clear syncedTo for this provider
                       const updatedSyncedTo = { ...playlist.syncedTo };

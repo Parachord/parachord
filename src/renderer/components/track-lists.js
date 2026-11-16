@@ -12,6 +12,7 @@
 // All props-driven, no app state; memoized exactly as before. React via the
 // vendor global; ResolverIcon via the ui-atoms module; icons via the icons
 // module's own destructure below.
+const { Button } = require('./button');
 const { ResolverIcon } = require('./ui-atoms');
 const { CardButton } = require('./card-button');
 const Icons = require('./icons');
@@ -486,19 +487,13 @@ const VirtualizedQueueList = React.memo(({
         style: { width: SOURCE_COLUMN, flexShrink: 0, minHeight: '20px' }
       },
         isError ?
-          React.createElement('button', {
-            onClick: (e) => {
+          React.createElement(Button, { variant: 'icon', size: 'sm', tone: 'dark', onClick: (e) => {
               e.stopPropagation();
               if (track.sourceUrl) {
                 removeFromQueue(track.id);
                 handleUrlDrop(track.sourceUrl, 'queue');
               }
-            },
-            type: 'button',
-            className: 'p-1 hover:text-white hover:bg-white/10 rounded transition-colors',
-            style: { color: 'var(--on-dark-secondary)' },
-            'aria-label': 'Try again', 'data-tooltip': 'Try again'
-          }, React.createElement(Icons.RefreshCw, { size: 14 }))
+            }, 'aria-label': 'Try again', 'data-tooltip': 'Try again' }, React.createElement(Icons.RefreshCw, { size: 14 }))
         : isLoading ?
           React.createElement('div', { className: 'flex items-center gap-1' },
             React.createElement('div', {
@@ -540,16 +535,11 @@ const VirtualizedQueueList = React.memo(({
         style: { width: '50px', flexShrink: 0, fontSize: '12px', color: 'var(--on-dark-tertiary)' }
       }, !isLoading && !isError ? trackDurationLabel(track, { trackSources, resolverOrder }) : ''),
       // Remove button
-      React.createElement('button', {
-        onClick: (e) => {
+      React.createElement(Button, { variant: 'icon', size: 'sm', tone: 'dark', className: 'flex-shrink-0 opacity-0 group-hover:opacity-100 card-reveal', onClick: (e) => {
           e.stopPropagation();
           // This row only: the same song may be queued more than once.
           removeFromQueue(track.id, index);
-        },
-        className: 'flex-shrink-0 p-1 hover:text-white hover:bg-white/10 rounded transition-colors opacity-0 group-hover:opacity-100 card-reveal',
-        style: { color: 'var(--on-dark-tertiary)' },
-        'aria-label': isLoading ? 'Cancel' : 'Remove from queue', 'data-tooltip': isLoading ? 'Cancel' : 'Remove from queue'
-      }, React.createElement(X, { size: 14 }))
+        }, 'aria-label': isLoading ? 'Cancel' : 'Remove from queue', 'data-tooltip': isLoading ? 'Cancel' : 'Remove from queue' }, React.createElement(X, { size: 14 }))
     );
   };
 

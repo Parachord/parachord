@@ -225,23 +225,7 @@ const McpSettingsSection = () => {
           wordBreak: 'break-all'
         }
       }, configSnippet),
-      React.createElement('button', {
-        onClick: handleCopy,
-        style: {
-          position: 'absolute',
-          top: '8px',
-          right: '8px',
-          padding: '4px 10px',
-          fontSize: '11px',
-          fontWeight: '500',
-          color: copied ? 'var(--text-success)' : 'var(--text-secondary)',
-          backgroundColor: copied ? 'color-mix(in srgb, var(--text-success) 12%, transparent)' : 'var(--placeholder-bg-light)',
-          border: '1px solid ' + (copied ? 'color-mix(in srgb, var(--text-success) 35%, transparent)' : 'var(--border-default)'),
-          borderRadius: '6px',
-          cursor: 'pointer',
-          transition: 'background-color 0.15s, color 0.15s, border-color 0.15s'
-        }
-      }, copied ? 'Copied!' : 'Copy')
+      React.createElement(Button, { variant: 'secondary', size: 'sm', className: 'absolute top-2 right-2', onClick: handleCopy }, copied ? 'Copied!' : 'Copy')
     ),
     React.createElement('p', {
       className: 'text-xs text-ink-tertiary mt-3',
@@ -458,11 +442,7 @@ const ScrobblerSettingsCard = React.memo(({
       ),
 
       // Complete Authorization button (fallback for pending token without polling)
-      config?.pendingToken && !isPolling && React.createElement('button', {
-        onClick: handleCompleteAuth,
-        disabled: connecting,
-        className: 'w-full py-2 px-4 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 transition-colors'
-      }, connecting ? 'Completing…' : 'Complete Authorization')
+      config?.pendingToken && !isPolling && React.createElement(Button, { variant: 'primary', pageColor: 'var(--fill-success)', className: 'w-full', onClick: handleCompleteAuth, disabled: connecting }, connecting ? 'Completing…' : 'Complete authorization')
     ) : (
       // Connected state: the import action, love-push controls + Disconnect
       React.createElement('div', { className: 'space-y-3' },
@@ -472,26 +452,12 @@ const ScrobblerSettingsCard = React.memo(({
         // onRunLoveImport).
         onRunLoveImport && (scrobbler.id === 'lastfm' || scrobbler.id === 'listenbrainz') &&
           React.createElement('div', { className: 'space-y-2' },
-            React.createElement('button', {
-              onClick: onRunLoveImport,
-              disabled: loveImportRunning,
-              className: 'w-full py-1.5 px-3 text-sm rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors',
-              style: {
-                // The tint token, not a palette class (design-drift ratchet
-                // #1380) and not --accent-soft (a text colour — it left the
-                // label at ~2:1 contrast; --accent-surface is the tint).
-                color: 'var(--accent-primary)',
-                backgroundColor: 'var(--accent-surface)',
-                border: '1px solid var(--border-default)'
-              }
-            },
-              loveImportRunning && loveImportProgress
+            React.createElement(Button, { variant: 'secondary', size: 'sm', className: 'w-full', onClick: onRunLoveImport, disabled: loveImportRunning }, loveImportRunning && loveImportProgress
                 ? (loveImportProgress.phase === 'confirm' ? 'Waiting for confirmation…'
                   : loveImportProgress.phase === 'lookup'
                     ? `Looking up names… ${loveImportProgress.done}/${loveImportProgress.total}`
                     : `Importing… ${loveImportProgress.done}/${loveImportProgress.total}`)
-                : hasImportedLoves ? 'Import new loves' : 'Import loved tracks'
-            )
+                : hasImportedLoves ? 'Import new loves' : 'Import loved tracks')
           ),
         // Love-push toggle + backfill button (only for services that support it)
         (scrobbler.id === 'lastfm' || scrobbler.id === 'listenbrainz') && onSetLovePushEnabled &&
@@ -517,10 +483,7 @@ const ScrobblerSettingsCard = React.memo(({
             )
           ),
         // Disconnect
-        React.createElement('button', {
-          onClick: handleDisconnect,
-          className: 'w-full py-2 px-4 bg-surface-inset text-ink-secondary rounded-lg font-medium hover:bg-surface-hover transition-colors'
-        }, 'Disconnect')
+        React.createElement(Button, { variant: 'secondary', className: 'w-full', onClick: handleDisconnect }, 'Disconnect')
       )
     )
   );

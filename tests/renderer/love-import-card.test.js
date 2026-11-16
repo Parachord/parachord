@@ -57,9 +57,9 @@ describe('the import button on the scrobbler card', () => {
     expect(app).toContain('hasImportedLoves: !!loveImportCursorRef.current?.listenbrainz');
   });
 
-  test('the tint token, not a palette class (design-drift ratchet #1380)', () => {
+  test('the shared secondary button, not a palette class (design-drift ratchet #1380)', () => {
     const markup = render({ onRunLoveImport: () => {} });
-    expect(markup).toContain('var(--accent-surface)');
+    expect(markup).toMatch(/<button type="button" class="[^"]*bg-surface-card text-ink-primary border border-line-strong[^"]*w-full">Import loved tracks<\/button>/);
     expect(markup).not.toContain('purple-50');
   });
 });

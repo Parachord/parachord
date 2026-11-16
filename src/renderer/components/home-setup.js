@@ -6,6 +6,7 @@
 // button and a × that dismisses them for good. The popover closes on an
 // outside click or Escape.
 
+const { Button } = require('./button');
 const Icons = require('./icons');
 function whatsNewLabel(notes) {
   return notes && notes.version ? `What's new in v${notes.version}` : "What's new";
@@ -107,13 +108,7 @@ function HomeSetupButton({ setup, onAction, onDismiss, onOpenWhatsNew }) {
             textDecoration: item.done ? 'line-through' : 'none'
           }
         }, item.label),
-        !item.done && React.createElement('button', {
-          type: 'button',
-          'aria-label': `Set up ${item.label}`,
-          onClick: () => { setOpen(false); onAction && onAction(item.action); },
-          className: 'px-2 py-0.5 rounded-md text-xs font-medium',
-          style: { border: '1px solid var(--border-default)', color: 'var(--text-primary)', backgroundColor: 'transparent' }
-        }, 'Set up'),
+        !item.done && React.createElement(Button, { variant: 'secondary', size: 'sm', 'aria-label': `Set up ${item.label}`, onClick: () => { setOpen(false); onAction && onAction(item.action); } }, 'Set up'),
         !item.done && React.createElement('button', {
           type: 'button',
           'aria-label': `Dismiss ${item.label}`,

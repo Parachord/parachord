@@ -65,7 +65,7 @@ describe('source', () => {
     expect(page).not.toContain("navigateTo('search')");
     // With nothing synced, the card is a way forward, not a dead-end sentence.
     const card = app.slice(app.indexOf('// Nothing synced yet: offer each service'), app.indexOf('// Nothing synced yet: offer each service') + 1800);
-    expect(card).toContain('onClick: () => openSyncSetupModal(pid),');
+    expect(card).toContain('onClick: () => openSyncSetupModal(pid) }');
     expect(card).toContain('`Set up ${config.name} sync`');
     expect(app).not.toContain('No sync providers connected.');
   });

@@ -203,20 +203,14 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                     position: 'top',
                     variant: 'dark'
                   },
-                    React.createElement('button', {
-                      'aria-label': isInCollection ? 'Remove from collection' : 'Add to collection',
-                      onClick: (e) => {
+                    React.createElement(Button, { variant: 'icon', size: 'sm', tone: 'dark', className: isInCollection ? '!text-on-dark-star hover:!text-on-dark-star-hover' : '', style: { filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.5))' }, 'aria-label': isInCollection ? 'Remove from collection' : 'Add to collection', onClick: (e) => {
                         e.stopPropagation();
                         if (!isInCollection) {
                           addArtistToCollection({ name: currentArtist.name, image: artistImage });
                         } else {
                           removeArtistFromCollection({ name: currentArtist.name });
                         }
-                      },
-                      className: `p-1.5 rounded-full transition-colors no-drag ${isInCollection ? 'text-on-dark-star hover:text-on-dark-star-hover' : 'text-white/70 hover:text-white'}`,
-                      style: { filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.5))' }
-                    },
-                      React.createElement('svg', {
+                      } }, React.createElement('svg', {
                         className: 'w-6 h-6',
                         viewBox: '0 0 24 24',
                         fill: isInCollection ? 'currentColor' : 'none',
@@ -228,8 +222,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                         React.createElement('polygon', {
                           points: '12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26'
                         })
-                      )
-                    )
+                      ))
                   )
                 );
               })()
@@ -352,20 +345,14 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                   position: 'top',
                   variant: 'dark'
                 },
-                  React.createElement('button', {
-                    'aria-label': isInCollection ? 'Remove from collection' : 'Add to collection',
-                    onClick: (e) => {
+                  React.createElement(Button, { variant: 'icon', size: 'sm', tone: 'dark', className: isInCollection ? '!text-on-dark-star hover:!text-on-dark-star-hover' : '', style: { filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.5))' }, 'aria-label': isInCollection ? 'Remove from collection' : 'Add to collection', onClick: (e) => {
                       e.stopPropagation();
                       if (!isInCollection) {
                         addArtistToCollection({ name: currentArtist.name, image: artistImage });
                       } else {
                         removeArtistFromCollection({ name: currentArtist.name });
                       }
-                    },
-                    className: `p-1 rounded-full transition-colors no-drag ${isInCollection ? 'text-on-dark-star hover:text-on-dark-star-hover' : 'text-white/70 hover:text-white'}`,
-                    style: { filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.5))' }
-                  },
-                    React.createElement('svg', {
+                    } }, React.createElement('svg', {
                       className: 'w-5 h-5',
                       viewBox: '0 0 24 24',
                       fill: isInCollection ? 'currentColor' : 'none',
@@ -377,8 +364,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                       React.createElement('polygon', {
                         points: '12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26'
                       })
-                    )
-                  )
+                    ))
                 );
               })()
             ),

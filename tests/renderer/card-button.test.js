@@ -74,7 +74,8 @@ test('every row that passes a ref passes it to CardButton, which forwards it', (
 // queue drawer couldn't be resized, and reason tooltips never showed.
 describe('nothing inside a card depends on the pointer unless it is lifted', () => {
   const { parse } = require('@babel/parser');
-  const LIFTED = new Set(['button', 'a', 'input', 'select', 'textarea', 'label']);
+  // Button (components/button.js) renders a <button>.
+  const LIFTED = new Set(['button', 'Button', 'a', 'input', 'select', 'textarea', 'label']);
   const files = ['src/renderer/app.js', ...fs.readdirSync(path.join(root, 'src/renderer/components')).filter((f) => f.endsWith('.js')).map((f) => `src/renderer/components/${f}`)];
   test.each(files)('%s', (file) => {
     const src = read(file);

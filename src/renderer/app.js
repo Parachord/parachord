@@ -37337,32 +37337,10 @@ useEffect(() => {
           className: 'flex items-center gap-2 px-4 pb-2'
         },
           React.createElement(Tooltip, { content: 'Back', position: 'bottom' },
-            React.createElement('button', {
-              'aria-label': 'Back',
-              onClick: navigateBack,
-              disabled: viewHistory.length <= 1,
-              className: 'p-1.5 rounded transition-colors no-drag',
-              style: {
-                color: viewHistory.length <= 1 ? 'var(--text-tertiary)' : 'var(--text-secondary)',
-                cursor: viewHistory.length <= 1 ? 'not-allowed' : 'pointer'
-              }
-            },
-              React.createElement(Icons.ChevronLeft, { className: 'w-4 h-4' })
-            )
+            React.createElement(Button, { variant: 'icon', size: 'sm', 'aria-label': 'Back', onClick: navigateBack, disabled: viewHistory.length <= 1 }, React.createElement(Icons.ChevronLeft, { className: 'w-4 h-4' }))
           ),
           React.createElement(Tooltip, { content: 'Forward', position: 'bottom' },
-            React.createElement('button', {
-              'aria-label': 'Forward',
-              onClick: navigateForward,
-              disabled: forwardHistory.length === 0,
-              className: 'p-1.5 rounded transition-colors no-drag',
-              style: {
-                color: forwardHistory.length === 0 ? 'var(--text-tertiary)' : 'var(--text-secondary)',
-                cursor: forwardHistory.length === 0 ? 'not-allowed' : 'pointer'
-              }
-            },
-              React.createElement(Icons.ChevronRight, { className: 'w-4 h-4' })
-            )
+            React.createElement(Button, { variant: 'icon', size: 'sm', 'aria-label': 'Forward', onClick: navigateForward, disabled: forwardHistory.length === 0 }, React.createElement(Icons.ChevronRight, { className: 'w-4 h-4' }))
           )
         ),
 
@@ -37633,25 +37611,14 @@ useEffect(() => {
                       position: 'top',
                       variant: 'light'
                     },
-                      React.createElement('button', {
-                        'aria-label': listenAlongFriend?.id === friend.id ? 'Stop listening along' : 'Listen along',
-                        onClick: (e) => {
+                      React.createElement(Button, { variant: 'icon', size: 'sm', className: `flex-shrink-0 ${listenAlongFriend?.id === friend.id ? '!text-accent hover:!bg-accent-tint' : 'opacity-0 group-hover:opacity-100 card-reveal'}`, 'aria-label': listenAlongFriend?.id === friend.id ? 'Stop listening along' : 'Listen along', onClick: (e) => {
                           e.stopPropagation();
                           if (listenAlongFriend?.id === friend.id) {
                             deactivateListenAlong();
                           } else {
                             activateListenAlong(friend);
                           }
-                        },
-                        className: `flex-shrink-0 transition-all p-1 rounded ${
-                          listenAlongFriend?.id === friend.id
-                            ? 'text-accent hover:bg-accent-tint opacity-100'
-                            : 'text-ink-tertiary hover:text-ink-secondary hover:bg-surface-hover opacity-0 group-hover:opacity-100 card-reveal'
-                        }`
-                      },
-                      // Headphones: listening (a link read as "copy link").
-                      React.createElement(Icons.Headphones, { className: 'w-4 h-4', strokeWidth: 2 })
-                    )
+                        } }, React.createElement(Icons.Headphones, { className: 'w-4 h-4', strokeWidth: 2 }))
                     ) // Close Tooltip
                   ),
                   // Mini playbar showing friend's current track
@@ -38085,25 +38052,13 @@ collapsedContent: null
           React.createElement('div', { className: 'flex-1' }),
           // View mode toggle (grid/table)
           React.createElement('div', { className: 'flex items-center gap-1 mr-4' },
-            React.createElement('button', {
-              onClick: () => setPlaylistsViewMode('grid'),
-              className: `p-1.5 rounded transition-colors ${playlistsViewMode === 'grid' ? 'bg-line text-ink-secondary' : 'text-ink-tertiary hover:text-ink-secondary'}`,
-              'aria-label': 'Grid view', 'data-tooltip': 'Grid view'
-            },
-              React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+            React.createElement(Button, { variant: 'icon', size: 'sm', className: playlistsViewMode === 'grid' ? '!bg-line !text-ink-secondary' : '', onClick: () => setPlaylistsViewMode('grid'), 'aria-label': 'Grid view', 'data-tooltip': 'Grid view' }, React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
                 React.createElement('rect', { x: 3, y: 3, width: 7, height: 7, rx: 1 }),
                 React.createElement('rect', { x: 14, y: 3, width: 7, height: 7, rx: 1 }),
                 React.createElement('rect', { x: 3, y: 14, width: 7, height: 7, rx: 1 }),
                 React.createElement('rect', { x: 14, y: 14, width: 7, height: 7, rx: 1 })
-              )
-            ),
-            React.createElement('button', {
-              onClick: () => setPlaylistsViewMode('table'),
-              className: `p-1.5 rounded transition-colors ${playlistsViewMode === 'table' ? 'bg-line text-ink-secondary' : 'text-ink-tertiary hover:text-ink-secondary'}`,
-              'aria-label': 'Table view', 'data-tooltip': 'Table view'
-            },
-              React.createElement(Icons.List, { className: 'w-5 h-5' })
-            )
+              )),
+            React.createElement(Button, { variant: 'icon', size: 'sm', className: playlistsViewMode === 'table' ? '!bg-line !text-ink-secondary' : '', onClick: () => setPlaylistsViewMode('table'), 'aria-label': 'Table view', 'data-tooltip': 'Table view' }, React.createElement(Icons.List, { className: 'w-5 h-5' }))
           ),
           // Search
           React.createElement(FilterBox, { value: playlistsSearch, onChange: setPlaylistsSearch, open: playlistsSearchOpen, onOpenChange: setPlaylistsSearchOpen }),
@@ -38184,20 +38139,13 @@ collapsedContent: null
                     cornerBadges: linkUpdateMode(playlist) === 'auto'
                       ? React.createElement(React.Fragment, null,
                           playlist.source === 'hosted-xspf' && React.createElement(Badge, { tone: 'surface', icon: Icons.Globe, tooltip: 'Hosted playlist: updates from its link' }, 'Hosted'),
-                          React.createElement('button', {
-                            type: 'button',
-                            onClick: async (e) => {
+                          React.createElement(Button, { variant: 'icon', size: 'sm', className: '!rounded-full bg-surface-card', onClick: async (e) => {
                               e.stopPropagation();
                               if (refreshingPlaylist === playlist.id) return;
                               setRefreshingPlaylist(playlist.id);
                               try { await refreshHostedPlaylist(playlist.id); }
                               finally { setRefreshingPlaylist(null); }
-                            },
-                            className: 'p-1 bg-surface-card rounded-full hover:bg-surface-hover transition-colors',
-                            'aria-label': 'Check for updates now', 'data-tooltip': 'Updates on its own from its link. Check now'
-                          },
-                            React.createElement(Icons.RefreshCw, { className: `w-3 h-3 text-ink-secondary ${refreshingPlaylist === playlist.id ? 'animate-spin' : ''}` })
-                          ))
+                            }, 'aria-label': 'Check for updates now', 'data-tooltip': 'Updates on its own from its link. Check now' }, React.createElement(Icons.RefreshCw, { className: `w-3 h-3 text-ink-secondary ${refreshingPlaylist === playlist.id ? 'animate-spin' : ''}` })))
                       : (playlist.isAiPlaylist && !playlist.sourceUrl
                           ? React.createElement(Badge, { tone: 'surface', icon: Icons.Sparkles, tooltip: `Made by ${playlist.creator || 'Shuffleupagus'}` }, 'AI')
                           : null)
@@ -39296,8 +39244,7 @@ React.createElement('span', {
                     onBlur: (e) => { e.currentTarget.style.borderColor = 'var(--border-default)'; e.currentTarget.style.boxShadow = 'none'; }, 'aria-label': 'City or region'
                   }),
                   // "Use my location" button
-                  React.createElement('button', {
-                    onClick: async () => {
+                  React.createElement(Button, { variant: 'icon', className: 'flex-shrink-0 border border-line bg-surface-inset hover:!text-page-concerts', onClick: async () => {
                       setConcertsGeocodingLoading(true);
                       setConcertsLocationSuggestions([]);
                       try {
@@ -39310,16 +39257,9 @@ React.createElement('span', {
                         showToast('Could not determine your location', 'error');
                       }
                       setConcertsGeocodingLoading(false);
-                    },
-                    disabled: concertsGeocodingLoading,
-                    className: 'flex-shrink-0 transition-colors hover:!text-page-concerts hover:!border-page-concerts',
-                    style: { padding: '8px', borderRadius: '10px', backgroundColor: 'var(--bg-inset)', border: '1px solid var(--border-default)', color: 'var(--text-tertiary)' },
-                    'aria-label': 'Use my location', 'data-tooltip': 'Use my location'
-                  },
-                    concertsGeocodingLoading
+                    }, disabled: concertsGeocodingLoading, 'aria-label': 'Use my location', 'data-tooltip': 'Use my location' }, concertsGeocodingLoading
                       ? React.createElement(Icons.RefreshCw, { className: 'w-4 h-4 animate-spin' })
-                      : React.createElement(Icons.LocateFixed, { className: 'w-4 h-4' })
-                  )
+                      : React.createElement(Icons.LocateFixed, { className: 'w-4 h-4' }))
                 ),
                 // Location search suggestions
                 concertsLocationSuggestions.length > 0 && !concertsLocationCoords && React.createElement('div', {
@@ -39381,8 +39321,7 @@ React.createElement('span', {
                     style: { fontSize: '13px', color: 'var(--text-tertiary)' },
                   }, 'Clear'),
                   // Apply button (geocode if needed)
-                  React.createElement('button', {
-                    onClick: async () => {
+                  React.createElement(Button, { variant: 'primary', size: 'sm', pageColor: PAGE_COLORS.concerts.color, onClick: async () => {
                       if (concertsLocation.trim() && !concertsLocationCoords) {
                         setConcertsGeocodingLoading(true);
                         const result = await geocodeLocation(concertsLocation.trim());
@@ -39393,10 +39332,7 @@ React.createElement('span', {
                         }
                       }
                       setConcertsLocationOpen(false);
-                    },
-                    disabled: concertsGeocodingLoading,
-                    style: { fontSize: '13px', fontWeight: '500', padding: '6px 16px', borderRadius: '8px', backgroundColor: PAGE_COLORS.concerts.color, color: 'var(--on-accent)' }
-                  }, concertsGeocodingLoading ? 'Looking up…' : 'Apply')
+                    }, disabled: concertsGeocodingLoading }, concertsGeocodingLoading ? 'Looking up…' : 'Apply')
                 )
               )
             ),
@@ -41572,74 +41508,14 @@ React.createElement('div', {
               React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '24px' } },
                 // Appearance Section
                 React.createElement(SettingsSection, { title: 'Appearance', description: 'Choose your preferred color theme' },
-React.createElement('div', { style: { display: 'flex', gap: '8px' } },
-                    // Light button
-                    React.createElement('button', {
-                      onClick: () => handleThemeChange('light'),
-                      style: {
-                        flex: 1,
-                        padding: '10px 16px',
-                        borderRadius: '8px',
-                        border: themePref === 'light' ? '2px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
-                        backgroundColor: themePref === 'light' ? 'var(--accent-primary-alpha-08)' : 'transparent',
-                        color: themePref === 'light' ? 'var(--accent-primary)' : 'var(--text-secondary)',
-                        fontSize: '13px',
-                        fontWeight: '500',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '6px'
-                      }
-                    },
-                      React.createElement('span', null, '\u2600\uFE0F'),
-                      'Light'
-                    ),
-                    // Dark button
-                    React.createElement('button', {
-                      onClick: () => handleThemeChange('dark'),
-                      style: {
-                        flex: 1,
-                        padding: '10px 16px',
-                        borderRadius: '8px',
-                        border: themePref === 'dark' ? '2px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
-                        backgroundColor: themePref === 'dark' ? 'var(--accent-primary-alpha-08)' : 'transparent',
-                        color: themePref === 'dark' ? 'var(--accent-primary)' : 'var(--text-secondary)',
-                        fontSize: '13px',
-                        fontWeight: '500',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '6px'
-                      }
-                    },
-                      React.createElement('span', null, '\uD83C\uDF19'),
-                      'Dark'
-                    ),
-                    // System button
-                    React.createElement('button', {
-                      onClick: () => handleThemeChange('system'),
-                      style: {
-                        flex: 1,
-                        padding: '10px 16px',
-                        borderRadius: '8px',
-                        border: themePref === 'system' ? '2px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
-                        backgroundColor: themePref === 'system' ? 'var(--accent-primary-alpha-08)' : 'transparent',
-                        color: themePref === 'system' ? 'var(--accent-primary)' : 'var(--text-secondary)',
-                        fontSize: '13px',
-                        fontWeight: '500',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '6px'
-                      }
-                    },
-                      React.createElement('span', null, '\uD83D\uDCBB'),
-                      'System'
-                    )
-                  )),
+                  // A pick-one choice: the app's chips (components/filter-chips.js),
+                  // not three hand-built buttons with emoji.
+                  React.createElement(FilterChips, {
+                    label: 'Theme',
+                    chips: [{ id: 'light', label: 'Light' }, { id: 'dark', label: 'Dark' }, { id: 'system', label: 'System' }],
+                    value: themePref,
+                    onChange: (id) => handleThemeChange(id)
+                  })),
                 // Cache Management Section - refined card
                 React.createElement(SettingsSection, { title: 'Cache Management', description: 'Clear cached data to free up space or fix display issues' },
 React.createElement('p', {
@@ -42117,21 +41993,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                         }, 'No service is synced yet. Set one up to import its playlists and saved music:'),
                         React.createElement('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap' } },
                           Object.entries(syncProviderConfig).map(([pid, config]) =>
-                            React.createElement('button', {
-                              key: pid,
-                              type: 'button',
-                              onClick: () => openSyncSetupModal(pid),
-                              style: {
-                                padding: '10px 16px',
-                                backgroundColor: 'var(--hover-bg-default)',
-                                color: 'var(--text-primary)',
-                                fontSize: '13px',
-                                fontWeight: 500,
-                                borderRadius: '8px',
-                                border: '1px solid var(--border-subtle)',
-                                cursor: 'pointer'
-                              }
-                            }, `Set up ${config.name} sync`)
+                            React.createElement(Button, { variant: 'secondary', key: pid, onClick: () => openSyncSetupModal(pid) }, `Set up ${config.name} sync`)
                           )
                         )
                       )
@@ -42189,8 +42051,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                   React.createElement('p', {
                     className: 'text-sm text-ink-secondary mb-5 leading-relaxed'
                   }, 'This will permanently delete all your data including your collection, playlists, friends, listening history, connected accounts, and all settings. The app will restart as if it was freshly installed.'),
-                  React.createElement('button', {
-                    onClick: async () => {
+                  React.createElement(Button, { variant: 'destructive', onClick: async () => {
                       // Show confirmation dialog
                       const confirmed = await confirmAsync({
                         title: 'Reset Parachord?',
@@ -42235,12 +42096,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                           showToast('Couldn\'t reset Parachord. Try again.', 'error');
                         }
                       }
-                    },
-                    className: 'inline-flex items-center gap-2 px-4 py-2 bg-status-error text-white text-sm font-medium rounded-lg hover:bg-status-error-hover transition-colors'
-                  },
-                    React.createElement(Icons.AlertTriangle, { className: 'w-4 h-4' }),
-                    'Reset Application'
-                  )
+                    } }, React.createElement(Icons.AlertTriangle, { className: 'w-4 h-4' }), 'Reset application')
                 )
               ) // Close space-y-8 wrapper
             ),
@@ -43245,17 +43101,11 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
           React.createElement('span', { style: { color: 'var(--playbar-accent-hover)' } }, '✨'),
           React.createElement('span', { style: { fontSize: '14px', fontWeight: '500', color: 'var(--on-dark-primary)' } }, 'Generate Playlist')
         ),
-        React.createElement('button', {
-          onClick: () => {
+        React.createElement(Button, { variant: 'icon', size: 'sm', tone: 'dark', 'aria-label': "Close", onClick: () => {
             setAiPromptOpen(false);
             setAiPrompt('');
             setAiError(null);
-          },
-          className: 'transition-colors hover:!text-on-dark-primary hover:!bg-[rgba(255,255,255,0.08)]',
-          style: { padding: '6px', color: 'var(--on-dark-secondary)', borderRadius: '8px' },
-        },
-          React.createElement(Icons.X, { className: 'w-4 h-4' })
-        )
+          } }, React.createElement(Icons.X, { className: 'w-4 h-4' }))
       ),
 
       // Input
@@ -48448,13 +48298,7 @@ React.createElement('div', {
           React.createElement('h2', {
             style: { fontSize: '20px', fontWeight: '600', color: 'var(--text-primary)' }
           }, 'Library Sync'),
-          React.createElement('button', {
-            onClick: () => setSyncStatusModal({ open: false }),
-            className: 'transition-colors hover:!text-[var(--text-secondary)] hover:!bg-[var(--hover-bg-default)]',
-            style: { padding: '6px', color: 'var(--text-tertiary)', borderRadius: '8px' },
-          },
-            React.createElement(Icons.X, { className: 'w-5 h-5' })
-          )
+          React.createElement(Button, { variant: 'icon', size: 'sm', 'aria-label': "Close", onClick: () => setSyncStatusModal({ open: false }) }, React.createElement(Icons.X, { className: 'w-5 h-5' }))
         ),
 React.createElement('div', {
           style: { padding: '20px 24px' }
@@ -48552,8 +48396,7 @@ React.createElement('div', {
               navigateTo('settings');
               setSettingsTab('plugins');
             } }, 'Manage settings'),
-          React.createElement('button', {
-            onClick: async () => {
+          React.createElement(Button, { variant: 'primary', onClick: async () => {
               let latestCollection = null;
               for (const [providerId, settings] of Object.entries(resolverSyncSettings)) {
                 if (settings.enabled) {
@@ -48599,20 +48442,7 @@ React.createElement('div', {
                 const hostedOnly = prev.filter(p => p.sourceUrl && !loadedUrls.has(p.sourceUrl));
                 return [...loadedPlaylists, ...hostedOnly];
               });
-            },
-            disabled: Object.values(syncStatus).some(s => s?.inProgress),
-            style: {
-              padding: '8px 16px',
-              fontSize: '13px',
-              fontWeight: '500',
-              color: Object.values(syncStatus).some(s => s?.inProgress) ? 'var(--text-tertiary)' : 'var(--on-accent)',
-              backgroundColor: Object.values(syncStatus).some(s => s?.inProgress) ? 'var(--hover-bg-default)' : 'var(--fill-success)',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: Object.values(syncStatus).some(s => s?.inProgress) ? 'not-allowed' : 'pointer',
-              transition: 'background-color 150ms ease'
-            },
-          }, Object.values(syncStatus).some(s => s?.inProgress) ? 'Syncing…' : 'Sync Now')
+            }, disabled: Object.values(syncStatus).some(s => s?.inProgress) }, Object.values(syncStatus).some(s => s?.inProgress) ? 'Syncing…' : 'Sync Now')
         )),
 
     // Stop Sync Confirmation Dialog - Cinematic Light design
