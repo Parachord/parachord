@@ -2,35 +2,17 @@
 // ids. Moved verbatim out of app.js's module scope so the extracted page
 // modules (Track 2b split) can use them; app.js requires them back.
 //
-// These must stay byte-identical in behaviour with sync-providers/spotify.js:
-// collection, love-push, sync and Achordion keys are built from them. Known
-// gap: normalizeForId keeps only [a-z0-9], so non-Latin names collapse (see
-// the track-slug follow-up in docs/architecture/renderer-patterns.md); fixing it means changing both
-// sides of the pair together.
+// The id formula itself lives in sync-engine/collection-id.js, shared with
+// the sync providers (sync-providers/spotify.js, applemusic.js), so there is
+// one definition, not copies to keep byte-identical. Non-Latin names fold
+// instead of collapsing to nothing (#1401); ASCII and accented-Latin ids are
+// unchanged, and a one-time migration moved stored rows to the new ids.
 
 'use strict';
 
 const { trackSlug } = require('./track-slug');
 
-// Normalize a string for ID generation (must match sync-providers/spotify.js)
-const normalizeForId = (str) => {
-  return (str || '').toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
-};
-
-// Generate a consistent track ID (must match sync-providers/spotify.js)
-const generateTrackId = (artist, title, album) => {
-  return `${normalizeForId(artist || 'unknown')}-${normalizeForId(title || 'untitled')}-${normalizeForId(album || 'noalbum')}`;
-};
-
-// Generate a consistent album ID (must match sync-providers/spotify.js)
-const generateAlbumId = (artist, title) => {
-  return `${normalizeForId(artist || 'unknown')}-${normalizeForId(title || 'untitled')}`;
-};
-
-// Generate a consistent artist ID (must match sync-providers/spotify.js)
-const generateArtistId = (name) => {
-  return normalizeForId(name || 'unknown');
-};
+const { normalizeForId, legacyNormalizeForId, generateTrackId, generateAlbumId, generateArtistId } = require('../../../sync-engine/collection-id');
 
 // An album that isn't one: nothing, "Single", or the name of one of the track's
 // own sources. The rule lives in sync-engine/track-identity.js, which library
@@ -57,7 +39,11 @@ const findSavedTrack = (tracks, track) => {
   // the find callback cost a recomputation per row (10k rows ≈ 5ms a miss).
   // Ungated it also changes Latin matching a little ("Every Day" would match
   // a saved "Everyday"), so the gate keeps Latin hearts on the id tiers.
-  const slugId = (!normalizeForId(track.artist) || !normalizeForId(track.title))
+  // The gate is the OLD normalize (#1401): rows the love import saved under a
+  // trackSlug id are the ones the old formula emptied. The startup migration
+  // moves them to generateTrackId ids, so this tier only matters for a
+  // profile the migration hasn't reached yet.
+  const slugId = (!legacyNormalizeForId(track.artist) || !legacyNormalizeForId(track.title))
     ? trackSlug(track.artist, track.title, track.album)
     : null;
   // A heart's own album: search, the queue and now-playing carry none, so an
