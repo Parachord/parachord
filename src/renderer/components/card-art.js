@@ -7,6 +7,7 @@
 // Props-driven; hooks are qualified; loads under plain Node.
 
 const Icons = require('./icons');
+const { transition } = require('../lib/motion');
 const { Play, Music } = Icons;
 
 const e = React.createElement;
@@ -36,9 +37,9 @@ function useReveal() {
 // a little. The class strings are the app's own; only the reveal is ours (state,
 // so keyboard focus shows the buttons too). A card passes only the actions its
 // type has, as the app's cards do.
-const APP_OVERLAY = 'absolute inset-0 bg-black/50 transition-opacity duration-200 flex items-center justify-center gap-3';
-const APP_SIDE_BTN = 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110';
-const APP_PLAY_BTN = 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110';
+const APP_OVERLAY = 'absolute inset-0 bg-black/50 transition-opacity duration-base flex items-center justify-center gap-3';
+const APP_SIDE_BTN = 'w-10 h-10 rounded-full flex items-center justify-center transition-transform hover:scale-110';
+const APP_PLAY_BTN = 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-transform hover:scale-110';
 const APP_ART_ZOOM = 'scale(1.05)';
 // The app's sizes (40/48/40px) need 152px of art. Home's half-row cards can be
 // narrower, so the buttons may shrink in proportion and stay round instead
@@ -138,7 +139,7 @@ function ArtBox({ imageUrl, mosaic, item, onArtError, children, style, placehold
   }
   // `zoom` scales the art the way the app's cards do on hover.
   const zoomed = art && e('div', {
-    style: { width: '100%', height: '100%', transition: 'transform 0.3s ease', transform: zoom ? APP_ART_ZOOM : 'none' },
+    style: { width: '100%', height: '100%', transition: transition('transform', 'slow'), transform: zoom ? APP_ART_ZOOM : 'none' },
   }, art);
   return e('div', {
     style: Object.assign({

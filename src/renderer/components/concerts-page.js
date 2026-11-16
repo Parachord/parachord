@@ -17,7 +17,7 @@ const { TicketsButton } = require('./tickets-button');
 const { ConcertListSkeleton } = require('./concert-skeletons');
 const { Button } = require('./button');
 const { ListRow } = require('./list-row');
-const { FIELD_CLASS } = require('./fields');
+const { Slider, TextField } = require('./fields');
 const { EmptyState, ErrorState } = require('./states');
 const { sellerBadgeBg, sellerName, sellerShortName, sellerTextColor } = require('../lib/ticket-sellers');
 const { concertMatchesSource, concertSourceKeys } = require('../lib/concert-events');
@@ -209,11 +209,9 @@ React.createElement('span', {
                 React.createElement('div', { style: { fontSize: '13px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '12px' } }, 'Filter by location'),
                 // Text input row
                 React.createElement('div', { className: 'flex items-center gap-2 mb-3' },
-                  React.createElement('input', {
-                    type: 'text',
+                  React.createElement(TextField, {
                     value: concertsLocation,
-                    onChange: (e) => {
-                      const val = e.target.value;
+                    onChange: (val) => {
                       setConcertsLocation(val);
                       if (!val.trim()) {
                         setConcertsLocationCoords(null);
@@ -243,7 +241,7 @@ React.createElement('span', {
                     autoFocus: true,
                     placeholder: 'City or region…',
                     // The shared text field (components/fields.js): one focus ring.
-                    className: `${FIELD_CLASS} flex-1 min-w-0`,
+                    className: 'flex-1 min-w-0',
                     'aria-label': 'City or region'
                   }),
                   // "Use my location" button
@@ -300,15 +298,16 @@ React.createElement('span', {
                     React.createElement('span', { style: { fontSize: '13px', color: 'var(--text-tertiary)' } }, 'Radius'),
                     React.createElement('span', { style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' } }, `${concertsLocationRadius} mi`)
                   ),
-                  React.createElement('input', {
-                    type: 'range',
+                  React.createElement(Slider, {
                     min: 10,
                     max: 500,
                     step: 10,
                     value: concertsLocationRadius,
-                    onChange: (e) => setConcertsLocationRadius(parseInt(e.target.value)),
+                    onChange: (v) => setConcertsLocationRadius(v),
+                    color: PAGE_COLORS.concerts.color,
                     className: 'w-full',
-                    style: { accentColor: PAGE_COLORS.concerts.color, height: '4px' }
+                    'aria-label': 'Radius',
+                    'aria-valuetext': `${concertsLocationRadius} miles`
                   })
                 ),
                 // Action buttons row

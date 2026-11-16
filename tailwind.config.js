@@ -93,7 +93,26 @@ module.exports = {
           500: '#10c9b4',
           600: '#0eb3a0',
         }
-      }
+      },
+      // Motion tokens (index.html --motion-* / --ease-*, #1450): a plain
+      // transition-colors / transition-opacity runs on --motion-fast and the
+      // standard easing, duration-base / -slow / -deliberate name the others,
+      // and ease-out / ease-in / ease-in-out read the tokens. Reduced motion
+      // zeroes the durations in one place.
+      transitionDuration: {
+        DEFAULT: 'var(--motion-fast)',
+        fast: 'var(--motion-fast)',
+        base: 'var(--motion-base)',
+        slow: 'var(--motion-slow)',
+        deliberate: 'var(--motion-deliberate)',
+      },
+      transitionTimingFunction: {
+        DEFAULT: 'var(--ease-standard)',
+        standard: 'var(--ease-standard)',
+        out: 'var(--ease-out)',
+        in: 'var(--ease-in)',
+        'in-out': 'var(--ease-standard)',
+      },
     }
   },
   plugins: []
