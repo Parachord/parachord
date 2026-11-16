@@ -91,9 +91,8 @@ describe('amazonWebPlayer.getRecommendations', () => {
       seeMorePages: amazonWebPlayer.seeMorePages,
       musicHomeVariant: amazonWebPlayer.musicHomeVariant,
       searchView: amazonWebPlayer.searchView,
-      searchViewParkTimer: amazonWebPlayer.webSession._parkTimer
     };
-    amazonWebPlayer.webSession._parkTimer = null;
+    amazonWebPlayer.webSession._parkTimer = null; // nothing reads a saved handle back — the teardown clears any fuse that re-armed
     amazonWebPlayer.searchView = fakeWin();
     amazonWebPlayer.musicHomeTemplate = null;
     amazonWebPlayer.seeMoreTemplate = null;
@@ -422,9 +421,8 @@ describe('amazonWebPlayer.expandRecommendationSection', () => {
       seeMorePages: amazonWebPlayer.seeMorePages,
       musicHomeVariant: amazonWebPlayer.musicHomeVariant,
       searchView: amazonWebPlayer.searchView,
-      searchViewParkTimer: amazonWebPlayer.webSession._parkTimer
     };
-    amazonWebPlayer.webSession._parkTimer = null;
+    amazonWebPlayer.webSession._parkTimer = null; // nothing reads a saved handle back — the teardown clears any fuse that re-armed
     amazonWebPlayer.searchView = fakeWin();
     amazonWebPlayer.musicHomeTemplate = null;
     amazonWebPlayer.seeMoreTemplate = null;
