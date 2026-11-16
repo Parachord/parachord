@@ -30,6 +30,7 @@ test('icons follow the heading, specific nouns first', () => {
 
 test('every icon it can pick exists in the shared set', () => {
   const src = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/whats-new-dialog.js'), 'utf8');
+  // Literal names; a page's icon comes from lib/page-icons.js (tests/renderer/page-icons.test.js).
   const names = [...src.matchAll(/, '([A-Z][A-Za-z0-9]+)'\]/g)].map((m) => m[1]).concat('Star');
   for (const n of names) expect(typeof Icons[n]).toBe('function');
 });

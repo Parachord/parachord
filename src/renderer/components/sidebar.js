@@ -14,6 +14,7 @@ const Icons = require('./icons');
 const { Tooltip } = require('./ui-atoms');
 const { FriendMiniPlaybar } = require('./friend-mini-playbar');
 const { NavItem, NavSearch } = require('./nav-item');
+const { PAGE_ICONS } = require('../lib/page-icons');
 const { Button } = require('./button');
 const { CardButton } = require('./card-button');
 const { FriendAvatar } = require('./friend-avatar');
@@ -143,7 +144,7 @@ const Sidebar = React.memo(function Sidebar(props) {
         // Scrollable navigation area
         React.createElement('div', { className: 'flex-1 overflow-y-auto scrollable-content px-2 py-2' },
           // The sidebar's page links (components/nav-item.js).
-          React.createElement(NavItem, { page: 'home', label: 'Home', icon: Icons.Home, prominent: true, active: activeView === 'home', onClick: () => navigateTo('home') }),
+          React.createElement(NavItem, { page: 'home', label: 'Home', icon: Icons[PAGE_ICONS['home']], prominent: true, active: activeView === 'home', onClick: () => navigateTo('home') }),
 
           // YOUR MUSIC section
           React.createElement('div', { className: 'mb-4' },
@@ -158,7 +159,7 @@ const Sidebar = React.memo(function Sidebar(props) {
               }
             }, 'Your Music'),
             React.createElement(NavItem, {
-              page: 'playlists', label: 'Playlists', icon: Icons.ListMusic, active: playlistsNavActive,
+              page: 'playlists', label: 'Playlists', icon: Icons[PAGE_ICONS['playlists']], active: playlistsNavActive,
               onClick: () => navigateTo('playlists'), count: sidebarBadges.playlists || 0, dropHighlight: playlistDropHighlight,
               dropProps: {
                 onDragOver: (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; },
@@ -168,7 +169,7 @@ const Sidebar = React.memo(function Sidebar(props) {
               }
             }),
             React.createElement(NavItem, {
-              page: 'library', label: 'Collection', icon: Icons.Library, active: activeView === 'library',
+              page: 'library', label: 'Collection', icon: Icons[PAGE_ICONS['library']], active: activeView === 'library',
               onClick: () => navigateTo('library'), count: sidebarBadges.collection || 0, dropHighlight: collectionDropHighlight,
               dropProps: {
                 onDragOver: (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; },
@@ -177,7 +178,7 @@ const Sidebar = React.memo(function Sidebar(props) {
                 onDrop: handleCollectionDrop
               }
             }),
-            React.createElement(NavItem, { page: 'history', label: 'History', icon: Icons.Clock, active: activeView === 'history', onClick: () => { navigateTo('history'); loadTopTracks(); } })
+            React.createElement(NavItem, { page: 'history', label: 'History', icon: Icons[PAGE_ICONS['history']], active: activeView === 'history', onClick: () => { navigateTo('history'); loadTopTracks(); } })
           ),
 
           // DISCOVER section
@@ -192,13 +193,13 @@ const Sidebar = React.memo(function Sidebar(props) {
                 letterSpacing: '0.08em'
               }
             }, 'Discover'),
-            React.createElement(NavItem, { page: 'new-releases', label: 'Fresh Drops', icon: Icons.Droplet, active: activeView === 'new-releases', unread: !!(showDiscoveryBadges && discoveryUnread.newReleases), onClick: () => { navigateTo('new-releases'); loadNewReleases(); } }),
-            React.createElement(NavItem, { page: 'recommendations', label: 'Recommendations', icon: Icons.Star, active: recommendationsNavActive, unread: !!(showDiscoveryBadges && discoveryUnread.recommendations), onClick: () => navigateTo('recommendations') }),
-            React.createElement(NavItem, { page: 'discover', label: 'Pop of the Tops', icon: Icons.ListOrdered, active: activeView === 'discover', unread: !!(showDiscoveryBadges && discoveryUnread.charts),
+            React.createElement(NavItem, { page: 'new-releases', label: 'Fresh Drops', icon: Icons[PAGE_ICONS['new-releases']], active: activeView === 'new-releases', unread: !!(showDiscoveryBadges && discoveryUnread.newReleases), onClick: () => { navigateTo('new-releases'); loadNewReleases(); } }),
+            React.createElement(NavItem, { page: 'recommendations', label: 'Recommendations', icon: Icons[PAGE_ICONS['recommendations']], active: recommendationsNavActive, unread: !!(showDiscoveryBadges && discoveryUnread.recommendations), onClick: () => navigateTo('recommendations') }),
+            React.createElement(NavItem, { page: 'discover', label: 'Pop of the Tops', icon: Icons[PAGE_ICONS['discover']], active: activeView === 'discover', unread: !!(showDiscoveryBadges && discoveryUnread.charts),
               // Only call loadCharts if cache is ready; useEffect will handle it otherwise
               onClick: () => { navigateTo('discover'); if (cacheLoaded) loadCharts(); } }),
-            React.createElement(NavItem, { page: 'critics-picks', label: 'Critical Darlings', icon: Icons.Trophy, active: activeView === 'critics-picks', unread: !!(showDiscoveryBadges && discoveryUnread.criticsPicks), onClick: () => { navigateTo('critics-picks'); loadCriticsPicks(); } }),
-            React.createElement(NavItem, { page: 'concerts', label: 'Concerts', icon: Icons.Ticket, active: activeView === 'concerts', unread: !!(showDiscoveryBadges && discoveryUnread.concerts), onClick: () => navigateTo('concerts') })
+            React.createElement(NavItem, { page: 'critics-picks', label: 'Critical Darlings', icon: Icons[PAGE_ICONS['critics-picks']], active: activeView === 'critics-picks', unread: !!(showDiscoveryBadges && discoveryUnread.criticsPicks), onClick: () => { navigateTo('critics-picks'); loadCriticsPicks(); } }),
+            React.createElement(NavItem, { page: 'concerts', label: 'Concerts', icon: Icons[PAGE_ICONS['concerts']], active: activeView === 'concerts', unread: !!(showDiscoveryBadges && discoveryUnread.concerts), onClick: () => navigateTo('concerts') })
           ),
 
           // FRIENDS section (always visible so new users can discover and add friends)
@@ -464,7 +465,7 @@ const Sidebar = React.memo(function Sidebar(props) {
             },
             onClick: () => navigateTo('settings')
           },
-            React.createElement(Icons.Settings, { className: 'w-4 h-4' }),
+            React.createElement(Icons[PAGE_ICONS.settings], { className: 'w-4 h-4' }),
             React.createElement('span', {
               style: {
                 fontSize: '11px',
