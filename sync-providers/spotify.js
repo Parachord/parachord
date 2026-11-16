@@ -521,10 +521,15 @@ const SpotifySyncProvider = {
    * @returns {Promise<{ok: boolean, status: number|null}>}
    */
   async checkAuthStatus(token) {
+    // Spotify's rate-limit pause (spotify-pause.js): answer the 429 it would
+    // send, without a request. sync:check-auth reads a 429 as a valid token,
+    // and the sync's own guard then fails fast, so a paused sync sends nothing.
+    if (sharedPause.isPaused()) return { ok: false, status: 429 };
     try {
       const response = await fetch(`${SPOTIFY_API_BASE}/me`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
+      sharedPause.noteStatus(response.status, response.headers && response.headers.get ? response.headers.get('Retry-After') : null);
       return { ok: response.ok, status: response.status };
     } catch {
       return { ok: false, status: null };
