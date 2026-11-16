@@ -147,7 +147,9 @@ function ArtBox({ imageUrl, mosaic, item, onArtError, children, style, placehold
   return e('div', {
     style: Object.assign({
       position: 'relative', aspectRatio: '1', borderRadius: '10px', overflow: 'hidden',
-      backgroundColor: 'var(--accent-surface)',
+      // The neutral placeholder grey, as the skeletons: an empty cover box
+      // is not an accent (it read as pale purple on every grid).
+      backgroundColor: 'var(--placeholder-bg)',
     }, style),
   }, zoomed, children);
 }
