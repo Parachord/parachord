@@ -2070,6 +2070,7 @@ const { useStableHandlers } = require('./lib/stable-handlers');
 const { homeBannerItems, bannerViewId } = require('./lib/home-banners');
 const { toastBackground } = require('./lib/toast-style');
 const { PAGE_COLORS, pageTint } = require('./lib/page-colors');
+const { capabilityLabel } = require('./lib/capability-labels');
 // A plugin manifest's "no colour of its own" value: never shown.
 const NO_PLUGIN_COLOR = '#888888';
 const { Modal, ConfirmModal, DontShowAgain } = require('./components/modal');
@@ -44564,33 +44565,9 @@ React.createElement('div', {
               }
             }, 'Capabilities'),
             React.createElement('div', { className: 'flex flex-wrap gap-2' },
-              Object.entries(selectedResolver.capabilities || {}).map(([cap, enabled]) => {
-                if (!enabled) return null;
-                const capLabels = {
-                  resolve: 'Resolve',
-                  search: 'Search',
-                  stream: 'Stream',
-                  browse: 'Browse',
-                  urlLookup: 'URL Lookup',
-                  purchase: 'Purchase Downloads',
-                  recommendations: 'Recommendations',
-                  metadata: 'Metadata',
-                  generate: 'AI Playlist Generation',
-                  chat: 'Conversational DJ'
-                };
-                const label = capLabels[cap] || cap;
-                return React.createElement('span', {
-                  key: cap,
-                  style: {
-                    padding: '6px 12px',
-                    backgroundColor: 'var(--accent-primary-alpha-08)',
-                    color: 'var(--accent-primary)',
-                    borderRadius: '16px',
-                    fontSize: '12px',
-                    fontWeight: '500'
-                  }
-                }, label);
-              })
+              Object.entries(selectedResolver.capabilities || {}).map(([cap, enabled]) =>
+                // The shared pill and the one label helper (lib/capability-labels.js).
+                enabled ? React.createElement(Badge, { key: cap, tone: 'accent' }, capabilityLabel(cap)) : null)
             )
           ),
 
@@ -44649,20 +44626,7 @@ React.createElement('div', {
               ),
               spotifyConnected
                 ? React.createElement(Button, { variant: 'secondary', onClick: disconnectSpotify }, 'Disconnect')
-                : React.createElement('button', {
-                    onClick: connectSpotify,
-                    className: 'transition-colors',
-                    style: {
-                      padding: '8px 14px',
-                      fontSize: '13px',
-                      fontWeight: '500',
-                      color: 'var(--on-accent)',
-                      backgroundColor: 'var(--fill-success)',
-                      border: 'none',
-                      borderRadius: '8px',
-                      cursor: 'pointer'
-                    }
-                  }, 'Connect')
+                : React.createElement(Button, { variant: 'primary', pageColor: getServiceColor('spotify') || 'var(--accent-fill)', onClick: connectSpotify }, 'Connect')
             ),
             spotifyConnected && React.createElement('div', {
               className: 'flex items-center gap-2',
@@ -44766,21 +44730,7 @@ React.createElement('div', {
               ),
               // Save / Clear buttons
               React.createElement('div', { className: 'flex gap-2' },
-                React.createElement('button', {
-                  onClick: saveSpotifyCredentials,
-                  disabled: !spotifyClientIdInput.trim(),
-                  style: {
-                    padding: '6px 12px',
-                    fontSize: '12px',
-                    fontWeight: '500',
-                    color: 'var(--on-accent)',
-                    backgroundColor: spotifyClientIdInput.trim() ? 'var(--fill-success)' : 'var(--control-off)',
-                    border: 'none',
-                    borderRadius: '6px',
-                    cursor: spotifyClientIdInput.trim() ? 'pointer' : 'default',
-                    opacity: spotifyClientIdInput.trim() ? 1 : 0.6
-                  }
-                }, 'Save'),
+                React.createElement(Button, { variant: 'primary', size: 'sm', onClick: saveSpotifyCredentials, disabled: !spotifyClientIdInput.trim() }, 'Save'),
                 spotifyClientIdInput && React.createElement(Button, { variant: 'text', size: 'sm', onClick: () => {
                     setSpotifyClientIdInput('');
                     // Pass the cleared value: the input state hasn't updated
@@ -44802,16 +44752,7 @@ React.createElement('div', {
                 }, 'Client ID'),
                 React.createElement(SecretField, { value: spotifyClientIdInput, onChange: (_v, e) => setSpotifyClientIdInput(e.target.value), placeholder: 'Your Spotify Client ID', 'aria-label': 'Your Spotify Client ID', className: 'w-full' })
               ),
-              React.createElement('button', {
-                onClick: saveSpotifyCredentials,
-                disabled: !spotifyClientIdInput.trim(),
-                style: {
-                  padding: '6px 12px', fontSize: '12px', fontWeight: '500', color: 'var(--on-accent)',
-                  backgroundColor: spotifyClientIdInput.trim() ? 'var(--fill-success)' : 'var(--control-off)',
-                  border: 'none', borderRadius: '6px',
-                  cursor: spotifyClientIdInput.trim() ? 'pointer' : 'default'
-                }
-              }, 'Save')
+              React.createElement(Button, { variant: 'primary', size: 'sm', onClick: saveSpotifyCredentials, disabled: !spotifyClientIdInput.trim() }, 'Save')
             )
           ),
 
@@ -44878,22 +44819,7 @@ React.createElement('div', {
                     React.createElement(Button, { variant: 'destructive', onClick: () => setStopSyncDialog({ open: true, providerId: selectedResolver.id }) }, 'Stop syncing')
                   )
                 )
-              : React.createElement('button', {
-                  className: 'hover:brightness-110',
-                  onClick: () => openSyncSetupModal(selectedResolver.id),
-                  style: {
-                    width: '100%',
-                    padding: '10px 16px',
-                    backgroundColor: syncProviderConfig[selectedResolver.id]?.color || 'var(--fill-success)',
-                    color: 'var(--on-accent)',
-                    borderRadius: '10px',
-                    fontWeight: '500',
-                    fontSize: '13px',
-                    border: 'none',
-                    cursor: 'pointer',
-                    transition: 'background-color 150ms ease'
-                  },
-                }, 'Set Up Library Sync')
+              : React.createElement(Button, { variant: 'primary', pageColor: syncProviderConfig[selectedResolver.id]?.color || 'var(--accent-fill)', className: 'w-full', onClick: () => openSyncSetupModal(selectedResolver.id) }, 'Set up library sync')
           ),
 
           // Auto-launch Spotify section
@@ -44972,20 +44898,7 @@ React.createElement('div', {
                 ),
                 soundcloudConnected
                   ? React.createElement(Button, { variant: 'secondary', onClick: disconnectSoundcloud }, 'Disconnect')
-                  : hasCredentials && React.createElement('button', {
-                      onClick: connectSoundcloud,
-                      className: 'transition-colors',
-                      style: {
-                        padding: '8px 14px',
-                        fontSize: '13px',
-                        fontWeight: '500',
-                        color: 'var(--on-accent)',
-                        backgroundColor: getServiceColor('soundcloud') || 'var(--accent-fill)',
-                        border: 'none',
-                        borderRadius: '8px',
-                        cursor: 'pointer'
-                      }
-                    }, 'Connect')
+                  : hasCredentials && React.createElement(Button, { variant: 'primary', pageColor: getServiceColor('soundcloud') || 'var(--accent-fill)', onClick: connectSoundcloud }, 'Connect')
               ),
               soundcloudConnected && React.createElement('div', {
                 className: 'flex items-center gap-2',
@@ -45109,23 +45022,9 @@ React.createElement('div', {
                       : `Add this to your SoundCloud app's Redirect URI. Parachord's local server is on port ${authPort}, so signing in to SoundCloud needs your own app credentials here: the built-in sign-in only works on port 8888. Parachord on Android and iOS always signs in on port 8888, so an app registered for port ${authPort} won't sign in on your phone.`)
                   ),
                   React.createElement('div', { className: 'flex gap-2' },
-                    React.createElement('button', {
-                      onClick: async () => {
+                    React.createElement(Button, { variant: 'primary', size: 'sm', onClick: async () => {
                         await saveSoundcloudCredentials();
-                      },
-                      disabled: !soundcloudClientIdInput.trim() || !soundcloudClientSecretInput.trim(),
-                      style: {
-                        padding: '8px 14px',
-                        fontSize: '12px',
-                        fontWeight: '500',
-                        color: 'var(--on-accent)',
-                        backgroundColor: !soundcloudClientIdInput.trim() || !soundcloudClientSecretInput.trim() ? 'var(--control-off)' : (getServiceColor('soundcloud') || 'var(--accent-fill)'),
-                        border: 'none',
-                        borderRadius: '6px',
-                        cursor: !soundcloudClientIdInput.trim() || !soundcloudClientSecretInput.trim() ? 'not-allowed' : 'pointer',
-                        opacity: !soundcloudClientIdInput.trim() || !soundcloudClientSecretInput.trim() ? 0.6 : 1
-                      }
-                    }, 'Save Credentials'),
+                      }, disabled: !soundcloudClientIdInput.trim() || !soundcloudClientSecretInput.trim() }, 'Save credentials'),
                     soundcloudCredentialsSource === 'user' && React.createElement(Button, { variant: 'secondary', onClick: async () => {
                         if (window.electron?.soundcloud?.setCredentials) {
                           const result = await window.electron.soundcloud.setCredentials({ clientId: '', clientSecret: '' });
@@ -45229,20 +45128,7 @@ React.createElement('div', {
               (appleMusicNativeAvailable || !!window.electron?.musicKit?.openAuthWindow) && (
                 appleMusicConnected
                   ? React.createElement(Button, { variant: 'secondary', onClick: disconnectAppleMusic }, 'Disconnect')
-                  : React.createElement('button', {
-                      onClick: connectAppleMusic,
-                      className: 'transition-colors',
-                      style: {
-                        padding: '8px 14px',
-                        fontSize: '13px',
-                        fontWeight: '500',
-                        color: 'var(--on-accent)',
-                        backgroundColor: getServiceColor('applemusic') || 'var(--accent-fill)',
-                        border: 'none',
-                        borderRadius: '8px',
-                        cursor: 'pointer'
-                      }
-                    }, 'Connect')
+                  : React.createElement(Button, { variant: 'primary', pageColor: getServiceColor('applemusic') || 'var(--accent-fill)', onClick: connectAppleMusic }, 'Connect')
               )
             ),
             appleMusicConnected && React.createElement('div', {
@@ -45315,19 +45201,7 @@ React.createElement('div', {
                     lineHeight: '1.4'
                   }
                 }, 'Get a token from the Apple Developer Portal (requires Apple Developer account). The token is a JWT that authenticates your app with Apple Music API.'),
-                React.createElement('button', {
-                  onClick: saveAppleMusicDeveloperToken,
-                  style: {
-                    padding: '6px 12px',
-                    fontSize: '12px',
-                    fontWeight: '500',
-                    color: appleMusicTokenSaved ? 'var(--text-success)' : 'var(--on-accent)',
-                    backgroundColor: appleMusicTokenSaved ? 'color-mix(in srgb, var(--text-success) 12%, transparent)' : (getServiceColor('applemusic') || 'var(--accent-fill)'),
-                    border: 'none',
-                    borderRadius: '6px',
-                    cursor: 'pointer'
-                  }
-                }, appleMusicTokenSaved ? '✓ Saved' : 'Save Token')
+                React.createElement(Button, { variant: 'primary', size: 'sm', onClick: saveAppleMusicDeveloperToken }, appleMusicTokenSaved ? '✓ Saved' : 'Save token')
               )
             )
           ),
@@ -45438,8 +45312,7 @@ React.createElement('div', {
                         React.createElement(SecretField, { value: lastfmApiSecretInput || metaServiceConfigs.lastfm.apiSecret || '', onChange: (_v, e) => setLastfmApiSecretInput(e.target.value), placeholder: 'Your Last.fm API secret', 'aria-label': 'Your Last.fm API secret', className: 'w-full' })
                       ),
                       React.createElement('div', { className: 'flex gap-2' },
-                        React.createElement('button', {
-                          onClick: async () => {
+                        React.createElement(Button, { variant: 'primary', size: 'sm', onClick: async () => {
                             const apiKey = lastfmApiKeyInput?.trim() || null;
                             const apiSecret = lastfmApiSecretInput?.trim() || null;
                             await saveMetaServiceConfig('lastfm', {
@@ -45451,18 +45324,7 @@ React.createElement('div', {
                               window.lastfmScrobbler.setApiCredentials(apiKey, apiSecret);
                             }
                             showToast(apiKey ? 'API credentials saved' : 'API credentials cleared', 'success');
-                          },
-                          style: {
-                            padding: '8px 14px',
-                            fontSize: '12px',
-                            fontWeight: '500',
-                            color: 'var(--on-accent)',
-                            backgroundColor: 'var(--fill-error)',
-                            border: 'none',
-                            borderRadius: '6px',
-                            cursor: 'pointer'
-                          }
-                        }, 'Save'),
+                          } }, 'Save'),
                         metaServiceConfigs.lastfm.apiKey && React.createElement(Button, { variant: 'secondary', onClick: async () => {
                             setLastfmApiKeyInput('');
                             setLastfmApiSecretInput('');
@@ -45623,23 +45485,7 @@ React.createElement('div', {
                     )
                   ),
                   // Connect button
-                  React.createElement('button', {
-                    onClick: () => connectLastfm(lastfmUsernameInput, lastfmApiKeyInput, lastfmApiSecretInput),
-                    disabled: lastfmConnecting || !lastfmUsernameInput.trim(),
-                    className: 'transition-colors',
-                    style: {
-                      width: '100%',
-                      padding: '10px 16px',
-                      fontSize: '13px',
-                      fontWeight: '500',
-                      color: 'var(--on-accent)',
-                      backgroundColor: lastfmConnecting || !lastfmUsernameInput.trim() ? 'var(--control-off)' : (getServiceColor('lastfm') || 'var(--accent-fill)'),
-                      border: 'none',
-                      borderRadius: '8px',
-                      cursor: lastfmConnecting || !lastfmUsernameInput.trim() ? 'not-allowed' : 'pointer',
-                      opacity: lastfmConnecting || !lastfmUsernameInput.trim() ? 0.6 : 1
-                    }
-                  }, lastfmConnecting ? 'Connecting…' : 'Connect')
+                  React.createElement(Button, { variant: 'primary', pageColor: getServiceColor('lastfm') || 'var(--accent-fill)', className: 'w-full', onClick: () => connectLastfm(lastfmUsernameInput, lastfmApiKeyInput, lastfmApiSecretInput), disabled: lastfmConnecting || !lastfmUsernameInput.trim() }, lastfmConnecting ? 'Connecting…' : 'Connect')
                 )
           ),
 
@@ -45837,23 +45683,7 @@ React.createElement('div', {
                     )
                   ),
                   // Connect button
-                  React.createElement('button', {
-                    onClick: () => connectListenbrainz(listenbrainzUsernameInput, listenbrainzTokenInput),
-                    disabled: listenbrainzConnecting || !listenbrainzUsernameInput.trim(),
-                    className: 'transition-colors',
-                    style: {
-                      width: '100%',
-                      padding: '10px 16px',
-                      fontSize: '13px',
-                      fontWeight: '500',
-                      color: 'var(--on-accent)',
-                      backgroundColor: listenbrainzConnecting || !listenbrainzUsernameInput.trim() ? 'var(--control-off)' : (getServiceColor('listenbrainz') || 'var(--accent-fill)'),
-                      border: 'none',
-                      borderRadius: '8px',
-                      cursor: listenbrainzConnecting || !listenbrainzUsernameInput.trim() ? 'not-allowed' : 'pointer',
-                      opacity: listenbrainzConnecting || !listenbrainzUsernameInput.trim() ? 0.6 : 1
-                    }
-                  }, listenbrainzConnecting ? 'Connecting…' : 'Connect')
+                  React.createElement(Button, { variant: 'primary', pageColor: getServiceColor('listenbrainz') || 'var(--accent-fill)', className: 'w-full', onClick: () => connectListenbrainz(listenbrainzUsernameInput, listenbrainzTokenInput), disabled: listenbrainzConnecting || !listenbrainzUsernameInput.trim() }, listenbrainzConnecting ? 'Connecting…' : 'Connect')
                 )
           ),
 
@@ -46057,22 +45887,10 @@ React.createElement('div', {
                   }
                 }, selectedResolver.settings?.configurable?.model?.label || 'Model'),
                 // Refresh button for dynamic-select
-                selectedResolver.settings?.configurable?.model?.type === 'dynamic-select' && React.createElement('button', {
-                  onClick: () => {
+                selectedResolver.settings?.configurable?.model?.type === 'dynamic-select' && React.createElement(Button, { variant: 'icon', size: 'sm', 'aria-label': "Refresh models", onClick: () => {
                     const resolver = metaServices.find(s => s.id === selectedResolver.id) || selectedResolver;
                     fetchDynamicModels(resolver, metaServiceConfigs[selectedResolver.id]);
-                  },
-                  'data-tooltip': 'Refresh models',
-                  style: {
-                    background: 'none',
-                    border: 'none',
-                    cursor: 'pointer',
-                    color: 'var(--text-secondary)',
-                    fontSize: '12px',
-                    padding: '2px 4px',
-                    borderRadius: '4px'
-                  }
-                }, '\u21BB')
+                  }, 'data-tooltip': 'Refresh models' }, React.createElement(Icons.RefreshCw, { className: 'w-4 h-4' }))
               ),
               (() => {
                 const modelSetting = selectedResolver.settings?.configurable?.model;
@@ -46382,21 +46200,9 @@ React.createElement('div', {
                 (() => {
                   const resolver = metaServices.find(s => s.id === selectedResolver.id) || selectedResolver;
                   const modelSetting = resolver.settings?.configurable?.model || resolver.configurable?.model;
-                  return (modelSetting?.type === 'dynamic-select') && React.createElement('button', {
-                    onClick: () => {
+                  return (modelSetting?.type === 'dynamic-select') && React.createElement(Button, { variant: 'icon', size: 'sm', 'aria-label': "Refresh models", onClick: () => {
                       fetchDynamicModels(resolver, metaServiceConfigs[selectedResolver.id]);
-                    },
-                    'data-tooltip': 'Refresh models',
-                    style: {
-                      background: 'none',
-                      border: 'none',
-                      cursor: 'pointer',
-                      color: 'var(--text-secondary)',
-                      fontSize: '12px',
-                      padding: '2px 4px',
-                      borderRadius: '4px'
-                    }
-                  }, '\u21BB');
+                    }, 'data-tooltip': 'Refresh models' }, React.createElement(Icons.RefreshCw, { className: 'w-4 h-4' }));
                 })()
               ),
               (() => {
@@ -46670,36 +46476,8 @@ React.createElement('div', {
                         )
                       ),
                       React.createElement('div', { className: 'flex items-center gap-2', style: { marginLeft: '16px' } },
-                        React.createElement('button', {
-                          onClick: () => handleRescanFolder(folder.path),
-                          disabled: isScanning,
-                          className: 'transition-colors',
-                          style: {
-                            padding: '6px',
-                            fontSize: '14px',
-                            color: 'var(--text-secondary)',
-                            backgroundColor: 'transparent',
-                            border: 'none',
-                            borderRadius: '6px',
-                            cursor: isScanning ? 'not-allowed' : 'pointer',
-                            opacity: isScanning ? 0.5 : 1
-                          },
-                          'data-tooltip': 'Rescan folder'
-                        }, '\u21BB'),
-                        React.createElement('button', {
-                          onClick: () => handleRemoveWatchFolder(folder.path),
-                          className: 'transition-colors',
-                          style: {
-                            padding: '6px',
-                            fontSize: '14px',
-                            color: 'var(--text-secondary)',
-                            backgroundColor: 'transparent',
-                            border: 'none',
-                            borderRadius: '6px',
-                            cursor: 'pointer'
-                          },
-                          'data-tooltip': 'Remove folder'
-                        }, '\u2715')
+                        React.createElement(Button, { variant: 'icon', size: 'sm', 'aria-label': "Rescan folder", onClick: () => handleRescanFolder(folder.path), disabled: isScanning, 'data-tooltip': 'Rescan folder' }, React.createElement(Icons.RefreshCw, { className: 'w-4 h-4' })),
+                        React.createElement(Button, { variant: 'icon', size: 'sm', 'aria-label': "Remove folder", onClick: () => handleRemoveWatchFolder(folder.path), 'data-tooltip': 'Remove folder' }, React.createElement(Icons.X, { className: 'w-4 h-4' }))
                       )
                     )
                   )
@@ -46774,7 +46552,7 @@ React.createElement('div', {
                       fontSize: '12px',
                       color: 'var(--text-secondary)'
                     }
-                  }, 'Total Tracks'),
+                  }, 'Total tracks'),
                   React.createElement('p', {
                     style: {
                       fontSize: '14px',
@@ -46790,23 +46568,27 @@ React.createElement('div', {
                       fontSize: '12px',
                       color: 'var(--text-secondary)'
                     }
-                  }, 'Last Scan'),
+                  }, 'Last scan'),
                   React.createElement('p', {
                     style: {
                       fontSize: '14px',
                       fontWeight: '500',
                       color: 'var(--text-primary)',
                       marginTop: '2px'
-                    }
+                    },
+                    // The app's relative time (lib/time-ago.js), the full date
+                    // as its tooltip.
+                    'data-tooltip': localFilesStats.lastScan ? new Date(localFilesStats.lastScan).toLocaleString() : undefined
                   },
-                    localFilesStats.lastScan
-                      ? new Date(localFilesStats.lastScan).toLocaleDateString()
-                      : 'Never'
+                    localFilesStats.lastScan ? timeAgo(localFilesStats.lastScan) : 'Never'
                   )
                 )
               ),
-              React.createElement(Button, { variant: 'text', size: 'sm', onClick: handleRescanAll, disabled: isScanning || watchFolders.length === 0, className: 'mt-4' }, 'Rescan all folders'),
-              React.createElement(Button, { variant: 'text', size: 'sm', onClick: handleRemoveMissingFiles, disabled: isScanning || watchFolders.length === 0, 'data-tooltip': 'Remove library entries for files that are no longer on disk', className: 'mt-4 ml-2' }, 'Remove missing files')
+              // The panel's actions: small secondary buttons flush with the
+              // content (text buttons' padding indented them).
+              React.createElement('div', { className: 'flex flex-wrap gap-2 mt-4' },
+                React.createElement(Button, { variant: 'secondary', size: 'sm', onClick: handleRescanAll, disabled: isScanning || watchFolders.length === 0 }, 'Rescan all folders'),
+                React.createElement(Button, { variant: 'secondary', size: 'sm', onClick: handleRemoveMissingFiles, disabled: isScanning || watchFolders.length === 0, 'data-tooltip': 'Remove library entries for files that are no longer on disk' }, 'Remove missing files'))
             )
           )
         ),
@@ -46836,25 +46618,10 @@ React.createElement('div', {
                 marketplaceResolver.version !== selectedResolver.version &&
                 marketplaceResolver.version > selectedResolver.version;
               if (hasUpdate) {
-                return React.createElement('button', {
-                  onClick: async () => {
+                return React.createElement(Button, { variant: 'primary', onClick: async () => {
                     await handleInstallFromMarketplace(marketplaceResolver);
                     setSelectedResolver(null);
-                  },
-                  disabled: installingResolvers.has(selectedResolver.id),
-                  className: 'transition-colors',
-                  style: {
-                    padding: '8px 14px',
-                    fontSize: '13px',
-                    fontWeight: '500',
-                    color: 'var(--on-accent)',
-                    backgroundColor: installingResolvers.has(selectedResolver.id) ? 'var(--control-off)' : 'var(--accent-fill)',
-                    border: 'none',
-                    borderRadius: '8px',
-                    cursor: installingResolvers.has(selectedResolver.id) ? 'not-allowed' : 'pointer',
-                    opacity: installingResolvers.has(selectedResolver.id) ? 0.6 : 1
-                  }
-                }, installingResolvers.has(selectedResolver.id) ? 'Updating…' : `Update to v${marketplaceResolver.version}`);
+                  }, disabled: installingResolvers.has(selectedResolver.id) }, installingResolvers.has(selectedResolver.id) ? 'Updating…' : `Update to v${marketplaceResolver.version}`);
               }
               return null;
             })(),
@@ -46980,22 +46747,7 @@ React.createElement('div', {
             }, selectedMarketplaceItem.author || 'Unknown')
           ),
           // Close button
-          React.createElement('button', {
-            type: 'button',
-            'aria-label': 'Close',
-            onClick: () => setSelectedMarketplaceItem(null),
-            className: 'flex items-center justify-center transition-colors',
-            style: {
-              width: '32px',
-              height: '32px',
-              borderRadius: '50%',
-              backgroundColor: 'rgba(255, 255, 255, 0.2)',
-              border: 'none',
-              color: 'var(--on-accent)',
-              cursor: 'pointer',
-              fontSize: '14px'
-            }
-          }, React.createElement(Icons.X, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }))
+          React.createElement(Button, { variant: 'icon', size: 'sm', tone: 'dark', className: 'rounded-full', 'aria-label': 'Close', onClick: () => setSelectedMarketplaceItem(null) }, React.createElement(Icons.X, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }))
         ),
 React.createElement('div', {
           style: { padding: '24px' }
@@ -47029,33 +46781,9 @@ React.createElement('div', {
               }
             }, 'Capabilities'),
             React.createElement('div', { className: 'flex flex-wrap gap-2' },
-              Object.entries(selectedMarketplaceItem.capabilities || {}).map(([cap, enabled]) => {
-                if (!enabled) return null;
-                const capLabels = {
-                  resolve: 'Resolve',
-                  search: 'Search',
-                  stream: 'Stream',
-                  browse: 'Browse',
-                  urlLookup: 'URL Lookup',
-                  purchase: 'Purchase Downloads',
-                  recommendations: 'Recommendations',
-                  metadata: 'Metadata',
-                  generate: 'AI Playlist Generation',
-                  chat: 'Conversational DJ'
-                };
-                const label = capLabels[cap] || cap;
-                return React.createElement('span', {
-                  key: cap,
-                  style: {
-                    padding: '6px 12px',
-                    backgroundColor: 'var(--accent-primary-alpha-08)',
-                    color: 'var(--accent-primary)',
-                    borderRadius: '16px',
-                    fontSize: '12px',
-                    fontWeight: '500'
-                  }
-                }, label);
-              })
+              Object.entries(selectedMarketplaceItem.capabilities || {}).map(([cap, enabled]) =>
+                // The shared pill and the one label helper (lib/capability-labels.js).
+                enabled ? React.createElement(Badge, { key: cap, tone: 'accent' }, capabilityLabel(cap)) : null)
             )
           ),
 
@@ -47166,25 +46894,10 @@ React.createElement('div', {
                 React.createElement('div', { className: 'flex items-center gap-2' },
                   // Update button if newer version available
                   selectedMarketplaceItem.installedResolver?.version !== selectedMarketplaceItem.version &&
-                    React.createElement('button', {
-                      onClick: async () => {
+                    React.createElement(Button, { variant: 'primary', onClick: async () => {
                         await handleInstallFromMarketplace(selectedMarketplaceItem);
                         setSelectedMarketplaceItem(null);
-                      },
-                      disabled: installingResolvers.has(selectedMarketplaceItem.id),
-                      className: 'transition-colors',
-                      style: {
-                        padding: '8px 14px',
-                        fontSize: '13px',
-                        fontWeight: '500',
-                        color: 'var(--on-accent)',
-                        backgroundColor: installingResolvers.has(selectedMarketplaceItem.id) ? 'var(--control-off)' : 'var(--accent-fill)',
-                        border: 'none',
-                        borderRadius: '8px',
-                        cursor: installingResolvers.has(selectedMarketplaceItem.id) ? 'not-allowed' : 'pointer',
-                        opacity: installingResolvers.has(selectedMarketplaceItem.id) ? 0.6 : 1
-                      }
-                    }, installingResolvers.has(selectedMarketplaceItem.id) ? 'Updating…' : 'Update'),
+                      }, disabled: installingResolvers.has(selectedMarketplaceItem.id) }, installingResolvers.has(selectedMarketplaceItem.id) ? 'Updating…' : 'Update'),
                   // Done button
                   React.createElement(Button, { variant: 'secondary', onClick: () => setSelectedMarketplaceItem(null) }, 'Done')
                 )
@@ -47238,22 +46951,7 @@ React.createElement('div', {
             }, 'Add music to Parachord from anywhere')
           ),
           // Close button
-          React.createElement('button', {
-            onClick: () => setExtensionInfoOpen(false),
-            style: {
-              marginLeft: 'auto',
-              padding: '8px',
-              backgroundColor: 'rgba(255, 255, 255, 0.2)',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }
-          },
-            React.createElement(Icons.X, { className: 'w-5 h-5 text-white' })
-          )
+          React.createElement(Button, { variant: 'icon', size: 'sm', tone: 'dark', className: 'ml-auto', 'aria-label': "Close", onClick: () => setExtensionInfoOpen(false) }, React.createElement(Icons.X, { className: 'w-5 h-5 text-white' }))
         ),
 React.createElement('div', {
           style: { padding: '24px', maxHeight: '50vh', overflowY: 'auto' }
@@ -47429,22 +47127,7 @@ React.createElement('div', {
             }, 'Control Parachord with keyboard shortcuts')
           ),
           // Close button
-          React.createElement('button', {
-            onClick: () => setRaycastInfoOpen(false),
-            style: {
-              marginLeft: 'auto',
-              padding: '8px',
-              backgroundColor: 'rgba(255, 255, 255, 0.2)',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }
-          },
-            React.createElement(Icons.X, { className: 'w-5 h-5 text-white' })
-          )
+          React.createElement(Button, { variant: 'icon', size: 'sm', tone: 'dark', className: 'ml-auto', 'aria-label': "Close", onClick: () => setRaycastInfoOpen(false) }, React.createElement(Icons.X, { className: 'w-5 h-5 text-white' }))
         ),
 React.createElement('div', {
           style: { padding: '24px', maxHeight: '50vh', overflowY: 'auto' }
@@ -47554,26 +47237,13 @@ React.createElement('div', {
             gap: '12px'
           }
         },
-          React.createElement('button', {
-            onClick: () => {
+          React.createElement(Button, { variant: 'primary', pageColor: '#FF6363', onClick: () => {
               if (window.electron?.shell?.openExternal) {
                 window.electron.shell.openExternal('https://www.raycast.com/parachord/parachord');
               } else {
                 window.open('https://www.raycast.com/parachord/parachord', '_blank');
               }
-            },
-            className: 'transition-colors',
-            style: {
-              padding: '10px 16px',
-              fontSize: '13px',
-              fontWeight: '500',
-              color: 'var(--on-accent)',
-              backgroundColor: '#FF6363',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: 'pointer'
-            }
-          }, 'Install from Raycast Store'),
+            } }, 'Install from Raycast Store'),
           React.createElement(Button, { variant: 'secondary', onClick: () => setRaycastInfoOpen(false) }, 'Done')
         )),
 

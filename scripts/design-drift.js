@@ -165,7 +165,12 @@ function scanSource(src) {
           const st = ps.find((p) => propKey(p) === 'style');
           const sText = st && st.value ? src.slice(st.value.start, st.value.end) : '';
           const byClass = /(?:^|[\s`'"])(?:p|px|py|pl|pr|pt|pb)-\d/.test(cText) && /(?:^|[\s`'"])(?:rounded(?:-\w+)?|bg-[\w[]|border(?:-\w+)?)(?=[\s`'"]|$)/.test(cText);
-          const byStyle = /\bpadding\b/.test(sText) && /\b(?:backgroundColor|background|borderRadius|border)\b/.test(sText);
+          // A text link drawn as a button (no padding, no fill, no border)
+          // isn't a button look: "See all", an artist name, Advanced.
+          const bare = /\bpadding:\s*(?:'0(?:px)?'|0)\b/.test(sText)
+            && !/\bbackground(?:Color)?:\s*(?!'(?:none|transparent)')/.test(sText)
+            && !/\bborder(?:Radius)?:\s*(?!'none')/.test(sText);
+          const byStyle = !bare && /\bpadding\b/.test(sText) && /\b(?:backgroundColor|background|borderRadius|border)\b/.test(sText);
           if ((byClass || byStyle) && !/buttonClassName\(|APP_PLAY_BTN|card-button-hit/.test(cText)) counts.handBuiltButtons += 1;
         }
         if (/\bsticky\b/.test(classText) && /\btop-0\b/.test(classText)) counts.stickyBarCopies += 1;
