@@ -162,7 +162,7 @@ describe('render', () => {
     // Other pages' collapsed heroes (80px, the uppercase light title and shadow)
     // and Home's sidebar colour (the accent, #7c3aed: Tailwind violet-600).
     // The pages' heroes are the shared PageHero (components/page-hero.js).
-    expect(require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/components/page-hero.js'), 'utf8')).toContain("const COLLAPSED_TITLE_STYLE = { textShadow: '0 2px 10px rgba(0,0,0,0.5)', letterSpacing: '0.2em', textTransform: 'uppercase' };");
+    expect(require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/components/page-hero.js'), 'utf8')).toContain("const COLLAPSED_TITLE_STYLE = { textShadow: 'var(--hero-text-shadow-bar)', letterSpacing: '0.2em', textTransform: 'uppercase' };");
     expect(app).toContain("React.createElement(NavItem, { page: 'home', label: 'Home', icon: Icons.Home, prominent: true, active: activeView === 'home'");
     expect(require('../../src/renderer/lib/page-colors').PAGE_COLORS.home.color).toBe('var(--accent-primary)');
     expect(fs.readFileSync(path.join(__dirname, '../../index.html'), 'utf8')).toMatch(/--accent-base: #7c3aed;[\s\S]*--accent-primary: var\(--accent-base\);/);
@@ -172,7 +172,7 @@ describe('render', () => {
     expect(html.indexOf('data-home-hero-banner')).toBeLessThan(html.indexOf('scrollable-content'));
     expect(hero).toMatch(/^data-home-hero-banner=""[^>]*style="height:80px;flex-shrink:0;overflow:hidden"/);
     expect(hero).toContain('class="absolute inset-0 bg-gradient-to-br from-purple-500 via-violet-600 to-indigo-600"');
-    expect(hero).toMatch(/<h1 class="text-2xl font-light text-white" style="text-shadow:0 2px 10px rgba\(0,0,0,0\.5\);letter-spacing:0\.2em;text-transform:uppercase">Home<\/h1>/);
+    expect(hero).toMatch(/<h1 class="text-2xl font-light text-white" style="text-shadow:var\(--hero-text-shadow-bar\);letter-spacing:0\.2em;text-transform:uppercase">Home<\/h1>/);
     // The hero replaces the macOS title-bar band, and the greeting is no longer a second h1.
     expect(html).not.toContain('data-home-titlebar');
     expect(html.match(/<h1/g)).toHaveLength(1);

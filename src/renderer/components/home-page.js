@@ -543,7 +543,7 @@ const HomePage = React.memo(function HomePage(props) {
       React.createElement('div', { className: 'absolute inset-0 flex items-center px-6 z-10' },
         React.createElement('h1', {
           className: 'text-2xl font-light text-white',
-          style: { textShadow: '0 2px 10px rgba(0,0,0,0.5)', letterSpacing: '0.2em', textTransform: 'uppercase' },
+          style: { textShadow: 'var(--hero-text-shadow-bar)', letterSpacing: '0.2em', textTransform: 'uppercase' },
           onContextMenu: copyParachordLink,
         }, 'Home'))),
     React.createElement('div', { className: 'flex-1 overflow-y-auto scrollable-content scroll-edge', style: { minHeight: 0 } },

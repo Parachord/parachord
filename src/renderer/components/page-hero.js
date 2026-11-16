@@ -27,8 +27,8 @@
 
 const { PAGE_COLORS } = require('../lib/page-colors');
 
-const EXPANDED_TITLE_STYLE = { textShadow: '0 2px 20px rgba(0,0,0,0.5)', letterSpacing: '0.3em', textTransform: 'uppercase' };
-const COLLAPSED_TITLE_STYLE = { textShadow: '0 2px 10px rgba(0,0,0,0.5)', letterSpacing: '0.2em', textTransform: 'uppercase' };
+const EXPANDED_TITLE_STYLE = { textShadow: 'var(--hero-text-shadow)', letterSpacing: '0.3em', textTransform: 'uppercase' };
+const COLLAPSED_TITLE_STYLE = { textShadow: 'var(--hero-text-shadow-bar)', letterSpacing: '0.2em', textTransform: 'uppercase' };
 const HERO_HEIGHT = 320;
 const HERO_COLLAPSED_HEIGHT = 80;
 

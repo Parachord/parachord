@@ -37889,7 +37889,7 @@ useEffect(() => {
             React.createElement('h1', {
               className: 'text-2xl font-bold text-white',
               style: {
-                textShadow: '0 2px 10px rgba(0,0,0,0.5)',
+                textShadow: 'var(--hero-text-shadow-bar)',
                 letterSpacing: '0.08em',
                 textTransform: 'uppercase'
               }
@@ -38003,7 +38003,7 @@ onTitleContextMenu: copyParachordLink,
 expanded: React.createElement(React.Fragment, null,
 React.createElement('div', {
               className: 'flex items-center gap-1 mt-6',
-              style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
+              style: { textShadow: 'var(--hero-text-shadow-line)' }
             },
               playlistsLoading && playlists.length === 0
                 ? React.createElement('div', {
@@ -38354,7 +38354,7 @@ onTitleContextMenu: copyParachordLink,
 expanded: React.createElement(React.Fragment, null,
 React.createElement('div', {
                   className: 'flex items-center gap-1 mt-4',
-                  style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
+                  style: { textShadow: 'var(--hero-text-shadow-line)' }
                 },
                   React.createElement(HeroTabs, { items: ['albums', 'songs'], isSelected: (tab) => chartsTab === tab, onSelect: (tab) => {
                         setChartsTab(tab);
@@ -38586,7 +38586,7 @@ onTitleContextMenu: copyParachordLink,
 expanded: React.createElement(React.Fragment, null,
 React.createElement('div', {
                   className: 'flex items-center gap-1 mt-6',
-                  style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
+                  style: { textShadow: 'var(--hero-text-shadow-line)' }
                 },
                   React.createElement('span', {
                     className: 'px-2 py-1 text-sm font-medium uppercase tracking-wider text-white'
@@ -38749,7 +38749,7 @@ onTitleContextMenu: copyParachordLink,
 expanded: React.createElement(React.Fragment, null,
 React.createElement('div', {
                   className: 'flex items-center gap-1 mt-6',
-                  style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
+                  style: { textShadow: 'var(--hero-text-shadow-line)' }
                 },
                   React.createElement('span', {
                     className: 'px-2 py-1 text-sm font-medium uppercase tracking-wider text-white'
@@ -39080,7 +39080,7 @@ onTitleContextMenu: copyParachordLink,
 expanded: React.createElement(React.Fragment, null,
 React.createElement('div', {
                   className: 'flex items-center gap-1 mt-6',
-                  style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
+                  style: { textShadow: 'var(--hero-text-shadow-line)' }
                 },
                   React.createElement('span', {
                     className: 'px-2 py-1 text-sm font-medium uppercase tracking-wider text-white'
@@ -39583,7 +39583,7 @@ onTitleContextMenu: copyParachordLink,
 expanded: React.createElement(React.Fragment, null,
 React.createElement('div', {
                 className: 'flex items-center gap-1 mt-6',
-                style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
+                style: { textShadow: 'var(--hero-text-shadow-line)' }
               },
                 React.createElement('span', {
                   className: 'px-2 py-1 text-sm font-medium uppercase tracking-wider text-white'
@@ -39599,7 +39599,7 @@ React.createElement('p', {
 collapsedContent: React.createElement(React.Fragment, null,
 React.createElement('p', {
                 className: 'text-white/70 text-sm truncate',
-                style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
+                style: { textShadow: 'var(--hero-text-shadow-line)' }
               }, 'Personalized picks from your services and Shuffleupagus'))
 }),
           // Filter bar (outside scrollable area), as on the other tabs (Fresh
@@ -40260,7 +40260,7 @@ onTitleContextMenu: copyParachordLink,
 expanded: React.createElement(React.Fragment, null,
 React.createElement('div', {
                 className: 'flex items-center gap-1 mt-6',
-                style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
+                style: { textShadow: 'var(--hero-text-shadow-line)' }
               },
                 React.createElement(HeroTabs, { items: [
                   { key: 'topTracks', label: 'Top Tracks' },
@@ -40286,7 +40286,7 @@ React.createElement('p', {
 collapsedContent: React.createElement(React.Fragment, null,
 React.createElement('div', {
                 className: 'flex items-center gap-1',
-                style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
+                style: { textShadow: 'var(--hero-text-shadow-line)' }
               },
                 React.createElement(HeroTabs, { items: [
                   { key: 'topTracks', label: 'Top Tracks' },
@@ -40543,7 +40543,7 @@ React.createElement('div', { className: 'flex items-center gap-3 mb-2' },
                   React.createElement('h1', {
                     className: 'text-4xl font-light text-white',
                     style: {
-                      textShadow: '0 2px 20px rgba(0,0,0,0.5)',
+                      textShadow: 'var(--hero-text-shadow)',
                       letterSpacing: '0.2em',
                       textTransform: 'uppercase'
                     },
@@ -40561,7 +40561,7 @@ React.createElement('div', { className: 'flex items-center gap-3 mb-2' },
                 ),
 React.createElement('div', {
                   className: 'flex items-center gap-1 mt-4',
-                  style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
+                  style: { textShadow: 'var(--hero-text-shadow-line)' }
                 },
                   React.createElement(HeroTabs, { items: [
                     { key: 'recent', label: 'Recently Played' },
@@ -40599,7 +40599,7 @@ React.createElement('div', {
 React.createElement('h1', {
                   className: 'text-2xl font-light text-white mr-6',
                   style: {
-                    textShadow: '0 2px 10px rgba(0,0,0,0.5)',
+                    textShadow: 'var(--hero-text-shadow-bar)',
                     letterSpacing: '0.2em',
                     textTransform: 'uppercase'
                   },
@@ -40611,7 +40611,7 @@ isOnAir(currentFriend) && React.createElement('span', {
                 }),
 React.createElement('div', {
                   className: 'flex items-center gap-1',
-                  style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
+                  style: { textShadow: 'var(--hero-text-shadow-line)' }
                 },
                   React.createElement(HeroTabs, { items: [
                     { key: 'recent', label: 'Recent' },

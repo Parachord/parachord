@@ -39,7 +39,7 @@ const SHUFFLE_COLOR = 'var(--accent-fill)'; // fill-accent: the accent var turns
 // the collapsed hero title's shadow, which the halves' bands copy.
 const FRESH_HERO = PAGE_COLORS['new-releases'].hero;
 const CRITICAL_HERO = PAGE_COLORS['critics-picks'].hero;
-const HERO_TEXT_SHADOW = '0 2px 10px rgba(0,0,0,0.5)';
+const HERO_TEXT_SHADOW = 'var(--hero-text-shadow-bar)';
 // Inner padding of the Fresh Drops / Critical Darlings panels.
 const HOME_HALF_PANEL_PAD = 20;
 const SECTION_STYLE = { display: 'flex', flexDirection: 'column', gap: '14px' };

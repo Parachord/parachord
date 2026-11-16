@@ -374,7 +374,7 @@ describe('Rows', () => {
     expect(app).toContain("page: 'new-releases'");
     expect(app).toContain("page: 'critics-picks'");
     // The pages' heroes are the shared PageHero (components/page-hero.js).
-    expect(require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/components/page-hero.js'), 'utf8')).toContain("const COLLAPSED_TITLE_STYLE = { textShadow: '0 2px 10px rgba(0,0,0,0.5)', letterSpacing: '0.2em', textTransform: 'uppercase' };");
+    expect(require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/components/page-hero.js'), 'utf8')).toContain("const COLLAPSED_TITLE_STYLE = { textShadow: 'var(--hero-text-shadow-bar)', letterSpacing: '0.2em', textTransform: 'uppercase' };");
     const html = h(S.FreshCriticalRow, { fresh: [{ title: 'T', artist: 'A' }], critical: [{ title: 'U', artist: 'B' }], navigateTo: () => {} });
     const sections = html.split('<section').slice(1);
     expect(sections).toHaveLength(2);
@@ -385,7 +385,7 @@ describe('Rows', () => {
     for (const sec of sections) {
       // A bordered card on the page background; the cards sit below the band.
       expect(sec).toMatch(/^[^>]*border-radius:16px;overflow:hidden;border:1px solid var\(--border-default\);background-color:var\(--bg-primary\)/);
-      expect(sec).toMatch(/<h2 id="home-(fresh|critical)" style="[^"]*font-weight:300;letter-spacing:0\.2em;text-transform:uppercase;color:var\(--on-accent\);text-shadow:0 2px 10px rgba\(0,0,0,0\.5\)"/);
+      expect(sec).toMatch(/<h2 id="home-(fresh|critical)" style="[^"]*font-weight:300;letter-spacing:0\.2em;text-transform:uppercase;color:var\(--on-accent\);text-shadow:var\(--hero-text-shadow-bar\)"/);
       expect(sec).toMatch(/aria-label="See all in (Fresh Drops|Critical Darlings)"[^>]*color:var\(--on-accent\)[^>]*>See all</);
       expect(sec.indexOf('data-home-hero')).toBeLessThan(sec.indexOf('Open '));
     }

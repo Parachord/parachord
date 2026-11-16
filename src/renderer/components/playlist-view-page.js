@@ -189,7 +189,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
             React.createElement('h1', {
               className: 'text-2xl font-bold text-white',
               style: {
-                textShadow: '0 2px 10px rgba(0,0,0,0.5)',
+                textShadow: 'var(--hero-text-shadow-bar)',
                 letterSpacing: '0.08em',
                 textTransform: 'uppercase'
               },

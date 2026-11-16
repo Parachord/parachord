@@ -138,7 +138,7 @@ onTitleContextMenu: copyParachordLink,
 expanded: React.createElement(React.Fragment, null,
 React.createElement('div', {
                   className: 'flex items-center gap-1 mt-6',
-                  style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
+                  style: { textShadow: 'var(--hero-text-shadow-line)' }
                 },
                   React.createElement(HeroTabs, { items: [
                     { key: 'artists', label: collectionLoading ? null : countOf(collectionData.artists.length, 'Artist'), staticLabel: 'Artists' },
@@ -159,7 +159,7 @@ React.createElement('div', {
 collapsedContent: React.createElement(React.Fragment, null,
 React.createElement('div', {
                   className: 'flex items-center gap-1',
-                  style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
+                  style: { textShadow: 'var(--hero-text-shadow-line)' }
                 },
                   React.createElement(HeroTabs, { items: [
                     { key: 'artists', label: collectionLoading ? null : countOf(collectionData.artists.length, 'Artist'), staticLabel: 'Artists' },

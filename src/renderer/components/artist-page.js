@@ -186,7 +186,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
               React.createElement('h1', {
                 className: 'hero-title font-light text-white',
                 style: {
-                  textShadow: '0 2px 20px rgba(0,0,0,0.5)',
+                  textShadow: 'var(--hero-text-shadow)',
                   letterSpacing: '0.3em',
                   textTransform: 'uppercase'
                 },
@@ -328,7 +328,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
               React.createElement('button', { type: 'button',
                 className: 'text-left text-2xl font-light text-white cursor-pointer hover:text-white/80 transition-colors no-drag',
                 style: {
-                  textShadow: '0 2px 10px rgba(0,0,0,0.5)',
+                  textShadow: 'var(--hero-text-shadow-bar)',
                   letterSpacing: '0.2em',
                   textTransform: 'uppercase',
                   lineHeight: '1.2'
@@ -475,7 +475,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
               React.createElement('button', { type: 'button',
               className: 'text-left text-2xl font-light mr-6 text-white cursor-pointer hover:text-white/80 transition-colors no-drag flex-shrink-0',
               style: {
-                textShadow: '0 2px 10px rgba(0,0,0,0.5)',
+                textShadow: 'var(--hero-text-shadow-bar)',
                 letterSpacing: '0.2em',
                 textTransform: 'uppercase',
                 maxWidth: '40%',
@@ -494,7 +494,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
             // Center: Navigation tabs
             React.createElement('div', {
               className: 'flex items-center gap-1',
-              style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
+              style: { textShadow: 'var(--hero-text-shadow-line)' }
             },
               React.createElement(HeroTabs, { items: ['music', 'biography', 'related', ...(artistConcerts.length > 0 || (artistPageTab === 'on-tour' && !artistConcertsLoaded) ? ['on-tour'] : [])], isSelected: (tab) => tab === 'music', onSelect: async (tab) => {
                     // Go back to artist page and switch to the selected tab
