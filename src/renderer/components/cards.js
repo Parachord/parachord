@@ -16,6 +16,7 @@ const Icons = require('./icons');
 const { EmptyState, ErrorState } = require('./states');
 const { Menu } = require('./menu');
 const { CardButton } = require('./card-button');
+const { OptionTile } = require('./option-tile');
 const { artistMenu } = require('../lib/item-menus');
 const { Play } = Icons;
 // hashString (module scope in app.js) is used by generateArtistPattern;
@@ -837,19 +838,10 @@ const ReleasePage = ({
           // another official release of the MusicBrainz release group, or an
           // edition one of the user's services carries. Sits above Share.
           React.createElement('div', { className: 'relative', style: { width: `${albumArtSize}px`, transition: 'width 300ms ease' } },
-            React.createElement('button', {
+            React.createElement(OptionTile, {
+              compact: true,
               onClick: toggleSourceOpen,
-              className: 'w-full text-left no-drag hover:!border-[var(--text-tertiary)]',
               'aria-expanded': sourceOpen,
-              style: {
-                display: 'block',
-                border: '1px solid var(--border-default)',
-                borderRadius: '8px',
-                backgroundColor: 'var(--card-bg)',
-                padding: '8px 10px',
-                cursor: 'pointer',
-                transition: 'border-color 150ms ease'
-              },
               'data-tooltip': 'Pick another edition of this album (MusicBrainz releases, or an edition your services carry)'
             },
               // First line: the source's badge and name, chevron at the right

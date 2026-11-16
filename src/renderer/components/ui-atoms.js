@@ -8,6 +8,9 @@
 // ParachordWordmark the splash/about wordmark; PlaybackProgress the playbar's
 // isolated progress leaf (parachord#768 — progress ticks re-render only it).
 
+const { Button } = require('./button');
+const Icons = require('./icons');
+
 // Tooltip (#1385 step 9): the one tooltip. There used to be two: a
 // CSS-only Tooltip (hover only, clipped by any overflow:hidden parent, shown
 // at once) and FixedTooltip (portal-positioned, shown on focus too). This is
@@ -496,39 +499,16 @@ const PlaybackProgress = React.memo(function PlaybackProgress({
   );
 });
 
-// ShareButton — the Share control under the album and playlist art. An
-// outlined button in the theme variables, drawn like the album source card
-// above it (same border, radius and hover), so it reads as part of the page
-// rather than a lone accent-colored pill. `open` keeps the hover look while
-// its menu is showing. It is Menu's trigger (components/menu.js):
-// renderTrigger passes its props straight through.
+// ShareButton — the Share control under the album and playlist art: the
+// shared secondary Button (small), with the Share icon. `open` keeps the
+// hover look while its menu is showing. It is Menu's trigger
+// (components/menu.js): renderTrigger passes its props straight through.
 const ShareButton = ({ open = false, ...triggerProps }) => {
-  const [hover, setHover] = React.useState(false);
-  const lit = open || hover;
-  return React.createElement('button', {
-    type: 'button',
-    // Menu's trigger props: onClick, onKeyDown, aria-haspopup/expanded/controls.
-    ...triggerProps,
-    onMouseEnter: () => setHover(true),
-    onMouseLeave: () => setHover(false),
-    className: 'flex items-center no-drag',
-    style: {
-      gap: '6px',
-      padding: '6px 12px',
-      borderRadius: '8px',
-      border: `1px solid ${lit ? 'var(--text-tertiary)' : 'var(--border-default)'}`,
-      backgroundColor: 'var(--card-bg)',
-      color: lit ? 'var(--text-primary)' : 'var(--text-secondary)',
-      fontSize: '12px',
-      fontWeight: 500,
-      lineHeight: '16px',
-      cursor: 'pointer',
-      transition: 'border-color 150ms ease, color 150ms ease'
-    }
-  },
-    React.createElement('svg', { width: 14, height: 14, fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2, 'aria-hidden': 'true' },
-      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z' })
-    ),
+  return React.createElement(Button, Object.assign({}, triggerProps, {
+    variant: 'secondary', size: 'sm',
+    className: open ? '!bg-surface-hover' : undefined,
+  }),
+    React.createElement(Icons.Share, { className: 'w-4 h-4', 'aria-hidden': 'true' }),
     'Share'
   );
 };

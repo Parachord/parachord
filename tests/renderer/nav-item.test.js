@@ -30,3 +30,14 @@ test('an unread dot and a count badge in the page colour', () => {
   expect(html).toContain('>+3<');
   expect(html).toContain('background-color:#0e7490');
 });
+
+test('NavSearch: the sidebar Search box, aria-current and a ring when open', () => {
+  const { NavSearch } = require('../../src/renderer/components/nav-item');
+  const open = renderToStaticMarkup(React.createElement(NavSearch, { active: true }));
+  expect(open).toContain('aria-current="page"');
+  expect(open).toContain('box-shadow:inset 0 0 0 1.5px var(--accent-primary-alpha-30)');
+  expect(open).toContain('>Search<');
+  const closed = renderToStaticMarkup(React.createElement(NavSearch, {}));
+  expect(closed).not.toContain('aria-current');
+  expect(closed).toContain('color:var(--text-tertiary)');
+});

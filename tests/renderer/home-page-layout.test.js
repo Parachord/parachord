@@ -382,8 +382,9 @@ describe('design-audit bug fixes (#1382)', () => {
   test('Add-to-Playlist "Done" is readable, and the stop-sync option keeps its box after a hover', () => {
     // Button (components/button.js): secondary until something is picked.
     expect(app).toContain("React.createElement(Button, { variant: selectedPlaylistsForAdd.length > 0 ? 'primary' : 'secondary',");
-    // The stop-sync options are tiles with CSS hover, no JS that clears them.
-    expect(app).toContain("'bg-surface-inset border-line hover:bg-surface-hover'");
+    // The stop-sync options are OptionTiles (CSS hover, no JS that clears them).
+    expect(app).toContain("React.createElement(OptionTile, {");
+    expect(read('src/renderer/components/option-tile.js')).toContain("'bg-surface-inset border-line hover:bg-surface-hover'");
   });
 });
 

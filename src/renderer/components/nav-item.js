@@ -21,6 +21,7 @@
 // Props-driven; loads under plain Node.
 
 const { PAGE_COLORS, pageTint } = require('../lib/page-colors');
+const Icons = require('./icons');
 
 function NavItem({ page, label, icon: Icon, active = false, onClick, prominent = false, unread = false, count = 0, dropHighlight = false, dropProps }) {
   const e = React.createElement;
@@ -55,4 +56,24 @@ function NavItem({ page, label, icon: Icon, active = false, onClick, prominent =
     }, `+${count}`));
 }
 
-module.exports = { NavItem };
+// NavSearch: the sidebar's Search item, drawn as a search box (it opens the
+// Search page; typing happens there). An inset ring when Search is open.
+function NavSearch({ active = false, onClick }) {
+  const e = React.createElement;
+  return e('button', {
+    type: 'button',
+    onClick,
+    'aria-current': active ? 'page' : undefined,
+    className: 'w-full flex items-center gap-3 px-3 py-2 transition-colors rounded-lg text-sm no-drag',
+    style: {
+      backgroundColor: 'var(--hover-bg-default)',
+      color: active ? 'var(--text-primary)' : 'var(--text-tertiary)',
+      fontWeight: active ? 500 : 400,
+      boxShadow: active ? 'inset 0 0 0 1.5px var(--accent-primary-alpha-30)' : undefined,
+    },
+  },
+    e(Icons.Search, { className: 'w-5 h-5 flex-shrink-0' }),
+    'Search');
+}
+
+module.exports = { NavItem, NavSearch };

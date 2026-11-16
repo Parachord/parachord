@@ -2080,12 +2080,14 @@ const { WhatsNewDialog } = require('./components/whats-new-dialog');
 const { ArtistCard, ArtistCardSkeleton, RankBadge } = require('./components/artist-card');
 const { AlbumCard, AlbumRankBadge } = require('./components/album-card');
 const { TicketsButton } = require('./components/tickets-button');
-const { NavItem } = require('./components/nav-item');
+const { NavItem, NavSearch } = require('./components/nav-item');
 const { ConcertListSkeleton } = require('./components/concert-skeletons');
 const { PlaylistCard } = require('./components/playlist-card');
 const { ListenerCard, LISTENER_HEXAGON } = require('./components/listener-card');
 const { Badge } = require('./components/badge');
 const { Button, buttonClassName } = require('./components/button');
+const { OptionTile } = require('./components/option-tile');
+const { ListRow } = require('./components/list-row');
 const { HeaderControl } = require('./components/header-control');
 const { ToastRegion, NowPlayingAnnouncer } = require('./components/toast');
 const { SortMenu } = require('./components/sort-menu');
@@ -3354,6 +3356,14 @@ const createChatServiceFromPlugin = (plugin, config, toolContext, getContext) =>
 // Ten pages ≈ 200 items at Amazon's 20-per-page (they top out around 50),
 // so this is a guard, not a live limit.
 const EXPANSION_PAGE_CAP = 10;
+
+// A result card in the Shuffleupagus chat (a track, album, artist or the
+// playlist it made): one box on the dark chat panel, hover lighter.
+const CHAT_CARD_CLASS = 'transition-colors bg-white/5 hover:bg-white/10';
+const CHAT_CARD_STYLE = {
+  display: 'flex', alignItems: 'center', gap: '10px', padding: '8px', marginTop: '8px', marginBottom: '8px',
+  borderRadius: '8px', cursor: 'pointer', minWidth: 0, maxWidth: '100%'
+};
 
 const Parachord = () => {
   // Spinoff mode - radio-like playback of similar tracks
@@ -17723,28 +17733,10 @@ ${trackListXml}
 
     return React.createElement(CardButton, { label: artist && title ? `${title} by ${artist}` : (title || artist || "Result"),
       onActivate: handleClick,
-      style: {
-        display: 'flex',
-        alignItems: 'center',
-        gap: '10px',
-        padding: '8px',
-        marginTop: '8px',
-        marginBottom: '8px',
-        backgroundColor: 'rgba(255, 255, 255, 0.05)',
-        borderRadius: '8px',
-        cursor: 'pointer',
-        transition: 'background-color 0.15s',
-        minWidth: 0,
-        maxWidth: '100%'
-      },
-      onMouseEnter: (e) => {
-        e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
-        setIsHovered(true);
-      },
-      onMouseLeave: (e) => {
-        e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
-        setIsHovered(false);
-      }
+      className: CHAT_CARD_CLASS,
+      style: CHAT_CARD_STYLE,
+      onMouseEnter: () => setIsHovered(true),
+      onMouseLeave: () => setIsHovered(false)
     },
       // Thumbnail wrapper with hover play button
       React.createElement('div', {
@@ -18161,23 +18153,12 @@ ${trackListXml}
             addedAt: Date.now()
           });
         };
-        return React.createElement('button', { type: 'button', className: 'w-full text-left hover:!bg-[rgba(255,255,255,0.1)]',
+        return React.createElement(CardButton, {
           key,
-          onClick: handlePlaylistCardClick,
-          style: {
-            display: 'flex',
-            alignItems: 'center',
-            gap: '10px',
-            padding: '8px',
-            marginTop: '8px',
-            marginBottom: '8px',
-            backgroundColor: 'rgba(255, 255, 255, 0.05)',
-            borderRadius: '8px',
-            cursor: 'pointer',
-            transition: 'background-color 0.15s',
-            minWidth: 0,
-            maxWidth: '100%'
-          },
+          label: playlistName,
+          onActivate: handlePlaylistCardClick,
+          className: CHAT_CARD_CLASS,
+          style: CHAT_CARD_STYLE
         },
           // Playlist icon
           React.createElement('div', {
@@ -37351,19 +37332,7 @@ useEffect(() => {
             borderBottom: '1px solid var(--border-subtle)'
           }
         },
-          React.createElement('button', {
-            className: 'w-full flex items-center gap-3 px-3 py-2 cursor-pointer transition-colors rounded-lg text-sm',
-            style: {
-              backgroundColor: 'var(--hover-bg-default)',
-              color: activeView === 'search' ? 'var(--text-primary)' : 'var(--text-tertiary)',
-              fontWeight: activeView === 'search' ? '500' : '400',
-              ...(activeView === 'search' ? { boxShadow: 'inset 0 0 0 1.5px var(--accent-primary-alpha-30)' } : {})
-            },
-            onClick: () => navigateTo('search')
-          },
-            React.createElement(Icons.Search, { className: 'w-5 h-5 flex-shrink-0' }),
-            'Search'
-          )
+          React.createElement(NavSearch, { active: activeView === 'search', onClick: () => navigateTo('search') })
         ),
 
         // Scrollable navigation area
@@ -39267,15 +39236,16 @@ React.createElement('span', {
                   style: { maxHeight: '160px', overflowY: 'auto', backgroundColor: 'var(--bg-inset)', border: '1px solid var(--border-default)', borderRadius: '10px' }
                 },
                   concertsLocationSuggestions.map((suggestion, i) =>
-                    React.createElement('button', {
+                    React.createElement(ListRow, {
                       key: i,
+                      size: 'sm',
+                      divider: true,
+                      className: 'text-ink-secondary',
                       onClick: () => {
                         setConcertsLocationCoords({ lat: suggestion.lat, lng: suggestion.lng });
                         setConcertsLocation(suggestion.displayName);
                         setConcertsLocationSuggestions([]);
                       },
-                      className: 'w-full text-left transition-colors flex items-center gap-2 hover:!bg-[var(--hover-bg-default)]',
-                      style: { padding: '8px 12px', fontSize: '13px', color: 'var(--text-secondary)', borderTop: i > 0 ? '1px solid var(--border-subtle)' : 'none' },
                     },
                       React.createElement(Icons.MapPin, { className: 'w-4 h-4 flex-shrink-0', style: { color: 'var(--text-tertiary)' } }),
                       React.createElement('span', { className: 'truncate' }, suggestion.region)
@@ -42698,11 +42668,10 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                               onContextMenu: sourceMenuFor(resId)
                             };
                           }),
-                          renderTrigger: (t) => React.createElement('button', Object.assign({}, t, {
-                            type: 'button',
+                          renderTrigger: (t) => React.createElement(Button, Object.assign({}, t, {
+                            variant: 'text', tone: 'dark', size: 'sm',
                             onContextMenu: sourceMenuFor(currentResolverId),
-                            className: 'flex items-center gap-1.5 pl-0 pr-2 py-0.5 rounded transition-all hover:bg-white/10 cursor-pointer',
-                            style: { background: t.open ? 'rgba(255,255,255,0.1)' : 'transparent' },
+                            className: `!gap-1.5 !pl-0 !pr-2 !py-0.5 !rounded !font-normal${t.open ? ' !bg-white/10' : ''}`,
                             'aria-label': `Playing from ${resolver.name}. Switch source`,
                             'data-tooltip': 'Switch playback source',
                             'data-tooltip-variant': 'dark'
@@ -46398,7 +46367,7 @@ React.createElement('div', {
               style: { display: 'flex', flexDirection: 'column', gap: '10px' }
             },
               // Chrome Web Store button
-              React.createElement('button', {
+              React.createElement(OptionTile, {
                 onClick: () => {
                   const url = 'https://chromewebstore.google.com/detail/parachord/gibkgapadebfoillbakpgmgpnppjlnie';
                   if (window.electron?.shell?.openExternal) {
@@ -46407,43 +46376,18 @@ React.createElement('div', {
                     window.open(url, '_blank');
                   }
                 },
-                className: 'transition-colors',
-                style: {
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '12px',
-                  padding: '12px 16px',
-                  backgroundColor: 'var(--bg-secondary)',
-                  border: '1px solid var(--border-subtle)',
-                  borderRadius: '12px',
-                  cursor: 'pointer',
-                  width: '100%',
-                  textAlign: 'left'
-                }
-              },
-                React.createElement('div', {
-                  style: {
-                    width: '32px',
-                    height: '32px',
-                    flexShrink: 0
-                  }
-                },
-                  // Chrome logo - geometric 3-segment circle with blue center
-                  React.createElement('svg', { width: '32', height: '32', viewBox: '0 0 48 48' },
+                icon: React.createElement('svg', { width: '32', height: '32', viewBox: '0 0 48 48' },
                     React.createElement('path', { d: 'M24,24 L24,4 A20,20,0,0,1,41.32,34 Z', fill: '#EA4335' }),
                     React.createElement('path', { d: 'M24,24 L41.32,34 A20,20,0,0,1,6.68,34 Z', fill: '#FBBC04' }),
                     React.createElement('path', { d: 'M24,24 L6.68,34 A20,20,0,0,1,24,4 Z', fill: '#34A853' }),
                     React.createElement('circle', { cx: '24', cy: '24', r: '11', fill: 'white' }),
                     React.createElement('circle', { cx: '24', cy: '24', r: '8', fill: '#4285F4' })
-                  )
-                ),
-                React.createElement('div', null,
-                  React.createElement('div', { style: { fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)' } }, 'Chrome Web Store'),
-                  React.createElement('div', { style: { fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '1px' } }, 'For Chrome, Edge, and Chromium browsers')
-                )
-              ),
+                  ),
+                title: 'Chrome Web Store',
+                description: 'For Chrome, Edge, and Chromium browsers'
+              }),
               // Firefox Add-ons button
-              React.createElement('button', {
+              React.createElement(OptionTile, {
                 onClick: () => {
                   const url = 'https://addons.mozilla.org/en-US/firefox/addon/parachord/';
                   if (window.electron?.shell?.openExternal) {
@@ -46452,39 +46396,14 @@ React.createElement('div', {
                     window.open(url, '_blank');
                   }
                 },
-                className: 'transition-colors',
-                style: {
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '12px',
-                  padding: '12px 16px',
-                  backgroundColor: 'var(--bg-secondary)',
-                  border: '1px solid var(--border-subtle)',
-                  borderRadius: '12px',
-                  cursor: 'pointer',
-                  width: '100%',
-                  textAlign: 'left'
-                }
-              },
-                React.createElement('div', {
-                  style: {
-                    width: '32px',
-                    height: '32px',
-                    flexShrink: 0
-                  }
-                },
-                  // Official Firefox 2019 logo from Mozilla protocol-assets
-                  React.createElement('img', {
+                icon: React.createElement('img', {
                     width: '32',
                     height: '32',
                     src: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='512' height='512' viewBox='0 0 512 512'%3E%3Cdefs%3E%3ClinearGradient id='a' x1='446.9' y1='76.85' x2='47.94' y2='461.77' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='.05' stop-color='%23fff44f'/%3E%3Cstop offset='.11' stop-color='%23ffe847'/%3E%3Cstop offset='.22' stop-color='%23ffc830'/%3E%3Cstop offset='.37' stop-color='%23ff980e'/%3E%3Cstop offset='.4' stop-color='%23ff8b16'/%3E%3Cstop offset='.46' stop-color='%23ff672a'/%3E%3Cstop offset='.53' stop-color='%23ff3647'/%3E%3Cstop offset='.7' stop-color='%23e31587'/%3E%3C/linearGradient%3E%3CradialGradient id='b' cx='428.46' cy='55.06' r='501.01' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='.13' stop-color='%23ffbd4f'/%3E%3Cstop offset='.19' stop-color='%23ffac31'/%3E%3Cstop offset='.25' stop-color='%23ff9d17'/%3E%3Cstop offset='.28' stop-color='%23ff980e'/%3E%3Cstop offset='.4' stop-color='%23ff563b'/%3E%3Cstop offset='.47' stop-color='%23ff3750'/%3E%3Cstop offset='.71' stop-color='%23f5156c'/%3E%3Cstop offset='.78' stop-color='%23eb0878'/%3E%3Cstop offset='.86' stop-color='%23e50080'/%3E%3C/radialGradient%3E%3CradialGradient id='c' cx='245.39' cy='259.88' r='501.01' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='.3' stop-color='%23960e18'/%3E%3Cstop offset='.35' stop-color='%23b11927' stop-opacity='.74'/%3E%3Cstop offset='.43' stop-color='%23db293d' stop-opacity='.34'/%3E%3Cstop offset='.5' stop-color='%23f5334b' stop-opacity='.09'/%3E%3Cstop offset='.53' stop-color='%23ff3750' stop-opacity='0'/%3E%3C/radialGradient%3E%3CradialGradient id='d' cx='305.8' cy='-58.64' r='362.96' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='.13' stop-color='%23fff44f'/%3E%3Cstop offset='.25' stop-color='%23ffdc3e'/%3E%3Cstop offset='.51' stop-color='%23ff9d12'/%3E%3Cstop offset='.53' stop-color='%23ff980e'/%3E%3C/radialGradient%3E%3CradialGradient id='e' cx='189.98' cy='390.75' r='238.55' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='.35' stop-color='%233a8ee6'/%3E%3Cstop offset='.47' stop-color='%235c79f0'/%3E%3Cstop offset='.67' stop-color='%239059ff'/%3E%3Cstop offset='1' stop-color='%23c139e6'/%3E%3C/radialGradient%3E%3CradialGradient id='f' cx='252.16' cy='201.25' r='126.48' gradientTransform='matrix(.97 -.24 .28 1.14 -48.36 31.43)' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='.21' stop-color='%239059ff' stop-opacity='0'/%3E%3Cstop offset='.28' stop-color='%238c4ff3' stop-opacity='.06'/%3E%3Cstop offset='.75' stop-color='%237716a8' stop-opacity='.45'/%3E%3Cstop offset='.97' stop-color='%236e008b' stop-opacity='.6'/%3E%3C/radialGradient%3E%3CradialGradient id='g' cx='239.06' cy='34.56' r='171.62' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='0' stop-color='%23ffe226'/%3E%3Cstop offset='.12' stop-color='%23ffdb27'/%3E%3Cstop offset='.3' stop-color='%23ffc82a'/%3E%3Cstop offset='.5' stop-color='%23ffa930'/%3E%3Cstop offset='.73' stop-color='%23ff7e37'/%3E%3Cstop offset='.79' stop-color='%23ff7139'/%3E%3C/radialGradient%3E%3CradialGradient id='h' cx='373.96' cy='-74.29' r='732.21' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='.11' stop-color='%23fff44f'/%3E%3Cstop offset='.46' stop-color='%23ff980e'/%3E%3Cstop offset='.62' stop-color='%23ff5634'/%3E%3Cstop offset='.72' stop-color='%23ff3647'/%3E%3Cstop offset='.9' stop-color='%23e31587'/%3E%3C/radialGradient%3E%3CradialGradient id='i' cx='304.59' cy='7.07' r='536.37' gradientTransform='matrix(.1 .99 -.65 .07 277.32 -296.33)' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='0' stop-color='%23fff44f'/%3E%3Cstop offset='.06' stop-color='%23ffe847'/%3E%3Cstop offset='.17' stop-color='%23ffc830'/%3E%3Cstop offset='.3' stop-color='%23ff980e'/%3E%3Cstop offset='.36' stop-color='%23ff8b16'/%3E%3Cstop offset='.45' stop-color='%23ff672a'/%3E%3Cstop offset='.57' stop-color='%23ff3647'/%3E%3Cstop offset='.74' stop-color='%23e31587'/%3E%3C/radialGradient%3E%3CradialGradient id='j' cx='235.02' cy='98.12' r='457.12' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='.14' stop-color='%23fff44f'/%3E%3Cstop offset='.48' stop-color='%23ff980e'/%3E%3Cstop offset='.59' stop-color='%23ff5634'/%3E%3Cstop offset='.66' stop-color='%23ff3647'/%3E%3Cstop offset='.9' stop-color='%23e31587'/%3E%3C/radialGradient%3E%3CradialGradient id='k' cx='355.69' cy='124.88' r='500.32' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='.09' stop-color='%23fff44f'/%3E%3Cstop offset='.23' stop-color='%23ffe141'/%3E%3Cstop offset='.51' stop-color='%23ffaf1e'/%3E%3Cstop offset='.63' stop-color='%23ff980e'/%3E%3C/radialGradient%3E%3ClinearGradient id='l' x1='442.1' y1='74.79' x2='102.64' y2='414.26' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='.17' stop-color='%23fff44f' stop-opacity='.8'/%3E%3Cstop offset='.27' stop-color='%23fff44f' stop-opacity='.63'/%3E%3Cstop offset='.49' stop-color='%23fff44f' stop-opacity='.22'/%3E%3Cstop offset='.6' stop-color='%23fff44f' stop-opacity='0'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M478.71 166.38c-10.44-25.13-31.6-52.26-48.21-60.83 13.52 26.51 21.34 53.1 24.33 72.94 0 0 0 .14.05.4C427.71 111.15 381.63 83.83 344 24.36c-1.91-3-3.81-6-5.67-9.21-1.05-1.81-1.9-3.45-2.64-5A43.73 43.73 0 0 1 332.1.68a.63.63 0 0 0-.54-.65.86.86 0 0 0-.45 0 .47.47 0 0 0-.11.07c-.06 0-.12.07-.18.09l.1-.13c-60.37 35.36-80.85 100.77-82.73 133.5A120.27 120.27 0 0 0 182 159.05a71.11 71.11 0 0 0-6.22-4.7 111.39 111.39 0 0 1-.67-58.74c-24.69 11.25-43.89 29-57.85 44.71h-.11c-9.53-12.07-8.86-51.88-8.32-60.19-.11-.52-7.1 3.63-8 4.26a174.74 174.74 0 0 0-23.49 20.12 210.18 210.18 0 0 0-22.44 26.91 202.86 202.86 0 0 0-32.25 72.82c-.11.52-.21 1.06-.32 1.59-.45 2.11-2.08 12.7-2.37 15v.53A229.1 229.1 0 0 0 16 254.52v1.23c0 132.72 107.6 240.32 240.32 240.32 118.87 0 217.56-86.3 236.89-199.66.4-3.07.73-6.17 1.09-9.27 4.78-41.22-.53-84.54-15.59-120.76zm-277 188.12c1.12.53 2.18 1.12 3.33 1.64l.16.1c-1.15-.56-2.32-1.14-3.48-1.74zm55-144.95zM454.9 179v-.23.26z' fill='url(%23a)'/%3E%3Cpath d='M478.71 166.38c-10.44-25.13-31.6-52.26-48.21-60.83 13.52 26.51 21.34 53.1 24.33 72.94v.49c22.68 61.48 10.32 124-7.48 162.2-27.54 59.1-94.21 119.68-198.58 116.73-112.67-3.2-212-86.91-230.55-196.46-3.38-17.29 0-26.06 1.7-40.09-2.07 10.81-2.86 13.94-3.89 33.16v1.23c0 132.72 107.6 240.32 240.32 240.32 118.87 0 217.56-86.3 236.89-199.66.4-3.07.73-6.17 1.09-9.27 4.75-41.22-.56-84.54-15.62-120.76z' fill='url(%23b)'/%3E%3Cpath d='M478.71 166.38c-10.44-25.13-31.6-52.26-48.21-60.83 13.52 26.51 21.34 53.1 24.33 72.94v.49c22.68 61.48 10.32 124-7.48 162.2-27.54 59.1-94.21 119.68-198.58 116.73-112.67-3.2-212-86.91-230.55-196.46-3.38-17.29 0-26.06 1.7-40.09-2.07 10.81-2.86 13.94-3.89 33.16v1.23c0 132.72 107.6 240.32 240.32 240.32 118.87 0 217.56-86.3 236.89-199.66.4-3.07.73-6.17 1.09-9.27 4.75-41.22-.56-84.54-15.62-120.76z' fill='url(%23c)'/%3E%3Cpath d='M361.92 194.62c.53.37 1 .74 1.5 1.11a130.49 130.49 0 0 0-22.32-29.12C266.4 91.91 321.52 4.63 330.81.19l.1-.13c-60.37 35.36-80.85 100.77-82.73 133.5 2.8-.19 5.59-.43 8.44-.43 45.05 0 84.29 24.78 105.3 61.49z' fill='url(%23d)'/%3E%3Cpath d='M256.77 209.54c-.39 6-21.51 26.6-28.9 26.6-68.34 0-79.43 41.34-79.43 41.34 3 34.82 27.26 63.49 56.61 78.66 1.34.69 2.69 1.31 4 1.93 2.35 1 4.71 2 7.06 2.89a106.88 106.88 0 0 0 31.27 6c119.78 5.62 143-143.22 56.55-186.44 22.13-3.85 45.11 5.06 57.94 14.07-21-36.71-60.25-61.49-105.3-61.49-2.85 0-5.64.24-8.44.43A120.27 120.27 0 0 0 182 159.05c3.67 3.11 7.81 7.25 16.52 15.83 16.34 16.12 58.16 32.71 58.25 34.66z' fill='url(%23e)'/%3E%3Cpath d='M256.77 209.54c-.39 6-21.51 26.6-28.9 26.6-68.34 0-79.43 41.34-79.43 41.34 3 34.82 27.26 63.49 56.61 78.66 1.34.69 2.69 1.31 4 1.93 2.35 1 4.71 2 7.06 2.89a106.88 106.88 0 0 0 31.27 6c119.78 5.62 143-143.22 56.55-186.44 22.13-3.85 45.11 5.06 57.94 14.07-21-36.71-60.25-61.49-105.3-61.49-2.85 0-5.64.24-8.44.43A120.27 120.27 0 0 0 182 159.05c3.67 3.11 7.81 7.25 16.52 15.83 16.34 16.12 58.16 32.71 58.25 34.66z' fill='url(%23f)'/%3E%3Cpath d='M170.83 151.06c1.95 1.26 3.55 2.32 5 3.29a111.39 111.39 0 0 1-.67-58.74c-24.69 11.25-43.89 29-57.85 44.71 1.13-.03 35.99-.66 53.52 10.74z' fill='url(%23g)'/%3E%3Cpath d='M18.22 261.45C36.77 371 136.1 454.71 248.85 457.91c104.37 2.95 171-57.63 198.58-116.73 17.8-38.21 30.16-100.72 7.48-162.2v-.46c0 .06 0 .14.05.4 8.52 55.67-19.79 109.6-64.05 146.07a7.3 7.3 0 0 0-.13.31c-86.25 70.23-168.78 42.37-185.49 31-1.16-.56-2.33-1.14-3.49-1.74 50.29-24-71.06-69.85-66.61-109.14-42.45 0-56.93-35.82-56.93-35.82s38.12-27.18 88.36-3.54c46.53 21.9 90.23 3.55 90.23 3.54-.09-1.95-41.91-18.59-58.22-34.66-8.71-8.58-12.85-12.72-16.52-15.83a71.11 71.11 0 0 0-6.22-4.7c-1.43-1-3-2-5-3.29-17.53-11.4-52.39-10.77-53.54-10.74h-.11c-9.53-12.07-8.86-51.88-8.32-60.19-.11-.52-7.1 3.63-8 4.26a174.74 174.74 0 0 0-23.49 20.12 210.18 210.18 0 0 0-22.44 26.91 202.86 202.86 0 0 0-32.25 72.82c-.19.46-8.74 37.79-4.52 57.15z' fill='url(%23h)'/%3E%3Cpath d='M341.1 166.61a130.49 130.49 0 0 1 22.32 29.12 46.36 46.36 0 0 1 3.6 3C421.5 248.89 393 319.9 390.83 325c44.26-36.47 72.57-90.4 64.05-146.07-27.17-67.78-73.25-95.1-110.88-154.57-1.91-3-3.81-6-5.67-9.21-1.05-1.81-1.9-3.45-2.64-5A43.73 43.73 0 0 1 332.1.68a.63.63 0 0 0-.54-.65.86.86 0 0 0-.45 0 .47.47 0 0 0-.11.07c-.06 0-.12.07-.18.09-9.3 4.44-64.42 91.72 10.28 166.42z' fill='url(%23i)'/%3E%3Cpath d='M367 198.68a46.36 46.36 0 0 0-3.6-3c-.49-.37-1-.74-1.5-1.11-12.83-9-35.81-17.92-57.94-14.07 86.44 43.22 63.23 192.06-56.55 186.44a106.88 106.88 0 0 1-31.27-6c-2.35-.88-4.71-1.85-7.06-2.89-1.36-.62-2.71-1.24-4-1.93l.16.1c16.71 11.4 99.24 39.26 185.49-31 0 0 .05-.13.13-.31C393 319.9 421.5 248.89 367 198.68z' fill='url(%23j)'/%3E%3Cpath d='M148.44 277.48s11.09-41.34 79.43-41.34c7.39 0 28.51-20.62 28.9-26.6s-43.7 18.36-90.23-3.54c-50.24-23.64-88.36 3.54-88.36 3.54s14.48 35.82 56.93 35.82c-4.45 39.29 16.32 85.1 66.61 109.14 1.12.53 2.18 1.12 3.33 1.64-29.35-15.14-53.58-43.84-56.61-78.66z' fill='url(%23k)'/%3E%3Cpath d='M478.71 166.38c-10.44-25.13-31.6-52.26-48.21-60.83 13.52 26.51 21.34 53.1 24.33 72.94 0 0 0 .14.05.4C427.71 111.15 381.63 83.83 344 24.36c-1.91-3-3.81-6-5.67-9.21-1.05-1.81-1.9-3.45-2.64-5A43.73 43.73 0 0 1 332.1.68a.63.63 0 0 0-.54-.65.86.86 0 0 0-.45 0 .47.47 0 0 0-.11.07c-.06 0-.12.07-.18.09l.1-.13c-60.37 35.36-80.85 100.77-82.73 133.5 2.8-.19 5.59-.43 8.44-.43 45.05 0 84.29 24.78 105.3 61.49-12.83-9-35.81-17.92-57.94-14.07 86.44 43.22 63.23 192.06-56.55 186.44a106.88 106.88 0 0 1-31.27-6c-2.35-.88-4.71-1.85-7.06-2.89-1.36-.62-2.71-1.24-4-1.93l.16.1c-1.16-.56-2.33-1.14-3.49-1.74 1.12.53 2.18 1.12 3.33 1.64-29.41-15.17-53.64-43.87-56.67-78.69 0 0 11.09-41.34 79.43-41.34 7.39 0 28.51-20.62 28.9-26.6-.09-1.95-41.91-18.59-58.22-34.66-8.71-8.58-12.85-12.72-16.52-15.83a71.11 71.11 0 0 0-6.22-4.7 111.39 111.39 0 0 1-.67-58.74c-24.69 11.25-43.89 29-57.85 44.71h-.11c-9.53-12.07-8.86-51.88-8.32-60.19-.11-.52-7.1 3.63-8 4.26a174.74 174.74 0 0 0-23.49 20.12 210.18 210.18 0 0 0-22.44 26.91 202.86 202.86 0 0 0-32.25 72.82c-.11.52-.21 1.06-.32 1.59-.45 2.11-2.49 12.85-2.77 15.15 0 .18 0-.17 0 0A278.84 278.84 0 0 0 16 254.52v1.23c0 132.72 107.6 240.32 240.32 240.32 118.87 0 217.56-86.3 236.89-199.66.4-3.07.73-6.17 1.09-9.27 4.78-41.22-.53-84.54-15.59-120.76zm-23.84 12.34v.26z' fill='url(%23l)'/%3E%3C/svg%3E"
-                  })
-                ),
-                React.createElement('div', null,
-                  React.createElement('div', { style: { fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)' } }, 'Firefox Add-ons'),
-                  React.createElement('div', { style: { fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '1px' } }, 'For Mozilla Firefox')
-                )
-              )
+                  }),
+                title: 'Firefox Add-ons',
+                description: 'For Mozilla Firefox'
+              })
             )
           )
         ),
@@ -47134,7 +47053,9 @@ React.createElement('div', {
                 showSidebarBadge('playlists', tracks.length);
               };
 
-              return React.createElement('button', { type: 'button', 'aria-pressed': selectedPlaylistsForAdd.includes(playlist.id),
+              return React.createElement(ListRow, { 'aria-pressed': selectedPlaylistsForAdd.includes(playlist.id),
+                divider: true,
+                state: isAdded ? 'added' : isDropTarget ? 'drop' : undefined,
                 key: playlist.id,
                 onClick: () => {
                   // Toggle selection instead of immediately adding
@@ -47192,13 +47113,6 @@ React.createElement('div', {
                   setDraggingTrackForPlaylist(null);
                   setDropTargetPlaylistId(null);
                 },
-                className: `w-full text-left flex items-center gap-3 px-5 py-2.5 cursor-pointer transition-all border-b border-line-light ${
-                  isAdded
-                    ? 'bg-tint-success'
-                    : isDropTarget
-                      ? 'bg-accent-tint border-l-4 border-l-accent pl-4'
-                      : 'hover:bg-surface-hover'
-                }`
               },
                 // Playlist thumbnail (gray square)
                 React.createElement('div', {
@@ -47440,16 +47354,11 @@ React.createElement('div', { style: { marginTop: '12px' } },
                   }
                 }, id3SelectedArt.year)
               ),
-              React.createElement('button', {
-                onClick: () => setId3SelectedArt(null),
-                style: {
-                  padding: '4px',
-                  color: 'var(--text-success)',
-                  backgroundColor: 'transparent',
-                  border: 'none',
-                  cursor: 'pointer'
-                }
-              }, React.createElement(Icons.X, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }))
+              React.createElement(Button, {
+                variant: 'icon', size: 'sm', 'aria-label': 'Clear the chosen art',
+                className: '!text-ink-success',
+                onClick: () => setId3SelectedArt(null)
+              }, React.createElement(Icons.X, { className: 'w-4 h-4' }))
             ),
 
             // Art suggestions grid - refined
@@ -47459,16 +47368,9 @@ React.createElement('div', { style: { marginTop: '12px' } },
               id3ArtSuggestions.map((art, idx) =>
                 React.createElement('button', {
                   key: art.releaseId || idx,
+                  type: 'button',
                   onClick: () => setId3SelectedArt(art),
-                  className: 'relative group transition-all',
-                  style: {
-                    borderRadius: '8px',
-                    overflow: 'hidden',
-                    border: '2px solid transparent',
-                    backgroundColor: 'transparent',
-                    padding: '0',
-                    cursor: 'pointer'
-                  },
+                  className: 'relative group block rounded-lg overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
                   'data-tooltip': `${art.releaseName} by ${art.artistName}${art.year ? ` (${art.year})` : ''}`
                 },
                   React.createElement('img', {
@@ -48450,14 +48352,9 @@ React.createElement('div', {
     // option tiles in the body (hover in CSS), Cancel in the footer.
     stopSyncDialog.open && (() => {
       const close = () => setStopSyncDialog({ open: false, providerId: null });
-      const option = (key, onClick, title, sub, danger) => React.createElement('button', {
-        key, type: 'button', onClick,
-        className: `w-full text-left rounded-xl border px-4 py-3.5 transition-colors ${danger
-          ? 'bg-tint-danger border-line-danger hover:bg-tint-danger-hover'
-          : 'bg-surface-inset border-line hover:bg-surface-hover'}`
-      },
-        React.createElement('div', { className: danger ? 'text-ink-danger' : 'text-ink-primary', style: { fontSize: '14px', fontWeight: 500 } }, title),
-        React.createElement('div', { className: 'text-ink-secondary', style: { fontSize: '12px', marginTop: '4px' } }, sub));
+      const option = (key, onClick, title, sub, danger) => React.createElement(OptionTile, {
+        key, onClick, title, description: sub, tone: danger ? 'danger' : undefined
+      });
       return React.createElement(Modal, {
         size: 'sm',
         title: 'Stop syncing?',
@@ -49000,7 +48897,7 @@ firstRunTutorial.step === 'complete' && (() => {
           } else if (playbackContext.type === 'album' && playbackContext.artist) {
             // handleCollectionAlbumClick has its own "already viewing" check
             handleCollectionAlbumClick({
-              'data-tooltip': playbackContext.name,
+              title: playbackContext.name,
               artist: playbackContext.artist
             });
           } else if (playbackContext.type === 'search') {

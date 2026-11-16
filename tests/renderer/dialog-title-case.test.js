@@ -6,7 +6,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const NAMES = /Apple Music|Amazon Music|Spotify|Parachord|Last\.fm|ListenBrainz|Recent Loves|Fresh Drops|Critical Darlings|Pop of the Tops|Shuffleupagus|Collection|Plug-Ins/g;
+const NAMES = /Apple Music|Amazon Music|Spotify|Parachord|Last\.fm|ListenBrainz|Recent Loves|Fresh Drops|Critical Darlings|Pop of the Tops|Shuffleupagus|Collection|Plug-Ins|Chrome Web Store|Firefox Add-ons/g;
 // Sample playlist data, not titles.
 const SAMPLES = new Set(['Midnight Dreams', 'Electric Pulse', 'Ocean Breeze', 'Urban Nights', 'Forest Path']);
 

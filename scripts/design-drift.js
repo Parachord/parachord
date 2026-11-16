@@ -77,7 +77,8 @@ const COPY_HOMES = {
   handBuiltButtons: ['components/button.js', 'components/header-control.js', 'components/card-button.js', 'components/filter-chips.js',
     'components/menu.js', 'components/sort-menu.js', 'components/fields.js', 'components/collection-radio-button.js',
     'components/tickets-button.js', 'components/hero-tabs.js', 'components/toast.js', 'components/reason-badge.js',
-    'components/album-card.js', 'components/artist-card.js', 'components/listener-card.js', 'components/card-art.js'],
+    'components/album-card.js', 'components/artist-card.js', 'components/listener-card.js', 'components/card-art.js',
+    'components/nav-item.js', 'components/option-tile.js', 'components/list-row.js'],
 };
 
 function rendererFiles(dir = RENDERER, out = []) {
