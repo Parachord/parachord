@@ -20,7 +20,7 @@ const path = require('path');
 const { Menu } = require('../../src/renderer/components/menu');
 
 const ROOT = path.join(__dirname, '../..');
-const app = fs.readFileSync(path.join(ROOT, 'src/renderer/app.js'), 'utf8');
+const app = require('../helpers/renderer-source').appWithPages(); // app.js and the dialogs moved out of it (#1451)
 const main = fs.readFileSync(path.join(ROOT, 'main.js'), 'utf8');
 const coll = fs.readFileSync(path.join(ROOT, 'src/renderer/components/collection-page.js'), 'utf8');
 
