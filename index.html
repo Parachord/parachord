@@ -110,7 +110,38 @@
       /* Shuffleupagus's own gradient (its avatar, Generate, the AI badge). */
       --ai-gradient: linear-gradient(135deg, #9333ea 0%, #c026d3 100%);
       /* The Playlists hero's gradient, for a playlist page still loading. */
-      --playlists-gradient: linear-gradient(to bottom right, #f43f5e, #ec4899, #c026d3);
+      /* Each page's colour (lib/page-colors.js points here): --page-<id>
+         for its text, icons and tint, -fill for a filled button with white
+         text (>= 4.5:1), -hero for its hero. The same in both themes. Home
+         is the accent, so its hero is mixed from --accent-base. */
+      --page-home: var(--accent-primary);
+      --page-home-fill: var(--accent-fill);
+      --page-home-hero: linear-gradient(to bottom right, color-mix(in srgb, var(--accent-base) 79%, white), var(--accent-base), color-mix(in srgb, var(--accent-base) 50%, #2563eb));
+      --page-playlists: #ec4899;
+      --page-playlists-fill: #be185d;
+      --page-playlists-hero: linear-gradient(to bottom right, #f43f5e, #ec4899, #c026d3);
+      --page-library: #06b6d4;
+      --page-library-fill: #0e7490;
+      --page-library-hero: linear-gradient(to bottom right, #06b6d4, #0891b2, #1d4ed8);
+      --page-history: #3b82f6;
+      --page-history-fill: #1d4ed8;
+      --page-history-hero: linear-gradient(to bottom right, #0ea5e9, #3b82f6, #4f46e5);
+      --page-new-releases: #22c55e;
+      --page-new-releases-fill: #15803d;
+      --page-new-releases-hero: linear-gradient(to bottom right, #84cc16, #22c55e, #059669);
+      --page-recommendations: #f59e0b;
+      --page-recommendations-fill: #b45309;
+      --page-recommendations-hero: linear-gradient(to bottom right, #fbbf24, #f59e0b, #f97316);
+      --page-discover: #f97316;
+      --page-discover-fill: #c2410c;
+      --page-discover-hero: linear-gradient(to bottom right, #f97316, #ec4899, #9333ea);
+      --page-critics-picks: #ef4444;
+      --page-critics-picks-fill: #b91c1c;
+      --page-critics-picks-hero: linear-gradient(to bottom right, #ef4444, #dc2626, #be123c);
+      --page-concerts: #10c9b4;
+      --page-concerts-fill: #0f766e;
+      --page-concerts-hero: linear-gradient(to bottom right, #14b8a6, #14b8a6, #0891b2);
+      --playlists-gradient: var(--page-playlists-hero);
       /* The playbar's sliders. The playbar is dark in both themes, so the
          accent there is the dark-mode accent in both. */
       --playbar-accent: color-mix(in srgb, var(--accent-base) 61%, white);
@@ -880,6 +911,17 @@
     .menu-item { background: transparent; color: var(--tooltip-text); }
     .menu-item:hover, .menu-item:focus { background: var(--tooltip-hover); outline: none; }
     .menu-item:focus-visible { box-shadow: inset 0 0 0 2px var(--accent-primary); }
+
+    /* A page's hero background (PAGE_COLORS[id].hero is this class). */
+    .page-hero-bg-home { background-image: var(--page-home-hero); }
+    .page-hero-bg-playlists { background-image: var(--page-playlists-hero); }
+    .page-hero-bg-library { background-image: var(--page-library-hero); }
+    .page-hero-bg-history { background-image: var(--page-history-hero); }
+    .page-hero-bg-new-releases { background-image: var(--page-new-releases-hero); }
+    .page-hero-bg-recommendations { background-image: var(--page-recommendations-hero); }
+    .page-hero-bg-discover { background-image: var(--page-discover-hero); }
+    .page-hero-bg-critics-picks { background-image: var(--page-critics-picks-hero); }
+    .page-hero-bg-concerts { background-image: var(--page-concerts-hero); }
 
     .tooltip-container {
       position: relative;

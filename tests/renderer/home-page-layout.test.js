@@ -164,14 +164,15 @@ describe('render', () => {
     // The pages' heroes are the shared PageHero (components/page-hero.js).
     expect(require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/components/page-hero.js'), 'utf8')).toContain("const COLLAPSED_TITLE_STYLE = { textShadow: 'var(--hero-text-shadow-bar)', letterSpacing: '0.2em', textTransform: 'uppercase' };");
     expect(app).toContain("React.createElement(NavItem, { page: 'home', label: 'Home', icon: Icons.Home, prominent: true, active: activeView === 'home'");
-    expect(require('../../src/renderer/lib/page-colors').PAGE_COLORS.home.color).toBe('var(--accent-primary)');
+    expect(require('../../src/renderer/lib/page-colors').PAGE_COLORS.home.color).toBe('var(--page-home)');
+    expect(fs.readFileSync(path.join(__dirname, '../../index.html'), 'utf8')).toContain('--page-home: var(--accent-primary);');
     expect(fs.readFileSync(path.join(__dirname, '../../index.html'), 'utf8')).toMatch(/--accent-base: #7c3aed;[\s\S]*--accent-primary: var\(--accent-base\);/);
     const html = render({});
     const hero = html.slice(html.indexOf('data-home-hero-banner'), html.indexOf('scrollable-content'));
     expect(html.indexOf('data-home-hero-banner')).toBeGreaterThan(-1);
     expect(html.indexOf('data-home-hero-banner')).toBeLessThan(html.indexOf('scrollable-content'));
     expect(hero).toMatch(/^data-home-hero-banner=""[^>]*style="height:80px;flex-shrink:0;overflow:hidden"/);
-    expect(hero).toContain('class="absolute inset-0 bg-gradient-to-br from-purple-500 via-violet-600 to-indigo-600"');
+    expect(hero).toContain('class="absolute inset-0 page-hero-bg-home"');
     expect(hero).toMatch(/<h1 class="text-2xl font-light text-white" style="text-shadow:var\(--hero-text-shadow-bar\);letter-spacing:0\.2em;text-transform:uppercase">Home<\/h1>/);
     // The hero replaces the macOS title-bar band, and the greeting is no longer a second h1.
     expect(html).not.toContain('data-home-titlebar');

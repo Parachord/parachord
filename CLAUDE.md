@@ -148,7 +148,7 @@ Each rule below exists because the audit found its absence. Read the audit's are
   - White text never sits on `var(--accent-primary)` (it's `#a78bfa` in dark mode): fills with white text use `--accent-fill` / `--on-accent` (`bg-accent-fill text-ink-on-accent`).
   - Status text uses `--text-success/-warning/-danger/-info`; white-text status fills use `--fill-*`; a status note's faint background and border use `--tint-*` / `--border-success/-warning/-info/-danger`. Never their own hex or `rgba()` values.
   - The accent is one value, `--accent-base`: every accent token is `color-mix()`ed from it. Never write a purple (or an `rgba()` of one) anywhere else.
-  - A page's colour comes from `PAGE_COLORS` (`src/renderer/lib/page-colors.js`); a service's from its plugin's `resolver.color`. Never a hard-coded copy.
+  - A page's colour comes from `PAGE_COLORS` (`src/renderer/lib/page-colors.js`), which names `index.html`'s `--page-<id>` / `-fill` / `-hero` variables (Home's are the accent's); a service's from its plugin's `resolver.color`. Never a hard-coded copy.
   - The playbar, queue drawer and AI panels are dark in both themes: they use `--surface-dark*`, never page tokens.
 - **Stay on the scales.**
   - Type: 11 · 12 · 13 · 14 · 16 · 20 · 24 · 28 · 48px. Weights as numbers.

@@ -17,13 +17,13 @@ const R = path.join(__dirname, '../../src/renderer');
 
 test('one seller: a teal link to it, named for the act', () => {
   const html = h({ sources: [{ source: 'songkick', label: 'Songkick', ticketUrl: 'https://s' }], artist: 'Hovvdy' });
-  expect(html).toMatch(/^<a href="https:\/\/s" target="_blank" rel="noopener noreferrer" aria-label="Tickets for Hovvdy"[^>]*style="background-color:#10c9b4;color:var\(--on-accent\)"[^>]*>Tickets<\/a>$/);
+  expect(html).toMatch(/^<a href="https:\/\/s" target="_blank" rel="noopener noreferrer" aria-label="Tickets for Hovvdy"[^>]*style="background-color:var\(--page-concerts\);color:var\(--on-accent\)"[^>]*>Tickets<\/a>$/);
 });
 
 test('several sellers: the shared menu trigger, closed', () => {
   const html = h({ sources: [{ source: 'a', ticketUrl: 'https://a' }, { source: 'b', ticketUrl: 'https://b' }], artist: 'X' });
   expect(html).toMatch(/<button[^>]*aria-haspopup="menu"[^>]*aria-expanded="false"/);
-  expect(html).toContain('background-color:#10c9b4;color:var(--on-accent)');
+  expect(html).toContain('background-color:var(--page-concerts);color:var(--on-accent)');
   expect(html).not.toContain('https://a');
 });
 

@@ -8,21 +8,32 @@ const lum = (h) => {
   return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
 };
 const onWhite = (h) => 1.05 / (lum(h) + 0.05);
-const hue = (cls) => cls.match(/from-([a-z]+)-/)[1];
 
-test('every page has a colour, a tint, a white-text fill and a hero', () => {
+// The colours live in index.html (--page-<id>, -fill, -hero); the map names them.
+const html = fs.readFileSync(path.join(__dirname, '../../index.html'), 'utf8');
+const token = (name) => (html.match(new RegExp(`\\s${name}:\\s*([^;]+);`)) || [])[1];
+const id = (view) => view;
+
+test('every page has a colour, a tint, a white-text fill and a hero, all index.html variables', () => {
   for (const [view, p] of Object.entries(PAGE_COLORS)) {
-    expect(p.color).toBeTruthy();
-    expect(p.hero).toMatch(/^bg-gradient-to-br from-[a-z]+-\d+ via-[a-z]+-\d+ to-[a-z]+-\d+$/);
-    expect(pageTint(view)).not.toBe('transparent');
-    if (p.fill.startsWith('#')) expect(onWhite(p.fill)).toBeGreaterThanOrEqual(4.5);
+    expect(p.color).toBe(`var(--page-${id(view)})`);
+    expect(p.fill).toBe(`var(--page-${id(view)}-fill)`);
+    expect(p.hero).toBe(`page-hero-bg-${id(view)}`);
+    expect(html).toContain(`.page-hero-bg-${id(view)} { background-image: var(--page-${id(view)}-hero); }`);
+    expect(token(`--page-${id(view)}-hero`)).toMatch(/^linear-gradient\(to bottom right, /);
+    expect(pageTint(view)).toBe(`color-mix(in srgb, var(--page-${id(view)}) 10%, transparent)`);
+    const fill = token(`--page-${id(view)}-fill`);
+    if (fill.startsWith('#')) expect(onWhite(fill)).toBeGreaterThanOrEqual(4.5);
   }
+  // Home is the accent: its colours and hero are mixed from --accent-base.
+  expect(token('--page-home')).toBe('var(--accent-primary)');
+  expect(token('--page-home-hero')).toContain('var(--accent-base)');
 });
 
 // The audit's mismatches: two pages sharing a hero start or a near-identical
 // colour read as the same page.
-test('no two heroes start in the same colour family', () => {
-  const starts = Object.values(PAGE_COLORS).map((p) => hue(p.hero));
+test('no two heroes start in the same colour', () => {
+  const starts = Object.keys(PAGE_COLORS).map((view) => token(`--page-${id(view)}-hero`).match(/to bottom right, (color-mix\([^)]*\)\)?|[^,]+),/)[1]);
   expect(new Set(starts).size).toBe(starts.length);
 });
 

@@ -314,16 +314,16 @@ describe('Rows', () => {
     // The sidebar's colours for those pages, which the links copy.
     // The sidebar and the links read the same map (lib/page-colors.js).
     const { PAGE_COLORS } = require('../../src/renderer/lib/page-colors');
-    expect(PAGE_COLORS.playlists.color).toBe('#ec4899');
-    expect(PAGE_COLORS.recommendations.color).toBe('#f59e0b');
-    expect(PAGE_COLORS.concerts.color).toBe('#10c9b4');
+    expect(PAGE_COLORS.playlists.color).toBe('var(--page-playlists)');
+    expect(PAGE_COLORS.recommendations.color).toBe('var(--page-recommendations)');
+    expect(PAGE_COLORS.concerts.color).toBe('var(--page-concerts)');
     // The sidebar's NavItem colours its current page from the same map.
     expect(fs.readFileSync(path.join(COMP, 'nav-item.js'), 'utf8')).toContain("color: active ? colors.color : 'var(--nav-inactive)',");
     for (const key of ['playlists', 'recommendations', 'concerts']) expect(app).toMatch(new RegExp(`React\\.createElement\\(NavItem, \\{\\s*page: '${key}'`));
-    const link = (html, page) => (html.match(new RegExp(`aria-label="See all in ${page}"[^>]*style="[^"]*color:(#[0-9a-f]{6})`)) || [])[1];
-    expect(link(h(S.PlaylistsRow, { playlists: [{ id: 'a', title: 'A' }], navigateTo: () => {} }), 'Playlists')).toBe('#ec4899');
-    expect(link(h(S.AlbumsRow, { albums: [{ title: 'T', artist: 'A', resolverId: 'lastfm' }], navigateTo: () => {} }), 'Recommendations')).toBe('#f59e0b');
-    expect(link(h(S.ConcertsRow, { concerts: [{ id: 'c', artist: 'A', date: '2099-01-01', venue: { name: 'V', city: 'C' } }], navigateTo: () => {} }), 'Concerts')).toBe('#10c9b4');
+    const link = (html, page) => (html.match(new RegExp(`aria-label="See all in ${page}"[^>]*style="[^"]*color:(var\\(--page-[a-z-]+\\))`)) || [])[1];
+    expect(link(h(S.PlaylistsRow, { playlists: [{ id: 'a', title: 'A' }], navigateTo: () => {} }), 'Playlists')).toBe('var(--page-playlists)');
+    expect(link(h(S.AlbumsRow, { albums: [{ title: 'T', artist: 'A', resolverId: 'lastfm' }], navigateTo: () => {} }), 'Recommendations')).toBe('var(--page-recommendations)');
+    expect(link(h(S.ConcertsRow, { concerts: [{ id: 'c', artist: 'A', date: '2099-01-01', venue: { name: 'V', city: 'C' } }], navigateTo: () => {} }), 'Concerts')).toBe('var(--page-concerts)');
   });
   test('Albums row see-all goes to Recommendations', () => {
     const html = h(S.AlbumsRow, { albums: [{ title: 'T', artist: 'A', resolverId: 'lastfm' }], navigateTo: () => {} });
@@ -471,7 +471,7 @@ describe('Concert cards', () => {
   });
   test('Tickets is the shared teal button (components/tickets-button.js)', () => {
     const html = h(S.ConcertsRow, { concerts: [{ ...base, ticketSources: [sellers2[0]] }] });
-    expect(html).toContain('background-color:#10c9b4;color:var(--on-accent)');
+    expect(html).toContain('background-color:var(--page-concerts);color:var(--on-accent)');
     expect(html).not.toContain('text-decoration:underline');
   });
   test('only http(s) ticket links reach an href', () => {

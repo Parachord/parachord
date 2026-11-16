@@ -110,6 +110,8 @@ A switch is an `--accent-fill` track when on, `--control-off` when off, and alwa
 
 Each page has one colour, in `src/renderer/lib/page-colors.js` (`PAGE_COLORS`): the sidebar item's active text and 10% tint (`pageTint(view)`), the hero gradient, links to the page (`SectionHeader`'s `pageColor`), Home's panels that preview it, and the page's own controls (Concerts' location and radius). Each entry has `color`, `rgb`, `fill` (a darker shade for white-text buttons, ≥ 4.5:1) and `hero` (full Tailwind gradient classes, so Tailwind's scan generates them).
 
+The values are CSS variables in `index.html`: `--page-<id>` (text, icons, the tint), `--page-<id>-fill` (a white-text fill, at least 4.5:1) and `--page-<id>-hero` (the hero gradient, painted by the `.page-hero-bg-<id>` class that `PAGE_COLORS[id].hero` names). A theme or a user recolours a page by setting those. Home's are the accent's, and its hero gradient is mixed from `--accent-base`, so it follows the accent. `pageTint(view)` is the page colour at 10% (`color-mix`).
+
 | Page | Colour | Hero |
 |------|--------|------|
 | Home | the accent | purple → violet → indigo |

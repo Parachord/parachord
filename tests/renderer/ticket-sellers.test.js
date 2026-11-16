@@ -11,7 +11,7 @@ test("a seller's colour comes from the plug-in registry, never a copied table", 
   }));
   T.setSellerColorLookup((id) => manifests[id] || null);
   expect(T.sellerColor('seatgeek')).toBe(manifests.seatgeek);
-  expect(T.sellerColor('nope')).toBe('#10c9b4'); // the Concerts colour
+  expect(T.sellerColor('nope')).toBe('var(--page-concerts)'); // the Concerts colour
   // app.js hands over its registry lookup.
   expect(fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8')).toContain('setSellerColorLookup(getServiceColor)');
 });
@@ -20,7 +20,7 @@ test('text and badge colours mix with theme tokens, so one value works in both t
   T.setSellerColorLookup((id) => (id === 'songkick' ? '#F80046' : null));
   expect(T.sellerTextColor('songkick')).toBe('color-mix(in srgb, #F80046 70%, var(--text-primary))');
   expect(T.sellerBadgeBg('songkick')).toBe('color-mix(in srgb, #F80046 15%, transparent)');
-  expect(T.sellerColor('ai')).toBe('#10c9b4');
+  expect(T.sellerColor('ai')).toBe('var(--page-concerts)');
   expect(T.sellerShortName({ source: 'ticketmaster' })).toBe('TM');
   expect(T.sellerName({ source: 'x', label: 'Venue site' })).toBe('Venue site');
 });

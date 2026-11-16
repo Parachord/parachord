@@ -26,8 +26,8 @@ describe('section header style', () => {
   });
 
   test('links take the destination page\'s sidebar colour, else the accent', () => {
-    expect(H.PAGE_COLOR).toEqual({ playlists: '#ec4899', recommendations: '#f59e0b', concerts: '#10c9b4' });
-    expect(H.sectionLinkColor('#ec4899')).toBe('#ec4899');
+    expect(H.PAGE_COLOR).toEqual({ playlists: 'var(--page-playlists)', recommendations: 'var(--page-recommendations)', concerts: 'var(--page-concerts)' });
+    expect(H.sectionLinkColor('var(--page-playlists)')).toBe('var(--page-playlists)');
     expect(H.sectionLinkColor()).toBe('var(--accent-primary)');
   });
 });
@@ -54,7 +54,7 @@ describe('SectionHeader', () => {
     const opened = [];
     const el = H.SectionHeader({ title: 'Your playlists', page: 'Playlists', view: 'playlists', navigateTo: (v) => opened.push(v), pageColor: H.PAGE_COLOR.playlists });
     const html = renderToStaticMarkup(el);
-    expect(html).toMatch(/aria-label="See all in Playlists"[^>]*style="[^"]*font-size:13px;font-weight:600[^"]*color:#ec4899"[^>]*>See all in Playlists</);
+    expect(html).toMatch(/aria-label="See all in Playlists"[^>]*style="[^"]*font-size:13px;font-weight:600[^"]*color:var\(--page-playlists\)"[^>]*>See all in Playlists</);
     // The button is the last child of the right-hand group.
     const button = el.props.children[1].props.children[1];
     button.props.onClick();
