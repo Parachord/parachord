@@ -587,7 +587,7 @@ describe('artist grids load with the shared artist card placeholder', () => {
   test('the artist page\'s related artists, History\'s top artists and Search use it', () => {
     const read = (f) => fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', f), 'utf8');
     expect(read('components/artist-page.js')).toMatch(/loadingRelated && filteredArtists\.length === 0 && React\.createElement\('div'[\s\S]{0,300}ArtistCardSkeleton/);
-    expect(read('app.js')).toMatch(/ArtistCardSkeleton, \{ key: `artist-skeleton-\$\{i\}`, index: i, lines: 2 \}/);
+    expect(read('components/history-page.js')).toMatch(/ArtistCardSkeleton, \{ key: `artist-skeleton-\$\{i\}`, index: i, lines: 2 \}/);
     expect(read('components/search-page.js')).toMatch(/ArtistCardSkeleton, \{ key: `artist-skeleton-\$\{i\}`, index: i \}/);
   });
 });
