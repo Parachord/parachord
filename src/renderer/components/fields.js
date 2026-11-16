@@ -146,4 +146,30 @@ function RadioGroup({ name, value, options, onChange, label }) {
       o.hint && e('span', { className: 'block text-ink-secondary', style: { fontSize: '12px', marginTop: '2px' } }, o.hint)))));
 }
 
-module.exports = { SettingRow, Select, TextField, SecretField, Switch, RadioGroup, FIELD_CLASS: FIELD };
+// SegmentedChoice: a pick-one row of equal-width tiles, each with an icon
+// and a label; the chosen one has an accent border and tint (Settings'
+// theme picker). role="radiogroup", each tile role="radio".
+//   options [{ value, label, icon }], value, onChange(value), label
+function SegmentedChoice({ value, options, onChange, label }) {
+  const e = React.createElement;
+  return e('div', { role: 'radiogroup', 'aria-label': label, className: 'flex', style: { gap: '8px' } },
+    (options || []).map((o) => {
+      const on = value === o.value;
+      return e('button', {
+        key: o.value,
+        type: 'button',
+        role: 'radio',
+        'aria-checked': on,
+        onClick: () => onChange && onChange(o.value),
+        className: 'flex-1 flex items-center justify-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent '
+          + (on ? 'text-accent' : 'text-ink-secondary hover:bg-surface-hover'),
+        style: {
+          gap: '6px', padding: '10px 16px', borderRadius: '8px', fontSize: '13px', fontWeight: 500,
+          border: on ? '2px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
+          backgroundColor: on ? 'var(--accent-primary-alpha-08)' : undefined,
+        },
+      }, o.icon && e('span', { 'aria-hidden': 'true' }, o.icon), o.label);
+    }));
+}
+
+module.exports = { SettingRow, Select, TextField, SecretField, Switch, RadioGroup, SegmentedChoice, FIELD_CLASS: FIELD };

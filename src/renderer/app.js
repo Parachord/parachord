@@ -2096,7 +2096,7 @@ const { ToastRegion, NowPlayingAnnouncer } = require('./components/toast');
 const { SortMenu } = require('./components/sort-menu');
 const { Menu } = require('./components/menu');
 const { HeroTabs } = require('./components/hero-tabs');
-const { SettingRow, Select, TextField, SecretField, Switch, RadioGroup, FIELD_CLASS } = require('./components/fields');
+const { SettingRow, Select, TextField, SecretField, Switch, RadioGroup, SegmentedChoice, FIELD_CLASS } = require('./components/fields');
 const { EmptyState, ErrorState } = require('./components/states');
 // Room the queue drawer leaves above it: the title bar and a little air.
 const QUEUE_DRAWER_TOP_GAP = 48;
@@ -41466,25 +41466,20 @@ React.createElement('div', {
               React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '24px' } },
                 // Appearance Section
                 React.createElement(SettingsSection, { title: 'Appearance', description: 'Choose your preferred color theme' },
-                  // A pick-one choice: the app's chips (components/filter-chips.js),
-                  // not three hand-built buttons with emoji.
-                  React.createElement(FilterChips, {
+                  React.createElement(SegmentedChoice, {
                     label: 'Theme',
-                    chips: [{ id: 'light', label: 'Light' }, { id: 'dark', label: 'Dark' }, { id: 'system', label: 'System' }],
+                    options: [
+                      { value: 'light', label: 'Light', icon: '\u2600\uFE0F' },
+                      { value: 'dark', label: 'Dark', icon: '\uD83C\uDF19' },
+                      { value: 'system', label: 'System', icon: '\uD83D\uDCBB' }
+                    ],
                     value: themePref,
-                    onChange: (id) => handleThemeChange(id)
+                    onChange: (v) => handleThemeChange(v)
                   })),
                 // Cache Management Section - refined card
                 React.createElement(SettingsSection, { title: 'Cache Management', description: 'Clear cached data to free up space or fix display issues' },
-React.createElement('p', {
-                    style: {
-                      fontSize: '13px',
-                      color: 'var(--text-secondary)',
-                      marginBottom: '20px',
-                      lineHeight: '1.6'
-                    }
-                  }, 'This will remove cached artist images, album art, and API responses. Loading may be slower temporarily while data is re-fetched.'),
-React.createElement(Button, { variant: 'destructive', size: 'sm', onClick: () => showConfirmDialog({
+React.createElement(SettingRow, { label: 'Clear cache', hint: 'Removes cached artist images, album art and service responses. Pages load more slowly until they’re fetched again.' },
+                  React.createElement(Button, { variant: 'destructive', size: 'sm', className: 'flex-shrink-0', onClick: () => showConfirmDialog({
                       // It can't be undone, so it asks first (it cleared on one click).
                       title: 'Clear cache?',
                       message: 'Cached artist images, album art and service responses are removed. Pages load more slowly until they’re fetched again.',
@@ -41508,7 +41503,7 @@ React.createElement(Button, { variant: 'destructive', size: 'sm', onClick: () =>
                       }
 
                       showToast('Cache cleared');
-                    } }) }, React.createElement(Icons.Trash2, { className: 'w-4 h-4' }), 'Clear cache')),
+                    } }) }, React.createElement(Icons.Trash2, { className: 'w-4 h-4' }), 'Clear cache'))),
 
                 // Playback Quality Section (global for Widevine/stream resolvers)
                 React.createElement(SettingsSection, {

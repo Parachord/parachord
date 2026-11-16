@@ -30,7 +30,7 @@ test('asked before a concert plug-in was ready: asked again once one is', () => 
 });
 
 test('Clear cache asks first: it removes every cache and cannot be undone', () => {
-  expect(app).toMatch(/variant: 'destructive', size: 'sm', onClick: \(\) => showConfirmDialog\(\{[\s\S]{0,200}title: 'Clear cache\?',[\s\S]{0,300}confirmLabel: 'Clear cache',\s*destructive: true,\s*onConfirm: async \(\) => \{/);
+  expect(app).toMatch(/React\.createElement\(SettingRow, \{ label: 'Clear cache', hint: '[^']+' \},\s*React\.createElement\(Button, \{ variant: 'destructive', size: 'sm', className: 'flex-shrink-0', onClick: \(\) => showConfirmDialog\(\{[\s\S]{0,200}title: 'Clear cache\?',[\s\S]{0,300}confirmLabel: 'Clear cache',\s*destructive: true,\s*onConfirm: async \(\) => \{/);
 });
 
 test("the artist hero is PageHero with the artist's photo", () => {
@@ -43,4 +43,18 @@ test("the artist hero is PageHero with the artist's photo", () => {
   expect(html).toContain('rgba(17,17,17,0.95)');
   expect(html).not.toContain('bg-gradient');
   expect(artist).not.toMatch(/height: isHeaderCollapsed \? '80px' : '320px'/);
+});
+
+test('the theme picker is SegmentedChoice: three equal tiles, the current one outlined', () => {
+  global.React = global.React || require('react');
+  const { renderToStaticMarkup } = require('react-dom/server');
+  const { SegmentedChoice } = require('../../src/renderer/components/fields');
+  const html = renderToStaticMarkup(React.createElement(SegmentedChoice, {
+    label: 'Theme', value: 'dark',
+    options: [{ value: 'light', label: 'Light', icon: '☀️' }, { value: 'dark', label: 'Dark', icon: '🌙' }],
+  }));
+  expect(html).toContain('role="radiogroup"');
+  expect(html).toMatch(/role="radio" aria-checked="true"[^>]*style="[^"]*border:2px solid var\(--accent-primary\)/);
+  expect(html).toMatch(/role="radio" aria-checked="false"[^>]*style="[^"]*border:1px solid var\(--border-subtle\)/);
+  expect(app).toMatch(/React\.createElement\(SegmentedChoice, \{\s*label: 'Theme'/);
 });
