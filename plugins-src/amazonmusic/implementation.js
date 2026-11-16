@@ -2746,10 +2746,12 @@ module.exports = {
       // user asks for Amazon).
       statusLabel: signedIn ? null : 'Setup required',
       statusMessage: signedIn
-        // The blocked plan's message; nothing to add on unlimited.
+        // The blocked plan's message; nothing to add on unlimited. Signed out,
+        // the profile-picker hint rides along — choosing a profile is the
+        // step people miss (the docs' sign-in section exists because of it).
         ? (limit && limit.blocked ? limit.message : null)
         : (cdm
-          ? 'Sign in with your Amazon Music account'
+          ? 'Sign in with your Amazon Music account, then choose a profile if Amazon asks.'
           : 'This build cannot play DRM-protected Amazon streams'),
       cdm
     };

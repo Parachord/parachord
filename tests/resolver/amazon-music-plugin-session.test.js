@@ -359,7 +359,7 @@ describe('getStatus', () => {
       signedIn: false,
       playbackLimit: null,
       statusLabel: 'Setup required',
-      statusMessage: 'Sign in with your Amazon Music account',
+      statusMessage: 'Sign in with your Amazon Music account, then choose a profile if Amazon asks.',
       cdm: true
     });
     // config.json needs the session: a signed-out reply reads no plan.
