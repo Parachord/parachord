@@ -604,11 +604,18 @@ const amazonWebPlayer = {
   // GQL_PARTIAL_STATUS in amazon-music-logic.js): a predicate over the parsed
   // body that says whether the data the flow needs came back. Without it a
   // 294 is a failure with its status, which the home flow relies on.
+  // `options.readerHeld` says the caller already holds the host's replay-gate
+  // reader for a multi-page walk — pageFetch then skips its own reader (the
+  // walk's pages must not come back `busy` under a navigation that is
+  // waiting for that same outer reader to drain).
   async replayGql(win, entry, body, options = {}) {
     const replayUrl = entry.url || 'https://gql.music.amazon.com/';
     const headers = amazonGqlFetchHeaders(entry.headers);
     const raw = JSON.stringify(body);
-    const replay = await webSession.pageFetch({ url: replayUrl, method: 'POST', headers, body: raw });
+    const replay = await webSession.pageFetch(
+      { url: replayUrl, method: 'POST', headers, body: raw },
+      { readerHeld: options.readerHeld === true }
+    );
     return gqlReplayOutcome(replay, { acceptPartial: options.acceptPartial || null });
   },
 
@@ -1266,7 +1273,15 @@ const amazonWebPlayer = {
   // re-serve a section an earlier page already carried. Throws plain Errors
   // for a replay failure and for a non-envelope response — the callers decide
   // which of those is a drop-the-template miss and which is structural.
-  async walkMusicHomePages(win, template) {
+  //
+  // `readerHeld` (the tryMusicHomeWalk caller): the walk runs under ONE outer
+  // replay-gate reader, so its pages pass { readerHeld: true } through to
+  // pageFetch — a navigation that starts between two pages of the walk is
+  // waiting for that same outer reader to drain, and page 2 answering
+  // { error: 'busy' } under it would fail the whole walk (and drop the
+  // template) for nothing. The chained page flow's walk (homePageFlow) takes
+  // no reader of its own, so its pages each take their own.
+  async walkMusicHomePages(win, template, { readerHeld = false } = {}) {
     const pages = [];
     let cursor = null;
     for (let i = 0; i < MUSIC_HOME_MAX_PAGES; i++) {
@@ -1274,7 +1289,7 @@ const amazonWebPlayer = {
         firstLimit: MUSIC_HOME_FIRST_LIMIT,
         afterCursor: cursor
       });
-      const outcome = await this.replayGql(win, template, body);
+      const outcome = await this.replayGql(win, template, body, { readerHeld });
       if (outcome.error) {
         const err = new Error(outcome.error);
         err.status = outcome.status;
@@ -1315,7 +1330,7 @@ const amazonWebPlayer = {
       }
       let timer = null;
       const walked = await Promise.race([
-        this.walkMusicHomePages(this.searchView, template),
+        this.walkMusicHomePages(this.searchView, template, { readerHeld: true }),
         new Promise(resolve => {
           timer = setTimeout(() => resolve({ timeout: true }), REPLAY_TIMEOUT_MS);
           if (typeof timer.unref === 'function') timer.unref();

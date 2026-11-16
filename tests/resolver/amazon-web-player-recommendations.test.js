@@ -212,6 +212,53 @@ describe('amazonWebPlayer.getRecommendations', () => {
     expect(sections[0].items[0].name).toBe('Tempelschlaf');
   });
 
+  test('a navigation starting between two walk pages does not fail the walk (the pages ride the walk\'s outer reader)', async () => {
+    // The mid-walk busy: tryMusicHomeWalk holds ONE replay-gate reader for
+    // the whole walk, and each page\'s pageFetch takes a reader of its own —
+    // answered { error: 'busy' } once a navigation starts between two pages
+    // (the maintainer\'s repro on this PR), which failed the walk and dropped
+    // the template. The walk\'s pages now pass { readerHeld: true } through
+    // to the host: the caller\'s outer reader covers the gate, the walk
+    // completes, and the navigation waits it out instead.
+    replayGql.mockRestore(); // the real replayGql — this pins what runs under it
+    const win = fakeWin();
+    amazonWebPlayer.searchView = win;
+    amazonWebPlayer.musicHomeTemplate = makeSpecSearchTemplate({
+      url: 'https://gql.music.amazon.com/', headers: CAPTURED_HEADERS, body: MUSIC_HOME_BODY, capturedAt: Date.now()
+    });
+    let navigationDone = false;
+    let page = 0;
+    win.webContents.executeJavaScript = jest.fn(async () => {
+      page += 1;
+      if (page === 1) {
+        // The navigation starts as page 1 answers — between the walk\'s pages.
+        // It claims the gate\'s writer flag and waits for the walk\'s outer
+        // reader to drain.
+        amazonWebPlayer.webSession.beginNavigation()
+          .then(() => { navigationDone = true; amazonWebPlayer.webSession.endNavigation(); });
+        return {
+          status: 200,
+          text: JSON.stringify(musicHomeData(
+            [{ id: SECTION_ID, name: 'Albums for You', recommendedContent: { edges: [{ node: albumNode('B0G2TSTWXD', 'Tempelschlaf', 'The Ruins Of Beverast') }] } }],
+            { hasNextPage: true, token: 'music-home.20' }))
+        };
+      }
+      return {
+        status: 200,
+        text: JSON.stringify(musicHomeData(
+          [{ id: 'uri:///recommendations/music-home/music-home_otherStrategy', name: 'More for You', recommendedContent: { edges: [{ node: albumNode('B0DTRR4VWM', 'Lonely People With Power', 'Deafheaven') }] } }]))
+      };
+    });
+    const walked = await amazonWebPlayer.tryMusicHomeWalk();
+    expect(walked).not.toBeNull();
+    expect(walked.pages).toBe(2); // page 2 did not come back busy
+    expect(walked.sections.map(s => s.title)).toEqual(['Albums for You', 'More for You']);
+    expect(amazonWebPlayer.musicHomeTemplate).not.toBeNull(); // the template survived
+    // The parked navigation drained the moment the walk\'s outer reader left.
+    for (let i = 0; i < 40 && !navigationDone; i++) await new Promise(r => setTimeout(r, 25));
+    expect(navigationDone).toBe(true);
+  });
+
   test('a replay error drops the template and falls to the chained page flow, which re-mints', async () => {
     amazonWebPlayer.musicHomeTemplate = makeSpecSearchTemplate({
       url: 'https://gql.music.amazon.com/', headers: CAPTURED_HEADERS, body: MUSIC_HOME_BODY, capturedAt: Date.now()

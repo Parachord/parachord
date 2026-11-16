@@ -418,6 +418,36 @@ describe('the gate — rule 2: navigations and pageFetches', () => {
     expect(view.webContents.loadURL).toHaveBeenCalledWith('https://music.testsvc.com/next');
   });
 
+  test('a readerHeld pageFetch runs under a navigation waiting out the caller\'s outer reader (a mid-walk page)', async () => {
+    // The maintainer's repro shape: a multi-page walk holds ONE reader for the
+    // whole walk (tryEnterReplay once), each page is a pageFetch — a
+    // navigation starting between two pages would make page 2 come back busy
+    // and fail the whole walk. readerHeld is the escape: the caller's outer
+    // reader covers the gate for the walk's own pages.
+    const { host, view } = await warmSession();
+    view.webContents.executeJavaScript.mockResolvedValue({ status: 200, text: '{}' });
+    expect(host.tryEnterReplay()).toBe(true); // the walk's outer reader
+    let navigationDone = false;
+    try {
+      // Page 1 of the walk: takes the gate fine (no navigation yet).
+      await expect(host.pageFetch({ url: 'https://gql.testsvc.com/' })).resolves.toEqual({ status: 200, text: '{}' });
+      // A navigation starts between the walk's pages: the writer flag is up,
+      // and it waits for the walk's outer reader to drain.
+      const navigation = host.beginNavigation();
+      navigation.then(() => { navigationDone = true; host.endNavigation(); });
+      await jest.advanceTimersByTimeAsync(100);
+      // An untethered pageFetch is still busy under the navigation...
+      await expect(host.pageFetch({ url: 'https://gql.testsvc.com/' })).resolves.toEqual({ error: 'busy' });
+      // ...but the walk's next page runs: its caller holds the outer reader.
+      await expect(host.pageFetch({ url: 'https://gql.testsvc.com/' }, { readerHeld: true }))
+        .resolves.toEqual({ status: 200, text: '{}' });
+    } finally {
+      host.exitReplay(); // the walk ends; the navigation may drain
+    }
+    await jest.advanceTimersByTimeAsync(200);
+    expect(navigationDone).toBe(true); // the writer ran the moment the walk's reader left
+  });
+
   test('an idle park and a load exclude each other (two writers never abort each others navigation)', async () => {
     const { host, view } = await warmSession({ warmMs: 1000 });
     let releasePark;

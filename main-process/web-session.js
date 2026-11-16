@@ -58,7 +58,11 @@
 //      kills a replay; the readers/writer gate (pageFetch = reader, load and
 //      the idle park = writer) drains readers before any navigation. A
 //      pageFetch that arrives while a navigation holds the gate resolves
-//      { error: 'busy' } — the caller falls back to its page flow.
+//      { error: 'busy' } — the caller falls back to its page flow. The one
+//      exception: a pageFetch called with { readerHeld: true } — its caller
+//      already holds a reader for a multi-page walk, and the walk's own
+//      pages must not come back busy under a navigation that is waiting for
+//      that same outer reader to drain.
 //   3. THE IDLE PARK NEVER BLANKS A BUSY VIEW. A page fetch needs an
 //      origin page world (about:blank is a null origin: no cookies, no CORS),
 //      so the view stays warm for `warmMs` after the last activity and is
@@ -624,13 +628,20 @@ function createWebSessionHost(config = {}) {
       });
     },
 
-    // pageFetch({ url, method, headers, body }) → { status, text } | { error }
+    // pageFetch({ url, method, headers, body }, { readerHeld }) → { status, text } | { error }
     // — a fetch from inside the page world: the page supplies the origin,
     // cookies and CORS. Parallel-safe (a reader). Never throws: every failure
     // is a recoverable { error }.
-    async pageFetch(request = {}) {
+    //
+    // A pageFetch is itself a reader on the navigation gate (rule 2). A
+    // caller that ALREADY holds a reader for a multi-page replay under one
+    // tryEnterReplay (a walk over a captured connection) passes
+    // { readerHeld: true }: its own pages must not come back `busy` under a
+    // navigation that is waiting for that same outer reader to drain — the
+    // walk's outer reader is the gate coverage for every page it fetches.
+    async pageFetch(request = {}, { readerHeld = false } = {}) {
       if (!request.url || typeof request.url !== 'string') return { error: 'pageFetch needs a url' };
-      if (!this.tryEnterReplay()) return { error: 'busy' }; // a navigation holds the gate
+      if (!readerHeld && !this.tryEnterReplay()) return { error: 'busy' }; // a navigation holds the gate
       this._chainBusy += 1;
       this.cancelPark();
       try {
@@ -664,7 +675,7 @@ function createWebSessionHost(config = {}) {
         return { status: outcome.status, text: outcome.text };
       } finally {
         this._chainBusy -= 1;
-        this.exitReplay();
+        if (!readerHeld) this.exitReplay();
         // Re-arm the fuse: pageFetch activity keeps the view warm the same
         // warmMs as a load (a session whose last call was a pageFetch would
         // otherwise idle on the service page at full speed forever — the
