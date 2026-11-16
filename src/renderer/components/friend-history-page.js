@@ -13,6 +13,7 @@ const Icons = require('./icons');
 const { TrackRow, TrackRowSkeleton } = require('./track-lists');
 const { historySortOptions, historyPeriodOptions } = require('../lib/history-options');
 const { PageHero } = require('./page-hero');
+const { FriendAvatar } = require('./friend-avatar');
 const { CardSkeleton } = require('./home-skeletons');
 const { ArtistCard, ArtistCardSkeleton, RankBadge } = require('./artist-card');
 const { AlbumCard, AlbumRankBadge } = require('./album-card');
@@ -105,22 +106,8 @@ const FriendHistoryPage = React.memo(function FriendHistoryPage(props) {
 collapsed: historyHeaderCollapsed,
 page: 'history',
 expanded: React.createElement(React.Fragment, null,
-React.createElement('div', {
-                  className: 'w-24 h-24 mb-4 overflow-hidden',
-                  style: {
-                    clipPath: 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)'
-                  }
-                },
-                  currentFriend.avatarUrl
-                    ? React.createElement('img', {
-                        src: currentFriend.avatarUrl,
-                        alt: currentFriend.displayName,
-                        className: 'w-full h-full object-cover'
-                      })
-                    : React.createElement('div', {
-                        className: 'w-full h-full flex items-center justify-center text-3xl font-medium bg-white/20 text-white'
-                      }, currentFriend.displayName.charAt(0).toUpperCase())
-                ),
+// Their photo, or their initial on the avatar gradient (components/friend-avatar.js).
+React.createElement(FriendAvatar, { name: currentFriend.displayName, avatarUrl: currentFriend.avatarUrl, size: 'lg', className: 'mb-4' }),
 React.createElement('div', { className: 'flex items-center gap-3 mb-2' },
                   React.createElement('h1', {
                     className: 'text-4xl font-light text-white',
@@ -162,22 +149,7 @@ React.createElement('p', {
                   className: 'mt-4 text-white/80 text-sm'
                 }, `Listening activity from ${currentFriend.service === 'lastfm' ? 'Last.fm' : 'ListenBrainz'}`)),
 collapsedContent: React.createElement(React.Fragment, null,
-React.createElement('div', {
-                  className: 'w-10 h-10 mr-4 overflow-hidden flex-shrink-0',
-                  style: {
-                    clipPath: 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)'
-                  }
-                },
-                  currentFriend.avatarUrl
-                    ? React.createElement('img', {
-                        src: currentFriend.avatarUrl,
-                        alt: currentFriend.displayName,
-                        className: 'w-full h-full object-cover'
-                      })
-                    : React.createElement('div', {
-                        className: 'w-full h-full flex items-center justify-center text-sm font-medium bg-white/20 text-white'
-                      }, currentFriend.displayName.charAt(0).toUpperCase())
-                ),
+React.createElement(FriendAvatar, { name: currentFriend.displayName, avatarUrl: currentFriend.avatarUrl, size: 'md', className: 'mr-4' }),
 React.createElement('h1', {
                   className: 'text-2xl font-light text-white mr-6',
                   style: {

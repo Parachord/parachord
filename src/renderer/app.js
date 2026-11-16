@@ -595,6 +595,7 @@ window.musicbrainzLimiter = window.createLimiter({
 const { mbFetchWithRetries, describeMusicBrainzError } = require('./lib/musicbrainz-fetch');
 const { transition } = require('./lib/motion');
 const { CardButton } = require('./components/card-button');
+const { FriendAvatar } = require('./components/friend-avatar');
 const { createIpv4Fallback } = require('./lib/metabrainz-ipv4');
 const { pluginMatchesQuery } = require('./lib/plugin-search');
 const {
@@ -37731,26 +37732,9 @@ useEffect(() => {
                     navigateToFriend(friend);
                   }
                 },
-                  React.createElement('div', {
-                    className: 'w-8 h-8 bg-surface-placeholder overflow-hidden',
-                    style: {
-                      clipPath: 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)'
-                    }
-                  },
-                    friend.avatarUrl
-                      ? React.createElement('img', {
-                          src: friend.avatarUrl,
-                          alt: friend.displayName,
-                          className: 'w-full h-full object-cover'
-                        })
-                      // No photo: the initial in white on the avatar gradient
-                      // (--avatar-gradient, index.html). A neutral grey here
-                      // all but vanished on the sidebar.
-                      : React.createElement('div', {
-                          className: 'w-full h-full flex items-center justify-center text-xs font-medium',
-                          style: { background: 'var(--avatar-gradient)', color: 'var(--on-accent)' }
-                        }, friend.displayName.charAt(0).toUpperCase())
-                  ),
+                  // Their photo, or their initial on the avatar gradient
+                  // (components/friend-avatar.js), as on their profile page.
+                  React.createElement(FriendAvatar, { name: friend.displayName, avatarUrl: friend.avatarUrl, size: 'sm' }),
                   // On-air indicator dot
                   onAir && React.createElement('div', {
                     // ListenerCard's on-air colour.
