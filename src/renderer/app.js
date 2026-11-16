@@ -47694,11 +47694,9 @@ React.createElement('div', {
             )
           ),
           // Close button
-          !syncSetupModal.progress && React.createElement('button', {
-            type: 'button', 'aria-label': 'Close', 'data-tooltip': 'Close',
+          !syncSetupModal.progress && React.createElement(Button, {
+            variant: 'icon', 'aria-label': 'Close', 'data-tooltip': 'Close',
             onClick: () => setSyncSetupModal(prev => ({ ...prev, open: false })),
-            className: 'transition-colors hover:!text-[var(--text-secondary)] hover:!bg-[var(--hover-bg-default)]',
-            style: { padding: '6px', color: 'var(--text-tertiary)', borderRadius: '8px' },
           },
             React.createElement(Icons.X, { className: 'w-5 h-5' })
           )
@@ -47805,40 +47803,18 @@ React.createElement('div', {
                   )
                 )
               : React.createElement(React.Fragment, null,
-                  // Filter tabs
-                  React.createElement('div', {
-                    style: {
-                      display: 'flex',
-                      gap: '4px',
-                      padding: '4px',
-                      backgroundColor: 'var(--hover-bg-default)',
-                      borderRadius: '10px',
-                      marginBottom: '4px'
-                    }
-                  },
-                    [
-                      { key: 'all', label: 'All' },
-                      { key: 'owned', label: 'Created by me' },
-                      { key: 'following', label: 'Following' }
-                    ].map(filter =>
-                      React.createElement('button', {
-                        key: filter.key,
-                        onClick: () => setSyncSetupModal(prev => ({ ...prev, playlistFilter: filter.key })),
-                        style: {
-                          flex: 1,
-                          padding: '8px 12px',
-                          fontSize: '13px',
-                          fontWeight: '500',
-                          color: syncSetupModal.playlistFilter === filter.key ? 'var(--text-primary)' : 'var(--text-secondary)',
-                          backgroundColor: syncSetupModal.playlistFilter === filter.key ? 'var(--bg-elevated)' : 'transparent',
-                          border: 'none',
-                          borderRadius: '8px',
-                          cursor: 'pointer',
-                          transition: 'background-color 150ms ease, color 150ms ease, box-shadow 150ms ease',
-                          boxShadow: syncSetupModal.playlistFilter === filter.key ? 'var(--shadow-sm)' : 'none'
-                        }
-                      }, filter.label)
-                    )
+                  // Which playlists: the shared pick-one chips (components/filter-chips.js)
+                  React.createElement('div', { style: { marginBottom: '4px' } },
+                    React.createElement(FilterChips, {
+                      label: 'Show playlists',
+                      chips: [
+                        { id: 'all', label: 'All' },
+                        { id: 'owned', label: 'Created by me' },
+                        { id: 'following', label: 'Following' }
+                      ],
+                      value: syncSetupModal.playlistFilter,
+                      onChange: (id) => setSyncSetupModal(prev => ({ ...prev, playlistFilter: id }))
+                    })
                   ),
                   // Select all / deselect all for current filter
                   React.createElement('div', {
