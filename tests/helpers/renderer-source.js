@@ -12,6 +12,7 @@ const PAGE_MODULES = [
   'components/recommendations-page.js',
   'components/concerts-page.js',
   'components/charts-page.js',
+  'components/critics-picks-page.js',
 ];
 
 function read(rel) {
