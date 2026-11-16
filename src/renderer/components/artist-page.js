@@ -31,6 +31,7 @@ const { PAGE_COLORS } = require('../lib/page-colors');
 const { EmptyState, ErrorState } = require('./states');
 const { SortMenu } = require('./sort-menu');
 const { Menu } = require('./menu');
+const { PageHero } = require('./page-hero');
 const { TicketsButton } = require('./tickets-button');
 const { ConcertListSkeleton } = require('./concert-skeletons');
 const { HeroTabs, heroTabClass } = require('./hero-tabs');
@@ -166,55 +167,17 @@ const ArtistPage = React.memo(function ArtistPage(props) {
       },
         // Artist page hero header (not inside scrollable area) - only show when NOT viewing or loading a release
         // Clickable to toggle collapse state
-        !currentRelease && !loadingRelease && React.createElement('div', {
-          className: 'relative',
-          style: {
-            height: isHeaderCollapsed ? '80px' : '320px',
-            flexShrink: 0,
-            overflow: 'hidden',
-            cursor: isHeaderCollapsed ? 'pointer' : 'default',
-            transition: 'height 300ms ease-out'
-          },
+        // The shared page hero (components/page-hero.js), with the artist's
+        // photo for its background.
+        !currentRelease && !loadingRelease && React.createElement(PageHero, {
+          collapsed: isHeaderCollapsed,
+          photo: { url: artistImage || null, position: artistImagePosition },
           // Right-click anywhere on the hero (not only the name): Copy link /
           // View on Achordion.
-          onContextMenu: copyParachordLink
-        },
-          // Clickable overlay to expand collapsed header (sits behind content)
-          isHeaderCollapsed && React.createElement('button', { type: 'button', 'aria-label': 'Expand header',
-            className: 'absolute inset-0 z-0',
-            style: { cursor: 'pointer' },
-            onClick: () => setIsHeaderCollapsed(false),           }),
-          // Background image with gradient overlay
-          artistImage && React.createElement('div', {
-            className: 'absolute inset-0',
-            style: {
-              backgroundImage: `url(${artistImage})`,
-              backgroundSize: 'cover',
-              backgroundPosition: artistImagePosition,
-              filter: 'blur(0px)',
-              pointerEvents: 'none'
-            }
-          }),
-          // Gradient overlay for readability
-          React.createElement('div', {
-            className: 'absolute inset-0',
-            style: {
-              background: artistImage
-                ? isHeaderCollapsed
-                  ? 'linear-gradient(to bottom, rgba(0,0,0,0.7) 0%, rgba(17,17,17,0.95) 100%)'
-                  : 'linear-gradient(to bottom, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.6) 50%, rgba(17,17,17,1) 100%)'
-                : 'linear-gradient(to bottom, rgba(60,60,80,0.4) 0%, rgba(17,17,17,1) 100%)',
-              pointerEvents: 'none'
-            }
-          }),
-          // EXPANDED STATE - Artist info overlay (centered)
-          !loadingRelease && currentArtist && !isHeaderCollapsed && React.createElement('div', {
-            className: 'absolute inset-0 flex flex-col items-center justify-center text-center px-6 z-10',
-            style: {
-              opacity: isHeaderCollapsed ? 0 : 1,
-              transition: 'opacity 300ms ease-out'
-            }
-          },
+          onContextMenu: copyParachordLink,
+          onExpand: () => setIsHeaderCollapsed(false),
+          title: null,
+          expanded: currentArtist && React.createElement(React.Fragment, null,
             // Artist name with star button (star positioned absolutely to not affect centering)
             React.createElement('div', {
               className: 'relative inline-flex items-center'
@@ -360,14 +323,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
               })
             )
           ),
-          // COLLAPSED STATE - Inline layout
-          !loadingRelease && currentArtist && isHeaderCollapsed && React.createElement('div', {
-            className: 'hero-bar absolute inset-0 flex items-center px-6 z-10',
-            style: {
-              opacity: isHeaderCollapsed ? 1 : 0,
-              transition: 'opacity 300ms ease-out'
-            }
-          },
+          collapsedContent: currentArtist && React.createElement(React.Fragment, null,
             // Left side: Artist name with star button - clickable to expand header
             React.createElement('div', {
               className: 'hero-bar-title flex items-center gap-2 mr-6',
@@ -492,7 +448,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
               className: 'ml-auto'
             }, React.createElement(Icons.Play, { size: 14 }), isCompactHeader ? 'Play' : 'Play top tracks')
           )
-        ),
+        }),
         
         // Release page - artist header (shows artist image/name/tabs at top)
         currentRelease && React.createElement('div', {

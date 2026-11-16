@@ -2663,10 +2663,10 @@ PERSONALITY & TONE:
 - When recommending, briefly mention WHY it fits their taste (e.g., "similar shoegaze production" or "same melancholic energy")
 - Match the user's energy - if they're excited, be enthusiastic; if they're chill, keep it mellow
 
-IMPORTANT: To play music or control the player, you MUST call the appropriate tool. Do NOT just say "I'll play..." - you must actually call the play or queue_add tool. Saying you will do something is NOT the same as doing it.
+IMPORTANT: To play music or control the player, you MUST call the appropriate tool. Do NOT just say "I'll play…" - you must actually call the play or queue_add tool. Saying you will do something is NOT the same as doing it.
 
 HANDLING EDGE CASES:
-- Search returns nothing: Suggest alternative spellings, or ask "Did you mean...?" with similar artist/track names
+- Search returns nothing: Suggest alternative spellings, or ask "Did you mean…?" with similar artist/track names
 - Ambiguous request: Ask a brief clarifying question (e.g., "The band or the solo project?")
 - User corrects you: Acknowledge briefly ("Ah, got it.") and try again - don't over-apologize
 - Just chatting (no music action): Keep it brief and friendly, but gently steer back to music if it continues
@@ -39437,6 +39437,8 @@ React.createElement('span', {
               ),
               // Location dropdown panel
               concertsLocationOpen && React.createElement('div', {
+                // A popover: its clicks stay in it.
+                role: 'dialog', 'aria-label': 'Filter by location',
                 className: 'absolute left-0 top-full mt-1 z-30',
                 style: { width: '300px', padding: '16px 20px', backgroundColor: 'var(--card-bg)', border: '1px solid var(--border-default)', borderRadius: '16px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)' },
                 onClick: (e) => e.stopPropagation()
@@ -47934,6 +47936,8 @@ React.createElement('div', {
             // "New Playlist" text or input form
             newPlaylistFormOpen ?
               React.createElement('div', {
+                // Not a control: it only keeps the form's clicks from the row.
+                role: 'presentation',
                 className: 'flex-1 flex gap-2',
                 onClick: (e) => e.stopPropagation(), // Prevent row click when interacting with form
                 style: { pointerEvents: 'auto' } // Allow form interaction
@@ -48558,6 +48562,8 @@ React.createElement('div', { style: { marginTop: '12px' } },
         }, copyIcon(), 'Copy parachord:// Link')
       );
       return React.createElement('div', {
+        // The scrim: a click outside closes the menu (Escape does too).
+        role: 'presentation',
         className: 'fixed inset-0 z-[70]',
         onClick: () => setParachordLinkMenu(null),
         onContextMenu: (e) => { e.preventDefault(); setParachordLinkMenu(null); },
@@ -49856,6 +49862,8 @@ firstRunTutorial.step === 'complete' && (() => {
         },
           // Drag handle for resizing - stops click propagation
           React.createElement('div', {
+            // The queue's resize handle (dragged with the mouse).
+            role: 'separator', 'aria-orientation': 'horizontal', 'aria-label': 'Resize the queue',
             className: 'card-above w-8 h-1 bg-on-dark-disabled rounded-full cursor-ns-resize',
             onClick: (e) => e.stopPropagation(),
             onMouseDown: (e) => {

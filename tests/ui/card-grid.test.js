@@ -58,8 +58,9 @@ test('collapsed page headers share .hero-bar: titles truncate, tabs scroll, one 
   expect(html).toContain('.hero-bar > h1, .hero-bar > h2 { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }');
   expect(html).toContain('.hero-bar > [role="tablist"], .hero-bar > div:has([role="tablist"]) { flex-shrink: 1; min-width: 0; overflow-x: auto;');
   const src = files.map((f) => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n');
-  // PageHero's bar, plus the artist page's photo hero (its two bars).
-  expect((src.match(/className: 'hero-bar absolute inset-0 flex items-center px-6 z-10'/g) || []).length).toBe(3);
+  // PageHero's bar (the artist page's hero is PageHero now), plus the
+  // release page's artist bar.
+  expect((src.match(/className: 'hero-bar absolute inset-0 flex items-center px-6 z-10'/g) || []).length).toBe(2);
   expect(src).not.toMatch(/absolute inset-0 flex items-center px-16 z-10/);
 });
 

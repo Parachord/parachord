@@ -18,6 +18,11 @@
 //   expanded         what shows under the title in the full hero (tabs, a
 //                    count, the one-line description)
 //   collapsedContent what follows the title in the bar (tabs, a count)
+//   photo            { url, position }: a photo for the background (the
+//                    artist page) instead of the page's gradient, darkened
+//                    for its text; url null shows the dark fallback
+//   onExpand         collapsed: a click on the bar expands it
+//   onContextMenu    (event) on the whole hero (the artist page's link menu)
 // Props-driven; loads under plain Node.
 
 const { PAGE_COLORS } = require('../lib/page-colors');
@@ -27,15 +32,31 @@ const COLLAPSED_TITLE_STYLE = { textShadow: '0 2px 10px rgba(0,0,0,0.5)', letter
 const HERO_HEIGHT = 320;
 const HERO_COLLAPSED_HEIGHT = 80;
 
-function PageHero({ collapsed, page, title, onTitleContextMenu, expanded, collapsedContent }) {
+// The darkening over a photo, so its text reads: lighter at the top in the
+// full hero, nearly solid in the bar; with no photo, a dark fallback.
+const photoShade = (hasUrl, collapsed) => (hasUrl
+  ? (collapsed
+    ? 'linear-gradient(to bottom, rgba(0,0,0,0.7) 0%, rgba(17,17,17,0.95) 100%)'
+    : 'linear-gradient(to bottom, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.6) 50%, rgba(17,17,17,1) 100%)')
+  : 'linear-gradient(to bottom, rgba(60,60,80,0.4) 0%, rgba(17,17,17,1) 100%)');
+
+function PageHero({ collapsed, page, title, onTitleContextMenu, expanded, collapsedContent, photo, onExpand, onContextMenu }) {
   const e = React.createElement;
   const colors = PAGE_COLORS[page] || PAGE_COLORS.home;
   return e('div', {
     className: 'relative',
+    onContextMenu,
     style: { height: `${collapsed ? HERO_COLLAPSED_HEIGHT : HERO_HEIGHT}px`, flexShrink: 0, transition: 'height 300ms ease-out', overflow: 'hidden' },
   },
-    e('div', { className: `absolute inset-0 ${colors.hero}` }),
-    colors.pattern && e('div', { className: 'absolute inset-0', style: { opacity: colors.patternOpacity, backgroundImage: colors.pattern } }),
+    // A collapsed bar that expands on a click (behind its content).
+    collapsed && onExpand && e('button', { type: 'button', 'aria-label': 'Expand header', className: 'absolute inset-0 z-0', style: { cursor: 'pointer' }, onClick: onExpand }),
+    photo
+      ? e(React.Fragment, null,
+          photo.url && e('div', { className: 'absolute inset-0', style: { backgroundImage: `url(${photo.url})`, backgroundSize: 'cover', backgroundPosition: photo.position, pointerEvents: 'none' } }),
+          e('div', { className: 'absolute inset-0', style: { background: photoShade(!!photo.url, collapsed), pointerEvents: 'none' } }))
+      : e(React.Fragment, null,
+          e('div', { className: `absolute inset-0 ${colors.hero}` }),
+          colors.pattern && e('div', { className: 'absolute inset-0', style: { opacity: colors.patternOpacity, backgroundImage: colors.pattern } })),
     collapsed
       ? e('div', { className: 'hero-bar absolute inset-0 flex items-center px-6 z-10' },
           title && e('h1', { className: 'text-2xl font-light text-white mr-6', style: COLLAPSED_TITLE_STYLE, onContextMenu: onTitleContextMenu }, title),

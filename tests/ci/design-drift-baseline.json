@@ -4,7 +4,7 @@
     "hexColors": 117,
     "paletteClasses": 29,
     "themeTernaries": 0,
-    "clickableNonInteractive": 6,
+    "clickableNonInteractive": 0,
     "inlineOutlineNone": 0,
     "nativeDialogs": 0,
     "asciiEllipsis": 2,
@@ -18,7 +18,7 @@
     "spinnerCopies": 0,
     "emptyStateCopies": 6,
     "filterPillCopies": 0,
-    "heroCopies": 1,
+    "heroCopies": 0,
     "stickyBarCopies": 0
   },
   "undefinedCssVars": []

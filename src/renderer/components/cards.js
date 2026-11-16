@@ -547,6 +547,8 @@ const AlbumVersionsMenu = ({ release, versions, resolvers = [], onSelect, onClos
     : [];
 
   return React.createElement('div', {
+    // The editions panel: its clicks stay in it.
+    role: 'dialog', 'aria-label': 'Other editions',
     className: 'absolute left-0 top-full mt-1 rounded-lg py-1 z-30 no-drag scrollable-content',
     style: {
       backgroundColor: 'var(--tooltip-bg)',

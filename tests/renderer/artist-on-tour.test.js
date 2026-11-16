@@ -32,3 +32,15 @@ test('asked before a concert plug-in was ready: asked again once one is', () => 
 test('Clear cache asks first: it removes every cache and cannot be undone', () => {
   expect(app).toMatch(/variant: 'destructive', size: 'sm', onClick: \(\) => showConfirmDialog\(\{[\s\S]{0,200}title: 'Clear cache\?',[\s\S]{0,300}confirmLabel: 'Clear cache',\s*destructive: true,\s*onConfirm: async \(\) => \{/);
 });
+
+test("the artist hero is PageHero with the artist's photo", () => {
+  global.React = global.React || require('react');
+  const { renderToStaticMarkup } = require('react-dom/server');
+  const { PageHero } = require('../../src/renderer/components/page-hero');
+  const html = renderToStaticMarkup(React.createElement(PageHero, { collapsed: true, photo: { url: 'https://x/a.jpg', position: 'center 20%' }, onExpand: () => {}, collapsedContent: 'bar' }));
+  expect(html).toContain('background-image:url(https://x/a.jpg)');
+  expect(html).toContain('aria-label="Expand header"');
+  expect(html).toContain('rgba(17,17,17,0.95)');
+  expect(html).not.toContain('bg-gradient');
+  expect(artist).not.toMatch(/height: isHeaderCollapsed \? '80px' : '320px'/);
+});

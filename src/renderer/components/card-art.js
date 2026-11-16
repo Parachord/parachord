@@ -67,7 +67,8 @@ function ArtOverlay({ shown, title, onClick, onPlay, onQueue, onAddToPlaylist })
   return e('div', {
     // The click opens the card once: stop it at the overlay, or a card whose
     // art is also wrapped in an opener (PlaylistCard) opened twice.
-    'data-art-actions': '', onClick: onClick && ((ev) => { ev.stopPropagation(); onClick(ev); }),
+    // Not a control of its own: the card's button is what a keyboard opens.
+    'data-art-actions': '', role: 'presentation', onClick: onClick && ((ev) => { ev.stopPropagation(); onClick(ev); }),
     className: css ? `${APP_OVERLAY} card-actions` : APP_OVERLAY,
     // Above CardButton's stretched button (1) while shown, so its buttons and
     // its own open-on-click work; under the reason badge (3).
