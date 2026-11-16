@@ -23,6 +23,7 @@ const { PlaylistViewPage, PLAYLIST_VIEW_PAGE_HANDLERS } = require('../../src/ren
 const { ArtistPage, ARTIST_PAGE_HANDLERS } = require('../../src/renderer/components/artist-page');
 const { SearchPage, SEARCH_PAGE_HANDLERS } = require('../../src/renderer/components/search-page');
 const { FreshDropsPage, FRESH_DROPS_PAGE_HANDLERS } = require('../../src/renderer/components/fresh-drops-page');
+const { RecommendationsPage, RECOMMENDATIONS_PAGE_HANDLERS } = require('../../src/renderer/components/recommendations-page');
 const { useStableHandlers } = require('../../src/renderer/lib/stable-handlers');
 
 const PAGES = [
@@ -32,6 +33,7 @@ const PAGES = [
   { component: 'ArtistPage', file: 'artist-page.js', handlersVar: 'artistPageHandlers', handlers: ARTIST_PAGE_HANDLERS, memo: ArtistPage },
   { component: 'SearchPage', file: 'search-page.js', handlersVar: 'searchPageHandlers', handlers: SEARCH_PAGE_HANDLERS, memo: SearchPage },
   { component: 'FreshDropsPage', file: 'fresh-drops-page.js', handlersVar: 'freshDropsPageHandlers', handlers: FRESH_DROPS_PAGE_HANDLERS, memo: FreshDropsPage },
+  { component: 'RecommendationsPage', file: 'recommendations-page.js', handlersVar: 'recommendationsPageHandlers', handlers: RECOMMENDATIONS_PAGE_HANDLERS, memo: RecommendationsPage },
 ];
 
 describe.each(PAGES)('$component', ({ memo }) => {
@@ -160,5 +162,23 @@ describe.each(PAGES)('$component: the app.js call site keeps every prop stable',
       .filter((p) => p.type !== 'SpreadElement' && !p.key.name.startsWith('_'))
       .map((p) => p.key.name);
     expect(destructure).toEqual([...passed, ...handlers].sort());
+  });
+});
+
+// The handlers hook reads each function when the component renders, so a
+// function declared below it with const is in the temporal dead zone: the
+// app throws on its first render ("Cannot access 'x' before
+// initialization"). Recommendations' hook first sat above the service-
+// playlist functions it passes (#1451).
+describe.each(PAGES)('$component: every handler is declared above its useStableHandlers hook', ({ handlersVar, handlers }) => {
+  test('no handler is read in the TDZ', () => {
+    const hookAt = appSrc.indexOf(`const ${handlersVar} = useStableHandlers(`);
+    expect(hookAt).toBeGreaterThan(-1);
+    const late = handlers.filter((name) => {
+      const m = new RegExp(`\\n {2}(?:const|let) ${name} = |\\n {2}(?:async )?function ${name}\\(`).exec(appSrc);
+      // Declared outside the component body (a require or a hook destructure): not this rule's concern.
+      return m && m.index > hookAt;
+    });
+    expect(late).toEqual([]);
   });
 });

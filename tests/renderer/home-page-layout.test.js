@@ -14,7 +14,7 @@ const { renderToStaticMarkup } = require('react-dom/server');
 const ROOT = path.join(__dirname, '..', '..');
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 const page = read('src/renderer/components/home-page.js');
-const app = read('src/renderer/app.js');
+const app = require('../helpers/renderer-source').appWithPages(); // app.js and the pages moved out of it (#1451)
 const main = read('main.js');
 const { HomePage, HOME_PAGE_HANDLERS } = require('../../src/renderer/components/home-page');
 

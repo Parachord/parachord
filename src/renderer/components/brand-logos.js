@@ -238,4 +238,9 @@ const BRAND_COLORS = {
   raycastGradient: 'linear-gradient(135deg, #FF6363 0%, #FF8E53 100%)',
 };
 
-module.exports = { SERVICE_LOGO_PATHS, SERVICE_LOGO_IMAGES, ResolverIcon, SERVICE_LOGOS, BRAND_MARKS, BrandMark, ParachordWordmark, BRAND_COLORS };
+// The colour a plug-in gets when it declares none: a sentinel the pages
+// compare against (a plug-in with this colour has no brand colour), never
+// drawn as a brand.
+const NO_PLUGIN_COLOR = '#888888';
+
+module.exports = { NO_PLUGIN_COLOR, SERVICE_LOGO_PATHS, SERVICE_LOGO_IMAGES, ResolverIcon, SERVICE_LOGOS, BRAND_MARKS, BrandMark, ParachordWordmark, BRAND_COLORS };

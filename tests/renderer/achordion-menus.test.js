@@ -40,7 +40,7 @@ test('main.js offers it for each item type that has a page', () => {
 });
 
 test('the renderer opens profiles and both Share menus offer it', () => {
-  const app = read('src/renderer/app.js');
+  const app = require('../helpers/renderer-source').appWithPages(); // app.js and the pages moved out of it (#1451)
   expect(app).toContain('const achordionUserUrl = (username) => `https://achordion.xyz/user/${encodeURIComponent(username)}`;');
   expect(app).toMatch(/data\.action === 'view-on-achordion-user' && data\.username[\s\S]{0,200}achordionUserUrl\(data\.username\)/);
   expect(app).toMatch(/activeView === 'friendHistory' && currentFriend\?\.service === 'listenbrainz'/);

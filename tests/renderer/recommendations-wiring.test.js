@@ -18,7 +18,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+const app = require('../helpers/renderer-source').appWithPages(); // app.js and the pages moved out of it (#1451)
 
 describe('recommendations wiring', () => {
   test('an aiRecommendations change re-merges the display model', () => {
@@ -169,7 +169,7 @@ describe('recommendations wiring', () => {
 });
 
 describe('opening a recommended playlist is responsive', () => {
-  const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  const app = require('../helpers/renderer-source').appWithPages(); // app.js and the pages moved out of it (#1451)
 
   test('the click opens the view at once and the tracks fill in when the lookup lands', () => {
     const open = app.slice(app.indexOf('const openServicePlaylist = (item, sourceName) => {'));
@@ -215,7 +215,7 @@ describe('opening a recommended playlist is responsive', () => {
 });
 
 describe('the single Show-more control with background pagination', () => {
-  const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  const app = require('../helpers/renderer-source').appWithPages(); // app.js and the pages moved out of it (#1451)
 
   test('expanding a paginated section drives the page fetches (no separate Load-more button)', () => {
     // The auto-fetch effect: expanded + canLoadMore + not in flight → fetch.
@@ -402,8 +402,9 @@ describe('the grouped model wiring (similar users, weekly sections, readers)', (
 });
 
 describe('the five-section page render', () => {
-  const start = app.indexOf('// Recommendations view with collapsible hero header.');
-  const view = app.slice(start, app.indexOf('// History view with collapsible hero header and tabs', start));
+  // The Recommendations page (components/recommendations-page.js, #1451).
+  const start = app.indexOf('const RecommendationsPage = React.memo(');
+  const view = app.slice(start, app.indexOf('module.exports', start));
   const between = (from, to) => view.slice(view.indexOf(from), view.indexOf(to, view.indexOf(from)));
   const home = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/home-page.js'), 'utf8');
 

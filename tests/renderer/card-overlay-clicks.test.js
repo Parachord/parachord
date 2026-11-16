@@ -85,10 +85,10 @@ test('every artist grid uses ArtistCard: Play on hover, queue in the artist menu
   const path = require('path');
   const read = (p) => fs.readFileSync(path.join(__dirname, '../..', p), 'utf8');
   const main = read('main.js');
-  const app = read('src/renderer/app.js');
+  const app = require('../helpers/renderer-source').appWithPages(); // app.js and the pages moved out of it (#1451)
   expect(main).toMatch(/label: 'Add Top 10 to Queue',[\s\S]{0,200}action: 'queue-artist-top-tracks'/);
   expect(app).toMatch(/data\.action === 'queue-artist-top-tracks' && data\.artist\?\.name/);
-  const uses = { 'src/renderer/app.js': 3, 'src/renderer/components/search-page.js': 2, 'src/renderer/components/collection-page.js': 1, 'src/renderer/components/artist-page.js': 1 };
+  const uses = { 'src/renderer/app.js': 2, 'src/renderer/components/recommendations-page.js': 1, 'src/renderer/components/search-page.js': 2, 'src/renderer/components/collection-page.js': 1, 'src/renderer/components/artist-page.js': 1 };
   for (const [file, n] of Object.entries(uses)) {
     const src = read(file);
     expect([file, (src.match(/React\.createElement\(ArtistCard, \{/g) || []).length]).toEqual([file, n]);
@@ -105,7 +105,7 @@ test("Listeners and Collection's friends share ListenerCard, with Play for their
   const fs = require('fs');
   const path = require('path');
   const read = (p) => fs.readFileSync(path.join(__dirname, '../..', p), 'utf8');
-  const app = read('src/renderer/app.js');
+  const app = require('../helpers/renderer-source').appWithPages(); // app.js and the pages moved out of it (#1451)
   const page = read('src/renderer/components/collection-page.js');
   const card = read('src/renderer/components/listener-card.js');
   expect(app).toMatch(/return React\.createElement\(ListenerCard, \{[\s\S]{0,800}onPlay: \(\) => playListenerTopTracks\(item\)/);

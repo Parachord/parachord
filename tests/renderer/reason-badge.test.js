@@ -9,7 +9,7 @@ const path = require('path');
 const { renderToStaticMarkup } = require('react-dom/server');
 const { ReasonBadge, ReasonMark, shuffleupagusBadgeProps } = require('../../src/renderer/components/reason-badge');
 
-const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+const app = require('../helpers/renderer-source').appWithPages(); // app.js and the pages moved out of it (#1451)
 
 describe('shuffleupagusBadgeProps', () => {
   test("Shuffleupagus's own items and merged items it sent get the badge", () => {

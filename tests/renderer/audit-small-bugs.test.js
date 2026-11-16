@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 
 const root = path.join(__dirname, '../..');
-const app = fs.readFileSync(path.join(root, 'src/renderer/app.js'), 'utf8');
+const app = require('../helpers/renderer-source').appWithPages(); // app.js and the pages moved out of it (#1451)
 // The pages moved out of app.js (#1451) are read with it.
 const fresh = fs.readFileSync(path.join(root, 'src/renderer/components/fresh-drops-page.js'), 'utf8');
 const pv = fs.readFileSync(path.join(root, 'src/renderer/components/playlist-view-page.js'), 'utf8');
