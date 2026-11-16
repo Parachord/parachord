@@ -29,8 +29,10 @@
 // and the one-time migration (sync-engine/collection-id-migration.js) moves
 // stored rows and their love marks to the new ids.
 //
-// Mobile computes the same ids (parachord-mobile, CollectionIds / the Kotlin
-// sync providers) and must switch with the same rule.
+// Mobile doesn't build these ids: the Android app keys its library by the
+// provider's own ids ("spotify-<id>", "applemusic-<id>", "listenbrainz-<mbid>")
+// and its love marks by its own track ids, so nothing there has to match
+// this formula (checked 2026-11-16, #1401).
 
 'use strict';
 
