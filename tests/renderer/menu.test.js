@@ -148,7 +148,7 @@ describe('callers', () => {
     expect(page).toContain("items.push({ separator: true, key: 'sep' });");
   });
   test("the playbar's Play from and the chat provider picker use it, as choices", () => {
-    const app = read('src/renderer/app.js');
+    const app = require('../helpers/renderer-source').appWithPages() /* app.js and the pages moved out of it (#1451) */;
     expect(app).toMatch(/React\.createElement\(Menu, \{\n\s*label: 'Play from',\n\s*heading: 'Play from',/);
     expect(app).toContain('checked: resId === currentResolverId,');
     // The chat provider picker is ProviderMenu (components/provider-menu.js), a Menu of choices.
@@ -161,7 +161,7 @@ describe('callers', () => {
     expect(read('src/renderer/app.js')).not.toContain("data-provider-dropdown");
   });
   test('their hand-built open state is gone', () => {
-    const app = read('src/renderer/app.js');
+    const app = require('../helpers/renderer-source').appWithPages() /* app.js and the pages moved out of it (#1451) */;
     for (const v of ['shareDropdownOpen', 'concertsTicketFlyout', 'artistConcertsTicketFlyout', 'syncMenuOpen', 'playbarSourceDropdownOpen', 'chatProviderDropdownOpen']) expect(app).not.toContain(v);
   });
 });

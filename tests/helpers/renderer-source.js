@@ -16,6 +16,7 @@ const PAGE_MODULES = [
   'components/history-page.js',
   'components/friend-history-page.js',
   'components/tag-editor-dialog.js',
+  'components/results-panel.js',
 ];
 
 function read(rel) {
