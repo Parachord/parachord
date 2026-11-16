@@ -43,7 +43,7 @@ const METRICS = {
   inlineOutlineNone: "Inline outline: 'none', which hides the global :focus-visible ring.",
   nativeDialogs: 'alert()/confirm()/prompt(). Use showToast or a dialog component.',
   asciiEllipsis: 'Strings with "..." (three dots). Use the "…" character.',
-  svgPaths: 'Hand-written <path> elements. Use the shared icon set (src/renderer/components/icons.js).',
+  svgPaths: 'Hand-written <path> elements. Use the shared icon set (components/icons.js) for a glyph, the brand logo kit (components/brand-logos.js) for a logo.',
   offScaleFontSizes: 'Inline font sizes off the type scale (11, 12, 13, 14, 16, 20, 24, 28, 48px).',
   offScaleRadii: 'Inline border radii off the radius scale (4, 6, 8, 10, 12, 16px, full).',
   jsHover: 'onMouseEnter handlers that change style (hover styling done in JS). Use CSS :hover / Tailwind hover: classes.',
@@ -239,8 +239,10 @@ function scan() {
   for (const file of rendererFiles()) {
     const rel = path.relative(ROOT, file);
     const { counts, cssVars } = scanSource(fs.readFileSync(file, 'utf8'));
-    // The shared icon set is where paths belong; svgPaths counts the copies.
-    if (rel === path.join('src', 'renderer', 'components', 'icons.js')) counts.svgPaths = 0;
+    // The shared icon set and the brand logo kit are where paths belong;
+    // svgPaths counts the copies.
+    if (rel === path.join('src', 'renderer', 'components', 'icons.js')
+      || rel === path.join('src', 'renderer', 'components', 'brand-logos.js')) counts.svgPaths = 0;
     for (const [metric, homes] of Object.entries(COPY_HOMES)) {
       if (homes.some((h) => rel === path.join('src', 'renderer', ...h.split('/')))) counts[metric] = 0;
     }
