@@ -131,7 +131,7 @@ describe('stream quality review follow-ups', () => {
   });
 
   test('the playbar title tooltip caps its width so long titles still truncate', () => {
-    const app = read('src/renderer/app.js');
+    const app = require('../helpers/renderer-source').appWithPages();
     const i = app.indexOf('content: streamQualityLabel,');
     expect(i).toBeGreaterThan(-1);
     expect(app.slice(i, i + 200)).toMatch(/className: 'tooltip-fill'/);
@@ -198,7 +198,7 @@ describe('Amazon quality updates and the queue save do not churn on every poll',
   // Two files in play after the hook extraction: the engine hook carries the
   // stream-quality attach (below); app.js still consolidates the hook calls.
   const app = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'hooks', 'use-playback-engine.js'), 'utf8');
-  const appJs = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
+  const appJs = require('../helpers/renderer-source').appWithPages();
 
   test('the widevine stream-quality attach gates on isStreamQualityChange', () => {
     const at = app.indexOf('const attachStreamQuality = () => {');

@@ -8,7 +8,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const app = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
+const app = require('../helpers/renderer-source').appWithPages();
 
 function extract(startMarker, endMarker) {
   const s = app.indexOf(startMarker);

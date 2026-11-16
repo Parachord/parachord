@@ -21,7 +21,7 @@ const {
 } = require('../../src/renderer/lib/playback-helpers');
 
 const root = path.join(__dirname, '../..');
-const app = fs.readFileSync(path.join(root, 'src/renderer/app.js'), 'utf8');
+const app = require('../helpers/renderer-source').appWithPages();
 const engine = fs.readFileSync(path.join(root, 'src/renderer/hooks/use-playback-engine.js'), 'utf8');
 const queueHook = fs.readFileSync(path.join(root, 'src/renderer/hooks/use-playback-queue.js'), 'utf8');
 const store = fs.readFileSync(path.join(root, 'main-process/ipc/store.js'), 'utf8');

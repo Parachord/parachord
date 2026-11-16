@@ -7,7 +7,7 @@
 const fs = require('fs');
 const path = require('path');
 const ROOT = path.join(__dirname, '..', '..');
-const app = fs.readFileSync(path.join(ROOT, 'src/renderer/app.js'), 'utf8');
+const app = require('../helpers/renderer-source').appWithPages();
 const atoms = fs.readFileSync(path.join(ROOT, 'src/renderer/components/ui-atoms.js'), 'utf8');
 const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 

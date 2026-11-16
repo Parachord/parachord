@@ -38,7 +38,7 @@ test('no two heroes start in the same colour', () => {
 });
 
 test('the sidebar, heroes and section links read the map, not their own copies', () => {
-  const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  const app = require('../helpers/renderer-source').appWithPages();
   // The heroes are the shared PageHero, which reads the page's gradient and
   // pattern from the map.
   for (const view of ['history', 'new-releases', 'discover', 'critics-picks', 'concerts', 'recommendations', 'playlists']) {
@@ -53,7 +53,7 @@ test('the sidebar, heroes and section links read the map, not their own copies',
 });
 
 test('the playbar and Search take service colours from the plugin, not their own copies', () => {
-  const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  const app = require('../helpers/renderer-source').appWithPages();
   const search = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/search-page.js'), 'utf8');
   expect(app).not.toMatch(/const resolverIconColors = \{/);
   expect(app).toMatch(/const currentIconColor = \(resolver\.color && resolver\.color !== NO_PLUGIN_COLOR\) \? resolver\.color/);

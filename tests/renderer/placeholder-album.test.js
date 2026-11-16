@@ -163,7 +163,7 @@ describe('clearPlaceholderAlbums', () => {
 });
 
 describe('the app uses them', () => {
-  const app = read('src/renderer/app.js');
+  const app = require('../helpers/renderer-source').appWithPages();
 
   test('nothing in app.js fills in Single as an album', () => {
     expect(app).not.toMatch(/album:\s*[^,\n]*\|\|\s*'Single'/);

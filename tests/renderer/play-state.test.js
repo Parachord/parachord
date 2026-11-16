@@ -238,7 +238,7 @@ describe('wiring in the playback engine', () => {
 });
 
 describe('the playbar shows a pending start', () => {
-  const app = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
+  const app = require('../helpers/renderer-source').appWithPages();
   const html = fs.readFileSync(path.join(__dirname, '..', '..', 'index.html'), 'utf8');
 
   test('the title and artist shimmer while a start of this track is pending', () => {

@@ -145,7 +145,7 @@ describe('seekRecheckPlan (the poller after a seek)', () => {
 
 describe('the wiring', () => {
   const root = path.join(__dirname, '../..');
-  const app = fs.readFileSync(path.join(root, 'src/renderer/app.js'), 'utf8');
+  const app = require('../helpers/renderer-source').appWithPages();
   const main = fs.readFileSync(path.join(root, 'main.js'), 'utf8');
   const preload = fs.readFileSync(path.join(root, 'preload.js'), 'utf8');
 

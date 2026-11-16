@@ -46,7 +46,7 @@ describe('previousAction', () => {
 
 describe('the engine wiring', () => {
   const engine = fs.readFileSync(path.join(__dirname, '../../src/renderer/hooks/use-playback-engine.js'), 'utf8');
-  const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  const app = require('../helpers/renderer-source').appWithPages();
   const nextStart = engine.indexOf("const handleNext = async (userInitiated = false, { trigger = 'next' } = {}) => {");
   const prevStart = engine.indexOf('const handlePrevious = async () => {');
   const handleNext = engine.slice(nextStart, prevStart);
