@@ -2024,7 +2024,9 @@ const { ChartsPage } = require('./components/charts-page');
 const { RaycastInfoDialog } = require('./components/raycast-info-dialog');
 const { ExtensionInfoDialog } = require('./components/extension-info-dialog');
 const { PluginSettingsDialog } = require('./components/plugin-settings-dialog');
+const { servicesWithCapability, hasScrobblerConnected: hasScrobblerConnectedTo } = require('./lib/ai-services');
 const { FirstRunTutorial } = require('./components/first-run-tutorial');
+const { AiPromptPanel } = require('./components/ai-prompt-panel');
 const { Sidebar } = require('./components/sidebar');
 const { Playbar } = require('./components/playbar');
 const { SettingsPage } = require('./components/settings-page');
@@ -8493,37 +8495,10 @@ const Parachord = () => {
   const topTracksCache = useRef({});
 
   // Get meta services with AI generation capability
-  const getAiServices = () => {
-    // Primary source: resolver loader (has implementation functions)
-    const fromLoader = resolverLoaderRef.current
-      ? resolverLoaderRef.current.getAllResolvers().filter(r => r.capabilities?.generate)
-      : [];
-
-    // Also include meta services with generate capability not yet in the resolver loader
-    const loaderIds = new Set(fromLoader.map(r => r.id));
-    const fromState = metaServices.filter(ms =>
-      ms.capabilities?.generate && !loaderIds.has(ms.id)
-    );
-
-    return [...fromLoader, ...fromState];
-  };
+  const getAiServices = () => servicesWithCapability('generate', resolverLoaderRef.current, metaServices);
 
   // Get AI services with chat capability (for Conversational DJ)
-  const getChatServices = () => {
-    // Primary source: resolver loader (has implementation functions)
-    const fromLoader = resolverLoaderRef.current
-      ? resolverLoaderRef.current.getAllResolvers().filter(r => r.capabilities?.chat)
-      : [];
-
-    // Also include meta services with chat capability not yet in the resolver loader
-    // This ensures services appear in the dropdown even if they failed to load into the resolver
-    const loaderIds = new Set(fromLoader.map(r => r.id));
-    const fromState = metaServices.filter(ms =>
-      ms.capabilities?.chat && !loaderIds.has(ms.id)
-    );
-
-    return [...fromLoader, ...fromState];
-  };
+  const getChatServices = () => servicesWithCapability('chat', resolverLoaderRef.current, metaServices);
 
   // Check if a service is enabled based on its config and auth requirements
   const isServiceEnabled = (service) => {
@@ -8534,11 +8509,7 @@ const Parachord = () => {
   };
 
   // Check if a scrobbler service (Last.fm or ListenBrainz) is connected
-  const hasScrobblerConnected = () => {
-    const lastfmConfig = metaServiceConfigs.lastfm;
-    const listenbrainzConfig = metaServiceConfigs.listenbrainz;
-    return !!(lastfmConfig?.username || listenbrainzConfig?.username);
-  };
+  const hasScrobblerConnected = () => hasScrobblerConnectedTo(metaServiceConfigs);
 
   // Get the name of the connected scrobbler service
   const getScrobblerName = () => {
@@ -37377,6 +37348,12 @@ useEffect(() => {
     connectLastfm, connectListenbrainz, handleAddWatchFolder, navigateTo,
   });
 
+  // Stable function props for the memo'd AiPromptPanel (keys must
+  // match AI_PROMPT_PANEL_HANDLERS in ai-prompt-panel.js).
+  const aiPromptPanelHandlers = useStableHandlers({
+    handleAiGenerate, navigateTo,
+  });
+
   // Stable function props for the memo'd PluginSettingsDialog (keys must
   // match PLUGIN_SETTINGS_DIALOG_HANDLERS in plugin-settings-dialog.js).
   const pluginSettingsDialogHandlers = useStableHandlers({
@@ -38564,125 +38541,24 @@ collapsedContent: null
     }),
 
     // AI Prompt Input Panel (floating above playbar, aligned with AI button on left) - Refined dark theme
-    aiPromptOpen && React.createElement('div', {
-      // Rises in above the playbar like a toast (.motion-rise-in).
-      className: 'on-dark motion-rise-in fixed bottom-24 left-4 z-50',
-      style: {
-        width: '380px',
-        backgroundColor: 'var(--surface-dark-solid)',
-        backdropFilter: 'blur(20px)',
-        border: '1px solid var(--surface-dark-border)',
-        borderRadius: '16px',
-        boxShadow: 'var(--shadow-dialog-dark)',
-        padding: '16px'
-      }
-    },
-      // Header
-      React.createElement('div', { className: 'flex items-center justify-between mb-3' },
-        React.createElement('div', { className: 'flex items-center gap-2' },
-          React.createElement('span', { style: { color: 'var(--playbar-accent-hover)' } }, '✨'),
-          React.createElement('span', { style: { fontSize: '14px', fontWeight: '500', color: 'var(--on-dark-primary)' } }, 'Generate Playlist')
-        ),
-        React.createElement(Button, { variant: 'icon', size: 'sm', tone: 'dark', 'aria-label': "Close", onClick: () => {
-            setAiPromptOpen(false);
-            setAiPrompt('');
-            setAiError(null);
-          } }, React.createElement(Icons.X, { className: 'w-4 h-4' }))
-      ),
-
-      // Input
-      // The shared text field (components/fields.js), dark tone, with
-      // Generate inside it: the field's own focus ring, no JS styling.
-      React.createElement(TextField, {
-        tone: 'dark',
-        size: 'lg',
-        wrapClassName: 'w-full',
-        value: aiPrompt,
-        onChange: setAiPrompt,
-        onKeyDown: (e) => {
-          // Prevent global shortcuts from interfering while typing
-          e.stopPropagation();
-          if (e.key === 'Enter' && aiPrompt.trim() && !aiLoading) {
-            handleAiGenerate(aiPrompt.trim());
-          }
-          if (e.key === 'Escape') {
-            setAiPromptOpen(false);
-            setAiPrompt('');
-            setAiError(null);
-          }
-        },
-        placeholder: 'What do you want to listen to?',
-        disabled: aiLoading,
-        autoFocus: true,
-        'aria-label': 'What do you want to listen to?',
-        trailing: React.createElement(Button, { variant: 'primary', size: 'sm', className: '!px-2', 'aria-label': "Generate", onClick: () => aiPrompt.trim() && !aiLoading && handleAiGenerate(aiPrompt.trim()), disabled: !aiPrompt.trim() || aiLoading }, aiLoading
-            ? React.createElement(Icons.Spinner, { size: 16 })
-            : React.createElement(Icons.ArrowRight, { className: 'w-4 h-4', strokeWidth: 2 }))
-      }),
-
-      // Provider selector row (right-aligned)
-      (() => {
-        const aiResolvers = getAiServices();
-        if (aiResolvers.length <= 1) return null;
-        return React.createElement('div', { className: 'mt-3 flex items-center justify-end gap-2' },
-          React.createElement('span', { style: { fontSize: '12px', color: 'var(--on-dark-secondary)' } }, 'Provider'),
-          // The same picker as the chat panel's (components/provider-menu.js).
-          React.createElement(ProviderMenu, {
-            label: 'AI provider',
-            services: aiResolvers,
-            value: selectedAiResolver || aiResolvers[0]?.id || '',
-            onChange: (id) => setSelectedAiResolver(id)
-          })
-        );
-      })(),
-
-      // Surprise Me button (own row, only when data sharing is enabled) - Muted gradient
-      aiIncludeHistory && React.createElement('div', {
-        className: 'mt-3'
-      },
-        React.createElement(Button, { variant: 'primary', className: 'w-full', style: { background: aiLoading ? 'var(--on-dark-faint)' : 'var(--ai-gradient)' }, onClick: () => !aiLoading && handleAiGenerate('Surprise me! Based on my listening history, create a playlist of songs I might love but haven\'t discovered yet. Mix familiar vibes with fresh discoveries.'), disabled: aiLoading }, React.createElement('span', { className: 'flex items-center justify-center gap-2' },
-            React.createElement(Icons.Dices, { className: 'w-4 h-4' }),
-            'Surprise Me'
-          ))
-      ),
-
-      // Scrobbler not connected - show link to plug-ins settings
-      !hasScrobblerConnected() && React.createElement('div', {
-        className: 'mt-3 flex items-center justify-between'
-      },
-        React.createElement('span', { style: { fontSize: '12px', color: 'var(--on-dark-secondary)' } },
-          'Connect a scrobbler for personalized recommendations'
-        ),
-        React.createElement('button', {
-          onClick: () => {
-            setAiPromptOpen(false);
-            setSettingsTab('plugins');
-            setMarketplaceCategory('social');
-            navigateTo('settings');
-          },
-          className: 'transition-colors hover:!text-[var(--playbar-accent-hover)]',
-          style: { fontSize: '12px', color: 'var(--accent-soft)' },
-        }, 'Browse →')
-      ),
-
-      // Error message
-      aiError && React.createElement('div', {
-        style: {
-          marginTop: '12px',
-          padding: '10px 12px',
-          backgroundColor: 'var(--tint-danger)',
-          border: '1px solid var(--border-danger)',
-          borderRadius: '8px'
-        }
-      },
-        React.createElement('p', { style: { fontSize: '12px', color: 'var(--on-dark-danger)' } }, aiError)
-      ),
-
-      // Hint
-      !aiError && React.createElement('p', { style: { marginTop: '12px', fontSize: '12px', color: 'var(--on-dark-secondary)' } },
-        'Try: "upbeat 90s hip hop" or "relaxing jazz for studying"'
-      )
-    ),
+    /* AiPromptPanel (components/ai-prompt-panel.js), a memo'd panel. */ aiPromptOpen && React.createElement(AiPromptPanel, {
+      _allResolvers: allResolvers,
+      aiError,
+      aiIncludeHistory,
+      aiLoading,
+      aiPrompt,
+      metaServiceConfigs,
+      metaServices,
+      resolverLoaderRef,
+      selectedAiResolver,
+      setAiError,
+      setAiPrompt,
+      setAiPromptOpen,
+      setMarketplaceCategory,
+      setSelectedAiResolver,
+      setSettingsTab,
+      ...aiPromptPanelHandlers
+    }),
 
     // Results Sidebar (slides in from right, above playbar) - Refined dark theme
     // ResultsPanel (components/results-panel.js), a memo'd panel.

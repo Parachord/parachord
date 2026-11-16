@@ -28,10 +28,12 @@ const PAGE_MODULES = [
   'components/sidebar.js',
   'components/plugin-settings-dialog.js',
   'components/first-run-tutorial.js',
+  'components/ai-prompt-panel.js',
   'components/extension-info-dialog.js',
   'components/raycast-info-dialog.js',
   // Module-level code moved out of app.js with them.
   'lib/resolver-order.js',
+  'lib/ai-services.js',
 ];
 
 function read(rel) {

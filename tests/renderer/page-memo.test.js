@@ -39,6 +39,7 @@ const { Playbar, PLAYBAR_HANDLERS } = require('../../src/renderer/components/pla
 const { Sidebar, SIDEBAR_HANDLERS } = require('../../src/renderer/components/sidebar');
 const { PluginSettingsDialog, PLUGIN_SETTINGS_DIALOG_HANDLERS } = require('../../src/renderer/components/plugin-settings-dialog');
 const { FirstRunTutorial, FIRST_RUN_TUTORIAL_HANDLERS } = require('../../src/renderer/components/first-run-tutorial');
+const { AiPromptPanel, AI_PROMPT_PANEL_HANDLERS } = require('../../src/renderer/components/ai-prompt-panel');
 const { useStableHandlers } = require('../../src/renderer/lib/stable-handlers');
 
 const PAGES = [
@@ -64,6 +65,7 @@ const PAGES = [
   { component: 'Sidebar', file: 'sidebar.js', handlersVar: 'sidebarHandlers', handlers: SIDEBAR_HANDLERS, memo: Sidebar },
   { component: 'PluginSettingsDialog', file: 'plugin-settings-dialog.js', handlersVar: 'pluginSettingsDialogHandlers', handlers: PLUGIN_SETTINGS_DIALOG_HANDLERS, memo: PluginSettingsDialog },
   { component: 'FirstRunTutorial', file: 'first-run-tutorial.js', handlersVar: 'firstRunTutorialHandlers', handlers: FIRST_RUN_TUTORIAL_HANDLERS, memo: FirstRunTutorial },
+  { component: 'AiPromptPanel', file: 'ai-prompt-panel.js', handlersVar: 'aiPromptPanelHandlers', handlers: AI_PROMPT_PANEL_HANDLERS, memo: AiPromptPanel },
 ];
 
 describe.each(PAGES)('$component', ({ memo }) => {
