@@ -118,7 +118,7 @@ describe('queue drawer source icons', () => {
   });
 
   test('app.js passes playbackResolvers and trackSources to the queue list', () => {
-    const app = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
+    const app = require('../helpers/renderer-source').appWithPages(); // the queue list is in components/queue-drawer.js (#1451)
     const start = app.indexOf('React.createElement(VirtualizedQueueList, {');
     expect(start).toBeGreaterThan(-1);
     const props = app.slice(start, app.indexOf('})', start));

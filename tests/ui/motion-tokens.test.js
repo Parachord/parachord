@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const root = path.join(__dirname, '../..');
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-const app = fs.readFileSync(path.join(root, 'src/renderer/app.js'), 'utf8');
+const app = require('../helpers/renderer-source').appWithPages(); // app.js and the pages / panels moved out of it (#1451)
 const { transition } = require('../../src/renderer/lib/motion');
 
 test('the tokens, and reduced motion zeroes the durations', () => {

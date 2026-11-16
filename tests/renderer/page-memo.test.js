@@ -30,6 +30,7 @@ const { CriticsPicksPage, CRITICS_PICKS_PAGE_HANDLERS } = require('../../src/ren
 const { HistoryPage, HISTORY_PAGE_HANDLERS } = require('../../src/renderer/components/history-page');
 const { FriendHistoryPage, FRIEND_HISTORY_PAGE_HANDLERS } = require('../../src/renderer/components/friend-history-page');
 const { ResultsPanel, RESULTS_PANEL_HANDLERS } = require('../../src/renderer/components/results-panel');
+const { QueueDrawer, QUEUE_DRAWER_HANDLERS } = require('../../src/renderer/components/queue-drawer');
 const { useStableHandlers } = require('../../src/renderer/lib/stable-handlers');
 
 const PAGES = [
@@ -46,6 +47,7 @@ const PAGES = [
   { component: 'HistoryPage', file: 'history-page.js', handlersVar: 'historyPageHandlers', handlers: HISTORY_PAGE_HANDLERS, memo: HistoryPage },
   { component: 'FriendHistoryPage', file: 'friend-history-page.js', handlersVar: 'friendHistoryPageHandlers', handlers: FRIEND_HISTORY_PAGE_HANDLERS, memo: FriendHistoryPage },
   { component: 'ResultsPanel', file: 'results-panel.js', handlersVar: 'resultsPanelHandlers', handlers: RESULTS_PANEL_HANDLERS, memo: ResultsPanel },
+  { component: 'QueueDrawer', file: 'queue-drawer.js', handlersVar: 'queueDrawerHandlers', handlers: QUEUE_DRAWER_HANDLERS, memo: QueueDrawer },
 ];
 
 describe.each(PAGES)('$component', ({ memo }) => {
