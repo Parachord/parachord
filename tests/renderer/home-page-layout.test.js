@@ -453,7 +453,7 @@ describe('design-audit small fixes (#1382)', () => {
   });
 
   test('saving an empty key or URL does not switch a plugin on', () => {
-    expect((app.match(/enabled: !!e\.target\.value\.trim\(\)/g) || []).length).toBe(2);
+    expect((app.match(/enabled: !!e\.target\.value\.trim\(\)/g) || []).length).toBe(1);
   });
 
   test('text fields and selections get a native Cut / Copy / Paste menu', () => {

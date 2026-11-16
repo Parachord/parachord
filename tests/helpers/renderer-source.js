@@ -27,6 +27,8 @@ const PAGE_MODULES = [
   'components/playbar.js',
   'components/sidebar.js',
   'components/plugin-settings-dialog.js',
+  'components/extension-info-dialog.js',
+  'components/raycast-info-dialog.js',
   // Module-level code moved out of app.js with them.
   'lib/resolver-order.js',
 ];

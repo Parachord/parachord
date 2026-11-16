@@ -17,9 +17,9 @@ test("an unknown one is spelled out, never shown as its id", () => {
   expect(capabilityLabel('lyrics_sync')).toBe('Lyrics sync');
 });
 
-test('Settings and the marketplace use it, as the shared pill', () => {
+test('Plug-in settings uses it, as the shared pill', () => {
   const app = require('../helpers/renderer-source').appWithPages();
-  expect(app.split("enabled ? React.createElement(Badge, { key: cap, tone: 'accent' }, capabilityLabel(cap)) : null)").length - 1).toBe(2);
+  expect(app.split("enabled ? React.createElement(Badge, { key: cap, tone: 'accent' }, capabilityLabel(cap)) : null)").length - 1).toBe(1);
   expect(app).not.toContain("urlLookup: 'URL Lookup'");
 });
 

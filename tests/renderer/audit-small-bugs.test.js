@@ -71,8 +71,8 @@ test('the queue keyframes move rows with translate, not transform (bug 13)', () 
   expect(block).toMatch(/translate: 0 -20px;/);
 });
 
-test("the marketplace's model picker lists the plugin's models, not a hard-coded set (bug 30)", () => {
+test("the model picker lists the plugin's models, not a hard-coded set (bug 30)", () => {
   expect(app).not.toMatch(/'GPT-4o Mini \(Recommended\)'/);
   expect(app).not.toMatch(/'Gemini 2\.5 Flash \(Recommended\)'/);
-  expect(app).toMatch(/modelSetting\?\.fallbackOptions \|\| modelSetting\?\.options \|\| \[\]/);
+  expect(app).toMatch(/options = modelSetting\.fallbackOptions;/);
 });
