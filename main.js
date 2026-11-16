@@ -816,17 +816,21 @@ const isMainWindowTopFrameSender = (event) => {
 };
 registerWidevineBridgeIpc({ ipcMain, isAllowedSender: isMainWindowTopFrameSender });
 
-// The webSession IPC bridge (#1356): registered web-session hosts exposed to
-// the renderer. Amazon's session is the ONE createWebSessionHost instance
-// amazon-web-player owns at module scope (the one owner of the
-// persist:amazon-music partition's webRequest slot) — registered here by
-// reference, never re-created. The bridge gates the sender like the widevine
-// bridge, scopes fetch/pageFetch URLs to the session's cookie domains, and
-// shuttles the sign-in tick/decide/settled protocol (channel contract in
-// docs/architecture/web-session.md, "The IPC bridge"). Nothing calls it yet —
-// the Amazon plugin starts when its flows move.
-const { registerWebSession, registerWebSessionBridgeIpc } = require('./main-process/ipc/web-session-bridge');
-registerWebSession('amazon-music', amazonWebPlayer.webSession);
+// The webSession IPC bridge (#1356): the channels are registered, but NO
+// session is yet — the live registration (Amazon's ONE createWebSessionHost
+// instance, the one owner of the persist:amazon-music partition's webRequest
+// slot, registered by reference and never re-created) moves to the layer that
+// first drives it through the bridge: the Amazon plugin's flow move (#1432
+// review, note 8 — this layer ships the module, its tests and the preload
+// wrapper code; the EXPOSURE, the session registration and the preload's
+// webSession block, moves with the layer that uses them). Until then every
+// webSession: call answers not-ready for every id. The bridge gates the sender
+// like the widevine bridge, scopes fetch/pageFetch to the session's allowed
+// hosts (exact hosts, https only, redirect hops re-checked host-side) and
+// load/signIn to the cookie domains, caps the caller budgets, and shuttles
+// the sign-in tick/decide/settled protocol (channel contract in
+// docs/architecture/web-session.md, "The IPC bridge").
+const { registerWebSessionBridgeIpc } = require('./main-process/ipc/web-session-bridge');
 registerWebSessionBridgeIpc({
   ipcMain,
   isAllowedSender: isMainWindowTopFrameSender,

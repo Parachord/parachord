@@ -22,17 +22,22 @@
 //                               CORS), parallel-safe
 //   fetch(request)           → { status, headers, text } — a request outside
 //                               the page carrying the session's cookies; the
-//                               host owns cookies in BOTH directions (the
-//                               request header is built from the jar, the
-//                               response's Set-Cookie is written into it, and
-//                               the returned headers carry set-cookie NAMES
+//                               URL must be https on one of the session's
+//                               allowedHosts and EVERY redirect hop is
+//                               re-checked (a hop off the list is not
+//                               followed — the jar rides every hop); the host
+//                               owns cookies in BOTH directions (the request
+//                               header is built from the jar, the response's
+//                               Set-Cookie is written into it, and the
+//                               returned headers carry set-cookie NAMES
 //                               only), it is budgeted like every other wait,
 //                               and the request aborts when the budget fires
 //   state()                  → { url, signInUrl, cookieNames } — the facts a
 //                               plugin composes its signed-in/wall verdicts
 //                               from (names only, never values)
-//   signIn(url, { decide })  → { signedIn } — a visible window ticked at the
-//                               host; decide({url, cookieNames, stableTicks})
+//   signIn(url, { decide })  → { signedIn } — a visible window (title from
+//                               host config, never a caller choice) ticked at
+//                               the host; decide({url, cookieNames, stableTicks})
 //                               is the plugin's pure verdict
 //   clear()                  — sign out: views die, the storage clears
 //
@@ -138,6 +143,26 @@ function sleep(ms) {
   });
 }
 
+// Whether a URL is https on one of the session's allowed hosts — EXACT host
+// equality, deliberately NOT cookie-domain semantics: a session-bearing
+// fetcher that reaches the whole cookie domain reaches the whole account
+// (amazon.com is the retail account; the service is music.amazon.com), so the
+// scope is the exact hosts the session's flows actually call (#1432 review,
+// finding 1). https only — an http: URL would send the jar in the clear. The
+// host's fetch (initial URL + every redirect hop) and the IPC bridge
+// (fetch/pageFetch URLs, capture prefixes) share this one predicate so the
+// two layers can never drift on what "allowed" means.
+function urlOnAllowedHost(url, hosts) {
+  try {
+    const { protocol, hostname } = new URL(url);
+    if (protocol !== 'https:') return false;
+    const host = String(hostname).toLowerCase();
+    return (Array.isArray(hosts) ? hosts : []).some((h) => String(h).toLowerCase() === host);
+  } catch {
+    return false;
+  }
+}
+
 // The hidden view parks at a real size LEFT OF the window, not at 0×0: SPAs
 // collapse widgets to max-width: 0 in a 0×0 view, and rows then never mount
 // (search results included). A real size the user cannot see is the fix.
@@ -204,6 +229,21 @@ function createLaneQueue() {
 //                       (['amazon.com']) — state() reports and clear()
 //                       removes these; on Android every WebView shares one
 //                       CookieManager, so a wipe must be domain-scoped
+//   allowedHosts         the EXACT hosts the session's data-source primitives
+//                       may reach (['music.amazon.com',
+//                       'gql.music.amazon.com']) — fetch()'s URL and every
+//                       redirect hop are checked against this list (the
+//                       cookieDomains are wider than the service on purpose:
+//                       amazon.com is the whole retail account, and a
+//                       session-bearing fetcher that reaches it reads the
+//                       account — #1432 review, finding 1); the IPC bridge
+//                       scopes fetch/pageFetch and capture prefixes by the
+//                       same list, read off the host
+//   signInTitle          the visible sign-in window's title ('Sign in to
+//                       Amazon Music') — host config, never a caller choice
+//                       (#1432 review, finding 3: a caller-chosen title on a
+//                       chromeless window is a phishing surface); null falls
+//                       back to `Sign in to <id>`
 //   preload             preload path for the hidden view (null: none)
 //   signInPreload       preload for the sign-in window (null: it must behave
 //                       like a normal browser window)
@@ -215,6 +255,9 @@ function createWebSessionHost(config = {}) {
   if (!cfg.partition) throw new Error(`web-session ${cfg.id}: config.partition is required`);
   if (!Array.isArray(cfg.cookieDomains) || cfg.cookieDomains.length === 0) {
     throw new Error(`web-session ${cfg.id}: config.cookieDomains is required (state() reports and clear() removes these — a shared-cookie-store host must be able to scope them)`);
+  }
+  if (!Array.isArray(cfg.allowedHosts) || !cfg.allowedHosts.length || !cfg.allowedHosts.every((h) => typeof h === 'string' && h)) {
+    throw new Error(`web-session ${cfg.id}: config.allowedHosts is required (the exact hosts fetch may reach and every redirect hop is re-checked against — the cookie domains are wider than the service, so a session-bearing fetcher scoped only by them reaches the whole account)`);
   }
 
   function electron() { return require('electron'); }
@@ -235,11 +278,17 @@ function createWebSessionHost(config = {}) {
     _signInRun: null,     // the pending signIn promise (one ticker per open window)
 
     // The declared cookie domains, copied: state()/clear() scope by them, and
-    // the IPC bridge's fetch/pageFetch URL gate reads them off the host — the
+    // the IPC bridge's load/signIn URL gate reads them off the host — the
     // host is the one owner of the partition, so its domains are the ones the
     // bridge must scope by (re-declaring them at the bridge's own seam would
     // drift from what the jar actually scopes).
     cookieDomains: [...cfg.cookieDomains],
+
+    // The allowed hosts, copied for the same reason: fetch()'s URL gate and
+    // every redirect hop are checked against this list, and the IPC bridge
+    // scopes fetch/pageFetch and capture prefixes by it — narrower than the
+    // cookie domains on purpose (see the config doc above, #1432 finding 1).
+    allowedHosts: [...cfg.allowedHosts],
 
     // ── Electron plumbing ───────────────────────────────────────────────────
 
@@ -499,6 +548,19 @@ function createWebSessionHost(config = {}) {
       const ses = this.session();
       const filter = { urls: urlPrefixes };
       const captured = [];
+      // ONLY the hidden view's requests are captured (#1432 review, finding
+      // 2): the webRequest listener is session-wide, and the sign-in window
+      // shares the partition — its requests (the sign-in form's POST body,
+      // password included) must never land in a caller's captures. Electron
+      // tags each request with the webContents it came from
+      // (details.webContentsId, absent for service-worker and net.request
+      // traffic); the view's id is read LIVE so a destroyed-and-recreated
+      // view is never mistaken for the one this capture belongs to.
+      const fromHiddenView = (details) => {
+        const view = this._view;
+        const id = view && view.webContents && !view.webContents.isDestroyed() ? view.webContents.id : null;
+        return !!(details && details.webContentsId !== undefined && details.webContentsId === id);
+      };
       // This registration is the session's CURRENT capture (the webRequest
       // slot is single). detach() only clears the slot if this registration
       // is still the current one: a superseded load's finally (the old load
@@ -506,11 +568,12 @@ function createWebSessionHost(config = {}) {
       // capture a NEWER load attached — it would return captures: [] with
       // the page's requests silently dropped (#1399 review). The
       // registration carries its own detach so clear() can release the
-      // CURRENT one (the sign-in window shares this partition — a stale
-      // listener would record ITS requests into a dead array).
+      // CURRENT one (a stale listener would record the partition's requests
+      // into a dead array).
       const registration = { captured, detached: false, detach: null, snapshot: null };
       const onRequest = (details, callback) => {
         try {
+          if (!fromHiddenView(details)) { callback({}); return; }
           let body = null;
           if (details.uploadData && details.uploadData.length) {
             body = details.uploadData.map((d) => (d.bytes ? d.bytes.toString('utf8') : '')).join('');
@@ -528,7 +591,7 @@ function createWebSessionHost(config = {}) {
         callback({});
       };
       const onSendHeaders = (details, callback) => {
-        const mine = captured.find((r) => r._id === details.id);
+        const mine = fromHiddenView(details) ? captured.find((r) => r._id === details.id) : null;
         if (mine) {
           // Cookie values never enter host capture state in either direction
           // (fetch()'s boundary rule, stated in its own comment): a capture
@@ -729,8 +792,19 @@ function createWebSessionHost(config = {}) {
     // set-cookie NAMES only — values never cross the boundary in either
     // direction. Budgeted like every other wait (default loadTimeoutMs), and
     // the request is ABORTED when the budget fires.
+    //
+    // THE ALLOWLIST (finding 1): the URL must be https on one of the
+    // session's allowedHosts, and EVERY redirect hop is re-checked — a hop
+    // that leaves the list is not followed (the jar rides every hop, so a
+    // hop to any other host is the same reach as an off-list initial URL;
+    // net.request follows redirects by default, and a handled 'redirect'
+    // event must followRedirect() synchronously or the request is CANCELLED —
+    // which is exactly the abort we want).
     async fetch(request = {}) {
       if (!request.url || typeof request.url !== 'string') throw notReady('invalid', 'web-session fetch needs a url');
+      if (!urlOnAllowedHost(request.url, cfg.allowedHosts)) {
+        throw notReady('invalid', `web-session ${cfg.id} fetch: URL must be https on one of the session's allowed hosts (${cfg.allowedHosts.join(', ')}) — the cookie domains are wider than the service, and this fetch carries the session's cookies`);
+      }
       const { net } = electron();
       const ses = this.session();
       const headers = { ...(request.headers || {}) };
@@ -779,6 +853,19 @@ function createWebSessionHost(config = {}) {
           finish({ status: -1, headers: {}, text: `web-session fetch exceeded ${timeoutMs}ms` });
         }, timeoutMs);
         if (typeof timer.unref === 'function') timer.unref();
+        // Finding 1's hop rule: net.request follows redirects by default, so
+        // the hop is re-checked here, host-side where the hops are visible —
+        // following synchronously only when the hop stays https on the
+        // allowlist; otherwise the request is left cancelled (the refusal
+        // settles it below).
+        req.on('redirect', (statusCode, method, redirectUrl) => {
+          if (urlOnAllowedHost(redirectUrl, cfg.allowedHosts)) {
+            try { req.followRedirect(); } catch { /* gone */ }
+            return;
+          }
+          try { req.abort(); } catch { /* gone */ }
+          finish({ status: -1, headers: {}, text: `web-session ${cfg.id} fetch refused a redirect hop off the session's allowed hosts (${cfg.allowedHosts.join(', ')}): ${redirectUrl}` });
+        });
         req.on('response', (res) => {
           res.on('data', (c) => chunks.push(c));
           res.on('end', () => {
@@ -850,15 +937,18 @@ function createWebSessionHost(config = {}) {
       }
     },
 
-    // signIn(url, { decide, width, height, title }) → { signedIn }.
+    // signIn(url, { decide, width, height }) → { signedIn }.
     //
     // The host shows a VISIBLE window on the session's partition and ticks
     // once a second; decide({ url, cookieNames, stableTicks }) — the plugin's
     // pure verdict — closes it (truthy) or keeps waiting. The person closing
     // it first resolves { signedIn: false }: closed-without-a-verdict is NOT a
     // signed-in. stableTicks counts consecutive same-url ticks (the host's
-    // fact; the verdict that uses it is the plugin's).
-    async signIn(url, { decide, width = 980, height = 760, title } = {}) {
+    // fact; the verdict that uses it is the plugin's). The window's TITLE is
+    // host config (cfg.signInTitle, `Sign in to <id>` fallback) — never a
+    // caller choice (#1432 review, finding 3: a caller-chosen title on a
+    // window with no URL bar is a phishing surface).
+    async signIn(url, { decide, width = 980, height = 760 } = {}) {
       if (typeof decide !== 'function') {
         throw notReady('invalid', `[web-session ${cfg.id}] signIn needs a decide() verdict`);
       }
@@ -882,7 +972,7 @@ function createWebSessionHost(config = {}) {
           width,
           height,
           show: true,
-          title: title || `Sign in to ${cfg.id}`,
+          title: cfg.signInTitle || `Sign in to ${cfg.id}`,
           backgroundColor: '#000000',
           skipTaskbar: false,
           parent: parent || undefined,
@@ -976,4 +1066,4 @@ function createWebSessionHost(config = {}) {
   return host;
 }
 
-module.exports = { createWebSessionHost, createLaneQueue, chromeUserAgent };
+module.exports = { createWebSessionHost, createLaneQueue, chromeUserAgent, urlOnAllowedHost };

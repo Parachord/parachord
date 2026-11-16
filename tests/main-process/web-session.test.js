@@ -17,6 +17,7 @@
 // module state; every construction helper lives inside the factory.
 
 const mockPartitions = new Map(); // partition → fake session
+let mockWebContentsSeq = 0;       // ids for the webRequest webContentsId filter
 const mockViews = [];            // every WebContentsView the host created
 const mockAuthWindows = [];      // every BrowserWindow the host created
 const mockNetRequests = [];
@@ -33,6 +34,7 @@ jest.mock('electron', () => {
     const wc = {
       _url: startUrl,
       _handlers: {},
+      id: ++mockWebContentsSeq, // what webRequest details carry as webContentsId
       isDestroyed: () => false,
       getURL() { return wc._url; },
       loadURL: jest.fn(async (url) => {
@@ -132,31 +134,55 @@ jest.mock('electron', () => {
     BrowserWindow: MockBrowserWindow,
     session: { fromPartition: (p) => partitionSession(p) },
     net: {
+      // A mock of net.request's redirect contract: a handler answering
+      // { redirect: url, status: 30x } is a redirect hop. With a 'redirect'
+      // listener registered, the listener decides SYNCHRONOUSLY — followRedirect()
+      // follows to the next handler's answer, no call leaves the request
+      // cancelled (exactly Electron's "handled redirect must followRedirect()
+      // synchronously or the request is cancelled"); with no listener, net
+      // follows redirects by default (the next handler's answer arrives).
       request: (opts) => {
         const headers = {};
         const record = { opts, headers, body: null, handlers: {}, aborted: false };
         mockNetRequests.push(record);
+        const respond = () => {
+          const handler = mockNetHandlers.shift() || (() => ({ status: 200, text: '{}' }));
+          const out = handler({ url: opts.url, headers, body: record.body });
+          // A handler returning nothing hangs the request (the timeout path).
+          if (!out) return;
+          if (out.redirect) {
+            if (typeof record.handlers.redirect === 'function') {
+              record.followedRedirect = false;
+              record.handlers.redirect(out.status || 301, opts.method || 'GET', out.redirect, {});
+              if (!record.followedRedirect) return; // cancelled: nothing follows
+              opts.url = out.redirect;
+              setImmediate(respond);
+              return;
+            }
+            opts.url = out.redirect; // no listener: net follows by default
+            setImmediate(respond);
+            return;
+          }
+          const { status, text, headers: resHeaders } = out;
+          const res = {
+            statusCode: status,
+            headers: resHeaders || { 'content-type': 'application/json' },
+            on: (ev, cb) => {
+              if (ev === 'data') setImmediate(() => cb(Buffer.from(text)));
+              if (ev === 'end') setImmediate(() => cb());
+              return res;
+            }
+          };
+          record.handlers.response(res);
+        };
         const req = {
           setHeader: (k, v) => { headers[k] = v; },
           abort: () => { record.aborted = true; },
+          followRedirect: () => { record.followedRedirect = true; },
           on: (event, cb) => { record.handlers[event] = cb; return req; },
           end: (body) => {
             record.body = body;
-            const handler = mockNetHandlers.shift() || (() => ({ status: 200, text: '{}' }));
-            const out = handler({ url: opts.url, headers, body });
-            // A handler returning nothing hangs the request (the timeout path).
-            if (!out) return;
-            const { status, text, headers: resHeaders } = out;
-            const res = {
-              statusCode: status,
-              headers: resHeaders || { 'content-type': 'application/json' },
-              on: (ev, cb) => {
-                if (ev === 'data') setImmediate(() => cb(Buffer.from(text)));
-                if (ev === 'end') setImmediate(() => cb());
-                return res;
-              }
-            };
-            record.handlers.response(res);
+            respond();
           }
         };
         return req;
@@ -195,6 +221,10 @@ function newSession(overrides = {}) {
     id: 'testsvc',
     partition: PARTITION,
     cookieDomains: ['testsvc.com'],
+    // The exact-host allowlist, deliberately narrower than the cookie domain
+    // (the #1432 finding-1 shape: the domain is the account, the hosts are
+    // the service — like Amazon's music + gql hosts).
+    allowedHosts: ['music.testsvc.com', 'gql.testsvc.com'],
     preload: '/path/to/preload.js',
     userAgent: 'UA/1.0',
     ...overrides
@@ -216,13 +246,29 @@ async function warmSession(overrides = {}) {
 // Fire a captured request into the session's webRequest listeners, the way a
 // real page would: onBeforeRequest (body) fires before onBeforeSendHeaders
 // (headers) — the pairing the capture must survive.
-function fireCaptured({ id, url = 'https://gql.testsvc.com/', method = 'POST', body = '{"query":"q"}', headers }) {
+// The hidden view's webContents id (the capture filter's key): the last
+// alive view the mock created — the current view in every capture flow.
+function currentViewId() {
+  for (let i = mockViews.length - 1; i >= 0; i -= 1) {
+    const wc = mockViews[i] && mockViews[i].webContents;
+    if (wc && !wc.isDestroyed()) return wc.id;
+  }
+  return null;
+}
+
+// Fire a captured request into the session's webRequest listeners, the way a
+// real page would: onBeforeRequest (body) fires before onBeforeSendHeaders
+// (headers) — the pairing the capture must survive. webContentsId defaults to
+// the hidden view's (Electron tags every request with the webContents it came
+// from — pass another id to fire as another window on the same partition, the
+// sign-in window's shape).
+function fireCaptured({ id, url = 'https://gql.testsvc.com/', method = 'POST', body = '{"query":"q"}', headers, webContentsId = currentViewId() }) {
   const listeners = theSession().__listeners;
   // A detached capture (a late request after the load window closed) is a
   // real state, not a crash — drop it.
   if (typeof listeners._onBeforeRequest !== 'function') return;
-  listeners._onBeforeRequest({ id, url, method, uploadData: body ? [{ bytes: Buffer.from(body) }] : [] }, () => {});
-  listeners._onBeforeSendHeaders({ id, requestHeaders: headers || { 'x-api-key': 'k' } }, () => {});
+  listeners._onBeforeRequest({ id, url, method, webContentsId, uploadData: body ? [{ bytes: Buffer.from(body) }] : [] }, () => {});
+  listeners._onBeforeSendHeaders({ id, url, method, webContentsId, requestHeaders: headers || { 'x-api-key': 'k' } }, () => {});
 }
 
 beforeEach(() => {
@@ -248,10 +294,12 @@ describe('load — navigation, capture, the quiet window', () => {
       capture: { urlPrefixes: ['https://gql.testsvc.com/*'], quietMs: 1000 }
     });
     await jest.advanceTimersByTimeAsync(0);
-    // onBeforeRequest fires milliseconds BEFORE onBeforeSendHeaders.
+    // onBeforeRequest fires milliseconds BEFORE onBeforeSendHeaders. The
+    // view's webContentsId rides each detail (the capture filter's key).
     const listeners = theSession().__listeners;
-    listeners._onBeforeRequest({ id: 7, url: 'https://gql.testsvc.com/', method: 'POST', uploadData: [{ bytes: Buffer.from('{"operationName":"Search"}') }] }, () => {});
-    listeners._onBeforeSendHeaders({ id: 7, requestHeaders: { 'csrf-token': 'tok' } }, () => {});
+    const viewId = view.webContents.id;
+    listeners._onBeforeRequest({ id: 7, url: 'https://gql.testsvc.com/', method: 'POST', webContentsId: viewId, uploadData: [{ bytes: Buffer.from('{"operationName":"Search"}') }] }, () => {});
+    listeners._onBeforeSendHeaders({ id: 7, url: 'https://gql.testsvc.com/', method: 'POST', webContentsId: viewId, requestHeaders: { 'csrf-token': 'tok' } }, () => {});
     await jest.advanceTimersByTimeAsync(1200);
     const result = await pending;
     expect(result.finalUrl).toBe('https://music.testsvc.com/search/x/songs');
@@ -304,6 +352,22 @@ describe('load — navigation, capture, the quiet window', () => {
     await jest.advanceTimersByTimeAsync(1200);
     const result = await pending;
     expect(result.captures[0].headers).toEqual({ 'csrf-token': 'tok', 'x-api-key': 'k' });
+  });
+
+  test("captures are the hidden view's own requests only — another window on the same partition (the sign-in one) is never recorded", async () => {
+    const { host } = await warmSession();
+    const pending = host.load('https://music.testsvc.com/', {
+      capture: { urlPrefixes: ['https://gql.testsvc.com/*'], quietMs: 1000 }
+    });
+    await jest.advanceTimersByTimeAsync(0);
+    // The sign-in window shares the partition: its POST bodies (a sign-in
+    // form carries the password) must never land in a caller's captures.
+    fireCaptured({ id: 1, body: '{"from":"the hidden view"}' });
+    fireCaptured({ id: 2, body: '{"from":"the sign-in window","email":"a@b.c","password":"hunter2"}', webContentsId: 4242 });
+    await jest.advanceTimersByTimeAsync(1200);
+    const result = await pending;
+    expect(result.captures).toHaveLength(1);
+    expect(result.captures[0].body).toBe('{"from":"the hidden view"}');
   });
 
   test('the capture window ends on quiet, bounded by budget', async () => {
@@ -646,6 +710,50 @@ describe('fetch — the outside-page request with the session jar', () => {
   });
 });
 
+describe('fetch — the allowed-hosts scope, initial URL and every redirect hop (#1432 review, finding 1)', () => {
+  beforeEach(() => {
+    // The net mock delivers responses over setImmediate, which fake timers
+    // starve; fetch itself has no timers to fake.
+    jest.useRealTimers();
+  });
+
+  test('a URL on the cookie domain but off the allowlist is refused before net.request exists (amazon.com is the account, not the service)', async () => {
+    const host = newSession();
+    // www.testsvc.com is under the declared cookie domain testsvc.com — the
+    // exact case the finding is about: the cookie domain covers the whole
+    // account, the allowlist is the service.
+    await expect(host.fetch({ url: 'https://www.testsvc.com/orders' })).rejects.toMatchObject({ reason: 'invalid' });
+    await expect(host.fetch({ url: 'https://gql.testsvc.com/ok', method: 'POST', body: '{}' })).resolves.toMatchObject({ status: 200 }); // an allowed host passes
+    expect(mockNetRequests).toHaveLength(1);
+    expect(mockNetRequests[0].opts.url).toBe('https://gql.testsvc.com/ok');
+  });
+
+  test('http: URLs are refused — the jar must never ride in the clear', async () => {
+    const host = newSession();
+    await expect(host.fetch({ url: 'http://music.testsvc.com/api' })).rejects.toMatchObject({ reason: 'invalid' });
+    expect(mockNetRequests).toHaveLength(0);
+  });
+
+  test('a redirect hop that stays on the allowlist is followed; a hop off it aborts the request', async () => {
+    const host = newSession();
+    // Hop 1 stays on the list: followed to the final answer.
+    mockNetHandlers.push(() => ({ status: 301, redirect: 'https://gql.testsvc.com/next' }));
+    mockNetHandlers.push(() => ({ status: 200, text: '{"ok":2}' }));
+    await expect(host.fetch({ url: 'https://music.testsvc.com/a' })).resolves.toMatchObject({ status: 200, text: '{"ok":2}' });
+    expect(mockNetRequests[0].aborted).toBe(false);
+
+    // A hop to any other host — under the cookie domain or off it — is not
+    // followed: net.request follows redirects by default, so the re-check is
+    // the 'redirect' listener, and not following cancels the request.
+    mockNetHandlers.push(() => ({ status: 302, redirect: 'https://www.testsvc.com/ap/steal' }));
+    const out = await host.fetch({ url: 'https://music.testsvc.com/b' });
+    expect(out.status).toBe(-1);
+    expect(out.text).toMatch(/refused a redirect hop off the session's allowed hosts/);
+    expect(mockNetRequests[1].aborted).toBe(true);
+    expect(mockNetRequests[1].followedRedirect).toBe(false);
+  });
+});
+
 describe('fetch — response cookies and the budget (review on #1399)', () => {
   beforeEach(() => {
     // The net mock delivers responses over setImmediate, which fake timers
@@ -811,6 +919,7 @@ describe('signIn — the visible window with the plugin verdict', () => {
     expect(auth.shown).toBe(true);
     expect(auth.webPreferences.preload).toBeNull(); // behaves like a normal browser window
     expect(auth.showOpt).toBe(true); // visible from the start
+    expect(auth.title).toBe('Sign in to testsvc'); // the host-config fallback — never a caller choice
 
     await jest.advanceTimersByTimeAsync(1000);
     expect(ticks.length).toBe(1);
@@ -834,6 +943,21 @@ describe('signIn — the visible window with the plugin verdict', () => {
     auth.close();
     await expect(run).resolves.toEqual({ signedIn: false });
     expect(decide).not.toHaveBeenCalled();
+  });
+
+  test('the window title comes from host config (signInTitle) — a caller-chosen title is a phishing surface, so there is no title option to pass (#1432 review, finding 3)', async () => {
+    const { host } = await warmSession({ signInTitle: 'Sign in to TestSvc' });
+    const run = host.signIn('https://music.testsvc.com/', {
+      decide: () => false,
+      // A title key in the options is inert: the signature has no such
+      // option, so a caller cannot name the window anything.
+      title: 'Sign in to Your Bank'
+    });
+    await jest.advanceTimersByTimeAsync(0);
+    const auth = mockAuthWindows[mockAuthWindows.length - 1];
+    expect(auth.title).toBe('Sign in to TestSvc'); // the host config, not the option
+    auth.close();
+    await run;
   });
 
   test('the sign-in window carries no preload; the hidden view does', async () => {
@@ -904,23 +1028,32 @@ describe('clear — sign out', () => {
 });
 
 describe('construction and argument validation', () => {
-  test('cookieDomains is required', () => {
+  test('cookieDomains and allowedHosts are required (the allowlist is the fetch scope — absent is not "all of the cookie domain")', () => {
     expect(() => createWebSessionHost({ id: 'x', partition: 'persist:x' }))
       .toThrow(/cookieDomains is required/);
+    expect(() => createWebSessionHost({ id: 'x', partition: 'persist:x', cookieDomains: ['testsvc.com'] }))
+      .toThrow(/allowedHosts is required/);
+    expect(() => createWebSessionHost({ id: 'x', partition: 'persist:x', cookieDomains: ['testsvc.com'], allowedHosts: [] }))
+      .toThrow(/allowedHosts is required/);
+    expect(() => createWebSessionHost({ id: 'x', partition: 'persist:x', cookieDomains: ['testsvc.com'], allowedHosts: ['ok.testsvc.com', 42] }))
+      .toThrow(/allowedHosts is required/);
     expect(() => createWebSessionHost({ id: 'x' })).toThrow(/partition is required/);
     expect(() => createWebSessionHost({})).toThrow(/config.id is required/);
   });
 
-  test('the host carries its declared cookieDomains (the IPC bridge scopes fetch/pageFetch by them)', async () => {
-    const { host } = await warmSession({ cookieDomains: ['testsvc.com', '.music.testsvc.com'] });
+  test('the host carries its declared cookieDomains and allowedHosts (the IPC bridge scopes by both)', async () => {
+    const { host } = await warmSession({ cookieDomains: ['testsvc.com', '.music.testsvc.com'], allowedHosts: ['music.testsvc.com', 'gql.testsvc.com'] });
     expect(host.cookieDomains).toEqual(['testsvc.com', '.music.testsvc.com']);
-    // A copy, not the host's own list: mutating the exposed array must not
-    // re-scope state()/clear() (the bridge reads it, so it cannot be a
-    // handle into the host's config).
+    expect(host.allowedHosts).toEqual(['music.testsvc.com', 'gql.testsvc.com']);
+    // Copies, not the host's own lists: mutating the exposed arrays must not
+    // re-scope state()/clear() or the fetch scope (the bridge reads them, so
+    // they cannot be handles into the host's config).
     mockJarCookies = [{ name: 'at-main', value: 'AT', domain: '.testsvc.com' }];
     expect((await host.state()).cookieNames).toEqual(['at-main']);
     host.cookieDomains.push('drift.example');
+    host.allowedHosts.push('drift.example');
     expect((await host.state()).cookieNames).toEqual(['at-main']);
+    await expect(host.fetch({ url: 'https://drift.example/x' })).rejects.toMatchObject({ reason: 'invalid' });
   });
 
   test('an invalid capture rejects before any state is touched (the fuse stays armed)', async () => {

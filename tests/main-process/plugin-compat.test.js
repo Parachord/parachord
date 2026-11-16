@@ -225,29 +225,46 @@ describe('host-bridge enforcement wiring (#1355)', () => {
   const main = fs.readFileSync(path.join(ROOT, 'main.js'), 'utf8');
 
   test('the preload advertises window.__parachordHostBridges, and every advertised bridge is a real exposed block', () => {
-    const match = preload.match(/const HOST_BRIDGES = \[([^\]]*)\]/);
+    // The webSession entry ships HELD BACK (#1432 review, note 8): the
+    // advertisement is built from the same __exposeWebSession flag as the
+    // wrapper block, so today the list is amazonMusic alone — the entry
+    // arrives with the bridge's live exposure.
+    // The entry list is flag-derived (the spread), so pin the whole line:
+    // amazonMusic literal, webSession only behind the same flag as the wrapper.
+    const match = preload.match(/const HOST_BRIDGES = .*/);
     expect(match).toBeTruthy();
-    const advertised = match[1].split(',').map((s) => s.trim().replace(/['"]/g, '')).filter(Boolean);
-    expect(advertised.length).toBeGreaterThan(0);
-    for (const bridge of advertised) {
+    expect(match[0]).toBe("const HOST_BRIDGES = ['amazonMusic', ...(__exposeWebSession ? ['webSession'] : [])];");
+    for (const bridge of ['amazonMusic']) {
       // Each advertised name must be a window.electron.<bridge> block the
       // preload actually exposes — the list is what the host supplies, so a
       // name with no block is a lie to every plugin that requires it.
       expect(preload).toMatch(new RegExp(`^\\s{2}${bridge}: \\{`, 'm'));
     }
-    expect(advertised).toContain('webSession'); // the bridge this milestone adds
-    expect(advertised).toContain('amazonMusic'); // stays until the Amazon flows move onto webSession
+    // The held-back wrapper block is present but installed on window.electron
+    // only behind the flag, and the advertisement follows the same flag.
+    expect(preload).toMatch(/__exposeWebSession \? \{ webSession: \{/);
+    expect(preload).toMatch(/\.\.\.\(__exposeWebSession \? \['webSession'\] : \[\]\)/);
     expect(preload).toMatch(/exposeInMainWorld\('__parachordHostBridges', HOST_BRIDGES\)/);
   });
 
-  test("the renderer hides a plugin whose host bridges aren't supplied (initResolvers drives the hide-filter seam)", () => {
-    expect(app).toContain("const { hostBridgesHideFilter } = require('../../main-process/plugin-compat')");
-    expect(app).toContain('hostBridgesHideFilter(resolversToLoad, suppliedHostBridges)');
-    expect(app).toContain('Array.from(window.__parachordHostBridges || [])');
+  test('the renderer hides a plugin whose host bridges are not supplied — one rule, every .axe load path (#1432 review, note 7)', () => {
+    // The rule's one owner is lib/host-bridges-hide.js; the main load path,
+    // the fallback load and the install/reload paths all run it.
+    expect(app).toContain("const { hideAxesLackingHostBridges } = require('./lib/host-bridges-hide')");
+    expect(app.match(/hideAxesLackingHostBridges\(/g) || []).toHaveLength(4); // initResolvers, the fallback load, install-from-file, marketplace install
+    // The pure half still lives in plugin-compat (mirrored by mobile).
+    expect(require('../../main-process/plugin-compat').hostBridgesHideFilter).toBeInstanceOf(Function);
+    // The helper module reads the advertisement the way initResolvers did.
+    const helper = fs.readFileSync(path.join(ROOT, 'src/renderer/lib', 'host-bridges-hide.js'), 'utf8');
+    expect(helper).toContain('Array.from((win && win.__parachordHostBridges) || [])');
+    expect(helper).toContain('hostBridgesHideFilter(axes, supplied)');
   });
 
-  test("main.js registers Amazon's ONE webSession host under its session id, gated like the widevine bridge", () => {
-    expect(main).toMatch(/registerWebSession\('amazon-music', amazonWebPlayer\.webSession\)/);
+  test("main.js registers the webSession channels with the widevine sender gate, and holds the amazon-music session back (#1432 review, note 8)", () => {
+    // The channels are registered; the live session registration (Amazon's
+    // ONE webSession instance) moves to the layer that first drives the
+    // bridge — until then every webSession: call answers not-ready.
+    expect(main).not.toMatch(/registerWebSession\(/);
     expect(main).toMatch(/registerWebSessionBridgeIpc\(\{\s*ipcMain,\s*isAllowedSender: isMainWindowTopFrameSender,\s*sendToRenderer: safeSendToRenderer\s*\}\)/);
     // The widevine bridge and the webSession bridge share one sender predicate.
     expect(main).toMatch(/registerWidevineBridgeIpc\(\{ ipcMain, isAllowedSender: isMainWindowTopFrameSender \}\)/);

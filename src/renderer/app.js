@@ -633,9 +633,12 @@ const { listenBrainzCoverUrl } = require('./lib/listenbrainz-cover');
 // The host-bridge compatibility rule (#1355) — the same pure module mobile
 // mirrors as PluginCompat.kt, required here like sync-providers/track-match
 // so the renderer and the Kotlin port read one rule, not two copies. The
-// loader's hide-filter (hostBridgesHideFilter) lives there too, so tests
-// drive the filter the renderer actually runs.
-const { hostBridgesHideFilter } = require('../../main-process/plugin-compat');
+// loader's hide-filter (hostBridgesHideFilter) lives there too; the renderer
+// plumbing around it (the advertisement read + the log) is
+// lib/host-bridges-hide.js — the ONE copy every .axe load path runs (#1432
+// review, note 7: initResolvers, the fallback load, and the install/reload
+// paths).
+const { hideAxesLackingHostBridges } = require('./lib/host-bridges-hide');
 const {
   searchResolversFor, catalogTracksToSearchResults, catalogAlbumsToSearchResults,
   catalogArtistsFromResults, mergeTrackResults, mergeAlbumResults, withoutLocalDuplicates, localSearchRows,
@@ -8640,18 +8643,10 @@ const Parachord = () => {
         // A plugin whose required host bridges this host doesn't supply is
         // HIDDEN, not loaded (#1355): a loaded plugin without its bridge would
         // throw not-ready on every resolve, and a retrying resolver would keep
-        // re-asking it. The host advertises what it supplies in
-        // window.__parachordHostBridges (preload.js); the rule lives in
-        // plugin-compat.js, mirrored by mobile's PluginCompat.kt. Malformed
-        // requires is no requirement (build-axes rejects one at source).
-        // Array.from, not Array.isArray: the list crosses contextBridge, which
-        // need not hand back a literal Array (a proxy still iterates).
-        const suppliedHostBridges = Array.from(window.__parachordHostBridges || []);
-        const { visible, hidden: hiddenByHostBridges } = hostBridgesHideFilter(resolversToLoad, suppliedHostBridges);
-        resolversToLoad = visible;
-        if (hiddenByHostBridges.length > 0) {
-          console.log(`🙈 Hidden ${hiddenByHostBridges.length} plugin(s) whose host bridges this app doesn't supply: ${hiddenByHostBridges.join(', ')}`);
-        }
+        // re-asking it. The one rule lives in lib/host-bridges-hide.js — the
+        // same copy the fallback load and the install/reload paths run (#1432
+        // review, note 7).
+        resolversToLoad = hideAxesLackingHostBridges(resolversToLoad);
 
         // Separate content resolvers from meta services by manifest type
         const contentResolverAxes = resolversToLoad.filter(axe =>
@@ -8767,7 +8762,11 @@ const Parachord = () => {
         console.log('💾 Attempting to use fallback resolvers...');
         
         try {
-          const resolvers = await resolverLoader.current.loadResolvers(FALLBACK_RESOLVERS);
+          // The same hostBridges hide rule as the primary load path (#1432
+          // review, note 7): the fallback axes are this app's own builds, so
+          // on desktop nothing hides — but the rule says such a plugin is
+          // hidden, and this path must not be the one place it isn't.
+          const resolvers = await resolverLoader.current.loadResolvers(hideAxesLackingHostBridges(FALLBACK_RESOLVERS));
           // Same wrapping as the primary load path (parachord#797).
           window.wrapResolverSearchesWithLimiter(resolvers);
           setLoadedResolvers(resolvers);
@@ -25534,6 +25533,14 @@ ${trackListXml}
       // Hot-reload: Load the new resolver without restarting
       try {
                 axe._filename = filename;
+        // The hostBridges hide rule, same as the main load path (#1432 review,
+        // note 7): the install itself is NOT gated (the .axe runs where the
+        // host has its bridges — a file-installed plugin may target another
+        // host), but this host does not LOAD one whose bridges it lacks.
+        if (hideAxesLackingHostBridges([axe]).length === 0) {
+          showToast(`${resolverName} installed but hidden on this host (it needs bridges this app doesn't supply)`, 'info');
+          return;
+        }
         const newResolverInstance = await resolverLoader.current.loadResolver(axe);
         // Wrap the newly-loaded resolver's search through the global limiter
         // (parachord#797) — same treatment as the primary load path.
@@ -25804,6 +25811,20 @@ ${trackListXml}
       const uninstalledResolvers = await window.electron.store.get('uninstalled_resolvers') || [];
       if (uninstalledResolvers.includes(resolverId)) {
         await window.electron.store.set('uninstalled_resolvers', uninstalledResolvers.filter(id => id !== resolverId));
+      }
+
+      // The hostBridges hide rule, same as the main load path (#1432 review,
+      // note 7): installed but not LOADED on a host that lacks its bridges —
+      // the marketplace download itself is not gated (hiding is a load-time
+      // decision, not a download-time one), so the install completes and the
+      // plugin runs on hosts that supply its bridges.
+      if (hideAxesLackingHostBridges([axe]).length === 0) {
+        showConfirmDialog({
+          type: 'info',
+          title: 'Hidden on this host',
+          message: `${resolverName} is installed, but this app doesn't supply the host bridges it needs. It stays available on hosts that do.`
+        });
+        return;
       }
 
       if (isMetaService) {

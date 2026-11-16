@@ -129,10 +129,11 @@ function makeFakes() {
     },
     syncLinks,
     // A web-session host shaped for registerWebSession's validation: the six
-    // primitives + the declared cookieDomains the bridge scopes
-    // fetch/pageFetch by.
+    // primitives + the declared cookieDomains and allowedHosts the bridge
+    // scopes load/signIn and fetch/pageFetch by.
     webSessionHost: {
       cookieDomains: ['smoke.example'],
+      allowedHosts: ['music.smoke.example', 'gql.smoke.example'],
       load: async () => ({}),
       pageFetch: async () => ({}),
       fetch: async () => ({}),

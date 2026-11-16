@@ -30,6 +30,22 @@ const __initialTheme = (() => {
   }
 })();
 
+// The webSession surface's live exposure (#1432 review, note 8): the
+// wrapper code ships in this layer, but nothing calls it yet — the first
+// caller is the layer that moves the Amazon plugin's flows onto the bridge —
+// so the surface stays OFF window.electron (and out of the hostBridges
+// advertisement below) until that layer turns this flag on. Read once at
+// preload time; the env var is the test seam (no production code sets it —
+// the flip is a one-line change in this constant when the first caller
+// lands, together with the session registration in main.js).
+const __exposeWebSession = (() => {
+  try {
+    return process.env.PARACHORD_EXPOSE_WEB_SESSION === '1';
+  } catch {
+    return false;
+  }
+})();
+
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electron', {
@@ -680,7 +696,12 @@ contextBridge.exposeInMainWorld('electron', {
   // signIn keeps the host's shape: the wrapper runs the plugin's decide() on
   // every forwarded tick, answers with the verdict, and resolves from the
   // settled event (the host promise settles on the main side).
-  webSession: {
+  //
+  // SHIPS UNWIRED (__exposeWebSession above, #1432 review note 8): the
+  // wrapper block is present but installed on window.electron only when the
+  // flag is on — the layer that first calls the bridge (the Amazon plugin's
+  // move) turns it on together with the session registration in main.js.
+  ...(__exposeWebSession ? { webSession: {
     load: (id, url, opts) => ipcRenderer.invoke('webSession:load', { id, url, opts }),
     pageFetch: (id, request) => ipcRenderer.invoke('webSession:pageFetch', { id, request }),
     fetch: (id, request) => ipcRenderer.invoke('webSession:fetch', { id, request }),
@@ -688,10 +709,11 @@ contextBridge.exposeInMainWorld('electron', {
     clear: (id) => ipcRenderer.invoke('webSession:clear', { id }),
     // signIn(id, url, { decide, window }) → { success, signedIn }:
     // decide({ url, cookieNames, stableTicks }) is the plugin's pure verdict,
-    // called once per tick; window is { width, height, title } for the visible
-    // sign-in window. The promise always resolves: settled { signedIn } on
-    // success, { success: false, reason, error } when the invoke itself is
-    // refused (an unknown session, a gated sender).
+    // called once per tick; window is { width, height } for the visible
+    // sign-in window — the window's TITLE is host config (#1432 review,
+    // finding 3), never a caller choice. The promise always resolves:
+    // settled { signedIn } on success, { success: false, reason, error } when
+    // the invoke itself is refused (an unknown session, a gated sender).
     signIn: (id, url, opts = {}) => new Promise((resolve) => {
       let callId = null;   // set when the invoke's reply lands
       let stopped = false; // the promise settled: no listener or flush may act again
@@ -750,7 +772,10 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.invoke('webSession:signIn', {
         id,
         url,
-        window: opts.window && typeof opts.window === 'object' ? opts.window : undefined
+        // { width, height } only — the title is host config (finding 3).
+        window: opts.window && typeof opts.window === 'object'
+          ? { width: opts.window.width, height: opts.window.height }
+          : undefined
       }).then((reply) => {
         if (stopped) return;
         if (!reply || !reply.success) {
@@ -771,7 +796,7 @@ contextBridge.exposeInMainWorld('electron', {
         resolve({ success: false, error: String((error && (error.message || error)) || error) });
       });
     })
-  },
+  } } : {}),
 
   // Ollama operations (local AI)
   ollama: {
@@ -820,7 +845,9 @@ contextBridge.exposeInMainWorld('electron', {
 // this host doesn't carry every one (docs/architecture/plugins.md, "Required
 // host bridges"). Keep the list in step with the window.electron blocks
 // above — a bridge missing from this list is a bridge no plugin can require.
-// (contextBridge is how a sandboxed preload reaches the page world — a bare
-// window assignment here stays preload-side.)
-const HOST_BRIDGES = ['amazonMusic', 'webSession'];
+// The webSession entry moves WITH its exposure: the advertisement ships here
+// only when __exposeWebSession turns the wrapper on (the layer that first
+// calls the bridge). (contextBridge is how a sandboxed preload reaches the
+// page world — a bare window assignment here stays preload-side.)
+const HOST_BRIDGES = ['amazonMusic', ...(__exposeWebSession ? ['webSession'] : [])];
 contextBridge.exposeInMainWorld('__parachordHostBridges', HOST_BRIDGES);

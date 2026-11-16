@@ -40,6 +40,13 @@ jest.mock('electron', () => ({
   }
 }));
 
+// The preload's webSession wrapper SHIPS UNWIRED (#1432 review, note 8):
+// __exposeWebSession is off unless this env flag is set, so this suite turns
+// it on BEFORE the require (the flag is read once at preload time). The
+// held-back state itself (nothing exposed, no advertisement entry) is pinned
+// at the bottom of the file by re-requiring the preload without the flag.
+process.env.PARACHORD_EXPOSE_WEB_SESSION = '1';
+
 require('../../preload');
 
 const topFrame = {};
@@ -90,12 +97,15 @@ describe('webSession.signIn — the preload wrapper against the bridge', () => {
     const flow = fakeSignInFlow();
     wireBridge({
       cookieDomains: ['amazon.com'],
+      allowedHosts: ['music.amazon.com', 'gql.music.amazon.com'],
       load: jest.fn(), pageFetch: jest.fn(), fetch: jest.fn(), state: jest.fn(), clear: jest.fn(),
       signIn: flow.signIn
     });
     const seen = [];
     const wrapper = mockWorld.electron.webSession.signIn('amazon-music', 'https://music.amazon.com/', {
-      window: { width: 480, height: 320, title: 'Sign in to the service' },
+      // The title is host config (finding 3): a caller-chosen one is stripped
+      // here, never reaching the bridge.
+      window: { width: 480, height: 320, title: 'Sign in to Your Bank' },
       decide: (tick) => {
         seen.push(tick);
         return tick.cookieNames.includes('at-main') && tick.stableTicks >= 1;
@@ -103,7 +113,7 @@ describe('webSession.signIn — the preload wrapper against the bridge', () => {
     });
     await flush(); // the invoke reply set the wrapper's callId
     expect(flow.signIn).toHaveBeenCalledTimes(1);
-    expect(flow.signIn.mock.calls[0][1]).toMatchObject({ decide: expect.any(Function), width: 480, height: 320, title: 'Sign in to the service' });
+    expect(flow.signIn.mock.calls[0][1]).toEqual({ decide: expect.any(Function), width: 480, height: 320 });
 
     // Tick 1: decide says false (not stable yet) — forwarded, answered, host sees false.
     await flow.tick({ url: 'https://music.amazon.com/', cookieNames: ['at-main'], stableTicks: 0 });
@@ -126,7 +136,8 @@ describe('webSession.signIn — the preload wrapper against the bridge', () => {
   });
 
   test('a refused invoke resolves success:false instead of hanging, and subscribes nothing that stays', async () => {
-    const host = { cookieDomains: ['amazon.com'], load: jest.fn(), pageFetch: jest.fn(), fetch: jest.fn(), state: jest.fn(), clear: jest.fn(), signIn: jest.fn() };
+    const host = { cookieDomains: ['amazon.com'],
+      allowedHosts: ['music.amazon.com', 'gql.music.amazon.com'], load: jest.fn(), pageFetch: jest.fn(), fetch: jest.fn(), state: jest.fn(), clear: jest.fn(), signIn: jest.fn() };
     wireBridge(host);
     const wrapper = mockWorld.electron.webSession.signIn('not-a-session', 'https://music.amazon.com/', { decide: () => true });
     await expect(wrapper).resolves.toMatchObject({ success: false, reason: 'not-ready' });
@@ -144,6 +155,7 @@ describe('webSession.signIn — the preload wrapper against the bridge', () => {
     // forever; the wrapper must buffer it and resolve on the reply.
     wireBridge({
       cookieDomains: ['amazon.com'],
+      allowedHosts: ['music.amazon.com', 'gql.music.amazon.com'],
       load: jest.fn(), pageFetch: jest.fn(), fetch: jest.fn(), state: jest.fn(), clear: jest.fn(),
       signIn: jest.fn(() => { throw new Error('no BrowserWindow'); })
     });
@@ -163,6 +175,7 @@ describe('webSession.signIn — the preload wrapper against the bridge', () => {
     const decide = jest.fn(() => false);
     wireBridge({
       cookieDomains: ['amazon.com'],
+      allowedHosts: ['music.amazon.com', 'gql.music.amazon.com'],
       load: jest.fn(), pageFetch: jest.fn(), fetch: jest.fn(), state: jest.fn(), clear: jest.fn(),
       signIn: jest.fn(async (_url, { decide: d }) => {
         d({ url: 'https://music.amazon.com/ap/signin', cookieNames: [], stableTicks: 0 }); // the pre-reply tick
@@ -183,6 +196,7 @@ describe('webSession.signIn — the preload wrapper against the bridge', () => {
     const flow = fakeSignInFlow();
     wireBridge({
       cookieDomains: ['amazon.com'],
+      allowedHosts: ['music.amazon.com', 'gql.music.amazon.com'],
       load: jest.fn(), pageFetch: jest.fn(), fetch: jest.fn(), state: jest.fn(), clear: jest.fn(),
       signIn: flow.signIn
     });
@@ -208,5 +222,35 @@ describe('webSession.signIn — the preload wrapper against the bridge', () => {
     flow.settle({ signedIn: true });
     await expect(first).resolves.toEqual({ success: true, signedIn: true });
     await expect(second).resolves.toEqual({ success: true, signedIn: true });
+  });
+});
+
+// ── the held-back exposure (#1432 review, note 8) ────────────────────────────
+//
+// The shipped state: without the env flag, the preload exposes NO webSession
+// block and the hostBridges advertisement stays amazonMusic-only — the surface
+// moves with the layer that first calls the bridge (the Amazon plugin's move),
+// which turns __exposeWebSession on together with the session registration in
+// main.js.
+
+describe('the held-back exposure (the flag off)', () => {
+  test('window.electron carries no webSession and the advertisement stays amazonMusic-only', () => {
+    const prev = process.env.PARACHORD_EXPOSE_WEB_SESSION;
+    delete process.env.PARACHORD_EXPOSE_WEB_SESSION;
+    try {
+      jest.resetModules();
+      jest.isolateModules(() => {
+        // The mocked electron's factory writes into the SAME mockWorld object
+        // across a reset — clear it so the assertions below read only this
+        // run's exposure.
+        Object.keys(mockWorld).forEach((k) => { delete mockWorld[k]; });
+        require('../../preload');
+      });
+      expect(mockWorld.electron.webSession).toBeUndefined();
+      expect(mockWorld.electron.amazonMusic).toBeTruthy(); // the rest of the surface is untouched
+      expect([...mockWorld.__parachordHostBridges]).toEqual(['amazonMusic']);
+    } finally {
+      if (prev !== undefined) process.env.PARACHORD_EXPOSE_WEB_SESSION = prev;
+    }
   });
 });

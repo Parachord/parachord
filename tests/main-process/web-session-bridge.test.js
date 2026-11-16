@@ -19,6 +19,9 @@ const { createWebSessionHost } = require('../../main-process/web-session');
 function makeFakeHost(overrides = {}) {
   return {
     cookieDomains: ['amazon.com', 'music.amazon.com'],
+    // The exact-host allowlist, deliberately NARROWER than the cookie domains
+    // (amazon.com is the whole retail account) — the finding-1 shape.
+    allowedHosts: ['music.amazon.com', 'gql.music.amazon.com'],
     load: jest.fn(async () => ({ finalUrl: 'https://music.amazon.com/' })),
     pageFetch: jest.fn(async () => ({ status: 200, text: '[]' })),
     fetch: jest.fn(async () => ({ status: 200, headers: { 'content-type': 'application/json' }, text: 'ok' })),
@@ -46,14 +49,16 @@ function fakeSignInFlow() {
   };
 }
 
-function makeBridge({ host = makeFakeHost(), isAllowedSender } = {}) {
+// The default gate is literally () => true — a test that means to allow says
+// so (#1432 review, note 5); pass null to register WITHOUT a predicate and pin
+// the fail-closed default.
+function makeBridge({ host = makeFakeHost(), isAllowedSender = () => true } = {}) {
   if (host) registerWebSession('amazon-music', host);
   const handlers = {};
   const ipcMain = { handle: (name, fn) => { handlers[name] = fn; } };
   const sent = [];
   const sendToRenderer = jest.fn((channel, payload) => { sent.push({ channel, payload }); });
-  const gate = isAllowedSender || ((event) => !!(event && event.senderFrame && event.senderFrame.top === event.senderFrame));
-  registerWebSessionBridgeIpc({ ipcMain, isAllowedSender: gate, sendToRenderer });
+  registerWebSessionBridgeIpc({ ipcMain, isAllowedSender, sendToRenderer });
   const byChannel = (channel) => sent.filter((s) => s.channel === channel).map((s) => s.payload);
   const flush = () => new Promise((resolve) => setImmediate(resolve));
   return { handlers, byChannel, flush };
@@ -69,7 +74,7 @@ const iframeEvent = { sender: { id: 1 }, senderFrame: { top: {}, different: true
 // ── the registry ────────────────────────────────────────────────────────────
 
 describe('registerWebSession', () => {
-  test('a host must implement the six primitives and carry cookieDomains', () => {
+  test('a host must implement the six primitives and carry cookieDomains + allowedHosts', () => {
     expect(() => registerWebSession('', makeFakeHost())).toThrow(/session id/);
     expect(() => registerWebSession('x')).toThrow(/must implement/);
     const missingClear = makeFakeHost();
@@ -78,6 +83,9 @@ describe('registerWebSession', () => {
     expect(() => registerWebSession('x', makeFakeHost({ cookieDomains: undefined }))).toThrow(/cookieDomains/);
     expect(() => registerWebSession('x', makeFakeHost({ cookieDomains: [] }))).toThrow(/cookieDomains/);
     expect(() => registerWebSession('x', makeFakeHost({ cookieDomains: ['amazon.com', 42] }))).toThrow(/cookieDomains/);
+    expect(() => registerWebSession('x', makeFakeHost({ allowedHosts: undefined }))).toThrow(/allowedHosts/);
+    expect(() => registerWebSession('x', makeFakeHost({ allowedHosts: [] }))).toThrow(/allowedHosts/);
+    expect(() => registerWebSession('x', makeFakeHost({ allowedHosts: ['music.amazon.com', ''] }))).toThrow(/allowedHosts/);
   });
 
   test('a registered session answers; an unknown id is not-ready everywhere', async () => {
@@ -97,9 +105,13 @@ describe('registerWebSession', () => {
   });
 
   test('a real createWebSessionHost registers (the primitive names stay in step)', () => {
-    const host = createWebSessionHost({ id: 'testsvc', partition: 'persist:testsvc', cookieDomains: ['testsvc.com'] });
+    const host = createWebSessionHost({
+      id: 'testsvc', partition: 'persist:testsvc',
+      cookieDomains: ['testsvc.com'], allowedHosts: ['music.testsvc.com']
+    });
     expect(() => registerWebSession('testsvc', host)).not.toThrow();
     expect(host.cookieDomains).toEqual(['testsvc.com']);
+    expect(host.allowedHosts).toEqual(['music.testsvc.com']);
   });
 });
 
@@ -107,7 +119,11 @@ describe('registerWebSession', () => {
 
 describe('sender gate', () => {
   test('iframes are denied on every channel', async () => {
-    const { handlers } = makeBridge();
+    // A gate shaped like main.js's top-frame predicate (the iframe shares the
+    // sender webContents but not the top frame).
+    const { handlers } = makeBridge({
+      isAllowedSender: (event) => !!(event && event.senderFrame && event.senderFrame.top === event.senderFrame)
+    });
     for (const [channel, payload] of [
       ['webSession:load', { id: 'amazon-music', url: 'https://music.amazon.com/' }],
       ['webSession:pageFetch', { id: 'amazon-music', request: { url: 'https://music.amazon.com/x' } }],
@@ -121,18 +137,112 @@ describe('sender gate', () => {
       expect(out).toMatchObject({ success: false, reason: 'denied' });
     }
   });
+
+  test('the gate FAILS CLOSED: a registration without isAllowedSender denies every caller (#1432 review, note 5)', async () => {
+    // main.js always passes one; a gate that defaulted to allow would be one
+    // refactor away from an open bridge. A test that means to allow passes
+    // () => true (the makeBridge default below, the registration smoke).
+    const { handlers } = makeBridge({ isAllowedSender: null });
+    for (const [channel, payload] of [
+      ['webSession:load', { id: 'amazon-music', url: 'https://music.amazon.com/' }],
+      ['webSession:pageFetch', { id: 'amazon-music', request: { url: 'https://music.amazon.com/x' } }],
+      ['webSession:fetch', { id: 'amazon-music', request: { url: 'https://music.amazon.com/x' } }],
+      ['webSession:state', { id: 'amazon-music' }],
+      ['webSession:clear', { id: 'amazon-music' }],
+      ['webSession:signIn', { id: 'amazon-music', url: 'https://music.amazon.com/' }],
+      ['webSession:sign-in-decide', { callId: 'anything', verdict: true }]
+    ]) {
+      const out = await handlers[channel](mainFrameEvent, payload);
+      expect(out).toMatchObject({ success: false, reason: 'denied' });
+    }
+  });
 });
 
 // ── load / state / clear: payloads and the error contract ──────────────────
 
 describe('webSession:load', () => {
-  test('success spreads the host payload; opts pass through', async () => {
+  test('success spreads the host payload; opts pass through scoped and clamped', async () => {
     const host = makeFakeHost();
     const { handlers } = makeBridge({ host });
     const opts = { timeoutMs: 5000, capture: { urlPrefixes: ['https://gql.music.amazon.com/*'] } };
     const out = await handlers['webSession:load'](mainFrameEvent, { id: 'amazon-music', url: 'https://music.amazon.com/search/x/songs', opts });
     expect(out).toEqual({ success: true, finalUrl: 'https://music.amazon.com/' });
     expect(host.load).toHaveBeenCalledWith('https://music.amazon.com/search/x/songs', opts);
+  });
+
+  test('a URL off the cookie domains or not https is invalid before the host is touched (#1432 review, finding 3)', async () => {
+    const host = makeFakeHost();
+    const { handlers } = makeBridge({ host });
+    for (const url of [
+      'https://not-amazon.example/search',     // off the cookie domains entirely
+      'http://music.amazon.com/search',         // the domains match, the scheme is not https
+      'not a url'
+    ]) {
+      const out = await handlers['webSession:load'](mainFrameEvent, { id: 'amazon-music', url, opts: {} });
+      expect(out).toMatchObject({ success: false, reason: 'invalid' });
+      expect(out.error).toMatch(/https and under the session's cookie domains/);
+    }
+    expect(host.load).not.toHaveBeenCalled();
+  });
+
+  test('capture prefixes off the session’s allowed hosts are invalid — a prefix chooses what gets recorded (#1432 review, findings 1-2)', async () => {
+    const host = makeFakeHost();
+    const { handlers } = makeBridge({ host });
+    // www.amazon.com is UNDER the cookie domains but NOT on the allowlist —
+    // the finding-1 shape: the sign-in form’s POST body lives there.
+    const out = await handlers['webSession:load'](mainFrameEvent, {
+      id: 'amazon-music',
+      url: 'https://music.amazon.com/search/x/songs',
+      opts: { capture: { urlPrefixes: ['https://www.amazon.com/ap/signin/*'] } }
+    });
+    expect(out).toMatchObject({ success: false, reason: 'invalid' });
+    expect(out.error).toMatch(/allowed hosts/);
+    expect(host.load).not.toHaveBeenCalled();
+    // An http: prefix is out too, and so is a non-array.
+    expect(await handlers['webSession:load'](mainFrameEvent, {
+      id: 'amazon-music', url: 'https://music.amazon.com/',
+      opts: { capture: { urlPrefixes: ['http://gql.music.amazon.com/*'] } }
+    })).toMatchObject({ success: false, reason: 'invalid' });
+    expect(await handlers['webSession:load'](mainFrameEvent, {
+      id: 'amazon-music', url: 'https://music.amazon.com/',
+      opts: { capture: { urlPrefixes: 'nope' } }
+    })).toMatchObject({ success: false, reason: 'invalid' });
+  });
+
+  test('caller budgets are clamped to the ceilings: the host gets min(the value, the cap) (#1432 review, finding 2)', async () => {
+    const host = makeFakeHost();
+    const { handlers } = makeBridge({ host });
+    const out = await handlers['webSession:load'](mainFrameEvent, {
+      id: 'amazon-music',
+      url: 'https://music.amazon.com/',
+      opts: {
+        timeoutMs: 600000, // ten minutes → 60s
+        capture: {
+          urlPrefixes: ['https://gql.music.amazon.com/*'],
+          quietMs: 120000,  // two minutes → 10s
+          budgetMs: 300000   // five minutes → 30s
+        }
+      }
+    });
+    expect(out).toMatchObject({ success: true });
+    expect(host.load).toHaveBeenCalledWith('https://music.amazon.com/', {
+      timeoutMs: 60000,
+      capture: { urlPrefixes: ['https://gql.music.amazon.com/*'], quietMs: 10000, budgetMs: 30000 }
+    });
+    // Under the caps and non-numeric values pass through untouched (the
+    // host’s own defaults and garbage handling apply).
+    await handlers['webSession:load'](mainFrameEvent, {
+      id: 'amazon-music', url: 'https://music.amazon.com/',
+      opts: { timeoutMs: 5000, capture: { urlPrefixes: ['https://gql.music.amazon.com/*'], quietMs: 500, budgetMs: 4000 } }
+    });
+    expect(host.load).toHaveBeenLastCalledWith('https://music.amazon.com/', {
+      timeoutMs: 5000,
+      capture: { urlPrefixes: ['https://gql.music.amazon.com/*'], quietMs: 500, budgetMs: 4000 }
+    });
+    await handlers['webSession:load'](mainFrameEvent, {
+      id: 'amazon-music', url: 'https://music.amazon.com/', opts: { timeoutMs: 'forever' }
+    });
+    expect(host.load).toHaveBeenLastCalledWith('https://music.amazon.com/', { timeoutMs: 'forever' });
   });
 
   test('a host reason crosses verbatim; a reasonless throw maps to load-failed', async () => {
@@ -206,22 +316,44 @@ describe('webSession:pageFetch', () => {
     expect(hit).toEqual({ success: true, status: 200, text: '{"ok":1}' });
   });
 
-  test('a URL off the session domains is invalid before the host is touched', async () => {
+  test('a URL off the session’s ALLOWED HOSTS is invalid before the host is touched (#1432 review, finding 1)', async () => {
     const host = makeFakeHost();
     const { handlers } = makeBridge({ host });
     const out = await handlers['webSession:pageFetch'](mainFrameEvent, {
       id: 'amazon-music', request: { url: 'https://evil.example.com/replay' }
     });
     expect(out).toMatchObject({ success: false, reason: 'invalid' });
-    expect(out.error).toMatch(/cookie domains/);
+    expect(out.error).toMatch(/allowed hosts/);
     expect(host.pageFetch).not.toHaveBeenCalled();
   });
 
-  test('subdomains of a declared domain pass; lookalikes do not', async () => {
+  test('a URL on the cookie domain but off the allowlist is invalid — www.amazon.com is the retail account, not the service (#1432 review, finding 1)', async () => {
+    const host = makeFakeHost();
+    const { handlers } = makeBridge({ host });
+    const out = await handlers['webSession:pageFetch'](mainFrameEvent, {
+      id: 'amazon-music', request: { url: 'https://www.amazon.com/gp/your-account' }
+    });
+    expect(out).toMatchObject({ success: false, reason: 'invalid' });
+    expect(out.error).toMatch(/allowed hosts \(music\.amazon\.com, gql\.music\.amazon\.com\)/);
+    expect(host.pageFetch).not.toHaveBeenCalled();
+  });
+
+  test('an http: URL is invalid — the jar must never ride in the clear', async () => {
+    const host = makeFakeHost();
+    const { handlers } = makeBridge({ host });
+    const out = await handlers['webSession:pageFetch'](mainFrameEvent, {
+      id: 'amazon-music', request: { url: 'http://music.amazon.com/x' }
+    });
+    expect(out).toMatchObject({ success: false, reason: 'invalid' });
+    expect(host.pageFetch).not.toHaveBeenCalled();
+  });
+
+  test('exact hosts only: subdomains beyond the listed host and lookalikes do not pass', async () => {
     const host = makeFakeHost();
     const { handlers } = makeBridge({ host });
     expect((await handlers['webSession:pageFetch'](mainFrameEvent, { id: 'amazon-music', request: { url: 'https://gql.music.amazon.com/x' } })).success).toBe(true);
-    expect((await handlers['webSession:pageFetch'](mainFrameEvent, { id: 'amazon-music', request: { url: 'https://amazon.com.evil.com/x' } })).success).toBe(false);
+    expect((await handlers['webSession:pageFetch'](mainFrameEvent, { id: 'amazon-music', request: { url: 'https://evil.music.amazon.com/x' } })).success).toBe(false); // a subdomain of a listed host is a different host
+    expect((await handlers['webSession:pageFetch'](mainFrameEvent, { id: 'amazon-music', request: { url: 'https://music.amazon.com.evil.com/x' } })).success).toBe(false);
   });
 });
 
@@ -236,32 +368,39 @@ describe('webSession:fetch', () => {
     expect(host.fetch).toHaveBeenCalledWith({ url: 'https://music.amazon.com/api/thing', method: 'POST', body: '{}' });
   });
 
-  test('off-domain and unparseable URLs are invalid; a host throw carries its reason', async () => {
+  test('off-allowlist, on-cookie-domain-but-off-allowlist, non-https and unparseable URLs are invalid; a host throw carries its reason (#1432 review, finding 1)', async () => {
     const host = makeFakeHost({
       fetch: jest.fn(async () => { const e = new Error('web-session fetch needs a url'); e.reason = 'invalid'; throw e; })
     });
     const { handlers } = makeBridge({ host });
     expect(await handlers['webSession:fetch'](mainFrameEvent, { id: 'amazon-music', request: { url: 'https://evil.example.com/' } }))
       .toMatchObject({ success: false, reason: 'invalid' });
+    // The finding-1 case: under the cookie domain, off the allowlist — this
+    // fetch carries the session's jar, and www.amazon.com is the account.
+    expect(await handlers['webSession:fetch'](mainFrameEvent, { id: 'amazon-music', request: { url: 'https://www.amazon.com/gp/your-orders' } }))
+      .toMatchObject({ success: false, reason: 'invalid' });
+    expect(await handlers['webSession:fetch'](mainFrameEvent, { id: 'amazon-music', request: { url: 'http://music.amazon.com/x' } }))
+      .toMatchObject({ success: false, reason: 'invalid' });
     expect(await handlers['webSession:fetch'](mainFrameEvent, { id: 'amazon-music', request: { url: 'not a url' } }))
       .toMatchObject({ success: false, reason: 'invalid' });
     expect(host.fetch).not.toHaveBeenCalled();
-    // On-domain: the host's own invalid throw crosses with its reason.
+    // On the allowlist: the host's own invalid throw crosses with its reason.
     expect(await handlers['webSession:fetch'](mainFrameEvent, { id: 'amazon-music', request: { url: 'https://music.amazon.com/x' } }))
       .toMatchObject({ success: false, reason: 'invalid' });
   });
 });
 
-describe('urlUnderDomains (the scope predicate)', () => {
+describe('urlUnderDomains (the load/signIn scope predicate — https only, finding 3)', () => {
   const domains = ['.amazon.com', 'music.amazon.com'];
   test('cookie-domain semantics: equal, subdomain, leading dot', () => {
     expect(urlUnderDomains('https://amazon.com/', domains)).toBe(true);
     expect(urlUnderDomains('https://music.amazon.com/', domains)).toBe(true);
     expect(urlUnderDomains('https://gql.music.amazon.com/graphql', domains)).toBe(true);
   });
-  test('lookalikes, other schemes and garbage are out', () => {
+  test('lookalikes, other schemes (http included — Amazon’s identity host is https) and garbage are out', () => {
     expect(urlUnderDomains('https://amazon.com.evil.com/', domains)).toBe(false);
     expect(urlUnderDomains('https://notamazon.com/', domains)).toBe(false);
+    expect(urlUnderDomains('http://music.amazon.com/', domains)).toBe(false);
     expect(urlUnderDomains('file:///etc/hosts', domains)).toBe(false);
     expect(urlUnderDomains('', domains)).toBe(false);
   });
@@ -277,14 +416,17 @@ describe('webSession:signIn', () => {
     const reply = await handlers['webSession:signIn'](mainFrameEvent, {
       id: 'amazon-music',
       url: 'https://music.amazon.com/',
-      window: { width: 480, height: 320, title: 'Sign in to the service' }
+      window: { width: 480, height: 320, title: 'Sign in to Your Bank' } // the title is host config — a caller-chosen one is dropped (finding 3)
     });
     expect(reply).toMatchObject({ success: true });
     const { callId } = reply;
     expect(typeof callId).toBe('string');
     expect(flow.signIn).toHaveBeenCalledTimes(1);
     expect(flow.signIn.mock.calls[0][0]).toBe('https://music.amazon.com/');
-    expect(flow.signIn.mock.calls[0][1]).toMatchObject({ decide: expect.any(Function), width: 480, height: 320, title: 'Sign in to the service' });
+    // Width/height cross; the caller's title does NOT (the host names the
+    // window from its own config — a caller-chosen title on a window with no
+    // URL bar is a phishing surface).
+    expect(flow.signIn.mock.calls[0][1]).toEqual({ decide: expect.any(Function), width: 480, height: 320 });
 
     // Tick 1: forwarded to the renderer; no verdict yet, so the host sees false.
     await flow.tick({ url: 'https://music.amazon.com/ap/signin', cookieNames: [], stableTicks: 0 });
@@ -341,6 +483,22 @@ describe('webSession:signIn', () => {
     });
     expect(reply).toMatchObject({ success: true });
     expect(flow.signIn.mock.calls[0][1]).toEqual({ decide: expect.any(Function) });
+  });
+
+  test('a URL off the cookie domains or not https is invalid before the host is touched (#1432 review, finding 3)', async () => {
+    const flow = fakeSignInFlow();
+    const host = makeFakeHost({ signIn: flow.signIn });
+    const { handlers } = makeBridge({ host });
+    for (const url of [
+      'https://evil.example.com/ap/signin', // off the cookie domains entirely
+      'http://music.amazon.com/ap/signin',  // the domains match, the scheme is not https
+      'not a url'
+    ]) {
+      const out = await handlers['webSession:signIn'](mainFrameEvent, { id: 'amazon-music', url });
+      expect(out).toMatchObject({ success: false, reason: 'invalid' });
+      expect(out.error).toMatch(/https and under the session's cookie domains/);
+    }
+    expect(flow.signIn).not.toHaveBeenCalled();
   });
 });
 
