@@ -56,6 +56,7 @@ const COLLECTION_PAGE_HANDLERS = [
   'openSyncSetupModal',
   'playArtistTopTracks',
   'playListenerTopTracks',
+  'setProviderSyncEnabled',
   'setQueueWithContext',
   'syncFriendsFromServices',
 ];
@@ -107,6 +108,8 @@ const CollectionPage = React.memo(function CollectionPage(props) {
     playbackContext,
     resolverOrder,
     resolverSyncSettings,
+    syncSignedOut,
+    setProviderSyncEnabled,
     setAddFriendModalOpen,
     setAddToPlaylistPanel,
     setCollectionHeaderCollapsed,
@@ -222,17 +225,24 @@ React.createElement('div', { className: 'ml-auto' },
                     label: config.name,
                     // The plug-in's colour and the shared logo kit.
                     icon: tile(config.color || 'var(--accent-fill)', React.createElement(ResolverIcon, { resolverId: pid, size: 16, fill: 'var(--on-accent)' })),
-                    trailing: resolverSyncSettings[pid]?.enabled && React.createElement('span', {
-                      'aria-label': 'Sync on', role: 'img',
-                      style: { width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--success)' }
-                    }),
+                    // The row opens Manage sync; the switch beside it turns
+                    // this service's sync on or off (off pauses it: nothing
+                    // synced is removed).
                     onSelect: () => openSyncSetupModal(pid),
+                    // Signed out: nothing syncs, so the switch shows off
+                    // (its saved setting stays, and it resumes once signed in).
+                    trailing: syncSignedOut?.[pid] && React.createElement('span', { style: { fontSize: '11px', opacity: 0.7 } }, 'Signed out'),
+                    toggle: {
+                      checked: !!resolverSyncSettings[pid]?.enabled && !syncSignedOut?.[pid],
+                      label: `Sync ${config.name}`,
+                      onChange: (next) => setProviderSyncEnabled(pid, next),
+                    },
                   });
                 }
                 return React.createElement(Menu, {
                   label: 'Sync',
                   align: 'right',
-                  minWidth: 220,
+                  minWidth: 280,
                   items,
                   // The shared small secondary button (components/button.js), as
                   // Playlists' Import is.
