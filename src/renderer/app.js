@@ -37853,14 +37853,16 @@ collapsedContent: null
                     onContextMenu: () => window.showItemMenu(playlistMenu(playlist, playlistTracksWithIds(playlist))),
                     titleBadge: playlist.syncedFrom?.isCollaborator === true && React.createElement('span', { className: 'shared-playlist-badge', style: { display: 'inline-flex' } },
                       React.createElement(Badge, { tone: 'accent', icon: Icons.Users, tooltip: 'You’re a collaborator on this playlist: your edits sync to the other collaborators' }, 'Shared')),
-                    // A playlist kept updated from its link: the Hosted badge
-                    // (XSPF) and a check-now button. A snapshot shows neither:
-                    // it never changes (lib/playlist-update-mode.js). An AI
-                    // playlist says who made it.
+                    // A playlist kept updated from its link: a hosted XSPF
+                    // shows the Hosted badge, which already says it updates
+                    // (Check now is on its page); any other shows a check-now
+                    // button. A snapshot shows neither: it never changes
+                    // (lib/playlist-update-mode.js). An AI playlist says who
+                    // made it.
                     cornerBadges: linkUpdateMode(playlist) === 'auto'
-                      ? React.createElement(React.Fragment, null,
-                          playlist.source === 'hosted-xspf' && React.createElement(Badge, { tone: 'surface', icon: Icons.Globe, tooltip: 'Hosted playlist: updates from its link' }, 'Hosted'),
-                          React.createElement(Button, { variant: 'icon', size: 'sm', className: '!rounded-full bg-surface-card', onClick: async (e) => {
+                      ? (playlist.source === 'hosted-xspf'
+                        ? React.createElement(Badge, { tone: 'surface', icon: Icons.Globe, tooltip: 'Hosted playlist: updates from its link' }, 'Hosted')
+                        : React.createElement(Button, { variant: 'icon', size: 'sm', className: '!rounded-full bg-surface-card', onClick: async (e) => {
                               e.stopPropagation();
                               if (refreshingPlaylist === playlist.id) return;
                               setRefreshingPlaylist(playlist.id);
@@ -37978,8 +37980,10 @@ collapsedContent: null
                     countOf(trackCount, 'track')
                   ),
                   // Check now, for a playlist kept updated from its link. A
-                  // snapshot has none: it never changes.
-                  linkUpdateMode(playlist) === 'auto' && React.createElement('button', {
+                  // snapshot has none: it never changes. A hosted XSPF has
+                  // none either: its Hosted badge already says it updates,
+                  // and Check now is on its page.
+                  linkUpdateMode(playlist) === 'auto' && playlist.source !== 'hosted-xspf' && React.createElement('button', {
                     onClick: async (e) => {
                       e.preventDefault();
                       e.stopPropagation();
