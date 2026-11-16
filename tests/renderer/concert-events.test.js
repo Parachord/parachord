@@ -10,7 +10,7 @@ const path = require('path');
 const { uniqueConcerts, concertSourceKeys, concertMatchesSource } = require('../../src/renderer/lib/concert-events');
 
 const ROOT = path.join(__dirname, '..', '..');
-const app = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'app.js'), 'utf8');
+const app = require('../helpers/renderer-source').appWithPages() /* app.js and the pages moved out of it (#1451) */;
 
 const seller = (source, extra = {}) => ({ source, aiProvider: null, ticketUrl: `https://${source}.example/t`, label: source, ...extra });
 const show = (id, artist, extra = {}) => ({
@@ -191,7 +191,7 @@ describe('the source filter sees every service that lists a show', () => {
   });
 
   test('the Concerts page filters and lists sources through them', () => {
-    const src = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+    const src = require('../helpers/renderer-source').appWithPages() /* app.js and the pages moved out of it (#1451) */;
     expect((src.match(/concertMatchesSource\(event, concertsSourceFilter\)/g) || []).length).toBe(2);
     expect(src).toMatch(/for \(const key of concertSourceKeys\(event\)\)/);
     expect(src).not.toMatch(/\} else if \(event\.source !== concertsSourceFilter\)/);

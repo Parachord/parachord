@@ -60,8 +60,8 @@ const PAGES = [
   ['Charts', "activeView === 'discover' && React.createElement('div', {", "activeView === 'new-releases' && React.createElement(FreshDropsPage, {", null],
   // Fresh Drops is its own module (#1451): the whole page component.
   ['Fresh Drops', 'const FreshDropsPage = React.memo(', 'module.exports', 'components/fresh-drops-page.js'],
-  ['Critical Darlings', "activeView === 'critics-picks' && React.createElement('div', {", "activeView === 'concerts' && (() => {", null],
-  ['Concerts', "activeView === 'concerts' && (() => {", "activeView === 'recommendations' && React.createElement(RecommendationsPage, {", null],
+  ['Critical Darlings', "activeView === 'critics-picks' && React.createElement('div', {", "activeView === 'concerts' && React.createElement(ConcertsPage, {", null],
+  ['Concerts', 'const ConcertsPage = React.memo(', 'module.exports', 'components/concerts-page.js'],
   ['Recommendations', 'const RecommendationsPage = React.memo(', 'module.exports', 'components/recommendations-page.js'],
   ['History', "activeView === 'history' && React.createElement('div', {", "activeView === 'settings' && React.createElement('div', {", null],
 ];

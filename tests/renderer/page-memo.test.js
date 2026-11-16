@@ -24,6 +24,7 @@ const { ArtistPage, ARTIST_PAGE_HANDLERS } = require('../../src/renderer/compone
 const { SearchPage, SEARCH_PAGE_HANDLERS } = require('../../src/renderer/components/search-page');
 const { FreshDropsPage, FRESH_DROPS_PAGE_HANDLERS } = require('../../src/renderer/components/fresh-drops-page');
 const { RecommendationsPage, RECOMMENDATIONS_PAGE_HANDLERS } = require('../../src/renderer/components/recommendations-page');
+const { ConcertsPage, CONCERTS_PAGE_HANDLERS } = require('../../src/renderer/components/concerts-page');
 const { useStableHandlers } = require('../../src/renderer/lib/stable-handlers');
 
 const PAGES = [
@@ -34,6 +35,7 @@ const PAGES = [
   { component: 'SearchPage', file: 'search-page.js', handlersVar: 'searchPageHandlers', handlers: SEARCH_PAGE_HANDLERS, memo: SearchPage },
   { component: 'FreshDropsPage', file: 'fresh-drops-page.js', handlersVar: 'freshDropsPageHandlers', handlers: FRESH_DROPS_PAGE_HANDLERS, memo: FreshDropsPage },
   { component: 'RecommendationsPage', file: 'recommendations-page.js', handlersVar: 'recommendationsPageHandlers', handlers: RECOMMENDATIONS_PAGE_HANDLERS, memo: RecommendationsPage },
+  { component: 'ConcertsPage', file: 'concerts-page.js', handlersVar: 'concertsPageHandlers', handlers: CONCERTS_PAGE_HANDLERS, memo: ConcertsPage },
 ];
 
 describe.each(PAGES)('$component', ({ memo }) => {
