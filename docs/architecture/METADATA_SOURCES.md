@@ -6,7 +6,7 @@ This document describes all external data sources used by Parachord for fetching
 
 | Metadata Type | Primary Provider | Fallback 1 | Fallback 2 | Fallback 3 |
 |---------------|------------------|------------|------------|------------|
-| **Artist Images** | Spotify (if connected) | MusicKit (Apple Music) | Wikipedia | Discogs |
+| **Artist Images** | Spotify (plug-in on and signed in) | MusicKit (Apple Music, plug-in on) | Wikipedia | Discogs |
 | **Artist Bios** | Last.fm | Wikipedia | Discogs | - |
 | **Related Artists** | Last.fm + ListenBrainz (merged) | - | - | - |
 | **Album Art** | Cover Art Archive | Embedded metadata | Folder art | - |
@@ -29,6 +29,8 @@ Used for artist page headers, related artists grid, recommendations, and playlis
 | MusicKit | `/v1/catalog/us/search?types=artists` | Developer token | Fallback when Spotify unavailable |
 | Wikipedia | `en.wikipedia.org/api/rest_v1/page/summary` | No | Via the Wikidata id (see the Wikipedia bio lookup chain) |
 | Discogs | `api.discogs.com/artists/{id}` | Optional PAT | Higher rate limits with token |
+
+Spotify and Apple Music are asked only while their plug-ins are on (`activeResolversRef`), the same rule as the plug-in artist-image steps. A saved Spotify sign-in survives turning the plug-in off, so a token check alone kept sending every uncached artist photo to Spotify after the user switched it off, and tripped its rate-limit pause (2026-11-16).
 
 **Code Location:** `src/renderer/app.js` → `getArtistImage()`
 
