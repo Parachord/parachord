@@ -41,11 +41,27 @@ const webSession = createWebSessionHost({
   preload: PRELOAD,
   userAgent: chromeUserAgent(),
   // The auth-cookie hedge (the plugin's amazonAuthCookieState over the
-  // reported names) must also see host-only auth-shaped cookies set on
-  // music.amazon.com: the pre-refactor read was whole-partition, so the wider
-  // list preserves it. state() merely reports more names; Electron's clear()
-  // wipes the whole partition regardless.
-  cookieDomains: ['amazon.com', 'music.amazon.com']
+// reported names) reads FEWER cookies than the pre-refactor whole-partition
+// read: the host reads cookies.get({ url }) per declared domain, so a
+// host-only cookie on some other Amazon host, or one scoped to a path other
+// than '/', is no longer seen. The known auth cookies all live on
+// `.amazon.com` (at-main, sess-at-main, x-main); music.amazon.com and
+// www.amazon.com cover the hosts a host-only auth-shaped rotation could
+// land on. state() reports names only; Electron's clear() still wipes the
+// whole partition.
+  cookieDomains: ['amazon.com', 'music.amazon.com', 'www.amazon.com'],
+  // The EXACT hosts the session's data-source primitives may reach (#1432
+  // review, finding 1): fetch/pageFetch URLs, every redirect hop and capture
+  // prefixes are scoped to this list, which is deliberately much narrower than
+  // the cookie domains — amazon.com is the whole retail account, and a
+  // session-bearing fetcher scoped only to the cookie domains would read it.
+  // Exactly the hosts the flows call, nothing broader: the
+  // home/search/dmls/config.json/telemetry host and the gql host. A new host
+  // is added to this list deliberately, one entry per service surface — never
+  // by widening a domain or falling back to the cookie domains.
+  allowedHosts: ['music.amazon.com', 'gql.music.amazon.com'],
+  // The visible sign-in window's title (host config, never a caller choice).
+  signInTitle: 'Sign in to Amazon Music'
 });
 
 module.exports = webSession;
