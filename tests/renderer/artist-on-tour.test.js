@@ -7,7 +7,7 @@
 const fs = require('fs');
 const path = require('path');
 const R = path.join(__dirname, '../../src/renderer');
-const app = fs.readFileSync(path.join(R, 'app.js'), 'utf8');
+const app = require('../helpers/renderer-source').appWithPages();
 const artist = fs.readFileSync(path.join(R, 'components/artist-page.js'), 'utf8');
 
 test('the tab shows only with concerts, or while an open On Tour is still loading', () => {

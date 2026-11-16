@@ -34,6 +34,7 @@ const { QueueDrawer, QUEUE_DRAWER_HANDLERS } = require('../../src/renderer/compo
 const { AddToPlaylistPanel, ADD_TO_PLAYLIST_PANEL_HANDLERS } = require('../../src/renderer/components/add-to-playlist-panel');
 const { SyncSetupDialog, SYNC_SETUP_DIALOG_HANDLERS } = require('../../src/renderer/components/sync-setup-dialog');
 const { SyncStatusDialog, SYNC_STATUS_DIALOG_HANDLERS } = require('../../src/renderer/components/sync-status-dialog');
+const { SettingsPage, SETTINGS_PAGE_HANDLERS } = require('../../src/renderer/components/settings-page');
 const { useStableHandlers } = require('../../src/renderer/lib/stable-handlers');
 
 const PAGES = [
@@ -54,6 +55,7 @@ const PAGES = [
   { component: 'AddToPlaylistPanel', file: 'add-to-playlist-panel.js', handlersVar: 'addToPlaylistPanelHandlers', handlers: ADD_TO_PLAYLIST_PANEL_HANDLERS, memo: AddToPlaylistPanel },
   { component: 'SyncSetupDialog', file: 'sync-setup-dialog.js', handlersVar: 'syncSetupDialogHandlers', handlers: SYNC_SETUP_DIALOG_HANDLERS, memo: SyncSetupDialog },
   { component: 'SyncStatusDialog', file: 'sync-status-dialog.js', handlersVar: 'syncStatusDialogHandlers', handlers: SYNC_STATUS_DIALOG_HANDLERS, memo: SyncStatusDialog },
+  { component: 'SettingsPage', file: 'settings-page.js', handlersVar: 'settingsPageHandlers', handlers: SETTINGS_PAGE_HANDLERS, memo: SettingsPage },
 ];
 
 describe.each(PAGES)('$component', ({ memo }) => {

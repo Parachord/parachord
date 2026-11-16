@@ -9,7 +9,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const src = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+const src = require('../helpers/renderer-source').appWithPages();
 
 describe('manageAmazonMusic', () => {
   const start = src.indexOf('const manageAmazonMusic = async');

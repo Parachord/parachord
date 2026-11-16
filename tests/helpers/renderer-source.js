@@ -22,6 +22,7 @@ const PAGE_MODULES = [
   'components/add-to-playlist-panel.js',
   'components/sync-setup-dialog.js',
   'components/sync-status-dialog.js',
+  'components/settings-page.js',
 ];
 
 function read(rel) {

@@ -50,7 +50,7 @@ describe('pluginMatchesQuery', () => {
 });
 
 describe('app.js uses the helper for both plug-in lists', () => {
-  const src = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  const src = require('../helpers/renderer-source').appWithPages();
   test('no substring match on plug-in descriptions remains', () => {
     expect(src).not.toMatch(/\.description \|\| ''\)\.toLowerCase\(\)\.includes\(query\)/);
     expect((src.match(/pluginMatchesQuery\(/g) || []).length).toBeGreaterThanOrEqual(2);

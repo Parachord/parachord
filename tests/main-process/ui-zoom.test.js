@@ -62,5 +62,5 @@ test('wired in: window creation, the View menu, preload, the store key, Settings
   expect(main).toMatch(/label: 'Actual Size', accelerator: 'CmdOrCtrl\+0', click: \(\) => uiZoom\.step\(0\)/);
   expect(fs.readFileSync(path.join(root, 'preload.js'), 'utf8')).toContain("setZoom: (zoom) => ipcRenderer.invoke('ui-zoom:set', zoom),");
   expect(fs.readFileSync(path.join(root, 'main-process/ipc/store.js'), 'utf8')).toContain("'ui_zoom'");
-  expect(fs.readFileSync(path.join(root, 'src/renderer/app.js'), 'utf8')).toContain("React.createElement(SettingRow, { label: 'Size',");
+  expect(require('../helpers/renderer-source').appWithPages()).toContain("React.createElement(SettingRow, { label: 'Size',");
 });
