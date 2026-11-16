@@ -39,3 +39,16 @@ test('no page keeps a hand-built Retry / Try Again button', () => {
   }
   expect(hits).toEqual([]);
 });
+
+test('tone dark: on-dark text, a faint circle and dark buttons (the AI panels, the edition menu)', () => {
+  const { EmptyState: Empty } = require('../../src/renderer/components/states');
+  const { renderToStaticMarkup: render } = require('react-dom/server');
+  const html = render(React.createElement(Empty, { tone: 'dark', title: 'No tracks left', body: 'Ask again.', actions: [{ label: 'Ask', onClick: () => {} }] }));
+  expect(html).toContain('text-on-dark-primary');
+  expect(html).toContain('text-on-dark-secondary');
+  expect(html).toContain('bg-white/5');
+  expect(html).not.toContain('text-ink-primary');
+  expect(html).not.toContain('bg-surface-inset');
+  const noIcon = render(React.createElement(Empty, { icon: null, title: 'Nothing' }));
+  expect(noIcon).not.toContain('rounded-full');
+});

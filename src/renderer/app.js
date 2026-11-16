@@ -41589,9 +41589,12 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column', 
                       })
                   ),
 loadedResolvers.filter(r => r.capabilities?.resolve && activeResolvers.includes(r.id)).length === 0 &&
-                    React.createElement('p', {
-                      style: { fontSize: '13px', color: 'var(--text-tertiary)', fontStyle: 'italic', padding: '12px 0' }
-                    }, 'No music services are on. Turn one on in Settings › Plug-Ins.'),
+                    React.createElement(EmptyState, {
+                      compact: true, align: 'start', icon: null,
+                      title: 'No music services are on',
+                      body: 'Turn one on in Plug-Ins to set its volume here.',
+                      actions: [{ label: 'Open Plug-Ins', variant: 'secondary', onClick: () => setSettingsTab('plugins') }]
+                    }),
 React.createElement('div', { style: { marginTop: '24px', paddingTop: '20px', borderTop: '1px solid var(--border-subtle)' } },
                     React.createElement(Button, { variant: 'secondary', size: 'sm', onClick: () => setResolverVolumeOffsets({
                         spotify: 0,
@@ -41945,16 +41948,13 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                     // Home's Import card lands on this card, and a sentence
                     // with no way forward was a dead end for a new user.
                     Object.entries(syncProviderConfig).filter(([pid]) => resolverSyncSettings[pid]?.enabled).length === 0 &&
-                      React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '10px' } },
-                        React.createElement('p', {
-                          style: { fontSize: '13px', color: 'var(--text-secondary)' }
-                        }, 'No service is synced yet. Set one up to import its playlists and saved music:'),
-                        React.createElement('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap' } },
-                          Object.entries(syncProviderConfig).map(([pid, config]) =>
-                            React.createElement(Button, { variant: 'secondary', key: pid, onClick: () => openSyncSetupModal(pid) }, `Set up ${config.name} sync`)
-                          )
-                        )
-                      )
+                      React.createElement(EmptyState, {
+                        compact: true, align: 'start', icon: null,
+                        title: 'No service is synced yet',
+                        body: 'Set one up to import its playlists and saved music.',
+                        actions: Object.entries(syncProviderConfig).map(([pid, config]) =>
+                          ({ label: `Set up ${config.name} sync`, variant: 'secondary', onClick: () => openSyncSetupModal(pid) }))
+                      })
                   )),
 
                 // Claude Desktop Integration Section
@@ -43577,7 +43577,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                 className: 'flex-1 flex items-center justify-center',
                 style: { padding: '16px' }
               },
-                React.createElement('p', { style: { fontSize: '14px', color: 'var(--on-dark-secondary)' } }, 'No tracks remaining')
+                React.createElement(EmptyState, { tone: 'dark', compact: true, icon: Icons.ListMusic, title: 'No tracks left', body: 'Ask Shuffleupagus for another playlist.' })
               ),
 
               // Actions - Three circular buttons
@@ -47596,7 +47596,7 @@ React.createElement('div', { style: { marginTop: '12px' } },
             if (d.recomputed) rows.push(banner('rgba(245,158,11,0.12)', 'rgba(245,158,11,0.4)', 'var(--text-warning)', 'The remote changed since you opened this. This is the updated diff.'));
             if (s.hasRemoves) rows.push(banner('rgba(220,38,38,0.10)', 'rgba(220,38,38,0.35)', 'var(--text-danger)', `${s.totalRemoves} track${s.totalRemoves === 1 ? '' : 's'} would be removed. Review the removals before you accept.`));
             if (!s.hasChanges && !s.protected.length) {
-              rows.push(React.createElement('p', { key: 'noop', style: { fontSize: '13px', color: 'var(--text-secondary)', padding: '4px 0 14px' } }, 'No changes needed — your playlists are already in sync. Safe to switch.'));
+              rows.push(React.createElement('p', { key: 'noop', style: { fontSize: '13px', color: 'var(--text-secondary)', padding: '4px 0 14px' } }, 'Your playlists are already in sync, so nothing changes. Safe to switch.'));
             } else if (s.hasChanges) {
               rows.push(React.createElement('p', { key: 'sum', style: { fontSize: '12px', color: 'var(--text-tertiary)', padding: '2px 0 8px' } }, `${s.noopCount} playlist${s.noopCount === 1 ? '' : 's'} already match. ${s.changed.length} need${s.changed.length === 1 ? 's' : ''} changes:`));
             }

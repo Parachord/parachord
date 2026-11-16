@@ -462,7 +462,7 @@ describe('AlbumVersionsMenu', () => {
     expect(html).toContain('animate-shimmer');
     expect(html).not.toContain('MusicBrainz editions');
     expect(html).not.toContain('Your services');
-    expect(html).not.toContain('No other versions found');
+    expect(html).not.toContain('No other editions');
   });
 
   test('nothing else to pick says so', () => {
@@ -471,7 +471,7 @@ describe('AlbumVersionsMenu', () => {
       versions: { key: albumVersionsKey(release), loading: false, mb: { releaseGroupId: RG, releases: [] }, catalogs: [] },
       resolvers: []
     });
-    expect(html).toContain('No other versions found');
+    expect(html).toContain('No other editions');
     expect(html).not.toContain('>MusicBrainz editions<');
     expect(html).not.toContain('>Your services<');
   });
@@ -484,14 +484,14 @@ describe('AlbumVersionsMenu', () => {
     expect(loading).not.toContain('Some services');
   });
 
-  test('a failed MusicBrainz browse leaves the retry hint, not "No other versions found"', () => {
+  test('a failed MusicBrainz browse leaves the retry hint, not "No other editions"', () => {
     const html = render({
       release,
       versions: { key: albumVersionsKey(release), loading: false, mb: { releaseGroupId: RG, releases: [], failed: true }, catalogs: [], failures: [] },
       resolvers: []
     });
     expect(html).toContain('Some services didn&#x27;t answer — reopen to retry');
-    expect(html).not.toContain('No other versions found');
+    expect(html).not.toContain('No other editions');
   });
 
   test('a panel whose only answers are failures shows the hint alone', () => {
@@ -501,7 +501,7 @@ describe('AlbumVersionsMenu', () => {
       resolvers: []
     });
     expect(html).toContain('Some services didn&#x27;t answer — reopen to retry');
-    expect(html).not.toContain('No other versions found');
+    expect(html).not.toContain('No other editions');
   });
 
   test('a long MusicBrainz list folds behind a "N more editions" row', () => {

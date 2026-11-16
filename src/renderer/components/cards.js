@@ -464,11 +464,11 @@ const AlbumVersionsMenu = ({ release, versions, resolvers = [], onSelect, onClos
     : (versions.loading && (catalogSections.length > 0 || (versions.mb && versions.mb.releases)) ? shimmerRows('more') : []);
 
   const emptyNote = nothingLoaded
-    ? [React.createElement('div', {
-        key: 'no-versions',
-        className: 'px-3 py-2.5',
-        style: { fontSize: '11px', color: 'rgba(255, 255, 255, 0.55)' }
-      }, 'No other versions found')]
+    ? [React.createElement(EmptyState, {
+        key: 'no-versions', tone: 'dark', compact: true, icon: null,
+        title: 'No other editions',
+        body: 'MusicBrainz and your services have no other edition of this album.'
+      })]
     : [];
 
   // Searches that failed or timed out (versions.failures, or a failed

@@ -1383,14 +1383,11 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                 ),
 
                 // No extended info found
-                !loadingExtendedInfo && artistExtendedInfo === false && React.createElement('div', {
-                  style: {
-                    fontSize: '11px',
-                    color: 'var(--text-tertiary)',
-                    textAlign: 'center',
-                    padding: '16px 0'
-                  }
-                }, 'No additional info available')
+                !loadingExtendedInfo && artistExtendedInfo === false && React.createElement(EmptyState, {
+                  compact: true, icon: null,
+                  title: 'No more details',
+                  body: 'MusicBrainz has no members or links for this artist yet.'
+                })
               )
             ),
 
