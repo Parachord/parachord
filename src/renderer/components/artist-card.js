@@ -48,7 +48,11 @@ function ArtistCard({ artist, image, imageLoaded, getArtistImage, onOpen, onPlay
       .catch(() => { if (!cancelled) setFetched(null); });
     return () => { cancelled = true; };
   }, [name, !!getArtistImage]);
-  const url = getArtistImage ? fetched : (image || null);
+  const rawUrl = getArtistImage ? fetched : (image || null);
+  // A photo that fails to load is no photo: the initials show, not an empty
+  // box (Search's artists, 2026-11-15).
+  const [brokenUrl, setBrokenUrl] = React.useState(null);
+  const url = rawUrl && rawUrl !== brokenUrl ? rawUrl : null;
   const loading = getArtistImage ? fetched === undefined : imageLoaded === false;
   const noImage = !loading && !url;
 
@@ -90,7 +94,7 @@ function ArtistCard({ artist, image, imageLoaded, getArtistImage, onOpen, onPlay
         style: { opacity: 0 },
         ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
         onLoad: (ev) => { ev.target.style.opacity = '1'; },
-        onError: (ev) => { ev.target.style.display = 'none'; },
+        onError: () => setBrokenUrl(url),
       }),
       badge,
       onPlay && e('div', {

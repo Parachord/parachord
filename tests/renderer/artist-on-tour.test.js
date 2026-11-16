@@ -28,3 +28,7 @@ test('asked before a concert plug-in was ready: asked again once one is', () => 
   // The hook reads functions declared above it (the TDZ trap).
   expect(app.indexOf('const getConcertServices = () =>')).toBeLessThan(app.indexOf('const concertServiceCount = useMemo('));
 });
+
+test('Clear cache asks first: it removes every cache and cannot be undone', () => {
+  expect(app).toMatch(/variant: 'destructive', size: 'sm', onClick: \(\) => showConfirmDialog\(\{[\s\S]{0,200}title: 'Clear cache\?',[\s\S]{0,300}confirmLabel: 'Clear cache',\s*destructive: true,\s*onConfirm: async \(\) => \{/);
+});

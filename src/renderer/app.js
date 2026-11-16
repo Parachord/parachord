@@ -5789,7 +5789,6 @@ const Parachord = () => {
       onCancel: options.onCancel || null,
       dontShowAgain: options.dontShowAgain || null,
       actionButton: options.actionButton || null,
-      onCancel: options.onCancel || null,
     });
     if (superseded) superseded();
   };
@@ -41895,7 +41894,13 @@ React.createElement('p', {
                       lineHeight: '1.6'
                     }
                   }, 'This will remove cached artist images, album art, and API responses. Loading may be slower temporarily while data is re-fetched.'),
-React.createElement(Button, { variant: 'destructive', size: 'sm', onClick: async () => {
+React.createElement(Button, { variant: 'destructive', size: 'sm', onClick: () => showConfirmDialog({
+                      // It can't be undone, so it asks first (it cleared on one click).
+                      title: 'Clear cache?',
+                      message: 'Cached artist images, album art and service responses are removed. Pages load more slowly until they’re fetched again.',
+                      confirmLabel: 'Clear cache',
+                      destructive: true,
+                      onConfirm: async () => {
                       // Clear all caches
                       artistImageCache.current = {};
                       albumArtCache.current = {};
@@ -41913,7 +41918,7 @@ React.createElement(Button, { variant: 'destructive', size: 'sm', onClick: async
                       }
 
                       showToast('Cache cleared');
-                    } }, React.createElement(Icons.Trash2, { className: 'w-4 h-4' }), 'Clear cache')),
+                    } }) }, React.createElement(Icons.Trash2, { className: 'w-4 h-4' }), 'Clear cache')),
 
                 // Playback Quality Section (global for Widevine/stream resolvers)
                 React.createElement(SettingsSection, {
