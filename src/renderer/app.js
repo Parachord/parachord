@@ -42235,13 +42235,13 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
             // end of the queue clears the track, and Previous brings it back
             // (#1319). The ref read is current here: handleNext pushes to the
             // history before the setCurrentTrack(null) that re-renders this.
-            React.createElement(Button, { variant: 'icon', tone: 'dark', style: { color: (!currentTrack && playHistoryRef.current.length === 0) ? 'var(--on-dark-disabled)' : 'var(--on-dark-primary)' }, 'aria-label': 'Previous', onClick: handlePrevious, disabled: !currentTrack && playHistoryRef.current.length === 0 }, React.createElement(SkipBack, { size: 18 }))
+            React.createElement(Button, { variant: 'icon', tone: 'dark', style: { color: 'var(--on-dark-primary)' }, 'aria-label': 'Previous', onClick: handlePrevious, disabled: !currentTrack && playHistoryRef.current.length === 0 }, React.createElement(SkipBack, { size: 18 }))
           ),
           React.createElement(Tooltip, { content: isPlaying ? 'Pause' : (playStartPending({ currentTrack, isPlaying, trackLoading, loadingTrack, resumePending }) ? 'Starting…' : 'Play'), position: 'top', variant: 'dark' },
-            React.createElement(Button, { variant: 'icon', tone: 'dark', style: { color: !currentTrack ? 'var(--on-dark-disabled)' : 'var(--on-dark-primary)' }, 'aria-label': isPlaying ? 'Pause' : 'Play', onClick: handlePlayPause, disabled: !currentTrack }, isPlaying ? React.createElement(Pause, { size: 22 }) : React.createElement(Play, { size: 22 }))
+            React.createElement(Button, { variant: 'icon', tone: 'dark', style: { color: 'var(--on-dark-primary)' }, 'aria-label': isPlaying ? 'Pause' : 'Play', onClick: handlePlayPause, disabled: !currentTrack }, isPlaying ? React.createElement(Pause, { size: 22 }) : React.createElement(Play, { size: 22 }))
           ),
           React.createElement(Tooltip, { content: 'Next', position: 'top', variant: 'dark' },
-            React.createElement(Button, { variant: 'icon', tone: 'dark', style: { color: !currentTrack ? 'var(--on-dark-disabled)' : 'var(--on-dark-primary)' }, 'aria-label': 'Next', onClick: () => handleNext(true), disabled: !currentTrack }, React.createElement(SkipForward, { size: 18 }))
+            React.createElement(Button, { variant: 'icon', tone: 'dark', style: { color: 'var(--on-dark-primary)' }, 'aria-label': 'Next', onClick: () => handleNext(true), disabled: !currentTrack }, React.createElement(SkipForward, { size: 18 }))
           ),
           // Queue button (hamburger style)
           React.createElement(Tooltip, { content: listenAlongFriend ? `Queue (listening along with ${listenAlongFriend.displayName || listenAlongFriend.username})` : 'Queue', position: 'top', variant: 'dark' },
@@ -42716,8 +42716,10 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                           // showed two tooltips at once.
                           'aria-label': `Buy on ${purchaseSource.resolverName}`
                         },
-                          // Shopping cart with download arrow icon
-                          React.createElement(Icons.ShoppingCart, { className: 'w-4 h-4' })
+                          // The cart, at the old glyph's 14px. Its basket sits in the
+                          // top of the box and only the wheels below, so it reads
+                          // high: 1px down centres it on the source name.
+                          React.createElement(Icons.ShoppingCart, { size: 14, style: { transform: 'translateY(1px)' } })
                         )
                       );
                     })()
@@ -42763,9 +42765,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
             position: 'top',
             variant: 'dark'
           },
-            React.createElement(Button, { variant: 'icon', size: 'sm', tone: 'dark', style: { color: !currentTrack || spinoffAvailable === false ? 'var(--on-dark-disabled)' :
-                  spinoffLoading || spinoffAvailable === null ? 'var(--on-dark-secondary)' :
-                  spinoffMode ? 'var(--playbar-accent)' : 'var(--on-dark-secondary)' }, 'aria-label': spinoffMode ? 'Exit spinoff mode' : 'Spinoff', onClick: () => {
+            React.createElement(Button, { variant: 'icon', size: 'sm', tone: 'dark', style: { color: spinoffMode ? 'var(--playbar-accent)' : 'var(--on-dark-secondary)' }, 'aria-label': spinoffMode ? 'Exit spinoff mode' : 'Spinoff', onClick: () => {
                 if (spinoffMode) {
                   exitSpinoff();
                 } else if (currentTrack && spinoffAvailable) {
@@ -42833,7 +42833,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
               position: 'top',
               variant: 'dark'
             },
-              React.createElement(Button, { variant: 'icon', size: 'sm', tone: 'dark', style: { color: shuffleDisabled ? 'var(--on-dark-disabled)' : shuffleMode ? 'var(--playbar-accent)' : 'var(--on-dark-secondary)' }, 'aria-label': tooltipContent, onClick: shuffleDisabled ? undefined : () => requestShuffle('toggle'), disabled: shuffleDisabled }, React.createElement(Icons.Shuffle, { className: 'w-4 h-4' }))
+              React.createElement(Button, { variant: 'icon', size: 'sm', tone: 'dark', style: { color: shuffleMode ? 'var(--playbar-accent)' : 'var(--on-dark-secondary)' }, 'aria-label': tooltipContent, onClick: shuffleDisabled ? undefined : () => requestShuffle('toggle'), disabled: shuffleDisabled }, React.createElement(Icons.Shuffle, { className: 'w-4 h-4' }))
             );
           })(),
           // Repeat button (#1319): off, all, one. Disabled during a spinoff or
@@ -42850,7 +42850,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
               position: 'top',
               variant: 'dark'
             },
-              React.createElement(Button, { variant: 'icon', size: 'sm', tone: 'dark', style: { color: repeatDisabled ? 'var(--on-dark-disabled)' : repeatMode !== 'off' ? 'var(--playbar-accent)' : 'var(--on-dark-secondary)' }, onClick: repeatDisabled ? undefined : () => requestRepeat('cycle'), disabled: repeatDisabled, 'aria-label': repeatMode === 'off' ? 'Repeat off' : repeatMode === 'all' ? 'Repeat all' : 'Repeat one' }, React.createElement(repeatMode === 'one' ? Icons.Repeat1 : Icons.Repeat, { className: 'w-4 h-4' }))
+              React.createElement(Button, { variant: 'icon', size: 'sm', tone: 'dark', style: { color: repeatMode !== 'off' ? 'var(--playbar-accent)' : 'var(--on-dark-secondary)' }, onClick: repeatDisabled ? undefined : () => requestRepeat('cycle'), disabled: repeatDisabled, 'aria-label': repeatMode === 'off' ? 'Repeat off' : repeatMode === 'all' ? 'Repeat all' : 'Repeat one' }, React.createElement(repeatMode === 'one' ? Icons.Repeat1 : Icons.Repeat, { className: 'w-4 h-4' }))
             );
           })(),
           // Volume - only enabled for local files and Spotify on Computer devices
