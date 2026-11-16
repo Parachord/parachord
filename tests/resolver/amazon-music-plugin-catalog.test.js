@@ -268,16 +268,17 @@ describe('searchAlbums (the albums tab of the spec search)', () => {
   test('a stale job (past the #1135 8s catalog budget) skips its page load and returns []', async () => {
     const ws = amazonWebSessionMock({ albums: ALBUMS });
     const resolver = instantiateAmazonPlugin(axe);
-    // Hold the plugin's page-flow chain with a job that never settles, so the
-    // album search queues behind it; then let the 8s budget pass before the
-    // chain frees up.
+    // Hold the plugin's page-flow queue with a gated job, so the album
+    // search queues behind it; then let the 8s budget pass before the queue
+    // frees up.
     let releaseChain;
-    resolver._pageFlowChain = new Promise((resolve) => { releaseChain = resolve; });
+    const gate = new Promise((resolve) => { releaseChain = resolve; });
+    resolver.enqueuePageFlow(() => gate); // a gated job holds the page-flow queue
     const base = Date.now();
     const dateSpy = jest.spyOn(Date, 'now').mockReturnValue(base);
     try {
       const pending = searchAlbums(resolver, 'wild pink');
-      await new Promise((r) => setTimeout(r, 0)); // the job reaches the chain wait
+      await new Promise((r) => setTimeout(r, 0)); // the job reaches the queue wait
       dateSpy.mockReturnValue(base + 8001);
       releaseChain();
       await expect(pending).resolves.toEqual([]);
@@ -368,12 +369,13 @@ describe('searchArtistImage (the artists tab, never throws)', () => {
     const ws = amazonWebSessionMock({ artists: ARTISTS });
     const resolver = instantiateAmazonPlugin(axe);
     let releaseChain;
-    resolver._pageFlowChain = new Promise((resolve) => { releaseChain = resolve; });
+    const gate = new Promise((resolve) => { releaseChain = resolve; });
+    resolver.enqueuePageFlow(() => gate); // a gated job holds the page-flow queue
     const base = Date.now();
     const dateSpy = jest.spyOn(Date, 'now').mockReturnValue(base);
     try {
       const pending = resolver.searchArtistImage('The Warning', {});
-      await new Promise((r) => setTimeout(r, 0)); // the job reaches the chain wait
+      await new Promise((r) => setTimeout(r, 0)); // the job reaches the queue wait
       dateSpy.mockReturnValue(base + 8001);
       releaseChain();
       await expect(pending).resolves.toBeNull();
@@ -1047,12 +1049,13 @@ describe('lookupAlbum (the candidate-ranking flow)', () => {
     const ws = albumLookupMock({});
     const resolver = instantiateAmazonPlugin(axe);
     let releaseChain;
-    resolver._pageFlowChain = new Promise((resolve) => { releaseChain = resolve; });
+    const gate = new Promise((resolve) => { releaseChain = resolve; });
+    resolver.enqueuePageFlow(() => gate); // a gated job holds the page-flow queue
     const base = Date.now();
     const dateSpy = jest.spyOn(Date, 'now').mockReturnValue(base);
     try {
       const pending = resolver.lookupAlbum(ALBUM_URL, {});
-      await new Promise((r) => setTimeout(r, 0)); // the job reaches the chain wait
+      await new Promise((r) => setTimeout(r, 0)); // the job reaches the queue wait
       dateSpy.mockReturnValue(base + 8001);
       releaseChain();
       await expect(pending).resolves.toBeNull();

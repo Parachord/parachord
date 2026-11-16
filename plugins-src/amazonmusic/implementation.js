@@ -89,6 +89,22 @@ module.exports = {
     // back to the quiet window instead of matching the SEO sibling.
     const ALBUM_DETAIL_OP_NAME = 'AlbumDetailPage';
 
+    // The playlist import's busy-backoff bound. The import's pagination
+    // replays run PARALLEL-SAFE — after the load phase the page-flow queue is
+    // free — so a queued page flow's load takes the host's readers/writer
+    // gate WHILE the import paginates, and every sendPlaylistQuery through
+    // that window answers { error: 'busy' }. A load holds the gate for its
+    // whole navigation budget (loadTimeoutMs, 30s — the host default, since
+    // the plugin's load passes no timeoutMs), so the backoff must OUTLAST
+    // that budget or the import truncates on page-error (or fails the
+    // lookup on 'busy') while the queued load is still holding the gate.
+    // 30s + 15s of margin (the retry cadence plus scheduling jitter — the
+    // worst case observes the busy the moment the navigation takes the gate)
+    // covers any one load. The bound still ends: a genuinely stuck gate
+    // fails the import honestly instead of hanging a 120s import's every
+    // page on it.
+    const PLAYLIST_BUSY_BACKOFF_MAX_MS = 45000;
+
     // The album catalog fallback on the renderer bounds each catalog step
     // (withCatalogTimeout / CATALOG_STEP_TIMEOUT_MS in src/renderer/app.js),
     // and getArtistImage bounds each chain step the same way
@@ -355,6 +371,43 @@ module.exports = {
       };
     }
 
+    // The per-instance page-flow queue, the plugin's mirror of the host's
+    // own load-chain lanes (createLaneQueue in main-process/web-session.js,
+    // whose #1423 semantics these are): one job at a time — real page
+    // navigation on the shared view and the single webRequest listener slot
+    // — in TWO LANES. A FOREGROUND job (something the user is waiting on,
+    // such as a playlist they opened) starts before every queued BACKGROUND
+    // job (the spec searches, album lookups, artist-photo jobs); FIFO within
+    // a lane; a running job is never interrupted. A job that throws rejects
+    // its own promise only; the queue moves on.
+    function createLaneQueue() {
+      const lanes = { foreground: [], background: [] };
+      let running = false;
+      const pump = () => {
+        if (running) return;
+        const job = lanes.foreground.shift() || lanes.background.shift();
+        if (!job) return;
+        running = true;
+        Promise.resolve()
+          .then(job.fn)
+          .then(job.resolve, job.reject)
+          .then(() => { running = false; pump(); });
+      };
+      return {
+        run(fn, { lane = 'background' } = {}) {
+          return new Promise((resolve, reject) => {
+            lanes[lane === 'foreground' ? 'foreground' : 'background'].push({ fn: fn, resolve: resolve, reject: reject });
+            pump();
+          });
+        },
+        // Jobs waiting (not counting the one running), per lane.
+        pending() {
+          return { foreground: lanes.foreground.length, background: lanes.background.length };
+        },
+        isRunning() { return running; }
+      };
+    }
+
     // ── Replay plumbing ──────────────────────────────────────────────────────
 
     // Diagnostic for the miss log: the gql operations the page fired. When
@@ -390,6 +443,58 @@ module.exports = {
         if (!GQL_REPLAY_DROP_HEADERS.has(String(k).toLowerCase())) out[k] = v;
       }
       return out;
+    }
+
+    // HTTP 294 is the gql server's PARTIAL-SUCCESS status: a resolver for one
+    // field failed, the response carries `errors` for that path, and `data`
+    // still holds everything else. It is not always a refusal. A community
+    // playlist (/user-playlists/<id>) answers playlistDetail with 294 to
+    // Amazon's own page, because playlist.capabilities.setOnDemand calls a
+    // collaborators service that fails (500) for a playlist the user doesn't
+    // own, while data.playlist (title, tracks, pageInfo) is complete, and the
+    // page renders it (live-captured 2026-11-15, #1423). Other 294s carry no
+    // usable data: a Prime account's MusicHomePage, and a home walk with
+    // firstLimit above 20. So a 294 is accepted only by a flow that asks, and
+    // only when its own predicate finds the data it needs (`acceptPartial`
+    // (parsed)); every other non-200 is a failure carrying its status (the
+    // host's music-home fallback reads that status — nothing else opts in).
+    // This is the plugin's copy of amazon-music-logic.js's rule (the host
+    // copy serves the host's remaining replay flows); the playlist import is
+    // the only flow here that passes a predicate (#1356 M7).
+    const GQL_PARTIAL_STATUS = 294;
+
+    // The replay's raw { status, text } (or { error }) -> { parsed } or
+    // { error, status? } (and { partial: true } for an accepted 294). Pure,
+    // so the status rules are unit-tested; replayGql below is the caller.
+    function gqlReplayOutcome(replay, { acceptPartial = null } = {}) {
+      if (!replay || replay.error) return { error: (replay && replay.error) || 'Amazon gql query failed' };
+      const status = replay.status;
+      const failed = () => ({ error: 'Amazon gql query failed (' + status + ')', status: status });
+      const partialAllowed = status === GQL_PARTIAL_STATUS && typeof acceptPartial === 'function';
+      if (status !== 200 && !partialAllowed) return failed();
+      let parsed = null;
+      try { parsed = JSON.parse(replay.text); } catch (e) { /* leave null */ }
+      if (status !== 200) {
+        // A partial answer the flow can't use (or that isn't JSON) is the plain
+        // failure, status and all.
+        let usable = false;
+        try { usable = !!(parsed && acceptPartial(parsed)); } catch (e) { usable = false; }
+        return usable ? { parsed: parsed, partial: true } : failed();
+      }
+      if (!parsed) return { error: 'Amazon gql response was not JSON' };
+      if (Array.isArray(parsed.errors) && parsed.errors.length && !parsed.data) {
+        return { error: String((parsed.errors[0] || {}).message || 'Amazon gql query error') };
+      }
+      return { parsed: parsed };
+    }
+
+    // The playlist flow's partial-answer predicate: data.playlist present,
+    // with track edges where playlistEdgesFromGql finds them. A null
+    // playlist, or one with no track rows block, is not a playlist we can
+    // import.
+    function playlistPartialIsUsable(parsed) {
+      const data = parsed && parsed.data;
+      return !!(data && data.playlist && Array.isArray(playlistEdgesFromGql(data)));
     }
 
     // ── The track mapper (shared by the spec search and the playlist import:
@@ -963,8 +1068,12 @@ module.exports = {
       specTemplateIsFresh,
       specBodyWithVars,
       createSearchBreaker,
+      createLaneQueue,
       capturedOperationNames,
       amazonGqlFetchHeaders,
+      GQL_PARTIAL_STATUS,
+      gqlReplayOutcome,
+      playlistPartialIsUsable,
       trackFromGqlEdge,
       searchTracksFromGql,
       searchAlbumsFromGql,
@@ -982,6 +1091,7 @@ module.exports = {
       playlistPageInfoFromGql,
       playlistEdgesFromGql,
       paginatePlaylistTracks,
+      PLAYLIST_BUSY_BACKOFF_MAX_MS,
       amazonNormalizeArtistName,
       amazonPlanFromTier,
       tierFromConfig,
@@ -1005,6 +1115,22 @@ module.exports = {
       throw err;
     }
     return this.lib;
+  },
+
+  // The per-instance page-flow queue: one job at a time (the plugin's whole
+  // page flows — load + the verbatim replay after it — serialized on the
+  // shared view), in TWO LANES mirroring the host's own (#1423's semantics,
+  // createLaneQueue in _lib — the host's enqueue(fn, { lane }) in
+  // main-process/web-session.js is the original). The FOREGROUND lane is for
+  // a job the user is waiting on (a playlist they opened — lookupPlaylistFlow
+  // is its only rider): it starts before every queued BACKGROUND job (the
+  // spec searches, album lookups, artist-photo jobs), FIFO within a lane, and
+  // a running job is never interrupted. The queue lives on the instance
+  // (per-resolver state, dropped with it).
+  enqueuePageFlow: function (fn, { lane = 'background' } = {}) {
+    const lib = this.requireLib();
+    if (!this._pageFlowQueue) this._pageFlowQueue = lib.createLaneQueue();
+    return this._pageFlowQueue.run(fn, { lane });
   },
 
   // ── The spec-search runner (#1356 M5) ──────────────────────────────────────
@@ -1049,7 +1175,13 @@ module.exports = {
   // from the request the page itself made, so it is always current for this
   // hornet deploy. Never throws for a failed fetch: every failure is a
   // recoverable { error }, so the fast path degrades to the page flow.
-  replayGql: async function (entry, body) {
+  // `options.acceptPartial` opts a flow into HTTP 294 partial answers (see
+  // GQL_PARTIAL_STATUS in _lib): a predicate over the parsed body that says
+  // whether the data the flow needs came back. Without it a 294 is a failure
+  // with its status — every flow here passes none, and the host's
+  // music-home fallback depends on the same rule holding there. The status
+  // rules live in the pure gqlReplayOutcome (unit-tested).
+  replayGql: async function (entry, body, options = {}) {
     const lib = this.requireLib();
     const ws = window.electron && window.electron.webSession;
     if (!ws) return { error: 'Amazon webSession bridge not available' };
@@ -1058,15 +1190,7 @@ module.exports = {
     const raw = JSON.stringify(body);
     const replay = await ws.pageFetch(lib.SESSION, { url: replayUrl, method: 'POST', headers, body: raw });
     if (!replay || !replay.success) return { error: (replay && replay.error) || 'Amazon web-session bridge unavailable' };
-    if (replay.error) return { error: String(replay.error) };
-    if (replay.status !== 200) return { error: 'Amazon gql query failed (' + replay.status + ')', status: replay.status };
-    let parsed = null;
-    try { parsed = JSON.parse(replay.text); } catch (e) { /* leave null */ }
-    if (!parsed) return { error: 'Amazon gql response was not JSON' };
-    if (Array.isArray(parsed.errors) && parsed.errors.length && !parsed.data) {
-      return { error: String((parsed.errors[0] || {}).message || 'Amazon gql query error') };
-    }
-    return { parsed };
+    return lib.gqlReplayOutcome(replay, { acceptPartial: (options && options.acceptPartial) || null });
   },
 
   // The shared runner for the spec searches — the track search, the album
@@ -1093,24 +1217,25 @@ module.exports = {
     }
     const fast = await this.trySpecReplay({ searchText, specType, parse, noun });
     if (fast !== null) return fast;
-    // The per-instance page flow chain: the host's load chain serializes the
-    // LOADS; this chain serializes the plugin's whole page flows (load + the
+    // The per-instance page-flow queue: the host's load chain serializes the
+    // LOADS; this queue serializes the plugin's whole page flows (load + the
     // verbatim replay after it) so one flow's re-minted template heals every
     // search queued behind it, and one flow's replay is never run into the
     // teeth of the next flow's navigation (a pageFetch arriving while a
-    // navigation holds the gate answers { error: 'busy' }). The album lookup
-    // rides the same chain; the host-side flows that remain (playlist
-    // import, recommendations) serialize against the loads on the host's
-    // own chain.
-    const run = (this._pageFlowChain || Promise.resolve())
-      .then(() => {
-        if (staleCheck && staleCheck()) {
-          console.log('[Amazon] ' + specType + ' search skipped: queued past the ' + lib.ALBUM_JOB_STALE_MS + 'ms budget — the caller already moved on');
-          return [];
-        }
-        return this.specSearchPageFlow({ url, searchText, specType, parse, noun });
-      });
-    this._pageFlowChain = run.then(() => {}, () => {});
+    // navigation holds the gate answers { error: 'busy' }). Two lanes,
+    // mirroring the host's own (#1423's semantics, createLaneQueue in _lib):
+    // this is the BACKGROUND lane — the spec searches are speculative work;
+    // the album lookup rides the same queue, and a playlist the user opened
+    // (lookupPlaylistFlow, the foreground lane) goes ahead of every job
+    // queued here. The host-side flows that remain (recommendations, the
+    // session mint) serialize against the loads on the host's own chain.
+    const run = this.enqueuePageFlow(() => {
+      if (staleCheck && staleCheck()) {
+        console.log('[Amazon] ' + specType + ' search skipped: queued past the ' + lib.ALBUM_JOB_STALE_MS + 'ms budget — the caller already moved on');
+        return [];
+      }
+      return this.specSearchPageFlow({ url, searchText, specType, parse, noun });
+    });
     return run;
   },
 
@@ -1925,15 +2050,13 @@ module.exports = {
       throw lib.notReady('not-signed-in', 'Sign in and choose an Amazon Music profile');
     }
     const queuedAt = Date.now();
-    const run = (this._pageFlowChain || Promise.resolve())
-      .then(() => {
-        if (Date.now() - queuedAt > lib.ALBUM_JOB_STALE_MS) {
-          console.log('[Amazon] album lookup skipped: queued past the ' + lib.ALBUM_JOB_STALE_MS + 'ms catalog budget — the caller already moved on');
-          return null;
-        }
-        return this.lookupAlbumPageFlow(asin);
-      });
-    this._pageFlowChain = run.then(() => {}, () => {});
+    const run = this.enqueuePageFlow(() => {
+      if (Date.now() - queuedAt > lib.ALBUM_JOB_STALE_MS) {
+        console.log('[Amazon] album lookup skipped: queued past the ' + lib.ALBUM_JOB_STALE_MS + 'ms catalog budget — the caller already moved on');
+        return null;
+      }
+      return this.lookupAlbumPageFlow(asin);
+    });
     return run;
   },
 
@@ -2263,14 +2386,22 @@ module.exports = {
   // amazonmusic-lookup-playlist handler never read the plan either.
 
   // The playlist-lookup entry: URL shape, sign-in check, then the load phase
-  // queued on the plugin's page-flow chain. The chain covers the LOAD only
+  // queued on the plugin's page-flow queue (the FOREGROUND lane — see
+  // lookupPlaylistFlow below). The queue covers the LOAD only
   // (serialized against the spec-search and album page flows, so one flow's
   // navigation never interleaves another's); the replay + token-driven
   // pagination after it run parallel-safe — pageFetch is reader traffic, and
   // a busy gate (a concurrent navigation) is ridden out by the bounded
   // backoff inside sendPlaylistQuery rather than truncating the import.
-  // A long import therefore does not hold the chain hostage (up to 120s of
+  // A long import therefore does not hold the queue hostage (up to 120s of
   // pagination behind it would starve every search queued on it).
+  //
+  // The load rides the FOREGROUND lane of the per-instance page-flow queue
+  // (#1423's semantics, mirrored from the host's own): the user opened this
+  // playlist and is waiting on it, so it starts before every queued
+  // background page flow (a spec search, an album lookup, an artist-photo
+  // job), behind at most the one in progress. The hover prefetch calls the
+  // same lookup, so it rides the foreground lane too.
   lookupPlaylistFlow: async function (rawUrl) {
     const lib = this.requireLib();
     const ws = window.electron && window.electron.webSession;
@@ -2285,10 +2416,7 @@ module.exports = {
     if (!(await this.isSignedIn())) {
       throw lib.notReady('not-signed-in', 'Sign in and choose an Amazon Music profile');
     }
-    const load = (this._pageFlowChain || Promise.resolve())
-      .then(() => this.lookupPlaylistPageFlow(rawUrl, playlistId));
-    this._pageFlowChain = load.then(() => {}, () => {});
-    const page = await load;
+    const page = await this.enqueuePageFlow(() => this.lookupPlaylistPageFlow(rawUrl, playlistId), { lane: 'foreground' });
     if (!page) return null;
     return this.playlistImportPages(page.entry, page.request);
   },
@@ -2318,6 +2446,17 @@ module.exports = {
       // window). Transient/wiring classes, never a miss and never a sign-in
       // prompt.
       throw lib.notReady((load && load.reason) || 'load-failed', (load && load.error) || 'Amazon playlist page did not finish loading');
+    }
+    if (load.loadTimedOut) {
+      // The host's rule-5 escape (#1423's bug class): the navigation budget ran
+      // out with the capture already holding requests — one slow subresource
+      // keeps did-finish-load from firing long after the page's gql. The
+      // page's requests were the point of the load, not the finished
+      // document, and the host returned them with the flag; the import
+      // proceeds on the still-loading page (the SPA already booted and
+      // queried). A capture that holds no playlistDetail is the ordinary miss
+      // below, with its ops log.
+      console.log('[Amazon] playlist page still loading after the load budget; proceeding with the captured requests');
     }
     // The after-load URL re-checks: a wall means the session died mid-flight
     // (the page redirected to a sign-in wall while it loaded); a page that
@@ -2366,12 +2505,22 @@ module.exports = {
     const sendPlaylistQuery = async (body) => {
       let outcome;
       // A busy gate (a concurrent navigation — another plugin page flow's
-      // load, the host's session mint) is transient, not a failed page: the
-      // same bounded backoff the other replay flows carry rides it out, so
-      // one navigation does not truncate the import.
+      // load, the host's session mint) is transient, not a failed page: a
+      // bounded backoff rides it out, so one navigation does not truncate the
+      // import. The bound OUTLASTS the host's load budget
+      // (PLAYLIST_BUSY_BACKOFF_MAX_MS, 45s > loadTimeoutMs + margin — the
+      // pagination runs parallel-safe after the load phase, so a queued page
+      // flow's load takes the gate for its whole navigation budget WHILE the
+      // import paginates; the old ~13s bound gave up mid-import and truncated
+      // the playlist on page-error / failed the lookup on 'busy').
       for (let attempt = 0; ; attempt++) {
         try {
-          outcome = await this.replayGql(entry, body);
+          // A community playlist (/user-playlists/) answers 294: complete
+          // data.playlist plus an error on a capabilities field we never read
+          // (playlistPartialIsUsable, _lib). Amazon's own page renders it, so
+          // the import does too — for the first page AND every continuation
+          // page (each page is its own 294 candidate). Nothing else opts in.
+          outcome = await this.replayGql(entry, body, { acceptPartial: lib.playlistPartialIsUsable });
         } catch (error) {
           // A HARD rejection — the invoke refused, the view destroyed
           // mid-replay (signOut, host close) — reads like any other replay
@@ -2379,11 +2528,19 @@ module.exports = {
           outcome = { error: (error && error.message) || String(error) };
         }
         if (outcome.error !== 'busy') break;
+        // The accumulated pause if this wait runs: three fast 400ms retries,
+        // then 1s steps — never past the bound above.
         const wait = attempt < 3 ? 400 : 1000;
-        if (attempt >= 3 && (attempt - 3 + 1) * 1000 > 12000) break;
+        const waited = attempt < 3 ? (attempt + 1) * 400 : 1200 + (attempt - 2) * 1000;
+        if (waited > lib.PLAYLIST_BUSY_BACKOFF_MAX_MS) break;
         await new Promise((resolve) => setTimeout(resolve, wait));
       }
       if (outcome.error) return { error: outcome.error };
+      if (outcome.partial) {
+        const paths = (Array.isArray(outcome.parsed.errors) ? outcome.parsed.errors : [])
+          .map(e => (Array.isArray(e && e.path) ? e.path.join('.') : '?'));
+        console.log('[Amazon] playlist partial answer (HTTP 294), using data.playlist; errors at: ' + (paths.join(', ') || 'none'));
+      }
       const parsed = outcome.parsed;
       if (parsed && Array.isArray(parsed.errors) && parsed.errors.length && !(parsed.data && parsed.data.playlist)) {
         return { error: String((parsed.errors[0] || {}).message || 'Amazon playlist query error') };
@@ -2459,8 +2616,9 @@ module.exports = {
     // The flow's throw → a result-shaped outcome, so the mapping below keeps
     // the exact semantics the deleted IPC bridge result used to carry. An
     // error with no reason class (a raw bridge rejection — the invoke itself
-    // broke) propagates to the outer catch instead, which answers null the
-    // way the old IPC rejection did.
+    // broke) propagates to the outer catch, which answers with the old IPC
+    // handler's shape: "Amazon Music playlist import failed: <message>",
+    // never a silent null (the old handler's catch-all did the same).
     var runFlow = async () => {
       try {
         var playlist = await this.lookupPlaylistFlow(url);
@@ -2503,8 +2661,14 @@ module.exports = {
       }
     } catch (error) {
       if (error && error.notReady) throw error;
+      // An error with no reason class keeps the old IPC handler's shape — the
+      // handler caught every error and the renderer surfaced "Amazon Music
+      // playlist import failed: <message>". Only a programming error or a
+      // broken invoke reaches this path (the reason-classed outcomes are
+      // handled below), but a silent null would report a real failure as a
+      // missing playlist.
       console.error('Amazon Music playlist lookup error:', error);
-      return null;
+      throw new Error('Amazon Music playlist import failed: ' + ((error && error.message) || error));
     }
     // Outside the try so the catch does not swallow these.
     // Transient/wiring failures first: a stalled load must not be reported as a

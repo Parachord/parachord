@@ -26,10 +26,21 @@
  *     log (a hornet rename reads as a rename); a wall after the load is
  *     not-signed-in; a refused load is load-failed/superseded, never a miss
  *   - a busy pageFetch (a concurrent navigation holds the gate) is ridden
- *     out by the bounded backoff, never read as a failed page
- *   - the load phase rides the per-instance page-flow chain; the pagination
- *     replays after it run parallel-safe (a queued page flow is not starved
- *     behind a long import's pagination)
+ *     out by the bounded backoff, never read as a failed page — and the
+ *     bound OUTLASTS the host's load budget, so a concurrent load that holds
+ *     the gate for its whole navigation budget does not truncate the import
+ *   - the load phase rides the per-instance page-flow queue's FOREGROUND
+ *     lane (a playlist the user opened goes ahead of every queued background
+ *     page flow); the pagination replays after it run parallel-safe (a queued
+ *     page flow is not starved behind a long import's pagination)
+ *   - a 294 partial answer is accepted for the first page AND every
+ *     continuation page (a community playlist imports; the log names the
+ *     error paths; a 294 with no usable playlist is a lookup failure, never a
+ *     miss) — playlistPartialIsUsable moved here from the host's
+ *     amazon-gql-partial.test.js with the flow
+ *   - a page whose load budget runs out with the request captured still
+ *     imports (the host returns the captures with loadTimedOut — the request
+ *     was the point, not the finished page)
  */
 
 const {
@@ -72,7 +83,7 @@ const delisted = (n) => ({ cursor: n + ':delisted-' + n, node: null });
 // page after page. respond returns a response payload, or { busy: true } /
 // { fetchError } / { status, text } for the failure shapes. Every request
 // body the plugin sent is recorded on the mock (ws.sentRequests).
-const playlistMock = ({ captures, respond, loadResult, finalUrl, state } = {}) => {
+const playlistMock = ({ captures, respond, loadResult, finalUrl, state, loadTimedOut } = {}) => {
   const mockOpts = {
     capturesFor: (url) => (captures !== undefined ? captures
       : (/\/playlists\//.test(String(url)) ? [amazonPlaylistDetailCapture(PLAYLIST_ID)] : [])),
@@ -80,6 +91,7 @@ const playlistMock = ({ captures, respond, loadResult, finalUrl, state } = {}) =
   };
   if (loadResult !== undefined) mockOpts.loadResult = loadResult;
   if (finalUrl !== undefined) mockOpts.finalUrl = finalUrl;
+  if (loadTimedOut !== undefined) mockOpts.loadTimedOut = loadTimedOut;
   const ws = amazonWebSessionMock(mockOpts);
   if (state) ws.state.mockImplementation(state);
   const sentRequests = [];
@@ -429,6 +441,111 @@ describe('lookupPlaylistFlow (the load + the replay + the pagination)', () => {
     expect(ws.pageFetch).toHaveBeenCalledTimes(2);
   });
 
+  test('a busy gate that holds for a whole load budget — a concurrent page flow navigating mid-import — does not truncate the import', async () => {
+    // Finding 4 (the #1437 review): the pagination replays run parallel-safe,
+    // so a queued page flow's load takes the host's readers/writer gate WHILE
+    // the import paginates, and every page through that window answers
+    // { error: 'busy' }. A load holds the gate for up to its whole navigation
+    // budget (loadTimeoutMs, 30s — the host default; the plugin's load passes
+    // no timeoutMs), so the backoff must OUTLAST that budget: the old ~13s
+    // bound gave up mid-import and truncated the playlist (page-error) or
+    // failed the lookup ('busy').
+    const reference = instantiateAmazonPlugin(axe);
+    expect(reference.lib.PLAYLIST_BUSY_BACKOFF_MAX_MS).toBeGreaterThan(30000); // the host's loadTimeoutMs default
+    jest.useFakeTimers();
+    try {
+      let gateOpen = false;
+      // The concurrent load's whole budget: the gate frees ~31s in — past the
+      // old bound, inside the new one.
+      setTimeout(() => { gateOpen = true; }, 31000);
+      const ws = playlistMock({
+        respond: async (body) => {
+          if (body.variables.afterCursor == null) {
+            if (!gateOpen) return { busy: true };
+            return amazonPlaylistPage({ ...PLAYLIST, trackCount: 3 }, [track(1), track(2), track(3)], last);
+          }
+          return { data: { playlist: null } };
+        }
+      });
+      const resolver = instantiateAmazonPlugin(axe);
+      const flow = resolver.lookupPlaylistFlow(PLAYLIST_URL);
+      // Ride out the busy window: the first replay hits busy at t=0 and the
+      // backoff steps (400ms x3, then 1s) until the gate opens at 31s and the
+      // next retry lands the first page.
+      await jest.advanceTimersByTimeAsync(33000);
+      const playlist = await flow;
+      expect(playlist.tracks.map(t => t.asin)).toEqual(['B0000000001', 'B0000000002', 'B0000000003']);
+      // The first page rode out the busy window on the backoff (retried well
+      // past the old ~13s bound), and hasNextPage false ends the import after
+      // one successful page.
+      expect(ws.pageFetch.mock.calls.length).toBeGreaterThan(1);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('a page whose load budget runs out with the request captured still imports (the host returns loadTimedOut)', async () => {
+    // Finding 2 (the #1437 review): the old host flow waited for the whole
+    // page to load before its capture window, so one slow subresource fired
+    // the 30s budget with playlistDetail already captured (the #1423 bug). The
+    // host's rule-5 escape returns the held captures with loadTimedOut, and
+    // the plugin proceeds — the request was the point of the load, not the
+    // finished page.
+    const log = jest.spyOn(console, 'log').mockImplementation(() => {});
+    const ws = playlistMock({
+      loadTimedOut: true,
+      respond: () => amazonPlaylistPage(PLAYLIST, [track(1), track(2)], last)
+    });
+    const resolver = instantiateAmazonPlugin(axe);
+    const playlist = await resolver.lookupPlaylistFlow(PLAYLIST_URL);
+    expect(playlist.tracks).toHaveLength(2);
+    expect(ws.load).toHaveBeenCalledTimes(1);
+    expect(log).toHaveBeenCalledWith('[Amazon] playlist page still loading after the load budget; proceeding with the captured requests');
+    log.mockRestore();
+  });
+
+  test('the playlist lookup goes ahead of queued background page flows (the foreground lane)', async () => {
+    // Finding 3 (the #1437 review), the port of the host's playlist-lane test
+    // (amazon-lane-queue.test.js, #1423): the plugin's page-flow queue has
+    // the host's two lanes, and the playlist load rides the FOREGROUND one. A
+    // running job is never interrupted (the playlist waits for the album
+    // lookup in progress); it starts before every QUEUED background job.
+    const order = [];
+    let releaseFirst;
+    const firstLoad = new Promise((resolve) => { releaseFirst = resolve; });
+    let seenFirst = false;
+    const ws = playlistMock({ respond: () => amazonPlaylistPage(PLAYLIST, [track(1)], last) });
+    ws.load.mockImplementation(async (id, url) => {
+      order.push(url);
+      if (!seenFirst) {
+        seenFirst = true; // the RUNNING job: never interrupted
+        await firstLoad;
+      }
+      const captures = /\/playlists\//.test(String(url)) ? [amazonPlaylistDetailCapture(PLAYLIST_ID)] : [];
+      return { success: true, finalUrl: url, captures };
+    });
+    const resolver = instantiateAmazonPlugin(axe);
+    const running = resolver.lookupAlbumFlow('https://music.amazon.com/albums/B000ALBUM1').catch(() => 'album-failed');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const bg1 = resolver.lookupAlbumFlow('https://music.amazon.com/albums/B000ALBUM2').catch(() => 'album-failed');
+    const bg2 = resolver.lookupAlbumFlow('https://music.amazon.com/albums/B000ALBUM3').catch(() => 'album-failed');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const playlist = resolver.lookupPlaylistFlow(PLAYLIST_URL);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    releaseFirst();
+    await Promise.all([running, bg1, bg2]);
+    const imported = await playlist;
+    expect(imported.tracks).toHaveLength(1); // the flow completed; the load ORDER is the point
+    // The playlist's load fired before both queued background jobs — behind
+    // only the one that was already running.
+    expect(order).toEqual([
+      'https://music.amazon.com/albums/B000ALBUM1',
+      PLAYLIST_URL,
+      'https://music.amazon.com/albums/B000ALBUM2',
+      'https://music.amazon.com/albums/B000ALBUM3'
+    ]);
+  });
+
   test('a wall after the load is not-signed-in (the session died mid-flight)', async () => {
     const ws = playlistMock({
       finalUrl: 'https://music.amazon.com/ap/signin',
@@ -521,6 +638,145 @@ describe('lookupPlaylistFlow (the load + the replay + the pagination)', () => {
     const [a, b] = await Promise.all([first, second]);
     expect(a.tracks).toHaveLength(3);
     expect(b.tracks).toHaveLength(3);
+  });
+});
+
+// ── HTTP 294: a community playlist answers playlistDetail with a partial answer ──
+// Ported from the host's amazon-gql-partial.test.js with the flow (#1437
+// review, finding 1): the live-captured, trimmed 294 response — a complete
+// data.playlist plus an error on playlist.capabilities.setOnDemand (the
+// collaborators service fails with a 500 for a playlist the user doesn't
+// own). Amazon's own page renders it; the import does too. The host's copy
+// of the rule (gqlReplayOutcome) stays pinned there for the host's remaining
+// replay flows — the music-home fallback reads a 294's status.
+
+const COMMUNITY_ID = 'd1670975fc554eed80edd41f03d355f4sune';
+const COMMUNITY_URL = 'https://music.amazon.com/user-playlists/' + COMMUNITY_ID;
+
+// The live-captured 294 answer, trimmed to two rows (2026-11-15, #1423).
+const communityRow = (id, title, artist, i) => ({
+  cursor: `${i}:row-${i}`,
+  node: {
+    __typename: 'Track', id, title, duration: 239,
+    contributingArtists: { edges: [{ role: 'PRIMARY', node: { name: artist } }] },
+    album: { shortTitle: 'Album ' + i },
+    images: []
+  }
+});
+
+const PARTIAL_RESPONSE = {
+  errors: [{
+    message: 'Request to PlaylistCustomerRelationshipService API ListPlaylistCollaborators failed',
+    path: ['playlist', 'capabilities', 'setOnDemand'],
+    extensions: { code: 'SERVICE_ERROR' }
+  }],
+  data: {
+    playlist: {
+      id: COMMUNITY_ID,
+      __typename: 'Playlist',
+      title: 'Melancholy Alternatives',
+      url: COMMUNITY_URL,
+      curator: { name: 'A curator' },
+      description: 'A melancholic alternative playlist.',
+      trackCount: 2,
+      images: [],
+      capabilities: { appendTracks: { isAllowed: false }, setOnDemand: null },
+      tracks: {
+        edges: [
+          communityRow('B000002UB3', 'Creep', 'Radiohead', 0),
+          communityRow('B000002H3Q', 'How Soon Is Now?', 'The Smiths', 1)
+        ],
+        pageInfo: { hasNextPage: false, token: null, endCursor: '1:row-1' }
+      }
+    }
+  }
+};
+
+describe('HTTP 294 — the community playlist imports from the partial answer', () => {
+  test('imports the tracks from the 294 answer, logging the error paths', async () => {
+    const log = jest.spyOn(console, 'log').mockImplementation(() => {});
+    const ws = playlistMock({
+      captures: [amazonPlaylistDetailCapture(COMMUNITY_ID)],
+      respond: () => ({ status: 294, text: PARTIAL_RESPONSE })
+    });
+    const resolver = instantiateAmazonPlugin(axe);
+    const playlist = await resolver.lookupPlaylistFlow(COMMUNITY_URL);
+    expect(playlist.name).toBe('Melancholy Alternatives');
+    expect(playlist.tracks.map(t => [t.title, t.artist])).toEqual([
+      ['Creep', 'Radiohead'],
+      ['How Soon Is Now?', 'The Smiths']
+    ]);
+    // The 294 log line names the error paths, so a new failing field reads
+    // as a hornet change, not a silent swallow.
+    expect(log).toHaveBeenCalledWith('[Amazon] playlist partial answer (HTTP 294), using data.playlist; errors at: playlist.capabilities.setOnDemand');
+    expect(ws.pageFetch).toHaveBeenCalledTimes(1); // hasNextPage false: no second page
+    log.mockRestore();
+  });
+
+  test('a 294 on a CONTINUATION page is accepted too — every page opts in', async () => {
+    // The acceptPartial option rides the replay for the first page AND every
+    // continuation page: each page is its own 294 candidate (a long community
+    // playlist answers 294 page after page).
+    const FULL = { id: COMMUNITY_ID, name: 'Melancholy Alternatives', trackCount: 3 };
+    let page = 0;
+    const ws = playlistMock({
+      captures: [amazonPlaylistDetailCapture(COMMUNITY_ID)],
+      respond: (body) => {
+        if (body.variables.afterCursor == null) {
+          page = 1;
+          return amazonPlaylistPage(FULL, [track(1)], more('T1'));
+        }
+        page = 2;
+        // The continuation answers 294: complete data.playlist plus the
+        // collaborators error.
+        const partial = JSON.parse(JSON.stringify(PARTIAL_RESPONSE));
+        partial.data.playlist.id = COMMUNITY_ID;
+        partial.data.playlist.title = FULL.name;
+        partial.data.playlist.trackCount = 3;
+        partial.data.playlist.tracks.edges = [communityRow('B0000000002', 'Track 2', 'Artist', 1)];
+        partial.data.playlist.tracks.pageInfo = last;
+        return { status: 294, text: partial };
+      }
+    });
+    const resolver = instantiateAmazonPlugin(axe);
+    const playlist = await resolver.lookupPlaylistFlow(COMMUNITY_URL);
+    expect(playlist.tracks.map(t => t.asin)).toEqual(['B0000000001', 'B0000000002']);
+    expect(ws.pageFetch).toHaveBeenCalledTimes(2);
+    expect(page).toBe(2);
+  });
+
+  test('a 294 with no usable playlist is still a lookup failure, never a miss', async () => {
+    // The predicate decides: data.playlist null (or no track rows block) is
+    // not a playlist we can import, so the 294 is the plain failure with its
+    // status — the same rule the host's music-home fallback depends on.
+    const ws = playlistMock({
+      respond: () => ({ status: 294, text: { errors: [{ message: 'x' }], data: { playlist: null } } })
+    });
+    await expect(instantiateAmazonPlugin(axe).lookupPlaylistFlow(PLAYLIST_URL))
+      .rejects.toMatchObject({ reason: 'lookup-failed', message: 'Amazon gql query failed (294)' });
+    expect(ws.pageFetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── playlistPartialIsUsable (the _lib copy, moved from amazon-gql-partial.test.js) ──
+
+describe('playlistPartialIsUsable (the _lib copy)', () => {
+  const lib = instantiateAmazonPlugin(axe).lib;
+
+  test('data.playlist with track edges is usable', () => {
+    expect(lib.playlistPartialIsUsable(PARTIAL_RESPONSE)).toBe(true);
+  });
+
+  test('a playlist with empty edges is still usable (an empty playlist)', () => {
+    const empty = { data: { playlist: { id: 'x', tracks: { edges: [] } } } };
+    expect(lib.playlistPartialIsUsable(empty)).toBe(true);
+  });
+
+  test('no playlist, or no track rows block, is not', () => {
+    expect(lib.playlistPartialIsUsable({ data: { playlist: null } })).toBe(false);
+    expect(lib.playlistPartialIsUsable({ data: { playlist: { id: 'x' } } })).toBe(false);
+    expect(lib.playlistPartialIsUsable({ data: null })).toBe(false);
+    expect(lib.playlistPartialIsUsable(null)).toBe(false);
   });
 });
 

@@ -6,27 +6,26 @@
  * and data.playlist is complete. Live-captured 2026-11-15 on a Prime account;
  * the fixture below is that response, trimmed to two rows.
  *
+ * This file pins the HOST's copy of the rule (gqlReplayOutcome, the status
+ * rule replayGql in amazon-web-player.js applies for the host's remaining
+ * replay flows): 200 as before; 294 is a failure with its status unless the
+ * flow passes acceptPartial and the predicate finds its data. The playlist
+ * import that opted in moved into the plugin (#1356 M7) — its 294 import,
+ * the playlistPartialIsUsable predicate and the plugin's own _lib copy of
+ * the rule are pinned in tests/resolver/amazon-music-plugin-playlist.test.js.
+ *
  * Pinned here:
  *   - gqlReplayOutcome: 200 as before; 294 is a failure with its status
  *     unless the flow passes acceptPartial and the predicate finds its data
- *   - playlistPartialIsUsable: data.playlist with track edges, nothing less
  *   - replayGql forwards acceptPartial over the host's pageFetch, and
  *     without it a 294 keeps its status (the music-home fallback reads
  *     error.status === 294)
- *   - lookupPlaylist replays the captured playlistDetail request verbatim and
- *     imports the tracks from a 294 answer
- *   - lookupPlaylist goes ahead as soon as the request is captured, even
- *     while the page is still loading (the poll rides the host's
- *     loadURLBudgeted + capture); a load failure before any capture is still
- *     load-failed, and the navigation gate is always released
  */
 
 const amazonWebPlayer = require('../../amazon-web-player');
-const { createLaneQueue } = require('../../main-process/web-session');
 const {
   GQL_PARTIAL_STATUS,
-  gqlReplayOutcome,
-  playlistPartialIsUsable
+  gqlReplayOutcome
 } = require('../../amazon-music-logic');
 
 const PLAYLIST_ID = 'd1670975fc554eed80edd41f03d355f4sune';
@@ -105,17 +104,17 @@ describe('gqlReplayOutcome', () => {
   });
 
   test('with acceptPartial a usable 294 is the parsed body, marked partial', () => {
-    const out = gqlReplayOutcome(partial, { acceptPartial: playlistPartialIsUsable });
+    const out = gqlReplayOutcome(partial, { acceptPartial: () => true });
     expect(out.partial).toBe(true);
     expect(out.parsed.data.playlist.title).toBe('Melancholy Alternatives');
   });
 
   test('a 294 whose data the predicate rejects is the plain failure', () => {
     const refused = { status: 294, text: JSON.stringify({ errors: [{ message: 'no' }], data: { playlist: null } }) };
-    expect(gqlReplayOutcome(refused, { acceptPartial: playlistPartialIsUsable }))
+    expect(gqlReplayOutcome(refused, { acceptPartial: () => false }))
       .toEqual({ error: 'Amazon gql query failed (294)', status: 294 });
     const notJson = { status: 294, text: '<html>' };
-    expect(gqlReplayOutcome(notJson, { acceptPartial: playlistPartialIsUsable }))
+    expect(gqlReplayOutcome(notJson, { acceptPartial: () => true }))
       .toEqual({ error: 'Amazon gql query failed (294)', status: 294 });
   });
 
@@ -129,24 +128,6 @@ describe('gqlReplayOutcome', () => {
       expect(gqlReplayOutcome({ status, text: JSON.stringify(PARTIAL_RESPONSE) }, { acceptPartial: () => true }))
         .toEqual({ error: `Amazon gql query failed (${status})`, status });
     }
-  });
-});
-
-describe('playlistPartialIsUsable', () => {
-  test('data.playlist with track edges is usable', () => {
-    expect(playlistPartialIsUsable(PARTIAL_RESPONSE)).toBe(true);
-  });
-
-  test('a playlist with empty edges is still usable (an empty playlist)', () => {
-    const empty = { data: { playlist: { id: 'x', tracks: { edges: [] } } } };
-    expect(playlistPartialIsUsable(empty)).toBe(true);
-  });
-
-  test('no playlist, or no track rows block, is not', () => {
-    expect(playlistPartialIsUsable({ data: { playlist: null } })).toBe(false);
-    expect(playlistPartialIsUsable({ data: { playlist: { id: 'x' } } })).toBe(false);
-    expect(playlistPartialIsUsable({ data: null })).toBe(false);
-    expect(playlistPartialIsUsable(null)).toBe(false);
   });
 });
 
@@ -164,102 +145,7 @@ describe('replayGql (the host pageFetch under it)', () => {
   test('acceptPartial is forwarded', async () => {
     pageFetch.mockResolvedValue({ status: 294, text: JSON.stringify(PARTIAL_RESPONSE) });
     const out = await amazonWebPlayer.replayGql({}, { url: 'https://gql.music.amazon.com/', headers: {} }, CAPTURED_BODY,
-      { acceptPartial: playlistPartialIsUsable });
+      { acceptPartial: () => true });
     expect(out.partial).toBe(true);
-  });
-});
-
-describe('lookupPlaylist on a community playlist (HTTP 294)', () => {
-  const spies = [];
-  const spy = (name, impl) => { const s = jest.spyOn(amazonWebPlayer, name).mockImplementation(impl); spies.push(s); return s; };
-  let pageFetch;
-  let savedChain;
-
-  const win = {
-    isDestroyed: () => false,
-    loadURL: jest.fn().mockResolvedValue(undefined),
-    webContents: {
-      isDestroyed: () => false,
-      getURL: () => PLAYLIST_URL,
-      loadURL: jest.fn().mockResolvedValue(undefined)
-    }
-  };
-
-  beforeEach(() => {
-    savedChain = amazonWebPlayer.webSession._chain;
-    amazonWebPlayer.webSession._chain = createLaneQueue();
-    spy('isSignedIn', async () => true);
-    spy('ensureWindow', async () => win);
-    spy('layoutSearch', async () => 'offscreen');
-    spy('cancelSearchViewPark', () => {});
-    spy('scheduleParkSearchView', () => {});
-    spy('attachGqlCapture', () => ({
-      captured: [{ id: 1, url: 'https://gql.music.amazon.com/', headers: CAPTURED_HEADERS, body: JSON.stringify(CAPTURED_BODY) }],
-      detach: () => {}
-    }));
-    pageFetch = jest.spyOn(amazonWebPlayer.webSession, 'pageFetch')
-      .mockResolvedValue({ status: 294, text: JSON.stringify(PARTIAL_RESPONSE) });
-    jest.spyOn(console, 'log').mockImplementation(() => {});
-    jest.spyOn(console, 'warn').mockImplementation(() => {});
-  });
-
-  afterEach(() => {
-    while (spies.length) spies.pop().mockRestore();
-    pageFetch.mockRestore();
-    console.log.mockRestore();
-    console.warn.mockRestore();
-    amazonWebPlayer.webSession._chain = savedChain;
-  });
-
-  test('imports the tracks from the partial answer', async () => {
-    const playlist = await amazonWebPlayer.lookupPlaylist(PLAYLIST_URL);
-    expect(playlist).toBeTruthy();
-    expect(playlist.name).toBe('Melancholy Alternatives');
-    expect(playlist.tracks.map(t => [t.title, t.artist])).toEqual([
-      ['Creep', 'Radiohead'],
-      ['How Soon Is Now?', 'The Smiths']
-    ]);
-  });
-
-  test('replays the captured request verbatim, to the captured URL, minus browser-managed headers', async () => {
-    await amazonWebPlayer.lookupPlaylist(PLAYLIST_URL);
-    expect(pageFetch).toHaveBeenCalledTimes(1); // hasNextPage false: no second page
-    const request = pageFetch.mock.calls[0][0];
-    expect(request.url).toBe('https://gql.music.amazon.com/');
-    expect(request.method).toBe('POST');
-    expect(JSON.parse(request.body)).toEqual(CAPTURED_BODY);
-    expect(request.headers['csrf-token']).toBe('t');
-    expect(request.headers.Cookie).toBeUndefined(); // browser-managed headers never ride a replay
-    expect(request.headers.Origin).toBeUndefined();
-  });
-
-  test('goes ahead once the request is captured, without waiting for the page to finish loading', async () => {
-    // A page that never fires did-finish-load (one slow subresource). The
-    // old flow sat out the 30s load budget and failed load-failed with the
-    // request already captured.
-    win.webContents.loadURL.mockImplementationOnce(() => new Promise(() => {}));
-    const started = Date.now();
-    const playlist = await amazonWebPlayer.lookupPlaylist(PLAYLIST_URL);
-    expect(playlist.tracks).toHaveLength(2);
-    expect(Date.now() - started).toBeLessThan(5000);
-    // The navigation gate was released: a replay may enter again.
-    expect(amazonWebPlayer.webSession.tryEnterReplay()).toBe(true);
-    amazonWebPlayer.webSession.exitReplay();
-  });
-
-  test('a load that fails before any capture is load-failed, and releases the gate', async () => {
-    const err = Object.assign(new Error('page did not finish loading within 30000ms'), { reason: 'load-failed' });
-    win.webContents.loadURL.mockImplementationOnce(() => Promise.reject(err));
-    amazonWebPlayer.attachGqlCapture.mockImplementation(() => ({ captured: [], detach: () => {} }));
-    await expect(amazonWebPlayer.lookupPlaylist(PLAYLIST_URL)).rejects.toMatchObject({ reason: 'load-failed' });
-    expect(pageFetch).not.toHaveBeenCalled();
-    expect(amazonWebPlayer.webSession.tryEnterReplay()).toBe(true);
-    amazonWebPlayer.webSession.exitReplay();
-  });
-
-  test('a 294 with no playlist is still a lookup failure', async () => {
-    pageFetch.mockImplementation(async () => ({ status: 294, text: JSON.stringify({ errors: [{ message: 'x' }], data: { playlist: null } }) }));
-    await expect(amazonWebPlayer.lookupPlaylist(PLAYLIST_URL))
-      .rejects.toMatchObject({ reason: 'lookup-failed', message: 'Amazon gql query failed (294)' });
   });
 });

@@ -65,7 +65,7 @@ describe('amazonmusic .axe structure', () => {
       expect(typeof new Function('return ' + src)()).toBe('function');
     }
     expect(Object.keys(axe.implementation).sort()).toEqual(
-      ['_lib', 'assertPlanPlays', 'cleanup', 'expandRecommendationSection', 'getPlan', 'getRecommendations', 'init', 'isSignedIn', 'lookupAlbum', 'lookupAlbumFlow', 'lookupAlbumPageFlow', 'lookupPlaylist', 'lookupPlaylistFlow', 'lookupPlaylistPageFlow', 'play', 'playlistImportPages', 'replayGql', 'requireLib', 'resolve', 'search', 'searchAlbums', 'searchArtistImage', 'sessionState', 'specSearch', 'specSearchPageFlow', 'specStructuralError', 'trySpecReplay'].sort()
+      ['_lib', 'assertPlanPlays', 'cleanup', 'enqueuePageFlow', 'expandRecommendationSection', 'getPlan', 'getRecommendations', 'init', 'isSignedIn', 'lookupAlbum', 'lookupAlbumFlow', 'lookupAlbumPageFlow', 'lookupPlaylist', 'lookupPlaylistFlow', 'lookupPlaylistPageFlow', 'play', 'playlistImportPages', 'replayGql', 'requireLib', 'resolve', 'search', 'searchAlbums', 'searchArtistImage', 'sessionState', 'specSearch', 'specSearchPageFlow', 'specStructuralError', 'trySpecReplay'].sort()
     );
   });
 });
@@ -460,11 +460,16 @@ describe('amazonmusic lookupPlaylist', () => {
     expect(managePrompt).not.toHaveBeenCalled();
   });
 
-  test('a flow rejection surfaces as null, not a throw', async () => {
+  test('a reasonless flow rejection keeps the old IPC handler shape, never a silent null', async () => {
+    // The #1437 review note: the deleted IPC handler caught EVERY error and
+    // the renderer surfaced "Amazon Music playlist import failed: <message>".
+    // A raw bridge rejection (a broken invoke — no reason class) reaches the
+    // outer catch, which must throw that shape, not return null (a null would
+    // report a real failure as a missing playlist).
     const ws = playlistMock();
     ws.load.mockRejectedValue(new Error('ipc broke'));
     const resolver = instantiate(axe);
-    await expect(resolver.lookupPlaylist(playlistUrl, {})).resolves.toBeNull();
+    await expect(resolver.lookupPlaylist(playlistUrl, {})).rejects.toThrow('Amazon Music playlist import failed: ipc broke');
   });
 
   test('no webSession bridge returns null', async () => {

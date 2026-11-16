@@ -253,6 +253,12 @@ function amazonPlaylistPage(playlist, tracks, pageInfo) {
 //   finalUrl         — the load's final URL (a wall redirect)
 //   loadResult       — the load's whole outcome ({ success: false, reason } for
 //                      the failure paths)
+//   loadTimedOut     — true simulates the host's rule-5 escape: the navigation
+//                      budget ran out with the capture already holding
+//                      requests, so the load returns them with
+//                      { loadTimedOut: true } instead of throwing
+//                      load-failed (nothing captured still fails — pass
+//                      loadResult for that)
 //   captureDelayMs   — the ms after load-finish the page's first capture fires
 //                      (default 0): the load returns it only when it fired
 //                      BEFORE the quiet window closed (see load below)
@@ -350,7 +356,12 @@ function amazonWebSessionMock(opts = {}) {
         const at = captures.findIndex((entry) => captureSatisfiesDoneWhen(doneWhen, entry));
         if (at >= 0) captures = captures.slice(0, at + 1);
       }
-      return { success: true, finalUrl: 'finalUrl' in opts ? opts.finalUrl : url, captures };
+      const out = { success: true, finalUrl: 'finalUrl' in opts ? opts.finalUrl : url, captures };
+      // The host's rule-5 escape, simulated at its decision point: the
+      // navigation budget ran out with the capture already holding requests,
+      // so the host returns them with the flag instead of throwing.
+      if (opts.loadTimedOut) out.loadTimedOut = true;
+      return out;
     }),
     pageFetch: jest.fn().mockImplementation(async (id, request) => {
       if (id !== 'amazon-music') throw new Error('the plugin must drive its own session id');
