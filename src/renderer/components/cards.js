@@ -42,44 +42,8 @@ const RELEASE_BADGE_STYLES = Object.fromEntries(Object.entries(RELEASE_TYPE_COLO
 const { generateArtistPattern } = require('../lib/artist-pattern');
 
 // Custom PlayTop10Icon - Play button with "10" badge for artist top tracks
-const PlayTop10Icon = ({ size = 24, className = '' }) => {
-  return React.createElement('svg', {
-    width: size,
-    height: size,
-    viewBox: '0 0 24 24',
-    fill: 'none',
-    className
-  },
-    // Play triangle, centred by its centroid (x 12) like the other play
-    // buttons' nudged triangle; the badge sits over its lower-right corner.
-    React.createElement('path', {
-      d: 'M8.17 4.75L19.67 12L8.17 19.25V4.75Z',
-      fill: 'currentColor',
-      stroke: 'currentColor',
-      strokeWidth: 1.5,
-      strokeLinecap: 'round',
-      strokeLinejoin: 'round'
-    }),
-    // Badge circle background
-    React.createElement('circle', {
-      cx: 18.5,
-      cy: 18.5,
-      r: 5.5,
-      fill: 'var(--success)'
-    }),
-    // "10" text in badge
-    React.createElement('text', {
-      x: 18.5,
-      y: 18.5,
-      textAnchor: 'middle',
-      dominantBaseline: 'central',
-      fill: 'white',
-      fontSize: 7,
-      fontWeight: 'bold',
-      fontFamily: 'var(--font-sans)'
-    }, '10')
-  );
-};
+// Play Top 10's icon lives in icons.js (Icons.PlayTop10); exported here as before.
+const PlayTop10Icon = Icons.PlayTop10;
 
 // Artist cards live in components/artist-card.js (ArtistCard).
 

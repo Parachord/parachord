@@ -11,6 +11,8 @@
 //   compact   true: the smaller one for a collapsed header ("Play Radio")
 // Props-driven; loads under plain Node.
 
+const Icons = require('./icons');
+
 const FILL = 'var(--accent-fill)';
 const ON_FILL = 'var(--on-accent)';
 
@@ -35,8 +37,7 @@ function CollectionRadioButton({ onClick, compact = false }) {
         backgroundColor: ON_FILL, color: FILL, flexShrink: 0,
       },
     },
-      e('svg', { width: compact ? 10 : 12, height: compact ? 10 : 12, viewBox: '0 0 24 24', fill: 'currentColor' },
-        e('path', { d: 'M7 4v16l13-8z' }))),
+      e(Icons.Play, { size: compact ? 10 : 12, strokeWidth: 0 })),
     compact ? 'Play Radio' : 'Play Collection Radio');
 }
 

@@ -713,13 +713,8 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                         className: 'w-full h-full flex items-center justify-center',
                         style: { background: 'var(--placeholder-bg)' }
                       },
-                        // Playlist icon (three lines with play triangle)
-                        React.createElement('svg', { className: 'w-12 h-12 text-ink-tertiary', viewBox: '0 0 24 24', fill: 'currentColor' },
-                          React.createElement('rect', { x: 3, y: 5, width: 18, height: 2, rx: 1 }),
-                          React.createElement('rect', { x: 3, y: 11, width: 10, height: 2, rx: 1 }),
-                          React.createElement('rect', { x: 3, y: 17, width: 7, height: 2, rx: 1 }),
-                          React.createElement('path', { d: 'M15 13.5v6l5.5-3-5.5-3z' })
-                        )
+                        // The Playlists page's glyph (icons.js)
+                        React.createElement(Icons.Playlist, { className: 'w-12 h-12 text-ink-tertiary' })
                       ),
                     // The playlist's own cover, over the mosaic/placeholder
                     // (DOM order = paint order here; see the comment above).

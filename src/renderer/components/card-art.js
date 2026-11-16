@@ -6,7 +6,8 @@
 // (hover or keyboard focus shows the overlay) and the release-type badge.
 // Props-driven; hooks are qualified; loads under plain Node.
 
-const { Play, Music } = require('./icons');
+const Icons = require('./icons');
+const { Play, Music } = Icons;
 
 const e = React.createElement;
 
@@ -49,14 +50,13 @@ const SHRINK = { flexShrink: 1, minWidth: 0, height: 'auto', aspectRatio: '1' };
 const SIDE_ICON = { width: '50%', height: '50%' };
 const PLAY_ICON = { width: '46%', height: '46%', marginLeft: '4%' };
 
-function SideButton({ label, onClick, path }) {
+function SideButton({ label, onClick, icon: Icon }) {
   return e('button', {
     type: 'button', 'aria-label': label, 'data-tooltip': label,
     onClick: (ev) => { ev.stopPropagation(); if (onClick) onClick(ev); },
     className: `${APP_SIDE_BTN} bg-white/15 hover:bg-white/25 text-white`,
     style: Object.assign({ border: 'none', cursor: 'pointer', padding: 0 }, SHRINK),
-  }, e('svg', { style: SIDE_ICON, fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2, 'aria-hidden': 'true' },
-    e('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: path })));
+  }, e(Icon, { style: SIDE_ICON }));
 }
 
 // `shown` undefined: CSS shows it (.card-actions, index.html: the CardButton
@@ -75,25 +75,21 @@ function ArtOverlay({ shown, title, onClick, onPlay, onQueue, onAddToPlaylist })
     style: Object.assign({ zIndex: 2, padding: '8px', boxSizing: 'border-box' },
       css ? null : { opacity: shown ? 1 : 0, pointerEvents: shown ? 'auto' : 'none' }),
   },
-    onAddToPlaylist && e(SideButton, { label: `Add ${title} to a playlist`, onClick: onAddToPlaylist, path: 'M12 4v16m8-8H4' }),
+    onAddToPlaylist && e(SideButton, { label: `Add ${title} to a playlist`, onClick: onAddToPlaylist, icon: Icons.Plus }),
     onPlay && e('button', {
       type: 'button', 'aria-label': `Play ${title}`, 'data-tooltip': 'Play',
       onClick: (ev) => { ev.stopPropagation(); onPlay(ev); },
       className: APP_PLAY_BTN,
       style: Object.assign({ border: 'none', cursor: 'pointer', padding: 0 }, SHRINK),
     }, e(Play, { size: 22, style: Object.assign({ color: 'var(--on-art-ink)' }, PLAY_ICON) })),
-    onQueue && e(SideButton, { label: `Add ${title} to the queue`, onClick: onQueue, path: 'M4 6h16M4 12h16M4 18h7' }));
+    onQueue && e(SideButton, { label: `Add ${title} to the queue`, onClick: onQueue, icon: Icons.AddToQueue }));
 }
 
 // The Playlists page's placeholder glyph: three lines and a play triangle.
-const PlaylistGlyph = () => e('svg', {
-  'aria-hidden': 'true', 'data-playlist-glyph': '', viewBox: '0 0 24 24', fill: 'currentColor',
+const PlaylistGlyph = () => e(Icons.Playlist, {
+  'data-playlist-glyph': '',
   style: { width: '40%', height: '40%', maxWidth: '48px', maxHeight: '48px', color: 'var(--text-secondary)' },
-},
-  e('rect', { x: 3, y: 5, width: 18, height: 2, rx: 1 }),
-  e('rect', { x: 3, y: 11, width: 10, height: 2, rx: 1 }),
-  e('rect', { x: 3, y: 17, width: 7, height: 2, rx: 1 }),
-  e('path', { d: 'M15 13.5v6l5.5-3-5.5-3z' }));
+});
 
 // Square art: a mosaic (2x2), one cover, or a placeholder block. A playlist
 // with no covers yet (`placeholder: 'playlist'`) shows the Playlists page's

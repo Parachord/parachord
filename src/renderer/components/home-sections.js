@@ -15,7 +15,8 @@
 const { Button } = require('./button');
 const { filterBySource } = require('../lib/home-model');
 const { ReasonBadge, ReasonMark, shuffleupagusIcon } = require('./reason-badge');
-const { Play } = require('./icons');
+const Icons = require('./icons');
+const { Play } = Icons;
 const { useReveal, ArtOverlay, ArtBox, releaseBadge } = require('./card-art');
 const { AlbumCard } = require('./album-card');
 const { TicketsButton } = require('./tickets-button');
@@ -47,11 +48,6 @@ const ELLIPSIS = { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'elli
 
 // Only http(s) ticket links reach an href.
 const isHttpUrl = (u) => typeof u === 'string' && /^https?:\/\//i.test(u.trim());
-
-const svg = (size, children, extra) => e('svg', Object.assign({
-  'aria-hidden': 'true', width: size, height: size, viewBox: '0 0 24 24',
-  fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
-}, extra), children);
 
 // ---------------------------------------------------------------- Jump back in
 
@@ -139,8 +135,8 @@ function JumpBackIn({ tiles, onOpenTile, onPlayTile, onContextMenu, onImport, on
 
 
 // The sidebar's Critical Darlings icon.
-const DropletGlyph = () => svg(16, e('path', { d: 'M12 22a7 7 0 0 0 7-7c0-5-7-13-7-13S5 10 5 15a7 7 0 0 0 7 7z' }));
-const TrophyGlyph = () => svg(16, e('path', { d: 'M6 2h12v6a6 6 0 01-12 0V2zM9 21h6M12 14v7M6 4H3v2a3 3 0 003 3M18 4h3v2a3 3 0 01-3 3' }));
+const DropletGlyph = () => e(Icons.Droplet, { size: 16 });
+const TrophyGlyph = () => e(Icons.Trophy, { size: 16 });
 
 // The round badge in the art's lower right corner: Shuffleupagus's reason, or a
 // Critical Darlings pick's review summary. A critics pick with no summary
