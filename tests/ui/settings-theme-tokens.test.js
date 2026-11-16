@@ -12,10 +12,8 @@ const app = require('../helpers/renderer-source').appWithPages(); // app.js and 
 const config = require(path.join(root, 'tailwind.config.js'));
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 
-const settings = app.slice(
-  app.indexOf("activeView === 'settings' && React.createElement('div', {"),
-  app.indexOf(') // Close settings container'),
-);
+// The Settings page (components/settings-page.js, #1451).
+const settings = fs.readFileSync(path.join(root, 'src/renderer/components/settings-page.js'), 'utf8');
 
 test('the token colours read CSS variables that index.html defines', () => {
   const colors = config.theme.extend.colors;
@@ -43,7 +41,7 @@ test('Clear Cache confirms with a toast, not alert()', () => {
 // vanished (2026-11, Settings > Playback's Atmos toggle).
 test('every switch is the shared Switch, with a white knob on the control tokens', () => {
   const read = (f) => fs.readFileSync(path.join(root, f), 'utf8');
-  for (const f of ['src/renderer/app.js', 'src/renderer/components/settings-cards.js']) {
+  for (const f of ['src/renderer/app.js', 'src/renderer/components/settings-page.js', 'src/renderer/components/settings-cards.js']) {
     expect([f, read(f).includes('bg-control-knob')]).toEqual([f, false]);
   }
   const fields = read('src/renderer/components/fields.js');

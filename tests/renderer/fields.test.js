@@ -54,7 +54,7 @@ test('RadioGroup marks the picked option', () => {
 });
 
 test('Settings > General uses the field set', () => {
-  const app = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  const app = require('../helpers/renderer-source').appWithPages();
   const a = app.indexOf("settingsTab === 'general' && ");
   const general = app.slice(a, app.indexOf("settingsTab === 'about' && ", a));
   expect((general.match(/React\.createElement\(SettingRow, \{/g) || []).length).toBeGreaterThanOrEqual(10);
@@ -66,7 +66,7 @@ test('Settings > General uses the field set', () => {
 });
 
 test('plugin panels say "Use <service>", toggles use the chevron icon, installs are toasts', () => {
-  const app = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  const app = require('../helpers/renderer-source').appWithPages();
   expect(app).not.toContain("'Enable Resolver'");
   expect(app).toContain('}, `Use ${selectedResolver.name}`),');
   expect(app).not.toMatch(/\? 'rotate-90' : ''\}`\n\s*\}, '▶'\)/);
@@ -89,7 +89,7 @@ test('no user-facing "resolver" in labels, toasts, dialogs or native menus', () 
 });
 
 test('Playback Quality names the services it applies to, and on/off is a switch', () => {
-  const app = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  const app = require('../helpers/renderer-source').appWithPages();
   expect(app).toContain("'Amazon Music and Apple Music use these settings right now. Other services choose their own quality.'");
   expect(app).toMatch(/label: 'Adjust to your connection'[^\n]*\n\s*React\.createElement\(Switch, \{ checked: playbackAbr === true/);
 });

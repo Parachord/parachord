@@ -33,7 +33,7 @@ describe('shouldAutoRefreshHomeSuggestions', () => {
 });
 
 describe('app.js', () => {
-  const src = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  const src = require('../helpers/renderer-source').appWithPages();
   // The fetch flow (component scope: the auto-fetch effect and the
   // Recommendations page's Refresh button both run it; Home has no button).
   const fnStart = src.indexOf('const fetchAiRecommendations = async () => {');

@@ -23,7 +23,7 @@ test('.card-grid is defined once, as auto-fill over the content width', () => {
 test('plug-in tiles use .tile-grid, sized for a 120px tile', () => {
   const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
   expect(html).toMatch(/\.tile-grid \{ display: grid; grid-template-columns: repeat\(auto-fill, minmax\(140px, 1fr\)\); justify-items: center; \}/);
-  const app = fs.readFileSync(path.join(ROOT, 'src/renderer/app.js'), 'utf8');
+  const app = require('../helpers/renderer-source').appWithPages();
   expect((app.match(/className: 'tile-grid gap-6'/g) || []).length).toBe(4);
 });
 
@@ -48,7 +48,7 @@ test('the playlist view\'s art and icon columns follow the content area, and so 
   // The skeleton is the shared TrackRowSkeleton, given the same column.
   expect(src).toMatch(/React\.createElement\(TrackRowSkeleton, \{ key: `skeleton-\$\{index\}`, index, duration: true, sourcesWidth: PLAYLIST_ICON_COLUMN \}\)/);
   expect(src).toMatch(/width: PLAYLIST_ART_COLUMN, overflowY: 'auto'/);
-  const app = fs.readFileSync(path.join(ROOT, 'src/renderer/app.js'), 'utf8');
+  const app = require('../helpers/renderer-source').appWithPages();
   expect(app).toMatch(/style: \{ width: PLAYLIST_ART_COLUMN \}/);
 });
 
@@ -76,7 +76,7 @@ test('the playlist and album pages\' tracklists scroll to the window edge (the p
 });
 
 test("Settings › Plug-Ins' notice fits its columns to the panel (one column at the 1000px minimum)", () => {
-  const app = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  const app = require('../helpers/renderer-source').appWithPages();
   expect(app).toContain("gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))'");
   expect(app).not.toContain("className: 'grid grid-cols-3 gap-4'");
 });

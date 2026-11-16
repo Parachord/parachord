@@ -5,7 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+const app = require('../helpers/renderer-source').appWithPages();
 const body = (start, end) => app.slice(app.indexOf(start), app.indexOf(end, app.indexOf(start)));
 
 test('a failed marketplace load shows an error with Try again on Plug-Ins', () => {

@@ -20,7 +20,7 @@ test('a section is the card with its heading and description', () => {
 });
 
 test('every Settings › General section uses it, Playback Quality included', () => {
-  const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  const app = require('../helpers/renderer-source').appWithPages();
   for (const title of ['Appearance', 'Cache Management', 'Playback Quality', 'Volume Normalization', 'Playback Behavior', 'Media Keys', 'Discord Presence', 'Local Server Port', 'Library Sync']) {
     expect([title, app.includes(`title: '${title}'`)]).toEqual([title, true]);
   }
@@ -28,7 +28,7 @@ test('every Settings › General section uses it, Playback Quality included', ()
 });
 
 test('Escape closes the queue drawer (it had no way but its ✕)', () => {
-  const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  const app = require('../helpers/renderer-source').appWithPages();
   expect(app).toMatch(/if \(e\.key === 'Escape' && !e\.defaultPrevented && queueDrawerOpen &&[\s\S]{0,200}setQueueDrawerOpen\(false\);\s*return;/);
   expect(app).toContain('}, [activeView, queueDrawerOpen]);');
 });

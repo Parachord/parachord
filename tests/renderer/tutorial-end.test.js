@@ -6,7 +6,7 @@
  */
 const fs = require('fs');
 const path = require('path');
-const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+const app = require('../helpers/renderer-source').appWithPages();
 
 test('the last step offers Start listening and Open Plug-Ins', () => {
   expect(app).toContain("tutorialPlayable && React.createElement(Button, { variant: 'primary', onClick: () => finishTutorial('home') }, 'Start listening')");
