@@ -688,6 +688,18 @@ contextBridge.exposeInMainWorld('electron', {
     }
   },
 
+  // The window's size (main-process/ui-zoom.js): 0.9 to 1.5. onChanged
+  // fires for Settings and the View menu's Zoom In / Out / Actual Size.
+  ui: {
+    getZoom: () => ipcRenderer.invoke('ui-zoom:get'),
+    setZoom: (zoom) => ipcRenderer.invoke('ui-zoom:set', zoom),
+    onZoomChanged: (callback) => {
+      const handler = (event, zoom) => callback(zoom);
+      ipcRenderer.on('ui-zoom-changed', handler);
+      return () => ipcRenderer.removeListener('ui-zoom-changed', handler);
+    }
+  },
+
   // Theme management
   theme: {
     initial: __initialTheme,

@@ -19,6 +19,7 @@ const { SortMenu } = require('./sort-menu');
 const { EmptyState, ErrorState } = require('./states');
 const { releaseMenu } = require('../lib/item-menus');
 const { CardButton } = require('./card-button');
+const { transition } = require('../lib/motion');
 
 // The sort menu's choices (a constant: as a prop built in app.js it was a
 // new array each render).
@@ -270,7 +271,7 @@ React.createElement('span', {
                       height: '100%',
                       objectFit: 'cover',
                       opacity: 0,
-                      transition: 'opacity 0.35s ease-out, transform 0.3s ease'
+                      transition: transition([['opacity', 'slow', 'out'], ['transform', 'slow']])
                     },
                     className: 'group-hover:scale-105',
                     ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
@@ -326,7 +327,7 @@ addCriticsPicksToQueue(album);
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
                       whiteSpace: 'nowrap',
-                      transition: 'color 0.2s ease'
+                      transition: transition('color', 'fast')
                     }
                   }, album.title),
                   React.createElement('button', { type: 'button',
@@ -338,7 +339,7 @@ addCriticsPicksToQueue(album);
                       whiteSpace: 'nowrap',
                       marginTop: '2px',
                       cursor: 'pointer',
-                      transition: 'color 0.2s ease'
+                      transition: transition('color', 'fast')
                     },
                     className: 'block max-w-full text-left hover:text-accent',
                     onClick: (e) => {
