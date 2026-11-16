@@ -40904,7 +40904,9 @@ React.createElement('div', {
                 className: 'rounded-xl border border-line bg-surface-inset',
                 style: { padding: '16px', marginBottom: '24px' }
               },
-                React.createElement('ul', { className: 'grid grid-cols-3 gap-4', style: { listStyle: 'none', margin: 0, padding: 0 } },
+                // As many columns as fit (three in a wide window, one stacked at
+                // the 1000px minimum), measured on the panel, not the window.
+                React.createElement('ul', { className: 'grid gap-4', style: { gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', listStyle: 'none', margin: 0, padding: 0 } },
                   [
                     [Icons.Music, 'Turn on the services you use. The numbers are the order Parachord tries them in; drag a tile to change it.'],
                     [Icons.Settings, 'Open a tile to sign in or set it up. Some services also need a developer key.'],

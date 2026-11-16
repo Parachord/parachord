@@ -74,3 +74,9 @@ test('the playlist and album pages\' tracklists scroll to the window edge (the p
   expect(pv).toContain("className: 'flex-1 min-w-0 pt-8 pr-6 pb-6 scrollable-content scroll-edge'");
   expect(cards).toContain("className: 'flex-1 min-w-0 pt-6 pr-6 pb-6 scrollable-content'");
 });
+
+test("Settings › Plug-Ins' notice fits its columns to the panel (one column at the 1000px minimum)", () => {
+  const app = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  expect(app).toContain("gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))'");
+  expect(app).not.toContain("className: 'grid grid-cols-3 gap-4'");
+});
