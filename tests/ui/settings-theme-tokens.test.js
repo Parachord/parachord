@@ -63,7 +63,7 @@ const PAGES = [
   ['Critical Darlings', 'const CriticsPicksPage = React.memo(', 'module.exports', 'components/critics-picks-page.js'],
   ['Concerts', 'const ConcertsPage = React.memo(', 'module.exports', 'components/concerts-page.js'],
   ['Recommendations', 'const RecommendationsPage = React.memo(', 'module.exports', 'components/recommendations-page.js'],
-  ['History', "activeView === 'history' && React.createElement('div', {", "activeView === 'settings' && React.createElement('div', {", null],
+  ['History', 'const HistoryPage = React.memo(', 'module.exports', 'components/history-page.js'],
 ];
 test.each(PAGES)('%s uses no grey/purple text, border or fill classes, and no theme ternaries for them', (_name, from, to, file) => {
   const src = file ? fs.readFileSync(path.join(root, 'src/renderer', file), 'utf8') : app;

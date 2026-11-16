@@ -2025,6 +2025,8 @@ function insertInCanonicalOrder(order, newId) {
 
 // Charts page country options (lib/charts-countries.js).
 const { CHARTS_COUNTRIES } = require('./lib/charts-countries');
+// History's and a friend's history's sort and period menus (lib/history-options.js).
+const { historySortOptions, historyPeriodOptions } = require('./lib/history-options');
 
 // ─── UI atoms (src/renderer/components/ui-atoms.js) ──────────────────────────
 // The leaf presentational kit — Tooltip/FixedTooltip, the service-logo set,
@@ -2083,6 +2085,7 @@ const { RecommendationsPage } = require('./components/recommendations-page');
 const { ConcertsPage } = require('./components/concerts-page');
 const { ChartsPage } = require('./components/charts-page');
 const { CriticsPicksPage } = require('./components/critics-picks-page');
+const { HistoryPage } = require('./components/history-page');
 const { ArtOverlay, PlaylistGlyph } = require('./components/card-art');
 const { hoverDwell } = require('./lib/hover-dwell');
 const { RELEASE_TYPE_COLORS } = require('./lib/release-types');
@@ -5633,12 +5636,6 @@ const Parachord = () => {
       default: return sorted;
     }
   }, [historySort]);
-
-  const historySortOptions = [
-    { value: 'recent', label: 'Recent' },
-    { value: 'artist', label: 'Artist A–Z' },
-    { value: 'title', label: 'Title A–Z' }
-  ];
 
   // Sort friend history
   const sortFriendHistory = useCallback((items) => {
@@ -30185,15 +30182,6 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     }
   };
 
-  // Period options for top charts
-  const historyPeriodOptions = [
-    { value: '7day', label: 'Last 7 days' },
-    { value: '1month', label: 'Last month' },
-    { value: '3month', label: 'Last 3 months' },
-    { value: '6month', label: 'Last 6 months' },
-    { value: '12month', label: 'Last year' },
-    { value: 'overall', label: 'All time' }
-  ];
 
   // Load Top Tracks from Last.fm
   const loadTopTracks = async (period = historyPeriod, forceRefresh = false) => {
@@ -37409,6 +37397,12 @@ useEffect(() => {
       .map(a => ({ artist: a.artist, title: a.title })));
   }, [activeView, recommendationAlbums.length]);
 
+  // Stable function props for the memo'd HistoryPage (keys must
+  // match HISTORY_PAGE_HANDLERS in history-page.js).
+  const historyPageHandlers = useStableHandlers({
+    albumCardActions, copyParachordLink, fetchAlbumTracksByName, fetchArtistData, formatTimeAgo, historyErrorState, loadListeningHistory, loadTopAlbums, loadTopArtists, loadTopTracks, observedRowRef, openTopAlbum, playArtistTopTracks, playTrackRow, prefetchTopAlbumTracks, trackRowDrag,
+  });
+
   // Stable function props for the memo'd CriticsPicksPage (keys must
   // match CRITICS_PICKS_PAGE_HANDLERS in critics-picks-page.js).
   const criticsPicksPageHandlers = useStableHandlers({
@@ -38712,270 +38706,44 @@ collapsedContent: null
         }),
 
         // History view with collapsible hero header and tabs
-        activeView === 'history' && React.createElement('div', {
-          className: 'flex-1 flex flex-col h-full',
-          style: { overflow: 'hidden', minHeight: 0 }
-        },
-          // Header section (outside scrollable area)
-          React.createElement(PageHero, {
-collapsed: historyHeaderCollapsed,
-page: 'history',
-title: 'History',
-onTitleContextMenu: copyParachordLink,
-expanded: React.createElement(React.Fragment, null,
-React.createElement('div', {
-                className: 'flex items-center gap-1 mt-6',
-                style: { textShadow: 'var(--hero-text-shadow-line)' }
-              },
-                React.createElement(HeroTabs, { items: [
-                  { key: 'topTracks', label: 'Top Tracks' },
-                  { key: 'topAlbums', label: 'Top Albums' },
-                  { key: 'topArtists', label: 'Top Artists' },
-                  { key: 'recent', label: 'Recently Played' }
-                ], isSelected: (tab) => historyTab === tab.key, onSelect: (tab) => {
-                      setHistoryTab(tab.key);
-                      if (tab.key === 'recent') loadListeningHistory();
-                      else if (tab.key === 'topTracks') loadTopTracks();
-                      else if (tab.key === 'topArtists') loadTopArtists();
-                      else if (tab.key === 'topAlbums') loadTopAlbums();
-                    }, renderLabel: (tab) => tab.label, label: 'History' })
-              ),
-React.createElement('p', {
-                className: 'mt-4 text-white/80 text-sm'
-              }, metaServiceConfigs.listenbrainz?.username && metaServiceConfigs.lastfm?.username
-                ? 'Your listening activity from ListenBrainz & Last.fm'
-                : metaServiceConfigs.listenbrainz?.username
-                  ? 'Your listening activity from ListenBrainz'
-                  : 'Your listening activity from Last.fm'
-              )),
-collapsedContent: React.createElement(React.Fragment, null,
-React.createElement('div', {
-                className: 'flex items-center gap-1',
-                style: { textShadow: 'var(--hero-text-shadow-line)' }
-              },
-                React.createElement(HeroTabs, { items: [
-                  { key: 'topTracks', label: 'Top Tracks' },
-                  { key: 'topAlbums', label: 'Top Albums' },
-                  { key: 'topArtists', label: 'Top Artists' },
-                  { key: 'recent', label: 'Recent' }
-                ], isSelected: (tab) => historyTab === tab.key, onSelect: (tab) => {
-                      setHistoryTab(tab.key);
-                      if (tab.key === 'recent') loadListeningHistory();
-                      else if (tab.key === 'topTracks') loadTopTracks();
-                      else if (tab.key === 'topArtists') loadTopArtists();
-                      else if (tab.key === 'topAlbums') loadTopAlbums();
-                    }, renderLabel: (tab) => tab.label, label: 'History' })
-              ))
-}),
-          // Filter bar (outside scrollable area)
-          React.createElement('div', {
-            className: 'flex items-center px-6 py-3',
-            style: { flexShrink: 0, backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
-          },
-            // Period dropdown for top charts OR sort dropdown for recent
-            historyTab === 'recent' ?
-              React.createElement(SortMenu, { value: historySort, options: historySortOptions, onChange: setHistorySort, label: "Sort" })
-            :
-              // Period dropdown for top charts
-              React.createElement(SortMenu, { value: historyPeriod, options: historyPeriodOptions, onChange: (option) => { setHistoryPeriod(option); if (historyTab === 'topTracks') loadTopTracks(option);
-                        else if (historyTab === 'topArtists') loadTopArtists(option);
-                        else if (historyTab === 'topAlbums') loadTopAlbums(option); }, label: "Time period" }),
-            React.createElement('div', { className: 'flex-1' }),
-            // Search (only for recent and top tracks)
-            (historyTab === 'recent' || historyTab === 'topTracks') && React.createElement(FilterBox, { value: historySearch, onChange: setHistorySearch, open: historySearchOpen, onOpenChange: setHistorySearchOpen })
-          ),
-          // Scrollable content area (shared by recent and topTracks tabs)
-          React.createElement('div', {
-            ref: (el) => {
-              historyScrollContainerRef.current = el;
-              topTracksScrollContainerRef.current = el; // Same container for top tracks tab
-              if (el) {
-                if (!historyScrollContainerReady) setHistoryScrollContainerReady(true);
-                if (!topTracksScrollContainerReady) setTopTracksScrollContainerReady(true);
-              }
-            },
-            className: 'flex-1 overflow-y-auto scrollable-content scroll-edge p-6',
-            onScroll: handleHistoryScroll
-          },
-            // RECENTLY PLAYED TAB
-            historyTab === 'recent' && (
-              listeningHistory.loading ?
-                React.createElement('div', { className: 'space-y-0' },
-                  ...Array(15).fill(null).map((_, i) =>
-                    React.createElement(TrackRowSkeleton, { key: `history-skeleton-${i}`, index: i, duration: true, cells: [{ key: 'album' }, { key: 'when', width: '80px', align: 'right' }] })
-                  )
-                )
-              : listeningHistory.error ?
-                historyErrorState(listeningHistory.error, loadListeningHistory, [{ id: 'lastfm', name: 'Last.fm' }, { id: 'listenbrainz', name: 'ListenBrainz' }])
-              : (() => {
-                  const filtered = filterHistory(listeningHistory.tracks);
-                  const sorted = sortHistory(filtered);
-
-                  if (sorted.length === 0) {
-                    return historySearch
-                      ? React.createElement(EmptyState, { icon: Icons.Search, title: 'No tracks match your search', body: 'Try other words, or clear the filter.' })
-                      : React.createElement(EmptyState, { title: 'No recent listens yet', body: 'What you play shows up here.' });
-                  }
-
-                  return React.createElement('div', { role: 'list', className: 'space-y-0' },
-                    ...sorted.map((track, index) => {
-
-                      return React.createElement(TrackRow, Object.assign({
-                        role: 'listitem',
-                        // Two listens of one song share an id (ListenBrainz's recording_msid).
-                        key: `${track.id}|${track.playedAt ?? index}`,
-                        track,
-                        number: String(index + 1).padStart(2, '0'),
-                        isNowPlaying: !!track.nowPlaying,
-                        sources: { trackSources, playbackResolvers, resolverOrder },
-                        allResolvers,
-                        rowRef: observedRowRef(historyTrackRowRefs, historyObserverRef, track.id),
-                        onPlay: (resolverId) => playTrackRow(track, sorted.slice(index + 1), { type: 'history', name: 'History' }, resolverId),
-                        onOpenArtist: fetchArtistData,
-                        onContextMenu: () => window.showItemMenu({ type: 'track', track }),
-                        duration: true,
-                        cells: [
-                          // The album column only when the list has albums (ListenBrainz's top
-                          // tracks carry none, which left a blank column).
-                          ...(sorted.some(t => t.album) ? [{ key: 'album', content: track.album || '' }] : []),
-                          { key: 'when', content: (track.playedAt || track.timestamp) ? formatTimeAgo(track.playedAt || track.timestamp) : '', width: '80px', align: 'right' }
-                        ]
-                      }, trackRowDrag(track, { id: track.id, title: track.title, artist: track.artist, album: track.album, duration: track.duration, sources: track.sources || {} })));
-                    })
-                  );
-                })()
-            ),
-
-            // TOP TRACKS TAB
-            historyTab === 'topTracks' && (
-              topTracks.loading ?
-                React.createElement('div', { className: 'space-y-0' },
-                  ...Array(15).fill(null).map((_, i) =>
-                    React.createElement(TrackRowSkeleton, { key: `top-track-skeleton-${i}`, index: i, duration: true, cells: [{ key: 'album' }, { key: 'plays', width: '80px', align: 'right' }] })
-                  )
-                )
-              : topTracks.error ?
-                historyErrorState(topTracks.error, () => loadTopTracks(), [{ id: 'lastfm', name: 'Last.fm' }])
-              : (() => {
-                  const filtered = historySearch ? topTracks.tracks.filter(t =>
-                    t.title.toLowerCase().includes(historySearch.toLowerCase()) ||
-                    t.artist.toLowerCase().includes(historySearch.toLowerCase())
-                  ) : topTracks.tracks;
-
-                  if (filtered.length === 0) {
-                    return historySearch
-                      ? React.createElement(EmptyState, { icon: Icons.Search, title: 'No tracks match your search', body: 'Try other words, or clear the filter.' })
-                      : React.createElement(EmptyState, { title: 'No top tracks for this period', body: 'Pick a longer period.' });
-                  }
-
-                  return React.createElement('div', { role: 'list', className: 'space-y-0' },
-                    ...filtered.map((track, index) => {
-                      return React.createElement(TrackRow, Object.assign({
-                        role: 'listitem',
-                        key: track.id,
-                        track,
-                        number: `#${track.rank}`,
-                        sources: { trackSources, playbackResolvers, resolverOrder },
-                        allResolvers,
-                        rowRef: observedRowRef(topTracksRowRefs, topTracksObserverRef, track.id),
-                        onPlay: (resolverId) => playTrackRow(track, filtered.slice(index + 1), { type: 'history', name: 'Top Tracks' }, resolverId),
-                        onOpenArtist: fetchArtistData,
-                        onContextMenu: () => window.showItemMenu({ type: 'track', track }),
-                        duration: true,
-                        cells: [
-                          // The album column only when the list has albums (ListenBrainz's top
-                          // tracks carry none, which left a blank column).
-                          ...(filtered.some(t => t.album) ? [{ key: 'album', content: track.album || '' }] : []),
-                          { key: 'plays', content: `${track.playCount} plays`, width: '80px', align: 'right' }
-                        ]
-                      }, trackRowDrag(track)));
-                    })
-                  );
-                })()
-            ),
-
-            // TOP ARTISTS TAB
-            historyTab === 'topArtists' && (
-              topArtists.loading ?
-                // Skeleton loading grid
-                React.createElement('div', {
-                  className: 'grid gap-4',
-                  style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
-                },
-                  Array.from({ length: 12 }).map((_, i) =>
-                    React.createElement(ArtistCardSkeleton, { key: `artist-skeleton-${i}`, index: i, lines: 2 })
-                  )
-                )
-              : topArtists.error ?
-                historyErrorState(topArtists.error, () => loadTopArtists(), [{ id: 'lastfm', name: 'Last.fm' }])
-              : topArtists.artists.length === 0 ?
-                React.createElement(EmptyState, { title: 'No top artists for this period', body: 'Pick a longer period.' })
-              :
-                // Top Artists grid - Square card design
-                React.createElement('div', { role: 'list',
-                  className: 'grid gap-4',
-                  style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
-                },
-                  ...topArtists.artists.map((artist, index) => React.createElement(ArtistCard, {
-                    key: artist.id,
-                    role: 'listitem',
-                    artist,
-                    image: artist.image,
-                    imageLoaded: !!artist.imageLoaded,
-                    badge: React.createElement(RankBadge, { rank: artist.rank }),
-                    subtitle: `${artist.playCount} plays`,
-                    animationDelay: Math.min(index * 30, 300),
-                    onOpen: () => fetchArtistData(artist.name),
-                    onPlay: playArtistTopTracks,
-                    onContextMenu: () => window.showItemMenu(artistMenu({ id: artist.id, name: artist.name, image: artist.image }))
-                  }))
-                )
-            ),
-
-            // TOP ALBUMS TAB
-            historyTab === 'topAlbums' && (
-              topAlbums.loading ?
-                // Skeleton loading grid
-                React.createElement('div', {
-                  className: 'card-grid gap-x-4 gap-y-5 pb-6'
-                },
-                  Array.from({ length: 10 }).map((_, i) =>
-                    React.createElement(CardSkeleton, { key: `album-skeleton-${i}`, index: i, lines: 2 })
-                  )
-                )
-              : topAlbums.error ?
-                historyErrorState(topAlbums.error, () => loadTopAlbums(), [{ id: 'lastfm', name: 'Last.fm' }])
-              : topAlbums.albums.length === 0 ?
-                React.createElement(EmptyState, { title: 'No top albums for this period', body: 'Pick a longer period.' })
-              :
-                // Top Albums grid - Cinematic Light design
-                React.createElement('div', { role: 'list',
-                  className: 'card-grid gap-x-4 gap-y-5 pb-6'
-                },
-                  // The shared album card (components/album-card.js), with the
-                  // rank on the cover and the play count under the artist.
-                  ...topAlbums.albums.map((album, index) => React.createElement(AlbumCard, Object.assign({
-                    key: album.id,
-                    role: 'listitem',
-                    album: { id: album.id, title: album.name, artist: album.artist, imageUrl: typeof album.image === 'string' && album.image ? album.image : null },
-                    imageLoading: album.image === undefined,
-                    cornerBadge: React.createElement(AlbumRankBadge, { rank: album.rank }),
-                    subtitle: `${album.playCount} plays`,
-                    animationDelay: Math.min(index * 30, 300),
-                    onOpen: () => openTopAlbum(album),
-                    onOpenArtist: () => fetchArtistData(album.artist),
-                    onHoverPrefetch: () => prefetchTopAlbumTracks(album.artist, album.name, album.image),
-                    onContextMenu: () => {
-                      const cacheKey = `${album.artist}-${album.name}`.toLowerCase();
-                      const cached = topAlbumTracksCache.current[cacheKey];
-                      window.showItemMenu(releaseMenu({ title: album.name, artist: album.artist, image: album.image }, { tracks: cached }));
-                    },
-                    onArtError: () => globalThis.reportBrokenAlbumArt && globalThis.reportBrokenAlbumArt(album.image, { artist: album.artist, album: album.name })
-                  }, albumCardActions({ title: album.name, artist: album.artist, getTracks: () => fetchAlbumTracksByName(album.artist, album.name, album.image) }))))
-                )
-            )
-          )
-        ),
+        // HistoryPage (components/history-page.js), a memo'd page.
+        activeView === 'history' && React.createElement(HistoryPage, {
+          allResolvers,
+          filterHistory,
+          handleHistoryScroll,
+          historyHeaderCollapsed,
+          historyObserverRef,
+          historyPeriod,
+          historyScrollContainerReady,
+          historyScrollContainerRef,
+          historySearch,
+          historySearchOpen,
+          historySort,
+          historyTab,
+          historyTrackRowRefs,
+          listeningHistory,
+          metaServiceConfigs,
+          playbackResolvers,
+          resolverOrder,
+          setHistoryPeriod,
+          setHistoryScrollContainerReady,
+          setHistorySearch,
+          setHistorySearchOpen,
+          setHistorySort,
+          setHistoryTab,
+          setTopTracksScrollContainerReady,
+          sortHistory,
+          topAlbumTracksCache,
+          topAlbums,
+          topArtists,
+          topTracks,
+          topTracksObserverRef,
+          topTracksRowRefs,
+          topTracksScrollContainerReady,
+          topTracksScrollContainerRef,
+          trackSources,
+          ...historyPageHandlers
+        }),
 
         // Friend History View - matching History page structure exactly
         activeView === 'friendHistory' && currentFriend && (() => {
