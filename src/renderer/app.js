@@ -1351,6 +1351,7 @@ const {
 const { countOf } = require('./lib/plural');
 const { movePriority, priorityMoves } = require('./lib/priority-order');
 const { timeAgo } = require('./lib/time-ago');
+const { chartLoadView } = require('./lib/chart-load-view');
 const { userError, errorText } = require('./lib/error-copy');
 const { trackDurationLabel } = require('./lib/track-duration');
 const { contextPlaylistTarget, playlistRef } = require('./lib/playlist-context');
@@ -5013,6 +5014,7 @@ const Parachord = () => {
   const [appleMusicSongsCharts, setAppleMusicSongsCharts] = useState([]); // Apple Music top songs
   const [appleMusicSongsChartsLoading, setAppleMusicSongsChartsLoading] = useState(false);
   const [appleMusicSongsChartsLoaded, setAppleMusicSongsChartsLoaded] = useState(false);
+  const [appleMusicSongsChartsError, setAppleMusicSongsChartsError] = useState(null); // the failed load's error, for ErrorState
 
   // Critics Picks page state
   const [criticsHeaderCollapsed, setCriticsHeaderCollapsed] = useState(false);
@@ -26732,11 +26734,13 @@ ${tracks}
       console.log(`📦 Using cached Apple Music Songs Charts (${countryName}, ${cacheAgeHours}h old)`);
       setAppleMusicSongsCharts(cached.tracks);
       setAppleMusicSongsChartsLoaded(true);
+      setAppleMusicSongsChartsError(null);
       return;
     }
 
     setAppleMusicSongsChartsLoading(true);
     setAppleMusicSongsChartsLoaded(false);
+    setAppleMusicSongsChartsError(null);
     setLastfmChartsScrollContainerReady(false); // Reset to re-trigger observer setup
 
     try {
@@ -26792,11 +26796,10 @@ ${tracks}
           message: `Could not refresh Apple Music charts. Showing cached data from ${cacheAgeHours} hours ago.`
         });
       } else {
-        showConfirmDialog({
-          type: 'error',
-          title: 'Couldn’t load the charts',
-          message: 'Apple Music’s charts didn’t load. Check your connection and try again.'
-        });
+        // Nothing to fall back on: the Tracks tab shows ErrorState with Try
+        // again (a dialog left the tab on its skeleton behind it).
+        setAppleMusicSongsCharts([]);
+        setAppleMusicSongsChartsError(error);
       }
     } finally {
       setAppleMusicSongsChartsLoading(false);
@@ -38657,9 +38660,18 @@ React.createElement('span', {
               );
             })(),
 
+            // SONGS TAB: a failed Apple Music load shows its error with Try again.
+            chartsTab === 'songs' && chartsSongsSource === 'apple' &&
+              chartLoadView({ loading: appleMusicSongsChartsLoading, loaded: appleMusicSongsChartsLoaded, error: appleMusicSongsChartsError }) === 'error' &&
+              React.createElement(ErrorState, {
+                title: 'Couldn’t load the Apple Music chart',
+                body: errorText(appleMusicSongsChartsError, 'Apple Music’s chart didn’t load. Check your connection and try again.'),
+                onRetry: () => loadAppleMusicSongsCharts({ country: chartsCountry, forceReload: true })
+              }),
+
             // SONGS TAB: the shared track row's placeholder, in its columns.
             chartsTab === 'songs' && (
-              (chartsSongsSource === 'apple' && (appleMusicSongsChartsLoading || !appleMusicSongsChartsLoaded)) ||
+              (chartsSongsSource === 'apple' && chartLoadView({ loading: appleMusicSongsChartsLoading, loaded: appleMusicSongsChartsLoaded, error: appleMusicSongsChartsError }) === 'skeleton') ||
               (chartsSongsSource === 'lastfm' && (lastfmChartsLoading || !lastfmChartsLoaded))
             ) && React.createElement('div', { className: 'space-y-0' },
               Array.from({ length: 20 }).map((_, i) => React.createElement(TrackRowSkeleton, {
