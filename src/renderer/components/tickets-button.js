@@ -1,9 +1,9 @@
 // src/renderer/components/tickets-button.js: a concert's Tickets button, in
-// the Concerts page's teal fill. The Concerts page, Home's concert cards and
+// the Concerts hero's teal, with white text. The Concerts page, Home's concert cards and
 // an artist's On tour tab use it.
 //
-// There were three copies: the Concerts page's (a #10c9b4 fill white text
-// can't be read on, with a JS hover), the artist page's and Home's (an
+// There were three copies: the Concerts page's (with a JS hover), the artist
+// page's (a darker teal) and Home's (an
 // underlined accent link with its own hand-built dropdown). One seller is a
 // link; several open the shared Menu with a link per seller.
 //
@@ -29,7 +29,9 @@ function TicketsButton({ sources, artist, size = 'md', className }) {
   if (safe.length === 0) return null;
   const look = {
     className: buttonClassName({ variant: 'primary', size, className: ['flex-shrink-0 no-drag', className].filter(Boolean).join(' ') }),
-    style: { backgroundColor: PAGE_COLORS.concerts.fill },
+    // The hero's own teal with white text, so it reads as the Concerts page
+    // (a design choice, 2026-11-15: white on it is about 2.3:1, under 4.5:1).
+    style: { backgroundColor: PAGE_COLORS.concerts.color, color: 'var(--on-accent)' },
   };
   const name = artist ? `Tickets for ${artist}` : undefined;
   if (safe.length === 1) {

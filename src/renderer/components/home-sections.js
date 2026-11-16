@@ -365,7 +365,10 @@ function ConcertCard({ concert, image }) {
       e('span', { style: Object.assign({ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }, ELLIPSIS) }, concert.artist),
       e('span', { style: Object.assign({ fontSize: '12px', color: 'var(--text-secondary)' }, ELLIPSIS) }, venue.name || 'Venue TBA'),
       city && e('span', { style: Object.assign({ fontSize: '12px', color: 'var(--text-secondary)' }, ELLIPSIS) }, city),
-      e(TicketsButton, { sources: sellers, artist: concert.artist, size: 'sm' })));
+      // In a box of its own, so the card's column doesn't stretch it: one
+      // seller and several are the same width.
+      sellers.length > 0 && e('div', { style: { display: 'flex', marginTop: '4px' } },
+        e(TicketsButton, { sources: sellers, artist: concert.artist, size: 'sm' }))));
 }
 
 // artistImages: the Concerts page's photos, keyed by lower-cased artist name

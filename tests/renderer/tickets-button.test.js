@@ -1,9 +1,9 @@
 /**
  * A concert's Tickets button is one shared component
- * (components/tickets-button.js), in the Concerts page's teal fill: the
+ * (components/tickets-button.js), in the Concerts hero's teal with white text: the
  * Concerts page, Home's concert cards and an artist's On tour tab. There were
- * three copies (a #10c9b4 fill white text can't be read on with a JS hover,
- * and Home's underlined link with its own dropdown), 2026-11-15.
+ * three copies (the Concerts page's with a JS hover, the artist page's in a
+ * darker teal, and Home's underlined link with its own dropdown), 2026-11-15.
  */
 global.React = require('react');
 global.ReactVirtual = global.ReactVirtual || {};
@@ -17,13 +17,13 @@ const R = path.join(__dirname, '../../src/renderer');
 
 test('one seller: a teal link to it, named for the act', () => {
   const html = h({ sources: [{ source: 'songkick', label: 'Songkick', ticketUrl: 'https://s' }], artist: 'Hovvdy' });
-  expect(html).toMatch(/^<a href="https:\/\/s" target="_blank" rel="noopener noreferrer" aria-label="Tickets for Hovvdy"[^>]*style="background-color:#0f766e"[^>]*>Tickets<\/a>$/);
+  expect(html).toMatch(/^<a href="https:\/\/s" target="_blank" rel="noopener noreferrer" aria-label="Tickets for Hovvdy"[^>]*style="background-color:#10c9b4;color:var\(--on-accent\)"[^>]*>Tickets<\/a>$/);
 });
 
 test('several sellers: the shared menu trigger, closed', () => {
   const html = h({ sources: [{ source: 'a', ticketUrl: 'https://a' }, { source: 'b', ticketUrl: 'https://b' }], artist: 'X' });
   expect(html).toMatch(/<button[^>]*aria-haspopup="menu"[^>]*aria-expanded="false"/);
-  expect(html).toContain('background-color:#0f766e');
+  expect(html).toContain('background-color:#10c9b4;color:var(--on-accent)');
   expect(html).not.toContain('https://a');
 });
 

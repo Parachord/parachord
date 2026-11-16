@@ -471,7 +471,7 @@ describe('Concert cards', () => {
   });
   test('Tickets is the shared teal button (components/tickets-button.js)', () => {
     const html = h(S.ConcertsRow, { concerts: [{ ...base, ticketSources: [sellers2[0]] }] });
-    expect(html).toContain('background-color:#0f766e');
+    expect(html).toContain('background-color:#10c9b4;color:var(--on-accent)');
     expect(html).not.toContain('text-decoration:underline');
   });
   test('only http(s) ticket links reach an href', () => {
