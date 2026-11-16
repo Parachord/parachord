@@ -246,10 +246,10 @@ const editionMusicBrainzBadge = (size = 18, onDark = false) => React.createEleme
     width: `${size}px`, height: `${size}px`, borderRadius: '4px', flexShrink: 0,
     boxSizing: 'border-box',
     backgroundColor: onDark ? 'transparent' : 'var(--card-bg)',
-    border: onDark ? '1px solid rgba(255, 255, 255, 0.3)' : '1px solid var(--border-default)',
+    border: onDark ? '1px solid var(--on-color-border)' : '1px solid var(--border-default)',
     display: 'inline-flex', alignItems: 'center', justifyContent: 'center'
   }
-}, React.createElement(ResolverIcon, { resolverId: 'musicbrainz', size: Math.round(size * 0.66), fill: onDark ? 'rgba(255, 255, 255, 0.75)' : 'var(--text-secondary)' }));
+}, React.createElement(ResolverIcon, { resolverId: 'musicbrainz', size: Math.round(size * 0.66), fill: onDark ? 'var(--on-dark-secondary)' : 'var(--text-secondary)' }));
 
 // The MusicBrainz edition list folds after this many rows behind a
 // "N more editions" row — a busy classical group can have dozens, and an
@@ -306,7 +306,7 @@ const AlbumVersionsMenu = ({ release, versions, resolvers = [], onSelect, onClos
       }, main),
       secondary && React.createElement('span', {
         className: 'block',
-        style: { fontSize: '11px', color: 'rgba(255, 255, 255, 0.55)', marginTop: '1px' }
+        style: { fontSize: '11px', color: 'var(--on-dark-tertiary)', marginTop: '1px' }
       }, secondary)
     ),
     current && React.createElement('span', {
@@ -316,7 +316,7 @@ const AlbumVersionsMenu = ({ release, versions, resolvers = [], onSelect, onClos
   const sectionHeader = (title, key) => React.createElement('div', {
     key,
     className: 'px-3 pt-2 pb-1',
-    style: { fontSize: '11px', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'rgba(255, 255, 255, 0.5)' }
+    style: { fontSize: '11px', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--on-dark-tertiary)' }
   }, title);
   const shimmerRows = (key) => [0, 1].map((i) => React.createElement('div', {
     key: `${key}-shimmer-${i}`,
@@ -448,7 +448,7 @@ const AlbumVersionsMenu = ({ release, versions, resolvers = [], onSelect, onClos
               key: 'mb-more-editions',
               onClick: (e) => { e.stopPropagation(); setShowAllMbEditions(true); },
               className: 'w-full px-3 py-1.5 text-left no-drag text-white hover:bg-white/10',
-              style: { fontSize: '11px', border: 'none', backgroundColor: 'transparent', color: 'rgba(255, 255, 255, 0.55)' }
+              style: { fontSize: '11px', border: 'none', backgroundColor: 'transparent', color: 'var(--on-dark-tertiary)' }
             }, `${hiddenCount} more ${hiddenCount === 1 ? 'edition' : 'editions'}`)]
           : [])
       ];
@@ -479,7 +479,7 @@ const AlbumVersionsMenu = ({ release, versions, resolvers = [], onSelect, onClos
     ? [React.createElement('div', {
         key: 'failures-hint',
         className: 'px-3 py-1.5',
-        style: { fontSize: '11px', color: 'rgba(255, 255, 255, 0.45)' }
+        style: { fontSize: '11px', color: 'var(--on-dark-tertiary)' }
       }, "Some services didn't answer — reopen to retry")]
     : [];
 
@@ -489,7 +489,7 @@ const AlbumVersionsMenu = ({ release, versions, resolvers = [], onSelect, onClos
     className: 'absolute left-0 top-full mt-1 rounded-lg py-1 z-30 no-drag scrollable-content',
     style: {
       backgroundColor: 'var(--tooltip-bg)',
-      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+      boxShadow: 'var(--shadow-popover)',
       // The card's own width (#1312): the album column hides anything wider
       // (overflow-x: hidden), so a 280px panel under a 160-192px card had
       // its right side cut off. Rows wrap instead (versionRow).

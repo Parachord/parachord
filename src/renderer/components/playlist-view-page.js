@@ -170,7 +170,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
           React.createElement('div', {
             className: 'absolute inset-0',
             style: {
-              background: 'linear-gradient(to bottom, rgba(0,0,0,0.3) 0%, rgba(17,17,17,0.95) 100%)'
+              background: 'var(--cover-shade)'
             }
           }),
           // Header content

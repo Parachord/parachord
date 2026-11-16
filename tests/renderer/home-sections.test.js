@@ -92,7 +92,7 @@ describe('AlbumCard', () => {
     // shared AlbumCard, which draws card-art.js's releaseBadge, the badge
     // Home's Fresh Drops row wears too.
     const freshDrops = app.slice(app.indexOf("activeView === 'new-releases' && React.createElement"));
-    expect(freshDrops.slice(0, 60000)).toMatch(/React\.createElement\(AlbumCard, Object\.assign\(\{[\s\S]{0,400}?releaseType: release\.releaseType,/);
+    expect(freshDrops.slice(0, 60000)).toMatch(/React\.createElement\(AlbumCard, Object\.assign\(\{[\s\S]{0,600}?releaseType: release\.releaseType,/);
     const { RELEASE_BADGE_BG } = require('../../src/renderer/components/card-art');
     // The album page's palette (lib/release-types.js) at 90%, every type.
     expect(RELEASE_BADGE_BG.album).toBe('color-mix(in srgb, rgb(99, 102, 241) 90%, transparent)');

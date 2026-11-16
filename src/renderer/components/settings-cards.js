@@ -83,8 +83,8 @@ const ResolverCard = React.memo(({
         backgroundColor: resolver.color || 'var(--fill-neutral)',
         opacity: isGrayed ? 0.5 : 1,
         boxShadow: isDragOver
-          ? '0 0 0 3px var(--accent-primary), 0 4px 12px rgba(0, 0, 0, 0.15)'
-          : '0 2px 8px rgba(0, 0, 0, 0.1), 0 4px 16px rgba(0, 0, 0, 0.05)'
+          ? '0 0 0 3px var(--accent-primary), var(--shadow-popover)'
+          : 'var(--shadow-tile)'
       },
       onClick: onClick,
       // Shift+F10 / the Menu key: the tile's menu (Raise / Lower Priority,
@@ -99,12 +99,12 @@ const ResolverCard = React.memo(({
           left: '8px',
           width: '22px',
           height: '22px',
-          backgroundColor: 'rgba(255, 255, 255, 0.95)',
+          backgroundColor: 'var(--on-color-chip)',
           borderRadius: '6px',
           fontSize: '11px',
           fontWeight: '600',
           color: 'var(--on-art-ink)',
-          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)'
+          boxShadow: 'var(--shadow-sm)'
         }
       }, priorityNumber),
       // Centered logo or emoji fallback
@@ -119,7 +119,7 @@ const ResolverCard = React.memo(({
           right: '8px',
           width: '22px',
           height: '22px',
-          backgroundColor: hasUpdate ? 'var(--fill-warning)' : 'rgba(255, 255, 255, 0.95)',
+          backgroundColor: hasUpdate ? 'var(--fill-warning)' : 'var(--on-color-chip)',
           borderRadius: '6px',
           fontSize: '11px',
           fontWeight: '600',
@@ -131,7 +131,7 @@ const ResolverCard = React.memo(({
       isInstalling && React.createElement('div', {
         className: 'absolute inset-0 flex items-center justify-center',
         style: {
-          backgroundColor: 'rgba(0, 0, 0, 0.4)',
+          backgroundColor: 'var(--scrim-soft)',
           borderRadius: '16px'
         }
       },
@@ -556,7 +556,7 @@ const FriendMiniPlaybar = ({ track, getAlbumArt, onPlay, onContextMenu }) => {
           })
         : React.createElement('div', {
             className: 'w-full h-full rounded-l flex items-center justify-center',
-            style: { backgroundColor: 'rgba(255, 255, 255, 0.1)' } // on-dark
+            style: { backgroundColor: 'var(--surface-dark-placeholder)' } // on-dark
           },
             React.createElement('span', { 'aria-hidden': 'true', style: { fontSize: '11px', color: 'var(--on-dark-tertiary)' } }, '\u266A')
           )

@@ -7407,7 +7407,7 @@ const Parachord = () => {
       style: {
         position: 'absolute',
         inset: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+        backgroundColor: 'var(--scrim-strong)',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
@@ -17755,9 +17755,9 @@ ${trackListXml}
             width: '40px',
             height: '40px',
             borderRadius: type === 'artist' ? '50%' : '4px',
-            backgroundColor: 'rgba(255, 255, 255, 0.1)',
+            backgroundColor: 'var(--surface-dark-placeholder)',
             backgroundImage: loading
-              ? 'linear-gradient(90deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.15) 50%, rgba(255,255,255,0.05) 100%)'
+              ? 'var(--shimmer-on-dark)'
               : hasImage ? `url(${imageUrl})` : 'none',
             backgroundSize: loading ? '200% 100%' : 'cover',
             backgroundPosition: 'center',
@@ -17770,7 +17770,7 @@ ${trackListXml}
           !loading && !hasImage && React.createElement(Icons.Music, { style: {
               width: '20px',
               height: '20px',
-              color: 'rgba(255, 255, 255, 0.3)'
+              color: 'var(--on-dark-disabled)'
             }, strokeWidth: 1.5 })
         ),
         // Hover overlay with play button (only for tracks and albums)
@@ -17782,7 +17782,7 @@ ${trackListXml}
             position: 'absolute',
             inset: 0,
             borderRadius: '4px',
-            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            backgroundColor: 'var(--scrim)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -17800,7 +17800,7 @@ ${trackListXml}
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1)',
+              boxShadow: 'var(--shadow-lg)',
               transform: isHovered ? 'scale(1)' : 'scale(0.9)',
               transition: 'transform 0.2s'
             }
@@ -18074,7 +18074,7 @@ ${trackListXml}
           result.push(React.createElement('code', {
             key,
             style: {
-              backgroundColor: isUserMessage ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.1)',
+              backgroundColor: isUserMessage ? 'var(--on-dark-inset)' : 'var(--surface-dark-placeholder)',
               padding: '2px 5px',
               borderRadius: '4px',
               fontFamily: 'monospace',
@@ -37870,7 +37870,7 @@ useEffect(() => {
           React.createElement('div', {
             className: 'absolute inset-0',
             style: {
-              background: 'linear-gradient(to bottom, rgba(0,0,0,0.3) 0%, rgba(17,17,17,0.95) 100%)'
+              background: 'var(--cover-shade)'
             }
           }),
           // Header content with title
@@ -38698,6 +38698,9 @@ React.createElement('span', {
                       key: release.id,
                       role: 'listitem',
                       album: { id: release.id, title: release.title, artist: release.artist, imageUrl: release.albumArt },
+                      // undefined: its cover isn't looked up yet (a shimmer);
+                      // null: it has none (the placeholder).
+                      imageLoading: release.albumArt === undefined,
                       releaseType: release.releaseType,
                       subtitle: dateLine,
                       // Why it is in Fresh Drops.
@@ -38912,7 +38915,7 @@ React.createElement('span', {
                     style: { position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }
                   },
                     React.createElement('svg', {
-                      style: { width: '32px', height: '32px', color: 'rgba(255, 255, 255, 0.2)' },
+                      style: { width: '32px', height: '32px', color: 'var(--on-dark-track)' },
                       fill: 'none',
                       viewBox: '0 0 24 24',
                       stroke: 'currentColor',
@@ -39162,7 +39165,7 @@ React.createElement('span', {
                 // A popover: its clicks stay in it.
                 role: 'dialog', 'aria-label': 'Filter by location',
                 className: 'absolute left-0 top-full mt-1 z-30',
-                style: { width: '300px', padding: '16px 20px', backgroundColor: 'var(--card-bg)', border: '1px solid var(--border-default)', borderRadius: '16px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)' },
+                style: { width: '300px', padding: '16px 20px', backgroundColor: 'var(--card-bg)', border: '1px solid var(--border-default)', borderRadius: '16px', boxShadow: 'var(--shadow-dialog)' },
                 onClick: (e) => e.stopPropagation()
               },
                 // Header
@@ -41351,7 +41354,7 @@ React.createElement('div', {
                         height: '120px',
                         borderRadius: '16px',
                         background: 'linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-soft) 100%)',
-                        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1), 0 4px 16px rgba(0, 0, 0, 0.05)'
+                        boxShadow: 'var(--shadow-tile)'
                       },
                       onClick: () => setExtensionInfoOpen(true)
                     },
@@ -41365,7 +41368,7 @@ React.createElement('div', {
                           right: '8px',
                           width: '22px',
                           height: '22px',
-                          backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                          backgroundColor: 'var(--on-color-chip)',
                           borderRadius: '6px',
                           fontSize: '12px',
                           fontWeight: '600',
@@ -41397,7 +41400,7 @@ React.createElement('div', {
                         height: '120px',
                         borderRadius: '16px',
                         background: RAYCAST_GRADIENT,
-                        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1), 0 4px 16px rgba(0, 0, 0, 0.05)'
+                        boxShadow: 'var(--shadow-tile)'
                       },
                       onClick: () => setRaycastInfoOpen(true)
                     },
@@ -41411,7 +41414,7 @@ React.createElement('div', {
                           right: '8px',
                           width: '22px',
                           height: '22px',
-                          backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                          backgroundColor: 'var(--on-color-chip)',
                           borderRadius: '6px',
                           fontSize: '12px',
                           fontWeight: '600',
@@ -42048,7 +42051,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                   border: '1px solid var(--border-subtle)',
                   borderRadius: '16px',
                   padding: '48px 56px',
-                  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.06)',
+                  boxShadow: 'var(--card-shadow)',
                   textAlign: 'center',
                   maxWidth: '420px'
                 }
@@ -42642,7 +42645,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                         background: 'color-mix(in srgb, var(--playbar-accent) 15%, transparent)',
                         color: 'var(--on-dark-info)',
                         border: '1px solid color-mix(in srgb, var(--playbar-accent) 30%, transparent)',
-                        boxShadow: '0 0 8px color-mix(in srgb, var(--playbar-accent) 15%, transparent), inset 0 1px 0 rgba(255,255,255,0.05)'
+                        boxShadow: '0 0 8px color-mix(in srgb, var(--playbar-accent) 15%, transparent), inset 0 1px 0 var(--on-dark-faint)'
                       },
                       title: 'Playing in browser'
                     },
@@ -42999,7 +43002,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
         backdropFilter: 'blur(20px)',
         border: '1px solid var(--surface-dark-border)',
         borderRadius: '16px',
-        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+        boxShadow: 'var(--shadow-dialog-dark)',
         padding: '16px'
       }
     },
@@ -43039,8 +43042,8 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
           autoFocus: true,
           style: {
             width: '100%',
-            backgroundColor: 'rgba(255, 255, 255, 0.05)',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
+            backgroundColor: 'var(--on-dark-faint)',
+            border: '1px solid var(--on-dark-border)',
             borderRadius: '10px',
             padding: '12px 48px 12px 16px',
             fontSize: '14px',
@@ -43048,7 +43051,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
             opacity: aiLoading ? '0.5' : '1'
           },
           onFocus: (e) => { e.target.style.borderColor = 'color-mix(in srgb, var(--playbar-accent) 50%, transparent)'; e.target.style.boxShadow = '0 0 0 3px color-mix(in srgb, var(--playbar-accent) 10%, transparent)'; },
-          onBlur: (e) => { e.target.style.borderColor = 'rgba(255, 255, 255, 0.1)'; e.target.style.boxShadow = 'none'; }, 'aria-label': 'What do you want to listen to?'
+          onBlur: (e) => { e.target.style.borderColor = 'var(--on-dark-border)'; e.target.style.boxShadow = 'none'; }, 'aria-label': 'What do you want to listen to?'
         }),
         React.createElement(Button, { variant: 'primary', size: 'sm', className: 'absolute right-2 top-1/2 -translate-y-1/2 !px-2', 'aria-label': "Generate", onClick: () => aiPrompt.trim() && !aiLoading && handleAiGenerate(aiPrompt.trim()), disabled: !aiPrompt.trim() || aiLoading }, aiLoading
             ? React.createElement(Icons.Spinner, { size: 16 })
@@ -43066,8 +43069,8 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
             value: selectedAiResolver || aiResolvers[0]?.id || '',
             onChange: (e) => setSelectedAiResolver(e.target.value),
             style: {
-              backgroundColor: 'rgba(255, 255, 255, 0.05)',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
+              backgroundColor: 'var(--on-dark-faint)',
+              border: '1px solid var(--on-dark-border)',
               borderRadius: '6px',
               padding: '4px 8px',
               fontSize: '12px',
@@ -43085,7 +43088,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
       aiIncludeHistory && React.createElement('div', {
         className: 'mt-3'
       },
-        React.createElement(Button, { variant: 'primary', className: 'w-full', style: { background: aiLoading ? 'rgba(255, 255, 255, 0.05)' : 'var(--ai-gradient)' }, onClick: () => !aiLoading && handleAiGenerate('Surprise me! Based on my listening history, create a playlist of songs I might love but haven\'t discovered yet. Mix familiar vibes with fresh discoveries.'), disabled: aiLoading }, React.createElement('span', { className: 'flex items-center justify-center gap-2' },
+        React.createElement(Button, { variant: 'primary', className: 'w-full', style: { background: aiLoading ? 'var(--on-dark-faint)' : 'var(--ai-gradient)' }, onClick: () => !aiLoading && handleAiGenerate('Surprise me! Based on my listening history, create a playlist of songs I might love but haven\'t discovered yet. Mix familiar vibes with fresh discoveries.'), disabled: aiLoading }, React.createElement('span', { className: 'flex items-center justify-center gap-2' },
             React.createElement(Icons.Dices, { className: 'w-4 h-4' }),
             'Surprise Me'
           ))
@@ -43137,7 +43140,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
       // Backdrop (click to close)
       React.createElement('div', { role: 'presentation', 'aria-hidden': 'true',
         className: 'flex-1',
-        style: { backgroundColor: 'rgba(0, 0, 0, 0.3)', backdropFilter: 'blur(4px)' },
+        style: { backgroundColor: 'var(--scrim-soft)', backdropFilter: 'blur(4px)' },
         onClick: closeSidebarAnimated
       }),
 
@@ -43147,13 +43150,13 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
         style: {
           backgroundColor: 'var(--surface-dark-solid)',
           borderLeft: '1px solid var(--surface-dark-border)',
-          boxShadow: '-10px 0 40px rgba(0, 0, 0, 0.3)',
+          boxShadow: 'var(--shadow-drawer)',
           animation: sidebarClosing ? 'slideOutRight 0.2s ease-out forwards' : 'slideInRight 0.2s ease-out'
         }
       },
         // Header
         React.createElement('div', {
-          style: { padding: '16px', borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }
+          style: { padding: '16px', borderBottom: '1px solid var(--on-dark-line)' }
         },
           React.createElement('div', { className: 'flex items-center justify-between' },
             React.createElement('div', { className: 'flex items-center gap-2' },
@@ -43309,7 +43312,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                           padding: '10px 14px',
                           borderRadius: msg.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
                           // White text sits on the fill accent, never --accent-primary.
-                          backgroundColor: msg.role === 'user' ? 'var(--accent-fill)' : 'rgba(255, 255, 255, 0.08)',
+                          backgroundColor: msg.role === 'user' ? 'var(--accent-fill)' : 'var(--on-dark-line)',
                           color: msg.role === 'user' ? 'var(--on-accent)' : 'var(--on-dark-primary)',
                           fontSize: '14px',
                           lineHeight: '1.5',
@@ -43340,7 +43343,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                     style: {
                       padding: '12px 16px',
                       borderRadius: '16px 16px 16px 4px',
-                      backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                      backgroundColor: 'var(--on-dark-line)',
                       display: 'flex',
                       alignItems: 'center',
                       gap: '8px'
@@ -43362,7 +43365,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
 
               // Chat input area
               React.createElement('div', {
-                style: { padding: '12px', borderTop: '1px solid rgba(255, 255, 255, 0.08)' }
+                style: { padding: '12px', borderTop: '1px solid var(--on-dark-line)' }
               },
                 React.createElement('div', { className: 'flex gap-2' },
                   React.createElement('input', {
@@ -43385,15 +43388,15 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                     disabled: aiChatLoading,
                     style: {
                       flex: 1,
-                      backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                      border: '1px solid rgba(255, 255, 255, 0.1)',
+                      backgroundColor: 'var(--on-dark-faint)',
+                      border: '1px solid var(--on-dark-border)',
                       borderRadius: '16px',
                       padding: '10px 16px',
                       fontSize: '14px',
                       color: 'var(--on-dark-primary)'
                     },
                     onFocus: (e) => { e.target.style.borderColor = 'var(--accent-primary-alpha-50)'; },
-                    onBlur: (e) => { e.target.style.borderColor = 'rgba(255, 255, 255, 0.1)'; }, 'aria-label': 'Ask Shuffleupagus'
+                    onBlur: (e) => { e.target.style.borderColor = 'var(--on-dark-border)'; }, 'aria-label': 'Ask Shuffleupagus'
                   }),
                   React.createElement(Button, { variant: 'primary', size: 'sm', className: 'w-10 h-10 !p-0 !rounded-full transition-transform hover:scale-105', onClick: () => aiChatInput.trim() && !aiChatLoading && handleAiChatSend(aiChatInput), disabled: !aiChatInput.trim() || aiChatLoading, 'aria-label': 'Send', 'data-tooltip': 'Send' }, aiChatLoading
                       ? React.createElement(Icons.Spinner, { size: 16 })
@@ -43428,7 +43431,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                         width: '28px',
                         height: '16px',
                         borderRadius: '8px',
-                        backgroundColor: aiIncludeHistory ? 'var(--accent-fill)' : 'rgba(255, 255, 255, 0.15)',
+                        backgroundColor: aiIncludeHistory ? 'var(--accent-fill)' : 'var(--on-dark-fill)',
                         transition: 'background-color 0.2s',
                         flexShrink: 0
                       }
@@ -43443,7 +43446,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                           height: '12px',
                           borderRadius: '50%',
                           backgroundColor: 'var(--card-bg)',
-                          boxShadow: '0 1px 2px rgba(0, 0, 0, 0.2)',
+                          boxShadow: 'var(--shadow-xs)',
                           transition: 'left 0.2s'
                         }
                       })
@@ -43468,17 +43471,17 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                         // Skeleton track number
                         React.createElement('div', {
                           className: 'animate-pulse',
-                          style: { width: '24px', height: '16px', backgroundColor: 'rgba(255, 255, 255, 0.08)', borderRadius: '4px' }
+                          style: { width: '24px', height: '16px', backgroundColor: 'var(--on-dark-line)', borderRadius: '4px' }
                         }),
                         // Skeleton track info
                         React.createElement('div', { className: 'flex-1 min-w-0 space-y-2' },
                           React.createElement('div', {
                             className: 'animate-pulse',
-                            style: { height: '16px', backgroundColor: 'rgba(255, 255, 255, 0.08)', borderRadius: '4px', width: `${60 + ((index * 37) % 30)}%`, animationDelay: `${index * 0.05}s` }
+                            style: { height: '16px', backgroundColor: 'var(--on-dark-line)', borderRadius: '4px', width: `${60 + ((index * 37) % 30)}%`, animationDelay: `${index * 0.05}s` }
                           }),
                           React.createElement('div', {
                             className: 'animate-pulse',
-                            style: { height: '12px', backgroundColor: 'rgba(255, 255, 255, 0.05)', borderRadius: '4px', width: `${40 + ((index * 23) % 25)}%`, animationDelay: `${index * 0.05 + 0.1}s` }
+                            style: { height: '12px', backgroundColor: 'var(--on-dark-faint)', borderRadius: '4px', width: `${40 + ((index * 23) % 25)}%`, animationDelay: `${index * 0.05 + 0.1}s` }
                           })
                         )
                       )
@@ -43486,7 +43489,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                   : (resultsSidebar.tracks || []).map((track, index) =>
                       React.createElement('div', {
                         key: track.id || index,
-                        className: 'group flex items-center gap-3 transition-colors hover:!bg-[rgba(255,255,255,0.05)]',
+                        className: 'group flex items-center gap-3 transition-colors hover:!bg-[var(--on-dark-faint)]',
                         style: { padding: '8px', borderRadius: '8px' },
                       },
                         // Track number
@@ -43519,12 +43522,12 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
 
               // Actions - Three circular buttons
               React.createElement('div', {
-                style: { padding: '16px', borderTop: '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '16px' }
+                style: { padding: '16px', borderTop: '1px solid var(--on-dark-line)', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '16px' }
               },
                 // Add to Playlist button
                 React.createElement(Button, { variant: 'icon', tone: 'dark', className: 'w-11 h-11 !rounded-full bg-white/10 enabled:hover:scale-110', onClick: handleAiAddToPlaylist, disabled: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0, 'aria-label': 'Add to playlist', 'data-tooltip': 'Add to playlist' }, React.createElement(Icons.Plus, { className: 'w-5 h-5' })),
                 // Play button (center, larger)
-                React.createElement(Button, { variant: 'icon', tone: 'dark', className: 'w-14 h-14 !rounded-full shadow-lg enabled:hover:scale-110', style: { backgroundColor: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0 ? 'rgba(255, 255, 255, 0.3)' : 'var(--on-dark-primary)' }, onClick: handleAiPlay, disabled: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0, 'aria-label': 'Play now', 'data-tooltip': 'Play now' }, React.createElement(Play, { size: 24, className: 'ml-0.5', style: { color: 'var(--surface-dark-solid)' } })),
+                React.createElement(Button, { variant: 'icon', tone: 'dark', className: 'w-14 h-14 !rounded-full shadow-lg enabled:hover:scale-110', style: { backgroundColor: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0 ? 'var(--on-dark-disabled)' : 'var(--on-dark-primary)' }, onClick: handleAiPlay, disabled: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0, 'aria-label': 'Play now', 'data-tooltip': 'Play now' }, React.createElement(Play, { size: 24, className: 'ml-0.5', style: { color: 'var(--surface-dark-solid)' } })),
                 // Add to Queue button
                 React.createElement(Button, { variant: 'icon', tone: 'dark', className: 'w-11 h-11 !rounded-full bg-white/10 enabled:hover:scale-110', onClick: handleAiAddToQueue, disabled: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0, 'aria-label': 'Add to queue', 'data-tooltip': 'Add to queue' }, React.createElement(Icons.QueueAdd, { className: 'w-5 h-5', strokeWidth: 2 }))
               )
@@ -43767,7 +43770,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
     selectedResolver && React.createElement(Modal, { bare: true, label: "Plugin settings", scrimClassName: 'z-50', onClose: () => { setSelectedResolver(null); }, panelProps: { style: {
           backgroundColor: 'var(--card-bg)',
           borderRadius: '16px',
-          boxShadow: '0 4px 24px rgba(0, 0, 0, 0.15), 0 12px 48px rgba(0, 0, 0, 0.1)',
+          boxShadow: 'var(--shadow-panel)',
           maxWidth: '440px',
           width: '100%',
           margin: '0 16px',
@@ -43798,7 +43801,7 @@ React.createElement('div', {
               selectedResolver.version && React.createElement('span', {
                 style: {
                   padding: '2px 8px',
-                  backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                  backgroundColor: 'var(--on-color-fill)',
                   borderRadius: '4px',
                   fontSize: '11px',
                   color: 'var(--on-accent)'
@@ -43808,7 +43811,7 @@ React.createElement('div', {
             React.createElement('p', {
               style: {
                 fontSize: '13px',
-                color: 'rgba(255, 255, 255, 0.8)',
+                color: 'var(--on-color-secondary)',
                 marginTop: '4px'
               }
             }, selectedResolver.author || 'Parachord Team')
@@ -43823,7 +43826,7 @@ React.createElement('div', {
               width: '32px',
               height: '32px',
               borderRadius: '50%',
-              backgroundColor: 'rgba(255, 255, 255, 0.2)',
+              backgroundColor: 'var(--on-color-fill)',
               border: 'none',
               color: 'var(--on-accent)',
               cursor: 'pointer',
@@ -46003,7 +46006,7 @@ React.createElement('div', {
     selectedMarketplaceItem && React.createElement(Modal, { bare: true, label: "Plugin details", scrimClassName: 'z-50', onClose: () => { setSelectedMarketplaceItem(null); }, panelProps: { style: {
           backgroundColor: 'var(--card-bg)',
           borderRadius: '16px',
-          boxShadow: '0 4px 24px rgba(0, 0, 0, 0.15), 0 12px 48px rgba(0, 0, 0, 0.1)',
+          boxShadow: 'var(--shadow-panel)',
           maxWidth: '440px',
           width: '100%',
           margin: '0 16px',
@@ -46034,7 +46037,7 @@ React.createElement('div', {
               selectedMarketplaceItem.version && React.createElement('span', {
                 style: {
                   padding: '2px 8px',
-                  backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                  backgroundColor: 'var(--on-color-fill)',
                   borderRadius: '4px',
                   fontSize: '11px',
                   color: 'var(--on-accent)'
@@ -46044,7 +46047,7 @@ React.createElement('div', {
             React.createElement('p', {
               style: {
                 fontSize: '13px',
-                color: 'rgba(255, 255, 255, 0.8)',
+                color: 'var(--on-color-secondary)',
                 marginTop: '4px'
               }
             }, selectedMarketplaceItem.author || 'Unknown')
@@ -46236,7 +46239,7 @@ React.createElement('div', {
               width: '56px',
               height: '56px',
               borderRadius: '12px',
-              backgroundColor: 'rgba(255, 255, 255, 0.2)',
+              backgroundColor: 'var(--on-color-fill)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center'
@@ -46250,7 +46253,7 @@ React.createElement('div', {
               style: { fontSize: '20px', fontWeight: '600', color: 'var(--on-accent)', marginBottom: '2px' }
             }, 'Browser Extension'),
             React.createElement('p', {
-              style: { fontSize: '13px', color: 'rgba(255, 255, 255, 0.8)' }
+              style: { fontSize: '13px', color: 'var(--on-color-secondary)' }
             }, 'Add music to Parachord from anywhere')
           ),
           // Close button
@@ -46356,7 +46359,7 @@ React.createElement('div', {
               width: '56px',
               height: '56px',
               borderRadius: '12px',
-              backgroundColor: 'rgba(255, 255, 255, 0.2)',
+              backgroundColor: 'var(--on-color-fill)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center'
@@ -46370,7 +46373,7 @@ React.createElement('div', {
               style: { fontSize: '20px', fontWeight: '600', color: 'var(--on-accent)', marginBottom: '2px' }
             }, 'Raycast Extension'),
             React.createElement('p', {
-              style: { fontSize: '13px', color: 'rgba(255, 255, 255, 0.8)' }
+              style: { fontSize: '13px', color: 'var(--on-color-secondary)' }
             }, 'Control Parachord with keyboard shortcuts')
           ),
           // Close button
@@ -46512,7 +46515,7 @@ React.createElement('div', {
         style: {
           left: '256px',
           pointerEvents: 'auto',
-          backgroundColor: 'rgba(0, 0, 0, 0.4)'
+          backgroundColor: 'var(--scrim-soft)'
         },
         onClick: closeAddToPlaylistPanel,
         onDragOver: (e) => {
@@ -46542,7 +46545,7 @@ React.createElement('div', {
           pointerEvents: 'auto',
           backgroundColor: 'var(--card-bg)',
           borderRadius: '0 16px 16px 0',
-          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+          boxShadow: 'var(--shadow-dialog)',
           overflow: 'hidden'
         },
         onDragOver: (e) => {
@@ -46570,7 +46573,7 @@ React.createElement('div', {
                 width: '32px',
                 height: '32px',
                 borderRadius: '8px',
-                backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                backgroundColor: 'var(--on-color-fill)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center'
@@ -47399,7 +47402,7 @@ React.createElement('div', { style: { marginTop: '12px' } },
             top: `${parachordLinkMenu.y}px`,
             backgroundColor: 'var(--tooltip-bg)',
             borderRadius: '8px',
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15), 0 2px 4px rgba(0, 0, 0, 0.1)',
+            boxShadow: 'var(--shadow-popover)',
             overflow: 'hidden',
             zIndex: 9999
           }
@@ -47600,7 +47603,7 @@ React.createElement('div', { style: { marginTop: '12px' } },
     syncSetupModal.open && React.createElement(Modal, { bare: true, label: "Set up sync", scrimClassName: 'z-50', onClose: () => !syncSetupModal.progress && setSyncSetupModal(prev => ({ ...prev, open: false })), panelProps: { className: 'relative w-full max-w-lg mx-4 overflow-hidden', style: {
           backgroundColor: 'var(--card-bg)',
           borderRadius: '16px',
-          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
+          boxShadow: 'var(--shadow-dialog)'
         } } },
 React.createElement('div', {
           style: {
@@ -48102,7 +48105,7 @@ React.createElement('div', {
     syncStatusModal.open && React.createElement(Modal, { bare: true, label: "Sync status", scrimClassName: 'z-50', onClose: () => setSyncStatusModal({ open: false }), panelProps: { className: 'relative w-full max-w-md mx-4 overflow-hidden', style: {
           backgroundColor: 'var(--card-bg)',
           borderRadius: '16px',
-          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
+          boxShadow: 'var(--shadow-dialog)'
         } } },
 React.createElement('div', {
           className: 'flex items-center justify-between',
@@ -48287,7 +48290,7 @@ React.createElement('div', {
           overflowY: 'auto',
           backgroundColor: 'var(--card-bg)',
           borderRadius: '16px',
-          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
+          boxShadow: 'var(--shadow-dialog)'
         } } },
 firstRunTutorial.step === 'welcome' && React.createElement(React.Fragment, null,
           // Accent bar
@@ -48433,7 +48436,7 @@ firstRunTutorial.step === 'sources' && React.createElement(React.Fragment, null,
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      boxShadow: isActive ? '0 4px 12px rgba(0, 0, 0, 0.15)' : '0 2px 8px rgba(0, 0, 0, 0.1)',
+                      boxShadow: isActive ? 'var(--shadow-popover)' : 'var(--shadow-sm)',
                       marginBottom: '8px'
                     }
                   },

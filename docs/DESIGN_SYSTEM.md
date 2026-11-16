@@ -77,7 +77,18 @@ Secondary and tertiary both pass 4.5:1 on the page and on cards in both themes, 
 | `--border-success` / `-warning` / `-info` | Its border: the status text colour at 30% (`--border-danger` is its own pair) |
 | `--photo-shade` / `-bar` / `-empty` | The darkening over an artist photo in a hero, the collapsed 80px bar, and no photo (same in both themes) |
 
-Never write a status colour as `rgba(34, 197, 94, 0.08)`: the drift script's `rgbColors` counts coloured `rgb()`/`rgba()` values (0 now), and `rgbNeutrals` the black and white ones (shadows, scrims, lines on the dark panels), still being moved onto tokens.
+Never write a colour as `rgba(…)` in the renderer: the drift script's `rgbColors` (coloured) and `rgbNeutrals` (black, white, grey) both count them, and both are 0.
+
+#### Neutral roles (same in both themes)
+
+| Token | Usage |
+|-------|-------|
+| `--on-color-secondary` / `-fill` / `-border` / `-chip` | White on a coloured header or tile: secondary text, a pill's fill, a border, a corner chip |
+| `--on-dark-faint` / `-line` / `-border` / `-hover` / `-fill` / `-inset` | The always-dark panels: a faint fill, a divider, a border, a hover, a stronger fill, a darker well |
+| `--scrim-soft` / `--scrim` / `--scrim-strong` | Darkening over content (a busy tile, a backdrop, art) at 40 / 50 / 80% |
+| `--cover-shade`, `--shimmer-on-dark` | The playlist cover's shade; a loading shimmer on a dark panel |
+| `--shadow-xs` / `-tile` / `-popover` / `-panel` / `-dialog` / `-dialog-dark` / `-drawer` | Shadows by role, with `--shadow-sm/md/lg` and `--card-shadow` |
+| `--hero-text-shadow` / `-bar` / `-line`, `--photo-text-shadow`, `--text-shadow-soft`, `--icon-shadow` | Text and icons over a hero, a photo or art |
 
 **The fill-accent convention.** `--accent-primary` turns light purple in dark mode, where white text on it is 2.72:1. So a button, badge or switch track with white text uses `--accent-fill` / `--on-accent`, and `--accent-primary` is for accent-coloured text, icons and outlines. Other accent tokens (`--accent-secondary`, `--accent-soft`, `--accent-surface`, alpha variants at 6–60%) are in `index.html`.
 

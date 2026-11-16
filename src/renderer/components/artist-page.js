@@ -204,7 +204,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                     position: 'top',
                     variant: 'dark'
                   },
-                    React.createElement(Button, { variant: 'icon', size: 'sm', tone: 'dark', className: isInCollection ? '!text-on-dark-star hover:!text-on-dark-star-hover' : '', style: { filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.5))' }, 'aria-label': isInCollection ? 'Remove from collection' : 'Add to collection', onClick: (e) => {
+                    React.createElement(Button, { variant: 'icon', size: 'sm', tone: 'dark', className: isInCollection ? '!text-on-dark-star hover:!text-on-dark-star-hover' : '', style: { filter: 'var(--icon-shadow)' }, 'aria-label': isInCollection ? 'Remove from collection' : 'Add to collection', onClick: (e) => {
                         e.stopPropagation();
                         if (!isInCollection) {
                           addArtistToCollection({ name: currentArtist.name, image: artistImage });
@@ -233,7 +233,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
               role: 'tablist',
               'aria-label': 'Artist',
               className: 'flex items-center gap-1 mt-6',
-              style: { textShadow: '0 2px 12px rgba(0,0,0,0.8), 0 0 20px rgba(0,0,0,0.4)' }
+              style: { textShadow: 'var(--photo-text-shadow)' }
             },
               (() => {
                 // On Tour only for an artist with upcoming concerts; while they load, an
@@ -346,7 +346,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                   position: 'top',
                   variant: 'dark'
                 },
-                  React.createElement(Button, { variant: 'icon', size: 'sm', tone: 'dark', className: isInCollection ? '!text-on-dark-star hover:!text-on-dark-star-hover' : '', style: { filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.5))' }, 'aria-label': isInCollection ? 'Remove from collection' : 'Add to collection', onClick: (e) => {
+                  React.createElement(Button, { variant: 'icon', size: 'sm', tone: 'dark', className: isInCollection ? '!text-on-dark-star hover:!text-on-dark-star-hover' : '', style: { filter: 'var(--icon-shadow)' }, 'aria-label': isInCollection ? 'Remove from collection' : 'Add to collection', onClick: (e) => {
                       e.stopPropagation();
                       if (!isInCollection) {
                         addArtistToCollection({ name: currentArtist.name, image: artistImage });
@@ -374,7 +374,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
               role: 'tablist',
               'aria-label': 'Artist',
               className: 'flex items-center gap-1',
-              style: { textShadow: '0 2px 12px rgba(0,0,0,0.8), 0 0 20px rgba(0,0,0,0.4)' }
+              style: { textShadow: 'var(--photo-text-shadow)' }
             },
               (() => {
                 // On Tour only for an artist with upcoming concerts; while they load, an

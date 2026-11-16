@@ -168,13 +168,13 @@ const SearchPage = React.memo(function SearchPage(props) {
                 React.createElement(Icons.Search, { className: 'w-5 h-5 text-white/70' }),
                 React.createElement('span', {
                   className: 'text-2xl font-light text-white uppercase',
-                  style: { textShadow: '0 2px 10px rgba(0,0,0,0.3)', letterSpacing: '0.2em' }
+                  style: { textShadow: 'var(--text-shadow-soft)', letterSpacing: '0.2em' }
                 }, `"${searchQuery}"`)
               ),
               // Tabs (next to title, like artist page)
               React.createElement('div', {
                 className: 'flex items-center gap-1',
-                style: { textShadow: '0 1px 10px rgba(0,0,0,0.3)' }
+                style: { textShadow: 'var(--text-shadow-soft)' }
               },
                 [
                   { key: 'artists', label: 'Artists', count: searchResults.artists.length },
@@ -772,7 +772,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                           width: '7px', height: '7px', borderRadius: '50%',
                           backgroundColor: allResolvers.find(r => r.id === resolverId)?.color || 'var(--text-tertiary)',
                           opacity: dim ? 0.6 : 1,
-                          boxShadow: '0 1px 2px rgba(0,0,0,0.3)'
+                          boxShadow: 'var(--shadow-xs)'
                         }
                       }))
                     );

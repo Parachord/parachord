@@ -86,7 +86,7 @@ function ArtistCard({ artist, image, imageLoaded, getArtistImage, onOpen, onPlay
       noImage && e('div', {
         className: 'absolute inset-0 flex items-center justify-center',
         style: { color: pattern.textColor, opacity: 0.4 },
-      }, e('span', { className: 'font-bold tracking-wider', style: { fontSize: '48px', textShadow: '0 2px 8px rgba(0,0,0,0.3)' } }, pattern.initials)),
+      }, e('span', { className: 'font-bold tracking-wider', style: { fontSize: '48px', textShadow: 'var(--text-shadow-soft)' } }, pattern.initials)),
       url && e('img', {
         src: url,
         alt: '',

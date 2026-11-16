@@ -48,7 +48,7 @@ const MENU_STYLE = {
   position: 'fixed', zIndex: 'var(--z-popover)', maxHeight: '60vh', overflowY: 'auto',
   minWidth: '160px', margin: 0, padding: '4px', listStyle: 'none', borderRadius: '8px',
   border: '1px solid var(--tooltip-border)', backgroundColor: 'var(--tooltip-bg)', color: 'var(--tooltip-text)',
-  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+  boxShadow: 'var(--shadow-popover)',
 };
 const ITEM_CLASS = 'menu-item no-drag w-full flex items-center gap-2 px-3 py-2 text-left rounded-md';
 const ITEM_STYLE = { border: 'none', cursor: 'pointer', textDecoration: 'none', font: 'inherit', fontSize: '12px', fontWeight: 500 };
@@ -173,7 +173,7 @@ function Menu({ label, items, renderTrigger, align = 'left', minWidth = 160, hea
     }, heading),
     list.map((item, i) => {
       if (item.separator) {
-        return e('div', { key: item.key || `sep-${i}`, role: 'separator', style: { height: '1px', margin: '4px 0', backgroundColor: 'rgba(255, 255, 255, 0.12)' } });
+        return e('div', { key: item.key || `sep-${i}`, role: 'separator', style: { height: '1px', margin: '4px 0', backgroundColor: 'var(--on-dark-hover)' } });
       }
       const body = [
         item.dot && e('span', { key: 'dot', 'aria-hidden': 'true', style: { width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0, backgroundColor: item.dot } }),
