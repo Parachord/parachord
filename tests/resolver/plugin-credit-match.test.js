@@ -22,11 +22,20 @@ function loadAxe(id) {
   return JSON.parse(fs.readFileSync(path.join(__dirname, `../../plugins/${id}.axe`), 'utf8'));
 }
 
-// Builds the resolver the way resolver-loader.js does. `RegExpImpl` shadows the
-// global RegExp inside the plugin's functions, to stand in for another engine.
+// Builds the resolver the way resolver-loader.js does, the #1402 plugin library
+// included (_lib materialized and CALLED once, frozen, injected as this.lib).
+// `RegExpImpl` shadows the global RegExp inside the plugin's functions, to
+// stand in for another engine.
 function instantiate(axe, RegExpImpl = RegExp) {
-  const resolver = { id: axe.manifest.id };
-  for (const [key, src] of Object.entries(axe.implementation)) {
+  const { _lib: libSource, ...methods } = axe.implementation;
+  const resolver = { id: axe.manifest.id, lib: null };
+  if (libSource !== undefined) {
+    const factory = new Function('return ' + libSource)();
+    const lib = factory();
+    if (!lib || typeof lib !== 'object') throw new Error('_lib must return the library (an object)');
+    resolver.lib = Object.freeze(lib);
+  }
+  for (const [key, src] of Object.entries(methods)) {
     const fn = new Function('RegExp', 'return ' + src)(RegExpImpl);
     resolver[key] = (...args) => fn.apply(resolver, args);
   }
@@ -57,18 +66,71 @@ const PLUGINS = {
   },
   amazonmusic: {
     config: {},
+    // #1356 M5: the plugin's own spec-search runner answers through the
+    // window.electron.webSession bridge (signed in, Music Unlimited, and the
+    // page flow's load/pageFetch pair serving the rows as a spec envelope).
     serve(rows) {
       const tracks = rows.map((row, i) => ({
         asin: `song-${i}`,
-        uniqueId: `ML-${i}`,
         title: row.title,
         artist: row.artist,
         album: 'Album',
         duration: 200,
       }));
+      const envelope = {
+        data: {
+          specificationSearch: {
+            result: [{
+              edges: tracks.map((t) => ({
+                node: {
+                  __typename: 'Track',
+                  id: t.asin,
+                  title: t.title,
+                  contributingArtists: { edges: [{ role: 'PRIMARY', node: { name: t.artist } }] },
+                  album: { shortTitle: t.album },
+                  duration: t.duration,
+                },
+              })),
+            }],
+          },
+        },
+      };
+      const captureFor = (url) => {
+        // The flow's own searchText comes out of the URL (the builder put it
+        // there) — the matcher keys on variables.searchText.
+        const m = decodeURIComponent(String(url)).match(/\/search\/(.+)\/songs$/);
+        const searchText = m ? m[1] : '';
+        return [{
+          url: 'https://gql.music.amazon.com/',
+          method: 'POST',
+          body: JSON.stringify({
+            operationName: 'SpecSearchSeeMorePage',
+            variables: { searchText, specType: 'track', firstLimit: 30 },
+            extensions: { persistedQuery: { version: 1, sha256Hash: 'hash' } },
+          }),
+          headers: { 'x-api-key': 'k', 'csrf-token': 't', 'csrf-rnd': 'r', 'csrf-ts': '1' },
+        }];
+      };
       global.window = {
         electron: {
-          amazonMusic: { searchTracks: jest.fn().mockResolvedValue({ success: true, tracks }) },
+          webSession: {
+            state: jest.fn().mockResolvedValue({
+              success: true,
+              url: 'https://music.amazon.com/search/x/songs',
+              signInUrl: null,
+              cookieNames: ['at-main', 'sess-at-main'],
+            }),
+            fetch: jest.fn().mockResolvedValue({
+              success: true, status: 200, headers: {},
+              text: JSON.stringify({ tier: 'UNLIMITED_AUDIO', customerId: 'A1' }),
+            }),
+            load: jest.fn().mockImplementation(async (_id, url) => ({
+              success: true, finalUrl: url, captures: captureFor(url),
+            })),
+            pageFetch: jest.fn().mockResolvedValue({
+              success: true, status: 200, text: JSON.stringify(envelope),
+            }),
+          },
         },
       };
     },

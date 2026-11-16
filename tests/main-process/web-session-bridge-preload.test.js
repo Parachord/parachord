@@ -40,13 +40,12 @@ jest.mock('electron', () => ({
   }
 }));
 
-// The preload's webSession wrapper SHIPS UNWIRED (#1432 review, note 8):
-// __exposeWebSession is off unless this env flag is set, so this suite turns
-// it on BEFORE the require (the flag is read once at preload time). The
-// held-back state itself (nothing exposed, no advertisement entry) is pinned
-// at the bottom of the file by re-requiring the preload without the flag.
-process.env.PARACHORD_EXPOSE_WEB_SESSION = '1';
-
+// The preload's webSession wrapper is LIVE (#1356 M5 — the Amazon plugin's
+// track search is the bridge's first consumer, and the layer that first
+// drives the bridge turns the surface on): the preload exposes it
+// unconditionally, so this suite requires the preload directly. The live
+// exposure is pinned at the bottom of the file (no env seam anymore — the
+// flag is gone).
 require('../../preload');
 
 const topFrame = {};
@@ -225,32 +224,26 @@ describe('webSession.signIn — the preload wrapper against the bridge', () => {
   });
 });
 
-// ── the held-back exposure (#1432 review, note 8) ────────────────────────────
+// ── the live exposure (#1356 M5 — the bridge's first consumer) ───────────────
 //
-// The shipped state: without the env flag, the preload exposes NO webSession
-// block and the hostBridges advertisement stays amazonMusic-only — the surface
-// moves with the layer that first calls the bridge (the Amazon plugin's move),
-// which turns __exposeWebSession on together with the session registration in
-// main.js.
+// The shipped state: the wrapper is unconditional — window.electron carries
+// webSession and the hostBridges advertisement includes it, no env seam. (It
+// shipped held back in the layer below — the #1432 review's note-8 option —
+// and went live with the track-search move, the bridge's first caller,
+// together with the session registration in main.js.)
 
-describe('the held-back exposure (the flag off)', () => {
-  test('window.electron carries no webSession and the advertisement stays amazonMusic-only', () => {
-    const prev = process.env.PARACHORD_EXPOSE_WEB_SESSION;
-    delete process.env.PARACHORD_EXPOSE_WEB_SESSION;
-    try {
-      jest.resetModules();
-      jest.isolateModules(() => {
-        // The mocked electron's factory writes into the SAME mockWorld object
-        // across a reset — clear it so the assertions below read only this
-        // run's exposure.
-        Object.keys(mockWorld).forEach((k) => { delete mockWorld[k]; });
-        require('../../preload');
-      });
-      expect(mockWorld.electron.webSession).toBeUndefined();
-      expect(mockWorld.electron.amazonMusic).toBeTruthy(); // the rest of the surface is untouched
-      expect([...mockWorld.__parachordHostBridges]).toEqual(['amazonMusic']);
-    } finally {
-      if (prev !== undefined) process.env.PARACHORD_EXPOSE_WEB_SESSION = prev;
-    }
+describe('the live exposure', () => {
+  test('window.electron carries webSession and the advertisement lists it', () => {
+    jest.resetModules();
+    jest.isolateModules(() => {
+      // The mocked electron's factory writes into the SAME mockWorld object
+      // across a reset — clear it so the assertions below read only this
+      // run's exposure.
+      Object.keys(mockWorld).forEach((k) => { delete mockWorld[k]; });
+      require('../../preload');
+    });
+    expect(mockWorld.electron.webSession).toBeTruthy();
+    expect(mockWorld.electron.amazonMusic).toBeTruthy(); // the rest of the surface is untouched
+    expect([...mockWorld.__parachordHostBridges]).toEqual(['amazonMusic', 'webSession']);
   });
 });

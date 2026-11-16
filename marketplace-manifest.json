@@ -177,7 +177,7 @@
         "widevine"
       ],
       "minAppVersion": {
-        "desktop": "0.9.12"
+        "desktop": "0.9.13"
       }
     },
     {

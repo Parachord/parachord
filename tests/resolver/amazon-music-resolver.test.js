@@ -19,24 +19,19 @@
 const fs = require('fs');
 const path = require('path');
 
-const axe = JSON.parse(fs.readFileSync(path.join(__dirname, '../../plugins/amazonmusic.axe'), 'utf8'));
+// instantiateAmazonPlugin materializes the .axe the way resolver-loader.js
+// does, #1402's plugin library included (implementation._lib called once,
+// frozen, injected as this.lib) — the search's runner rides it.
+const {
+  loadAmazonAxe,
+  instantiateAmazonPlugin,
+  amazonWebSessionMock
+} = require('../helpers/amazon-plugin-bridge');
+
+const axe = loadAmazonAxe();
 
 function instantiate(axeContent) {
-  const { manifest, capabilities, implementation } = axeContent;
-  const resolver = {
-    id: manifest.id,
-    name: manifest.name,
-    capabilities,
-    ...Object.fromEntries(
-      Object.entries(implementation).map(([k, src]) => [k, new Function('return ' + src)()])
-    )
-  };
-  // Bind `this` the way resolver-loader.js does so this.search works inside resolve/play
-  for (const key of Object.keys(implementation)) {
-    const original = resolver[key];
-    resolver[key] = function (...args) { return original.call(resolver, ...args); };
-  }
-  return resolver;
+  return instantiateAmazonPlugin(axeContent || axe);
 }
 
 describe('amazonmusic .axe structure', () => {
@@ -49,6 +44,8 @@ describe('amazonmusic .axe structure', () => {
     expect(axe.capabilities).toEqual(
       expect.objectContaining({ resolve: true, search: true, stream: true, urlLookup: true, albumSearch: true, artistImage: true, recommendations: true, widevine: true, mobile: false })
     );
+    expect(axe.requires).toEqual({ hostBridges: ['webSession'] });
+    expect(axe.manifest.minAppVersion).toEqual({ desktop: '0.9.13' });
     expect(axe.settings.requiresAuth).toBe(false);
     expect(axe.urlPatterns).toEqual([
       'music.amazon.com/playlists/*',
@@ -64,37 +61,27 @@ describe('amazonmusic .axe structure', () => {
       expect(typeof new Function('return ' + src)()).toBe('function');
     }
     expect(Object.keys(axe.implementation).sort()).toEqual(
-      ['cleanup', 'expandRecommendationSection', 'getRecommendations', 'init', 'lookupAlbum', 'lookupPlaylist', 'play', 'resolve', 'search', 'searchAlbums', 'searchArtistImage'].sort()
+      ['_lib', 'assertPlanPlays', 'cleanup', 'expandRecommendationSection', 'getPlan', 'getRecommendations', 'init', 'isSignedIn', 'lookupAlbum', 'lookupPlaylist', 'play', 'replayGql', 'requireLib', 'resolve', 'search', 'searchAlbums', 'searchArtistImage', 'specSearch', 'specSearchPageFlow', 'specStructuralError', 'trySpecReplay'].sort()
     );
   });
 });
 
 describe('amazonmusic search', () => {
-  let bridgeResults;
-
-  beforeEach(() => {
-    bridgeResults = {
-      success: true,
-      tracks: [
-        { asin: 'B000SNWG5Q', uniqueId: 'ML-abc', title: 'Around the World', artist: 'Daft Punk', album: 'Homework', duration: 430, genre: 'Electronic', explicit: false, albumArt: 'https://m.media-amazon.com/images/I/B000SNWG5Q.jpg' },
-        { asin: 'B07XLSKGGK', uniqueId: 'ML-def', title: 'Master of Puppets (Remastered)', artist: 'Metallica', album: 'Master of Puppets', duration: 515, genre: 'Metal', explicit: false }
-      ]
-    };
-    global.window = {
-      electron: {
-        amazonMusic: {
-          searchTracks: jest.fn().mockResolvedValue(bridgeResults),
-          playTrack: jest.fn().mockResolvedValue({ success: true })
-        }
-      }
-    };
-  });
+  // #1356 M5: the search runs in the plugin, driving the host web session
+  // through the window.electron.webSession bridge (the machinery pins live
+  // in amazon-music-plugin-spec-search.test.js); these pins are the resolver
+  // surface — the track mapping and the miss-vs-notReady semantics.
+  const runnerTracks = [
+    { asin: 'B000SNWG5Q', title: 'Around the World', artist: 'Daft Punk', album: 'Homework', albumAsin: 'B000031W1M', duration: 430, explicit: false, albumArt: 'https://m.media-amazon.com/images/I/B000SNWG5Q.jpg' },
+    { asin: 'B07XLSKGGK', title: 'Master of Puppets (Remastered)', artist: 'Metallica', album: 'Master of Puppets', duration: 515, explicit: false }
+  ];
 
   afterEach(() => {
     delete global.window;
   });
 
-  test('maps bridge tracks to the resolver track shape', async () => {
+  test('maps the runner rows to the resolver track shape', async () => {
+    amazonWebSessionMock({ tracks: runnerTracks });
     const resolver = instantiate(axe);
     const results = await resolver.search('daft punk around the world', {});
     expect(results).toHaveLength(2);
@@ -106,9 +93,8 @@ describe('amazonmusic search', () => {
       duration: 430,
       sources: ['amazonmusic'],
       amazonAsin: 'B000SNWG5Q',
-      amazonUniqueId: 'ML-abc',
       explicit: false,
-      // The gql search response carries track cover art — the resolver passes
+      // The gql search response carries the track's own cover art — the resolver passes
       // it through so getAlbumArtFromResolvers can hit it.
       albumArt: 'https://m.media-amazon.com/images/I/B000SNWG5Q.jpg'
     }));
@@ -116,9 +102,7 @@ describe('amazonmusic search', () => {
   });
 
   test('throws notReady when the player is not signed in so resolve does not cache noMatch', async () => {
-    global.window.electron.amazonMusic.searchTracks.mockResolvedValue({
-      success: false, reason: 'not-signed-in'
-    });
+    amazonWebSessionMock({ tracks: runnerTracks, signedIn: false });
     const resolver = instantiate(axe);
     await expect(resolver.search('anything', {})).rejects.toMatchObject({
       notReady: true,
@@ -127,9 +111,7 @@ describe('amazonmusic search', () => {
   });
 
   test('throws notReady when the in-app player is not signed in', async () => {
-    global.window.electron.amazonMusic.searchTracks.mockResolvedValue({
-      success: false, reason: 'not-signed-in'
-    });
+    amazonWebSessionMock({ tracks: runnerTracks, signedIn: false });
     const resolver = instantiate(axe);
     await expect(resolver.resolve('Daft Punk', 'Around the World', null, {})).rejects.toMatchObject({
       notReady: true,
@@ -138,8 +120,9 @@ describe('amazonmusic search', () => {
   });
 
   test('throws notReady when the page never loaded, so a stalled network is not cached as noMatch', async () => {
-    global.window.electron.amazonMusic.searchTracks.mockResolvedValue({
-      success: false, reason: 'load-failed', error: 'Amazon Music page did not finish loading within 30000ms'
+    amazonWebSessionMock({
+      tracks: runnerTracks,
+      loadResult: { success: false, reason: 'load-failed', error: 'Amazon Music page did not finish loading within 30000ms' }
     });
     const resolver = instantiate(axe);
     await expect(resolver.search('daft punk', {})).rejects.toMatchObject({
@@ -148,12 +131,10 @@ describe('amazonmusic search', () => {
     });
   });
 
-  // #1220: off Music Unlimited the host answers plan-ineligible. Not-ready,
-  // not a miss: a 30-day noMatch would outlive an upgrade.
+  // #1220: off Music Unlimited the search gate answers plan-ineligible.
+  // Not-ready, not a miss: a 30-day noMatch would outlive an upgrade.
   test('throws notReady when the plan is not Music Unlimited, so it is not cached as noMatch', async () => {
-    global.window.electron.amazonMusic.searchTracks.mockResolvedValue({
-      success: false, reason: 'plan-ineligible', error: 'Amazon Prime: ...'
-    });
+    amazonWebSessionMock({ tracks: runnerTracks, tier: 'PRIME' });
     const resolver = instantiate(axe);
     await expect(resolver.resolve('Daft Punk', 'Around the World', null, {})).rejects.toMatchObject({
       notReady: true,
@@ -162,29 +143,25 @@ describe('amazonmusic search', () => {
   });
 
   test('returns [] on short queries', async () => {
+    const ws = amazonWebSessionMock({ tracks: runnerTracks });
     const resolver = instantiate(axe);
     expect(await resolver.search('d', {})).toEqual([]);
-    expect(global.window.electron.amazonMusic.searchTracks).not.toHaveBeenCalled();
+    expect(ws.load).not.toHaveBeenCalled();
   });
 });
 
 describe('amazonmusic resolve', () => {
+  // resolve rides the plugin's own search (the webSession runner), so these
+  // mocks serve the spec-search envelope through the bridge.
+  const serveTracks = (tracks) => amazonWebSessionMock({ tracks });
+
   beforeEach(() => {
-    global.window = {
-      electron: {
-        amazonMusic: {
-          searchTracks: jest.fn().mockResolvedValue({
-            success: true,
-            tracks: [
-              // Deliberately not the target first — resolve must pick by containment
-              { asin: 'B1', uniqueId: 'ML-1', title: 'The Game of Love', artist: 'Daft Punk', album: 'RAM', duration: 322 },
-              { asin: 'B2', uniqueId: 'ML-2', title: 'Around the World', artist: 'Daft Punk', album: 'Homework', duration: 430 },
-              { asin: 'B3', uniqueId: 'ML-3', title: 'Around the World (Live)', artist: 'Some Cover Band', album: 'Covers', duration: 400 }
-            ]
-          })
-        }
-      }
-    };
+    serveTracks([
+      // Deliberately not the target first — resolve must pick by containment
+      { asin: 'B1', title: 'The Game of Love', artist: 'Daft Punk', album: 'RAM', duration: 322 },
+      { asin: 'B2', title: 'Around the World', artist: 'Daft Punk', album: 'Homework', duration: 430 },
+      { asin: 'B3', title: 'Around the World (Live)', artist: 'Some Cover Band', album: 'Covers', duration: 400 }
+    ]);
   });
 
   afterEach(() => {
@@ -196,19 +173,16 @@ describe('amazonmusic resolve', () => {
     const match = await resolver.resolve('Daft Punk', 'Around the World', null, {});
     expect(match).toBeTruthy();
     expect(match.amazonAsin).toBe('B2');
-    expect(global.window.electron.amazonMusic.searchTracks).toHaveBeenCalledWith({
-      title: 'Around the World',
-      artist: 'Daft Punk'
-    });
+    // The search ran for the quoted title + artist pair (the OR-union query).
+    const ws = global.window.electron.webSession;
+    expect(ws.load).toHaveBeenCalledTimes(1);
+    expect(decodeURIComponent(ws.load.mock.calls[0][1])).toContain('"Around the World" by "Daft Punk"');
   });
 
   test('matches Cyrillic titles instead of stripping them to empty', async () => {
-    global.window.electron.amazonMusic.searchTracks.mockResolvedValue({
-      success: true,
-      tracks: [
-        { asin: 'B9', uniqueId: 'ML-9', title: 'На рахунок три', artist: 'Tember Blanche', album: 'На рахунок три', duration: 180 }
-      ]
-    });
+    serveTracks([
+      { asin: 'B9', title: 'На рахунок три', artist: 'Tember Blanche', album: 'На рахунок три', duration: 180 }
+    ]);
     const resolver = instantiate(axe);
     const match = await resolver.resolve('Tember Blanche', 'На рахунок три', null, {});
     expect(match).toBeTruthy();
@@ -216,16 +190,13 @@ describe('amazonmusic resolve', () => {
   });
 
   test('falls back to null when nothing matches', async () => {
-    global.window.electron.amazonMusic.searchTracks.mockResolvedValue({ success: true, tracks: [] });
+    serveTracks([]);
     const resolver = instantiate(axe);
     expect(await resolver.resolve('Nobody', 'Nothing', null, {})).toBeNull();
   });
 
   const resolveAmong = async (tracks, artist, title) => {
-    global.window.electron.amazonMusic.searchTracks.mockResolvedValue({
-      success: true,
-      tracks: tracks.map(([asin, a, t]) => ({ asin, uniqueId: asin, title: t, artist: a, album: 'X', duration: 200 })),
-    });
+    serveTracks(tracks.map(([asin, a, t]) => ({ asin, title: t, artist: a, album: 'X', duration: 200 })));
     return (await instantiate(axe).resolve(artist, title, null, {}))?.amazonAsin || null;
   };
 

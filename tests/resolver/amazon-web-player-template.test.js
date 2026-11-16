@@ -1,6 +1,11 @@
 /**
  * amazon-web-player spec-search rework: replay-first templates + parallel
- * replays (docs/architecture/amazon-music.md). Pinned here:
+ * replays (docs/architecture/amazon-music.md). The TRACK search moved into
+ * the plugin (#1356 M5 — its pins live in amazon-music-plugin-spec-search.test.js,
+ * against a mocked window.electron.webSession bridge); this file pins the
+ * HOST-side runner the album/artist searches still use until their move —
+ * same machinery, same pure helpers (amazon-music-logic.js), driven directly
+ * through the exported singleton. Pinned here:
  *   - a fresh template answers a spec search with NO page flow: replayGql
  *     gets the patched body (searchText/specType swapped, hash intact), and
  *     none of ensureWindow/layoutSearch/attachGqlCapture run

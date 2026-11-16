@@ -816,21 +816,23 @@ const isMainWindowTopFrameSender = (event) => {
 };
 registerWidevineBridgeIpc({ ipcMain, isAllowedSender: isMainWindowTopFrameSender });
 
-// The webSession IPC bridge (#1356): the channels are registered, but NO
-// session is yet — the live registration (Amazon's ONE createWebSessionHost
-// instance, the one owner of the persist:amazon-music partition's webRequest
-// slot, registered by reference and never re-created) moves to the layer that
-// first drives it through the bridge: the Amazon plugin's flow move (#1432
-// review, note 8 — this layer ships the module, its tests and the preload
-// wrapper code; the EXPOSURE, the session registration and the preload's
-// webSession block, moves with the layer that uses them). Until then every
-// webSession: call answers not-ready for every id. The bridge gates the sender
-// like the widevine bridge, scopes fetch/pageFetch to the session's allowed
-// hosts (exact hosts, https only, redirect hops re-checked host-side) and
-// load/signIn to the same allowed hosts, caps the caller budgets, and shuttles
-// the sign-in tick/decide/settled protocol (channel contract in
+// The webSession IPC bridge (#1356): registered web-session hosts exposed to
+// the renderer. Amazon's session is the ONE createWebSessionHost instance
+// amazon-web-player owns at module scope (the one owner of the
+// persist:amazon-music partition's webRequest slot) — registered here by
+// reference, never re-created. The registration is LIVE as of the
+// track-search move (#1356 M5): that layer is the bridge's first consumer
+// (the plugin's spec-search runner drives this session through
+// window.electron.webSession), the #1432 review's note-8 option — the
+// exposure went on together with the preload's webSession block and its
+// hostBridges entry. The bridge gates the sender like the widevine bridge,
+// scopes fetch/pageFetch to the session's allowed hosts (exact hosts, https
+// only, redirect hops re-checked host-side) and load/signIn to the same
+// allowed hosts, caps the caller budgets, and shuttles the sign-in
+// tick/decide/settled protocol (channel contract in
 // docs/architecture/web-session.md, "The IPC bridge").
-const { registerWebSessionBridgeIpc } = require('./main-process/ipc/web-session-bridge');
+const { registerWebSession, registerWebSessionBridgeIpc } = require('./main-process/ipc/web-session-bridge');
+registerWebSession('amazon-music', amazonWebPlayer.webSession);
 registerWebSessionBridgeIpc({
   ipcMain,
   isAllowedSender: isMainWindowTopFrameSender,
@@ -3910,30 +3912,6 @@ ipcMain.handle('amazonmusic-sign-out', async () => {
     return await amazonWebPlayer.signOut();
   } catch (error) {
     return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle('amazonmusic-search-tracks', async (event, payload) => {
-  console.log(`[Amazon] IPC search ${JSON.stringify(payload)}`);
-  try {
-    // #1220: off Music Unlimited, offer no playable tracks. Checked only when
-    // signed in, so a signed-out search still answers not-signed-in (the
-    // sign-in prompt). The resolver treats plan-ineligible as not-ready, so
-    // nothing is cached as a miss and an upgrade re-resolves.
-    if (await amazonWebPlayer.isSignedIn()) await amazonDmls.assertPlanPlays();
-    const tracks = await amazonWebPlayer.searchTracks(payload || {});
-    console.log(`[Amazon] IPC search done ${(tracks && tracks.length) || 0} tracks`);
-    return { success: true, engine: 'web', tracks };
-  } catch (error) {
-    console.warn(`[Amazon] IPC search failed: ${error && error.reason} ${error && error.message}`);
-    // Pass the reason through verbatim — the resolver (.axe) decides which
-    // reasons are notReady (skipped from the noMatch cache) and which are
-    // plain misses.
-    return {
-      success: false,
-      reason: error.reason,
-      error: error.message
-    };
   }
 });
 
