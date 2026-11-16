@@ -2016,6 +2016,9 @@ app.whenReady().then(async () => {
     return null;
   });
 
+  // Before the window: the renderer must read the migrated collection (#1401).
+  await runCollectionIdMigration();
+
   createWindow();
 
   // Explicitly allow all permission requests. This is needed because some
@@ -6800,6 +6803,48 @@ async function writeCollectionAtomic(collectionPath, collection) {
   const tmpPath = `${collectionPath}.tmp`;
   await fsPromises.writeFile(tmpPath, JSON.stringify(collection), 'utf8');
   await fsPromises.rename(tmpPath, collectionPath);
+}
+
+// The collection id migration (#1401). Collection ids used to drop every
+// non-Latin character, so all-Cyrillic or all-CJK names collapsed (a second
+// such album couldn't be saved). The id formula now folds them
+// (sync-engine/collection-id.js); this moves stored rows, and the love marks
+// keyed by them, to the new ids, once. It runs at startup before the window
+// opens, so the renderer never reads a half-migrated collection, and keeps a
+// copy of the file it rewrote (collection.json.pre-id-v2.bak). Only ids the
+// old formula had broken change, so most profiles rewrite nothing. A file it
+// can't read or parse is left alone and the migration tries again next launch.
+const { COLLECTION_ID_VERSION } = require('./sync-engine/collection-id');
+const { migrateCollectionIds } = require('./sync-engine/collection-id-migration');
+async function runCollectionIdMigration() {
+  try {
+    if ((store.get('collection_id_version') || 1) >= COLLECTION_ID_VERSION) return;
+    const fsPromises = require('fs').promises;
+    const collectionPath = path.join(app.getPath('userData'), 'collection.json');
+    let collection = null;
+    try {
+      collection = JSON.parse(await fsPromises.readFile(collectionPath, 'utf8'));
+    } catch (error) {
+      if (error.code !== 'ENOENT') {
+        console.warn('[CollectionIds] collection.json unreadable, migration retries next launch:', error.message);
+        return;
+      }
+    }
+    if (collection) {
+      const lovePushedKeys = store.get('love_pushed_keys') || {};
+      const result = migrateCollectionIds(collection, lovePushedKeys);
+      const { tracks, albums, artists, loveKeysMoved, loveKeysDropped } = result.changed;
+      if (tracks || albums || artists) {
+        await fsPromises.copyFile(collectionPath, `${collectionPath}.pre-id-v2.bak`).catch(() => {});
+        await writeCollectionAtomic(collectionPath, result.collection);
+        if (result.lovePushedKeys !== lovePushedKeys) store.set('love_pushed_keys', result.lovePushedKeys);
+      }
+      console.log(`[CollectionIds] v${COLLECTION_ID_VERSION}: ${tracks} tracks, ${albums} albums, ${artists} artists moved to new ids; love marks ${loveKeysMoved} moved, ${loveKeysDropped} dropped`);
+    }
+    store.set('collection_id_version', COLLECTION_ID_VERSION);
+  } catch (error) {
+    console.error('[CollectionIds] migration failed, retries next launch:', error);
+  }
 }
 
 // Collection handlers - store in userData directory for persistence across app updates

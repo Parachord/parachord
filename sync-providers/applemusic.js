@@ -93,12 +93,11 @@ const amPutUnsupportedRef = { current: false };
 // the rename step and abort before tracks are pushed. Resets on restart.
 const amPatchUnsupportedRef = { current: false };
 
-/**
- * Normalize a string for ID generation (lowercase, remove special chars)
- */
-const normalizeForId = (str) => {
-  return (str || '').toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
-};
+// Normalize a string for ID generation: the one shared definition
+// (sync-engine/collection-id.js; non-Latin names fold instead of collapsing,
+// #1401). This provider keeps its own id wrappers below, which have no
+// 'unknown'/'untitled' fallbacks, so its ids for empty fields don't move.
+const { normalizeForId } = require('../sync-engine/collection-id');
 
 /**
  * Generate a consistent ID from artist, title, album

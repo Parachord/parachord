@@ -150,11 +150,12 @@ function loveNameKey(track) {
 // ── Row ids ────────────────────────────────────────────────────────────────
 
 // The id for an imported row. `generateTrackId` while it is meaningful (both
-// the artist and the title leave something after the ASCII strip), else
-// `trackSlug`'s Unicode-aware fold. Without this, every fully non-Latin love
-// collapses to the same `--noalbum` id: 宇多田ヒカル/光 and 宇多田ヒカル/First
-// Love would be one row, and BTS's `First Love` would collide with every
-// other artist's (issue #1071 review).
+// the artist and the title leave something), else `trackSlug`'s fold. Before
+// #1401 the id formula stripped non-Latin text, so every fully non-Latin love
+// took the trackSlug branch (宇多田ヒカル/光 and 宇多田ヒカル/First Love would
+// otherwise have been one `--noalbum` row; #1071 review). generateTrackId
+// keeps non-Latin text now, so the branch only takes names with no letters
+// at all, and the startup migration moved the old trackSlug rows.
 function loveRowId(love) {
   if (normalizeForId(love.artist) && normalizeForId(love.title)) {
     return generateTrackId(love.artist, love.title, love.album);
