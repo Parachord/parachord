@@ -40,6 +40,17 @@ const { Sidebar, SIDEBAR_HANDLERS } = require('../../src/renderer/components/sid
 const { PluginSettingsDialog, PLUGIN_SETTINGS_DIALOG_HANDLERS } = require('../../src/renderer/components/plugin-settings-dialog');
 const { FirstRunTutorial, FIRST_RUN_TUTORIAL_HANDLERS } = require('../../src/renderer/components/first-run-tutorial');
 const { AiPromptPanel, AI_PROMPT_PANEL_HANDLERS } = require('../../src/renderer/components/ai-prompt-panel');
+const { ExternalTrackPrompt, EXTERNAL_TRACK_PROMPT_HANDLERS } = require('../../src/renderer/components/external-track-prompt');
+const { UnsavedFriendDialog, UNSAVED_FRIEND_DIALOG_HANDLERS } = require('../../src/renderer/components/unsaved-friend-dialog');
+const { AiSaveDialog, AI_SAVE_DIALOG_HANDLERS } = require('../../src/renderer/components/ai-save-dialog');
+const { NewPlaylistDialog, NEW_PLAYLIST_DIALOG_HANDLERS } = require('../../src/renderer/components/new-playlist-dialog');
+const { QueueSaveDialog, QUEUE_SAVE_DIALOG_HANDLERS } = require('../../src/renderer/components/queue-save-dialog');
+const { UrlImportDialog, URL_IMPORT_DIALOG_HANDLERS } = require('../../src/renderer/components/url-import-dialog');
+const { AmazonManageDialog } = require('../../src/renderer/components/amazon-manage-dialog');
+const { SyncDeleteDialog, SYNC_DELETE_DIALOG_HANDLERS } = require('../../src/renderer/components/sync-delete-dialog');
+const { NwayMigrationDialog, NWAY_MIGRATION_DIALOG_HANDLERS } = require('../../src/renderer/components/nway-migration-dialog');
+const { SyncChannelDisableDialog } = require('../../src/renderer/components/sync-channel-disable-dialog');
+const { StopSyncDialog, STOP_SYNC_DIALOG_HANDLERS } = require('../../src/renderer/components/stop-sync-dialog');
 const { useStableHandlers } = require('../../src/renderer/lib/stable-handlers');
 
 const PAGES = [
@@ -66,6 +77,17 @@ const PAGES = [
   { component: 'PluginSettingsDialog', file: 'plugin-settings-dialog.js', handlersVar: 'pluginSettingsDialogHandlers', handlers: PLUGIN_SETTINGS_DIALOG_HANDLERS, memo: PluginSettingsDialog },
   { component: 'FirstRunTutorial', file: 'first-run-tutorial.js', handlersVar: 'firstRunTutorialHandlers', handlers: FIRST_RUN_TUTORIAL_HANDLERS, memo: FirstRunTutorial },
   { component: 'AiPromptPanel', file: 'ai-prompt-panel.js', handlersVar: 'aiPromptPanelHandlers', handlers: AI_PROMPT_PANEL_HANDLERS, memo: AiPromptPanel },
+  { component: 'ExternalTrackPrompt', file: 'external-track-prompt.js', handlersVar: 'externalTrackPromptHandlers', handlers: EXTERNAL_TRACK_PROMPT_HANDLERS, memo: ExternalTrackPrompt },
+  { component: 'UnsavedFriendDialog', file: 'unsaved-friend-dialog.js', handlersVar: 'unsavedFriendDialogHandlers', handlers: UNSAVED_FRIEND_DIALOG_HANDLERS, memo: UnsavedFriendDialog },
+  { component: 'AiSaveDialog', file: 'ai-save-dialog.js', handlersVar: 'aiSaveDialogHandlers', handlers: AI_SAVE_DIALOG_HANDLERS, memo: AiSaveDialog },
+  { component: 'NewPlaylistDialog', file: 'new-playlist-dialog.js', handlersVar: 'newPlaylistDialogHandlers', handlers: NEW_PLAYLIST_DIALOG_HANDLERS, memo: NewPlaylistDialog },
+  { component: 'QueueSaveDialog', file: 'queue-save-dialog.js', handlersVar: 'queueSaveDialogHandlers', handlers: QUEUE_SAVE_DIALOG_HANDLERS, memo: QueueSaveDialog },
+  { component: 'UrlImportDialog', file: 'url-import-dialog.js', handlersVar: 'urlImportDialogHandlers', handlers: URL_IMPORT_DIALOG_HANDLERS, memo: UrlImportDialog },
+  { component: 'AmazonManageDialog', file: 'amazon-manage-dialog.js', handlersVar: null, handlers: [], memo: AmazonManageDialog },
+  { component: 'SyncDeleteDialog', file: 'sync-delete-dialog.js', handlersVar: 'syncDeleteDialogHandlers', handlers: SYNC_DELETE_DIALOG_HANDLERS, memo: SyncDeleteDialog },
+  { component: 'NwayMigrationDialog', file: 'nway-migration-dialog.js', handlersVar: 'nwayMigrationDialogHandlers', handlers: NWAY_MIGRATION_DIALOG_HANDLERS, memo: NwayMigrationDialog },
+  { component: 'SyncChannelDisableDialog', file: 'sync-channel-disable-dialog.js', handlersVar: null, handlers: [], memo: SyncChannelDisableDialog },
+  { component: 'StopSyncDialog', file: 'stop-sync-dialog.js', handlersVar: 'stopSyncDialogHandlers', handlers: STOP_SYNC_DIALOG_HANDLERS, memo: StopSyncDialog },
 ];
 
 describe.each(PAGES)('$component', ({ memo }) => {
@@ -171,6 +193,8 @@ describe.each(PAGES)('$component: the app.js call site keeps every prop stable',
 
   test('plain functions come only through the stable-handlers spread, with the documented keys', () => {
     const spread = call.arguments[1].properties.filter((p) => p.type === 'SpreadElement');
+    // A dialog with no plain-function props (SyncChannelDisableDialog) has no spread.
+    if (handlers.length === 0) { expect(spread).toEqual([]); return; }
     expect(spread.map((s) => s.argument.name)).toEqual([handlersVar]);
     expect(stability(resolve(spread[0].argument))).toBe('useStableHandlers');
 
@@ -204,6 +228,7 @@ describe.each(PAGES)('$component: the app.js call site keeps every prop stable',
 // playlist functions it passes (#1451).
 describe.each(PAGES)('$component: every handler is declared above its useStableHandlers hook', ({ handlersVar, handlers }) => {
   test('no handler is read in the TDZ', () => {
+    if (handlers.length === 0) return;
     const hookAt = appSrc.indexOf(`const ${handlersVar} = useStableHandlers(`);
     expect(hookAt).toBeGreaterThan(-1);
     const late = handlers.filter((name) => {

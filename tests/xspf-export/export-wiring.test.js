@@ -29,7 +29,8 @@ describe('playlist XSPF export is reachable', () => {
     expect(playlistView).toMatch(/'Export as XSPF…'/);
     expect(app).toMatch(/data\.action === 'export-playlist' && data\.playlistId/);
     expect(app).toMatch(/const handleSaveQueueToFile = async \(\) => \{/);
-    expect(app).toMatch(/onClick: handleSaveQueueToFile,/);
+    // The queue's Save dialog is components/queue-save-dialog.js.
+    expect(read('src/renderer/components/queue-save-dialog.js')).toMatch(/onClick: handleSaveQueueToFile,/);
   });
 
   test('the native playlist context menu offers the export action', () => {
