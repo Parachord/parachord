@@ -8,7 +8,7 @@
     "inlineOutlineNone": 0,
     "nativeDialogs": 0,
     "asciiEllipsis": 2,
-    "svgPaths": 102,
+    "svgPaths": 75,
     "offScaleFontSizes": 1,
     "offScaleRadii": 0,
     "jsHover": 0,
@@ -19,7 +19,8 @@
     "emptyStateCopies": 6,
     "filterPillCopies": 0,
     "heroCopies": 0,
-    "stickyBarCopies": 0
+    "stickyBarCopies": 0,
+    "handBuiltButtons": 111
   },
   "undefinedCssVars": []
 }

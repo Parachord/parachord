@@ -32,6 +32,7 @@ const { ListenerCard } = require('./listener-card');
 const { countOf } = require('../lib/plural');
 const { PAGE_COLORS } = require('../lib/page-colors');
 const { CollectionRadioButton } = require('./collection-radio-button');
+const { Button, buttonClassName } = require('./button');
 
 // Plain functions from Parachord, passed as stable wrappers.
 const COLLECTION_PAGE_HANDLERS = [
@@ -244,15 +245,11 @@ React.createElement('div', { className: 'ml-auto' },
                   align: 'right',
                   minWidth: 220,
                   items,
+                  // The shared small secondary button (components/button.js), as
+                  // Playlists' Import is.
                   renderTrigger: (t) => React.createElement('button', Object.assign({}, t, {
                     type: 'button',
-                    className: 'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5',
-                    style: {
-                      backgroundColor: syncOn ? PAGE_COLORS.library.fill : 'var(--nav-inactive)',
-                      color: 'var(--on-accent)',
-                      border: 'none',
-                      cursor: 'pointer'
-                    },
+                    className: buttonClassName({ variant: 'secondary', size: 'sm' }),
                     'data-tooltip': 'Sync your music library'
                   }),
                     React.createElement(Icons.RefreshCw, { className: 'w-4 h-4' }),
@@ -269,7 +266,9 @@ React.createElement('div', { className: 'ml-auto' },
               const lastfmConfig = metaServiceConfigs.lastfm;
               const listenbrainzConfig = metaServiceConfigs.listenbrainz;
               const hasCreds = !!(lastfmConfig?.username || listenbrainzConfig?.username);
-              return React.createElement('button', {
+              // The shared icon button (components/button.js).
+              return React.createElement(Button, {
+                variant: 'icon', size: 'sm', className: 'ml-3',
                 onClick: () => syncFriendsFromServices({ silent: false }),
                 disabled: friendSyncInProgress || !hasCreds,
                 'aria-label': hasCreds
@@ -277,23 +276,17 @@ React.createElement('div', { className: 'ml-auto' },
                   : 'Connect Last.fm or ListenBrainz in Settings to sync friends', 'data-tooltip': hasCreds
                   ? 'Sync friends from Last.fm and ListenBrainz'
                   : 'Connect Last.fm or ListenBrainz in Settings to sync friends',
-                className: 'ml-3 p-1.5 text-ink-tertiary hover:text-ink-secondary transition-colors',
-                style: { opacity: friendSyncInProgress || !hasCreds ? 0.4 : 1, cursor: hasCreds ? 'pointer' : 'not-allowed' }
               },
                 friendSyncInProgress
-                  ? React.createElement(Icons.Spinner, { className: 'w-5 h-5' })
-                  : React.createElement('svg', {
-                      className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor'
-                    },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15' })
-                    )
+                  ? React.createElement(Icons.Spinner, { className: 'w-4 h-4' })
+                  : React.createElement(Icons.RefreshCw, { className: 'w-4 h-4' })
               );
             })(),
             // Add Friend button in header (only on friends tab)
-            collectionTab === 'friends' && React.createElement('button', {
-              onClick: () => setAddFriendModalOpen(true),
-              className: 'ml-3 px-3 py-1.5 text-white rounded-lg text-sm font-medium transition-[filter] hover:brightness-110 flex items-center gap-1.5',
-              style: { backgroundColor: PAGE_COLORS.library.fill }
+            // The shared small primary button, in Collection's colour.
+            collectionTab === 'friends' && React.createElement(Button, {
+              variant: 'primary', size: 'sm', pageColor: PAGE_COLORS.library.fill, className: 'ml-3',
+              onClick: () => setAddFriendModalOpen(true)
             },
               React.createElement(Icons.Plus, { className: 'w-4 h-4' }),
               'Add friend'

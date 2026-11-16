@@ -61,6 +61,7 @@ const METRICS = {
   filterPillCopies: 'Hand-built pill buttons (rounded-full px-3 py-1…). Use FilterChips.',
   heroCopies: 'Hand-built page heroes (a 320px block collapsing to 80px). Use PageHero (components/page-hero.js); the artist page\'s photo hero is the one other design.',
   stickyBarCopies: 'Hand-built sticky bars (sticky top-0 classes). Use StickyBar (components/filter-box.js).',
+  handBuiltButtons: 'Buttons and links styled as buttons by hand (their own padding plus a fill, border or radius, in classes or inline style). Use Button / buttonClassName (components/button.js), or the shared component for that control.',
 };
 
 // The file each copy metric's shared component lives in: its own uses don't count.
@@ -72,6 +73,11 @@ const COPY_HOMES = {
   filterPillCopies: ['components/filter-chips.js'],
   stickyBarCopies: ['components/filter-box.js'],
   heroCopies: ['components/page-hero.js'],
+  // Shared components whose own buttons are the one look for their control.
+  handBuiltButtons: ['components/button.js', 'components/header-control.js', 'components/card-button.js', 'components/filter-chips.js',
+    'components/menu.js', 'components/sort-menu.js', 'components/fields.js', 'components/collection-radio-button.js',
+    'components/tickets-button.js', 'components/hero-tabs.js', 'components/toast.js', 'components/reason-badge.js',
+    'components/album-card.js', 'components/artist-card.js', 'components/listener-card.js', 'components/card-art.js'],
 };
 
 function rendererFiles(dir = RENDERER, out = []) {
@@ -149,6 +155,19 @@ function scanSource(src) {
         const classText = cls && cls.value ? src.slice(cls.value.start, cls.value.end) : '';
         if (/\banimate-spin\b|\bborder-t-transparent\b/.test(classText)) counts.spinnerCopies += 1;
         if (tag === 'button' && /\brounded-full\b/.test(classText) && /\bpx-3\b/.test(classText) && /\bpy-1(?:\.5)?\b/.test(classText)) counts.filterPillCopies += 1;
+        if (tag === 'button' || tag === 'a') {
+          // A Menu trigger spreads its props: Object.assign({}, t, { ... }).
+          const arg = node.arguments[1];
+          const own = arg && arg.type === 'CallExpression' && arg.arguments.length ? arg.arguments[arg.arguments.length - 1] : arg;
+          const ps = own && own.type === 'ObjectExpression' ? own.properties : [];
+          const c = ps.find((p) => propKey(p) === 'className');
+          const cText = c && c.value ? src.slice(c.value.start, c.value.end) : '';
+          const st = ps.find((p) => propKey(p) === 'style');
+          const sText = st && st.value ? src.slice(st.value.start, st.value.end) : '';
+          const byClass = /(?:^|[\s`'"])(?:p|px|py|pl|pr|pt|pb)-\d/.test(cText) && /(?:^|[\s`'"])(?:rounded(?:-\w+)?|bg-[\w[]|border(?:-\w+)?)(?=[\s`'"]|$)/.test(cText);
+          const byStyle = /\bpadding\b/.test(sText) && /\b(?:backgroundColor|background|borderRadius|border)\b/.test(sText);
+          if ((byClass || byStyle) && !/buttonClassName\(|APP_PLAY_BTN|card-button-hit/.test(cText)) counts.handBuiltButtons += 1;
+        }
         if (/\bsticky\b/.test(classText) && /\btop-0\b/.test(classText)) counts.stickyBarCopies += 1;
         const aria = props.find((p) => propKey(p) === 'aria-label');
         const ariaText = aria && aria.value ? (aria.value.type === 'StringLiteral' ? aria.value.value : aria.value.type === 'TemplateLiteral' ? aria.value.quasis[0].value.cooked : '') : '';

@@ -18190,13 +18190,7 @@ ${trackListXml}
               flexShrink: 0
             }
           },
-            React.createElement('svg', {
-              style: { width: '20px', height: '20px' },
-              fill: 'white',
-              viewBox: '0 0 24 24'
-            },
-              React.createElement('path', { d: 'M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z' })
-            )
+            React.createElement(Icons.ListMusic, { style: { width: '20px', height: '20px', color: 'var(--on-accent)' } })
           ),
           // Text content
           React.createElement('div', { style: { flex: 1, minWidth: 0 } },
@@ -37440,9 +37434,7 @@ useEffect(() => {
                 fontWeight: playlistsNavActive ? '500' : '400'
               }
             },
-              React.createElement('svg', { className: 'w-4 h-4 flex-shrink-0', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 6h16M4 10h16M4 14h16M4 18h16' })
-              ),
+              React.createElement(Icons.ListMusic, { className: 'w-4 h-4 flex-shrink-0' }),
               'Playlists',
               sidebarBadges.playlists && React.createElement('span', {
                 key: `playlists-badge-${Date.now()}`,
@@ -37476,9 +37468,7 @@ useEffect(() => {
                 fontWeight: activeView === 'library' ? '500' : '400'
               }
             },
-              React.createElement('svg', { className: 'w-4 h-4 flex-shrink-0', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10' })
-              ),
+              React.createElement(Icons.Library, { className: 'w-4 h-4 flex-shrink-0' }),
               'Collection',
               sidebarBadges.collection && React.createElement('span', {
                 key: `collection-badge-${Date.now()}`,
@@ -37578,9 +37568,7 @@ useEffect(() => {
               }
             },
               // Bar chart icon for Charts
-              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' })
-              ),
+              React.createElement(Icons.BarChart3, { className: 'w-4 h-4' }),
               React.createElement('span', { className: 'flex items-center gap-1.5' },
                 'Pop of the Tops',
                 showDiscoveryBadges && discoveryUnread.charts && React.createElement('span', {
@@ -37925,10 +37913,7 @@ useEffect(() => {
             },
             onClick: () => navigateTo('settings')
           },
-            React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z' }),
-              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M15 12a3 3 0 11-6 0 3 3 0 016 0z' })
-            ),
+            React.createElement(Icons.Settings, { className: 'w-4 h-4' }),
             React.createElement('span', {
               style: {
                 fontSize: '11px',
@@ -38290,9 +38275,7 @@ collapsedContent: null
               className: `p-1.5 rounded transition-colors ${playlistsViewMode === 'table' ? 'bg-line text-ink-secondary' : 'text-ink-tertiary hover:text-ink-secondary'}`,
               'aria-label': 'Table view', 'data-tooltip': 'Table view'
             },
-              React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h16' })
-              )
+              React.createElement(Icons.List, { className: 'w-5 h-5' })
             )
           ),
           // Search
@@ -39508,10 +39491,7 @@ React.createElement('span', {
                   },
                     concertsGeocodingLoading
                       ? React.createElement(Icons.RefreshCw, { className: 'w-4 h-4 animate-spin' })
-                      : React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                          React.createElement('circle', { cx: 12, cy: 12, r: 3, strokeWidth: 2 }),
-                          React.createElement('path', { strokeLinecap: 'round', strokeWidth: 2, d: 'M12 2v4m0 12v4m10-10h-4M6 12H2' })
-                        )
+                      : React.createElement(Icons.LocateFixed, { className: 'w-4 h-4' })
                   )
                 ),
                 // Location search suggestions
@@ -43402,13 +43382,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                   cursor: repeatDisabled ? 'not-allowed' : 'pointer'
                 }
               },
-                React.createElement('svg', { className: 'w-4 h-4', viewBox: '0 0 24 24', fill: 'currentColor' },
-                  React.createElement('path', {
-                    d: repeatMode === 'one'
-                      ? 'M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4zm-4-2V9h-1l-2 1v1h1.5v4H13z'
-                      : 'M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z'
-                  })
-                )
+                React.createElement(repeatMode === 'one' ? Icons.Repeat1 : Icons.Repeat, { className: 'w-4 h-4' })
               )
             );
           })(),
@@ -43496,16 +43470,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                   onClick: handleMuteToggle,
                   disabled: isDisabled
                 },
-                  React.createElement('svg', { width: 16, height: 16, viewBox: '0 0 18 18', fill: 'currentColor' },
-                    isMuted || effectiveVolume === 0
-                      // Muted icon (speaker with diagonal slash)
-                      ? React.createElement('g', null,
-                          React.createElement('path', { d: 'M16,17.4l-6.1-3.8H2V5.1h6.9L16,0.6V17.4z M3,12.6h7.2l4.8,3V2.4L9.1,6.1H3V12.6z' }),
-                          React.createElement('line', { x1: '1', y1: '17', x2: '17', y2: '1', stroke: 'currentColor', strokeWidth: '2', strokeLinecap: 'round' })
-                        )
-                      // Normal volume icon
-                      : React.createElement('path', { d: 'M16,17.4l-6.1-3.8H2V5.1h6.9L16,0.6V17.4z M3,12.6h7.2l4.8,3V2.4L9.1,6.1H3V12.6z' })
-                  )
+                  React.createElement(isMuted || effectiveVolume === 0 ? Icons.VolumeX : Icons.Volume2, { size: 16 })
                 )
               ),
               React.createElement(Tooltip, {
@@ -43952,14 +43917,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                           flexShrink: 0
                         }
                       },
-                        React.createElement('svg', {
-                          width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none',
-                          stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round'
-                        },
-                          React.createElement('path', { d: 'M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8' }),
-                          React.createElement('polyline', { points: '16 6 12 2 8 6' }),
-                          React.createElement('line', { x1: 12, y1: 2, x2: 12, y2: 15 })
-                        )
+                        React.createElement(Icons.Share, { size: 14 })
                       ),
                       React.createElement('div', {
                         style: {
@@ -47268,19 +47226,7 @@ React.createElement('div', {
               justifyContent: 'center'
             }
           },
-            React.createElement('svg', {
-              className: 'w-8 h-8 text-white',
-              fill: 'none',
-              viewBox: '0 0 24 24',
-              stroke: 'currentColor',
-              strokeWidth: 1.5
-            },
-              React.createElement('path', {
-                strokeLinecap: 'round',
-                strokeLinejoin: 'round',
-                d: 'M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-1.605.42-3.113 1.157-4.418'
-              })
-            )
+            React.createElement(Icons.Globe, { className: 'w-8 h-8 text-white' })
           ),
           // Title
           React.createElement('div', null,
@@ -48500,14 +48446,7 @@ React.createElement('div', { style: { marginTop: '12px' } },
         alignItems: 'center',
         gap: '8px'
       };
-      const copyIcon = () => React.createElement('svg', {
-        width: 14, height: 14, viewBox: '0 0 24 24',
-        fill: 'none', stroke: 'currentColor', strokeWidth: 2,
-        strokeLinecap: 'round', strokeLinejoin: 'round'
-      },
-        React.createElement('rect', { x: 9, y: 9, width: 13, height: 13, rx: 2, ry: 2 }),
-        React.createElement('path', { d: 'M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1' })
-      );
+      const copyIcon = () => React.createElement(Icons.Copy, { size: 14 });
       const items = [];
       if (parachordLinkMenu.achordionShare) {
         items.push(
@@ -48532,15 +48471,7 @@ React.createElement('div', { style: { marginTop: '12px' } },
               },
               style: itemStyle,
             },
-              React.createElement('svg', {
-                width: 14, height: 14, viewBox: '0 0 24 24',
-                fill: 'none', stroke: 'currentColor', strokeWidth: 2,
-                strokeLinecap: 'round', strokeLinejoin: 'round'
-              },
-                React.createElement('path', { d: 'M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6' }),
-                React.createElement('polyline', { points: '15 3 21 3 21 9' }),
-                React.createElement('line', { x1: 10, y1: 14, x2: 21, y2: 3 })
-              ),
+              React.createElement(Icons.ExternalLink, { size: 14 }),
               'View on Achordion'
             )
           );
@@ -49529,27 +49460,10 @@ firstRunTutorial.step === 'welcome' && React.createElement(React.Fragment, null,
               style: { display: 'flex', flexDirection: 'column', gap: '12px' }
             },
               [
-                { icon: React.createElement('svg', { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'var(--accent-primary)', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' },
-                  React.createElement('path', { d: 'M9 18V5l12-2v13' }),
-                  React.createElement('circle', { cx: 6, cy: 18, r: 3 }),
-                  React.createElement('circle', { cx: 18, cy: 16, r: 3 })
-                ), text: 'Play from the streaming services you use, your own files, and more' },
-                { icon: React.createElement('svg', { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'var(--accent-primary)', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' },
-                  React.createElement('circle', { cx: 11, cy: 11, r: 8 }),
-                  React.createElement('path', { d: 'M21 21l-4.35-4.35' })
-                ), text: 'Search all your sources at once' },
-                { icon: React.createElement('svg', { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'var(--accent-primary)', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' },
-                  React.createElement('path', { d: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z' }),
-                  React.createElement('path', { d: 'M14 2v6h6' }),
-                  React.createElement('line', { x1: 16, y1: 13, x2: 8, y2: 13 }),
-                  React.createElement('line', { x1: 16, y1: 17, x2: 8, y2: 17 })
-                ), text: 'Create playlists that span services' },
-                { icon: React.createElement('svg', { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'var(--accent-primary)', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' },
-                  React.createElement('path', { d: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2' }),
-                  React.createElement('circle', { cx: 9, cy: 7, r: 4 }),
-                  React.createElement('path', { d: 'M23 21v-2a4 4 0 0 0-3-3.87' }),
-                  React.createElement('path', { d: 'M16 3.13a4 4 0 0 1 0 7.75' })
-                ), text: 'Connect with friends on Last.fm & ListenBrainz' }
+                { icon: React.createElement(Icons.Music, { size: 18 , color: 'var(--accent-primary)' }), text: 'Play from the streaming services you use, your own files, and more' },
+                { icon: React.createElement(Icons.Search, { size: 18 , color: 'var(--accent-primary)' }), text: 'Search all your sources at once' },
+                { icon: React.createElement(Icons.FileText, { size: 18 , color: 'var(--accent-primary)' }), text: 'Create playlists that span services' },
+                { icon: React.createElement(Icons.Users, { size: 18 , color: 'var(--accent-primary)' }), text: 'Connect with friends on Last.fm & ListenBrainz' }
               ].map((item, i) =>
                 React.createElement('div', {
                   key: i,
@@ -49688,9 +49602,7 @@ firstRunTutorial.step === 'sources' && React.createElement(React.Fragment, null,
               alignItems: 'center'
             }
           },
-            React.createElement(Button, { variant: 'secondary', onClick: () => setFirstRunTutorial(prev => ({ ...prev, step: 'welcome' })) }, React.createElement('svg', { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
-                React.createElement('path', { d: 'M19 12H5M12 19l-7-7 7-7' })
-              ), 'Back'),
+            React.createElement(Button, { variant: 'secondary', onClick: () => setFirstRunTutorial(prev => ({ ...prev, step: 'welcome' })) }, React.createElement(Icons.ArrowLeft, { size: 16 }), 'Back'),
             React.createElement(Button, { variant: 'primary', onClick: () => setFirstRunTutorial(prev => ({
               ...prev, step: 'accounts',
               lastfmUsername: prev.lastfmUsername || metaServiceConfigs.lastfm?.username || '',
@@ -49951,9 +49863,7 @@ firstRunTutorial.step === 'complete' && (() => {
           React.createElement('div', {
             className: 'flex flex-col items-center justify-center h-full text-on-dark-tertiary'
           },
-            React.createElement('svg', { className: 'w-10 h-10 text-on-dark-disabled mb-2', fill: 'currentColor', viewBox: '0 0 24 24' },
-              React.createElement('path', { d: 'M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z' })
-            ),
+            React.createElement(Icons.Music, { className: 'w-10 h-10 text-on-dark-disabled mb-2' }),
             React.createElement('span', { className: 'text-on-dark-secondary' }, 'Queue is empty'),
             React.createElement('span', { className: 'text-sm text-on-dark-tertiary mt-1' }, 'Play a playlist to add tracks')
           )
@@ -50099,26 +50009,7 @@ firstRunTutorial.step === 'complete' && (() => {
           )
         ),
         // Hide arrow for spinoff (not clickable)
-        playbackContext.type !== 'spinoff' && React.createElement('svg', {
-          className: 'w-4 h-4 text-[var(--playbar-accent)]',
-          fill: 'none',
-          stroke: 'currentColor',
-          viewBox: '0 0 24 24'
-        },
-          playbackContext.type === 'url'
-            ? React.createElement('path', {
-                strokeLinecap: 'round',
-                strokeLinejoin: 'round',
-                strokeWidth: 2,
-                d: 'M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14'
-              })
-            : React.createElement('path', {
-                strokeLinecap: 'round',
-                strokeLinejoin: 'round',
-                strokeWidth: 2,
-                d: 'M14 5l7 7m0 0l-7 7m7-7H3'
-              })
-        )
+        playbackContext.type !== 'spinoff' && React.createElement(playbackContext.type === 'url' ? Icons.ExternalLink : Icons.ArrowRight, { className: 'w-4 h-4 text-[var(--playbar-accent)]' })
       )
     )
   );
