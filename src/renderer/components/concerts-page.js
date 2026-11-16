@@ -146,6 +146,8 @@ React.createElement('span', {
             // (including those merged into another service's row, its
             // ticketSources, lib/concert-events.js) in its plugin's colour.
             (() => {
+              // Read at render; the call site passes _allResolvers and
+              // _metaServices so this re-renders once the plug-ins load.
               const allResolvers = resolverLoaderRef.current ? resolverLoaderRef.current.getAllResolvers() : [];
               const chips = [{ id: 'all', label: 'All' }];
               const seen = new Set();
