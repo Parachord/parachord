@@ -6,13 +6,14 @@ const fs = require('fs');
 const path = require('path');
 
 const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
-const start = app.indexOf('addToPlaylistPanel.open && React.createElement(\'div\', {');
+const start = app.indexOf('addToPlaylistPanel.open && React.createElement(SidePanel, {');
 const panel = app.slice(start, start + 30000);
 
-test('it is a dialog: focus goes in and comes back, and Escape closes it', () => {
-  expect(panel).toMatch(/ref: addPanelRef,\s*role: 'dialog',\s*'aria-modal': 'true',\s*'aria-label': 'Add to playlist',\s*tabIndex: -1,/);
-  expect(panel).toContain("onKeyDown: (e) => { if (e.key === 'Escape' && !e.defaultPrevented) { e.stopPropagation(); closeAddToPlaylistPanel(); } },");
-  expect(app).toMatch(/const addPanelRef = useCallback\(\(el\) => \{[\s\S]{0,200}el\.focus\(\);[\s\S]{0,300}prev\.focus\(\);/);
+test('it is the shared SidePanel: focus goes in, is trapped and comes back, and Escape closes it', () => {
+  expect(start).toBeGreaterThan(0);
+  expect(panel).toMatch(/React\.createElement\(SidePanel, \{\s*onClose: closeAddToPlaylistPanel,\s*label: 'Add to playlist',/);
+  // No second copy of the focus handling (#1449).
+  expect(app).not.toContain('addPanelRef');
   // An inner field's own Escape doesn't close the panel.
   expect(panel).toMatch(/\/\/ Closes the form only, not the panel around it\.\s*e\.preventDefault\(\);/);
 });

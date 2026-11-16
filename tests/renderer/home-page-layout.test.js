@@ -405,7 +405,7 @@ describe('design-audit copy and motion fixes (#1382)', () => {
   });
 
   test('card-fade-up releases the card when it ends, so the hover lift applies', () => {
-    expect(html).toMatch(/\.card-fade-up \{\s*animation: cardFadeUp 0\.4s cubic-bezier\(0\.4, 0, 0\.2, 1\) backwards;\s*\}/);
+    expect(html).toMatch(/\.card-fade-up \{\s*animation: cardFadeUp var\(--motion-deliberate\) var\(--ease-standard\) backwards;\s*\}/);
     expect(html).toMatch(/\.release-card:hover \{[^}]*!important;/);
   });
 
