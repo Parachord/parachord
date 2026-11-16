@@ -4033,6 +4033,21 @@ const Parachord = () => {
 
   // Resolver sync settings
   const [resolverSyncSettings, setResolverSyncSettings] = useState({});
+  // Services whose last sign-in check definitely failed ({ [id]: true }): the
+  // Sync menu shows their switch off ("Signed out"), whatever `enabled` says,
+  // since nothing syncs until they sign in again. Fed only by the checks the
+  // app already makes (no extra calls); a check that couldn't reach the
+  // service changes nothing.
+  const [syncSignedOut, setSyncSignedOut] = useState({});
+  const noteSyncAuth = (providerId, authStatus) => {
+    if (!authStatus) return;
+    let out = null;
+    if (authStatus.authenticated) out = false;
+    else if (authStatus.status === 401 || authStatus.status === 403 || authStatus.tokenRejected
+      || /no token|token configured|not connected/i.test(authStatus.error || '')) out = true;
+    if (out === null) return;
+    setSyncSignedOut(prev => (!!prev[providerId] === out ? prev : { ...prev, [providerId]: out }));
+  };
   const [syncStatus, setSyncStatus] = useState({});
   const pendingSyncSetupRef = useRef(null); // Track pending sync setup after Spotify auth redirect
   const spotifyAuthSucceededAtRef = useRef(0); // Last Spotify auth success; guards the sync flow against re-auth loops (parachord#986)
@@ -4228,6 +4243,7 @@ const Parachord = () => {
           }
           try {
             const authStatus = await window.electron.sync.checkAuth(providerId);
+            noteSyncAuth(providerId, authStatus);
             if (authStatus.authenticated) {
               console.log(`[Sync] Starting background sync for ${providerId}`);
               // Track this provider as in-flight so the foreground handler
@@ -9616,6 +9632,7 @@ const Parachord = () => {
 
     // Check auth
     let authStatus = await window.electron.sync.checkAuth(providerId);
+    noteSyncAuth(providerId, authStatus);
     if (!authStatus.authenticated) {
       if (providerId === 'spotify') {
         // Never start another login right after one succeeded. The token we
@@ -9703,6 +9720,7 @@ const Parachord = () => {
               await window.electron.store.set('applemusic_authorized', true);
             }
             authStatus = await window.electron.sync.checkAuth(providerId);
+            noteSyncAuth(providerId, authStatus);
 
             // Enable the Apple Music resolver so tracks can be resolved/played
             if (authStatus.authenticated) {
@@ -10376,6 +10394,35 @@ const Parachord = () => {
     }));
 
     setStopSyncDialog({ open: false, providerId: null });
+  };
+
+  // The Sync menu's on/off switch (components/collection-page.js). Off is a
+  // pause: only `enabled` changes. Every other setting, the Collection's
+  // syncSources and playlists' syncedFrom/syncedTo stay, and nothing calls the
+  // service until it's back on (the background loop, the startup syncs, the
+  // love/unlove pushes and the N-way drive all check `enabled`). Removing what
+  // a service synced is Settings' Stop syncing, not this. On: a service with
+  // saved choices resumes with them on the next background run; one never set
+  // up opens the setup dialog instead.
+  const setProviderSyncEnabled = async (providerId, enabled) => {
+    const existing = resolverSyncSettingsRef.current[providerId];
+    // Never set up, or signed out: setup, which asks for the sign-in first.
+    if (enabled && (!existing || syncSignedOut[providerId])) { openSyncSetupModal(providerId); return; }
+    const next = { ...existing, enabled };
+    // The ref first: a love or unlove in the same tick reads it.
+    resolverSyncSettingsRef.current = { ...resolverSyncSettingsRef.current, [providerId]: next };
+    setResolverSyncSettings(prev => ({ ...prev, [providerId]: { ...prev[providerId], enabled } }));
+    try {
+      await window.electron.syncSettings.setProvider(providerId, next);
+    } catch (err) {
+      console.error('[Sync] Could not save the sync switch:', err);
+      showToast(errorText(err, 'Couldn’t change sync. Try again.'), 'error');
+      return;
+    }
+    // A sync already running for it stops now, not at its end.
+    if (!enabled) window.electron.sync.cancel(providerId).catch(() => {});
+    const name = syncProviderConfig[providerId]?.name || 'This service';
+    showToast(enabled ? `${name} sync is on` : `${name} sync is paused. Your synced music stays.`);
   };
 
   // Browser extension event handlers
@@ -14848,7 +14895,9 @@ ${trackListXml}
       const syncSettings = resolverSyncSettingsRef.current;
       if (window.electron?.sync) {
         // Spotify: remove if synced from or pushed to Spotify
-        if ((existingTrack.syncSources?.spotify || syncSettings?.spotify?.enabled) && existingTrack.spotifyId) {
+        // Only while Spotify sync is on: a paused service is never called
+        // (the tombstone keeps the next sync from bringing it back).
+        if (syncSettings?.spotify?.enabled && existingTrack.spotifyId) {
           window.electron.sync.removeTracks('spotify', [existingTrack.spotifyId])
             .then(result => {
               if (result.success) console.log(`[Sync] Removed "${track.title}" from Spotify Liked Songs`);
@@ -15076,7 +15125,9 @@ ${trackListXml}
       // Remove from connected sync providers
       const syncSettings = resolverSyncSettingsRef.current;
       if (window.electron?.sync) {
-        if ((existingAlbum.syncSources?.spotify || syncSettings?.spotify?.enabled) && existingAlbum.spotifyId) {
+        // Only while Spotify sync is on: a paused service is never called
+        // (the tombstone keeps the next sync from bringing it back).
+        if (syncSettings?.spotify?.enabled && existingAlbum.spotifyId) {
           window.electron.sync.removeAlbums('spotify', [existingAlbum.spotifyId])
             .then(result => {
               if (result.success) console.log(`[Sync] Removed "${album.title}" from Spotify Saved Albums`);
@@ -15109,7 +15160,9 @@ ${trackListXml}
       // Remove from connected sync providers
       const syncSettings = resolverSyncSettingsRef.current;
       if (window.electron?.sync) {
-        if ((existingArtist.syncSources?.spotify || syncSettings?.spotify?.enabled) && existingArtist.spotifyId) {
+        // Only while Spotify sync is on: a paused service is never called
+        // (the tombstone keeps the next sync from bringing it back).
+        if (syncSettings?.spotify?.enabled && existingArtist.spotifyId) {
           window.electron.sync.unfollowArtists('spotify', [existingArtist.spotifyId])
             .then(result => {
               if (result.success) console.log(`[Sync] Unfollowed "${artist.name}" on Spotify`);
@@ -37275,7 +37328,7 @@ useEffect(() => {
     addToQueue, albumCardActions, copyParachordLink, fetchArtistData, getAlbumArt, getArtistImage,
     getArtistTopTracks, getCollectionSortOptions, handleCollectionAlbumClick, handlePlay,
     handlePlaylistDragEnd, handleStartCollectionStation, isOnAir, navigateToFriend,
-    openChartsAlbum, openSyncSetupModal, playArtistTopTracks, playListenerTopTracks, setQueueWithContext, syncFriendsFromServices,
+    openChartsAlbum, openSyncSetupModal, playArtistTopTracks, playListenerTopTracks, setProviderSyncEnabled, setQueueWithContext, syncFriendsFromServices,
   });
 
   // The sidebar item a playlist page belongs to. An ephemeral playlist (a
@@ -38337,7 +38390,7 @@ collapsedContent: null
 
         // Library view with collapsible hero header (matching Recommendations pattern)
         activeView === 'library' && React.createElement(CollectionPage, {
-          activeResolvers: playbackResolvers, allResolvers, autoPinnedFriendIds, collectionData, collectionHeaderCollapsed, collectionLoading, collectionObserverRef, collectionScrollContainerRef, collectionSearch, collectionSearchOpen, collectionSongsSorted, collectionSort, collectionTab, collectionTrackRowRefs, currentTrack, filterCollectionItems, friendSyncInProgress, friends, handleCollectionScrollContainerRef, isPlaying, library, libraryLoading, metaServiceConfigs, pinnedFriendIds, playbackContext, resolverOrder, resolverSyncSettings, setAddFriendModalOpen, setAddToPlaylistPanel, setCollectionHeaderCollapsed, setCollectionSearch, setCollectionSearchOpen, setCollectionSort, setCollectionTab, setDraggingTrackForPlaylist, setSyncStatusModal, setTrackLoading, showToast, sortCollectionItems, syncProviderConfig, syncStatus, trackSources,
+          activeResolvers: playbackResolvers, allResolvers, autoPinnedFriendIds, collectionData, collectionHeaderCollapsed, collectionLoading, collectionObserverRef, collectionScrollContainerRef, collectionSearch, collectionSearchOpen, collectionSongsSorted, collectionSort, collectionTab, collectionTrackRowRefs, currentTrack, filterCollectionItems, friendSyncInProgress, friends, handleCollectionScrollContainerRef, isPlaying, library, libraryLoading, metaServiceConfigs, pinnedFriendIds, playbackContext, resolverOrder, resolverSyncSettings, syncSignedOut, setAddFriendModalOpen, setAddToPlaylistPanel, setCollectionHeaderCollapsed, setCollectionSearch, setCollectionSearchOpen, setCollectionSort, setCollectionTab, setDraggingTrackForPlaylist, setSyncStatusModal, setTrackLoading, showToast, sortCollectionItems, syncProviderConfig, syncStatus, trackSources,
           ...collectionPageHandlers
         }),
 
@@ -47629,7 +47682,7 @@ React.createElement('div', {
             React.createElement('div', null,
               React.createElement('h2', {
                 style: { fontSize: '20px', fontWeight: '600', color: 'var(--text-primary)' }
-              }, syncSetupModal.step === 'complete' ? 'Sync Complete' : `Sync Your ${syncProviderConfig[syncSetupModal.providerId]?.name || 'Music'} Library`),
+              }, syncSetupModal.step === 'complete' ? 'Sync complete' : `Sync your ${syncProviderConfig[syncSetupModal.providerId]?.name || 'music'} library`),
               React.createElement('p', {
                 style: { fontSize: '13px', color: 'var(--text-secondary)', marginTop: '2px' }
               },
@@ -47642,6 +47695,7 @@ React.createElement('div', {
           ),
           // Close button
           !syncSetupModal.progress && React.createElement('button', {
+            type: 'button', 'aria-label': 'Close', 'data-tooltip': 'Close',
             onClick: () => setSyncSetupModal(prev => ({ ...prev, open: false })),
             className: 'transition-colors hover:!text-[var(--text-secondary)] hover:!bg-[var(--hover-bg-default)]',
             style: { padding: '6px', color: 'var(--text-tertiary)', borderRadius: '8px' },
@@ -48011,11 +48065,30 @@ React.createElement('div', {
           className: 'flex justify-end gap-3',
           style: { padding: '16px 24px 20px', borderTop: '1px solid var(--border-subtle)' }
         },
-          // Options step buttons
-          syncSetupModal.step === 'options' && React.createElement(React.Fragment, null,
-            React.createElement(Button, { variant: 'secondary', onClick: () => setSyncSetupModal(prev => ({ ...prev, open: false })) }, 'Cancel'),
-            React.createElement('button', { className: 'hover:brightness-110',
-              onClick: async () => {
+          // The footer (the shared Button, in the service's colour). A
+          // service that already syncs says Save; with nothing ticked, a new
+          // one can't start, and a syncing one offers to turn sync off (the
+          // Sync menu's pause: nothing synced is removed).
+          ...(() => {
+            const pid = syncSetupModal.providerId;
+            const syncingNow = !!resolverSyncSettings[pid]?.enabled;
+            const st = syncSetupModal.settings || {};
+            // Only the options this service offers count: ListenBrainz shows
+            // Playlists alone, while its saved tracks/albums/artists flags stay on.
+            const caps = syncProviderConfig[pid]?.capabilities || {};
+            const chosen = (cap, key) => !!caps[cap] && !!st[key];
+            const nothingChosen = !chosen('tracks', 'syncTracks') && !chosen('albums', 'syncAlbums') && !chosen('artists', 'syncArtists') && !chosen('playlists', 'syncPlaylists');
+            const fill = syncProviderConfig[pid]?.color || 'var(--accent-fill)';
+            const close = () => setSyncSetupModal(prev => ({ ...prev, open: false }));
+            if (syncSetupModal.step === 'options') {
+              return [
+                React.createElement(Button, { key: 'cancel', variant: 'secondary', onClick: close }, 'Cancel'),
+                nothingChosen && syncingNow
+                  ? React.createElement(Button, { key: 'off', variant: 'primary', pageColor: fill, onClick: () => { setProviderSyncEnabled(pid, false); close(); } }, 'Turn off sync')
+                  : React.createElement(Button, {
+                      key: 'go', variant: 'primary', pageColor: fill, disabled: nothingChosen,
+                      'data-tooltip': nothingChosen ? 'Choose something to sync' : undefined,
+                      onClick: async () => {
                 if (syncSetupModal.settings.syncPlaylists) {
                   // Load playlists first
                   setSyncSetupModal(prev => ({ ...prev, step: 'playlists', error: null }));
@@ -48051,57 +48124,21 @@ React.createElement('div', {
                 } else {
                   startSync();
                 }
-              },
-              style: {
-                padding: '10px 24px',
-                fontSize: '14px',
-                fontWeight: '500',
-                color: 'var(--on-accent)',
-                backgroundColor: syncProviderConfig[syncSetupModal.providerId]?.color || 'var(--accent-fill)',
-                border: 'none',
-                borderRadius: '10px',
-                cursor: 'pointer',
-                transition: 'background-color 150ms ease'
-              },
-            }, syncSetupModal.settings.syncPlaylists ? 'Next' : 'Start Sync')
-          ),
-
-          // Playlists step buttons
-          syncSetupModal.step === 'playlists' && React.createElement(React.Fragment, null,
-            React.createElement(Button, { variant: 'secondary', onClick: () => setSyncSetupModal(prev => ({ ...prev, step: 'options' })) }, 'Back'),
-            React.createElement('button', {
-              className: 'hover:brightness-110',
-              onClick: startSync,
-              style: {
-                padding: '10px 24px',
-                fontSize: '14px',
-                fontWeight: '500',
-                color: 'var(--on-accent)',
-                backgroundColor: syncProviderConfig[syncSetupModal.providerId]?.color || 'var(--accent-fill)',
-                border: 'none',
-                borderRadius: '10px',
-                cursor: 'pointer',
-                transition: 'background-color 150ms ease'
-              },
-            }, 'Start Sync')
-          ),
-
-          // Complete step button
-          syncSetupModal.step === 'complete' && React.createElement('button', {
-            className: 'hover:brightness-110',
-            onClick: () => setSyncSetupModal(prev => ({ ...prev, open: false })),
-            style: {
-              padding: '10px 24px',
-              fontSize: '14px',
-              fontWeight: '500',
-              color: 'var(--on-accent)',
-              backgroundColor: syncProviderConfig[syncSetupModal.providerId]?.color || 'var(--accent-fill)',
-              border: 'none',
-              borderRadius: '10px',
-              cursor: 'pointer',
-              transition: 'background-color 150ms ease'
-            },
-          }, 'Done')
+              }
+                    }, chosen('playlists', 'syncPlaylists') ? 'Next' : (syncingNow ? 'Save' : 'Start sync')),
+              ];
+            }
+            if (syncSetupModal.step === 'playlists') {
+              return [
+                React.createElement(Button, { key: 'back', variant: 'secondary', onClick: () => setSyncSetupModal(prev => ({ ...prev, step: 'options' })) }, 'Back'),
+                React.createElement(Button, { key: 'go', variant: 'primary', pageColor: fill, onClick: startSync }, syncingNow ? 'Save' : 'Start sync'),
+              ];
+            }
+            if (syncSetupModal.step === 'complete') {
+              return [React.createElement(Button, { key: 'done', variant: 'primary', pageColor: fill, onClick: close }, 'Done')];
+            }
+            return [];
+          })()
         )),
 
     // Sync Status Modal (Quick View from Collection) - Cinematic Light design
@@ -48221,6 +48258,7 @@ React.createElement('div', {
                 if (settings.enabled) {
                   try {
                     const authStatus = await window.electron.sync.checkAuth(providerId);
+                    noteSyncAuth(providerId, authStatus);
                     if (authStatus.authenticated) {
                       // Explicit "Sync Now" button — bypass per-cycle stagger
                       // so the user gets a full sweep (parachord#800).

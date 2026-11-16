@@ -80,6 +80,14 @@ Five tier-1 + tier-2 fixes addressing the 120% CPU spike + pinwheel users used t
 
 When designing new sync features (#801 per-playlist store keys, #802 orchestrator refactor, or anything else): consider how the new code interacts with all five invariants. The push-loop yields and cancel-on-focus checks especially need to be preserved in any code that iterates `local_playlists` with per-item IPCs.
 
+### Turning a service's sync off (a pause)
+
+Collection's Sync menu has an on/off switch beside each service (`setProviderSyncEnabled` in app.js). Off is a pause: only `resolver_sync_settings[provider].enabled` changes. Every other setting, the Collection's `syncSources` and playlists' `syncedFrom` / `syncedTo` stay, and a sync already running for it is cancelled (`sync.cancel`). Removing what a service synced is Settings › Plug-Ins › Stop syncing, which is a different thing.
+
+While a service is off nothing calls it for sync: the background loop and the two re-auth startup syncs check `enabled`, love and unlove only push to (or remove from) Spotify while its sync is on, and the N-way drive (`runNwayShadowReconcile` in main.js) skips its mirrors the way it skips a provider with no token. An unlove while paused is not sent to Spotify; the tombstone keeps the next sync from bringing the item back, but it stays in the Spotify library. Playback and search still use the service; this pauses sync only.
+
+On: a service with saved choices resumes with them on the next background run; one never set up opens the setup dialog. A service whose sign-in check definitely failed (401 or 403, a rejected token, or no saved sign-in; `noteSyncAuth`, fed only by the checks the app already makes) shows its switch off with "Signed out", whatever `enabled` says, since nothing syncs until it signs in again; its saved setting stays, and turning it on opens setup, which asks for the sign-in. A check that never reached the service changes nothing. In that dialog, nothing ticked can't start a sync; a service that already syncs says Save, and with nothing ticked offers Turn off sync (the same pause).
+
 ### Background Sync Cadence
 
 Three triggers fire `runBackgroundSync` (app.js, ~L6177 `useEffect`). The function takes an optional `{ minStaleness }` so the per-provider `lastSyncAt < threshold` gate can be tightened or relaxed without forking the function body.
