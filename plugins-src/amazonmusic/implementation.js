@@ -59,6 +59,18 @@ module.exports = {
     // inside the window — the gap the old poll's unconditional 15s coverage
     // existed to close.
     const PAGE_CAPTURE_QUIET_MS = 2500;
+    // The ALBUM page's own quiet window is deliberately longer: the real
+    // album page fires AlbumSeo (header-only) FIRST and the detail op can lag
+    // it by more than one gap. The old in-flow poll kept polling to the END
+    // of its 20s window while every replay so far was header-only, exactly
+    // because a detail op lagging its SEO sibling by more than a poll had
+    // produced a bogus miss (the #1135 review — the "0 of 12 tracks"
+    // truncation class). The bridge's quiet window replaces that poll, so the
+    // shared 2500ms would cut the window 2.5s after the last capture and a
+    // slow detail op would read as a header-only miss; 10s past the last
+    // capture keeps it inside — sized to the old 20s poll's intent (the gap
+    // it existed to cover), still capped by the shared 15s budget above.
+    const ALBUM_CAPTURE_QUIET_MS = 10000;
 
     // The album catalog fallback on the renderer bounds each catalog step
     // (withCatalogTimeout / CATALOG_STEP_TIMEOUT_MS in src/renderer/app.js),
@@ -737,7 +749,7 @@ module.exports = {
 
     return {
       SESSION, GQL_URL, CONFIG_URL,
-      PAGE_CAPTURE_BUDGET_MS, PAGE_CAPTURE_QUIET_MS, ALBUM_JOB_STALE_MS,
+      PAGE_CAPTURE_BUDGET_MS, PAGE_CAPTURE_QUIET_MS, ALBUM_CAPTURE_QUIET_MS, ALBUM_JOB_STALE_MS,
       PLAN_TTL_MS, PLAN_UNKNOWN_TTL_MS,
       notReady,
       pageBlocksPlayback,
@@ -899,7 +911,13 @@ module.exports = {
   // specSearch's fast path: replay the cached request with fresh variables
   // from the warm view. Returns the parsed rows, or null for any template
   // miss (the caller then runs the page flow, which re-mints the template).
-  // Throws not-signed-in on a wall URL, exactly like the page flow. A
+  // A wall URL on the warm view is one of those misses, NOT a throw: the
+  // view keeps whatever URL its last navigation left behind, so a
+  // token-refresh redirect can park it on a wall with a LIVE session, and a
+  // throw would block the very page flow that navigates it off — the page
+  // flow's own after-load URL re-check (it loads a fresh page, so its
+  // verdict is current) is where a genuinely dead session surfaces
+  // not-signed-in. A
   // structural-looking response (200 with data but no spec search envelope)
   // is NOT judged here: on the page flow that can only mean a hornet rename
   // (its request was captured seconds earlier), but on the fast path it can
@@ -1195,20 +1213,23 @@ module.exports = {
   // backstop: an upgrade unblocks the search a minute later at the worst,
   // sooner when the renderer's plan-changed handler drops this cache (it
   // clears the resolver instance's _planState alongside the misses).
-  getPlan: async function () {
+  getPlan: async function ({ refresh } = {}) {
     const lib = this.requireLib();
     const ws = window.electron && window.electron.webSession;
     if (!ws) return 'unknown';
     const now = Date.now();
     const s = this._planState;
-    if (s) {
-      // Only an UNLIMITED reading earns the 30-min TTL. The plugin cannot hear
-      // the host's amazonmusic-plan-changed event (Settings' refreshPlan path
-      // refreshes only the host's dmls cache), so a refused reading (prime /
-      // unknown) re-reads within the 1-min TTL: an upgrade unblocks search a
-      // minute later at the worst, without any refresh channel. The harmful
-      // error is a false refusal (an Unlimited account blocked); a false
-      // unlimited reading costs at most one failed play's manifest refusal.
+    // dmls's own shape (amazon-dmls.js getPlan): a FORCED re-read skips the
+    // cache entirely — it exists to catch a change — and a scheduled read
+    // serves it within the TTL. Only an UNLIMITED reading earns the 30-min
+    // TTL. The plugin cannot hear the host's amazonmusic-plan-changed event
+    // (Settings' refreshPlan path refreshes only the host's dmls cache), so a
+    // refused reading (prime / unknown) re-reads within the 1-min TTL: an
+    // upgrade unblocks search a minute later at the worst, without any
+    // refresh channel. The harmful error is a false refusal (an Unlimited
+    // account blocked); a false unlimited reading costs at most one failed
+    // play's manifest refusal.
+    if (!refresh && s) {
       const ttl = s.plan === 'unlimited' ? lib.PLAN_TTL_MS : lib.PLAN_UNKNOWN_TTL_MS;
       if (now - s.at < ttl) return s.plan;
     }
@@ -1232,12 +1253,26 @@ module.exports = {
           config = JSON.parse(out.text); // a bad reply reads as no tier → unknown
         }
       } catch (e) { /* a failed fetch reads as no tier → unknown */ }
-      let plan = lib.amazonPlanFromTier(lib.tierFromConfig(config));
-      // A read that came back without a tier (offline, a bad reply) keeps a
-      // known plan instead of blocking on unknown — the dmls gate's rule:
-      // an Unlimited account must not be locked out by a network blip past
-      // the TTL, and the scheduled re-read stays the judge.
-      if (plan === 'unknown' && s && s.plan !== 'unknown') plan = s.plan;
+      const plan = lib.amazonPlanFromTier(lib.tierFromConfig(config));
+      // The dmls gate's rule, exactly (amazon-dmls.js getPlan): only a FORCED
+      // re-read that comes back without a tier (offline, a bad reply) keeps a
+      // known plan — that would otherwise block an Unlimited account for a
+      // minute because Settings opened — and it keeps the reading WITHOUT
+      // re-caching it (the stale timestamp stands, so a scheduled re-read
+      // that follows stays the judge). The generation check is the plugin's
+      // equivalent of dmls's onSignOut-forgets: a known plan from before a
+      // sign-out belongs to the old account. A SCHEDULED re-read stays the
+      // judge: it reads what came back (unknown), so a hornet rename of
+      // `tier` surfaces as plan-ineligible here exactly as it does host-side,
+      // never as this plugin serving its last Unlimited reading until a
+      // restart or sign-out.
+      if (
+        refresh && plan === 'unknown' &&
+        s && s.plan !== 'unknown' &&
+        this._sessionGeneration === startedGeneration
+      ) {
+        return s.plan;
+      }
       // A sign-out raced the read (the generation bumped): the reading
       // belongs to the old account — don't cache it under the new one (the
       // generation drop in sessionState is worthless if this write lands
@@ -1601,8 +1636,16 @@ module.exports = {
         err.code = reason;
         throw err;
       }
+      // Any other error (a requireLib throw, a bridge 'invalid'/'denied', a
+      // plain bug) is notReady too, never a cached miss — search()'s rule
+      // ("an error is never 'no results'", playback.md): the album search
+      // shares the runner's failure classes, and a miss here caches a
+      // 30-day noMatch against every album page that asked.
       console.error('Amazon Music album search error:', error);
-      return [];
+      var unknownErr = new Error('Amazon Music not ready');
+      unknownErr.notReady = true;
+      unknownErr.code = reason || 'not-ready';
+      throw unknownErr;
     }
   },
 
@@ -1706,7 +1749,11 @@ module.exports = {
   // at all is the hornet-rename shape and fails the lookup (below). Unlike
   // the old in-flow poll (which replayed candidates as they streamed in), the
   // bridge returns the whole burst once it goes quiet — so the ranking replay
-  // runs over the complete candidate set.
+  // runs over the complete candidate set. The quiet window is the album one
+  // (ALBUM_CAPTURE_QUIET_MS), not the shared default: the detail op can lag
+  // its SEO sibling by more than the shared 2.5s, and the old poll's rule was
+  // to wait it out (#1135 review — a lagging detail op once read as a bogus
+  // header-only miss).
   lookupAlbumPageFlow: async function (asin) {
     const lib = this.requireLib();
     const ws = window.electron && window.electron.webSession;
@@ -1715,7 +1762,7 @@ module.exports = {
     const load = await ws.load(lib.SESSION, url, {
       capture: {
         urlPrefixes: [lib.GQL_URL + '*'],
-        quietMs: lib.PAGE_CAPTURE_QUIET_MS,
+        quietMs: lib.ALBUM_CAPTURE_QUIET_MS,
         budgetMs: lib.PAGE_CAPTURE_BUDGET_MS
       }
     });

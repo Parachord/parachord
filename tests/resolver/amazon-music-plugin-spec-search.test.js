@@ -144,20 +144,52 @@ describe('the plan gate (#1220) before any search', () => {
     expect(ws.fetch).toHaveBeenCalledTimes(3); // still the cached unlimited reading
   });
 
-  test('a read past the TTL that comes back without a tier keeps the known plan — the dmls rule', async () => {
-    // An Unlimited account must not be locked out by a network blip past the
-    // 30-min TTL: an unreadable config.json keeps the last KNOWN plan (the
-    // unknown TTL still applies to a genuinely unknown plan), and the
-    // scheduled re-read stays the judge.
+  test("a SCHEDULED read past the TTL that comes back without a tier stays the judge — dmls's rule", async () => {
+    // The plugin's gate mirrors the dmls gate exactly (amazon-dmls.js
+    // getPlan): only a FORCED re-read keeps a known plan when the tier read
+    // fails. A scheduled re-read reads what came back — unknown — so a
+    // hornet rename of `tier` blocks the plugin's search (plan-ineligible,
+    // re-read within the 1-min TTL) exactly as it blocks the host's, instead
+    // of the plugin serving its last Unlimited reading until a restart or
+    // sign-out.
     const ws = amazonWebSessionMock({ tracks: TRACKS, tier: 'UNLIMITED_AUDIO' });
     const resolver = instantiateAmazonPlugin(axe);
     await search(resolver, 'daft punk'); // caches the unlimited reading
     expect(ws.fetch).toHaveBeenCalledTimes(1);
     resolver._planState.at = Date.now() - (31 * 60 * 1000); // the TTL elapsed
     ws.fetch.mockResolvedValue({ success: true, status: 200, headers: {}, text: 'not json' });
-    const rows = await search(resolver, 'daft punk');
-    expect(rows).toHaveLength(2);
-    expect(ws.fetch).toHaveBeenCalledTimes(2);
+    await expect(search(resolver, 'daft punk')).rejects.toMatchObject({
+      notReady: true,
+      code: 'plan-ineligible'
+    });
+    expect(ws.fetch).toHaveBeenCalledTimes(2); // the scheduled re-read ran, and it read unknown
+  });
+
+  test("a FORCED re-read that comes back without a tier keeps a known plan without re-caching it — dmls's rule", async () => {
+    // dmls's other half (amazon-dmls.js getPlan, the Settings refreshPlan
+    // path): a forced re-read failing on a network blip must not overturn a
+    // known plan — that would block an Unlimited account for a minute
+    // because Settings opened. The plugin's reads are scheduled (its
+    // searches), so this drives getPlan's forced option directly — and the
+    // kept reading is NOT re-cached: the stale timestamp stands, so the
+    // scheduled re-read that follows still re-reads.
+    const ws = amazonWebSessionMock({ tracks: TRACKS, tier: 'UNLIMITED_AUDIO' });
+    const resolver = instantiateAmazonPlugin(axe);
+    await search(resolver, 'daft punk'); // caches the unlimited reading
+    expect(ws.fetch).toHaveBeenCalledTimes(1);
+    resolver._planState.at = Date.now() - (31 * 60 * 1000); // the TTL elapsed
+    const staleAt = resolver._planState.at;
+    ws.fetch.mockResolvedValue({ success: true, status: 200, headers: {}, text: 'not json' });
+    await expect(resolver.getPlan({ refresh: true })).resolves.toBe('unlimited'); // keeps the known plan
+    expect(ws.fetch).toHaveBeenCalledTimes(2); // the forced read skips the cache entirely
+    expect(resolver._planState.at).toBe(staleAt); // not re-cached
+    // The scheduled re-read that follows stays the judge: unknown, not the
+    // kept reading.
+    await expect(search(resolver, 'daft punk')).rejects.toMatchObject({
+      notReady: true,
+      code: 'plan-ineligible'
+    });
+    expect(ws.fetch).toHaveBeenCalledTimes(3);
   });
 
   test('an unlimited tier searches (the gate passes through)', async () => {

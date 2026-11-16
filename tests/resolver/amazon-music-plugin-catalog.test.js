@@ -161,6 +161,21 @@ describe('searchAlbums (the albums tab of the spec search)', () => {
     expect(ws.load).not.toHaveBeenCalled();
   });
 
+  test("an error without a listed reason (a requireLib throw) is notReady, never a cached miss — search()'s rule", async () => {
+    // "An error is never 'no results'" (playback.md): search() maps every
+    // unlisted reason to notReady (more failure classes reach the catch
+    // since the runner moved into the plugin), and searchAlbums shares the
+    // runner — a miss here would cache a 30-day noMatch against every album
+    // page that asked.
+    amazonWebSessionMock({ albums: ALBUMS });
+    const resolver = instantiateAmazonPlugin(axe);
+    resolver.lib = null; // a host older than the _lib prerequisite (requireLib throws)
+    await expect(searchAlbums(resolver, 'wild pink')).rejects.toMatchObject({
+      notReady: true,
+      code: 'not-ready'
+    });
+  });
+
   test('an album search answers off a TRACK-minted template: specType swaps, no page load', async () => {
     // The spec-search template is shared across specs — a track search's page
     // flow mints it, and the album search's fast path patches specType onto
@@ -405,13 +420,17 @@ const ALBUM_URL = 'https://music.amazon.com/albums/B07558DQJL';
 // pageFetch answers per operationName (AlbumSeo carries the header only —
 // data.album with title/trackCount but no tracksConnection — while
 // AlbumDetailPage carries the tracksConnection the winner is judged by).
-function albumLookupMock({ captures, seoFirst = true, seo = {}, detail = {}, replayFor } = {}) {
+// entriesFor, when passed, overrides the load's capture verdict: (url, o) =>
+// captures, computed against the load's OWN capture options — the host's
+// quiet-window verdict simulated at the decision point (see
+// amazonWebSessionMock's captureDelayMs).
+function albumLookupMock({ captures, seoFirst = true, seo = {}, detail = {}, replayFor, entriesFor } = {}) {
   const asin = 'B07558DQJL';
   const entries = captures || (seoFirst
     ? [albumPageCapture(asin, 'AlbumSeo'), albumPageCapture(asin, 'AlbumDetailPage')]
     : [albumPageCapture(asin, 'AlbumDetailPage')]);
   const ws = amazonWebSessionMock({
-    capturesFor: (url) => (/\/albums\//.test(String(url)) ? entries : []),
+    capturesFor: entriesFor || ((url) => (/\/albums\//.test(String(url)) ? entries : [])),
     envelope: {}
   });
   const seoResponse = {
@@ -560,6 +579,52 @@ describe('lookupAlbum (the candidate-ranking flow)', () => {
     } finally {
       warn.mockRestore();
     }
+  });
+
+  test('a detail op lagging its SEO sibling past the shared quiet window is still captured and matched', async () => {
+    // The old in-flow poll kept polling to the END of its 20s window while
+    // every replay so far was header-only, because a detail op lagging
+    // AlbumSeo by more than a poll had produced a bogus miss (the #1135
+    // review). The bridge's quiet window replaces the poll, so the album
+    // page asks for a longer one (ALBUM_CAPTURE_QUIET_MS, not the shared
+    // PAGE_CAPTURE_QUIET_MS): this detail op lands 4s behind the SEO header —
+    // past the shared 2500ms default (under which the same page reads as the
+    // header-only miss above), inside the album window — and the lookup
+    // still wins on it.
+    const LAG_MS = 4000;
+    const seoEntry = albumPageCapture('B07558DQJL', 'AlbumSeo');
+    const detailEntry = albumPageCapture('B07558DQJL', 'AlbumDetailPage');
+    const resolver = instantiateAmazonPlugin(axe);
+    // The lag sits past the shared quiet window and inside the album one —
+    // the gap the old poll's wait-it-out rule existed to cover.
+    expect(LAG_MS).toBeGreaterThan(resolver.lib.PAGE_CAPTURE_QUIET_MS);
+    expect(LAG_MS).toBeLessThan(resolver.lib.ALBUM_CAPTURE_QUIET_MS);
+    // The host's quiet-window verdict for this timeline, computed at the
+    // decision point: the window closes quietMs after the LAST capture, so
+    // the detail op is among the returned captures only when the window was
+    // still open when it fired (LAG_MS < quietMs).
+    const ws = albumLookupMock({
+      entriesFor: (url, o) => {
+        if (!/\/albums\//.test(String(url))) return [];
+        return LAG_MS < (o && o.capture && o.capture.quietMs) ? [seoEntry, detailEntry] : [seoEntry];
+      }
+    });
+    const album = await resolver.lookupAlbum(ALBUM_URL, {});
+    expect(album).toEqual(expect.objectContaining({
+      id: 'amazonmusic-album-B07558DQJL',
+      name: 'Master of Puppets (Remastered)',
+      trackCount: 8
+    }));
+    expect(album.tracks).toHaveLength(2);
+    // The album page's own quiet window, not the shared 2.5s one — and the
+    // shared 15s budget still caps it.
+    expect(ws.load.mock.calls[0][2].capture.quietMs).toBe(resolver.lib.ALBUM_CAPTURE_QUIET_MS);
+    expect(ws.load.mock.calls[0][2].capture.quietMs).toBe(10000);
+    expect(ws.load.mock.calls[0][2].capture.budgetMs).toBe(15000);
+    // The detail op won on its tracksConnection; the header-only sibling
+    // ranked behind it was never needed.
+    const ops = ws.pageFetch.mock.calls.map((c) => JSON.parse(c[1].body).operationName);
+    expect(ops).toEqual(['AlbumDetailPage']);
   });
 
   test('no candidates at all is the deleted/region miss (null), with the ops log', async () => {
