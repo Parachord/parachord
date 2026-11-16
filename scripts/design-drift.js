@@ -71,7 +71,7 @@ const METRICS = {
 // its own uses don't count.
 const COPY_HOMES = {
   trackRowCopies: ['components/track-lists.js'],
-  sourceButtonCopies: ['components/track-lists.js', 'components/menu.js'],
+  sourceButtonCopies: ['components/track-lists.js', 'components/menu.js', 'components/source-icon-button.js'],
   spinnerCopies: ['components/icons.js'],
   emptyStateCopies: ['components/states.js'],
   filterPillCopies: ['components/filter-chips.js'],
@@ -89,7 +89,8 @@ const COPY_HOMES = {
     'components/menu.js', 'components/sort-menu.js', 'components/fields.js', 'components/collection-radio-button.js',
     'components/tickets-button.js', 'components/hero-tabs.js', 'components/toast.js', 'components/reason-badge.js',
     'components/album-card.js', 'components/artist-card.js', 'components/listener-card.js', 'components/card-art.js',
-    'components/nav-item.js', 'components/option-tile.js', 'components/list-row.js'],
+    'components/nav-item.js', 'components/option-tile.js', 'components/list-row.js',
+    'components/source-icon-button.js', 'components/queue-context-bar.js', 'components/friend-mini-playbar.js'],
 };
 
 function rendererFiles(dir = RENDERER, out = []) {

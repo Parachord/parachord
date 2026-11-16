@@ -2094,6 +2094,7 @@ const { Badge } = require('./components/badge');
 const { Button, buttonClassName } = require('./components/button');
 const { OptionTile } = require('./components/option-tile');
 const { ListRow } = require('./components/list-row');
+const { QueueContextBar } = require('./components/queue-context-bar');
 const { HeaderControl } = require('./components/header-control');
 const { ToastRegion, NowPlayingAnnouncer } = require('./components/toast');
 const { SortMenu } = require('./components/sort-menu');
@@ -48785,10 +48786,8 @@ firstRunTutorial.step === 'complete' && (() => {
       ),
 
       // Playback context banner - shows where playback originated from (at bottom of queue)
-      playbackContext && React.createElement('button', { type: 'button',
-        className: `w-full text-left flex items-center justify-between px-4 py-1.5 bg-[color-mix(in_srgb,var(--accent-fill)_25%,transparent)] border-t border-[color-mix(in_srgb,var(--accent-fill)_30%,transparent)] transition-colors ${
-          playbackContext.type === 'spinoff' ? 'cursor-default' : 'cursor-pointer hover:bg-[color-mix(in_srgb,var(--accent-fill)_35%,transparent)]'
-        }`,
+      playbackContext && React.createElement(QueueContextBar, {
+        interactive: playbackContext.type !== 'spinoff',
         onClick: () => {
           // AI Playlist - reopen the Shuffleupagus chat
           if (playbackContext.type === 'aiPlaylist') {
@@ -48854,7 +48853,7 @@ firstRunTutorial.step === 'complete' && (() => {
           }
           setQueueDrawerOpen(false);
         },
-        'data-tooltip': playbackContext.type === 'url' ? 'Open source page' : 'Go to source'
+        tooltip: playbackContext.type === 'url' ? 'Open source page' : 'Go to source'
       },
         React.createElement('div', { className: 'flex items-center gap-2' },
           React.createElement('span', { className: 'text-xs text-[var(--playbar-accent-hover)]' },

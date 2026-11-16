@@ -15,6 +15,7 @@
 const { Button } = require('./button');
 const { ResolverIcon } = require('./ui-atoms');
 const { CardButton } = require('./card-button');
+const { SourceIconButton } = require('./source-icon-button');
 const Icons = require('./icons');
 const { X } = Icons;
 
@@ -84,24 +85,7 @@ function sourceColumnWidth(playbackResolvers) {
 }
 const SOURCE_COLUMN = 'var(--source-col, 140px)';
 
-// A service's play button: its colour and logo (the plugin's `color`). Hover
-// grows it in CSS (no JS hover); the tooltip names the service and the match.
-// `quiet` (the queue drawer): desaturated and faded at rest, full on hover or
-// focus (.source-quiet in index.html).
-function SourceIconButton({ resolver, confidence, dim, onClick, size = 20, quiet = false }) {
-  const label = `Play from ${resolver.name}${confidence ? ` (${Math.round(confidence * 100)}% match)` : ''}`;
-  return React.createElement('button', {
-    type: 'button',
-    className: `no-drag flex items-center justify-center transition-transform hover:scale-110${quiet ? ' source-quiet' : ''}`,
-    'aria-label': label,
-    'data-tooltip': label,
-    onClick: (e) => { e.stopPropagation(); onClick(); },
-    style: Object.assign({
-      width: `${size}px`, height: `${size}px`, borderRadius: '4px', backgroundColor: resolver.color,
-      border: 'none', cursor: 'pointer', padding: 0, pointerEvents: 'auto',
-    }, quiet ? { '--rest': dim ? 0.5 : 0.7 } : { opacity: dim ? 0.6 : 1 }),
-  }, React.createElement(ResolverIcon, { resolverId: resolver.id, size: Math.round(size * 0.6) }));
-}
+// A service's play button lives in components/source-icon-button.js.
 
 // The source column: a shimmer while resolving, the icons when playable,
 // nothing when unplayable (the row is dimmed). The icons sit at the
