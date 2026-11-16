@@ -29,8 +29,8 @@ const FILTER_CHIP_DOT_STYLE = { width: '8px', height: '8px', borderRadius: '50%'
  * fills with it when picked, its text whichever of white or near-black reads
  * better on it; `gradient` (a CSS gradient) paints over that fill and the dot.
  * A chip without one (All, a category) stays neutral: the page's grey when
- * idle, and when picked the accent, or `pageColor` (a page's white-text fill
- * from lib/page-colors.js) on a page with its own colour.
+ * idle, and when picked the accent, or `pageColor` (the page's colour from
+ * lib/page-colors.js, the same as its hero) on a page with its own colour.
  *
  * `value` is the picked chip's id; `onChange(id)` picks one. `label` names
  * the group for screen readers.

@@ -106,8 +106,10 @@ test('a picked neutral chip takes the page colour when one is given', () => {
 
 test('Fresh Drops and Recommendations pass their page colour', () => {
   const app = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/app.js'), 'utf8');
-  expect(app).toContain("pageColor: PAGE_COLORS['new-releases'].fill,");
-  expect(app).toContain('pageColor: PAGE_COLORS.recommendations.fill,');
+  // The picked All chip is the page's hero colour, as on Concerts.
+  expect(app).toContain("pageColor: PAGE_COLORS['new-releases'].color,");
+  expect(app).toContain('pageColor: PAGE_COLORS.recommendations.color,');
+  expect(app).toContain('pageColor: PAGE_COLORS.concerts.color,');
 });
 
 describe('Chip', () => {
