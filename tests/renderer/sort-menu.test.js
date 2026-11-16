@@ -19,7 +19,7 @@ test('with no match it shows the placeholder', () => {
 });
 
 test('the hand-built sort dropdowns in app.js are SortMenus, carrying their reloads', () => {
-  const app = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  const app = require('../helpers/renderer-source').appWithPages() /* app.js and the pages moved out of it (#1451) */;
   expect((app.match(/React\.createElement\(SortMenu, \{/g) || []).length).toBeGreaterThanOrEqual(7);
   expect(app).toMatch(/React\.createElement\(SortMenu, \{ value: historyPeriod, options: historyPeriodOptions, onChange: \(option\) => \{ setHistoryPeriod\(option\); [^}]*loadTopTracks\(option\)/);
 });
@@ -31,7 +31,7 @@ test('Collection, Search, the artist page and Charts use SortMenu too', () => {
   expect(read('components/collection-page.js')).toContain('React.createElement(SortMenu, {');
   expect((read('components/search-page.js').match(/React\.createElement\(SortMenu, \{/g) || []).length).toBe(3);
   expect(read('components/artist-page.js')).toContain("label: 'Sort releases', align: 'right'");
-  const app = read('app.js');
+  const app = require('../helpers/renderer-source').appWithPages() /* app.js and the pages moved out of it (#1451) */;
   expect(app).toContain("label: 'Chart source',");
   expect(app).toContain("label: 'Chart region',");
   expect(app).not.toMatch(/set(?:Collection|SearchResults|Artist|ChartsSongsSource|ChartsCountry|Playlists|History|FriendHistory|Critics|AddToPlaylist)Sort\w*DropdownOpen\(!/);

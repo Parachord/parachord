@@ -57,7 +57,7 @@ test('every switch is the shared Switch, with a white knob on the control tokens
 // Pages converted after Settings. Their own page colour (Concerts' teal)
 // waits for step 5's PAGE_COLOR, and skeleton bars keep bg-gray-200 for now.
 const PAGES = [
-  ['Charts', "activeView === 'discover' && React.createElement('div', {", "activeView === 'new-releases' && React.createElement(FreshDropsPage, {", null],
+  ['Charts', 'const ChartsPage = React.memo(', 'module.exports', 'components/charts-page.js'],
   // Fresh Drops is its own module (#1451): the whole page component.
   ['Fresh Drops', 'const FreshDropsPage = React.memo(', 'module.exports', 'components/fresh-drops-page.js'],
   ['Critical Darlings', "activeView === 'critics-picks' && React.createElement('div', {", "activeView === 'concerts' && React.createElement(ConcertsPage, {", null],
