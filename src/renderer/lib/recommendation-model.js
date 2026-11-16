@@ -58,7 +58,7 @@ const PLAYLIST_CATEGORIES = [
   { id: 'community', title: 'From other listeners' },
   { id: 'other', title: 'More playlists' }
 ];
-// `new` is valid on albums only; no provider sends it yet.
+// `new` is valid on albums only (Amazon Music's New Releases for You).
 const ALBUM_CATEGORIES = [
   { id: 'new', title: 'New for you' },
   { id: 'personal', title: 'Based on your listening' },
