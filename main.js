@@ -144,6 +144,7 @@ if (autoUpdater) {
 // file on every set (main-process/split-store.js). Split files are written
 // compact: nobody reads a 9 MB cache by hand, and the tabs cost write time.
 const { createSplitStore } = require('./main-process/split-store');
+const { registerUiZoom, normalizeZoom, minSizeFor, STORE_KEY: UI_ZOOM_KEY } = require('./main-process/ui-zoom');
 const splitStoreDir = path.join(app.getPath('userData'), 'store');
 const store = createSplitStore({
   main: new Store(),
@@ -963,6 +964,11 @@ function createWindow() {
   // --parachord-theme, read in preload.js). Without it a dark-mode launch
   // flashed light until React applied the class.
   const initialTheme = initialThemeFor(store.get('theme_preference'), nativeTheme.shouldUseDarkColors);
+  // The saved size (main-process/ui-zoom.js): applied before the first
+  // paint, and the minimum window grows with it so pages never lay out
+  // narrower than at 100%.
+  const initialZoom = normalizeZoom(store.get(UI_ZOOM_KEY));
+  const initialMin = minSizeFor(initialZoom, require('electron').screen.getPrimaryDisplay().workAreaSize);
 
   mainWindow = new BrowserWindow({
     width: savedBounds?.width || 1400,
@@ -970,8 +976,8 @@ function createWindow() {
     ...(savedBounds && typeof savedBounds.x === 'number'
       ? { x: savedBounds.x, y: savedBounds.y }
       : {}),
-    minWidth: 1000,
-    minHeight: 600,
+    minWidth: initialMin.width,
+    minHeight: initialMin.height,
     // Hidden title bar on macOS only — macOS menus live in the system menu bar,
     // so hiding the title bar is purely cosmetic. On Windows, the menu bar is part
     // of the window frame, so we use the default title bar to keep menus accessible.
@@ -983,6 +989,7 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
+      zoomFactor: initialZoom,
       webviewTag: false,  // Disabled for security — use BrowserView or iframes instead
       backgroundThrottling: false,  // Prevent renderer throttle/suspension when backgrounded (music player needs this)
       // V8 code cache (parachord#878). Persists compiled bytecode for the
@@ -2210,7 +2217,14 @@ app.whenReady().then(async () => {
     {
       label: 'View',
       submenu: [
-        { role: 'reload' }
+        { role: 'reload' },
+        { type: 'separator' },
+        // The size setting's steps (main-process/ui-zoom.js), saved like the
+        // Settings choice; not the built-in zoom roles, which don't persist
+        // or move the window's minimum size.
+        { label: 'Actual Size', accelerator: 'CmdOrCtrl+0', click: () => uiZoom.step(0) },
+        { label: 'Zoom In', accelerator: 'CmdOrCtrl+=', click: () => uiZoom.step(1) },
+        { label: 'Zoom Out', accelerator: 'CmdOrCtrl+-', click: () => uiZoom.step(-1) }
       ]
     },
 
@@ -3098,6 +3112,16 @@ ipcMain.handle('updater-get-version', () => {
 
 // "1 track", "2 tracks": the item menus printed "(1 tracks)" (audit bug 38).
 const trackCount = (n) => `${n} ${n === 1 ? 'track' : 'tracks'}`;
+
+// The window's size setting (main-process/ui-zoom.js, #1452): Settings and
+// the View menu's Zoom In / Zoom Out / Actual Size. electron's screen is
+// read lazily (it can't be touched before app ready).
+const uiZoom = registerUiZoom({
+  ipcMain,
+  store,
+  screen: { getDisplayMatching: (bounds) => require('electron').screen.getDisplayMatching(bounds) },
+  getWindow: () => mainWindow,
+});
 
 // Theme IPC handlers
 ipcMain.handle('theme-get-system', () => {

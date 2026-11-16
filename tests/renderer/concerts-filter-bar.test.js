@@ -17,8 +17,8 @@ test('no Refresh button in the Concerts filter bar', () => {
 
 test('the city field is the shared field, with no focus style of its own', () => {
   const at = app.indexOf("placeholder: 'City or region…'");
-  const field = app.slice(at, at + 400);
-  expect(field).toContain('className: `${FIELD_CLASS} flex-1 min-w-0`');
+  const field = app.slice(app.lastIndexOf('React.createElement(', at), at + 400);
+  expect(field).toMatch(/^React\.createElement\(TextField, \{/);
   expect(field).not.toContain('onFocus');
   expect(field).not.toContain('boxShadow');
 });

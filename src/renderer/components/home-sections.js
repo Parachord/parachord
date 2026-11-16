@@ -16,6 +16,7 @@ const { Button } = require('./button');
 const { filterBySource } = require('../lib/home-model');
 const { ReasonBadge, ReasonMark, shuffleupagusIcon } = require('./reason-badge');
 const Icons = require('./icons');
+const { TextField } = require('./fields');
 const { Play } = Icons;
 const { useReveal, ArtOverlay, ArtBox, releaseBadge } = require('./card-art');
 const { AlbumCard } = require('./album-card');
@@ -432,14 +433,12 @@ function AskShuffleupagus({ initialPrompt, chatAvailable, onAsk, onSetup }) {
         htmlFor: 'home-ask-prompt',
         style: { position: 'absolute', width: '1px', height: '1px', overflow: 'hidden', clip: 'rect(0 0 0 0)' },
       }, 'Prompt for Shuffleupagus'),
-      e('input', {
-        id: 'home-ask-prompt', type: 'text', maxLength: PROMPT_CAP, value,
-        onChange: (ev) => { touched.current = true; setValue(ev.target.value); },
-        style: {
-          flex: '1 1 360px', minWidth: 0, font: 'inherit', fontSize: '16px', color: isExample ? 'var(--text-tertiary)' : 'var(--text-primary)',
-          backgroundColor: 'var(--bg-primary)', border: '1px solid var(--border-default)', borderRadius: '12px',
-          padding: '12px 14px', minHeight: '48px', boxSizing: 'border-box',
-        },
+      // The shared text field (components/fields.js), large; an example
+      // prompt reads as a placeholder until it's edited.
+      e(TextField, {
+        id: 'home-ask-prompt', size: 'lg', muted: isExample, maxLength: PROMPT_CAP, value,
+        onChange: (v) => { touched.current = true; setValue(v); },
+        style: { flex: '1 1 360px', minWidth: 0 },
       }),
       React.createElement(Button, { variant: 'primary', type: 'submit', className: '!rounded-full min-h-[48px] !px-5' }, 'Ask')),
     e('div', { style: { fontSize: '12px', color: 'var(--text-secondary)' } },
