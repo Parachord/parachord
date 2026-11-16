@@ -15,6 +15,7 @@ const PAGE_MODULES = [
   'components/critics-picks-page.js',
   'components/history-page.js',
   'components/friend-history-page.js',
+  'components/tag-editor-dialog.js',
 ];
 
 function read(rel) {
