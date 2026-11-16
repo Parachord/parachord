@@ -322,12 +322,13 @@ function FreshCriticalRow(props) {
 
 // The concert card's photo and its date badge. The photo is the artist's
 // (the Concerts page's images, face-centred); with none yet, the page's
-// grey with a note. The date sits on it as a badge in Concerts' fill.
+// grey with a note. The date sits on it as a badge in the Concerts hero's
+// teal, as Tickets is.
 const CONCERT_ART = 72;
 const CONCERT_BADGE_STYLE = {
   position: 'absolute', left: '4px', bottom: '4px', padding: '2px 6px', borderRadius: '4px',
   fontSize: '11px', fontWeight: 700, lineHeight: '16px', letterSpacing: '.04em', textTransform: 'uppercase',
-  backgroundColor: PAGE_COLORS.concerts.fill, color: ON_FILL,
+  backgroundColor: PAGE_COLORS.concerts.color, color: ON_FILL,
   whiteSpace: 'nowrap',
 };
 
