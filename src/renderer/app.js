@@ -37567,8 +37567,8 @@ useEffect(() => {
                 fontWeight: activeView === 'discover' ? '500' : '400'
               }
             },
-              // Bar chart icon for Charts
-              React.createElement(Icons.BarChart3, { className: 'w-4 h-4' }),
+              // A ranked list for Pop of the Tops (the charts).
+              React.createElement(Icons.ListOrdered, { className: 'w-4 h-4' }),
               React.createElement('span', { className: 'flex items-center gap-1.5' },
                 'Pop of the Tops',
                 showDiscoveryBadges && discoveryUnread.charts && React.createElement('span', {

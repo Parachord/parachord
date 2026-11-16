@@ -137,7 +137,8 @@ const SHAPES = {
   // playbar's volume, Share, the welcome screen).
   ListMusic: [['path', { d: 'M21 15V6' }], ['path', { d: 'M18.5 18a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z' }], ['path', { d: 'M12 12H3' }], ['path', { d: 'M16 6H3' }], ['path', { d: 'M12 18H3' }]],
   Library: [['path', { d: 'm16 6 4 14' }], ['path', { d: 'M12 6v14' }], ['path', { d: 'M8 8v12' }], ['path', { d: 'M4 4v16' }]],
-  BarChart3: [['path', { d: 'M3 3v18h18' }], ['path', { d: 'M18 17V9' }], ['path', { d: 'M13 17V5' }], ['path', { d: 'M8 17v-3' }]],
+  // A ranked list (Pop of the Tops): 1, 2, 3.
+  ListOrdered: [['line', { x1: 10, x2: 21, y1: 6, y2: 6 }], ['line', { x1: 10, x2: 21, y1: 12, y2: 12 }], ['line', { x1: 10, x2: 21, y1: 18, y2: 18 }], ['path', { d: 'M4 6h1v4' }], ['path', { d: 'M4 10h2' }], ['path', { d: 'M6 18H4c0-1 2-2 2-3s-1-1.5-2-1' }]],
   LocateFixed: [['line', { x1: 2, x2: 5, y1: 12, y2: 12 }], ['line', { x1: 19, x2: 22, y1: 12, y2: 12 }], ['line', { x1: 12, x2: 12, y1: 2, y2: 5 }], ['line', { x1: 12, x2: 12, y1: 19, y2: 22 }], ['circle', { cx: 12, cy: 12, r: 7 }], ['circle', { cx: 12, cy: 12, r: 3 }]],
   Share: [['path', { d: 'M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8' }], ['polyline', { points: '16 6 12 2 8 6' }], ['line', { x1: 12, x2: 12, y1: 2, y2: 15 }]],
   FileText: [['path', { d: 'M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z' }], ['path', { d: 'M14 2v4a2 2 0 0 0 2 2h4' }], ['path', { d: 'M10 9H8' }], ['path', { d: 'M16 13H8' }], ['path', { d: 'M16 17H8' }]],
