@@ -22,6 +22,7 @@
 
 const { PAGE_COLORS, pageTint } = require('../lib/page-colors');
 const Icons = require('./icons');
+const { PAGE_ICONS } = require('../lib/page-icons');
 
 function NavItem({ page, label, icon: Icon, active = false, onClick, prominent = false, unread = false, count = 0, dropHighlight = false, dropProps }) {
   const e = React.createElement;
@@ -72,7 +73,7 @@ function NavSearch({ active = false, onClick }) {
       boxShadow: active ? 'inset 0 0 0 1.5px var(--accent-primary-alpha-30)' : undefined,
     },
   },
-    e(Icons.Search, { className: 'w-5 h-5 flex-shrink-0' }),
+    e(Icons[PAGE_ICONS.search], { className: 'w-5 h-5 flex-shrink-0' }),
     'Search');
 }
 

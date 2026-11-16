@@ -567,8 +567,8 @@ describe('the five-section page render', () => {
     expect(app).toContain("const viewingRecommendedPlaylist = activeView === 'playlist-view' && !!selectedPlaylist?.isEphemeral;");
     expect(app).toContain("const playlistsNavActive = activeView === 'playlists' || (activeView === 'playlist-view' && !viewingRecommendedPlaylist);");
     expect(app).toContain("const recommendationsNavActive = activeView === 'recommendations' || viewingRecommendedPlaylist;");
-    expect(app).toContain("page: 'playlists', label: 'Playlists', icon: Icons.ListMusic, active: playlistsNavActive,");
-    expect(app).toContain("page: 'recommendations', label: 'Recommendations', icon: Icons.Star, active: recommendationsNavActive,");
+    expect(app).toContain("page: 'playlists', label: 'Playlists', icon: Icons[PAGE_ICONS['playlists']], active: playlistsNavActive,");
+    expect(app).toContain("page: 'recommendations', label: 'Recommendations', icon: Icons[PAGE_ICONS['recommendations']], active: recommendationsNavActive,");
     expect(app).not.toContain("(activeView === 'playlists' || activeView === 'playlist-view') ? '#ec4899'");
   });
 

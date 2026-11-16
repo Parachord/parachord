@@ -13,6 +13,7 @@
 
 const Icons = require('./icons');
 const { Modal } = require('./modal');
+const { PAGE_ICONS } = require('../lib/page-icons');
 const { Button } = require('./button');
 
 const MAX_HIGHLIGHTS = 6;
@@ -22,19 +23,24 @@ const MAX_HIGHLIGHTS = 6;
 // one; speed is the fallback).
 const ICON_RULES = [
   [/sync|import/, 'RefreshCw'],
-  [/search/, 'Search'],
+  [/search/, PAGE_ICONS.search],
   [/friend|listen.?along/, 'Users'],
-  [/concert|tour|ticket/, 'Ticket'],
+  [/concert|tour|ticket/, PAGE_ICONS.concerts],
   [/love|heart/, 'Heart'],
-  [/playlist|library|collection|local files?/, 'List'],
-  [/radio|recommend|discover|fresh drops|charts?/, 'Radio'],
+  [/playlist/, PAGE_ICONS.playlists],
+  [/library|collection|local files?/, PAGE_ICONS.library],
+  [/fresh drops/, PAGE_ICONS['new-releases']],
+  [/critical darlings|critics/, PAGE_ICONS['critics-picks']],
+  [/pop of the tops|charts?/, PAGE_ICONS.discover],
+  [/recommend|discover/, PAGE_ICONS.recommendations],
+  [/radio/, 'Radio'],
   [/shuffleupagus|\bai\b|\bdj\b/, 'Zap'],
   [/link|share|deep link/, 'Link'],
-  [/setting|plug-?ins?|preferences/, 'Settings'],
-  [/^home\b/, 'Home'],
+  [/setting|plug-?ins?|preferences/, PAGE_ICONS.settings],
+  [/^home\b/, PAGE_ICONS.home],
   [/playback|player|queue|volume/, 'Play'],
   [/download|offline/, 'Download'],
-  [/scrobbl|history/, 'Clock'],
+  [/scrobbl|history/, PAGE_ICONS.history],
   [/\b(art|cover|album|artist|music|spotify|apple|amazon|bandcamp|soundcloud|youtube|tidal)/, 'Music'],
   [/fast|speed|startup|performance/, 'Zap'],
 ];
