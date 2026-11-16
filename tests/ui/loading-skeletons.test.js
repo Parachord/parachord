@@ -622,3 +622,29 @@ describe('concert list skeletons match their rows (components/concert-skeletons.
     expect(artist).toContain("events.length === 0 ? 'Upcoming concerts' : countOf(events.length, 'upcoming concert')");
   });
 });
+
+describe("the playbar's now-playing block keeps its three lines' height", () => {
+  global.React = global.React || require('react');
+  const { renderToStaticMarkup } = require('react-dom/server');
+  const { PlaybarLineSkeleton, PLAYBAR_LINES } = require('../../src/renderer/components/playbar-skeleton');
+  const app = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/app.js'), 'utf8');
+
+  test('each line is its real height: title 20px, artist 16px, source 20px', () => {
+    expect(PLAYBAR_LINES.title.height).toBe(20);
+    expect(PLAYBAR_LINES.artist.height).toBe(16);
+    expect(PLAYBAR_LINES.source.height).toBe(20);
+    for (const line of ['title', 'artist', 'source']) {
+      expect(renderToStaticMarkup(React.createElement(PlaybarLineSkeleton, { line }))).toContain(`height:${PLAYBAR_LINES[line].height}px`);
+    }
+    // The source picker's own row is the same 20px.
+    expect(app).toMatch(/return React\.createElement\('div', \{ className: 'flex items-center gap-1\.5', style: \{ height: '20px' \} \}/);
+  });
+
+  test('the skeleton has all three lines, and a track without its source yet keeps line 3', () => {
+    expect(app).toMatch(/PlaybarLineSkeleton, \{ line: 'title'[\s\S]{0,200}PlaybarLineSkeleton, \{ line: 'artist'[\s\S]{0,200}PlaybarLineSkeleton, \{ line: 'source'/);
+    expect(app).toContain("return React.createElement(PlaybarLineSkeleton, { line: 'source', shimmer: true, blank: !(trackLoading || loadingTrack) });");
+    const blank = renderToStaticMarkup(React.createElement(PlaybarLineSkeleton, { line: 'source', blank: true }));
+    expect(blank).toContain('height:20px');
+    expect(blank).not.toContain('rounded');
+  });
+});

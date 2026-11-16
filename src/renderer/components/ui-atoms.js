@@ -70,6 +70,12 @@ const placeFixedTooltip = (rect, tip, view, margin = 8, gap = 6) => placeTooltip
 let tooltipSeq = 0;
 const TOOLTIP_DELAY_MS = 400;
 
+// Keyboard focus, not a click's: :focus-visible (an engine without it counts
+// as keyboard, so focus still shows the tip there).
+const isKeyboardFocus = (node) => {
+  try { return !node || !node.matches || node.matches(':focus-visible'); } catch (e) { return true; }
+};
+
 const Tooltip = ({ children, content, position = 'top', variant = 'light', className = '', id, delay = TOOLTIP_DELAY_MS, block = false, note = false }) => {
   const [hover, setHover] = React.useState(false);
   const [focus, setFocus] = React.useState(false);
@@ -109,6 +115,10 @@ const Tooltip = ({ children, content, position = 'top', variant = 'light', class
   React.useEffect(() => {
     if (!visible) return undefined;
     const onKey = (ev) => { if (ev.key === 'Escape') setDismissed(true); };
+    // The pointer left the window (the playbar sits on its bottom edge):
+    // no mouseleave reaches the trigger then, so hide on the way out.
+    const onLeaveWindow = (ev) => { if (!ev.relatedTarget) setHover(false); };
+    document.addEventListener('pointerout', onLeaveWindow);
     // A fixed tip would stay put while its trigger scrolls away.
     const onScroll = () => setDismissed(true);
     document.addEventListener('keydown', onKey);
@@ -116,6 +126,7 @@ const Tooltip = ({ children, content, position = 'top', variant = 'light', class
     return () => {
       document.removeEventListener('keydown', onKey);
       document.removeEventListener('scroll', onScroll, true);
+      document.removeEventListener('pointerout', onLeaveWindow);
     };
   }, [visible]);
 
@@ -137,8 +148,17 @@ const Tooltip = ({ children, content, position = 'top', variant = 'light', class
     ref: triggerRef,
     onMouseEnter: () => { setHover(true); setDismissed(false); },
     onMouseLeave: () => setHover(false),
-    // Keyboard focus anywhere inside shows it too (React's focus events bubble).
-    onFocus: () => { if (!focus) setDismissed(false); setFocus(true); },
+    // A click dismisses it, as TooltipLayer does: the click is the answer.
+    onPointerDown: () => setDismissed(true),
+    // Keyboard focus anywhere inside shows it too (React's focus events
+    // bubble), but only keyboard focus (:focus-visible). A click focuses a
+    // button too, and showing on that left the tip up after the pointer left
+    // (the playbar's buttons), until something else took focus.
+    onFocus: (ev) => {
+      if (!isKeyboardFocus(ev && ev.target)) return;
+      if (!focus) setDismissed(false);
+      setFocus(true);
+    },
     onBlur: (ev) => {
       if (!ev.currentTarget.contains(ev.relatedTarget)) setFocus(false);
     },
@@ -219,8 +239,11 @@ const TooltipLayer = ({ delay = TOOLTIP_DELAY_MS }) => {
       if (el && ev.target.matches && ev.target.matches(':focus-visible')) arm(el);
     };
     const onFocusOut = (ev) => { if (current.current && current.current.contains(ev.target)) hide(); };
+    // The pointer left the window: no pointerover follows to hide it.
+    const onOut = (ev) => { if (current.current && !ev.relatedTarget) hide(); };
     const onKey = (ev) => { if (ev.key === 'Escape' && current.current) hide(); };
     document.addEventListener('pointerover', onOver);
+    document.addEventListener('pointerout', onOut);
     document.addEventListener('pointerdown', hide, true);
     document.addEventListener('focusin', onFocusIn);
     document.addEventListener('focusout', onFocusOut);
@@ -230,6 +253,7 @@ const TooltipLayer = ({ delay = TOOLTIP_DELAY_MS }) => {
     return () => {
       clearTimeout(timer.current);
       document.removeEventListener('pointerover', onOver);
+      document.removeEventListener('pointerout', onOut);
       document.removeEventListener('pointerdown', hide, true);
       document.removeEventListener('focusin', onFocusIn);
       document.removeEventListener('focusout', onFocusOut);

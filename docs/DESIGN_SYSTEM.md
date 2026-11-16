@@ -83,6 +83,7 @@ Never write a colour as `rgba(…)` in the renderer: the drift script's `rgbColo
 
 | Token | Usage |
 |-------|-------|
+| `--on-art-ink` | Near-black text on art or a bright fill (`readableTextOn` picks it or `--on-accent`); the same in both themes |
 | `--on-color-secondary` / `-fill` / `-border` / `-chip` | White on a coloured header or tile: secondary text, a pill's fill, a border, a corner chip |
 | `--on-dark-faint` / `-line` / `-border` / `-hover` / `-fill` / `-inset` | The always-dark panels: a faint fill, a divider, a border, a hover, a stronger fill, a darker well |
 | `--scrim-soft` / `--scrim` / `--scrim-strong` | Darkening over content (a busy tile, a backdrop, art) at 40 / 50 / 80% |
@@ -139,7 +140,7 @@ No two heroes start in the same colour family (`tests/renderer/page-colors.test.
 
 #### Service colours
 
-A music service's colour is its plug-in's `manifest.color` (`plugins-src/<id>/manifest.json`), exposed as `resolver.color` (`#888888` when a manifest has none). The track-list badges, the playbar's source button and "Play from" menu, Search's source dots and Home's source chips all read it. (`TrackRow` in `track-lists.js` still has its own `resolverMeta` table, but nothing renders `TrackRow` any more.) Concert ticket sellers' colours are in `src/renderer/lib/ticket-sellers.js`, equal to their plug-ins' manifest colours (tested); their text is the brand colour mixed 70% with `--text-primary`, so one value reads on both themes.
+A music service's colour is its plug-in's `manifest.color` (`plugins-src/<id>/manifest.json`), exposed as `resolver.color` (`#888888`, the loader's no-colour marker, when a manifest has none; `NO_PLUGIN_COLOR` in app.js tests for it). Every surface reads it from the plug-in registry, never a copy: the track rows' source buttons, the playbar's source button and "Play from" menu, Search's source dots, Home's source chips, the Sync menu's tiles and the sync dialog (`syncProviderConfig`, which reads the loader so meta-services like ListenBrainz count), and the concert ticket sellers (`lib/ticket-sellers.js` gets a lookup from app.js via `setSellerColorLookup`; the fallback is the Concerts page colour). A seller's text is its colour mixed 70% with `--text-primary`, so one value reads on both themes. Brand colours that aren't a plug-in's (Chrome's logo, Raycast's orange) are in `components/brand-logos.js`.
 
 Inside a service's own plugin panel (its header, Connect, Save and sync buttons), the service's brand colour is used on purpose instead of the accent: a decision of 2026-11-14. Everywhere else, buttons are `Button`'s variants.
 
@@ -151,6 +152,8 @@ Inside a service's own plugin panel (its header, Connect, Save and sync buttons)
 | `--shadow-md` | `0 4px 6px rgba(0,0,0,0.07)` | `0 4px 6px rgba(0,0,0,0.4)` |
 | `--shadow-lg` | `0 10px 15px rgba(0,0,0,0.1)` | `0 10px 15px rgba(0,0,0,0.5)` |
 | `--card-shadow` | `0 1px 3px rgba(0,0,0,0.05), 0 4px 12px rgba(0,0,0,0.03)` | `0 1px 3px rgba(0,0,0,0.2), 0 4px 12px rgba(0,0,0,0.15)` |
+
+Shadows by role, the same in both themes: `--shadow-xs` (a small chip), `--shadow-tile` (a Settings tile), `--shadow-popover` (a menu or dropdown), `--shadow-panel` (a dialog panel, a toast), `--shadow-dialog` / `--shadow-dialog-dark` (a large dialog, on a light or a dark surface), `--shadow-drawer` (the AI panel's edge). Never write a shadow's `rgba()` in the renderer: `rgbNeutrals` counts it.
 
 ### Typography
 
@@ -241,12 +244,12 @@ Components use `React.createElement()` (no JSX) and live in `src/renderer/compon
 | A person (friend, recommended listener) | `ListenerCard` | `listener-card.js` | The hexagon avatar (`LISTENER_HEXAGON`); user avatars are always hexagons |
 | A concert's Tickets (Concerts page, Home's concert cards, an artist's On tour) | `TicketsButton` | `tickets-button.js` | The primary button in the Concerts hero's teal (`PAGE_COLORS.concerts.color`) with white text; one seller is a link, several open `Menu` with a link per seller |
 | Starting Collection Radio (Home's greeting, the Collection hero and its collapsed header) | `CollectionRadioButton` | `collection-radio-button.js` | The accent fill with a round Play mark; `compact` for a collapsed header |
-| A link to a page in the sidebar, or a section in Settings | `NavItem` | `nav-item.js` | The page's colour and tint when current (`aria-current`), a hover tint otherwise; `unread` dot and `count` badge |
+| A link to a page in the sidebar, or a section in Settings (`NavSearch`: the sidebar's Search box) | `NavItem` | `nav-item.js` | The page's colour and tint when current (`aria-current`), a hover tint otherwise; `unread` dot and `count` badge |
 | A choice shown as a bordered tile (a title and a line under it) | `OptionTile` | `option-tile.js` | `tone: 'danger'` for the destructive choice; `compact` for the album page's edition card |
 | A row in a list you pick from (suggestions, Add to playlist) | `ListRow` | `list-row.js` | `size`, `divider`, `state`: `added` / `drop` / `current` |
 | A cover's hover actions (Add to playlist, Play, Add to queue) | `ArtOverlay` + `useReveal` | `card-art.js` | Shown on hover and keyboard focus. Without `shown`, CSS reveals it (`.card-actions`) for a card drawn in a list. `ArtBox` is the square art (cover, mosaic or placeholder, reporting a dead cover) |
 | A track list row | `TrackRow` | `track-lists.js` | number · title · artist · `cells` · source icons · `duration` (the last column, the icons right up against it). `lead` (edit-mode handles), `showArtist`, `resolving`, `dimResolving`; `onPlay(resolverId?)` covers the row and each icon |
-| A service's play button (a source icon) | `SourceIconButton` (`TrackSources` for the column) | `track-lists.js` | The plug-in's colour and logo, "Play from X (95% match)"; `quiet` on the dark queue drawer (`.source-quiet`: faded and desaturated at rest, full on hover or focus) |
+| A service's play button (a source icon) | `SourceIconButton` (`TrackSources` for the column) | `source-icon-button.js` (re-exported by `track-lists.js`) | The plug-in's colour and logo, "Play from X (95% match)"; `quiet` on the dark queue drawer (`.source-quiet`: faded and desaturated at rest, full on hover or focus) |
 | A page's coloured header | `PageHero` | `page-hero.js` | 320px, collapsing to 80px; gradient and pattern from `PAGE_COLORS`; the page passes `expanded` and `collapsedContent`. The artist page's photo hero is the one other design |
 | A page's Filter… box | `FilterBox` | `filter-box.js` | Opens focused; an empty box closes on blur; ✕ or Escape empties and closes it (and its Escape doesn't close a dialog around it) |
 | The strip that stays at the top of a page's scroll area | `StickyBar` | `filter-box.js` | `variant` 'filter' or 'header' |
@@ -261,13 +264,18 @@ Components use `React.createElement()` (no JSX) and live in `src/renderer/compon
 | The AI provider picker | `ProviderMenu` | `provider-menu.js` | The shared `Menu` of AI plug-ins, on both Shuffleupagus panels |
 | A pick-one row of equal tiles, each with an icon (Settings' theme) | `SegmentedChoice` | `fields.js` | `role="radiogroup"`; the current tile has an accent border and tint |
 | Nothing to show yet / a load that failed | `EmptyState` / `ErrorState` | `states.js` | `ErrorState` has "Try again" (`onRetry`); `tone: 'dark'` on the dark panels, `icon: null` for none |
-| A loading placeholder | `CardSkeleton` (one card, any grid; `CardRowSkeleton` for Home's rows), `ArtistCardSkeleton` (an artist card), `TrackRowSkeleton` (a track row, `TrackRow`'s own columns), `ConcertListSkeleton` (a month of concert rows: `photo: true` for the Concerts page's row, without for an artist's On tour), the page's skeletons | `home-skeletons.js`, `track-lists.js`, `recommendation-skeletons.js`, `concert-skeletons.js` | Same box and columns as the content (see Shimmer classes), so nothing jumps when it lands |
+| A loading placeholder (the playbar's three now-playing lines: `PlaybarLineSkeleton`, `playbar-skeleton.js`; a concert list: `ConcertListSkeleton`, `concert-skeletons.js`) | `CardSkeleton` (one card, any grid; `CardRowSkeleton` for Home's rows), `ArtistCardSkeleton` (an artist card), `TrackRowSkeleton` (a track row, `TrackRow`'s own columns), `ConcertListSkeleton` (a month of concert rows: `photo: true` for the Concerts page's row, without for an artist's On tour), the page's skeletons | `home-skeletons.js`, `track-lists.js`, `recommendation-skeletons.js`, `concert-skeletons.js` | Same box and columns as the content (see Shimmer classes), so nothing jumps when it lands |
 | A tooltip | `Tooltip`, or `data-tooltip` on a control | `ui-atoms.js` | Never a native `title` (below) |
 | A "why it's here" badge on a cover | `ReasonBadge` (`ReasonMark` for a heading) | `reason-badge.js` | Shuffleupagus picks, Critical Darlings summaries |
-| A service's icon or logo | `ResolverIcon`, `SERVICE_LOGOS` | `ui-atoms.js` | The colour comes from the plug-in's `manifest.color` |
+| A service's icon or logo | `ResolverIcon`, `SERVICE_LOGOS` | `brand-logos.js` (re-exported by `ui-atoms.js`) | The colour comes from the plug-in's `manifest.color` |
+| Any other logo (Shuffleupagus' elephant, Chrome, X, Instagram, Facebook, YouTube) or Parachord's wordmark | `BrandMark` (`id`), `ParachordWordmark` | `brand-logos.js` | One-colour marks take `fill`; Chrome keeps its own colours |
+| The queue's "Playing from" bar | `QueueContextBar` | `queue-context-bar.js` | `interactive` false for a Spinoff; app.js passes the click |
+| A friend's now-playing pill in the sidebar | `FriendMiniPlaybar` | `friend-mini-playbar.js` (re-exported by `settings-cards.js`) | |
 | An icon | `Icons.*` | `icons.js` | Real SVGs from one set (see Icons); never a pasted path or a text glyph |
 | A track's source icons | `visibleSources` / `sourceRowState` | `lib/visible-sources.js` | One rule for every list (`TrackRow` runs it) |
-| A page's colour, gradient or hero pattern | `PAGE_COLORS`, `pageTint` | `lib/page-colors.js` | |
+| A page's colour, gradient or hero pattern | `PAGE_COLORS`, `pageTint` | `lib/page-colors.js` | Names `index.html`'s `--page-<id>` / `-fill` / `-hero` variables |
+| A plug-in capability's name in UI text | `capabilityLabel` | `lib/capability-labels.js` | Sentence case; an unknown id is spelled out, never shown raw |
+| An artist with no photo | `generateArtistPattern` | `lib/artist-pattern.js` | A gradient and initials picked by a hash of the name |
 | A release type's colour | `RELEASE_TYPE_COLORS`, `releaseTypeColor` | `lib/release-types.js` | The album page's badge, the cards' badge and the type chips |
 | A hover prefetch on an element that isn't a shared card | `hoverDwell` | `lib/hover-dwell.js` | Runs after a 250ms rest, so a scroll past doesn't fetch |
 | Share | `ShareButton` | `ui-atoms.js` | |
@@ -277,14 +285,15 @@ Components use `React.createElement()` (no JSX) and live in `src/renderer/compon
 
 | Module | Exports |
 |--------|---------|
-| `button.js`, `header-control.js`, `modal.js`, `toast.js`, `menu.js`, `provider-menu.js`, `sort-menu.js`, `card-button.js`, `section-header.js`, `filter-chips.js` (`FilterChips`, `Chip`), `filter-box.js` (`FilterBox`, `StickyBar`), `hero-tabs.js`, `page-hero.js`, `badge.js`, `fields.js`, `states.js`, `reason-badge.js`, `keyboard-shortcuts.js`, `whats-new-dialog.js` | The shared controls in the table above, the keyboard shortcuts dialog and What's New |
+| `button.js`, `header-control.js`, `modal.js`, `toast.js`, `menu.js`, `provider-menu.js`, `sort-menu.js`, `card-button.js`, `section-header.js`, `filter-chips.js` (`FilterChips`, `Chip`), `filter-box.js` (`FilterBox`, `StickyBar`), `hero-tabs.js`, `page-hero.js`, `badge.js`, `fields.js`, `states.js`, `reason-badge.js`, `keyboard-shortcuts.js`, `whats-new-dialog.js`, `option-tile.js`, `list-row.js`, `nav-item.js` (`NavItem`, `NavSearch`), `tickets-button.js`, `collection-radio-button.js`, `queue-context-bar.js` | The shared controls in the table above, the keyboard shortcuts dialog and What's New |
 | `album-card.js`, `playlist-card.js`, `artist-card.js`, `listener-card.js`, `card-art.js` | The cards, and the art and overlay they share |
-| `ui-atoms.js` | `Tooltip`, `FixedTooltip`, `TooltipLayer`, `placeTooltip`, `ResolverIcon`, `SERVICE_LOGOS` (and its paths and images), `ParachordWordmark`, `PlaybackProgress`, `ShareButton` |
-| `icons.js` | `Icons`, the one icon set |
-| `track-lists.js` | `TrackRow`, `TrackSources`, `SourceIconButton`, `VirtualizedQueueList`, `VirtualizedTrackList` |
-| `cards.js` | `ReleasePage` (the album page), `ReleaseCard` (the artist page's discography card, an `AlbumCard`), `AlbumVersionsMenu`, `SearchHistoryItem`, `PlayTop10Icon`, `RELEASE_BADGE_STYLES`, `generateArtistPattern` |
-| `settings-cards.js` | `ResolverCard` (the plug-in tile), `McpSettingsSection`, `ScrobblerSettingsCard`, `FriendMiniPlaybar` |
-| `home-sections.js`, `home-banner.js`, `home-setup.js`, `home-skeletons.js`, `recommendation-skeletons.js` | Home's rows and both pages' skeletons |
+| `ui-atoms.js` | `Tooltip`, `FixedTooltip`, `TooltipLayer`, `placeTooltip`, `PlaybackProgress`, `ShareButton`; re-exports the logo kit |
+| `brand-logos.js` | `ResolverIcon`, `SERVICE_LOGO_PATHS` / `_IMAGES`, `SERVICE_LOGOS`, `BRAND_MARKS` / `BrandMark`, `ParachordWordmark`, `BRAND_COLORS` |
+| `icons.js` | `Icons`, the one icon set (custom: `Spinner`, `Spinoff`, `Playlist`, `PlayTop10`) |
+| `track-lists.js` | `TrackRow`, `TrackSources`, `VirtualizedQueueList`, `VirtualizedTrackList`; re-exports `SourceIconButton` (`source-icon-button.js`) |
+| `cards.js` | `ReleasePage` (the album page), `ReleaseCard` (the artist page's discography card, an `AlbumCard`), `AlbumVersionsMenu`, `SearchHistoryItem`, `PlayTop10Icon` (= `Icons.PlayTop10`), `RELEASE_BADGE_STYLES`; re-exports `generateArtistPattern` (`lib/artist-pattern.js`) |
+| `settings-cards.js` | `ResolverCard` (the plug-in tile), `McpSettingsSection`, `ScrobblerSettingsCard`, `SettingsSection`; re-exports `FriendMiniPlaybar` (`friend-mini-playbar.js`) |
+| `home-sections.js`, `home-banner.js`, `home-setup.js`, `home-skeletons.js`, `recommendation-skeletons.js`, `concert-skeletons.js`, `playbar-skeleton.js` | Home's rows and the pages' and playbar's skeletons |
 | `home-page.js`, `collection-page.js`, `artist-page.js`, `playlist-view-page.js`, `search-page.js` | Whole pages, each `React.memo`'d and fed stable props |
 
 Everything else still renders inline in `src/renderer/app.js`. Details of a few:
@@ -301,7 +310,7 @@ One tooltip, two ways in (#1385 step 9):
 - **`Tooltip`** wraps a trigger. **`data-tooltip`** goes on a control with no wrapper; `TooltipLayer`, mounted once at the app root, shows it. Controls never use a native `title` (it shows late, never on focus, and in the OS's look); `tests/renderer/tooltip-layer.test.js` fails on one.
 - **Panel:** `.tooltip-panel` in `index.html`, portalled to `<body>` and `position: fixed`, so no `overflow: hidden` clips it. `variant: 'dark'` / `data-tooltip-variant="dark"` adds an outline on the always-dark surfaces (same dark tip); `.tooltip-bio` wraps long text.
 - **Placement:** `position` = `'top'` (default) | `'top-end'` | `'bottom'` | `'bottom-start'` | `'left'` | `'right'` (`data-tooltip-position`). `placeTooltip` (pure) keeps it inside the window and flips it when its side has no room.
-- **Behaviour:** shows on hover and on keyboard focus (focus-visible only for `data-tooltip`) after 400ms (`TOOLTIP_DELAY_MS`), stays while either lasts, and Escape or a scroll dismisses it (WCAG 1.4.13). A click hides a `data-tooltip` one.
+- **Behaviour:** shows on hover and on keyboard focus (`:focus-visible` only, for both ways in: the focus a click gives a button never shows one) after 400ms (`TOOLTIP_DELAY_MS`), stays while either lasts, and Escape or a scroll dismisses it (WCAG 1.4.13). A click on the trigger hides it, and so does the pointer leaving the window (no mouseleave reaches a trigger on the window's edge, such as the playbar). Before 2026-11-16 the wrapper showed on any focus, so a playbar button's tip stayed up after the click until something else took focus.
 - **Names:** a tooltip is a description, not a name. An icon-only control needs an `aria-label` too, usually the same words. A wrapped single element gets `aria-describedby` pointing at the tip while it shows.
 
 ### FixedTooltip
@@ -462,12 +471,16 @@ Props: `size` (default 24; a `w-*`/`h-*` class or `style` overrides it), `classN
 
 ### Service Logos
 
-Large service logos are stored in the `SERVICE_LOGOS` object (`ui-atoms.js`), sized `w-16 h-16` and mostly white for coloured backgrounds. Services include: Spotify, Apple Music, Amazon Music, YouTube, Bandcamp, SoundCloud, Subsonic, Local Files, MusicBrainz, Last.fm, Libre.fm, ListenBrainz, ChatGPT, Claude, Gemini, Ollama, Shuffleupagus, Wikipedia, Discogs, Bandsintown, Songkick, SeatGeek, Ticketmaster and Achordion. SoundCloud and Subsonic are images; the rest are SVGs.
+Large service logos are stored in the `SERVICE_LOGOS` object (`brand-logos.js`), sized `w-16 h-16` and mostly white for coloured backgrounds. Services include: Spotify, Apple Music, Amazon Music, YouTube, Bandcamp, SoundCloud, Subsonic, Local Files, MusicBrainz, Last.fm, Libre.fm, ListenBrainz, ChatGPT, Claude, Gemini, Ollama, Shuffleupagus, Wikipedia, Discogs, Bandsintown, Songkick, SeatGeek, Ticketmaster and Achordion. SoundCloud and Subsonic are images; the rest are SVGs.
 
 ### Custom Icons
 
-- **`PlayTop10Icon`** — Play triangle with green "10" badge (for artist top tracks)
-- **`QueueTop10Icon`** — Queue/list icon with green "10" badge
+Custom icons live in `icons.js` beside the Lucide ones, as components that draw their own SVG (outside the 24px stroke grid):
+
+- **`Icons.Spinner`**: the one loading spinner
+- **`Icons.Spinoff`**: the playbar's Spinoff fork, solid, in its own 32px box
+- **`Icons.Playlist`**: the Playlists placeholder (three bars and a play triangle), solid
+- **`Icons.PlayTop10`**: a play triangle with a green "10" badge (Play an artist's or a listener's top 10; `cards.js` still exports it as `PlayTop10Icon`)
 
 ### App Icons
 
