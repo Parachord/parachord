@@ -64,7 +64,8 @@ const METRICS = {
   handBuiltButtons: 'Buttons and links styled as buttons by hand (their own padding plus a fill, border or radius, in classes or inline style). Use Button / buttonClassName (components/button.js), or the shared component for that control.',
 };
 
-// The file each copy metric's shared component lives in: its own uses don't count.
+// The file each copy metric's shared component (or canonical data) lives in:
+// its own uses don't count.
 const COPY_HOMES = {
   trackRowCopies: ['components/track-lists.js'],
   sourceButtonCopies: ['components/track-lists.js', 'components/menu.js'],
@@ -73,6 +74,10 @@ const COPY_HOMES = {
   filterPillCopies: ['components/filter-chips.js'],
   stickyBarCopies: ['components/filter-box.js'],
   heroCopies: ['components/page-hero.js'],
+  // The canonical colour data: each page's colour (CLAUDE.md "A page's colour
+  // comes from PAGE_COLORS") and the artist stand-in art's palettes.
+  hexColors: ['lib/page-colors.js', 'lib/artist-pattern.js'],
+  paletteClasses: ['lib/page-colors.js'],
   // Shared components whose own buttons are the one look for their control.
   handBuiltButtons: ['components/button.js', 'components/header-control.js', 'components/card-button.js', 'components/filter-chips.js',
     'components/menu.js', 'components/sort-menu.js', 'components/fields.js', 'components/collection-radio-button.js',

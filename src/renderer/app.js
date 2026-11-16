@@ -2073,6 +2073,9 @@ const { PAGE_COLORS, pageTint } = require('./lib/page-colors');
 const { capabilityLabel } = require('./lib/capability-labels');
 // A plugin manifest's "no colour of its own" value: never shown.
 const NO_PLUGIN_COLOR = '#888888';
+// Raycast's brand colour and gradient (its extension's info dialog).
+const RAYCAST_COLOR = '#FF6363';
+const RAYCAST_GRADIENT = `linear-gradient(135deg, ${RAYCAST_COLOR} 0%, #FF8E53 100%)`;
 const { Modal, ConfirmModal, DontShowAgain } = require('./components/modal');
 const { PlaylistUpdateDialog, UpdateModeChoice } = require('./components/playlist-update-dialog');
 const { KeyboardShortcutsDialog } = require('./components/keyboard-shortcuts');
@@ -4032,40 +4035,6 @@ const Parachord = () => {
   const openListenBrainzSettingsRef = useRef(null); // Settings → Plugins, on ListenBrainz (read from stale closures)
   const openSyncSetupModalRef = useRef(null); // Ref for openSyncSetupModal to avoid stale closures
 
-  // Provider branding for sync UI
-  // Memoized: it is a prop of the memo'd CollectionPage, and a literal rebuilt
-  // on every render would make that prop change every time.
-  const syncProviderConfig = useMemo(() => ({
-    spotify: {
-      name: 'Spotify',
-      color: '#1DB954',
-      colorHover: '#1ed760',
-      capabilities: { tracks: true, albums: true, artists: true, playlists: true },
-      icon: React.createElement('svg', { className: 'w-6 h-6', viewBox: '0 0 24 24', fill: '#ffffff' },
-        React.createElement('path', { d: 'M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z' })
-      )
-    },
-    applemusic: {
-      name: 'Apple Music',
-      color: '#FA243C',
-      colorHover: '#ff3b52',
-      capabilities: { tracks: true, albums: true, artists: false, playlists: true },
-      icon: React.createElement('svg', { className: 'w-6 h-6', viewBox: '0 0 122.88 122.88', fill: '#ffffff' },
-        React.createElement('path', { d: 'M47.76,86.16v-38.4c0-1.44,0.8-2.32,2.4-2.64l33.12-6.72c1.76-0.32,2.72,0.48,2.88,2.4v29.28c0,2.4-3.6,4-10.8,4.8c-13.68,2.16-11.52,25.2,7.2,18.96c7.2-2.64,8.4-9.6,8.4-16.56V21.12c0,0,0-4.8-4.08-3.6l-40.8,8.4c0,0-3.12,0.48-3.12,4.32v48.72c0,2.4-3.6,4-10.8,4.8c-13.68,2.16-11.52,25.2,7.2,18.96C46.56,100.08,47.76,93.12,47.76,86.16z' })
-      )
-    },
-    listenbrainz: {
-      name: 'ListenBrainz',
-      color: '#353070',
-      colorHover: '#4a4496',
-      // LB sync only supports playlists today (no liked-songs / saved-albums / artist-follow API parity).
-      capabilities: { tracks: false, albums: false, artists: false, playlists: true },
-      icon: React.createElement('svg', { className: 'w-6 h-6', viewBox: '0 0 146 160', fill: '#ffffff' },
-        React.createElement('path', { d: 'm75.354 7.823v144l61-35v-74z' }),
-        React.createElement('path', { d: 'm70.354 7.823-61 35v74l61 35z' })
-      )
-    }
-  }), []);
 
   // Sync setup modal state
   const [syncSetupModal, setSyncSetupModal] = useState({
@@ -12981,6 +12950,35 @@ ${trackListXml}
   // Use loaded resolvers directly — loadedResolvers is already [] when empty,
   // so no need for a conditional that creates a new [] reference every render.
   const allResolvers = loadedResolvers;
+
+  // Provider branding for sync UI: the name and capabilities here; the colour
+  // and logo come from the plug-in (its manifest's color, the shared logo
+  // kit), never a copy. No colour until the plug-ins load: the sync UI falls
+  // back to the accent.
+  // Memoized: it is a prop of the memo'd CollectionPage, and a literal rebuilt
+  // on every render would make that prop change every time.
+  const syncProviderConfig = useMemo(() => {
+    // Every loaded plug-in, meta-services (ListenBrainz) included: the
+    // loader has them all; allResolvers is only the content ones, and is the
+    // dependency because it changes when the loader has loaded.
+    const plugins = resolverLoaderRef.current?.getAllResolvers?.() || allResolvers;
+    const colorOf = (id) => {
+      const r = plugins.find(x => x.id === id);
+      return r && r.color && r.color !== NO_PLUGIN_COLOR ? r.color : null;
+    };
+    const provider = (id, name, capabilities) => ({
+      name,
+      color: colorOf(id),
+      capabilities,
+      icon: React.createElement(ResolverIcon, { resolverId: id, size: 24, fill: 'var(--on-accent)' })
+    });
+    return {
+      spotify: provider('spotify', 'Spotify', { tracks: true, albums: true, artists: true, playlists: true }),
+      applemusic: provider('applemusic', 'Apple Music', { tracks: true, albums: true, artists: false, playlists: true }),
+      // LB sync only supports playlists today (no liked-songs / saved-albums / artist-follow API parity).
+      listenbrainz: provider('listenbrainz', 'ListenBrainz', { tracks: false, albums: false, artists: false, playlists: true })
+    };
+  }, [allResolvers]);
 
   // Sync resolverOrder with activeResolvers - only active resolvers belong in
   // the priority order. Add any active resolvers that are missing, and remove
@@ -41403,7 +41401,7 @@ React.createElement('div', {
                         width: '120px',
                         height: '120px',
                         borderRadius: '16px',
-                        background: 'linear-gradient(135deg, #FF6363 0%, #FF8E53 100%)',
+                        background: RAYCAST_GRADIENT,
                         boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1), 0 4px 16px rgba(0, 0, 0, 0.05)'
                       },
                       onClick: () => setRaycastInfoOpen(true)
@@ -41422,7 +41420,7 @@ React.createElement('div', {
                           borderRadius: '6px',
                           fontSize: '12px',
                           fontWeight: '600',
-                          color: '#FF6363'
+                          color: RAYCAST_COLOR
                         }
                       }, 'i')
                     ),
@@ -46415,7 +46413,7 @@ React.createElement('div', {
 React.createElement('div', {
           style: {
             padding: '24px',
-            background: 'linear-gradient(135deg, #FF6363 0%, #FF8E53 100%)',
+            background: RAYCAST_GRADIENT,
             display: 'flex',
             alignItems: 'center',
             gap: '16px'
@@ -46464,7 +46462,7 @@ React.createElement('div', {
                   window.open('https://raycast.com', '_blank');
                 }
               },
-              style: { color: '#FF6363', textDecoration: 'none', fontWeight: '500' }
+              style: { color: RAYCAST_COLOR, textDecoration: 'none', fontWeight: '500' }
             }, 'Raycast'),
             ' extension lets you control playback, search for music, and chat with Shuffleupagus — all from your keyboard.'
           ),
@@ -46525,7 +46523,7 @@ React.createElement('div', {
                       width: '22px',
                       height: '22px',
                       borderRadius: '50%',
-                      backgroundColor: '#FF6363',
+                      backgroundColor: RAYCAST_COLOR,
                       color: 'var(--on-accent)',
                       display: 'flex',
                       alignItems: 'center',
@@ -46555,7 +46553,7 @@ React.createElement('div', {
             gap: '12px'
           }
         },
-          React.createElement(Button, { variant: 'primary', pageColor: '#FF6363', onClick: () => {
+          React.createElement(Button, { variant: 'primary', pageColor: RAYCAST_COLOR, onClick: () => {
               if (window.electron?.shell?.openExternal) {
                 window.electron.shell.openExternal('https://www.raycast.com/parachord/parachord');
               } else {
