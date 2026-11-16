@@ -50,7 +50,7 @@ describe('the import button on the scrobbler card', () => {
   test('both cards are wired (a reverted card wiring fails this)', () => {
     const fs = require('fs');
     const path = require('path');
-    const app = fs.readFileSync(path.join(__dirname, '../..', 'src/renderer/app.js'), 'utf8');
+    const app = require('../helpers/renderer-source').appWithPages();
     expect(app).toContain("onRunLoveImport: () => runLoveImport('lastfm')");
     expect(app).toContain("onRunLoveImport: () => runLoveImport('listenbrainz')");
     expect(app).toContain('loveImportRunning: !!loveImportRunning.listenbrainz');

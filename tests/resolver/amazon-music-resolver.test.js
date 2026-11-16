@@ -770,12 +770,12 @@ describe('FALLBACK_RESOLVERS parity (generated module)', () => {
     const fallback = entries.find((e) => e.manifest && e.manifest.id === 'amazonmusic');
     expect(fallback).toBeTruthy();
     expect(fallback).toEqual(axe);
-    const appSrc = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+    const appSrc = require('../helpers/renderer-source').appWithPages();
     expect(appSrc).toContain("require('./lib/fallback-resolvers.generated.js')");
   });
 
   test('amazonmusic is in the canonical resolver order', () => {
-    const appSrc = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+    const appSrc = require('../helpers/renderer-source').appWithPages();
     const m = appSrc.match(/const CANONICAL_RESOLVER_ORDER = \[([^\]]+)\]/);
     expect(m).toBeTruthy();
     const order = m[1].split(',').map(s => s.trim().replace(/['"]/g, ''));

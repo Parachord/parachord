@@ -48,7 +48,7 @@ describe('amazonSignInPromptDecision', () => {
 });
 
 describe('app.js wiring', () => {
-  const src = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  const src = require('../helpers/renderer-source').appWithPages();
   const start = src.indexOf('const manageAmazonMusic = async');
   const body = src.slice(start, src.indexOf('window.__parachordManageAmazonMusic = manageAmazonMusic', start));
 

@@ -37,6 +37,7 @@ const { SyncStatusDialog, SYNC_STATUS_DIALOG_HANDLERS } = require('../../src/ren
 const { SettingsPage, SETTINGS_PAGE_HANDLERS } = require('../../src/renderer/components/settings-page');
 const { Playbar, PLAYBAR_HANDLERS } = require('../../src/renderer/components/playbar');
 const { Sidebar, SIDEBAR_HANDLERS } = require('../../src/renderer/components/sidebar');
+const { PluginSettingsDialog, PLUGIN_SETTINGS_DIALOG_HANDLERS } = require('../../src/renderer/components/plugin-settings-dialog');
 const { useStableHandlers } = require('../../src/renderer/lib/stable-handlers');
 
 const PAGES = [
@@ -60,6 +61,7 @@ const PAGES = [
   { component: 'SettingsPage', file: 'settings-page.js', handlersVar: 'settingsPageHandlers', handlers: SETTINGS_PAGE_HANDLERS, memo: SettingsPage },
   { component: 'Playbar', file: 'playbar.js', handlersVar: 'playbarHandlers', handlers: PLAYBAR_HANDLERS, memo: Playbar },
   { component: 'Sidebar', file: 'sidebar.js', handlersVar: 'sidebarHandlers', handlers: SIDEBAR_HANDLERS, memo: Sidebar },
+  { component: 'PluginSettingsDialog', file: 'plugin-settings-dialog.js', handlersVar: 'pluginSettingsDialogHandlers', handlers: PLUGIN_SETTINGS_DIALOG_HANDLERS, memo: PluginSettingsDialog },
 ];
 
 describe.each(PAGES)('$component', ({ memo }) => {

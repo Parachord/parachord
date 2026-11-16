@@ -1,0 +1,2367 @@
+// src/renderer/components/plugin-settings-dialog.js: a plug-in's settings
+// dialog, opened from its tile in Settings › Plug-Ins: its sign-in or keys,
+// its options (quality, models, scrobbling, sync), enable and remove
+// (#1451, moved out of app.js).
+//
+// A React.memo'd dialog on the shared Modal, fed stable props: state,
+// setters, refs, memos, callbacks and playback-hook values by value, plain
+// functions through useStableHandlers (PLUGIN_SETTINGS_DIALOG_HANDLERS,
+// pinned by tests/renderer/page-memo.test.js). authPort is derived here
+// from authServerStatus. The markup moved as it was; window is read only
+// inside handlers.
+
+const Icons = require('./icons');
+const PlaybackLimits = require('../lib/playback-limits');
+const { countOf } = require('../lib/plural');
+const { timeAgo } = require('../lib/time-ago');
+const { SERVICE_LOGOS } = require('./brand-logos');
+const { ScrobblerSettingsCard } = require('./settings-cards');
+const { capabilityLabel } = require('../lib/capability-labels');
+const { Modal } = require('./modal');
+const { Badge } = require('./badge');
+const { Button } = require('./button');
+const { SecretField, Select, Switch, TextField } = require('./fields');
+const { EmptyState } = require('./states');
+const { transition } = require('../lib/motion');
+const { appendUniqueId, insertInCanonicalOrder } = require('../lib/resolver-order');
+
+const PLUGIN_SETTINGS_DIALOG_HANDLERS = [
+  'applyAmazonMusicStatus',
+  'connectAppleMusic',
+  'connectLastfm',
+  'connectListenbrainz',
+  'connectSoundcloud',
+  'connectSpotify',
+  'disconnectAppleMusic',
+  'disconnectLastfm',
+  'disconnectListenbrainz',
+  'disconnectSoundcloud',
+  'disconnectSpotify',
+  'fetchDynamicModels',
+  'getServiceColor',
+  'handleAddWatchFolder',
+  'handleInstallFromMarketplace',
+  'handleRemoveMissingFiles',
+  'handleRemoveWatchFolder',
+  'handleRescanAll',
+  'handleRescanFolder',
+  'handleUninstallResolver',
+  'manageAmazonMusic',
+  'openSyncSetupModal',
+  'saveAppleMusicDeveloperToken',
+  'saveMetaServiceConfig',
+  'saveSoundcloudCredentials',
+  'saveSpotifyCredentials',
+  'toggleResolver',
+];
+
+const PluginSettingsDialog = React.memo(function PluginSettingsDialog(props) {
+  const {
+    activeResolvers,
+    allResolvers,
+    amazonMusicStatus,
+    appleMusicAdvancedOpen,
+    appleMusicConnected,
+    appleMusicDeveloperToken,
+    appleMusicNativeAvailable,
+    appleMusicTokenSaved,
+    applyAmazonMusicStatus,
+    audioRef,
+    authServerStatus,
+    autoLaunchSpotify,
+    collectionData,
+    collectionDataRef,
+    connectAppleMusic,
+    connectLastfm,
+    connectListenbrainz,
+    connectSoundcloud,
+    connectSpotify,
+    currentTrackRef,
+    disconnectAppleMusic,
+    disconnectLastfm,
+    disconnectListenbrainz,
+    disconnectSoundcloud,
+    disconnectSpotify,
+    dynamicModelOptions,
+    fetchDynamicModels,
+    getServiceColor,
+    handleAddWatchFolder,
+    handleInstallFromMarketplace,
+    handleRemoveMissingFiles,
+    handleRemoveWatchFolder,
+    handleRescanAll,
+    handleRescanFolder,
+    handleUninstallResolver,
+    installingResolvers,
+    isScanning,
+    lastfmAdvancedOpen,
+    lastfmApiKeyInput,
+    lastfmApiSecretInput,
+    lastfmConnecting,
+    lastfmUsernameInput,
+    listenbrainzAdvancedOpen,
+    listenbrainzConnecting,
+    listenbrainzTokenInput,
+    listenbrainzUsernameInput,
+    localFilesStats,
+    loveBackfillProgress,
+    loveBackfillRunning,
+    loveImportCursorRef,
+    loveImportProgress,
+    loveImportRunning,
+    lovePushedKeysRef,
+    manageAmazonMusic,
+    marketplaceManifest,
+    metaServiceConfigs,
+    metaServices,
+    openSyncSetupModal,
+    playbackLimits,
+    resolverConfigCache,
+    resolverSyncSettings,
+    runLoveBackfill,
+    runLoveImport,
+    saveAppleMusicDeveloperToken,
+    saveMetaServiceConfig,
+    saveSoundcloudCredentials,
+    saveSpotifyCredentials,
+    scanProgress,
+    scrobblerConfigs,
+    scrobblerLovePushEnabled,
+    selectedResolver,
+    setActiveResolvers,
+    setAmazonMusicStatus,
+    setAppleMusicAdvancedOpen,
+    setAppleMusicDeveloperToken,
+    setAutoLaunchSpotify,
+    setIsPlaying,
+    setLastfmAdvancedOpen,
+    setLastfmApiKeyInput,
+    setLastfmApiSecretInput,
+    setLastfmUsernameInput,
+    setListenbrainzAdvancedOpen,
+    setListenbrainzTokenInput,
+    setListenbrainzUsernameInput,
+    setLovePushEnabled,
+    setResolverOrder,
+    setScrobblerConfigs,
+    setSelectedResolver,
+    setSoundcloudAdvancedOpen,
+    setSoundcloudClientIdInput,
+    setSoundcloudClientSecretInput,
+    setSoundcloudCredentialsSource,
+    setSpotifyAdvancedOpen,
+    setSpotifyClientIdInput,
+    setStopSyncDialog,
+    showToast,
+    soundcloudAdvancedOpen,
+    soundcloudClientIdInput,
+    soundcloudClientSecretInput,
+    soundcloudConnected,
+    soundcloudCredentialsSource,
+    spotifyAdvancedOpen,
+    spotifyClientIdInput,
+    spotifyConnected,
+    spotifyCredentialsSource,
+    syncProviderConfig,
+    toggleResolver,
+    watchFolders,
+  } = props;
+  // The bound local server port (main-process/auth-port.js), 8888 until known.
+  const authPort = authServerStatus?.port || 8888;
+  return React.createElement(Modal, { bare: true, label: "Plugin settings", scrimClassName: 'z-50', onClose: () => { setSelectedResolver(null); }, panelProps: { style: {
+          backgroundColor: 'var(--card-bg)',
+          borderRadius: '16px',
+          boxShadow: 'var(--shadow-panel)',
+          maxWidth: '440px',
+          width: '100%',
+          margin: '0 16px',
+          overflow: 'hidden'
+        } } },
+React.createElement('div', {
+          className: 'flex items-center gap-4',
+          style: {
+            padding: '24px',
+            backgroundColor: selectedResolver.color || 'var(--fill-neutral)'
+          }
+        },
+          // Logo
+          React.createElement('div', {
+            className: 'flex items-center justify-center',
+            style: { width: '56px', height: '56px' }
+          }, SERVICE_LOGOS[selectedResolver.id] || React.createElement('span', { style: { fontSize: '28px' } }, selectedResolver.icon)),
+          // Name and version
+          React.createElement('div', { className: 'flex-1' },
+            React.createElement('div', { className: 'flex items-center gap-2' },
+              React.createElement('h2', {
+                style: {
+                  fontSize: '20px',
+                  fontWeight: '600',
+                  color: 'var(--on-accent)'
+                }
+              }, selectedResolver.name),
+              selectedResolver.version && React.createElement('span', {
+                style: {
+                  padding: '2px 8px',
+                  backgroundColor: 'var(--on-color-fill)',
+                  borderRadius: '4px',
+                  fontSize: '11px',
+                  color: 'var(--on-accent)'
+                }
+              }, 'v', selectedResolver.version)
+            ),
+            React.createElement('p', {
+              style: {
+                fontSize: '13px',
+                color: 'var(--on-color-secondary)',
+                marginTop: '4px'
+              }
+            }, selectedResolver.author || 'Parachord Team')
+          ),
+          // Close button
+          React.createElement('button', {
+            type: 'button',
+            'aria-label': 'Close',
+            onClick: () => setSelectedResolver(null),
+            className: 'flex items-center justify-center transition-colors',
+            style: {
+              width: '32px',
+              height: '32px',
+              borderRadius: '50%',
+              backgroundColor: 'var(--on-color-fill)',
+              border: 'none',
+              color: 'var(--on-accent)',
+              cursor: 'pointer',
+              fontSize: '14px'
+            }
+          }, React.createElement(Icons.X, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }))
+        ),
+React.createElement('div', {
+          className: 'scrollable-content',
+          style: {
+            padding: '24px',
+            maxHeight: '60vh',
+            overflowY: 'auto'
+          }
+        },
+          // Description
+          React.createElement('p', {
+            style: {
+              fontSize: '13px',
+              color: 'var(--text-secondary)',
+              lineHeight: '1.6',
+              marginBottom: selectedResolver.requirement ? '8px' : '24px'
+            }
+          }, selectedResolver.description),
+          // What it needs (manifest.requirement, #1387): a sign-in, a
+          // subscription, a developer key, or nothing.
+          selectedResolver.requirement && React.createElement('p', {
+            className: 'text-ink-primary',
+            style: { fontSize: '13px', lineHeight: '1.6', marginBottom: '24px' }
+          }, selectedResolver.requirement),
+
+          // Capabilities
+          React.createElement('div', { style: { marginBottom: '24px' } },
+            React.createElement('h3', {
+              style: {
+                fontSize: '11px',
+                fontWeight: '600',
+                color: 'var(--text-tertiary)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.08em',
+                marginBottom: '12px'
+              }
+            }, 'Capabilities'),
+            React.createElement('div', { className: 'flex flex-wrap gap-2' },
+              Object.entries(selectedResolver.capabilities || {}).map(([cap, enabled]) =>
+                // The shared pill and the one label helper (lib/capability-labels.js).
+                enabled ? React.createElement(Badge, { key: cap, tone: 'accent' }, capabilityLabel(cap)) : null)
+            )
+          ),
+
+          // Enable/Disable toggle (only for content resolvers, not meta services)
+          selectedResolver.type !== 'meta-service' && React.createElement('div', {
+            className: 'flex items-center justify-between',
+            style: {
+              padding: '16px 0',
+              borderTop: '1px solid var(--border-subtle)'
+            }
+          },
+            React.createElement('div', null,
+              React.createElement('span', {
+                style: {
+                  fontSize: '13px',
+                  fontWeight: '500',
+                  color: 'var(--text-primary)'
+                }
+              }, `Use ${selectedResolver.name}`),
+              React.createElement('p', {
+                style: {
+                  fontSize: '12px',
+                  color: 'var(--text-secondary)',
+                  marginTop: '2px'
+                }
+              }, 'Include in search and playback')
+            ),
+            React.createElement(Switch, { checked: activeResolvers.includes(selectedResolver.id), onToggle: () => toggleResolver(selectedResolver.id), 'aria-label': `Use ${selectedResolver.name}` })
+          ),
+
+          // Authentication section (for services that require it)
+          selectedResolver.id === 'spotify' && React.createElement('div', {
+            style: {
+              padding: '16px 0',
+              borderTop: '1px solid var(--border-subtle)'
+            }
+          },
+            React.createElement('div', { className: 'flex items-center justify-between' },
+              React.createElement('div', null,
+                React.createElement('span', {
+                  style: {
+                    fontSize: '13px',
+                    fontWeight: '500',
+                    color: 'var(--text-primary)'
+                  }
+                }, 'Spotify Account'),
+                React.createElement('p', {
+                  style: {
+                    fontSize: '12px',
+                    color: 'var(--text-secondary)',
+                    marginTop: '2px'
+                  }
+                },
+                  spotifyConnected ? 'Connected and ready' : 'Sign in to enable streaming'
+                )
+              ),
+              spotifyConnected
+                ? React.createElement(Button, { variant: 'secondary', onClick: disconnectSpotify }, 'Disconnect')
+                : React.createElement(Button, { variant: 'primary', pageColor: getServiceColor('spotify') || 'var(--accent-fill)', onClick: connectSpotify }, 'Connect')
+            ),
+            spotifyConnected && React.createElement('div', {
+              className: 'flex items-center gap-2',
+              style: {
+                marginTop: '12px',
+                fontSize: '12px',
+                color: 'var(--text-success)'
+              }
+            },
+              React.createElement('span', null, React.createElement(Icons.Check, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } })),
+              React.createElement('span', null, 'Spotify Premium connected')
+            ),
+            // Spotify API credentials — BYOK required
+            !spotifyConnected && React.createElement('div', {
+              style: {
+                marginTop: '16px',
+                padding: '12px',
+                backgroundColor: 'var(--hover-bg-default)',
+                borderRadius: '8px'
+              }
+            },
+              spotifyCredentialsSource === 'env'
+                ? React.createElement('p', {
+                    style: { fontSize: '11px', color: 'var(--text-success)', marginBottom: '8px', lineHeight: '1.5' }
+                  }, 'Using Client ID from environment variable.')
+                : React.createElement('p', {
+                    style: { fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '12px', lineHeight: '1.5' }
+                  },
+                    'Spotify requires your own API credentials. Create a free app at ',
+                    React.createElement('a', {
+                      href: '#',
+                      onClick: (e) => { e.preventDefault(); window.electron?.openExternal?.('https://developer.spotify.com/dashboard') || window.open('https://developer.spotify.com/dashboard', '_blank'); },
+                      style: { color: getServiceColor('spotify') || 'var(--accent-primary)', textDecoration: 'underline' }
+                    }, 'developer.spotify.com/dashboard'),
+                    // Since February 2026 a Development Mode app works only
+                    // while its owner has Premium, and every Parachord sign-in
+                    // is one (docs/architecture/playback.md).
+                    ' to get your Client ID. The Spotify account that creates the app needs Spotify Premium, and the app stops working if that Premium lapses.'
+                  ),
+              // Setup steps (only shown when no key configured)
+              spotifyCredentialsSource === 'none' && React.createElement('div', {
+                style: {
+                  fontSize: '11px',
+                  color: 'var(--text-secondary)',
+                  marginBottom: '12px',
+                  lineHeight: '1.6',
+                  paddingLeft: '4px'
+                }
+              },
+                React.createElement('div', null, '1. Create a new app (name it anything)'),
+                React.createElement('div', null, '2. Add both Redirect URIs:'),
+                React.createElement('div', { style: { paddingLeft: '12px', marginTop: '2px', marginBottom: '2px' } },
+                  React.createElement('code', {
+                    onClick: () => { navigator.clipboard.writeText(`http://127.0.0.1:${authPort}/callback`); showToast('Copied to clipboard', 'success'); },
+                    title: 'Click to copy',
+                    style: { cursor: 'pointer', backgroundColor: 'var(--hover-bg-default)', padding: '1px 4px', borderRadius: '4px', display: 'inline-block', marginBottom: '2px', userSelect: 'all' }
+                  }, `http://127.0.0.1:${authPort}/callback`),
+                  React.createElement('br'),
+                  React.createElement('code', {
+                    onClick: () => { navigator.clipboard.writeText(`http://[::1]:${authPort}/callback`); showToast('Copied to clipboard', 'success'); },
+                    title: 'Click to copy',
+                    style: { cursor: 'pointer', backgroundColor: 'var(--hover-bg-default)', padding: '1px 4px', borderRadius: '4px', display: 'inline-block', userSelect: 'all' }
+                  }, `http://[::1]:${authPort}/callback`)
+                ),
+                // Without Web Playback SDK ticked, play commands can fail with
+                // 403 "Restriction violated" (parachord#985).
+                React.createElement('div', null, '3. Under "APIs used", tick both Web API and Web Playback SDK'),
+                React.createElement('div', null, '4. Copy your Client ID and paste it below')
+              ),
+              // Client ID input
+              React.createElement('div', { style: { marginBottom: '10px' } },
+                React.createElement('label', {
+                  style: { fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }
+                }, 'Client ID'),
+                React.createElement(SecretField, { value: spotifyClientIdInput, onChange: (_v, e) => setSpotifyClientIdInput(e.target.value), placeholder: 'Paste your Spotify Client ID here', 'aria-label': 'Paste your Spotify Client ID here', className: 'w-full' })
+              ),
+              // Redirect URIs (always visible for reference)
+              React.createElement('div', { style: { marginBottom: '12px' } },
+                React.createElement('label', {
+                  style: { fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }
+                }, 'Redirect URIs'),
+                React.createElement('div', { style: { display: 'flex', gap: '6px', marginBottom: '6px' } },
+                  React.createElement(TextField, { 'aria-label': 'Redirect URI (IPv4)', value: `http://127.0.0.1:${authPort}/callback`, readOnly: true, className: 'flex-1' }),
+                  React.createElement(Button, { variant: 'secondary', 'aria-label': 'Copy redirect URI', title: 'Copy', onClick: () => {
+                      navigator.clipboard.writeText(`http://127.0.0.1:${authPort}/callback`);
+                      showToast('Copied to clipboard', 'success');
+                    } },
+  React.createElement(Icons.Copy, { className: 'w-4 h-4' }))
+                ),
+                React.createElement('div', { style: { display: 'flex', gap: '6px' } },
+                  React.createElement(TextField, { 'aria-label': 'Redirect URI (IPv6)', value: `http://[::1]:${authPort}/callback`, readOnly: true, className: 'flex-1' }),
+                  React.createElement(Button, { variant: 'secondary', 'aria-label': 'Copy redirect URI', title: 'Copy', onClick: () => {
+                      navigator.clipboard.writeText(`http://[::1]:${authPort}/callback`);
+                      showToast('Copied to clipboard', 'success');
+                    } },
+  React.createElement(Icons.Copy, { className: 'w-4 h-4' }))
+                ),
+                React.createElement('p', {
+                  style: { fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }
+                }, 'Add both URLs to your Spotify app\'s Redirect URIs (IPv4 + IPv6)')
+              ),
+              // Save / Clear buttons
+              React.createElement('div', { className: 'flex gap-2' },
+                React.createElement(Button, { variant: 'primary', size: 'sm', onClick: saveSpotifyCredentials, disabled: !spotifyClientIdInput.trim() }, 'Save'),
+                spotifyClientIdInput && React.createElement(Button, { variant: 'text', size: 'sm', onClick: () => {
+                    setSpotifyClientIdInput('');
+                    // Pass the cleared value: the input state hasn't updated
+                    // yet, and reading it re-saved the old Client ID.
+                    saveSpotifyCredentials('');
+                  } }, 'Clear')
+              )
+            ),
+            // Show credentials source when connected
+            spotifyConnected && spotifyCredentialsSource === 'user' && React.createElement(Button, { variant: 'text', size: 'sm', onClick: () => setSpotifyAdvancedOpen(!spotifyAdvancedOpen) }, React.createElement(Icons.ChevronRight, {
+                className: `w-3.5 h-3.5 transform transition-transform ${spotifyAdvancedOpen ? 'rotate-90' : ''}`
+              }), 'Change client ID'),
+            spotifyConnected && spotifyAdvancedOpen && React.createElement('div', {
+              style: { marginTop: '8px', padding: '12px', backgroundColor: 'var(--hover-bg-default)', borderRadius: '8px' }
+            },
+              React.createElement('div', { style: { marginBottom: '10px' } },
+                React.createElement('label', {
+                  style: { fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }
+                }, 'Client ID'),
+                React.createElement(SecretField, { value: spotifyClientIdInput, onChange: (_v, e) => setSpotifyClientIdInput(e.target.value), placeholder: 'Your Spotify Client ID', 'aria-label': 'Your Spotify Client ID', className: 'w-full' })
+              ),
+              React.createElement(Button, { variant: 'primary', size: 'sm', onClick: saveSpotifyCredentials, disabled: !spotifyClientIdInput.trim() }, 'Save')
+            )
+          ),
+
+          // Library Sync Section - shown for providers that support sync
+          (selectedResolver.id === 'spotify' || selectedResolver.id === 'applemusic') && React.createElement('div', {
+            style: {
+              marginTop: '20px',
+              padding: '16px',
+              backgroundColor: 'var(--hover-bg-default)',
+              borderRadius: '12px',
+              border: '1px solid var(--border-subtle)'
+            }
+          },
+            React.createElement('h4', {
+              style: {
+                fontSize: '11px',
+                fontWeight: '600',
+                color: 'var(--text-tertiary)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.08em',
+                marginBottom: '14px'
+              }
+            }, 'Library Sync'),
+            resolverSyncSettings[selectedResolver.id]?.enabled
+              ? React.createElement('div', {
+                  style: { display: 'flex', flexDirection: 'column', gap: '12px' }
+                },
+                  // Status row
+                  React.createElement('div', {
+                    style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '13px' }
+                  },
+                    React.createElement('span', {
+                      style: { color: 'var(--text-secondary)' }
+                    }, 'Status'),
+                    React.createElement('span', {
+                      style: { color: 'var(--text-success)', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '500' }
+                    },
+                      React.createElement('span', {
+                        style: { width: '8px', height: '8px', backgroundColor: 'var(--success)', borderRadius: '50%' }
+                      }),
+                      'Active'
+                    )
+                  ),
+                  // Last synced row
+                  React.createElement('div', {
+                    style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '13px' }
+                  },
+                    React.createElement('span', {
+                      style: { color: 'var(--text-secondary)' }
+                    }, 'Last synced'),
+                    React.createElement('span', {
+                      style: { color: 'var(--text-primary)' }
+                    },
+                      resolverSyncSettings[selectedResolver.id]?.lastSyncAt
+                        ? new Date(resolverSyncSettings[selectedResolver.id].lastSyncAt).toLocaleString()
+                        : 'Never'
+                    )
+                  ),
+                  // Action buttons
+                  React.createElement('div', {
+                    style: { display: 'flex', gap: '8px', marginTop: '4px' }
+                  },
+                    React.createElement(Button, { variant: 'secondary', onClick: () => openSyncSetupModal(selectedResolver.id) }, 'Manage sync'),
+                    React.createElement(Button, { variant: 'destructive', onClick: () => setStopSyncDialog({ open: true, providerId: selectedResolver.id }) }, 'Stop syncing')
+                  )
+                )
+              : React.createElement(Button, { variant: 'primary', pageColor: syncProviderConfig[selectedResolver.id]?.color || 'var(--accent-fill)', className: 'w-full', onClick: () => openSyncSetupModal(selectedResolver.id) }, 'Set up library sync')
+          ),
+
+          // Auto-launch Spotify section
+          selectedResolver.id === 'spotify' && React.createElement('div', {
+            style: {
+              marginTop: '20px',
+              padding: '16px',
+              backgroundColor: 'var(--hover-bg-default)',
+              borderRadius: '12px',
+              border: '1px solid var(--border-subtle)'
+            }
+          },
+            React.createElement('h4', {
+              style: {
+                fontSize: '11px',
+                fontWeight: '600',
+                color: 'var(--text-tertiary)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.08em',
+                marginBottom: '14px'
+              }
+            }, 'Startup'),
+            React.createElement('div', { className: 'flex items-center justify-between' },
+              React.createElement('div', null,
+                React.createElement('p', { style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' } },
+                  'Auto-launch Spotify'
+                ),
+                React.createElement('p', { style: { fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px', lineHeight: '1.5' } },
+                  'Start Spotify in background when Parachord opens. Ensures a device is always available for playback.'
+                )
+              ),
+              React.createElement(Switch, { checked: autoLaunchSpotify, onToggle: async () => {
+                  const newValue = !autoLaunchSpotify;
+                  setAutoLaunchSpotify(newValue);
+                  if (window.electron?.store) {
+                    await window.electron.store.set('auto_launch_spotify', newValue);
+                  }
+                  // If enabling, launch Spotify now
+                  if (newValue && window.electron?.spotify?.launchInBackground) {
+                    window.electron.spotify.launchInBackground();
+                    showToast('Spotify launched in background', 'success');
+                  }
+                }, 'aria-label': 'Open Spotify in the background at startup', style: { flexShrink: 0, marginLeft: '16px' } })
+            )
+          ),
+
+          // SoundCloud authentication section
+          selectedResolver.id === 'soundcloud' && (() => {
+            const hasCredentials = soundcloudCredentialsSource !== 'none' && soundcloudCredentialsSource !== undefined;
+            return React.createElement('div', {
+              style: {
+                padding: '16px 0',
+                borderTop: '1px solid var(--border-subtle)'
+              }
+            },
+              React.createElement('div', { className: 'flex items-center justify-between' },
+                React.createElement('div', null,
+                  React.createElement('span', {
+                    style: {
+                      fontSize: '13px',
+                      fontWeight: '500',
+                      color: 'var(--text-primary)'
+                    }
+                  }, 'SoundCloud Account'),
+                  React.createElement('p', {
+                    style: {
+                      fontSize: '12px',
+                      color: 'var(--text-secondary)',
+                      marginTop: '2px'
+                    }
+                  },
+                    soundcloudConnected ? 'Connected and ready'
+                      : hasCredentials ? 'Sign in to enable search and streaming'
+                      : 'Requires API credentials to connect'
+                  )
+                ),
+                soundcloudConnected
+                  ? React.createElement(Button, { variant: 'secondary', onClick: disconnectSoundcloud }, 'Disconnect')
+                  : hasCredentials && React.createElement(Button, { variant: 'primary', pageColor: getServiceColor('soundcloud') || 'var(--accent-fill)', onClick: connectSoundcloud }, 'Connect')
+              ),
+              soundcloudConnected && React.createElement('div', {
+                className: 'flex items-center gap-2',
+                style: {
+                  marginTop: '12px',
+                  fontSize: '12px',
+                  color: 'var(--text-success)'
+                }
+              },
+                React.createElement('span', null, React.createElement(Icons.Check, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } })),
+                React.createElement('span', null, 'SoundCloud connected')
+              ),
+              soundcloudConnected && React.createElement('p', {
+                style: {
+                  fontSize: '11px',
+                  color: 'var(--text-tertiary)',
+                  marginTop: '12px',
+                  lineHeight: '1.5'
+                }
+              },
+                'Note: Streaming availability depends on individual track permissions set by uploaders.'
+              ),
+
+              // API Credentials section - Advanced accordion with optional BYOK
+              React.createElement('div', {
+                style: { marginTop: '16px' }
+              },
+                React.createElement('button', {
+                  onClick: () => setSoundcloudAdvancedOpen(!soundcloudAdvancedOpen),
+                  className: 'flex items-center gap-1',
+                  style: {
+                    fontSize: '12px',
+                    color: 'var(--text-secondary)',
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: '0'
+                  }
+                },
+                  React.createElement(Icons.ChevronRight, {
+                    className: `w-3.5 h-3.5 transform transition-transform ${soundcloudAdvancedOpen ? 'rotate-90' : ''}`
+                  }),
+                  'Advanced'
+                ),
+                soundcloudAdvancedOpen && React.createElement('div', {
+                  style: {
+                    marginTop: '12px',
+                    padding: '12px',
+                    backgroundColor: 'var(--hover-bg-default)',
+                    borderRadius: '8px'
+                  }
+                },
+                  React.createElement('p', {
+                    style: {
+                      fontSize: '11px',
+                      color: soundcloudCredentialsSource === 'user' || soundcloudCredentialsSource === 'env' ? 'var(--text-success)' : 'var(--text-secondary)',
+                      marginBottom: '12px',
+                      lineHeight: '1.5'
+                    }
+                  },
+                    soundcloudCredentialsSource === 'user'
+                      ? '✓ Using your custom SoundCloud API credentials.'
+                      : soundcloudCredentialsSource === 'env'
+                        ? '✓ Using credentials from environment variables.'
+                        : 'Optional: Use your own SoundCloud API credentials to avoid rate limiting.'
+                  ),
+                  React.createElement('div', { style: { marginBottom: '10px' } },
+                    React.createElement('label', {
+                      style: {
+                        display: 'block',
+                        fontSize: '11px',
+                        fontWeight: '500',
+                        color: 'var(--text-primary)',
+                        marginBottom: '4px'
+                      }
+                    }, 'Client ID'),
+                    React.createElement(SecretField, { value: soundcloudClientIdInput, onChange: (_v, e) => setSoundcloudClientIdInput(e.target.value), placeholder: 'Your SoundCloud Client ID', 'aria-label': 'Your SoundCloud Client ID', className: 'w-full' })
+                  ),
+                  React.createElement('div', { style: { marginBottom: '10px' } },
+                    React.createElement('label', {
+                      style: {
+                        display: 'block',
+                        fontSize: '11px',
+                        fontWeight: '500',
+                        color: 'var(--text-primary)',
+                        marginBottom: '4px'
+                      }
+                    }, 'Client Secret'),
+                    React.createElement(SecretField, { value: soundcloudClientSecretInput, onChange: (_v, e) => setSoundcloudClientSecretInput(e.target.value), placeholder: 'Your SoundCloud Client Secret', 'aria-label': 'Your SoundCloud Client Secret', className: 'w-full' })
+                  ),
+                  React.createElement('div', { style: { marginBottom: '12px' } },
+                    React.createElement('label', {
+                      style: {
+                        fontSize: '11px',
+                        color: 'var(--text-secondary)',
+                        display: 'block',
+                        marginBottom: '4px'
+                      }
+                    }, 'Redirect URI'),
+                    React.createElement('div', {
+                      style: {
+                        display: 'flex',
+                        gap: '6px'
+                      }
+                    },
+                      React.createElement(TextField, { 'aria-label': 'SoundCloud redirect URI', value: `http://127.0.0.1:${authPort}/callback/soundcloud`, readOnly: true, className: 'flex-1' }),
+                      React.createElement(Button, { variant: 'secondary', 'aria-label': 'Copy redirect URI', title: 'Copy', onClick: () => {
+                          navigator.clipboard.writeText(`http://127.0.0.1:${authPort}/callback/soundcloud`);
+                          showToast('Redirect URI copied', 'success');
+                        } },
+  React.createElement(Icons.Copy, { className: 'w-4 h-4' }))
+                    ),
+                    React.createElement('p', {
+                      style: {
+                        fontSize: '11px',
+                        color: 'var(--text-tertiary)',
+                        marginTop: '4px'
+                      }
+                    }, authPort === 8888
+                      ? 'Add this to your SoundCloud app\'s Redirect URI. The same app also works with Parachord on Android and iOS.'
+                      : `Add this to your SoundCloud app's Redirect URI. Parachord's local server is on port ${authPort}, so signing in to SoundCloud needs your own app credentials here: the built-in sign-in only works on port 8888. Parachord on Android and iOS always signs in on port 8888, so an app registered for port ${authPort} won't sign in on your phone.`)
+                  ),
+                  React.createElement('div', { className: 'flex gap-2' },
+                    React.createElement(Button, { variant: 'primary', size: 'sm', onClick: async () => {
+                        await saveSoundcloudCredentials();
+                      }, disabled: !soundcloudClientIdInput.trim() || !soundcloudClientSecretInput.trim() }, 'Save credentials'),
+                    soundcloudCredentialsSource === 'user' && React.createElement(Button, { variant: 'secondary', onClick: async () => {
+                        if (window.electron?.soundcloud?.setCredentials) {
+                          const result = await window.electron.soundcloud.setCredentials({ clientId: '', clientSecret: '' });
+                          if (result.success) {
+                            setSoundcloudClientIdInput('');
+                            setSoundcloudClientSecretInput('');
+                            setSoundcloudCredentialsSource(result.source);
+                            showToast('Custom credentials cleared. Using default credentials.', 'info');
+                          }
+                        }
+                      } }, 'Clear')
+                  )
+                )
+              )
+            );
+          })(),
+
+          // Apple Music / MusicKit authentication section
+          selectedResolver.id === 'applemusic' && React.createElement('div', {
+            style: {
+              padding: '16px 0',
+              borderTop: '1px solid var(--border-subtle)'
+            }
+          },
+            // Apple Music auth-method notice. Three states:
+            //   1. Native MusicKit available (macOS with helper built) — green.
+            //   2. Auth-window flow available (any platform with the openAuthWindow
+            //      IPC bridge; parachord#834) — neutral info banner explaining
+            //      the browser-window sign-in flow.
+            //   3. Neither — red "macOS Only" banner with build instructions
+            //      (older builds without the auth-window plumbing).
+            appleMusicNativeAvailable && React.createElement('div', {
+              style: {
+                marginBottom: '12px',
+                padding: '10px 12px',
+                backgroundColor: 'var(--tint-success)',
+                borderRadius: '8px',
+                fontSize: '12px',
+                color: 'var(--text-success)'
+              }
+            },
+              '✓ Apple Music can play directly on this Mac'
+            ),
+            !appleMusicNativeAvailable && !!window.electron?.musicKit?.openAuthWindow && React.createElement('div', {
+              style: {
+                marginBottom: '12px',
+                padding: '10px 12px',
+                backgroundColor: 'var(--tint-info)',
+                borderRadius: '8px',
+                fontSize: '12px',
+                color: 'var(--text-info)'
+              }
+            },
+              'Sign-in opens an Apple Music window for direct Apple ID authentication. Your subscription playback works the same as on macOS.'
+            ),
+            !appleMusicNativeAvailable && !window.electron?.musicKit?.openAuthWindow && React.createElement('div', {
+              style: {
+                marginBottom: '12px',
+                padding: '10px 12px',
+                backgroundColor: 'var(--tint-danger)',
+                borderRadius: '8px',
+                fontSize: '12px',
+                color: 'var(--text-danger)'
+              }
+            },
+              React.createElement('strong', null, 'macOS Only: '),
+              'Native MusicKit playback requires macOS and building the helper binary. ',
+              React.createElement('span', { style: { fontFamily: 'monospace', fontSize: '11px' } },
+                'cd native/musickit-helper && ./build.sh'
+              )
+            ),
+            React.createElement('div', { className: 'flex items-center justify-between' },
+              React.createElement('div', null,
+                React.createElement('span', {
+                  style: {
+                    fontSize: '13px',
+                    fontWeight: '500',
+                    color: 'var(--text-primary)'
+                  }
+                }, 'Apple Music Account'),
+                React.createElement('p', {
+                  style: {
+                    fontSize: '12px',
+                    color: 'var(--text-secondary)',
+                    marginTop: '2px'
+                  }
+                },
+                  appleMusicConnected
+                    ? 'Connected and ready for playback'
+                    : (appleMusicNativeAvailable || !!window.electron?.musicKit?.openAuthWindow)
+                      ? 'Sign in with your Apple ID to enable streaming'
+                      : 'Search and URL lookup available (playback opens in browser)'
+                )
+              ),
+              // Show the Connect/Disconnect button when EITHER auth path is
+              // available: native MusicKit (macOS) OR the auth-window IPC
+              // (parachord#834). Without the second clause, Linux/Windows
+              // users had no UI entry point to the new auth flow even though
+              // the underlying IPC was wired up — see dyland84's report on
+              // issue #834.
+              (appleMusicNativeAvailable || !!window.electron?.musicKit?.openAuthWindow) && (
+                appleMusicConnected
+                  ? React.createElement(Button, { variant: 'secondary', onClick: disconnectAppleMusic }, 'Disconnect')
+                  : React.createElement(Button, { variant: 'primary', pageColor: getServiceColor('applemusic') || 'var(--accent-fill)', onClick: connectAppleMusic }, 'Connect')
+              )
+            ),
+            appleMusicConnected && React.createElement('div', {
+              className: 'flex items-center gap-2',
+              style: {
+                marginTop: '12px',
+                fontSize: '12px',
+                color: 'var(--text-success)'
+              }
+            },
+              React.createElement('span', null, React.createElement(Icons.Check, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } })),
+              React.createElement('span', null, 'Apple Music authorized for playback')
+            ),
+
+            // Advanced accordion for MusicKit developer token
+            React.createElement('div', { style: { marginTop: '16px' } },
+              React.createElement('button', {
+                onClick: () => setAppleMusicAdvancedOpen(!appleMusicAdvancedOpen),
+                className: 'flex items-center gap-1',
+                style: {
+                  fontSize: '12px',
+                  color: 'var(--text-secondary)',
+                  backgroundColor: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '0'
+                }
+              },
+                React.createElement(Icons.ChevronRight, {
+                  className: `w-3.5 h-3.5 transform transition-transform ${appleMusicAdvancedOpen ? 'rotate-90' : ''}`
+                }),
+                'Advanced'
+              ),
+              appleMusicAdvancedOpen && React.createElement('div', {
+                style: {
+                  marginTop: '12px',
+                  padding: '12px',
+                  backgroundColor: 'var(--hover-bg-default)',
+                  borderRadius: '8px'
+                }
+              },
+                React.createElement('p', {
+                  style: {
+                    fontSize: '11px',
+                    color: 'var(--text-secondary)',
+                    marginBottom: '12px',
+                    lineHeight: '1.5'
+                  }
+                },
+                  appleMusicDeveloperToken
+                    ? 'Using your developer token for faster search.'
+                    : 'Add a developer token for faster, more reliable search.'
+                ),
+                React.createElement('div', { style: { marginBottom: '10px' } },
+                  React.createElement('label', {
+                    style: {
+                      fontSize: '11px',
+                      color: 'var(--text-secondary)',
+                      display: 'block',
+                      marginBottom: '4px'
+                    }
+                  }, 'MusicKit Developer Token (JWT)'),
+                  React.createElement(SecretField, { value: appleMusicDeveloperToken, onChange: (_v, e) => setAppleMusicDeveloperToken(e.target.value), placeholder: 'eyJ…', 'aria-label': 'Apple Music developer token', className: 'w-full' })
+                ),
+                React.createElement('p', {
+                  style: {
+                    fontSize: '11px',
+                    color: 'var(--text-tertiary)',
+                    marginBottom: '12px',
+                    lineHeight: '1.4'
+                  }
+                }, 'Get a token from the Apple Developer Portal (requires Apple Developer account). The token is a JWT that authenticates your app with Apple Music API.'),
+                React.createElement(Button, { variant: 'primary', size: 'sm', onClick: saveAppleMusicDeveloperToken }, appleMusicTokenSaved ? '✓ Saved' : 'Save token')
+              )
+            )
+          ),
+
+          // Last.fm authentication section
+          selectedResolver.id === 'lastfm' && React.createElement('div', {
+            style: {
+              padding: '16px 0',
+              borderTop: '1px solid var(--border-subtle)'
+            }
+          },
+            // Connected state
+            metaServiceConfigs.lastfm?.username
+              ? React.createElement('div', null,
+                  React.createElement('div', { className: 'flex items-center justify-between' },
+                    React.createElement('div', null,
+                      React.createElement('span', {
+                        style: {
+                          fontSize: '13px',
+                          fontWeight: '500',
+                          color: 'var(--text-primary)'
+                        }
+                      }, 'Last.fm Account'),
+                      React.createElement('p', {
+                        style: {
+                          fontSize: '12px',
+                          color: 'var(--text-secondary)',
+                          marginTop: '2px'
+                        }
+                      },
+                        `Connected as ${metaServiceConfigs.lastfm.username}`
+                      )
+                    ),
+                    React.createElement(Button, { variant: 'secondary', onClick: disconnectLastfm }, 'Disconnect')
+                  ),
+                  React.createElement('div', {
+                    className: 'flex items-center gap-2',
+                    style: {
+                      marginTop: '12px',
+                      fontSize: '12px',
+                      color: 'var(--text-success)'
+                    }
+                  },
+                    React.createElement('span', null, React.createElement(Icons.Check, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } })),
+                    React.createElement('span', null, 'Connected to Last.fm')
+                  ),
+                  // Advanced accordion for API credentials (also shown when connected)
+                  React.createElement('div', { style: { marginTop: '16px' } },
+                    React.createElement('button', {
+                      onClick: () => setLastfmAdvancedOpen(!lastfmAdvancedOpen),
+                      className: 'flex items-center gap-1',
+                      style: {
+                        fontSize: '12px',
+                        color: 'var(--text-secondary)',
+                        backgroundColor: 'transparent',
+                        border: 'none',
+                        cursor: 'pointer',
+                        padding: '0'
+                      }
+                    },
+                      React.createElement(Icons.ChevronRight, {
+                        className: `w-3.5 h-3.5 transform transition-transform ${lastfmAdvancedOpen ? 'rotate-90' : ''}`
+                      }),
+                      'Advanced'
+                    ),
+                    lastfmAdvancedOpen && React.createElement('div', {
+                      style: {
+                        marginTop: '12px',
+                        padding: '12px',
+                        backgroundColor: 'var(--hover-bg-default)',
+                        borderRadius: '8px'
+                      }
+                    },
+                      React.createElement('p', {
+                        style: {
+                          fontSize: '11px',
+                          color: metaServiceConfigs.lastfm.apiKey ? 'var(--text-success)' : 'var(--text-secondary)',
+                          marginBottom: '12px',
+                          lineHeight: '1.5'
+                        }
+                      },
+                        metaServiceConfigs.lastfm.apiKey
+                          ? '✓ Using your custom Last.fm API credentials.'
+                          : 'Optional: Use your own Last.fm API credentials to avoid rate limiting.'
+                      ),
+                      React.createElement('div', { style: { marginBottom: '10px' } },
+                        React.createElement('label', {
+                          style: {
+                            display: 'block',
+                            fontSize: '11px',
+                            fontWeight: '500',
+                            color: 'var(--text-primary)',
+                            marginBottom: '4px'
+                          }
+                        }, 'API Key'),
+                        React.createElement(SecretField, { value: lastfmApiKeyInput || metaServiceConfigs.lastfm.apiKey || '', onChange: (_v, e) => setLastfmApiKeyInput(e.target.value), placeholder: 'Your Last.fm API key', 'aria-label': 'Your Last.fm API key', className: 'w-full' })
+                      ),
+                      React.createElement('div', { style: { marginBottom: '12px' } },
+                        React.createElement('label', {
+                          style: {
+                            display: 'block',
+                            fontSize: '11px',
+                            fontWeight: '500',
+                            color: 'var(--text-primary)',
+                            marginBottom: '4px'
+                          }
+                        }, 'API Secret'),
+                        React.createElement(SecretField, { value: lastfmApiSecretInput || metaServiceConfigs.lastfm.apiSecret || '', onChange: (_v, e) => setLastfmApiSecretInput(e.target.value), placeholder: 'Your Last.fm API secret', 'aria-label': 'Your Last.fm API secret', className: 'w-full' })
+                      ),
+                      React.createElement('div', { className: 'flex gap-2' },
+                        React.createElement(Button, { variant: 'primary', size: 'sm', onClick: async () => {
+                            const apiKey = lastfmApiKeyInput?.trim() || null;
+                            const apiSecret = lastfmApiSecretInput?.trim() || null;
+                            await saveMetaServiceConfig('lastfm', {
+                              ...metaServiceConfigs.lastfm,
+                              apiKey,
+                              apiSecret
+                            });
+                            if (apiKey && apiSecret && window.lastfmScrobbler) {
+                              window.lastfmScrobbler.setApiCredentials(apiKey, apiSecret);
+                            }
+                            showToast(apiKey ? 'API credentials saved' : 'API credentials cleared', 'success');
+                          } }, 'Save'),
+                        metaServiceConfigs.lastfm.apiKey && React.createElement(Button, { variant: 'secondary', onClick: async () => {
+                            setLastfmApiKeyInput('');
+                            setLastfmApiSecretInput('');
+                            await saveMetaServiceConfig('lastfm', {
+                              ...metaServiceConfigs.lastfm,
+                              apiKey: null,
+                              apiSecret: null
+                            });
+                            showToast('Custom credentials cleared. Using default credentials.', 'info');
+                          } }, 'Clear')
+                      )
+                    )
+                  ),
+
+                  // Scrobbling section for Last.fm
+                  React.createElement('div', {
+                    style: {
+                      marginTop: '16px',
+                      paddingTop: '16px',
+                      borderTop: '1px solid var(--border-subtle)'
+                    }
+                  },
+                    React.createElement('div', { className: 'flex items-center justify-between', style: { marginBottom: '12px' } },
+                      React.createElement('div', null,
+                        React.createElement('span', {
+                          style: {
+                            fontSize: '13px',
+                            fontWeight: '500',
+                            color: 'var(--text-primary)'
+                          }
+                        }, 'Scrobbling'),
+                        React.createElement('p', {
+                          style: {
+                            fontSize: '12px',
+                            color: 'var(--text-secondary)',
+                            marginTop: '2px'
+                          }
+                        },
+                          'Report your listening history to Last.fm'
+                        )
+                      )
+                    ),
+                    // Scrobbler card for Last.fm
+                    window.scrobblers && window.scrobblers.find(s => s.id === 'lastfm') &&
+                      React.createElement(ScrobblerSettingsCard, {
+                        scrobbler: window.scrobblers.find(s => s.id === 'lastfm'), color: getServiceColor('lastfm'),
+                        config: scrobblerConfigs['lastfm'],
+                        onConfigChange: (id, newConfig) => {
+                          setScrobblerConfigs(prev => ({ ...prev, [id]: newConfig }));
+                        },
+                        lovePushEnabled: !!scrobblerLovePushEnabled.lastfm,
+                        onSetLovePushEnabled: (v) => setLovePushEnabled('lastfm', v),
+                        onRunBackfill: () => runLoveBackfill('lastfm'),
+                        backfillRunning: !!loveBackfillRunning.lastfm,
+                        backfillProgress: loveBackfillProgress.lastfm,
+                        unpushedCount: (collectionDataRef.current?.tracks || collectionData.tracks).filter(t => !lovePushedKeysRef.current[t.id]?.lastfm).length,
+                        onRunLoveImport: () => runLoveImport('lastfm'),
+                        loveImportRunning: !!loveImportRunning.lastfm,
+                        loveImportProgress: loveImportProgress.lastfm,
+                        hasImportedLoves: !!loveImportCursorRef.current?.lastfm,
+                      })
+                  )
+                )
+              // Not connected state
+              : React.createElement('div', null,
+                  React.createElement('span', {
+                    style: {
+                      fontSize: '13px',
+                      fontWeight: '500',
+                      color: 'var(--text-primary)'
+                    }
+                  }, 'Last.fm Account'),
+                  React.createElement('p', {
+                    style: {
+                      fontSize: '12px',
+                      color: 'var(--text-secondary)',
+                      marginTop: '4px',
+                      marginBottom: '16px',
+                      lineHeight: '1.5'
+                    }
+                  },
+                    'Enter your Last.fm username to enable personalized recommendations.'
+                  ),
+                  // Username input
+                  React.createElement('div', { style: { marginBottom: '16px' } },
+                    React.createElement('label', {
+                      style: {
+                        display: 'block',
+                        fontSize: '12px',
+                        fontWeight: '500',
+                        color: 'var(--text-primary)',
+                        marginBottom: '6px'
+                      }
+                    }, 'Username'),
+                    React.createElement(TextField, { value: lastfmUsernameInput, onChange: (_v, e) => setLastfmUsernameInput(e.target.value), placeholder: 'Your Last.fm username', 'aria-label': 'Your Last.fm username', className: 'w-full' })
+                  ),
+                  // Advanced accordion
+                  React.createElement('div', { style: { marginBottom: '16px' } },
+                    React.createElement('button', {
+                      onClick: () => setLastfmAdvancedOpen(!lastfmAdvancedOpen),
+                      className: 'flex items-center gap-1',
+                      style: {
+                        fontSize: '12px',
+                        color: 'var(--text-secondary)',
+                        backgroundColor: 'transparent',
+                        border: 'none',
+                        cursor: 'pointer',
+                        padding: '0'
+                      }
+                    },
+                      React.createElement(Icons.ChevronRight, {
+                        className: `w-3.5 h-3.5 transform transition-transform ${lastfmAdvancedOpen ? 'rotate-90' : ''}`
+                      }),
+                      'Advanced'
+                    ),
+                    lastfmAdvancedOpen && React.createElement('div', {
+                      style: {
+                        marginTop: '12px',
+                        padding: '12px',
+                        backgroundColor: 'var(--hover-bg-default)',
+                        borderRadius: '8px'
+                      }
+                    },
+                      React.createElement('p', {
+                        style: {
+                          fontSize: '11px',
+                          color: 'var(--text-secondary)',
+                          marginBottom: '12px',
+                          lineHeight: '1.5'
+                        }
+                      },
+                        'Optional: Use your own Last.fm API credentials to avoid rate limiting.'
+                      ),
+                      React.createElement('div', { style: { marginBottom: '10px' } },
+                        React.createElement('label', {
+                          style: {
+                            display: 'block',
+                            fontSize: '11px',
+                            fontWeight: '500',
+                            color: 'var(--text-primary)',
+                            marginBottom: '4px'
+                          }
+                        }, 'API Key'),
+                        React.createElement(SecretField, { value: lastfmApiKeyInput, onChange: (_v, e) => setLastfmApiKeyInput(e.target.value), placeholder: 'Your Last.fm API key', 'aria-label': 'Your Last.fm API key', className: 'w-full' })
+                      ),
+                      React.createElement('div', null,
+                        React.createElement('label', {
+                          style: {
+                            display: 'block',
+                            fontSize: '11px',
+                            fontWeight: '500',
+                            color: 'var(--text-primary)',
+                            marginBottom: '4px'
+                          }
+                        }, 'API Secret'),
+                        React.createElement(SecretField, { value: lastfmApiSecretInput, onChange: (_v, e) => setLastfmApiSecretInput(e.target.value), placeholder: 'Your Last.fm API secret', 'aria-label': 'Your Last.fm API secret', className: 'w-full' })
+                      )
+                    )
+                  ),
+                  // Connect button
+                  React.createElement(Button, { variant: 'primary', pageColor: getServiceColor('lastfm') || 'var(--accent-fill)', className: 'w-full', onClick: () => connectLastfm(lastfmUsernameInput, lastfmApiKeyInput, lastfmApiSecretInput), disabled: lastfmConnecting || !lastfmUsernameInput.trim() }, lastfmConnecting ? 'Connecting…' : 'Connect')
+                )
+          ),
+
+          // ListenBrainz authentication section
+          selectedResolver.id === 'listenbrainz' && React.createElement('div', {
+            style: {
+              padding: '16px 0',
+              borderTop: '1px solid var(--border-subtle)'
+            }
+          },
+            // Connected state
+            metaServiceConfigs.listenbrainz?.username
+              ? React.createElement('div', null,
+                  React.createElement('div', { className: 'flex items-center justify-between' },
+                    React.createElement('div', null,
+                      React.createElement('span', {
+                        style: {
+                          fontSize: '13px',
+                          fontWeight: '500',
+                          color: 'var(--text-primary)'
+                        }
+                      }, 'ListenBrainz Account'),
+                      React.createElement('p', {
+                        style: {
+                          fontSize: '12px',
+                          color: 'var(--text-secondary)',
+                          marginTop: '2px'
+                        }
+                      },
+                        `Connected as ${metaServiceConfigs.listenbrainz.username}`
+                      )
+                    ),
+                    React.createElement(Button, { variant: 'secondary', onClick: disconnectListenbrainz }, 'Disconnect')
+                  ),
+                  React.createElement('div', {
+                    className: 'flex items-center gap-2',
+                    style: {
+                      marginTop: '12px',
+                      fontSize: '12px',
+                      color: 'var(--text-success)'
+                    }
+                  },
+                    React.createElement('span', null, React.createElement(Icons.Check, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } })),
+                    React.createElement('span', null, 'Connected to ListenBrainz')
+                  ),
+                  // Show token status if configured - masked like AI service API keys
+                  metaServiceConfigs.listenbrainz.userToken && React.createElement('div', {
+                    style: {
+                      marginTop: '12px'
+                    }
+                  },
+                    React.createElement('label', {
+                      style: {
+                        display: 'block',
+                        fontSize: '11px',
+                        fontWeight: '500',
+                        color: 'var(--text-primary)',
+                        marginBottom: '4px'
+                      }
+                    }, 'User Token'),
+                    React.createElement(SecretField, { 'aria-label': 'ListenBrainz user token', defaultValue: metaServiceConfigs.listenbrainz.userToken, readOnly: true, className: 'w-full' })
+                  ),
+
+                  // Scrobbling section for ListenBrainz
+                  React.createElement('div', {
+                    style: {
+                      marginTop: '16px',
+                      paddingTop: '16px',
+                      borderTop: '1px solid var(--border-subtle)'
+                    }
+                  },
+                    React.createElement('div', { className: 'flex items-center justify-between', style: { marginBottom: '12px' } },
+                      React.createElement('div', null,
+                        React.createElement('span', {
+                          style: {
+                            fontSize: '13px',
+                            fontWeight: '500',
+                            color: 'var(--text-primary)'
+                          }
+                        }, 'Scrobbling'),
+                        React.createElement('p', {
+                          style: {
+                            fontSize: '12px',
+                            color: 'var(--text-secondary)',
+                            marginTop: '2px'
+                          }
+                        },
+                          'Report your listening history to ListenBrainz'
+                        )
+                      )
+                    ),
+                    // Scrobbler card for ListenBrainz
+                    window.scrobblers && window.scrobblers.find(s => s.id === 'listenbrainz') &&
+                      React.createElement(ScrobblerSettingsCard, {
+                        scrobbler: window.scrobblers.find(s => s.id === 'listenbrainz'), color: getServiceColor('listenbrainz'),
+                        config: scrobblerConfigs['listenbrainz'],
+                        onConfigChange: (id, newConfig) => {
+                          setScrobblerConfigs(prev => ({ ...prev, [id]: newConfig }));
+                        },
+                        lovePushEnabled: !!scrobblerLovePushEnabled.listenbrainz,
+                        onSetLovePushEnabled: (v) => setLovePushEnabled('listenbrainz', v),
+                        onRunBackfill: () => runLoveBackfill('listenbrainz'),
+                        backfillRunning: !!loveBackfillRunning.listenbrainz,
+                        backfillProgress: loveBackfillProgress.listenbrainz,
+                        unpushedCount: (collectionDataRef.current?.tracks || collectionData.tracks).filter(t => !lovePushedKeysRef.current[t.id]?.listenbrainz).length,
+                        onRunLoveImport: () => runLoveImport('listenbrainz'),
+                        loveImportRunning: !!loveImportRunning.listenbrainz,
+                        loveImportProgress: loveImportProgress.listenbrainz,
+                        hasImportedLoves: !!loveImportCursorRef.current?.listenbrainz,
+                      })
+                  )
+                )
+              // Not connected state
+              : React.createElement('div', null,
+                  React.createElement('span', {
+                    style: {
+                      fontSize: '13px',
+                      fontWeight: '500',
+                      color: 'var(--text-primary)'
+                    }
+                  }, 'ListenBrainz Account'),
+                  React.createElement('p', {
+                    style: {
+                      fontSize: '12px',
+                      color: 'var(--text-secondary)',
+                      marginTop: '4px',
+                      marginBottom: '16px',
+                      lineHeight: '1.5'
+                    }
+                  },
+                    'Enter your ListenBrainz username to enable open-source music recommendations and history.'
+                  ),
+                  // Username input
+                  React.createElement('div', { style: { marginBottom: '16px' } },
+                    React.createElement('label', {
+                      style: {
+                        display: 'block',
+                        fontSize: '12px',
+                        fontWeight: '500',
+                        color: 'var(--text-primary)',
+                        marginBottom: '6px'
+                      }
+                    }, 'Username'),
+                    React.createElement(TextField, { value: listenbrainzUsernameInput, onChange: (_v, e) => setListenbrainzUsernameInput(e.target.value), placeholder: 'Your ListenBrainz username', 'aria-label': 'Your ListenBrainz username', className: 'w-full' })
+                  ),
+                  // Advanced accordion
+                  React.createElement('div', { style: { marginBottom: '16px' } },
+                    React.createElement('button', {
+                      onClick: () => setListenbrainzAdvancedOpen(!listenbrainzAdvancedOpen),
+                      className: 'flex items-center gap-1',
+                      style: {
+                        fontSize: '12px',
+                        color: 'var(--text-secondary)',
+                        backgroundColor: 'transparent',
+                        border: 'none',
+                        cursor: 'pointer',
+                        padding: '0'
+                      }
+                    },
+                      React.createElement(Icons.ChevronRight, {
+                        className: `w-3.5 h-3.5 transform transition-transform ${listenbrainzAdvancedOpen ? 'rotate-90' : ''}`
+                      }),
+                      'Advanced'
+                    ),
+                    listenbrainzAdvancedOpen && React.createElement('div', {
+                      style: {
+                        marginTop: '12px',
+                        padding: '12px',
+                        backgroundColor: 'var(--hover-bg-default)',
+                        borderRadius: '8px'
+                      }
+                    },
+                      React.createElement('p', {
+                        style: {
+                          fontSize: '11px',
+                          color: 'var(--text-secondary)',
+                          marginBottom: '12px',
+                          lineHeight: '1.5'
+                        }
+                      },
+                        'Optional: Add your user token to enable listen submissions and access private data. Find it at listenbrainz.org/settings/'
+                      ),
+                      React.createElement('div', null,
+                        React.createElement('label', {
+                          style: {
+                            display: 'block',
+                            fontSize: '11px',
+                            fontWeight: '500',
+                            color: 'var(--text-primary)',
+                            marginBottom: '4px'
+                          }
+                        }, 'User Token'),
+                        React.createElement(SecretField, { value: listenbrainzTokenInput, onChange: (_v, e) => setListenbrainzTokenInput(e.target.value), placeholder: 'Your ListenBrainz user token', 'aria-label': 'Your ListenBrainz user token', className: 'w-full' })
+                      )
+                    )
+                  ),
+                  // Connect button
+                  React.createElement(Button, { variant: 'primary', pageColor: getServiceColor('listenbrainz') || 'var(--accent-fill)', className: 'w-full', onClick: () => connectListenbrainz(listenbrainzUsernameInput, listenbrainzTokenInput), disabled: listenbrainzConnecting || !listenbrainzUsernameInput.trim() }, listenbrainzConnecting ? 'Connecting…' : 'Connect')
+                )
+          ),
+
+          // Username + password credentials (Subsonic). Not an API key: no
+          // "get a key" link, and the pair is rendered together rather than
+          // split across an API-key slot and the extra-field list. The loader
+          // flattens authType/configurable onto the resolver (no .settings
+          // wrapper), so check both.
+          ((selectedResolver.settings?.authType === 'userpass') || selectedResolver.authType === 'userpass') && (() => {
+            const configurable = selectedResolver.settings?.configurable || selectedResolver.configurable || {};
+            const saved = metaServiceConfigs[selectedResolver.id] || {};
+            const inputStyle = {
+              width: '100%',
+              padding: '10px 12px',
+              fontSize: '13px',
+              color: 'var(--text-primary)',
+              backgroundColor: 'var(--card-bg)',
+              border: '1px solid var(--border-subtle)',
+              borderRadius: '8px'
+            };
+            const labelStyle = {
+              display: 'block',
+              fontSize: '12px',
+              fontWeight: '500',
+              color: 'var(--text-primary)',
+              marginBottom: '6px'
+            };
+            const saveField = (fieldKey, value) => {
+              saveMetaServiceConfig(selectedResolver.id, {
+                ...metaServiceConfigs[selectedResolver.id],
+                [fieldKey]: value
+              });
+              delete resolverConfigCache.current[selectedResolver.id];
+            };
+            const otherFields = Object.entries(configurable).filter(([key, setting]) =>
+              setting && key !== 'username' && key !== 'password' && key !== 'model'
+            );
+            const usernameSetting = configurable.username;
+            const passwordSetting = configurable.password;
+            const credentialNote = passwordSetting?.description || usernameSetting?.description;
+            const configured = !!(saved.username && saved.password && (!configurable.serverUrl || saved.serverUrl));
+            return React.createElement('div', {
+              style: {
+                padding: '16px 0',
+                borderTop: '1px solid var(--border-subtle)'
+              }
+            },
+              ...otherFields.map(([fieldKey, fieldSetting]) =>
+                React.createElement('div', { key: fieldKey, style: { marginBottom: '16px' } },
+                  React.createElement('label', { style: labelStyle }, fieldSetting.label || fieldKey),
+                  fieldSetting.description && React.createElement('p', {
+                    style: {
+                      fontSize: '12px',
+                      color: 'var(--text-secondary)',
+                      marginTop: '-2px',
+                      marginBottom: '8px',
+                      lineHeight: '1.5'
+                    }
+                  }, fieldSetting.description),
+                  React.createElement(TextField, { defaultValue: saved[fieldKey] || fieldSetting.default || '', placeholder: fieldSetting.placeholder || '', spellCheck: false, onBlur: (e) => saveField(fieldKey, fieldSetting.type === 'password' ? e.target.value : e.target.value.trim()), 'aria-label': fieldSetting.label || fieldKey, className: 'w-full' })
+                )
+              ),
+              (usernameSetting || passwordSetting) && React.createElement('div', {
+                style: {
+                  display: 'flex',
+                  gap: '12px',
+                  flexWrap: 'wrap',
+                  padding: '12px',
+                  backgroundColor: 'var(--hover-bg-default)',
+                  borderRadius: '10px'
+                }
+              },
+                usernameSetting && React.createElement('div', { style: { flex: '1 1 140px', minWidth: 0 } },
+                  React.createElement('label', { style: labelStyle }, usernameSetting.label || 'Username'),
+                  React.createElement(TextField, { defaultValue: saved.username || '', placeholder: usernameSetting.placeholder || '', autoComplete: 'username', spellCheck: false, onBlur: (e) => saveField('username', e.target.value.trim()), 'aria-label': usernameSetting.label || 'Username', className: 'w-full' })
+                ),
+                passwordSetting && React.createElement('div', { style: { flex: '1 1 140px', minWidth: 0 } },
+                  React.createElement('label', { style: labelStyle }, passwordSetting.label || 'Password'),
+                  React.createElement(SecretField, { defaultValue: saved.password || '', placeholder: passwordSetting.placeholder || '', autoComplete: 'current-password', spellCheck: false, onBlur: (e) => saveField('password', e.target.value), 'aria-label': passwordSetting.label || 'Password', className: 'w-full' })
+                ),
+                credentialNote && React.createElement('p', {
+                  style: {
+                    flex: '1 1 100%',
+                    fontSize: '11px',
+                    color: 'var(--text-secondary)',
+                    margin: 0,
+                    lineHeight: '1.5'
+                  }
+                }, credentialNote)
+              ),
+              configured && React.createElement('div', {
+                className: 'flex items-center gap-2',
+                style: { marginTop: '12px', fontSize: '12px', color: 'var(--text-success)' }
+              },
+                React.createElement('span', null, '\u2713'),
+                React.createElement('span', null, 'Credentials saved')
+              )
+            );
+          })(),
+
+          // AI Service / credential configuration - generic based on plugin settings
+          // Check both .axe settings and top-level marketplace manifest properties.
+          // The resolver loader flattens requiresAuth/authType/configurable onto
+          // the resolver object (no .settings wrapper), so fall back to the
+          // top-level fields. userpass resolvers (Subsonic) are handled above
+          // and must not land here — this block assumes an API key.
+          ((selectedResolver.settings?.requiresAuth && selectedResolver.settings?.authType === 'apikey') ||
+           (selectedResolver.requiresAuth && selectedResolver.authType === 'apikey') ||
+           (selectedResolver.type === 'meta-service' && (selectedResolver.capabilities?.generate || selectedResolver.capabilities?.chat) && selectedResolver.id !== 'ollama')) && (() => {
+            // Determine the actual config field name from plugin settings (e.g. apiKey, clientId, appId)
+            const configurable = selectedResolver.settings?.configurable || selectedResolver.configurable || {};
+            const authFieldKey = Object.keys(configurable).find(k => k !== 'model') || 'apiKey';
+            const authFieldSettings = configurable[authFieldKey] || {};
+            return React.createElement('div', {
+            style: {
+              padding: '16px 0',
+              borderTop: '1px solid var(--border-subtle)'
+            }
+          },
+            React.createElement('span', {
+              style: {
+                fontSize: '13px',
+                fontWeight: '500',
+                color: 'var(--text-primary)'
+              }
+            }, 'API Configuration'),
+            React.createElement('p', {
+              style: {
+                fontSize: '12px',
+                color: 'var(--text-secondary)',
+                marginTop: '4px',
+                marginBottom: '16px',
+                lineHeight: '1.5'
+              }
+            }, authFieldSettings.description || `Enter your API key to enable ${selectedResolver.name}.`),
+            // API Key input
+            React.createElement('div', { style: { marginBottom: '16px' } },
+              React.createElement('label', {
+                style: {
+                  display: 'block',
+                  fontSize: '12px',
+                  fontWeight: '500',
+                  color: 'var(--text-primary)',
+                  marginBottom: '6px'
+                }
+              }, authFieldSettings.label || 'API Key'),
+              React.createElement(SecretField, { defaultValue: metaServiceConfigs[selectedResolver.id]?.[authFieldKey] || '', onBlur: (e) => {
+                  // Services whose key is optional (requiresAuth: false, e.g. local
+                  // custom-LLM endpoints) keep their explicit enabled toggle — blurring
+                  // an empty key field must not silently disable them. Note `=== true ||`,
+                  // NOT `??`: nullish coalescing doesn't fall through on `false`, so an
+                  // early empty-field blur would poison `enabled: false` forever — a
+                  // later key entry has to be able to re-enable the service.
+                  const svcRequiresAuth = selectedResolver.settings?.requiresAuth ?? selectedResolver.requiresAuth;
+                  const keyRequired = svcRequiresAuth !== false;
+                  saveMetaServiceConfig(selectedResolver.id, {
+                    ...metaServiceConfigs[selectedResolver.id],
+                    [authFieldKey]: e.target.value,
+                    enabled: keyRequired
+                      ? !!e.target.value
+                      : (metaServiceConfigs[selectedResolver.id]?.enabled === true || !!e.target.value)
+                  });
+                  // Re-fetch dynamic models after API key change
+                  setTimeout(() => {
+                    const resolver = metaServices.find(s => s.id === selectedResolver.id) || selectedResolver;
+                    const modelSetting = resolver.settings?.configurable?.model || resolver.configurable?.model;
+                    if (modelSetting?.type === 'dynamic-select') {
+                      fetchDynamicModels(resolver, { ...metaServiceConfigs[selectedResolver.id], [authFieldKey]: e.target.value });
+                    }
+                  }, 100);
+                }, placeholder: authFieldSettings.placeholder || (selectedResolver.id === 'chatgpt' ? 'sk-…' : selectedResolver.id === 'gemini' ? 'AIza…' : selectedResolver.id === 'claude' ? 'sk-ant-…' : ''), 'aria-label': `${selectedResolver.name} API key`, className: 'w-full' }),
+              selectedResolver.homepage && React.createElement('a', {
+                href: '#',
+                onClick: (e) => {
+                  e.preventDefault();
+                  const urls = {
+                    chatgpt: 'https://platform.openai.com/api-keys',
+                    gemini: 'https://aistudio.google.com/app/apikey',
+                    claude: 'https://console.anthropic.com/settings/keys'
+                  };
+                  window.electron?.shell?.openExternal?.(urls[selectedResolver.id] || selectedResolver.homepage);
+                },
+                style: {
+                  display: 'inline-block',
+                  marginTop: '6px',
+                  fontSize: '12px',
+                  color: 'var(--accent-primary)',
+                  fontWeight: '500',
+                  textDecoration: 'none'
+                }
+              }, 'Get your API key →')
+            ),
+            // Model selector - supports both static and dynamic-select
+            selectedResolver.settings?.configurable?.model && React.createElement('div', { style: { marginBottom: '16px' } },
+              React.createElement('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' } },
+                React.createElement('label', {
+                  style: {
+                    fontSize: '12px',
+                    fontWeight: '500',
+                    color: 'var(--text-primary)'
+                  }
+                }, selectedResolver.settings?.configurable?.model?.label || 'Model'),
+                // Refresh button for dynamic-select
+                selectedResolver.settings?.configurable?.model?.type === 'dynamic-select' && React.createElement(Button, { variant: 'icon', size: 'sm', 'aria-label': "Refresh models", onClick: () => {
+                    const resolver = metaServices.find(s => s.id === selectedResolver.id) || selectedResolver;
+                    fetchDynamicModels(resolver, metaServiceConfigs[selectedResolver.id]);
+                  }, 'data-tooltip': 'Refresh models' }, React.createElement(Icons.RefreshCw, { className: 'w-4 h-4' }))
+              ),
+              (() => {
+                const modelSetting = selectedResolver.settings?.configurable?.model;
+                const isDynamic = modelSetting?.type === 'dynamic-select';
+                const dynamicState = isDynamic ? dynamicModelOptions[selectedResolver.id] : null;
+                const isLoading = dynamicState?.loading;
+
+                const modelInputStyle = {
+                  width: '100%',
+                  padding: '10px 12px',
+                  fontSize: '13px',
+                  color: 'var(--text-primary)',
+                  backgroundColor: 'var(--card-bg)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: '8px'
+                };
+
+                // Free-form model id — for endpoints whose model names aren't a fixed list
+                if (modelSetting?.type === 'text') {
+                  return React.createElement(TextField, { defaultValue: metaServiceConfigs[selectedResolver.id]?.model || modelSetting?.default || '', placeholder: modelSetting?.placeholder || '', onBlur: (e) => {
+                      saveMetaServiceConfig(selectedResolver.id, {
+                        ...metaServiceConfigs[selectedResolver.id],
+                        model: e.target.value.trim()
+                      });
+                    }, 'aria-label': 'Model', className: 'w-full' });
+                }
+
+                // Free-form model id with fetched suggestions (allowCustom) — lets users
+                // type any model id while still offering the endpoint's model list as
+                // datalist suggestions (the list endpoint isn't universal, so typing must
+                // always work)
+                if (isDynamic && modelSetting?.allowCustom) {
+                  const suggestions = dynamicState?.options?.length > 0
+                    ? dynamicState.options
+                    : (modelSetting?.fallbackOptions || []);
+                  const listId = `model-suggestions-${selectedResolver.id}`;
+                  return React.createElement('div', null,
+                    React.createElement(TextField, { list: listId, defaultValue: metaServiceConfigs[selectedResolver.id]?.model || modelSetting?.default || '', placeholder: modelSetting?.placeholder || 'model id', onBlur: (e) => {
+                        saveMetaServiceConfig(selectedResolver.id, {
+                          ...metaServiceConfigs[selectedResolver.id],
+                          model: e.target.value.trim()
+                        });
+                      }, 'aria-label': 'Model', className: 'w-full' }),
+                    React.createElement('datalist', { id: listId },
+                      suggestions.map(opt =>
+                        React.createElement('option', { key: opt.value, value: opt.value }, opt.label)
+                      )
+                    )
+                  );
+                }
+
+                // Determine which options to show
+                let options;
+                if (isDynamic && dynamicState?.options?.length > 0) {
+                  options = dynamicState.options;
+                } else if (isDynamic && modelSetting?.fallbackOptions) {
+                  options = modelSetting.fallbackOptions;
+                } else if (modelSetting?.options) {
+                  options = modelSetting.options;
+                } else {
+                  options = [];
+                }
+
+                // The shared select (components/fields.js).
+                return React.createElement(Select, {
+                  'aria-label': 'Model',
+                  value: metaServiceConfigs[selectedResolver.id]?.model || modelSetting?.default || '',
+                  onChange: (model) => {
+                    saveMetaServiceConfig(selectedResolver.id, {
+                      ...metaServiceConfigs[selectedResolver.id],
+                      model
+                    });
+                  },
+                  disabled: isLoading,
+                  className: 'w-full',
+                  options: isLoading ? [{ value: '', label: 'Loading models…' }] : options
+                });
+              })()
+            ),
+            // Additional configurable fields (API dialect, base URL, token limits, ...)
+            // beyond the standard key + model pair. Rendered generically from the
+            // plugin's settings.configurable so any meta-service plugin can declare
+            // them (e.g. the customllm endpoint config). Existing AI plugins only
+            // declare apiKey + model, so they render nothing here.
+            ...Object.entries(configurable)
+              .filter(([fieldKey, fieldSetting]) => fieldSetting && fieldKey !== 'model' && fieldKey !== authFieldKey)
+              .map(([fieldKey, fieldSetting]) => {
+                const savedValue = metaServiceConfigs[selectedResolver.id]?.[fieldKey];
+                // Changing the endpoint or dialect can change the model list — refresh it
+                const refetchModels = (fieldKey === 'baseUrl' || fieldKey === 'endpoint' || fieldKey === 'api')
+                  ? (newValue) => {
+                      setTimeout(() => {
+                        const resolver = metaServices.find(s => s.id === selectedResolver.id) || selectedResolver;
+                        const modelSetting = resolver.settings?.configurable?.model || resolver.configurable?.model;
+                        if (modelSetting?.type === 'dynamic-select') {
+                          fetchDynamicModels(resolver, { ...metaServiceConfigs[selectedResolver.id], [fieldKey]: newValue });
+                        }
+                      }, 100);
+                    }
+                  : null;
+                return React.createElement('div', { key: fieldKey, style: { marginBottom: '16px' } },
+                  React.createElement('label', {
+                    style: {
+                      display: 'block',
+                      fontSize: '12px',
+                      fontWeight: '500',
+                      color: 'var(--text-primary)',
+                      marginBottom: '6px'
+                    }
+                  }, fieldSetting.label || fieldKey),
+                  fieldSetting.description && React.createElement('p', {
+                    style: {
+                      fontSize: '12px',
+                      color: 'var(--text-secondary)',
+                      marginTop: '-2px',
+                      marginBottom: '8px',
+                      lineHeight: '1.5'
+                    }
+                  }, fieldSetting.description),
+                  fieldSetting.type === 'select'
+                    ? React.createElement(Select, {
+                        'aria-label': fieldSetting.label || fieldKey,
+                        value: savedValue || fieldSetting.default || (fieldSetting.options?.[0]?.value ?? ''),
+                        onChange: (v) => {
+                          saveMetaServiceConfig(selectedResolver.id, {
+                            ...metaServiceConfigs[selectedResolver.id],
+                            [fieldKey]: v
+                          });
+                          if (refetchModels) refetchModels(v);
+                        },
+                        className: 'w-full',
+                        options: fieldSetting.options || []
+                      })
+                    : React.createElement(TextField, { defaultValue: savedValue || fieldSetting.default || '', placeholder: fieldSetting.placeholder || '', onBlur: (e) => {
+                          saveMetaServiceConfig(selectedResolver.id, {
+                            ...metaServiceConfigs[selectedResolver.id],
+                            [fieldKey]: e.target.value.trim()
+                          });
+                          if (refetchModels) refetchModels(e.target.value.trim());
+                        }, 'aria-label': fieldSetting.label || fieldKey, className: 'w-full' })
+                );
+              }),
+            // Explicit enable toggle for no-key AI services (requiresAuth: false).
+            // These services are enabled solely by the `enabled` flag (see
+            // isServiceEnabled) — a set apiKey alone does NOT enable them, so the
+            // flag must be visible and directly flippable (same affordance the
+            // Ollama block has). Keyed services (chatgpt/claude/gemini) stay
+            // key-gated and render no toggle.
+            (selectedResolver.settings?.requiresAuth ?? selectedResolver.requiresAuth) === false && React.createElement('div', {
+              className: 'flex items-center justify-between',
+              style: { marginTop: '4px' }
+            },
+              React.createElement('span', { style: { fontSize: '13px', color: 'var(--text-primary)' } },
+                `Enable ${selectedResolver.name || selectedResolver.id}`),
+              React.createElement(Switch, { checked: metaServiceConfigs[selectedResolver.id]?.enabled === true, onToggle: async () => { const next = !(metaServiceConfigs[selectedResolver.id]?.enabled === true);
+                    saveMetaServiceConfig(selectedResolver.id, {
+                      ...metaServiceConfigs[selectedResolver.id],
+                      enabled: next
+                    });
+                    // When enabling, ensure the plugin is actually loaded (e.g.
+                    // previously uninstalled)
+                    if (next) {
+                      const isLoaded = metaServices.some(s => s.id === selectedResolver.id);
+                      if (!isLoaded) {
+                        const uninstalled = await window.electron.store.get('uninstalled_resolvers') || [];
+                        if (uninstalled.includes(selectedResolver.id)) {
+                          await window.electron.store.set('uninstalled_resolvers', uninstalled.filter(id => id !== selectedResolver.id));
+                        }
+                        const marketplaceItem = (marketplaceManifest?.plugins || []).find(r => r.id === selectedResolver.id);
+                        if (marketplaceItem) {
+                          await handleInstallFromMarketplace(marketplaceItem);
+                        }
+                      }
+                    }
+                  }, 'aria-label': `Use ${selectedResolver.name}` })
+            ),
+            // Connection status
+            metaServiceConfigs[selectedResolver.id]?.[authFieldKey] && React.createElement('div', {
+              className: 'flex items-center gap-2 text-ink-success text-sm'
+            },
+              React.createElement('span', null, React.createElement(Icons.Check, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } })),
+              React.createElement('span', null, (authFieldSettings.label || 'API key') + ' configured')
+            )
+          );
+          })(),
+
+          // Ollama configuration (no API key, but has endpoint and model)
+          selectedResolver.id === 'ollama' && React.createElement('div', {
+            style: {
+              padding: '16px 0',
+              borderTop: '1px solid var(--border-subtle)'
+            }
+          },
+            React.createElement('span', {
+              style: {
+                fontSize: '13px',
+                fontWeight: '500',
+                color: 'var(--text-primary)'
+              }
+            }, 'Ollama Configuration'),
+            React.createElement('p', {
+              style: {
+                fontSize: '12px',
+                color: 'var(--text-secondary)',
+                marginTop: '4px',
+                marginBottom: '12px',
+                lineHeight: '1.5'
+              }
+            }, 'Run AI locally with Ollama. Free, private, and works offline.'),
+            // Download/install callout
+            React.createElement('div', {
+              style: {
+                padding: '12px 14px',
+                backgroundColor: 'var(--accent-primary-alpha-06)',
+                borderRadius: '10px',
+                marginBottom: '16px',
+                border: '1px solid var(--accent-primary-alpha-10)'
+              }
+            },
+              React.createElement('p', {
+                style: { fontSize: '12px', fontWeight: '500', color: 'var(--text-primary)', marginBottom: '6px' }
+              }, 'Ollama must be installed separately'),
+              React.createElement('p', {
+                style: { fontSize: '11px', color: 'var(--text-secondary)', lineHeight: '1.5', marginBottom: '8px' }
+              }, 'Download and install Ollama, then pull a model (e.g. ollama pull llama3.1) before enabling.'),
+              React.createElement('button', {
+                onClick: (e) => {
+                  e.preventDefault();
+                  window.electron?.shell?.openExternal?.('https://ollama.ai');
+                },
+                style: {
+                  fontSize: '12px',
+                  fontWeight: '500',
+                  color: 'var(--accent-primary)',
+                  backgroundColor: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '0'
+                }
+              }, 'Download Ollama →')
+            ),
+            // Endpoint URL input
+            React.createElement('div', { style: { marginBottom: '16px' } },
+              React.createElement('label', {
+                style: {
+                  display: 'block',
+                  fontSize: '12px',
+                  fontWeight: '500',
+                  color: 'var(--text-primary)',
+                  marginBottom: '6px'
+                }
+              }, 'Ollama URL'),
+              React.createElement(TextField, { defaultValue: metaServiceConfigs[selectedResolver.id]?.endpoint || 'http://localhost:11434', onBlur: (e) => {
+                  // Saving an empty URL doesn't switch the plugin on.
+                  saveMetaServiceConfig(selectedResolver.id, {
+                    ...metaServiceConfigs[selectedResolver.id],
+                    endpoint: e.target.value,
+                    enabled: !!e.target.value.trim()
+                  });
+                  // Re-fetch dynamic models after endpoint change
+                  setTimeout(() => {
+                    const resolver = metaServices.find(s => s.id === selectedResolver.id) || selectedResolver;
+                    const modelSetting = resolver.settings?.configurable?.model || resolver.configurable?.model;
+                    if (modelSetting?.type === 'dynamic-select') {
+                      fetchDynamicModels(resolver, { ...metaServiceConfigs[selectedResolver.id], endpoint: e.target.value });
+                    }
+                  }, 100);
+                }, placeholder: 'http://localhost:11434', 'aria-label': 'Ollama server URL', className: 'w-full' }),
+            ),
+            // Model selector for Ollama - supports dynamic-select
+            React.createElement('div', { style: { marginBottom: '16px' } },
+              React.createElement('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' } },
+                React.createElement('label', {
+                  style: {
+                    fontSize: '12px',
+                    fontWeight: '500',
+                    color: 'var(--text-primary)'
+                  }
+                }, 'Model'),
+                // Refresh button for dynamic model fetching
+                (() => {
+                  const resolver = metaServices.find(s => s.id === selectedResolver.id) || selectedResolver;
+                  const modelSetting = resolver.settings?.configurable?.model || resolver.configurable?.model;
+                  return (modelSetting?.type === 'dynamic-select') && React.createElement(Button, { variant: 'icon', size: 'sm', 'aria-label': "Refresh models", onClick: () => {
+                      fetchDynamicModels(resolver, metaServiceConfigs[selectedResolver.id]);
+                    }, 'data-tooltip': 'Refresh models' }, React.createElement(Icons.RefreshCw, { className: 'w-4 h-4' }));
+                })()
+              ),
+              (() => {
+                const resolver = metaServices.find(s => s.id === selectedResolver.id) || selectedResolver;
+                const modelSetting = resolver.settings?.configurable?.model || resolver.configurable?.model;
+                const isDynamic = modelSetting?.type === 'dynamic-select';
+                const dynamicState = isDynamic ? dynamicModelOptions[selectedResolver.id] : null;
+                const isLoading = dynamicState?.loading;
+
+                let options;
+                if (isDynamic && dynamicState?.options?.length > 0) {
+                  options = dynamicState.options;
+                } else if (isDynamic && modelSetting?.fallbackOptions) {
+                  options = modelSetting.fallbackOptions;
+                } else if (modelSetting?.options) {
+                  options = modelSetting.options;
+                } else {
+                  // Legacy hardcoded fallback for Ollama
+                  options = [
+                    { value: 'llama3.1', label: 'Llama 3.1 (8B)' },
+                    { value: 'llama3.1:70b', label: 'Llama 3.1 (70B)' },
+                    { value: 'llama3.2', label: 'Llama 3.2 (3B)' },
+                    { value: 'mistral', label: 'Mistral (7B)' },
+                    { value: 'mixtral', label: 'Mixtral (8x7B)' },
+                    { value: 'qwen2.5', label: 'Qwen 2.5 (7B)' },
+                    { value: 'gemma2', label: 'Gemma 2 (9B)' }
+                  ];
+                }
+
+                // The shared select (components/fields.js).
+                return React.createElement(Select, {
+                  'aria-label': 'Model',
+                  value: metaServiceConfigs[selectedResolver.id]?.model || modelSetting?.default || 'llama3.1',
+                  onChange: (model) => {
+                    saveMetaServiceConfig(selectedResolver.id, {
+                      ...metaServiceConfigs[selectedResolver.id],
+                      model
+                    });
+                  },
+                  disabled: isLoading,
+                  className: 'w-full',
+                  options: isLoading ? [{ value: '', label: 'Loading models…' }] : options
+                });
+              })()
+            ),
+            // Enable toggle
+            React.createElement('div', { className: 'flex items-center justify-between' },
+              React.createElement('span', { style: { fontSize: '13px', color: 'var(--text-primary)' } }, 'Enable Ollama'),
+              React.createElement(Switch, { checked: metaServiceConfigs[selectedResolver.id]?.enabled === true, onToggle: async () => { const next = !(metaServiceConfigs[selectedResolver.id]?.enabled === true);
+                    saveMetaServiceConfig(selectedResolver.id, {
+                      ...metaServiceConfigs[selectedResolver.id],
+                      enabled: next
+                    });
+                    // When enabling, ensure the plugin is actually loaded
+                    if (next) {
+                      const isLoaded = metaServices.some(s => s.id === selectedResolver.id);
+                      if (!isLoaded) {
+                        // Remove from uninstalled list so it loads on next restart
+                        const uninstalled = await window.electron.store.get('uninstalled_resolvers') || [];
+                        if (uninstalled.includes(selectedResolver.id)) {
+                          await window.electron.store.set('uninstalled_resolvers', uninstalled.filter(id => id !== selectedResolver.id));
+                        }
+                        // Also trigger install from marketplace to hot-load immediately
+                        const marketplaceItem = (marketplaceManifest?.plugins || []).find(r => r.id === selectedResolver.id);
+                        if (marketplaceItem) {
+                          await handleInstallFromMarketplace(marketplaceItem);
+                        }
+                      }
+                    }
+                  }, 'aria-label': `Use ${selectedResolver.name}` })
+            )
+          ),
+
+          // Libre.fm scrobbling section
+          selectedResolver.id === 'librefm' && React.createElement('div', {
+            className: 'py-3 border-t border-line-light'
+          },
+            React.createElement('div', { className: 'mb-4' },
+              React.createElement('span', { className: 'font-medium text-ink-primary' }, 'Libre.fm Scrobbling'),
+              React.createElement('p', { className: 'text-xs text-ink-tertiary mt-1' },
+                'Open-source scrobbling service - an alternative to Last.fm. Report your listening history to Libre.fm.'
+              )
+            ),
+            // Scrobbler card for Libre.fm
+            window.scrobblers && window.scrobblers.find(s => s.id === 'librefm') &&
+              React.createElement(ScrobblerSettingsCard, {
+                scrobbler: window.scrobblers.find(s => s.id === 'librefm'), color: getServiceColor('librefm'),
+                config: scrobblerConfigs['librefm'],
+                onConfigChange: (id, newConfig) => {
+                  setScrobblerConfigs(prev => ({ ...prev, [id]: newConfig }));
+                  // Sync scrobbler config to metaServiceConfigs so the tile reflects connected state
+                  if (newConfig?.username) {
+                    saveMetaServiceConfig('librefm', {
+                      ...metaServiceConfigs['librefm'],
+                      enabled: !!newConfig.enabled,
+                      username: newConfig.username
+                    });
+                  } else {
+                    // Disconnected - clear meta service config
+                    saveMetaServiceConfig('librefm', {
+                      ...metaServiceConfigs['librefm'],
+                      enabled: false,
+                      username: undefined
+                    });
+                  }
+                }
+              })
+          ),
+
+          // Amazon Music settings section (in-app sign-in)
+          selectedResolver.id === 'amazonmusic' && React.createElement('div', {
+            style: {
+              padding: '16px 0',
+              borderTop: '1px solid var(--border-subtle)'
+            }
+          },
+            React.createElement('h3', {
+              style: {
+                fontSize: '13px',
+                fontWeight: '500',
+                color: 'var(--text-primary)',
+                marginBottom: '8px'
+              }
+            }, 'Amazon Music'),
+            React.createElement('p', {
+              style: {
+                fontSize: '12px',
+                color: 'var(--text-secondary)',
+                marginBottom: '12px',
+                lineHeight: '1.5'
+              }
+            },
+              'Sign in once, and choose a profile if Amazon asks. Uses Amazon\'s web player and this app\'s Widevine CDM. The Amazon Music desktop app is not used.'
+            ),
+            React.createElement('div', {
+              className: 'flex items-center justify-between',
+              style: {
+                padding: '12px',
+                backgroundColor: 'var(--hover-bg-default)',
+                borderRadius: '8px',
+                marginBottom: '8px'
+              }
+            },
+              React.createElement('div', null,
+                React.createElement('p', {
+                  style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' }
+                }, !amazonMusicStatus ? 'Checking Amazon Music…' :
+                  amazonMusicStatus.web?.signedIn ? 'Signed in' :
+                  amazonMusicStatus.web?.cdm ? 'Ready — sign in to play' :
+                  'Can’t play in this version of Parachord'),
+                React.createElement('p', {
+                  style: { fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }
+                }, !amazonMusicStatus ? '' :
+                  amazonMusicStatus.web?.signedIn
+                    // Off Music Unlimited, nothing plays (#1220); say why.
+                    ? (PlaybackLimits.limitMessage(playbackLimits, 'amazonmusic') || '')
+                    : amazonMusicStatus.web?.cdm
+                      ? 'Sign in with your Amazon Music account'
+                      : 'This build cannot play DRM-protected Amazon streams')
+              ),
+              amazonMusicStatus?.web?.signedIn
+                ? React.createElement(Button, { variant: 'secondary', onClick: async () => {
+                      // Stop the shared engine BEFORE the session dies — the
+                      // shaka session (license + buffered signed URLs) must
+                      // not keep playing a signed-out account's content, and
+                      // the dmls side needs a live session for the FINAL
+                      // trackStreamed pair.
+                      if (window.__parachordWidevine && typeof window.__parachordWidevine.stop === 'function') {
+                        await window.__parachordWidevine.stop().catch(() => {});
+                        if (audioRef.current && currentTrackRef.current?._activeResolver === 'amazonmusic') {
+                          setIsPlaying(false);
+                        }
+                      }
+                      // Plan blocks are account-scoped (the FLAC/HD and
+                      // spatial/ec-3 KID-group latches). The next sign-in may
+                      // be an account that clears either; don't keep the
+                      // refused families off.
+                      if (window.__parachordWidevine && typeof window.__parachordWidevine.clearPlanBlocks === 'function') {
+                        window.__parachordWidevine.clearPlanBlocks();
+                      }
+                      const r = await window.electron.amazonMusic.signOut();
+                      if (r && r.success) {
+                        setAmazonMusicStatus({ success: true, engine: 'widevine', web: { cdm: !!(amazonMusicStatus && amazonMusicStatus.web && amazonMusicStatus.web.cdm), signedIn: false } });
+                        showToast('Signed out of Amazon Music', 'success');
+                      } else {
+                        showToast((r && r.error) || 'Could not sign out of Amazon Music', 'error');
+                      }
+                    } }, 'Sign out')
+                : React.createElement(Button, { variant: 'primary', onClick: async () => {
+                      const ok = await manageAmazonMusic({ explicit: true, reason: 'not-signed-in', forcePrompt: true });
+                      if (ok) {
+                        const s = await window.electron.amazonMusic.getStatus().catch(() => null);
+                        if (s && s.success) applyAmazonMusicStatus(s);
+                      }
+                    } }, 'Sign in')
+            ),
+          ),
+
+          // Local Files settings section
+          selectedResolver.id === 'localfiles' && React.createElement('div', {
+            style: {
+              padding: '16px 0',
+              borderTop: '1px solid var(--border-subtle)'
+            }
+          },
+            React.createElement('h3', {
+              style: {
+                fontSize: '13px',
+                fontWeight: '500',
+                color: 'var(--text-primary)',
+                marginBottom: '8px'
+              }
+            }, 'Watch Folders'),
+            React.createElement('p', {
+              style: {
+                fontSize: '12px',
+                color: 'var(--text-secondary)',
+                marginBottom: '16px',
+                lineHeight: '1.5'
+              }
+            },
+              'Add folders containing your music files. Parachord will automatically index and watch them for changes.'
+            ),
+
+            // Watch folders list
+            React.createElement('div', { style: { marginBottom: '16px' } },
+              watchFolders.length === 0
+                ? React.createElement(EmptyState, { compact: true, align: 'start', title: 'No watch folders yet' })
+                : watchFolders.map(folder =>
+                    React.createElement('div', {
+                      key: folder.path,
+                      className: 'flex items-center justify-between',
+                      style: {
+                        padding: '12px',
+                        backgroundColor: 'var(--hover-bg-default)',
+                        borderRadius: '8px',
+                        marginBottom: '8px'
+                      }
+                    },
+                      React.createElement('div', { className: 'flex-1 min-w-0' },
+                        React.createElement('p', {
+                          className: 'truncate',
+                          style: {
+                            fontSize: '13px',
+                            fontWeight: '500',
+                            color: 'var(--text-primary)'
+                          }
+                        }, folder.path),
+                        React.createElement('p', {
+                          style: {
+                            fontSize: '11px',
+                            color: 'var(--text-secondary)',
+                            marginTop: '2px'
+                          }
+                        },
+                          `${countOf(folder.track_count || 0, 'track')}`
+                        )
+                      ),
+                      React.createElement('div', { className: 'flex items-center gap-2', style: { marginLeft: '16px' } },
+                        React.createElement(Button, { variant: 'icon', size: 'sm', 'aria-label': "Rescan folder", onClick: () => handleRescanFolder(folder.path), disabled: isScanning, 'data-tooltip': 'Rescan folder' }, React.createElement(Icons.RefreshCw, { className: 'w-4 h-4' })),
+                        React.createElement(Button, { variant: 'icon', size: 'sm', 'aria-label': "Remove folder", onClick: () => handleRemoveWatchFolder(folder.path), 'data-tooltip': 'Remove folder' }, React.createElement(Icons.X, { className: 'w-4 h-4' }))
+                      )
+                    )
+                  )
+            ),
+
+            // Add folder button
+            React.createElement(Button, { variant: 'secondary', onClick: handleAddWatchFolder, disabled: isScanning, className: 'w-full' }, React.createElement(Icons.Plus, { size: 16 }), 'Add watch folder'),
+
+            // Scan progress
+            isScanning && React.createElement('div', { style: { marginTop: '16px' } },
+              React.createElement('div', { className: 'flex items-center gap-2', style: { marginBottom: '8px' } },
+                React.createElement(Icons.Spinner, { size: 14, style: { color: 'var(--accent-primary)' } }),
+                React.createElement('span', {
+                  style: {
+                    fontSize: '13px',
+                    color: 'var(--text-secondary)'
+                  }
+                }, 'Scanning…')
+              ),
+              React.createElement('div', {
+                style: {
+                  width: '100%',
+                  backgroundColor: 'var(--border-subtle)',
+                  borderRadius: '4px',
+                  height: '6px'
+                }
+              },
+                React.createElement('div', {
+                  style: {
+                    width: `${scanProgress.total > 0 ? (scanProgress.current / scanProgress.total) * 100 : 0}%`,
+                    backgroundColor: 'var(--accent-primary)',
+                    height: '6px',
+                    borderRadius: '4px',
+                    transition: transition('width', 'slow')
+                  }
+                })
+              ),
+              React.createElement('p', {
+                className: 'truncate',
+                style: {
+                  fontSize: '11px',
+                  color: 'var(--text-tertiary)',
+                  marginTop: '6px'
+                }
+              },
+                scanProgress.file || 'Preparing…'
+              )
+            ),
+
+            // Stats
+            React.createElement('div', {
+              style: {
+                marginTop: '24px',
+                paddingTop: '16px',
+                borderTop: '1px solid var(--border-subtle)'
+              }
+            },
+              React.createElement('h4', {
+                style: {
+                  fontSize: '11px',
+                  fontWeight: '600',
+                  color: 'var(--text-tertiary)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.08em',
+                  marginBottom: '12px'
+                }
+              }, 'Library Stats'),
+              React.createElement('div', { className: 'grid grid-cols-4 gap-4' },
+                React.createElement('div', null,
+                  React.createElement('p', {
+                    style: {
+                      fontSize: '12px',
+                      color: 'var(--text-secondary)'
+                    }
+                  }, 'Total tracks'),
+                  React.createElement('p', {
+                    style: {
+                      fontSize: '14px',
+                      fontWeight: '500',
+                      color: 'var(--text-primary)',
+                      marginTop: '2px'
+                    }
+                  }, localFilesStats.totalTracks.toLocaleString())
+                ),
+                React.createElement('div', null,
+                  React.createElement('p', {
+                    style: {
+                      fontSize: '12px',
+                      color: 'var(--text-secondary)'
+                    }
+                  }, 'Last scan'),
+                  React.createElement('p', {
+                    style: {
+                      fontSize: '14px',
+                      fontWeight: '500',
+                      color: 'var(--text-primary)',
+                      marginTop: '2px'
+                    },
+                    // The app's relative time (lib/time-ago.js), the full date
+                    // as its tooltip.
+                    'data-tooltip': localFilesStats.lastScan ? new Date(localFilesStats.lastScan).toLocaleString() : undefined
+                  },
+                    localFilesStats.lastScan ? timeAgo(localFilesStats.lastScan) : 'Never'
+                  )
+                )
+              ),
+              // The panel's actions: small secondary buttons flush with the
+              // content (text buttons' padding indented them).
+              React.createElement('div', { className: 'flex flex-wrap gap-2 mt-4' },
+                React.createElement(Button, { variant: 'secondary', size: 'sm', onClick: handleRescanAll, disabled: isScanning || watchFolders.length === 0 }, 'Rescan all folders'),
+                React.createElement(Button, { variant: 'secondary', size: 'sm', onClick: handleRemoveMissingFiles, disabled: isScanning || watchFolders.length === 0, 'data-tooltip': 'Remove library entries for files that are no longer on disk' }, 'Remove missing files'))
+            )
+          )
+        ),
+React.createElement('div', {
+          className: 'flex items-center justify-between',
+          style: {
+            padding: '16px 24px',
+            backgroundColor: 'var(--hover-bg-default)',
+            borderTop: '1px solid var(--border-subtle)'
+          }
+        },
+          // Left side: Remove button (only for user-installed resolvers)
+          React.createElement('div', null,
+            // Check if this is a user-installed resolver (not built-in core plugins)
+            !['spotify', 'localfiles'].includes(selectedResolver.id) &&
+              React.createElement(Button, { variant: 'secondary', size: 'sm', onClick: async () => {
+                  await handleUninstallResolver(selectedResolver.id);
+                  setSelectedResolver(null);
+                } }, 'Remove')
+          ),
+          // Right side: Update button (if available) and Done
+          React.createElement('div', { className: 'flex items-center gap-2' },
+            // Update button - show if marketplace has newer version
+            (() => {
+              const marketplaceResolver = marketplaceManifest?.plugins?.find(r => r.id === selectedResolver.id);
+              const hasUpdate = marketplaceResolver &&
+                marketplaceResolver.version !== selectedResolver.version &&
+                marketplaceResolver.version > selectedResolver.version;
+              if (hasUpdate) {
+                return React.createElement(Button, { variant: 'primary', onClick: async () => {
+                    await handleInstallFromMarketplace(marketplaceResolver);
+                    setSelectedResolver(null);
+                  }, disabled: installingResolvers.has(selectedResolver.id) }, installingResolvers.has(selectedResolver.id) ? 'Updating…' : `Update to v${marketplaceResolver.version}`);
+              }
+              return null;
+            })(),
+            (() => {
+              // Determine if this resolver/service needs an "Enable" button
+              const isContentResolver = selectedResolver.capabilities?.resolve && !selectedResolver.type;
+              const isMetaService = selectedResolver.type === 'meta-service';
+              const config = metaServiceConfigs[selectedResolver.id];
+              const isAiServiceNeedingKey = isMetaService &&
+                (selectedResolver.capabilities?.generate || selectedResolver.capabilities?.chat) &&
+                selectedResolver.id !== 'ollama';
+
+              let showEnable = false;
+              if (isContentResolver) {
+                showEnable = !activeResolvers.includes(selectedResolver.id);
+              } else if (isMetaService) {
+                // No-key AI services (Ollama, Custom LLM) are enabled solely by the
+                // explicit `enabled` flag (see isServiceEnabled) — a set apiKey does
+                // NOT count as enabled for them, so the button must track the flag.
+                // Otherwise a configured-but-not-enabled service shows "Done" with no
+                // visible way to enable it.
+                const isNoKeyAiService = (selectedResolver.capabilities?.generate || selectedResolver.capabilities?.chat)
+                  && (selectedResolver.settings?.requiresAuth === false || selectedResolver.requiresAuth === false);
+                if (isNoKeyAiService) {
+                  showEnable = config?.enabled !== true;
+                } else {
+                  showEnable = !(config?.enabled || config?.apiKey || config?.appId || config?.clientId || config?.username);
+                }
+              }
+
+              return React.createElement(Button, { variant: 'primary', onClick: async () => {
+                  if (showEnable) {
+                    const isLoaded = allResolvers.some(r => r.id === selectedResolver.id)
+                      || metaServices.some(s => s.id === selectedResolver.id);
+
+                    if (!isLoaded) {
+                      // Not yet downloaded - install transparently from marketplace
+                      const marketplaceItem = (marketplaceManifest?.plugins || []).find(r => r.id === selectedResolver.id);
+                      if (marketplaceItem) {
+                        await handleInstallFromMarketplace(marketplaceItem);
+                        // Also enable the service after install (install alone doesn't set enabled)
+                        if (isMetaService) {
+                          saveMetaServiceConfig(selectedResolver.id, {
+                            ...metaServiceConfigs[selectedResolver.id],
+                            enabled: true
+                          });
+                        }
+                        setSelectedResolver(null);
+                        return;
+                      }
+                    }
+
+                    if (isContentResolver) {
+                      setActiveResolvers(prev => appendUniqueId(prev, selectedResolver.id));
+                      setResolverOrder(prev => insertInCanonicalOrder(prev, selectedResolver.id));
+                    } else if (isMetaService) {
+                      saveMetaServiceConfig(selectedResolver.id, {
+                        ...metaServiceConfigs[selectedResolver.id],
+                        enabled: true
+                      });
+                    }
+
+                    // For AI services that need an API key, keep the modal open
+                    // so the user can enter their key after enabling
+                    if (isAiServiceNeedingKey) {
+                      return; // Don't close modal - let user enter API key
+                    }
+                  }
+                  setSelectedResolver(null);
+                } }, showEnable ? 'Enable' : 'Done');
+            })()
+          )
+        ));
+});
+
+module.exports = { PluginSettingsDialog, PLUGIN_SETTINGS_DIALOG_HANDLERS };

@@ -18,7 +18,7 @@ test("an unknown one is spelled out, never shown as its id", () => {
 });
 
 test('Settings and the marketplace use it, as the shared pill', () => {
-  const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  const app = require('../helpers/renderer-source').appWithPages();
   expect(app.split("enabled ? React.createElement(Badge, { key: cap, tone: 'accent' }, capabilityLabel(cap)) : null)").length - 1).toBe(2);
   expect(app).not.toContain("urlLookup: 'URL Lookup'");
 });
