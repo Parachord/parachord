@@ -12,7 +12,6 @@ Related: [METADATA_SOURCES.md](../architecture/METADATA_SOURCES.md) (artist imag
 | Weekly Jams / Weekly Exploration | Weekly Exploration: Recommendations page, first in the Playlists section. Weekly Jams and Daily Jams: Home's "Made from your listening" (apps older than ListenBrainz 1.5.0 plugin support still show Weekly Jams here) | ListenBrainz `createdfor` playlists, through the plugin's `getRecommendations` | ListenBrainz's own weekly generation | Track playlists | ListenBrainz username |
 | Shuffleupagus suggestions | Home's "Albums you might love" row (albums only, "Shuffleupagus · <reason>" on each card, with the Refresh icon); Recommendations page, blended into the Albums and Artists sections | AI chat plugin, one prompt per visit (either page) | Listening history, collection, prior suggestions | Albums and artists (with reasons) | AI chat plugin + "Share my data" |
 | Shuffleupagus chat | Playbar AI button; Home; `parachord://chat` | AI chat plugin with tools | Listening history, collection, queue, playlists, friends | Anything the model plays, queues or saves | AI chat plugin |
-| AI Playlist (one shot) | Prompt panel | AI `generate` plugin | Listening history when sharing is on | Track list | AI generate plugin |
 | Related Artists | Artist page tab | Last.fm `artist.getsimilar` merged with ListenBrainz labs `similar-artists` | The artist | Artists | Nothing |
 | Fresh Drops | Sidebar; Home "New from artists you love" | MusicBrainz release groups per artist | Collection, library, listening history | Release groups (albums, EPs, singles) | Nothing (empty with no collection or scrobbler) |
 | Critical Darlings | Sidebar; Home "Acclaimed by critics" | Achordion critics feed | Not personalized | Albums | Nothing |
@@ -105,13 +104,9 @@ Listening context (`fetchListeningContext`) is shared with the Home suggestions 
 
 `services/mcp-server.js` advertises the registry in `tools/dj-tools.js` (17 tools) to external agents such as Claude Desktop. That set differs from the in-app chat list: it includes `seek` and `get_position` and lacks `queue_remove` and `collection_radio`. Both dispatch through `executeDjTool` in app.js with their own context objects; the playlist methods are built once by `buildPlaylistToolContext` and spread into both. The MCP context has no "Share my data" gate because the MCP server is its own opt-in. `tests/chat/dj-tools-executor-parity.test.js` fails if a registry tool has no executor case or if the MCP context lacks a method the executor calls.
 
-## AI Playlist (one shot)
+## AI Playlist (one shot): removed
 
-Code: `handleAiGenerate` (src/renderer/app.js), which also renders the prompt panel.
-
-Sends the user's prompt to a plugin with the `generate` capability (ChatGPT, Gemini and Custom LLM have it; Claude and Ollama are chat only). When "Share my data" is on, the `fetchListeningContext` result is serialised into the system prompt. The result is a list of `{ title, artist }` shown in an "AI Playlist" sidebar with Play, Add to Queue and Add to Playlist. A "Surprise Me" button appears when sharing is on.
-
-The playbar AI button opens chat whenever any chat provider is enabled and only falls back to this panel otherwise. Every bundled plugin that can generate can also chat, so with bundled plugins this panel is not reachable from that button. See "Known gaps".
+The one-shot AI Playlist prompt panel (a prompt sent to a plugin's `generate`, its track list shown in the results sidebar) was removed in parachord#1020, along with the sidebar's track-list mode and its save dialog. The playbar AI button opened chat whenever a chat plugin was on, and every bundled plugin that can generate can also chat, so the panel could no longer be reached. Shuffleupagus chat does the same job (`create_playlist`, `queue_add`). Plugins may still implement `generate`; the app no longer calls it.
 
 ## Related Artists (artist page)
 
@@ -221,7 +216,6 @@ From the manifests in `plugins/*.axe`. The app reads `generate`, `chat`, `concer
 
 Found while writing this inventory; none are fixed by this document.
 
-1. The one-shot AI Playlist panel cannot be opened from the playbar button with bundled plugins, because chat takes priority whenever a chat-capable plugin is enabled. (parachord#1020)
-2. There is no UI to view or clear the recommendation blocklist. (parachord#1022)
+1. There is no UI to view or clear the recommendation blocklist. (parachord#1022)
 
-Fixed since the first version: artist-only radio links now seed from the artist's top track (parachord#1005), the blocklist is applied and listed in the chat prompt (parachord#1006), in-app chat offers `block_recommendation` (parachord#1007), the MCP playlist tools work (parachord#1008), and with no ListenBrainz recommendation playlist the page says so instead of showing the user's own most-played tracks (parachord#1021).
+Fixed since the first version: the unreachable one-shot AI Playlist panel was removed (parachord#1020), artist-only radio links now seed from the artist's top track (parachord#1005), the blocklist is applied and listed in the chat prompt (parachord#1006), in-app chat offers `block_recommendation` (parachord#1007), the MCP playlist tools work (parachord#1008), and with no ListenBrainz recommendation playlist the page says so instead of showing the user's own most-played tracks (parachord#1021).

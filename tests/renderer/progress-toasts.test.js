@@ -41,7 +41,7 @@ test('each arrival path plays its animation', () => {
   // The embed's "add to queue".
   expect(app).toMatch(/embed\.onQueue\([\s\S]{0,200}setCurrentQueue\(prev => \[\.\.\.prev, track\]\);\s*triggerQueueAnimation\(\);/);
   // Every new playlist badges Playlists.
-  for (const name of ['handleSaveQueueConfirm', 'handleAiSavePlaylistConfirm', 'createPlaylistFromChat', 'handleImportPlaylistFromUrl']) {
+  for (const name of ['handleSaveQueueConfirm', 'createPlaylistFromChat', 'handleImportPlaylistFromUrl']) {
     expect([name, fn(name).includes("showSidebarBadge('playlists')")]).toEqual([name, true]);
   }
   // Adding a friend slides them in.

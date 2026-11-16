@@ -16,7 +16,6 @@ const callProps = (comp) => {
 
 test.each([
   ['ConcertsPage', 'concerts-page.js', ['_allResolvers: allResolvers', '_metaServices: metaServices']],
-  ['AiPromptPanel', 'ai-prompt-panel.js', ['_allResolvers: allResolvers']],
   ['RecommendationsPage', 'recommendations-page.js', ['_metaServices: metaServices']],
   ['FriendHistoryPage', 'friend-history-page.js', ['_metaServices: metaServices']],
 ])('%s re-renders when the plug-ins load', (comp, file, props) => {

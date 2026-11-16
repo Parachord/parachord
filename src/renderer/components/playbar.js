@@ -34,7 +34,6 @@ const { List, Music, Pause, Play, SkipBack, SkipForward } = Icons;
 const PLAYBAR_HANDLERS = [
   'closeAiChat',
   'fetchArtistData',
-  'getAiServices',
   'getChatServices',
   'handleDragEnter',
   'handleDragLeave',
@@ -55,7 +54,6 @@ const Playbar = React.memo(function Playbar(props) {
   const {
     addTrackToCollection,
     aiChatOpen,
-    aiPromptOpen,
     allResolvers,
     applyLocalFileVolume,
     browserPlaybackActive,
@@ -74,7 +72,6 @@ const Playbar = React.memo(function Playbar(props) {
     exitSpinoff,
     fetchArtistData,
     formatTime,
-    getAiServices,
     getChatServices,
     getEffectiveVolume,
     handleDragEnter,
@@ -115,7 +112,6 @@ const Playbar = React.memo(function Playbar(props) {
     resolverBlocklist,
     resolverVolumeOffsets,
     resumePending,
-    setAiPromptOpen,
     setDraggingTrackForPlaylist,
     setIsMuted,
     setPlaybarAlbumArt,
@@ -201,44 +197,28 @@ const Playbar = React.memo(function Playbar(props) {
               }, currentQueue.length > 99 ? '99+' : currentQueue.length)
             )
           ),
-          // AI Playlist/DJ button (sparkle icon) - opens chat if available, else prompt
+          // Shuffleupagus button (sparkle icon): opens the chat when a chat
+          // plug-in is on, else it's disabled and points to Settings.
           (() => {
-            const aiResolvers = getAiServices();
-            const chatServices = getChatServices();
-
-            // Check if chat providers are enabled
-            const hasEnabledChat = chatServices.some(isServiceEnabled);
-
-            // Check if generate providers are enabled (fallback)
-            const hasEnabledGenerate = aiResolvers.some(isServiceEnabled);
-
-            const hasAnyAi = hasEnabledChat || hasEnabledGenerate;
-            const isActive = aiChatOpen || aiPromptOpen;
+            const hasEnabledChat = getChatServices().some(isServiceEnabled);
+            const isActive = aiChatOpen;
+            const label = hasEnabledChat ? 'Shuffleupagus' : 'Enable AI in Settings';
 
             const handleClick = () => {
-              if (hasEnabledChat) {
-                // Prefer chat interface
-                if (aiChatOpen) {
-                  closeAiChat();
-                } else {
-                  openAiChat();
-                }
-              } else if (hasEnabledGenerate) {
-                // Fall back to one-shot prompt
-                setAiPromptOpen(!aiPromptOpen);
+              if (!hasEnabledChat) return;
+              if (aiChatOpen) {
+                closeAiChat();
+              } else {
+                openAiChat();
               }
             };
 
             return React.createElement(Tooltip, {
-              content: hasEnabledChat
-                ? 'Shuffleupagus'
-                : hasEnabledGenerate
-                  ? 'AI Playlist'
-                  : 'Enable AI in Settings',
+              content: label,
               position: 'top',
               variant: 'dark'
             },
-              React.createElement(Button, { variant: 'icon', size: 'sm', tone: 'dark', className: 'ml-1', style: { color: isActive ? 'var(--playbar-accent-hover)' : hasAnyAi ? 'var(--on-dark-secondary)' : 'var(--on-dark-disabled)', backgroundColor: isActive ? 'var(--accent-primary-alpha-30)' : undefined }, 'aria-label': hasEnabledChat ? 'Shuffleupagus' : hasEnabledGenerate ? 'AI Playlist' : 'Enable AI in Settings', onClick: handleClick, disabled: !hasAnyAi }, React.createElement(Icons.Sparkles, { className: 'w-4 h-4' }))
+              React.createElement(Button, { variant: 'icon', size: 'sm', tone: 'dark', className: 'ml-1', style: { color: isActive ? 'var(--playbar-accent-hover)' : hasEnabledChat ? 'var(--on-dark-secondary)' : 'var(--on-dark-disabled)', backgroundColor: isActive ? 'var(--accent-primary-alpha-30)' : undefined }, 'aria-label': label, onClick: handleClick, disabled: !hasEnabledChat }, React.createElement(Icons.Sparkles, { className: 'w-4 h-4' }))
             );
           })()
         ),

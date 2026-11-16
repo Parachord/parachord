@@ -538,7 +538,7 @@ Every transition and short animation runs on these (`index.html`, #1450). Reduce
 | `menuIn` | `[role="menu"]`, `[role="listbox"]` | Menus and pick lists (`Menu`, `SortMenu`) fade and drop 4px in, on `--motion-base` |
 | `sidePanelIn` | a modal dialog that isn't `.modal-panel` | The Add to playlist panel slides 16px out from the sidebar, on `--motion-slow` |
 | `motionFadeIn` | `.motion-fade-in` | Content that swaps as it mounts: the page hero's full and collapsed sides, so they don't pop while its height animates |
-| `toastIn` | `.motion-rise-in` | The Shuffleupagus prompt panel rises in above the playbar |
+| `toastIn` | `.motion-rise-in` | Rises an element in from below; no current user (the Shuffleupagus prompt panel it was made for was removed in #1020) |
 | `fadeIn` | inline `animation` | Concert rows appearing |
 
 ### Queue
