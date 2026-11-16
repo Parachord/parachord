@@ -45,6 +45,7 @@
 // Props-driven; hooks are qualified; loads under plain Node.
 
 const Icons = require('./icons');
+const { transition } = require('../lib/motion');
 
 // One look for every menu: Share's dark panel (the tooltip colours, in both
 // themes), 12px medium text. Items are styled by .menu-item in index.html
@@ -139,11 +140,13 @@ function menuPanel({ id, label, heading, minWidth, pos, menuRef, onKeyDown, list
             onClick: (ev) => { ev.stopPropagation(); item.toggle.onChange(!on); },
           }, e('span', {
             'aria-hidden': 'true', 'data-menu-switch': on ? 'on' : 'off',
-            style: { position: 'relative', width: '28px', height: '16px', borderRadius: '9999px', transition: 'background-color 150ms ease',
+            style: { position: 'relative', width: '28px', height: '16px', borderRadius: '9999px', transition: transition('background-color', 'fast'),
               backgroundColor: on ? 'var(--accent-fill)' : 'var(--on-dark-track)' },
           }, e('span', {
-            style: { position: 'absolute', top: '2px', left: on ? '14px' : '2px', width: '12px', height: '12px', borderRadius: '9999px',
-              backgroundColor: 'var(--on-dark-primary)', transition: 'left 150ms ease' },
+            // The knob slides on transform (the motion rule: no layout properties).
+            style: { position: 'absolute', top: '2px', left: '2px', width: '12px', height: '12px', borderRadius: '9999px',
+              transform: on ? 'translateX(12px)' : 'none',
+              backgroundColor: 'var(--on-dark-primary)', transition: transition('transform', 'fast') },
           }))));
       }
       return item.href

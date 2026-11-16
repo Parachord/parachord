@@ -391,7 +391,7 @@ const VirtualizedQueueList = React.memo(({
       },
       // On the always-dark drawer: the accent fill for the playing row, the
       // on-dark tints for hover and drag, the soft accent for a drop line.
-      className: `group flex items-center gap-3 py-1.5 px-3 hover:bg-white/10 transition-all duration-300 ${
+      className: `group flex items-center gap-3 py-1.5 px-3 hover:bg-white/10 transition-colors ${
         isDragging ? 'opacity-50 bg-white/5' : ''} ${
         isError || isUnplayable ? 'opacity-50' : ''
       } ${isDraggedOver ? 'border-t-2' : ''} ${

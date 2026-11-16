@@ -160,7 +160,7 @@ Each rule below exists because the audit found its absence. Read the audit's are
   - Spacing: the 4px scale. 10px is only for card padding.
   - Radius: 4 · 6 · 8 · 10 · 12 · 16 · full.
   - One 24px page gutter for hero, filter bar and content.
-  - Motion: 100–400ms on transform/opacity, never `transition-all` on list rows. One deliberate exception: the queue drawer's insert glow (`queue-track-insert`, 1s), which is the only "added to queue" signal since that toast went.
+  - Motion: on the motion tokens (`--motion-fast` 150 / `-base` 200 / `-slow` 300 / `-deliberate` 400ms, `--ease-standard` / `-out` / `-in`; reduced motion zeroes them): Tailwind `transition-colors` etc. with `duration-fast/base/slow`, or `transition()` from `lib/motion.js` inline. Name the properties (transform, opacity, colours), never `transition-all`, a numbered `duration-300` or an inline string with its own times (design-drift's `rawTransitions`). One deliberate exception: the queue drawer's insert glow (`queue-track-insert`, 1s), which is the only "added to queue" signal since that toast went.
   - Section titles are `SectionHeader`. Filter buttons are `FilterChips`.
 - **Interactive means `<button>` or `<a>`.** Never put `onClick` on a `div`, `span`, `li` or `img`.
   - Icon-only buttons get an `aria-label`.
@@ -183,7 +183,7 @@ Each rule below exists because the audit found its absence. Read the audit's are
   - Plurals go through one helper (`countOf`), never a hard-coded "tracks".
   - An error says what happened and what to do. A confirm button is named for its action and sits next to Cancel. Success is a toast, not a dialog.
 - **The ratchet enforces this.** `tests/ci/design-drift.test.js` runs `scripts/design-drift.js` over `src/renderer/` and compares against `tests/ci/design-drift-baseline.json`.
-  - It counts hex colours, coloured and neutral `rgb()`/`rgba()` values, palette classes, theme ternaries, clickable non-buttons, `outline: 'none'`, native dialogs, "...", pasted SVG paths, off-scale font sizes and radii, JS hover and focus handlers that change style, raw form controls outside `fields.js` (`inputCopies`), and buttons styled by hand instead of `Button` (`handBuiltButtons`; a shared component's own button doesn't count). It also flags CSS variables the renderer uses but `index.html` doesn't define.
+  - It counts hex colours, coloured and neutral `rgb()`/`rgba()` values, palette classes, theme ternaries, clickable non-buttons, `outline: 'none'`, native dialogs, "...", pasted SVG paths, off-scale font sizes and radii, JS hover and focus handlers that change style, raw form controls outside `fields.js` (`inputCopies`), transitions off the motion tokens (`rawTransitions`), and buttons styled by hand instead of `Button` (`handBuiltButtons`; a shared component's own button doesn't count). It also flags CSS variables the renderer uses but `index.html` doesn't define.
   - It also counts hand-built copies of shared components: track rows (a `sourceRowState()` call outside `TrackRow`), "Play from" source buttons, spinners, "No …" empty states, pill buttons, sticky bars and page heroes. The audit counted colours but not copies, so pages kept their own rows and states while every colour in them was a token (2026-11-15).
   - A count that rises fails: fix it with the shared component or token.
   - A count that falls fails until you lock it in with `npm run design-drift -- --write` and commit the baseline.

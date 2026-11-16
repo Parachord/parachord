@@ -496,7 +496,26 @@ Located in `assets/icons/`:
 
 ## Animations
 
-Every animation is a `@keyframes` rule in `index.html`, and every one listed here is in use (the design audit removed the unused `spin-reverse`, `loadingFadeInUp`, `loadingDotPulse` and `friendStatusChange`). Motion stays within 100–400ms on transform and opacity, except loops and the splash. With `prefers-reduced-motion`, one block in `index.html` turns animations and transitions off; spinners keep turning.
+Every animation is a `@keyframes` rule in `index.html`, and every one listed here is in use (the design audit removed the unused `spin-reverse`, `loadingFadeInUp`, `loadingDotPulse` and `friendStatusChange`). With `prefers-reduced-motion`, one block in `index.html` turns animations and transitions off; spinners keep turning.
+
+### Motion tokens
+
+Every transition and short animation runs on these (`index.html`, #1450). Reduced motion sets every duration to 0.01ms in one block, so whatever reads them settles at once.
+
+| Token | Value | For |
+|-------|-------|-----|
+| `--motion-fast` | 150ms | Colour and small state changes: hover, a switch, a row's tint. Tailwind's default (`transition-colors` with no duration) |
+| `--motion-base` | 200ms | Something appearing: a menu, a fade, the results panel |
+| `--motion-slow` | 300ms | Movement across the screen: the queue drawer, a side panel, the hero's collapse, a progress fill |
+| `--motion-deliberate` | 400ms | The one long settle: the artist hero, a card grid fading up |
+| `--ease-standard` | `cubic-bezier(0.4, 0, 0.2, 1)` | A change in place (Tailwind's default) |
+| `--ease-out` | `cubic-bezier(0, 0, 0.2, 1)` | Something arriving |
+| `--ease-in` | `cubic-bezier(0.4, 0, 1, 1)` | Something leaving |
+
+- **In classes:** `transition-colors` / `-opacity` / `-transform`, or `transition-[box-shadow,border-color]` for two, with `duration-fast` / `-base` / `-slow` / `-deliberate` and `ease-out` / `ease-in` (all read the tokens; `tailwind.config.js`).
+- **Inline:** `transition('opacity transform', 'slow', 'out')` from `lib/motion.js`. It refuses `all` and off-scale names.
+- **Never** `transition-all`, a numbered `duration-300`, or an inline string with its own times: the drift script counts them (`rawTransitions`).
+- Animate transform, opacity, colours and filters. A size or position (width, height, max-width) only where it is the design: a progress fill, the hero's collapse. The queue drawer slides on `transform` and its height isn't animated, so dragging its handle resizes it under the cursor (it lagged with `transition-all`).
 
 ### Loading and feedback
 
@@ -514,6 +533,10 @@ Every animation is a `@keyframes` rule in `index.html`, and every one listed her
 | `modalPanelIn` | `.modal-panel` | `Modal`'s panel fades and rises 8px |
 | `toastIn` | `.toast-enter` | A toast fades and rises 8px |
 | `tooltip-in` | `.tooltip-panel` | The shared tooltip |
+| `menuIn` | `[role="menu"]`, `[role="listbox"]` | Menus and pick lists (`Menu`, `SortMenu`) fade and drop 4px in, on `--motion-base` |
+| `sidePanelIn` | a modal dialog that isn't `.modal-panel` | The Add to playlist panel slides 16px out from the sidebar, on `--motion-slow` |
+| `motionFadeIn` | `.motion-fade-in` | Content that swaps as it mounts: the page hero's full and collapsed sides, so they don't pop while its height animates |
+| `toastIn` | `.motion-rise-in` | The Shuffleupagus prompt panel rises in above the playbar |
 | `fadeIn` | inline `animation` | Concert rows appearing |
 
 ### Queue

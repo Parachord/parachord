@@ -20,6 +20,7 @@
 // from props under their old names.
 
 const { sellerColor, sellerTextColor, sellerBadgeBg, sellerShortName, sellerName } = require('../lib/ticket-sellers');
+const { transition } = require('../lib/motion');
 const { Tooltip, ShareButton } = require('./ui-atoms');
 const { BrandMark } = require('./brand-logos');
 const { CardButton } = require('./card-button');
@@ -250,7 +251,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                         opacity: showOnTour ? 1 : 0,
                         maxWidth: showOnTour ? '20px' : '0px',
             overflow: 'hidden',
-                        transition: 'opacity 0.4s ease, max-width 0.4s ease'
+                        transition: transition('opacity max-width', 'deliberate')
                       } : undefined
                     }, '|'),
                     React.createElement('button', {
@@ -279,7 +280,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                         maxWidth: showOnTour ? '200px' : '0px',
             overflow: 'hidden',
                         padding: showOnTour ? '0.25rem 0.5rem' : '0.25rem 0',
-                        transition: 'opacity 0.4s ease, max-width 0.4s ease, padding 0.4s ease',
+                        transition: transition('opacity max-width padding', 'deliberate'),
                         whiteSpace: 'nowrap'
                       } : { padding: '0.25rem 0.5rem' }
                     }, tab === 'related' ? 'Related Artists' : tab === 'on-tour' ? 'On Tour' : tab.charAt(0).toUpperCase() + tab.slice(1))
@@ -391,7 +392,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                         opacity: showOnTour ? 1 : 0,
                         maxWidth: showOnTour ? '20px' : '0px',
             overflow: 'hidden',
-                        transition: 'opacity 0.4s ease, max-width 0.4s ease'
+                        transition: transition('opacity max-width', 'deliberate')
                       } : undefined
                     }, '|'),
                     React.createElement('button', {
@@ -419,7 +420,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                         maxWidth: showOnTour ? '200px' : '0px',
             overflow: 'hidden',
                         padding: showOnTour ? '0.25rem 0.5rem' : '0.25rem 0',
-                        transition: 'opacity 0.4s ease, max-width 0.4s ease, padding 0.4s ease',
+                        transition: transition('opacity max-width padding', 'deliberate'),
                         whiteSpace: 'nowrap'
                       } : { padding: '0.25rem 0.5rem' }
                     }, tab === 'related' ? 'Related Artists' : tab === 'on-tour' ? 'On Tour' : tab.charAt(0).toUpperCase() + tab.slice(1))
@@ -558,7 +559,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                     fetchArtistData(artistName);
                   }
                 },
-                style: { color: 'var(--text-tertiary)', transition: 'color 0.15s' },
+                style: { color: 'var(--text-tertiary)', transition: transition('color', 'fast') },
                 className: 'hover:text-ink-secondary transition-colors uppercase hover:!text-[var(--text-secondary)]',
               }, currentArtist?.name || currentRelease?.artist?.name || 'Artist'),
               React.createElement('span', { style: { color: 'var(--border-default)' } }, '/'),

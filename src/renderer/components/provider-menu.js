@@ -17,6 +17,7 @@
 const { Menu } = require('./menu');
 const { buttonClassName } = require('./button');
 const Icons = require('./icons');
+const { transition } = require('../lib/motion');
 const { SERVICE_LOGOS } = require('./brand-logos');
 
 const nameOf = (s) => (s && (s.name || (s.manifest && s.manifest.name))) || '';
@@ -54,7 +55,7 @@ function ProviderMenu({ label = 'AI provider', services, value, onChange }) {
     }),
     current ? e(ProviderLogo, { service: current }) : null,
     nameOf(current) || 'Select',
-    e(Icons.ChevronDown, { size: 10, style: { transform: t.open ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' } })),
+    e(Icons.ChevronDown, { size: 10, style: { transform: t.open ? 'rotate(180deg)' : 'rotate(0deg)', transition: transition('transform', 'base') } })),
   });
 }
 

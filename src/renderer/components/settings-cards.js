@@ -76,7 +76,7 @@ const ResolverCard = React.memo(({
     }),
     // Card
     React.createElement('button', { type: 'button', 'aria-label': resolver.name,
-      className: `relative flex items-center justify-center cursor-pointer transition-all ${isGrayed ? 'grayscale' : ''}`,
+      className: `relative flex items-center justify-center cursor-pointer transition-[opacity,filter] ${isGrayed ? 'grayscale' : ''}`,
       style: {
         width: '120px',
         height: '120px',
@@ -197,7 +197,7 @@ const McpSettingsSection = () => {
   };
 
   return React.createElement('div', {
-    className: 'bg-surface-card border border-line rounded-xl p-6 hover:shadow-sm hover:border-line-strong transition-all'
+    className: 'bg-surface-card border border-line rounded-xl p-6 hover:shadow-sm hover:border-line-strong transition-[box-shadow,border-color]'
   },
     React.createElement('div', { className: 'mb-5' },
       React.createElement('h3', {
@@ -352,7 +352,7 @@ const ScrobblerSettingsCard = React.memo(({
   // Get scrobbler-specific styling
 
   return React.createElement('div', {
-    className: 'bg-surface-card rounded-xl p-4 shadow-sm border border-line hover:shadow-md hover:border-line-strong transition-all'
+    className: 'bg-surface-card rounded-xl p-4 shadow-sm border border-line hover:shadow-md hover:border-line-strong transition-[box-shadow,border-color]'
   },
     // Header row with icon, name, and toggle
     React.createElement('div', { className: 'flex items-center justify-between mb-3' },
