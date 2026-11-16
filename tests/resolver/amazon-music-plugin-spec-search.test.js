@@ -26,6 +26,14 @@
  *     breaker fail-fast precedes any replay
  *   - the spec-only rule: an album-spec capture for our text is a structural
  *     failure, never a track result
+ *   - the plan-gate rules: only an unlimited reading earns the 30-min TTL (a
+ *     refusal re-reads within a minute — the upgrade path the plugin cannot
+ *     hear), an in-flight plan read is never joined or cached across a session
+ *     generation change, and any error without a listed reason is notReady,
+ *     never a cached miss
+ *   - a busy gate on the page flow's own replay (the capture already
+ *     succeeded) is ridden out with a bounded backoff, and a template dropped
+ *     by a session-generation bump is never replayed
  *   - the moved parser (searchTracksFromGql) and the resolver track mapping
  */
 
@@ -112,6 +120,30 @@ describe('the plan gate (#1220) before any search', () => {
     expect(ws.load).not.toHaveBeenCalled();
   });
 
+  test('only an unlimited reading earns the 30-min TTL — a refusal re-reads within a minute (the upgrade path)', async () => {
+    // The plugin cannot hear the host's amazonmusic-plan-changed event (the
+    // Settings refreshPlan path refreshes only the host's dmls cache), so a
+    // refused reading must not sit for 30 minutes: an upgrade unblocks the
+    // search a minute later at the worst. The plugin's own _lib constants pin
+    // the TTLs; this pins which reading gets which.
+    const ws = amazonWebSessionMock({ tracks: TRACKS, tier: 'PRIME' });
+    const resolver = instantiateAmazonPlugin(axe);
+    await expect(search(resolver, 'daft punk')).rejects.toMatchObject({ code: 'plan-ineligible' });
+    expect(ws.fetch).toHaveBeenCalledTimes(1);
+    resolver._planState.at = Date.now() - (61 * 1000); // the 1-min refusal TTL elapsed
+    await expect(search(resolver, 'daft punk')).rejects.toMatchObject({ code: 'plan-ineligible' });
+    expect(ws.fetch).toHaveBeenCalledTimes(2); // re-read — not the 30-min cache
+    // ...and an unlimited reading within the 30-min TTL is served from cache.
+    ws.fetch.mockResolvedValue({ success: true, status: 200, headers: {}, text: JSON.stringify({ tier: 'UNLIMITED_AUDIO' }) });
+    resolver._planState.at = Date.now() - (61 * 1000); // the refusal re-read re-cached 'prime'
+    const rows = await search(resolver, 'daft punk');
+    expect(rows).toHaveLength(2);
+    resolver._planState.at = Date.now() - (29 * 60 * 1000); // within the 30-min unlimited TTL
+    const rows2 = await search(resolver, 'daft punk around the world');
+    expect(rows2).toHaveLength(2);
+    expect(ws.fetch).toHaveBeenCalledTimes(3); // still the cached unlimited reading
+  });
+
   test('an unlimited tier searches (the gate passes through)', async () => {
     const ws = amazonWebSessionMock({ tracks: TRACKS, tier: 'UNLIMITED_AUDIO' });
     const resolver = instantiateAmazonPlugin(axe);
@@ -142,6 +174,21 @@ describe('the resolver track mapping', () => {
     amazonWebSessionMock({ envelope: { data: { specificationSearch: { result: [{ edges: [] }] } } } });
     const resolver = instantiateAmazonPlugin(axe);
     expect(await search(resolver, 'nothing anywhere')).toEqual([]);
+  });
+
+  test("an error without a listed reason (a requireLib throw) is notReady, never a cached miss", async () => {
+    // "An error is never 'no results'" (playback.md): more failure classes
+    // reach search()'s catch since the runner moved into the plugin (a
+    // requireLib throw, a bridge 'invalid'/'denied', a plain bug), and the
+    // resolver would store a 30-day noMatch for a failure that had nothing to
+    // do with matching — the recommendations path's rule, now search's too.
+    amazonWebSessionMock({ tracks: TRACKS });
+    const resolver = instantiateAmazonPlugin(axe);
+    resolver.lib = null; // a host older than the _lib prerequisite (requireLib throws)
+    await expect(search(resolver, 'daft punk')).rejects.toMatchObject({
+      notReady: true,
+      code: 'not-ready'
+    });
   });
 });
 
@@ -203,6 +250,24 @@ describe('the page flow (webSession.load with the capture window inside it)', ()
       notReady: true,
       code: 'load-failed'
     });
+  });
+
+  test("a busy gate on the page flow's own replay is ridden out, not a structural failure", async () => {
+    // A concurrent navigation (a host-side playlist import or the session
+    // mint) can hold the readers/writer gate after the page flow's capture
+    // already succeeded: busy is transient there, not a rename — a short
+    // retry rides it out instead of failing the search not-ready.
+    const ws = amazonWebSessionMock({ tracks: TRACKS });
+    const resolver = instantiateAmazonPlugin(axe);
+    const outcomes = [
+      { success: true, error: 'busy' },
+      { success: true, error: 'busy' },
+      { success: true, status: 200, text: JSON.stringify(amazonSpecEnvelope(TRACKS)) }
+    ];
+    ws.pageFetch.mockImplementation(async () => outcomes.shift());
+    const rows = await search(resolver, 'daft punk');
+    expect(rows).toHaveLength(2);
+    expect(resolver._searchBreaker.state().failures).toBe(0);
   });
 
   test('a load superseded by a sign-out surfaces superseded', async () => {
@@ -557,6 +622,88 @@ describe('the session generation (a sign-out the plugin cannot see the event of)
     expect(resolver._specSearchTemplate).toBe(minted);
   });
 
+  test('a plan read racing a sign-out is not joined or cached under the new session (the generation)', async () => {
+    // Account A's plan read is in flight when the session is cleared and B
+    // signs in. A concurrent search must not JOIN the stale read (it would
+    // gate B on A's plan), and the stale read must not WRITE the plan cache
+    // under the new account — the generation drop in sessionState is
+    // worthless if that write lands after it.
+    const ws = amazonWebSessionMock({ tracks: TRACKS });
+    const resolver = instantiateAmazonPlugin(axe);
+    const releases = [];
+    ws.fetch.mockImplementation(() => new Promise((resolve) => releases.push(resolve)));
+    // Account A's search starts the plan read under generation 0.
+    const p1 = search(resolver, 'daft punk');
+    await new Promise((r) => setTimeout(r, 0));
+    expect(releases).toHaveLength(1);
+    // Sign out + sign in as B, observed by the next state read BEFORE the
+    // fetch resolves.
+    ws.state.mockResolvedValue({
+      success: true,
+      url: 'https://music.amazon.com/search/x/songs',
+      signInUrl: null,
+      cookieNames: ['at-main', 'sess-at-main'],
+      generation: 1
+    });
+    const p2 = search(resolver, 'daft punk');
+    await new Promise((r) => setTimeout(r, 0));
+    // The concurrent search did NOT join account A's in-flight read — it
+    // started its own fetch under the new generation.
+    expect(releases).toHaveLength(2);
+    releases[0]({ success: true, status: 200, headers: {}, text: JSON.stringify({ tier: 'PRIME', customerId: 'A1' }) });
+    releases[1]({ success: true, status: 200, headers: {}, text: JSON.stringify({ tier: 'UNLIMITED_AUDIO', customerId: 'B2' }) });
+    // A's own search still answers A's reading (Prime → plan-ineligible);
+    // B's search proceeds.
+    await expect(p1).rejects.toMatchObject({ notReady: true, code: 'plan-ineligible' });
+    const rows = await p2;
+    expect(rows).toHaveLength(2);
+    // The racing write was skipped: the cached plan is B's, and a third
+    // search serves it without re-fetching config.json.
+    const rows3 = await search(resolver, 'daft punk');
+    expect(rows3).toHaveLength(2);
+    expect(ws.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  test('a template dropped by a session-generation bump is never replayed by a queued page flow', async () => {
+    // The warmed retry inside the chained page flow re-reads the template
+    // AFTER its state read: a sign-out + sign-in as another account between
+    // the queue and the run must not send account A's csrf-bearing template
+    // into account B's session. The drop (sessionState) nulls the instance
+    // field — the snapshot must be re-checked, not trusted.
+    const ws = amazonWebSessionMock({ tracks: TRACKS });
+    const resolver = instantiateAmazonPlugin(axe);
+    await search(resolver, 'daft punk'); // mints the template under generation 0
+    const minted = resolver._specSearchTemplate;
+    expect(minted).toBeTruthy();
+    ws.state.mockResolvedValue({
+      success: true,
+      url: 'https://music.amazon.com/search/x/songs',
+      signInUrl: null,
+      cookieNames: ['at-main', 'sess-at-main'],
+      generation: 1
+    });
+    ws.load.mockClear();
+    ws.pageFetch.mockClear();
+    // specSearch directly (the warmed-retry seam): no isSignedIn first, so
+    // the generation bump is first observed inside the retry's own read.
+    const rows = await resolver.specSearch({
+      url: 'https://music.amazon.com/search/daft%20punk/songs',
+      searchText: 'daft punk',
+      specType: 'track',
+      noun: 'tracks',
+      parse: (data) => {
+        const out = resolver.lib.searchTracksFromGql(data);
+        return { rows: out.tracks, envelope: out.envelope };
+      }
+    });
+    expect(rows).toHaveLength(2);
+    // The stale template was NOT replayed (no pageFetch before the load) —
+    // the identity re-check sent the flow to its page load, which re-minted.
+    expect(ws.load).toHaveBeenCalledTimes(1);
+    expect(ws.pageFetch).toHaveBeenCalledTimes(1); // the page flow's own replay only
+    expect(resolver._specSearchTemplate).not.toBe(minted);
+  });
+
   test('a state read with no generation (an older host) changes nothing', async () => {
     const ws = amazonWebSessionMock({ tracks: TRACKS });
     const resolver = instantiateAmazonPlugin(axe);
@@ -662,6 +809,22 @@ describe('the moved parser (searchTracksFromGql, the _lib copy)', () => {
       { __typename: 'Album', id: 'B0ALBUM123', title: 'Kid A',
         contributingArtists: { edges: [{ role: 'PRIMARY', node: { name: 'Radiohead' } }] },
         album: { id: 'B0ALBUM123', shortTitle: 'Kid A' }, duration: 2900 },
+      trackNode('B073N3R1KZ', 'Eisenherz', [['Juli', 'PRIMARY']], ['In Love', 'B073HX454H'], 276)
+    ]);
+    const out = lib.searchTracksFromGql(data);
+    expect(out.envelope).toBe(true);
+    expect(out.tracks).toHaveLength(1);
+    expect(out.tracks[0].asin).toBe('B073N3R1KZ');
+  });
+
+  test('a row without artists is dropped, not fatal', () => {
+    // A row with no contributingArtists edges is not a track this resolver
+    // could match (the mapper would leave it artistless and the confidence
+    // gate would drop it anyway): the parser drops the ROW, the rest of the
+    // response survives. The old amazon-music-logic.test.js pin, moved with
+    // the parser.
+    const data = response([
+      trackNode('B0NOARTIST', 'Artless', [], ['X', 'B0ALBUMX'], 100),
       trackNode('B073N3R1KZ', 'Eisenherz', [['Juli', 'PRIMARY']], ['In Love', 'B073HX454H'], 276)
     ]);
     const out = lib.searchTracksFromGql(data);

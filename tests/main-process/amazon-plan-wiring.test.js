@@ -67,9 +67,16 @@ describe('main process', () => {
     expect(app).toMatch(/window\.electron\.amazonMusic\.getStatus\(\{ refreshPlan: true \}\)/);
   });
 
-  test('a plan change is sent to the renderer', () => {
+  test('a plan change is sent to the renderer, and the renderer drops the plugin plan cache with it', () => {
     expect(main).toMatch(/onPlanChange: \(\{ plan \}\) => safeSendToRenderer\('amazonmusic-plan-changed', \{ plan \}\)/);
     expect(preload).toMatch(/ipcRenderer\.on\('amazonmusic-plan-changed', handler\)/);
+    // The plugin's own plan cache (the track-search gate, #1356 M5) cannot
+    // hear the event — main's refreshPlan path refreshes only the host's
+    // dmls copy — so the renderer's plan-changed handler drops the resolver
+    // instance's cache alongside refreshing the status: an upgrade unblocks
+    // the next search at once instead of after the 1-min refusal TTL.
+    const handler = between(app, 'return window.electron.amazonMusic.onPlanChanged(() => {', 'refreshAmazonMusicStatus();');
+    expect(handler).toMatch(/_planState = null/);
   });
 
   test('telemetry uses the shared Unlimited rule', () => {

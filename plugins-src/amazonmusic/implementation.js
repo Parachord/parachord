@@ -555,6 +555,12 @@ module.exports = {
     // dropped before it can replay into this one.
     const state = await this.sessionState();
     if (!state) return null;
+    // The generation check inside sessionState may have dropped the template
+    // (a sign-out the plugin cannot see the event of): the local snapshot
+    // belongs to the previous account — its csrf headers must never replay
+    // into this one. A template replaced meanwhile (a page flow re-mint) is
+    // simply a miss — the caller falls to its page flow.
+    if (this._specSearchTemplate !== template) return null;
     const href = state.url;
     if (!href || !lib.isAmazonMusicPage(href)) return null;
     if (lib.pageBlocksPlayback(href)) {
@@ -698,7 +704,30 @@ module.exports = {
       if (template) this._specSearchTemplate = template;
       else console.warn('[Amazon] spec search captured a request that is not template-shaped; staying page-load-per-search');
     }
-    const outcome = await this.replayGql(entry, request);
+    let outcome;
+    // A busy gate is transient (a concurrent navigation — a host-side playlist
+    // import, an album/artist search or the session mint — holds the
+    // readers/writer gate between this flow's load and its own replay), not a
+    // structural failure: the capture already succeeded. A short bounded
+    // retry rides it out; anything still busy after it is not-ready.
+    for (let attempt = 0; ; attempt++) {
+      try {
+        outcome = await this.replayGql(entry, request);
+      } catch (error) {
+        // A HARD rejection — the invoke refused, the view destroyed mid-replay —
+        // is the same as an error envelope: not-ready, never a raw throw the
+        // callers would map to a cached miss.
+        outcome = { error: (error && error.message) || String(error) };
+      }
+      if (outcome.error !== 'busy') break;
+      // Back off within a ~12s bound: a real navigation (a host-side playlist
+      // import or the session mint) can hold the gate for its whole load
+      // budget, and the capture already succeeded — the flow is one gate away
+      // from its answer.
+      const wait = attempt < 3 ? 400 : 1000;
+      if (attempt >= 3 && (attempt - 3 + 1) * 1000 > 12000) break;
+      await new Promise((resolve) => setTimeout(resolve, wait));
+    }
     if (outcome.error) throw lib.notReady('not-ready', outcome.error);
     const parsed = outcome.parsed;
     const { rows, envelope } = parse(parsed && parsed.data);
@@ -773,11 +802,16 @@ module.exports = {
   // The plugin's copy of the gate the deleted amazonmusic-search-tracks
   // handler ran (amazonDmls.assertPlanPlays): the plan is config.json's
   // `tier`, read through the webSession bridge (the jar's cookies ride the
-  // fetch), mapped by amazonPlanFromTier, cached 30 min (1 min when unknown —
-  // a refused read is retried soon) and unknown BLOCKS (a format change on
-  // Amazon's side must show up as a message, not as plays the plan may not
-  // cover). Search checks it only when signed in — a signed-out search must
-  // still answer not-signed-in, the sign-in prompt — and before searching.
+  // fetch), mapped by amazonPlanFromTier, cached 30 min ONLY when the reading
+  // is unlimited — a refusal (prime/unknown) re-reads within the 1-min TTL —
+  // and unknown BLOCKS (a format change on Amazon's side must show up as a
+  // message, not as plays the plan may not cover). Search checks it only when
+  // signed in — a signed-out search must still answer not-signed-in, the
+  // sign-in prompt — and before searching. The plugin cannot hear the host's
+  // amazonmusic-plan-changed event, so the refusal TTL is the upgrade path's
+  // backstop: an upgrade unblocks the search a minute later at the worst,
+  // sooner when the renderer's plan-changed handler drops this cache (it
+  // clears the resolver instance's _planState alongside the misses).
   getPlan: async function () {
     const lib = this.requireLib();
     const ws = window.electron && window.electron.webSession;
@@ -785,11 +819,25 @@ module.exports = {
     const now = Date.now();
     const s = this._planState;
     if (s) {
-      const ttl = s.plan === 'unknown' ? lib.PLAN_UNKNOWN_TTL_MS : lib.PLAN_TTL_MS;
+      // Only an UNLIMITED reading earns the 30-min TTL. The plugin cannot hear
+      // the host's amazonmusic-plan-changed event (Settings' refreshPlan path
+      // refreshes only the host's dmls cache), so a refused reading (prime /
+      // unknown) re-reads within the 1-min TTL: an upgrade unblocks search a
+      // minute later at the worst, without any refresh channel. The harmful
+      // error is a false refusal (an Unlimited account blocked); a false
+      // unlimited reading costs at most one failed play's manifest refusal.
+      const ttl = s.plan === 'unlimited' ? lib.PLAN_TTL_MS : lib.PLAN_UNKNOWN_TTL_MS;
       if (now - s.at < ttl) return s.plan;
     }
-    if (this._planPromise) return this._planPromise;
-    this._planPromise = (async () => {
+    // Join an in-flight read only when it started under the same session
+    // generation — a read that started before a sign-out belongs to the old
+    // account, and joining it would gate the new account on the old plan.
+    if (this._planPromise && this._planPromiseGeneration === this._sessionGeneration) {
+      return this._planPromise;
+    }
+    const startedGeneration = this._sessionGeneration;
+    this._planPromiseGeneration = startedGeneration;
+    const myPlanPromise = this._planPromise = (async () => {
       let config = {};
       try {
         const out = await ws.fetch(lib.SESSION, {
@@ -802,13 +850,22 @@ module.exports = {
         }
       } catch (e) { /* a failed fetch reads as no tier → unknown */ }
       const plan = lib.amazonPlanFromTier(lib.tierFromConfig(config));
-      this._planState = { plan, at: Date.now() };
+      // A sign-out raced the read (the generation bumped): the reading
+      // belongs to the old account — don't cache it under the new one (the
+      // generation drop in sessionState is worthless if this write lands
+      // after it).
+      if (this._sessionGeneration === startedGeneration) {
+        this._planState = { plan, at: Date.now() };
+      }
       return plan;
     })();
     try {
       return await this._planPromise;
     } finally {
-      this._planPromise = null;
+      // Clear only this call's slot: an overlapping read that started after a
+      // generation bump owns the field now, and a third read must join it,
+      // not start a third fetch.
+      if (this._planPromise === myPlanPromise) this._planPromise = null;
     }
   },
 
@@ -907,8 +964,17 @@ module.exports = {
         err.code = reason;
         throw err;
       }
+      // Any other error (a requireLib throw, a bridge 'invalid'/'denied', a
+      // plain bug) is notReady too, never a cached miss — the recommendations
+      // path's rule: "an error is never 'no results'" (playback.md), and more
+      // failure classes reach this catch since the runner moved into the
+      // plugin. The reason (when the error carries one) still rides along as
+      // the code.
       console.error('Amazon Music search error:', error);
-      return [];
+      var unknownErr = new Error('Amazon Music not ready');
+      unknownErr.notReady = true;
+      unknownErr.code = reason || 'not-ready';
+      throw unknownErr;
     }
   },
   resolve: async function (artist, track, album, config) {
