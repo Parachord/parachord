@@ -700,7 +700,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                             covers[idx] && React.createElement('img', {
                               src: covers[idx],
                               alt: '',
-                              className: 'absolute inset-0 w-full h-full object-cover transition-opacity duration-300',
+                              className: 'absolute inset-0 w-full h-full object-cover transition-opacity duration-slow',
                               style: { opacity: 0 },
                               ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
                               onLoad: (e) => { e.target.style.opacity = '1'; }

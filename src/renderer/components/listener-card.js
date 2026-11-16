@@ -23,6 +23,7 @@
 // Props-driven; hooks are qualified; loads under plain Node.
 
 const Icons = require('./icons');
+const { transition } = require('../lib/motion');
 const { CardButton } = require('./card-button');
 const { PlayTop10Icon } = require('./cards');
 
@@ -52,13 +53,13 @@ function ListenerCard({ name, avatarUrl, onOpen, onPlay, onContextMenu, onAir = 
         style: {
           position: 'absolute', inset: 0, clipPath: HEXAGON,
           background: onAir ? 'var(--success)' : 'linear-gradient(135deg, var(--hover-bg-subtle) 0%, var(--hover-bg-default) 100%)',
-          transition: 'transform 300ms ease',
+          transition: transition('transform', 'slow'),
         },
       }),
       // Inner hexagon: the photo, or the initial.
       e('div', { style: { position: 'absolute', inset: '3px', clipPath: HEXAGON, overflow: 'hidden' } },
         e('div', {
-          className: 'group-hover:scale-110 transition-transform duration-300',
+          className: 'group-hover:scale-110 transition-transform duration-slow',
           style: Object.assign(
             { width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' },
             avatarUrl
