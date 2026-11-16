@@ -127,11 +127,14 @@ const webSession = createWebSessionHost({
   preload: PRELOAD,
   userAgent: chromeUserAgent(),
   // The auth-cookie hedge (amazonAuthCookieState over the reported names)
-  // must also see host-only auth-shaped cookies set on music.amazon.com:
-  // the pre-refactor read was whole-partition, so the wider list preserves
-  // it. state() merely reports more names; Electron's clear() wipes the
-  // whole partition regardless.
-  cookieDomains: ['amazon.com', 'music.amazon.com']
+  // reads FEWER cookies than the pre-refactor whole-partition read: the
+  // host reads cookies.get({ url }) per declared domain, so a host-only
+  // cookie on some other Amazon host, or one scoped to a path other than
+  // '/', is no longer seen. The known auth cookies all live on `.amazon.com`
+  // (at-main, sess-at-main, x-main); music.amazon.com and www.amazon.com
+  // cover the hosts a host-only auth-shaped rotation could land on. state()
+  // reports names only; Electron's clear() still wipes the whole partition.
+  cookieDomains: ['amazon.com', 'music.amazon.com', 'www.amazon.com']
 });
 
 function electron() {
