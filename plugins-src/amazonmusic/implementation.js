@@ -1852,15 +1852,20 @@ module.exports = {
       const time = typeof now === 'function' ? now : () => Date.now() / 1000;
       const uuid = typeof randomUUID === 'function' ? randomUUID : uuid4;
       const send = (actions) => {
-        if (!actions.length || typeof post !== 'function') return;
+        if (!actions.length || typeof post !== 'function') return null;
         const ctx = typeof context === 'function' ? (context() || {}) : {};
         try {
-          void Promise.resolve(post({
+          // The post's promise rides out: onStopped's callers await it —
+          // signOut posts the FINAL accounting before the session clears.
+          // The catch stays: telemetry never throws into playback, and a
+          // caller that drops the promise (the generation drop) can never
+          // see a rejection.
+          return Promise.resolve(post({
             deviceId: ctx.deviceId || null,
             deviceType: AMAZON_DEVICE_TYPE_ID,
             clientActionList: actions
           })).catch(() => {});
-        } catch { /* telemetry never throws into playback */ }
+        } catch { /* telemetry never throws into playback */ return null; }
       };
 
       const state = {
@@ -1927,7 +1932,7 @@ module.exports = {
           });
           actions.push(amazonClientAction('trackStreamed', streamed, { timestampSeconds: stamp, sdkEventId: sdkEventId() }));
         }
-        send(actions);
+        return send(actions);
       };
 
       const segmentElapsedSecs = () => (state.segmentStartSecs == null ? 0 : Math.max(0, time() - state.segmentStartSecs));
@@ -2008,13 +2013,16 @@ module.exports = {
         onStopped({ positionMs } = {}) {
           // Guard on the track session, not the open segment: pause-then-skip
           // still owes its FINAL trackStreamed (review I6; hornet's flow).
-          if (!state.current) return;
+          // Returns the post's promise: signOut awaits it before clearing
+          // the session, so the final accounting goes out while it lives.
+          if (!state.current) return null;
           const segmentSecs = state.trackTerminated ? 0 : segmentElapsedSecs();
           state.durationSumSecs += segmentSecs;
           state.segmentStartSecs = null;
           state.trackTerminated = true;
-          emitPair(TELEMETRY_TERMINATION.systemStop, { segmentSecs, progressSecs: Math.round((Number(positionMs) || 0) / 1000), final: true });
+          const post = emitPair(TELEMETRY_TERMINATION.systemStop, { segmentSecs, progressSecs: Math.round((Number(positionMs) || 0) / 1000), final: true });
           state.current = null;
+          return post;
         },
 
         // debug visibility
@@ -2530,10 +2538,16 @@ module.exports = {
   // query source (account A's last search is not "already in the user's
   // history" under account B). The stream the old account was playing gets
   // its FINAL accounting first (the old dmls onSignOut's
-  // trackStreamed-before-the-clear; best-effort — in practice the renderer
-  // stops the engine before the sign-out, so the 'stopped' event posts it
-  // while the session still lives). _cdmProbe is process state, not session
-  // state — a CDM does not leave with the account.
+  // trackStreamed-before-the-clear): the post's promise is RETURNED, and
+  // signOut awaits it before the clear, so the accounting goes out while the
+  // session still lives. The generation-drop caller cannot rely on it — the
+  // plugin only sees the generation change on its first state read AFTER
+  // webSession.clear(), so the onStopped there always fires once the cookies
+  // are gone and its post fails (best-effort, fire-and-forget); what posts
+  // the final pair in practice is the Settings sign-out button stopping the
+  // engine BEFORE it calls sign-out — that 'stopped' reaches
+  // handlePlayerEvent while the session still lives. _cdmProbe is process
+  // state, not session state — a CDM does not leave with the account.
   dropSessionState: function () {
     this._planState = null;
     this._planPromise = null;
@@ -2544,7 +2558,12 @@ module.exports = {
     this._seeMorePages = new Map();
     this._musicHomeVariant = null;
     this._searchBreaker = null;
-    try { this._telemetry && this._telemetry.onStopped({}); } catch (e) { /* best-effort */ }
+    // The final accounting (the returned promise is signOut's to await
+    // before the clear; every other caller fires it best-effort).
+    let finalPost = null;
+    try {
+      if (this._telemetry) finalPost = this._telemetry.onStopped({});
+    } catch (e) { /* best-effort */ }
     this._drmSessionContext = null;
     this._drmSessionContextPromise = null;
     this._certSessionReady = false;
@@ -2552,6 +2571,7 @@ module.exports = {
     this._telemetryHealth = { last: null, dropped: 0 };
     this._lastSearchText = null;
     this._cookieWarned = false;
+    return finalPost;
   },
 
   // ── The signed-in verdict ──────────────────────────────────────────────────
@@ -2831,22 +2851,29 @@ module.exports = {
   // whole-session clear is correctly scoped — the machinery half is the
   // host's clear() behind the bridge: the views die, the sign-in window
   // closes, the webRequest capture detaches, the chain cuts and the storage
-  // clears. The plugin's half runs FIRST: the final telemetry accounting
-  // posts while the session still lives (the stream the old account was
-  // playing gets its trackStreamed pair), then every session-scoped state
-  // this instance holds drops (dropSessionState) — clear() bumps the
-  // generation too, but the next getStatus must not serve the old account's
-  // plan reading for even one read.
+  // clears. The plugin's half runs FIRST: every session-scoped state this
+  // instance holds drops (dropSessionState, which also posts the final
+  // telemetry accounting — the stream the old account was playing gets its
+  // trackStreamed pair), and the returned post is AWAITED before the clear:
+  // the accounting goes out while the session still lives, never racing the
+  // clear that destroys the cookies it needs. clear() bumps the generation
+  // too, but the next getStatus must not serve the old account's plan
+  // reading for even one read.
   signOut: async function () {
     const lib = this.requireLib();
     const ws = window.electron && window.electron.webSession;
     if (!ws || typeof ws.clear !== 'function') {
       return { success: false, error: 'no web-session bridge' };
     }
-    this.dropSessionState();
+    const finalPost = this.dropSessionState();
     // Re-learn the generation on the next state read: the drop above already
     // ran for THIS sign-out, and clear()'s bump must not run it twice.
     this._sessionGeneration = null;
+    // The final accounting goes out while the session still lives: the post
+    // is AWAITED here, before the clear — its fetch needs the cookies the
+    // clear destroys. best-effort still: a failed post (or none) never
+    // blocks the sign-out.
+    if (finalPost) await finalPost;
     const out = await ws.clear(lib.SESSION);
     if (!out || out.success !== true) {
       return { success: false, error: (out && out.error) || 'sign-out failed' };

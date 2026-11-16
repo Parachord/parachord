@@ -478,9 +478,18 @@ describe('signOut', () => {
     await p.getStatus();
     p._specSearchTemplate = { url: 'https://gql.music.amazon.com/', body: '{}', headers: {}, at: Date.now() };
     p._musicHomeVariant = 'browse';
-    const onStopped = jest.fn();
+    let postLanded;
+    const finalPost = new Promise((r) => { postLanded = r; });
+    const onStopped = jest.fn(() => finalPost);
     p._telemetry = { onStopped };
-    const reply = await p.signOut();
+    let signOutDone = false;
+    const done = p.signOut().then((r) => { signOutDone = true; return r; });
+    // The drop and the post ran; the clear has NOT — it waits for the post.
+    expect(onStopped).toHaveBeenCalledTimes(1);
+    expect(ws.clear).not.toHaveBeenCalled();
+    postLanded(); // the accounting is out
+    const reply = await done;
+    expect(signOutDone).toBe(true);
     expect(reply).toEqual({ success: true });
     expect(ws.clear).toHaveBeenCalledWith('amazon-music');
     // The accounting is first: it needs the live session the clear destroys.
@@ -490,6 +499,28 @@ describe('signOut', () => {
     expect(p._musicHomeVariant).toBeNull();
     expect(p._telemetry).toBeNull();
     expect(p._lastSearchText).toBeNull();
+  });
+
+  test('the real seam: the final pair\u2019s fetch goes out before clear() (review, note 2)', async () => {
+    // The fire-and-forget post raced the clear on the next line — the clear
+    // went out first and the accounting's fetch lost its cookies. signOut
+    // awaits the post now; this pins the real telemetry's fetch (not a stub)
+    // landing before ws.clear.
+    const ws = sessionBridge({});
+    const p = plugin();
+    p._drmSessionContext = { csrfToken: 't', csrfRnd: 'r', csrfTs: 's', deviceId: 'd', deviceType: 'dt', territoryId: 'US', region: 'na', tier: 'UNLIMITED_HD' };
+    p.telemetry().onPlayStarted({ asin: 'B000TEST01', albumAsin: 'B000ALBUM1', durationMs: 120000 });
+    const reply = await p.signOut();
+    expect(reply).toEqual({ success: true });
+    expect(ws.fetch).toHaveBeenCalled();
+    const telemetryCalls = ws.fetch.mock.calls.filter(([, req]) => req && req.url === 'https://music.amazon.com/telemetry/v1/events');
+    // onPlayStarted posted streamingInitiated; the FINAL pair is the
+    // trackStreamed one the sign-out accounting owes.
+    const finalPost = telemetryCalls.find(([, req]) => req.body.includes('trackStreamed'));
+    expect(finalPost).toBeTruthy();
+    // The accounting's fetch precedes the clear that destroys its session.
+    expect(ws.fetch.mock.invocationCallOrder[ws.fetch.mock.calls.indexOf(finalPost)])
+      .toBeLessThan(ws.clear.mock.invocationCallOrder[0]);
   });
 
   test('the generation re-learn: a state read after the sign-out must not drop twice', async () => {
