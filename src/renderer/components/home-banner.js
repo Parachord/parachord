@@ -39,7 +39,7 @@ function HomeBanner({ items, onDismiss, onCta }) {
     className: 'flex items-start gap-3 px-4 py-2.5 flex-shrink-0',
     style: {
       backgroundColor: bg,
-      color: '#ffffff', // on-color
+      color: 'var(--on-accent)', // on-color
       fontSize: '13px'
     }
   },
@@ -55,7 +55,7 @@ function HomeBanner({ items, onDismiss, onCta }) {
         backgroundColor: 'rgba(255, 255, 255, 0.2)',
         border: '1px solid rgba(255, 255, 255, 0.35)',
         borderRadius: '6px',
-        color: '#ffffff', // on-color
+        color: 'var(--on-accent)', // on-color
         fontSize: '12px',
         fontWeight: 600,
         cursor: 'pointer',
@@ -70,7 +70,7 @@ function HomeBanner({ items, onDismiss, onCta }) {
       style: {
         background: 'transparent',
         border: 'none',
-        color: '#ffffff', // on-color
+        color: 'var(--on-accent)', // on-color
         opacity: 0.85,
         cursor: 'pointer',
         padding: '0 4px',

@@ -42,7 +42,7 @@ describe('FilterChips', () => {
     const idle = h({ chips, value: 'ep' });
     expect(idle).toMatch(/aria-pressed="false"[^>]*background-color:var\(--bg-secondary\);color:var\(--text-primary\)"[^>]*>All</);
     const picked = h({ chips, value: 'all' });
-    expect(picked).toMatch(/aria-pressed="true"[^>]*background-color:var\(--accent-fill\);color:#fff"[^>]*>All</);
+    expect(picked).toMatch(/aria-pressed="true"[^>]*background-color:var\(--accent-fill\);color:var\(--on-accent\)"[^>]*>All</);
     expect(picked.match(/data-chip-dot/g)).toHaveLength(1); // the idle EPs chip's
   });
 

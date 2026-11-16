@@ -77,7 +77,7 @@ const ResolverCard = React.memo(({
         width: '120px',
         height: '120px',
         borderRadius: '16px',
-        backgroundColor: resolver.color || '#6B7280',
+        backgroundColor: resolver.color || 'var(--fill-neutral)',
         opacity: isGrayed ? 0.5 : 1,
         boxShadow: isDragOver
           ? '0 0 0 3px var(--accent-primary), 0 4px 12px rgba(0, 0, 0, 0.15)'
@@ -100,7 +100,7 @@ const ResolverCard = React.memo(({
           borderRadius: '6px',
           fontSize: '11px',
           fontWeight: '600',
-          color: '#111827',
+          color: 'var(--on-art-ink)',
           boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)'
         }
       }, priorityNumber),
@@ -116,11 +116,11 @@ const ResolverCard = React.memo(({
           right: '8px',
           width: '22px',
           height: '22px',
-          backgroundColor: hasUpdate ? '#f97316' : 'rgba(255, 255, 255, 0.95)',
+          backgroundColor: hasUpdate ? 'var(--fill-warning)' : 'rgba(255, 255, 255, 0.95)',
           borderRadius: '6px',
           fontSize: '11px',
           fontWeight: '600',
-          color: hasUpdate ? '#ffffff' : 'var(--text-success)'
+          color: hasUpdate ? 'var(--on-accent)' : 'var(--text-success)'
         },
         title: hasUpdate ? 'Update available' : 'Enabled'
       }, hasUpdate ? '↑' : React.createElement(Icons.Check, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } })),
@@ -146,7 +146,7 @@ const ResolverCard = React.memo(({
           borderRadius: '6px',
           fontSize: '12px',
           fontWeight: '600',
-          color: '#78350f',
+          color: 'var(--on-art-ink)',
           boxShadow: '0 1px 3px rgba(0, 0, 0, 0.2)'
         },
         title: 'Needs configuration'
@@ -249,8 +249,8 @@ const McpSettingsSection = () => {
           fontSize: '11px',
           fontWeight: '500',
           color: copied ? 'var(--text-success)' : 'var(--text-secondary)',
-          backgroundColor: copied ? '#ecfdf5' : 'var(--placeholder-bg-light)',
-          border: '1px solid ' + (copied ? '#a7f3d0' : 'var(--border-default)'),
+          backgroundColor: copied ? 'color-mix(in srgb, var(--text-success) 12%, transparent)' : 'var(--placeholder-bg-light)',
+          border: '1px solid ' + (copied ? 'color-mix(in srgb, var(--text-success) 35%, transparent)' : 'var(--border-default)'),
           borderRadius: '6px',
           cursor: 'pointer',
           transition: 'background-color 0.15s, color 0.15s, border-color 0.15s'
@@ -266,7 +266,7 @@ const McpSettingsSection = () => {
 
 // ScrobblerSettingsCard component - Settings card for individual scrobbler services
 const ScrobblerSettingsCard = React.memo(({
-  scrobbler, config, onConfigChange,
+  scrobbler, config, onConfigChange, color,
   lovePushEnabled = false,
   onSetLovePushEnabled = null,
   onRunBackfill = null,
@@ -379,14 +379,6 @@ const ScrobblerSettingsCard = React.memo(({
   };
 
   // Get scrobbler-specific styling
-  const getScrobblerColor = () => {
-    switch (scrobbler.id) {
-      case 'lastfm': return 'bg-red-500';
-      case 'listenbrainz': return 'bg-orange-500';
-      case 'librefm': return 'bg-green-500';
-      default: return 'bg-gray-500';
-    }
-  };
 
   return React.createElement('div', {
     className: 'bg-surface-card rounded-xl p-4 shadow-sm border border-line hover:shadow-md hover:border-line-strong transition-all'
@@ -396,7 +388,9 @@ const ScrobblerSettingsCard = React.memo(({
       React.createElement('div', { className: 'flex items-center gap-3' },
         // Service icon
         React.createElement('div', {
-          className: `w-10 h-10 rounded-lg flex items-center justify-center ${getScrobblerColor()}`
+          // The plugin's own colour (its manifest's color), never a per-id copy.
+          className: 'w-10 h-10 rounded-lg flex items-center justify-center',
+          style: { backgroundColor: color || 'var(--fill-neutral)' }
         },
           React.createElement('span', { className: 'text-white text-lg font-bold' },
             scrobbler.name[0]
@@ -596,7 +590,7 @@ const FriendMiniPlaybar = ({ track, getAlbumArt, onPlay, onContextMenu }) => {
 
   return React.createElement('button', { type: 'button',
     className: 'text-left mt-1 flex items-center rounded cursor-pointer transition-colors pr-2',
-    style: { maxWidth: '180px', height: '20px', backgroundColor: 'var(--surface-dark)', color: '#d1d5db' },
+    style: { maxWidth: '180px', height: '20px', backgroundColor: 'var(--surface-dark)', color: 'var(--on-dark-primary)' },
     onClick: onPlay,
     onContextMenu: onContextMenu
   },

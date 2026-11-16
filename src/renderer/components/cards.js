@@ -160,7 +160,7 @@ const SearchHistoryItem = ({ entry, onQueryClick, onResultClick, onRemove }) => 
   };
 
   return React.createElement(CardButton, { label: selectedResult ? selectedResult.name : `Search for ${query}`,
-    className: 'flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 group transition-colors cursor-pointer',
+    className: 'flex items-center gap-3 p-3 rounded-lg hover:bg-surface-hover group transition-colors cursor-pointer',
     onActivate: handleRowClick
   },
     // Result thumbnail or search icon
@@ -171,20 +171,20 @@ const SearchHistoryItem = ({ entry, onQueryClick, onResultClick, onRemove }) => 
         onError: (e) => { e.target.style.display = 'none'; }
       }) :
       React.createElement('div', {
-        className: 'w-12 h-12 rounded bg-gray-100 flex items-center justify-center'
+        className: 'w-12 h-12 rounded bg-surface-subtle flex items-center justify-center'
       },
-        React.createElement(Icons.Search, { className: 'w-5 h-5 text-gray-400' })
+        React.createElement(Icons.Search, { className: 'w-5 h-5 text-ink-tertiary' })
       ),
 
     // Query and result info
     React.createElement('div', { className: 'flex-1 min-w-0' },
       React.createElement('button', {
         onClick: (e) => { e.stopPropagation(); onQueryClick(query); },
-        className: 'text-sm font-medium text-gray-900 hover:text-blue-600 truncate block text-left w-full'
+        className: 'text-sm font-medium text-ink-primary hover:text-accent truncate block text-left w-full'
       }, `"${query}"`),
       selectedResult && React.createElement('button', {
         onClick: (e) => { e.stopPropagation(); onResultClick(selectedResult); },
-        className: 'text-xs text-gray-500 hover:text-blue-600 truncate block text-left w-full'
+        className: 'text-xs text-ink-secondary hover:text-accent truncate block text-left w-full'
       },
         `${selectedResult.type}: ${selectedResult.name}${selectedResult.artist ? ` • ${selectedResult.artist}` : ''}`
       )
@@ -193,7 +193,7 @@ const SearchHistoryItem = ({ entry, onQueryClick, onResultClick, onRemove }) => 
     // Remove button
     React.createElement('button', {
       onClick: (e) => { e.stopPropagation(); onRemove(query); },
-      className: 'opacity-0 group-hover:opacity-100 card-reveal p-1 text-gray-400 hover:text-red-500 transition-opacity'
+      className: 'opacity-0 group-hover:opacity-100 card-reveal p-1 text-ink-tertiary hover:text-ink-danger transition-opacity'
     },
       React.createElement(Icons.X, { className: 'w-4 h-4' })
     )
@@ -297,7 +297,7 @@ const detailShimmer = (kind) => React.createElement('span', {
 const editionServiceBadge = (resolverId, color, size = 18) => React.createElement('span', {
   style: {
     width: `${size}px`, height: `${size}px`, borderRadius: '4px', flexShrink: 0,
-    backgroundColor: color || '#555',
+    backgroundColor: color || 'var(--fill-neutral)',
     display: 'inline-flex', alignItems: 'center', justifyContent: 'center'
   }
 }, React.createElement(ResolverIcon, { resolverId, size: Math.round(size * 0.66) }));
@@ -365,7 +365,7 @@ const AlbumVersionsMenu = ({ release, versions, resolvers = [], onSelect, onClos
     React.createElement('span', { className: 'min-w-0', style: { flex: '1 1 0', overflowWrap: 'anywhere' } },
       React.createElement('span', {
         className: 'block',
-        style: { fontWeight: 500, color: current ? 'var(--accent-soft)' : '#ffffff' }
+        style: { fontWeight: 500, color: current ? 'var(--accent-soft)' : 'var(--on-dark-primary)' }
       }, main),
       secondary && React.createElement('span', {
         className: 'block',
@@ -409,7 +409,7 @@ const AlbumVersionsMenu = ({ release, versions, resolvers = [], onSelect, onClos
   // its own edition, or every row would read the same.
   const servicesRows = [];
   catalogSections.forEach((section) => {
-    const color = resolvers.find(r => r.id === section.resolverId)?.color || '#555';
+    const color = resolvers.find(r => r.id === section.resolverId)?.color || 'var(--fill-neutral)';
     section.albums.forEach((album, i) => {
       const isCurrent = release._catalogSource?.resolverId === section.resolverId
         && release._catalogSource?.url && release._catalogSource.url === album.url;

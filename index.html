@@ -83,8 +83,13 @@
       --fill-error: #b91c1c;
       /* A neutral white-text fill: a plug-in with no colour of its own (7.6:1). */
       --fill-neutral: #4b5563;
+      /* Dark text on a white chip over art or a cover (a Play button, a
+         reason badge, a plug-in tile's status), the same in both themes. */
+      --on-art-ink: #111827;
       /* A friend's avatar with no photo (the sidebar): white initial on it. */
       --avatar-gradient: linear-gradient(to bottom right, #c084fc, #f472b6);
+      /* A hero with no page colour (Search's results header): white text on it. */
+      --hero-neutral-gradient: linear-gradient(135deg, #374151 0%, #4b5563 50%, #374151 100%);
       /* Shuffleupagus's own gradient (its avatar, Generate, the AI badge). */
       --ai-gradient: linear-gradient(135deg, #9333ea 0%, #c026d3 100%);
       /* The Playlists hero's gradient, for a playlist page still loading. */
@@ -194,6 +199,9 @@
       --on-dark-success: #4ade80;
       --on-dark-info: #a5b4fc;
       --on-dark-danger: #f87171;
+      /* The artist page's "in your Collection" star, over the hero photo. */
+      --on-dark-star: #facc15;
+      --on-dark-star-hover: #fde047;
       --surface-dark-gradient-from: rgba(17, 24, 39, 0.9);
       /* 0.85, not 0.5: over a light page the drawer's top was too clear for
          its text (white at 0.7 fell to 2.5:1). */
@@ -309,6 +317,9 @@
       --on-dark-success: #4ade80;
       --on-dark-info: #a5b4fc;
       --on-dark-danger: #f87171;
+      /* The artist page's "in your Collection" star, over the hero photo. */
+      --on-dark-star: #facc15;
+      --on-dark-star-hover: #fde047;
       --surface-dark-gradient-from: rgba(38, 38, 38, 0.95);
       --surface-dark-gradient-to: rgba(38, 38, 38, 0.85);
       --surface-dark-header: rgba(42, 42, 42, 0.95);
@@ -335,10 +346,6 @@
     }
 
     /* Tailwind dark mode overrides */
-    .dark .text-gray-900 { color: var(--text-primary) !important; }
-    .dark .text-gray-800 { color: var(--text-primary) !important; }
-    .dark .text-gray-500 { color: var(--text-tertiary) !important; }
-    .dark .text-gray-400 { color: var(--text-tertiary) !important; }
     .dark .bg-white { background-color: var(--bg-elevated) !important; }
     /* A page's body: the page colour in both themes (white / #161616), so
        cards (bg-white → --bg-elevated in dark) keep their edges. Page bodies
@@ -357,11 +364,9 @@
     .toast-enter { animation: toastIn 150ms cubic-bezier(0, 0, 0.2, 1); }
     @keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
     @media (prefers-reduced-motion: reduce) { .toast-enter { animation: none; } }
-    .dark .bg-gray-100 { background-color: var(--bg-inset) !important; }
     .dark .shadow-sm { box-shadow: var(--shadow-sm) !important; }
     .dark .shadow-md { box-shadow: var(--shadow-md) !important; }
     .dark .shadow-lg { box-shadow: var(--shadow-lg) !important; }
-    .dark .hover\:bg-gray-50:hover { background-color: rgba(255, 255, 255, 0.05) !important; }
 
     /* ========== End Design Tokens ========== */
 

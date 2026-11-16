@@ -30,6 +30,7 @@ const { AlbumCard } = require('./album-card');
 const { ArtistCard } = require('./artist-card');
 const { ListenerCard } = require('./listener-card');
 const { countOf } = require('../lib/plural');
+const { PAGE_COLORS } = require('../lib/page-colors');
 
 // Plain functions from Parachord, passed as stable wrappers.
 const COLLECTION_PAGE_HANDLERS = [
@@ -153,8 +154,9 @@ React.createElement('div', {
                     onClick: handleStartCollectionStation,
                     className: 'px-6 py-2 rounded-full font-medium text-white no-drag transition-all hover:scale-105',
                     style: {
-                      backgroundColor: '#E91E63',
-                      boxShadow: '0 4px 15px rgba(233, 30, 99, 0.4)'
+                      // The page's own white-text fill (lib/page-colors.js).
+                      backgroundColor: PAGE_COLORS.library.fill,
+                      boxShadow: 'var(--card-shadow)'
                     }
                   }, 'Start Collection Radio')
                 )),
@@ -177,7 +179,7 @@ React.createElement('button', {
                   onClick: handleStartCollectionStation,
                   className: 'ml-auto px-4 py-1.5 rounded-full text-sm font-medium text-white transition-colors hover:opacity-90 no-drag',
                   style: {
-                    backgroundColor: '#E91E63'
+                    backgroundColor: PAGE_COLORS.library.fill
                   }
                 }, 'Start Radio'))
 }),
@@ -218,7 +220,7 @@ React.createElement('button', {
                   items.push({
                     key: 'sync-status',
                     label: Object.values(syncStatus).some(s => s?.inProgress) ? 'Syncing…' : 'Library sync…',
-                    icon: tile('#06b6d4', React.createElement(Icons.RefreshCw, { size: 16, style: { color: '#ffffff' } })),
+                    icon: tile(PAGE_COLORS.library.fill, React.createElement(Icons.RefreshCw, { size: 16, style: { color: 'var(--on-accent)' } })),
                     onSelect: () => setSyncStatusModal({ open: true }),
                   });
                   items.push({ separator: true, key: 'sep' });
@@ -229,9 +231,8 @@ React.createElement('button', {
                     label: config.name,
                     icon: tile(config.color,
                       React.createElement('svg', {
-                        style: { width: '16px', height: '16px' },
-                        viewBox: pid === 'spotify' ? '0 0 24 24' : pid === 'listenbrainz' ? '0 0 146 160' : '0 0 122.88 122.88',
-                        fill: '#ffffff'
+                        style: { width: '16px', height: '16px', fill: 'var(--on-accent)' },
+                        viewBox: pid === 'spotify' ? '0 0 24 24' : pid === 'listenbrainz' ? '0 0 146 160' : '0 0 122.88 122.88'
                       },
                         pid === 'spotify'
                           ? React.createElement('path', { d: 'M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z' })
@@ -259,8 +260,8 @@ React.createElement('button', {
                     type: 'button',
                     className: 'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5',
                     style: {
-                      backgroundColor: syncOn ? '#06b6d4' : 'var(--nav-inactive)',
-                      color: '#ffffff',
+                      backgroundColor: syncOn ? PAGE_COLORS.library.fill : 'var(--nav-inactive)',
+                      color: 'var(--on-accent)',
                       border: 'none',
                       cursor: 'pointer'
                     },
@@ -303,7 +304,8 @@ React.createElement('button', {
             // Add Friend button in header (only on friends tab)
             collectionTab === 'friends' && React.createElement('button', {
               onClick: () => setAddFriendModalOpen(true),
-              className: 'ml-3 px-3 py-1.5 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5'
+              className: 'ml-3 px-3 py-1.5 text-white rounded-lg text-sm font-medium transition-[filter] hover:brightness-110 flex items-center gap-1.5',
+              style: { backgroundColor: PAGE_COLORS.library.fill }
             },
               React.createElement(Icons.Plus, { className: 'w-4 h-4' }),
               'Add friend'
@@ -647,7 +649,7 @@ React.createElement('button', {
                         style: {
                           marginTop: '4px',
                           backgroundColor: friend.service === 'lastfm' ? 'rgba(239, 68, 68, 0.08)' : 'rgba(249, 115, 22, 0.08)',
-                          color: friend.service === 'lastfm' ? '#dc2626' : '#ea580c'
+                          color: friend.service === 'lastfm' ? 'var(--text-danger)' : 'var(--text-warning)'
                         }
                       }, friend.service === 'lastfm' ? 'Last.fm' : 'ListenBrainz'),
                       // Current track if on-air

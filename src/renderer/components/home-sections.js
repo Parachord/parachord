@@ -31,7 +31,7 @@ const e = React.createElement;
 
 // Drawn over album art or on a filled accent: the same in both themes.
 const PLAY_FILL = 'var(--accent-fill)'; // fill-accent
-const ON_FILL = '#fff'; // on-color
+const ON_FILL = 'var(--on-accent)'; // on-color
 const SHUFFLE_COLOR = 'var(--accent-fill)'; // fill-accent: the accent var turns light purple in dark mode
 
 // The Fresh Drops and Critical Darlings pages' hero gradients (app.js) and

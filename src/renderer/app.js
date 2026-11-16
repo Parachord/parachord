@@ -45575,7 +45575,7 @@ React.createElement('div', {
                     // Scrobbler card for Last.fm
                     window.scrobblers && window.scrobblers.find(s => s.id === 'lastfm') &&
                       React.createElement(ScrobblerSettingsCard, {
-                        scrobbler: window.scrobblers.find(s => s.id === 'lastfm'),
+                        scrobbler: window.scrobblers.find(s => s.id === 'lastfm'), color: getServiceColor('lastfm'),
                         config: scrobblerConfigs['lastfm'],
                         onConfigChange: (id, newConfig) => {
                           setScrobblerConfigs(prev => ({ ...prev, [id]: newConfig }));
@@ -45801,7 +45801,7 @@ React.createElement('div', {
                     // Scrobbler card for ListenBrainz
                     window.scrobblers && window.scrobblers.find(s => s.id === 'listenbrainz') &&
                       React.createElement(ScrobblerSettingsCard, {
-                        scrobbler: window.scrobblers.find(s => s.id === 'listenbrainz'),
+                        scrobbler: window.scrobblers.find(s => s.id === 'listenbrainz'), color: getServiceColor('listenbrainz'),
                         config: scrobblerConfigs['listenbrainz'],
                         onConfigChange: (id, newConfig) => {
                           setScrobblerConfigs(prev => ({ ...prev, [id]: newConfig }));
@@ -46564,7 +46564,7 @@ React.createElement('div', {
             // Scrobbler card for Libre.fm
             window.scrobblers && window.scrobblers.find(s => s.id === 'librefm') &&
               React.createElement(ScrobblerSettingsCard, {
-                scrobbler: window.scrobblers.find(s => s.id === 'librefm'),
+                scrobbler: window.scrobblers.find(s => s.id === 'librefm'), color: getServiceColor('librefm'),
                 config: scrobblerConfigs['librefm'],
                 onConfigChange: (id, newConfig) => {
                   setScrobblerConfigs(prev => ({ ...prev, [id]: newConfig }));

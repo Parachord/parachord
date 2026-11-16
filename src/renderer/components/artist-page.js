@@ -250,7 +250,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                           removeArtistFromCollection({ name: currentArtist.name });
                         }
                       },
-                      className: `p-1.5 rounded-full transition-colors no-drag ${isInCollection ? 'text-yellow-400 hover:text-yellow-300' : 'text-white/70 hover:text-white'}`,
+                      className: `p-1.5 rounded-full transition-colors no-drag ${isInCollection ? 'text-on-dark-star hover:text-on-dark-star-hover' : 'text-white/70 hover:text-white'}`,
                       style: { filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.5))' }
                     },
                       React.createElement('svg', {
@@ -406,7 +406,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                         removeArtistFromCollection({ name: currentArtist.name });
                       }
                     },
-                    className: `p-1 rounded-full transition-colors no-drag ${isInCollection ? 'text-yellow-400 hover:text-yellow-300' : 'text-white/70 hover:text-white'}`,
+                    className: `p-1 rounded-full transition-colors no-drag ${isInCollection ? 'text-on-dark-star hover:text-on-dark-star-hover' : 'text-white/70 hover:text-white'}`,
                     style: { filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.5))' }
                   },
                     React.createElement('svg', {

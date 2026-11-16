@@ -157,7 +157,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
             style: {
               backgroundImage: playlistCoverArt[0]
                 ? `url(${playlistCoverArt[0]})`
-                : 'linear-gradient(to bottom right, #f43f5e, #ec4899, #c026d3)',
+                : 'var(--playlists-gradient)',
               backgroundSize: 'cover',
               backgroundPosition: 'center',
               filter: 'blur(20px) brightness(0.7)',
@@ -204,7 +204,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                 fontSize: '11px',
                 padding: '2px 6px',
                 borderRadius: '4px',
-                backgroundColor: 'var(--accent-secondary, #6366f1)',
+                backgroundColor: 'var(--accent-secondary)',
                 color: 'var(--accent-secondary-fg)',
                 fontWeight: 600,
                 marginLeft: '6px',
@@ -700,7 +700,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                           return React.createElement('div', {
                             key: idx,
                             className: 'relative w-full h-full flex items-center justify-center',
-                            style: { background: 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)' }
+                            style: { background: 'var(--placeholder-bg)' }
                           },
                             !covers[idx] && React.createElement(Music, { size: 20, className: 'text-ink-secondary' }),
                             covers[idx] && React.createElement('img', {
@@ -717,7 +717,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                     :
                       React.createElement('div', {
                         className: 'w-full h-full flex items-center justify-center',
-                        style: { background: 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)' }
+                        style: { background: 'var(--placeholder-bg)' }
                       },
                         // Playlist icon (three lines with play triangle)
                         React.createElement('svg', { className: 'w-12 h-12 text-ink-tertiary', viewBox: '0 0 24 24', fill: 'currentColor' },

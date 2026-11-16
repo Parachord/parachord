@@ -65,7 +65,7 @@ const HOME_PAGE_HANDLERS = [
 const LOVES_CONTEXT = { type: 'loves', name: 'Recent Loves' };
 
 const PLAY_FILL = 'var(--accent-fill)'; // fill-accent
-const ON_FILL = '#fff'; // on-color
+const ON_FILL = 'var(--on-accent)'; // on-color
 
 const artKey = (artist, album) => `${artist || ''}\u0000${album || ''}`.toLowerCase();
 

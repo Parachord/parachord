@@ -151,11 +151,12 @@ const SearchPage = React.memo(function SearchPage(props) {
               overflow: 'hidden'
             }
           },
-            // Background - light gray gradient
+            // Background: the neutral hero gradient, dark enough for its
+            // white text (the old grey was about 2.5:1).
             React.createElement('div', {
               className: 'absolute inset-0',
               style: {
-                background: 'linear-gradient(135deg, #6b7280 0%, #9ca3af 50%, #6b7280 100%)'
+                background: 'var(--hero-neutral-gradient)'
               }
             }),
             // Header content - matches artist page collapsed header style

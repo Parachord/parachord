@@ -122,7 +122,9 @@ test('every .dark palette remap is for a class the renderer still uses', () => {
   const src = glob(path4.join(root4, 'src/renderer')).map((f) => fs4.readFileSync(f, 'utf8')).join('\n');
   const html4 = fs4.readFileSync(path4.join(root4, 'index.html'), 'utf8');
   const rules = [...html4.matchAll(/^\s*\.dark \.((?:hover\\:)?(?:text|bg|border|divide|placeholder)-(?:gray|purple|violet)-[\w\\/]+)/gm)].map((m) => m[1]);
-  expect(rules.length).toBeGreaterThan(0);
+  // None are left (2026-11-15: every gray/purple class moved to tokens); a
+  // new remap would mean a palette class came back.
+  expect(rules).toEqual([]);
   const unused = rules
     .map((r) => r.replace(/\\/g, '').replace(/:(hover|placeholder)$/, ''))
     .filter((cls) => !new RegExp(`(?<![\\w:/-])${cls.replace(/[/:]/g, (c) => `\\${c}`)}(?![\\w/-])`).test(src));

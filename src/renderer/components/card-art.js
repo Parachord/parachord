@@ -80,7 +80,7 @@ function ArtOverlay({ shown, title, onClick, onPlay, onQueue, onAddToPlaylist })
       onClick: (ev) => { ev.stopPropagation(); onPlay(ev); },
       className: APP_PLAY_BTN,
       style: Object.assign({ border: 'none', cursor: 'pointer', padding: 0 }, SHRINK),
-    }, e(Play, { size: 22, className: 'text-gray-800', style: PLAY_ICON })),
+    }, e(Play, { size: 22, style: Object.assign({ color: 'var(--on-art-ink)' }, PLAY_ICON) })),
     onQueue && e(SideButton, { label: `Add ${title} to the queue`, onClick: onQueue, path: 'M4 6h16M4 12h16M4 18h7' }));
 }
 

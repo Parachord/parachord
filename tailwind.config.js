@@ -67,6 +67,8 @@ module.exports = {
           'love-hover': 'var(--on-dark-love-hover)',
           success: 'var(--on-dark-success)',
           info: 'var(--on-dark-info)',
+          star: 'var(--on-dark-star)',
+          'star-hover': 'var(--on-dark-star-hover)',
         },
         'surface-dark': { placeholder: 'var(--surface-dark-placeholder)' },
         // A page's colour as a class (text-page-concerts): the hex lives

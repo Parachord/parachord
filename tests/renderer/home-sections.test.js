@@ -385,8 +385,8 @@ describe('Rows', () => {
     for (const sec of sections) {
       // A bordered card on the page background; the cards sit below the band.
       expect(sec).toMatch(/^[^>]*border-radius:16px;overflow:hidden;border:1px solid var\(--border-default\);background-color:var\(--bg-primary\)/);
-      expect(sec).toMatch(/<h2 id="home-(fresh|critical)" style="[^"]*font-weight:300;letter-spacing:0\.2em;text-transform:uppercase;color:#fff;text-shadow:0 2px 10px rgba\(0,0,0,0\.5\)"/);
-      expect(sec).toMatch(/aria-label="See all in (Fresh Drops|Critical Darlings)"[^>]*color:#fff[^>]*>See all</);
+      expect(sec).toMatch(/<h2 id="home-(fresh|critical)" style="[^"]*font-weight:300;letter-spacing:0\.2em;text-transform:uppercase;color:var\(--on-accent\);text-shadow:0 2px 10px rgba\(0,0,0,0\.5\)"/);
+      expect(sec).toMatch(/aria-label="See all in (Fresh Drops|Critical Darlings)"[^>]*color:var\(--on-accent\)[^>]*>See all</);
       expect(sec.indexOf('data-home-hero')).toBeLessThan(sec.indexOf('Open '));
     }
     expect(sections[0]).toContain('Fresh Drops');
