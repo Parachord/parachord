@@ -1711,7 +1711,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                               if (hasAiSource) {
                                 badges.push(React.createElement('span', {
                                   key: 'ai-disclaimer',
-                                  className: 'text-xs text-teal-400 italic flex-shrink-0',
+                                  className: 'text-xs text-page-concerts italic flex-shrink-0',
                                   title: 'AI-generated results may not be accurate. Verify event details before purchasing tickets.'
                                 }, 'AI generated results may be hallucinations'));
                               }

@@ -470,7 +470,7 @@ describe('the five-section page render', () => {
     expect(bar).toContain("React.createElement(FilterChips, { chips, value: active, onChange: setRecommendationSourceFilter, pageColor: PAGE_COLORS.recommendations.fill, label: 'Filter recommendations by source' })");
     // A source's colour is Home's (the plugins' manifest colours), Shuffleupagus
     // the fixed accent, a source with none the grey.
-    expect(bar).toContain("const colorFor = (id) => (id === 'shuffleupagus' ? '#7c3aed' : (homeSourceColors && homeSourceColors[id]) || 'var(--text-secondary)');");
+    expect(bar).toContain("const colorFor = (id) => (id === 'shuffleupagus' ? 'var(--accent-fill)' : (homeSourceColors && homeSourceColors[id]) || 'var(--text-secondary)');");
     // Fresh Drops' bar, verbatim; no page-local pill classes.
     expect(bar).toContain("className: 'flex items-center px-6 py-3'");
     expect(bar).toContain("style: { flexShrink: 0, backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }");

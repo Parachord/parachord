@@ -1,4 +1,6 @@
 /** @type {import('tailwindcss').Config} */
+// The pages' colours, from their one source (src/renderer/lib/page-colors.js).
+const { PAGE_COLORS } = require('./src/renderer/lib/page-colors');
 module.exports = {
   darkMode: 'class',
   // Scan the renderer SOURCES, never the generated root app.js: that bundle
@@ -67,6 +69,9 @@ module.exports = {
           info: 'var(--on-dark-info)',
         },
         'surface-dark': { placeholder: 'var(--surface-dark-placeholder)' },
+        // A page's colour as a class (text-page-concerts): the hex lives
+        // only in lib/page-colors.js.
+        page: { concerts: PAGE_COLORS.concerts.color },
         // Faint status backgrounds behind status text (bg-tint-danger with
         // text-ink-danger): the status colour at 12%, or 20% for hover.
         tint: {

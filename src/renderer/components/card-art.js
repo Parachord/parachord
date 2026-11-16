@@ -169,4 +169,4 @@ function releaseBadge(type) {
 }
 
 
-module.exports = { useReveal, ArtOverlay, ArtBox, releaseBadge, RELEASE_BADGE_BG, APP_ART_ZOOM };
+module.exports = { useReveal, ArtOverlay, ArtBox, releaseBadge, RELEASE_BADGE_BG, APP_ART_ZOOM, PlaylistGlyph };
