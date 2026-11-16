@@ -22,5 +22,7 @@ test('no Hidden / Showing badges, and the Home checklist has its own Reset', () 
 test('the tracks lists are lists (#1386)', () => {
   const lists = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/track-lists.js'), 'utf8');
   expect(lists).toContain("role: 'listitem',\n        ref: virtualizer.measureElement,");
-  expect((app.match(/role: 'list',/g) || []).length).toBeGreaterThanOrEqual(11);
+  // Fresh Drops' grid is in its own module now (#1451).
+  const fresh = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/fresh-drops-page.js'), 'utf8');
+  expect(((app + fresh).match(/role: 'list',/g) || []).length).toBeGreaterThanOrEqual(11);
 });

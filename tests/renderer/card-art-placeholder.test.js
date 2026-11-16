@@ -24,6 +24,6 @@ test('a cover being looked up shimmers grey', () => {
 });
 
 test('Fresh Drops tells the card when its cover is still being looked up', () => {
-  const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
-  expect(app).toContain('imageLoading: release.albumArt === undefined,');
+  const page = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/fresh-drops-page.js'), 'utf8');
+  expect(page).toContain('imageLoading: release.albumArt === undefined,');
 });

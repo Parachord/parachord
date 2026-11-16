@@ -22,6 +22,7 @@ const { HomePage, HOME_PAGE_HANDLERS } = require('../../src/renderer/components/
 const { PlaylistViewPage, PLAYLIST_VIEW_PAGE_HANDLERS } = require('../../src/renderer/components/playlist-view-page');
 const { ArtistPage, ARTIST_PAGE_HANDLERS } = require('../../src/renderer/components/artist-page');
 const { SearchPage, SEARCH_PAGE_HANDLERS } = require('../../src/renderer/components/search-page');
+const { FreshDropsPage, FRESH_DROPS_PAGE_HANDLERS } = require('../../src/renderer/components/fresh-drops-page');
 const { useStableHandlers } = require('../../src/renderer/lib/stable-handlers');
 
 const PAGES = [
@@ -30,6 +31,7 @@ const PAGES = [
   { component: 'PlaylistViewPage', file: 'playlist-view-page.js', handlersVar: 'playlistViewPageHandlers', handlers: PLAYLIST_VIEW_PAGE_HANDLERS, memo: PlaylistViewPage },
   { component: 'ArtistPage', file: 'artist-page.js', handlersVar: 'artistPageHandlers', handlers: ARTIST_PAGE_HANDLERS, memo: ArtistPage },
   { component: 'SearchPage', file: 'search-page.js', handlersVar: 'searchPageHandlers', handlers: SEARCH_PAGE_HANDLERS, memo: SearchPage },
+  { component: 'FreshDropsPage', file: 'fresh-drops-page.js', handlersVar: 'freshDropsPageHandlers', handlers: FRESH_DROPS_PAGE_HANDLERS, memo: FreshDropsPage },
 ];
 
 describe.each(PAGES)('$component', ({ memo }) => {

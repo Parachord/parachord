@@ -125,13 +125,15 @@ describe('wiring', () => {
   // AlbumCard, whose ArtBox drops a dead cover and shows a new URL afresh
   // (see the ArtBox test below and album-card-behaviour.test.js).
   test.each([
-    ['new-releases', /retryBrokenListArt\(release\.albumArt, \{ artist: release\.artist, album: release\.title, id: release\.id, cacheId: release\.id \}/, /React\.createElement\(AlbumCard, Object\.assign\(\{[\s\S]{0,200}?imageUrl: release\.albumArt \}/],
+    // Fresh Drops is its own module (components/fresh-drops-page.js, #1451).
+    ['new-releases', /retryBrokenListArt\(release\.albumArt, \{ artist: release\.artist, album: release\.title, id: release\.id, cacheId: release\.id \}/, /e\(AlbumCard, Object\.assign\(\{[\s\S]{0,200}?imageUrl: release\.albumArt \}/],
     ['discover', /retryBrokenListArt\(item\.albumArt, \{ artist: item\.artist, album: item\.title, id: item\.id \}, patchListArt\(setCharts\)\)/, /React\.createElement\(AlbumCard, Object\.assign\(\{[\s\S]{0,200}?imageUrl: item\.albumArt \|\| null \}/],
     ['critics-picks', /retryBrokenListArt\(album\.albumArt, \{ artist: album\.artist, album: album\.title, id: album\.id \}, patchListArt\(setCriticsPicks\)\)/, /key: album\.albumArt,/],
   ])('the %s grid retries a dead cover and never reuses a hidden img for the fresh URL', (view, call, img) => {
+    const fresh = fs.readFileSync(path.join(root, 'src', 'renderer', 'components', 'fresh-drops-page.js'), 'utf8');
     const start = app.indexOf(`activeView === '${view}' && React.createElement`);
     expect(start).toBeGreaterThan(-1);
-    const body = app.slice(start, start + 60000);
+    const body = view === 'new-releases' ? fresh : app.slice(start, start + 60000);
     expect(body).toMatch(call);
     expect(body).toMatch(img);
   });
@@ -143,7 +145,8 @@ describe('wiring', () => {
   });
 
   test('Fresh Drops patches through its art writer, so the persisted copy is fixed too', () => {
-    const at = app.indexOf('retryBrokenListArt(release.albumArt');
-    expect(app.slice(at, at + 400)).toMatch(/newReleasesArtWriterRef\.current\.queue\(id, fresh\);\s*newReleasesArtWriterRef\.current\.flush\(\);/);
+    const fresh = fs.readFileSync(path.join(root, 'src', 'renderer', 'components', 'fresh-drops-page.js'), 'utf8');
+    const at = fresh.indexOf('retryBrokenListArt(release.albumArt');
+    expect(fresh.slice(at, at + 400)).toMatch(/newReleasesArtWriterRef\.current\.queue\(id, fresh\);\s*newReleasesArtWriterRef\.current\.flush\(\);/);
   });
 });

@@ -6,6 +6,8 @@ const path = require('path');
 
 const root = path.join(__dirname, '../..');
 const app = fs.readFileSync(path.join(root, 'src/renderer/app.js'), 'utf8');
+// The pages moved out of app.js (#1451) are read with it.
+const fresh = fs.readFileSync(path.join(root, 'src/renderer/components/fresh-drops-page.js'), 'utf8');
 const pv = fs.readFileSync(path.join(root, 'src/renderer/components/playlist-view-page.js'), 'utf8');
 
 test('no window.alert / alert() left in the renderer pages (bug 25)', () => {
@@ -52,7 +54,7 @@ test('Recommendations says so when it loads with nothing to show (bug 2)', () =>
 });
 
 test('Fresh Drops and Concerts show their skeleton before the caches load (bug 28)', () => {
-  expect(app).toContain("!newReleasesError && (newReleasesLoading || !cacheLoaded) && newReleases.length === 0 && React.createElement('div', {");
+  expect(fresh).toContain("!newReleasesError && (newReleasesLoading || !cacheLoaded) && newReleases.length === 0 && e('div', { className: 'card-grid gap-4' },");
   expect(app).toContain("(concertsLoading || !cacheLoaded) && !concertsError && concerts.length === 0 && React.createElement('div', {");
 });
 
