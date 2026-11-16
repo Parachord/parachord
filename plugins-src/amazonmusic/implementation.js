@@ -2732,6 +2732,10 @@ module.exports = {
     let plan = null;
     if (signedIn) {
       try {
+        // FRESH on purpose, on every call — the background not-signed-in
+        // prompt decisions go through this reply too, so the prompt gate
+        // always sees the current plan (the one config.json round trip it
+        // costs is the price of that; #1440 review, note 4).
         plan = await this.getPlan({ refresh: true });
       } catch (e) { plan = 'unknown'; }
     }
