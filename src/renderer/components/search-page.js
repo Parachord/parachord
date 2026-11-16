@@ -20,6 +20,7 @@
 
 const Icons = require('./icons');
 const { transition } = require('../lib/motion');
+const { TextField } = require('./fields');
 const { FilterBox, StickyBar } = require('./filter-box');
 const { HeaderControl } = require('./header-control');
 const { CardButton } = require('./card-button');
@@ -504,14 +505,16 @@ const SearchPage = React.memo(function SearchPage(props) {
         React.createElement('div', null,
           // Large search input with cursor styling
           React.createElement('div', { className: 'mb-8' },
-            React.createElement('input', {
-              ref: (el) => {
+            // The shared text field (components/fields.js), bare: the page's
+            // big type, where the caret is the focus sign.
+            React.createElement(TextField, {
+              bare: true,
+              inputRef: (el) => {
                 searchInputRef.current = el;
                 if (el && activeView === 'search' && !searchQuery) el.focus();
               },
-              type: 'text',
               value: searchQuery,
-              onChange: (e) => handleSearchInput(e.target.value),
+              onChange: (v) => handleSearchInput(v),
               onKeyDown: (e) => {
                 // Prevent keyboard shortcuts from interfering while typing in search
                 // Allow Escape to propagate for navigation, but stop other keys
@@ -520,7 +523,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                 }
               },
               placeholder: '',
-              className: 'w-full text-6xl font-extralight text-ink-primary bg-transparent border-none outline-none tracking-tight',
+              className: 'w-full text-6xl font-extralight tracking-tight',
               style: {
                 caretColor: 'var(--text-tertiary)',
                 fontFamily: 'var(--font-sans)'

@@ -110,7 +110,8 @@ describe('status fills and the accent (#1383 step 3)', () => {
   });
 
   test('the playbar sliders use the accent, not blue', () => {
-    const sliders = html2.slice(html2.indexOf('.progress-slider::-webkit-slider-thumb'), html2.indexOf('.volume-slider.disabled::-webkit-slider-thumb'));
+    const start = html2.indexOf('.slider-dark {');
+    const sliders = html2.slice(start, html2.indexOf('}', start));
     expect(sliders).not.toMatch(/#3b82f6|#60a5fa/);
     expect(sliders).toMatch(/var\(--playbar-accent\)/);
   });

@@ -9,7 +9,7 @@
 const { FriendMiniPlaybar } = require('./friend-mini-playbar');
 const Icons = require('./icons');
 const { Button } = require('./button');
-const { TextField, SecretField, Switch } = require('./fields');
+const { TextField, SecretField, Switch, Checkbox } = require('./fields');
 const { Tooltip, SERVICE_LOGOS } = require('./ui-atoms');
 const { menuKeyHandler } = require('./card-button');
 
@@ -464,11 +464,9 @@ const ScrobblerSettingsCard = React.memo(({
         (scrobbler.id === 'lastfm' || scrobbler.id === 'listenbrainz') && onSetLovePushEnabled &&
           React.createElement('div', { className: 'border-t border-line pt-3 space-y-2' },
             React.createElement('label', { className: 'flex items-center gap-2 text-sm cursor-pointer' },
-              React.createElement('input', {
-                type: 'checkbox',
+              React.createElement(Checkbox, {
                 checked: lovePushEnabled,
-                onChange: (e) => onSetLovePushEnabled(e.target.checked),
-                className: 'rounded text-accent focus:ring-accent'
+                onChange: (checked) => onSetLovePushEnabled(checked)
               }),
               React.createElement('span', { className: 'text-ink-secondary' },
                 `Push newly loved tracks to ${scrobbler.id === 'lastfm' ? 'Last.fm' : 'ListenBrainz'}`

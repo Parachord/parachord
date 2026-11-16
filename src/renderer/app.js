@@ -1352,6 +1352,7 @@ const {
 const { countOf } = require('./lib/plural');
 const { movePriority, priorityMoves } = require('./lib/priority-order');
 const { timeAgo } = require('./lib/time-ago');
+const { chartLoadView } = require('./lib/chart-load-view');
 const { userError, errorText } = require('./lib/error-copy');
 const { trackDurationLabel } = require('./lib/track-duration');
 const { contextPlaylistTarget, playlistRef } = require('./lib/playlist-context');
@@ -2111,7 +2112,7 @@ const { capabilityLabel } = require('./lib/capability-labels');
 // The colour resolver-loader.js gives a plug-in whose manifest names none: a
 // marker to test against ("this plug-in has no colour"), never drawn.
 const NO_PLUGIN_COLOR = '#888888';
-const { Modal, ConfirmModal, DontShowAgain } = require('./components/modal');
+const { Modal, SidePanel, ConfirmModal, DontShowAgain } = require('./components/modal');
 const { PlaylistUpdateDialog, UpdateModeChoice } = require('./components/playlist-update-dialog');
 const { KeyboardShortcutsDialog } = require('./components/keyboard-shortcuts');
 const { WhatsNewDialog } = require('./components/whats-new-dialog');
@@ -2131,9 +2132,10 @@ const { PlaybarLineSkeleton } = require('./components/playbar-skeleton');
 const { HeaderControl } = require('./components/header-control');
 const { ToastRegion, NowPlayingAnnouncer } = require('./components/toast');
 const { SortMenu } = require('./components/sort-menu');
-const { Menu } = require('./components/menu');
+const { Menu, ContextMenu } = require('./components/menu');
+const { ProviderMenu } = require('./components/provider-menu');
 const { HeroTabs } = require('./components/hero-tabs');
-const { SettingRow, Select, TextField, SecretField, Switch, RadioGroup, SegmentedChoice, FIELD_CLASS } = require('./components/fields');
+const { SettingRow, Select, TextField, SecretField, Switch, Checkbox, Slider, RadioGroup, SegmentedChoice } = require('./components/fields');
 const { EmptyState, ErrorState } = require('./components/states');
 // Room the queue drawer leaves above it: the title bar and a little air.
 const QUEUE_DRAWER_TOP_GAP = 48;
@@ -2143,6 +2145,9 @@ const { releaseMenu, artistMenu, playlistMenu } = require('./lib/item-menus');
 const { runPlaybackControl } = require('../../tools/playback-control');
 const { runQueueAdd } = require('../../tools/queue-add');
 const { EMBED_PLAYER_KINDS } = require('./lib/embed-players');
+// Focus rings show after keyboard use only (lib/input-modality.js).
+const { installInputModality } = require('./lib/input-modality');
+installInputModality();
 
 
 
@@ -3689,12 +3694,6 @@ const Parachord = () => {
   const [playlistEditMode, setPlaylistEditMode] = useState(false); // Edit mode for playlist detail view
   const [editedPlaylistData, setEditedPlaylistData] = useState(null); // Buffered changes: { title, creator, tracks }
   const [parachordLinkMenu, setParachordLinkMenu] = useState(null); // { x, y, link } — right-click "Copy link" menu
-  useEffect(() => {
-    if (!parachordLinkMenu) return;
-    const dismiss = (e) => { if (e.key === 'Escape') setParachordLinkMenu(null); };
-    window.addEventListener('keydown', dismiss);
-    return () => window.removeEventListener('keydown', dismiss);
-  }, [parachordLinkMenu]);
   const [currentArtist, setCurrentArtist] = useState(null); // Artist page data
   const [artistImage, setArtistImage] = useState(null); // Artist image from Spotify
   const [artistImagePosition, setArtistImagePosition] = useState('center 25%'); // Face-centered position
@@ -3911,6 +3910,15 @@ const Parachord = () => {
   const waitingForBrowserPlaybackRef = useRef(false); // True when we're waiting for browser to connect after opening external track
   const [settingsTab, setSettingsTab] = useState('plugins'); // 'plugins' | 'general' | 'about'
   const [themePref, setThemePref] = useState('system'); // 'light' | 'dark' | 'system'
+  // The window's size (main-process/ui-zoom.js, #1452): Settings' Size and
+  // the View menu's zoom steps; main applies and stores it.
+  const [uiZoom, setUiZoom] = useState(1);
+  useEffect(() => {
+    const api = window.electron?.ui;
+    if (!api) return undefined;
+    api.getZoom().then((z) => { if (z) setUiZoom(z); }).catch(() => {});
+    return api.onZoomChanged ? api.onZoomChanged((z) => setUiZoom(z)) : undefined;
+  }, []);
   // Resolved 'light' | 'dark'. Seeded from the class index.html set before the
   // first paint, so the first render never strips .dark (a light flash).
   const [effectiveTheme, setEffectiveTheme] = useState(() => (
@@ -5010,10 +5018,12 @@ const Parachord = () => {
   const [lastfmCharts, setLastfmCharts] = useState([]); // Last.fm top tracks
   const [lastfmChartsLoading, setLastfmChartsLoading] = useState(false);
   const [lastfmChartsLoaded, setLastfmChartsLoaded] = useState(false);
+  const [lastfmChartsError, setLastfmChartsError] = useState(null); // the failed load's error, for ErrorState
   const [chartsSongsSource, setChartsSongsSource] = useState('apple'); // 'apple' | 'lastfm'
   const [appleMusicSongsCharts, setAppleMusicSongsCharts] = useState([]); // Apple Music top songs
   const [appleMusicSongsChartsLoading, setAppleMusicSongsChartsLoading] = useState(false);
   const [appleMusicSongsChartsLoaded, setAppleMusicSongsChartsLoaded] = useState(false);
+  const [appleMusicSongsChartsError, setAppleMusicSongsChartsError] = useState(null); // the failed load's error, for ErrorState
 
   // Critics Picks page state
   const [criticsHeaderCollapsed, setCriticsHeaderCollapsed] = useState(false);
@@ -5764,19 +5774,6 @@ const Parachord = () => {
   const [addToPlaylistSort, setAddToPlaylistSort] = useState('added'); // Sort option for add-to-playlist panel
   const [addToPlaylistSearch, setAddToPlaylistSearch] = useState(''); // Search filter for add-to-playlist panel
   const [addToPlaylistSearchOpen, setAddToPlaylistSearchOpen] = useState(false); // Search input expanded state
-  // The Add to playlist panel is a dialog: focus moves into it when it opens
-  // and goes back where it was when it closes; Escape closes it.
-  const addPanelReturnFocusRef = useRef(null);
-  const addPanelRef = useCallback((el) => {
-    if (el) {
-      addPanelReturnFocusRef.current = document.activeElement;
-      el.focus();
-    } else {
-      const prev = addPanelReturnFocusRef.current;
-      addPanelReturnFocusRef.current = null;
-      if (prev && typeof prev.focus === 'function' && document.contains(prev)) prev.focus();
-    }
-  }, []);
   const closeAddToPlaylistPanel = () => {
     setAddToPlaylistPanel(prev => ({ ...prev, open: false }));
     setSelectedPlaylistsForAdd([]);
@@ -24593,6 +24590,26 @@ ${trackListXml}
     }
   }, [activeView, chartsTab, chartsSongsSource, appleMusicSongsChartsLoading, lastfmChartsLoading]);
 
+  // Load the Tracks tab's chart once it's showing and the app can load it:
+  // the cache for Apple Music, the Last.fm key for Last.fm. The tab and
+  // source pickers used to start the load themselves and did nothing before
+  // the cache was ready, so a click then left the skeleton up for good. A
+  // failed load waits for Try again; this never retries it.
+  useEffect(() => {
+    if (activeView !== 'discover' || chartsTab !== 'songs') return;
+    if (chartsSongsSource === 'apple') {
+      if (cacheLoaded && !appleMusicSongsChartsLoaded && !appleMusicSongsChartsLoading && !appleMusicSongsChartsError) {
+        loadAppleMusicSongsCharts({ country: chartsCountry });
+      }
+    } else if (chartsSongsSource === 'lastfm') {
+      if (lastfmKeyLoaded && !lastfmChartsLoaded && !lastfmChartsLoading && !lastfmChartsError) {
+        loadLastfmCharts({ country: chartsCountry });
+      }
+    }
+  }, [activeView, chartsTab, chartsSongsSource, cacheLoaded, lastfmKeyLoaded,
+    appleMusicSongsChartsLoaded, appleMusicSongsChartsLoading, appleMusicSongsChartsError,
+    lastfmChartsLoaded, lastfmChartsLoading, lastfmChartsError]);
+
   // IntersectionObserver for songs charts tracks visibility (Apple Music or Last.fm)
   useEffect(() => {
     // Note: Charts (Pop of the Tops) uses activeView === 'discover'
@@ -26587,6 +26604,10 @@ ${tracks}
     const apiKey = getLastfmApiKey();
     if (!apiKey) {
       console.log('📊 No Last.fm API key available for charts');
+      // Settled, so the Tracks tab says why instead of keeping its skeleton.
+      setLastfmCharts([]);
+      setLastfmChartsLoaded(false);
+      setLastfmChartsError(userError('Last.fm’s chart needs a Last.fm API key. Add your own in Settings.'));
       return;
     }
 
@@ -26601,11 +26622,13 @@ ${tracks}
       console.log(`📦 Using cached Last.fm Charts (${country || 'global'}, ${cacheAgeHours}h old)`);
       setLastfmCharts(cached.tracks);
       setLastfmChartsLoaded(true);
+      setLastfmChartsError(null);
       return;
     }
 
     setLastfmChartsLoading(true);
     setLastfmChartsLoaded(false);
+    setLastfmChartsError(null);
     setLastfmChartsScrollContainerReady(false); // Reset to re-trigger observer setup
 
     try {
@@ -26681,11 +26704,9 @@ ${tracks}
           message: `Could not refresh Last.fm charts. Showing cached data from ${cacheAgeHours} hours ago.`
         });
       } else {
-        showConfirmDialog({
-          type: 'error',
-          title: 'Load failed',
-          message: 'Failed to load Last.fm Charts. Please try again.'
-        });
+        // Nothing to fall back on: the Tracks tab shows ErrorState with Try again.
+        setLastfmCharts([]);
+        setLastfmChartsError(error);
       }
     } finally {
       setLastfmChartsLoading(false);
@@ -26733,11 +26754,13 @@ ${tracks}
       console.log(`📦 Using cached Apple Music Songs Charts (${countryName}, ${cacheAgeHours}h old)`);
       setAppleMusicSongsCharts(cached.tracks);
       setAppleMusicSongsChartsLoaded(true);
+      setAppleMusicSongsChartsError(null);
       return;
     }
 
     setAppleMusicSongsChartsLoading(true);
     setAppleMusicSongsChartsLoaded(false);
+    setAppleMusicSongsChartsError(null);
     setLastfmChartsScrollContainerReady(false); // Reset to re-trigger observer setup
 
     try {
@@ -26793,11 +26816,10 @@ ${tracks}
           message: `Could not refresh Apple Music charts. Showing cached data from ${cacheAgeHours} hours ago.`
         });
       } else {
-        showConfirmDialog({
-          type: 'error',
-          title: 'Couldn’t load the charts',
-          message: 'Apple Music’s charts didn’t load. Check your connection and try again.'
-        });
+        // Nothing to fall back on: the Tracks tab shows ErrorState with Try
+        // again (a dialog left the tab on its skeleton behind it).
+        setAppleMusicSongsCharts([]);
+        setAppleMusicSongsChartsError(error);
       }
     } finally {
       setAppleMusicSongsChartsLoading(false);
@@ -38507,15 +38529,8 @@ React.createElement('div', {
                   style: { textShadow: 'var(--hero-text-shadow-line)' }
                 },
                   React.createElement(HeroTabs, { items: ['albums', 'songs'], isSelected: (tab) => chartsTab === tab, onSelect: (tab) => {
+                        // The Tracks chart loads from an effect once it can.
                         setChartsTab(tab);
-                        // Load charts based on selected source when switching to songs tab
-                        if (tab === 'songs' && cacheLoaded) {
-                          if (chartsSongsSource === 'apple' && !appleMusicSongsChartsLoaded && !appleMusicSongsChartsLoading) {
-                            loadAppleMusicSongsCharts({ country: chartsCountry });
-                          } else if (chartsSongsSource === 'lastfm' && !lastfmChartsLoaded && !lastfmChartsLoading) {
-                            loadLastfmCharts({ country: chartsCountry });
-                          }
-                        }
                       }, renderLabel: (tab) => (tab === 'songs' ? 'Tracks' : 'Albums'), label: 'Charts' })
                 ),
 React.createElement('p', {
@@ -38531,13 +38546,6 @@ React.createElement('div', {
                 },
                   React.createElement(HeroTabs, { items: ['albums', 'songs'], isSelected: (tab) => chartsTab === tab, onSelect: (tab) => {
                         setChartsTab(tab);
-                        if (tab === 'songs' && cacheLoaded) {
-                          if (chartsSongsSource === 'apple' && !appleMusicSongsChartsLoaded && !appleMusicSongsChartsLoading) {
-                            loadAppleMusicSongsCharts({ country: chartsCountry });
-                          } else if (chartsSongsSource === 'lastfm' && !lastfmChartsLoaded && !lastfmChartsLoading) {
-                            loadLastfmCharts({ country: chartsCountry });
-                          }
-                        }
                       }, renderLabel: (tab) => (tab === 'songs' ? 'Tracks' : 'Albums'), label: 'Charts' })
                 ),
 React.createElement('div', { className: 'flex-1' }),
@@ -38558,15 +38566,8 @@ React.createElement('span', {
                 options: [{ value: 'apple', label: 'Apple Music' }, { value: 'lastfm', label: 'Last.fm' }],
                 label: 'Chart source',
                 prefix: 'Source:',
-                onChange: (v) => {
-                  setChartsSongsSource(v);
-                  if (v === 'apple' && cacheLoaded && !appleMusicSongsChartsLoaded && !appleMusicSongsChartsLoading) {
-                    loadAppleMusicSongsCharts({ country: chartsCountry });
-                  }
-                  if (v === 'lastfm' && !lastfmChartsLoaded && !lastfmChartsLoading) {
-                    loadLastfmCharts({ country: chartsCountry });
-                  }
-                },
+                // The picked source's chart loads from an effect once it can.
+                onChange: (v) => setChartsSongsSource(v),
               }),
               // Region (components/sort-menu.js). Apple Music has no global
               // chart, so an empty region means the US there; Last.fm offers Global.
@@ -38658,10 +38659,26 @@ React.createElement('span', {
               );
             })(),
 
+            // SONGS TAB: a failed load shows its error with Try again.
+            chartsTab === 'songs' && chartsSongsSource === 'apple' &&
+              chartLoadView({ loading: appleMusicSongsChartsLoading, loaded: appleMusicSongsChartsLoaded, error: appleMusicSongsChartsError }) === 'error' &&
+              React.createElement(ErrorState, {
+                title: 'Couldn’t load the Apple Music chart',
+                body: errorText(appleMusicSongsChartsError, 'Apple Music’s chart didn’t load. Check your connection and try again.'),
+                onRetry: () => loadAppleMusicSongsCharts({ country: chartsCountry, forceReload: true })
+              }),
+            chartsTab === 'songs' && chartsSongsSource === 'lastfm' &&
+              chartLoadView({ loading: lastfmChartsLoading, loaded: lastfmChartsLoaded, error: lastfmChartsError }) === 'error' &&
+              React.createElement(ErrorState, {
+                title: 'Couldn’t load the Last.fm chart',
+                body: errorText(lastfmChartsError, 'Last.fm’s chart didn’t load. Check your connection and try again.'),
+                onRetry: () => loadLastfmCharts({ country: chartsCountry, forceReload: true })
+              }),
+
             // SONGS TAB: the shared track row's placeholder, in its columns.
             chartsTab === 'songs' && (
-              (chartsSongsSource === 'apple' && (appleMusicSongsChartsLoading || !appleMusicSongsChartsLoaded)) ||
-              (chartsSongsSource === 'lastfm' && (lastfmChartsLoading || !lastfmChartsLoaded))
+              (chartsSongsSource === 'apple' && chartLoadView({ loading: appleMusicSongsChartsLoading, loaded: appleMusicSongsChartsLoaded, error: appleMusicSongsChartsError }) === 'skeleton') ||
+              (chartsSongsSource === 'lastfm' && chartLoadView({ loading: lastfmChartsLoading, loaded: lastfmChartsLoaded, error: lastfmChartsError }) === 'skeleton')
             ) && React.createElement('div', { className: 'space-y-0' },
               Array.from({ length: 20 }).map((_, i) => React.createElement(TrackRowSkeleton, {
                 key: `skeleton-row-${i}`, index: i, duration: true,
@@ -39322,11 +39339,9 @@ React.createElement('span', {
                 React.createElement('div', { style: { fontSize: '13px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '12px' } }, 'Filter by location'),
                 // Text input row
                 React.createElement('div', { className: 'flex items-center gap-2 mb-3' },
-                  React.createElement('input', {
-                    type: 'text',
+                  React.createElement(TextField, {
                     value: concertsLocation,
-                    onChange: (e) => {
-                      const val = e.target.value;
+                    onChange: (val) => {
                       setConcertsLocation(val);
                       if (!val.trim()) {
                         setConcertsLocationCoords(null);
@@ -39356,7 +39371,7 @@ React.createElement('span', {
                     autoFocus: true,
                     placeholder: 'City or region…',
                     // The shared text field (components/fields.js): one focus ring.
-                    className: `${FIELD_CLASS} flex-1 min-w-0`,
+                    className: 'flex-1 min-w-0',
                     'aria-label': 'City or region'
                   }),
                   // "Use my location" button
@@ -39413,15 +39428,16 @@ React.createElement('span', {
                     React.createElement('span', { style: { fontSize: '13px', color: 'var(--text-tertiary)' } }, 'Radius'),
                     React.createElement('span', { style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' } }, `${concertsLocationRadius} mi`)
                   ),
-                  React.createElement('input', {
-                    type: 'range',
+                  React.createElement(Slider, {
                     min: 10,
                     max: 500,
                     step: 10,
                     value: concertsLocationRadius,
-                    onChange: (e) => setConcertsLocationRadius(parseInt(e.target.value)),
+                    onChange: (v) => setConcertsLocationRadius(v),
+                    color: PAGE_COLORS.concerts.color,
                     className: 'w-full',
-                    style: { accentColor: PAGE_COLORS.concerts.color, height: '4px' }
+                    'aria-label': 'Radius',
+                    'aria-valuetext': `${concertsLocationRadius} miles`
                   })
                 ),
                 // Action buttons row
@@ -41071,16 +41087,16 @@ React.createElement('div', {
               // Search and filter bar
               React.createElement('div', { className: 'flex flex-col gap-3 mb-6' },
                 // Top row: Search input
-                React.createElement('div', { className: 'relative', style: { width: 'fit-content' } },
-                  React.createElement(Icons.Search, { className: 'absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-tertiary' }),
-                  React.createElement('input', {
-                    type: 'text',
-                    placeholder: 'Search plug-ins…',
-                    value: marketplaceSearchQuery,
-                    onChange: (e) => setMarketplaceSearchQuery(e.target.value),
-                    className: 'w-64 pl-9 pr-4 py-2 bg-surface-subtle border border-line rounded-full text-sm text-ink-primary placeholder-ink-tertiary focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent', 'aria-label': 'Search plug-ins'
-                  })
-                ),
+                // The shared text field (components/fields.js), a pill with the search glyph.
+                React.createElement(TextField, {
+                  pill: true,
+                  icon: React.createElement(Icons.Search, { className: 'w-4 h-4' }),
+                  wrapClassName: 'w-64',
+                  placeholder: 'Search plug-ins…',
+                  value: marketplaceSearchQuery,
+                  onChange: setMarketplaceSearchQuery,
+                  'aria-label': 'Search plug-ins'
+                }),
                 // Bottom row: Dropdown + Category pills together
                 React.createElement('div', { className: 'flex items-center gap-3 flex-wrap' },
                   // Install status dropdown filter
@@ -41615,7 +41631,7 @@ React.createElement('div', {
               // Settings sections - refined
               React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '24px' } },
                 // Appearance Section
-                React.createElement(SettingsSection, { title: 'Appearance', description: 'Choose your preferred color theme' },
+                React.createElement(SettingsSection, { title: 'Appearance', description: 'Choose your color theme and how big things are' },
                   React.createElement(SegmentedChoice, {
                     label: 'Theme',
                     options: [
@@ -41625,7 +41641,21 @@ React.createElement('div', {
                     ],
                     value: themePref,
                     onChange: (v) => handleThemeChange(v)
-                  })),
+                  }),
+                  // The window's size: text, art and controls together
+                  // (main-process/ui-zoom.js). View › Zoom In / Out step it.
+                  React.createElement(SettingRow, { label: 'Size', hint: 'Makes text, art and controls bigger or smaller together. View › Zoom In and Zoom Out change it too.', style: { marginTop: '12px' } },
+                    React.createElement(Select, {
+                      value: String(uiZoom),
+                      onChange: (v) => { const z = Number(v); setUiZoom(z); window.electron?.ui?.setZoom(z); },
+                      options: [
+                        { value: '0.9', label: 'Small (90%)' },
+                        { value: '1', label: 'Default (100%)' },
+                        { value: '1.1', label: 'Large (110%)' },
+                        { value: '1.25', label: 'Larger (125%)' },
+                        { value: '1.5', label: 'Largest (150%)' }
+                      ]
+                    }))),
                 // Cache Management Section - refined card
                 React.createElement(SettingsSection, { title: 'Cache Management', description: 'Clear cached data to free up space or fix display issues' },
 React.createElement(SettingRow, { label: 'Clear cache', hint: 'Removes cached artist images, album art and service responses. Pages load more slowly until they’re fetched again.' },
@@ -41709,16 +41739,16 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column', 
                               color: isVolumeDisabled ? 'var(--text-tertiary)' : 'var(--text-primary)'
                             }
                           }, resolver.name),
-                          React.createElement('input', {
-                            type: 'range',
-                            min: '-12',
-                            max: '6',
-                            step: '1',
+                          React.createElement(Slider, {
+                            min: -12,
+                            max: 6,
+                            step: 1,
                             value: offset,
-                            onChange: (e) => setResolverVolumeOffsets(prev => ({ ...prev, [resolver.id]: Number(e.target.value) })),
-                            className: `flex-1 h-2 bg-control-off rounded-full appearance-none ${isVolumeDisabled ? 'cursor-not-allowed' : 'cursor-pointer accent-[var(--accent-fill)]'}`,
+                            onChange: (v) => setResolverVolumeOffsets(prev => ({ ...prev, [resolver.id]: v })),
+                            className: 'flex-1',
                             disabled: isVolumeDisabled,
-                            'aria-label': isVolumeDisabled ? (resolver.id === 'applemusic' ? 'Use system volume to control Apple Music' : 'Browser playback - volume control not available') : undefined, 'data-tooltip': isVolumeDisabled ? (resolver.id === 'applemusic' ? 'Use system volume to control Apple Music' : 'Browser playback - volume control not available') : undefined
+                            'aria-valuetext': `${offset > 0 ? '+' : ''}${offset} dB`,
+                            'aria-label': isVolumeDisabled ? (resolver.id === 'applemusic' ? 'Use system volume to control Apple Music' : 'Browser playback - volume control not available') : `${resolver.name} volume`, 'data-tooltip': isVolumeDisabled ? (resolver.id === 'applemusic' ? 'Use system volume to control Apple Music' : 'Browser playback - volume control not available') : undefined
                           }),
                           React.createElement('span', {
                             style: {
@@ -43097,16 +43127,15 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                 position: 'top-end',
                 variant: 'dark'
               },
-                React.createElement('input', {
+                React.createElement(Slider, {
+                  tone: 'dark',
                   'aria-label': 'Volume',
                   'aria-valuetext': isMuted ? 'Muted' : `${Math.round(effectiveVolume)}%`,
-                  type: 'range',
-                  min: '0',
-                  max: '100',
+                  min: 0,
+                  max: 100,
                   value: effectiveVolume,
                   disabled: isDisabled,
-                  onChange: (e) => {
-                    const newVolume = Number(e.target.value);
+                  onChange: (newVolume) => {
                     // If user moves slider while muted, unmute
                     if (isMuted && newVolume > 0) {
                       setIsMuted(false);
@@ -43128,7 +43157,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                       window._appleMusicPreviewAudio.volume = effectiveVol / 100;
                     }
                   },
-                className: `volume-slider w-20 h-1 rounded-full ${isDisabled ? 'disabled cursor-not-allowed opacity-50' : 'cursor-pointer'}`
+                className: `w-20 ${isDisabled ? 'opacity-50' : ''}`
                 })
               )
             );
@@ -43165,67 +43194,48 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
       ),
 
       // Input
-      React.createElement('div', { className: 'relative' },
-        React.createElement('input', {
-          type: 'text',
-          value: aiPrompt,
-          onChange: (e) => setAiPrompt(e.target.value),
-          onKeyDown: (e) => {
-            // Prevent global shortcuts from interfering while typing
-            e.stopPropagation();
-            if (e.key === 'Enter' && aiPrompt.trim() && !aiLoading) {
-              handleAiGenerate(aiPrompt.trim());
-            }
-            if (e.key === 'Escape') {
-              setAiPromptOpen(false);
-              setAiPrompt('');
-              setAiError(null);
-            }
-          },
-          placeholder: 'What do you want to listen to?',
-          disabled: aiLoading,
-          autoFocus: true,
-          style: {
-            width: '100%',
-            backgroundColor: 'var(--on-dark-faint)',
-            border: '1px solid var(--on-dark-border)',
-            borderRadius: '10px',
-            padding: '12px 48px 12px 16px',
-            fontSize: '14px',
-            color: 'var(--on-dark-primary)',
-            opacity: aiLoading ? '0.5' : '1'
-          },
-          onFocus: (e) => { e.target.style.borderColor = 'color-mix(in srgb, var(--playbar-accent) 50%, transparent)'; e.target.style.boxShadow = '0 0 0 3px color-mix(in srgb, var(--playbar-accent) 10%, transparent)'; },
-          onBlur: (e) => { e.target.style.borderColor = 'var(--on-dark-border)'; e.target.style.boxShadow = 'none'; }, 'aria-label': 'What do you want to listen to?'
-        }),
-        React.createElement(Button, { variant: 'primary', size: 'sm', className: 'absolute right-2 top-1/2 -translate-y-1/2 !px-2', 'aria-label': "Generate", onClick: () => aiPrompt.trim() && !aiLoading && handleAiGenerate(aiPrompt.trim()), disabled: !aiPrompt.trim() || aiLoading }, aiLoading
+      // The shared text field (components/fields.js), dark tone, with
+      // Generate inside it: the field's own focus ring, no JS styling.
+      React.createElement(TextField, {
+        tone: 'dark',
+        size: 'lg',
+        wrapClassName: 'w-full',
+        value: aiPrompt,
+        onChange: setAiPrompt,
+        onKeyDown: (e) => {
+          // Prevent global shortcuts from interfering while typing
+          e.stopPropagation();
+          if (e.key === 'Enter' && aiPrompt.trim() && !aiLoading) {
+            handleAiGenerate(aiPrompt.trim());
+          }
+          if (e.key === 'Escape') {
+            setAiPromptOpen(false);
+            setAiPrompt('');
+            setAiError(null);
+          }
+        },
+        placeholder: 'What do you want to listen to?',
+        disabled: aiLoading,
+        autoFocus: true,
+        'aria-label': 'What do you want to listen to?',
+        trailing: React.createElement(Button, { variant: 'primary', size: 'sm', className: '!px-2', 'aria-label': "Generate", onClick: () => aiPrompt.trim() && !aiLoading && handleAiGenerate(aiPrompt.trim()), disabled: !aiPrompt.trim() || aiLoading }, aiLoading
             ? React.createElement(Icons.Spinner, { size: 16 })
             : React.createElement(Icons.ArrowRight, { className: 'w-4 h-4', strokeWidth: 2 }))
-      ),
+      }),
 
       // Provider selector row (right-aligned)
       (() => {
         const aiResolvers = getAiServices();
         if (aiResolvers.length <= 1) return null;
         return React.createElement('div', { className: 'mt-3 flex items-center justify-end gap-2' },
-          React.createElement('span', { style: { fontSize: '12px', color: 'var(--on-dark-secondary)' } }, 'Provider:'),
-          React.createElement('select', {
-            'aria-label': 'AI provider',
+          React.createElement('span', { style: { fontSize: '12px', color: 'var(--on-dark-secondary)' } }, 'Provider'),
+          // The same picker as the chat panel's (components/provider-menu.js).
+          React.createElement(ProviderMenu, {
+            label: 'AI provider',
+            services: aiResolvers,
             value: selectedAiResolver || aiResolvers[0]?.id || '',
-            onChange: (e) => setSelectedAiResolver(e.target.value),
-            style: {
-              backgroundColor: 'var(--on-dark-faint)',
-              border: '1px solid var(--on-dark-border)',
-              borderRadius: '6px',
-              padding: '4px 8px',
-              fontSize: '12px',
-              color: 'var(--on-dark-primary)'
-            }
-          },
-            aiResolvers.map(r =>
-              React.createElement('option', { key: r.id, value: r.id }, r.name)
-            )
-          )
+            onChange: (id) => setSelectedAiResolver(id)
+          })
         );
       })(),
 
@@ -43329,59 +43339,32 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                 // Custom dropdown button
                 (() => {
                   const enabledServices = getChatServices().filter(isServiceEnabled);
-                  const currentService = enabledServices.find(s => s.id === selectedChatProvider);
 
-                  // The chat provider picker (components/menu.js): a choice
-                  // among the enabled chat plug-ins, with a check on the
-                  // current one.
-                  return React.createElement(Menu, {
+                  // The AI provider picker (components/provider-menu.js),
+                  // the same control as the prompt panel's.
+                  return React.createElement(ProviderMenu, {
                     label: 'Chat provider',
-                    align: 'right',
-                    minWidth: 140,
-                    items: enabledServices.map(service => ({
-                      key: service.id,
-                      label: service.name || service.manifest?.name,
-                      icon: (SERVICE_LOGOS[service.id]
-                        ? React.createElement('span', { style: { width: '14px', height: '14px', display: 'inline-flex', flexShrink: 0 } },
-                            React.cloneElement(SERVICE_LOGOS[service.id], { className: '', style: { width: '14px', height: '14px' } }))
-                        : React.createElement('span', { style: { fontSize: '12px' } }, service.icon || service.manifest?.icon || '🤖')),
-                      checked: service.id === selectedChatProvider,
-                      onSelect: () => {
-                        const newProvider = service.id;
-                        // Picking the current one changes nothing.
-                        if (newProvider === selectedChatProvider) return;
-                        // Save current provider's history before switching
-                        if (selectedChatProvider && selectedChatProvider !== newProvider && aiChatMessages.length > 0) {
-                          aiChatHistoriesRef.current[selectedChatProvider] = aiChatMessages;
-                        }
-                        setSelectedChatProvider(newProvider);
-                        // Clear current chat service so it recreates with new provider
-                        aiChatServiceRef.current = null;
-                        // Load saved chat history for this provider (or empty if none)
-                        const savedHistory = aiChatHistoriesRef.current[newProvider] || [];
-                        setAiChatMessages(savedHistory);
-                        // Update sidebar with new provider and loaded messages
-                        setResultsSidebar(prev => ({
-                          ...prev,
-                          subtitle: service.name || service.manifest?.name,
-                          provider: { id: service.id, name: service.name || service.manifest?.name, icon: service.icon || service.manifest?.icon },
-                          messages: savedHistory
-                        }));
-                      },
-                    })),
-                    renderTrigger: (t) => React.createElement('button', Object.assign({}, t, {
-                      type: 'button',
-                      'aria-label': `Chat provider: ${currentService?.name || currentService?.manifest?.name || 'none'}`,
-                      // The shared small secondary button, dark tone.
-                      className: buttonClassName({ variant: 'secondary', size: 'sm', tone: 'dark' })
-                    }),
-                      currentService ? (SERVICE_LOGOS[currentService.id]
-                        ? React.createElement('span', { style: { width: '14px', height: '14px', display: 'inline-flex', flexShrink: 0 } },
-                            React.cloneElement(SERVICE_LOGOS[currentService.id], { className: '', style: { width: '14px', height: '14px' } }))
-                        : React.createElement('span', { style: { fontSize: '12px' } }, currentService.icon || currentService.manifest?.icon || '🤖')) : null,
-                      currentService?.name || currentService?.manifest?.name || 'Select',
-                      React.createElement(Icons.ChevronDown, { size: 10, style: { transform: t.open ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' } })
-                    )
+                    services: enabledServices,
+                    value: selectedChatProvider,
+                    onChange: (newProvider, service) => {
+                      // Save current provider's history before switching
+                      if (selectedChatProvider && selectedChatProvider !== newProvider && aiChatMessages.length > 0) {
+                        aiChatHistoriesRef.current[selectedChatProvider] = aiChatMessages;
+                      }
+                      setSelectedChatProvider(newProvider);
+                      // Clear current chat service so it recreates with new provider
+                      aiChatServiceRef.current = null;
+                      // Load saved chat history for this provider (or empty if none)
+                      const savedHistory = aiChatHistoriesRef.current[newProvider] || [];
+                      setAiChatMessages(savedHistory);
+                      // Update sidebar with new provider and loaded messages
+                      setResultsSidebar(prev => ({
+                        ...prev,
+                        subtitle: service.name || service.manifest?.name,
+                        provider: { id: service.id, name: service.name || service.manifest?.name, icon: service.icon || service.manifest?.icon },
+                        messages: savedHistory
+                      }));
+                    },
                   });
                 })()
               )
@@ -43514,10 +43497,14 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                 style: { padding: '12px', borderTop: '1px solid var(--on-dark-line)' }
               },
                 React.createElement('div', { className: 'flex gap-2' },
-                  React.createElement('input', {
-                    type: 'text',
+                  // The shared text field (components/fields.js), dark tone.
+                  React.createElement(TextField, {
+                    tone: 'dark',
+                    pill: true,
+                    wrapClassName: 'flex-1 min-w-0',
+                    className: 'w-full',
                     value: aiChatInput,
-                    onChange: (e) => setAiChatInput(e.target.value),
+                    onChange: setAiChatInput,
                     onKeyDown: (e) => {
                       e.stopPropagation();
                       if (e.key === 'Enter' && aiChatInput.trim() && !aiChatLoading) {
@@ -43532,19 +43519,9 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                     },
                     placeholder: 'Ask Shuffleupagus…',
                     disabled: aiChatLoading,
-                    style: {
-                      flex: 1,
-                      backgroundColor: 'var(--on-dark-faint)',
-                      border: '1px solid var(--on-dark-border)',
-                      borderRadius: '16px',
-                      padding: '10px 16px',
-                      fontSize: '14px',
-                      color: 'var(--on-dark-primary)'
-                    },
-                    onFocus: (e) => { e.target.style.borderColor = 'var(--accent-primary-alpha-50)'; },
-                    onBlur: (e) => { e.target.style.borderColor = 'var(--on-dark-border)'; }, 'aria-label': 'Ask Shuffleupagus'
+                    'aria-label': 'Ask Shuffleupagus'
                   }),
-                  React.createElement(Button, { variant: 'primary', size: 'sm', className: 'w-10 h-10 !p-0 !rounded-full transition-transform hover:scale-105', onClick: () => aiChatInput.trim() && !aiChatLoading && handleAiChatSend(aiChatInput), disabled: !aiChatInput.trim() || aiChatLoading, 'aria-label': 'Send', 'data-tooltip': 'Send' }, aiChatLoading
+                  React.createElement(Button, { variant: 'primary', size: 'sm', className: 'w-9 h-9 !p-0 !rounded-full transition-transform hover:scale-105', onClick: () => aiChatInput.trim() && !aiChatLoading && handleAiChatSend(aiChatInput), disabled: !aiChatInput.trim() || aiChatLoading, 'aria-label': 'Send', 'data-tooltip': 'Send' }, aiChatLoading
                       ? React.createElement(Icons.Spinner, { size: 16 })
                       : React.createElement(Icons.ArrowRight, { className: 'w-4 h-4', strokeWidth: 2 }))
                 ),
@@ -43556,47 +43533,21 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                   resultsSidebar.messages && resultsSidebar.messages.length > 0
                     ? React.createElement(Button, { variant: 'text', size: 'sm', tone: 'dark', onClick: clearAiChatHistory }, 'Clear conversation')
                     : React.createElement('div'),
-                  // Share my data toggle (right)
-                  React.createElement('label', {
-                    style: { display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', userSelect: 'none', padding: '4px 8px' },
-                    title: aiIncludeHistory ? 'Sharing your data with AI' : 'Not sharing your data with AI'
-                  },
-                    React.createElement('span', {
+                  // Share my data toggle (right): the shared switch, dark tone.
+                  React.createElement('div', { className: 'flex items-center', style: { gap: '8px', padding: '4px 8px' } },
+                    React.createElement('label', {
+                      htmlFor: 'ai-chat-share-data',
+                      className: 'cursor-pointer select-none',
                       style: { fontSize: '12px', color: 'var(--on-dark-secondary)', whiteSpace: 'nowrap' }
                     }, 'Share my data'),
-                    React.createElement('input', {
-                      type: 'checkbox',
+                    React.createElement(Switch, {
+                      id: 'ai-chat-share-data',
+                      size: 'sm',
+                      tone: 'dark',
                       checked: aiIncludeHistory,
-                      onChange: (e) => setAiIncludeHistory(e.target.checked),
-                      style: { position: 'absolute', opacity: 0, width: 0, height: 0 }
-                    }),
-                    // Toggle track
-                    React.createElement('div', {
-                      style: {
-                        position: 'relative',
-                        width: '28px',
-                        height: '16px',
-                        borderRadius: '8px',
-                        backgroundColor: aiIncludeHistory ? 'var(--accent-fill)' : 'var(--on-dark-fill)',
-                        transition: 'background-color 0.2s',
-                        flexShrink: 0
-                      }
-                    },
-                      // Toggle knob
-                      React.createElement('div', {
-                        style: {
-                          position: 'absolute',
-                          top: '2px',
-                          left: aiIncludeHistory ? '14px' : '2px',
-                          width: '12px',
-                          height: '12px',
-                          borderRadius: '50%',
-                          backgroundColor: 'var(--card-bg)',
-                          boxShadow: 'var(--shadow-xs)',
-                          transition: 'left 0.2s'
-                        }
-                      })
-                    )
+                      onToggle: () => setAiIncludeHistory(!aiIncludeHistory),
+                      'data-tooltip': aiIncludeHistory ? 'Sharing your listening with Shuffleupagus' : 'Not sharing your listening with Shuffleupagus'
+                    })
                   )
                 )
               )
@@ -45406,34 +45357,20 @@ React.createElement('div', {
                   options = [];
                 }
 
-                return React.createElement('select', {
+                // The shared select (components/fields.js).
+                return React.createElement(Select, {
                   'aria-label': 'Model',
                   value: metaServiceConfigs[selectedResolver.id]?.model || modelSetting?.default || '',
-                  onChange: (e) => {
+                  onChange: (model) => {
                     saveMetaServiceConfig(selectedResolver.id, {
                       ...metaServiceConfigs[selectedResolver.id],
-                      model: e.target.value
+                      model
                     });
                   },
                   disabled: isLoading,
-                  style: {
-                    width: '100%',
-                    padding: '10px 12px',
-                    fontSize: '13px',
-                    color: 'var(--text-primary)',
-                    backgroundColor: 'var(--card-bg)',
-                    border: '1px solid var(--border-subtle)',
-                    borderRadius: '8px',
-                    cursor: isLoading ? 'wait' : 'pointer',
-                    opacity: isLoading ? 0.6 : 1
-                  }
-                },
-                  isLoading
-                    ? React.createElement('option', { value: '' }, 'Loading models…')
-                    : options.map(opt =>
-                        React.createElement('option', { key: opt.value, value: opt.value }, opt.label)
-                      )
-                );
+                  className: 'w-full',
+                  options: isLoading ? [{ value: '', label: 'Loading models…' }] : options
+                });
               })()
             ),
             // Additional configurable fields (API dialect, base URL, token limits, ...)
@@ -45445,15 +45382,6 @@ React.createElement('div', {
               .filter(([fieldKey, fieldSetting]) => fieldSetting && fieldKey !== 'model' && fieldKey !== authFieldKey)
               .map(([fieldKey, fieldSetting]) => {
                 const savedValue = metaServiceConfigs[selectedResolver.id]?.[fieldKey];
-                const fieldInputStyle = {
-                  width: '100%',
-                  padding: '10px 12px',
-                  fontSize: '13px',
-                  color: 'var(--text-primary)',
-                  backgroundColor: 'var(--card-bg)',
-                  border: '1px solid var(--border-subtle)',
-                  borderRadius: '8px'
-                };
                 // Changing the endpoint or dialect can change the model list — refresh it
                 const refetchModels = (fieldKey === 'baseUrl' || fieldKey === 'endpoint' || fieldKey === 'api')
                   ? (newValue) => {
@@ -45486,22 +45414,19 @@ React.createElement('div', {
                     }
                   }, fieldSetting.description),
                   fieldSetting.type === 'select'
-                    ? React.createElement('select', {
+                    ? React.createElement(Select, {
                         'aria-label': fieldSetting.label || fieldKey,
                         value: savedValue || fieldSetting.default || (fieldSetting.options?.[0]?.value ?? ''),
-                        onChange: (e) => {
+                        onChange: (v) => {
                           saveMetaServiceConfig(selectedResolver.id, {
                             ...metaServiceConfigs[selectedResolver.id],
-                            [fieldKey]: e.target.value
+                            [fieldKey]: v
                           });
-                          if (refetchModels) refetchModels(e.target.value);
+                          if (refetchModels) refetchModels(v);
                         },
-                        style: { ...fieldInputStyle, cursor: 'pointer' }
-                      },
-                        (fieldSetting.options || []).map(opt =>
-                          React.createElement('option', { key: opt.value, value: opt.value }, opt.label)
-                        )
-                      )
+                        className: 'w-full',
+                        options: fieldSetting.options || []
+                      })
                     : React.createElement(TextField, { defaultValue: savedValue || fieldSetting.default || '', placeholder: fieldSetting.placeholder || '', onBlur: (e) => {
                           saveMetaServiceConfig(selectedResolver.id, {
                             ...metaServiceConfigs[selectedResolver.id],
@@ -45684,34 +45609,20 @@ React.createElement('div', {
                   ];
                 }
 
-                return React.createElement('select', {
+                // The shared select (components/fields.js).
+                return React.createElement(Select, {
                   'aria-label': 'Model',
                   value: metaServiceConfigs[selectedResolver.id]?.model || modelSetting?.default || 'llama3.1',
-                  onChange: (e) => {
+                  onChange: (model) => {
                     saveMetaServiceConfig(selectedResolver.id, {
                       ...metaServiceConfigs[selectedResolver.id],
-                      model: e.target.value
+                      model
                     });
                   },
                   disabled: isLoading,
-                  style: {
-                    width: '100%',
-                    padding: '10px 12px',
-                    fontSize: '13px',
-                    color: 'var(--text-primary)',
-                    backgroundColor: 'var(--card-bg)',
-                    border: '1px solid var(--border-subtle)',
-                    borderRadius: '8px',
-                    cursor: isLoading ? 'wait' : 'pointer',
-                    opacity: isLoading ? 0.6 : 1
-                  }
-                },
-                  isLoading
-                    ? React.createElement('option', { value: '' }, 'Loading models…')
-                    : options.map(opt =>
-                        React.createElement('option', { key: opt.value, value: opt.value }, opt.label)
-                      )
-                );
+                  className: 'w-full',
+                  options: isLoading ? [{ value: '', label: 'Loading models…' }] : options
+                });
               })()
             ),
             // Enable toggle
@@ -46280,22 +46191,22 @@ React.createElement('div', {
             // model list is the plugin's (the marketplace entry has none).
             metaServices.some(m => m.id === selectedMarketplaceItem.id) && React.createElement('div', { className: 'mt-4 space-y-2' },
               React.createElement('label', { className: 'block text-sm text-ink-secondary' }, 'Model'),
-              React.createElement('select', {
+              // The shared select (components/fields.js).
+              React.createElement(Select, {
                 'aria-label': 'Model',
                 defaultValue: metaServiceConfigs[selectedMarketplaceItem.id]?.model
                   || (metaServices.find(m => m.id === selectedMarketplaceItem.id) || selectedMarketplaceItem).settings?.configurable?.model?.default,
-                onChange: (e) => {
+                onChange: (model) => {
                   saveMetaServiceConfig(selectedMarketplaceItem.id, {
                     ...metaServiceConfigs[selectedMarketplaceItem.id],
-                    model: e.target.value
+                    model
                   });
                 },
-                className: 'w-full px-3 py-2 border border-line-strong rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent bg-surface-card'
-              },
+                className: 'w-full',
                 // The plugin's own model list (audit bug 30): the models it
                 // fetched, else its manifest's fallbackOptions. This used to
                 // be a hard-coded list that drifted from the plugins.
-                (() => {
+                options: (() => {
                   const plugin = metaServices.find(m => m.id === selectedMarketplaceItem.id) || selectedMarketplaceItem;
                   const modelSetting = plugin.settings?.configurable?.model || plugin.manifest?.settings?.configurable?.model;
                   const fetched = dynamicModelOptions[selectedMarketplaceItem.id]?.options;
@@ -46303,9 +46214,9 @@ React.createElement('div', {
                     .map(o => (typeof o === 'string' ? { value: o, label: o } : o));
                   const current = metaServiceConfigs[selectedMarketplaceItem.id]?.model;
                   if (current && !options.some(o => o.value === current)) options.unshift({ value: current, label: current });
-                  return options.map(o => React.createElement('option', { key: o.value, value: o.value }, o.label || o.value));
+                  return options.map(o => ({ value: o.value, label: o.label || o.value }));
                 })()
-              )
+              })
             )
           ),
 
@@ -46650,58 +46561,35 @@ React.createElement('div', {
       }
     }),
 
-    // Add to Playlist Slide-out Panel - refined styling
-    addToPlaylistPanel.open && React.createElement('div', {
-      className: 'fixed inset-0 z-50',
-      style: { pointerEvents: 'none' }
-    },
-      // Backdrop (only covers area outside sidebar)
-      React.createElement('div', { role: 'presentation', 'aria-hidden': 'true',
-        className: 'absolute inset-0 transition-opacity',
-        style: {
-          left: '256px',
-          pointerEvents: 'auto',
-          backgroundColor: 'var(--scrim-soft)'
-        },
-        onClick: closeAddToPlaylistPanel,
-        onDragOver: (e) => {
-          e.preventDefault();
-        },
-        onDrop: (e) => {
-          e.preventDefault();
-        }
-      }),
-
-      // Panel - positioned at right edge of sidebar, full height above playbar.
-      // A dialog: it takes focus, Escape closes it (an inner field that
-      // handles Escape itself stops it first).
-      React.createElement('div', {
-        ref: addPanelRef,
-        role: 'dialog',
-        'aria-modal': 'true',
-        'aria-label': 'Add to playlist',
-        tabIndex: -1,
-        onKeyDown: (e) => { if (e.key === 'Escape' && !e.defaultPrevented) { e.stopPropagation(); closeAddToPlaylistPanel(); } },
-        className: 'absolute flex flex-col',
-        style: {
-          left: '256px',
-          top: '0',
-          bottom: '85px',
-          width: '384px',
-          pointerEvents: 'auto',
-          backgroundColor: 'var(--card-bg)',
-          borderRadius: '0 16px 16px 0',
-          boxShadow: 'var(--shadow-dialog)',
-          overflow: 'hidden'
-        },
-        onDragOver: (e) => {
-          // Allow drag events to pass through to children
-          e.preventDefault();
-        },
-        onDrop: (e) => {
-          e.preventDefault();
-        }
+    // Add to Playlist slide-out: the shared SidePanel (components/modal.js),
+    // a dialog beside the sidebar. Focus moves in, is trapped and comes back;
+    // Escape closes it (an inner field that handles Escape stops it first).
+    addToPlaylistPanel.open && React.createElement(SidePanel, {
+      onClose: closeAddToPlaylistPanel,
+      label: 'Add to playlist',
+      // The scrim leaves the sidebar uncovered (drag a track onto it).
+      scrimStyle: { left: '256px' },
+      scrimProps: {
+        onDragOver: (e) => { e.preventDefault(); },
+        onDrop: (e) => { e.preventDefault(); }
       },
+      // Positioned at the right edge of the sidebar, full height above the playbar.
+      panelStyle: {
+        left: '256px',
+        top: '0',
+        bottom: '85px',
+        width: '384px',
+        backgroundColor: 'var(--card-bg)',
+        borderRadius: '0 16px 16px 0',
+        boxShadow: 'var(--shadow-dialog)',
+        overflow: 'hidden'
+      },
+      panelProps: {
+        // Allow drag events to pass through to children
+        onDragOver: (e) => { e.preventDefault(); },
+        onDrop: (e) => { e.preventDefault(); }
+      }
+    },
         // Header with title - matches Playlists view header gradient
         React.createElement('div', {
           style: {
@@ -47202,7 +47090,6 @@ React.createElement('div', {
             });
           })()
         )
-      )
     ),
 
     // ID3 Tag Editor Modal
@@ -47474,87 +47361,45 @@ React.createElement('div', { style: { marginTop: '12px' } },
     // Page-header context menu (power-user feature, tooltip-styled).
     // Always offers "Copy parachord:// link"; when the current view maps to
     // an Achordion entity (artist or album), shows "Copy link" first.
-    parachordLinkMenu && (() => {
-      const itemStyle = {
-        padding: '8px 14px',
-        fontSize: '12px',
-        fontWeight: '500',
-        color: 'var(--on-accent)',
-        whiteSpace: 'nowrap',
-        cursor: 'pointer',
-        userSelect: 'none',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '8px'
-      };
-      const copyIcon = () => React.createElement(Icons.Copy, { size: 14 });
-      const items = [];
-      if (parachordLinkMenu.achordionShare) {
-        items.push(
-          React.createElement('button', { type: 'button', className: 'w-full text-left hover:!opacity-[0.85]',
-            key: 'achordion',
-            onClick: (e) => {
-              e.stopPropagation();
-              try { parachordLinkMenu.achordionShare.run(); } catch (err) { console.warn('[CopyLink] menu run failed:', err); }
-              setParachordLinkMenu(null);
-            },
-            style: itemStyle,
-          }, copyIcon(), 'Copy Link')
-        );
-        if (parachordLinkMenu.achordionShare.runView) {
-          items.push(
-            React.createElement('button', { type: 'button', className: 'w-full text-left hover:!opacity-[0.85]',
-              key: 'achordion-view',
-              onClick: (e) => {
-                e.stopPropagation();
-                try { parachordLinkMenu.achordionShare.runView(); } catch (err) { console.warn('[ViewAchordion] menu run failed:', err); }
-                setParachordLinkMenu(null);
-              },
-              style: itemStyle,
-            },
-              React.createElement(Icons.ExternalLink, { size: 14 }),
-              'View on Achordion'
-            )
-          );
-        }
-      }
-      items.push(
-        React.createElement('button', { type: 'button', className: 'w-full text-left hover:!opacity-[0.85]',
-          key: 'parachord',
-          onClick: (e) => {
-            e.stopPropagation();
-            navigator.clipboard.writeText(parachordLinkMenu.link).then(() => {
-              showToast(`Copied ${parachordLinkMenu.link}`, 'success');
-            }).catch(() => {
-              showToast('Failed to copy link', 'error');
-            });
-            setParachordLinkMenu(null);
-          },
-          style: itemStyle,
-        }, copyIcon(), 'Copy parachord:// Link')
-      );
-      return React.createElement('div', {
-        // The scrim: a click outside closes the menu (Escape does too).
-        role: 'presentation',
-        className: 'fixed inset-0 z-[70]',
-        onClick: () => setParachordLinkMenu(null),
-        onContextMenu: (e) => { e.preventDefault(); setParachordLinkMenu(null); },
-        style: { cursor: 'default' }
-      },
-        React.createElement('div', {
-          style: {
-            position: 'fixed',
-            left: `${parachordLinkMenu.x}px`,
-            top: `${parachordLinkMenu.y}px`,
-            backgroundColor: 'var(--tooltip-bg)',
-            borderRadius: '8px',
-            boxShadow: 'var(--shadow-popover)',
-            overflow: 'hidden',
-            zIndex: 9999
+    parachordLinkMenu && React.createElement(ContextMenu, {
+      // The shared menu at the pointer (components/menu.js): its look,
+      // keyboard handling and placement.
+      label: 'Link',
+      at: { x: parachordLinkMenu.x, y: parachordLinkMenu.y },
+      onClose: () => setParachordLinkMenu(null),
+      items: [
+        parachordLinkMenu.achordionShare && {
+          key: 'achordion',
+          label: 'Copy link',
+          icon: React.createElement(Icons.Copy, { size: 14 }),
+          onSelect: () => {
+            try { parachordLinkMenu.achordionShare.run(); } catch (err) { console.warn('[CopyLink] menu run failed:', err); }
           }
-        }, ...items)
-      );
-    })(),
+        },
+        parachordLinkMenu.achordionShare && parachordLinkMenu.achordionShare.runView && {
+          key: 'achordion-view',
+          label: 'View on Achordion',
+          icon: React.createElement(Icons.ExternalLink, { size: 14 }),
+          onSelect: () => {
+            try { parachordLinkMenu.achordionShare.runView(); } catch (err) { console.warn('[ViewAchordion] menu run failed:', err); }
+          }
+        },
+        {
+          key: 'parachord',
+          label: 'Copy parachord:// link',
+          icon: React.createElement(Icons.Copy, { size: 14 }),
+          onSelect: () => {
+            const link = parachordLinkMenu.link;
+            navigator.clipboard.writeText(link).then(() => {
+              showToast(`Copied ${link}`, 'success');
+            }).catch((err) => {
+              console.error('Copy link failed:', err);
+              showToast('Couldn’t copy the link. Try again.', 'error');
+            });
+          }
+        }
+      ]
+    }),
 
     // Confirmation Dialog Modal - refined styling
     // The confirm dialog (showConfirmDialog), on the shared Modal (#1385).
@@ -47827,24 +47672,19 @@ React.createElement('div', {
                   className: 'flex items-center gap-3 cursor-pointer transition-colors',
                   style: {
                     padding: '14px 16px',
-                    backgroundColor: syncSetupModal.settings[option.key] ? `${providerColor}10` : 'var(--hover-bg-default)',
+                    backgroundColor: syncSetupModal.settings[option.key] ? `color-mix(in srgb, ${providerColor} 6%, transparent)` : 'var(--hover-bg-default)',
                     borderRadius: '12px',
-                    border: syncSetupModal.settings[option.key] ? `1px solid ${providerColor}4D` : '1px solid var(--border-subtle)'
+                    border: syncSetupModal.settings[option.key] ? `1px solid color-mix(in srgb, ${providerColor} 30%, transparent)` : '1px solid var(--border-subtle)'
                   }
                 },
-                  React.createElement('input', {
-                    type: 'checkbox',
+                  React.createElement(Checkbox, {
+                    size: 'md',
+                    color: providerColor,
                     checked: syncSetupModal.settings[option.key],
-                    onChange: (e) => setSyncSetupModal(prev => ({
+                    onChange: (checked) => setSyncSetupModal(prev => ({
                       ...prev,
-                      settings: { ...prev.settings, [option.key]: e.target.checked }
-                    })),
-                    style: {
-                      width: '18px',
-                      height: '18px',
-                      accentColor: providerColor,
-                      cursor: 'pointer'
-                    }
+                      settings: { ...prev.settings, [option.key]: checked }
+                    }))
                   }),
                   React.createElement('div', null,
                     React.createElement('div', { style: { fontSize: '14px', fontWeight: '500', color: 'var(--text-primary)' } }, option.label),
@@ -47951,18 +47791,17 @@ React.createElement('div', {
                             backgroundColor: syncSetupModal.selectedPlaylists.includes(playlist.externalId) ? `color-mix(in srgb, ${syncProviderConfig[syncSetupModal.providerId]?.color || 'var(--accent-fill)'} 6%, transparent)` : 'transparent'
                           },
                         },
-                          React.createElement('input', {
-                            type: 'checkbox',
+                          React.createElement(Checkbox, {
+                            color: syncProviderConfig[syncSetupModal.providerId]?.color,
                             checked: syncSetupModal.selectedPlaylists.includes(playlist.externalId),
-                            onChange: (e) => {
+                            onChange: (checked) => {
                               setSyncSetupModal(prev => ({
                                 ...prev,
-                                selectedPlaylists: e.target.checked
+                                selectedPlaylists: checked
                                   ? [...prev.selectedPlaylists, playlist.externalId]
                                   : prev.selectedPlaylists.filter(id => id !== playlist.externalId)
                               }));
-                            },
-                            style: { width: '16px', height: '16px', accentColor: syncProviderConfig[syncSetupModal.providerId]?.color || 'var(--accent-fill)', cursor: 'pointer' }
+                            }
                           }),
                           playlist.image && React.createElement('img', {
                             src: playlist.image,
@@ -48004,21 +47843,15 @@ React.createElement('div', {
                 border: syncSetupModal.settings.pushLocalPlaylists ? `1px solid color-mix(in srgb, ${syncProviderConfig.listenbrainz?.color || 'var(--accent-fill)'} 30%, transparent)` : '1px solid var(--border-subtle)'
               }
             },
-              React.createElement('input', {
-                type: 'checkbox',
+              React.createElement(Checkbox, {
+                size: 'md',
+                color: syncProviderConfig.listenbrainz?.color,
                 checked: !!syncSetupModal.settings.pushLocalPlaylists,
-                onChange: (e) => setSyncSetupModal(prev => ({
+                onChange: (checked) => setSyncSetupModal(prev => ({
                   ...prev,
-                  settings: { ...prev.settings, pushLocalPlaylists: e.target.checked }
+                  settings: { ...prev.settings, pushLocalPlaylists: checked }
                 })),
-                style: {
-                  width: '18px',
-                  height: '18px',
-                  marginTop: '2px',
-                  accentColor: syncProviderConfig.listenbrainz?.color || 'var(--accent-fill)',
-                  cursor: 'pointer',
-                  flexShrink: 0
-                }
+                style: { marginTop: '2px' }
               }),
               React.createElement('div', null,
                 React.createElement('div', { style: { fontSize: '14px', fontWeight: '500', color: 'var(--text-primary)' } }, 'Push my Parachord playlists to ListenBrainz'),

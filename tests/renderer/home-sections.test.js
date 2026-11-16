@@ -534,7 +534,7 @@ describe('AskShuffleupagus', () => {
   test('once the user types, a new example never overwrites it', () => {
     const render = askHarness();
     const input = render({ initialPrompt: 'Make me a playlist', chatAvailable: true });
-    input.props.onChange({ target: { value: 'my own words' } });
+    input.props.onChange('my own words');
     expect(render({ initialPrompt: 'Make me a playlist', chatAvailable: true }).props.value).toBe('my own words');
     expect(render({ initialPrompt: 'Songs that sound like Frog', chatAvailable: true }).props.value).toBe('my own words');
   });

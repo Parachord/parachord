@@ -234,7 +234,9 @@ Components use `React.createElement()` (no JSX) and live in `src/renderer/compon
 | A button | `Button` | `button.js` | `variant`: primary (one per view), secondary, destructive, text, icon (needs `aria-label`); `size` sm/md; `busy`; `tone: 'dark'` on the always-dark surfaces; `pageColor` for a hero's fill |
 | A page or drawer header's Close / Edit / Save / Cancel | `HeaderControl` | `header-control.js` | The shared `Button`, small and sentence case; `close` is an icon-only ✕ with its label as name and tooltip; tones default / primary / dark |
 | A dialog | `Modal` | `modal.js` | Focus moves in and comes back, Escape and the scrim close it, one title size and three widths. `ConfirmModal` for confirm/cancel (the confirm button named for its action, `destructive` for red); `DontShowAgain` for the checkbox |
+| A panel that slides out beside the sidebar (Add to playlist) | `SidePanel` | `modal.js` | `Modal`'s focus handling and labelling; Escape goes to an inner field first; its scrim can leave the sidebar uncovered |
 | A success, info or error message | `showToast(message, type, action, options)` | `toast.js` (`ToastRegion`) | Success is a toast, never a dialog |
+| A menu at the pointer whose actions run in the page (the header's Copy link) | `ContextMenu` | `menu.js` | `Menu`'s panel, keys and look at `{ x, y }`, kept inside the window |
 | A menu (right-click or "More") | `Menu`, items from `lib/item-menus.js` | `menu.js` | Portalled, keyboard and typeahead, flips up near the bottom; the dark 12px look. An item's `toggle` puts an on/off switch (a `menuitemcheckbox`) beside it |
 | A sort control | `SortMenu` | `sort-menu.js` | |
 | A clickable card or row | `CardButton` | `card-button.js` | A stretched `<button>` under the card; inner buttons sit above it; `onContextMenu` also opens on Shift+F10 / the Menu key; `tooltip` for a whole-card note. Use the cards and `TrackRow` below first; `CardButton` is what they are built on |
@@ -260,7 +262,8 @@ Components use `React.createElement()` (no JSX) and live in `src/renderer/compon
 | Pick-one filter buttons | `FilterChips` | `filter-chips.js` | Home's source filter style |
 | Tabs in a hero | `HeroTabs` | `hero-tabs.js` | `role="tablist"`, arrow keys |
 | A section of Settings (its card and heading) | `SettingsSection` | `settings-cards.js` | The card, the small-capitals heading (written in Title Case), an optional line under it |
-| A setting row, text field, secret field, select, switch or radio group | `SettingRow`, `TextField`, `SecretField`, `Select`, `Switch`, `RadioGroup` | `fields.js` | Every field has a label; on/off is always a `Switch` |
+| A setting row, text field, secret field, select, checkbox, slider, switch or radio group | `SettingRow`, `TextField`, `SecretField`, `Select`, `Checkbox`, `Slider`, `Switch`, `RadioGroup` | `fields.js` | Every field has a label; on/off in a setting is a `Switch`; `tone: 'dark'` on the dark panels; no raw `<input>` / `<select>` (`inputCopies` 0) |
+| The AI provider picker | `ProviderMenu` | `provider-menu.js` | The shared `Menu` of AI plug-ins, on both Shuffleupagus panels |
 | A pick-one row of equal tiles, each with an icon (Settings' theme) | `SegmentedChoice` | `fields.js` | `role="radiogroup"`; the current tile has an accent border and tint |
 | Nothing to show yet / a load that failed | `EmptyState` / `ErrorState` | `states.js` | `ErrorState` has "Try again" (`onRetry`); `tone: 'dark'` on the dark panels, `icon: null` for none |
 | A loading placeholder (the playbar's three now-playing lines: `PlaybarLineSkeleton`, `playbar-skeleton.js`; a concert list: `ConcertListSkeleton`, `concert-skeletons.js`) | `CardSkeleton` (one card, any grid; `CardRowSkeleton` for Home's rows), `ArtistCardSkeleton` (an artist card), `TrackRowSkeleton` (a track row, `TrackRow`'s own columns), `ConcertListSkeleton` (a month of concert rows: `photo: true` for the Concerts page's row, without for an artist's On tour), the page's skeletons | `home-skeletons.js`, `track-lists.js`, `recommendation-skeletons.js`, `concert-skeletons.js` | Same box and columns as the content (see Shimmer classes), so nothing jumps when it lands |
@@ -284,7 +287,7 @@ Components use `React.createElement()` (no JSX) and live in `src/renderer/compon
 
 | Module | Exports |
 |--------|---------|
-| `button.js`, `header-control.js`, `modal.js`, `toast.js`, `menu.js`, `sort-menu.js`, `card-button.js`, `section-header.js`, `filter-chips.js` (`FilterChips`, `Chip`), `filter-box.js` (`FilterBox`, `StickyBar`), `hero-tabs.js`, `page-hero.js`, `badge.js`, `fields.js`, `states.js`, `reason-badge.js`, `keyboard-shortcuts.js`, `whats-new-dialog.js`, `option-tile.js`, `list-row.js`, `nav-item.js` (`NavItem`, `NavSearch`), `tickets-button.js`, `collection-radio-button.js`, `queue-context-bar.js` | The shared controls in the table above, the keyboard shortcuts dialog and What's New |
+| `button.js`, `header-control.js`, `modal.js`, `toast.js`, `menu.js`, `provider-menu.js`, `sort-menu.js`, `card-button.js`, `section-header.js`, `filter-chips.js` (`FilterChips`, `Chip`), `filter-box.js` (`FilterBox`, `StickyBar`), `hero-tabs.js`, `page-hero.js`, `badge.js`, `fields.js`, `states.js`, `reason-badge.js`, `keyboard-shortcuts.js`, `whats-new-dialog.js`, `option-tile.js`, `list-row.js`, `nav-item.js` (`NavItem`, `NavSearch`), `tickets-button.js`, `collection-radio-button.js`, `queue-context-bar.js` | The shared controls in the table above, the keyboard shortcuts dialog and What's New |
 | `album-card.js`, `playlist-card.js`, `artist-card.js`, `listener-card.js`, `card-art.js` | The cards, and the art and overlay they share |
 | `ui-atoms.js` | `Tooltip`, `FixedTooltip`, `TooltipLayer`, `placeTooltip`, `PlaybackProgress`, `ShareButton`; re-exports the logo kit |
 | `brand-logos.js` | `ResolverIcon`, `SERVICE_LOGO_PATHS` / `_IMAGES`, `SERVICE_LOGOS`, `BRAND_MARKS` / `BrandMark`, `ParachordWordmark`, `BRAND_COLORS` |
@@ -610,7 +613,7 @@ Navigation history is maintained with `viewHistory` and `forwardHistory` arrays 
 - Main content width is tracked via `ResizeObserver` on the content container
 - Search results grid adjusts item count based on `searchContainerWidth`
 - Artist cards accept `itemWidth` prop for responsive sizing
-- **Card grids use `.card-grid`** (`index.html`): `repeat(auto-fill, minmax(180px, 1fr))`, as many columns as the content area holds; the grid's own gap class sets the spacing, and its skeleton uses the same class. Never Tailwind's `sm:`/`md:`/`lg:`/`xl:` for columns: they measure the **window**, not the content area (at the 1000px minimum window the content is only 744px wide).
+- **Card grids use `.card-grid`** (`index.html`): `repeat(auto-fill, minmax(180px, 1fr))`, as many columns as the content area holds; the grid's own gap class sets the spacing, and its skeleton uses the same class. Never Tailwind's `sm:`/`md:`/`lg:`/`xl:` for columns: they measure the **window**, not the content area (at the 1000px minimum window the content is only 744px wide). The Size setting (zoom, `main-process/ui-zoom.js`) raises the window's minimum with the zoom, so this holds at every size.
 
 ---
 
@@ -632,6 +635,7 @@ All scrollbars use rounded thumbs (`border-radius: 10px` or `3px`) with transpar
 
 - **Keyboard focus:** `:focus-visible` shows a `2px solid var(--accent-primary)` outline with `2px` offset
 - **Mouse focus:** `:focus:not(:focus-visible)` suppresses the outline
+- **After a click, no ring at all:** `lib/input-modality.js` sets `<html data-input="pointer">` on pointer down and `"keyboard"` on a key (a modifier alone doesn't count); `html[data-input="pointer"] :focus-visible` drops the outline, Tailwind's ring and the menu items' inset. Chromium matches `:focus-visible` when code moves focus after a click on something that can't hold it (a right-click menu, a dialog, the Add to playlist panel), which lit the ring for mouse users. A text field keeps its accent border
 - **Filter pill focus:** `.filter-pill:focus-within` highlights the outer border, suppressing inner input outline
 - **Text selection:** `.no-select` disables user selection in non-editable areas
 - **Window dragging:** `.drag` / `.no-drag` control Electron's window drag regions
@@ -640,15 +644,12 @@ All scrollbars use rounded thumbs (`border-radius: 10px` or `3px`) with transpar
 
 ## Slider Controls
 
-### Progress Slider (`.progress-slider`)
+Every slider is `Slider` (`fields.js`) on one class, `.slider` in `index.html` (the seek bar's and volume's own copies, `.progress-slider` and `.volume-slider`, are gone):
 
-- Track: 4px height, `#4b5563`, rounded
-- Thumb: 12px circle, `#3b82f6` (hover: `#60a5fa`, disabled: `#6b7280`)
-
-### Volume Slider (`.volume-slider`)
-
-- Same dimensions as progress slider
-- Disabled state uses `.disabled` class modifier
+- Track: 4px, 2px radius, `--slider-track` (`--control-off`; `--on-dark-track` in `.slider-dark`)
+- Thumb: 12px circle, `--slider-fill` (`--accent-fill`, or the `color` prop: Concerts' radius is the page's teal; `--playbar-accent` in `.slider-dark`), its hover `--slider-fill-hover`
+- Disabled: `--slider-disabled` thumb on `--slider-track-disabled`
+- `tone: 'dark'` on the playbar (seek and volume); `onChange` gets a number
 
 ---
 
