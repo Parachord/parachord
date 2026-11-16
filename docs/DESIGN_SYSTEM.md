@@ -168,6 +168,20 @@ Certain UI elements (player bar, queue drawer, AI chat panels) remain dark regar
 
 In dark mode these surfaces are lifted slightly above `--bg-primary` so they still read as separate panels (values from `index.html`).
 
+What sits on them uses the `--on-dark-*` tokens, the same in both themes, never the page tokens (`--text-secondary` is 2.2:1 there) or palette classes. As Tailwind colours they are `text-on-dark-*` and `bg-surface-dark-placeholder` (`tailwind.config.js`).
+
+| Token | Value | For |
+|-------|-------|-----|
+| `--on-dark-primary` / `-secondary` / `-tertiary` | white at 0.95 / 0.7 / 0.55 | Text and icons: titles and active controls / idle controls and labels / hints |
+| `--on-dark-disabled` | white at 0.3 | A control that can't be used now |
+| `--on-dark-track` / `--on-dark-track-disabled` | white at 0.2 / 0.1 | A slider's track (the playbar's scrubber and volume) |
+| `--surface-dark-placeholder` | white at 0.1 | An art or text placeholder before the track loads |
+| `--on-dark-fill-muted` | white at 0.25 | A muted fill behind white text (the queue badge in Spinoff) |
+| `--on-dark-love` / `-love-hover` | `#f87171` / `#fca5a5` | The playbar's heart when the track is in the Collection |
+| `--on-dark-success` | `#4ade80` | Buy on hover |
+| `--on-dark-info` | `#a5b4fc` | The "playing in the browser" pill |
+| `--playbar-accent` / `-hover` | `#a78bfa` / `#c4b5fd` | Slider handles, and Shuffle, Repeat and Spinoff when on (the dark-mode accent, in both themes) |
+
 ---
 
 ## Tailwind Configuration

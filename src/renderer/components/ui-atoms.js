@@ -475,13 +475,13 @@ const PlaybackProgress = React.memo(function PlaybackProgress({
     'aria-valuetext': hasTrack && !browserPlaybackActive && duration
       ? `${formatTime(shown)} of ${formatTime(duration)}` : 'Nothing playing',
     onChange: (e) => onSeek(Number(e.target.value)),
-    className: `progress-slider w-full h-1 rounded-full ${seekDisabled ? 'bg-gray-600 opacity-50' : 'bg-gray-600'}`
+    className: `progress-slider w-full h-1 rounded-full ${seekDisabled ? 'opacity-50' : ''}`
   });
   // Shrinks to 120px in a narrow window (was a 200px minimum, which pushed
   // the playbar's right-hand controls off-screen below ~1120px).
   return React.createElement('div', { className: 'flex items-center gap-2', style: { minWidth: '120px' } },
     React.createElement('span', {
-      className: 'text-xs text-gray-400 tabular-nums',
+      className: 'text-xs text-on-dark-secondary tabular-nums',
       style: { width: '36px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', lineHeight: '1' }
     }, hasTrack && !browserPlaybackActive ? formatTime(shown) : '0:00'),
     React.createElement('div', { className: 'flex-1 w-24 flex items-center' },
@@ -490,7 +490,7 @@ const PlaybackProgress = React.memo(function PlaybackProgress({
         : slider
     ),
     React.createElement('span', {
-      className: 'text-xs text-gray-400 tabular-nums',
+      className: 'text-xs text-on-dark-secondary tabular-nums',
       style: { width: '36px', textAlign: 'left', fontVariantNumeric: 'tabular-nums', lineHeight: '1' }
     }, hasTrack ? formatTime(duration) : '0:00')
   );

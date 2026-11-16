@@ -172,6 +172,19 @@
       --on-dark-primary: rgba(255, 255, 255, 0.95);
       --on-dark-secondary: rgba(255, 255, 255, 0.7);
       --on-dark-tertiary: rgba(255, 255, 255, 0.55);
+      /* More for the always-dark surfaces, the same in both themes: a control
+         that can't be used now, a slider's track (and a disabled one), an
+         art or text placeholder, a muted fill behind white text, and status
+         colours that read on dark (love, buy/success, info). */
+      --on-dark-disabled: rgba(255, 255, 255, 0.3);
+      --on-dark-track: rgba(255, 255, 255, 0.2);
+      --on-dark-track-disabled: rgba(255, 255, 255, 0.1);
+      --surface-dark-placeholder: rgba(255, 255, 255, 0.1);
+      --on-dark-fill-muted: rgba(255, 255, 255, 0.25);
+      --on-dark-love: #f87171;
+      --on-dark-love-hover: #fca5a5;
+      --on-dark-success: #4ade80;
+      --on-dark-info: #a5b4fc;
       --surface-dark-gradient-from: rgba(17, 24, 39, 0.9);
       /* 0.85, not 0.5: over a light page the drawer's top was too clear for
          its text (white at 0.7 fell to 2.5:1). */
@@ -273,6 +286,19 @@
       --on-dark-primary: rgba(255, 255, 255, 0.95);
       --on-dark-secondary: rgba(255, 255, 255, 0.7);
       --on-dark-tertiary: rgba(255, 255, 255, 0.55);
+      /* More for the always-dark surfaces, the same in both themes: a control
+         that can't be used now, a slider's track (and a disabled one), an
+         art or text placeholder, a muted fill behind white text, and status
+         colours that read on dark (love, buy/success, info). */
+      --on-dark-disabled: rgba(255, 255, 255, 0.3);
+      --on-dark-track: rgba(255, 255, 255, 0.2);
+      --on-dark-track-disabled: rgba(255, 255, 255, 0.1);
+      --surface-dark-placeholder: rgba(255, 255, 255, 0.1);
+      --on-dark-fill-muted: rgba(255, 255, 255, 0.25);
+      --on-dark-love: #f87171;
+      --on-dark-love-hover: #fca5a5;
+      --on-dark-success: #4ade80;
+      --on-dark-info: #a5b4fc;
       --surface-dark-gradient-from: rgba(38, 38, 38, 0.95);
       --surface-dark-gradient-to: rgba(38, 38, 38, 0.85);
       --surface-dark-header: rgba(42, 42, 42, 0.95);
@@ -890,7 +916,7 @@
     .progress-slider::-webkit-slider-runnable-track {
       height: 4px;
       border-radius: 2px;
-      background: #4b5563;
+      background: var(--on-dark-track);
     }
 
     .progress-slider::-webkit-slider-thumb {
@@ -910,12 +936,12 @@
     }
 
     .progress-slider:disabled::-webkit-slider-thumb {
-      background: #6b7280;
+      background: var(--on-dark-disabled);
       cursor: not-allowed;
     }
 
     .progress-slider:disabled::-webkit-slider-runnable-track {
-      background: #374151;
+      background: var(--on-dark-track-disabled);
     }
 
     /* Volume slider styling */
@@ -928,7 +954,7 @@
     .volume-slider::-webkit-slider-runnable-track {
       height: 4px;
       border-radius: 2px;
-      background: #4b5563;
+      background: var(--on-dark-track);
     }
 
     .volume-slider::-webkit-slider-thumb {
@@ -947,12 +973,12 @@
     }
 
     .volume-slider.disabled::-webkit-slider-thumb {
-      background: #6b7280 !important;
+      background: var(--on-dark-disabled) !important;
       cursor: not-allowed;
     }
 
     .volume-slider.disabled::-webkit-slider-runnable-track {
-      background: #374151;
+      background: var(--on-dark-track-disabled);
     }
 
     /* Release card hover lift animation. The hover shadow is !important

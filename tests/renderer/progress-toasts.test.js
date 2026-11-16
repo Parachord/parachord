@@ -83,5 +83,5 @@ test('the queue badge shows the listen-along friend', () => {
   expect(app).toMatch(/\? React\.createElement\('span', \{\s*'data-listen-along-badge': ''/);
   // A hexagon, like every user avatar.
   expect(app).toMatch(/'data-listen-along-badge'[\s\S]{0,300}clipPath: LISTENER_HEXAGON/);
-  expect(app).toContain("backgroundColor: spinoffMode ? '#6b7280' : 'var(--accent-fill)'");
+  expect(app).toContain("backgroundColor: spinoffMode ? 'var(--on-dark-fill-muted)' : 'var(--accent-fill)'");
 });

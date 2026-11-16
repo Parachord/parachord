@@ -37449,7 +37449,8 @@ useEffect(() => {
                 className: 'ml-auto sidebar-badge',
                 style: {
                   fontSize: '11px',
-                  backgroundColor: 'var(--accent-fill)',
+                  // The page's own white-text fill (lib/page-colors.js).
+                  backgroundColor: PAGE_COLORS.playlists.fill,
                   color: 'var(--on-accent)',
                   padding: '2px 6px',
                   borderRadius: '10px'
@@ -37484,8 +37485,10 @@ useEffect(() => {
                 className: 'ml-auto sidebar-badge',
                 style: {
                   fontSize: '11px',
-                  backgroundColor: '#06b6d4',
-                  color: '#ffffff',
+                  // The page's own white-text fill (lib/page-colors.js); white
+                  // on the bright cyan was about 2.4:1.
+                  backgroundColor: PAGE_COLORS.library.fill,
+                  color: 'var(--on-accent)',
                   padding: '2px 6px',
                   borderRadius: '10px'
                 }
@@ -37537,7 +37540,8 @@ useEffect(() => {
               React.createElement('span', { className: 'flex items-center gap-1.5' },
                 'Fresh Drops',
                 showDiscoveryBadges && discoveryUnread.newReleases && React.createElement('span', {
-                  className: 'w-2 h-2 rounded-full bg-emerald-500 animate-pulse'
+                  // The page's colour (lib/page-colors.js).
+                  className: 'w-2 h-2 rounded-full animate-pulse', style: { backgroundColor: PAGE_COLORS['new-releases'].color }
                 })
               )
             ),
@@ -37555,7 +37559,8 @@ useEffect(() => {
               React.createElement('span', { className: 'flex items-center gap-1.5' },
                 "Recommendations",
                 showDiscoveryBadges && discoveryUnread.recommendations && React.createElement('span', {
-                  className: 'w-2 h-2 rounded-full bg-amber-500 animate-pulse'
+                  // The page's colour (lib/page-colors.js).
+                  className: 'w-2 h-2 rounded-full animate-pulse', style: { backgroundColor: PAGE_COLORS['recommendations'].color }
                 })
               )
             ),
@@ -37579,7 +37584,8 @@ useEffect(() => {
               React.createElement('span', { className: 'flex items-center gap-1.5' },
                 'Pop of the Tops',
                 showDiscoveryBadges && discoveryUnread.charts && React.createElement('span', {
-                  className: 'w-2 h-2 rounded-full bg-orange-500 animate-pulse'
+                  // The page's colour (lib/page-colors.js).
+                  className: 'w-2 h-2 rounded-full animate-pulse', style: { backgroundColor: PAGE_COLORS['discover'].color }
                 })
               )
             ),
@@ -37600,7 +37606,8 @@ useEffect(() => {
               React.createElement('span', { className: 'flex items-center gap-1.5' },
                 "Critical Darlings",
                 showDiscoveryBadges && discoveryUnread.criticsPicks && React.createElement('span', {
-                  className: 'w-2 h-2 rounded-full bg-red-500 animate-pulse'
+                  // The page's colour (lib/page-colors.js).
+                  className: 'w-2 h-2 rounded-full animate-pulse', style: { backgroundColor: PAGE_COLORS['critics-picks'].color }
                 })
               )
             ),
@@ -37620,7 +37627,8 @@ useEffect(() => {
               React.createElement('span', { className: 'flex items-center gap-1.5' },
                 'Concerts',
                 showDiscoveryBadges && discoveryUnread.concerts && React.createElement('span', {
-                  className: 'w-2 h-2 rounded-full bg-teal-500 animate-pulse'
+                  // The page's colour (lib/page-colors.js).
+                  className: 'w-2 h-2 rounded-full animate-pulse', style: { backgroundColor: PAGE_COLORS['concerts'].color }
                 })
               )
             ),
@@ -37781,14 +37789,19 @@ useEffect(() => {
                           alt: friend.displayName,
                           className: 'w-full h-full object-cover'
                         })
+                      // No photo: the initial on ListenerCard's neutral
+                      // gradient (components/listener-card.js), not a
+                      // purple-to-pink of its own.
                       : React.createElement('div', {
-                          className: 'w-full h-full flex items-center justify-center text-ink-tertiary text-xs font-medium bg-gradient-to-br from-purple-400 to-pink-400 text-white'
+                          className: 'w-full h-full flex items-center justify-center text-ink-tertiary text-xs font-medium',
+                          style: { background: 'linear-gradient(135deg, var(--hover-bg-subtle) 0%, var(--hover-bg-default) 100%)' }
                         }, friend.displayName.charAt(0).toUpperCase())
                   ),
                   // On-air indicator dot
                   onAir && React.createElement('div', {
-                    className: 'absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2',
-                    style: { borderColor: 'var(--bg-secondary)' }
+                    // ListenerCard's on-air colour.
+                    className: 'absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2',
+                    style: { borderColor: 'var(--bg-secondary)', backgroundColor: 'var(--success)' }
                   })
                 ),
                 // Name and track info
@@ -42698,7 +42711,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
               onClick: handlePrevious,
               disabled: !currentTrack && playHistoryRef.current.length === 0,
               className: 'p-2 rounded hover:bg-white/10 transition-colors',
-              style: { display: 'flex', alignItems: 'center', justifyContent: 'center', color: (!currentTrack && playHistoryRef.current.length === 0) ? '#4b5563' : '#ffffff', cursor: (!currentTrack && playHistoryRef.current.length === 0) ? 'not-allowed' : 'pointer' }
+              style: { display: 'flex', alignItems: 'center', justifyContent: 'center', color: (!currentTrack && playHistoryRef.current.length === 0) ? 'var(--on-dark-disabled)' : 'var(--on-dark-primary)', cursor: (!currentTrack && playHistoryRef.current.length === 0) ? 'not-allowed' : 'pointer' }
             }, React.createElement(SkipBack, { size: 18 }))
           ),
           React.createElement(Tooltip, { content: isPlaying ? 'Pause' : (playStartPending({ currentTrack, isPlaying, trackLoading, loadingTrack, resumePending }) ? 'Starting…' : 'Play'), position: 'top', variant: 'dark' },
@@ -42707,7 +42720,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
               onClick: handlePlayPause,
               disabled: !currentTrack,
               className: 'p-2 rounded hover:bg-white/10 transition-colors',
-              style: { width: '38px', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: !currentTrack ? '#4b5563' : '#ffffff', cursor: !currentTrack ? 'not-allowed' : 'pointer' }
+              style: { width: '38px', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: !currentTrack ? 'var(--on-dark-disabled)' : 'var(--on-dark-primary)', cursor: !currentTrack ? 'not-allowed' : 'pointer' }
             }, isPlaying ? React.createElement(Pause, { size: 22 }) : React.createElement(Play, { size: 22 }))
           ),
           React.createElement(Tooltip, { content: 'Next', position: 'top', variant: 'dark' },
@@ -42716,7 +42729,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
               onClick: () => handleNext(true),
               disabled: !currentTrack,
               className: 'p-2 rounded hover:bg-white/10 transition-colors',
-              style: { display: 'flex', alignItems: 'center', justifyContent: 'center', color: !currentTrack ? '#4b5563' : '#ffffff', cursor: !currentTrack ? 'not-allowed' : 'pointer' }
+              style: { display: 'flex', alignItems: 'center', justifyContent: 'center', color: !currentTrack ? 'var(--on-dark-disabled)' : 'var(--on-dark-primary)', cursor: !currentTrack ? 'not-allowed' : 'pointer' }
             }, React.createElement(SkipForward, { size: 18 }))
           ),
           // Queue button (hamburger style)
@@ -42726,7 +42739,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
               // Who decides what's next while listening along.
               'aria-description': listenAlongFriend ? `Listening along with ${listenAlongFriend.displayName || listenAlongFriend.username}` : undefined,
               onClick: () => setQueueDrawerOpen(!queueDrawerOpen),
-              className: `relative p-2 ml-1 rounded hover:bg-white/10 transition-colors ${queueDrawerOpen ? 'bg-white/20 text-white' : 'text-gray-400'} ${queueAnimating ? 'queue-pulse' : ''}`,
+              className: `relative p-2 ml-1 rounded hover:bg-white/10 transition-colors ${queueDrawerOpen ? 'bg-white/20 text-white' : 'text-on-dark-secondary'} ${queueAnimating ? 'queue-pulse' : ''}`,
               style: { display: 'flex', alignItems: 'center', justifyContent: 'center' }
             },
               // Listening along, your queue is on hold: only the icon dims,
@@ -42755,7 +42768,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                     }, !listenAlongFriend.avatarUrl && (listenAlongFriend.displayName || listenAlongFriend.username || '?').charAt(0).toUpperCase()))
                 : currentQueue.length > 0 && React.createElement('span', {
                 className: `absolute -top-1 -right-1 text-white rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1 font-medium ${queueAnimating ? 'badge-flash' : ''}`,
-                style: { fontSize: '10px', backgroundColor: spinoffMode ? '#6b7280' : 'var(--accent-fill)' }
+                style: { fontSize: '10px', backgroundColor: spinoffMode ? 'var(--on-dark-fill-muted)' : 'var(--accent-fill)' }
               }, currentQueue.length > 99 ? '99+' : currentQueue.length)
             )
           ),
@@ -42802,7 +42815,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                 disabled: !hasAnyAi,
                 className: 'p-2 ml-1 rounded transition-colors',
                 style: {
-                  color: isActive ? '#d8b4fe' : hasAnyAi ? '#9ca3af' : '#4b5563',
+                  color: isActive ? 'var(--playbar-accent-hover)' : hasAnyAi ? 'var(--on-dark-secondary)' : 'var(--on-dark-disabled)',
                   backgroundColor: isActive ? 'rgba(168, 85, 247, 0.3)' : 'transparent',
                   cursor: !hasAnyAi ? 'not-allowed' : 'pointer'
                 }
@@ -42888,7 +42901,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                 style: { position: 'relative' }
               },
                 React.createElement('div', {
-                  className: 'bg-gray-700 rounded flex items-center justify-center overflow-hidden relative',
+                  className: 'bg-surface-dark-placeholder rounded flex items-center justify-center overflow-hidden relative',
                   style: { width: '61px', height: '61px' }
                 },
                   // Previous album art (fading out) - use stable key to prevent DOM remounting flash
@@ -42917,7 +42930,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                     onLoad: () => setPlaybarAlbumArt(prev => ({ ...prev, isLoaded: true })),
                     onError: (e) => { e.target.style.display = 'none'; }
                   }),
-                  React.createElement(Music, { size: 20, className: 'text-gray-500' })
+                  React.createElement(Music, { size: 20, className: 'text-on-dark-tertiary' })
                 )
               )
             ),
@@ -42965,7 +42978,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                 }, titleDiv);
               })(),
               // Line 2: Artist name with bio tooltip + on tour badge
-              React.createElement('div', { className: 'flex items-center text-xs text-gray-400 min-w-0' },
+              React.createElement('div', { className: 'flex items-center text-xs text-on-dark-secondary min-w-0' },
                 (() => {
                   const bioPreview = playbarArtistBio && playbarArtistBio.bio
                     ? playbarArtistBio.bio.split('\n').slice(0, 2).join(' ').substring(0, 200).trim() + (playbarArtistBio.bio.length > 200 ? '…' : '')
@@ -43023,7 +43036,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                         fetchArtistData(currentTrack.artist);
                       },
                       className: 'flex-shrink-0 ml-3 rounded-full transition-opacity hover:opacity-80 cursor-pointer no-drag',
-                      style: { width: '7px', height: '7px', backgroundColor: '#10c9b4' }
+                      style: { width: '7px', height: '7px', backgroundColor: PAGE_COLORS.concerts.color }
                     })
                   );
                 })()
@@ -43132,7 +43145,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                       className: 'inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium tracking-wide uppercase',
                       style: {
                         background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(139, 92, 246, 0.15) 100%)',
-                        color: '#a5b4fc',
+                        color: 'var(--on-dark-info)',
                         border: '1px solid rgba(139, 92, 246, 0.3)',
                         boxShadow: '0 0 8px rgba(139, 92, 246, 0.15), inset 0 1px 0 rgba(255,255,255,0.05)'
                       },
@@ -43207,7 +43220,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                               console.error('Failed to open purchase link:', error);
                             }
                           },
-                          className: 'flex items-center justify-center rounded transition-colors text-gray-400 hover:text-green-400 no-drag',
+                          className: 'flex items-center justify-center rounded transition-colors text-on-dark-secondary hover:text-on-dark-success no-drag',
                           style: { width: '16px', height: '16px' },
                           // The Tooltip above names it; a native title too
                           // showed two tooltips at once.
@@ -43234,24 +43247,24 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
           ] : React.createElement(React.Fragment, null,
             // Skeleton album art
             React.createElement('div', {
-              className: `flex-shrink-0 rounded ${trackLoading ? 'shimmer-dark animate-shimmer' : 'bg-gray-700'}`,
+              className: `flex-shrink-0 rounded ${trackLoading ? 'shimmer-dark animate-shimmer' : 'bg-surface-dark-placeholder'}`,
               style: { width: '61px', height: '61px', ...(trackLoading ? { backgroundSize: '200% 100%' } : {}) }
             }),
             // Skeleton track info - matches actual track info layout
             React.createElement('div', { className: 'min-w-0' },
               // Track title skeleton (text-sm = 14px, but skeleton slightly smaller)
               React.createElement('div', {
-                className: `h-3.5 rounded ${trackLoading ? 'shimmer-dark animate-shimmer' : 'bg-gray-700'}`,
+                className: `h-3.5 rounded ${trackLoading ? 'shimmer-dark animate-shimmer' : 'bg-surface-dark-placeholder'}`,
                 style: { width: '200px', ...(trackLoading ? { backgroundSize: '200% 100%' } : {}) }
               }),
               // Artist skeleton (text-xs = 12px)
               React.createElement('div', {
-                className: `h-3 rounded mt-1 ${trackLoading ? 'shimmer-dark animate-shimmer' : 'bg-gray-700'}`,
+                className: `h-3 rounded mt-1 ${trackLoading ? 'shimmer-dark animate-shimmer' : 'bg-surface-dark-placeholder'}`,
                 style: { width: '140px', ...(trackLoading ? { backgroundSize: '200% 100%' } : {}) }
               }),
               // Source skeleton (text-xs with mt-0.5)
               React.createElement('div', {
-                className: `h-3 rounded mt-1 ${trackLoading ? 'shimmer-dark animate-shimmer' : 'bg-gray-700'}`,
+                className: `h-3 rounded mt-1 ${trackLoading ? 'shimmer-dark animate-shimmer' : 'bg-surface-dark-placeholder'}`,
                 style: { width: '80px', ...(trackLoading ? { backgroundSize: '200% 100%' } : {}) }
               })
             )
@@ -43280,9 +43293,9 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
               disabled: !currentTrack || spinoffLoading || spinoffAvailable === false || spinoffAvailable === null,
               className: 'p-1.5 rounded-full transition-colors',
               style: {
-                color: !currentTrack || spinoffAvailable === false ? '#4b5563' :
-                  spinoffLoading || spinoffAvailable === null ? '#9ca3af' :
-                  spinoffMode ? '#c084fc' : '#9ca3af',
+                color: !currentTrack || spinoffAvailable === false ? 'var(--on-dark-disabled)' :
+                  spinoffLoading || spinoffAvailable === null ? 'var(--on-dark-secondary)' :
+                  spinoffMode ? 'var(--playbar-accent)' : 'var(--on-dark-secondary)',
                 cursor: !currentTrack || spinoffAvailable === false ? 'not-allowed' : 'pointer',
                 opacity: !currentTrack || spinoffAvailable === false ? 0.5 : 1
               }
@@ -43329,7 +43342,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                     removeTrackFromCollection(currentTrack);
                   }
                 },
-                className: `p-1.5 rounded-full transition-colors ${isInCollection ? 'text-red-500 hover:text-red-400' : 'text-gray-400 hover:text-white'}`
+                className: `p-1.5 rounded-full transition-colors ${isInCollection ? 'text-on-dark-love hover:text-on-dark-love-hover' : 'text-on-dark-secondary hover:text-white'}`
               },
                 React.createElement(Icons.Heart, { className: 'w-5 h-5', strokeWidth: isInCollection ? 0 : 2, fill: isInCollection ? 'currentColor' : 'none' })
               )
@@ -43371,7 +43384,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                 disabled: shuffleDisabled,
                 className: 'p-2 rounded transition-colors',
                 style: {
-                  color: shuffleDisabled ? '#4b5563' : shuffleMode ? '#c084fc' : '#9ca3af',
+                  color: shuffleDisabled ? 'var(--on-dark-disabled)' : shuffleMode ? 'var(--playbar-accent)' : 'var(--on-dark-secondary)',
                   cursor: shuffleDisabled ? 'not-allowed' : 'pointer'
                 }
               },
@@ -43399,7 +43412,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                 'aria-label': repeatMode === 'off' ? 'Repeat off' : repeatMode === 'all' ? 'Repeat all' : 'Repeat one',
                 className: 'p-2 rounded transition-colors',
                 style: {
-                  color: repeatDisabled ? '#4b5563' : repeatMode !== 'off' ? '#c084fc' : '#9ca3af',
+                  color: repeatDisabled ? 'var(--on-dark-disabled)' : repeatMode !== 'off' ? 'var(--playbar-accent)' : 'var(--on-dark-secondary)',
                   cursor: repeatDisabled ? 'not-allowed' : 'pointer'
                 }
               },
@@ -43493,7 +43506,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                 React.createElement('button', {
                   'aria-label': isMuted || effectiveVolume === 0 ? 'Unmute' : 'Mute',
                   className: 'transition-colors',
-                  style: { color: isDisabled ? '#4b5563' : '#9ca3af', cursor: isDisabled ? 'not-allowed' : 'pointer' },
+                  style: { color: isDisabled ? 'var(--on-dark-disabled)' : 'var(--on-dark-secondary)', cursor: isDisabled ? 'not-allowed' : 'pointer' },
                   onClick: handleMuteToggle,
                   disabled: isDisabled
                 },

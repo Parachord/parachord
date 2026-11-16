@@ -54,6 +54,19 @@ module.exports = {
           'tint-hover': 'var(--accent-primary-alpha-15)',
         },
         control: { off: 'var(--control-off)', knob: 'var(--control-knob)' },
+        // Text and fills on the always-dark surfaces (the playbar, the queue
+        // drawer, the AI panels): the same in both themes.
+        'on-dark': {
+          primary: 'var(--on-dark-primary)',
+          secondary: 'var(--on-dark-secondary)',
+          tertiary: 'var(--on-dark-tertiary)',
+          disabled: 'var(--on-dark-disabled)',
+          love: 'var(--on-dark-love)',
+          'love-hover': 'var(--on-dark-love-hover)',
+          success: 'var(--on-dark-success)',
+          info: 'var(--on-dark-info)',
+        },
+        'surface-dark': { placeholder: 'var(--surface-dark-placeholder)' },
         // Faint status backgrounds behind status text (bg-tint-danger with
         // text-ink-danger): the status colour at 12%, or 20% for hover.
         tint: {
