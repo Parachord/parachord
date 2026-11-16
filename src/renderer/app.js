@@ -38614,6 +38614,13 @@ collapsedContent: null
         // Concerts view with collapsible hero header
         // ConcertsPage (components/concerts-page.js), a memo'd page.
         activeView === 'concerts' && React.createElement(ConcertsPage, {
+          // Memo invalidators, not read as props: the source chips name and
+          // colour each seller from resolverLoaderRef during render, and a
+          // ref changing doesn't re-render a memo'd page. A page opened
+          // before the plug-ins load (the view saved at quit) showed the ids
+          // ("seatgeek") until something else re-rendered it.
+          _allResolvers: allResolvers,
+          _metaServices: metaServices,
           cacheLoaded,
           concerts,
           concertsArtistImages,
@@ -38657,6 +38664,10 @@ collapsedContent: null
         // (expandRecommendationSection) fill an open row in the background.
         // Recommendations (components/recommendations-page.js), a memo'd page.
         activeView === 'recommendations' && React.createElement(RecommendationsPage, {
+          // Memo invalidator, not read as a prop: service names and colours
+          // come from resolverLoaderRef at render, and Last.fm / ListenBrainz
+          // are meta services, which load after allResolvers.
+          _metaServices: metaServices,
           allResolvers,
           collectionData,
           currentTrack,
@@ -38745,6 +38756,10 @@ collapsedContent: null
         // Friend History View - matching History page structure exactly
         // FriendHistoryPage (components/friend-history-page.js), a memo'd page.
         activeView === 'friendHistory' && currentFriend && React.createElement(FriendHistoryPage, {
+          // Memo invalidator, not read as a prop: service names and colours
+          // come from resolverLoaderRef at render, and Last.fm / ListenBrainz
+          // are meta services, which load after allResolvers.
+          _metaServices: metaServices,
           allResolvers,
           currentFriend,
           followingRecommended,
