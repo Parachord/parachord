@@ -2093,7 +2093,7 @@ const { ToastRegion, NowPlayingAnnouncer } = require('./components/toast');
 const { SortMenu } = require('./components/sort-menu');
 const { Menu } = require('./components/menu');
 const { HeroTabs } = require('./components/hero-tabs');
-const { SettingRow, Select, TextField, SecretField, Switch, RadioGroup } = require('./components/fields');
+const { SettingRow, Select, TextField, SecretField, Switch, RadioGroup, FIELD_CLASS } = require('./components/fields');
 const { EmptyState, ErrorState } = require('./components/states');
 // Room the queue drawer leaves above it: the title bar and a little air.
 const QUEUE_DRAWER_TOP_GAP = 48;
@@ -39128,15 +39128,6 @@ React.createElement('span', {
                 pageColor: PAGE_COLORS.concerts.color, label: 'Filter concerts by source',
               });
             })(),
-            // Refresh button
-            React.createElement('button', {
-              onClick: () => loadConcerts(true),
-              disabled: concertsLoading,
-              className: `ml-2 p-1.5 transition-colors ${concertsLoading ? 'text-page-concerts' : 'text-ink-tertiary hover:text-ink-secondary'}`,
-              'aria-label': concertsLoading ? 'Loading…' : 'Refresh', 'data-tooltip': concertsLoading ? 'Loading…' : 'Refresh'
-            },
-              React.createElement(Icons.RefreshCw, { className: `w-4 h-4 ${concertsLoading ? 'animate-spin' : ''}` })
-            ),
             // Location filter
             React.createElement('div', { className: 'relative ml-2 flex items-center gap-1.5' },
               // Location chip (shown when a location is active)
@@ -39207,10 +39198,9 @@ React.createElement('span', {
                     },
                     autoFocus: true,
                     placeholder: 'City or region…',
-                    className: 'flex-1 text-sm outline-none transition-colors',
-                    style: { backgroundColor: 'var(--bg-inset)', color: 'var(--text-primary)', border: '1px solid var(--border-default)', borderRadius: '10px', padding: '8px 14px' },
-                    onFocus: (e) => { e.currentTarget.style.borderColor = PAGE_COLORS.concerts.color; e.currentTarget.style.boxShadow = `0 0 0 3px ${pageTint('concerts')}`; },
-                    onBlur: (e) => { e.currentTarget.style.borderColor = 'var(--border-default)'; e.currentTarget.style.boxShadow = 'none'; }, 'aria-label': 'City or region'
+                    // The shared text field (components/fields.js): one focus ring.
+                    className: `${FIELD_CLASS} flex-1 min-w-0`,
+                    'aria-label': 'City or region'
                   }),
                   // "Use my location" button
                   React.createElement(Button, { variant: 'icon', className: 'flex-shrink-0 border border-line bg-surface-inset hover:!text-page-concerts', onClick: async () => {
