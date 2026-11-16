@@ -10,7 +10,7 @@
 // read only inside handlers.
 
 const Icons = require('./icons');
-const { TrackRow, TrackRowSkeleton } = require('./track-lists');
+const { TrackRow, TrackRowSkeleton, VirtualizedTrackList } = require('./track-lists');
 const { FilterBox } = require('./filter-box');
 const { PageHero } = require('./page-hero');
 const { CardSkeleton } = require('./home-skeletons');
@@ -199,12 +199,18 @@ React.createElement('div', {
                       : React.createElement(EmptyState, { title: 'No recent listens yet', body: 'What you play shows up here.' });
                   }
 
-                  return React.createElement('div', { role: 'list', className: 'space-y-0' },
-                    ...sorted.map((track, index) => {
-
+                  // The album column only when the list has albums (ListenBrainz's top
+                  // tracks carry none, which left a blank column).
+                  const hasAlbums = sorted.some(t => t.album);
+                  // Virtualized past 100 rows (#767). Two listens of one song
+                  // share an id (ListenBrainz's recording_msid), so rows key
+                  // by the listen.
+                  return React.createElement(VirtualizedTrackList, {
+                    tracks: sorted,
+                    parentRef: historyScrollContainerRef,
+                    getKey: (track, index) => `${track.id}|${track.playedAt ?? index}`,
+                    renderRow: (track, index) => {
                       return React.createElement(TrackRow, Object.assign({
-                        role: 'listitem',
-                        // Two listens of one song share an id (ListenBrainz's recording_msid).
                         key: `${track.id}|${track.playedAt ?? index}`,
                         track,
                         number: String(index + 1).padStart(2, '0'),
@@ -217,14 +223,12 @@ React.createElement('div', {
                         onContextMenu: () => window.showItemMenu({ type: 'track', track }),
                         duration: true,
                         cells: [
-                          // The album column only when the list has albums (ListenBrainz's top
-                          // tracks carry none, which left a blank column).
-                          ...(sorted.some(t => t.album) ? [{ key: 'album', content: track.album || '' }] : []),
+                          ...(hasAlbums ? [{ key: 'album', content: track.album || '' }] : []),
                           { key: 'when', content: (track.playedAt || track.timestamp) ? formatTimeAgo(track.playedAt || track.timestamp) : '', width: '80px', align: 'right' }
                         ]
                       }, trackRowDrag(track, { id: track.id, title: track.title, artist: track.artist, album: track.album, duration: track.duration, sources: track.sources || {} })));
-                    })
-                  );
+                    }
+                  });
                 })()
             ),
 
@@ -250,10 +254,14 @@ React.createElement('div', {
                       : React.createElement(EmptyState, { title: 'No top tracks for this period', body: 'Pick a longer period.' });
                   }
 
-                  return React.createElement('div', { role: 'list', className: 'space-y-0' },
-                    ...filtered.map((track, index) => {
+                  const hasAlbums = filtered.some(t => t.album);
+                  // Virtualized past 100 rows (#767); Top tracks shares the
+                  // History tab's scroll container.
+                  return React.createElement(VirtualizedTrackList, {
+                    tracks: filtered,
+                    parentRef: topTracksScrollContainerRef,
+                    renderRow: (track, index) => {
                       return React.createElement(TrackRow, Object.assign({
-                        role: 'listitem',
                         key: track.id,
                         track,
                         number: `#${track.rank}`,
@@ -265,14 +273,12 @@ React.createElement('div', {
                         onContextMenu: () => window.showItemMenu({ type: 'track', track }),
                         duration: true,
                         cells: [
-                          // The album column only when the list has albums (ListenBrainz's top
-                          // tracks carry none, which left a blank column).
-                          ...(filtered.some(t => t.album) ? [{ key: 'album', content: track.album || '' }] : []),
+                          ...(hasAlbums ? [{ key: 'album', content: track.album || '' }] : []),
                           { key: 'plays', content: `${track.playCount} plays`, width: '80px', align: 'right' }
                         ]
                       }, trackRowDrag(track)));
-                    })
-                  );
+                    }
+                  });
                 })()
             ),
 

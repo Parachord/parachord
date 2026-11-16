@@ -601,8 +601,13 @@ const VirtualizedTrackList = React.memo(({
   renderRow,
   estimatedRowHeight = 56,
   overscan = 8,
-  virtualizationThreshold = 100
+  virtualizationThreshold = 100,
+  // A list where one track can appear twice (two listens of a song in
+  // History) keys its rows by more than the id (#767); keys must be unique
+  // among siblings (CLAUDE.md).
+  getKey = null
 }) => {
+  const keyOf = (track, index) => (getKey ? getKey(track, index) : (track.id || track.filePath || index));
   // CRITICAL: `useVirtualizer` MUST be called unconditionally on every
   // render (Rules of Hooks). The earlier guard `typeof ReactVirtual !==
   // 'undefined' && parentRef?.current` made the hook conditional on a
@@ -642,7 +647,7 @@ const VirtualizedTrackList = React.memo(({
       style: { minHeight: 'calc(100vh - 160px)' }
     },
       // Each row is a list item (#1386): the page's renderRow stays as it was.
-      tracks.map((track, index) => React.createElement('div', { key: track.id || track.filePath || index, role: 'listitem' },
+      tracks.map((track, index) => React.createElement('div', { key: keyOf(track, index), role: 'listitem' },
         renderRow(track, index, null)))
     );
   }
@@ -663,7 +668,7 @@ const VirtualizedTrackList = React.memo(({
       // The wrapper's height tracks the rendered row's actual height via
       // measureElement; virtualizer corrects its size estimates over time.
       return React.createElement('div', {
-        key: track.id || track.filePath || virtualRow.index,
+        key: keyOf(track, virtualRow.index),
         'data-index': virtualRow.index,
         role: 'listitem',
         ref: virtualizer.measureElement,
