@@ -154,6 +154,18 @@ describe('getArtistImage wiring', () => {
     expect(getArtistImage).toContain('if (complete) artistImageMissesRef.current.add(artistName);');
   });
 
+  // A saved Spotify sign-in outlives turning the plug-in off, so a token
+  // check alone sent every uncached artist photo to Spotify while it was off
+  // (and tripped its rate-limit pause, 2026-11-16). Apple Music had the same gap.
+  test('asks Spotify and Apple Music only when their plug-ins are on', () => {
+    expect(getArtistImage).toContain('const activeIds = activeResolversRef.current || [];');
+    expect(getArtistImage).toContain("if (token && activeIds.includes('spotify')) {");
+    expect(getArtistImage).toContain("if (musicKitAvailable && activeIds.includes('applemusic')) {");
+    // One activeIds for every step, read before the first one.
+    expect(getArtistImage.match(/const activeIds = /g)).toHaveLength(1);
+    expect(getArtistImage.indexOf('const activeIds = ')).toBeLessThan(getArtistImage.indexOf("id: 'spotify'"));
+  });
+
   test('stale-closure callers see live credentials', () => {
     expect(getArtistImage).toContain('const token = spotifyTokenRef.current || spotifyToken;');
     expect(getArtistImage).toContain('metaServiceConfigsRef.current?.discogs?.personalAccessToken');

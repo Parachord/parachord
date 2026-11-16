@@ -32922,8 +32922,14 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     const token = spotifyTokenRef.current || spotifyToken;
     const discogsToken = metaServiceConfigsRef.current?.discogs?.personalAccessToken;
 
+    // Only a service whose plug-in is on is asked, the same rule as the
+    // plug-in steps below. A saved sign-in outlives turning the plug-in off,
+    // so a token alone sent every uncached artist photo to Spotify while the
+    // user had switched it off (and kept tripping its rate-limit pause).
+    const activeIds = activeResolversRef.current || [];
+
     const steps = [];
-    if (token) {
+    if (token && activeIds.includes('spotify')) {
       steps.push({ id: 'spotify', run: async () => {
         const searchUrl = `https://api.spotify.com/v1/search?q=artist:"${encodeURIComponent(artistName)}"&type=artist&limit=5`;
         const response = await fetch(searchUrl, {
@@ -32937,12 +32943,11 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         return artist?.images?.[0]?.url || null;
       } });
     }
-    if (musicKitAvailable) {
+    if (musicKitAvailable && activeIds.includes('applemusic')) {
       steps.push({ id: 'applemusic', run: async () => (await musicKitWeb.getArtistImage(artistName))?.url || null });
     }
     const loader = resolverLoaderRef.current;
     if (loader?.getArtistImageResolvers) {
-      const activeIds = activeResolversRef.current || [];
       const ordered = orderCatalogResolvers(loader.getArtistImageResolvers(), {
         activeIds,
         order: resolverOrderRef.current || []
