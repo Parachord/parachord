@@ -2126,6 +2126,7 @@ const { Button, buttonClassName } = require('./components/button');
 const { OptionTile } = require('./components/option-tile');
 const { ListRow } = require('./components/list-row');
 const { QueueContextBar } = require('./components/queue-context-bar');
+const { PlaybarLineSkeleton } = require('./components/playbar-skeleton');
 const { HeaderControl } = require('./components/header-control');
 const { ToastRegion, NowPlayingAnnouncer } = require('./components/toast');
 const { SortMenu } = require('./components/sort-menu');
@@ -42883,7 +42884,10 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
                     })()
                   );
                 }
-                return null;
+                // No source yet: line 3 still holds its 20px (a shimmer while
+                // the track loads), so the title and artist don't jump up
+                // when the source picker arrives.
+                return React.createElement(PlaybarLineSkeleton, { line: 'source', shimmer: true, blank: !(trackLoading || loadingTrack) });
               })()
             )
           ] : React.createElement(React.Fragment, null,
@@ -42892,23 +42896,12 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
               className: `flex-shrink-0 rounded ${trackLoading ? 'shimmer-dark animate-shimmer' : 'bg-surface-dark-placeholder'}`,
               style: { width: '61px', height: '61px', ...(trackLoading ? { backgroundSize: '200% 100%' } : {}) }
             }),
-            // Skeleton track info - matches actual track info layout
+            // Skeleton track info: the three lines at their real heights
+            // (components/playbar-skeleton.js), so the track replaces it in place.
             React.createElement('div', { className: 'min-w-0' },
-              // Track title skeleton (text-sm = 14px, but skeleton slightly smaller)
-              React.createElement('div', {
-                className: `h-3.5 rounded ${trackLoading ? 'shimmer-dark animate-shimmer' : 'bg-surface-dark-placeholder'}`,
-                style: { width: '200px', ...(trackLoading ? { backgroundSize: '200% 100%' } : {}) }
-              }),
-              // Artist skeleton (text-xs = 12px)
-              React.createElement('div', {
-                className: `h-3 rounded mt-1 ${trackLoading ? 'shimmer-dark animate-shimmer' : 'bg-surface-dark-placeholder'}`,
-                style: { width: '140px', ...(trackLoading ? { backgroundSize: '200% 100%' } : {}) }
-              }),
-              // Source skeleton (text-xs with mt-0.5)
-              React.createElement('div', {
-                className: `h-3 rounded mt-1 ${trackLoading ? 'shimmer-dark animate-shimmer' : 'bg-surface-dark-placeholder'}`,
-                style: { width: '80px', ...(trackLoading ? { backgroundSize: '200% 100%' } : {}) }
-              })
+              React.createElement(PlaybarLineSkeleton, { line: 'title', shimmer: !!trackLoading }),
+              React.createElement(PlaybarLineSkeleton, { line: 'artist', shimmer: !!trackLoading }),
+              React.createElement(PlaybarLineSkeleton, { line: 'source', shimmer: !!trackLoading })
             )
           )
         ),

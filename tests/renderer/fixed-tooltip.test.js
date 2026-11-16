@@ -170,6 +170,41 @@ describe('FixedTooltip behaviour', () => {
       expect(t.tipOf(t.settle())).toBeNull();
     } finally { t.cleanup(); }
   });
+
+  // The playbar's tips stuck: clicking a button focuses it, and any focus
+  // used to show the tip until something else took focus.
+  test("a click's focus (not :focus-visible) shows nothing", () => {
+    const t = harness();
+    try {
+      t.render().props.onFocus({ target: { matches: () => false } });
+      expect(t.tipOf(t.settle())).toBeNull();
+    } finally { t.cleanup(); }
+  });
+
+  test('a click on the trigger dismisses the tip; hovering again re-arms it', () => {
+    const t = harness();
+    try {
+      t.render().props.onMouseEnter();
+      let tree = t.settle();
+      expect(t.tipOf(tree)).not.toBeNull();
+      tree.props.onPointerDown();
+      tree = t.settle();
+      expect(t.tipOf(tree)).toBeNull();
+      tree.props.onMouseLeave();
+      t.settle().props.onMouseEnter();
+      expect(t.tipOf(t.settle())).not.toBeNull();
+    } finally { t.cleanup(); }
+  });
+
+  test('the pointer leaving the window hides it', () => {
+    const t = harness();
+    try {
+      t.render().props.onMouseEnter();
+      t.settle();
+      t.listeners.pointerout({ relatedTarget: null });
+      expect(t.tipOf(t.settle())).toBeNull();
+    } finally { t.cleanup(); }
+  });
 });
 
 describe('placeTooltip', () => {
@@ -224,4 +259,10 @@ describe('FixedTooltip markup', () => {
       React.createElement('div', null, React.createElement('h3', null, 'Title'))));
     expect(html).toBe('<div style="position:relative"><div><h3>Title</h3></div></div>');
   });
+});
+
+test('TooltipLayer hides a tip when the pointer leaves the window', () => {
+  const src = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/components/ui-atoms.js'), 'utf8');
+  expect(src).toContain("const onOut = (ev) => { if (current.current && !ev.relatedTarget) hide(); };");
+  expect(src).toContain("document.addEventListener('pointerout', onOut);");
 });
