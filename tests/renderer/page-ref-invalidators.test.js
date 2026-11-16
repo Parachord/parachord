@@ -37,6 +37,14 @@ test('UrlImportDialog re-renders when the plug-ins or playlists change', () => {
   expect(call).toContain('_playlists: playlists');
 });
 
+// The Playlists page asks linkUpdateMode (a stable handler that reads the
+// plug-in loader) whether each card is kept updated, so it re-renders when
+// the plug-ins load.
+test('PlaylistsPage re-renders when the plug-ins load', () => {
+  expect(fs.readFileSync(path.join(root, 'components', 'playlists-page.js'), 'utf8')).toMatch(/linkUpdateMode\(playlist\)/);
+  expect(callProps('PlaylistsPage')).toContain('_allResolvers: allResolvers');
+});
+
 test('every moved page that reads resolverLoaderRef at render has an invalidator', () => {
   const pages = fs.readdirSync(path.join(root, 'components')).filter((f) => /-page\.js$|-panel\.js$/.test(f));
   for (const f of pages) {

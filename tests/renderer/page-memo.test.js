@@ -20,6 +20,7 @@ global.ReactVirtual = global.ReactVirtual || require('@tanstack/react-virtual');
 const { CollectionPage, COLLECTION_PAGE_HANDLERS } = require('../../src/renderer/components/collection-page');
 const { HomePage, HOME_PAGE_HANDLERS } = require('../../src/renderer/components/home-page');
 const { PlaylistViewPage, PLAYLIST_VIEW_PAGE_HANDLERS } = require('../../src/renderer/components/playlist-view-page');
+const { PlaylistsPage, PLAYLISTS_PAGE_HANDLERS } = require('../../src/renderer/components/playlists-page');
 const { ArtistPage, ARTIST_PAGE_HANDLERS } = require('../../src/renderer/components/artist-page');
 const { SearchPage, SEARCH_PAGE_HANDLERS } = require('../../src/renderer/components/search-page');
 const { FreshDropsPage, FRESH_DROPS_PAGE_HANDLERS } = require('../../src/renderer/components/fresh-drops-page');
@@ -57,6 +58,7 @@ const PAGES = [
   { component: 'CollectionPage', file: 'collection-page.js', handlersVar: 'collectionPageHandlers', handlers: COLLECTION_PAGE_HANDLERS, memo: CollectionPage },
   { component: 'HomePage', file: 'home-page.js', handlersVar: 'homePageHandlers', handlers: HOME_PAGE_HANDLERS, memo: HomePage },
   { component: 'PlaylistViewPage', file: 'playlist-view-page.js', handlersVar: 'playlistViewPageHandlers', handlers: PLAYLIST_VIEW_PAGE_HANDLERS, memo: PlaylistViewPage },
+  { component: 'PlaylistsPage', file: 'playlists-page.js', handlersVar: 'playlistsPageHandlers', handlers: PLAYLISTS_PAGE_HANDLERS, memo: PlaylistsPage },
   { component: 'ArtistPage', file: 'artist-page.js', handlersVar: 'artistPageHandlers', handlers: ARTIST_PAGE_HANDLERS, memo: ArtistPage },
   { component: 'SearchPage', file: 'search-page.js', handlersVar: 'searchPageHandlers', handlers: SEARCH_PAGE_HANDLERS, memo: SearchPage },
   { component: 'FreshDropsPage', file: 'fresh-drops-page.js', handlersVar: 'freshDropsPageHandlers', handlers: FRESH_DROPS_PAGE_HANDLERS, memo: FreshDropsPage },

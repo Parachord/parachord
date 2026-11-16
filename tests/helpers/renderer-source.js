@@ -42,6 +42,8 @@ const PAGE_MODULES = [
   'components/stop-sync-dialog.js',
   'components/extension-info-dialog.js',
   'components/raycast-info-dialog.js',
+  'components/playlists-page.js',
+  'components/playlist-view-page.js',
   // Module-level code moved out of app.js with them.
   'lib/resolver-order.js',
   'lib/ai-services.js',

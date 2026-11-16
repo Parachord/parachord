@@ -33,6 +33,6 @@ test('the page headers and the queue drawer use it', () => {
   // app.js and the panels moved out of it (#1451): the queue drawer's are in queue-drawer.js.
   expect((require('../helpers/renderer-source').appWithPages().match(/React\.createElement\(HeaderControl, \{/g) || []).length).toBeGreaterThanOrEqual(6);
   // 8: Refresh became Keep updated / Check now + Stop updating (a playlist
-  // link kept updated or a snapshot).
-  expect((read('src/renderer/components/playlist-view-page.js').match(/React\.createElement\(HeaderControl, \{/g) || []).length).toBe(8);
+  // link kept updated or a snapshot); 9 with the loading state's (#1451).
+  expect((read('src/renderer/components/playlist-view-page.js').match(/React\.createElement\(HeaderControl, \{/g) || []).length).toBe(9);
 });

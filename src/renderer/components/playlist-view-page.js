@@ -1115,4 +1115,156 @@ const tracksWithIds = (playlistTracks || []).map(track => ({
       );
 });
 
-module.exports = { PlaylistViewPage, PLAYLIST_VIEW_PAGE_HANDLERS, PLAYLIST_ART_COLUMN, PLAYLIST_ICON_COLUMN };
+// PlaylistViewLoading: what the playlist page shows between a click and the
+// playlist arriving (a link or sync import still loading): the hero with the
+// pending title, a sticky header and track-row skeletons in the page's
+// columns, so the page doesn't jump when it loads. Moved out of app.js with
+// the page (#1451); props are state and setters, no plain functions.
+const PlaylistViewLoading = React.memo(function PlaylistViewLoading(props) {
+  const {
+    pendingPlaylistLoad,
+    setActiveView,
+    setPendingPlaylistLoad,
+    setViewHistory,
+  } = props;
+  return React.createElement('div', {
+        className: 'flex-1 flex flex-col',
+        style: { overflow: 'hidden' }
+      },
+        // Hero header with pending playlist title (real header, not skeleton)
+        React.createElement('div', {
+          className: 'relative',
+          style: {
+            height: '140px',
+            flexShrink: 0,
+            overflow: 'hidden'
+          }
+        },
+          // Gradient background (same as loaded state)
+          React.createElement('div', {
+            className: 'absolute inset-0',
+            style: {
+              // The Playlists hero's gradient (lib/page-colors.js).
+              backgroundImage: 'var(--playlists-gradient)',
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+              filter: 'blur(20px) brightness(0.7)',
+              transform: 'scale(1.2)'
+            }
+          }),
+          // Gradient overlay
+          React.createElement('div', {
+            className: 'absolute inset-0',
+            style: {
+              background: 'var(--cover-shade)'
+            }
+          }),
+          // Header content with title
+          React.createElement('div', {
+            className: 'absolute inset-0 flex items-center px-8 z-10'
+          },
+            // Playlist icon
+            React.createElement('div', {
+              className: 'w-6 h-6 rounded-full bg-white/20 flex items-center justify-center mr-3'
+            },
+              React.createElement('svg', { className: 'w-3 h-3 text-white', fill: 'currentColor', viewBox: '0 0 24 24' },
+                React.createElement('circle', { cx: '12', cy: '12', r: '10' })
+              )
+            ),
+            // Playlist name from pending load
+            React.createElement('h1', {
+              className: 'text-2xl font-bold text-white',
+              style: {
+                textShadow: 'var(--hero-text-shadow-bar)',
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase'
+              }
+            }, pendingPlaylistLoad?.title || 'Loading…')
+          )
+        ),
+        // Content area with sticky bar and loading skeletons
+        React.createElement('div', {
+          className: 'scrollable-content scroll-edge page-bg',
+          style: {
+            flex: 1,
+            overflowY: 'scroll',
+            pointerEvents: 'auto'
+          }
+        },
+          // PLAYLIST DETAILS sticky bar with breadcrumb (same as loaded state)
+          React.createElement(StickyBar, { variant: 'header' },
+            // Breadcrumb navigation: Playlists > Playlist Name
+            React.createElement('div', {
+              className: 'flex items-center gap-2 text-xs font-medium tracking-widest uppercase'
+            },
+              React.createElement('button', {
+                onClick: () => {
+                  setPendingPlaylistLoad(null);
+                  setActiveView('playlists');
+                  setViewHistory(['library', 'playlists']);
+                },
+                className: 'text-ink-tertiary hover:text-ink-secondary transition-colors uppercase'
+              }, 'Playlists'),
+              React.createElement('span', { className: 'text-ink-faint' }, '/'),
+              React.createElement('span', { className: 'text-ink-secondary uppercase' },
+                pendingPlaylistLoad?.title || 'Loading'
+              )
+            ),
+            // Close button
+            React.createElement(HeaderControl, { close: true, onClick: () => {
+                setPendingPlaylistLoad(null);
+                setActiveView('playlists');
+                setViewHistory(['library', 'playlists']);
+              } }, 'Close')
+          ),
+          // Loading content placeholder
+          React.createElement('div', { className: 'flex gap-0 pl-6' },
+            // LEFT COLUMN: Skeleton album art and metadata
+            React.createElement('div', {
+              className: 'flex-shrink-0 pr-8 pt-8',
+              // The playlist view's own art column (#1389), so nothing moves
+              // when the playlist lands.
+              style: { width: PLAYLIST_ART_COLUMN }
+            },
+              // Skeleton 2x2 album art grid (the card's art: the column less
+              // the card's 10px padding each side)
+              React.createElement('div', {
+                className: 'grid grid-cols-2 gap-0.5 rounded-lg overflow-hidden mb-4',
+                style: { width: 'calc(100% - 20px)', aspectRatio: '1 / 1' }
+              },
+                Array.from({ length: 4 }).map((_, i) =>
+                  React.createElement('div', {
+                    key: `cover-skeleton-${i}`,
+                    className: 'aspect-square shimmer-light animate-shimmer',
+                    style: { backgroundSize: '200% 100%', animationDelay: `${i * 50}ms` }
+                  })
+                )
+              ),
+              // Skeleton metadata
+              React.createElement('div', { className: 'mt-4 space-y-2' },
+                React.createElement('div', {
+                  className: 'h-5 shimmer-light rounded w-40 animate-shimmer',
+                  style: { backgroundSize: '200% 100%' }
+                }),
+                React.createElement('div', {
+                  className: 'h-4 shimmer-light rounded w-32 animate-shimmer',
+                  style: { backgroundSize: '200% 100%', animationDelay: '100ms' }
+                }),
+                React.createElement('div', {
+                  className: 'h-4 shimmer-light rounded w-24 animate-shimmer',
+                  style: { backgroundSize: '200% 100%', animationDelay: '200ms' }
+                })
+              )
+            ),
+            // RIGHT COLUMN: the shared track row's placeholder
+            React.createElement('div', { className: 'flex-1 min-w-0 pt-8 pr-6' },
+              Array.from({ length: 8 }).map((_, i) =>
+                React.createElement(TrackRowSkeleton, { key: `track-skeleton-${i}`, index: i, duration: true })
+              )
+            )
+          )
+        )
+      );
+});
+
+module.exports = { PlaylistViewPage, PlaylistViewLoading, PLAYLIST_VIEW_PAGE_HANDLERS, PLAYLIST_ART_COLUMN, PLAYLIST_ICON_COLUMN };
