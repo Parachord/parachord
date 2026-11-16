@@ -2422,9 +2422,14 @@ module.exports = {
         // The DRM state (M9): the session context embeds the old session's
         // csrf triplet and belongs to the old account; the cert warm, the
         // telemetry instance and its health are session-scoped the same way.
-        // The stream the old account was playing gets its FINAL accounting
-        // first (the old dmls onSignOut's trackStreamed-before-the-clear;
-        // best-effort — the post races the clear itself).
+        // Do NOT rely on this drop to post the stream's FINAL accounting
+        // (trackStreamed): the plugin only sees the generation change on its
+        // first state read AFTER webSession.clear(), so the onStopped below
+        // always fires once the cookies are already gone and its post fails
+        // (best-effort). What posts the final pair in practice is the
+        // Settings sign-out button stopping the engine BEFORE it calls
+        // sign-out — that 'stopped' reaches the plugin's handlePlayerEvent
+        // while the session still lives.
         try { this._telemetry && this._telemetry.onStopped({}); } catch { /* best-effort */ }
         this._drmSessionContext = null;
         this._drmSessionContextPromise = null;
@@ -2838,7 +2843,11 @@ module.exports = {
     // the plugin's own last search text (it is already in the user's Amazon
     // history, so the one-shot page flow pollutes nothing; the old host mint
     // used the host store's search_history for the same reason), falling back
-    // to a constant when no search has run yet.
+    // to a constant when no search has run yet. Difference from the old host
+    // mint, known and accepted (#1439 review): _lastSearchText is in-memory
+    // only, while the host read the persisted search_history[0] — so the
+    // first mint after every launch uses the benign constant, not the user's
+    // last search.
     const query = (this._lastSearchText && String(this._lastSearchText).trim()) || lib.MINT_BENIGN_QUERY;
     const [config, headers] = await Promise.all([
       this.fetchConfigJson(),
@@ -2879,16 +2888,16 @@ module.exports = {
     try { return JSON.parse(out.text); } catch { return {}; }
   },
 
-  // The csrf-triplet mint, as its own page flow on the plugin's per-instance
-  // chain (serialized against the spec searches, the album lookups, the
-  // playlist import and the recommendations — one flow's navigation never
-  // interleaves another's capture).
+  // The csrf-triplet mint, as its own page flow on the plugin's two-lane
+  // page-flow queue (serialized against the spec searches, the album
+  // lookups, the playlist import and the recommendations — one flow's
+  // navigation never interleaves another's capture). It rides the BACKGROUND
+  // lane like the other speculative flows; a playlist the user opened
+  // (the foreground lane) goes ahead of it.
   mintCsrfHeaders: async function (query) {
     const lib = this.requireLib();
     const q = String(query || lib.MINT_BENIGN_QUERY).slice(0, 120);
-    const run = (this._pageFlowChain || Promise.resolve()).then(() => this.mintCsrfPageFlow(q));
-    this._pageFlowChain = run.then(() => {}, () => {});
-    return run;
+    return this.enqueuePageFlow(() => this.mintCsrfPageFlow(q));
   },
 
   mintCsrfPageFlow: async function (q) {

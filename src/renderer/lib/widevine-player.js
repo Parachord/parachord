@@ -4,9 +4,9 @@
 // local files, SoundCloud and html5Stream resolvers share). Per-resolver
 // differences stop at the widevine bridge: getManifest (entity → DASH MPD
 // text) and relayLicense (CDM challenge bytes ↔ license bytes) are IPC
-// handled by main-process providers (amazon-dmls today) — or, on the
-// plugin-mediated path (#1356 M4), supplied renderer-side by a resolver
-// that implements getPlaybackManifest/relayLicense: playPlugin() declares the
+// handled by providers registered main-side — or, on the plugin-mediated
+// path (#1356 M4, Amazon's DRM pair since M9), supplied renderer-side by a
+// resolver that implements getPlaybackManifest/relayLicense: playPlugin() declares the
 // manifest UP to the bridge's session open (only its length crosses — the
 // text stays renderer-side), and the licence router answers main's forwarded
 // challenges through the plugin's relayLicense with the context held
@@ -975,6 +975,9 @@ async function playPlugin(audio, { resolverId, manifestResult, relayLicense, pla
     // path's engine-provided entity filled; the loadManifestSession merge
     // layers the SERVED asin (substituteAsin) over it, so play-started
     // telemetry and provenance attribute the deliverable pressing.
+    // `asin` is Amazon's word on a GENERIC plugin contract — accepted for
+    // now (#1439 review); rename it to a neutral id when a second DRM
+    // service appears (a Tidal resolver must not return an `asin`).
     entity: typeof reply.asin === 'string' && reply.asin ? { asin: reply.asin } : {},
     trackContext,
     startTime,

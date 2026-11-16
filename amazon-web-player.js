@@ -372,8 +372,11 @@ const amazonWebPlayer = {
   // (1 min when unknown), a forced re-read (opening Settings) that comes back
   // without a tier keeps a known plan, and a reading that differs from the
   // last is reported to the renderer (main.js wires the listener — the
-  // upgrade refresh). This dies with the teardown milestone's status move,
-  // when the plugin's status capability takes the surface over.
+  // upgrade refresh). Until the teardown milestone removes it, the plan is
+  // read in TWO places — this stopgap for the surfaces above, the plugin's
+  // own read for plays — each with its own cache, so the two can disagree
+  // inside a TTL window; that window dies with this stopgap, when the
+  // plugin's status capability takes the surface over.
   planState: null, // { plan: 'unlimited'|'prime'|'unknown', tier, at }
   planPromise: null,
   loggedTiers: new Set(),
