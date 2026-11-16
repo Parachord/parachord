@@ -104,8 +104,9 @@ test('app.js renders the confirm dialog through ConfirmModal', () => {
 });
 
 test('every dialog shell in app.js is a Modal; the plain ones use its title, close and footer', () => {
-  const app = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/app.js'), 'utf8');
-  // Dialogs moved into their own modules (WhatsNewDialog, KeyboardShortcutsDialog) render Modal there.
+  // app.js and the dialogs moved out of it (#1451); those moved into their own
+  // modules (WhatsNewDialog, KeyboardShortcutsDialog) render Modal there.
+  const app = require('../helpers/renderer-source').appWithPages();
   expect((app.match(/React\.createElement\((Modal|WhatsNewDialog|KeyboardShortcutsDialog), \{/g) || []).length).toBeGreaterThanOrEqual(20);
   // Redone on the standard parts (no longer bare).
   for (const label of ['Unsaved friend', 'Delete synced playlist', 'Stop syncing', 'Switch sync engine', 'Open in browser', 'Save AI playlist', 'Save queue as playlist', 'Import playlist', 'Add friend', 'Amazon Music sign-in', 'Edit tags']) {

@@ -7,7 +7,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const app = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
+const app = require('../helpers/renderer-source').appWithPages(); // app.js and the dialogs moved out of it (#1451)
 // The Collection page header (where the opener lives) moved into its own
 // module in the Track 2b split.
 const collectionPage = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'components', 'collection-page.js'), 'utf8');
@@ -19,7 +19,8 @@ describe('Sync Now is reachable', () => {
   });
 
   test('the modal\'s Sync Now runs a full (unstaggered) sync', () => {
-    const start = app.indexOf('syncStatusModal.open && React.createElement(Modal, {');
+    // The Sync status dialog (components/sync-status-dialog.js, #1451).
+    const start = app.indexOf('const SyncStatusDialog = React.memo(');
     expect(start).toBeGreaterThan(-1);
     const src = app.slice(start, start + 12000);
     expect(src).toMatch(/window\.electron\.sync\.start\(providerId, \{ settings, fullSync: true \}\)/);

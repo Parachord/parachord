@@ -20,6 +20,8 @@ const PAGE_MODULES = [
   'components/queue-drawer.js',
   'components/drop-zone-overlay.js',
   'components/add-to-playlist-panel.js',
+  'components/sync-setup-dialog.js',
+  'components/sync-status-dialog.js',
 ];
 
 function read(rel) {
