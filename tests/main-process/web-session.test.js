@@ -596,7 +596,9 @@ describe('load — navigation, capture, the quiet window', () => {
     }
   });
 
-  test('a stalled navigation throws load-failed and detaches the capture', async () => {
+  test('a stalled navigation with NOTHING captured still throws load-failed and detaches the capture', async () => {
+    // The no-requests case of the budget timeout: nothing redeems it (rule
+    // 5's escape below needs captures in hand).
     const { host, view } = await warmSession();
     view.webContents._hangNextLoad = true;
     const attempt = host.load('https://music.testsvc.com/', {
@@ -610,6 +612,38 @@ describe('load — navigation, capture, the quiet window', () => {
     const webRequest = theSession().webRequest;
     expect(webRequest.onBeforeRequest).toHaveBeenLastCalledWith(expect.anything(), null);
     expect(webRequest.onBeforeSendHeaders).toHaveBeenLastCalledWith(expect.anything(), null);
+  });
+
+  test("a stalled navigation with captures already held returns them with loadTimedOut (rule 5's escape, the #1423 bug class)", async () => {
+    // One slow subresource keeps did-finish-load from firing long after the
+    // page fired its gql: the request was the point of the load, not the
+    // finished document. The host cannot judge the capture (the matcher is
+    // the caller's), so it returns what it holds with the flag and the
+    // caller decides.
+    const { host, view } = await warmSession();
+    view.webContents._hangNextLoad = true;
+    const pending = host.load('https://music.testsvc.com/', {
+      timeoutMs: 500,
+      capture: { urlPrefixes: ['https://gql.testsvc.com/*'], quietMs: 1000 }
+    });
+    await jest.advanceTimersByTimeAsync(0);
+    // The page fired its gql while the navigation hangs.
+    fireCaptured({ id: 11, body: '{"operationName":"playlistDetail"}' });
+    await jest.advanceTimersByTimeAsync(600);
+    const result = await pending;
+    expect(result.loadTimedOut).toBe(true);
+    expect(result.finalUrl).toBe('https://music.testsvc.com/');
+    expect(result.captures).toEqual([
+      expect.objectContaining({ body: '{"operationName":"playlistDetail"}', headers: { 'x-api-key': 'k' } })
+    ]);
+    // Resolving at once: the quiet window never runs past a budget that
+    // already fired (the result above would still be waiting on quietMs).
+    // The capture listeners are detached and the gate was released either way.
+    const webRequest = theSession().webRequest;
+    expect(webRequest.onBeforeRequest).toHaveBeenLastCalledWith(expect.anything(), null);
+    expect(webRequest.onBeforeSendHeaders).toHaveBeenLastCalledWith(expect.anything(), null);
+    expect(host.tryEnterReplay()).toBe(true);
+    host.exitReplay();
   });
 
   test('no host window → not-ready', async () => {
