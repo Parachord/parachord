@@ -2021,6 +2021,7 @@ const { ExtensionInfoDialog } = require('./components/extension-info-dialog');
 const { PluginSettingsDialog } = require('./components/plugin-settings-dialog');
 const { servicesWithCapability, hasScrobblerConnected: hasScrobblerConnectedTo } = require('./lib/ai-services');
 const { PROVIDER_LABEL, getPlaylistMirrorTargets } = require('./lib/playlist-mirrors');
+const { playlistImportLabel } = require('./lib/playlist-import-sources');
 const { FirstRunTutorial } = require('./components/first-run-tutorial');
 const { AiPromptPanel } = require('./components/ai-prompt-panel');
 const { StopSyncDialog } = require('./components/stop-sync-dialog');
@@ -12870,6 +12871,14 @@ ${trackListXml}
   // Use loaded resolvers directly — loadedResolvers is already [] when empty,
   // so no need for a conditional that creates a new [] reference every render.
   const allResolvers = loadedResolvers;
+  // What the Import playlist dialog says it takes: the loaded plug-ins that
+  // import playlist links (lib/playlist-import-sources.js, #1019). Keyed on
+  // allResolvers, which changes when plug-ins load; the plug-in objects come
+  // from the loader.
+  const playlistImportSourcesLabel = useMemo(
+    () => playlistImportLabel(resolverLoaderRef.current ? resolverLoaderRef.current.getAllResolvers() : []),
+    [allResolvers]
+  );
 
   // Provider branding for sync UI: the name and capabilities here; the colour
   // and logo come from the plug-in (its manifest's color, the shared logo
@@ -38180,6 +38189,7 @@ useEffect(() => {
     /* UrlImportDialog (components/url-import-dialog.js), a memo'd dialog. */ showUrlImportDialog && React.createElement(UrlImportDialog, {
       _allResolvers: allResolvers,
       _playlists: playlists,
+      importSourcesLabel: playlistImportSourcesLabel,
       setShowUrlImportDialog,
       setUrlImportLoading,
       setUrlImportMode,
