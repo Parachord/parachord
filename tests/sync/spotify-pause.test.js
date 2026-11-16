@@ -77,3 +77,24 @@ describe('wiring', () => {
     expect(sync).toMatch(/sharedPause\.noteStatus\(/);
   });
 });
+
+describe('the sync sign-in check honours the pause', () => {
+  const spotify = require('../../sync-providers/spotify');
+  const { sharedPause } = require('../../sync-providers/spotify-pause');
+  afterEach(() => { sharedPause.clear(); delete global.fetch; });
+
+  test('while paused it answers 429 without a request', async () => {
+    sharedPause.noteStatus(429, '600');
+    global.fetch = jest.fn();
+    expect(await spotify.checkAuthStatus('tok')).toEqual({ ok: false, status: 429 });
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  test('a 429 from /me starts the pause, so the sync after it sends nothing', async () => {
+    global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 429, headers: { get: (k) => (k.toLowerCase() === 'retry-after' ? '600' : null) } });
+    expect(await spotify.checkAuthStatus('tok')).toEqual({ ok: false, status: 429 });
+    expect(sharedPause.isPaused()).toBe(true);
+    await expect(spotify.getPlaylistSnapshot('p', 'tok')).rejects.toThrow(/cooldown/i);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+});
