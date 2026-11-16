@@ -16,7 +16,7 @@ const PAGE_ICONS = {
   library: 'Library',
   history: 'RotateCcw',
   'new-releases': 'Droplet',
-  recommendations: 'Star',
+  recommendations: 'Radar', // not Star: a star follows an artist
   discover: 'ListOrdered',
   'critics-picks': 'Trophy',
   concerts: 'Ticket',
