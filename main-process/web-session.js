@@ -44,16 +44,13 @@
 //
 //   1. LOADS SERIALIZE. webRequest has a single listener slot per method per
 //      session, so two page loads must never interleave captures. Every load
-//      runs on an internal chain, one at a time — two lanes (foreground/
-//      background, createLaneQueue): a foreground job starts before every
-//      queued background job, FIFO within a lane. A plugin that wants flow-level
+//      runs on the host's internal job queue (createLaneQueue): two lanes,
+//      FOREGROUND and BACKGROUND. A foreground job — something the user is
+//      waiting on, by the plugin's judgment — starts before every queued
+//      background job; FIFO within a lane; the one running job is never
+//      interrupted; clear() resets both lanes. A plugin that wants flow-level
 //      serialization (a multi-step import) serializes itself; the host
 //      guarantees no two of ITS loads overlap.
-//     A load runs on the host's internal job queue (createLaneQueue): two
-//     lanes, FOREGROUND and BACKGROUND. A foreground job — something the
-//     user is waiting on, by the plugin's judgment — starts before every
-//     queued background job; FIFO within a lane; the one running job is
-//     never interrupted. clear() resets both lanes.
 //   2. A NAVIGATION WAITS OUT IN-FLIGHT PAGEFETCHES. Tearing a frame mid-fetch
 //      kills a replay; the readers/writer gate (pageFetch = reader, load and
 //      the idle park = writer) drains readers before any navigation. A

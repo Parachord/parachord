@@ -394,7 +394,7 @@ const amazonWebPlayer = {
   // The hidden search view, through the one owner. The host creates the
   // WebContentsView (the Amazon preload, the UA mask, the session's
   // permission handlers) and keeps it alive on the app window; pageOf keeps
-  // the { webContents, loadURL, isDestroyed } shape the flows read.
+  // the { webContents, isDestroyed } shape the flows read.
   async ensureWindow() {
     return this.pageOf(webSession.ensureView());
   },
