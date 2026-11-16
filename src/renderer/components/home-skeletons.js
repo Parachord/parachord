@@ -127,7 +127,7 @@ function ConcertRowSkeleton({ count = HOME_CONCERT_CARDS } = {}) {
   }, Array.from({ length: count }, (_, i) => React.createElement('div', {
     key: i,
     style: {
-      display: 'flex', alignItems: 'center', gap: '12px', padding: '10px', borderRadius: '14px',
+      display: 'flex', alignItems: 'center', gap: '12px', padding: '10px', borderRadius: '16px',
       border: '1px solid var(--border-default)'
     }
   },

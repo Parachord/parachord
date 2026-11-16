@@ -122,7 +122,7 @@ function JumpBackIn({ tiles, onOpenTile, onPlayTile, onContextMenu, onImport, on
         },
       },
         e('div', null,
-          e('div', { style: { fontWeight: 600, fontSize: '15px', color: 'var(--text-primary)' } }, 'Build your collection'),
+          e('div', { style: { fontWeight: 600, fontSize: '16px', color: 'var(--text-primary)' } }, 'Build your collection'),
           e('div', { style: SUB_STYLE }, 'Import your playlists and loved tracks from the services you use.')),
         e('button', {
           type: 'button', onClick: () => onImport && onImport(),
@@ -294,7 +294,7 @@ function FreshCriticalRow(props) {
         id,
         style: {
           margin: 0, display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0,
-          fontSize: '18px', fontWeight: 300, letterSpacing: '0.2em', textTransform: 'uppercase',
+          fontSize: '20px', fontWeight: 300, letterSpacing: '0.2em', textTransform: 'uppercase',
           color: ON_FILL, textShadow: HERO_TEXT_SHADOW, // on-color
         },
       }, icon, title),
@@ -344,7 +344,7 @@ function ConcertCard({ concert, image }) {
   const photo = image && isHttpUrl(image.url) ? image : null;
   return e('div', {
     style: {
-      display: 'flex', alignItems: 'center', gap: '12px', padding: '10px', borderRadius: '14px', minWidth: 0,
+      display: 'flex', alignItems: 'center', gap: '12px', padding: '10px', borderRadius: '16px', minWidth: 0,
       border: '1px solid var(--border-default)',
     },
   },
@@ -447,7 +447,7 @@ function AskShuffleupagus({ initialPrompt, chatAvailable, onAsk, onSetup }) {
         id: 'home-ask-prompt', type: 'text', maxLength: PROMPT_CAP, value,
         onChange: (ev) => { touched.current = true; setValue(ev.target.value); },
         style: {
-          flex: '1 1 360px', minWidth: 0, font: 'inherit', fontSize: '15px', color: isExample ? 'var(--text-tertiary)' : 'var(--text-primary)',
+          flex: '1 1 360px', minWidth: 0, font: 'inherit', fontSize: '16px', color: isExample ? 'var(--text-tertiary)' : 'var(--text-primary)',
           backgroundColor: 'var(--bg-primary)', border: '1px solid var(--border-default)', borderRadius: '12px',
           padding: '12px 14px', minHeight: '48px', boxSizing: 'border-box',
         },

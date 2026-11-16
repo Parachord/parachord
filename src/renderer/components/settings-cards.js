@@ -168,16 +168,16 @@ const ResolverCard = React.memo(({
     }, resolver.name),
     // "Setup required" label - enabled but needs configuration
     needsConfiguration && isEnabled && React.createElement('span', {
-      style: { fontSize: '10px', fontWeight: '500', color: 'var(--text-warning)', marginTop: '2px' }
+      style: { fontSize: '11px', fontWeight: '500', color: 'var(--text-warning)', marginTop: '2px' }
     }, 'Setup required'),
     // A limit the resolver is set up under (statusTitle explains it)
     !needsConfiguration && isEnabled && statusLabel && React.createElement('span', {
-      style: { fontSize: '10px', fontWeight: '500', color: 'var(--text-warning)', marginTop: '2px' },
+      style: { fontSize: '11px', fontWeight: '500', color: 'var(--text-warning)', marginTop: '2px' },
       title: statusTitle || undefined
     }, statusLabel),
     // "Available" label - not enabled
     isAvailable && React.createElement('span', {
-      style: { fontSize: '10px', fontWeight: '500', color: 'var(--text-tertiary)', marginTop: '2px' }
+      style: { fontSize: '11px', fontWeight: '500', color: 'var(--text-tertiary)', marginTop: '2px' }
     }, 'Available')
   );
 });

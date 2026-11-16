@@ -31,6 +31,7 @@ const { ArtistCard } = require('./artist-card');
 const { ListenerCard } = require('./listener-card');
 const { countOf } = require('../lib/plural');
 const { PAGE_COLORS } = require('../lib/page-colors');
+const { CollectionRadioButton } = require('./collection-radio-button');
 
 // Plain functions from Parachord, passed as stable wrappers.
 const COLLECTION_PAGE_HANDLERS = [
@@ -149,16 +150,8 @@ React.createElement('div', {
 React.createElement('div', {
                   className: 'mt-6 flex items-center gap-3'
                 },
-                  // Start Collection Station button (pink, matching Artist page)
-                  React.createElement('button', {
-                    onClick: handleStartCollectionStation,
-                    className: 'px-6 py-2 rounded-full font-medium text-white no-drag transition-all hover:scale-105',
-                    style: {
-                      // The page's own white-text fill (lib/page-colors.js).
-                      backgroundColor: PAGE_COLORS.library.fill,
-                      boxShadow: 'var(--card-shadow)'
-                    }
-                  }, 'Start Collection Radio')
+                  // Home's button (components/collection-radio-button.js).
+                  React.createElement(CollectionRadioButton, { onClick: handleStartCollectionStation })
                 )),
 collapsedContent: React.createElement(React.Fragment, null,
 React.createElement('div', {
@@ -175,13 +168,8 @@ React.createElement('div', {
                       tab.staticLabel
                     ), label: 'Collection' })
                 ),
-React.createElement('button', {
-                  onClick: handleStartCollectionStation,
-                  className: 'ml-auto px-4 py-1.5 rounded-full text-sm font-medium text-white transition-colors hover:opacity-90 no-drag',
-                  style: {
-                    backgroundColor: PAGE_COLORS.library.fill
-                  }
-                }, 'Start Radio'))
+React.createElement('div', { className: 'ml-auto' },
+                  React.createElement(CollectionRadioButton, { onClick: handleStartCollectionStation, compact: true })))
 }),
           // Filter bar — promoted out of scroll container so the virtualized
           // collection-tracks list inside can be a direct child of the

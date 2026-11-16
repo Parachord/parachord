@@ -616,9 +616,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                   }
                 },
                 style: { color: 'var(--text-tertiary)', transition: 'color 0.15s' },
-                className: 'hover:text-ink-secondary transition-colors uppercase',
-                onMouseEnter: (e) => e.currentTarget.style.color = 'var(--text-secondary)',
-                onMouseLeave: (e) => e.currentTarget.style.color = 'var(--text-tertiary)'
+                className: 'hover:text-ink-secondary transition-colors uppercase hover:!text-[var(--text-secondary)]',
               }, currentArtist?.name || currentRelease?.artist?.name || 'Artist'),
               React.createElement('span', { style: { color: 'var(--border-default)' } }, '/'),
               // The album's heading (#1386), drawn as the breadcrumb's last part.

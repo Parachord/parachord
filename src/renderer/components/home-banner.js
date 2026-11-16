@@ -74,7 +74,7 @@ function HomeBanner({ items, onDismiss, onCta }) {
         opacity: 0.85,
         cursor: 'pointer',
         padding: '0 4px',
-        fontSize: '18px',
+        fontSize: '20px',
         lineHeight: 1,
         flexShrink: 0
       }

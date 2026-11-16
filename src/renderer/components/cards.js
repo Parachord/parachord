@@ -369,7 +369,7 @@ const AlbumVersionsMenu = ({ release, versions, resolvers = [], onSelect, onClos
       }, main),
       secondary && React.createElement('span', {
         className: 'block',
-        style: { fontSize: '10.5px', color: 'rgba(255, 255, 255, 0.55)', marginTop: '1px' }
+        style: { fontSize: '11px', color: 'rgba(255, 255, 255, 0.55)', marginTop: '1px' }
       }, secondary)
     ),
     current && React.createElement('span', {
@@ -379,7 +379,7 @@ const AlbumVersionsMenu = ({ release, versions, resolvers = [], onSelect, onClos
   const sectionHeader = (title, key) => React.createElement('div', {
     key,
     className: 'px-3 pt-2 pb-1',
-    style: { fontSize: '10px', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'rgba(255, 255, 255, 0.5)' }
+    style: { fontSize: '11px', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'rgba(255, 255, 255, 0.5)' }
   }, title);
   const shimmerRows = (key) => [0, 1].map((i) => React.createElement('div', {
     key: `${key}-shimmer-${i}`,
@@ -837,7 +837,7 @@ const ReleasePage = ({
           React.createElement('div', { className: 'relative', style: { width: `${albumArtSize}px`, transition: 'width 300ms ease' } },
             React.createElement('button', {
               onClick: toggleSourceOpen,
-              className: 'w-full text-left no-drag',
+              className: 'w-full text-left no-drag hover:!border-[var(--text-tertiary)]',
               'aria-expanded': sourceOpen,
               style: {
                 display: 'block',
@@ -848,8 +848,6 @@ const ReleasePage = ({
                 cursor: 'pointer',
                 transition: 'border-color 150ms ease'
               },
-              onMouseEnter: (e) => { e.currentTarget.style.borderColor = 'var(--text-tertiary)'; },
-              onMouseLeave: (e) => { e.currentTarget.style.borderColor = 'var(--border-default)'; },
               'data-tooltip': 'Pick another edition of this album (MusicBrainz releases, or an edition your services carry)'
             },
               // First line: the source's badge and name, chevron at the right
@@ -863,7 +861,7 @@ const ReleasePage = ({
                   title: sourceLine
                 }, sourceLine),
                 React.createElement('span', {
-                  style: { fontSize: '9px', color: 'var(--text-tertiary)', flexShrink: 0 }
+                  style: { fontSize: '11px', color: 'var(--text-tertiary)', flexShrink: 0 }
                 }, sourceOpen ? React.createElement(Icons.ChevronUp, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }) : React.createElement(Icons.ChevronDown, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } }))
               ),
               // Then one line per detail, aligned under the name
