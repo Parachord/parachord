@@ -607,6 +607,7 @@ const {
 } = require('./lib/artist-image-chain');
 const { carriedReleaseArt, withArchiveCover, createReleaseGroupPicks } = require('./lib/release-open');
 const { firstNonEmptyList, entriesFromMusicBrainzRelease, entriesFromCatalogRelease, pickReleaseGroup } = require('./lib/album-track-list');
+const { resolversToAskAgain, nextUnanswered } = require('./lib/unanswered-resolvers');
 const { pickRelease } = require('./lib/release-pick');
 const { uniqueReleases, freshDropsWindow, withinFreshDropsWindow } = require('./lib/fresh-drops-releases');
 const { uniqueConcerts, concertSourceKeys, concertMatchesSource } = require('./lib/concert-events');
@@ -681,6 +682,36 @@ const {
       // signal: an aborted request leaves the queue without using a slot.
       { background: !!mbBackground, signal: fetchInit.signal }
     );
+  };
+})();
+
+// Spotify's rate-limit pause (sync-providers/spotify-pause.js). Every
+// api.spotify.com request from the renderer goes through here: plugin
+// searches, playback controls, the discography fallback. While Spotify's
+// Retry-After runs, a call answers the same 429 without a request, since
+// requests sent meanwhile can stretch the limit; any 429 starts or extends the
+// pause. The first one of a pause is announced with the
+// `parachord:spotify-paused` event (the toast in Parachord).
+(function installSpotifyPause() {
+  if (typeof window.fetch !== 'function') return;
+  const { createSpotifyPause, isSpotifyApiUrl, pausedResponse } = require('../../sync-providers/spotify-pause');
+  const spotifyPause = createSpotifyPause();
+  window.spotifyPause = spotifyPause;
+  const innerFetch = window.fetch;
+  window.fetch = function (input, init) {
+    if (!isSpotifyApiUrl(input)) return innerFetch(input, init);
+    if (spotifyPause.isPaused()) {
+      return Promise.resolve(pausedResponse(spotifyPause.msRemaining()));
+    }
+    return innerFetch(input, init).then((response) => {
+      const started = spotifyPause.noteStatus(response.status, response.headers && response.headers.get('Retry-After'));
+      if (started) {
+        try {
+          window.dispatchEvent(new CustomEvent('parachord:spotify-paused', { detail: { until: spotifyPause.until() } }));
+        } catch (_e) { /* no event, still paused */ }
+      }
+      return response;
+    });
   };
 })();
 
@@ -13531,6 +13562,20 @@ ${trackListXml}
     setToast({ message, type, action, persistent, duration });
   }, []);
 
+  // Spotify's rate-limit pause (installSpotifyPause above): say so once per
+  // pause when it is long enough to notice. Short ones (a few seconds) pass
+  // without a word.
+  useEffect(() => {
+    const onPaused = (event) => {
+      const until = event && event.detail && event.detail.until;
+      if (!until || until - Date.now() < 60 * 1000) return;
+      const at = new Date(until).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      showToast(`Spotify asked Parachord to slow down. Spotify searches and controls resume at ${at}; other services keep working.`, 'warning', null, { duration: 10000 });
+    };
+    window.addEventListener('parachord:spotify-paused', onPaused);
+    return () => window.removeEventListener('parachord:spotify-paused', onPaused);
+  }, [showToast]);
+
   // Copy a track's Achordion entity-page URL to the clipboard. Resolves to:
   //   1. /recording/<mbid> via the entity-link endpoint when MBID is known
   //      (cached on track or via the MBID Mapper fallback in the plugin)
@@ -21631,7 +21676,14 @@ ${trackListXml}
       console.log('Release data loaded:', tracks.length, 'tracks');
       // An edition switch is in flight (#1238): its skeleton waits for the
       // picked edition, and this load's default release must not displace it.
-      setCurrentRelease(prev => (prev && prev._pickingEdition ? prev : releaseInfo));
+      // The fastest list stays: a service's list for this album that the
+      // catalogs' race already put on screen is not replaced by MusicBrainz's
+      // (replacing it flickered the page's source from the service to
+      // MusicBrainz, 2026-11-15). MusicBrainz's editions stay in the source
+      // dropdown.
+      const keepsFirstList = (prev) => !!(prev && prev._catalogSource && prev.tracks
+        && sameAlbumIdentity(prev, { title: release.title, artist: artistNameForLookup }));
+      setCurrentRelease(prev => (prev && (prev._pickingEdition || keepsFirstList(prev)) ? prev : releaseInfo));
       setLoadingRelease(false);
 
       // Update collection album's track count if album is in collection
@@ -22540,12 +22592,11 @@ ${trackListXml}
   // other lookups, while a service's albumSearch + lookupAlbum usually answers
   // in well under a second. So as soon as a page is waiting for its track
   // list, the catalogs are asked too, and their list shows if it lands first.
-  // (Until 2026-11 they were asked only after the page had waited 5s.) When
-  // MusicBrainz answers, fetchReleaseData's success path replaces it, so
-  // MusicBrainz stays the canonical list (track ids, recording ids); rows are
-  // keyed by position, so a matching list just gains MusicBrainz's data in
-  // place. Until then fetchReleaseData's own load does not blank the catalog
-  // list. Skipped when MusicBrainz's answer is already cached (it lands at
+  // (Until 2026-11 they were asked only after the page had waited 5s.) Whichever
+  // list lands first stays: when MusicBrainz answers after a catalog list is
+  // on screen, fetchReleaseData's success path keeps the catalog list (it
+  // used to replace it, which flickered the page's source), and
+  // fetchReleaseData's own load does not blank it. Skipped when MusicBrainz's answer is already cached (it lands at
   // once). Keyed on the album, not the id: a page moves from a release-group
   // id to a release id while it loads.
   const waitingAlbumKey = (currentRelease && !currentRelease.tracks && !currentRelease._loadError
@@ -23163,16 +23214,37 @@ ${trackListXml}
                       (now - cachedData.timestamp) < CACHE_TTL.trackSources &&
                       cachedData.resolverHash === currentResolverHash;
 
-    // Check if there are active resolvers that weren't queried in the cached data or persisted sources
-    // Note: when cacheValid is true, the resolver hash matches, meaning ALL active resolvers
-    // were already queried when the cache was built. Resolvers absent from sources returned no match.
+    // Check if there are active resolvers that weren't queried in the cached data or persisted sources.
+    // A valid cache still lists the services that never answered: an answer is a
+    // source or a noMatch sentinel, and a service that threw or ran past
+    // RESOLVE_BUDGET_MS left no entry (lib/unanswered-resolvers.js). Reading that
+    // gap as "no match" kept a timed-out service unasked for the whole TTL.
     const cachedResolverIds = cachedData ? Object.keys(cachedData.sources) : [];
     const persistedResolverIds = Object.keys(persistedSources);
     const availableResolverIds = [...new Set([...cachedResolverIds, ...persistedResolverIds])];
-    const missingResolvers = cacheValid ? [] : currentActiveResolvers.filter(id =>
-      !availableResolverIds.includes(id) &&
-      currentResolvers.find(r => r.id === id)?.capabilities?.resolve
-    );
+    const canResolve = id => {
+      const r = currentResolvers.find(x => x.id === id);
+      return !!(r?.capabilities?.resolve && r.play);
+    };
+    // Only services that can play here are asked again: a plan-blocked one
+    // (Amazon on Prime) shows no icon either way, and fails every time.
+    const askAgainIds = currentActiveResolvers.filter(id =>
+      canResolve(id) && (playbackResolversRef.current || currentActiveResolvers).includes(id));
+    const missingResolvers = cacheValid
+      ? resolversToAskAgain(cachedData, askAgainIds, now)
+      : currentActiveResolvers.filter(id =>
+        !availableResolverIds.includes(id) &&
+        currentResolvers.find(r => r.id === id)?.capabilities?.resolve
+      );
+    // Set on a real cache hit that still has services to ask again; the
+    // ask-again branch below then queries only those.
+    let askAgainOnly = false;
+    // What to save as the entry's `unanswered` map after a lookup: a service
+    // asked this time with no entry in `sources` threw or timed out.
+    const unansweredAfter = (prev, asked, sources) => nextUnanswered(prev, {
+      failed: asked.filter(id => !sources[id]),
+      answered: asked.filter(id => sources[id]),
+    }, Date.now());
 
     if (DEBUG_RESOLUTION && (cachedData || hasValidPersistedSources)) {
       console.log(`  🔍 Cache check for "${track.title}": in-memory=${!!cachedData}, persisted=${persistedResolverIds.join(', ') || 'none'}, missing: ${missingResolvers.join(', ') || 'none'}`);
@@ -23253,13 +23325,18 @@ ${trackListXml}
         : displaySources;
       queueTrackSources(trackKey, finalDisplay);
 
-      // Background validation: if cache is > 24 hours old, validate in background
-      if (cacheAge >= 24) {
-        console.log(`🔄 Cache > 24h old, validating in background...`);
-        setTimeout(() => validateCachedSources(track, artistName, cachedData.sources, cacheKey, trackKey), 1000);
-      }
+      if (missingResolvers.length === 0) {
+        // Background validation: if cache is > 24 hours old, validate in background
+        if (cacheAge >= 24) {
+          console.log(`🔄 Cache > 24h old, validating in background...`);
+          setTimeout(() => validateCachedSources(track, artistName, cachedData.sources, cacheKey, trackKey), 1000);
+        }
 
-      return displaySources;
+        return displaySources;
+      }
+      // Some services never answered: the cached sources are on screen, and
+      // the ask-again branch below queries only those services.
+      askAgainOnly = true;
       } // close `else` (real cache hit branch); poisoned-cache path falls through to fresh resolve
     }
 
@@ -23413,23 +23490,32 @@ ${trackListXml}
         sources: sources,
         timestamp: now,
         resolverHash: currentResolverHash,
-        v: CACHE_SCHEMA_VERSION
+        v: CACHE_SCHEMA_VERSION,
+        unanswered: unansweredAfter(cachedData?.unanswered, missingResolvers, sources)
       };
 
-      // Persist new sources (including noMatch sentinels) back to collection/playlist
+      // Persist new sources (including noMatch sentinels) back to collection/playlist.
+      // An explicit playlistId (background pre-resolution of a playlist that
+      // isn't open) comes first, as in the other branches: without it the
+      // fresh sources never reached the playlist, its old ones stayed past the
+      // 30-day limit, and every launch queued the same tracks again.
       if (track.id && collectionTracksRef.current.some(t => t.id === track.id)) {
         queueCollectionSourceUpdate(track.id, sources);
       }
-      const currentPlaylist = selectedPlaylistRef.current;
-      if (track.id && currentPlaylist?.id && currentPlaylist.tracks?.some(t => t.id === track.id)) {
-        queuePlaylistSourceUpdate(currentPlaylist.id, track.id, sources);
+      if (track.id && playlistId) {
+        queuePlaylistSourceUpdate(playlistId, track.id, sources);
+      } else {
+        const currentPlaylist = selectedPlaylistRef.current;
+        if (track.id && currentPlaylist?.id && currentPlaylist.tracks?.some(t => t.id === track.id)) {
+          queuePlaylistSourceUpdate(currentPlaylist.id, track.id, sources);
+        }
       }
 
       return filterNoMatch(sources);
     }
 
     // If cache is valid but missing resolvers, query only the missing ones
-    if (cacheValid && missingResolvers.length > 0) {
+    if (askAgainOnly) {
       console.log(`🔍 Cache valid but missing ${missingResolvers.length} resolver(s), querying: ${missingResolvers.join(', ')}`);
 
       // Start with cached sources
@@ -23479,6 +23565,8 @@ ${trackListXml}
             const confidence = calculateConfidence({ artist: artistName, title: track.title }, result);
             if (confidence < MIN_CONFIDENCE_THRESHOLD) {
               console.warn(`  ⚠️ ${resolver.name}: Rejecting "${result.title}" by "${result.artist}" — does not match "${track.title}" by "${artistName}"`);
+              // An answer, so it isn't asked again (same as the other branches)
+              sources[resolver.id] = { noMatch: true, resolvedAt: Date.now() };
             } else {
               sources[resolver.id] = { ...result, confidence };
               console.log(`  ✅ ${resolver.name}: Found match (confidence: ${(confidence * 100).toFixed(0)}%)`);
@@ -23487,6 +23575,7 @@ ${trackListXml}
               }
             }
           } else {
+            sources[resolver.id] = { noMatch: true, resolvedAt: Date.now() };
             console.log(`  ⚪ ${resolver.name}: No match found`);
           }
         } catch (error) {
@@ -23514,7 +23603,8 @@ ${trackListXml}
         sources: sources,
         timestamp: Date.now(),
         resolverHash: getResolverSettingsHash(),
-        v: CACHE_SCHEMA_VERSION
+        v: CACHE_SCHEMA_VERSION,
+        unanswered: unansweredAfter(cachedData.unanswered, missingResolvers, sources)
       };
 
       // Persist new sources back to collection if this track is in the collection
@@ -23650,7 +23740,10 @@ ${trackListXml}
           const confidence = calculateConfidence({ artist: artistName, title: track.title }, result);
           if (confidence < MIN_CONFIDENCE_THRESHOLD) {
             console.warn(`  ⚠️ ${resolver.name}: Rejecting "${result.title}" by "${result.artist}" — does not match "${track.title}" by "${artistName}"`);
-            return; // skip-attach below floor; no flush
+            // Skip-attach below floor; no flush. A wrong song is an answer
+            // ("no match"), so it's saved as one and not asked again.
+            sources[resolver.id] = existingRealSources[resolver.id] || { noMatch: true, resolvedAt: Date.now() };
+            return;
           }
           sources[resolver.id] = { ...result, confidence };
           console.log(`  ✅ ${resolver.name}: Found match (confidence: ${(confidence * 100).toFixed(0)}%)`);
@@ -23714,7 +23807,8 @@ ${trackListXml}
       sources: sources,
       timestamp: Date.now(),
       resolverHash: getResolverSettingsHash(),
-      v: CACHE_SCHEMA_VERSION
+      v: CACHE_SCHEMA_VERSION,
+      unanswered: unansweredAfter(undefined, enabledResolvers.filter(r => r.capabilities.resolve && r.play).map(r => r.id), sources)
     };
 
     if (trackKey) {

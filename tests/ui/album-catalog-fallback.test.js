@@ -142,10 +142,13 @@ describe('the catalogs race MusicBrainz', () => {
     expect(fnBody('const fetchReleaseData = async (release, artist) => {')).toMatch(/resolveAlbumTrack\(\{ \.\.\.track, id: trackId \}, artistName\)/);
   });
 
-  test('fetchReleaseData does not blank a catalog list already on screen, and MusicBrainz success replaces it', () => {
+  test('fetchReleaseData does not blank a catalog list already on screen, and the fastest list stays', () => {
     const body = fnBody('const fetchReleaseData = async (release, artist) => {');
     expect(body).toMatch(/const keepCatalogList = [\s\S]*?shownRelease\._catalogSource[\s\S]*?if \(!keepCatalogList\) \{\s*setCurrentRelease\(partialRelease\);/);
-    expect(body).toMatch(/setCurrentRelease\(prev => \(prev && prev\._pickingEdition \? prev : releaseInfo\)\);/);
+    // MusicBrainz's answer doesn't replace a catalog list for this album
+    // (replacing it flickered the source from the service to MusicBrainz).
+    expect(body).toMatch(/const keepsFirstList = \(prev\) => !!\(prev && prev\._catalogSource && prev\.tracks\s*&& sameAlbumIdentity\(prev, \{ title: release\.title, artist: artistNameForLookup \}\)\);/);
+    expect(body).toMatch(/setCurrentRelease\(prev => \(prev && \(prev\._pickingEdition \|\| keepsFirstList\(prev\)\) \? prev : releaseInfo\)\);/);
     // a MusicBrainz failure with the catalog list showing leaves it be
     expect(body).toMatch(/onScreen\._catalogSource && onScreen\.tracks[\s\S]*?setLoadingRelease\(false\);\s*return;/);
   });

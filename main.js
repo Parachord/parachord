@@ -192,6 +192,9 @@ let localFilesServiceReady = null; // Promise that resolves when service is read
 // and a hung pause on quit holds the app open (parachord#1300 follow-up).
 const { pauseSpotifyOnQuit } = require('./main-process/quit-cleanup');
 const SPOTIFY_API_TIMEOUT_MS = 5000;
+// Spotify's rate-limit pause for the main process (sync-providers/spotify-pause.js),
+// shared with the sync provider: no Spotify request while Retry-After runs.
+const { sharedPause, pausedResponse: spotifyPausedResponse } = require('./sync-providers/spotify-pause');
 // Quitting waits on the pause, so it gets less.
 const SPOTIFY_QUIT_PAUSE_TIMEOUT_MS = 3000;
 
@@ -355,12 +358,16 @@ const spotifyPoller = {
       return;
     }
     const uriAtStart = this.expectedTrackUri;
+    // Spotify asked for no requests (a 429's Retry-After): polling on would
+    // only stretch the limit. The next tick checks again.
+    if (sharedPause.isPaused()) return;
 
     try {
       const response = await fetch('https://api.spotify.com/v1/me/player', {
         headers: { 'Authorization': `Bearer ${this.token}` },
         signal: AbortSignal.timeout(SPOTIFY_API_TIMEOUT_MS)
       });
+      sharedPause.noteStatus(response.status, response.headers.get('Retry-After'));
 
       if (!response.ok) {
         if (response.status === 401) {
@@ -524,11 +531,13 @@ const spotifyPoller = {
     console.log('🔄 [Main] Starting polling recovery...');
 
     this.recoveryInterval = setInterval(async () => {
+      if (sharedPause.isPaused()) return; // see poll()
       try {
         const response = await fetch('https://api.spotify.com/v1/me/player', {
           headers: { 'Authorization': `Bearer ${this.token}` },
           signal: AbortSignal.timeout(SPOTIFY_API_TIMEOUT_MS)
         });
+        sharedPause.noteStatus(response.status, response.headers.get('Retry-After'));
 
         if (response.ok && response.status !== 204) {
           const data = await response.json();
@@ -2423,11 +2432,14 @@ app.whenReady().then(async () => {
 const pauseSpotifyPlayback = async () => {
   const outcome = await pauseSpotifyOnQuit({
     getToken: ensureValidSpotifyToken,
-    sendPause: (token) => fetch('https://api.spotify.com/v1/me/player/pause', {
-      method: 'PUT',
-      headers: { 'Authorization': `Bearer ${token}` },
-      signal: AbortSignal.timeout(SPOTIFY_QUIT_PAUSE_TIMEOUT_MS)
-    })
+    // While Spotify's rate-limit pause runs, a request would only be refused.
+    sendPause: (token) => (sharedPause.isPaused()
+      ? Promise.resolve(spotifyPausedResponse(sharedPause.msRemaining()))
+      : fetch('https://api.spotify.com/v1/me/player/pause', {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${token}` },
+        signal: AbortSignal.timeout(SPOTIFY_QUIT_PAUSE_TIMEOUT_MS)
+      }))
   });
   if (outcome === 'paused') console.log('✅ Spotify playback paused on quit');
   else if (outcome === 'nothing-playing') console.log('ℹ️ Spotify: no active playback to pause');

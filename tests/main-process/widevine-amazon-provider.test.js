@@ -60,7 +60,7 @@ const CONFIG_JSON = JSON.stringify({
   marketplaceId: 'MKT',
   musicTerritory: 'US',
   siteRegion: 'NA',
-  deviceId: '14354613042605242',
+  deviceId: '12345678901234567',
   tier: { name: 'UNLIMITED_HD' }
 });
 
@@ -117,7 +117,7 @@ describe('amazon-dmls session context', () => {
     expect(ctx.customerId).toBe('CUST1');
     expect(ctx.territoryId).toBe('US');
     expect(ctx.region).toBe('NA');
-    expect(ctx.deviceId).toBe('14354613042605242'); // config.json first
+    expect(ctx.deviceId).toBe('12345678901234567'); // config.json first
     expect(ctx.csrfToken).toBe('tok-0123456789abcdef0123456789abcdef=');
     expect(ctx.tier).toBe('UNLIMITED_HD');
   });
@@ -126,7 +126,7 @@ describe('amazon-dmls session context', () => {
     amazonWebPlayer.mintSessionHeaders.mockResolvedValueOnce({ csrfToken: 'tok-0123456789abcdef0123456789abcdef=', csrfRnd: '1', csrfTs: '2', deviceId: 'foo' });
     requestHandlers.push(() => ({ status: 200, text: CONFIG_JSON }));
     const ctx = await amazonDmls.ensureSessionContext();
-    expect(ctx.deviceId).toBe('14354613042605242');
+    expect(ctx.deviceId).toBe('12345678901234567');
   });
 
   test('not signed in (no at-main cookie) fails with not-signed-in', async () => {
@@ -151,7 +151,7 @@ describe('amazon-dmls getManifest', () => {
     const body = JSON.parse(dmlsReq.getBody());
     expect(body.contentIdList).toEqual([{ identifier: 'B00CRMX53S', identifierType: 'ASIN' }]);
     expect(body.customerId).toBe('CUST1');
-    expect(body.deviceToken).toEqual({ deviceTypeId: 'A16ZV8BU3SN1N3', deviceId: '14354613042605242' });
+    expect(body.deviceToken).toEqual({ deviceTypeId: 'A16ZV8BU3SN1N3', deviceId: '12345678901234567' });
     expect(body.appInfo.musicAgent).toMatch(/^Vinyl\/2\.0 GreenHornet_Web\//);
     expect(result.manifest).toContain('<MPD');
     expect(result.substituteAsin).toBe('SUB1');

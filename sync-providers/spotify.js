@@ -12,6 +12,9 @@ const { pickConfidentMatch } = require('./confidence-scoring');
 // persistence via _setBreakerStore (load on startup, save on every transition);
 // absent → in-memory only (still stops in-session re-hammering).
 const { createSpotifyBreaker } = require('../sync-engine/spotify-breaker');
+// The main process's rate-limit pause, shared with the playback poller in
+// main.js: a 429 either one gets stops both until Retry-After has passed.
+const { sharedPause } = require('./spotify-pause');
 const _spotifyBreaker = createSpotifyBreaker();
 let _spotifyBreakerSave = null;
 function _setBreakerStore(io) {
@@ -22,11 +25,14 @@ function _persistBreaker() { if (_spotifyBreakerSave) { try { _spotifyBreakerSav
 // Throw if the breaker is open (skip the API call to avoid prolonging the ban).
 function _breakerGuard() {
   const now = Date.now();
+  if (sharedPause.isPaused(now)) {
+    throw new Error(`Spotify rate-limit cooldown active (Spotify asked for ${Math.ceil(sharedPause.msRemaining(now) / 60000)} min without requests)`);
+  }
   if (_spotifyBreaker.isOpen(now)) {
     throw new Error(`Spotify rate-limit cooldown active (${Math.ceil(_spotifyBreaker.msRemaining(now) / 60000)} min left); skipping to avoid prolonging the ban`);
   }
 }
-function _breakerTrip() { _spotifyBreaker.trip(Date.now()); _persistBreaker(); }
+function _breakerTrip(minMs) { _spotifyBreaker.trip(Date.now(), minMs); _persistBreaker(); }
 function _breakerSuccess() { if (_spotifyBreaker.recordSuccess()) _persistBreaker(); }
 
 /**
@@ -47,6 +53,11 @@ const generateTrackId = (artist, title, album) => {
  * Make an authenticated Spotify API request (non-paginated, supports all methods)
  */
 const MAX_RETRIES = 5;
+// The longest Retry-After a sync request waits out in place. Spotify's can be
+// hours (8940 s on 2026-11-15); sleeping that long held a sync inside one
+// request. Past this the breaker opens until Retry-After has passed, and the
+// call fails now, so the sync ends and the next one waits for the breaker.
+const MAX_RETRY_AFTER_WAIT_S = 60;
 
 const spotifyRequest = async (endpoint, token, options = {}, _retryCount = 0) => {
   if (_retryCount === 0) _breakerGuard(); // §2b: fail-fast while the abuse cooldown is open
@@ -64,11 +75,16 @@ const spotifyRequest = async (endpoint, token, options = {}, _retryCount = 0) =>
 
   if (!response.ok) {
     if (response.status === 429) {
+      const retryAfter = parseInt(response.headers.get('Retry-After') || '5', 10);
+      sharedPause.noteStatus(429, response.headers.get('Retry-After'));
       if (_retryCount >= MAX_RETRIES) {
-        _breakerTrip(); // §2b: open the escalating cooldown — stop re-hammering next cycle
+        _breakerTrip(retryAfter * 1000); // §2b: open the escalating cooldown — stop re-hammering next cycle
         throw new Error('Spotify API rate limit exceeded after maximum retries');
       }
-      const retryAfter = parseInt(response.headers.get('Retry-After') || '5', 10);
+      if (retryAfter > MAX_RETRY_AFTER_WAIT_S) {
+        _breakerTrip(retryAfter * 1000);
+        throw new Error(`Spotify API rate limit: Spotify asked for ${Math.ceil(retryAfter / 60)} min without requests`);
+      }
       await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
       return spotifyRequest(endpoint, token, options, _retryCount + 1);
     }
@@ -137,12 +153,16 @@ const spotifyFetch = async (endpoint, token, allItems = [], onProgress, refreshT
 
   if (!response.ok) {
     if (response.status === 429) {
+      const retryAfter = parseInt(response.headers.get('Retry-After') || '5', 10);
+      sharedPause.noteStatus(429, response.headers.get('Retry-After'));
       if (_retryCount >= MAX_RETRIES) {
-        _breakerTrip(); // §2b: open the escalating cooldown
+        _breakerTrip(retryAfter * 1000); // §2b: open the escalating cooldown
         throw new Error('Spotify API rate limit exceeded after maximum retries');
       }
-      // Rate limited - get retry-after header
-      const retryAfter = parseInt(response.headers.get('Retry-After') || '5', 10);
+      if (retryAfter > MAX_RETRY_AFTER_WAIT_S) {
+        _breakerTrip(retryAfter * 1000);
+        throw new Error(`Spotify API rate limit: Spotify asked for ${Math.ceil(retryAfter / 60)} min without requests`);
+      }
       await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
       return spotifyFetch(endpoint, token, allItems, onProgress, refreshToken, _retryCount + 1, isCancelled);
     }
@@ -501,10 +521,15 @@ const SpotifySyncProvider = {
    * @returns {Promise<{ok: boolean, status: number|null}>}
    */
   async checkAuthStatus(token) {
+    // Spotify's rate-limit pause (spotify-pause.js): answer the 429 it would
+    // send, without a request. sync:check-auth reads a 429 as a valid token,
+    // and the sync's own guard then fails fast, so a paused sync sends nothing.
+    if (sharedPause.isPaused()) return { ok: false, status: 429 };
     try {
       const response = await fetch(`${SPOTIFY_API_BASE}/me`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
+      sharedPause.noteStatus(response.status, response.headers && response.headers.get ? response.headers.get('Retry-After') : null);
       return { ok: response.ok, status: response.status };
     } catch {
       return { ok: false, status: null };

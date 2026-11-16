@@ -28,9 +28,11 @@ function createSpotifyBreaker() {
     isOpen(now) { return now < openUntil; },
     msRemaining(now) { return Math.max(0, openUntil - now); },
     // A 429 exhausted retries → open / escalate. Returns true (state changed).
-    trip(now) {
+    // `minMs` keeps it open at least that long: Spotify's own Retry-After,
+    // when that is longer than the escalation step (it can be hours).
+    trip(now, minMs = 0) {
       level += 1;
-      openUntil = now + cooldownMsForLevel(level);
+      openUntil = now + Math.max(cooldownMsForLevel(level), Number(minMs) || 0);
       return true;
     },
     // A successful Spotify call → close + reset escalation. Returns true iff it

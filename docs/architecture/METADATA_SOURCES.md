@@ -200,7 +200,7 @@ Import library and playlists from external services, and keep playlists mirrored
 | Apple Music | `sync-providers/applemusic.js` | MusicKit user token | Library songs, albums, artists, playlists (append-only writes) |
 | ListenBrainz | `sync-providers/listenbrainz.js` | User token | Playlists only (JSPF, recording MBID per track) |
 
-**Rate Limiting:** 100ms delay between Spotify requests, respects 429 responses with retry-after header. Apple Music catalog calls go through a dedicated limiter.
+**Rate Limiting:** 100ms delay between Spotify requests. A 429 is honoured: sync waits out a `Retry-After` of up to 60 s, and a longer one opens the sync breaker (`sync-engine/spotify-breaker.js`) until it has passed instead of sleeping inside the request; the Spotify plugin sends no search until it has passed. Every other Spotify Web API call waits too: each process keeps one pause (`sync-providers/spotify-pause.js`) that any 429 starts or extends. The renderer's fetch gate (`installSpotifyPause` in `src/renderer/app.js`) answers every `api.spotify.com` request with the same 429, without sending it, while the pause runs: plugin searches, playback controls, volume, seek, the discography fallback. A pause over a minute shows one toast. In the main process the playback poller, its recovery loop and the pause on quit skip their request, and the sync provider's guard fails fast. The sync sign-in check (`checkAuthStatus`) answers 429 without a request too, and a 429 from it starts the pause. Apple Music catalog calls go through a dedicated limiter.
 
 ---
 

@@ -11,7 +11,7 @@ const CTX = {
   territoryId: 'US',
   region: 'NA',
   tier: 'UNLIMITED_HD',
-  deviceId: '14354613042605242',
+  deviceId: '12345678901234567',
   csrfToken: 'tok-0123456789abcdef0123456789abcdef=',
   csrfRnd: '403697901',
   csrfTs: '1793304003',
