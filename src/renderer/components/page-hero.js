@@ -36,9 +36,9 @@ const HERO_COLLAPSED_HEIGHT = 80;
 // full hero, nearly solid in the bar; with no photo, a dark fallback.
 const photoShade = (hasUrl, collapsed) => (hasUrl
   ? (collapsed
-    ? 'linear-gradient(to bottom, rgba(0,0,0,0.7) 0%, rgba(17,17,17,0.95) 100%)'
-    : 'linear-gradient(to bottom, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.6) 50%, rgba(17,17,17,1) 100%)')
-  : 'linear-gradient(to bottom, rgba(60,60,80,0.4) 0%, rgba(17,17,17,1) 100%)');
+    ? 'var(--photo-shade-bar)'
+    : 'var(--photo-shade)')
+  : 'var(--photo-shade-empty)');
 
 function PageHero({ collapsed, page, title, onTitleContextMenu, expanded, collapsedContent, photo, onExpand, onContextMenu }) {
   const e = React.createElement;

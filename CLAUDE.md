@@ -146,7 +146,8 @@ Each rule below exists because the audit found its absence. Read the audit's are
   - Use the theme-token Tailwind classes (`text-ink-secondary`, `bg-surface-card`, `border-line`, `bg-accent-fill`, `bg-tint-danger`, ...; `tailwind.config.js`) or `var(--…)` in inline styles. Don't add hex values, Tailwind palette classes (`text-gray-500`, `bg-red-50`, `purple-600`, ...), or `isDark` / `effectiveTheme` ternaries (the count is 0; keep it there).
   - If no token fits, add one to `:root` and `.dark` together (and to `tailwind.config.js` if classes will use it).
   - White text never sits on `var(--accent-primary)` (it's `#a78bfa` in dark mode): fills with white text use `--accent-fill` / `--on-accent` (`bg-accent-fill text-ink-on-accent`).
-  - Status text uses `--text-success/-warning/-danger/-info`; white-text status fills use `--fill-*`. Never their own hex values.
+  - Status text uses `--text-success/-warning/-danger/-info`; white-text status fills use `--fill-*`; a status note's faint background and border use `--tint-*` / `--border-success/-warning/-info/-danger`. Never their own hex or `rgba()` values.
+  - The accent is one value, `--accent-base`: every accent token is `color-mix()`ed from it. Never write a purple (or an `rgba()` of one) anywhere else.
   - A page's colour comes from `PAGE_COLORS` (`src/renderer/lib/page-colors.js`); a service's from its plugin's `resolver.color`. Never a hard-coded copy.
   - The playbar, queue drawer and AI panels are dark in both themes: they use `--surface-dark*`, never page tokens.
 - **Stay on the scales.**
@@ -176,7 +177,7 @@ Each rule below exists because the audit found its absence. Read the audit's are
   - Plurals go through one helper (`countOf`), never a hard-coded "tracks".
   - An error says what happened and what to do. A confirm button is named for its action and sits next to Cancel. Success is a toast, not a dialog.
 - **The ratchet enforces this.** `tests/ci/design-drift.test.js` runs `scripts/design-drift.js` over `src/renderer/` and compares against `tests/ci/design-drift-baseline.json`.
-  - It counts hex colours, palette classes, theme ternaries, clickable non-buttons, `outline: 'none'`, native dialogs, "...", pasted SVG paths, off-scale font sizes and radii, JS hover handlers that change style, and buttons styled by hand instead of `Button` (`handBuiltButtons`; a shared component's own button doesn't count). It also flags CSS variables the renderer uses but `index.html` doesn't define.
+  - It counts hex colours, coloured and neutral `rgb()`/`rgba()` values, palette classes, theme ternaries, clickable non-buttons, `outline: 'none'`, native dialogs, "...", pasted SVG paths, off-scale font sizes and radii, JS hover handlers that change style, and buttons styled by hand instead of `Button` (`handBuiltButtons`; a shared component's own button doesn't count). It also flags CSS variables the renderer uses but `index.html` doesn't define.
   - It also counts hand-built copies of shared components: track rows (a `sourceRowState()` call outside `TrackRow`), "Play from" source buttons, spinners, "No …" empty states, pill buttons, sticky bars and page heroes. The audit counted colours but not copies, so pages kept their own rows and states while every colour in them was a token (2026-11-15).
   - A count that rises fails: fix it with the shared component or token.
   - A count that falls fails until you lock it in with `npm run design-drift -- --write` and commit the baseline.

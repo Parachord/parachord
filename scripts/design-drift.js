@@ -32,11 +32,14 @@ const RADII = new Set([0, 4, 6, 8, 10, 12, 16, 999, 9999]);
 
 const NON_INTERACTIVE = new Set(['div', 'span', 'li', 'img', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'tr', 'td', 'section', 'article', 'header']);
 const HEX = /#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b/g;
+const RGB = /rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})/g;
 const PALETTE_CLASS = /(?:^|[\s:"'`])(?:text|bg|border|ring|from|via|to|fill|stroke|divide|placeholder|accent|outline|decoration)-(?:gray|slate|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d{2,3}\b/g;
 const THEME_TERNARY = /\bisDark\s*\?|effectiveTheme\s*===\s*['"](?:dark|light)['"]\s*\?/g;
 
 const METRICS = {
   hexColors: 'Hard-coded hex colours in the renderer. Use a CSS variable from index.html (add one, with a .dark value, if none fits).',
+  rgbColors: 'Hard-coded coloured rgb()/rgba() values (a status green, the accent purple…). Use the token, or color-mix(in srgb, var(--token) N%, transparent) for a faint one.',
+  rgbNeutrals: 'Hard-coded black / white / grey rgba() values (shadows, scrims, lines on dark panels). Use --on-dark-*, --shadow-* / --scrim tokens.',
   paletteClasses: 'Tailwind palette colour classes (text-gray-500, bg-red-50, purple-600…). Most have no dark-mode remap; use CSS variables.',
   themeTernaries: 'isDark / effectiveTheme ternaries. Theme through CSS variables instead.',
   clickableNonInteractive: 'div/span/li/img… with onClick and no role: unreachable by keyboard. Use a <button> (or role, tabIndex and Enter/Space).',
@@ -76,8 +79,10 @@ const COPY_HOMES = {
   heroCopies: ['components/page-hero.js'],
   // The canonical colour data: each page's colour (CLAUDE.md "A page's colour
   // comes from PAGE_COLORS"), the artist stand-in art's palettes, and the
-  // brands' own colours in their logos.
-  hexColors: ['lib/page-colors.js', 'lib/artist-pattern.js', 'components/brand-logos.js'],
+  // brands' own colours in their logos, and each release type's colour
+  // (lib/release-types.js, one palette for every badge and chip).
+  hexColors: ['lib/page-colors.js', 'lib/artist-pattern.js', 'components/brand-logos.js', 'lib/release-types.js'],
+  rgbColors: ['lib/page-colors.js', 'lib/artist-pattern.js', 'components/brand-logos.js', 'lib/release-types.js'],
   paletteClasses: ['lib/page-colors.js'],
   // Shared components whose own buttons are the one look for their control.
   handBuiltButtons: ['components/button.js', 'components/header-control.js', 'components/card-button.js', 'components/filter-chips.js',
@@ -141,6 +146,10 @@ function scanSource(src) {
     if (strings && !consoleHere) {
       for (const s of strings) {
         counts.hexColors += (s.match(HEX) || []).length;
+        for (const m of s.matchAll(RGB)) {
+          const [r, g, b] = [m[1], m[2], m[3]].map(Number);
+          if (r === g && g === b) counts.rgbNeutrals += 1; else counts.rgbColors += 1;
+        }
         counts.paletteClasses += (s.match(PALETTE_CLASS) || []).length;
         if (s.includes('...')) counts.asciiEllipsis += 1;
         for (const v of s.match(/var\(\s*(--[a-zA-Z0-9-]+)/g) || []) cssVars.add(v.replace(/var\(\s*/, ''));

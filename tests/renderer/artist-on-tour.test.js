@@ -40,7 +40,7 @@ test("the artist hero is PageHero with the artist's photo", () => {
   const html = renderToStaticMarkup(React.createElement(PageHero, { collapsed: true, photo: { url: 'https://x/a.jpg', position: 'center 20%' }, onExpand: () => {}, collapsedContent: 'bar' }));
   expect(html).toContain('background-image:url(https://x/a.jpg)');
   expect(html).toContain('aria-label="Expand header"');
-  expect(html).toContain('rgba(17,17,17,0.95)');
+  expect(html).toContain('background:var(--photo-shade-bar)');
   expect(html).not.toContain('bg-gradient');
   expect(artist).not.toMatch(/height: isHeaderCollapsed \? '80px' : '320px'/);
 });

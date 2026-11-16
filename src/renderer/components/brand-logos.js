@@ -231,4 +231,11 @@ const ParachordWordmark = ({ fill = 'black', height = 40 }) => React.createEleme
   React.createElement('rect', { x: 57, y: 148, width: 25, height: 108.261, fill: fill })
 );
 
-module.exports = { SERVICE_LOGO_PATHS, SERVICE_LOGO_IMAGES, ResolverIcon, SERVICE_LOGOS, BRAND_MARKS, BrandMark, ParachordWordmark };
+// Brand colours that aren't a plug-in's (a plug-in's comes from its
+// manifest): Raycast's, for its extension's info dialog.
+const BRAND_COLORS = {
+  raycast: '#FF6363',
+  raycastGradient: 'linear-gradient(135deg, #FF6363 0%, #FF8E53 100%)',
+};
+
+module.exports = { SERVICE_LOGO_PATHS, SERVICE_LOGO_IMAGES, ResolverIcon, SERVICE_LOGOS, BRAND_MARKS, BrandMark, ParachordWordmark, BRAND_COLORS };

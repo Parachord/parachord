@@ -410,7 +410,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
               return React.createElement('div', {
                 key: `remote-deleted-${providerId}`,
                 className: `mx-4 mt-3 p-3 rounded-lg border`,
-                style: { background: 'rgba(234, 179, 8, 0.12)', borderColor: 'rgba(234, 179, 8, 0.25)' }
+                style: { background: 'var(--tint-warning)', borderColor: 'var(--border-warning)' }
               },
                 React.createElement('div', { className: 'text-sm font-medium text-ink-warning mb-2' },
                   `"${playlist.title}" was deleted on ${providerName}`

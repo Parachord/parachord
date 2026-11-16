@@ -2,14 +2,22 @@ const fs = require('fs');
 const path = require('path');
 const T = require('../../src/renderer/lib/ticket-sellers');
 
-test("each seller's colour is its plugin's manifest colour", () => {
-  for (const [id, hex] of Object.entries(T.SELLER_COLORS)) {
-    const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, `../../plugins-src/${id}/manifest.json`), 'utf8'));
-    expect((manifest.manifest || manifest).color.toLowerCase()).toBe(hex.toLowerCase());
-  }
+test("a seller's colour comes from the plug-in registry, never a copied table", () => {
+  const src = fs.readFileSync(path.join(__dirname, '../../src/renderer/lib/ticket-sellers.js'), 'utf8');
+  expect(src).not.toMatch(/#[0-9a-fA-F]{6}/);
+  const manifests = Object.fromEntries(['bandsintown', 'songkick', 'seatgeek', 'ticketmaster'].map((id) => {
+    const m = JSON.parse(fs.readFileSync(path.join(__dirname, `../../plugins-src/${id}/manifest.json`), 'utf8'));
+    return [id, (m.manifest || m).color];
+  }));
+  T.setSellerColorLookup((id) => manifests[id] || null);
+  expect(T.sellerColor('seatgeek')).toBe(manifests.seatgeek);
+  expect(T.sellerColor('nope')).toBe('#10c9b4'); // the Concerts colour
+  // app.js hands over its registry lookup.
+  expect(fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8')).toContain('setSellerColorLookup(getServiceColor)');
 });
 
 test('text and badge colours mix with theme tokens, so one value works in both themes', () => {
+  T.setSellerColorLookup((id) => (id === 'songkick' ? '#F80046' : null));
   expect(T.sellerTextColor('songkick')).toBe('color-mix(in srgb, #F80046 70%, var(--text-primary))');
   expect(T.sellerBadgeBg('songkick')).toBe('color-mix(in srgb, #F80046 15%, transparent)');
   expect(T.sellerColor('ai')).toBe('#10c9b4');

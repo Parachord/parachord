@@ -49,7 +49,7 @@ describe('FilterChips', () => {
   test('a coloured chip shows a dot idle and fills picked, its text readable on the fill', () => {
     expect(h({ chips, value: 'all' })).toMatch(/data-chip-dot[^>]*background-color:#25D1DA/);
     const picked = h({ chips, value: 'ep' });
-    expect(picked).toMatch(/aria-pressed="true"[^>]*background-color:#25D1DA;color:#111827/);
+    expect(picked).toMatch(/aria-pressed="true"[^>]*background-color:#25D1DA;color:var\(--on-art-ink\)/);
     expect(picked).not.toContain('data-chip-dot');
   });
 
@@ -57,7 +57,7 @@ describe('FilterChips', () => {
     const g = 'linear-gradient(to right, #f97316, #dc2626)';
     const both = [{ id: 'all', label: 'All' }, { id: 'both', label: 'Both', color: '#dc2626', gradient: g }];
     expect(h({ chips: both, value: 'all' })).toMatch(/data-chip-dot[^>]*background-image:linear-gradient/);
-    expect(h({ chips: both, value: 'both' })).toMatch(/aria-pressed="true"[^>]*background-color:#dc2626;background-image:linear-gradient\(to right, #f97316, #dc2626\);color:#fff/);
+    expect(h({ chips: both, value: 'both' })).toMatch(/aria-pressed="true"[^>]*background-color:#dc2626;background-image:linear-gradient\(to right, #f97316, #dc2626\);color:var\(--on-accent\)/);
   });
 
   test('clicking a chip picks it', () => {

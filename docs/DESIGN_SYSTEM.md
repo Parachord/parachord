@@ -69,6 +69,16 @@ Secondary and tertiary both pass 4.5:1 on the page and on cards in both themes, 
 | `--accent-primary-alpha-10` | `bg-accent-tint` | 10% | 10% | Selected and now-playing rows, accent chips |
 | `--accent-primary-alpha-15` | `bg-accent-tint-hover` | 15% | 15% | Their hover |
 
+#### Status tints and photo shades
+
+| Token | Usage |
+|-------|-------|
+| `--tint-success` / `-warning` / `-danger` / `-info` (`bg-tint-*`) | A status note's faint background: its status text colour at 12% (`--tint-danger-hover` 20%), so it follows the theme |
+| `--border-success` / `-warning` / `-info` | Its border: the status text colour at 30% (`--border-danger` is its own pair) |
+| `--photo-shade` / `-bar` / `-empty` | The darkening over an artist photo in a hero, the collapsed 80px bar, and no photo (same in both themes) |
+
+Never write a status colour as `rgba(34, 197, 94, 0.08)`: the drift script's `rgbColors` counts coloured `rgb()`/`rgba()` values (0 now), and `rgbNeutrals` the black and white ones (shadows, scrims, lines on the dark panels), still being moved onto tokens.
+
 **The fill-accent convention.** `--accent-primary` turns light purple in dark mode, where white text on it is 2.72:1. So a button, badge or switch track with white text uses `--accent-fill` / `--on-accent`, and `--accent-primary` is for accent-coloured text, icons and outlines. Other accent tokens (`--accent-secondary`, `--accent-soft`, `--accent-surface`, alpha variants at 6–60%) are in `index.html`.
 
 #### Status

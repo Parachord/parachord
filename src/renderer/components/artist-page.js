@@ -461,8 +461,8 @@ const ArtistPage = React.memo(function ArtistPage(props) {
             className: 'absolute inset-0',
             style: {
               background: artistImage
-                ? 'linear-gradient(to bottom, rgba(0,0,0,0.5) 0%, rgba(17,17,17,0.95) 100%)'
-                : 'linear-gradient(to bottom, rgba(60,60,80,0.4) 0%, rgba(17,17,17,1) 100%)'
+                ? 'var(--photo-shade-bar)'
+                : 'var(--photo-shade-empty)'
             }
           }),
           // Artist info overlay (inline layout for release page - matches collapsed artist header)

@@ -2018,7 +2018,10 @@ const {
   Tooltip, FixedTooltip, TooltipLayer, ResolverIcon,
   SERVICE_LOGOS, ParachordWordmark, PlaybackProgress,
 } = require('./components/ui-atoms');
-const { BrandMark } = require('./components/brand-logos');
+const { BrandMark, BRAND_COLORS } = require('./components/brand-logos');
+// Raycast's brand colour and gradient (its extension's info dialog).
+const RAYCAST_COLOR = BRAND_COLORS.raycast;
+const RAYCAST_GRADIENT = BRAND_COLORS.raycastGradient;
 // Why a pick is there: the round badge on its cover (Home and Recommendations).
 const { ReasonBadge, shuffleupagusBadgeProps } = require('./components/reason-badge');
 
@@ -2073,10 +2076,9 @@ const { toastBackground } = require('./lib/toast-style');
 const { PAGE_COLORS, pageTint } = require('./lib/page-colors');
 const { capabilityLabel } = require('./lib/capability-labels');
 // A plugin manifest's "no colour of its own" value: never shown.
+// The colour resolver-loader.js gives a plug-in whose manifest names none: a
+// marker to test against ("this plug-in has no colour"), never drawn.
 const NO_PLUGIN_COLOR = '#888888';
-// Raycast's brand colour and gradient (its extension's info dialog).
-const RAYCAST_COLOR = '#FF6363';
-const RAYCAST_GRADIENT = `linear-gradient(135deg, ${RAYCAST_COLOR} 0%, #FF8E53 100%)`;
 const { Modal, ConfirmModal, DontShowAgain } = require('./components/modal');
 const { PlaylistUpdateDialog, UpdateModeChoice } = require('./components/playlist-update-dialog');
 const { KeyboardShortcutsDialog } = require('./components/keyboard-shortcuts');
@@ -2101,7 +2103,7 @@ const { SettingRow, Select, TextField, SecretField, Switch, RadioGroup, Segmente
 const { EmptyState, ErrorState } = require('./components/states');
 // Room the queue drawer leaves above it: the title bar and a little air.
 const QUEUE_DRAWER_TOP_GAP = 48;
-const { sellerColor, sellerTextColor, sellerBadgeBg, sellerShortName, sellerName } = require('./lib/ticket-sellers');
+const { setSellerColorLookup, sellerColor, sellerTextColor, sellerBadgeBg, sellerShortName, sellerName } = require('./lib/ticket-sellers');
 const { withCollectionState } = require('./lib/menu-collection-state');
 const { releaseMenu, artistMenu, playlistMenu } = require('./lib/item-menus');
 const { runPlaybackControl } = require('../../tools/playback-control');
@@ -7412,7 +7414,7 @@ const Parachord = () => {
         justifyContent: 'center',
         zIndex: 100,
         borderRadius: '8px',
-        border: '2px dashed rgba(147, 51, 234, 0.5)',
+        border: '2px dashed var(--accent-primary-alpha-50)',
         pointerEvents: 'none'
       }
     },
@@ -33662,6 +33664,9 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     const r = (resolverLoaderRef.current?.getAllResolvers?.() || []).find(x => x.id === id);
     return r && r.color && r.color !== NO_PLUGIN_COLOR ? r.color : null;
   };
+  // Ticket sellers take their plug-in's colour too (lib/ticket-sellers.js
+  // asks this; it reads the loader at call time, so once is enough).
+  useEffect(() => { setSellerColorLookup(getServiceColor); }, []);
 
   const playArtistTopTracks = async (artist) => {
     const name = typeof artist === 'string' ? artist : artist?.name;
@@ -41663,7 +41668,7 @@ discordPresenceEnabled && (() => {
                           borderRadius: '999px',
                           fontSize: '11px',
                           fontWeight: '600',
-                          backgroundColor: tone === 'good' ? 'rgba(34,197,94,0.16)' : tone === 'warn' ? 'rgba(245,158,11,0.16)' : 'var(--hover-bg-default)',
+                          backgroundColor: tone === 'good' ? 'var(--tint-success)' : tone === 'warn' ? 'var(--tint-warning)' : 'var(--hover-bg-default)',
                           color: tone === 'good' ? 'var(--text-success)' : tone === 'warn' ? 'var(--text-warning)' : 'var(--text-tertiary)'
                         }
                       }, DISCORD_PRESENCE_STATUS_LABELS[statusKey] || statusKey),
@@ -42321,7 +42326,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
               position: 'top',
               variant: 'dark'
             },
-              React.createElement(Button, { variant: 'icon', size: 'sm', tone: 'dark', className: 'ml-1', style: { color: isActive ? 'var(--playbar-accent-hover)' : hasAnyAi ? 'var(--on-dark-secondary)' : 'var(--on-dark-disabled)', backgroundColor: isActive ? 'rgba(168, 85, 247, 0.3)' : undefined }, 'aria-label': hasEnabledChat ? 'Shuffleupagus' : hasEnabledGenerate ? 'AI Playlist' : 'Enable AI in Settings', onClick: handleClick, disabled: !hasAnyAi }, React.createElement(Icons.Sparkles, { className: 'w-4 h-4' }))
+              React.createElement(Button, { variant: 'icon', size: 'sm', tone: 'dark', className: 'ml-1', style: { color: isActive ? 'var(--playbar-accent-hover)' : hasAnyAi ? 'var(--on-dark-secondary)' : 'var(--on-dark-disabled)', backgroundColor: isActive ? 'var(--accent-primary-alpha-30)' : undefined }, 'aria-label': hasEnabledChat ? 'Shuffleupagus' : hasEnabledGenerate ? 'AI Playlist' : 'Enable AI in Settings', onClick: handleClick, disabled: !hasAnyAi }, React.createElement(Icons.Sparkles, { className: 'w-4 h-4' }))
             );
           })()
         ),
@@ -43110,8 +43115,8 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column' }
         style: {
           marginTop: '12px',
           padding: '10px 12px',
-          backgroundColor: 'rgba(239, 68, 68, 0.1)',
-          border: '1px solid rgba(239, 68, 68, 0.2)',
+          backgroundColor: 'var(--tint-danger)',
+          border: '1px solid var(--border-danger)',
           borderRadius: '8px'
         }
       },
@@ -44358,7 +44363,7 @@ React.createElement('div', {
               style: {
                 marginBottom: '12px',
                 padding: '10px 12px',
-                backgroundColor: 'rgba(34, 197, 94, 0.08)',
+                backgroundColor: 'var(--tint-success)',
                 borderRadius: '8px',
                 fontSize: '12px',
                 color: 'var(--text-success)'
@@ -44370,7 +44375,7 @@ React.createElement('div', {
               style: {
                 marginBottom: '12px',
                 padding: '10px 12px',
-                backgroundColor: 'rgba(59, 130, 246, 0.08)',
+                backgroundColor: 'var(--tint-info)',
                 borderRadius: '8px',
                 fontSize: '12px',
                 color: 'var(--text-info)'
@@ -44382,7 +44387,7 @@ React.createElement('div', {
               style: {
                 marginBottom: '12px',
                 padding: '10px 12px',
-                backgroundColor: 'rgba(250, 36, 60, 0.08)',
+                backgroundColor: 'var(--tint-danger)',
                 borderRadius: '8px',
                 fontSize: '12px',
                 color: 'var(--text-danger)'
@@ -47221,8 +47226,8 @@ React.createElement('div', { style: { marginTop: '12px' } },
               style: {
                 marginBottom: '12px',
                 padding: '12px',
-                backgroundColor: 'rgba(34, 197, 94, 0.08)',
-                border: '1px solid rgba(34, 197, 94, 0.2)',
+                backgroundColor: 'var(--tint-success)',
+                border: '1px solid var(--border-success)',
                 borderRadius: '10px'
               }
             },
@@ -47511,8 +47516,8 @@ React.createElement('div', { style: { marginTop: '12px' } },
             if (!s) return null;
             const banner = (bg, border, color, text) => React.createElement('div', { style: { backgroundColor: bg, border: `1px solid ${border}`, borderRadius: '8px', padding: '9px 11px', marginBottom: '12px' } }, React.createElement('span', { style: { fontSize: '12px', color, lineHeight: '1.45' } }, text));
             const rows = [];
-            if (d.recomputed) rows.push(banner('rgba(245,158,11,0.12)', 'rgba(245,158,11,0.4)', 'var(--text-warning)', 'The remote changed since you opened this. This is the updated diff.'));
-            if (s.hasRemoves) rows.push(banner('rgba(220,38,38,0.10)', 'rgba(220,38,38,0.35)', 'var(--text-danger)', `${s.totalRemoves} track${s.totalRemoves === 1 ? '' : 's'} would be removed. Review the removals before you accept.`));
+            if (d.recomputed) rows.push(banner('var(--tint-warning)', 'var(--border-warning)', 'var(--text-warning)', 'The remote changed since you opened this. This is the updated diff.'));
+            if (s.hasRemoves) rows.push(banner('var(--tint-danger)', 'var(--border-danger)', 'var(--text-danger)', `${s.totalRemoves} track${s.totalRemoves === 1 ? '' : 's'} would be removed. Review the removals before you accept.`));
             if (!s.hasChanges && !s.protected.length) {
               rows.push(React.createElement('p', { key: 'noop', style: { fontSize: '13px', color: 'var(--text-secondary)', padding: '4px 0 14px' } }, 'Your playlists are already in sync, so nothing changes. Safe to switch.'));
             } else if (s.hasChanges) {
@@ -47529,7 +47534,7 @@ React.createElement('div', { style: { marginTop: '12px' } },
                 p.removes.forEach((t, ti) => provNodes.push(React.createElement('div', { key: `r${ppi}-${ti}`, style: { fontSize: '13px', color: 'var(--text-danger)', padding: '2px 0' } }, `−  ${t.artist}${t.artist && t.title ? ' — ' : ''}${t.title}`)));
                 p.adds.forEach((t, ti) => provNodes.push(React.createElement('div', { key: `a${ppi}-${ti}`, style: { fontSize: '13px', color: 'var(--text-success)', padding: '2px 0' } }, `+  ${t.artist}${t.artist && t.title ? ' — ' : ''}${t.title}`)));
               });
-              rows.push(React.createElement('div', { key: `pl${pi}`, style: { padding: '10px 12px', marginBottom: '8px', borderRadius: '10px', backgroundColor: hasRem ? 'rgba(220,38,38,0.06)' : 'rgba(127,127,127,0.06)', borderLeft: hasRem ? '3px solid var(--fill-error)' : '3px solid transparent' } },
+              rows.push(React.createElement('div', { key: `pl${pi}`, style: { padding: '10px 12px', marginBottom: '8px', borderRadius: '10px', backgroundColor: hasRem ? 'var(--tint-danger)' : 'var(--hover-bg-default)', borderLeft: hasRem ? '3px solid var(--fill-error)' : '3px solid transparent' } },
                 React.createElement('div', { style: { fontSize: '14px', fontWeight: '500', color: 'var(--text-primary)' } }, pl.displayName),
                 ...provNodes
               ));
@@ -47647,8 +47652,8 @@ React.createElement('div', {
             style: {
               marginBottom: '16px',
               padding: '12px 16px',
-              backgroundColor: 'rgba(239, 68, 68, 0.08)',
-              border: '1px solid rgba(239, 68, 68, 0.2)',
+              backgroundColor: 'var(--tint-danger)',
+              border: '1px solid var(--border-danger)',
               borderRadius: '10px',
               fontSize: '13px',
               color: 'var(--text-danger)'
@@ -48140,7 +48145,7 @@ React.createElement('div', {
                         height: '10px',
                         borderRadius: '50%',
                         backgroundColor: isInProgress ? 'var(--info)' : 'var(--success)',
-                        boxShadow: isInProgress ? '0 0 8px rgba(59, 130, 246, 0.5)' : 'none'
+                        boxShadow: isInProgress ? '0 0 8px var(--border-info)' : 'none'
                       }
                     }),
                     React.createElement('div', { style: { flex: 1 } },

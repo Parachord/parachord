@@ -160,7 +160,7 @@ describe('SourceFilter colours', () => {
   });
   test('the selected chip fills with the colour and reads on it', () => {
     const html = h(S.SourceFilter, { sources, value: 'amazonmusic' });
-    expect(html).toMatch(/aria-pressed="true"[^>]*background-color:#25D1DA;color:#111827/);
+    expect(html).toMatch(/aria-pressed="true"[^>]*background-color:#25D1DA;color:var\(--on-art-ink\)/);
     expect(html).not.toMatch(/data-chip-dot[^>]*#25D1DA/);
   });
   test('All stays neutral and has no dot', () => {

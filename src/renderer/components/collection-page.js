@@ -22,6 +22,7 @@ const { EmptyState, ErrorState } = require('./states');
 const { SortMenu } = require('./sort-menu');
 const { Menu } = require('./menu');
 const { ResolverIcon } = require('./ui-atoms');
+const { Badge } = require('./badge');
 const { HeroTabs } = require('./hero-tabs');
 const { VirtualizedTrackList, TrackRow, TrackRowSkeleton } = require('./track-lists');
 const { slug } = require('../lib/track-slug');
@@ -612,15 +613,11 @@ React.createElement('div', { className: 'ml-auto' },
                       },
                       details: [
                       // Service badge - refined
-                      React.createElement('div', {
-                        key: 'service',
-                        className: 'release-badge',
-                        style: {
-                          marginTop: '4px',
-                          backgroundColor: friend.service === 'lastfm' ? 'rgba(239, 68, 68, 0.08)' : 'rgba(249, 115, 22, 0.08)',
-                          color: friend.service === 'lastfm' ? 'var(--text-danger)' : 'var(--text-warning)'
-                        }
-                      }, friend.service === 'lastfm' ? 'Last.fm' : 'ListenBrainz'),
+                      // The service the friend listens on: a neutral Badge (its
+                      // name says which; the danger / warning colours it wore
+                      // said nothing about Last.fm or ListenBrainz).
+                      React.createElement('span', { key: 'service', style: { display: 'inline-flex', marginTop: '4px' } },
+                        React.createElement(Badge, null, friend.service === 'lastfm' ? 'Last.fm' : 'ListenBrainz')),
                       // Current track if on-air
                       onAir && friend.cachedRecentTrack && React.createElement('div', {
                         key: 'now',
