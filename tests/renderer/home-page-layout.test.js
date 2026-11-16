@@ -163,7 +163,8 @@ describe('render', () => {
     // and Home's sidebar colour (the accent, #7c3aed: Tailwind violet-600).
     // The pages' heroes are the shared PageHero (components/page-hero.js).
     expect(require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/components/page-hero.js'), 'utf8')).toContain("const COLLAPSED_TITLE_STYLE = { textShadow: '0 2px 10px rgba(0,0,0,0.5)', letterSpacing: '0.2em', textTransform: 'uppercase' };");
-    expect(app).toContain("color: activeView === 'home' ? 'var(--accent-primary)' : 'var(--nav-inactive)',");
+    expect(app).toContain("React.createElement(NavItem, { page: 'home', label: 'Home', icon: Icons.Home, prominent: true, active: activeView === 'home'");
+    expect(require('../../src/renderer/lib/page-colors').PAGE_COLORS.home.color).toBe('var(--accent-primary)');
     expect(fs.readFileSync(path.join(__dirname, '../../index.html'), 'utf8')).toMatch(/--accent-primary: #7c3aed;/);
     const html = render({});
     const hero = html.slice(html.indexOf('data-home-hero-banner'), html.indexOf('scrollable-content'));

@@ -317,9 +317,9 @@ describe('Rows', () => {
     expect(PAGE_COLORS.playlists.color).toBe('#ec4899');
     expect(PAGE_COLORS.recommendations.color).toBe('#f59e0b');
     expect(PAGE_COLORS.concerts.color).toBe('#10c9b4');
-    expect(app).toContain("color: playlistsNavActive ? PAGE_COLORS.playlists.color : 'var(--nav-inactive)',");
-    expect(app).toContain("color: recommendationsNavActive ? PAGE_COLORS.recommendations.color : 'var(--nav-inactive)',");
-    expect(app).toContain("color: activeView === 'concerts' ? PAGE_COLORS['concerts'].color : 'var(--nav-inactive)',");
+    // The sidebar's NavItem colours its current page from the same map.
+    expect(fs.readFileSync(path.join(COMP, 'nav-item.js'), 'utf8')).toContain("color: active ? colors.color : 'var(--nav-inactive)',");
+    for (const key of ['playlists', 'recommendations', 'concerts']) expect(app).toMatch(new RegExp(`React\\.createElement\\(NavItem, \\{\\s*page: '${key}'`));
     const link = (html, page) => (html.match(new RegExp(`aria-label="See all in ${page}"[^>]*style="[^"]*color:(#[0-9a-f]{6})`)) || [])[1];
     expect(link(h(S.PlaylistsRow, { playlists: [{ id: 'a', title: 'A' }], navigateTo: () => {} }), 'Playlists')).toBe('#ec4899');
     expect(link(h(S.AlbumsRow, { albums: [{ title: 'T', artist: 'A', resolverId: 'lastfm' }], navigateTo: () => {} }), 'Recommendations')).toBe('#f59e0b');

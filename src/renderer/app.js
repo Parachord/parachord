@@ -2080,6 +2080,7 @@ const { WhatsNewDialog } = require('./components/whats-new-dialog');
 const { ArtistCard, ArtistCardSkeleton, RankBadge } = require('./components/artist-card');
 const { AlbumCard, AlbumRankBadge } = require('./components/album-card');
 const { TicketsButton } = require('./components/tickets-button');
+const { NavItem } = require('./components/nav-item');
 const { ConcertListSkeleton } = require('./components/concert-skeletons');
 const { PlaylistCard } = require('./components/playlist-card');
 const { ListenerCard, LISTENER_HEXAGON } = require('./components/listener-card');
@@ -37389,20 +37390,8 @@ useEffect(() => {
 
         // Scrollable navigation area
         React.createElement('div', { className: 'flex-1 overflow-y-auto scrollable-content px-2 py-2' },
-          // HOME button at the top
-          React.createElement('button', {
-            onClick: () => navigateTo('home'),
-            className: 'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors mb-3',
-            style: {
-              backgroundColor: activeView === 'home' ? 'var(--accent-primary-alpha-10)' : 'transparent',
-              color: activeView === 'home' ? 'var(--accent-primary)' : 'var(--nav-inactive)',
-              fontWeight: activeView === 'home' ? '600' : '500'
-            }
-          },
-            // Home icon
-            React.createElement(Icons.Home, { className: 'w-5 h-5', strokeWidth: activeView === 'home' ? 2.5 : 2 }),
-            'Home'
-          ),
+          // The sidebar's page links (components/nav-item.js).
+          React.createElement(NavItem, { page: 'home', label: 'Home', icon: Icons.Home, prominent: true, active: activeView === 'home', onClick: () => navigateTo('home') }),
 
           // YOUR MUSIC section
           React.createElement('div', { className: 'mb-4' },
@@ -37416,90 +37405,27 @@ useEffect(() => {
                 letterSpacing: '0.08em'
               }
             }, 'Your Music'),
-            React.createElement('button', {
-              onClick: () => navigateTo('playlists'),
-              onDragOver: (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; },
-              onDragEnter: (e) => { e.preventDefault(); setPlaylistDropHighlight(true); },
-              onDragLeave: (e) => { e.preventDefault(); setPlaylistDropHighlight(false); },
-              onDrop: handlePlaylistDrop,
-              className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
-              style: playlistDropHighlight ? {
-                backgroundColor: pageTint('playlists'),
-                outline: `2px solid ${PAGE_COLORS.playlists.color}`,
-                outlineOffset: '-2px',
-                borderRadius: '4px',
-                color: PAGE_COLORS.playlists.color
-              } : {
-                backgroundColor: playlistsNavActive ? pageTint('playlists') : 'transparent',
-                color: playlistsNavActive ? PAGE_COLORS.playlists.color : 'var(--nav-inactive)',
-                fontWeight: playlistsNavActive ? '500' : '400'
+            React.createElement(NavItem, {
+              page: 'playlists', label: 'Playlists', icon: Icons.ListMusic, active: playlistsNavActive,
+              onClick: () => navigateTo('playlists'), count: sidebarBadges.playlists || 0, dropHighlight: playlistDropHighlight,
+              dropProps: {
+                onDragOver: (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; },
+                onDragEnter: (e) => { e.preventDefault(); setPlaylistDropHighlight(true); },
+                onDragLeave: (e) => { e.preventDefault(); setPlaylistDropHighlight(false); },
+                onDrop: handlePlaylistDrop
               }
-            },
-              React.createElement(Icons.ListMusic, { className: 'w-4 h-4 flex-shrink-0' }),
-              'Playlists',
-              sidebarBadges.playlists && React.createElement('span', {
-                key: `playlists-badge-${Date.now()}`,
-                className: 'ml-auto sidebar-badge',
-                style: {
-                  fontSize: '11px',
-                  // The page's own white-text fill (lib/page-colors.js).
-                  backgroundColor: PAGE_COLORS.playlists.fill,
-                  color: 'var(--on-accent)',
-                  padding: '2px 6px',
-                  borderRadius: '10px'
-                }
-              }, `+${sidebarBadges.playlists}`)
-            ),
-            React.createElement('button', {
-              onClick: () => navigateTo('library'),
-              onDragOver: (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; },
-              onDragEnter: (e) => { e.preventDefault(); setCollectionDropHighlight(true); },
-              onDragLeave: (e) => { e.preventDefault(); setCollectionDropHighlight(false); },
-              onDrop: handleCollectionDrop,
-              className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
-              style: collectionDropHighlight ? {
-                backgroundColor: pageTint('library'),
-                outline: `2px solid ${PAGE_COLORS.library.color}`,
-                outlineOffset: '-2px',
-                borderRadius: '4px',
-                color: PAGE_COLORS.library.color
-              } : {
-                backgroundColor: activeView === 'library' ? pageTint('library') : 'transparent',
-                color: activeView === 'library' ? PAGE_COLORS['library'].color : 'var(--nav-inactive)',
-                fontWeight: activeView === 'library' ? '500' : '400'
+            }),
+            React.createElement(NavItem, {
+              page: 'library', label: 'Collection', icon: Icons.Library, active: activeView === 'library',
+              onClick: () => navigateTo('library'), count: sidebarBadges.collection || 0, dropHighlight: collectionDropHighlight,
+              dropProps: {
+                onDragOver: (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; },
+                onDragEnter: (e) => { e.preventDefault(); setCollectionDropHighlight(true); },
+                onDragLeave: (e) => { e.preventDefault(); setCollectionDropHighlight(false); },
+                onDrop: handleCollectionDrop
               }
-            },
-              React.createElement(Icons.Library, { className: 'w-4 h-4 flex-shrink-0' }),
-              'Collection',
-              sidebarBadges.collection && React.createElement('span', {
-                key: `collection-badge-${Date.now()}`,
-                className: 'ml-auto sidebar-badge',
-                style: {
-                  fontSize: '11px',
-                  // The page's own white-text fill (lib/page-colors.js); white
-                  // on the bright cyan was about 2.4:1.
-                  backgroundColor: PAGE_COLORS.library.fill,
-                  color: 'var(--on-accent)',
-                  padding: '2px 6px',
-                  borderRadius: '10px'
-                }
-              }, `+${sidebarBadges.collection}`)
-            ),
-            React.createElement('button', {
-              onClick: () => {
-                navigateTo('history');
-                loadTopTracks();
-              },
-              className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
-              style: {
-                backgroundColor: activeView === 'history' ? pageTint('history') : 'transparent',
-                color: activeView === 'history' ? PAGE_COLORS['history'].color : 'var(--nav-inactive)',
-                fontWeight: activeView === 'history' ? '500' : '400'
-              }
-            },
-              React.createElement(Icons.Clock, { className: 'w-4 h-4' }),
-              'History'
-            )
+            }),
+            React.createElement(NavItem, { page: 'history', label: 'History', icon: Icons.Clock, active: activeView === 'history', onClick: () => { navigateTo('history'); loadTopTracks(); } })
           ),
 
           // DISCOVER section
@@ -37514,113 +37440,13 @@ useEffect(() => {
                 letterSpacing: '0.08em'
               }
             }, 'Discover'),
-            React.createElement('button', {
-              onClick: () => {
-                navigateTo('new-releases');
-                loadNewReleases();
-              },
-              className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
-              style: {
-                backgroundColor: activeView === 'new-releases' ? pageTint('new-releases') : 'transparent',
-                color: activeView === 'new-releases' ? PAGE_COLORS['new-releases'].color : 'var(--nav-inactive)',
-                fontWeight: activeView === 'new-releases' ? '500' : '400'
-              }
-            },
-              // Droplet icon for New Releases (Fresh Drops)
-              React.createElement(Icons.Droplet, { className: 'w-4 h-4' }),
-              React.createElement('span', { className: 'flex items-center gap-1.5' },
-                'Fresh Drops',
-                showDiscoveryBadges && discoveryUnread.newReleases && React.createElement('span', {
-                  // The page's colour (lib/page-colors.js).
-                  className: 'w-2 h-2 rounded-full animate-pulse', style: { backgroundColor: PAGE_COLORS['new-releases'].color }
-                })
-              )
-            ),
-            React.createElement('button', {
-              onClick: () => navigateTo('recommendations'),
-              className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
-              style: {
-                backgroundColor: recommendationsNavActive ? pageTint('recommendations') : 'transparent',
-                color: recommendationsNavActive ? PAGE_COLORS.recommendations.color : 'var(--nav-inactive)',
-                fontWeight: recommendationsNavActive ? '500' : '400'
-              }
-            },
-              // Star icon for Recommendations
-              React.createElement(Icons.Star, { className: 'w-4 h-4' }),
-              React.createElement('span', { className: 'flex items-center gap-1.5' },
-                "Recommendations",
-                showDiscoveryBadges && discoveryUnread.recommendations && React.createElement('span', {
-                  // The page's colour (lib/page-colors.js).
-                  className: 'w-2 h-2 rounded-full animate-pulse', style: { backgroundColor: PAGE_COLORS['recommendations'].color }
-                })
-              )
-            ),
-            React.createElement('button', {
-              onClick: () => {
-                navigateTo('discover');
-                // Only call loadCharts if cache is ready; useEffect will handle it otherwise
-                if (cacheLoaded) loadCharts();
-              },
-              className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
-              style: {
-                backgroundColor: activeView === 'discover' ? pageTint('discover') : 'transparent',
-                color: activeView === 'discover' ? PAGE_COLORS['discover'].color : 'var(--nav-inactive)',
-                fontWeight: activeView === 'discover' ? '500' : '400'
-              }
-            },
-              // A ranked list for Pop of the Tops (the charts).
-              React.createElement(Icons.ListOrdered, { className: 'w-4 h-4' }),
-              React.createElement('span', { className: 'flex items-center gap-1.5' },
-                'Pop of the Tops',
-                showDiscoveryBadges && discoveryUnread.charts && React.createElement('span', {
-                  // The page's colour (lib/page-colors.js).
-                  className: 'w-2 h-2 rounded-full animate-pulse', style: { backgroundColor: PAGE_COLORS['discover'].color }
-                })
-              )
-            ),
-            React.createElement('button', {
-              onClick: () => {
-                navigateTo('critics-picks');
-                loadCriticsPicks();
-              },
-              className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
-              style: {
-                backgroundColor: activeView === 'critics-picks' ? pageTint('critics-picks') : 'transparent',
-                color: activeView === 'critics-picks' ? PAGE_COLORS['critics-picks'].color : 'var(--nav-inactive)',
-                fontWeight: activeView === 'critics-picks' ? '500' : '400'
-              }
-            },
-              // Award/trophy icon for Critical Darlings
-              React.createElement(Icons.Trophy, { className: 'w-4 h-4' }),
-              React.createElement('span', { className: 'flex items-center gap-1.5' },
-                "Critical Darlings",
-                showDiscoveryBadges && discoveryUnread.criticsPicks && React.createElement('span', {
-                  // The page's colour (lib/page-colors.js).
-                  className: 'w-2 h-2 rounded-full animate-pulse', style: { backgroundColor: PAGE_COLORS['critics-picks'].color }
-                })
-              )
-            ),
-            React.createElement('button', {
-              onClick: () => {
-                navigateTo('concerts');
-              },
-              className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
-              style: {
-                backgroundColor: activeView === 'concerts' ? pageTint('concerts') : 'transparent',
-                color: activeView === 'concerts' ? PAGE_COLORS['concerts'].color : 'var(--nav-inactive)',
-                fontWeight: activeView === 'concerts' ? '500' : '400'
-              }
-            },
-              // Ticket icon for Concerts
-              React.createElement(Icons.Ticket, { className: 'w-4 h-4' }),
-              React.createElement('span', { className: 'flex items-center gap-1.5' },
-                'Concerts',
-                showDiscoveryBadges && discoveryUnread.concerts && React.createElement('span', {
-                  // The page's colour (lib/page-colors.js).
-                  className: 'w-2 h-2 rounded-full animate-pulse', style: { backgroundColor: PAGE_COLORS['concerts'].color }
-                })
-              )
-            ),
+            React.createElement(NavItem, { page: 'new-releases', label: 'Fresh Drops', icon: Icons.Droplet, active: activeView === 'new-releases', unread: !!(showDiscoveryBadges && discoveryUnread.newReleases), onClick: () => { navigateTo('new-releases'); loadNewReleases(); } }),
+            React.createElement(NavItem, { page: 'recommendations', label: 'Recommendations', icon: Icons.Star, active: recommendationsNavActive, unread: !!(showDiscoveryBadges && discoveryUnread.recommendations), onClick: () => navigateTo('recommendations') }),
+            React.createElement(NavItem, { page: 'discover', label: 'Pop of the Tops', icon: Icons.ListOrdered, active: activeView === 'discover', unread: !!(showDiscoveryBadges && discoveryUnread.charts),
+              // Only call loadCharts if cache is ready; useEffect will handle it otherwise
+              onClick: () => { navigateTo('discover'); if (cacheLoaded) loadCharts(); } }),
+            React.createElement(NavItem, { page: 'critics-picks', label: 'Critical Darlings', icon: Icons.Trophy, active: activeView === 'critics-picks', unread: !!(showDiscoveryBadges && discoveryUnread.criticsPicks), onClick: () => { navigateTo('critics-picks'); loadCriticsPicks(); } }),
+            React.createElement(NavItem, { page: 'concerts', label: 'Concerts', icon: Icons.Ticket, active: activeView === 'concerts', unread: !!(showDiscoveryBadges && discoveryUnread.concerts), onClick: () => navigateTo('concerts') })
           ),
 
           // FRIENDS section (always visible so new users can discover and add friends)
@@ -41129,60 +40955,10 @@ React.createElement('div', {
               }
             },
               React.createElement('nav', { 'aria-label': 'Settings sections', style: { padding: '0 12px' } },
-              // Plug-Ins tab (unified marketplace and installed)
-              React.createElement('button', {
-                onClick: () => setSettingsTab('plugins'),
-                'aria-current': settingsTab === 'plugins' ? 'page' : undefined,
-                className: 'w-full text-left transition-all',
-                style: {
-                  padding: '12px 16px',
-                  marginBottom: '4px',
-                  fontSize: '13px',
-                  fontWeight: settingsTab === 'plugins' ? '500' : '400',
-                  color: settingsTab === 'plugins' ? 'var(--text-primary)' : 'var(--text-secondary)',
-                  backgroundColor: settingsTab === 'plugins' ? 'var(--accent-primary-alpha-08)' : 'transparent',
-                  borderRadius: '8px',
-                  border: 'none',
-                  cursor: 'pointer',
-                  borderLeft: settingsTab === 'plugins' ? '3px solid var(--accent-primary)' : '3px solid transparent'
-                }
-              }, 'Plug-Ins'),
-              // General tab
-              React.createElement('button', {
-                onClick: () => setSettingsTab('general'),
-                'aria-current': settingsTab === 'general' ? 'page' : undefined,
-                className: 'w-full text-left transition-all',
-                style: {
-                  padding: '12px 16px',
-                  marginBottom: '4px',
-                  fontSize: '13px',
-                  fontWeight: settingsTab === 'general' ? '500' : '400',
-                  color: settingsTab === 'general' ? 'var(--text-primary)' : 'var(--text-secondary)',
-                  backgroundColor: settingsTab === 'general' ? 'var(--accent-primary-alpha-08)' : 'transparent',
-                  borderRadius: '8px',
-                  border: 'none',
-                  cursor: 'pointer',
-                  borderLeft: settingsTab === 'general' ? '3px solid var(--accent-primary)' : '3px solid transparent'
-                }
-              }, 'General'),
-              // About tab
-              React.createElement('button', {
-                onClick: () => setSettingsTab('about'),
-                'aria-current': settingsTab === 'about' ? 'page' : undefined,
-                className: 'w-full text-left transition-all',
-                style: {
-                  padding: '12px 16px',
-                  marginBottom: '4px',
-                  fontSize: '13px',
-                  fontWeight: settingsTab === 'about' ? '500' : '400',
-                  color: settingsTab === 'about' ? 'var(--text-primary)' : 'var(--text-secondary)',
-                  backgroundColor: settingsTab === 'about' ? 'var(--accent-primary-alpha-08)' : 'transparent',
-                  borderRadius: '8px',
-                  border: 'none',
-                  cursor: 'pointer',
-                  borderLeft: settingsTab === 'about' ? '3px solid var(--accent-primary)' : '3px solid transparent'
-                }
-              }, 'About')
+              // The sidebar's nav item (components/nav-item.js), in the accent:
+              // Settings had its own look with a left bar.
+              ...[['plugins', 'Plug-Ins'], ['general', 'General'], ['about', 'About']].map(([tab, label]) =>
+                React.createElement(NavItem, { key: tab, page: 'home', label, active: settingsTab === tab, onClick: () => setSettingsTab(tab) }))
             )
           ),
           // Settings content area (right side) - refined styling

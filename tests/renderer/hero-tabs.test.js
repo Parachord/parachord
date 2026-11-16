@@ -27,7 +27,8 @@ test('every hero tab row uses HeroTabs or tab roles', () => {
   const artist = read('components/artist-page.js');
   expect(artist.match(/role: 'tab',/g)).toHaveLength(2);
   expect(artist.match(/role: 'tablist',/g)).toHaveLength(2);
-  expect(app).toContain("'aria-current': settingsTab === 'plugins' ? 'page' : undefined,");
+  // Settings' sections are the sidebar's NavItem, which sets aria-current.
+  expect(app).toContain("React.createElement(NavItem, { key: tab, page: 'home', label, active: settingsTab === tab, onClick: () => setSettingsTab(tab) })");
 });
 
 test('the selected tab stands out: semibold and underlined, not only brighter', () => {

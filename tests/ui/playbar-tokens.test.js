@@ -37,12 +37,14 @@ test('the on-dark tokens are defined in both themes', () => {
 });
 
 test("the sidebar's dots and badges are their page's colour", () => {
-  const side = slice("'Fresh Drops',", "'Concerts',");
-  expect(side).not.toMatch(PALETTE);
-  for (const key of ['new-releases', 'recommendations', 'discover', 'critics-picks']) {
-    expect(app).toContain(`style: { backgroundColor: PAGE_COLORS['${key}'].color }`);
+  // The sidebar's items are NavItem (components/nav-item.js), which takes
+  // the dot's colour and the count badge's fill from the page.
+  const nav = fs.readFileSync(path.join(ROOT, 'src/renderer/components/nav-item.js'), 'utf8');
+  expect(nav).toContain("style: { backgroundColor: colors.color } })");
+  expect(nav).toContain("backgroundColor: colors.fill || 'var(--accent-fill)'");
+  expect(nav).not.toMatch(PALETTE);
+  for (const key of ['new-releases', 'recommendations', 'discover', 'critics-picks', 'concerts', 'library', 'playlists']) {
+    expect(app).toMatch(new RegExp(`React\\.createElement\\(NavItem, \\{\\s*page: '${key}'`));
   }
-  expect(app).toContain('backgroundColor: PAGE_COLORS.library.fill,');
-  expect(app).toContain('backgroundColor: PAGE_COLORS.playlists.fill,');
   expect(app).not.toContain("backgroundColor: '#06b6d4'");
 });
