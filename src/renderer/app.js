@@ -37455,10 +37455,16 @@ useEffect(() => {
     soundcloud: soundcloudConnected,
     amazonmusic: !!amazonMusicStatus?.web?.signedIn
   }), [spotifyConnected, appleMusicConnected, soundcloudConnected, amazonMusicStatus]);
+  // A required setting not saved yet: Spotify needs your own Client ID
+  // (release builds ship none; a dev .env one doesn't count, so a dev build
+  // behaves as a release does). SoundCloud ships a fallback key.
+  const pluginSetupNeeded = useMemo(() => ({
+    spotify: spotifyCredentialsSource !== 'user'
+  }), [spotifyCredentialsSource]);
   const homeGettingStartedModel = useMemo(() => {
     const GS = GettingStartedModel;
     const plugins = GS.stepOnePlugins(loadedResolvers);
-    const opts = { accounts: pluginAccounts, playbackResolvers, playbackLimits };
+    const opts = { accounts: pluginAccounts, setupNeeded: pluginSetupNeeded, playbackResolvers, playbackLimits };
     const serviceStates = Object.fromEntries(plugins.services.map(r => [r.id, GS.serviceState(r, opts)]));
     const scrobblers = GS.scrobblerPlugins(metaServices);
     const scrobblerStates = Object.fromEntries(scrobblers.map(sv => [sv.id, !!metaServiceConfigs?.[sv.id]?.username]));
@@ -37480,7 +37486,7 @@ useEffect(() => {
       scrobblers,
       scrobblerStates
     };
-  }, [loadedResolvers, pluginAccounts, playbackResolvers, playbackLimits, activeResolvers, metaServices, metaServiceConfigs,
+  }, [loadedResolvers, pluginAccounts, pluginSetupNeeded, playbackResolvers, playbackLimits, activeResolvers, metaServices, metaServiceConfigs,
     collectionData, library, playlists, watchFolders, homeGettingStarted]);
   // Something played while the layout is up: step 3 is done.
   useEffect(() => {
@@ -37509,14 +37515,14 @@ useEffect(() => {
   };
   // Step 1's Connect: switch the plug-in on, then run the sign-in its panel
   // runs. The host has a sign-in for these services; one that needs
-  // something typed first (Spotify's and SoundCloud's own client ids), and
+  // something typed first (Spotify's own Client ID, pluginSetupNeeded), and
   // any other plug-in, opens its panel instead.
   const connectPlugin = async (pluginId) => {
     const plugin = (loadedResolversRef.current || []).find(r => r.id === pluginId);
     if (!plugin) return;
     if (!activeResolversRef.current.includes(pluginId)) toggleResolver(pluginId);
     const signIn = {
-      spotify: spotifyCredentialsSource !== 'none' ? connectSpotify : null,
+      spotify: pluginSetupNeeded.spotify ? null : connectSpotify,
       soundcloud: soundcloudCredentialsSource !== 'none' ? connectSoundcloud : null,
       applemusic: connectAppleMusic,
       amazonmusic: () => manageAmazonMusic({ explicit: true, reason: 'not-signed-in', forcePrompt: true })

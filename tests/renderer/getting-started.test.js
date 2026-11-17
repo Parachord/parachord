@@ -42,6 +42,19 @@ describe('step 1 comes from the registry', () => {
     expect(GS.stepOnePlugins([...registry, fresh]).services.map((r) => r.id)).toContain('newservice');
   });
 
+  test('a required setting not saved yet makes the tile "Add your <field>", named by the manifest', () => {
+    const spotify = registry[0];
+    // The test registry flattens settings like the loader; Spotify's Client ID is required.
+    const withFields = { ...spotify, configurable: JSON.parse(read('plugins-src/spotify/manifest.json')).settings.configurable };
+    expect(GS.requiredSetting(withFields)).toEqual({ key: 'clientId', label: 'Client ID' });
+    expect(GS.serviceState(withFields, { accounts: { spotify: false }, setupNeeded: { spotify: true } })).toEqual({ state: 'setup', label: 'Add your Client ID' });
+    // Once signed in, setup no longer matters.
+    expect(GS.serviceState(withFields, { accounts: { spotify: true }, setupNeeded: { spotify: true }, playbackResolvers: ['spotify'] }).state).toBe('connected');
+    const fn = app.slice(app.indexOf('const connectPlugin = async'), app.indexOf('const homePageHandlers'));
+    expect(fn).toContain('spotify: pluginSetupNeeded.spotify ? null : connectSpotify,');
+    expect(app).toContain("spotify: spotifyCredentialsSource !== 'user'");
+  });
+
   test('a tile is connected only when signed in and playing; a plan limit shows its label', () => {
     const spotify = registry[0];
     const amazon = registry[2];
@@ -224,6 +237,6 @@ describe('app wiring', () => {
   });
 
   test('step 1 reads playbackResolvers and the playback limits, not activeResolvers alone', () => {
-    expect(app).toContain('const opts = { accounts: pluginAccounts, playbackResolvers, playbackLimits };');
+    expect(app).toContain('const opts = { accounts: pluginAccounts, setupNeeded: pluginSetupNeeded, playbackResolvers, playbackLimits };');
   });
 });

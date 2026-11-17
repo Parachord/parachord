@@ -47,11 +47,26 @@ function stepOnePlugins(loadedResolvers) {
 // or 'connect'. `accounts` maps a plug-in id to whether the host knows it is
 // signed in; a plug-in the host has no sign-in state for counts as connected
 // once it is on and playing (playbackResolvers).
-function serviceState(resolver, { accounts = {}, playbackResolvers = [], playbackLimits = {} } = {}) {
+// The first setting a plug-in's manifest marks required (Spotify's Client
+// ID), or null.
+function requiredSetting(resolver) {
+  const fields = (resolver && (resolver.configurable || (resolver.settings && resolver.settings.configurable))) || {};
+  const key = Object.keys(fields).find((k) => fields[k] && fields[k].required);
+  return key ? { key, label: fields[key].label || key } : null;
+}
+
+// `setupNeeded` maps a plug-in id to true while a required setting isn't
+// saved yet (the host knows: Spotify's own Client ID): its tile is 'setup',
+// and Connect opens its panel to fill it in.
+function serviceState(resolver, { accounts = {}, setupNeeded = {}, playbackResolvers = [], playbackLimits = {} } = {}) {
   const id = resolver && resolver.id;
   const limit = playbackLimits && playbackLimits[id];
   const known = Object.prototype.hasOwnProperty.call(accounts || {}, id);
   const signedIn = known ? !!accounts[id] : playbackResolvers.includes(id);
+  if (!signedIn && setupNeeded && setupNeeded[id]) {
+    const field = requiredSetting(resolver);
+    return { state: 'setup', label: field ? `Add your ${field.label}` : 'Set up' };
+  }
   if (!signedIn) return { state: 'connect', label: null };
   if (limit && limit.blocked) return { state: 'limited', label: limit.label || 'Can’t play on this plan' };
   if (!playbackResolvers.includes(id)) return { state: 'connect', label: null };
@@ -113,6 +128,7 @@ module.exports = {
   LOCAL_FILES_ID,
   playsHere,
   needsAccount,
+  requiredSetting,
   stepOnePlugins,
   serviceState,
   serviceConnected,

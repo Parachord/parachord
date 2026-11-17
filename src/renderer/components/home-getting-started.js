@@ -17,6 +17,9 @@ const { ListRow } = require('./list-row');
 const { OptionTile } = require('./option-tile');
 const { SERVICE_LOGOS } = require('./brand-logos');
 const { CollectionRadioButton } = require('./collection-radio-button');
+const { BrandMark } = require('./brand-logos');
+const { PAGE_COLORS } = require('../lib/page-colors');
+const { PAGE_ICONS } = require('../lib/page-icons');
 const { countOf } = require('../lib/plural');
 
 const e = React.createElement;
@@ -86,12 +89,16 @@ function ServiceMark({ resolver }) {
     : e(Icons.Music, { size: 18 }));
 }
 
-function IconMark({ icon: Icon }) {
+// A choice that leads to one of the app's pages: that page's icon
+// (PAGE_ICONS) in white on its colour (PAGE_COLORS fill), the way a
+// service's tile is its logo on its colour. With no page, the neutral fill.
+function IconMark({ page, icon }) {
+  const Icon = icon || (page && Icons[PAGE_ICONS[page]]) || Icons.Music;
   return e('span', {
     style: {
       width: '36px', height: '36px', borderRadius: '8px', flexShrink: 0,
       display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-      backgroundColor: 'var(--accent-surface)', color: 'var(--accent-primary)',
+      backgroundColor: page && PAGE_COLORS[page] ? PAGE_COLORS[page].fill : 'var(--fill-neutral)', color: 'var(--on-accent)',
     },
   }, e(Icon, { size: 18 }));
 }
@@ -127,14 +134,19 @@ function ConnectStep({ plugins, serviceStates, watchFolders, onConnect, onOpenPl
         const s = serviceStates[r.id] || { state: 'connect' };
         const description = s.state === 'connected'
           ? e(Badge, { tone: 'accent', icon: Icons.Check }, 'Connected')
-          : s.state === 'limited' ? s.label : 'Connect';
+          : (s.state === 'limited' || s.state === 'setup') ? s.label : 'Connect';
+        const ariaLabel = s.state === 'connect' ? `Connect ${r.name}`
+          : s.state === 'setup' ? `Set up ${r.name}: ${s.label.toLowerCase()}`
+            : `${r.name}: ${s.state === 'connected' ? 'connected' : s.label}`;
         return e(Tile, {
           key: r.id,
           icon: e(ServiceMark, { resolver: r }),
           title: r.name,
           description,
-          'aria-label': s.state === 'connect' ? `Connect ${r.name}` : `${r.name}: ${s.state === 'connected' ? 'connected' : s.label}`,
-          onClick: () => (s.state === 'connect' ? onConnect(r.id) : onOpenPlugin(r.id)),
+          'aria-label': ariaLabel,
+          // Connect runs the sign-in (or opens the panel when a setting is
+          // needed first); a connected or limited tile opens its panel.
+          onClick: () => ((s.state === 'connect' || s.state === 'setup') ? onConnect(r.id) : onOpenPlugin(r.id)),
         });
       }),
       e(Tile, {
@@ -174,11 +186,11 @@ function MusicStep({ scrobblers, scrobblerStates, onImportLink, onSyncLibrary, o
     e('p', { style: LINE }, 'Bring in your playlists and liked songs, and your listening history for recommendations and friends.'),
     e(Group, { label: 'Playlists and liked songs' },
       e(Tile, {
-        key: 'link', icon: e(IconMark, { icon: Icons.Link }), title: 'Import a playlist', description: 'Paste a link from any service',
+        key: 'link', icon: e(IconMark, { page: 'playlists' }), title: 'Import a playlist', description: 'Paste a link from any service',
         onClick: onImportLink,
       }),
       e(Tile, {
-        key: 'sync', icon: e(IconMark, { icon: Icons.RefreshCw }), title: 'Sync your library', description: 'From a service you connected',
+        key: 'sync', icon: e(IconMark, { page: 'library' }), title: 'Sync your library', description: 'From a service you connected',
         onClick: onSyncLibrary,
       })),
     scrobblers.length > 0 && e(Group, { label: 'Listening history' },
@@ -203,7 +215,7 @@ function ListenStep({ hasCollection, playlists, onCollectionRadio, onOpenPlaylis
       : 'Play an album from Explore below, or search for a song.'),
     (hasCollection || list.length > 0) && e(Group, null,
       list.map((p) => e(Tile, {
-        key: p.id, icon: e(IconMark, { icon: Icons.ListMusic }), title: p.title || 'Untitled playlist',
+        key: p.id, icon: e(IconMark, { page: 'playlists' }), title: p.title || 'Untitled playlist',
         description: countOf((p.tracks || []).length || p.trackCount || 0, 'track'),
         onClick: () => onOpenPlaylist(p),
       }))),
@@ -257,8 +269,9 @@ function GettingStarted(props) {
     e(StepNote, {
       icon: Icons.Smartphone,
       actions: [
-        e(Button, { key: 'ios', variant: 'text', size: 'sm', onClick: () => props.onOpenLink && props.onOpenLink(MOBILE_LINKS.ios) }, 'iPhone beta on TestFlight'),
-        e(Button, { key: 'android', variant: 'text', size: 'sm', onClick: () => props.onOpenLink && props.onOpenLink(MOBILE_LINKS.android) }, 'Android beta on Google Play'),
+        // The store marks parachord.com's badges use (BRAND_MARKS).
+        e(Button, { key: 'ios', variant: 'text', size: 'sm', onClick: () => props.onOpenLink && props.onOpenLink(MOBILE_LINKS.ios) }, e(BrandMark, { id: 'apple', size: 16 }), 'iPhone beta on TestFlight'),
+        e(Button, { key: 'android', variant: 'text', size: 'sm', onClick: () => props.onOpenLink && props.onOpenLink(MOBILE_LINKS.android) }, e(BrandMark, { id: 'googleplay', size: 14 }), 'Android beta on Google Play'),
       ],
     }, 'Take it with you. Parachord for iPhone and Android (both in beta) plays from the same services. Connect the same accounts and turn on sync there, and your playlists, collection and Loves stay up to date between your phone and this computer.'));
 }
