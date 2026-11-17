@@ -11,11 +11,13 @@
  * it — the advertisement read (contextBridge need not hand back a literal
  * Array, so the read uses Array.from) and the loader's log line.
  *
- * initResolvers ran the only copy: the fallback resolver load and the
- * install/reload paths (install-from-file, marketplace install) materialized
- * .axe content straight onto the resolver list, where the same plugin would
- * load and throw not-ready on every resolve. One rule, one owner — every path
- * that turns .axe content into a live resolver runs this first.
+ * initResolvers ran the only copy: the fallback resolver load, the
+ * install/reload paths (install-from-file, marketplace install) and the
+ * meta-service hot-reload after a marketplace sync (handlePluginsUpdated)
+ * materialized .axe content straight onto the resolver list, where the same
+ * plugin would load and throw not-ready on every resolve. One rule, one
+ * owner — every path that turns .axe content into a live resolver runs this
+ * first.
  */
 
 const { hostBridgesHideFilter } = require('../../../main-process/plugin-compat');

@@ -1,23 +1,29 @@
 // main-process/ipc/web-session-bridge.js — the IPC bridge over registered
 // web-session hosts (#1356): sender gating (main window top frame only),
-// the { success, reason, error } IPC error contract, fetch/pageFetch URL
-// scoping to the session's cookie domains, and the signIn
-// tick/decide/settled shuttle (including the two-calls join: one window, one
+// the { success, reason, error } IPC error contract, fetch/pageFetch/
+// load/signIn URL scoping to the session's exact-host allowlist, and the
+// signIn tick/decide/settled shuttle (including the two-calls join: one window, one
 // ticker, two callIds, both settled). The bridge is dependency-injected
 // (ipcMain, isAllowedSender, sendToRenderer, the hosts themselves), so these
 // tests need no electron mock — the fake hosts carry the host contract.
 
 const {
   registerWebSession,
-  registerWebSessionBridgeIpc,
-  urlUnderDomains
+  registerWebSessionBridgeIpc
 } = require('../../main-process/ipc/web-session-bridge');
-const { createWebSessionHost } = require('../../main-process/web-session');
+// urlOnAllowedHost is the bridge's one URL predicate (fetch/pageFetch,
+// capture prefixes, load/signIn — one list, one judgment).
+const { createWebSessionHost, urlOnAllowedHost } = require('../../main-process/web-session');
 
 // ── fakes ───────────────────────────────────────────────────────────────────
 
 function makeFakeHost(overrides = {}) {
   return {
+    // The bridge never reads this — every URL scope goes by allowedHosts —
+    // but a real host's jar still scopes by it (web-session cfg), and its
+    // presence here pins that the narrow list, not the account-wide domain,
+    // is what gates load/signIn below (www.amazon.com is under amazon.com,
+    // and it is INVALID as a load/signIn URL).
     cookieDomains: ['amazon.com', 'music.amazon.com'],
     // The exact-host allowlist, deliberately NARROWER than the cookie domains
     // (amazon.com is the whole retail account) — the finding-1 shape.
@@ -74,15 +80,12 @@ const iframeEvent = { sender: { id: 1 }, senderFrame: { top: {}, different: true
 // ── the registry ────────────────────────────────────────────────────────────
 
 describe('registerWebSession', () => {
-  test('a host must implement the six primitives and carry cookieDomains + allowedHosts', () => {
+  test('a host must implement the six primitives and carry allowedHosts', () => {
     expect(() => registerWebSession('', makeFakeHost())).toThrow(/session id/);
     expect(() => registerWebSession('x')).toThrow(/must implement/);
     const missingClear = makeFakeHost();
     delete missingClear.clear;
     expect(() => registerWebSession('x', missingClear)).toThrow(/must implement/);
-    expect(() => registerWebSession('x', makeFakeHost({ cookieDomains: undefined }))).toThrow(/cookieDomains/);
-    expect(() => registerWebSession('x', makeFakeHost({ cookieDomains: [] }))).toThrow(/cookieDomains/);
-    expect(() => registerWebSession('x', makeFakeHost({ cookieDomains: ['amazon.com', 42] }))).toThrow(/cookieDomains/);
     expect(() => registerWebSession('x', makeFakeHost({ allowedHosts: undefined }))).toThrow(/allowedHosts/);
     expect(() => registerWebSession('x', makeFakeHost({ allowedHosts: [] }))).toThrow(/allowedHosts/);
     expect(() => registerWebSession('x', makeFakeHost({ allowedHosts: ['music.amazon.com', ''] }))).toThrow(/allowedHosts/);
@@ -110,7 +113,10 @@ describe('registerWebSession', () => {
       cookieDomains: ['testsvc.com'], allowedHosts: ['music.testsvc.com']
     });
     expect(() => registerWebSession('testsvc', host)).not.toThrow();
-    expect(host.cookieDomains).toEqual(['testsvc.com']);
+    // The bridge's one scope reads allowedHosts off the host; the host still
+    // requires cookieDomains at construction (state()/clear() read the
+    // closed-over cfg directly — the host carries no public copy for a
+    // bridge to drift from).
     expect(host.allowedHosts).toEqual(['music.testsvc.com']);
   });
 });
@@ -170,17 +176,18 @@ describe('webSession:load', () => {
     expect(host.load).toHaveBeenCalledWith('https://music.amazon.com/search/x/songs', opts);
   });
 
-  test('a URL off the cookie domains or not https is invalid before the host is touched (#1432 review, finding 3)', async () => {
+  test('a URL off the allowed hosts or not https is invalid before the host is touched (#1432 review, finding 3’s follow-up)', async () => {
     const host = makeFakeHost();
     const { handlers } = makeBridge({ host });
     for (const url of [
-      'https://not-amazon.example/search',     // off the cookie domains entirely
-      'http://music.amazon.com/search',         // the domains match, the scheme is not https
+      'https://www.amazon.com/ap/signin',       // UNDER the cookie domains, NOT on the allowlist — the finding-1 shape, now out for loads too
+      'https://not-amazon.example/search',      // off both lists entirely
+      'http://music.amazon.com/search',         // the host matches, the scheme is not https
       'not a url'
     ]) {
       const out = await handlers['webSession:load'](mainFrameEvent, { id: 'amazon-music', url, opts: {} });
       expect(out).toMatchObject({ success: false, reason: 'invalid' });
-      expect(out.error).toMatch(/https and under the session's cookie domains/);
+      expect(out.error).toMatch(/https on one of the session's allowed hosts/);
     }
     expect(host.load).not.toHaveBeenCalled();
   });
@@ -390,19 +397,23 @@ describe('webSession:fetch', () => {
   });
 });
 
-describe('urlUnderDomains (the load/signIn scope predicate — https only, finding 3)', () => {
-  const domains = ['.amazon.com', 'music.amazon.com'];
-  test('cookie-domain semantics: equal, subdomain, leading dot', () => {
-    expect(urlUnderDomains('https://amazon.com/', domains)).toBe(true);
-    expect(urlUnderDomains('https://music.amazon.com/', domains)).toBe(true);
-    expect(urlUnderDomains('https://gql.music.amazon.com/graphql', domains)).toBe(true);
+describe('urlOnAllowedHost (the ONE fetch/pageFetch/capture/load/signIn scope predicate — https exact-host only)', () => {
+  const hosts = ['music.amazon.com', 'gql.music.amazon.com'];
+  test('exact-host semantics: any listed host; www.amazon.com is NOT a suffix match (the finding-3 follow-up shape)', () => {
+    expect(urlOnAllowedHost('https://music.amazon.com/', hosts)).toBe(true);
+    expect(urlOnAllowedHost('https://gql.music.amazon.com/graphql', hosts)).toBe(true);
+    // The identity host is under the amazon.com cookie domain, but the list
+    // is exact hosts — a load or sign-in off the list never reaches the
+    // bridge's host.
+    expect(urlOnAllowedHost('https://www.amazon.com/ap/signin', hosts)).toBe(false);
+    expect(urlOnAllowedHost('https://amazon.com/', hosts)).toBe(false);
   });
-  test('lookalikes, other schemes (http included — Amazon’s identity host is https) and garbage are out', () => {
-    expect(urlUnderDomains('https://amazon.com.evil.com/', domains)).toBe(false);
-    expect(urlUnderDomains('https://notamazon.com/', domains)).toBe(false);
-    expect(urlUnderDomains('http://music.amazon.com/', domains)).toBe(false);
-    expect(urlUnderDomains('file:///etc/hosts', domains)).toBe(false);
-    expect(urlUnderDomains('', domains)).toBe(false);
+  test('lookalikes, deeper subdomains, other schemes (http included — Amazon’s identity host is https) and garbage are out', () => {
+    expect(urlOnAllowedHost('https://music.amazon.com.evil.com/', hosts)).toBe(false);
+    expect(urlOnAllowedHost('https://x.gql.music.amazon.com/', hosts)).toBe(false);
+    expect(urlOnAllowedHost('http://music.amazon.com/', hosts)).toBe(false);
+    expect(urlOnAllowedHost('file:///etc/hosts', hosts)).toBe(false);
+    expect(urlOnAllowedHost('', hosts)).toBe(false);
   });
 });
 
@@ -485,18 +496,19 @@ describe('webSession:signIn', () => {
     expect(flow.signIn.mock.calls[0][1]).toEqual({ decide: expect.any(Function) });
   });
 
-  test('a URL off the cookie domains or not https is invalid before the host is touched (#1432 review, finding 3)', async () => {
+  test('a URL off the allowed hosts or not https is invalid before the host is touched (#1432 review, finding 3’s follow-up)', async () => {
     const flow = fakeSignInFlow();
     const host = makeFakeHost({ signIn: flow.signIn });
     const { handlers } = makeBridge({ host });
     for (const url of [
-      'https://evil.example.com/ap/signin', // off the cookie domains entirely
-      'http://music.amazon.com/ap/signin',  // the domains match, the scheme is not https
+      'https://www.amazon.com/ap/signin',   // UNDER the cookie domains, NOT on the allowlist — the service's sign-in starts on its music host
+      'https://evil.example.com/ap/signin', // off both lists entirely
+      'http://music.amazon.com/ap/signin',  // the host matches, the scheme is not https
       'not a url'
     ]) {
       const out = await handlers['webSession:signIn'](mainFrameEvent, { id: 'amazon-music', url });
       expect(out).toMatchObject({ success: false, reason: 'invalid' });
-      expect(out.error).toMatch(/https and under the session's cookie domains/);
+      expect(out.error).toMatch(/https on one of the session's allowed hosts/);
     }
     expect(flow.signIn).not.toHaveBeenCalled();
   });

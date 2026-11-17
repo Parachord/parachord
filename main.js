@@ -827,7 +827,7 @@ registerWidevineBridgeIpc({ ipcMain, isAllowedSender: isMainWindowTopFrameSender
 // webSession: call answers not-ready for every id. The bridge gates the sender
 // like the widevine bridge, scopes fetch/pageFetch to the session's allowed
 // hosts (exact hosts, https only, redirect hops re-checked host-side) and
-// load/signIn to the cookie domains, caps the caller budgets, and shuttles
+// load/signIn to the same allowed hosts, caps the caller budgets, and shuttles
 // the sign-in tick/decide/settled protocol (channel contract in
 // docs/architecture/web-session.md, "The IPC bridge").
 const { registerWebSessionBridgeIpc } = require('./main-process/ipc/web-session-bridge');

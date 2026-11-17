@@ -32,11 +32,13 @@
 //          EXACT-host list declared at registration — for Amazon that's the
 //          music + gql hosts, not the whole amazon.com retail account). The
 //          host's fetch re-checks every redirect hop against the same list.
-//        - load and signIn accept only https URLs under the session's cookie
-//          domains — the plugin navigates its own service's pages, and
-//          Amazon's identity host (www.amazon.com) is under its cookie
-//          domain; a navigation allowlist in the host config can come later
-//          if a service ever needs a third-party identity provider.
+//        - load and signIn accept only https URLs on one of the session's
+//          ALLOWED hosts (the same exact-host list as fetch/pageFetch and the
+//          capture prefixes — #1432 review, finding 3's advisory follow-up:
+//          Amazon's flows only ever navigate music.amazon.com, so the shared
+//          list costs the service nothing and one list is one list; a service
+//          whose sign-in starts on another host adds a navigation allowlist
+//          in the host config when it arrives).
 //   3. Budgets: load's timeoutMs and capture budgets are clamped to the
 //      ceilings above (finding 2) — the host gets min(the caller's value,
 //      the cap).
@@ -73,7 +75,7 @@
 
 const { urlOnAllowedHost } = require('../web-session');
 
-const sessions = new Map(); // session id → { host, cookieDomains, allowedHosts }
+const sessions = new Map(); // session id → { host, allowedHosts }
 const signInRuns = new Map(); // session id → { calls: Map(callId → { verdict }) }
 
 // The bridge's ceilings on caller-supplied budgets (#1432 review, finding
@@ -90,27 +92,6 @@ const CAPTURE_QUIET_CAP_MS = 10000;   // the capture window's quiet tail (host d
 
 function mintCallId() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-}
-
-// Whether a URL's host is under one of the session's declared cookie domains
-// (cookie-domain semantics: 'music.amazon.com' is under 'amazon.com', and a
-// leading dot on the declared domain — '.amazon.com' — means the same
-// thing), https only (#1432 review, finding 3: load/signIn navigate the
-// service's own pages, whose scope is the cookie domain — Amazon's identity
-// host www.amazon.com is under amazon.com). Anything unparseable, non-https,
-// or off the domains is out.
-function urlUnderDomains(url, domains) {
-  try {
-    const { protocol, hostname } = new URL(url);
-    if (protocol !== 'https:') return false;
-    const host = String(hostname).toLowerCase();
-    return domains.some((domain) => {
-      const d = String(domain).replace(/^\./, '').toLowerCase();
-      return host === d || host.endsWith('.' + d);
-    });
-  } catch {
-    return false;
-  }
 }
 
 // The load-opts sanitizer: the caller picks the capture prefixes and the
@@ -140,10 +121,10 @@ function sanitizeLoadOpts(opts, allowedHosts) {
 }
 
 // One registered host = one session. The host itself is the authority on its
-// cookie domains and its allowed hosts (it validated both at construction),
-// so the bridge reads them off the host instead of taking a second copy at
-// its own seam — a re-declared list would drift from the one the jar and the
-// redirect checks actually scope by.
+// allowed hosts (it validated them at construction), so the bridge reads them
+// off the host instead of taking a second copy at its own seam — a
+// re-declared list would drift from the one the jar and the redirect checks
+// actually scope by.
 function registerWebSession(id, host) {
   if (!id || typeof id !== 'string') {
     throw new Error('web-session bridge: registerWebSession needs a session id');
@@ -152,15 +133,11 @@ function registerWebSession(id, host) {
   if (!host || typeof host !== 'object' || primitives.some((name) => typeof host[name] !== 'function')) {
     throw new Error(`web-session bridge: host for ${id} must implement ${primitives.join(', ')}`);
   }
-  const domains = Array.isArray(host.cookieDomains) ? host.cookieDomains : null;
-  if (!domains || !domains.length || !domains.every((d) => typeof d === 'string' && d)) {
-    throw new Error(`web-session bridge: host for ${id} must carry cookieDomains (a non-empty array of strings) — the bridge scopes load/signIn URLs by them`);
-  }
   const hosts = Array.isArray(host.allowedHosts) ? host.allowedHosts : null;
   if (!hosts || !hosts.length || !hosts.every((h) => typeof h === 'string' && h)) {
-    throw new Error(`web-session bridge: host for ${id} must carry allowedHosts (a non-empty array of exact host strings) — the bridge scopes fetch/pageFetch URLs and capture prefixes by them (the cookie domains are wider than the service)`);
+    throw new Error(`web-session bridge: host for ${id} must carry allowedHosts (a non-empty array of exact host strings) — the bridge scopes fetch/pageFetch, load/signIn and capture-prefix URLs by them (the cookie domains are wider than the service)`);
   }
-  sessions.set(id, { host, cookieDomains: domains.slice(), allowedHosts: hosts.slice() });
+  sessions.set(id, { host, allowedHosts: hosts.slice() });
 }
 
 function registerWebSessionBridgeIpc({ ipcMain, isAllowedSender, sendToRenderer }) {
@@ -233,8 +210,11 @@ function registerWebSessionBridgeIpc({ ipcMain, isAllowedSender, sendToRenderer 
     const entry = registered(id);
     if (!entry) return fail('not-ready', `no web session registered for ${id}`);
     if (!url || typeof url !== 'string') return fail('invalid', 'load needs a url');
-    if (!urlUnderDomains(url, entry.cookieDomains)) {
-      return fail('invalid', `load URLs must be https and under the session's cookie domains (${entry.cookieDomains.join(', ')})`);
+    // The same exact-host allowlist fetch/pageFetch and the capture prefixes
+    // scope by (#1432 review, finding 3's follow-up): one list, one predicate
+    // — load navigates a page with the session's cookies attached.
+    if (!urlOnAllowedHost(url, entry.allowedHosts)) {
+      return fail('invalid', `load URLs must be https on one of the session's allowed hosts (${entry.allowedHosts.join(', ')})`);
     }
     // Finding 2: the caller picks the capture prefixes and the budgets, so
     // the bridge scopes and clamps them before the host sees them.
@@ -312,12 +292,12 @@ function registerWebSessionBridgeIpc({ ipcMain, isAllowedSender, sendToRenderer 
     const entry = registered(id);
     if (!entry) return fail('not-ready', `no web session registered for ${id}`);
     if (!url || typeof url !== 'string') return fail('invalid', 'signIn needs a url');
-    // Finding 3: https under the session's cookie domains (Amazon's identity
-    // host is under its cookie domain); the window's title is host config —
+    // Finding 3: https on one of the session's allowed hosts (the same list
+    // every other URL gate scopes by); the window's title is host config —
     // a caller-chosen title on a window with no URL bar is a phishing
     // surface, so the window payload here is { width, height } only.
-    if (!urlUnderDomains(url, entry.cookieDomains)) {
-      return fail('invalid', `signIn URLs must be https and under the session's cookie domains (${entry.cookieDomains.join(', ')})`);
+    if (!urlOnAllowedHost(url, entry.allowedHosts)) {
+      return fail('invalid', `signIn URLs must be https on one of the session's allowed hosts (${entry.allowedHosts.join(', ')})`);
     }
     const callId = mintCallId();
     const open = signInRuns.get(id);
@@ -349,4 +329,4 @@ function registerWebSessionBridgeIpc({ ipcMain, isAllowedSender, sendToRenderer 
   });
 }
 
-module.exports = { registerWebSession, registerWebSessionBridgeIpc, urlUnderDomains };
+module.exports = { registerWebSession, registerWebSessionBridgeIpc };

@@ -8805,16 +8805,24 @@ const Parachord = () => {
           return !!(metaConfig?.enabled || metaConfig?.apiKey);
         });
 
+        // The hostBridges hide rule, same as every .axe load path (#1432
+        // review, note 7): this hot reload materializes .axe content into
+        // live resolvers — a plugin whose required bridges this host doesn't
+        // supply would throw not-ready on every resolve. The rule runs before
+        // the capability splits, so the loads AND the meta-services state
+        // below all derive from visible axes only.
+        const visibleAxes = hideAxesLackingHostBridges(filteredAxes);
+
         // Re-load meta services with generate/chat/recommendations/playback-telemetry capabilities into resolver loader
-        const withGenerate = filteredAxes.filter(axe =>
+        const withGenerate = visibleAxes.filter(axe =>
           axe.capabilities?.generate && axe.implementation?.generate);
-        const withChat = filteredAxes.filter(axe =>
+        const withChat = visibleAxes.filter(axe =>
           axe.capabilities?.chat && axe.implementation?.chat);
-        const withRecommendations = filteredAxes.filter(axe =>
+        const withRecommendations = visibleAxes.filter(axe =>
           (axe.capabilities?.recommendations && axe.implementation?.getRecommendations)
           || (axe.capabilities?.similarUsers && axe.implementation?.getSimilarUsers)
           || (axe.capabilities?.historyMixes && axe.implementation?.getHistoryMixes));
-        const withPlaybackTelemetry = filteredAxes.filter(axe =>
+        const withPlaybackTelemetry = visibleAxes.filter(axe =>
           axe.capabilities?.playbackTelemetry && axe.implementation?.init);
 
         await Promise.all([
@@ -8837,7 +8845,7 @@ const Parachord = () => {
         ]);
 
         // Update meta services state so UI reflects new capabilities
-        const metaServicesData = filteredAxes.map(axe => ({
+        const metaServicesData = visibleAxes.map(axe => ({
           id: axe.manifest.id,
           name: axe.manifest.name,
           type: axe.manifest.type,

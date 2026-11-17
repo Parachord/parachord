@@ -251,7 +251,7 @@ describe('host-bridge enforcement wiring (#1355)', () => {
     // The rule's one owner is lib/host-bridges-hide.js; the main load path,
     // the fallback load and the install/reload paths all run it.
     expect(app).toContain("const { hideAxesLackingHostBridges } = require('./lib/host-bridges-hide')");
-    expect(app.match(/hideAxesLackingHostBridges\(/g) || []).toHaveLength(4); // initResolvers, the fallback load, install-from-file, marketplace install
+    expect(app.match(/hideAxesLackingHostBridges\(/g) || []).toHaveLength(5); // initResolvers, the fallback load, install-from-file, marketplace install, the meta-service hot-reload (handlePluginsUpdated)
     // The pure half still lives in plugin-compat (mirrored by mobile).
     expect(require('../../main-process/plugin-compat').hostBridgesHideFilter).toBeInstanceOf(Function);
     // The helper module reads the advertisement the way initResolvers did.
