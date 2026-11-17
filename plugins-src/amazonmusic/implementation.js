@@ -1,4 +1,4 @@
-// Source of truth for plugins/amazonmusic.axe v1.19.0.
+// Source of truth for plugins/amazonmusic.axe v1.21.0.
 // Imported from the .axe by `node scripts/build-axes.js --import`.
 // Edit here, bump manifest.version in manifest.json, then run `node scripts/build-axes.js`.
 // The functions materialize fully isolated (resolver-loader.js uses
@@ -16,7 +16,8 @@
 // and the token-driven pagination), the recommendations (M8 — the
 // music-home walk, the see-more route and the synthesized playlists section),
 // the DRM pair (M9 — getPlaybackManifest + relayLicense, the dmls
-// provider's flows with the csrf mint and the streaming telemetry) and the
+// provider's flows with the csrf mint, the rendition-group refusal cache
+// and the streaming telemetry) and the
 // session surfaces (M10 — the status reply, sign-in, sign-out) are the
 // plugin's: they drive the ONE host web-session instance (registered
 // as 'amazon-music') through the window.electron.webSession bridge —
@@ -1651,11 +1652,15 @@ module.exports = {
       const sets = [];
       if (!text) return sets;
       const attr = (name, tag) => {
-        const m = (tag || '').match(new RegExp(name + '="([^"]*)"'));
+        // (?:^|\s) left boundary: an unanchored `value="…"` also matches
+        // INSIDE `subvalue="9"`. Same helper shape the group-label reader
+        // falls back to.
+        const m = (tag || '').match(new RegExp('(?:^|\\s)' + name + '="([^"]*)"'));
         return m ? m[1] : null;
       };
       for (const match of text.matchAll(/<AdaptationSet[\s\S]*?<\/AdaptationSet>/g)) {
         const set = match[0];
+        const setTag = set.slice(0, set.indexOf('>') + 1);
         const kids = [...set.matchAll(/cenc:default_KID="([^"]+)"/g)].map((m) => m[1]);
         const kid = kids.length ? kids[0] : null;
         const reps = [];
@@ -1667,9 +1672,161 @@ module.exports = {
           });
         }
         const family = reps.length ? dashCodecFamily(reps[0].codecs) : null;
-        sets.push({ kid, family, reps });
+        // What KIND of set this is, for the playability guard: Amazon's audio
+        // sets say contentType="audio"; mimeType is the fallback. null when
+        // the document types nothing.
+        const contentType = attr('contentType', setTag) || (String(attr('mimeType', setTag) || '').split('/')[0] || null);
+        // Every KID the set declares, not just the first (a set may carry more
+        // than one ContentProtection), and the set's OWN rendition-group
+        // label — the stable name for what a license refusal was about. See
+        // mpdRenditionGroupLabel.
+        sets.push({ kid, kids, family, groupLabel: mpdRenditionGroupLabel(set, attr), contentType, reps });
       }
       return sets;
+    }
+
+    // Does this document still carry something the player could play? Tag
+    // counting is not enough (a leftover self-closing set or a VIDEO set with
+    // representations passes it) — the engine dies at "manifest carried no
+    // audio variant this build can play". Typed sets decide when the document
+    // types its sets; when nothing is typed, any set with representations
+    // counts.
+    function mpdHasPlayableAudio(xml) {
+      const sets = mpdContentProtectionSets(xml).filter((s) => s.reps.length);
+      if (!sets.length) return false;
+      const typed = sets.filter((s) => s.contentType);
+      return typed.length ? typed.some((s) => s.contentType === 'audio') : true;
+    }
+
+    // Amazon tags every audio adaptation set with its rendition tier:
+    //   <SupplementalProperty schemeIdUri="amz-music:trackType" value="LD"/>
+    // Live capture over seven plays SERVED TO THE UNVERIFIED BUILD: the TIER
+    // SET is what is stable (an Ultra-HD account is served a wider answer —
+    // five sets / nine renditions including two FLAC rungs and spatial tiers,
+    // see the synthesized five-set fixture in tests/test-utils/
+    // amazon-live-mpd.js):
+    //   value="LD" selectionPriority 500  opus, 2 rungs 51-63k + 163-180k   (one KID)
+    //   value="SD" selectionPriority 1000 opus, 3 rungs 51-63k + 195-213k + 323-346k (one KID)
+    //   value="HD" selectionPriority 2000 fLaC, 1-4 rungs 0.88-4.37M        (one KID)
+    // The RUNG COUNT varies per track (one title carries one FLAC rung,
+    // another four); the tier, its key group, and the label do not.
+    // The KID cannot be a cross-track cache key — it is per-asset (live:
+    // KID-536f9d, KID-1bc225, KID-a0d737 over three tracks) — but the LABEL is
+    // the same string on every track, and it is the SAME vocabulary the
+    // license refusal comes back with (`not eligible for SD content`), which
+    // is what makes a refused rendition group cacheable at all. The label is
+    // an opaque name here: nothing in this file interprets LD/SD/HD, and it is
+    // NOT the playback_quality tier vocabulary (saver/standard/high/max) — do
+    // not conflate them.
+    const AMAZON_TRACK_TYPE_SCHEME = 'amz-music:trackType';
+    function mpdRenditionGroupLabel(setBlock, attr) {
+      const tag = String(setBlock || '');
+      const read = attr || ((name, t) => {
+        // Anchored like mpdContentProtectionSets' own reader — `value="…"`
+        // must not match inside e.g. `subvalue="9"`.
+        const m = (t || '').match(new RegExp('(?:^|\\s)' + name + '="([^"]*)"'));
+        return m ? m[1] : null;
+      });
+      for (const sp of tag.matchAll(/<SupplementalProperty[^>]*\/?>/g)) {
+        if (read('schemeIdUri', sp[0]) === AMAZON_TRACK_TYPE_SCHEME) {
+          const value = read('value', sp[0]);
+          if (value) return value;
+        }
+      }
+      return null;
+    }
+
+    // The group a license refusal is about, from Amazon's own sentence. Live
+    // shape: `UNVERIFIED request not eligible for HD content
+    // (EligibilityException VMP_VALIDATION_FAILED)` — the level word is the
+    // set's trackType label. No match → null, and the caller keeps today's
+    // unfiltered behavior.
+    const AMAZON_GROUP_LABEL_RE = /not\s+eligible\s+for\s+([A-Za-z][A-Za-z0-9_-]*)\s+content/i;
+    function amazonGroupLabelFromDenial(message) {
+      const m = AMAZON_GROUP_LABEL_RE.exec(String(message || ''));
+      return m ? m[1].toUpperCase() : null;
+    }
+
+    // The scope a rendition-group refusal is cached at, when to cache it at
+    // all: 'build-refused' is a BUILD fact (this build's VMP signature was
+    // refused — it survives a sign-out; another account changes nothing about
+    // the signature), 'license-denied' is an ACCOUNT fact (sign-out and a plan
+    // upgrade end it). Both marks need a POSITIVE, RECOGNIZED reason — the
+    // VMP_VALIDATION_FAILED reason or Amazon's own "UNVERIFIED request"
+    // sentence (matched ANCHORED at the start of the RAW message so a
+    // redacted PII tail cannot impersonate it) say build, CUSTOMER_NOT_ELIGIBLE
+    // says account, and ANYTHING ELSE says null: an unrecognized reason (a
+    // per-title HD refusal, a reason Amazon invents tomorrow) records
+    // NOTHING — a recorded label keeps a tier out of the session's later
+    // manifests, and an unrecognized one must never take a tier away.
+    function amazonGroupRefusalScope(denialReason, message) {
+      if (denialReason === 'VMP_VALIDATION_FAILED') return 'build-refused';
+      if (/^UNVERIFIED request/i.test(String(message || ''))) return 'build-refused';
+      if (denialReason === 'CUSTOMER_NOT_ELIGIBLE') return 'license-denied';
+      return null;
+    }
+
+    // Drop whole rendition groups from the MPD text — the only way to stop
+    // the license requests for them, since a key group in the manifest is a
+    // key request Shaka will make whether or not anything selects it (the
+    // license body carries no ASIN and no quality level, and the KIDs inside
+    // the challenge are opaque). Returns the manifest and which labels were
+    // dropped (ordered unique — two sets can share a tier: the five-set
+    // capture shape carries TWO FLAC sets both value="HD", and the drop is
+    // per TIER, so it reports ['HD'] once); refuses to empty the manifest (a
+    // Period with no playable audio set is an unplayable track, and an
+    // over-eager cache must not cause that).
+    // THE LABEL IS A TIER NAME, NOT A CODEC FAMILY. Family-scoping the
+    // refusal was considered and rejected: the refusal is about the tier
+    // ("not eligible for HD content"), and a family-scoped drop re-pays the
+    // refusal round-trip on the next track whose refused tier rides a
+    // different codec family (SD and LD are both opus today, so the shapes
+    // coincide on this capture — the Ultra-HD answer, where FLAC and a
+    // spatial set share no family with the lossy tiers, is where they
+    // differ).
+    function mpdDropRenditionGroups(xml, wantLabels) {
+      const text = String(xml || '');
+      const want = new Set((wantLabels || []).map((l) => String(l || '').toUpperCase()).filter(Boolean));
+      if (!text || !want.size) return { manifest: text, dropped: [] };
+      // DASH's AdaptationSetType permits NESTED sets and self-closing sets; a
+      // non-greedy match over the whole document would cut a nested block at
+      // the INNER close tag and mispair a self-closing one — the vendored
+      // Shaka parser then rejects the result with "Unexpected close tag", a
+      // hard manifest error instead of a graceful degrade. So NESTED answers
+      // bail out BEFORE the rewrite (an `<AdaptationSet` that opens another
+      // `<AdaptationSet` before any `</AdaptationSet>`): matching is
+      // innermost-only, so a nested document would be partially rewritten —
+      // the inner block removed, its OUTER shell left standing — which is
+      // neither the refused group nor a whole removal. And documents whose
+      // open/close counts disagree (self-closing, unbalanced) bail before the
+      // rewrite. The post-rewrite count guard can no longer be the nesting
+      // answer — innermost-only matching always removes one open with its
+      // close — so it stays as insurance against a rewrite bug only. None of
+      // this is reachable with today's flat Amazon audio answers: it is
+      // insurance, and it leaves a non-flat answer unfiltered.
+      const opens = (s) => (s.match(/<AdaptationSet/g) || []).length;
+      const closes = (s) => (s.match(/<\/AdaptationSet>/g) || []).length;
+      if (/<AdaptationSet(?:(?!<\/AdaptationSet>)[\s\S])*?<AdaptationSet/.test(text)) return { manifest: text, dropped: [] };
+      if (opens(text) !== closes(text)) return { manifest: text, dropped: [] };
+      const dropped = [];
+      const out = text.replace(/<AdaptationSet(?:(?!<AdaptationSet)[\s\S])*?<\/AdaptationSet>/g, (block) => {
+        const label = mpdRenditionGroupLabel(block);
+        if (label && want.has(label.toUpperCase())) {
+          const up = label.toUpperCase();
+          if (!dropped.includes(up)) dropped.push(up);
+          return '';
+        }
+        return block;
+      });
+      if (opens(out) !== closes(out)) return { manifest: text, dropped: [] };
+      // Playability, not tag counting: an `<AdaptationSet` merely PRESENT can
+      // be a leftover self-closing set or a VIDEO set — every audio set can
+      // still be gone, and the engine then dies at "manifest carried no audio
+      // variant this build can play". Require that the filtered document
+      // still carries playable AUDIO (a video set's representations are not a
+      // substitute).
+      if (!mpdHasPlayableAudio(out)) return { manifest: text, dropped: [] };
+      return { manifest: out, dropped };
     }
 
     // hornet reports times relative to this offset format.
@@ -2221,6 +2378,11 @@ module.exports = {
       amazonNativeSessionFromConfig,
       dashCodecFamily,
       mpdContentProtectionSets,
+      mpdHasPlayableAudio,
+      mpdRenditionGroupLabel,
+      amazonGroupLabelFromDenial,
+      amazonGroupRefusalScope,
+      mpdDropRenditionGroups,
       MUSIC_AGENT_SDK,
       MUSIC_AGENT_CLIENT,
       MINT_CAPTURE_URL_PREFIXES,
@@ -2766,6 +2928,16 @@ module.exports = {
   dropSessionState: function () {
     this._planState = null;
     this._planPromise = null;
+    // Rendition-group refusals split the same way as the engine's family
+    // table: an eligibility refusal ('license-denied') is the ACCOUNT's —
+    // the next account's plan may cover the group — while an UNVERIFIED-
+    // request refusal ('build-refused') is this BUILD's and stays (a
+    // different account changes nothing about this build's VMP signature).
+    if (this._refusedGroups) {
+      for (const label of Array.from(this._refusedGroups.keys())) {
+        if (this._refusedGroups.get(label) === 'license-denied') this._refusedGroups.delete(label);
+      }
+    }
     this._specSearchTemplate = null;
     this._musicHomeTemplate = null;
     this._seeMoreTemplate = null;
@@ -2894,7 +3066,7 @@ module.exports = {
       // generation drop in sessionState is worthless if this write lands
       // after it).
       if (this._sessionGeneration === startedGeneration) {
-        this._planState = { plan, at: Date.now() };
+        this.notePlanReading(plan);
       }
       return plan;
     })();
@@ -2905,6 +3077,29 @@ module.exports = {
       // generation bump owns the field now, and a third read must join it,
       // not start a third fetch.
       if (this._planPromise === myPlanPromise) this._planPromise = null;
+    }
+  },
+
+  // The plan-reading write: every `_planState` write site goes through here.
+  // A reading that turns `unlimited` FROM non-unlimited clears the
+  // ACCOUNT-scoped rendition-group refusals (the `license-denied` entries —
+  // the next reading's plan may cover the group; the `build-refused` ones
+  // stay: the build's VMP signature did not change with the plan). On this
+  // stack a Prime account never reaches a licence at all (`assertPlanPlays`
+  // refuses before any dmls request), so an eligibility refusal is only ever
+  // recorded under an UNLIMITED reading — the reachable transition is
+  // unlimited → unknown (a scheduled re-read on a bad reply) → unlimited,
+  // and the return to unlimited is the moment the old refusals must not
+  // outlive. A RE-read of an already-unlimited plan clears nothing (the
+  // first-ever reading counts as the turn: there is nothing older to keep,
+  // and the worst case is one extra refusal round-trip on the next track).
+  notePlanReading: function (plan) {
+    const previous = this._planState && this._planState.plan;
+    this._planState = { plan, at: Date.now() };
+    if (plan === 'unlimited' && previous !== 'unlimited' && this._refusedGroups) {
+      for (const label of Array.from(this._refusedGroups.keys())) {
+        if (this._refusedGroups.get(label) === 'license-denied') this._refusedGroups.delete(label);
+      }
     }
   },
 
@@ -3170,15 +3365,46 @@ module.exports = {
     const substituteAsin = entry.substituteAsin || null;
     const cdnType = entry.cdnType || null;
     const musicDashVersion = entry.musicDashVersion || null;
-    const protectionSets = lib.mpdContentProtectionSets(entry.manifest);
+    // A key group in the manifest is a license request Shaka will make whether
+    // or not anything selects it, so a refusal that is only remembered at
+    // selection time still pays the round-trip on every track. Drop the
+    // refused groups from the manifest we hand the player instead — BEFORE
+    // the protectionSets are computed, so the reply's sets describe the SERVED
+    // manifest (a dropped group can never be blamed by error attribution).
+    let manifest = entry.manifest;
+    let droppedGroups = [];
+    if (this._refusedGroups && this._refusedGroups.size) {
+      const filtered = lib.mpdDropRenditionGroups(manifest, Array.from(this._refusedGroups.keys()));
+      if (filtered.dropped.length) {
+        manifest = filtered.manifest;
+        droppedGroups = filtered.dropped;
+      }
+    }
+    const protectionSets = lib.mpdContentProtectionSets(manifest);
+    // The full rung/KID shape, not just one KID per set: which rungs a track
+    // offers and which rendition group each set rides is what every
+    // license-shaped investigation needs, and it is otherwise only readable
+    // from a pasted MPD. The roster is built from the SERVED manifest — when
+    // filtering changed the document, print served/original so the size next
+    // to the roster can not be misread as the raw answer's.
+    const roster = protectionSets
+      .map((g) => g.family + (g.groupLabel ? '/' + g.groupLabel : '')
+        + '(' + ((g.kids || []).length
+          ? (g.kids.length === 1 ? 'KID-' + String(g.kids[0]).slice(0, 6) : g.kids.length + ' KIDs')
+          : 'clear') + ') '
+        + g.reps.map((r) => (r.codecs || '?') + '@' + Math.round((r.bandwidth || 0) / 1000) + 'k').join(' '))
+      .join(' | ');
+    const sizeNote = manifest === entry.manifest
+      ? Math.round(entry.manifest.length / 1024) + 'KB'
+      : Math.round(manifest.length / 1024) + '/' + Math.round(entry.manifest.length / 1024) + 'KB';
     console.log('[Amazon dmls] manifest ' + asin + (substituteAsin ? ' → substitute ' + substituteAsin : '')
-      + ' (' + Math.round(entry.manifest.length / 1024) + 'KB, '
-      + protectionSets.map((g) => g.family + ':KID-' + (g.kid || '?').slice(0, 6)).join(' ') + ')');
+      + ' (' + sizeNote + ', ' + roster + ')'
+      + (droppedGroups.length ? ' [dropped refused groups: ' + droppedGroups.join(',') + ']' : ''));
     // CAQ= cert pre-charge once per session (the page world used to do this
     // in its Shaka setup; warm it lazily on the first successful manifest).
     this.kickCertWarm();
     return {
-      manifest: entry.manifest,
+      manifest,
       type: 'dash',
       drm: 'widevine',
       // The plugin's identifier extraction, riding the reply's optional
@@ -3252,10 +3478,44 @@ module.exports = {
       // sentence; only the sentence reaches the error and the log.
       const message = lib.licenseDenialSummary(refusal && refusal.message);
       if (lib.CERTIFICATE_DENIAL_REASONS.has(denialReason)) {
+        // NO rendition-group label is recorded here, on purpose: a
+        // certificate-class refusal means NO license works at all on this
+        // build — caching groups from it would be noise (and the message tail
+        // of such a refusal is not a per-group sentence).
         const err = new Error('Amazon refused the Widevine license. This build needs a production VMP signature.');
         err.reason = 'playback-failed';
         err.licenseDenied = true;
         throw err;
+      }
+      // The refusal names the rendition group it is about in the manifest's own
+      // vocabulary — `not eligible for SD content` against the set tagged
+      // <SupplementalProperty schemeIdUri="amz-music:trackType" value="SD"/>.
+      // That label, not the per-asset KID, is what carries to the next track, so
+      // it is what the manifest filter drops. The LABEL is read from the SUMMARY,
+      // never the raw message: after the first sentence Amazon dumps
+      // `CustomerEligibility(customerId=…, note=not eligible for HD content)` —
+      // a label must never be mined from that PII tail. The SCOPE reads the RAW
+      // message instead: its build signal is ANCHORED at the sentence start, so
+      // the redacted tail cannot trip it, and the summary's " - " cut can drop
+      // the very sentence that says build.
+      const groupLabel = lib.amazonGroupLabelFromDenial(message);
+      if (groupLabel) {
+        // The scope decides WHETHER the label is recorded at all: an
+        // unrecognized reason (amazonGroupRefusalScope → null) records
+        // nothing — a per-title HD refusal must never take a tier away from
+        // the whole session.
+        const scope = lib.amazonGroupRefusalScope(denialReason, refusal && refusal.message);
+        // Never DOWNGRADE a build-scoped entry: `build-refused` means this
+        // build's VMP signature was refused, and a later refusal for the same
+        // label with an account-shaped reason does not unsay that —
+        // overwriting would quietly hand the entry back to sign-out and let
+        // the refused group walk into every later manifest again.
+        if (scope) {
+          if (!this._refusedGroups) this._refusedGroups = new Map();
+          if (this._refusedGroups.get(groupLabel) !== 'build-refused') {
+            this._refusedGroups.set(groupLabel, scope);
+          }
+        }
       }
       const err = new Error('Amazon refused the license for this content'
         + (denialReason ? ' (' + denialReason + ')' : '')
@@ -3263,7 +3523,12 @@ module.exports = {
       err.reason = 'playback-failed';
       err.licenseDenied = false;
       err.denialReason = denialReason;
-      console.warn('[Amazon dmls] license denied (' + (denialReason || 'unknown') + ')' + (message ? ': ' + message : ''));
+      // Provider-local diagnostics (the test ring reads it). The bridge
+      // forwards only reason/licenseDenied/denialReason/message — the engine
+      // never reads provider dialect, so do not widen the bridge for this.
+      err.groupLabel = groupLabel;
+      console.warn('[Amazon dmls] license denied (' + (denialReason || 'unknown') + ')' + (message ? ': ' + message : '')
+        + (groupLabel ? ' — rendition group ' + groupLabel + ' is out of this session\'s manifests' : ''));
       throw err;
     }
     let json = null;
@@ -3340,8 +3605,7 @@ module.exports = {
       // worthless if this write lands after it).
       if (this._sessionGeneration === startedGeneration) {
         this._drmSessionContext = ctx;
-        const plan = this.requireLib().amazonPlanFromTier(ctx.tier);
-        this._planState = { plan, at: Date.now() };
+        this.notePlanReading(this.requireLib().amazonPlanFromTier(ctx.tier));
         console.log('[Amazon dmls] session context ok (territory ' + ctx.territoryId + ', region ' + ctx.region + ', tier ' + (ctx.tier || 'unknown') + ')');
         return ctx;
       }
