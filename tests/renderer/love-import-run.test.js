@@ -364,7 +364,7 @@ describe('wiring (source markers)', () => {
     expect(app).toContain('onConfirm: () => resolve(true),');
     expect(app).toContain('onCancel: () => resolve(false),');
     // Connected, not just toggled.
-    expect(app).toContain('otherConnected = await otherScrobbler.isEnabled();');
+    expect(app).toContain('otherConnected = await otherScrobbler.isSignedIn();'); // signed in, not scrobbling-on
   });
 
   test('a failed tombstone read stops the run', () => {
