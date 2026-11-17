@@ -59,18 +59,32 @@ module.exports = {
     // inside the window — the gap the old poll's unconditional 15s coverage
     // existed to close.
     const PAGE_CAPTURE_QUIET_MS = 2500;
-    // The ALBUM page's own quiet window is deliberately longer: the real
-    // album page fires AlbumSeo (header-only) FIRST and the detail op can lag
-    // it by more than one gap. The old in-flow poll kept polling to the END
-    // of its 20s window while every replay so far was header-only, exactly
-    // because a detail op lagging its SEO sibling by more than a poll had
-    // produced a bogus miss (the #1135 review — the "0 of 12 tracks"
-    // truncation class). The bridge's quiet window replaces that poll, so the
-    // shared 2500ms would cut the window 2.5s after the last capture and a
-    // slow detail op would read as a header-only miss; 10s past the last
-    // capture keeps it inside — sized to the old 20s poll's intent (the gap
-    // it existed to cover), still capped by the shared 15s budget above.
-    const ALBUM_CAPTURE_QUIET_MS = 10000;
+    // The album page's own stop condition and quiet window. The page fires
+    // AlbumSeo (header-only) FIRST and the detail op can lag it by more than
+    // one gap — the #1135 review class, where a lagging detail op read as a
+    // bogus "0 of 12 tracks" miss — so the old in-flow poll waited it out to
+    // the END of its 20s window. The load's capture now ends the moment the
+    // DETAIL op itself lands: doneWhen (the host's data-only stop condition,
+    // rule 5) names the operation-name value the plugin's matcher ranks
+    // first, quoted so it can only match the gql body's operationName field —
+    // a hornet rename of the op never matches and falls back to the quiet
+    // window, and the judgement on the returned captures stays the plugin's
+    // (the response's tracksConnection, never the name). The quiet window is
+    // the FALLBACK, and it is sized to the renderer's catalog-step budget —
+    // withCatalogTimeout gives the whole lookup CATALOG_STEP_TIMEOUT_MS
+    // (8000ms, src/renderer/app.js; the plugin mirrors it as
+    // ALBUM_JOB_STALE_MS below and cannot read the renderer constant), so
+    // load + quiet must finish comfortably inside it: 4500ms past the last
+    // capture keeps the pinned 4s detail-op lag inside while a page that
+    // loads in ~2s still ends its window by ~7s, still capped by the shared
+    // 15s budget.
+    const ALBUM_CAPTURE_QUIET_MS = 4500;
+    // The operation-name value the album page fires for the album's detail —
+    // live-captured 2026-10 (variables.id = the ASIN). The doneWhen needle is
+    // the quoted JSON value, so it cannot match inside another operation's
+    // GraphQL document text (names there are unquoted), and a rename falls
+    // back to the quiet window instead of matching the SEO sibling.
+    const ALBUM_DETAIL_OP_NAME = 'AlbumDetailPage';
 
     // The album catalog fallback on the renderer bounds each catalog step
     // (withCatalogTimeout / CATALOG_STEP_TIMEOUT_MS in src/renderer/app.js),
@@ -749,7 +763,7 @@ module.exports = {
 
     return {
       SESSION, GQL_URL, CONFIG_URL,
-      PAGE_CAPTURE_BUDGET_MS, PAGE_CAPTURE_QUIET_MS, ALBUM_CAPTURE_QUIET_MS, ALBUM_JOB_STALE_MS,
+      PAGE_CAPTURE_BUDGET_MS, PAGE_CAPTURE_QUIET_MS, ALBUM_CAPTURE_QUIET_MS, ALBUM_DETAIL_OP_NAME, ALBUM_JOB_STALE_MS,
       PLAN_TTL_MS, PLAN_UNKNOWN_TTL_MS,
       notReady,
       pageBlocksPlayback,
@@ -1749,11 +1763,17 @@ module.exports = {
   // at all is the hornet-rename shape and fails the lookup (below). Unlike
   // the old in-flow poll (which replayed candidates as they streamed in), the
   // bridge returns the whole burst once it goes quiet — so the ranking replay
-  // runs over the complete candidate set. The quiet window is the album one
-  // (ALBUM_CAPTURE_QUIET_MS), not the shared default: the detail op can lag
-  // its SEO sibling by more than the shared 2.5s, and the old poll's rule was
-  // to wait it out (#1135 review — a lagging detail op once read as a bogus
-  // header-only miss).
+  // runs over the complete candidate set. The window ends EARLY on the detail
+  // op itself: doneWhen (the host's data-only stop condition) names
+  // AlbumDetailPage's operation-name value, so the load returns the moment
+  // that op's headers land — before the page's subresources finish — and the
+  // whole flow fits the renderer's 8s catalog step instead of paying page
+  // load + a 10s tail. The quiet window is the album one
+  // (ALBUM_CAPTURE_QUIET_MS), not the shared default, and it is the FALLBACK
+  // for a detail op the needle can't see (a hornet rename of the op name): a
+  // detail op lagging its SEO sibling is still captured and matched either
+  // way (#1135 review — a lagging detail op once read as a bogus header-only
+  // miss).
   lookupAlbumPageFlow: async function (asin) {
     const lib = this.requireLib();
     const ws = window.electron && window.electron.webSession;
@@ -1763,7 +1783,8 @@ module.exports = {
       capture: {
         urlPrefixes: [lib.GQL_URL + '*'],
         quietMs: lib.ALBUM_CAPTURE_QUIET_MS,
-        budgetMs: lib.PAGE_CAPTURE_BUDGET_MS
+        budgetMs: lib.PAGE_CAPTURE_BUDGET_MS,
+        doneWhen: { bodyIncludes: '"' + lib.ALBUM_DETAIL_OP_NAME + '"' }
       }
     });
     if (!load || !load.success) {

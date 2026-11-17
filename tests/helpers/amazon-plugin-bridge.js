@@ -150,6 +150,36 @@ function amazonArtistSpecEnvelope(artists) {
   };
 }
 
+// Whether a capture satisfies a doneWhen record — the host's own predicate
+// (captureSatisfiesDoneWhen in main-process/web-session.js), mirrored here so
+// the mock simulates the host's early stop by the host's rule: header-complete
+// (the mock's entries all carry headers), no echo, and every present needle a
+// substring of the capture's own field.
+function captureSatisfiesDoneWhen(doneWhen, entry) {
+  if (!doneWhen || !entry || !entry.headers) return false;
+  if (entry.echo) return false;
+  if (doneWhen.bodyIncludes && !(typeof entry.body === 'string' && entry.body.includes(doneWhen.bodyIncludes))) return false;
+  if (doneWhen.urlIncludes && !(typeof entry.url === 'string' && entry.url.includes(doneWhen.urlIncludes))) return false;
+  return true;
+}
+
+// The quiet window's end over a request timeline, by the host's own poll
+// rules (awaitCaptureQuiet in main-process/web-session.js): walk the requests
+// in order — the window is open at a request's atMs when no earlier end has
+// been decided, and each CAPTURED request's quietMs pushes the end out, never
+// before loadMs (the poll starts after the navigation settles), never past
+// loadMs + budgetMs. Zero captured requests → the budget (the cold-view
+// rule: a page that has fired nothing has not started).
+function quietWindowEnd(loadMs, requests, quietMs, budgetMs) {
+  const hardEnd = loadMs + budgetMs;
+  let end = null;
+  for (const r of [...requests].sort((a, b) => a.atMs - b.atMs)) {
+    if (end !== null && r.atMs >= end) break; // the window had already closed — never captured
+    end = Math.min(hardEnd, Math.max(loadMs, r.atMs + quietMs));
+  }
+  return end === null ? hardEnd : end;
+}
+
 // A window.electron.webSession mock: the page flow's load answers the flow's
 // own searchText out of the URL (the URL builder put it there), and pageFetch
 // answers the configured envelope. opts:
@@ -175,6 +205,21 @@ function amazonArtistSpecEnvelope(artists) {
 //   generation       — the session generation state() carries (default 0;
 //                      a bumped value after a sign-out→sign-in drops the
 //                      plugin's session-scoped caches)
+//   timing           — the host's CLOCK, for a test that measures a flow's
+//                      total time (fake timers): { loadMs, requests, finalUrl }.
+//                      loadMs is when the page's did-finish-load settles;
+//                      requests is [{ atMs, entry }] — the page's gql requests,
+//                      at atMs ms after the load START, header-complete at
+//                      atMs; finalUrl overrides the load's final URL. The
+//                      load sleeps the window's own end by the host's rules
+//                      (sleeping past it needs jest.advanceTimersByTimeAsync)
+//                      and returns the captures the window saw: a doneWhen
+//                      match ends it AT the matching request (the early stop,
+//                      before did-finish-load); otherwise the quiet window —
+//                      quietMs past the last captured request, never before
+//                      loadMs, capped at loadMs + budgetMs; zero requests →
+//                      loadMs + budgetMs. The replay's own cost is the
+//                      pageFetch override's business (the plugin's call).
 function amazonWebSessionMock(opts = {}) {
   const envelope = opts.envelope !== undefined
     ? opts.envelope
@@ -209,20 +254,48 @@ function amazonWebSessionMock(opts = {}) {
     load: jest.fn().mockImplementation(async (id, url, o) => {
       if (id !== 'amazon-music') throw new Error('the plugin must drive its own session id');
       if (opts.loadResult) return opts.loadResult;
-      // The host's quiet window, simulated at the decision point (the host
-      // polls in real time; a test computes the same verdict): a page that
-      // has fired NOTHING yet is not quiet — it has not started — so the
-      // wait runs to budgetMs for the first request, and closes quietMs
-      // after the last one. A page whose first capture fires captureDelayMs
-      // after load-finish is inside the returned captures only when it fired
-      // before the close (captureDelayMs < max(quietMs, budgetMs)); a
-      // request after the close is not among them, exactly the captures: []
-      // the host returns. The host's DEFAULTS (captureQuietMs 1000,
-      // captureBudgetMs 8000) apply when the caller passes none.
       const quietMs = o && o.capture && Number.isFinite(o.capture.quietMs) ? o.capture.quietMs : 1000;
       const budgetMs = o && o.capture && Number.isFinite(o.capture.budgetMs) ? o.capture.budgetMs : 8000;
+      const doneWhen = o && o.capture && o.capture.doneWhen;
+      // The host's clock (opts.timing): resolve at the window's own end,
+      // computed by the host's rules over the request timeline — the early
+      // stop at a doneWhen match, else the quiet window / the budget.
+      if (opts.timing) {
+        const requests = (opts.timing.requests || []).slice().sort((a, b) => a.atMs - b.atMs);
+        const quietEnd = quietWindowEnd(opts.timing.loadMs, requests, quietMs, budgetMs);
+        const match = doneWhen && requests.find((r) => captureSatisfiesDoneWhen(doneWhen, r.entry));
+        const endMs = match && match.atMs < quietEnd ? match.atMs : quietEnd;
+        await new Promise((resolve) => setTimeout(resolve, endMs));
+        return {
+          success: true,
+          finalUrl: 'finalUrl' in opts.timing ? opts.timing.finalUrl : url,
+          captures: requests.filter((r) => r.atMs <= endMs).map((r) => r.entry)
+        };
+      }
+      // The host's capture-window rules, simulated at the decision point (the
+      // host polls in real time; a test computes the same verdict).
+      //
+      // doneWhen first (rule 5's data-only stop): a header-complete capture
+      // satisfying the caller's record ends the window AT that capture — the
+      // host checks it on the pairing listener, before did-finish-load
+      // included — so the returned captures are everything up to and
+      // including the first match; a test's capturesFor list is a timeline,
+      // and the entries after the match are the requests the window never
+      // saw. A doneWhen nothing satisfies falls through to the quiet rules.
+      //
+      // The quiet window: a page that has fired NOTHING yet is not quiet —
+      // it has not started — so the wait runs to budgetMs for the first
+      // request, and closes quietMs after the last one. A page whose first
+      // capture fires captureDelayMs after load-finish is inside the
+      // returned captures only when it fired before the close
+      // (captureDelayMs < max(quietMs, budgetMs)); a request after the close
+      // is not among them, exactly the captures: [] the host returns.
       const delayMs = Number.isFinite(opts.captureDelayMs) ? opts.captureDelayMs : 0;
-      const captures = delayMs < Math.max(quietMs, budgetMs) ? capturesFor(url, o) : [];
+      let captures = delayMs < Math.max(quietMs, budgetMs) ? capturesFor(url, o) : [];
+      if (doneWhen && captures.length) {
+        const at = captures.findIndex((entry) => captureSatisfiesDoneWhen(doneWhen, entry));
+        if (at >= 0) captures = captures.slice(0, at + 1);
+      }
       return { success: true, finalUrl: 'finalUrl' in opts ? opts.finalUrl : url, captures };
     }),
     pageFetch: jest.fn().mockImplementation(async (id, request) => {
@@ -243,5 +316,6 @@ module.exports = {
   amazonSpecEnvelope,
   amazonAlbumSpecEnvelope,
   amazonArtistSpecEnvelope,
-  amazonWebSessionMock
+  amazonWebSessionMock,
+  captureSatisfiesDoneWhen
 };

@@ -41,7 +41,10 @@
 //          in the host config when it arrives).
 //   3. Budgets: load's timeoutMs and capture budgets are clamped to the
 //      ceilings above (finding 2) — the host gets min(the caller's value,
-//      the cap).
+//      the cap). capture.doneWhen — the data-only stop condition (rule 5 in
+//      web-session.js) — is validated, not clamped: known keys
+//      (bodyIncludes/urlIncludes), non-empty strings, rejected like a bad
+//      prefix otherwise.
 //   4. The sign-in window's TITLE is host config (cfg.signInTitle), never a
 //      caller choice (finding 3): a caller-chosen title on a window with no
 //      URL bar is a phishing surface. The window payload is { width, height }.
@@ -73,7 +76,7 @@
 
 'use strict';
 
-const { urlOnAllowedHost } = require('../web-session');
+const { urlOnAllowedHost, captureDoneWhenProblem } = require('../web-session');
 
 const sessions = new Map(); // session id → { host, allowedHosts }
 const signInRuns = new Map(); // session id → { calls: Map(callId → { verdict }) }
@@ -100,8 +103,10 @@ function mintCallId() {
 // ALLOWED hosts (the same list fetch/pageFetch scope by — a capture prefix
 // is a choose-what-to-record power, and one that reaches the whole cookie
 // domain would record pages the session's own flows never touch); every
-// budget is clamped to its ceiling. Returns { opts } or { invalid } naming
-// the refusal. A non-object opts (undefined, null, a primitive) passes as {}
+// budget is clamped to its ceiling; capture.doneWhen (the data-only stop
+// condition, rule 5) passes through after the host's shape check rejects a
+// malformed one. Returns { opts } or { invalid } naming the refusal. A
+// non-object opts (undefined, null, a primitive) passes as {}
 // — the host defaults apply.
 function sanitizeLoadOpts(opts, allowedHosts) {
   const src = opts && typeof opts === 'object' ? opts : {};
@@ -116,6 +121,16 @@ function sanitizeLoadOpts(opts, allowedHosts) {
     out.capture = { urlPrefixes: [...prefixes] };
     if (src.capture.quietMs !== undefined) out.capture.quietMs = clamp(src.capture.quietMs, CAPTURE_QUIET_CAP_MS);
     if (src.capture.budgetMs !== undefined) out.capture.budgetMs = clamp(src.capture.budgetMs, CAPTURE_BUDGET_CAP_MS);
+    // doneWhen is DATA, not a budget — nothing to clamp. The host's own
+    // shape rule (one rule, both seams: the host re-checks it before any
+    // state is touched), rejected here like a bad prefix: a stop condition
+    // is a wait-ending power, so an unknown key or a non-string value must
+    // not ride through on a typo.
+    if (src.capture.doneWhen !== undefined && src.capture.doneWhen !== null) {
+      const problem = captureDoneWhenProblem(src.capture.doneWhen);
+      if (problem) return { invalid: problem };
+      out.capture.doneWhen = { ...src.capture.doneWhen };
+    }
   }
   return { opts: out };
 }

@@ -456,6 +456,146 @@ describe('load — navigation, capture, the quiet window', () => {
     expect(result.captures.length).toBeGreaterThanOrEqual(4); // the budget, not quiet, ended it
   });
 
+  test('doneWhen ends the capture window at the matching header-complete capture — BEFORE did-finish-load (rule 5)', async () => {
+    const { host, view } = await warmSession();
+    // The page never finishes loading (a slow subresource): without the
+    // early stop the window cannot even start (the quiet poll waits for the
+    // navigation to settle), and a 10s quiet tail would answer past any
+    // caller's patience. doneWhen is the caller naming its match as data, and
+    // the host stopping on it is still rule 5 — the host never stops on a
+    // match it can't see, the caller TOLD it what the match is.
+    view.webContents._hangNextLoad = true;
+    const loadRun = host.load('https://music.testsvc.com/albums/B1', {
+      capture: {
+        urlPrefixes: ['https://gql.testsvc.com/*'],
+        quietMs: 5000,
+        budgetMs: 15000,
+        doneWhen: { bodyIncludes: '"AlbumDetailPage"' }
+      }
+    });
+    await jest.advanceTimersByTimeAsync(0);
+    fireCaptured({ id: 1, body: '{"operationName":"AlbumSeo"}' });        // captured, not the match
+    fireCaptured({ id: 2, body: '{"operationName":"AlbumDetailPage"}' }); // the match: the window ends here
+    await jest.advanceTimersByTimeAsync(100); // one poll — far under quietMs
+    const result = await loadRun;
+    expect(result.captures.map((c) => c.body)).toEqual([
+      '{"operationName":"AlbumSeo"}',
+      '{"operationName":"AlbumDetailPage"}'
+    ]);
+    // The still-loading navigation is the loser: freeing it later (its
+    // ERR_ABORTED rejection) must never surface as an unhandled rejection —
+    // the load answered, the navigation's fate is nobody's news.
+    view.webContents.close();
+    await jest.advanceTimersByTimeAsync(0);
+  });
+
+  test('doneWhen ends the quiet window the moment the match lands after load too', async () => {
+    const { host } = await warmSession();
+    const loadRun = host.load('https://music.testsvc.com/albums/B1', {
+      capture: {
+        urlPrefixes: ['https://gql.testsvc.com/*'],
+        quietMs: 5000,
+        budgetMs: 15000,
+        doneWhen: { bodyIncludes: '"AlbumDetailPage"' }
+      }
+    });
+    await jest.advanceTimersByTimeAsync(0); // the load settles; the window is open
+    await jest.advanceTimersByTimeAsync(1000); // nothing captured yet
+    fireCaptured({ id: 1, body: '{"operationName":"AlbumDetailPage"}' });
+    await jest.advanceTimersByTimeAsync(50); // under one poll — the match ends the window itself
+    const result = await loadRun;
+    expect(result.captures.map((c) => c.body)).toEqual(['{"operationName":"AlbumDetailPage"}']);
+  });
+
+  test('captures that do not satisfy doneWhen wait out the quiet window, exactly as without it', async () => {
+    const { host } = await warmSession();
+    const loadRun = host.load('https://music.testsvc.com/albums/B1', {
+      capture: {
+        urlPrefixes: ['https://gql.testsvc.com/*'],
+        quietMs: 1000,
+        budgetMs: 15000,
+        doneWhen: { bodyIncludes: '"AlbumDetailPage"' } // never arrives
+      }
+    });
+    await jest.advanceTimersByTimeAsync(0);
+    fireCaptured({ id: 1, body: '{"operationName":"AlbumSeo"}' });
+    fireCaptured({ id: 2, body: '{"operationName":"PlaybackContextSeed"}' });
+    await jest.advanceTimersByTimeAsync(800); // still inside the quiet tail
+    let settled = false;
+    loadRun.then(() => { settled = true; });
+    await jest.advanceTimersByTimeAsync(0);
+    expect(settled).toBe(false); // the window is still open
+    await jest.advanceTimersByTimeAsync(300); // a poll past quietMs since the last capture
+    const result = await loadRun;
+    expect(result.captures).toHaveLength(2); // both kept, matched nothing
+  });
+
+  test('a doneWhen with no capture at all does nothing weird: the zero-capture budget rule holds', async () => {
+    const { host } = await warmSession();
+    // The needle never lands (the page fired nothing): the cold-view rule —
+    // zero captures is NOT quiet — runs the wait to the budget, the early
+    // stop simply never firing.
+    const loadRun = host.load('https://music.testsvc.com/albums/B1', {
+      capture: {
+        urlPrefixes: ['https://gql.testsvc.com/*'],
+        quietMs: 1000,
+        budgetMs: 2000,
+        doneWhen: { bodyIncludes: '"AlbumDetailPage"' }
+      }
+    });
+    await jest.advanceTimersByTimeAsync(0);
+    await jest.advanceTimersByTimeAsync(1500); // past quietMs, still zero captures
+    let settled = false;
+    loadRun.then(() => { settled = true; });
+    await jest.advanceTimersByTimeAsync(0);
+    expect(settled).toBe(false);
+    await jest.advanceTimersByTimeAsync(600); // the budget, not quiet, ends it
+    const result = await loadRun;
+    expect(result.captures).toEqual([]);
+  });
+
+  test('an ECHOED capture never satisfies doneWhen — our own replay traffic is not the page\'s answer (rules 4+5)', async () => {
+    const { host, view } = await warmSession();
+    let releaseFetch;
+    view.webContents.executeJavaScript.mockImplementation(() => new Promise((resolve) => { releaseFetch = resolve; }));
+    const fetchRun = host.pageFetch({ url: 'https://gql.testsvc.com/' });
+    await jest.advanceTimersByTimeAsync(0);
+    const loadRun = host.load('https://music.testsvc.com/albums/B1', {
+      capture: {
+        urlPrefixes: ['https://gql.testsvc.com/*'],
+        quietMs: 1000,
+        budgetMs: 3000,
+        doneWhen: { bodyIncludes: '"AlbumDetailPage"' }
+      }
+    });
+    await jest.advanceTimersByTimeAsync(300);
+    // Our own in-flight replay of the detail op — the exact needle, flagged
+    // echo — must not end the window; the page's own request does, after it.
+    fireCaptured({ id: 1, body: '{"operationName":"AlbumDetailPage"}' }); // echo: true
+    releaseFetch({ status: 200, text: '{}' });
+    await fetchRun;
+    fireCaptured({ id: 2, body: '{"operationName":"AlbumDetailPage"}' }); // the page's own
+    await jest.advanceTimersByTimeAsync(200); // one poll past the match
+    const result = await loadRun;
+    expect(result.captures.map((c) => c.echo)).toEqual([true, false]);
+  });
+
+  test('a malformed doneWhen is invalid before any state is touched, like bad prefixes', async () => {
+    const { host } = await warmSession();
+    for (const doneWhen of [
+      'AlbumDetailPage',                                   // not an object
+      {},                                                 // no condition — matches nothing
+      { needle: 'x' },                                    // unknown key
+      { bodyIncludes: 42 },                               // not a string
+      { bodyIncludes: '' },                               // matches everything — a bug, not a wait
+      { bodyIncludes: 'x'.repeat(513) }                   // not a needle the caller writes
+    ]) {
+      await expect(host.load('https://music.testsvc.com/albums/B1', {
+        capture: { urlPrefixes: ['https://gql.testsvc.com/*'], doneWhen }
+      })).rejects.toMatchObject({ reason: 'invalid' });
+    }
+  });
+
   test('a stalled navigation throws load-failed and detaches the capture', async () => {
     const { host, view } = await warmSession();
     view.webContents._hangNextLoad = true;

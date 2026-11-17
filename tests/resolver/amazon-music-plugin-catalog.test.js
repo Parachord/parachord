@@ -19,7 +19,11 @@
  *     webSession.load + webSession.pageFetch, the winner judged by
  *     albumTracksConnectionIn (AlbumSeo's header-only response is logged and
  *     skipped), the miss/lookup-failed/not-found semantics, and the
- *     per-disc numbering with no pageInfo to follow
+ *     per-disc numbering with no pageInfo to follow — and the capture
+ *     window's own shape: the doneWhen early stop ending it AT the detail op
+ *     (the load opts carry the needle) with the album quiet window as the
+ *     fallback, and the TOTAL flow time measured against the renderer's 8s
+ *     catalog step (CATALOG_STEP_TIMEOUT_MS) on both paths, the drift guard
  */
 
 const {
@@ -424,39 +428,47 @@ const ALBUM_URL = 'https://music.amazon.com/albums/B07558DQJL';
 // captures, computed against the load's OWN capture options — the host's
 // quiet-window verdict simulated at the decision point (see
 // amazonWebSessionMock's captureDelayMs).
-function albumLookupMock({ captures, seoFirst = true, seo = {}, detail = {}, replayFor, entriesFor } = {}) {
+// The album page's two responses: AlbumSeo carries the header only
+// (data.album with title/trackCount but no tracksConnection — the shape a
+// header-only miss is judged by), AlbumDetailPage the tracksConnection the
+// winner is judged by. Shared by albumLookupMock and the timing tests.
+const albumSeoResponse = (seo = {}) => ({
+  data: {
+    album: Object.assign({ id: 'B07558DQJL', title: 'Master of Puppets (Remastered)', trackCount: 8 }, seo)
+  }
+});
+const albumDetailResponse = (detail = {}) => ({
+  data: {
+    album: Object.assign({
+      id: 'B07558DQJL',
+      title: 'Master of Puppets (Remastered)',
+      shortTitle: 'Master of Puppets',
+      trackCount: 8,
+      releaseDate: '1986-02-21T00:00:00.000Z',
+      images: [{ url: 'https://m.media-amazon.com/images/I/71RlRk9uwIL.jpg', width: 1200, height: 1200, imageType: 'PRIMARY' }],
+      contributingArtists: { edges: [{ role: 'PRIMARY', node: { name: 'Metallica' } }] },
+      tracksConnection: {
+        edges: [
+          { node: detailTrack('B07554FHF5', 'Battery (Remastered)', 1, 312) },
+          { node: detailTrack('B0755C8JX3', 'Master Of Puppets (Remastered)', 2, 515) }
+        ]
+      }
+    }, detail)
+  }
+});
+
+function albumLookupMock({ captures, seoFirst = true, seo = {}, detail = {}, replayFor, entriesFor, timing } = {}) {
   const asin = 'B07558DQJL';
   const entries = captures || (seoFirst
     ? [albumPageCapture(asin, 'AlbumSeo'), albumPageCapture(asin, 'AlbumDetailPage')]
     : [albumPageCapture(asin, 'AlbumDetailPage')]);
   const ws = amazonWebSessionMock({
     capturesFor: entriesFor || ((url) => (/\/albums\//.test(String(url)) ? entries : [])),
-    envelope: {}
+    envelope: {},
+    ...(timing ? { timing } : {})
   });
-  const seoResponse = {
-    data: {
-      album: Object.assign({ id: asin, title: 'Master of Puppets (Remastered)', trackCount: 8 }, seo)
-    }
-  };
-  const detailResponse = {
-    data: {
-      album: Object.assign({
-        id: asin,
-        title: 'Master of Puppets (Remastered)',
-        shortTitle: 'Master of Puppets',
-        trackCount: 8,
-        releaseDate: '1986-02-21T00:00:00.000Z',
-        images: [{ url: 'https://m.media-amazon.com/images/I/71RlRk9uwIL.jpg', width: 1200, height: 1200, imageType: 'PRIMARY' }],
-        contributingArtists: { edges: [{ role: 'PRIMARY', node: { name: 'Metallica' } }] },
-        tracksConnection: {
-          edges: [
-            { node: detailTrack('B07554FHF5', 'Battery (Remastered)', 1, 312) },
-            { node: detailTrack('B0755C8JX3', 'Master Of Puppets (Remastered)', 2, 515) }
-          ]
-        }
-      }, detail)
-    }
-  };
+  const seoResponse = albumSeoResponse(seo);
+  const detailResponse = albumDetailResponse(detail);
   ws.pageFetch.mockImplementation(async (id, request) => {
     if (id !== 'amazon-music') throw new Error('the plugin must drive its own session id');
     const body = JSON.parse(request.body);
@@ -585,11 +597,13 @@ describe('lookupAlbum (the candidate-ranking flow)', () => {
     // The old in-flow poll kept polling to the END of its 20s window while
     // every replay so far was header-only, because a detail op lagging
     // AlbumSeo by more than a poll had produced a bogus miss (the #1135
-    // review). The bridge's quiet window replaces the poll, so the album
-    // page asks for a longer one (ALBUM_CAPTURE_QUIET_MS, not the shared
-    // PAGE_CAPTURE_QUIET_MS): this detail op lands 4s behind the SEO header —
-    // past the shared 2500ms default (under which the same page reads as the
-    // header-only miss above), inside the album window — and the lookup
+    // review). The bridge's capture replaces the poll with TWO mechanisms:
+    // the doneWhen early stop ends the window the moment the detail op
+    // itself lands (however far behind its SEO sibling — the needle is the
+    // operation-name value the plugin's matcher ranks first), and the quiet
+    // window is the FALLBACK for a detail op the needle can't see (a hornet
+    // rename). This detail op lands 4s behind the SEO header — past the
+    // shared 2500ms default, inside the album quiet window — and the lookup
     // still wins on it.
     const LAG_MS = 4000;
     const seoEntry = albumPageCapture('B07558DQJL', 'AlbumSeo');
@@ -599,14 +613,15 @@ describe('lookupAlbum (the candidate-ranking flow)', () => {
     // the gap the old poll's wait-it-out rule existed to cover.
     expect(LAG_MS).toBeGreaterThan(resolver.lib.PAGE_CAPTURE_QUIET_MS);
     expect(LAG_MS).toBeLessThan(resolver.lib.ALBUM_CAPTURE_QUIET_MS);
-    // The host's quiet-window verdict for this timeline, computed at the
-    // decision point: the window closes quietMs after the LAST capture, so
-    // the detail op is among the returned captures only when the window was
-    // still open when it fired (LAG_MS < quietMs).
+    // The host's window verdict for this timeline, computed at the decision
+    // point: doneWhen ends the window AT the detail op (the early stop), so
+    // the ONLY way it is missing is the shared budget closing the window
+    // before it fires (LAG_MS ≥ budgetMs) — the quiet window never gets the
+    // chance to cut a lagging detail op off once the needle names it.
     const ws = albumLookupMock({
       entriesFor: (url, o) => {
         if (!/\/albums\//.test(String(url))) return [];
-        return LAG_MS < (o && o.capture && o.capture.quietMs) ? [seoEntry, detailEntry] : [seoEntry];
+        return LAG_MS < (o && o.capture && o.capture.budgetMs) ? [seoEntry, detailEntry] : [seoEntry];
       }
     });
     const album = await resolver.lookupAlbum(ALBUM_URL, {});
@@ -616,15 +631,119 @@ describe('lookupAlbum (the candidate-ranking flow)', () => {
       trackCount: 8
     }));
     expect(album.tracks).toHaveLength(2);
-    // The album page's own quiet window, not the shared 2.5s one — and the
-    // shared 15s budget still caps it.
+    // The album page's own stop condition and quiet window, not the shared
+    // 2.5s ones — and the shared 15s budget still caps the window.
     expect(ws.load.mock.calls[0][2].capture.quietMs).toBe(resolver.lib.ALBUM_CAPTURE_QUIET_MS);
-    expect(ws.load.mock.calls[0][2].capture.quietMs).toBe(10000);
+    expect(ws.load.mock.calls[0][2].capture.quietMs).toBe(4500);
     expect(ws.load.mock.calls[0][2].capture.budgetMs).toBe(15000);
+    expect(ws.load.mock.calls[0][2].capture.doneWhen).toEqual({ bodyIncludes: '"AlbumDetailPage"' });
     // The detail op won on its tracksConnection; the header-only sibling
     // ranked behind it was never needed.
     const ops = ws.pageFetch.mock.calls.map((c) => JSON.parse(c[1].body).operationName);
     expect(ops).toEqual(['AlbumDetailPage']);
+  });
+
+  test('the flow total stays inside the renderer\'s 8s catalog step — doneWhen ends the window at the detail op, before the page even finishes loading', async () => {
+    // The renderer wraps every album lookup in withCatalogTimeout
+    // (CATALOG_STEP_TIMEOUT_MS, 8000ms — src/renderer/app.js) and drops the
+    // answer when the step expires; the plugin cannot read the renderer
+    // constant, so it mirrors the budget as ALBUM_JOB_STALE_MS and this test
+    // mirrors it again — the drift guard the maintainer asked for: a future
+    // quiet-window or doneWhen change that pushes the flow past 8s fails
+    // HERE, not in the field as "no track list".
+    const CATALOG_STEP_TIMEOUT_MS = 8000;
+    const REPLAY_MS = 300; // one candidate replay's cost
+    // The timeline: a slow album page — did-finish-load at 6s (subresources),
+    // but the page fires AlbumSeo at 1.5s and the detail op at 3s. doneWhen
+    // ends the capture window AT the detail op, so the load returns at 3s,
+    // with did-finish-load still 3s out — the pre-doneWhen flow (page load +
+    // the quiet tail) answered at ~13s, three seconds past the renderer's
+    // step, every Amazon-sourced album showing "no track list".
+    const ws = albumLookupMock({
+      timing: {
+        loadMs: 6000,
+        requests: [
+          { atMs: 1500, entry: albumPageCapture('B07558DQJL', 'AlbumSeo') },
+          { atMs: 3000, entry: albumPageCapture('B07558DQJL', 'AlbumDetailPage') }
+        ]
+      }
+    });
+    ws.pageFetch.mockImplementation(async (id, request) => {
+      if (id !== 'amazon-music') throw new Error('the plugin must drive its own session id');
+      await new Promise((resolve) => setTimeout(resolve, REPLAY_MS));
+      const body = JSON.parse(request.body);
+      if (body.operationName === 'AlbumSeo') return { success: true, status: 200, text: JSON.stringify(albumSeoResponse()) };
+      return { success: true, status: 200, text: JSON.stringify(albumDetailResponse()) };
+    });
+    const resolver = instantiateAmazonPlugin(axe);
+    expect(resolver.lib.ALBUM_JOB_STALE_MS).toBe(CATALOG_STEP_TIMEOUT_MS); // the two mirrors never drift apart
+    jest.useFakeTimers();
+    try {
+      const t0 = Date.now();
+      // Drive the clock only as far as the flow needs: the elapsed measured
+      // below is the flow's own end, not however far a blind advance went.
+      let settled = false;
+      const pending = resolver.lookupAlbum(ALBUM_URL, {}).then((out) => { settled = true; return out; });
+      for (let clock = 0; clock < CATALOG_STEP_TIMEOUT_MS && !settled; clock += 1) {
+        await jest.advanceTimersByTimeAsync(1);
+      }
+      const album = await pending;
+      const elapsed = Date.now() - t0;
+      expect(album).toEqual(expect.objectContaining({ id: 'amazonmusic-album-B07558DQJL', trackCount: 8 }));
+      // The whole flow — sign-in check, page load, the capture window, the
+      // winning replay — answered inside the renderer's step, and before
+      // did-finish-load: the early stop, not a lucky quiet window.
+      expect(elapsed).toBeLessThan(CATALOG_STEP_TIMEOUT_MS);
+      expect(elapsed).toBeLessThan(6000 + REPLAY_MS);
+      expect(elapsed).toBe(3000 + REPLAY_MS); // the window ended AT the detail op
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('the fallback path — only the SEO sibling, no detail op to match — still finishes inside the 8s step on the quiet window', async () => {
+    // The same budget against the FALLBACK: a detail op the needle can't see
+    // (the hornet-rename case) never matches doneWhen, so the window falls
+    // back to ALBUM_CAPTURE_QUIET_MS past the last capture — which must stay
+    // sized so page load + quiet still answers inside the renderer's step.
+    // A page that loads in 2s, fires its SEO sibling at 2.4s and nothing else
+    // ends the window at 2.4s + 4.5s = 6.9s, replays the header-only
+    // candidate and reports the miss at ~7.2s — inside the step, so the miss
+    // is CACHED as the honest answer instead of being dropped for a slow
+    // nothing.
+    const CATALOG_STEP_TIMEOUT_MS = 8000;
+    const REPLAY_MS = 300;
+    const ws = albumLookupMock({
+      timing: {
+        loadMs: 2000,
+        requests: [{ atMs: 2400, entry: albumPageCapture('B07558DQJL', 'AlbumSeo') }]
+      }
+    });
+    ws.pageFetch.mockImplementation(async (id, request) => {
+      if (id !== 'amazon-music') throw new Error('the plugin must drive its own session id');
+      await new Promise((resolve) => setTimeout(resolve, REPLAY_MS));
+      return { success: true, status: 200, text: JSON.stringify(albumSeoResponse()) };
+    });
+    const resolver = instantiateAmazonPlugin(axe);
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    jest.useFakeTimers();
+    try {
+      const t0 = Date.now();
+      let settled = false;
+      const pending = resolver.lookupAlbum(ALBUM_URL, {}).then((out) => { settled = true; return out; });
+      for (let clock = 0; clock < CATALOG_STEP_TIMEOUT_MS && !settled; clock += 1) {
+        await jest.advanceTimersByTimeAsync(1);
+      }
+      await expect(pending).resolves.toBeNull(); // the header-only miss
+      const elapsed = Date.now() - t0;
+      // Page load (2s) + the last capture (2.4s) + the album quiet window
+      // (4.5s) + the one header-only replay — inside the step with room.
+      expect(elapsed).toBeLessThan(CATALOG_STEP_TIMEOUT_MS);
+      expect(elapsed).toBe(2400 + resolver.lib.ALBUM_CAPTURE_QUIET_MS + REPLAY_MS);
+    } finally {
+      jest.useRealTimers();
+      warn.mockRestore();
+    }
   });
 
   test('no candidates at all is the deleted/region miss (null), with the ops log', async () => {
@@ -795,12 +914,16 @@ describe('lookupAlbum (the candidate-ranking flow)', () => {
     // null) exhausts the pool at four pageFetch replays; the fifth-ranked
     // candidate (an unrelated read carrying the ASIN) is never asked.
     const asin = 'B07558DQJL';
+    // The capture timeline ends at the detail op (doneWhen ends the window
+    // the moment it lands): the SEO sibling and the strays fired first, all
+    // captured, and the ranking — not arrival order — still puts the
+    // detail-named op at the head of the pool the cap governs.
     const entries = [
-      albumPageCapture(asin, 'AlbumDetailPage'),
       albumPageCapture(asin, 'AlbumSeo'),
       albumPageCapture(asin, 'PlaybackContextSeed'),
       albumPageCapture(asin, 'LibrarySeed'),
-      albumPageCapture(asin, 'MerchModuleSeed')
+      albumPageCapture(asin, 'MerchModuleSeed'),
+      albumPageCapture(asin, 'AlbumDetailPage')
     ];
     const ws = albumLookupMock({
       captures: entries,
