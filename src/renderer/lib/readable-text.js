@@ -1,5 +1,5 @@
-// Pick the text colour that reads best on a brand-coloured fill: white or
-// near-black, whichever has the higher WCAG contrast. A colour that is not a
+// Pick the text colour for a brand-coloured fill: white when it reads (3:1
+// or better), else whichever of white or near-black contrasts more. A colour that is not a
 // hex string (a CSS variable, nothing) gets white, the accent's text colour.
 // It returns the theme tokens (both the same in either theme); the RGB
 // values are only for the contrast sums and must match index.html's.
@@ -35,7 +35,15 @@ function readableTextOn(hex) {
   const rgb = parseHex(hex);
   if (!rgb) return LIGHT;
   const l = luminance(rgb);
-  return contrast(luminance(LIGHT_RGB), l) >= contrast(l, luminance(DARK_RGB)) ? LIGHT : DARK;
+  // White wins whenever it reads (3:1, WCAG's floor for bold and large text
+  // and UI controls): the plug-in's header is white on the same colour, and
+  // most services' own buttons are (Apple Music's red, SoundCloud's orange).
+  // Only a fill too light for white (Spotify's green, Amazon's cyan) takes
+  // near-black. Picking the higher contrast alone gave Apple's red
+  // near-black text under a white header (2026-11-17).
+  const onWhite = contrast(luminance(LIGHT_RGB), l);
+  if (onWhite >= 3) return LIGHT;
+  return onWhite >= contrast(l, luminance(DARK_RGB)) ? LIGHT : DARK;
 }
 
 module.exports = { readableTextOn, LIGHT_RGB, DARK_RGB };
