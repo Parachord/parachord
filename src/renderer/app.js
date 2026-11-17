@@ -14252,8 +14252,8 @@ ${trackListXml}
     if (enabled.lastfm && !pushed.lastfm && window.lastfmScrobbler) {
       tasks.push((async () => {
         try {
-          const isEnabled = await window.lastfmScrobbler.isEnabled();
-          if (!isEnabled) return;
+          // Signed in is enough: "Scrobble to Last.fm" pauses scrobbling only.
+          if (!(await window.lastfmScrobbler.isSignedIn())) return;
           await window.lastfmScrobbler.loveTrack({
             artist: track.artist, title: track.title,
             mbid: track.mbid && /^[a-f0-9-]{36}$/i.test(track.mbid) ? track.mbid : undefined,
@@ -14270,8 +14270,7 @@ ${trackListXml}
     if (enabled.listenbrainz && !pushed.listenbrainz && window.listenbrainzScrobbler) {
       tasks.push((async () => {
         try {
-          const isEnabled = await window.listenbrainzScrobbler.isEnabled();
-          if (!isEnabled) return;
+          if (!(await window.listenbrainzScrobbler.isSignedIn())) return;
           const mbid = await window.resolveMbidForLove(track);
           if (!mbid) {
             console.log(`[love-push] LB skip "${track.title}" — no MBID`);
@@ -14387,6 +14386,11 @@ ${trackListXml}
     });
   }, []);
 
+  // Does this plug-in sync loved tracks? Its manifest's `lovedTracks`
+  // capability (Last.fm, ListenBrainz), read from the loaded meta-services.
+  const serviceHasLovedTracks = (service) =>
+    !!(metaServicesRef.current || []).find(s => s.id === service)?.capabilities?.lovedTracks;
+
   // Manual backfill: walks the collection, pushes any track not yet
   // marked as pushed for this service. Soft rate-limit ~1 req/sec.
   // Idempotency cache means re-clicks are cheap.
@@ -14397,11 +14401,12 @@ ${trackListXml}
   // queue when MBIDs can't resolve).
   const runLoveBackfill = useCallback(async (service, { onlyIds } = {}) => {
     if (loveBackfillRunningRef.current[service]) return;
-    if (!['lastfm', 'listenbrainz'].includes(service)) return;
+    // A plug-in that declares `lovedTracks` (was two hard-coded names).
+    if (!serviceHasLovedTracks(service)) return;
     const scrobbler = service === 'lastfm' ? window.lastfmScrobbler : window.listenbrainzScrobbler;
     if (!scrobbler) { showToast(`${service} scrobbler not loaded`); return; }
-    const isEnabled = await scrobbler.isEnabled();
-    if (!isEnabled) { showToast(`${service} not connected`); return; }
+    // Signed in is enough: the scrobbling switch doesn't stop loved tracks.
+    if (!(await scrobbler.isSignedIn())) { showToast(`Sign in to ${scrobbler.name} to sync loved tracks`); return; }
 
     const tracks = (collectionDataRef.current?.tracks || []);
     const todo = tracks.filter(t => !lovePushedKeysRef.current[t.id]?.[service] && (!onlyIds || onlyIds.has(t.id)));
@@ -14483,7 +14488,7 @@ ${trackListXml}
   //   6. One-way stays one-way: importing never unloves anything remotely.
 
   const runLoveImport = useCallback(async (service) => {
-    if (!['lastfm', 'listenbrainz'].includes(service)) return;
+    if (!serviceHasLovedTracks(service)) return;
     if (loveImportRunningRef.current[service]) return;
     const label = service === 'lastfm' ? 'Last.fm' : 'ListenBrainz';
     const otherService = service === 'lastfm' ? 'listenbrainz' : 'lastfm';
@@ -14505,7 +14510,7 @@ ${trackListXml}
     setLoveImportProgress(prev => ({ ...prev, [service]: { done: 0, total: 0 } }));
     try {
       let connected = false;
-      try { connected = await scrobbler.isEnabled(); } catch (e) { connected = false; }
+      try { connected = await scrobbler.isSignedIn(); } catch (e) { connected = false; }
       if (!connected) { showToast(`${label} is not connected`, 'error'); return; }
 
       // Cross-service propagation, confirmed up front (issue #1071 rule 2).
@@ -14516,7 +14521,7 @@ ${trackListXml}
       const otherScrobbler = otherService === 'lastfm' ? window.lastfmScrobbler : window.listenbrainzScrobbler;
       if (scrobblerLovePushEnabledRef.current?.[otherService] && otherScrobbler) {
         let otherConnected = false;
-        try { otherConnected = await otherScrobbler.isEnabled(); } catch (e) { otherConnected = false; }
+        try { otherConnected = await otherScrobbler.isSignedIn(); } catch (e) { otherConnected = false; }
         if (otherConnected) {
           setLoveImportProgress(prev => ({ ...prev, [service]: { done: 0, total: 0, phase: 'confirm' } }));
           crossConfirm = await new Promise((resolve) => {
@@ -36448,8 +36453,14 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     return true;
   };
 
+  // Remove (the username row): forget the username only. It used to
+  // delete the plug-in's whole settings record, which also switched
+  // "Enable" off and wiped the Advanced API keys (2026-11-17). Enable stays
+  // as it was (a username counted as on), and the scrobbling session is the
+  // Scrobbling section's own.
   const disconnectLastfm = async () => {
-    await clearMetaServiceConfig('lastfm');
+    const { username: _username, ...rest } = metaServiceConfigs.lastfm || {};
+    await saveMetaServiceConfig('lastfm', { ...rest, enabled: rest.enabled !== false });
     console.log('🎧 Disconnected from Last.fm');
   };
 
@@ -36541,8 +36552,14 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     return true;
   };
 
+  // Remove (the username row): forget the username only. It used to
+  // delete the plug-in's whole settings record, which also switched
+  // "Enable" off and wiped the Advanced API keys (2026-11-17). Enable stays
+  // as it was (a username counted as on), and the scrobbling session is the
+  // Scrobbling section's own.
   const disconnectListenbrainz = async () => {
-    await clearMetaServiceConfig('listenbrainz');
+    const { username: _username, ...rest } = metaServiceConfigs.listenbrainz || {};
+    await saveMetaServiceConfig('listenbrainz', { ...rest, enabled: rest.enabled !== false });
     console.log('🎵 Disconnected from ListenBrainz');
   };
 

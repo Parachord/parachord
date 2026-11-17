@@ -46,6 +46,10 @@ The plugin contract is `window.scrobbleManager.registerPlugin({ id, isEnabled, s
 | Loved-tracks push toggles + backfill, and the import action (`runLoveImport`) | inline in app.js, persisted at `scrobbler_love_push_enabled` / `love_pushed_keys` / `love_import_cursor`; pure helpers in `src/renderer/lib/love-import.js` |
 | Removed | `scrobblers/` directory and `scrobble-manager.js` were a dead older copy, deleted 2026-10 (parachord#757; consolidation was commit [`26b7ebd`](https://github.com/Parachord/parachord/commit/26b7ebd)) |
 
+### Signed in vs scrobbling on
+
+Each scrobbler has two tests: `isEnabled()` (signed in **and** "Scrobble to X" switched on: what scrobbling reads) and `isSignedIn()` (a session or token, whatever the switch says). Loved-track syncing (the live push, `runLoveBackfill`, `runLoveImport` and its cross-service offer) reads `isSignedIn()`, so the scrobbling switch pauses scrobbling only; until 2026-11-17 it stopped loved tracks too. Sign out (the Scrobbling section) ends both. The username row's Remove forgets only Last.fm's or ListenBrainz's username: "Enable", the API keys and the scrobbling session stay (it used to delete the whole settings record, switching Enable off).
+
 ### A resumed track isn't scrobbled twice
 
 `ScrobbleManager` scrobbles once a track's position passes the threshold: half its length or 4 minutes, whichever is sooner, and at least 30 s. Every `onTrackStart` resets that.
