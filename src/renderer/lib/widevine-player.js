@@ -4,14 +4,23 @@
 // local files, SoundCloud and html5Stream resolvers share). Per-resolver
 // differences stop at the widevine bridge: getManifest (entity → DASH MPD
 // text) and relayLicense (CDM challenge bytes ↔ license bytes) are IPC
-// handled by main-process providers (amazon-dmls today). Variant selection
-// obeys the GLOBAL playback-quality setting ('playback_quality' /
+// handled by main-process providers (amazon-dmls today) — or, on the
+// plugin-mediated path (#1356 M4), supplied renderer-side by a resolver
+// that implements getPlaybackManifest/relayLicense: playPlugin() declares the
+// manifest UP to the bridge's session open (only its length crosses — the
+// text stays renderer-side), and the licence router answers main's forwarded
+// challenges through the plugin's relayLicense with the context held
+// renderer-side — no plugin data crosses the widevine:plugin-license push.
+// Variant
+// selection obeys the GLOBAL playback-quality setting ('playback_quality' /
 // 'playback_abr' store keys) through lib/widevine-quality.js — no resolver
 // gets its own quality vocabulary.
 //
 // Lifecycle:
 //   widevine-player.play(audio, { resolverId, entity })
 //      → bridge manifest → Shaka load → quality config → caller .play()s
+//   widevine-player.playPlugin(audio, { resolverId, manifestResult, relayLicense })
+//      → bridge session open (manifest supplied renderer-side) → same load
 //   widevine-player.applyQuality()         live re-select after a setting change
 //   widevine-player.stop()                 unload; restore the element for plain URLs
 //   widevine-player.currentVariantFacts()  stream-quality record fields
@@ -48,6 +57,18 @@ let lastQualityRead = null; // debug: the tier/adaptive seen by the last play/ap
 // and a re-anchor is owed. A fresh load clears it (see play()).
 let criteriaNarrowed = false;
 let trackSession = null; // { resolverId, entity, trackContext, started }
+// The plugin relay's router record (#1356 M4): { sessionId, relayLicense,
+// context } | null. Shaka fires a plugin play's FIRST licence request during
+// load() (as soon as the DRM engine has init data — a PSSH in the MPD fires
+// at attach), long before loadManifestSession assigns trackSession below, so
+// the router cannot read the relay off trackSession — it reads THIS record,
+// taken the moment openSession mints the session, before the load starts.
+// The record dies with its play: a newer play clears it at entry
+// (supersession), and stop() tears it down. The context is the plugin's own
+// reply field and never crosses IPC — the router is its renderer-side holder
+// (review: no plugin data rides the widevine:plugin-license push, a channel
+// any renderer code can subscribe to).
+let pluginRelayRecord = null;
 let loadStartStamp = 0;
 let playToken = 0; // per-call token: a superseded play must never reach the element
 let lastErrorDetail = null;
@@ -146,6 +167,9 @@ function ensureLicenseScheme() {
     const result = await window.electron.widevine.relayLicense(resolverId, b64(request.body), sessionId);
     if (!result || result.success !== true) {
       const err = new Error((result && result.error) || 'license relay failed');
+      // .reason is load-bearing contract (the engine's refusal handlers key
+      // on it): propagate it, never drop it (review).
+      err.reason = (result && result.reason) || 'playback-failed';
       if (result && result.licenseDenied) err.licenseDenied = true;
       // Eligibility refusals (CUSTOMER_NOT_ELIGIBLE — live-verified on a
       // Prime plan for the HD KID group) are account-level facts: stop asking
@@ -530,11 +554,13 @@ function playableVariants(tracks) {
 //     manager is re-fed a one-family set on every choice, forever.
 // preferredAudioCodecs stays EMPTY everywhere on this engine.
 
-async function play(audio, { resolverId, entity, trackContext, startTime } = {}) {
-  if (!audio || !resolverId) throw new Error('widevine-player: audio element and resolverId are required');
-  if (!ensureLicenseScheme()) throw new Error('widevine-player: shaka did not load (index.html script tag)');
-  if (!window.electron || !window.electron.widevine) throw new Error('widevine-player: bridge missing (preload)');
-
+// Claim the play token for a play that has not reached play()/playPlugin()
+// yet: the engine's plugin path claims BEFORE the plugin's getPlaybackManifest
+// await (the provider path's play() claims ahead of its manifest mint), so a
+// bare stop() during the manifest fetch — the sign-out path, which bumps no
+// playback generation — makes the play superseded instead of loading onto a
+// stopped engine. The returned token rides into playPlugin({ token }).
+function claimPlayToken() {
   const mine = ++playToken;
   lastError = null;
   clearAudible();
@@ -542,6 +568,20 @@ async function play(audio, { resolverId, entity, trackContext, startTime } = {})
   // errors (the playToken check covers it); drop it so a fresh play starts
   // clean.
   pendingDenialLatch = null;
+  return mine;
+}
+
+async function play(audio, { resolverId, entity, trackContext, startTime } = {}) {
+  if (!audio || !resolverId) throw new Error('widevine-player: audio element and resolverId are required');
+  if (!ensureLicenseScheme()) throw new Error('widevine-player: shaka did not load (index.html script tag)');
+  if (!window.electron || !window.electron.widevine) throw new Error('widevine-player: bridge missing (preload)');
+
+  const mine = claimPlayToken();
+  // A provider play supersedes any plugin play: its router record dies here
+  // (the bridge rotates the session at the mint below — an in-flight forward
+  // for the old session is refused renderer-side too, the same tail of that
+  // rotation).
+  pluginRelayRecord = null;
   loadStartStamp = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
   const result = await window.electron.widevine.getManifest(resolverId, entity || {});
   // A stop/skip during the mint wins over the manifest's own failure:
@@ -553,7 +593,20 @@ async function play(audio, { resolverId, entity, trackContext, startTime } = {})
     err.reason = (result && result.reason) || 'playback-failed';
     throw err;
   }
+  return loadManifestSession(audio, {
+    resolverId, result, entity: entity || {}, trackContext, startTime, mine
+  });
+}
 
+// The post-manifest half of a play, shared by the provider path (play) and
+// the plugin-mediated path (playPlugin): both arrive holding a minted session
+// id and a manifest string, and everything below — Shaka setup, blob-URL
+// load, quality config, the track-session bookkeeping — is agnostic to where
+// the manifest came from. `mine` is the caller's playToken: a play
+// superseded mid-load must not reach the element or close the newer play's
+// session. A plugin play's relay lives in pluginRelayRecord, taken before
+// this runs — Shaka asks for its first licence during load(), below.
+async function loadManifestSession(audio, { resolverId, result, entity, trackContext, startTime, mine }) {
   const shaka = window.shaka;
   if (!player) {
     player = new shaka.Player();
@@ -776,6 +829,135 @@ async function play(audio, { resolverId, entity, trackContext, startTime } = {})
   return { substituteAsin: result.substituteAsin || null, resolverId, token: mine };
 }
 
+// The plugin-mediated licence router (#1356 M4). Main forwards a
+// plugin-mediated session's licence challenge to the renderer; the router
+// hands it to the CURRENT play's plugin relayLicense together with the
+// session's context — held HERE, in pluginRelayRecord, since the
+// open-session (review: the context never crosses IPC; the router is its
+// renderer-side holder, and no plugin data rides the broadcast any renderer
+// code can subscribe to). Registered once, on the first plugin-mediated
+// play; a request naming any session other than the live one (a superseded
+// play racing its last relay) is refused — main already gated the session,
+// this is the renderer-side tail of the same rule. The record answers
+// MID-LOAD requests too: Shaka fires the first licence request during
+// load(), before trackSession exists — the record predates the load, so the
+// first licence of a plugin play is answered, not refused.
+let pluginRelayRouterBound = false;
+function ensurePluginRelayRouter(bridge) {
+  if (pluginRelayRouterBound) return true;
+  if (!bridge || typeof bridge.onPluginLicenseRequest !== 'function') return false;
+  pluginRelayRouterBound = true;
+  bridge.onPluginLicenseRequest(async (request) => {
+    const record = pluginRelayRecord;
+    if (!record || record.sessionId !== request.sessionId || typeof record.relayLicense !== 'function') {
+      const err = new Error('widevine-player: no live plugin license relay for this session');
+      err.reason = 'playback-failed';
+      throw err;
+    }
+    const license = await record.relayLicense(request.challenge, record.context);
+    if (typeof license !== 'string' || !license) {
+      const err = new Error('widevine-player: the resolver\'s relayLicense answered empty');
+      err.reason = 'playback-failed';
+      throw err;
+    }
+    return license;
+  });
+  return true;
+}
+
+// The plugin-mediated play path (#1356 M4): a resolver that implements
+// getPlaybackManifest supplies the manifest RENDERER-side (the engine calls
+// it with the whole track); the host declares that manifest UP to main
+// (widevine:open-session, by LENGTH — the text never crosses IPC), which
+// opens the licence session under the same gates a provider manifest opens
+// one — sender, rate window, supersession, matched close. The plugin's
+// opaque `context` never crosses IPC either: it stays renderer-side, in the
+// relay record below, and returns to the plugin with every licence
+// challenge. The manifest extras the provider reply carries
+// (protectionSets/substituteAsin/cdnType) are optional fields on the plugin's
+// reply and ride the same seams; a plugin reply without them simply reports
+// no substitution and no KID annotation.
+async function playPlugin(audio, { resolverId, manifestResult, relayLicense, trackContext, startTime, token } = {}) {
+  if (!audio || !resolverId) throw new Error('widevine-player: audio element and resolverId are required');
+  if (!ensureLicenseScheme()) throw new Error('widevine-player: shaka did not load (index.html script tag)');
+  const bridge = window.electron && window.electron.widevine;
+  if (!bridge) throw new Error('widevine-player: bridge missing (preload)');
+  if (typeof bridge.openSession !== 'function' || typeof bridge.onPluginLicenseRequest !== 'function') {
+    throw new Error('widevine-player: plugin license bridge missing (preload)');
+  }
+  if (typeof relayLicense !== 'function') {
+    const err = new Error('widevine-player: playPlugin needs the resolver\'s relayLicense');
+    err.reason = 'playback-failed';
+    throw err;
+  }
+  const reply = manifestResult && typeof manifestResult === 'object' ? manifestResult : null;
+  if (!reply || typeof reply.manifest !== 'string' || !reply.manifest) {
+    const err = new Error('widevine-player: the resolver\'s manifest reply carried no manifest');
+    err.reason = 'playback-failed';
+    throw err;
+  }
+  // This engine is DASH + Widevine (Shaka on the shared element): the
+  // plugin's declared stream shape gates HERE, before a session is minted —
+  // the bridge carries type/drm on the session record inertly, so a future
+  // stream system declares itself without main learning wire formats.
+  if (reply.type !== 'dash' || reply.drm !== 'widevine') {
+    const err = new Error(`widevine-player: the resolver's manifest reply is ${reply.type || '?'}/${reply.drm || '?'} — this engine plays dash/widevine`);
+    err.reason = 'playback-failed';
+    throw err;
+  }
+  if (!ensurePluginRelayRouter(bridge)) {
+    throw new Error('widevine-player: plugin license router registration failed');
+  }
+
+  // A pre-claimed token (claimPlayToken — the engine claims before the
+  // plugin's manifest fetch) can be stale: a stop() during that fetch
+  // already invalidated it, and this play is superseded before it starts —
+  // never claim a fresh token here (that would abort the newer play
+  // instead). Without one, claim here (the direct-call shape).
+  const mine = typeof token === 'number' ? token : claimPlayToken();
+  if (playToken !== mine) throw supersededError();
+  lastError = null;
+  clearAudible();
+  pendingDenialLatch = null;
+  // A plugin play supersedes whatever was live (plugin or provider): the
+  // previous play's router record dies here; the new one is taken below, the
+  // moment the session is minted.
+  pluginRelayRecord = null;
+  loadStartStamp = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
+  const open = await bridge.openSession(resolverId, reply.manifest.length, reply.type, reply.drm);
+  // A stop/skip during the open wins over the open's own failure — the same
+  // supersession rule the provider path applies to its manifest mint.
+  if (playToken !== mine) throw supersededError();
+  if (!open || open.success !== true) {
+    const err = new Error((open && open.error) || 'license session open failed');
+    err.reason = (open && open.reason) || 'playback-failed';
+    throw err;
+  }
+  // The router's record, taken BEFORE the load starts: Shaka fires the
+  // first licence request during load() (init data present at attach),
+  // before trackSession exists — the router answers from this record, with
+  // the plugin's own context held renderer-side.
+  pluginRelayRecord = { sessionId: open.sessionId, relayLicense, context: reply.context || null };
+  return loadManifestSession(audio, {
+    resolverId,
+    // The bridge-minted session id plus the plugin-supplied manifest, in the
+    // result shape the provider path feeds downstream: sessionId drives the
+    // licence URL and the matched close, and the optional extras ride the
+    // provider reply's own fields.
+    result: {
+      manifest: reply.manifest,
+      sessionId: open.sessionId,
+      protectionSets: reply.protectionSets,
+      substituteAsin: reply.substituteAsin,
+      cdnType: reply.cdnType
+    },
+    entity: {},
+    trackContext,
+    startTime,
+    mine
+  });
+}
+
 // Live re-apply of the global quality setting against the active manifest.
 async function applyQuality() {
   if (!player || !activeResolverId || !trackSession) return;
@@ -804,6 +986,10 @@ async function stop({ token } = {}) {
     positionMs: audioElement && Number.isFinite(audioElement.currentTime) ? Math.round(audioElement.currentTime * 1000) : 0
   });
   trackSession = null;
+  // The plugin relay dies with its play: a late forwarded challenge for the
+  // stopped session finds no router target (main's matched close already
+  // woke its in-flight forwards).
+  pluginRelayRecord = null;
   activeResolverId = null;
   lastError = null;
   // Nothing is playing — the criteria state is stale either way, and a
@@ -864,5 +1050,5 @@ function getState() {
   };
 }
 
-const api = { play, applyQuality, stop, getState, currentVariantFacts, setVariantListener, untilAudible, clearPlanBlocks, QUALITY_STORE_KEY, ABR_STORE_KEY, SPATIAL_STORE_KEY };
+const api = { play, playPlugin, claimPlayToken, applyQuality, stop, getState, currentVariantFacts, setVariantListener, untilAudible, clearPlanBlocks, QUALITY_STORE_KEY, ABR_STORE_KEY, SPATIAL_STORE_KEY };
 module.exports = api;

@@ -46,6 +46,11 @@ const __exposeWebSession = (() => {
   }
 })();
 
+// The plugin-mediated licence relay's unsubscribe, while one is live — the
+// subscription is SINGLE-OWNER (see onPluginLicenseRequest below): the first
+// registration owns the relay until it unsubscribes.
+let __pluginLicenseRelayUnsubscribe = null;
+
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electron', {
@@ -683,10 +688,67 @@ contextBridge.exposeInMainWorld('electron', {
   // relays license bytes through it; providers register per resolver (Amazon
   // Music is amazon-dmls.js). This is the ONLY surface a stream resolver
   // needs beyond its search/sign-in channels.
+  //
+  // The plugin-mediated half (#1356 M4): a resolver that implements
+  // getPlaybackManifest supplies the manifest renderer-side and declares it
+  // UP (openSession carries only its length — the text stays renderer-side),
+  // and its relayLicense answers main's forwarded license challenges
+  // (onPluginLicenseRequest) — main keeps the sender/session/cap gates
+  // either way. The plugin's context never crosses IPC: the renderer-side
+  // router holds it and hands it back to the plugin's relayLicense.
   widevine: {
     getManifest: (resolverId, entity) => ipcRenderer.invoke('widevine:manifest', { resolverId, entity }),
     relayLicense: (resolverId, challenge, sessionId) => ipcRenderer.invoke('widevine:license', { resolverId, challenge, sessionId }),
-    playerEvent: (resolverId, event) => ipcRenderer.invoke('widevine:player-event', { resolverId, event })
+    playerEvent: (resolverId, event) => ipcRenderer.invoke('widevine:player-event', { resolverId, event }),
+    openSession: (resolverId, manifestLength, type, drm) =>
+      ipcRenderer.invoke('widevine:open-session', { resolverId, manifestLength, type, drm }),
+    // A plugin-mediated session's license challenges arrive here, one push
+    // per relay. The callback gets { requestId, resolverId, sessionId,
+    // challenge } and returns the license (base64) — no context rides the
+    // push (the caller holds the plugin's context renderer-side). A thrown
+    // error's fields (reason/licenseDenied/denialReason/message) answer in
+    // the same shape a provider relayLicense rejection produces. The wrapper
+    // ALWAYS answers — main's relay timeout is the net for a callback that
+    // never settles.
+    //
+    // SINGLE-OWNER (#1434 review): the player registers this exactly once
+    // (ensurePluginRelayRouter in lib/widevine-player.js), and main takes
+    // the FIRST answer for a requestId — so a second subscriber that raced
+    // its own answer ahead of the router would decide the play. The first
+    // call wins; every later call gets a warning and a no-op unsubscribe
+    // (a second registration is the caller's bug, not a supported relay).
+    // Ownership is released when the owner unsubscribes, so a re-register
+    // after a teardown is still possible.
+    onPluginLicenseRequest: (callback) => {
+      if (__pluginLicenseRelayUnsubscribe) {
+        console.warn('widevine.onPluginLicenseRequest: a plugin license relay is already registered; ignoring the second registration');
+        return () => { /* no-op: the first registration owns the relay */ };
+      }
+      const handler = (_event, request) => {
+        if (!request || typeof request.requestId !== 'string') return;
+        Promise.resolve()
+          .then(() => callback(request))
+          .then((license) => ipcRenderer.invoke('widevine:plugin-license-answer', { requestId: request.requestId, ok: true, license }))
+          .catch((error) => ipcRenderer.invoke('widevine:plugin-license-answer', {
+            requestId: request.requestId,
+            ok: false,
+            error: {
+              message: String((error && (error.message || error)) || 'plugin license relay failed'),
+              reason: (error && error.reason) || undefined,
+              licenseDenied: !!(error && error.licenseDenied),
+              denialReason: (error && typeof error.denialReason === 'string') ? error.denialReason : null
+            }
+          }))
+          .catch(() => { /* the answer is best-effort; main's timeout is the net */ });
+      };
+      ipcRenderer.on('widevine:plugin-license', handler);
+      const unsubscribe = () => {
+        ipcRenderer.removeListener('widevine:plugin-license', handler);
+        if (__pluginLicenseRelayUnsubscribe === unsubscribe) __pluginLicenseRelayUnsubscribe = null;
+      };
+      __pluginLicenseRelayUnsubscribe = unsubscribe;
+      return unsubscribe;
+    }
   },
 
   // The generic web-session bridge (#1356): a registered web-session host's
