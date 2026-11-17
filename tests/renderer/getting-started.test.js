@@ -42,6 +42,17 @@ describe('step 1 comes from the registry', () => {
     expect(GS.stepOnePlugins([...registry, fresh]).services.map((r) => r.id)).toContain('newservice');
   });
 
+  test('a plug-in with empty settings needs setup; once one is saved it can count as connected', () => {
+    const subsonic = { ...registry[4], configurable: JSON.parse(read('plugins-src/subsonic/manifest.json')).settings.configurable };
+    expect(GS.settingsMissing(subsonic, undefined)).toBe(true);
+    expect(GS.settingsMissing(subsonic, { serverUrl: '  ' })).toBe(true);
+    expect(GS.settingsMissing(subsonic, { serverUrl: 'http://nas:4533' })).toBe(false);
+    expect(GS.settingsMissing(registry[5], undefined)).toBe(false); // Bandcamp: nothing to fill in
+    // Switched on but not set up: Set up, never Connected.
+    expect(GS.serviceState(subsonic, { setupNeeded: { subsonic: true }, playbackResolvers: ['subsonic'] })).toEqual({ state: 'setup', label: 'Set up' });
+    expect(app).toContain('out[r.id] = GettingStartedModel.settingsMissing(r, metaServiceConfigs?.[r.id]);');
+  });
+
   test('a required setting not saved yet makes the tile "Add your <field>", named by the manifest', () => {
     const spotify = registry[0];
     // The test registry flattens settings like the loader; Spotify's Client ID is required.
@@ -52,7 +63,7 @@ describe('step 1 comes from the registry', () => {
     expect(GS.serviceState(withFields, { accounts: { spotify: true }, setupNeeded: { spotify: true }, playbackResolvers: ['spotify'] }).state).toBe('connected');
     const fn = app.slice(app.indexOf('const connectPlugin = async'), app.indexOf('const homePageHandlers'));
     expect(fn).toContain('spotify: pluginSetupNeeded.spotify ? null : connectSpotify,');
-    expect(app).toContain("spotify: spotifyCredentialsSource !== 'user'");
+    expect(app).toContain("out.spotify = spotifyCredentialsSource !== 'user';");
   });
 
   test('a tile is connected only when signed in and playing; a plan limit shows its label', () => {
@@ -231,7 +242,8 @@ describe('app wiring', () => {
 
   test('Connect switches the plug-in on and runs its sign-in, else opens its panel', () => {
     const fn = app.slice(app.indexOf('const connectPlugin = async'), app.indexOf('const homePageHandlers'));
-    expect(fn).toContain('if (!activeResolversRef.current.includes(pluginId)) toggleResolver(pluginId);');
+    // Switched on only when its sign-in runs; a panel opens with the plug-in as it was.
+    expect(fn).toMatch(/if \(signIn\) \{\s*if \(!activeResolversRef\.current\.includes\(pluginId\)\) toggleResolver\(pluginId\);\s*await signIn\(\);\s*\} else setSelectedResolver\(plugin\);/);
     expect(fn).toContain('applemusic: connectAppleMusic');
     expect(fn).toContain('else setSelectedResolver(plugin);');
   });

@@ -37458,9 +37458,18 @@ useEffect(() => {
   // A required setting not saved yet: Spotify needs your own Client ID
   // (release builds ship none; a dev .env one doesn't count, so a dev build
   // behaves as a release does). SoundCloud ships a fallback key.
-  const pluginSetupNeeded = useMemo(() => ({
-    spotify: spotifyCredentialsSource !== 'user'
-  }), [spotifyCredentialsSource]);
+  // Any other plug-in the host has no sign-in for needs setup while its own
+  // settings are empty (Subsonic's server, username and password).
+  const pluginSetupNeeded = useMemo(() => {
+    const out = {};
+    for (const r of loadedResolvers) {
+      if (!Object.prototype.hasOwnProperty.call(pluginAccounts, r.id)) {
+        out[r.id] = GettingStartedModel.settingsMissing(r, metaServiceConfigs?.[r.id]);
+      }
+    }
+    out.spotify = spotifyCredentialsSource !== 'user';
+    return out;
+  }, [loadedResolvers, pluginAccounts, metaServiceConfigs, spotifyCredentialsSource]);
   const homeGettingStartedModel = useMemo(() => {
     const GS = GettingStartedModel;
     const plugins = GS.stepOnePlugins(loadedResolvers);
@@ -37520,15 +37529,18 @@ useEffect(() => {
   const connectPlugin = async (pluginId) => {
     const plugin = (loadedResolversRef.current || []).find(r => r.id === pluginId);
     if (!plugin) return;
-    if (!activeResolversRef.current.includes(pluginId)) toggleResolver(pluginId);
     const signIn = {
       spotify: pluginSetupNeeded.spotify ? null : connectSpotify,
       soundcloud: soundcloudCredentialsSource !== 'none' ? connectSoundcloud : null,
       applemusic: connectAppleMusic,
       amazonmusic: () => manageAmazonMusic({ explicit: true, reason: 'not-signed-in', forcePrompt: true })
     }[pluginId];
-    if (signIn) await signIn();
-    else setSelectedResolver(plugin);
+    // Switched on only when the sign-in runs here: a plug-in that still needs
+    // setup opens its panel as it is, where you set it up and turn it on.
+    if (signIn) {
+      if (!activeResolversRef.current.includes(pluginId)) toggleResolver(pluginId);
+      await signIn();
+    } else setSelectedResolver(plugin);
   };
   // Stable function props for the memo'd FirstRunTutorial (keys must
   // match FIRST_RUN_TUTORIAL_HANDLERS in first-run-tutorial.js),

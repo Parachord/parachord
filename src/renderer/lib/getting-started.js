@@ -55,6 +55,17 @@ function requiredSetting(resolver) {
   return key ? { key, label: fields[key].label || key } : null;
 }
 
+// A plug-in whose settings panel takes values (Subsonic's server, username
+// and password: its manifest's non-advanced fields) and has none saved yet
+// (`saved`, its meta_service_configs entry). A plug-in with no such fields
+// needs none.
+function settingsMissing(resolver, saved) {
+  const fields = (resolver && (resolver.configurable || (resolver.settings && resolver.settings.configurable))) || {};
+  const keys = Object.keys(fields).filter((k) => fields[k] && !fields[k].advanced);
+  if (keys.length === 0) return false;
+  return !keys.some((k) => saved && saved[k] !== undefined && saved[k] !== null && String(saved[k]).trim() !== '');
+}
+
 // `setupNeeded` maps a plug-in id to true while a required setting isn't
 // saved yet (the host knows: Spotify's own Client ID): its tile is 'setup',
 // and Connect opens its panel to fill it in.
@@ -63,7 +74,9 @@ function serviceState(resolver, { accounts = {}, setupNeeded = {}, playbackResol
   const limit = playbackLimits && playbackLimits[id];
   const known = Object.prototype.hasOwnProperty.call(accounts || {}, id);
   const signedIn = known ? !!accounts[id] : playbackResolvers.includes(id);
-  if (!signedIn && setupNeeded && setupNeeded[id]) {
+  // Setup first, unless the host knows the account is signed in: being
+  // switched on is no sign of a plug-in being set up.
+  if (setupNeeded && setupNeeded[id] && !(known && accounts[id])) {
     const field = requiredSetting(resolver);
     return { state: 'setup', label: field ? `Add your ${field.label}` : 'Set up' };
   }
@@ -129,6 +142,7 @@ module.exports = {
   playsHere,
   needsAccount,
   requiredSetting,
+  settingsMissing,
   stepOnePlugins,
   serviceState,
   serviceConnected,
