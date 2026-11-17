@@ -694,7 +694,12 @@ const Playbar = React.memo(function Playbar(props) {
           ),
           // Heart/favorite button
           (() => {
-            if (!currentTrack) return null;
+            // No track: the button stays in place, disabled, so the playbar
+            // doesn't shift when the first track loads (it took 44px with it).
+            if (!currentTrack) {
+              return React.createElement(Button, { variant: 'icon', size: 'sm', tone: 'dark', 'aria-label': 'Save to collection', disabled: true },
+                React.createElement(Icons.Heart, { className: 'w-5 h-5', strokeWidth: 2, fill: 'none' }));
+            }
             const isInCollection = !!findSavedTrack(collectionData.tracks, currentTrack);
             return React.createElement(Tooltip, {
               content: isInCollection ? 'Remove from collection' : 'Save to collection',
