@@ -38,6 +38,7 @@
 - **View on Achordion.** ListenBrainz playlists, ListenBrainz users, a friend's now-playing track and an album's Share menu link to their page on Achordion.
 - **Concerts.** Tickets buttons and date badges are in the Concerts teal everywhere, including on Home. The Refresh button is gone: listings refresh themselves daily, and again when you change your location. An artist's On Tour tab appears only when they have shows coming up.
 - **Settings.** Light, Dark and System are three tiles again. Clear cache asks before it clears. A plug-in that needs attention says so in one place, the line under its name, and its capabilities read in plain words; Last.fm and ListenBrainz now list Scrobbling.
+- **One Auto-update menu for a playlist from a link.** A playlist you imported from a link had separate Check now, Stop updating and Keep updated buttons. Its header now has one Auto-update button showing whether it's on, with a menu to switch it and, while it's on, to refresh now.
 - **Smaller fixes.** History's Recently played shows when each track played. Search's playlist results show their covers. An artist photo that fails to load shows the artist's initials. An album's title is no longer cut off by its type badge. Live and compilation releases have their own colours instead of the Singles pink. Home's and Recommendations' albums show their release year. A disabled playbar button is dimmed but still readable. Wikipedia's logo on source badges and its plug-in tile no longer draws a W with a chunk cut out of it.
 
 ## Amazon Music
