@@ -22,6 +22,8 @@ const { Badge } = require('./badge');
 const { Button } = require('./button');
 const { SecretField, Select, SettingRow, Switch, TextField } = require('./fields');
 const { pluginSwitchState } = require('../lib/plugin-switch');
+const { AccountRow } = require('./account-row');
+const { Disclosure } = require('./disclosure');
 const { EmptyState } = require('./states');
 const { transition } = require('../lib/motion');
 
@@ -323,28 +325,20 @@ React.createElement('div', {
             const signedIn = !!(status && status.signedIn === true);
             const canSignOut = signedIn && typeof selectedResolver.signOut === 'function';
             const canSignIn = !signedIn && typeof selectedResolver.signIn === 'function';
+            // The account row (components/account-row.js, #1498 step 3): the
+            // plugin's own getStatus label and message as its status line.
             return React.createElement('div', {
               style: {
                 padding: '16px 0',
                 borderTop: '1px solid var(--border-subtle)'
               }
             },
-              React.createElement('div', {
-                className: 'flex items-center justify-between',
-                style: { padding: '12px', backgroundColor: 'var(--hover-bg-default)', borderRadius: '8px' }
-              },
-                React.createElement('div', null,
-                  React.createElement('p', {
-                    style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' }
-                  }, row.label),
-                  row.message ? React.createElement('p', {
-                    style: { fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }
-                  }, row.message) : null
-                ),
-                canSignOut ? React.createElement(Button, {
-                  variant: 'secondary',
-                  size: 'sm',
-                  onClick: async () => {
+              React.createElement(AccountRow, {
+                name: selectedResolver.name,
+                color: getServiceColor(selectedResolver.id) || selectedResolver.color,
+                signedIn,
+                status: row.message ? `${row.label} · ${row.message}` : row.label,
+                onSignOut: canSignOut ? async () => {
                     // Stop the shared engine BEFORE the session dies — the
                     // shaka session (license + buffered signed URLs) must not
                     // keep playing a signed-out account's content, and the
@@ -370,11 +364,8 @@ React.createElement('div', {
                     } else {
                       showToast((r && r.error) || `Could not sign out of ${selectedResolver.name}`, 'error');
                     }
-                  }
-                }, 'Sign out') : canSignIn ? React.createElement(Button, {
-                  variant: 'primary',
-                  size: 'sm',
-                  onClick: async () => {
+                  } : undefined,
+                onSignIn: canSignIn ? async () => {
                     // Amazon's sign-in carries its own prompt flow (the
                     // consent dialog, single-flight, the 10-minute quiet
                     // after a decline, the hiccup retry); every other plugin's
@@ -397,10 +388,8 @@ React.createElement('div', {
                     }
                     await selectedResolver.signIn().catch(() => null);
                     refreshPluginStatus(selectedResolver.id);
-                  }
-                }, 'Sign in') : null
-              )
-            );
+                  } : undefined,
+              }));
           })(),
 
           // Authentication section (for services that require it)
@@ -410,40 +399,12 @@ React.createElement('div', {
               borderTop: '1px solid var(--border-subtle)'
             }
           },
-            React.createElement('div', { className: 'flex items-center justify-between' },
-              React.createElement('div', null,
-                React.createElement('span', {
-                  style: {
-                    fontSize: '13px',
-                    fontWeight: '500',
-                    color: 'var(--text-primary)'
-                  }
-                }, 'Spotify Account'),
-                React.createElement('p', {
-                  style: {
-                    fontSize: '12px',
-                    color: 'var(--text-secondary)',
-                    marginTop: '2px'
-                  }
-                },
-                  spotifyConnected ? 'Connected and ready' : 'Sign in to enable streaming'
-                )
-              ),
-              spotifyConnected
-                ? React.createElement(Button, { variant: 'secondary', onClick: disconnectSpotify }, 'Disconnect')
-                : React.createElement(Button, { variant: 'primary', pageColor: getServiceColor('spotify') || 'var(--accent-fill)', onClick: connectSpotify }, 'Connect')
-            ),
-            spotifyConnected && React.createElement('div', {
-              className: 'flex items-center gap-2',
-              style: {
-                marginTop: '12px',
-                fontSize: '12px',
-                color: 'var(--text-success)'
-              }
-            },
-              React.createElement('span', null, React.createElement(Icons.Check, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } })),
-              React.createElement('span', null, 'Spotify Premium connected')
-            ),
+            // The account (components/account-row.js, #1498 step 3).
+            React.createElement(AccountRow, {
+              name: 'Spotify', color: getServiceColor('spotify'), signedIn: spotifyConnected,
+              status: spotifyConnected ? 'Signed in' : 'Sign in to play from Spotify',
+              onSignIn: connectSpotify, onSignOut: disconnectSpotify,
+            }),
             // Spotify API credentials — BYOK required
             !spotifyConnected && React.createElement('div', {
               style: {
@@ -544,13 +505,8 @@ React.createElement('div', {
                   } }, 'Clear')
               )
             ),
-            // Show credentials source when connected
-            spotifyConnected && spotifyCredentialsSource === 'user' && React.createElement(Button, { variant: 'text', size: 'sm', onClick: () => setSpotifyAdvancedOpen(!spotifyAdvancedOpen) }, React.createElement(Icons.ChevronRight, {
-                className: `w-3.5 h-3.5 transform transition-transform ${spotifyAdvancedOpen ? 'rotate-90' : ''}`
-              }), 'Change client ID'),
-            spotifyConnected && spotifyAdvancedOpen && React.createElement('div', {
-              style: { marginTop: '8px', padding: '12px', backgroundColor: 'var(--hover-bg-default)', borderRadius: '8px' }
-            },
+            // Your own client ID, once signed in with one (components/disclosure.js).
+            spotifyConnected && spotifyCredentialsSource === 'user' && React.createElement(Disclosure, { label: 'Change client ID', open: spotifyAdvancedOpen, onToggle: () => setSpotifyAdvancedOpen(!spotifyAdvancedOpen) },
               React.createElement('div', { style: { marginBottom: '10px' } },
                 React.createElement('label', {
                   style: { fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }
@@ -680,42 +636,11 @@ React.createElement('div', {
                 borderTop: '1px solid var(--border-subtle)'
               }
             },
-              React.createElement('div', { className: 'flex items-center justify-between' },
-                React.createElement('div', null,
-                  React.createElement('span', {
-                    style: {
-                      fontSize: '13px',
-                      fontWeight: '500',
-                      color: 'var(--text-primary)'
-                    }
-                  }, 'SoundCloud Account'),
-                  React.createElement('p', {
-                    style: {
-                      fontSize: '12px',
-                      color: 'var(--text-secondary)',
-                      marginTop: '2px'
-                    }
-                  },
-                    soundcloudConnected ? 'Connected and ready'
-                      : hasCredentials ? 'Sign in to enable search and streaming'
-                      : 'Requires API credentials to connect'
-                  )
-                ),
-                soundcloudConnected
-                  ? React.createElement(Button, { variant: 'secondary', onClick: disconnectSoundcloud }, 'Disconnect')
-                  : hasCredentials && React.createElement(Button, { variant: 'primary', pageColor: getServiceColor('soundcloud') || 'var(--accent-fill)', onClick: connectSoundcloud }, 'Connect')
-              ),
-              soundcloudConnected && React.createElement('div', {
-                className: 'flex items-center gap-2',
-                style: {
-                  marginTop: '12px',
-                  fontSize: '12px',
-                  color: 'var(--text-success)'
-                }
-              },
-                React.createElement('span', null, React.createElement(Icons.Check, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } })),
-                React.createElement('span', null, 'SoundCloud connected')
-              ),
+              React.createElement(AccountRow, {
+                name: 'SoundCloud', color: getServiceColor('soundcloud'), signedIn: soundcloudConnected,
+                status: soundcloudConnected ? 'Signed in' : hasCredentials ? 'Sign in to search and stream SoundCloud' : 'Add your client ID and secret under Advanced first',
+                onSignIn: connectSoundcloud, onSignOut: disconnectSoundcloud, signInDisabled: !hasCredentials,
+              }),
               soundcloudConnected && React.createElement('p', {
                 style: {
                   fontSize: '11px',
@@ -728,35 +653,8 @@ React.createElement('div', {
               ),
 
               // API Credentials section - Advanced accordion with optional BYOK
-              React.createElement('div', {
-                style: { marginTop: '16px' }
-              },
-                React.createElement('button', {
-                  onClick: () => setSoundcloudAdvancedOpen(!soundcloudAdvancedOpen),
-                  className: 'flex items-center gap-1',
-                  style: {
-                    fontSize: '12px',
-                    color: 'var(--text-secondary)',
-                    backgroundColor: 'transparent',
-                    border: 'none',
-                    cursor: 'pointer',
-                    padding: '0'
-                  }
-                },
-                  React.createElement(Icons.ChevronRight, {
-                    className: `w-3.5 h-3.5 transform transition-transform ${soundcloudAdvancedOpen ? 'rotate-90' : ''}`
-                  }),
-                  'Advanced'
-                ),
-                soundcloudAdvancedOpen && React.createElement('div', {
-                  style: {
-                    marginTop: '12px',
-                    padding: '12px',
-                    backgroundColor: 'var(--hover-bg-default)',
-                    borderRadius: '8px'
-                  }
-                },
-                  React.createElement('p', {
+              React.createElement(Disclosure, { open: soundcloudAdvancedOpen, onToggle: () => setSoundcloudAdvancedOpen(!soundcloudAdvancedOpen) },
+React.createElement('p', {
                     style: {
                       fontSize: '11px',
                       color: soundcloudCredentialsSource === 'user' || soundcloudCredentialsSource === 'env' ? 'var(--text-success)' : 'var(--text-secondary)',
@@ -770,7 +668,7 @@ React.createElement('div', {
                         ? '✓ Using credentials from environment variables.'
                         : 'Optional: Use your own SoundCloud API credentials to avoid rate limiting.'
                   ),
-                  React.createElement('div', { style: { marginBottom: '10px' } },
+React.createElement('div', { style: { marginBottom: '10px' } },
                     React.createElement('label', {
                       style: {
                         display: 'block',
@@ -782,7 +680,7 @@ React.createElement('div', {
                     }, 'Client ID'),
                     React.createElement(SecretField, { value: soundcloudClientIdInput, onChange: (_v, e) => setSoundcloudClientIdInput(e.target.value), placeholder: 'Your SoundCloud Client ID', 'aria-label': 'Your SoundCloud Client ID', className: 'w-full' })
                   ),
-                  React.createElement('div', { style: { marginBottom: '10px' } },
+React.createElement('div', { style: { marginBottom: '10px' } },
                     React.createElement('label', {
                       style: {
                         display: 'block',
@@ -794,7 +692,7 @@ React.createElement('div', {
                     }, 'Client Secret'),
                     React.createElement(SecretField, { value: soundcloudClientSecretInput, onChange: (_v, e) => setSoundcloudClientSecretInput(e.target.value), placeholder: 'Your SoundCloud Client Secret', 'aria-label': 'Your SoundCloud Client Secret', className: 'w-full' })
                   ),
-                  React.createElement('div', { style: { marginBottom: '12px' } },
+React.createElement('div', { style: { marginBottom: '12px' } },
                     React.createElement('label', {
                       style: {
                         fontSize: '11px',
@@ -826,7 +724,7 @@ React.createElement('div', {
                       ? 'Add this to your SoundCloud app\'s Redirect URI. The same app also works with Parachord on Android and iOS.'
                       : `Add this to your SoundCloud app's Redirect URI. Parachord's local server is on port ${authPort}, so signing in to SoundCloud needs your own app credentials here: the built-in sign-in only works on port 8888. Parachord on Android and iOS always signs in on port 8888, so an app registered for port ${authPort} won't sign in on your phone.`)
                   ),
-                  React.createElement('div', { className: 'flex gap-2' },
+React.createElement('div', { className: 'flex gap-2' },
                     React.createElement(Button, { variant: 'primary', size: 'sm', onClick: async () => {
                         await saveSoundcloudCredentials();
                       }, disabled: !soundcloudClientIdInput.trim() || !soundcloudClientSecretInput.trim() }, 'Save credentials'),
@@ -841,9 +739,7 @@ React.createElement('div', {
                           }
                         }
                       } }, 'Clear')
-                  )
-                )
-              )
+                  ))
             );
           })(),
 
@@ -901,81 +797,21 @@ React.createElement('div', {
                 'cd native/musickit-helper && ./build.sh'
               )
             ),
-            React.createElement('div', { className: 'flex items-center justify-between' },
-              React.createElement('div', null,
-                React.createElement('span', {
-                  style: {
-                    fontSize: '13px',
-                    fontWeight: '500',
-                    color: 'var(--text-primary)'
-                  }
-                }, 'Apple Music Account'),
-                React.createElement('p', {
-                  style: {
-                    fontSize: '12px',
-                    color: 'var(--text-secondary)',
-                    marginTop: '2px'
-                  }
-                },
-                  appleMusicConnected
-                    ? 'Connected and ready for playback'
-                    : (appleMusicNativeAvailable || !!window.electron?.musicKit?.openAuthWindow)
-                      ? 'Sign in with your Apple ID to enable streaming'
-                      : 'Search and URL lookup available (playback opens in browser)'
-                )
-              ),
-              // Show the Connect/Disconnect button when EITHER auth path is
-              // available: native MusicKit (macOS) OR the auth-window IPC
-              // (parachord#834). Without the second clause, Linux/Windows
-              // users had no UI entry point to the new auth flow even though
-              // the underlying IPC was wired up — see dyland84's report on
-              // issue #834.
-              (appleMusicNativeAvailable || !!window.electron?.musicKit?.openAuthWindow) && (
-                appleMusicConnected
-                  ? React.createElement(Button, { variant: 'secondary', onClick: disconnectAppleMusic }, 'Disconnect')
-                  : React.createElement(Button, { variant: 'primary', pageColor: getServiceColor('applemusic') || 'var(--accent-fill)', onClick: connectAppleMusic }, 'Connect')
-              )
-            ),
-            appleMusicConnected && React.createElement('div', {
-              className: 'flex items-center gap-2',
-              style: {
-                marginTop: '12px',
-                fontSize: '12px',
-                color: 'var(--text-success)'
-              }
-            },
-              React.createElement('span', null, React.createElement(Icons.Check, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } })),
-              React.createElement('span', null, 'Apple Music authorized for playback')
-            ),
+            React.createElement(AccountRow, {
+              name: 'Apple Music', color: getServiceColor('applemusic'), signedIn: appleMusicConnected,
+              status: appleMusicConnected ? 'Signed in'
+                : (appleMusicNativeAvailable || !!window.electron?.musicKit?.openAuthWindow)
+                  ? 'Sign in with your Apple Account to play from Apple Music'
+                  : 'Search and links work; playback opens in your browser',
+              // Either sign-in path: native MusicKit (macOS) or the auth
+              // window (parachord#834); without one there's no button.
+              onSignIn: (appleMusicNativeAvailable || !!window.electron?.musicKit?.openAuthWindow) ? connectAppleMusic : undefined,
+              onSignOut: disconnectAppleMusic,
+            }),
 
             // Advanced accordion for MusicKit developer token
-            React.createElement('div', { style: { marginTop: '16px' } },
-              React.createElement('button', {
-                onClick: () => setAppleMusicAdvancedOpen(!appleMusicAdvancedOpen),
-                className: 'flex items-center gap-1',
-                style: {
-                  fontSize: '12px',
-                  color: 'var(--text-secondary)',
-                  backgroundColor: 'transparent',
-                  border: 'none',
-                  cursor: 'pointer',
-                  padding: '0'
-                }
-              },
-                React.createElement(Icons.ChevronRight, {
-                  className: `w-3.5 h-3.5 transform transition-transform ${appleMusicAdvancedOpen ? 'rotate-90' : ''}`
-                }),
-                'Advanced'
-              ),
-              appleMusicAdvancedOpen && React.createElement('div', {
-                style: {
-                  marginTop: '12px',
-                  padding: '12px',
-                  backgroundColor: 'var(--hover-bg-default)',
-                  borderRadius: '8px'
-                }
-              },
-                React.createElement('p', {
+            React.createElement(Disclosure, { open: appleMusicAdvancedOpen, onToggle: () => setAppleMusicAdvancedOpen(!appleMusicAdvancedOpen) },
+React.createElement('p', {
                   style: {
                     fontSize: '11px',
                     color: 'var(--text-secondary)',
@@ -987,7 +823,7 @@ React.createElement('div', {
                     ? 'Using your developer token for faster search.'
                     : 'Add a developer token for faster, more reliable search.'
                 ),
-                React.createElement('div', { style: { marginBottom: '10px' } },
+React.createElement('div', { style: { marginBottom: '10px' } },
                   React.createElement('label', {
                     style: {
                       fontSize: '11px',
@@ -998,7 +834,7 @@ React.createElement('div', {
                   }, 'MusicKit Developer Token (JWT)'),
                   React.createElement(SecretField, { value: appleMusicDeveloperToken, onChange: (_v, e) => setAppleMusicDeveloperToken(e.target.value), placeholder: 'eyJ…', 'aria-label': 'Apple Music developer token', className: 'w-full' })
                 ),
-                React.createElement('p', {
+React.createElement('p', {
                   style: {
                     fontSize: '11px',
                     color: 'var(--text-tertiary)',
@@ -1006,9 +842,7 @@ React.createElement('div', {
                     lineHeight: '1.4'
                   }
                 }, 'Get a token from the Apple Developer Portal (requires Apple Developer account). The token is a JWT that authenticates your app with Apple Music API.'),
-                React.createElement(Button, { variant: 'primary', size: 'sm', onClick: saveAppleMusicDeveloperToken }, appleMusicTokenSaved ? '✓ Saved' : 'Save token')
-              )
-            )
+React.createElement(Button, { variant: 'primary', size: 'sm', onClick: saveAppleMusicDeveloperToken }, appleMusicTokenSaved ? '✓ Saved' : 'Save token'))
           ),
 
           // Last.fm authentication section
@@ -1054,33 +888,8 @@ React.createElement('div', {
                     React.createElement('span', null, 'Connected to Last.fm')
                   ),
                   // Advanced accordion for API credentials (also shown when connected)
-                  React.createElement('div', { style: { marginTop: '16px' } },
-                    React.createElement('button', {
-                      onClick: () => setLastfmAdvancedOpen(!lastfmAdvancedOpen),
-                      className: 'flex items-center gap-1',
-                      style: {
-                        fontSize: '12px',
-                        color: 'var(--text-secondary)',
-                        backgroundColor: 'transparent',
-                        border: 'none',
-                        cursor: 'pointer',
-                        padding: '0'
-                      }
-                    },
-                      React.createElement(Icons.ChevronRight, {
-                        className: `w-3.5 h-3.5 transform transition-transform ${lastfmAdvancedOpen ? 'rotate-90' : ''}`
-                      }),
-                      'Advanced'
-                    ),
-                    lastfmAdvancedOpen && React.createElement('div', {
-                      style: {
-                        marginTop: '12px',
-                        padding: '12px',
-                        backgroundColor: 'var(--hover-bg-default)',
-                        borderRadius: '8px'
-                      }
-                    },
-                      React.createElement('p', {
+                  React.createElement(Disclosure, { open: lastfmAdvancedOpen, onToggle: () => setLastfmAdvancedOpen(!lastfmAdvancedOpen) },
+React.createElement('p', {
                         style: {
                           fontSize: '11px',
                           color: metaServiceConfigs.lastfm.apiKey ? 'var(--text-success)' : 'var(--text-secondary)',
@@ -1092,7 +901,7 @@ React.createElement('div', {
                           ? '✓ Using your custom Last.fm API credentials.'
                           : 'Optional: Use your own Last.fm API credentials to avoid rate limiting.'
                       ),
-                      React.createElement('div', { style: { marginBottom: '10px' } },
+React.createElement('div', { style: { marginBottom: '10px' } },
                         React.createElement('label', {
                           style: {
                             display: 'block',
@@ -1104,7 +913,7 @@ React.createElement('div', {
                         }, 'API Key'),
                         React.createElement(SecretField, { value: lastfmApiKeyInput || metaServiceConfigs.lastfm.apiKey || '', onChange: (_v, e) => setLastfmApiKeyInput(e.target.value), placeholder: 'Your Last.fm API key', 'aria-label': 'Your Last.fm API key', className: 'w-full' })
                       ),
-                      React.createElement('div', { style: { marginBottom: '12px' } },
+React.createElement('div', { style: { marginBottom: '12px' } },
                         React.createElement('label', {
                           style: {
                             display: 'block',
@@ -1116,7 +925,7 @@ React.createElement('div', {
                         }, 'API Secret'),
                         React.createElement(SecretField, { value: lastfmApiSecretInput || metaServiceConfigs.lastfm.apiSecret || '', onChange: (_v, e) => setLastfmApiSecretInput(e.target.value), placeholder: 'Your Last.fm API secret', 'aria-label': 'Your Last.fm API secret', className: 'w-full' })
                       ),
-                      React.createElement('div', { className: 'flex gap-2' },
+React.createElement('div', { className: 'flex gap-2' },
                         React.createElement(Button, { variant: 'primary', size: 'sm', onClick: async () => {
                             const apiKey = lastfmApiKeyInput?.trim() || null;
                             const apiSecret = lastfmApiSecretInput?.trim() || null;
@@ -1140,9 +949,7 @@ React.createElement('div', {
                             });
                             showToast('Custom credentials cleared. Using default credentials.', 'info');
                           } }, 'Clear')
-                      )
-                    )
-                  ),
+                      )),
 
                   // Scrobbling section for Last.fm
                   React.createElement('div', {
@@ -1227,33 +1034,8 @@ React.createElement('div', {
                     React.createElement(TextField, { value: lastfmUsernameInput, onChange: (_v, e) => setLastfmUsernameInput(e.target.value), placeholder: 'Your Last.fm username', 'aria-label': 'Your Last.fm username', className: 'w-full' })
                   ),
                   // Advanced accordion
-                  React.createElement('div', { style: { marginBottom: '16px' } },
-                    React.createElement('button', {
-                      onClick: () => setLastfmAdvancedOpen(!lastfmAdvancedOpen),
-                      className: 'flex items-center gap-1',
-                      style: {
-                        fontSize: '12px',
-                        color: 'var(--text-secondary)',
-                        backgroundColor: 'transparent',
-                        border: 'none',
-                        cursor: 'pointer',
-                        padding: '0'
-                      }
-                    },
-                      React.createElement(Icons.ChevronRight, {
-                        className: `w-3.5 h-3.5 transform transition-transform ${lastfmAdvancedOpen ? 'rotate-90' : ''}`
-                      }),
-                      'Advanced'
-                    ),
-                    lastfmAdvancedOpen && React.createElement('div', {
-                      style: {
-                        marginTop: '12px',
-                        padding: '12px',
-                        backgroundColor: 'var(--hover-bg-default)',
-                        borderRadius: '8px'
-                      }
-                    },
-                      React.createElement('p', {
+                  React.createElement(Disclosure, { open: lastfmAdvancedOpen, onToggle: () => setLastfmAdvancedOpen(!lastfmAdvancedOpen) },
+React.createElement('p', {
                         style: {
                           fontSize: '11px',
                           color: 'var(--text-secondary)',
@@ -1263,7 +1045,7 @@ React.createElement('div', {
                       },
                         'Optional: Use your own Last.fm API credentials to avoid rate limiting.'
                       ),
-                      React.createElement('div', { style: { marginBottom: '10px' } },
+React.createElement('div', { style: { marginBottom: '10px' } },
                         React.createElement('label', {
                           style: {
                             display: 'block',
@@ -1275,7 +1057,7 @@ React.createElement('div', {
                         }, 'API Key'),
                         React.createElement(SecretField, { value: lastfmApiKeyInput, onChange: (_v, e) => setLastfmApiKeyInput(e.target.value), placeholder: 'Your Last.fm API key', 'aria-label': 'Your Last.fm API key', className: 'w-full' })
                       ),
-                      React.createElement('div', null,
+React.createElement('div', null,
                         React.createElement('label', {
                           style: {
                             display: 'block',
@@ -1286,9 +1068,7 @@ React.createElement('div', {
                           }
                         }, 'API Secret'),
                         React.createElement(SecretField, { value: lastfmApiSecretInput, onChange: (_v, e) => setLastfmApiSecretInput(e.target.value), placeholder: 'Your Last.fm API secret', 'aria-label': 'Your Last.fm API secret', className: 'w-full' })
-                      )
-                    )
-                  ),
+                      )),
                   // Connect button
                   React.createElement(Button, { variant: 'primary', pageColor: getServiceColor('lastfm') || 'var(--accent-fill)', className: 'w-full', onClick: () => connectLastfm(lastfmUsernameInput, lastfmApiKeyInput, lastfmApiSecretInput), disabled: lastfmConnecting || !lastfmUsernameInput.trim() }, lastfmConnecting ? 'Connecting…' : 'Connect')
                 )
@@ -1437,33 +1217,8 @@ React.createElement('div', {
                     React.createElement(TextField, { value: listenbrainzUsernameInput, onChange: (_v, e) => setListenbrainzUsernameInput(e.target.value), placeholder: 'Your ListenBrainz username', 'aria-label': 'Your ListenBrainz username', className: 'w-full' })
                   ),
                   // Advanced accordion
-                  React.createElement('div', { style: { marginBottom: '16px' } },
-                    React.createElement('button', {
-                      onClick: () => setListenbrainzAdvancedOpen(!listenbrainzAdvancedOpen),
-                      className: 'flex items-center gap-1',
-                      style: {
-                        fontSize: '12px',
-                        color: 'var(--text-secondary)',
-                        backgroundColor: 'transparent',
-                        border: 'none',
-                        cursor: 'pointer',
-                        padding: '0'
-                      }
-                    },
-                      React.createElement(Icons.ChevronRight, {
-                        className: `w-3.5 h-3.5 transform transition-transform ${listenbrainzAdvancedOpen ? 'rotate-90' : ''}`
-                      }),
-                      'Advanced'
-                    ),
-                    listenbrainzAdvancedOpen && React.createElement('div', {
-                      style: {
-                        marginTop: '12px',
-                        padding: '12px',
-                        backgroundColor: 'var(--hover-bg-default)',
-                        borderRadius: '8px'
-                      }
-                    },
-                      React.createElement('p', {
+                  React.createElement(Disclosure, { open: listenbrainzAdvancedOpen, onToggle: () => setListenbrainzAdvancedOpen(!listenbrainzAdvancedOpen) },
+React.createElement('p', {
                         style: {
                           fontSize: '11px',
                           color: 'var(--text-secondary)',
@@ -1473,7 +1228,7 @@ React.createElement('div', {
                       },
                         'Optional: Add your user token to enable listen submissions and access private data. Find it at listenbrainz.org/settings/'
                       ),
-                      React.createElement('div', null,
+React.createElement('div', null,
                         React.createElement('label', {
                           style: {
                             display: 'block',
@@ -1484,9 +1239,7 @@ React.createElement('div', {
                           }
                         }, 'User Token'),
                         React.createElement(SecretField, { value: listenbrainzTokenInput, onChange: (_v, e) => setListenbrainzTokenInput(e.target.value), placeholder: 'Your ListenBrainz user token', 'aria-label': 'Your ListenBrainz user token', className: 'w-full' })
-                      )
-                    )
-                  ),
+                      )),
                   // Connect button
                   React.createElement(Button, { variant: 'primary', pageColor: getServiceColor('listenbrainz') || 'var(--accent-fill)', className: 'w-full', onClick: () => connectListenbrainz(listenbrainzUsernameInput, listenbrainzTokenInput), disabled: listenbrainzConnecting || !listenbrainzUsernameInput.trim() }, listenbrainzConnecting ? 'Connecting…' : 'Connect')
                 )
