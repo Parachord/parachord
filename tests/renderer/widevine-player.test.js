@@ -1661,17 +1661,21 @@ describe('the quality handover keeps the buffer the load-time pick downloaded', 
   });
 });
 
-// The FIRST-TRACK DEFENSIVE CLEAR: on the plugin-mediated stack the per-group
-// refusal (VMP_VALIDATION_FAILED — the Linux dev-VMP shape) lands in the
-// licence scheme handler AFTER the post-load handover, and since that handover
-// stopped clearing the buffer, the refused rung's fetched chunk sits ahead of
-// the playhead with a key that never comes — a stall by construction. The
-// plugin's refusal cache only shapes LATER manifests, so the handler itself
-// flushes the refused family's buffered bytes once: the tier selection re-runs
-// with clearBuffer: true. The engine never sees the group LABEL (family
-// granularity only — SD and LD share opus), and a VMP refusal is NOT a family
-// block (the family table is for eligibility refusals and append failures).
-describe('the first-track defensive clear (a refused group\'s chunk does not stall the play)', () => {
+// A rendition-group refusal (VMP_VALIDATION_FAILED — the Linux dev-VMP shape)
+// is never the ENGINE's to answer: with more than one key session open Shaka
+// raises no error at all, drops the refused session, and once the survivors
+// have loaded its key-status handler restricts the variant whose key never
+// arrived; a restricted ACTIVE variant re-chooses through chooseVariantAndSwitch,
+// whose clearBuffer defaults to true — the refused rung's chunk is flushed and
+// the play continues on the rung whose key arrived (amazon-music.md "Buffer
+// handover"). The licence scheme handler therefore records nothing, clears
+// nothing, and re-picks nothing: an engine-side clear would run the tier
+// selection over the still-unfiltered roster (the group label is the
+// provider's dialect) and re-pick the SAME refused rung, and on an SD refusal
+// during an LD play (both opus) it would flush the good LD buffer — the
+// start-of-track stutter, once per launch. The plugin's refusal cache shapes
+// the NEXT track's manifest.
+describe('a rendition-group refusal is the player\'s to handle, never the engine\'s', () => {
   const refusal = { success: false, reason: 'playback-failed', licenseDenied: false, denialReason: 'VMP_VALIDATION_FAILED', error: 'UNVERIFIED request not eligible for HD content' };
   function fireRefusal(sh) {
     const handler = sh.schemeHandlers.get('parachord-license');
@@ -1681,7 +1685,7 @@ describe('the first-track defensive clear (a refused group\'s chunk does not sta
     for (let i = 0; i < 6; i += 1) await new Promise((r) => setImmediate(r));
   }
 
-  test('a per-group refusal landing while the active variant is still that family re-runs the tier selection with clearBuffer=true', async () => {
+  test('a per-group refusal records no block, clears no buffer, and re-picks no rung', async () => {
     const { sh, el, player } = load({ electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: false } }) });
     await player.play(makeAudio(), { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
     const p = sh.playerInstances[0];
@@ -1690,83 +1694,14 @@ describe('the first-track defensive clear (a refused group\'s chunk does not sta
     const real = p.selectVariantTrack.bind(p);
     p.selectVariantTrack = (t, clearBuffer) => { selects.push({ codecs: t.codecs, clearBuffer }); real(t); };
     el.bridge.relayLicense.mockResolvedValueOnce(refusal);
+    // The refusal still propagates (the CDM's update rejects) — but the engine
+    // adds nothing on top: the buffer flush is the player's own
+    // restriction-and-switch on the variant whose key never arrives, and the
+    // play stays on its rung until that switch takes it off.
     await expect(fireRefusal(sh)).rejects.toBeTruthy();
     await settle();
-    // The refused family's buffered bytes were flushed once — and the refusal
-    // blocked no family (a group refusal is not the #1262 family table's to
-    // answer; the tier selection over the still-unfiltered roster decides).
-    const clear = selects.filter((s) => s.clearBuffer === true);
-    expect(clear).toHaveLength(1);
-    expect(clear[0].codecs).toBe('flac');
-    expect(player.getState().blockedFamilies).toEqual({});
-  });
-
-  test('the clear is one-time per play — a second refusal must not loop clears', async () => {
-    const { sh, el, player } = load({ electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: false } }) });
-    await player.play(makeAudio(), { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
-    const p = sh.playerInstances[0];
-    const selects = [];
-    const real = p.selectVariantTrack.bind(p);
-    p.selectVariantTrack = (t, clearBuffer) => { selects.push({ codecs: t.codecs, clearBuffer }); real(t); };
-    el.bridge.relayLicense.mockResolvedValueOnce(refusal);
-    await expect(fireRefusal(sh)).rejects.toBeTruthy();
-    await settle();
-    // The tier selection re-landed on the SAME refused rung (the roster is
-    // still unfiltered — the group label is the provider's dialect): the
-    // re-fetched chunk would be refused again, and that second refusal must
-    // not clear a second time — the honest end is the track failing, and the
-    // NEXT track is served a filtered manifest.
-    el.bridge.relayLicense.mockResolvedValueOnce(refusal);
-    await expect(fireRefusal(sh)).rejects.toBeTruthy();
-    await settle();
-    expect(selects.filter((s) => s.clearBuffer === true)).toHaveLength(1);
-  });
-
-  test('family granularity: an opus-group refusal clears the opus tier selection even though the LD opus group keyed fine', async () => {
-    // The known over-clear: SD and LD share the opus family, and the engine
-    // cannot tell them apart — the defensive clear re-runs the tier selection
-    // (clearBuffer: true) even when the re-pick lands on the same opus rung.
-    const { sh, el, player } = load({ electron: makeElectron({ storeValues: { playback_quality: 'standard', playback_abr: false } }) });
-    await player.play(makeAudio(), { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
-    const p = sh.playerInstances[0];
-    expect(p.selected.codecs).toBe('opus');
-    const selects = [];
-    const real = p.selectVariantTrack.bind(p);
-    p.selectVariantTrack = (t, clearBuffer) => { selects.push({ codecs: t.codecs, clearBuffer }); real(t); };
-    el.bridge.relayLicense.mockResolvedValueOnce({ ...refusal, error: 'UNVERIFIED request not eligible for SD content' });
-    await expect(fireRefusal(sh)).rejects.toBeTruthy();
-    await settle();
-    const clear = selects.filter((s) => s.clearBuffer === true);
-    expect(clear).toHaveLength(1);
-    expect(clear[0].codecs).toBe('opus'); // the over-clear, family granularity only
-    expect(p.selected.codecs).toBe('opus'); // the re-pick is the tier's own rung again
-  });
-
-  test('a refusal whose round-trip outlived the handover to another family clears nothing', async () => {
-    // The license request fires during load() — its facts snapshot is the
-    // load-time pick's family — and the refusal lands AFTER the post-load
-    // handover moved the play onto another family: the refused group's
-    // ciphertext is not what streams next, and a clear would only re-fetch
-    // for nothing. Simulated with a deferred relay answer: the refusal lands
-    // only once the tier switch has taken.
-    const { sh, el, player } = load({ electron: makeElectron({ storeValues: { playback_quality: 'saver', playback_abr: false } }) });
-    await player.play(makeAudio(), { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
-    const p = sh.playerInstances[0];
-    expect(p.selected.codecs).toBe('opus'); // locked saver — the family the request fired on
-    const selects = [];
-    const real = p.selectVariantTrack.bind(p);
-    p.selectVariantTrack = (t, clearBuffer) => { selects.push({ codecs: t.codecs, clearBuffer }); real(t); };
-    let answerRefusal;
-    el.bridge.relayLicense.mockImplementationOnce(() => new Promise((resolve) => { answerRefusal = resolve; }));
-    const pending = fireRefusal(sh); // the facts snapshot is taken now: opus
-    // While the round-trip is in flight, the play moves onto FLAC (the tier
-    // switch's own select carries clearBuffer: false — the ordinary handover).
-    await window.electron.store.set('playback_quality', 'max');
-    await player.applyQuality();
+    expect(selects).toEqual([]); // no engine clear, no re-pick of the refused rung
     expect(p.selected.codecs).toBe('flac');
-    answerRefusal(refusal);
-    await expect(pending).rejects.toBeTruthy();
-    await settle();
-    expect(selects.filter((s) => s.clearBuffer === true)).toHaveLength(0);
+    expect(player.getState().blockedFamilies).toEqual({}); // a group refusal is not the #1262 family table's to answer
   });
 });
