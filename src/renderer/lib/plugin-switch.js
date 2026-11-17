@@ -70,11 +70,18 @@ function hintFor(plugin) {
   if (caps.chat && caps.generate) return 'AI playlists and Shuffleupagus chat';
   if (caps.generate) return 'AI playlists';
   if (caps.chat) return 'Shuffleupagus chat';
+  // A listening service lists everything it does (Last.fm and ListenBrainz
+  // left out scrobbling, loved tracks and playlist sync, 2026-11-17).
   if (caps.recommendations) {
-    const parts = ['Recommendations'];
+    const parts = [];
+    if (caps.scrobbling) parts.push('scrobbling');
+    parts.push('recommendations');
     if (caps.similarUsers) parts.push('similar listeners');
+    if (caps.lovedTracks) parts.push('loved tracks');
+    if (caps.playlistSync) parts.push('playlist sync');
     parts.push('your listening history');
-    return parts.length === 2 ? parts.join(' and ') : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
+    const text = `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
+    return text.charAt(0).toUpperCase() + text.slice(1);
   }
   if (caps.scrobbling) return 'Scrobbling, a log of what you play';
   if (caps.biography && caps.artistImages) return 'Artist biographies and photos';
