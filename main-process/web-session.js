@@ -44,14 +44,22 @@
 //
 //   1. LOADS SERIALIZE. webRequest has a single listener slot per method per
 //      session, so two page loads must never interleave captures. Every load
-//      runs on an internal chain, one at a time. A plugin that wants flow-level
+//      runs on the host's internal job queue (createLaneQueue): two lanes,
+//      FOREGROUND and BACKGROUND. A foreground job — something the user is
+//      waiting on, by the plugin's judgment — starts before every queued
+//      background job; FIFO within a lane; the one running job is never
+//      interrupted; clear() resets both lanes. A plugin that wants flow-level
 //      serialization (a multi-step import) serializes itself; the host
 //      guarantees no two of ITS loads overlap.
 //   2. A NAVIGATION WAITS OUT IN-FLIGHT PAGEFETCHES. Tearing a frame mid-fetch
 //      kills a replay; the readers/writer gate (pageFetch = reader, load and
 //      the idle park = writer) drains readers before any navigation. A
 //      pageFetch that arrives while a navigation holds the gate resolves
-//      { error: 'busy' } — the caller falls back to its page flow.
+//      { error: 'busy' } — the caller falls back to its page flow. The one
+//      exception: a pageFetch called with { readerHeld: true } — its caller
+//      already holds a reader for a multi-page walk, and the walk's own
+//      pages must not come back busy under a navigation that is waiting for
+//      that same outer reader to drain.
 //   3. THE IDLE PARK NEVER BLANKS A BUSY VIEW. A page fetch needs an
 //      origin page world (about:blank is a null origin: no cookies, no CORS),
 //      so the view stays warm for `warmMs` after the last activity and is
@@ -148,6 +156,45 @@ function chromeUserAgent() {
   return `Mozilla/5.0 (${platform}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chrome} Safari/537.36`;
 }
 
+// The host's job queue (rule 1's serialization): one job runs at a time —
+// real page navigation on the shared view, and the single webRequest listener
+// slot per method — in two lanes. A FOREGROUND job (something the user is
+// waiting on, such as a page they clicked) starts before every queued
+// BACKGROUND job (prefetches, refreshes, fallbacks), FIFO within each lane.
+// Which of its flows a plugin marks foreground is the plugin's choice; the
+// lanes are the host's. A running job is never interrupted: a foreground job
+// waits at most for the one in progress. A job that throws rejects its own
+// promise only; the queue moves on. (#1423's createLaneQueue, carried into
+// the host when the plugin's own queue was removed: one owner of the
+// serialization, on the same instance that owns the gate and the fuse.)
+function createLaneQueue() {
+  const lanes = { foreground: [], background: [] };
+  let running = false;
+  const pump = () => {
+    if (running) return;
+    const job = lanes.foreground.shift() || lanes.background.shift();
+    if (!job) return;
+    running = true;
+    Promise.resolve()
+      .then(job.fn)
+      .then(job.resolve, job.reject)
+      .then(() => { running = false; pump(); });
+  };
+  return {
+    run(fn, { lane = 'background' } = {}) {
+      return new Promise((resolve, reject) => {
+        lanes[lane === 'foreground' ? 'foreground' : 'background'].push({ fn, resolve, reject });
+        pump();
+      });
+    },
+    // Jobs waiting (not counting the one running), per lane.
+    pending() {
+      return { foreground: lanes.foreground.length, background: lanes.background.length };
+    },
+    isRunning() { return running; }
+  };
+}
+
 // One web session: a hidden persistent view (partition), a visible sign-in
 // window when asked, and the primitives above. createWebSessionHost(config):
 //
@@ -178,7 +225,7 @@ function createWebSessionHost(config = {}) {
     _host: null,          // the app window hosting the hidden view
     _view: null,          // the hidden view (search/import view)
     _authWindow: null,    // the visible sign-in window
-    _chain: Promise.resolve(), // loads serialize here (rule 1)
+    _chain: createLaneQueue(),   // loads serialize here (rule 1), two lanes: a foreground job starts ahead of queued background work
     _chainBusy: 0,        // in-flight load/pageFetch calls (rule 3's fuse check)
     _replayReaders: 0,    // in-flight pageFetches (rule 2's gate)
     _navigating: false,   // a load/park holds the writer side of the gate
@@ -383,8 +430,9 @@ function createWebSessionHost(config = {}) {
       // The flag flips BEFORE the reader drain, not after: readers arriving
       // while the drain is in progress must be refused, or a stream of
       // parallel pageFetches (which the architecture deliberately allows
-      // off-chain) starves the navigation forever (createReplayGate's "sync
-      // flag flip first, then drain" rule).
+      // off-chain) starves the navigation forever (the "sync flag flip
+      // first, then drain" rule amazon-music-logic's old createReplayGate
+      // taught, now the host's own gate).
       this._navigating = true;
       while (this._replayReaders > 0) {
         await sleep(50);
@@ -405,9 +453,20 @@ function createWebSessionHost(config = {}) {
       this._replayReaders = Math.max(0, this._replayReaders - 1);
     },
 
-    // ── rule 1: the load chain ──────────────────────────────────────────────
-
-    enqueue(fn) {
+    // ── rule 1: the load chain, two lanes ────────────────────────────────
+    //
+    // enqueue(fn) runs one job at a time, serialized (rule 1); every job also
+    // holds the busy count so the park fuse never blanks the view under a
+    // flow it cannot see (rule 3). enqueue(fn, { lane: 'foreground' }) puts
+    // the job on the FOREGROUND lane: it starts before every queued
+    // background job, after the one already running (never interrupted).
+    // Which of a plugin's flows deserves the foreground lane is plugin
+    // knowledge — the lanes themselves are the host's (createLaneQueue).
+    enqueue(fn, { lane = 'background' } = {}) {
+      const pending = this._chain.pending();
+      if (lane === 'foreground' && pending.background > 0) {
+        console.log(`[web-session ${cfg.id}] foreground job goes ahead of ${pending.background} queued background job(s)`);
+      }
       const busy = async () => {
         this._chainBusy += 1;
         try {
@@ -416,9 +475,7 @@ function createWebSessionHost(config = {}) {
           this._chainBusy -= 1;
         }
       };
-      const run = this._chain.then(busy, busy);
-      this._chain = run.then(() => {}, () => {});
-      return run;
+      return this._chain.run(busy, { lane });
     },
 
     // ── rule 5 + the capture pairing: the request capture ──────────────────
@@ -568,13 +625,20 @@ function createWebSessionHost(config = {}) {
       });
     },
 
-    // pageFetch({ url, method, headers, body }) → { status, text } | { error }
+    // pageFetch({ url, method, headers, body }, { readerHeld }) → { status, text } | { error }
     // — a fetch from inside the page world: the page supplies the origin,
     // cookies and CORS. Parallel-safe (a reader). Never throws: every failure
     // is a recoverable { error }.
-    async pageFetch(request = {}) {
+    //
+    // A pageFetch is itself a reader on the navigation gate (rule 2). A
+    // caller that ALREADY holds a reader for a multi-page replay under one
+    // tryEnterReplay (a walk over a captured connection) passes
+    // { readerHeld: true }: its own pages must not come back `busy` under a
+    // navigation that is waiting for that same outer reader to drain — the
+    // walk's outer reader is the gate coverage for every page it fetches.
+    async pageFetch(request = {}, { readerHeld = false } = {}) {
       if (!request.url || typeof request.url !== 'string') return { error: 'pageFetch needs a url' };
-      if (!this.tryEnterReplay()) return { error: 'busy' }; // a navigation holds the gate
+      if (!readerHeld && !this.tryEnterReplay()) return { error: 'busy' }; // a navigation holds the gate
       this._chainBusy += 1;
       this.cancelPark();
       try {
@@ -608,7 +672,7 @@ function createWebSessionHost(config = {}) {
         return { status: outcome.status, text: outcome.text };
       } finally {
         this._chainBusy -= 1;
-        this.exitReplay();
+        if (!readerHeld) this.exitReplay();
         // Re-arm the fuse: pageFetch activity keeps the view warm the same
         // warmMs as a load (a session whose last call was a pageFetch would
         // otherwise idle on the service page at full speed forever — the
@@ -866,7 +930,7 @@ function createWebSessionHost(config = {}) {
         try { this._authWindow.close(); } catch { /* gone */ }
       }
       this._authWindow = null;
-      this._chain = Promise.resolve(); // cut the queue: a new account starts clean
+      this._chain = createLaneQueue(); // cut BOTH lanes: a new account starts clean
       // Supersede everything a load still in flight holds: the next
       // generation's captures are not its to detach, its fuse is not the
       // one to arm. The CURRENT registration is released here (not just
@@ -888,4 +952,4 @@ function createWebSessionHost(config = {}) {
   return host;
 }
 
-module.exports = { createWebSessionHost, chromeUserAgent };
+module.exports = { createWebSessionHost, createLaneQueue, chromeUserAgent };

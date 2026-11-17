@@ -8,15 +8,20 @@
  *     chained page flow, whose capture re-mints the template
  *   - a wall URL on the warm view is not-signed-in, a missing envelope is
  *     structural (breaker), and the breaker fail-fast precedes any replay
- *   - the delayed park fuse (SEARCH_VIEW_WARM_MS) and its cancel on activity
+ *   - the delayed park fuse (the web-session host's warmMs, 30s) and its
+ *     cancel on activity
  *
  * The module is loaded with plain require: electron is pulled lazily behind
  * electron() inside the stubbed methods. Spec-search plumbing methods are
- * stubbed on the exported singleton — all looked up through `this`.
+ * stubbed on the exported singleton — all looked up through `this`; the
+ * machinery the plumbing delegates to (the view, the chain, the gate, the
+ * fuse) is the host instance at `amazonWebPlayer.webSession`, the same
+ * white-box surface tests/main-process/web-session.test.js uses.
  */
 
 const amazonWebPlayer = require('../../amazon-web-player');
 const { makeSpecSearchTemplate, SPEC_TEMPLATE_MAX_AGE_MS } = require('../../amazon-music-logic');
+const { createLaneQueue } = require('../../main-process/web-session');
 
 const CAPTURED_BODY = {
   operationName: 'SpecSearchSeeMorePage',
@@ -64,9 +69,9 @@ describe('specSearch template replay', () => {
   beforeEach(() => {
     savedTemplate = amazonWebPlayer.specSearchTemplate;
     savedView = amazonWebPlayer.searchView;
-    savedTimer = amazonWebPlayer.searchViewParkTimer;
+    savedTimer = amazonWebPlayer.webSession._parkTimer;
     savedBreaker = amazonWebPlayer.searchBreaker;
-    amazonWebPlayer.searchViewParkTimer = null;
+    amazonWebPlayer.webSession._parkTimer = null;
     amazonWebPlayer.searchView = fakeWin();
     amazonWebPlayer.specSearchTemplate = makeSpecSearchTemplate({
       url: 'https://gql.music.amazon.com/', headers: CAPTURED_HEADERS, body: CAPTURED_BODY, capturedAt: Date.now()
@@ -92,11 +97,11 @@ describe('specSearch template replay', () => {
     amazonWebPlayer.searchBreaker = savedBreaker;
     amazonWebPlayer.specSearchTemplate = savedTemplate;
     amazonWebPlayer.searchView = savedView;
-    amazonWebPlayer.searchViewBusy = 0;
-    if (amazonWebPlayer.searchViewParkTimer) clearTimeout(amazonWebPlayer.searchViewParkTimer);
-    amazonWebPlayer.searchViewParkTimer = savedTimer;
+    amazonWebPlayer.webSession._chainBusy = 0;
+    if (amazonWebPlayer.webSession._parkTimer) clearTimeout(amazonWebPlayer.webSession._parkTimer);
+    amazonWebPlayer.webSession._parkTimer = savedTimer;
     // The chain must be drained between tests (its jobs capture this suite's mocks).
-    amazonWebPlayer.searchQueue = require('../../amazon-music-logic').createLaneQueue();
+    amazonWebPlayer.webSession._chain = createLaneQueue();
   });
 
   const run = (over = {}) => amazonWebPlayer.specSearch({
@@ -161,7 +166,7 @@ describe('specSearch template replay', () => {
     const rows = await run();
     expect(rows).toEqual([trackEdge.node]);
     expect(attachGqlCapture).toHaveBeenCalled();
-    expect(win.loadURL).toHaveBeenCalledWith('https://music.amazon.com/search/q/songs');
+    expect(win.webContents.loadURL).toHaveBeenCalledWith('https://music.amazon.com/search/q/songs');
     // The page flow re-minted from its fresh capture — always, for a stale
     // template: refreshed headers are what the stale template needed.
     expect(amazonWebPlayer.specSearchTemplate.body.variables.searchText).toBe('"daft punk"');
@@ -177,7 +182,7 @@ describe('specSearch template replay', () => {
     const { win } = pageFlowCapture();
     replayGql.mockResolvedValue({ parsed: { data: specEnvelope([trackEdge]) } });
     await amazonWebPlayer.specSearchPageFlow({ url: 'https://music.amazon.com/search/q/songs', searchText: '"daft punk"', specType: 'track', noun: 'tracks', parse: parseTracks });
-    expect(win.loadURL).toHaveBeenCalled();
+    expect(win.webContents.loadURL).toHaveBeenCalled();
     expect(amazonWebPlayer.specSearchTemplate.capturedAt).toBe(mintedAt);
     // ...and with a DIFFERENT body (a real page capture), mint proceeds.
     const different = JSON.parse(JSON.stringify(amazonWebPlayer.specSearchTemplate.body));
@@ -198,7 +203,7 @@ describe('specSearch template replay', () => {
       .mockResolvedValueOnce({ parsed: { data: specEnvelope([trackEdge]) } }); // the page flow's own replay
     const rows = await run();
     expect(rows).toEqual([trackEdge.node]);
-    expect(win.loadURL).toHaveBeenCalled();
+    expect(win.webContents.loadURL).toHaveBeenCalled();
     // The failed template was dropped before the page flow re-minted its own.
     expect(amazonWebPlayer.specSearchTemplate).not.toBe(oldTemplate);
   });
@@ -223,7 +228,7 @@ describe('specSearch template replay', () => {
     // Two replays: the failed template replay, then the page flow's own.
     expect(replayGql).toHaveBeenCalledTimes(2);
     expect(attachGqlCapture).toHaveBeenCalled();
-    expect(win.loadURL).toHaveBeenCalled();
+    expect(win.webContents.loadURL).toHaveBeenCalled();
     // The breaker heard it ONCE — from the page flow, not the fast path.
     expect(amazonWebPlayer.searchBreaker.recordFailure).toHaveBeenCalledTimes(1);
     expect(amazonWebPlayer.searchBreaker.recordSuccess).not.toHaveBeenCalled();
@@ -238,17 +243,17 @@ describe('specSearch template replay', () => {
       .mockResolvedValueOnce({ parsed: { data: specEnvelope([trackEdge]) } }); // the page flow's fresh capture
     const rows = await run();
     expect(rows).toEqual([trackEdge.node]);
-    expect(win.loadURL).toHaveBeenCalled();
+    expect(win.webContents.loadURL).toHaveBeenCalled();
     expect(amazonWebPlayer.specSearchTemplate.body.variables.searchText).toBe('"daft punk"');
     // The NEXT search replays the freshly minted template — no page flow.
     replayGql.mockClear();
-    win.loadURL.mockClear();
+    win.webContents.loadURL.mockClear();
     attachGqlCapture.mockClear();
     replayGql.mockResolvedValueOnce({ parsed: { data: specEnvelope([trackEdge]) } });
     const rows2 = await run({ searchText: '"daft punk two"', url: 'https://music.amazon.com/search/q2/songs' });
     expect(rows2).toEqual([trackEdge.node]);
     expect(replayGql).toHaveBeenCalledTimes(1);
-    expect(win.loadURL).not.toHaveBeenCalled();
+    expect(win.webContents.loadURL).not.toHaveBeenCalled();
     expect(attachGqlCapture).not.toHaveBeenCalled();
   });
 
@@ -272,7 +277,7 @@ describe('specSearch template replay', () => {
     replayGql.mockResolvedValue({ parsed: { data: specEnvelope([trackEdge]) } });
     await run();
     expect(attachGqlCapture).toHaveBeenCalled();
-    expect(win.loadURL).toHaveBeenCalled();
+    expect(win.webContents.loadURL).toHaveBeenCalled();
   });
 
   test('two searches in flight resolve concurrently off the chain', async () => {
@@ -308,22 +313,22 @@ describe('specSearch template replay', () => {
       searchText: '"two"', specType: 'track', noun: 'tracks', parse: parseTracks
     });
     await new Promise(r => setTimeout(r, 30));
-    expect(win.loadURL).not.toHaveBeenCalled(); // the writer is draining the reader first
+    expect(win.webContents.loadURL).not.toHaveBeenCalled(); // the writer is draining the reader first
     resolvers[0]({ parsed: { data: specEnvelope([trackEdge]) } }); // the reader's replay answers
     await fast;
     for (let i = 0; i < 20 && resolvers.length < 2; i++) await new Promise(r => setTimeout(r, 50));
     if (resolvers[1]) resolvers[1]({ parsed: { data: specEnvelope([trackEdge]) } });
     await flow;
-    expect(win.loadURL).toHaveBeenCalledWith('https://music.amazon.com/search/q2/songs');
+    expect(win.webContents.loadURL).toHaveBeenCalledWith('https://music.amazon.com/search/q2/songs');
   });
 
   test('the park fuse blanks the view 30s after activity', async () => {
     jest.useFakeTimers();
     try {
       replayGql.mockResolvedValue({ parsed: { data: specEnvelope([trackEdge]) } });
-      const parkSpy = jest.spyOn(amazonWebPlayer, 'parkSearchView').mockResolvedValue(undefined);
+      const parkSpy = jest.spyOn(amazonWebPlayer.webSession, 'park').mockResolvedValue(undefined);
       await run();
-      expect(amazonWebPlayer.searchViewParkTimer).not.toBeNull();
+      expect(amazonWebPlayer.webSession._parkTimer).not.toBeNull();
       jest.advanceTimersByTime(29_999);
       expect(parkSpy).not.toHaveBeenCalled();
       jest.advanceTimersByTime(1);
@@ -339,7 +344,7 @@ describe('specSearch template replay', () => {
     jest.useFakeTimers();
     try {
       replayGql.mockResolvedValue({ parsed: { data: specEnvelope([trackEdge]) } });
-      const parkSpy = jest.spyOn(amazonWebPlayer, 'parkSearchView').mockResolvedValue(undefined);
+      const parkSpy = jest.spyOn(amazonWebPlayer.webSession, 'park').mockResolvedValue(undefined);
       await run(); // arms the fuse
       // Simulate activity 20s later: the cancel hook (as trySpecReplay does on entry).
       jest.advanceTimersByTime(20_000);
@@ -355,36 +360,47 @@ describe('specSearch template replay', () => {
   test('the fuse RE-ARMS instead of blanking while a flow is using the view (fire-time busy check)', async () => {
     jest.useFakeTimers();
     try {
-      const parkSpy = jest.spyOn(amazonWebPlayer, 'parkSearchView').mockResolvedValue(undefined);
+      const parkSpy = jest.spyOn(amazonWebPlayer.webSession, 'park').mockResolvedValue(undefined);
       // Busy is what every enqueued page flow holds: a parked-then-long job
       // must not have the view blanked under it by an older fuse.
       amazonWebPlayer.scheduleParkSearchView();
-      amazonWebPlayer.searchViewBusy = 1; // a flow in flight
+      amazonWebPlayer.webSession._chainBusy = 1; // a flow in flight
       jest.advanceTimersByTime(30_000);   // fuse fires: busy → re-arm, no blank
       expect(parkSpy).not.toHaveBeenCalled();
-      expect(amazonWebPlayer.searchViewParkTimer).not.toBeNull();
+      expect(amazonWebPlayer.webSession._parkTimer).not.toBeNull();
       jest.advanceTimersByTime(15_000);   // flow still running at t=45s: nothing happens
       expect(parkSpy).not.toHaveBeenCalled();
-      amazonWebPlayer.searchViewBusy = 0; // flow ends
+      amazonWebPlayer.webSession._chainBusy = 0; // flow ends
       jest.advanceTimersByTime(15_000);   // re-armed fuse fires at t=60s
       await Promise.resolve();
       expect(parkSpy).toHaveBeenCalledTimes(1);
       parkSpy.mockRestore();
     } finally {
-      amazonWebPlayer.searchViewBusy = 0;
+      amazonWebPlayer.webSession._chainBusy = 0;
       jest.useRealTimers();
     }
   });
 
   test('an in-flight replay holds the view busy until it exits', async () => {
+    // The busy count is the host's, held inside pageFetch around the real
+    // page-world fetch — so the boundary held open here is the view's
+    // executeJavaScript (the host re-arms the fuse and releases the busy
+    // count only when it settles).
     let release;
-    replayGql.mockImplementation(() => new Promise((resolve) => { release = resolve; }));
-    const pending = run(); // enters the gate and holds searchViewBusy
-    for (let i = 0; i < 20 && amazonWebPlayer.searchViewBusy !== 1; i++) await new Promise(r => setTimeout(r, 25));
-    expect(amazonWebPlayer.searchViewBusy).toBe(1);
-    release({ parsed: { data: specEnvelope([trackEdge]) } });
-    await pending;
-    expect(amazonWebPlayer.searchViewBusy).toBe(0);
+    const view = fakeWin();
+    view.webContents.executeJavaScript = () => new Promise((resolve) => { release = resolve; });
+    amazonWebPlayer.searchView = view;
+    const settle = () => { if (release) release({ status: 200, text: JSON.stringify({ data: specEnvelope([trackEdge]) }) }); };
+    try {
+      const pending = run(); // the fast path's replay → pageFetch holds the busy count
+      for (let i = 0; i < 20 && amazonWebPlayer.webSession._chainBusy !== 1; i++) await new Promise(r => setTimeout(r, 25));
+      expect(amazonWebPlayer.webSession._chainBusy).toBe(1);
+      settle();
+      await pending;
+      expect(amazonWebPlayer.webSession._chainBusy).toBe(0);
+    } finally {
+      settle(); // never leave a reader leaked for the next test's navigations
+    }
   });
 
   test('a HARD replay rejection is a template miss, not a raw throw (M1): fallback page flow answers', async () => {
@@ -395,7 +411,7 @@ describe('specSearch template replay', () => {
       .mockResolvedValueOnce({ parsed: { data: specEnvelope([trackEdge]) } }); // the page flow's replay
     const rows = await run();
     expect(rows).toEqual([trackEdge.node]);
-    expect(win.loadURL).toHaveBeenCalled();
+    expect(win.webContents.loadURL).toHaveBeenCalled();
     expect(amazonWebPlayer.specSearchTemplate).not.toBe(oldTemplate);
   });
 
@@ -439,15 +455,13 @@ describe('specSearch template replay', () => {
 
 describe('signOut template hygiene', () => {
   test('signOut drops the template and the park fuse', async () => {
-    const savedChain = amazonWebPlayer.searchQueue;
+    const savedChain = amazonWebPlayer.webSession._chain;
     amazonWebPlayer.specSearchTemplate = { url: 'x', headers: {}, body: {}, capturedAt: Date.now() };
     amazonWebPlayer.scheduleParkSearchView();
-    expect(amazonWebPlayer.searchViewParkTimer).not.toBeNull();
-    const destroyView = jest.spyOn(amazonWebPlayer, 'destroyView').mockImplementation(() => {});
+    expect(amazonWebPlayer.webSession._parkTimer).not.toBeNull();
     await amazonWebPlayer.signOut(); // session() electron call fails post-clear → success:false is fine
     expect(amazonWebPlayer.specSearchTemplate).toBeNull();
-    expect(amazonWebPlayer.searchViewParkTimer).toBeNull();
-    destroyView.mockRestore();
-    amazonWebPlayer.searchQueue = savedChain;
+    expect(amazonWebPlayer.webSession._parkTimer).toBeNull();
+    amazonWebPlayer.webSession._chain = savedChain;
   });
 });

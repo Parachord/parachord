@@ -317,6 +317,22 @@ describe('load — navigation, capture, the quiet window', () => {
 });
 
 describe('the load chain — rule 1: loads serialize', () => {
+  test('a foreground job starts before every queued background job, after the running one', async () => {
+    const host = newSession();
+    const order = [];
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    host.enqueue(async () => { order.push('running'); await gate; });
+    const bg = host.enqueue(async () => { order.push('bg'); });
+    const fg = host.enqueue(async () => { order.push('fg'); return 'fg'; }, { lane: 'foreground' });
+    await Promise.resolve(); // the queue's pump runs the first job on a microtask
+    expect(order).toEqual(['running']); // the running job is never interrupted
+    release();
+    expect(await fg).toBe('fg');
+    await bg;
+    expect(order).toEqual(['running', 'fg', 'bg']); // foreground jumped the queued background job
+  });
+
   test('a second load waits for the first (captures never interleave)', async () => {
     const { host, view } = await warmSession();
     const loads = [];
@@ -402,6 +418,36 @@ describe('the gate — rule 2: navigations and pageFetches', () => {
     expect(view.webContents.loadURL).toHaveBeenCalledWith('https://music.testsvc.com/next');
   });
 
+  test('a readerHeld pageFetch runs under a navigation waiting out the caller\'s outer reader (a mid-walk page)', async () => {
+    // The maintainer's repro shape: a multi-page walk holds ONE reader for the
+    // whole walk (tryEnterReplay once), each page is a pageFetch — a
+    // navigation starting between two pages would make page 2 come back busy
+    // and fail the whole walk. readerHeld is the escape: the caller's outer
+    // reader covers the gate for the walk's own pages.
+    const { host, view } = await warmSession();
+    view.webContents.executeJavaScript.mockResolvedValue({ status: 200, text: '{}' });
+    expect(host.tryEnterReplay()).toBe(true); // the walk's outer reader
+    let navigationDone = false;
+    try {
+      // Page 1 of the walk: takes the gate fine (no navigation yet).
+      await expect(host.pageFetch({ url: 'https://gql.testsvc.com/' })).resolves.toEqual({ status: 200, text: '{}' });
+      // A navigation starts between the walk's pages: the writer flag is up,
+      // and it waits for the walk's outer reader to drain.
+      const navigation = host.beginNavigation();
+      navigation.then(() => { navigationDone = true; host.endNavigation(); });
+      await jest.advanceTimersByTimeAsync(100);
+      // An untethered pageFetch is still busy under the navigation...
+      await expect(host.pageFetch({ url: 'https://gql.testsvc.com/' })).resolves.toEqual({ error: 'busy' });
+      // ...but the walk's next page runs: its caller holds the outer reader.
+      await expect(host.pageFetch({ url: 'https://gql.testsvc.com/' }, { readerHeld: true }))
+        .resolves.toEqual({ status: 200, text: '{}' });
+    } finally {
+      host.exitReplay(); // the walk ends; the navigation may drain
+    }
+    await jest.advanceTimersByTimeAsync(200);
+    expect(navigationDone).toBe(true); // the writer ran the moment the walk's reader left
+  });
+
   test('an idle park and a load exclude each other (two writers never abort each others navigation)', async () => {
     const { host, view } = await warmSession({ warmMs: 1000 });
     let releasePark;
@@ -435,6 +481,18 @@ describe('the gate — rule 2: navigations and pageFetches', () => {
     await fetchRun;
     await jest.advanceTimersByTimeAsync(2500); // the re-armed fuse fires, the gate is free now
     expect(view.webContents.loadURL).toHaveBeenCalledWith('about:blank');
+  });
+
+  test('exitReplay never drives the reader counter negative (an unmatched exit is clamped)', async () => {
+    const { host } = await warmSession();
+    // The old createReplayGate warned loudly on an unmatched exit (its unit
+    // test pinned this same clamp); the host's gate clamps silently —
+    // Math.max(0, readers - 1) — so an unmatched exit cannot steal a live
+    // reader's slot by burying the counter below zero.
+    host.exitReplay(); // zero readers in flight: the unmatched exit
+    expect(host.tryEnterReplay()).toBe(true); // the gate still admits a reader
+    host.exitReplay(); // the paired exit
+    expect(host._replayReaders).toBe(0); // back to zero, never below it
   });
 });
 
@@ -795,6 +853,27 @@ describe('clear — sign out', () => {
     // The view's destruction aborts the hung navigation (a raw rejection, the
     // same shape loadURLBudgeted propagates today) — and the chain moved on.
     await expect(hung).rejects.toThrow(/ERR_ABORTED/);
+  });
+
+  test('clear() cuts BOTH lanes: queued jobs from the old account never wedge the new one', async () => {
+    const { host } = await warmSession();
+    const order = [];
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    // A running background job that never settles, a foreground and a
+    // background job queued behind it — the old account's in-flight work.
+    host.enqueue(async () => { order.push('running'); await gate; });
+    host.enqueue(async () => { order.push('bg-queued'); });
+    host.enqueue(async () => { order.push('fg-queued'); }, { lane: 'foreground' });
+    await jest.advanceTimersByTimeAsync(0);
+    expect(order).toEqual(['running']);
+
+    await host.clear(); // cuts the queue: both lanes start clean
+    const next = host.load('https://music.testsvc.com/fresh'); // the new account's first load
+    await jest.advanceTimersByTimeAsync(1100);
+    expect(await next).toMatchObject({ finalUrl: 'https://music.testsvc.com/fresh' });
+    expect(order).toEqual(['running']); // the orphaned jobs never ran
+    release();
   });
 });
 

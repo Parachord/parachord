@@ -24,6 +24,7 @@
 
 const amazonWebPlayer = require('../../amazon-web-player');
 const { makeSpecSearchTemplate } = require('../../amazon-music-logic');
+const { createLaneQueue } = require('../../main-process/web-session');
 
 const CAPTURED_HEADERS = { 'x-api-key': 'amzn1.application.x', 'csrf-token': 't', 'csrf-rnd': 'r', 'csrf-ts': '1000' };
 
@@ -90,9 +91,8 @@ describe('amazonWebPlayer.getRecommendations', () => {
       seeMorePages: amazonWebPlayer.seeMorePages,
       musicHomeVariant: amazonWebPlayer.musicHomeVariant,
       searchView: amazonWebPlayer.searchView,
-      searchViewParkTimer: amazonWebPlayer.searchViewParkTimer
     };
-    amazonWebPlayer.searchViewParkTimer = null;
+    amazonWebPlayer.webSession._parkTimer = null; // nothing reads a saved handle back — the teardown clears any fuse that re-armed
     amazonWebPlayer.searchView = fakeWin();
     amazonWebPlayer.musicHomeTemplate = null;
     amazonWebPlayer.seeMoreTemplate = null;
@@ -121,9 +121,9 @@ describe('amazonWebPlayer.getRecommendations', () => {
     cancelSearchViewPark.mockRestore();
     scheduleParkSearchView.mockRestore();
     Object.assign(amazonWebPlayer, saved);
-    amazonWebPlayer.searchViewBusy = 0;
-    if (amazonWebPlayer.searchViewParkTimer) clearTimeout(amazonWebPlayer.searchViewParkTimer);
-    amazonWebPlayer.searchQueue = require('../../amazon-music-logic').createLaneQueue();
+    amazonWebPlayer.webSession._chainBusy = 0;
+    if (amazonWebPlayer.webSession._parkTimer) clearTimeout(amazonWebPlayer.webSession._parkTimer);
+    amazonWebPlayer.webSession._chain = createLaneQueue();
   });
 
   test('not signed in: notReady without any request', async () => {
@@ -211,6 +211,53 @@ describe('amazonWebPlayer.getRecommendations', () => {
     expect(sections[0].items[0].name).toBe('Tempelschlaf');
   });
 
+  test('a navigation starting between two walk pages does not fail the walk (the pages ride the walk\'s outer reader)', async () => {
+    // The mid-walk busy: tryMusicHomeWalk holds ONE replay-gate reader for
+    // the whole walk, and each page\'s pageFetch takes a reader of its own —
+    // answered { error: 'busy' } once a navigation starts between two pages
+    // (the maintainer\'s repro on this PR), which failed the walk and dropped
+    // the template. The walk\'s pages now pass { readerHeld: true } through
+    // to the host: the caller\'s outer reader covers the gate, the walk
+    // completes, and the navigation waits it out instead.
+    replayGql.mockRestore(); // the real replayGql — this pins what runs under it
+    const win = fakeWin();
+    amazonWebPlayer.searchView = win;
+    amazonWebPlayer.musicHomeTemplate = makeSpecSearchTemplate({
+      url: 'https://gql.music.amazon.com/', headers: CAPTURED_HEADERS, body: MUSIC_HOME_BODY, capturedAt: Date.now()
+    });
+    let navigationDone = false;
+    let page = 0;
+    win.webContents.executeJavaScript = jest.fn(async () => {
+      page += 1;
+      if (page === 1) {
+        // The navigation starts as page 1 answers — between the walk\'s pages.
+        // It claims the gate\'s writer flag and waits for the walk\'s outer
+        // reader to drain.
+        amazonWebPlayer.webSession.beginNavigation()
+          .then(() => { navigationDone = true; amazonWebPlayer.webSession.endNavigation(); });
+        return {
+          status: 200,
+          text: JSON.stringify(musicHomeData(
+            [{ id: SECTION_ID, name: 'Albums for You', recommendedContent: { edges: [{ node: albumNode('B0G2TSTWXD', 'Tempelschlaf', 'The Ruins Of Beverast') }] } }],
+            { hasNextPage: true, token: 'music-home.20' }))
+        };
+      }
+      return {
+        status: 200,
+        text: JSON.stringify(musicHomeData(
+          [{ id: 'uri:///recommendations/music-home/music-home_otherStrategy', name: 'More for You', recommendedContent: { edges: [{ node: albumNode('B0DTRR4VWM', 'Lonely People With Power', 'Deafheaven') }] } }]))
+      };
+    });
+    const walked = await amazonWebPlayer.tryMusicHomeWalk();
+    expect(walked).not.toBeNull();
+    expect(walked.pages).toBe(2); // page 2 did not come back busy
+    expect(walked.sections.map(s => s.title)).toEqual(['Albums for You', 'More for You']);
+    expect(amazonWebPlayer.musicHomeTemplate).not.toBeNull(); // the template survived
+    // The parked navigation drained the moment the walk\'s outer reader left.
+    for (let i = 0; i < 40 && !navigationDone; i++) await new Promise(r => setTimeout(r, 25));
+    expect(navigationDone).toBe(true);
+  });
+
   test('a replay error drops the template and falls to the chained page flow, which re-mints', async () => {
     amazonWebPlayer.musicHomeTemplate = makeSpecSearchTemplate({
       url: 'https://gql.music.amazon.com/', headers: CAPTURED_HEADERS, body: MUSIC_HOME_BODY, capturedAt: Date.now()
@@ -231,7 +278,7 @@ describe('amazonWebPlayer.getRecommendations', () => {
     const sections = await amazonWebPlayer.getRecommendations();
     expect(sections).toHaveLength(1);
     expect(ensureWindow).toHaveBeenCalledTimes(1);
-    expect(win.loadURL).toHaveBeenCalledWith('https://music.amazon.com/music');
+    expect(win.webContents.loadURL).toHaveBeenCalledWith('https://music.amazon.com/music');
     // The page flow minted from the FRESHEST csrf-ts capture (id 2's headers).
     expect(amazonWebPlayer.musicHomeTemplate.headers['csrf-ts']).toBe('2000');
     // The page's own request is replayed verbatim.
@@ -266,7 +313,7 @@ describe('amazonWebPlayer.getRecommendations', () => {
       .mockResolvedValueOnce({ parsed: musicHomeData([{ id: 'uri:///recommendations/browse-home/browse-home_mp3YmlRecentPlaybackStrategy', name: 'Based on Your Recents', recommendedContent: { edges: [{ node: albumNode('B0DTRR4VWM', 'Lonely People With Power', 'Deafheaven') }] } }]) });
     const sections = await amazonWebPlayer.getRecommendations();
     expect(sections.map(sec => sec.title)).toEqual(['Based on Your Recents']);
-    expect(win.loadURL.mock.calls.map(c => c[0])).toEqual(['https://music.amazon.com/music', 'https://music.amazon.com/']);
+    expect(win.webContents.loadURL.mock.calls.map(c => c[0])).toEqual(['https://music.amazon.com/music', 'https://music.amazon.com/']);
     // The music tab's walk, then the full home's: each replays its own page's request.
     expect(replayGql.mock.calls[0][2].operationName).toBe('MusicHomePage');
     expect(replayGql.mock.calls[1][2]).toEqual({ ...BROWSE_HOME_BODY, variables: { ...BROWSE_HOME_BODY.variables, firstLimit: 20 } });
@@ -275,10 +322,10 @@ describe('amazonWebPlayer.getRecommendations', () => {
     // The next page flow goes straight to the full home: no refused load first.
     amazonWebPlayer.recommendationsCache = null;
     amazonWebPlayer.musicHomeTemplate = null;
-    win.loadURL.mockClear();
+    win.webContents.loadURL.mockClear();
     replayGql.mockResolvedValueOnce({ parsed: musicHomeData([{ id: SECTION_ID, name: 'Albums for You', recommendedContent: { edges: [{ node: albumNode('B0G2TSTWXD', 'Tempelschlaf', 'The Ruins Of Beverast') }] } }]) });
     await amazonWebPlayer.getRecommendations();
-    expect(win.loadURL.mock.calls.map(c => c[0])).toEqual(['https://music.amazon.com/']);
+    expect(win.webContents.loadURL.mock.calls.map(c => c[0])).toEqual(['https://music.amazon.com/']);
   });
 
   test('a music-tab failure that is not a 294 does not switch homes', async () => {
@@ -288,7 +335,7 @@ describe('amazonWebPlayer.getRecommendations', () => {
     attachGqlCapture.mockReturnValue({ captured: [{ id: 1, body: JSON.stringify(MUSIC_HOME_BODY), url: 'https://gql.music.amazon.com/', headers: CAPTURED_HEADERS }], detach: jest.fn() });
     replayGql.mockResolvedValueOnce({ error: 'Amazon gql query failed (500)', status: 500 });
     await expect(amazonWebPlayer.getRecommendations()).rejects.toMatchObject({ reason: 'not-ready' });
-    expect(win.loadURL).toHaveBeenCalledTimes(1);
+    expect(win.webContents.loadURL).toHaveBeenCalledTimes(1);
     expect(amazonWebPlayer.musicHomeVariant).toBeNull();
   });
 
@@ -374,9 +421,8 @@ describe('amazonWebPlayer.expandRecommendationSection', () => {
       seeMorePages: amazonWebPlayer.seeMorePages,
       musicHomeVariant: amazonWebPlayer.musicHomeVariant,
       searchView: amazonWebPlayer.searchView,
-      searchViewParkTimer: amazonWebPlayer.searchViewParkTimer
     };
-    amazonWebPlayer.searchViewParkTimer = null;
+    amazonWebPlayer.webSession._parkTimer = null; // nothing reads a saved handle back — the teardown clears any fuse that re-armed
     amazonWebPlayer.searchView = fakeWin();
     amazonWebPlayer.musicHomeTemplate = null;
     amazonWebPlayer.seeMoreTemplate = null;
@@ -401,9 +447,9 @@ describe('amazonWebPlayer.expandRecommendationSection', () => {
     cancelSearchViewPark.mockRestore();
     scheduleParkSearchView.mockRestore();
     Object.assign(amazonWebPlayer, saved);
-    amazonWebPlayer.searchViewBusy = 0;
-    if (amazonWebPlayer.searchViewParkTimer) clearTimeout(amazonWebPlayer.searchViewParkTimer);
-    amazonWebPlayer.searchQueue = require('../../amazon-music-logic').createLaneQueue();
+    amazonWebPlayer.webSession._chainBusy = 0;
+    if (amazonWebPlayer.webSession._parkTimer) clearTimeout(amazonWebPlayer.webSession._parkTimer);
+    amazonWebPlayer.webSession._chain = createLaneQueue();
   });
 
   test('a fresh template replays with the id/afterCursor patched, hash and firstLimit intact', async () => {
@@ -455,7 +501,7 @@ describe('amazonWebPlayer.expandRecommendationSection', () => {
     const page = await amazonWebPlayer.expandRecommendationSection(SECTION_ID, 'music-home_mp3PrimeAlbumsStrategy.20');
     expect(page.items[0].name).toBe('Sons of Northern Darkness');
     expect(page.nextCursor).toBeNull();
-    expect(win.loadURL).toHaveBeenCalledWith('https://music.amazon.com/browse/music-items/home/recommendation/music-home_mp3PrimeAlbumsStrategy');
+    expect(win.webContents.loadURL).toHaveBeenCalledWith('https://music.amazon.com/browse/music-items/home/recommendation/music-home_mp3PrimeAlbumsStrategy');
     // The minted template carries the route's request.
     expect(amazonWebPlayer.seeMoreTemplate.body.extensions.persistedQuery.sha256Hash).toBe('seemorehash');
     // The cursor page replay patches the minted template.
@@ -514,7 +560,7 @@ describe('amazonWebPlayer.withPlaylistsSection (the synthesized "Playlists for Y
   const playlistSections = [{ id: 'uri:///recommendations/browse-home/other', title: 'Home playlists', items: [{ type: 'playlist', id: 'PP1', name: 'My Discovery Mix', url: 'https://music.amazon.com/playlists/PP1' }] }];
 
   beforeEach(() => {
-    saved = { recommendationsCache: amazonWebPlayer.recommendationsCache, seeMorePages: amazonWebPlayer.seeMorePages, searchQueue: amazonWebPlayer.searchQueue };
+    saved = { recommendationsCache: amazonWebPlayer.recommendationsCache, seeMorePages: amazonWebPlayer.seeMorePages, searchChain: amazonWebPlayer.webSession._chain };
     amazonWebPlayer.recommendationsCache = null;
     amazonWebPlayer.seeMorePages = new Map();
     amazonWebPlayer.musicHomeVariant = null;
@@ -527,7 +573,7 @@ describe('amazonWebPlayer.withPlaylistsSection (the synthesized "Playlists for Y
     expandParsed.mockRestore();
     amazonWebPlayer.recommendationsCache = saved.recommendationsCache;
     amazonWebPlayer.seeMorePages = saved.seeMorePages;
-    amazonWebPlayer.searchQueue = saved.searchQueue;
+    amazonWebPlayer.webSession._chain = saved.searchChain;
   });
 
   test('no playlist items in the home sections: the playlists strategy is pulled as a titled section with its cursor', async () => {
@@ -566,15 +612,14 @@ describe('signOut recommendations hygiene', () => {
       recommendationsCache: amazonWebPlayer.recommendationsCache,
       seeMorePages: amazonWebPlayer.seeMorePages
     };
-    const destroyView = jest.spyOn(amazonWebPlayer, 'destroyView').mockImplementation(() => {});
-    const cancelSearchViewPark = jest.spyOn(amazonWebPlayer, 'cancelSearchViewPark').mockImplementation(() => {});
-    const session = jest.spyOn(amazonWebPlayer, 'session').mockReturnValue({ clearStorageData: jest.fn().mockResolvedValue(undefined) });
+    const clear = jest.spyOn(amazonWebPlayer.webSession, 'clear').mockResolvedValue({ success: true });
     try {
       amazonWebPlayer.musicHomeTemplate = { url: 'https://gql.music.amazon.com/', headers: { 'csrf-ts': '1' }, body: MUSIC_HOME_BODY, capturedAt: Date.now() };
       amazonWebPlayer.seeMoreTemplate = { url: 'https://gql.music.amazon.com/', headers: { 'csrf-ts': '1' }, body: SEE_MORE_BODY, capturedAt: Date.now() };
       amazonWebPlayer.recommendationsCache = { sections: [{ id: SECTION_ID, title: 'Albums for You', items: [] }], fetchedAt: Date.now() };
       amazonWebPlayer.seeMorePages.set('x|', { items: [], nextCursor: null });
       await amazonWebPlayer.signOut();
+      expect(clear).toHaveBeenCalledTimes(1); // the host half: views die, storage clears
       expect(amazonWebPlayer.musicHomeTemplate).toBeNull();
       expect(amazonWebPlayer.seeMoreTemplate).toBeNull();
       expect(amazonWebPlayer.recommendationsCache).toBeNull();
@@ -582,14 +627,12 @@ describe('signOut recommendations hygiene', () => {
       // The next account may read the music tab: the switch is forgotten.
       expect(amazonWebPlayer.musicHomeVariant).toBeNull();
     } finally {
-      destroyView.mockRestore();
-      cancelSearchViewPark.mockRestore();
-      session.mockRestore();
+      clear.mockRestore();
       amazonWebPlayer.musicHomeTemplate = saved.musicHomeTemplate;
       amazonWebPlayer.seeMoreTemplate = saved.seeMoreTemplate;
       amazonWebPlayer.recommendationsCache = saved.recommendationsCache;
       amazonWebPlayer.seeMorePages = saved.seeMorePages;
-      amazonWebPlayer.searchQueue = require('../../amazon-music-logic').createLaneQueue();
+      amazonWebPlayer.webSession._chain = createLaneQueue();
     }
   });
 });

@@ -1,9 +1,21 @@
 // In-app Amazon Music player.
 //
-// Parachord runs on castlabs Electron, which ships a Widevine CDM. Playback
-// and search are WebContentsViews on the main window with 0×0 bounds, so
-// they cannot cover the app and there is no extra OS window. Sign-in is the
-// only real window — the user has to see Amazon's page to pick a profile.
+// Parachord runs on castlabs Electron, which ships a Widevine CDM. Search
+// and playlist import run in a hidden WebContentsView on the main window
+// (0×0 when parked, a real size left of the window when in use), so they
+// cannot cover the app and there is no extra OS window. Sign-in is the only
+// real window — the user has to see Amazon's page to pick a profile.
+//
+// ── One owner of the partition (docs/architecture/web-session.md) ───────────
+// Every piece of web-session machinery here — the hidden view, the webRequest
+// capture, the page-world fetch, the load chain, the readers/writer gate,
+// the idle-park fuse, the sign-in window, sign-out — lives on ONE
+// createWebSessionHost instance (the module-scope `webSession` below). This
+// module owns the FLOWS: which URL loads, which request to capture and how to
+// patch, replay and parse it, what a wall or a session looks like. It
+// composes them over the host's primitives and never registers a webRequest
+// listener, creates a view, or takes a navigation outside that instance —
+// the partition's single webRequest slot has exactly one owner.
 //
 // ── Amazon page contract ─────────────────────────────────────────────────────
 // Everything in this module scrapes or hooks music.amazon.com (hornet), and
@@ -55,6 +67,7 @@ const path = require('path');
 const HOME_URL = 'https://music.amazon.com/';
 const PARTITION = 'persist:amazon-music';
 const PRELOAD = path.join(__dirname, 'amazon-player-preload.js');
+const { createWebSessionHost, chromeUserAgent } = require('./main-process/web-session');
 const {
   pageBlocksPlayback,
   signInLanded,
@@ -69,8 +82,6 @@ const {
   specTemplateIsFresh,
   specBodyWithVars,
   bodyMatchesTemplate,
-  createReplayGate,
-  createLaneQueue,
   amazonAlbumSearchUrl,
   amazonAlbumAsinFromUrl,
   amazonAlbumDetailRequest,
@@ -104,39 +115,30 @@ const {
   summarizeGqlRequest
 } = require('./amazon-music-logic');
 
-// Replay fetch, evaluated in the page world of the search view. The page
-// context supplies cookies (credentials: 'include') and the headers we copied
-// from the request the page itself made (x-api-key, csrf-*, music-territory,
-// x-amzn-*); the APQ hash in the body comes from that request too, so it is
-// always current for this hornet deploy. The body is replayed VERBATIM —
-// playlist pages and the songs search page both fire their own request for
-// exactly what we asked, so there is nothing to rewrite.
-const GQL_FETCH_SCRIPT = (url, headers, body) => `(async () => {
-  try {
-    const r = await fetch(${JSON.stringify(url)}, {
-      method: 'POST',
-      credentials: 'include',
-      headers: ${JSON.stringify(headers)},
-      body: ${JSON.stringify(body)}
-    });
-    return { status: r.status, text: await r.text() };
-  } catch (e) {
-    return { error: String(e && (e.message || e)) };
-  }
-})()`;
+// ONE owner of the partition (see the header): every view, navigation, gate
+// entry, capture registration and sign-in window for persist:amazon-music
+// flows through this single host instance. The timings this module used to
+// carry as constants are the host's defaults (warmMs 30 000, loadTimeoutMs
+// 30 000, pageFetchTimeoutMs 12 000) — a flow that ever needs a different
+// value passes it explicitly.
+const webSession = createWebSessionHost({
+  id: 'amazon-music',
+  partition: PARTITION,
+  preload: PRELOAD,
+  userAgent: chromeUserAgent(),
+  // The auth-cookie hedge (amazonAuthCookieState over the reported names)
+  // reads FEWER cookies than the pre-refactor whole-partition read: the
+  // host reads cookies.get({ url }) per declared domain, so a host-only
+  // cookie on some other Amazon host, or one scoped to a path other than
+  // '/', is no longer seen. The known auth cookies all live on `.amazon.com`
+  // (at-main, sess-at-main, x-main); music.amazon.com and www.amazon.com
+  // cover the hosts a host-only auth-shaped rotation could land on. state()
+  // reports names only; Electron's clear() still wipes the whole partition.
+  cookieDomains: ['amazon.com', 'music.amazon.com', 'www.amazon.com']
+});
 
 function electron() {
   return require('electron');
-}
-
-function chromeUserAgent() {
-  const chrome = (process.versions && process.versions.chrome) || '131.0.0.0';
-  const platform = process.platform === 'win32'
-    ? 'Windows NT 10.0; Win64; x64'
-    : process.platform === 'linux'
-      ? 'X11; Linux x86_64'
-      : 'Macintosh; Intel Mac OS X 10_15_7';
-  return `Mozilla/5.0 (${platform}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chrome} Safari/537.36`;
 }
 
 function notReady(reason, message) {
@@ -145,21 +147,10 @@ function notReady(reason, message) {
   return err;
 }
 
-// loadURL resolves on did-finish-load, which on a stalled network can hang for
-// the Chromium network-stack timeout (minutes). Every other step in this module
-// is budgeted (search 16×400ms, play 20×400ms, playlist 40×500ms); the loads
-// themselves are the one unbounded wait — and searchTracks and lookupPlaylist
-// share enqueueSearch, so one hung page wedges both surfaces and queues every
-// later search behind it. Race the load: the loser keeps loading in the
-// renderer (the next loadURL aborts it, or the failure paths blank it), we
-// just stop waiting. A load that fails this way is transient (offline, captive
-// portal, stall), so it throws notReady('load-failed') — NOT an empty result,
-// which the resolver would cache as a 30-day noMatch.
-const LOAD_URL_TIMEOUT_MS = 30000;
-
 // lookupPlaylist's capture poll: every PLAYLIST_CAPTURE_POLL_MS while the page
 // loads, then up to PLAYLIST_CAPTURE_POLLS_AFTER_LOAD more once it has loaded
-// (20s: boot + query is ~2-4s on a cold view).
+// (20s: boot + query is ~2-4s on a cold view). The load itself rides the
+// host's loadURLBudgeted (its budget is the host's loadTimeoutMs, 30s).
 const PLAYLIST_CAPTURE_POLL_MS = 500;
 const PLAYLIST_CAPTURE_POLLS_AFTER_LOAD = 40;
 
@@ -177,19 +168,17 @@ const PLAYLIST_CAPTURE_POLLS_AFTER_LOAD = 40;
 const ALBUM_JOB_STALE_MS = 8000;
 
 // How long the search view stays on its last Amazon page after a flow
-// finishes. A gql template replay needs an Amazon-origin page world —
-// about:blank has a null origin and can neither pass CORS nor attach the
-// session cookies — so once a capture has minted a request template, later
-// searches replay from this still-warm view instead of loading a page each.
-// parkSearchView still runs, just on this fuse: the idle-SPA cost it was
-// built to kill (backgroundThrottling is off) is bounded to the window,
-// while a burst of searches (a playlist resolve, a page of catalog/image
-// lookups) shares one page load instead of paying one per lookup.
-const SEARCH_VIEW_WARM_MS = 30000;
+// finishes is the host's idle-park fuse (warmMs, 30s — a gql template replay
+// needs an Amazon-origin page world: about:blank has a null origin and can
+// neither pass CORS nor attach the session cookies, so the host keeps the
+// view warm that long after the last activity, then parks it). A burst of
+// searches (a playlist resolve, a page of catalog/image lookups) shares one
+// page load instead of paying one per lookup.
 
-// A template replay with no answer by now is abandoned (and the page flow's
-// navigation never waits longer for readers to drain — readers are bounded
-// by this timeout, so the writer's drain wait is too).
+// A single template replay is bounded by the host's pageFetch timeout
+// (pageFetchTimeoutMs, 12s). The multi-page home walk below additionally
+// bounds the WHOLE walk with the same 12s — one slow page must not stretch a
+// walk of four into a minute.
 const REPLAY_TIMEOUT_MS = 12000;
 
 // How long the parsed home-page sections (getRecommendations) stay fresh in
@@ -231,37 +220,20 @@ const HOME_REFUSED_STATUS = 294;
 // see-more route answers it regardless (live-verified 2026-11).
 const PLAYLISTS_SECTION_ID = 'uri:///recommendations/browse-home/browse-home_playlistStrategy';
 
-// How long quality reads/writes wait for the __r trap to capture the live
-// playbackController store. Live observation (2026-10, hornet 1.18x):
-// storeCaptured stays false on track pages — hornet's factories appear to use
-// a closure-scoped require, or the store materializes after require time — so
-// this wait mostly times out. The persisted playback-controller localStorage
-// entry is the working mechanism (hornet rehydrates from it at boot, i.e.
-// "applies on the next track"); the live-store write is an opportunistic
-// upgrade if a hornet deploy ever routes requires through the global __r.
-// Keep this short so the settings panel does not spin on a first read.
-async function loadURLBudgeted(page, url, timeoutMs = LOAD_URL_TIMEOUT_MS) {
-  const loaded = page.loadURL(url);
-  loaded.catch(() => {}); // a late rejection after the race lost must not be unhandled
-  let timer = null;
-  try {
-    await Promise.race([
-      loaded,
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(notReady('load-failed', `Amazon Music page did not finish loading within ${timeoutMs}ms: ${url}`)), timeoutMs);
-      })
-    ]);
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 const amazonWebPlayer = {
 
-  searchView: null,
-  authWindow: null,
-  host: null,
-  searchQueue: createLaneQueue(),
+  // The one owner of the partition (see the module header): the hidden view,
+  // the capture, the chain, the gate, the fuse, the sign-in window and the
+  // sign-out all live here. Exposed for the flows, the diagnostics and the
+  // machinery tests (the same white-box surface tests/main-process/
+  // web-session.test.js uses).
+  webSession,
+
+  // The hidden search view (the host's slot). An accessor pair, not a copy:
+  // preloadProbe and the flows read it, and the machinery tests drive fake
+  // views through it — it is always exactly the host's view.
+  get searchView() { return webSession._view; },
+  set searchView(view) { webSession._view = view; },
 
   cookieWarned: false,
   // Circuit breaker for search's structural failures — a hornet rename of the
@@ -294,33 +266,12 @@ const amazonWebPlayer = {
   // Session cache of see-more expansion pages, keyed `${sectionId}|${afterCursor}`.
   // Bounded (SEE_MORE_CACHE_MAX); cleared on signOut.
   seeMorePages: new Map(),
-  // The delayed parkSearchView fuse (SEARCH_VIEW_WARM_MS) — canceled by new
-  // search activity, re-armed at its end.
-  searchViewParkTimer: null,
-  // Reader/writer gate over the search view: template replays run in
-  // parallel; a page load (the writer) waits out in-flight replays
-  // (createReplayGate in amazon-music-logic.js, unit-tested).
-  replayGate: createReplayGate(),
-  // How many flows currently use the search view: every chained page flow
-  // (incremented in enqueueSearch) plus every in-flight template replay.
-  // The park fuse consults it at FIRE time — a fuse armed by flow A never
-  // blanks the view under flow B (or under a 40s playlist import whose
-  // pagination is replay-only), it re-arms while busy. Cancel-at-entry is
-  // belt; the fire-time check is the suspenders.
-  searchViewBusy: 0,
   // Monotone counter bumped on every template-replay entry. A page flow
   // reads it at start: replay traffic that overlaps its capture poll can
   // masquerade as the page's own other-spec request and poison the grace
   // fast-fail, so a changed mark degrades the grace to the full window
   // instead of a structural miss (see specSearchPageFlow).
   replayActivity: 0,
-  _onHostClosed: null,
-  // Audio representations parsed from the captured DASH manifest (+ init
-  // segment STREAMINFO), scoped to the current play: nulled when a play
-  // claims the player, filled asynchronously by readStreamRepresentations,
-  // keyed to that play's generation + ASIN so a late capture from a superseded
-  // play cannot land on the new track.
-
 
   // castlabs Electron exposes electron.components. Stock Electron does not,
   // and the old --widevine-cdm-path switch does nothing there. EME probe is
@@ -340,55 +291,19 @@ const amazonWebPlayer = {
     }
   },
 
+  // The partition's session, through the one owner — the host installs the
+  // permission allowlist (['fullscreen'], warn-once per name) on first use.
   session() {
-    const { session } = electron();
-    const ses = session.fromPartition(PARTITION);
-    if (!ses.__parachordAmazonPerms) {
-      // Allowlist, not a denylist. Playback needs no permission grant at all
-      // (HTMLMediaElement and EME/Widevine are not gated by permission
-      // handlers), so the hidden page gets fullscreen and nothing else. The
-      // previous deny-list default-allowed everything it did not name -
-      // including 'media', which is the umbrella getUserMedia permission for
-      // camera/microphone on a hidden third-party page. Every denial is
-      // logged once per permission name (checks fire often) so an unexpected
-      // request is visible in the field without console spam.
-      const allowed = new Set(['fullscreen']);
-      const warned = new Set();
-      const check = (permission) => {
-        if (allowed.has(permission)) return true;
-        if (!warned.has(permission)) {
-          warned.add(permission);
-          console.warn(`[Amazon] denied permission request: ${permission}`);
-        }
-        return false;
-      };
-      ses.setPermissionRequestHandler((_wc, permission, callback) => callback(check(permission)));
-      ses.setPermissionCheckHandler((_wc, permission) => check(permission));
-      ses.__parachordAmazonPerms = true;
-    }
-    return ses;
-  },
-
-  // 'known' | 'rotated' | 'none' (amazonAuthCookieState). Empty-valued
-  // cookies are deletions in flight, not a session.
-  async authCookieState() {
-    try {
-      const cookies = await this.session().cookies.get({});
-      return amazonAuthCookieState(cookies.filter(c => c.value).map(c => c.name));
-    } catch {
-      return 'none';
-    }
-  },
-
-  async hasAuthCookie() {
-    return (await this.authCookieState()) !== 'none';
+    return webSession.session();
   },
 
   // Ready means signed in AND a profile has been chosen. A window still on
   // the profile picker or the sign-in page is not ready, even if a cookie
-  // from an earlier step is already set.
+  // from an earlier step is already set. The composition is Amazon's (pure
+  // logic over the host's facts: state() → { url, signInUrl, cookieNames }).
   async isSignedIn() {
-    const cookies = await this.authCookieState();
+    const { signInUrl, cookieNames } = await webSession.state();
+    const cookies = amazonAuthCookieState(cookieNames);
     if (cookies === 'none') return false;
     // The auth-cookie names are an implementation detail Amazon can rotate.
     // A jar with no known name but another auth-shaped one (x-main, at-*,
@@ -408,179 +323,59 @@ const amazonWebPlayer = {
     // account out right after a successful sign-in. A genuinely dead
     // session is still caught mid-flight: search, lookup and play re-check
     // the URL after every load and throw not-signed-in on a redirect.
-    const auth = this.authWindow;
-    if (this.alive(auth) && pageBlocksPlayback(auth.webContents.getURL())) return false;
+    if (signInUrl && pageBlocksPlayback(signInUrl)) return false;
     return true;
   },
 
   setHost(win) {
-    if (this.host && this._onHostClosed) {
-      try { this.host.off('closed', this._onHostClosed); } catch { /* gone */ }
-    }
-    this.host = win && !win.isDestroyed() ? win : null;
-    this._onHostClosed = null;
-    if (!this.host) {
-      this.destroyView(this.searchView);
-      this.searchView = null;
-      return;
-    }
-    this._onHostClosed = () => this.setHost(null);
-    this.host.on('closed', this._onHostClosed);
-    this.collapse(this.searchView);
-  },
-
-  // The hidden search view gets the full treatment: the preload's
-  // visibility stub + __r trap. The sign-in window gets neither — it is the
-  // one visible Amazon page and must behave like a normal browser window
-  // (real focus events, real document.hidden, no tampering that Amazon's
-  // sign-in flows or bot heuristics could trip over).
-  webPreferences({ preload = PRELOAD } = {}) {
-    return {
-      partition: PARTITION,
-      nodeIntegration: false,
-      contextIsolation: true,
-      sandbox: true,
-      preload,
-      webSecurity: true,
-      backgroundThrottling: false,
-      autoplayPolicy: 'no-user-gesture-required'
-    };
-  },
-
-  windowOptions(show) {
-    return {
-      width: 1100,
-      height: 760,
-      show: !!show,
-      title: 'Amazon Music',
-      backgroundColor: '#000000',
-      skipTaskbar: !show,
-      webPreferences: this.webPreferences()
-    };
+    webSession.setHost(win);
   },
 
   alive(target) {
     return !!(target && target.webContents && !target.webContents.isDestroyed());
   },
 
-  attachContents(wc) {
-    const harden = () => {
-      try { wc.setUserAgent(chromeUserAgent()); } catch { /* destroyed */ }
-    };
-    harden();
-    try { wc.setBackgroundThrottling(false); } catch { /* destroyed */ }
-    // A hidden page on the Amazon session must not spawn a visible window.
-    // Electron's default is to create one, and that window would carry the
-    // session cookies without the preload or the UA mask.
-    try { wc.setWindowOpenHandler(() => ({ action: 'deny' })); } catch { /* destroyed */ }
-    wc.on('did-start-navigation', harden);
-    return wc;
-  },
-
-  attachWindow(win) {
-    this.attachContents(win.webContents);
-    win.on('closed', () => {
-      if (this.authWindow === win) this.authWindow = null;
-    });
-    return win;
-  },
-
-  // 0×0 so a view painted above the page still cannot cover Parachord.
-  collapse(view) {
-    if (!view) return;
-    try { view.setBounds({ x: 0, y: 0, width: 0, height: 0 }); } catch { /* gone */ }
-  },
-
-  destroyView(view) {
-    if (!view) return;
-    try {
-      if (this.host && !this.host.isDestroyed()) this.host.contentView.removeChildView(view);
-    } catch { /* detached */ }
-    try {
-      if (view.webContents && !view.webContents.isDestroyed()) view.webContents.close();
-    } catch { /* gone */ }
-  },
-
   pageOf(view) {
     const wc = view.webContents;
     return {
       webContents: wc,
-      loadURL: (url) => wc.loadURL(url),
       isDestroyed: () => !wc || wc.isDestroyed()
     };
   },
 
-  appView() {
-    const host = this.host;
-    if (!host || host.isDestroyed()) return null;
-    const kids = host.contentView.children || [];
-    return kids.find(v => v && v.webContents && v.webContents.id === host.webContents.id) || null;
-  },
-
   // Search rows do not mount in a 0×0 view (the widget collapses to
   // max-width: 0). Park the search view at a real size but left of the
-  // window so it cannot cover Parachord. Do not attach the debugger.
-  layoutSearch(view) {
-    if (!view) return 'none';
-    try {
-      view.setBounds({ x: -1200, y: 0, width: 1100, height: 800 });
-    } catch { /* gone */ }
-    return 'offscreen';
+  // window so it cannot cover Parachord — the host's offscreen layout
+  // (OFFSCREEN_BOUNDS in main-process/web-session.js). Do not attach the
+  // debugger.
+  layoutSearch(view = this.searchView) {
+    return webSession.layoutOffscreen(view);
   },
 
   // Blank the search view when a search is done. The SPA would otherwise
   // keep running at full speed (backgroundThrottling is off), and a view
   // left parked on a sign-in wall poisons sign-in detection for the rest of
-  // the session. Awaits the blank so the next queued page load (search or
-  // playlist) cannot race it. Flows no longer call this directly — they
-  // scheduleParkSearchView (a fuse long enough for template replays to run)
-  // — but a hard park still cancels any pending fuse.
+  // the session. The host's park gates the blank like every other
+  // navigation. Flows no longer call this directly — they scheduleParkSearchView
+  // (a fuse long enough for template replays to run) — but a hard park still
+  // cancels any pending fuse.
   async parkSearchView() {
-    this.cancelSearchViewPark();
-    const view = this.searchView;
-    if (!this.alive(view)) return;
-    this.collapse(view);
-    // Blanking IS a navigation: gate it like every other, so a replay that
-    // entered between the fuse's busy check and the load is waited out
-    // instead of having its frame torn down mid-fetch.
-    await this.replayGate.beginNavigation();
-    try {
-      const url = view.webContents.getURL();
-      if (url && url !== 'about:blank') await view.webContents.loadURL('about:blank');
-    } catch { /* gone */ } finally {
-      this.replayGate.endNavigation();
-    }
+    await webSession.park();
   },
 
-  // Arm the delayed park of the search view, SEARCH_VIEW_WARM_MS out (the
-  // constant's comment has the trade: bounded idle-SPA cost vs one page load
-  // per search). Re-arming replaces a pending fuse; the timer is unref'd so
-  // it never keeps the app alive.
+  // Arm the delayed park of the search view, warmMs (30s) out (the host's
+  // fuse: bounded idle-SPA cost vs one page load per search). Re-arming
+  // replaces a pending fuse; the timer is unref'd so it never keeps the app
+  // alive.
   scheduleParkSearchView() {
-    this.cancelSearchViewPark();
-    this.searchViewParkTimer = setTimeout(() => {
-      this.searchViewParkTimer = null;
-      // A flow or replay is using the view: re-arm instead of blanking. A
-      // fuse armed by flow A must never blank the view under flow B (a 40s
-      // playlist import outlives the fuse, and a replay during it would
-      // otherwise re-arm a blank into the middle of its pagination).
-      if (this.searchViewBusy > 0) {
-        this.scheduleParkSearchView();
-        return;
-      }
-      this.parkSearchView().catch(() => {});
-    }, SEARCH_VIEW_WARM_MS);
-    if (typeof this.searchViewParkTimer.unref === 'function') this.searchViewParkTimer.unref();
+    webSession.schedulePark();
   },
 
   // New search activity cancels a pending park — the view is about to be
   // used again (a template replay reaching in, or a page flow starting).
   // Without this an older fuse could blank the view mid-flow.
   cancelSearchViewPark() {
-    if (this.searchViewParkTimer) {
-      clearTimeout(this.searchViewParkTimer);
-      this.searchViewParkTimer = null;
-    }
+    webSession.cancelPark();
   },
 
   // Structural failure reporting shared by the fast and page flows: record
@@ -596,33 +391,12 @@ const amazonWebPlayer = {
     return notReady('not-ready', message);
   },
 
-  ensureView(which) {
-    const { WebContentsView } = electron();
-    // Audio plays through the shared renderer player (widevine path) now —
-    // the only Amazon view left is the SEARCH view, host for sign-in state,
-    // spec searches/lookups and the session-header mint.
-    const key = 'searchView';
-    if (this.alive(this[key])) {
-      this.collapse(this[key]);
-      return this.pageOf(this[key]);
-    }
-    if (!this.host || this.host.isDestroyed()) {
-      throw notReady('not-ready', 'Amazon Music has no host window');
-    }
-    this.session();
-    const view = new WebContentsView({ webPreferences: this.webPreferences() });
-    this.attachContents(view.webContents);
-    this.host.contentView.addChildView(view);
-    this.collapse(view);
-    this[key] = view;
-    view.webContents.on('destroyed', () => {
-      if (this[key] === view) this[key] = null;
-    });
-    return this.pageOf(view);
-  },
-
+  // The hidden search view, through the one owner. The host creates the
+  // WebContentsView (the Amazon preload, the UA mask, the session's
+  // permission handlers) and keeps it alive on the app window; pageOf keeps
+  // the { webContents, isDestroyed } shape the flows read.
   async ensureWindow() {
-    return this.ensureView('search');
+    return this.pageOf(webSession.ensureView());
   },
 
   async evalOn(win, script) {
@@ -658,119 +432,49 @@ const amazonWebPlayer = {
     }
   },
 
+  // Sign-in, through the one owner: the host shows the visible window (no
+  // preload — it must behave like a normal browser window), loads the page
+  // (unbudgeted on purpose: this is the one window the person watches), and
+  // ticks once a second with { url, cookieNames, stableTicks } (tracing every
+  // page it visits and the cookie names as they appear). The verdict is
+  // Amazon's: signInLanded over the tick's facts — positive signal only
+  // ("not on a known wall" used to close this window on a logged-out first
+  // paint of music.amazon.com/), the cookie one accepted signal, not a
+  // requirement (Amazon rotating the cookie names must not leave the window
+  // waiting forever; a path off / or a third stable tick stands in for it).
+  // lastUrl/stableTicks are maintained here because signInLanded's tick
+  // counting (an ok URL resets to 1, a wall to 0) is its own, not the host's.
   async openLogin() {
-    const { BrowserWindow } = electron();
-    let win = this.authWindow;
-    if (!this.alive(win)) {
-      this.session();
-      const parent = this.host && !this.host.isDestroyed() ? this.host : null;
-      win = this.attachWindow(new BrowserWindow({
-        ...this.windowOptions(true),
-        width: 980,
-        height: 760,
-        parent: parent || undefined,
-        title: 'Sign in to Amazon Music',
-        // No preload here: the visibility stub and __r trap are for the hidden
-        // player views. This window is visible and must behave normally.
-        webPreferences: this.webPreferences({ preload: null })
-      }));
-      this.authWindow = win;
-      // Unbudgeted on purpose: this is the one window the user watches. A
-      // stalled load here is visible (and recoverable by the user retrying),
-      // and rejecting the openLogin promise at 30s would abandon a sign-in
-      // flow that may still complete.
-      await win.loadURL(HOME_URL);
-    }
-    win.show();
-    win.focus();
-
-    this._signInTracePage = null;
-    this._signInTraceCookies = null;
-    return new Promise((resolve) => {
-      let settled = false;
-      let lastUrl = null;
-      let stableTicks = 0;
-      const finish = (signedIn) => {
-        if (settled) return;
-        settled = true;
-        clearInterval(timer);
-        resolve({ success: !!signedIn, signedIn: !!signedIn });
-      };
-      const timer = setInterval(async () => {
-        if (win.isDestroyed()) return;
-        const url = win.webContents.getURL();
-        // Positive signal only (signInLanded): "not on a known wall" used to
-        // close this window on a logged-out first paint of music.amazon.com/.
-        // The cookie is one accepted signal, not a requirement — Amazon
-        // rotating the cookie names must not leave this timer waiting forever;
-        // a path off / or a third stable tick stands in for it.
-        const hasCookie = await this.hasAuthCookie().catch(() => false);
-        await this.traceSignIn(url).catch(() => {});
-        const verdict = signInLanded({ url, lastUrl, stableTicks, hasCookie });
-        lastUrl = url;
+    let lastUrl = null;
+    let stableTicks = 0;
+    const { signedIn } = await webSession.signIn(HOME_URL, {
+      width: 980,
+      height: 760,
+      title: 'Sign in to Amazon Music',
+      decide: (tick) => {
+        const hasCookie = amazonAuthCookieState(tick.cookieNames) !== 'none';
+        const verdict = signInLanded({ url: tick.url, lastUrl, stableTicks, hasCookie });
+        lastUrl = tick.url;
         stableTicks = verdict.stableTicks;
-        if (!verdict.landed) return;
-        console.log(`[Amazon] sign-in landed on ${this.signInTraceUrl(url)} (cookie: ${hasCookie}, stable ticks: ${verdict.stableTicks})`);
-        clearInterval(timer);
-        setTimeout(() => {
-          if (win && !win.isDestroyed()) win.close();
-        }, 600);
-        finish(true);
-      }, 1000);
-      win.on('closed', () => finish(false));
+        return verdict.landed;
+      }
     });
-  },
-
-  // Sign-in trace: each page the sign-in window visits (host + path only; the
-  // query can carry tokens) and the Amazon session cookie NAMES as they
-  // appear (never values), so a sign-in that closes too early or never
-  // finishes can be read from the log.
-  signInTraceUrl(url) {
-    try {
-      const u = new URL(url);
-      return `${u.host}${u.pathname}`;
-    } catch {
-      return String(url || '').split('?')[0];
-    }
-  },
-
-  async traceSignIn(url) {
-    const page = this.signInTraceUrl(url);
-    if (page !== this._signInTracePage) {
-      this._signInTracePage = page;
-      console.log(`[Amazon] sign-in page: ${page}`);
-    }
-    const cookies = await this.session().cookies.get({});
-    const names = [...new Set(cookies.filter(c => /^(at-|sess-at-|x-main|session-token)/.test(c.name)).map(c => c.name))].sort().join(',');
-    if (names !== this._signInTraceCookies) {
-      this._signInTraceCookies = names;
-      console.log(`[Amazon] sign-in cookies: ${names || '(none)'}`);
-    }
+    return { success: signedIn, signedIn };
   },
 
   // Serializes real page navigation: fallback spec searches, playlist
   // imports, album lookups and the diagnostic capture share the one view and
-  // the webRequest listener slots, so they run one at a time. Every enqueued
-  // job also holds searchViewBusy — the park fuse must not blank the view
-  // under a flow it cannot see (a fuse has no idea what the chain is up to).
+  // the webRequest listener slots, so they run one at a time — the host's
+  // chain, two lanes (webSession.enqueue(fn, { lane }), the #1423 semantics
+  // living in the host now). A FOREGROUND job starts before every queued
+  // BACKGROUND job; FIFO within a lane; a running job is never interrupted.
   // `lane: 'foreground'` is for a job the user is waiting on (a playlist
-  // they opened): it starts before every queued background job
-  // (createLaneQueue in amazon-music-logic.js). Everything else is background.
+  // they opened from Recommendations): everything else — artist photos, the
+  // recommendations refresh, catalog fallbacks, the session-header mint — is
+  // background. Every enqueued job also holds the host's busy count, so the
+  // park fuse must not blank the view under a flow it cannot see.
   enqueueSearch(fn, { lane = 'background' } = {}) {
-    const busy = async () => {
-      this.searchViewBusy++;
-      try {
-        return await fn();
-      } finally {
-        this.searchViewBusy--;
-      }
-    };
-    const queue = this.searchQueue;
-    const pending = queue.pending();
-    if (lane === 'foreground' && pending.background > 0) {
-      console.log(`[Amazon] search queue: foreground job goes ahead of ${pending.background} queued background job(s)`);
-    }
-    return queue.run(busy, { lane });
+    return webSession.enqueue(fn, { lane });
   },
 
   // One-shot session-header capture for the native playback engine
@@ -814,21 +518,26 @@ const amazonWebPlayer = {
       };
     }
     return this.enqueueSearch(async () => {
-      const ses = this.session();
-      const win = await this.ensureWindow('search');
+      const win = await this.ensureWindow();
+      // The bounds are deliberate, not inherited: the host's ensureView keeps a
+      // LIVE view's layout, so without this the mint's load would run at
+      // whatever the last flow left — offscreen after a recent flow, 0×0 on a
+      // fresh view. A 0×0 view is the one where the search page's own
+      // requests never fire (SPAs collapse widgets to max-width: 0), so the
+      // mint lays its view out explicitly like every other flow.
+      await this.layoutSearch(this.searchView);
       const q = String(query || 'the').slice(0, 120);
       console.log(`[Amazon] session-headers mint: page flow for "${q}"`);
-      const headers = await new Promise((resolve) => {
-        const filter = { urls: ['https://gql.music.amazon.com/*', 'https://music.amazon.com/api/*', 'https://music.amazon.com/*/api/*'] };
-        let done = false;
-        const finish = (value) => {
-          if (done) return;
-          done = true;
-          clearTimeout(timer);
-          try { ses.webRequest.onBeforeSendHeaders(filter, null); } catch { /* none */ }
-          resolve(value);
-        };
-        const timer = setTimeout(() => finish(null), 10000);
+      // The registration is the host's — webRequest has a single listener
+      // slot per method per session, and the chain (this whole body rides it)
+      // is what serializes the mint against an in-flight search's own capture
+      // registration.
+      const { captured, detach } = webSession.attachCapture([
+        'https://gql.music.amazon.com/*',
+        'https://music.amazon.com/api/*',
+        'https://music.amazon.com/*/api/*'
+      ]);
+      try {
         // The page emits PLACEHOLDER csrf values (literally foo/bar) on
         // requests that do not need them — only the real spec-search-class
         // requests carry live ones. A dmls call made with placeholders fails
@@ -838,84 +547,85 @@ const amazonWebPlayer = {
         const tokenLooksReal = (h) =>
           typeof h['csrf-token'] === 'string' && h['csrf-token'].length >= 20 &&
           /^\d+$/.test(String(h['csrf-rnd'] || '')) && /^\d+$/.test(String(h['csrf-ts'] || ''));
-        ses.webRequest.onBeforeSendHeaders(filter, (details, callback) => {
-          const h = details.requestHeaders || {};
-          if (h['csrf-token'] && tokenLooksReal(h)) {
-            finish({
-              csrfToken: h['csrf-token'],
-              csrfRnd: h['csrf-rnd'] || null,
-              csrfTs: h['csrf-ts'] || null,
-              deviceId: h['x-amzn-device-id'] || null
-            });
+        let loadError = null;
+        const load = webSession.loadURLBudgeted(win, `https://music.amazon.com/search/${encodeURIComponent(q)}/songs`)
+          .catch((error) => { loadError = error; return null; });
+        let headers = null;
+        for (let i = 0; i < 40 && !headers && !loadError; i++) {
+          await new Promise((resolve) => setTimeout(resolve, 250));
+          for (const entry of captured) {
+            const h = entry.headers;
+            if (h && h['csrf-token'] && tokenLooksReal(h)) {
+              headers = {
+                csrfToken: h['csrf-token'],
+                csrfRnd: h['csrf-rnd'] || null,
+                csrfTs: h['csrf-ts'] || null,
+                deviceId: h['x-amzn-device-id'] || null
+              };
+              break;
+            }
           }
-          callback({});
-        });
-        loadURLBudgeted(win, `https://music.amazon.com/search/${encodeURIComponent(q)}/songs`).catch(() => finish(null));
-      });
-      // Park on the warm fuse (template replays need an Amazon-origin page
-      // world; parkSearchView's immediate blank only happens on real restarts).
-      if (typeof this.scheduleParkSearchView === 'function') this.scheduleParkSearchView();
-      if (!headers || !headers.csrfToken) {
-        const err = new Error('session headers: the page fired no captured request');
-        err.reason = 'load-failed'; // transient/network — never a sign-in prompt
-        throw err;
+        }
+        await load;
+        // Park on the warm fuse (template replays need an Amazon-origin page
+        // world; parkSearchView's immediate blank only happens on real restarts).
+        this.scheduleParkSearchView();
+        if (!headers || !headers.csrfToken) {
+          const err = new Error('session headers: the page fired no captured request');
+          err.reason = 'load-failed'; // transient/network — never a sign-in prompt
+          throw err;
+        }
+        console.log('[Amazon] session-headers mint ok');
+        return headers;
+      } finally {
+        detach();
       }
-      console.log('[Amazon] session-headers mint ok');
-      return headers;
     });
   },
 
   // Capture gql requests (bodies from onBeforeRequest, headers paired by
-  // request id) while a page loads and fires its own queries. A registration
-  // replaces any previous one — webRequest has a single listener slot per
-  // method per session — and the search chain serializes searchTracks and
-  // lookupPlaylist, so the two flows never interleave captures. Returns
-  // { captured, detach } — detach in a finally so a stale capture does not
-  // keep buffering every later page's gql bodies into a dead array.
+  // request id) while a page loads and fires its own queries — the host's
+  // registration for the gql host: a registration replaces any previous one
+  // (webRequest has a single listener slot per method per session) and the
+  // search chain serializes searchTracks and lookupPlaylist, so the two
+  // flows never interleave captures. Returns { captured, detach } — detach
+  // in a finally so a stale capture does not keep buffering every later
+  // page's gql bodies into a dead array (identity-guarded: a superseded
+  // registration's detach never clears a newer one's slot). Entries also
+  // carry an `echo` flag (true when a pageFetch was in flight as the request
+  // was seen — our own replay traffic) and `method`/`at` — extra host facts
+  // the flows are free to ignore.
   attachGqlCapture() {
-    const ses = this.session();
-    const gqlFilter = { urls: ['https://gql.music.amazon.com/*'] };
-    const captured = [];
-    const onRequest = (details, callback) => {
-      try {
-        if (details.uploadData && details.uploadData.length) {
-          const body = details.uploadData.map(d => (d.bytes ? d.bytes.toString('utf8') : '')).join('');
-          // Keep the URL the page itself used — replaying a hardcoded endpoint
-          // rots the day Amazon puts a path or region segment on it.
-          captured.push({ id: details.id, body, url: details.url });
-        }
-      } catch (e) { /* keep other requests flowing */ }
-      callback({});
-    };
-    const onSendHeaders = (details, callback) => {
-      const mine = captured.find(r => r.id === details.id);
-      if (mine) mine.headers = details.requestHeaders;
-      callback({ requestHeaders: details.requestHeaders });
-    };
-    try { ses.webRequest.onBeforeRequest(gqlFilter, onRequest); } catch { /* a second registration replaces */ }
-    try { ses.webRequest.onBeforeSendHeaders(gqlFilter, onSendHeaders); } catch { /* a second registration replaces */ }
-    const detach = () => {
-      try { ses.webRequest.onBeforeRequest(gqlFilter, null); } catch { /* none */ }
-      try { ses.webRequest.onBeforeSendHeaders(gqlFilter, null); } catch { /* none */ }
-    };
-    return { captured, detach };
+    return webSession.attachCapture(['https://gql.music.amazon.com/*']);
   },
 
-  // Replay a captured gql request from the page world of the search view.
-  // The page context supplies cookies (credentials: 'include') and the
-  // headers we copied from the request the page itself made; the APQ hash in
-  // the body comes from that request too, so it is always current for this
-  // hornet deploy. Returns { parsed } (the full response envelope) or
-  // { error } — each flow decides which envelope shape it expects.
+  // Replay a captured gql request from the page world of the search view —
+  // the host's pageFetch: the page context supplies the origin, cookies
+  // (credentials: 'include') and CORS, and the headers we copied from the
+  // request the page itself made; the APQ hash in the body comes from that
+  // request too, so it is always current for this hornet deploy. The fetch
+  // is bounded by the host's pageFetchTimeoutMs (12s) and never throws —
+  // every failure is a recoverable { error }. Returns { parsed } (the full
+  // response envelope) or { error } — each flow decides which envelope shape
+  // it expects. (`win` is the search view the flow read; the host replays
+  // from its own view — kept in the signature because it is always the same
+  // view, and the flows and tests speak in its terms.)
   // `options.acceptPartial` opts a flow into HTTP 294 partial answers (see
   // GQL_PARTIAL_STATUS in amazon-music-logic.js): a predicate over the parsed
   // body that says whether the data the flow needs came back. Without it a
   // 294 is a failure with its status, which the home flow relies on.
+  // `options.readerHeld` says the caller already holds the host's replay-gate
+  // reader for a multi-page walk — pageFetch then skips its own reader (the
+  // walk's pages must not come back `busy` under a navigation that is
+  // waiting for that same outer reader to drain).
   async replayGql(win, entry, body, options = {}) {
     const replayUrl = entry.url || 'https://gql.music.amazon.com/';
     const headers = amazonGqlFetchHeaders(entry.headers);
     const raw = JSON.stringify(body);
-    const replay = await this.evalOn(win, GQL_FETCH_SCRIPT(replayUrl, headers, raw));
+    const replay = await webSession.pageFetch(
+      { url: replayUrl, method: 'POST', headers, body: raw },
+      { readerHeld: options.readerHeld === true }
+    );
     return gqlReplayOutcome(replay, { acceptPartial: options.acceptPartial || null });
   },
 
@@ -950,8 +660,8 @@ const amazonWebPlayer = {
   // to the chained page flow, whose capture re-mints the template — the
   // fallback IS the old flow, so the failure semantics never change. Only
   // real page navigation is serialized on the chain now (fallback searches,
-  // playlist imports) — and it waits out in-flight replays first
-  // (replayGate), instead of their frames being torn down mid-fetch.
+  // playlist imports) — and it waits out in-flight replays first (the host's
+  // readers/writer gate), instead of their frames being torn down mid-fetch.
   async specSearch({ url, searchText, specType, parse, noun, staleCheck = null }) {
     if (staleCheck && staleCheck()) {
       console.log(`[Amazon] ${specType} search skipped: past the ${ALBUM_JOB_STALE_MS}ms budget before it started — the caller already moved on`);
@@ -993,38 +703,27 @@ const amazonWebPlayer = {
   async trySpecReplay({ searchText, specType, parse, noun }) {
     const template = this.specSearchTemplate;
     if (!specTemplateIsFresh(template, Date.now())) return null;
-    if (!this.replayGate.tryEnterReplay()) return null;
-    // Hold the view: the park fuse consults searchViewBusy at fire time, and
-    // a page flow's capture poll consults replayActivity before trusting its
-    // other-spec grace (our own fetch can look like the page's request).
-    this.searchViewBusy++;
+    // Take the host's reader side for the whole replay: a navigation (a page
+    // flow or the idle park) waits this replay out instead of tearing its
+    // frame mid-fetch. A page flow's capture poll also consults
+    // replayActivity before trusting its other-spec grace (our own fetch can
+    // look like the page's request).
+    if (!webSession.tryEnterReplay()) return null;
     this.replayActivity++;
     try {
-      this.cancelSearchViewPark();
-      const win = this.searchView;
-      if (!this.alive(win)) return null;
-      let href = '';
-      try { href = win.webContents.getURL(); } catch { return null; }
+      webSession.cancelPark();
       // A replay needs an Amazon-origin page world (cookies, CORS): a parked
       // or never-loaded view means the page flow runs instead.
-      if (!isAmazonMusicPage(href)) return null;
+      const href = webSession.viewUrl();
+      if (!href || !isAmazonMusicPage(href)) return null;
       if (pageBlocksPlayback(href)) {
         console.warn(`[Amazon] ${specType} replay blocked: ${href}`);
         throw notReady('not-signed-in', 'Choose an Amazon Music profile');
       }
       const body = specBodyWithVars(template.body, { searchText, specType });
-      const slow = this.replayGql(win, template, body);
-      slow.catch(() => {}); // a late rejection after the race lost must not be unhandled
-      let timer = null;
       let outcome;
       try {
-        outcome = await Promise.race([
-          slow,
-          new Promise(resolve => {
-            timer = setTimeout(() => resolve({ error: `replay exceeded ${REPLAY_TIMEOUT_MS}ms` }), REPLAY_TIMEOUT_MS);
-            if (typeof timer.unref === 'function') timer.unref();
-          })
-        ]);
+        outcome = await this.replayGql(this.searchView, template, body);
       } catch (error) {
         // A HARD rejection — the view destroyed mid-replay (signOut, host
         // close), a navigation tearing the frame — is the same miss as an
@@ -1032,7 +731,6 @@ const amazonWebPlayer = {
         // itself. The fast path must never break specSearch's throw contract.
         outcome = { error: (error && error.message) || String(error) };
       }
-      clearTimeout(timer);
       if (outcome.error) {
         console.warn(`[Amazon] ${specType} template replay failed (${outcome.error}); refreshing via a page load`);
         // Drop only if nobody re-minted meanwhile — a page flow that ran in
@@ -1056,9 +754,8 @@ const amazonWebPlayer = {
       console.log(`[Amazon] ${specType} replay${fromSpec && fromSpec !== specType ? ` (${fromSpec} template)` : ''} returning ${rows.length} ${noun} for ${JSON.stringify(searchText)}`);
       return rows;
     } finally {
-      this.searchViewBusy--;
-      this.replayGate.exitReplay();
-      this.scheduleParkSearchView();
+      webSession.exitReplay();
+      webSession.schedulePark();
     }
   },
 
@@ -1076,16 +773,16 @@ const amazonWebPlayer = {
     // Reading at the poll would still let a span-past-the-boundary replay
     // poison it.
     const replayMark = this.replayActivity;
-    const win = await this.ensureWindow('search');
+    const win = await this.ensureWindow();
     const mode = await this.layoutSearch(this.searchView);
     console.log(`[Amazon] search mode=${mode} ${url}`);
     const { captured, detach } = this.attachGqlCapture();
     try {
-      await this.replayGate.beginNavigation();
+      await webSession.beginNavigation();
       try {
-        await loadURLBudgeted(win, url);
+        await webSession.loadURLBudgeted(win, url);
       } finally {
-        this.replayGate.endNavigation();
+        webSession.endNavigation();
       }
       // Wait for the page's own search request (boot + query is ~1-3s on a
       // warm view; the poll window covers a slow load). The entry must also
@@ -1301,7 +998,7 @@ const amazonWebPlayer = {
       // A fuse armed by an earlier flow must not blank the view mid-load
       // (belt; the fuse's fire-time busy check is the suspenders).
       this.cancelSearchViewPark();
-      const win = await this.ensureWindow('search');
+      const win = await this.ensureWindow();
       const mode = await this.layoutSearch(this.searchView);
       console.log(`[Amazon] playlist lookup mode=${mode} ${rawUrl}`);
 
@@ -1314,18 +1011,18 @@ const amazonWebPlayer = {
         // long after (did-finish-load waits for every subresource). The poll
         // runs WHILE the page loads and takes the request the moment it is
         // captured; one slow resource used to time the lookup out at 30s
-        // with the request already in hand (2026-11-15). The load's own
+        // with the request already in hand (2026-11-15). The host load's own
         // budget still bounds a page that never fires it: a load that fails
         // or times out before the capture throws its load-failed error, and
         // a load that finishes without it gets the poll window below.
         // The entry must also have its headers (onBeforeSendHeaders fires
         // milliseconds after onBeforeRequest — accepting the body alone
         // races that) before we take it.
-        await this.replayGate.beginNavigation();
+        await webSession.beginNavigation();
         let entry = null;
         try {
           const load = { done: false, error: null };
-          loadURLBudgeted(win, rawUrl).then(
+          webSession.loadURLBudgeted(win, rawUrl).then(
             () => { load.done = true; },
             (error) => { load.done = true; load.error = error; }
           );
@@ -1347,7 +1044,7 @@ const amazonWebPlayer = {
         } finally {
           // A page still loading after the capture is the same document (the
           // SPA already booted and queried), so replays may run on it.
-          this.replayGate.endNavigation();
+          webSession.endNavigation();
         }
         if (!entry) {
           // The page loaded but never asked for this playlist: deleted, private,
@@ -1476,39 +1173,28 @@ const amazonWebPlayer = {
   // flow, the #1152 rule: only a fresh capture can prove a hornet rename.
   async tryRecommendationReplay({ template, drop, bodyFor, parse, noun }) {
     if (!specTemplateIsFresh(template, Date.now())) return null;
-    if (!this.replayGate.tryEnterReplay()) return null;
-    this.searchViewBusy++;
+    // Take the host's reader side for the whole replay (a navigation waits it
+    // out rather than tearing its frame mid-fetch; the page flow's capture
+    // poll also consults replayActivity).
+    if (!webSession.tryEnterReplay()) return null;
     this.replayActivity++;
     try {
-      this.cancelSearchViewPark();
-      const win = this.searchView;
-      if (!this.alive(win)) return null;
-      let href = '';
-      try { href = win.webContents.getURL(); } catch { return null; }
+      webSession.cancelPark();
       // A replay needs an Amazon-origin page world (cookies, CORS): a parked
       // or never-loaded view means the page flow runs instead.
-      if (!isAmazonMusicPage(href)) return null;
+      const href = webSession.viewUrl();
+      if (!href || !isAmazonMusicPage(href)) return null;
       if (pageBlocksPlayback(href)) {
         console.warn(`[Amazon] recommendation replay blocked: ${href}`);
         throw notReady('not-signed-in', 'Choose an Amazon Music profile');
       }
       const body = bodyFor(template.body);
-      const slow = this.replayGql(win, template, body);
-      slow.catch(() => {}); // a late rejection after the race lost must not be unhandled
-      let timer = null;
       let outcome;
       try {
-        outcome = await Promise.race([
-          slow,
-          new Promise(resolve => {
-            timer = setTimeout(() => resolve({ error: `replay exceeded ${REPLAY_TIMEOUT_MS}ms` }), REPLAY_TIMEOUT_MS);
-            if (typeof timer.unref === 'function') timer.unref();
-          })
-        ]);
+        outcome = await this.replayGql(this.searchView, template, body);
       } catch (error) {
         outcome = { error: (error && error.message) || String(error) };
       }
-      clearTimeout(timer);
       if (outcome.error) {
         console.warn(`[Amazon] ${noun} template replay failed (${outcome.error}); the page flow will re-capture`);
         drop();
@@ -1522,9 +1208,8 @@ const amazonWebPlayer = {
       }
       return parsed;
     } finally {
-      this.searchViewBusy--;
-      this.replayGate.exitReplay();
-      this.scheduleParkSearchView();
+      webSession.exitReplay();
+      webSession.schedulePark();
     }
   },
 
@@ -1598,7 +1283,15 @@ const amazonWebPlayer = {
   // re-serve a section an earlier page already carried. Throws plain Errors
   // for a replay failure and for a non-envelope response — the callers decide
   // which of those is a drop-the-template miss and which is structural.
-  async walkMusicHomePages(win, template) {
+  //
+  // `readerHeld` (the tryMusicHomeWalk caller): the walk runs under ONE outer
+  // replay-gate reader, so its pages pass { readerHeld: true } through to
+  // pageFetch — a navigation that starts between two pages of the walk is
+  // waiting for that same outer reader to drain, and page 2 answering
+  // { error: 'busy' } under it would fail the whole walk (and drop the
+  // template) for nothing. The chained page flow's walk (homePageFlow) takes
+  // no reader of its own, so its pages each take their own.
+  async walkMusicHomePages(win, template, { readerHeld = false } = {}) {
     const pages = [];
     let cursor = null;
     for (let i = 0; i < MUSIC_HOME_MAX_PAGES; i++) {
@@ -1606,7 +1299,7 @@ const amazonWebPlayer = {
         firstLimit: MUSIC_HOME_FIRST_LIMIT,
         afterCursor: cursor
       });
-      const outcome = await this.replayGql(win, template, body);
+      const outcome = await this.replayGql(win, template, body, { readerHeld });
       if (outcome.error) {
         const err = new Error(outcome.error);
         err.status = outcome.status;
@@ -1630,25 +1323,24 @@ const amazonWebPlayer = {
   async tryMusicHomeWalk() {
     const template = this.musicHomeTemplate;
     if (!specTemplateIsFresh(template, Date.now())) return null;
-    if (!this.replayGate.tryEnterReplay()) return null;
-    this.searchViewBusy++;
+    // Take the host's reader side around the WHOLE walk (a navigation must
+    // never tear the view between two pages of one walk; the page flow's
+    // capture poll also consults replayActivity).
+    if (!webSession.tryEnterReplay()) return null;
     this.replayActivity++;
     try {
-      this.cancelSearchViewPark();
-      const win = this.searchView;
-      if (!this.alive(win)) return null;
-      let href = '';
-      try { href = win.webContents.getURL(); } catch { return null; }
+      webSession.cancelPark();
       // A replay needs an Amazon-origin page world (cookies, CORS): a parked
       // or never-loaded view means the page flow runs instead.
-      if (!isAmazonMusicPage(href)) return null;
+      const href = webSession.viewUrl();
+      if (!href || !isAmazonMusicPage(href)) return null;
       if (pageBlocksPlayback(href)) {
         console.warn(`[Amazon] home recommendations replay blocked: ${href}`);
         throw notReady('not-signed-in', 'Choose an Amazon Music profile');
       }
       let timer = null;
       const walked = await Promise.race([
-        this.walkMusicHomePages(win, template),
+        this.walkMusicHomePages(this.searchView, template, { readerHeld: true }),
         new Promise(resolve => {
           timer = setTimeout(() => resolve({ timeout: true }), REPLAY_TIMEOUT_MS);
           if (typeof timer.unref === 'function') timer.unref();
@@ -1671,9 +1363,8 @@ const amazonWebPlayer = {
       this.musicHomeTemplate = null;
       return null;
     } finally {
-      this.searchViewBusy--;
-      this.replayGate.exitReplay();
-      this.scheduleParkSearchView();
+      webSession.exitReplay();
+      webSession.schedulePark();
     }
   },
 
@@ -1708,16 +1399,16 @@ const amazonWebPlayer = {
     const home = AMAZON_HOMES[this.musicHomeVariant === 'browse' ? 'browse' : 'music'];
     // A fuse armed by an earlier flow must not blank the view mid-load.
     this.cancelSearchViewPark();
-    const win = await this.ensureWindow('search');
+    const win = await this.ensureWindow();
     await this.layoutSearch(this.searchView);
     console.log(`[Amazon] home recommendations: loading ${home.url}`);
     const { captured, detach } = this.attachGqlCapture();
     try {
-      await this.replayGate.beginNavigation();
+      await webSession.beginNavigation();
       try {
-        await loadURLBudgeted(win, home.url);
+        await webSession.loadURLBudgeted(win, home.url);
       } finally {
-        this.replayGate.endNavigation();
+        webSession.endNavigation();
       }
       // Wait for the page's own MusicHomePage request (boot + query is ~1-3s
       // warm; the poll window covers a slow load). The entry must have its
@@ -1860,16 +1551,16 @@ const amazonWebPlayer = {
     if (!url || !seeMoreId) throw notReady('not-ready', 'Not an Amazon recommendation section id');
     // A fuse armed by an earlier flow must not blank the view mid-load.
     this.cancelSearchViewPark();
-    const win = await this.ensureWindow('search');
+    const win = await this.ensureWindow();
     await this.layoutSearch(this.searchView);
     console.log(`[Amazon] see-more: loading ${url}`);
     const { captured, detach } = this.attachGqlCapture();
     try {
-      await this.replayGate.beginNavigation();
+      await webSession.beginNavigation();
       try {
-        await loadURLBudgeted(win, url);
+        await webSession.loadURLBudgeted(win, url);
       } finally {
-        this.replayGate.endNavigation();
+        webSession.endNavigation();
       }
       let entry = null;
       let request = null;
@@ -1957,7 +1648,7 @@ const amazonWebPlayer = {
       }
       // A fuse armed by an earlier flow must not blank the view mid-load.
       this.cancelSearchViewPark();
-      const win = await this.ensureWindow('search');
+      const win = await this.ensureWindow();
       const mode = await this.layoutSearch(this.searchView);
       const url = `https://music.amazon.com/albums/${asin}`;
       console.log(`[Amazon] album lookup mode=${mode} ${url}`);
@@ -1966,11 +1657,11 @@ const amazonWebPlayer = {
       // request id) while the page loads and fires AlbumDetailPage itself.
       const { captured, detach } = this.attachGqlCapture();
       try {
-        await this.replayGate.beginNavigation();
+        await webSession.beginNavigation();
         try {
-          await loadURLBudgeted(win, url);
+          await webSession.loadURLBudgeted(win, url);
         } finally {
-          this.replayGate.endNavigation();
+          webSession.endNavigation();
         }
         const pageUrl = win.isDestroyed() ? '' : win.webContents.getURL();
         if (!isAmazonMusicPage(pageUrl)) {
@@ -2111,15 +1802,15 @@ const amazonWebPlayer = {
       // A fuse armed by an earlier flow must not blank the view mid-load
       // (belt; the fuse's fire-time busy check is the suspenders).
       this.cancelSearchViewPark();
-      const win = await this.ensureWindow('search');
+      const win = await this.ensureWindow();
       await this.layoutSearch(this.searchView);
       const { captured, detach } = this.attachGqlCapture();
       try {
-        await this.replayGate.beginNavigation();
+        await webSession.beginNavigation();
         try {
-          await loadURLBudgeted(win, rawUrl);
+          await webSession.loadURLBudgeted(win, rawUrl);
         } finally {
-          this.replayGate.endNavigation();
+          webSession.endNavigation();
         }
         // Let the page fire its queries: stop after 3s with nothing new, at
         // most 20s.
@@ -2162,17 +1853,13 @@ const amazonWebPlayer = {
 
   // Full sign-out. The partition (persist:amazon-music) is Amazon-only, so a
   // whole-session clear is correctly scoped - no partial cookie-clear guessing
-  // like the Apple flow needs. In-flight plays are superseded by the
-  // generation bump instead of fighting the teardown.
+  // like the Apple flow needs. The machinery half is the host's clear(): the
+  // views die, the sign-in window closes, the webRequest capture detaches,
+  // the chain cuts and the storage clears. The FLOW state below (the captured
+  // request templates and the parsed caches of the old account) is this
+  // module's to drop.
   async signOut() {
-    try { this.destroyView(this.searchView); } catch { /* gone */ }
-    this.searchView = null;
-    if (this.alive(this.authWindow)) {
-      try { this.authWindow.close(); } catch { /* gone */ }
-    }
-    this.authWindow = null;
     this.cookieWarned = false;
-    this.searchQueue = createLaneQueue();
     // The captured request templates embed the signed-out session's headers
     // and APQ hash — they must not replay into the next account. The parsed
     // recommendations caches carry the old account's content.
@@ -2183,13 +1870,7 @@ const amazonWebPlayer = {
     // The next account may read the music tab (only some plans are refused).
     this.musicHomeVariant = null;
     this.seeMorePages.clear();
-    this.cancelSearchViewPark();
-    try {
-      await this.session().clearStorageData();
-    } catch (error) {
-      return { success: false, error: String((error && error.message) || error) };
-    }
-    return { success: true };
+    return await webSession.clear();
   },
 };
 
