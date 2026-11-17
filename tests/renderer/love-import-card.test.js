@@ -52,14 +52,11 @@ describe('the import button on the scrobbler card', () => {
     expect(importButton(render({ onRunLoveImport: () => {}, lovedTracks: false }))).toBeNull();
   });
 
-  test('both cards are wired (a reverted card wiring fails this)', () => {
-    const fs = require('fs');
-    const path = require('path');
+  test('the card is wired once, for whichever plug-in is open (a reverted wiring fails this)', () => {
     const app = require('../helpers/renderer-source').appWithPages();
-    expect(app).toContain("onRunLoveImport: () => runLoveImport('lastfm')");
-    expect(app).toContain("onRunLoveImport: () => runLoveImport('listenbrainz')");
-    expect(app).toContain('loveImportRunning: !!loveImportRunning.listenbrainz');
-    expect(app).toContain('hasImportedLoves: !!loveImportCursorRef.current?.listenbrainz');
+    expect(app).toContain('onRunLoveImport: () => runLoveImport(id)');
+    expect(app).toContain('loveImportRunning: !!loveImportRunning[id]');
+    expect(app).toContain('hasImportedLoves: !!loveImportCursorRef.current?.[id]');
   });
 
   test('the shared secondary button, not a palette class (design-drift ratchet #1380)', () => {
