@@ -1,4 +1,4 @@
-const { playlistLinksFingerprint, createSubmitMemo, STORE_KEY } = require('../../main-process/achordion-submit-memo');
+const { playlistLinksFingerprint, createSubmitMemo, STORE_KEY, REFRESH_MS } = require('../../main-process/achordion-submit-memo');
 const fs = require('fs');
 const path = require('path');
 
@@ -40,8 +40,18 @@ describe('createSubmitMemo', () => {
     memo.remember('mbid-1', 'fp');
     expect(memo.unchanged('mbid-1', 'fp')).toBe(true);
     expect(memo.unchanged('mbid-1', 'other')).toBe(false);
-    expect(store.data[STORE_KEY]).toEqual({ 'mbid-1': 'fp' });
+    expect(store.data[STORE_KEY]['mbid-1'].fp).toBe('fp');
     expect(createSubmitMemo(store).unchanged('mbid-1', 'fp')).toBe(true);
+  });
+  test('an unchanged playlist is sent again before Achordion\'s 90-day entry can expire', () => {
+    let t = 1000;
+    const memo = createSubmitMemo(fakeStore(), () => t);
+    memo.remember('mbid-1', 'fp');
+    t += REFRESH_MS - 1;
+    expect(memo.unchanged('mbid-1', 'fp')).toBe(true);
+    t += 2;
+    expect(memo.unchanged('mbid-1', 'fp')).toBe(false);
+    expect(REFRESH_MS).toBeLessThan(90 * 24 * 60 * 60 * 1000);
   });
   test('a store that throws still works for the session', () => {
     const memo = createSubmitMemo({ get() { throw new Error('x'); }, set() { throw new Error('x'); } });
