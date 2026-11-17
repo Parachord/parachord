@@ -45,7 +45,7 @@ describe('amazonmusic .axe structure', () => {
       expect.objectContaining({ resolve: true, search: true, stream: true, urlLookup: true, albumSearch: true, artistImage: true, recommendations: true, widevine: true, mobile: false })
     );
     expect(axe.requires).toEqual({ hostBridges: ['webSession'] });
-    expect(axe.manifest.minAppVersion).toEqual({ desktop: '0.9.13' });
+    expect(axe.manifest.minAppVersion).toEqual({ desktop: '0.9.14' });
     expect(axe.settings.requiresAuth).toBe(false);
     expect(axe.urlPatterns).toEqual([
       'music.amazon.com/playlists/*',
