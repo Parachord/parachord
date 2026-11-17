@@ -3,11 +3,11 @@
     "id": "claude",
     "name": "Claude",
     "type": "meta-service",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "icon": "🧡",
     "color": "#D97757",
     "author": "Parachord Team",
-    "description": "Anthropic's Claude - thoughtful and capable AI assistant.",
+    "description": "Talk music with Shuffleupagus, using Claude.",
     "requirement": "Needs your own Anthropic API key.",
     "homepage": "https://anthropic.com"
   },

@@ -3,9 +3,10 @@
     "id": "librefm",
     "name": "Libre.fm",
     "type": "meta-service",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "author": "Parachord Team",
-    "description": "Open-source scrobbling service - an alternative to Last.fm",
+    "description": "Scrobble what you play to Libre.fm, an open-source alternative to Last.fm.",
+    "requirement": "Needs a Libre.fm account.",
     "icon": "🎵",
     "color": "#4CAF50",
     "homepage": "https://libre.fm"

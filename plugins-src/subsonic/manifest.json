@@ -2,9 +2,9 @@
   "manifest": {
     "id": "subsonic",
     "name": "Subsonic",
-    "version": "0.3.4",
+    "version": "0.3.5",
     "author": "Parachord Team",
-    "description": "Stream music from your self-hosted Subsonic-compatible server (Navidrome, Subsonic, Airsonic, Gonic, ...). Configure the server URL, username and password in settings.",
+    "description": "Stream from your own music server: Navidrome, Airsonic, Gonic or anything Subsonic-compatible.",
     "requirement": "Needs your own Subsonic-compatible server, such as Navidrome.",
     "icon": "📡",
     "color": "#14b8a6",
@@ -34,7 +34,7 @@
       "serverUrl": {
         "type": "text",
         "label": "Server URL",
-        "description": "Base URL of your Subsonic-compatible server. A trailing /rest is tolerated (e.g. http://192.168.0.13:4533 or http://navidrome.local:4533/rest).",
+        "description": "Your server's address, such as http://navidrome.local:4533.",
         "placeholder": "http://navidrome.local:4533"
       },
       "username": {
@@ -46,7 +46,7 @@
       "password": {
         "type": "password",
         "label": "Password",
-        "description": "Your Subsonic account password. Sent as an MD5 token (salt + hash), never in plain text."
+        "description": "Your Subsonic account password. It's never sent in plain text."
       }
     }
   }
