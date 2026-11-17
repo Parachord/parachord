@@ -1,4 +1,4 @@
-// Source of truth for plugins/amazonmusic.axe v1.19.0.
+// Source of truth for plugins/amazonmusic.axe v1.21.0.
 // Imported from the .axe by `node scripts/build-axes.js --import`.
 // Edit here, bump manifest.version in manifest.json, then run `node scripts/build-axes.js`.
 // The functions materialize fully isolated (resolver-loader.js uses
