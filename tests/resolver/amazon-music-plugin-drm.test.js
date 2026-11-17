@@ -41,7 +41,7 @@ const CONFIG_JSON = {
   marketplaceId: 'MKT',
   musicTerritory: 'US',
   siteRegion: 'NA',
-  deviceId: '14354613042605242',
+  deviceId: '12345678901234567',
   tier: { name: 'UNLIMITED_HD' }
 };
 
@@ -292,7 +292,7 @@ describe('the session-context mint', () => {
     // The manifest body carries the config's device (the captured header's is
     // the fallback), the customer, and the mint's csrf triplet.
     const body = JSON.parse(dmlsFetches(fetches)[0].body);
-    expect(body.deviceToken).toEqual({ deviceTypeId: 'A16ZV8BU3SN1N3', deviceId: '14354613042605242' });
+    expect(body.deviceToken).toEqual({ deviceTypeId: 'A16ZV8BU3SN1N3', deviceId: '12345678901234567' });
     expect(body.customerId).toBe('CUST1');
     expect(dmlsFetches(fetches)[0].headers['csrf-token']).toBe(MINT_HEADERS['csrf-token']);
     expect(ws.fetch).toHaveBeenCalledWith('amazon-music', expect.objectContaining({ url: expect.stringContaining('/api/dmls/') }));
@@ -302,7 +302,7 @@ describe('the session-context mint', () => {
     const { fetches } = drmMock({ mints: [{ ...MINT_HEADERS, 'x-amzn-device-id': 'foo' }] });
     const resolver = instantiateAmazonPlugin(axe);
     await resolver.getPlaybackManifest(drmTrack(), {});
-    expect(JSON.parse(dmlsFetches(fetches)[0].body).deviceToken.deviceId).toBe('14354613042605242');
+    expect(JSON.parse(dmlsFetches(fetches)[0].body).deviceToken.deviceId).toBe('12345678901234567');
   });
 
   test('the benign mint query is the plugin\'s own last search text, else a constant', async () => {
@@ -376,7 +376,7 @@ describe('getPlaybackManifest', () => {
     // The context carries the session bits relayLicense + telemetry need.
     expect(reply.context).toMatchObject({
       customerId: 'CUST1',
-      deviceId: '14354613042605242',
+      deviceId: '12345678901234567',
       csrfToken: MINT_HEADERS['csrf-token'],
       region: 'NA',
       tier: 'UNLIMITED_HD',
@@ -478,7 +478,7 @@ describe('relayLicense', () => {
     const resolver = instantiateAmazonPlugin(axe);
     const context = {
       customerId: 'CUST1', marketplaceId: 'MKT', territoryId: 'US', region: 'NA', tier: 'UNLIMITED_HD',
-      deviceId: '14354613042605242', csrfToken: 'tok-x', csrfRnd: '1', csrfTs: '2',
+      deviceId: '12345678901234567', csrfToken: 'tok-x', csrfRnd: '1', csrfTs: '2',
       substituteAsin: 'SUB1', cdnType: 'cf', musicDashVersion: 'SIREN_KATANA'
     };
     await expect(resolver.relayLicense('Y2hhbGxlbmdl', context)).resolves.toBe('TElDRU5TRQ==');
@@ -596,7 +596,7 @@ describe('relayLicense', () => {
     });
     const resolver = instantiateAmazonPlugin(axe);
     const context = {
-      customerId: 'CUST1', deviceId: '14354613042605242', region: 'NA',
+      customerId: 'CUST1', deviceId: '12345678901234567', region: 'NA',
       csrfToken: 'tok-stale', csrfRnd: '1', csrfTs: '2'
     };
     await expect(resolver.relayLicense('Y2hhbGxlbmdl', context)).resolves.toBe('TElDRU5TRQ==');
@@ -653,8 +653,8 @@ describe('telemetry (the player events over the bridge)', () => {
     const envelope = JSON.parse(posts[0].body);
     expect(posts[0].headers['csrf-token']).toBe(MINT_HEADERS['csrf-token']);
     expect(posts[0].headers['x-amz-device-type']).toBe('A16ZV8BU3SN1N3');
-    expect(posts[0].headers['x-amz-device-id']).toBe('14354613042605242');
-    expect(envelope.deviceId).toBe('14354613042605242');
+    expect(posts[0].headers['x-amz-device-id']).toBe('12345678901234567');
+    expect(envelope.deviceId).toBe('12345678901234567');
     expect(envelope.deviceType).toBe('A16ZV8BU3SN1N3');
     const action = envelope.clientActionList[0];
     expect(action.actionName).toBe('streamingInitiated');
