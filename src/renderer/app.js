@@ -703,11 +703,36 @@ const {
 // requests sent meanwhile can stretch the limit; any 429 starts or extends the
 // pause. The first one of a pause is announced with the
 // `parachord:spotify-paused` event (the toast in Parachord).
+//
+// The pause is shared with main and outlives a restart (#909): this side
+// adopts main's (the saved one on load, then every change) and hands main its
+// own 429s. A restored pause therefore blocks the first call after a launch,
+// so no request goes out and no toast repeats. Every change of the cooldown
+// (this pause or the sync breaker's) is re-announced as
+// `parachord:spotify-cooldown` with { until } for the Sync menu.
 (function installSpotifyPause() {
   if (typeof window.fetch !== 'function') return;
   const { createSpotifyPause, isSpotifyApiUrl, pausedResponse } = require('../../sync-providers/spotify-pause');
   const spotifyPause = createSpotifyPause();
   window.spotifyPause = spotifyPause;
+  const bridge = window.electron && window.electron.spotify;
+  const announce = (until) => {
+    try { window.dispatchEvent(new CustomEvent('parachord:spotify-cooldown', { detail: { until: Number(until) || 0 } })); } catch (_e) { /* no event */ }
+  };
+  const adopt = (cooldown) => {
+    if (!cooldown) return;
+    spotifyPause.extendTo(cooldown.pauseUntil);
+    window.spotifyCooldownUntil = Math.max(Number(cooldown.until) || 0, spotifyPause.until());
+    announce(window.spotifyCooldownUntil);
+  };
+  // This side's own 429s go to main, which saves and re-announces them.
+  spotifyPause.onChange((until) => {
+    if (bridge && typeof bridge.notePause === 'function') bridge.notePause(until);
+  });
+  if (bridge && typeof bridge.getCooldown === 'function') {
+    bridge.getCooldown().then(adopt).catch(() => { /* main not ready: its change event still arrives */ });
+  }
+  if (bridge && typeof bridge.onCooldownChanged === 'function') bridge.onCooldownChanged(adopt);
   const innerFetch = window.fetch;
   window.fetch = function (input, init) {
     if (!isSpotifyApiUrl(input)) return innerFetch(input, init);
@@ -1362,6 +1387,7 @@ const {
 const { countOf } = require('./lib/plural');
 const { movePriority, priorityMoves } = require('./lib/priority-order');
 const { timeAgo } = require('./lib/time-ago');
+const { untilLabel } = require('./lib/until-label');
 const { chartLoadView } = require('./lib/chart-load-view');
 const { userError, errorText } = require('./lib/error-copy');
 const { trackDurationLabel } = require('./lib/track-duration');
@@ -4034,6 +4060,25 @@ const Parachord = () => {
   // app already makes (no extra calls); a check that couldn't reach the
   // service changes nothing.
   const [syncSignedOut, setSyncSignedOut] = useState({});
+  // A sync service's rate-limit cooldown, { [providerId]: until ms }, for the
+  // Sync menu's "Paused until …" (#909). Spotify's comes from its pause and
+  // sync breaker (installSpotifyPause's `parachord:spotify-cooldown`); it is
+  // cleared when it runs out, so the label goes without a re-check.
+  const [syncPausedUntil, setSyncPausedUntil] = useState({});
+  useEffect(() => {
+    let timer = null;
+    const apply = (until) => {
+      clearTimeout(timer);
+      const left = (Number(until) || 0) - Date.now();
+      if (left <= 0) { setSyncPausedUntil(prev => (prev.spotify ? {} : prev)); return; }
+      setSyncPausedUntil(prev => (prev.spotify === until ? prev : { ...prev, spotify: until }));
+      timer = setTimeout(() => apply(0), Math.min(left + 500, 2147483647));
+    };
+    const onCooldown = (event) => apply(event && event.detail && event.detail.until);
+    apply(window.spotifyCooldownUntil);
+    window.addEventListener('parachord:spotify-cooldown', onCooldown);
+    return () => { clearTimeout(timer); window.removeEventListener('parachord:spotify-cooldown', onCooldown); };
+  }, []);
   const noteSyncAuth = (providerId, authStatus) => {
     if (!authStatus) return;
     let out = null;
@@ -13552,7 +13597,7 @@ ${trackListXml}
     const onPaused = (event) => {
       const until = event && event.detail && event.detail.until;
       if (!until || until - Date.now() < 60 * 1000) return;
-      const at = new Date(until).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      const at = untilLabel(until);
       showToast(`Spotify asked Parachord to slow down. Spotify searches and controls resume at ${at}; other services keep working.`, 'warning', null, { duration: 10000 });
     };
     window.addEventListener('parachord:spotify-paused', onPaused);
@@ -37835,7 +37880,7 @@ useEffect(() => {
 
         // Library view with collapsible hero header (matching Recommendations pattern)
         activeView === 'library' && React.createElement(CollectionPage, {
-          activeResolvers: playbackResolvers, allResolvers, autoPinnedFriendIds, collectionData, collectionHeaderCollapsed, collectionLoading, collectionObserverRef, collectionScrollContainerRef, collectionSearch, collectionSearchOpen, collectionSongsSorted, collectionSort, collectionTab, collectionTrackRowRefs, currentTrack, filterCollectionItems, friendSyncInProgress, friends, handleCollectionScrollContainerRef, isPlaying, library, libraryLoading, metaServiceConfigs, pinnedFriendIds, playbackContext, resolverOrder, resolverSyncSettings, syncSignedOut, setAddFriendModalOpen, setAddToPlaylistPanel, setCollectionHeaderCollapsed, setCollectionSearch, setCollectionSearchOpen, setCollectionSort, setCollectionTab, setDraggingTrackForPlaylist, setSyncStatusModal, setTrackLoading, showToast, sortCollectionItems, syncProviderConfig, syncStatus, trackSources,
+          activeResolvers: playbackResolvers, allResolvers, autoPinnedFriendIds, collectionData, collectionHeaderCollapsed, collectionLoading, collectionObserverRef, collectionScrollContainerRef, collectionSearch, collectionSearchOpen, collectionSongsSorted, collectionSort, collectionTab, collectionTrackRowRefs, currentTrack, filterCollectionItems, friendSyncInProgress, friends, handleCollectionScrollContainerRef, isPlaying, library, libraryLoading, metaServiceConfigs, pinnedFriendIds, playbackContext, resolverOrder, resolverSyncSettings, syncPausedUntil, syncSignedOut, setAddFriendModalOpen, setAddToPlaylistPanel, setCollectionHeaderCollapsed, setCollectionSearch, setCollectionSearchOpen, setCollectionSort, setCollectionTab, setDraggingTrackForPlaylist, setSyncStatusModal, setTrackLoading, showToast, sortCollectionItems, syncProviderConfig, syncStatus, trackSources,
           ...collectionPageHandlers
         }),
 

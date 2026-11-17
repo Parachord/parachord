@@ -196,6 +196,26 @@ const SPOTIFY_API_TIMEOUT_MS = 5000;
 // Spotify's rate-limit pause for the main process (sync-providers/spotify-pause.js),
 // shared with the sync provider: no Spotify request while Retry-After runs.
 const { sharedPause, pausedResponse: spotifyPausedResponse } = require('./sync-providers/spotify-pause');
+// The pause outlives a restart (#909): restored from the store before anything
+// can call Spotify, and saved on every lengthening. Without this, each launch
+// sent one more request into a running limit (and showed the slow-down toast
+// again). The renderer hears every change (preload `spotifyPause`).
+sharedPause.extendTo(store.get('spotify_pause_until'));
+// When Spotify is next free for this app: the pause, or the sync breaker's
+// cooldown (sync-engine/spotify-breaker.js, saved as spotify_breaker_state),
+// whichever ends later. Local arithmetic only: reading it asks Spotify nothing.
+function spotifyCooldown() {
+  const breaker = store.get('spotify_breaker_state');
+  const breakerUntil = (breaker && Number(breaker.openUntil)) || 0;
+  return { pauseUntil: sharedPause.until(), until: Math.max(sharedPause.until(), breakerUntil) };
+}
+function announceSpotifyCooldown() {
+  safeSendToRenderer('spotify-cooldown-changed', spotifyCooldown());
+}
+sharedPause.onChange((until) => {
+  try { store.set('spotify_pause_until', until); } catch (e) { console.warn('[spotify-pause] save failed:', e && e.message); }
+  announceSpotifyCooldown();
+});
 // Quitting waits on the pause, so it gets less.
 const SPOTIFY_QUIT_PAUSE_TIMEOUT_MS = 3000;
 
@@ -1969,7 +1989,8 @@ app.whenReady().then(async () => {
     if (spProvider && typeof spProvider._setBreakerStore === 'function') {
       spProvider._setBreakerStore({
         load: () => store.get('spotify_breaker_state'),
-        save: (s) => store.set('spotify_breaker_state', s),
+        // Every breaker transition also moves the cooldown the Sync menu shows.
+        save: (s) => { store.set('spotify_breaker_state', s); announceSpotifyCooldown(); },
       });
     }
   } catch (e) { console.warn('[spotify-breaker] persistence wiring failed:', e && e.message); }
@@ -3426,6 +3447,13 @@ ipcMain.handle('musickit:token-status', async () => {
 });
 
 // Spotify OAuth handler
+// Spotify's cooldown for the renderer (#909): its fetch gate adopts
+// `pauseUntil`, and the Sync menu shows `until`. Asks Spotify nothing.
+ipcMain.handle('spotify-cooldown-get', () => spotifyCooldown());
+// A 429 the renderer got: main adopts it, saves it, and re-announces it.
+// extendTo only lengthens and caps at 24h, so a bad value can't do more.
+ipcMain.on('spotify-pause-note', (_event, until) => { sharedPause.extendTo(until); });
+
 ipcMain.handle('spotify-auth', async () => {
   const { clientId, source } = getSpotifyCredentials();
   const redirectUri = spotifyRedirectUri();
