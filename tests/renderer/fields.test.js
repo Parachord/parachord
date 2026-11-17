@@ -68,7 +68,8 @@ test('Settings > General uses the field set', () => {
 test('plugin panels say "Use <service>", toggles use the chevron icon, installs are toasts', () => {
   const app = require('../helpers/renderer-source').appWithPages();
   expect(app).not.toContain("'Enable Resolver'");
-  expect(app).toContain('}, `Use ${selectedResolver.name}`),');
+  // The one on/off switch, in a SettingRow named "Use <service>" (#1498 step 2).
+  expect(app).toContain('label: `Use ${selectedResolver.name}`,');
   expect(app).not.toMatch(/\? 'rotate-90' : ''\}`\n\s*\}, '▶'\)/);
   expect(app).not.toMatch(/title: 'Resolver (Updated|Installed)'/);
   expect(app).toContain("showToast(`${resolverName} installed`, 'success');");
