@@ -42,16 +42,16 @@ describe('AI plug-ins that need no key (Ollama, Custom LLM): on = enabled: true'
 
 describe('everything else: enabled, or set up and not switched off; never disabled', () => {
   test('Last.fm is on by its fresh-install default, before any username', () => {
-    expect(pluginSwitchState({ plugin: plugin('lastfm'), config: { enabled: true } })).toEqual({ checked: true, disabled: false, hint: 'Scrobbling, recommendations, similar listeners, loved tracks and your listening history' });
-    expect(pluginSwitchState({ plugin: plugin('lastfm'), config: { enabled: false } })).toEqual({ checked: false, disabled: false, hint: 'Scrobbling, recommendations, similar listeners, loved tracks and your listening history' });
+    expect(pluginSwitchState({ plugin: plugin('lastfm'), config: { enabled: true } })).toEqual({ checked: true, disabled: false, hint: 'Recommendations, similar listeners and your listening history' });
+    expect(pluginSwitchState({ plugin: plugin('lastfm'), config: { enabled: false } })).toEqual({ checked: false, disabled: false, hint: 'Recommendations, similar listeners and your listening history' });
   });
   test('ListenBrainz is on once set up, unless switched off', () => {
     expect(pluginSwitchState({ plugin: plugin('listenbrainz'), config: { username: 'u' } }).checked).toBe(true);
     expect(pluginSwitchState({ plugin: plugin('listenbrainz'), config: { username: 'u', enabled: false } }).checked).toBe(false);
     expect(pluginSwitchState({ plugin: plugin('listenbrainz'), config: {} }).disabled).toBe(false);
   });
-  test('ListenBrainz lists everything it does, playlist sync included', () => {
-    expect(pluginSwitchState({ plugin: plugin('listenbrainz'), config: {} }).hint).toBe('Scrobbling, recommendations, similar listeners, loved tracks, playlist sync and your listening history');
+  test('the Enable line claims only what works without a sign-in (scrobbling, loves and sync sit under Scrobbling)', () => {
+    expect(pluginSwitchState({ plugin: plugin('listenbrainz'), config: {} }).hint).toBe('Recommendations, similar listeners and your listening history');
   });
   test('Libre.fm only scrobbles, and says so', () => {
     expect(pluginSwitchState({ plugin: plugin('librefm'), config: {} }).hint).toBe('Scrobbling, a log of what you play');

@@ -372,9 +372,10 @@ const ScrobblerSettingsCard = React.memo(({
     ? (config?.username ? `Scrobbling as ${config.username}` : 'Signed in')
     // The service ended the session (the loader clears it and keeps the
     // reason): say so, and what it costs, rather than a plain "Sign in".
-    : config?.authError ? `${scrobbler.name} signed you out. Sign in again to scrobble.`
+    : config?.authError ? `${scrobbler.name} signed you out. Sign in again to scrobble${lovedTracks ? ' and sync loved tracks' : ''}.`
     : usesPassword ? 'Enter your username and password below'
     : usesToken ? 'Add your user token below to scrobble'
+    : lovedTracks ? 'Sign in to scrobble and sync loved tracks'
     : 'Sign in to scrobble what you play';
   const signInDisabled = isPolling || (usesToken && !tokenInput) || (usesPassword && (!usernameInput || !passwordInput));
 
