@@ -4,12 +4,21 @@
  */
 const fs = require('fs');
 const path = require('path');
-const { capabilityLabel } = require('../../src/renderer/lib/capability-labels');
+const { capabilityLabel, visibleCapabilities, HIDDEN_CAPABILITIES } = require('../../src/renderer/lib/capability-labels');
 
 test('known capabilities read as words, in sentence case', () => {
   expect(capabilityLabel('albumSearch')).toBe('Album search');
   expect(capabilityLabel('urlLookup')).toBe('Link lookup');
   expect(capabilityLabel('purchase')).toBe('Purchase downloads');
+});
+
+test('internal capabilities never show as chips; the rest keep their manifest order (#1498)', () => {
+  expect(visibleCapabilities({ resolve: true, widevine: true, mobile: true, html5Stream: true, search: true, playbackTelemetry: true, resolvePicks: true, stream: false }))
+    .toEqual(['resolve', 'search']);
+  expect(visibleCapabilities(undefined)).toEqual([]);
+  expect([...HIDDEN_CAPABILITIES].sort()).toEqual(['html5Stream', 'mobile', 'playbackTelemetry', 'resolvePicks', 'widevine']);
+  expect(capabilityLabel('artistImages')).toBe('Artist photos');
+  expect(capabilityLabel('similarUsers')).toBe('Similar listeners');
 });
 
 test("an unknown one is spelled out, never shown as its id", () => {
@@ -19,7 +28,8 @@ test("an unknown one is spelled out, never shown as its id", () => {
 
 test('Plug-in settings uses it, as the shared pill', () => {
   const app = require('../helpers/renderer-source').appWithPages();
-  expect(app.split("enabled ? React.createElement(Badge, { key: cap, tone: 'accent' }, capabilityLabel(cap)) : null)").length - 1).toBe(1);
+  expect(app.split("visibleCapabilities(selectedResolver.capabilities).map((cap) =>").length - 1).toBe(1);
+  expect(app).toContain("React.createElement(Badge, { key: cap, tone: 'accent' }, capabilityLabel(cap)))");
   expect(app).not.toContain("urlLookup: 'URL Lookup'");
 });
 
