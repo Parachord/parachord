@@ -62,7 +62,7 @@ function isArtistInfoOnly(plugin) {
 // What the switch's hint line says when nothing's missing.
 function hintFor(plugin) {
   const caps = plugin.capabilities || {};
-  if (plugin.type !== 'meta-service') return 'Search, covers, artist photos and links';
+  if (plugin.type !== 'meta-service') return 'Include it in search';
   if (caps.concerts) return 'Include in Concerts';
   if (caps.chat || caps.generate) return 'Use with Shuffleupagus';
   if (caps.recommendations) return 'Use for recommendations and your history';
@@ -106,7 +106,7 @@ function playbackSwitchState({ plugin, active, playbackOff, limit }) {
   const shown = plugin.type !== 'meta-service' && !!caps.resolve && !!active;
   if (limit && limit.blocked) return { shown, checked: false, disabled: true, hint: limit.message || limit.label || 'Your plan can\u2019t play from it' };
   return playbackOff
-    ? { shown, checked: false, disabled: false, hint: 'Off: used for search, covers and links only' }
+    ? { shown, checked: false, disabled: false, hint: 'Off: found in search, played from other plug-ins' }
     : { shown, checked: true, disabled: false, hint: 'Plays tracks, in your priority order' };
 }
 
@@ -118,7 +118,16 @@ function recommendationsSwitchState({ plugin, active, recommendationsOff }) {
   const shown = !!caps.recommendations && !!active;
   return recommendationsOff
     ? { shown, checked: false, hint: 'Its picks are left out of Recommendations and Home' }
-    : { shown, checked: true, hint: 'Show its picks in Recommendations and on Home' };
+    : { shown, checked: true, hint: 'Its picks in Recommendations and on Home' };
 }
 
-module.exports = { playbackSwitchState, recommendationsSwitchState, pluginSwitchState, authFieldOf, needsKey, hasKey, keyLabel };
+// The "Use metadata from X" switch (#1505), for a music plug-in that's on:
+// album covers and artist photos. Off, they come from the other plug-ins.
+function metadataSwitchState({ plugin, active, metadataOff }) {
+  const shown = plugin.type !== 'meta-service' && !!(plugin.capabilities || {}).resolve && !!active;
+  return metadataOff
+    ? { shown, checked: false, hint: 'Covers and artist photos come from other plug-ins' }
+    : { shown, checked: true, hint: 'Album covers and artist photos' };
+}
+
+module.exports = { metadataSwitchState, playbackSwitchState, recommendationsSwitchState, pluginSwitchState, authFieldOf, needsKey, hasKey, keyLabel };

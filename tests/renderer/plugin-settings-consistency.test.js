@@ -43,5 +43,7 @@ test('signing in and out is only ever AccountRow', () => {
 
 test('one on/off control: the plug-in switch', () => {
   expect(count(/pluginSwitchState\(/g)).toBe(1);
-  expect(src).not.toMatch(/showEnable|'Enable Ollama'|`Enable \$\{selectedResolver/);
+  expect(src).not.toMatch(/showEnable|'Enable Ollama'/);
+  // "Enable X" is the one switch's label (#1505); a second one would be a copy.
+  expect((src.match(/`Enable \$\{selectedResolver\.name\}`/g) || []).length).toBe(1);
 });

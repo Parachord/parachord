@@ -21,7 +21,7 @@ const { Modal } = require('./modal');
 const { Badge } = require('./badge');
 const { Button } = require('./button');
 const { SecretField, Select, SettingRow, Switch, TextField } = require('./fields');
-const { pluginSwitchState, playbackSwitchState, recommendationsSwitchState, keyLabel } = require('../lib/plugin-switch');
+const { pluginSwitchState, metadataSwitchState, playbackSwitchState, recommendationsSwitchState, keyLabel } = require('../lib/plugin-switch');
 const { librarySyncState } = require('../lib/library-sync-state');
 const { ProgressBar } = require('./progress-bar');
 const { AccountRow } = require('./account-row');
@@ -56,6 +56,7 @@ const PLUGIN_SETTINGS_DIALOG_HANDLERS = [
   'saveSoundcloudCredentials',
   'saveSpotifyCredentials',
   'setProviderSyncEnabled',
+  'setResolverMetadataOn',
   'setResolverPlaybackOn',
   'setResolverRecommendationsOn',
   'toggleResolver',
@@ -124,11 +125,13 @@ const PluginSettingsDialog = React.memo(function PluginSettingsDialog(props) {
     pluginStatuses,
     refreshPluginStatus,
     setProviderSyncEnabled,
+    setResolverMetadataOn,
     setResolverPlaybackOn,
     setResolverRecommendationsOn,
     playbackLimits,
     playbackOffResolvers,
     recommendationsOffResolvers,
+    metadataOffResolvers,
     resolverConfigCache,
     resolverSyncSettings,
     syncSignedOut,
@@ -331,6 +334,7 @@ React.createElement('div', {
           (() => {
             const id = selectedResolver.id;
             const state = pluginSwitchState({ plugin: selectedResolver, config: metaServiceConfigs[id], activeResolvers });
+            const meta = metadataSwitchState({ plugin: selectedResolver, active: state.checked, metadataOff: (metadataOffResolvers || []).includes(id) });
             const recs = recommendationsSwitchState({ plugin: selectedResolver, active: state.checked, recommendationsOff: (recommendationsOffResolvers || []).includes(id) });
             const play = playbackSwitchState({ plugin: selectedResolver, active: state.checked, playbackOff: (playbackOffResolvers || []).includes(id), limit: playbackLimits && playbackLimits[id] });
             const setOn = async (next) => {
@@ -353,7 +357,7 @@ React.createElement('div', {
             };
             return React.createElement('div', { style: { padding: '16px 0', borderTop: '1px solid var(--border-subtle)' } },
               React.createElement(SettingRow, {
-                label: `Use ${selectedResolver.name}`,
+                label: `Enable ${selectedResolver.name}`,
                 hint: state.hint || undefined,
                 style: { padding: 0 },
               }, React.createElement(Switch, { checked: state.checked, disabled: state.disabled, onToggle: () => setOn(!state.checked) })),
@@ -363,14 +367,23 @@ React.createElement('div', {
               play.shown && React.createElement(SettingRow, {
                 label: `Play from ${selectedResolver.name}`,
                 hint: play.hint,
-                style: { padding: '12px 0 0' },
-              }, React.createElement(Switch, { checked: play.checked, disabled: play.disabled, onToggle: () => setResolverPlaybackOn(id, !play.checked) })),
-              // "Recommendations from X", for a plug-in that offers them (#1505).
+                nested: true,
+                style: { padding: '6px 0', marginTop: '12px' },
+              }, React.createElement(Switch, { size: 'sm', checked: play.checked, disabled: play.disabled, onToggle: () => setResolverPlaybackOn(id, !play.checked) })),
+              // "Use metadata from X": covers and artist photos (#1505).
+              meta.shown && React.createElement(SettingRow, {
+                label: `Use metadata from ${selectedResolver.name}`,
+                hint: meta.hint,
+                nested: true,
+                style: { padding: '6px 0' },
+              }, React.createElement(Switch, { size: 'sm', checked: meta.checked, onToggle: () => setResolverMetadataOn(id, !meta.checked) })),
+              // "Use recommendations from X", for a plug-in that offers them (#1505).
               recs.shown && React.createElement(SettingRow, {
-                label: `Recommendations from ${selectedResolver.name}`,
+                label: `Use recommendations from ${selectedResolver.name}`,
                 hint: recs.hint,
-                style: { padding: '12px 0 0' },
-              }, React.createElement(Switch, { checked: recs.checked, onToggle: () => setResolverRecommendationsOn(id, !recs.checked) })));
+                nested: true,
+                style: { padding: '6px 0', marginTop: (play.shown || meta.shown) ? '0' : '12px' },
+              }, React.createElement(Switch, { size: 'sm', checked: recs.checked, onToggle: () => setResolverRecommendationsOn(id, !recs.checked) })));
           })(),
 
           // A status-capable plugin's sign-in row (capabilities.status, the
