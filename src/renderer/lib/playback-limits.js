@@ -56,11 +56,25 @@ function playbackResolverIds(activeIds, blockedIds) {
   return activeIds.filter((id) => !blockedIds.includes(id));
 }
 
-// ResolverCard's statusLabel/statusTitle for a resolver, or nulls.
-function tileStatus(limits, id) {
+// The ids that are on but don't play: the plan's (planBlockedIds) and the
+// user's own choice, the plug-in's "Play from" switch (#1505). One list, so
+// playback, source icons and the priority numbers have one rule.
+function notPlayingIds(blockedIds, playbackOffIds) {
+  const off = Array.isArray(playbackOffIds) ? playbackOffIds : [];
+  if (off.length === 0) return blockedIds || [];
+  return [...new Set([...(blockedIds || []), ...off])].sort();
+}
+
+// ResolverCard's statusLabel/statusTitle for a resolver, or nulls. A plan
+// limit says what the plan stops; a "Play from" switched off says what's
+// left.
+function tileStatus(limits, id, playbackOffIds) {
   const limit = limits && limits[id];
-  if (!limit || !limit.blocked) return { statusLabel: null, statusTitle: null };
-  return { statusLabel: limit.label || 'No playback', statusTitle: limit.message || null };
+  if (limit && limit.blocked) return { statusLabel: limit.label || 'No playback', statusTitle: limit.message || null };
+  if (Array.isArray(playbackOffIds) && playbackOffIds.includes(id)) {
+    return { statusLabel: 'Search and links only', statusTitle: 'Playing from it is off in its settings' };
+  }
+  return { statusLabel: null, statusTitle: null };
 }
 
 // A plugin's limit, from its getStatus reply (capabilities.status,
@@ -155,6 +169,7 @@ module.exports = {
   pluginStatusLimits,
   pluginStatusRow,
   planBlockedIds,
+  notPlayingIds,
   playbackResolverIds,
   tileStatus,
   limitMessage,

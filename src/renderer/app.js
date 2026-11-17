@@ -3823,6 +3823,15 @@ const Parachord = () => {
   const queueTrackSources = (key, value, opts) => trackSourcesWriterRef.current.queue(key, value, opts);
   const flushTrackSources = () => trackSourcesWriterRef.current.flush();
   const [activeResolvers, setActiveResolvers] = useState(['bandcamp', 'localfiles']);
+  // Music plug-ins that are on but switched not to play ("Play from X" off,
+  // #1505): search, covers and links only. Saved as playback_off_resolvers.
+  const [playbackOffResolvers, setPlaybackOffResolvers] = useState([]);
+  // Plug-ins whose recommendations are switched off ("Recommendations from
+  // X", #1505): the Recommendations page and Home skip them. Saved as
+  // recommendations_off_resolvers.
+  const [recommendationsOffResolvers, setRecommendationsOffResolvers] = useState([]);
+  const recommendationsOffRef = useRef(recommendationsOffResolvers);
+  recommendationsOffRef.current = recommendationsOffResolvers;
   const [resolverOrder, setResolverOrder] = useState(['bandcamp', 'localfiles']);
   const resolverSettingsLoaded = useRef(false);  // Track if we've loaded settings from storage
   const activeResolversRef = useRef(activeResolvers);  // Ref to avoid stale closure in save
@@ -6232,13 +6241,37 @@ const Parachord = () => {
     }
     return out;
   }, [syncSignedOut, playbackLimits]);
-  // For the plug-in tile menu's Raise / Lower Priority handler, registered once.
-  const planBlockedResolverIdsRef = useRef(planBlockedResolverIds);
-  planBlockedResolverIdsRef.current = planBlockedResolverIds;
-  const playbackResolvers = useMemo(
-    () => PlaybackLimits.playbackResolverIds(activeResolvers, planBlockedResolverIds),
-    [activeResolvers, planBlockedResolverIds]
+  // On but not playing: the plan's (above) and the user's own "Play from"
+  // switched off (#1505). Everything about playing reads this one list.
+  const notPlayingResolverIds = useMemo(
+    () => PlaybackLimits.notPlayingIds(planBlockedResolverIds, playbackOffResolvers),
+    [planBlockedResolverIds, playbackOffResolvers]
   );
+  // For the plug-in tile menu's Raise / Lower Priority handler, registered once.
+  const notPlayingResolverIdsRef = useRef(notPlayingResolverIds);
+  notPlayingResolverIdsRef.current = notPlayingResolverIds;
+  const playbackResolvers = useMemo(
+    () => PlaybackLimits.playbackResolverIds(activeResolvers, notPlayingResolverIds),
+    [activeResolvers, notPlayingResolverIds]
+  );
+  // The "Play from X" switch (#1505). Off leaves the plug-in on for search,
+  // covers and links; resolverOrder keeps its slot, so on puts it back there.
+  const setResolverPlaybackOn = (resolverId, on) => {
+    setPlaybackOffResolvers(prev => {
+      const next = on ? prev.filter(id => id !== resolverId) : (prev.includes(resolverId) ? prev : [...prev, resolverId]);
+      window.electron.store.set('playback_off_resolvers', next).catch(err => console.error('[Plug-ins] Could not save Play from:', err));
+      return next;
+    });
+  };
+  // The "Recommendations from X" switch (#1505), for a plug-in with the
+  // recommendations capability. The Recommendations page reloads without it.
+  const setResolverRecommendationsOn = (resolverId, on) => {
+    setRecommendationsOffResolvers(prev => {
+      const next = on ? prev.filter(id => id !== resolverId) : (prev.includes(resolverId) ? prev : [...prev, resolverId]);
+      window.electron.store.set('recommendations_off_resolvers', next).catch(err => console.error('[Plug-ins] Could not save Recommendations from:', err));
+      return next;
+    });
+  };
   const playbackResolversRef = useRef(playbackResolvers);
   playbackResolversRef.current = playbackResolvers;
   const [dynamicModelOptions, setDynamicModelOptions] = useState({}); // { [resolverId]: { loading, options: [{value,label}], error } }
@@ -12971,7 +13004,7 @@ ${trackListXml}
         } else if (data.action === 'raise-priority' || data.action === 'lower-priority') {
           // The tile's numbered neighbours only: the same set the drag
           // reorders (active, not blocked by the account's plan).
-          const isNumbered = (id) => activeResolversRef.current.includes(id) && !planBlockedResolverIdsRef.current.includes(id);
+          const isNumbered = (id) => activeResolversRef.current.includes(id) && !notPlayingResolverIdsRef.current.includes(id);
           setResolverOrder(prev => movePriority(prev, data.resolverId, data.action === 'raise-priority' ? -1 : 1, isNumbered));
         }
       });
@@ -19287,7 +19320,7 @@ ${trackListXml}
         'cache_recommendations',
         'cache_critics_picks',
         // Resolver settings & user preferences
-        'active_resolvers', 'resolver_order', 'resolver_order_memory', 'meta_service_configs',
+        'active_resolvers', 'resolver_order', 'resolver_order_memory', 'playback_off_resolvers', 'recommendations_off_resolvers', 'meta_service_configs',
         'applemusic_developer_token', 'friends', 'pinnedFriendIds',
         'autoPinnedFriendIds', 'hidden_friend_keys', 'resolver_volume_offsets', 'saved_volume',
         'skip_external_prompt', 'skip_unplayable_prompt',
@@ -19837,6 +19870,8 @@ ${trackListXml}
 
       // Resolver settings and user preferences (already loaded in batch)
       const savedActiveResolvers = d['active_resolvers'];
+      if (Array.isArray(d['playback_off_resolvers'])) setPlaybackOffResolvers(d['playback_off_resolvers']);
+      if (Array.isArray(d['recommendations_off_resolvers'])) setRecommendationsOffResolvers(d['recommendations_off_resolvers']);
       const savedResolverOrder = d['resolver_order'];
       const savedMetaServiceConfigs = d['meta_service_configs'];
       const savedAppleMusicDevToken = d['applemusic_developer_token'];
@@ -28353,7 +28388,10 @@ Return ONLY the JSON array, no other text.`;
     const order = resolverOrderRef.current || [];
     const metaIds = new Set((metaServicesRef.current || []).map(s => s.id));
     return orderCatalogResolvers(
-      loader.getRecommendationResolvers().filter(r => activeIds.includes(r.id) || metaIds.has(r.id)),
+      loader.getRecommendationResolvers()
+        .filter(r => activeIds.includes(r.id) || metaIds.has(r.id))
+        // Its "Recommendations from X" switched off (#1505).
+        .filter(r => !recommendationsOffRef.current.includes(r.id)),
       { activeIds, order }
     );
   };
@@ -29977,7 +30015,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     if (activeView !== 'recommendations' && !(activeView === 'home' && recommendationProviderIdsRef.current !== null)) return;
     if (recommendationProviderKey(recommendationProviders()) === recommendationProviderIdsRef.current) return;
     loadRecommendations();
-  }, [activeView, cacheLoaded, loadedResolvers, activeResolvers, metaServices]);
+  }, [activeView, cacheLoaded, loadedResolvers, activeResolvers, metaServices, recommendationsOffResolvers]);
 
   // Home loads its own discovery data (recommendations, Fresh Drops,
   // Critical Darlings, concerts) in one idle-time effect in home-page.js.
@@ -37480,7 +37518,7 @@ useEffect(() => {
   // Stable function props for the memo'd PluginSettingsDialog (keys must
   // match PLUGIN_SETTINGS_DIALOG_HANDLERS in plugin-settings-dialog.js).
   const pluginSettingsDialogHandlers = useStableHandlers({
-    connectAppleMusic, connectLastfm, connectListenbrainz, connectSoundcloud, connectSpotify, disconnectAppleMusic, disconnectLastfm, disconnectListenbrainz, disconnectSoundcloud, disconnectSpotify, fetchDynamicModels, getServiceColor, handleAddWatchFolder, handleInstallFromMarketplace, handleRemoveMissingFiles, handleRemoveWatchFolder, handleRescanAll, handleRescanFolder, handleUninstallResolver, manageAmazonMusic, openSyncSetupModal, refreshPluginStatus, saveAppleMusicDeveloperToken, saveMetaServiceConfig, saveSoundcloudCredentials, saveSpotifyCredentials, setProviderSyncEnabled, toggleResolver,
+    connectAppleMusic, connectLastfm, connectListenbrainz, connectSoundcloud, connectSpotify, disconnectAppleMusic, disconnectLastfm, disconnectListenbrainz, disconnectSoundcloud, disconnectSpotify, fetchDynamicModels, getServiceColor, handleAddWatchFolder, handleInstallFromMarketplace, handleRemoveMissingFiles, handleRemoveWatchFolder, handleRescanAll, handleRescanFolder, handleUninstallResolver, manageAmazonMusic, openSyncSetupModal, refreshPluginStatus, saveAppleMusicDeveloperToken, saveMetaServiceConfig, saveSoundcloudCredentials, saveSpotifyCredentials, setProviderSyncEnabled, setResolverPlaybackOn, setResolverRecommendationsOn, toggleResolver,
   });
 
   // Stable function props for the memo'd ChartsPage (keys must
@@ -38044,7 +38082,8 @@ useEffect(() => {
           metaServiceConfigs,
           metaServices,
           nwayEngineMode,
-          planBlockedResolverIds,
+          notPlayingResolverIds,
+          playbackOffResolvers,
           playbackAbr,
           playbackLimits,
           playbackQuality,
@@ -38284,6 +38323,8 @@ useEffect(() => {
       metaServices,
       playbackLimits,
       pluginStatuses,
+      playbackOffResolvers,
+      recommendationsOffResolvers,
       resolverConfigCache,
       resolverSyncSettings,
       syncSignedOut: syncSignedOutView,

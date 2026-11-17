@@ -21,7 +21,7 @@ const { Modal } = require('./modal');
 const { Badge } = require('./badge');
 const { Button } = require('./button');
 const { SecretField, Select, SettingRow, Switch, TextField } = require('./fields');
-const { pluginSwitchState, keyLabel } = require('../lib/plugin-switch');
+const { pluginSwitchState, playbackSwitchState, recommendationsSwitchState, keyLabel } = require('../lib/plugin-switch');
 const { librarySyncState } = require('../lib/library-sync-state');
 const { ProgressBar } = require('./progress-bar');
 const { AccountRow } = require('./account-row');
@@ -56,6 +56,8 @@ const PLUGIN_SETTINGS_DIALOG_HANDLERS = [
   'saveSoundcloudCredentials',
   'saveSpotifyCredentials',
   'setProviderSyncEnabled',
+  'setResolverPlaybackOn',
+  'setResolverRecommendationsOn',
   'toggleResolver',
 ];
 
@@ -122,7 +124,11 @@ const PluginSettingsDialog = React.memo(function PluginSettingsDialog(props) {
     pluginStatuses,
     refreshPluginStatus,
     setProviderSyncEnabled,
+    setResolverPlaybackOn,
+    setResolverRecommendationsOn,
     playbackLimits,
+    playbackOffResolvers,
+    recommendationsOffResolvers,
     resolverConfigCache,
     resolverSyncSettings,
     syncSignedOut,
@@ -324,7 +330,9 @@ React.createElement('div', {
           // what to add first.
           (() => {
             const id = selectedResolver.id;
-            const state = pluginSwitchState({ plugin: selectedResolver, config: metaServiceConfigs[id], activeResolvers, limit: playbackLimits && playbackLimits[id] });
+            const state = pluginSwitchState({ plugin: selectedResolver, config: metaServiceConfigs[id], activeResolvers });
+            const recs = recommendationsSwitchState({ plugin: selectedResolver, active: state.checked, recommendationsOff: (recommendationsOffResolvers || []).includes(id) });
+            const play = playbackSwitchState({ plugin: selectedResolver, active: state.checked, playbackOff: (playbackOffResolvers || []).includes(id), limit: playbackLimits && playbackLimits[id] });
             const setOn = async (next) => {
               if (next) {
                 const isLoaded = allResolvers.some(r => r.id === id) || metaServices.some(s => s.id === id);
@@ -343,11 +351,26 @@ React.createElement('div', {
                 toggleResolver(id);
               }
             };
-            return React.createElement(SettingRow, {
-              label: `Use ${selectedResolver.name}`,
-              hint: state.hint || undefined,
-              style: { padding: '16px 0', borderTop: '1px solid var(--border-subtle)' },
-            }, React.createElement(Switch, { checked: state.checked, disabled: state.disabled, onToggle: () => setOn(!state.checked) }));
+            return React.createElement('div', { style: { padding: '16px 0', borderTop: '1px solid var(--border-subtle)' } },
+              React.createElement(SettingRow, {
+                label: `Use ${selectedResolver.name}`,
+                hint: state.hint || undefined,
+                style: { padding: 0 },
+              }, React.createElement(Switch, { checked: state.checked, disabled: state.disabled, onToggle: () => setOn(!state.checked) })),
+              // "Play from X" under it, while it's on (#1505): off keeps it for
+              // search, covers and links and takes it out of the priority
+              // order; a plan that can't play locks it off, saying why.
+              play.shown && React.createElement(SettingRow, {
+                label: `Play from ${selectedResolver.name}`,
+                hint: play.hint,
+                style: { padding: '12px 0 0' },
+              }, React.createElement(Switch, { checked: play.checked, disabled: play.disabled, onToggle: () => setResolverPlaybackOn(id, !play.checked) })),
+              // "Recommendations from X", for a plug-in that offers them (#1505).
+              recs.shown && React.createElement(SettingRow, {
+                label: `Recommendations from ${selectedResolver.name}`,
+                hint: recs.hint,
+                style: { padding: '12px 0 0' },
+              }, React.createElement(Switch, { checked: recs.checked, onToggle: () => setResolverRecommendationsOn(id, !recs.checked) })));
           })(),
 
           // A status-capable plugin's sign-in row (capabilities.status, the

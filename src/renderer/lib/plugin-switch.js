@@ -62,7 +62,7 @@ function isArtistInfoOnly(plugin) {
 // What the switch's hint line says when nothing's missing.
 function hintFor(plugin) {
   const caps = plugin.capabilities || {};
-  if (plugin.type !== 'meta-service') return 'Include in search and playback';
+  if (plugin.type !== 'meta-service') return 'Search, covers, artist photos and links';
   if (caps.concerts) return 'Include in Concerts';
   if (caps.chat || caps.generate) return 'Use with Shuffleupagus';
   if (caps.recommendations) return 'Use for recommendations and your history';
@@ -78,21 +78,12 @@ function keyLabel(plugin) {
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
-// pluginSwitchState({ plugin, config, activeResolvers, limit }) →
+// pluginSwitchState({ plugin, config, activeResolvers }) →
 //   { checked, disabled, hint }
-// `limit` is the plug-in's playback limit (lib/playback-limits.js). A music
-// plug-in the account's plan can't play stays on (search, covers, links) but
-// its tile says it can't play, so the switch's hint says so too: the tile
-// read "Prime: no playback" while the dialog read "Include in search and
-// playback".
-function pluginSwitchState({ plugin, config, activeResolvers, limit }) {
+function pluginSwitchState({ plugin, config, activeResolvers }) {
   const c = config || {};
   if (plugin.type !== 'meta-service') {
-    const checked = (activeResolvers || []).includes(plugin.id);
-    const hint = checked && limit && limit.blocked
-      ? `Search, covers and links only (${limit.label || 'no playback'})`
-      : hintFor(plugin);
-    return { checked, disabled: false, hint };
+    return { checked: (activeResolvers || []).includes(plugin.id), disabled: false, hint: hintFor(plugin) };
   }
   if (isGatedService(plugin)) {
     if (!needsKey(plugin)) return { checked: c.enabled === true, disabled: false, hint: hintFor(plugin) };
@@ -103,4 +94,31 @@ function pluginSwitchState({ plugin, config, activeResolvers, limit }) {
   return { checked: c.enabled === true || (c.enabled !== false && hasKey(plugin, c)), disabled: false, hint: hintFor(plugin) };
 }
 
-module.exports = { pluginSwitchState, authFieldOf, needsKey, hasKey, keyLabel };
+// The "Play from X" switch under a music plug-in's "Use X" (#1505): on, a
+// plug-in plays and takes a place in the priority order; off, it stays on
+// for search, covers and links. The account's plan can switch it off too
+// (lib/playback-limits.js): then it's off and can't be turned on, saying why.
+//
+// playbackSwitchState({ plugin, active, playbackOff, limit }) →
+//   { shown, checked, disabled, hint }
+function playbackSwitchState({ plugin, active, playbackOff, limit }) {
+  const caps = plugin.capabilities || {};
+  const shown = plugin.type !== 'meta-service' && !!caps.resolve && !!active;
+  if (limit && limit.blocked) return { shown, checked: false, disabled: true, hint: limit.message || limit.label || 'Your plan can\u2019t play from it' };
+  return playbackOff
+    ? { shown, checked: false, disabled: false, hint: 'Off: used for search, covers and links only' }
+    : { shown, checked: true, disabled: false, hint: 'Plays tracks, in your priority order' };
+}
+
+// The "Recommendations from X" switch (#1505), for a plug-in that's on and
+// offers recommendations (Amazon, Apple Music, Last.fm, ListenBrainz): off,
+// the Recommendations page and Home leave its picks out.
+function recommendationsSwitchState({ plugin, active, recommendationsOff }) {
+  const caps = plugin.capabilities || {};
+  const shown = !!caps.recommendations && !!active;
+  return recommendationsOff
+    ? { shown, checked: false, hint: 'Its picks are left out of Recommendations and Home' }
+    : { shown, checked: true, hint: 'Show its picks in Recommendations and on Home' };
+}
+
+module.exports = { playbackSwitchState, recommendationsSwitchState, pluginSwitchState, authFieldOf, needsKey, hasKey, keyLabel };
