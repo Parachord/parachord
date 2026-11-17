@@ -493,7 +493,6 @@ const SettingsPage = React.memo(function SettingsPage(props) {
                           needsConfiguration: needsConfiguration,
                           statusLabel: planStatus.statusLabel,
                           statusTitle: planStatus.statusTitle,
-                          unplayable: isActive && planBlockedResolverIds.includes(resolver.id),
                           priorityNumber: resolver.priorityNumber,
                           isInstalling: isInstalling,
                           draggable: reorderable,
