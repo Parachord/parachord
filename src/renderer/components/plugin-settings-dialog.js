@@ -23,10 +23,10 @@ const { Button } = require('./button');
 const { SecretField, Select, SettingRow, Switch, TextField } = require('./fields');
 const { pluginSwitchState, keyLabel } = require('../lib/plugin-switch');
 const { librarySyncState } = require('../lib/library-sync-state');
+const { ProgressBar } = require('./progress-bar');
 const { AccountRow } = require('./account-row');
 const { Disclosure } = require('./disclosure');
 const { EmptyState } = require('./states');
-const { transition } = require('../lib/motion');
 
 const PLUGIN_SETTINGS_DIALOG_HANDLERS = [
   'connectAppleMusic',
@@ -167,7 +167,6 @@ const PluginSettingsDialog = React.memo(function PluginSettingsDialog(props) {
     spotifyClientIdInput,
     spotifyConnected,
     spotifyCredentialsSource,
-    syncProviderConfig,
     toggleResolver,
     watchFolders,
   } = props;
@@ -798,20 +797,10 @@ React.createElement(Button, { variant: 'primary', size: 'sm', onClick: saveApple
             metaServiceConfigs.lastfm?.username
               ? React.createElement('div', null,
                   // The account (components/account-row.js, #1498 step 3).
-                  // A username reads your history; it isn't a sign-in (that's
-                  // the Scrobbling row below), so the row doesn't say "Signed in".
-                  React.createElement(AccountRow, {
-                    name: 'Last.fm', label: 'Listening history', color: getServiceColor('lastfm'), signedIn: true,
-                    status: `Using ${metaServiceConfigs.lastfm.username}’s history`, onSignOut: disconnectLastfm, signOutLabel: 'Remove',
-                  }),
                   // Scrobbling section for Last.fm
-                  React.createElement('div', {
-                    style: {
-                      marginTop: '16px',
-                      paddingTop: '16px',
-                      borderTop: '1px solid var(--border-subtle)'
-                    }
-                  },
+                  // Scrobbling first: it's the sign-in (#1498: sign-in, then
+                  // what needs it); the username's history comes under it.
+                  React.createElement('div', null,
                     // Scrobbler card for Last.fm
                     window.scrobblers && window.scrobblers.find(s => s.id === 'lastfm') &&
                       React.createElement(ScrobblerSettingsCard, {
@@ -832,6 +821,13 @@ React.createElement(Button, { variant: 'primary', size: 'sm', onClick: saveApple
                         hasImportedLoves: !!loveImportCursorRef.current?.lastfm,
                       })
                   ),
+                  React.createElement('div', { style: SYNC_BLOCK },
+                  // A username reads your history; it isn't a sign-in (that's
+                  // the Scrobbling row above), so the row doesn't say "Signed in".
+                  React.createElement(AccountRow, {
+                    name: 'Last.fm', label: 'Listening history', color: getServiceColor('lastfm'), signedIn: true,
+                    status: `Using ${metaServiceConfigs.lastfm.username}’s history`, onSignOut: disconnectLastfm, signOutLabel: 'Remove',
+                  })),
                   // Advanced accordion for API credentials (also shown when connected)
                   React.createElement(Disclosure, { open: lastfmAdvancedOpen, onToggle: () => setLastfmAdvancedOpen(!lastfmAdvancedOpen) },
 React.createElement('p', {
@@ -970,8 +966,33 @@ React.createElement('div', null,
             metaServiceConfigs.listenbrainz?.username
               ? React.createElement('div', null,
                   // The account (components/account-row.js, #1498 step 3).
+                  // Scrobbling section for ListenBrainz
+                  // Scrobbling first: it's the sign-in (#1498: sign-in, then
+                  // what needs it); the username's history comes under it.
+                  React.createElement('div', null,
+                    // Scrobbler card for ListenBrainz
+                    window.scrobblers && window.scrobblers.find(s => s.id === 'listenbrainz') &&
+                      React.createElement(ScrobblerSettingsCard, {
+                        scrobbler: window.scrobblers.find(s => s.id === 'listenbrainz'), color: getServiceColor('listenbrainz'), accountLabel: 'Scrobbling',
+                        config: scrobblerConfigs['listenbrainz'],
+                        onConfigChange: (id, newConfig) => {
+                          setScrobblerConfigs(prev => ({ ...prev, [id]: newConfig }));
+                        },
+                        lovePushEnabled: !!scrobblerLovePushEnabled.listenbrainz,
+                        onSetLovePushEnabled: (v) => setLovePushEnabled('listenbrainz', v),
+                        onRunBackfill: () => runLoveBackfill('listenbrainz'),
+                        backfillRunning: !!loveBackfillRunning.listenbrainz,
+                        backfillProgress: loveBackfillProgress.listenbrainz,
+                        unpushedCount: (collectionDataRef.current?.tracks || collectionData.tracks).filter(t => !lovePushedKeysRef.current[t.id]?.listenbrainz).length,
+                        onRunLoveImport: () => runLoveImport('listenbrainz'),
+                        loveImportRunning: !!loveImportRunning.listenbrainz,
+                        loveImportProgress: loveImportProgress.listenbrainz,
+                        hasImportedLoves: !!loveImportCursorRef.current?.listenbrainz,
+                      })
+                  ),
+                  React.createElement('div', { style: SYNC_BLOCK },
                   // A username reads your history; it isn't a sign-in (that's
-                  // the Scrobbling row below), so the row doesn't say "Signed in".
+                  // the Scrobbling row above), so the row doesn't say "Signed in".
                   React.createElement(AccountRow, {
                     name: 'ListenBrainz', label: 'Listening history', color: getServiceColor('listenbrainz'), signedIn: true,
                     status: `Using ${metaServiceConfigs.listenbrainz.username}’s history`, onSignOut: disconnectListenbrainz, signOutLabel: 'Remove',
@@ -992,36 +1013,7 @@ React.createElement('div', null,
                       }
                     }, 'User Token'),
                     React.createElement(SecretField, { 'aria-label': 'ListenBrainz user token', defaultValue: metaServiceConfigs.listenbrainz.userToken, readOnly: true, className: 'w-full' })
-                  ),
-
-                  // Scrobbling section for ListenBrainz
-                  React.createElement('div', {
-                    style: {
-                      marginTop: '16px',
-                      paddingTop: '16px',
-                      borderTop: '1px solid var(--border-subtle)'
-                    }
-                  },
-                    // Scrobbler card for ListenBrainz
-                    window.scrobblers && window.scrobblers.find(s => s.id === 'listenbrainz') &&
-                      React.createElement(ScrobblerSettingsCard, {
-                        scrobbler: window.scrobblers.find(s => s.id === 'listenbrainz'), color: getServiceColor('listenbrainz'), accountLabel: 'Scrobbling',
-                        config: scrobblerConfigs['listenbrainz'],
-                        onConfigChange: (id, newConfig) => {
-                          setScrobblerConfigs(prev => ({ ...prev, [id]: newConfig }));
-                        },
-                        lovePushEnabled: !!scrobblerLovePushEnabled.listenbrainz,
-                        onSetLovePushEnabled: (v) => setLovePushEnabled('listenbrainz', v),
-                        onRunBackfill: () => runLoveBackfill('listenbrainz'),
-                        backfillRunning: !!loveBackfillRunning.listenbrainz,
-                        backfillProgress: loveBackfillProgress.listenbrainz,
-                        unpushedCount: (collectionDataRef.current?.tracks || collectionData.tracks).filter(t => !lovePushedKeysRef.current[t.id]?.listenbrainz).length,
-                        onRunLoveImport: () => runLoveImport('listenbrainz'),
-                        loveImportRunning: !!loveImportRunning.listenbrainz,
-                        loveImportProgress: loveImportProgress.listenbrainz,
-                        hasImportedLoves: !!loveImportCursorRef.current?.listenbrainz,
-                      })
-                  )
+                  ))
                 )
               // Not connected state
               : React.createElement('div', null,
@@ -1599,181 +1591,54 @@ React.createElement('div', null,
           // the generic status-capable plugin row above — the plugin's
           // getStatus reply, its Sign in prompt flow and its Sign out.)
 
-          // Local Files settings section
+          // Local Files settings section: flat rows like the rest of the
+          // dialog (SettingRow, Button, ProgressBar); no headings, cards or
+          // stats grid of its own.
           selectedResolver.id === 'localfiles' && React.createElement('div', {
-            style: {
-              padding: '16px 0',
-              borderTop: '1px solid var(--border-subtle)'
-            }
+            style: { padding: '16px 0', borderTop: '1px solid var(--border-subtle)' }
           },
-            React.createElement('h3', {
-              style: {
-                fontSize: '13px',
-                fontWeight: '500',
-                color: 'var(--text-primary)',
-                marginBottom: '8px'
-              }
-            }, 'Watch Folders'),
-            React.createElement('p', {
-              style: {
-                fontSize: '12px',
-                color: 'var(--text-secondary)',
-                marginBottom: '16px',
-                lineHeight: '1.5'
-              }
-            },
-              'Add folders containing your music files. Parachord will automatically index and watch them for changes.'
-            ),
+            React.createElement(SettingRow, { label: 'Watch folders', hint: 'Parachord adds the music in these folders and keeps watching them for changes', style: { padding: 0 } },
+              React.createElement(Button, { variant: 'secondary', size: 'sm', onClick: handleAddWatchFolder, disabled: isScanning, 'aria-label': 'Add a watch folder' }, React.createElement(Icons.Plus, { className: 'w-4 h-4' }), 'Add folder')),
 
-            // Watch folders list
-            React.createElement('div', { style: { marginBottom: '16px' } },
+            // One row per folder: its path and track count, rescan and remove.
+            React.createElement('div', { style: { marginTop: '8px' } },
               watchFolders.length === 0
                 ? React.createElement(EmptyState, { compact: true, align: 'start', title: 'No watch folders yet' })
                 : watchFolders.map(folder =>
-                    React.createElement('div', {
+                    React.createElement(SettingRow, {
                       key: folder.path,
-                      className: 'flex items-center justify-between',
-                      style: {
-                        padding: '12px',
-                        backgroundColor: 'var(--hover-bg-default)',
-                        borderRadius: '8px',
-                        marginBottom: '8px'
-                      }
+                      label: React.createElement('span', { className: 'block truncate', 'data-tooltip': folder.path }, folder.path),
+                      hint: countOf(folder.track_count || 0, 'track'),
+                      className: 'border-b border-line-light last:border-b-0',
                     },
-                      React.createElement('div', { className: 'flex-1 min-w-0' },
-                        React.createElement('p', {
-                          className: 'truncate',
-                          style: {
-                            fontSize: '13px',
-                            fontWeight: '500',
-                            color: 'var(--text-primary)'
-                          }
-                        }, folder.path),
-                        React.createElement('p', {
-                          style: {
-                            fontSize: '11px',
-                            color: 'var(--text-secondary)',
-                            marginTop: '2px'
-                          }
-                        },
-                          `${countOf(folder.track_count || 0, 'track')}`
-                        )
-                      ),
-                      React.createElement('div', { className: 'flex items-center gap-2', style: { marginLeft: '16px' } },
-                        React.createElement(Button, { variant: 'icon', size: 'sm', 'aria-label': "Rescan folder", onClick: () => handleRescanFolder(folder.path), disabled: isScanning, 'data-tooltip': 'Rescan folder' }, React.createElement(Icons.RefreshCw, { className: 'w-4 h-4' })),
-                        React.createElement(Button, { variant: 'icon', size: 'sm', 'aria-label': "Remove folder", onClick: () => handleRemoveWatchFolder(folder.path), 'data-tooltip': 'Remove folder' }, React.createElement(Icons.X, { className: 'w-4 h-4' }))
-                      )
-                    )
+                      React.createElement('div', { className: 'flex items-center gap-1' },
+                        React.createElement(Button, { variant: 'icon', size: 'sm', 'aria-label': 'Rescan folder', onClick: () => handleRescanFolder(folder.path), disabled: isScanning, 'data-tooltip': 'Rescan folder' }, React.createElement(Icons.RefreshCw, { className: 'w-4 h-4' })),
+                        React.createElement(Button, { variant: 'icon', size: 'sm', 'aria-label': 'Remove folder', onClick: () => handleRemoveWatchFolder(folder.path), 'data-tooltip': 'Remove folder' }, React.createElement(Icons.X, { className: 'w-4 h-4' }))))
                   )
             ),
 
-            // Add folder button
-            React.createElement(Button, { variant: 'secondary', onClick: handleAddWatchFolder, disabled: isScanning, className: 'w-full' }, React.createElement(Icons.Plus, { size: 16 }), 'Add watch folder'),
-
-            // Scan progress
-            isScanning && React.createElement('div', { style: { marginTop: '16px' } },
-              React.createElement('div', { className: 'flex items-center gap-2', style: { marginBottom: '8px' } },
-                React.createElement(Icons.Spinner, { size: 14, style: { color: 'var(--accent-primary)' } }),
-                React.createElement('span', {
-                  style: {
-                    fontSize: '13px',
-                    color: 'var(--text-secondary)'
-                  }
-                }, 'Scanning…')
-              ),
-              React.createElement('div', {
-                style: {
-                  width: '100%',
-                  backgroundColor: 'var(--border-subtle)',
-                  borderRadius: '4px',
-                  height: '6px'
-                }
-              },
-                React.createElement('div', {
-                  style: {
-                    width: `${scanProgress.total > 0 ? (scanProgress.current / scanProgress.total) * 100 : 0}%`,
-                    backgroundColor: 'var(--accent-primary)',
-                    height: '6px',
-                    borderRadius: '4px',
-                    transition: transition('width', 'slow')
-                  }
-                })
-              ),
-              React.createElement('p', {
-                className: 'truncate',
-                style: {
-                  fontSize: '11px',
-                  color: 'var(--text-tertiary)',
-                  marginTop: '6px'
-                }
-              },
-                scanProgress.file || 'Preparing…'
-              )
+            // Scan progress (components/progress-bar.js).
+            isScanning && React.createElement('div', { style: { marginTop: '12px' } },
+              React.createElement('div', { className: 'flex items-center gap-2 text-ink-secondary', style: { fontSize: '13px', marginBottom: '8px' } },
+                React.createElement(Icons.Spinner, { className: 'w-4 h-4 text-accent' }), 'Scanning…'),
+              React.createElement(ProgressBar, { value: scanProgress.current, max: scanProgress.total, label: 'Scanning folders' }),
+              React.createElement('p', { className: 'truncate text-ink-tertiary', style: { fontSize: '11px', marginTop: '6px' } }, scanProgress.file || 'Preparing…')
             ),
 
-            // Stats
-            React.createElement('div', {
-              style: {
-                marginTop: '24px',
-                paddingTop: '16px',
-                borderTop: '1px solid var(--border-subtle)'
-              }
-            },
-              React.createElement('h4', {
-                style: {
-                  fontSize: '11px',
-                  fontWeight: '600',
-                  color: 'var(--text-tertiary)',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.08em',
-                  marginBottom: '12px'
-                }
-              }, 'Library Stats'),
-              React.createElement('div', { className: 'grid grid-cols-4 gap-4' },
-                React.createElement('div', null,
-                  React.createElement('p', {
-                    style: {
-                      fontSize: '12px',
-                      color: 'var(--text-secondary)'
-                    }
-                  }, 'Total tracks'),
-                  React.createElement('p', {
-                    style: {
-                      fontSize: '14px',
-                      fontWeight: '500',
-                      color: 'var(--text-primary)',
-                      marginTop: '2px'
-                    }
-                  }, localFilesStats.totalTracks.toLocaleString())
-                ),
-                React.createElement('div', null,
-                  React.createElement('p', {
-                    style: {
-                      fontSize: '12px',
-                      color: 'var(--text-secondary)'
-                    }
-                  }, 'Last scan'),
-                  React.createElement('p', {
-                    style: {
-                      fontSize: '14px',
-                      fontWeight: '500',
-                      color: 'var(--text-primary)',
-                      marginTop: '2px'
-                    },
-                    // The app's relative time (lib/time-ago.js), the full date
-                    // as its tooltip.
-                    'data-tooltip': localFilesStats.lastScan ? new Date(localFilesStats.lastScan).toLocaleString() : undefined
-                  },
-                    localFilesStats.lastScan ? timeAgo(localFilesStats.lastScan) : 'Never'
-                  )
-                )
-              ),
-              // The panel's actions: small secondary buttons flush with the
-              // content (text buttons' padding indented them).
-              React.createElement('div', { className: 'flex flex-wrap gap-2 mt-4' },
-                React.createElement(Button, { variant: 'secondary', size: 'sm', onClick: handleRescanAll, disabled: isScanning || watchFolders.length === 0 }, 'Rescan all folders'),
-                React.createElement(Button, { variant: 'secondary', size: 'sm', onClick: handleRemoveMissingFiles, disabled: isScanning || watchFolders.length === 0, 'data-tooltip': 'Remove library entries for files that are no longer on disk' }, 'Remove missing files'))
-            )
+            // The library: what's in it and when it was last scanned, then
+            // its two actions, each a row of its own.
+            React.createElement('div', { style: SYNC_BLOCK },
+              React.createElement(SettingRow, {
+                label: 'Library',
+                hint: React.createElement('span', null,
+                  countOf(localFilesStats.totalTracks, 'track'), ' · ',
+                  React.createElement('span', { 'data-tooltip': localFilesStats.lastScan ? new Date(localFilesStats.lastScan).toLocaleString() : undefined },
+                    localFilesStats.lastScan ? `scanned ${timeAgo(localFilesStats.lastScan)}` : 'not scanned yet')),
+                style: { padding: '0 0 10px' },
+              },
+                React.createElement(Button, { variant: 'secondary', size: 'sm', onClick: handleRescanAll, disabled: isScanning || watchFolders.length === 0 }, 'Rescan all')),
+              React.createElement(SettingRow, { label: 'Missing files', hint: 'Remove tracks whose files are no longer on disk', style: { padding: '10px 0 0' } },
+                React.createElement(Button, { variant: 'secondary', size: 'sm', onClick: handleRemoveMissingFiles, disabled: isScanning || watchFolders.length === 0, 'aria-label': 'Remove missing files' }, 'Remove')))
           )
         ),
 React.createElement('div', {
