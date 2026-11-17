@@ -7659,8 +7659,18 @@ const Parachord = () => {
     ids.forEach(id => pluginStatusReadsRef.current.add(id));
     Promise.allSettled(ids.map(id => loader.getStatus(id))).then((replies) => {
       ids.forEach(id => pluginStatusReadsRef.current.delete(id));
+      // A sweep in flight when an uninstall lands must not write the
+      // uninstalled plugin's entry back: the reads started before the
+      // uninstall, so their replies are a dead plugin's. Re-check the loaded
+      // set HERE, when the batch lands — not only the set the sweep fired
+      // with — and through the ref (loadedResolversRef, kept current by the
+      // effect), not this render's loadedResolvers: the landing happens
+      // after the render the uninstall committed (the uninstall drops the
+      // entry itself; this keeps the drop held).
+      const stillLoaded = new Set((loadedResolversRef.current || []).map(r => r.id));
       const statuses = {};
       ids.forEach((id, i) => {
+        if (!stillLoaded.has(id)) return;
         if (replies[i].status === 'fulfilled') statuses[id] = replies[i].value;
       });
       setPluginStatuses(prev => ({ ...prev, ...statuses }));

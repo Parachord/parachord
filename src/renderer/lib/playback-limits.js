@@ -86,8 +86,9 @@ function tileStatus(limits, id) {
 // itself, and this mapper only validates the shape — a reply without a
 // playbackLimit, or one that isn't shaped like an entry, is NO verdict
 // (null), never a guess. That is the no-throw contract's other half: a
-// plugin whose status call failed (resolver-loader.js getStatus answers
-// null) must never end up unplugged from playback by a malformed answer.
+// plugin whose status call failed (resolver-loader.js getStatus answers its
+// failed marker, STATUS_READ_FAILED — the marker carries no playbackLimit)
+// must never end up unplugged from playback by a malformed answer.
 function pluginStatusLimit(status) {
   const limit = status && typeof status === 'object' ? status.playbackLimit : null;
   if (!limit || typeof limit !== 'object' || typeof limit.blocked !== 'boolean') return null;

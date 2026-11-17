@@ -283,6 +283,18 @@ describe('wiring', () => {
     expect(uninstall).toMatch(/delete next\[resolverId\];/);
   });
 
+  test('a sweep in flight when an uninstall lands does not write the uninstalled plugin\u2019s entry back', () => {
+    // The #1433 review's round-3 note: the batch merge ({ ...prev, ...statuses })
+    // would resurrect the entry the uninstall dropped, because the reads
+    // started before the uninstall. The drop holds only if the landing
+    // re-checks the loaded set — in the .then, when the batch lands, not
+    // just the set the sweep fired with.
+    const sweep = between(app, 'const refreshPluginStatuses = () => {', '\n  };');
+    const landing = between(sweep, 'Promise.allSettled(ids.map(id => loader.getStatus(id))).then((replies) => {', 'setPluginStatuses(prev => ({ ...prev, ...statuses }));');
+    expect(landing).toContain('const stillLoaded = new Set((loadedResolversRef.current || []).map(r => r.id));');
+    expect(landing).toMatch(/if \(!stillLoaded\.has\(id\)\) return;/);
+  });
+
   test('the trigger set is the Amazon status\u2019s own: startup, Settings, the panel, a plan refusal', () => {
     expect(app).toContain('const refreshPluginStatuses = () => {');
     // Startup (including after the resolver registry lands — it races the
@@ -302,11 +314,16 @@ describe('wiring', () => {
   });
 
   test('the Settings sign-in row shows for a status-capable resolver, generic and display-only', () => {
-    const row = between(app, "A status-capable plugin's sign-in row", '// Authentication section (for services that require it)');
+    // #1451 moved the resolver detail panel's markup into its own component;
+    // the row moved with the panel, and app.js feeds it the replies.
+    const dialog = read('src', 'renderer', 'components', 'plugin-settings-dialog.js');
+    const row = between(dialog, "A status-capable plugin's sign-in row", '// Authentication section (for services that require it)');
     expect(row).toContain('selectedResolver?.capabilities?.status && typeof selectedResolver.getStatus === \'function\'');
     expect(row).toContain('PlaybackLimits.pluginStatusRow(pluginStatuses[selectedResolver.id])');
-    // The capabilities chip is labelled, not a raw id.
-    expect(app).toContain("status: 'Status'");
+    expect(dialog).toContain('pluginStatuses,');
+    expect(app).toMatch(/playbackLimits,\s*pluginStatuses,/);
+    // The capabilities chip is labelled, not a raw id (lib/capability-labels.js).
+    expect(read('src', 'renderer', 'lib', 'capability-labels.js')).toContain("status: 'Status'");
   });
 
   test('no shipped plugin declares the capability yet — Amazon\u2019s migration flips it', () => {
