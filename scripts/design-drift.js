@@ -36,6 +36,18 @@ const RGB = /rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})/g;
 const PALETTE_CLASS = /(?:^|[\s:"'`])(?:text|bg|border|ring|from|via|to|fill|stroke|divide|placeholder|accent|outline|decoration)-(?:gray|slate|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d{2,3}\b/g;
 const THEME_TERNARY = /\bisDark\s*\?|effectiveTheme\s*===\s*['"](?:dark|light)['"]\s*\?/g;
 
+// Plug-in ids, for serviceNameBranches: the folder names under plugins-src/.
+const PLUGIN_IDS = (() => {
+  try {
+    return new Set(fs.readdirSync(path.join(ROOT, 'plugins-src'), { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name));
+  } catch {
+    return new Set();
+  }
+})();
+// What a plug-in's id is called: x.id, resolverId, providerId, serviceId.
+const isPluginIdRef = (n) => n && ((n.type === 'MemberExpression' && !n.computed && n.property.name === 'id')
+  || (n.type === 'Identifier' && /^(?:resolver|provider|service|plugin)Id$/.test(n.name)));
+
 const METRICS = {
   hexColors: 'Hard-coded hex colours in the renderer. Use a CSS variable from index.html (add one, with a .dark value, if none fits).',
   rgbColors: 'Hard-coded coloured rgb()/rgba() values (a status green, the accent purple…). Use the token, or color-mix(in srgb, var(--token) N%, transparent) for a faint one.',
@@ -66,6 +78,7 @@ const METRICS = {
   stickyBarCopies: 'Hand-built sticky bars (sticky top-0 classes). Use StickyBar (components/filter-box.js).',
   rawTransitions: 'Transitions off the motion tokens: an inline transition written with its own times or `all`, a transition-all class, or a numbered duration-N class. Use transition() from lib/motion.js, or Tailwind transition-colors / -opacity / -transform with duration-fast / -base / -slow.',
   inputCopies: 'Raw <input> / <select> / <textarea> elements. Use TextField, Select, Checkbox, Slider, Switch or RadioGroup (components/fields.js).',
+  serviceNameBranches: "Branches on a plug-in's id (x.id === 'spotify', resolverId !== 'applemusic'): code that does something for one named service. Route by the plug-in registry instead (resolver-loader.js, a capability or a manifest field), so a new plug-in needs no code change (CLAUDE.md, the first invariants). The plug-in settings dialog's per-service sections grew this way (docs/plans/2026-11-17-plugin-settings-audit.md).",
   handBuiltButtons: 'Buttons and links styled as buttons by hand (their own padding plus a fill, border or radius, in classes or inline style). Use Button / buttonClassName (components/button.js), or the shared component for that control.',
 };
 
@@ -161,6 +174,13 @@ function scanSource(src) {
         // A name cut off by a template (`var(--motion-${speed})`) ends in '-': not a variable.
         for (const v of s.match(/var\(\s*(--[a-zA-Z0-9-]+)/g) || []) if (!v.endsWith('-')) cssVars.add(v.replace(/var\(\s*/, ''));
       }
+    }
+
+    if (node.type === 'BinaryExpression' && /^[!=]==?$/.test(node.operator)) {
+      const [l, r] = [node.left, node.right];
+      const lit = l.type === 'StringLiteral' ? l : (r.type === 'StringLiteral' ? r : null);
+      const other = lit === l ? r : l;
+      if (lit && PLUGIN_IDS.has(lit.value) && isPluginIdRef(other)) counts.serviceNameBranches += 1;
     }
 
     if (node.type === 'CallExpression') {
