@@ -242,22 +242,12 @@ function shouldRevealPlayerOnFailure() {
 }
 
 
-// A playlist page lives at /playlists/<id> (shared/brand playlists),
-// /my/playlists/<id> (the user's own) or /user-playlists/<id> (the share-link
-// shape for user-created playlists). The id is a long token — PP… (brand), a
-// bare hex uuid, or a dashed uuid (live-observed 2026-10) — not the 10-char
-// ASIN a track uses (brand playlists use those too). The id class must accept
-// dashes: a dashed-uuid id truncated at its first dash never matches the
-// page's own playlistDetail request (variables.id), and the import times out
-// into "Playlist not found".
-function amazonPlaylistIdFromUrl(url) {
-  const m = String(url || '').match(/music\.amazon\.com\/(?:my\/)?(?:user-)?playlists\/([A-Za-z0-9-]+)/i);
-  return m ? m[1] : null;
-}
-
 // Diagnostic for the lookup miss: the gql operations the page actually fired.
-// When hornet renames playlistDetail, every import looks like "playlist
-// deleted" — this turns that into a one-line diagnosis.
+// When hornet renames an operation, every miss looks like "playlist deleted" /
+// "never searched" — this turns that into a one-line diagnosis. (The playlist
+// import moved into the plugin with its own _lib copy — #1356 M7; this copy
+// serves the remaining host flows, recommendations and the diagnostic
+// capture.)
 function capturedOperationNames(bodies) {
   const names = new Set();
   for (const raw of (Array.isArray(bodies) ? bodies : [])) {
@@ -271,38 +261,13 @@ function capturedOperationNames(bodies) {
   return [...names];
 }
 
-// The page fetches its playlist via a persisted GraphQL query (APQ) against
-// gql.music.amazon.com: {operationName: 'playlistDetail', variables: {id,
-// firstLimit: 100, ...}, extensions: {persistedQuery: {sha256Hash}}}. The hash
-// renumbers on every hornet redeploy, so we never hardcode it — we capture the
-// request the page itself makes for the playlist we loaded, then replay it from
-// the page world with a bigger firstLimit. Given the captured request bodies
-// (strings), return the parsed playlistDetail request for OUR playlist id, or
-// null when the page never made one (not found / private / other region).
-function amazonPlaylistDetailRequest(bodies, playlistId) {
-  const wanted = String(playlistId || '').toLowerCase();
-  for (const raw of (Array.isArray(bodies) ? bodies : [])) {
-    let parsed;
-    try { parsed = JSON.parse(raw); } catch (e) { continue; }
-    const batch = Array.isArray(parsed) ? parsed : [parsed];
-    for (const req of batch) {
-      if (!req || req.operationName !== 'playlistDetail') continue;
-      const id = req.variables && req.variables.id;
-      if (!id) continue;
-      if (wanted && String(id).toLowerCase() !== wanted) continue;
-      return req;
-    }
-  }
-  return null;
-}
-
 
 // --- Request templates (replay-first) -------------------------------------
 // A page load per flow is what mints a fresh capture: the APQ hash
 // renumbers on every hornet redeploy, and the csrf/session headers rotate
 // with the session. But within a deploy+session the page's own request is
-// reusable — playlist pagination replays one capture up to 40 times. So a
-// flow that comes in while a captured template is still fresh skips its
+// reusable — a recommendations walk replays one capture up to four times. So
+// a flow that comes in while a captured template is still fresh skips its
 // page load entirely and replays from the still-warm search view. A replay
 // error (stale hash, rotated headers, network) discards the template and
 // falls back to the full page flow, which recaptures — the fallback IS the
@@ -386,8 +351,11 @@ function amazonGqlFetchHeaders(headers) {
 const GQL_PARTIAL_STATUS = 294;
 
 // The page-world replay's raw { status, text } (or { error }) -> { parsed }
-// or { error, status? }. Pure, so the status rules are unit-tested;
-// replayGql in amazon-web-player.js is the caller.
+// or { error, status? }. Pure, so the status rules are unit-tested; the
+// host's replayGql in amazon-web-player.js is the caller (the recommendations
+// and dmls flows it still serves), and the plugin's `_lib` copy serves the
+// plugin's own replayGql with the moved flows (#1356 M5/M6/M7; the playlist
+// flow's playlistPartialIsUsable predicate moved with it).
 function gqlReplayOutcome(replay, { acceptPartial = null } = {}) {
   if (!replay || replay.error) return { error: (replay && replay.error) || 'Amazon gql query failed' };
   const status = replay.status;
@@ -410,38 +378,26 @@ function gqlReplayOutcome(replay, { acceptPartial = null } = {}) {
   return { parsed };
 }
 
-// The playlist flow's partial-answer predicate: data.playlist present, with
-// track edges where playlistEdgesFromGql finds them. A null playlist, or one
-// with no track rows block, is not a playlist we can import.
-function playlistPartialIsUsable(parsed) {
-  const data = parsed && parsed.data;
-  return !!(data && data.playlist && Array.isArray(playlistEdgesFromGql(data)));
-}
-
 // The widest imageType=PRIMARY image, else the widest image overall. The
-// playlist cover and the per-track art use the same pick.
+// recommendation item art and section covers use the same pick. (The
+// playlist's own cover pick moved into the plugin with the playlist import —
+// #1356 M7.)
 function gqlPrimaryImageUrl(images) {
   const list = (Array.isArray(images) ? images : []).filter(i => i && i.url);
   const widest = (l) => (l.length ? l.reduce((a, b) => ((b.width || 0) >= (a.width || 0) ? b : a)) : null);
   return (widest(list.filter(i => i.imageType === 'PRIMARY')) || widest(list) || {}).url || null;
 }
 
-// One tracks.edges[] entry -> the lookupPlaylist track shape. Artist is the
-// joined contributing artists (PRIMARY first); album is the album shortTitle
-// (the detail response has no full album title). A row without asin + title +
-// artist is dropped (the import path filters on both anyway). The plugin's
-// track search (the #1356 M5 move, plugins-src/amazonmusic) carries its own
-// copy of this mapper — the search response's edges are the same Track entity
-// (live-verified 2026-10: id/title/contributingArtists/album/duration/images
 // Amazon renders the explicit tag as a marker INSIDE the title text
 // ("Kunnioita [Explicit]") — the gql Track node carries no explicit field.
 // Left in, the tag pollutes every downstream consumer that compares this
 // title against another provider's spelling (cross-resolver enrichment, sync
 // mirrors, and scrobbles — "Kunnioita [Explicit]" is a different Last.fm
 // track). Strip a TRAILING bracketed/parenthesized "explicit" marker (the
-// only shape Amazon uses) and report it, so the edge mapper can set the
+// only shape Amazon uses) and report it, so an item mapper can set the
 // explicit flag the payload itself lacks. A bare word ("Sexually Explicit")
-// is the track's real title and is left alone.
+// is the track's real title and is left alone. (The plugin's _lib carries
+// its own copy — #1356 M5; this one serves the recommendation item mapper.)
 function stripAmazonTitleMarker(title) {
   const raw = String(title || '');
   const m = raw.match(/^(.*?)\s*[[(]\s*explicit\s*[\])]\s*$/i);
@@ -449,11 +405,10 @@ function stripAmazonTitleMarker(title) {
   return { title: m[1].trim(), explicit: true };
 }
 
-// are identical shapes), and the search flow additionally uses the art.
 // The joined artist credit for a contributingArtists connection: the
-// PRIMARY-role artists, else every named artist. Shared by the playlist
-// mapper and the recommendation item mapper (the search/album/artist copies
-// live in the plugin's _lib).
+// PRIMARY-role artists, else every named artist. Serves the recommendation
+// item mapper (the search/album/artist/playlist copies live in the plugin's
+// _lib).
 function gqlPrimaryArtistNames(connection) {
   const artists = (connection && Array.isArray(connection.edges)) ? connection.edges : [];
   const primary = artists.filter(a => a && a.node && a.node.name && a.role === 'PRIMARY');
@@ -462,100 +417,11 @@ function gqlPrimaryArtistNames(connection) {
   return chosen.map(a => a.node.name).join(', ');
 }
 
-// Only Track entities import: the search response asks for __typename, and an
-// album/artist-spec edge (an Album node) must never become a track — an album
-// ASIN in the track slot passes the confidence gate on self-titled releases
-// and playback loads /tracks/<albumAsin>. Absent __typename (the playlist
-// detail response does not request it) is allowed.
-function playlistTrackFromGqlEdge(edge) {
-  const node = edge && edge.node;
-  if (!node || !node.id || !node.title) return null;
-  if (node.__typename && node.__typename !== 'Track') return null;
-  const artist = gqlPrimaryArtistNames(node.contributingArtists);
-  if (!artist) return null;
-  const cleaned = stripAmazonTitleMarker(node.title);
-  if (!cleaned.title) return null;
-  const album = node.album || {};
-  return {
-    asin: node.id,
-    title: cleaned.title.slice(0, 200),
-    artist: artist.slice(0, 200),
-    album: String(album.shortTitle || album.title || '').slice(0, 200),
-    albumAsin: album.id || null,
-    albumArt: gqlPrimaryImageUrl(node.images) || null,
-    duration: typeof node.duration === 'number' ? node.duration : 0,
-    explicit: cleaned.explicit
-  };
-}
-
-// The gql response's data.playlist -> the lookupPlaylist result shape. Picks
-// the cover (imageType PRIMARY, else the largest) and a best-effort owner.
-// Returns null when data.playlist is null (deleted / private / other region).
-function playlistFromGql(data) {
-  const playlist = data && data.playlist;
-  if (!playlist) return null;
-  // Cover: the widest imageType=PRIMARY entry (the 2400×2400 square); when
-  // there is no PRIMARY, the widest image overall.
-  const cover = gqlPrimaryImageUrl(playlist.images);
-  const curator = playlist.curator;
-  const owner = (curator && typeof curator === 'object' && curator.name) || (typeof curator === 'string' ? curator : null);
-  const tracks = (playlist.tracks && Array.isArray(playlist.tracks.edges))
-    ? playlist.tracks.edges.map(playlistTrackFromGqlEdge).filter(Boolean)
-    : [];
-  return {
-    id: playlist.id,
-    name: playlist.title || 'Amazon Music Playlist',
-    owner,
-    albumArt: cover,
-    trackCount: typeof playlist.trackCount === 'number' ? playlist.trackCount : tracks.length,
-    tracks
-  };
-}
-
-// --- Playlist pagination (a >page-size playlist arrives in pages) ---
-// The server clamps the page size (a 977-track playlist answered 100 rows
-// however high firstLimit was raised), so the import has to follow the
-// playlist's own pagination. Everything below is learned from the page or the
-// response — no param name or cursor format is hardcoded against hornet.
-
-// The connection's pageInfo, when the response carries one. hasNextPage null =
-// absent; endCursor null = absent. Returns null when there is no pageInfo at
-// all (the caller falls back to scroll-driven pagination).
-function playlistPageInfoFromGql(data) {
-  const tracks = data && data.playlist && data.playlist.tracks;
-  const pageInfo = tracks && tracks.pageInfo;
-  if (!pageInfo || typeof pageInfo !== 'object') return null;
-  const endCursor = pageInfo.endCursor == null ? null : String(pageInfo.endCursor);
-  const hasNextPage = typeof pageInfo.hasNextPage === 'boolean' ? pageInfo.hasNextPage : null;
-  // token is the page's OWN continuation state (a composite base64 blob) —
-  // the value the next request passes as afterCursor. Live-verified 2026-10:
-  // the token advances the pages; the Relay-style endCursor is ignored by the
-  // server (page 1 repeats) and the dependent blob alone errors.
-  const token = typeof pageInfo.token === 'string' && pageInfo.token ? pageInfo.token : null;
-  return { hasNextPage, endCursor, token };
-}
-
-// The response's track edges. The playlistDetail envelope is
-// data.playlist.tracks.edges; a continuation operation may answer with a
-// different envelope, so fall back to a bounded scan for any edges[] whose
-// nodes look like playlist rows (id + title).
-function playlistEdgesFromGql(data) {
-  const tracks = data && data.playlist && data.playlist.tracks;
-  if (tracks && Array.isArray(tracks.edges)) return tracks.edges;
-  const looksLikeRow = (edges) =>
-    Array.isArray(edges) && edges.some(e => e && e.node && e.node.id && e.node.title);
-  const scan = (value, depth) => {
-    if (depth > 4 || !value || typeof value !== 'object') return null;
-    if (looksLikeRow(value.edges)) return value.edges;
-    for (const key of Object.keys(value)) {
-      const found = scan(value[key], depth + 1);
-      if (found) return found;
-    }
-    return null;
-  };
-  return scan(data, 0);
-}
-
+// (The playlist edge mapper and the data.playlist parsers —
+// playlistTrackFromGqlEdge / playlistFromGql / playlistPageInfoFromGql /
+// playlistEdgesFromGql — lived here until #1356 M7 moved the playlist import
+// into the plugin; the _lib copies in plugins-src/amazonmusic/implementation.js
+// are the only ones now.)
 
 
 
@@ -843,74 +709,9 @@ function recommendationsFromSeeMore(data) {
 
 
 
-// Follow a playlist's own pagination to the end of the list. The gql server
-// serves one page per request however high firstLimit is raised, and the ONLY
-// continuation it accepts is the response's pageInfo.token passed as the
-// afterCursor variable (live-verified 2026-10 — the Relay-style endCursor is
-// a decoy the server answers with page 1 for, other variable names are
-// dropped, the dependent blob alone errors "Invalid sequence token"). Each
-// response's own token drives the next page.
-//
-// Pure except the injected fetchPage (one gql page by token: { error } or
-// { data }) and now() (the time cap) — the same pattern as the Amazon poller,
-// so every stop condition is unit-testable.
-//
-// Progress is judged on RAW edges, never mapped tracks (review feedback on
-// #1072): a page that is entirely delisted rows (node:null) maps to zero
-// tracks but still advances — later pages can exist after a label pulls its
-// catalog — and a duplicate track that happens to be first on two consecutive
-// pages is not a repeated window. The per-edge cursor (position-encoded:
-// "128:dfeab136-…128") distinguishes a genuine advance from the same window
-// served again.
-//
-// Returns { playlist, pages, stop }:
-//   'complete'    — every row merged (tracks >= trackCount)
-//   'exhausted'   — the server is out of pages (no token / hasNextPage false)
-//   'page-error'  — fetchPage answered an error (a later page may exist)
-//   'empty-page'  — a page with zero raw edges
-//   'no-advance'  — a page starting at the same cursor as the previous one
-//   'page-limit'  / 'time-limit' — the caps
-//   'no-playlist' — the first page has no playlist (deleted/private/region)
-async function paginatePlaylistTracks({ firstPageData, fetchPage, maxPages = 40, maxMs = 120000, now = Date.now, log = () => {} }) {
-  const playlist = playlistFromGql(firstPageData);
-  if (!playlist) return { playlist: null, pages: 0, stop: 'no-playlist' };
-  const firstEdges = playlistEdgesFromGql(firstPageData) || [];
-  let lastFirstCursor = firstEdges.length && firstEdges[0] && firstEdges[0].cursor != null
-    ? String(firstEdges[0].cursor) : null;
-  let pageInfo = playlistPageInfoFromGql(firstPageData);
-  const startedAt = now();
-  let pages = 0;
-  let stop = null;
-  while (!stop) {
-    if (playlist.tracks.length >= playlist.trackCount) { stop = 'complete'; break; }
-    if (!pageInfo || !pageInfo.token || pageInfo.hasNextPage === false) { stop = 'exhausted'; break; }
-    if (pages >= maxPages) { stop = 'page-limit'; break; }
-    if (now() - startedAt >= maxMs) { stop = 'time-limit'; break; }
-    pages += 1;
-    const page = await fetchPage(pageInfo.token);
-    if (!page || page.error) { stop = 'page-error'; break; }
-    const data = page.data;
-    const edges = (data && playlistEdgesFromGql(data)) || [];
-    if (!edges.length) { stop = 'empty-page'; break; }
-    const firstCursor = edges[0] && edges[0].cursor != null ? String(edges[0].cursor) : null;
-    if (firstCursor != null && firstCursor === lastFirstCursor) { stop = 'no-advance'; break; }
-    lastFirstCursor = firstCursor;
-    let mappedAdded = 0;
-    for (const edge of edges) {
-      const track = playlistTrackFromGqlEdge(edge);
-      if (track) {
-        playlist.tracks.push(track);
-        mappedAdded++;
-      }
-    }
-    const info = data ? playlistPageInfoFromGql(data) : null;
-    if (info) pageInfo = info;
-    const respCount = data && data.playlist && data.playlist.trackCount;
-    if (typeof respCount === 'number' && respCount > playlist.trackCount) playlist.trackCount = respCount;
-    log(`page ${pages}: +${edges.length} rows (+${mappedAdded} tracks, ${playlist.tracks.length}/${playlist.trackCount})`);
-  }
-  return { playlist, pages, stop };
-}
+// (paginatePlaylistTracks — the pure token-driven pagination loop — lived
+// here until #1356 M7 moved the playlist import into the plugin; the _lib
+// copy in plugins-src/amazonmusic/implementation.js is the only one now.)
 
 // A halt that started for play N must not pause play N+1. The page token is
 // stamped after the track document loads. A generation-scoped pause no-ops
@@ -1417,15 +1218,12 @@ module.exports = {
   amazonNowPlayingMismatch,
   signInLanded,
   asinFromPlayerUrl,
-  amazonPlaylistIdFromUrl,
-  amazonPlaylistDetailRequest,
   SPEC_TEMPLATE_MAX_AGE_MS,
   makeSpecSearchTemplate,
   specTemplateIsFresh,
   amazonGqlFetchHeaders,
   GQL_PARTIAL_STATUS,
   gqlReplayOutcome,
-  playlistPartialIsUsable,
   capturedOperationNames,
   recommendationItemFromGqlNode,
   amazonMusicHomeRequest,
@@ -1438,13 +1236,8 @@ module.exports = {
   amazonSeeMorePageUrl,
   seeMoreBodyWithVars,
   recommendationsFromSeeMore,
-  playlistTrackFromGqlEdge,
   gqlPrimaryArtistNames,
   stripAmazonTitleMarker,
-  playlistFromGql,
-  playlistPageInfoFromGql,
-  paginatePlaylistTracks,
-  playlistEdgesFromGql,
   AMAZON_DEVICE_TYPE_ID,
   DML_TARGET_PREFIX,
   WIDEVINE_CERT_CHALLENGE,

@@ -289,6 +289,43 @@ describe('webSession:load', () => {
     expect(host.load).toHaveBeenCalledTimes(1); // only the well-formed one reached the host
   });
 
+  test("capture.returnOnTimeout passes through as the escape's opt-in and is rejected when not a boolean", async () => {
+    const host = makeFakeHost();
+    const { handlers } = makeBridge({ host });
+    // The opt-in to rule 5's budget escape is data, not a budget — nothing
+    // to clamp. Only `true` is carried across; the default (absent/false)
+    // keeps the old throws-load-failed contract.
+    const out = await handlers['webSession:load'](mainFrameEvent, {
+      id: 'amazon-music',
+      url: 'https://music.amazon.com/playlists/PP1',
+      opts: { capture: { urlPrefixes: ['https://gql.music.amazon.com/*'], returnOnTimeout: true } }
+    });
+    expect(out).toMatchObject({ success: true });
+    expect(host.load).toHaveBeenCalledWith('https://music.amazon.com/playlists/PP1', {
+      capture: { urlPrefixes: ['https://gql.music.amazon.com/*'], returnOnTimeout: true }
+    });
+    const off = await handlers['webSession:load'](mainFrameEvent, {
+      id: 'amazon-music',
+      url: 'https://music.amazon.com/playlists/PP1',
+      opts: { capture: { urlPrefixes: ['https://gql.music.amazon.com/*'], returnOnTimeout: false } }
+    });
+    expect(off).toMatchObject({ success: true });
+    expect(host.load).toHaveBeenLastCalledWith('https://music.amazon.com/playlists/PP1', {
+      capture: { urlPrefixes: ['https://gql.music.amazon.com/*'] }
+    });
+    // Malformed: rejected before the host is touched, like a bad prefix —
+    // the escape is a wait-ending power, so a typo must not ride through.
+    for (const bad of ['yes', 1, {}]) {
+      const refused = await handlers['webSession:load'](mainFrameEvent, {
+        id: 'amazon-music',
+        url: 'https://music.amazon.com/playlists/PP1',
+        opts: { capture: { urlPrefixes: ['https://gql.music.amazon.com/*'], returnOnTimeout: bad } }
+      });
+      expect(refused).toMatchObject({ success: false, reason: 'invalid' });
+    }
+    expect(host.load).toHaveBeenCalledTimes(2); // only the well-formed ones reached the host
+  });
+
   test('a host reason crosses verbatim; a reasonless throw maps to load-failed', async () => {
     const host = makeFakeHost({
       load: jest.fn(async () => {

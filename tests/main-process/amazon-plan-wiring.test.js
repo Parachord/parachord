@@ -60,25 +60,21 @@ describe('main process', () => {
     expect(impl).toMatch(/PLAN_UNKNOWN_TTL_MS = 60 \* 1000/);
   });
 
-  test('album search, artist photos and lookups do not check the plan', () => {
-    // #1356 M6: the album catalog flows moved into the plugin, so the pin
-    // reads the plugin source — their methods must not touch the plan gate
-    // (the plan gate stops playback, not discovery) — and the IPC handlers
-    // that used to carry them are gone (the plugin drives the session
-    // through the webSession bridge).
+  test('album search, artist photos, lookups and playlist import do not check the plan', () => {
+    // #1356 M6/M7: the album catalog flows and the playlist import moved
+    // into the plugin, so the pin reads the plugin source — their methods
+    // must not touch the plan gate (the plan gate stops playback, not
+    // discovery) — and the IPC handlers that used to carry them are gone
+    // (the plugin drives the session through the webSession bridge).
     const impl = read('plugins-src/amazonmusic/implementation.js');
-    for (const method of ['searchAlbums: async function', 'searchArtistImage: async function', 'lookupAlbumFlow: async function']) {
+    for (const method of ['searchAlbums: async function', 'searchArtistImage: async function', 'lookupAlbumFlow: async function', 'lookupPlaylistFlow: async function']) {
       expect(methodBody(impl, method)).not.toMatch(/assertPlanPlays|getPlan|plan-ineligible/);
     }
     // The handlers are deleted, and the preload no longer exposes them.
-    for (const ch of ['amazonmusic-search-albums', 'amazonmusic-search-artist-image', 'amazonmusic-lookup-album']) {
+    for (const ch of ['amazonmusic-search-albums', 'amazonmusic-search-artist-image', 'amazonmusic-lookup-album', 'amazonmusic-lookup-playlist']) {
       expect(main).not.toContain(`ipcMain.handle('${ch}'`);
       expect(preload).not.toContain(`'${ch}'`);
     }
-    // The playlist import (still host-side) stays un-gated too.
-    const start = main.indexOf("ipcMain.handle('amazonmusic-lookup-playlist'");
-    const next = main.indexOf('ipcMain.handle(', start + 10);
-    expect(main.slice(start, next)).not.toMatch(/assertPlanPlays|getPlan/);
   });
 
   test('getStatus reports the plan and its message once signed in', () => {

@@ -8,6 +8,8 @@
  *   - play() not-signed-in flow (sign-in prompt + retry)
  *   - searchAlbums()/lookupAlbum() (the albumSearch capability: bridge mapping,
  *     sign-in prompt, and miss vs notReady)
+ *   - lookupPlaylist() (the playlist import: resolver-shape mapping, sign-in
+ *     prompt, and the miss vs notReady vs truncated policy)
  *   - searchArtistImage() (the artistImage capability: bridge mapping, the
  *     no-bridge no-op, and miss vs error — never a sign-in prompt)
  *   - getRecommendations()/expandRecommendationSection() (the recommendations
@@ -25,7 +27,9 @@ const path = require('path');
 const {
   loadAmazonAxe,
   instantiateAmazonPlugin,
-  amazonWebSessionMock
+  amazonWebSessionMock,
+  amazonPlaylistDetailCapture,
+  amazonPlaylistPage
 } = require('../helpers/amazon-plugin-bridge');
 
 const axe = loadAmazonAxe();
@@ -37,7 +41,7 @@ function instantiate(axeContent) {
 describe('amazonmusic .axe structure', () => {
   test('manifest identifies the resolver', () => {
     expect(axe.manifest.id).toBe('amazonmusic');
-    expect(axe.manifest.version).toBe('1.15.0');
+    expect(axe.manifest.version).toBe('1.16.0');
   });
 
   test('declares streaming capabilities without auth', () => {
@@ -61,7 +65,7 @@ describe('amazonmusic .axe structure', () => {
       expect(typeof new Function('return ' + src)()).toBe('function');
     }
     expect(Object.keys(axe.implementation).sort()).toEqual(
-      ['_lib', 'assertPlanPlays', 'cleanup', 'expandRecommendationSection', 'getPlan', 'getRecommendations', 'init', 'isSignedIn', 'lookupAlbum', 'lookupAlbumFlow', 'lookupAlbumPageFlow', 'lookupPlaylist', 'play', 'replayGql', 'requireLib', 'resolve', 'search', 'searchAlbums', 'searchArtistImage', 'sessionState', 'specSearch', 'specSearchPageFlow', 'specStructuralError', 'trySpecReplay'].sort()
+      ['_lib', 'assertPlanPlays', 'cleanup', 'enqueuePageFlow', 'expandRecommendationSection', 'getPlan', 'getRecommendations', 'init', 'isSignedIn', 'lookupAlbum', 'lookupAlbumFlow', 'lookupAlbumPageFlow', 'lookupPlaylist', 'lookupPlaylistFlow', 'lookupPlaylistPageFlow', 'play', 'playlistImportPages', 'replayGql', 'requireLib', 'resolve', 'search', 'searchAlbums', 'searchArtistImage', 'sessionState', 'specSearch', 'specSearchPageFlow', 'specStructuralError', 'trySpecReplay'].sort()
     );
   });
 });
@@ -286,43 +290,60 @@ describe('amazonmusic play (host-owned through capabilities.widevine)', () => {
 });
 
 describe('amazonmusic lookupPlaylist', () => {
+  // The flow runs in the plugin (#1356 M7) over the webSession bridge; the
+  // flow mechanics (the capture window, the verbatim replay, the token-driven
+  // pagination with its delisted/duplicate/no-advance rules, the busy backoff)
+  // are pinned in tests/resolver/amazon-music-plugin-playlist.test.js. Here:
+  // the resolver contract — the mapping to the playlist shape, the sign-in
+  // prompt, and the miss vs notReady policy.
   const playlistUrl = 'https://music.amazon.com/playlists/PP6417A00A9C99470BBC8834FF3BF6009A';
 
-  const bridgePlaylist = {
-    success: true,
-    engine: 'web',
-    playlist: {
-      id: 'PP6417A00A9C99470BBC8834FF3BF6009A',
-      name: 'Alexa Chill',
-      owner: null,
-      albumArt: 'https://m.media-amazon.com/images/I/71Yr0gqZPpL._SX500_SY500_.jpg',
-      tracks: [
-        { asin: 'B000SNWG5Q', title: 'Around the World', artist: 'Daft Punk', album: 'Homework', duration: 430, albumAsin: 'B000031W1M' },
-        { asin: 'B07XLSKGGK', title: 'Master of Puppets (Remastered)', artist: 'Metallica', album: 'Master of Puppets', duration: 515, albumAsin: null }
-      ]
-    }
+  const PLAYLIST = {
+    id: 'PP6417A00A9C99470BBC8834FF3BF6009A',
+    name: 'Alexa Chill',
+    owner: 'Amazon',
+    albumArt: 'https://m.media-amazon.com/images/I/71Yr0gqZPpL._SX500_SY500_.jpg'
+  };
+  const TRACKS = [
+    { asin: 'B000SNWG5Q', title: 'Around the World', artist: 'Daft Punk', album: 'Homework', duration: 430, albumAsin: 'B000031W1M' },
+    { asin: 'B07XLSKGGK', title: 'Master of Puppets (Remastered)', artist: 'Metallica', album: 'Master of Puppets', duration: 515, albumAsin: null }
+  ];
+
+  // A webSession mock whose playlist page answers the page's own
+  // playlistDetail capture and one response page. `pages(afterCursor)` (when
+  // given) replaces the response script: it answers the afterCursor the
+  // plugin sent, or null for a not-found shape.
+  const playlistMock = (pages = null) => {
+    const first = amazonPlaylistPage(PLAYLIST, TRACKS, null);
+    const ws = amazonWebSessionMock({
+      capturesFor: (url) => (/\/playlists\//.test(String(url))
+        ? [amazonPlaylistDetailCapture(PLAYLIST.id)]
+        : []),
+      envelope: {}
+    });
+    ws.pageFetch.mockImplementation(async (id, request) => {
+      const body = JSON.parse(request.body);
+      const afterCursor = body.variables && body.variables.afterCursor;
+      const page = pages ? pages(afterCursor) : (!afterCursor ? first : null);
+      if (!page) return { success: true, status: 200, text: JSON.stringify({ data: { playlist: null } }) };
+      return { success: true, status: 200, text: JSON.stringify(page) };
+    });
+    return ws;
   };
 
-  beforeEach(() => {
-    global.window = {
-      electron: {
-        amazonMusic: {
-          lookupPlaylist: jest.fn().mockResolvedValue(bridgePlaylist)
-        }
-      }
-    };
-  });
-
   afterEach(() => {
+    if (global.window) delete global.window.__parachordManageAmazonMusic;
     delete global.window;
   });
 
-  test('maps bridge tracks to the resolver playlist shape', async () => {
+  test('maps the flow playlist to the resolver playlist shape', async () => {
+    const ws = playlistMock();
     const resolver = instantiate(axe);
     const playlist = await resolver.lookupPlaylist(playlistUrl, {});
     expect(playlist).toEqual(expect.objectContaining({
       id: 'amazonmusic-playlist-PP6417A00A9C99470BBC8834FF3BF6009A',
       name: 'Alexa Chill',
+      owner: 'Amazon',
       trackCount: 2,
       url: playlistUrl,
       albumArt: 'https://m.media-amazon.com/images/I/71Yr0gqZPpL._SX500_SY500_.jpg'
@@ -337,74 +358,81 @@ describe('amazonmusic lookupPlaylist', () => {
       amazonAsin: 'B000SNWG5Q',
       albumAsin: 'B000031W1M'
     }));
-    expect(global.window.electron.amazonMusic.lookupPlaylist).toHaveBeenCalledWith(playlistUrl);
+    // The playlist page loaded on the plugin's session with the gql capture
+    // window inside the load, and the page's own request was replayed
+    // verbatim (its own firstLimit, no cursor variables patched).
+    expect(ws.load).toHaveBeenCalledTimes(1);
+    expect(ws.load.mock.calls[0][0]).toBe('amazon-music');
+    expect(ws.load.mock.calls[0][1]).toBe(playlistUrl);
+    expect(ws.load.mock.calls[0][2].capture.urlPrefixes).toEqual(['https://gql.music.amazon.com/*']);
+    expect(ws.pageFetch).toHaveBeenCalledTimes(1);
+    const replayed = JSON.parse(ws.pageFetch.mock.calls[0][1].body);
+    expect(replayed.operationName).toBe('playlistDetail');
+    expect(replayed.variables.firstLimit).toBe(100);
+    expect('afterCursor' in replayed.variables).toBe(false);
   });
 
   describe('not signed in', () => {
-    let managePrompt;
-
-    const makeResolver = () => {
-      managePrompt = jest.fn().mockResolvedValue(true);
-      global.window.__parachordManageAmazonMusic = managePrompt;
-      return instantiate(axe);
-    };
-
     test('prompts for sign-in and retries once, like play()', async () => {
-      const resolver = makeResolver();
-      global.window.electron.amazonMusic.lookupPlaylist
-        .mockResolvedValueOnce({ success: false, reason: 'not-signed-in' })
-        .mockResolvedValueOnce(bridgePlaylist);
+      const ws = playlistMock();
+      let signedOut = true;
+      ws.state.mockImplementation(async () => ({
+        success: true,
+        url: 'https://music.amazon.com/search/x/songs',
+        signInUrl: null,
+        cookieNames: signedOut ? ['session-id', 'ubid-main'] : ['at-main', 'sess-at-main'],
+        generation: 0
+      }));
+      const resolver = instantiate(axe);
+      const managePrompt = jest.fn(async () => { signedOut = false; return true; });
+      global.window.__parachordManageAmazonMusic = managePrompt;
       const playlist = await resolver.lookupPlaylist(playlistUrl, {});
       expect(playlist.trackCount).toBe(2);
       expect(managePrompt).toHaveBeenCalledTimes(1);
-      expect(global.window.electron.amazonMusic.lookupPlaylist).toHaveBeenCalledTimes(2);
+      // The refused run never loaded a page; only the retry did.
+      expect(ws.load).toHaveBeenCalledTimes(1);
     });
 
     test('declined sign-in throws notReady so the import is not reported as a missing playlist', async () => {
-      const resolver = makeResolver();
-      managePrompt.mockResolvedValue(false);
-      global.window.electron.amazonMusic.lookupPlaylist.mockResolvedValue({
-        success: false, reason: 'not-signed-in'
-      });
+      const ws = playlistMock();
+      ws.state.mockImplementation(async () => ({
+        success: true,
+        url: 'https://music.amazon.com/search/x/songs',
+        signInUrl: null,
+        cookieNames: ['session-id', 'ubid-main'],
+        generation: 0
+      }));
+      const resolver = instantiate(axe);
+      global.window.__parachordManageAmazonMusic = jest.fn(async () => false);
       await expect(resolver.lookupPlaylist(playlistUrl, {})).rejects.toMatchObject({
         notReady: true,
         code: 'not-signed-in'
       });
-      expect(global.window.electron.amazonMusic.lookupPlaylist).toHaveBeenCalledTimes(1);
+      expect(ws.load).not.toHaveBeenCalled();
     });
   });
 
-  test('a playlist that never loaded is a not-found, not an empty import', async () => {
-    // The gql replay never fires for a deleted/private playlist -> main returns
-    // success with playlist: null.
-    global.window.electron.amazonMusic.lookupPlaylist.mockResolvedValue({
-      success: true, playlist: null
-    });
+  test('a playlist the page never asked for (deleted/private/renamed) is the not-found error', async () => {
+    // The page loaded but never fired playlistDetail for our id — the old
+    // "success with playlist: null" IPC result.
+    const ws = amazonWebSessionMock({ capturesFor: () => [], envelope: {} });
     const resolver = instantiate(axe);
     await expect(resolver.lookupPlaylist(playlistUrl, {})).rejects.toThrow(/not found on Amazon Music/);
+    expect(ws.pageFetch).not.toHaveBeenCalled();
   });
 
-  test('a bridge error surfaces its message', async () => {
-    global.window.electron.amazonMusic.lookupPlaylist.mockResolvedValue({
-      success: false, reason: 'lookup-failed', error: 'Amazon playlist query failed (403)'
-    });
+  test('an errored replay surfaces its message', async () => {
+    playlistMock().pageFetch.mockImplementation(async () => ({ success: true, error: 'Amazon playlist query failed (403)' }));
     const resolver = instantiate(axe);
     await expect(resolver.lookupPlaylist(playlistUrl, {})).rejects.toThrow(/403/);
   });
 
-  test('a server-truncated import keeps the playlist\'s own trackCount instead of looking complete', async () => {
-    global.window.electron.amazonMusic.lookupPlaylist.mockResolvedValue({
-      success: true,
-      engine: 'web',
-      playlist: {
-        id: 'PP6417A00A9C99470BBC8834FF3BF6009A',
-        name: 'Alexa Chill',
-        owner: null,
-        albumArt: null,
-        trackCount: 7,
-        tracks: bridgePlaylist.playlist.tracks
-      }
-    });
+  test("a server-truncated import keeps the playlist's own trackCount instead of looking complete", async () => {
+    // A one-page response whose trackCount exceeds its rows, with no
+    // continuation pageInfo: the server is simply out of pages.
+    playlistMock((afterCursor) => (afterCursor == null
+      ? amazonPlaylistPage({ ...PLAYLIST, trackCount: 7 }, TRACKS, null)
+      : null));
     const resolver = instantiate(axe);
     const playlist = await resolver.lookupPlaylist(playlistUrl, {});
     expect(playlist.trackCount).toBe(7);
@@ -414,38 +442,38 @@ describe('amazonmusic lookupPlaylist', () => {
   test('a page that never loaded is not reported as a missing playlist', async () => {
     // load-failed means the import never got to ask Amazon (offline, captive
     // portal, stalled load) — 'Playlist not found' would be a lie. The manage
-    // function is installed to prove it is also NOT offered a sign-in prompt.
+    // function is installed to prove it is also NOT offered a sign-in prompt
+    // (each mock replaces global.window, so it is installed after each one).
     const managePrompt = jest.fn().mockResolvedValue(true);
-    global.window.__parachordManageAmazonMusic = managePrompt;
-    global.window.electron.amazonMusic.lookupPlaylist.mockResolvedValue({
-      success: false, reason: 'load-failed', error: 'Amazon Music page did not finish loading within 30000ms'
-    });
-    const resolver = instantiate(axe);
-    await expect(resolver.lookupPlaylist(playlistUrl, {})).rejects.toMatchObject({
-      notReady: true,
-      code: 'load-failed'
-    });
+    for (const reason of ['load-failed', 'superseded', 'not-ready']) {
+      amazonWebSessionMock({
+        loadResult: { success: false, reason, error: reason + ' happened' },
+        capturesFor: () => [],
+        envelope: {}
+      });
+      global.window.__parachordManageAmazonMusic = managePrompt;
+      await expect(instantiate(axe).lookupPlaylist(playlistUrl, {})).rejects.toMatchObject({
+        notReady: true,
+        code: reason
+      });
+    }
     expect(managePrompt).not.toHaveBeenCalled();
-    expect(global.window.electron.amazonMusic.lookupPlaylist).toHaveBeenCalledTimes(1);
   });
 
-  test('a missing CDM never offers the sign-in prompt — importing needs no CDM', async () => {
-    const managePrompt = jest.fn().mockResolvedValue(true);
-    global.window.__parachordManageAmazonMusic = managePrompt;
-    global.window.electron.amazonMusic.lookupPlaylist.mockResolvedValue({
-      success: false, reason: 'no-cdm', error: 'This Parachord build has no Widevine CDM'
-    });
+  test('a reasonless flow rejection keeps the old IPC handler shape, never a silent null', async () => {
+    // The #1437 review note: the deleted IPC handler caught EVERY error and
+    // the renderer surfaced "Amazon Music playlist import failed: <message>".
+    // A raw bridge rejection (a broken invoke — no reason class) reaches the
+    // outer catch, which must throw that shape, not return null (a null would
+    // report a real failure as a missing playlist).
+    const ws = playlistMock();
+    ws.load.mockRejectedValue(new Error('ipc broke'));
     const resolver = instantiate(axe);
-    await expect(resolver.lookupPlaylist(playlistUrl, {})).rejects.toMatchObject({
-      notReady: true,
-      code: 'no-cdm'
-    });
-    expect(managePrompt).not.toHaveBeenCalled();
-    expect(global.window.electron.amazonMusic.lookupPlaylist).toHaveBeenCalledTimes(1);
+    await expect(resolver.lookupPlaylist(playlistUrl, {})).rejects.toThrow('Amazon Music playlist import failed: ipc broke');
   });
 
-  test('a bridge rejection surfaces as null, not a throw', async () => {
-    global.window.electron.amazonMusic.lookupPlaylist.mockRejectedValue(new Error('ipc broke'));
+  test('no webSession bridge returns null', async () => {
+    global.window = {};
     const resolver = instantiate(axe);
     await expect(resolver.lookupPlaylist(playlistUrl, {})).resolves.toBeNull();
   });

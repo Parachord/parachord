@@ -131,6 +131,16 @@ function sanitizeLoadOpts(opts, allowedHosts) {
       if (problem) return { invalid: problem };
       out.capture.doneWhen = { ...src.capture.doneWhen };
     }
+    // returnOnTimeout is the OPT-IN to rule 5's budget escape, not a budget —
+    // nothing to clamp, and the same one-rule-both-seams shape check: a
+    // non-boolean must not ride through on a typo. Only `true` is carried:
+    // the default (absent/false) keeps the old throws-load-failed contract.
+    if (src.capture.returnOnTimeout !== undefined && src.capture.returnOnTimeout !== null) {
+      if (typeof src.capture.returnOnTimeout !== 'boolean') {
+        return { invalid: 'capture.returnOnTimeout must be a boolean (the opt-in to rule 5\'s budget escape)' };
+      }
+      if (src.capture.returnOnTimeout) out.capture.returnOnTimeout = true;
+    }
   }
   return { opts: out };
 }

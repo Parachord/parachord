@@ -96,7 +96,13 @@
 //      touched) — names the request the caller waits for, and the window ends
 //      the moment a header-complete, non-echo capture satisfies it, before
 //      did-finish-load included (the navigation keeps loading in the
-//      background). Echoed captures (rule 4) never satisfy it.
+//      background). Echoed captures (rule 4) never satisfy it. The budget
+//      has an OPT-IN escape in the same spirit (capture.returnOnTimeout: a
+//      boolean): a navigation budget that fires with captures held throws
+//      load-failed by default — the old contract every caller already treats
+//      as transient — and only the caller that opted in gets the held
+//      captures back with { loadTimedOut: true } instead, judging the
+//      half-loaded page's captures itself.
 //
 // The capture listener itself pairs bodies (onBeforeRequest) with headers
 // (onBeforeSendHeaders) by request id — onBeforeSendHeaders fires
@@ -810,7 +816,10 @@ function createWebSessionHost(config = {}) {
     // A budgeted navigation: a stalled network must not wedge the session's
     // chain for the Chromium network-stack timeout (minutes). The loser keeps
     // loading in the renderer (the next load aborts it, or the failure paths
-    // blank it); we just stop waiting.
+    // blank it); we just stop waiting. The budget's rejection is marked
+    // `loadTimedOut` — the load() below distinguishes "the budget ran out"
+    // (which a capture may redeem, rule 5's escape) from a navigation that
+    // actually failed.
     async loadURLBudgeted(view, url, timeoutMs = cfg.loadTimeoutMs) {
       const loaded = view.webContents.loadURL(url);
       loaded.catch(() => {}); // a late rejection after the race lost must not be unhandled
@@ -819,7 +828,11 @@ function createWebSessionHost(config = {}) {
         await Promise.race([
           loaded,
           new Promise((_, reject) => {
-            timer = setTimeout(() => reject(notReady('load-failed', `[web-session ${cfg.id}] page did not finish loading within ${timeoutMs}ms: ${url}`)), timeoutMs);
+            timer = setTimeout(() => {
+              const timeout = notReady('load-failed', `[web-session ${cfg.id}] page did not finish loading within ${timeoutMs}ms: ${url}`);
+              timeout.loadTimedOut = true;
+              reject(timeout);
+            }, timeoutMs);
           })
         ]);
       } finally {
@@ -829,11 +842,14 @@ function createWebSessionHost(config = {}) {
 
     // ── the primitives ─────────────────────────────────────────────────────
 
-    // load(url, { timeoutMs, capture: { urlPrefixes, quietMs, budgetMs, doneWhen } })
+    // load(url, { timeoutMs, capture: { urlPrefixes, quietMs, budgetMs, doneWhen, returnOnTimeout } })
     // → { finalUrl, captures } — captures present only when capture was asked
     // for. Serialized per session (rule 1); waits out in-flight pageFetches
     // (rule 2); captures flag echoes (rule 4) and end on quiet/budget, or on
-    // the caller's doneWhen match — the data-only early stop (rule 5).
+    // the caller's doneWhen match — the data-only early stop (rule 5). A
+    // budget that fires with captures held throws load-failed unless the
+    // caller OPTED IN to rule 5's escape (capture.returnOnTimeout — the
+    // caller that knows how to judge a half-loaded page's captures says so).
     async load(url, opts = {}) {
       // Validate before ANY state is touched: a bad argument must not leave
       // a created-but-never-laid-out view or a disarmed park fuse behind.
@@ -843,6 +859,10 @@ function createWebSessionHost(config = {}) {
       const doneWhenProblem = captureDoneWhenProblem(opts.capture && opts.capture.doneWhen);
       if (doneWhenProblem) {
         throw notReady('invalid', `[web-session ${cfg.id}] ${doneWhenProblem}`);
+      }
+      if (opts.capture && opts.capture.returnOnTimeout !== undefined && opts.capture.returnOnTimeout !== null
+        && typeof opts.capture.returnOnTimeout !== 'boolean') {
+        throw notReady('invalid', `[web-session ${cfg.id}] capture.returnOnTimeout must be a boolean (the opt-in to rule 5's budget escape)`);
       }
       return this.enqueue(async () => {
         const generation = this._generation; // clear() bumps this: a superseded load's teardown must not touch the new session state
@@ -855,6 +875,7 @@ function createWebSessionHost(config = {}) {
         this.cancelPark();
         const captureState = opts.capture ? this.attachCapture(opts.capture.urlPrefixes, opts.capture.doneWhen) : null;
         try {
+          let loadTimedOut = false;
           await this.beginNavigation();
           try {
             if (captureState && opts.capture.doneWhen) {
@@ -870,10 +891,29 @@ function createWebSessionHost(config = {}) {
             } else {
               await this.loadURLBudgeted(view, url, opts.timeoutMs);
             }
+          } catch (error) {
+            // Rule 5's escape (the #1423 bug class), OPT-IN ONLY
+            // (capture.returnOnTimeout): the navigation budget ran out, but
+            // the capture already holds requests — the page's requests were
+            // the point of the load, not the finished document (a slow
+            // subresource keeps did-finish-load from firing long after the
+            // page's gql). The host cannot know which request matters (the
+            // matcher is plugin-side), so the caller that knows how to judge
+            // a half-loaded page's captures opts in and gets what was
+            // captured with the flag. Every other caller keeps the old
+            // contract: a budget timeout — with captures held or not — or a
+            // genuine navigation failure throws load-failed, which those
+            // callers already treat as transient (a spec search must not
+            // read a slow page as a structural "never searched").
+            if (captureState && opts.capture.returnOnTimeout && error && error.loadTimedOut && captureState.snapshot().length) {
+              loadTimedOut = true;
+            } else {
+              throw error;
+            }
           } finally {
             this.endNavigation();
           }
-          if (captureState) {
+          if (captureState && !loadTimedOut) {
             // The quiet window (rule 5) — raced against the caller's named
             // match when there is one: the window ends AT the match, not at
             // the next poll (a match that fired mid-navigation already
@@ -896,7 +936,8 @@ function createWebSessionHost(config = {}) {
           const finalUrl = this.alive(view) ? view.webContents.getURL() : '';
           return {
             finalUrl,
-            ...(captureState ? { captures: captureState.snapshot() } : {})
+            ...(captureState ? { captures: captureState.snapshot() } : {}),
+            ...(loadTimedOut ? { loadTimedOut: true } : {})
           };
         } finally {
           if (captureState) captureState.detach();

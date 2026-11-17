@@ -2,11 +2,14 @@
  * The search view's job queue, now the host's load chain in two lanes
  * (createLaneQueue + enqueue(fn, { lane }) in main-process/web-session.js;
  * enqueueSearch in amazon-web-player.js is the Amazon wrapper). One job at a
- * time; a foreground job (a playlist the user opened) starts before every
- * queued background job (artist photos, recommendations, catalog fallbacks);
- * FIFO within a lane; a running job is never interrupted; a throwing job
- * rejects only itself. The lanes live on webSession since the one-owner step
- * (#1356) — the plugin no longer owns a queue next to the host's.
+ * time; a foreground job starts before every queued background job (artist
+ * photos, recommendations, catalog fallbacks); FIFO within a lane; a running
+ * job is never interrupted; a throwing job rejects only itself. The lanes
+ * live on webSession since the one-owner step (#1356) — the plugin no longer
+ * owns a queue next to the host's. The playlist lookup that used to ride the
+ * host's foreground lane moved into the plugin (#1356 M7): its own two-lane
+ * queue (the plugin's mirror of these semantics) and its foreground playlist
+ * lookup are pinned in tests/resolver/amazon-music-plugin-playlist.test.js.
  */
 
 const amazonWebPlayer = require('../../amazon-web-player');
@@ -107,14 +110,5 @@ describe('enqueueSearch lanes (the host chain under Amazon)', () => {
     await expect(amazonWebPlayer.enqueueSearch(async () => { throw new Error('x'); })).rejects.toThrow('x');
     expect(during).toBe(before + 1);
     expect(amazonWebPlayer.webSession._chainBusy).toBe(before);
-  });
-
-  test('lookupPlaylist uses the foreground lane', async () => {
-    const spy = jest.spyOn(amazonWebPlayer, 'enqueueSearch').mockResolvedValue(null);
-    const signed = jest.spyOn(amazonWebPlayer, 'isSignedIn').mockResolvedValue(true);
-    await amazonWebPlayer.lookupPlaylist('https://music.amazon.com/user-playlists/d1670975fc554eed80edd41f03d355f4sune');
-    expect(spy).toHaveBeenCalledWith(expect.any(Function), { lane: 'foreground' });
-    spy.mockRestore();
-    signed.mockRestore();
   });
 });

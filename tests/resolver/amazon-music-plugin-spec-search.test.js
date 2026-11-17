@@ -257,6 +257,9 @@ describe('the page flow (webSession.load with the capture window inside it)', ()
     // returns ~quietMs after load-finish when ZERO captures exist, so the
     // default would close before a cold view's first gql ever fired.
     expect(opts.capture.quietMs).toBeGreaterThanOrEqual(2500);
+    // The budget escape is OPT-IN and the spec search never opts in: a slow
+    // page stays a load-failed here, never a structural "never searched".
+    expect(opts.capture.returnOnTimeout).toBeUndefined();
     // The page's own request was replayed verbatim to the captured URL.
     expect(ws.pageFetch).toHaveBeenCalledTimes(1);
     const [rid, request] = ws.pageFetch.mock.calls[0];
@@ -298,6 +301,40 @@ describe('the page flow (webSession.load with the capture window inside it)', ()
       notReady: true,
       code: 'load-failed'
     });
+  });
+
+  test('a load budget that fires mid-page is load-failed for the spec search — three slow pages never open the breaker', async () => {
+    // #1437 review round 2, New 1 (the maintainer's bridge-mock
+    // reproduction): a slow page — the budget fires after the page's
+    // boot-time gql but before the search request — is a load-failed, not a
+    // structural "never searched". The spec search never opts into rule 5's
+    // budget escape (capture.returnOnTimeout is the playlist import's), so
+    // the half-loaded page's captures never reach the matcher: the flow
+    // takes the refused-load path, the breaker never hears it, and the
+    // fourth slow search still loads its page (the breaker's fail-fast
+    // never precedes it).
+    const ws = amazonWebSessionMock({
+      loadTimedOut: true, // the mock answers by the host's OPT-IN rule: no returnOnTimeout → load-failed
+      capturesFor: () => [{ url: 'https://gql.music.amazon.com/', method: 'POST', body: JSON.stringify({ operationName: 'MusicHomePage', variables: {} }), headers: { 'x-api-key': 'k' } }]
+    });
+    const resolver = instantiateAmazonPlugin(axe);
+    // The spec-search load never opts into the escape.
+    const optIns = () => ws.load.mock.calls.map((c) => !!(c[2] && c[2].capture && c[2].capture.returnOnTimeout));
+    for (let i = 0; i < 3; i += 1) {
+      await expect(search(resolver, 'daft punk')).rejects.toMatchObject({
+        notReady: true,
+        code: 'load-failed'
+      });
+    }
+    expect(optIns()).toEqual([false, false, false]);
+    // The breaker counted NONE of them — a slow network is not a hornet
+    // rename, and three slow page loads must not stop Amazon search for
+    // ten minutes.
+    expect(resolver._searchBreaker.state()).toMatchObject({ failures: 0, open: false });
+    // The fourth slow search still pays for its page load: no fail-fast.
+    await expect(search(resolver, 'daft punk')).rejects.toMatchObject({ code: 'load-failed' });
+    expect(ws.load).toHaveBeenCalledTimes(4);
+    expect(resolver._searchBreaker.state()).toMatchObject({ failures: 0, open: false });
   });
 
   test("a busy gate on the page flow's own replay is ridden out, not a structural failure", async () => {

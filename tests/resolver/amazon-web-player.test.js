@@ -1,9 +1,9 @@
 /**
  * amazonWebPlayer.isSignedIn wiring (the host half that remains after the
- * #1356 moves: sign-in, playlist import, recommendations, dmls, the
- * diagnostic capture). The track search moved into the plugin in M5 and the
- * album/artist catalog flows (searchAlbums / searchArtistImage /
- * lookupAlbum) in M6 — their pins live in tests/resolver/
+ * #1356 moves: recommendations, dmls, the diagnostic capture, sign-in). The
+ * track search moved into the plugin in M5, the album/artist catalog flows
+ * (searchAlbums / searchArtistImage / lookupAlbum) in M6 and the playlist
+ * import in M7 — their pins live in tests/resolver/
  * amazon-music-plugin-*.test.js, driving the plugin against a mocked
  * window.electron.webSession bridge.
  *
