@@ -1960,7 +1960,7 @@ const FALLBACK_RESOLVERS = require('./lib/fallback-resolvers.generated.js');
 
 
 // The canonical plug-in order and its helpers (lib/resolver-order.js).
-const { CANONICAL_RESOLVER_ORDER, appendUniqueId, insertInCanonicalOrder } = require('./lib/resolver-order');
+const { CANONICAL_RESOLVER_ORDER, appendUniqueId, insertRemembered, rememberOrder } = require('./lib/resolver-order');
 
 // Charts page country options (lib/charts-countries.js).
 const { CHARTS_COUNTRIES } = require('./lib/charts-countries');
@@ -3805,7 +3805,11 @@ const Parachord = () => {
   // at ~7.6k; useRef identity is mount-agnostic).
   const resolverConfigCache = useRef({});
   const resolverOrderRef = useRef(resolverOrder);  // Ref to avoid stale closure in save
-  const savedResolverOrderRef = useRef(null);  // Persisted order from storage — used to restore priority position when re-enabling
+  // The user's whole priority ranking, disabled plug-ins included
+  // (lib/resolver-order.js rememberOrder): a plug-in turned back on, or back
+  // after a sign-in, returns to its place, not the canonical default. Kept
+  // current on every order change and saved as resolver_order_memory.
+  const savedResolverOrderRef = useRef(null);
   const savedActiveResolversRef = useRef(null);  // Persisted active_resolvers from storage — used to distinguish auth-gated removal from user-disabled
   const [draggedResolver, setDraggedResolver] = useState(null);
   const [dragOverResolver, setDragOverResolver] = useState(null);  // Which resolver is being dragged over
@@ -9506,7 +9510,7 @@ const Parachord = () => {
       });
       setResolverOrder(prev => {
         if (!prev.includes('applemusic')) {
-          return insertInCanonicalOrder(prev, 'applemusic');
+          return insertRemembered(prev, 'applemusic', savedResolverOrderRef.current);
         }
         return prev;
       });
@@ -9615,7 +9619,7 @@ const Parachord = () => {
               });
               setResolverOrder(prev => {
                 if (!prev.includes('applemusic')) {
-                  return insertInCanonicalOrder(prev, 'applemusic');
+                  return insertRemembered(prev, 'applemusic', savedResolverOrderRef.current);
                 }
                 return prev;
               });
@@ -12952,7 +12956,7 @@ ${trackListXml}
             }
             newOrder = [...newOrder.slice(0, insertAt), id, ...newOrder.slice(insertAt)];
           } else {
-            newOrder = insertInCanonicalOrder(newOrder, id);
+            newOrder = insertRemembered(newOrder, id, savedResolverOrderRef.current);
           }
         }
       }
@@ -15559,6 +15563,8 @@ ${trackListXml}
   useEffect(() => {
     activeResolversRef.current = activeResolvers;
     resolverOrderRef.current = resolverOrder;
+    // Remember every ranking change, disabled plug-ins kept in place.
+    if (resolverSettingsLoaded.current) savedResolverOrderRef.current = rememberOrder(savedResolverOrderRef.current, resolverOrder);
   }, [activeResolvers, resolverOrder]);
 
   // Ready to play (#1287): the saved settings have loaded (the active resolvers)
@@ -19222,7 +19228,7 @@ ${trackListXml}
         'cache_recommendations',
         'cache_critics_picks',
         // Resolver settings & user preferences
-        'active_resolvers', 'resolver_order', 'meta_service_configs',
+        'active_resolvers', 'resolver_order', 'resolver_order_memory', 'meta_service_configs',
         'applemusic_developer_token', 'friends', 'pinnedFriendIds',
         'autoPinnedFriendIds', 'hidden_friend_keys', 'resolver_volume_offsets', 'saved_volume',
         'skip_external_prompt', 'skip_unplayable_prompt',
@@ -19864,7 +19870,9 @@ ${trackListXml}
         const removedResolvers = ['qobuz'];
         const dedupedOrder = [...new Set(savedResolverOrder)].filter(id => !removedResolvers.includes(id));
         setResolverOrder(dedupedOrder);
-        savedResolverOrderRef.current = dedupedOrder;
+        // The ranking memory, or (before it existed) the saved order.
+        const savedMemory = Array.isArray(d['resolver_order_memory']) ? d['resolver_order_memory'].filter(id => !removedResolvers.includes(id)) : null;
+        savedResolverOrderRef.current = rememberOrder(savedMemory, dedupedOrder);
         console.log(`📦 Loaded resolver order from storage (${dedupedOrder.length} resolvers)`);
       }
 
@@ -20245,6 +20253,7 @@ ${trackListXml}
       // Save resolver settings (use refs to ensure we have current values, not stale closure)
       await window.electron.store.set('active_resolvers', activeResolversRef.current);
       await window.electron.store.set('resolver_order', resolverOrderRef.current);
+      if (savedResolverOrderRef.current) await window.electron.store.set('resolver_order_memory', savedResolverOrderRef.current);
 
       // Save volume normalization offsets (use ref to avoid stale closure)
       await window.electron.store.set('resolver_volume_offsets', resolverVolumeOffsetsRef.current);
@@ -25392,7 +25401,7 @@ ${trackListXml}
       // Enabling: add to resolverOrder in canonical position
       setResolverOrder(prev => {
         if (!prev.includes(resolverId)) {
-          return insertInCanonicalOrder(prev, resolverId);
+          return insertRemembered(prev, resolverId, savedResolverOrderRef.current);
         }
         return prev;
       });
@@ -36096,7 +36105,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         });
         setResolverOrder(prev => {
           if (!prev.includes('applemusic')) {
-            return insertInCanonicalOrder(prev, 'applemusic');
+            return insertRemembered(prev, 'applemusic', savedResolverOrderRef.current);
           }
           return prev;
         });
