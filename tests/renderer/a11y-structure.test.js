@@ -45,7 +45,7 @@ test('the playing row is aria-current', () => {
 
 test('the always-dark surfaces get a light focus ring', () => {
   expect(html).toContain('.on-dark :focus-visible,');
-  expect((app.match(/className: 'on-dark /g) || []).length).toBeGreaterThanOrEqual(4);
+  expect((app.match(/className: 'on-dark /g) || []).length).toBeGreaterThanOrEqual(3); // 4 until the prompt panel went (#1020)
 });
 
 test('Space plays and pauses, but not on a control or with an overlay open', () => {

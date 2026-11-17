@@ -2057,7 +2057,6 @@ const { servicesWithCapability, hasScrobblerConnected: hasScrobblerConnectedTo }
 const { PROVIDER_LABEL, getPlaylistMirrorTargets } = require('./lib/playlist-mirrors');
 const { playlistImportLabel } = require('./lib/playlist-import-sources');
 const { FirstRunTutorial } = require('./components/first-run-tutorial');
-const { AiPromptPanel } = require('./components/ai-prompt-panel');
 const { StopSyncDialog } = require('./components/stop-sync-dialog');
 const { SyncChannelDisableDialog } = require('./components/sync-channel-disable-dialog');
 const { NwayMigrationDialog } = require('./components/nway-migration-dialog');
@@ -2066,7 +2065,6 @@ const { AmazonManageDialog } = require('./components/amazon-manage-dialog');
 const { UrlImportDialog } = require('./components/url-import-dialog');
 const { QueueSaveDialog } = require('./components/queue-save-dialog');
 const { NewPlaylistDialog } = require('./components/new-playlist-dialog');
-const { AiSaveDialog } = require('./components/ai-save-dialog');
 const { UnsavedFriendDialog } = require('./components/unsaved-friend-dialog');
 const { ExternalTrackPrompt } = require('./components/external-track-prompt');
 const { PlaylistsPage } = require('./components/playlists-page');
@@ -3447,20 +3445,13 @@ const Parachord = () => {
   const [mainContentWidth, setMainContentWidth] = useState(800);
   const mainContentRef = useRef(null);
 
-  // AI Playlist Generation state
-  const [aiPromptOpen, setAiPromptOpen] = useState(false);
-  const [aiPrompt, setAiPrompt] = useState('');
-  const [aiLoading, setAiLoading] = useState(false);
+  // Whether Shuffleupagus may read the listening history
   const [aiIncludeHistory, setAiIncludeHistory] = useState(false);
   const aiIncludeHistoryRef = useRef(false); // Ref for toggle to avoid stale closures in cached getContext
   const [recommendationBlocklist, setRecommendationBlocklist] = useState({ artists: [], albums: [], tracks: [] });
   const recommendationBlocklistRef = useRef({ artists: [], albums: [], tracks: [] }); // Ref for blocklist to avoid stale closures
   const [resolverBlocklist, setResolverBlocklist] = useState([]); // Array of { artist, title, resolverId, blockedAt }
   const resolverBlocklistRef = useRef([]); // Ref for blocklist to avoid stale closures
-  const [aiError, setAiError] = useState(null);
-  const [selectedAiResolver, setSelectedAiResolver] = useState(null);
-  const [aiSaveDialogOpen, setAiSaveDialogOpen] = useState(false);
-  const [aiSavePlaylistName, setAiSavePlaylistName] = useState('');
 
   // Results sidebar state (generic/reusable)
   const [resultsSidebar, setResultsSidebar] = useState(null);
@@ -8640,9 +8631,6 @@ const Parachord = () => {
 
   // Cache for top tracks data (keyed by period)
   const topTracksCache = useRef({});
-
-  // Get meta services with AI generation capability
-  const getAiServices = () => servicesWithCapability('generate', resolverLoaderRef.current, metaServices);
 
   // Get AI services with chat capability (for Conversational DJ)
   const getChatServices = () => servicesWithCapability('chat', resolverLoaderRef.current, metaServices);
@@ -17170,116 +17158,6 @@ ${trackListXml}
 
     // No data from either source
     return null;
-  };
-
-  // AI Playlist Generation
-  const handleAiGenerate = async (prompt) => {
-    const aiServices = getAiServices();
-    // Filter to only enabled services with valid config
-    const enabledServices = aiServices.filter(isServiceEnabled);
-
-    if (enabledServices.length === 0) {
-      setAiError('No AI plugins configured. Enable OpenAI or Gemini and add your API key in Settings → General.');
-      return;
-    }
-
-    // Use selected service or first available
-    const service = selectedAiResolver
-      ? enabledServices.find(s => s.id === selectedAiResolver) || enabledServices[0]
-      : enabledServices[0];
-
-    setAiLoading(true);
-    setAiError(null);
-
-    // Open sidebar immediately with loading state
-    setResultsSidebar({
-      title: '✨ AI Playlist',
-      subtitle: `"${prompt.length > 50 ? prompt.substring(0, 50) + '…' : prompt}"`,
-      tracks: [],
-      source: 'ai',
-      prompt: prompt,
-      provider: { id: service.id, name: service.name },
-      loading: true
-    });
-
-    // Close prompt input immediately
-    setAiPromptOpen(false);
-    setAiPrompt('');
-
-    try {
-      // Get service config from metaServiceConfigs
-      const config = metaServiceConfigs[service.id] || {};
-
-      // Fetch listening context if toggle is enabled
-      let listeningContext = null;
-      if (aiIncludeHistory) {
-        listeningContext = await fetchListeningContext();
-        if (!listeningContext) {
-          console.log('🎵 No listening context available, proceeding without');
-        }
-      }
-
-      // Call the service's generate function
-      const tracks = await service.generate(prompt, config, listeningContext);
-
-      if (!tracks || tracks.length === 0) {
-        throw new Error('No tracks returned. Try a different prompt.');
-      }
-
-      // Update sidebar with the generated tracks
-      setResultsSidebar({
-        title: '✨ AI Playlist',
-        subtitle: `"${prompt.length > 50 ? prompt.substring(0, 50) + '…' : prompt}"`,
-        tracks: tracks.map((t, i) => ({
-          id: `ai-${Date.now()}-${i}`,
-          title: t.title,
-          artist: t.artist,
-          album: t.album || '',
-          sources: {} // Will be resolved when added to queue
-        })),
-        source: 'ai',
-        prompt: prompt,
-        provider: { id: service.id, name: service.name },
-        loading: false
-      });
-    } catch (error) {
-      console.error('AI generation error:', error);
-      setAiError(error.message || 'Failed to generate playlist');
-      // Close sidebar on error, reopen prompt
-      closeSidebarAnimated();
-      setAiPromptOpen(true);
-    } finally {
-      setAiLoading(false);
-    }
-  };
-
-  // Handle adding AI results to queue
-  const handleAiAddToQueue = () => {
-    if (!resultsSidebar?.tracks) return;
-    // Use aiPlaylist context type (not navigable, unlike recommendations page)
-    const context = { type: 'aiPlaylist', name: 'AI Playlist' };
-    addToQueue(resultsSidebar.tracks, context);
-    closeSidebarAnimated();
-  };
-
-  // Handle playing AI results now (replace queue)
-  const handleAiPlay = () => {
-    if (!resultsSidebar?.tracks || resultsSidebar.tracks.length === 0) return;
-    const context = { type: 'aiPlaylist', name: 'AI Playlist' };
-    playTrackCollection(resultsSidebar.tracks, context);
-    closeSidebarAnimated();
-  };
-
-  // Handle adding AI results to existing/new playlist
-  const handleAiAddToPlaylist = () => {
-    if (!resultsSidebar?.tracks || resultsSidebar.tracks.length === 0) return;
-    setAddToPlaylistPanel({
-      open: true,
-      tracks: resultsSidebar.tracks,
-      sourceName: resultsSidebar.prompt || 'AI Playlist',
-      sourceType: 'playlist'
-    });
-    closeSidebarAnimated();
   };
 
   // ============================================
@@ -26147,48 +26025,6 @@ ${trackListXml}
 ${tracks}
   </trackList>
 </playlist>`;
-  };
-
-  // Open save dialog for AI playlist
-  const handleAiSavePlaylist = () => {
-    if (!resultsSidebar?.tracks) return;
-
-    // Set default name based on prompt
-    const defaultName = resultsSidebar.prompt
-      ? resultsSidebar.prompt.substring(0, 50)
-      : 'AI Generated Playlist';
-
-    setAiSavePlaylistName(defaultName);
-    setAiSaveDialogOpen(true);
-  };
-
-  // Actually save the AI playlist with the chosen name
-  const handleAiSavePlaylistConfirm = async () => {
-    if (!resultsSidebar?.tracks || !aiSavePlaylistName.trim()) return;
-
-    const playlistId = `ai-${Date.now()}`;
-    const providerName = resultsSidebar.provider?.name || 'AI';
-
-    const newPlaylist = {
-      id: playlistId,
-      title: aiSavePlaylistName.trim(),
-      creator: providerName,
-      tracks: resultsSidebar.tracks,
-      createdAt: Date.now(),
-      addedAt: Date.now(),
-      lastModified: Date.now()
-    };
-
-    // Add to playlists state (prepend so it appears at top immediately)
-    setPlaylists(prev => [newPlaylist, ...prev]);
-
-    // Save to unified local storage (electron-store)
-    await savePlaylistToStore(newPlaylist);
-
-    // Close dialogs
-    setAiSaveDialogOpen(false);
-    closeSidebarAnimated();
-    showSidebarBadge('playlists');
   };
 
   // Save playlist to local storage (electron-store)
@@ -37505,7 +37341,7 @@ useEffect(() => {
   // Stable function props for the memo'd ResultsPanel (keys must
   // match RESULTS_PANEL_HANDLERS in results-panel.js).
   const resultsPanelHandlers = useStableHandlers({
-    clearAiChatHistory, closeAiChat, closeSidebarAnimated, getChatServices, handleAiAddToPlaylist, handleAiAddToQueue, handleAiChatSend, handleAiPlay, isServiceEnabled, renderChatContent, showCopyFallback,
+    clearAiChatHistory, closeAiChat, closeSidebarAnimated, getChatServices, handleAiChatSend, isServiceEnabled, renderChatContent, showCopyFallback,
   });
 
   // Stable function props for the memo'd QueueDrawer (keys must
@@ -37541,7 +37377,7 @@ useEffect(() => {
   // Stable function props for the memo'd Playbar (keys must
   // match PLAYBAR_HANDLERS in playbar.js).
   const playbarHandlers = useStableHandlers({
-    closeAiChat, fetchArtistData, getAiServices, getChatServices, handleDragEnter, handleDragLeave, handleDragOver, handleDrop, handlePlaylistDragEnd, haversineDistance, isServiceEnabled, mediaElementFor, openAiChat, openAlbumForTrack, playsInApp, requestRepeat, requestShuffle,
+    closeAiChat, fetchArtistData, getChatServices, handleDragEnter, handleDragLeave, handleDragOver, handleDrop, handlePlaylistDragEnd, haversineDistance, isServiceEnabled, mediaElementFor, openAiChat, openAlbumForTrack, playsInApp, requestRepeat, requestShuffle,
   });
 
   // Stable function props for the memo'd Sidebar (keys must
@@ -37556,12 +37392,6 @@ useEffect(() => {
     connectLastfm, connectListenbrainz, handleAddWatchFolder, navigateTo,
   });
 
-  // Stable function props for the memo'd AiPromptPanel (keys must
-  // match AI_PROMPT_PANEL_HANDLERS in ai-prompt-panel.js).
-  const aiPromptPanelHandlers = useStableHandlers({
-    handleAiGenerate, navigateTo,
-  });
-
   // Stable function props for the memo'd ExternalTrackPrompt (keys must
   // match EXTERNAL_TRACK_PROMPT_HANDLERS in external-track-prompt.js).
   const externalTrackPromptHandlers = useStableHandlers({
@@ -37572,12 +37402,6 @@ useEffect(() => {
   // match UNSAVED_FRIEND_DIALOG_HANDLERS in unsaved-friend-dialog.js).
   const unsavedFriendDialogHandlers = useStableHandlers({
     confirmUnpinFriend, saveFriendToCollection,
-  });
-
-  // Stable function props for the memo'd AiSaveDialog (keys must
-  // match AI_SAVE_DIALOG_HANDLERS in ai-save-dialog.js).
-  const aiSaveDialogHandlers = useStableHandlers({
-    handleAiSavePlaylistConfirm,
   });
 
   // Stable function props for the memo'd NewPlaylistDialog (keys must
@@ -38256,7 +38080,6 @@ useEffect(() => {
       _cacheLoaded: cacheLoaded,
       addTrackToCollection,
       aiChatOpen,
-      aiPromptOpen,
       allResolvers,
       applyLocalFileVolume,
       browserPlaybackActive,
@@ -38299,7 +38122,6 @@ useEffect(() => {
       resolverBlocklist,
       resolverVolumeOffsets,
       resumePending,
-      setAiPromptOpen,
       setDraggingTrackForPlaylist,
       setIsMuted,
       setPlaybarAlbumArt,
@@ -38319,26 +38141,6 @@ useEffect(() => {
       trackSourcesCache,
       volume,
       ...playbarHandlers
-    }),
-
-    // AI Prompt Input Panel (floating above playbar, aligned with AI button on left) - Refined dark theme
-    /* AiPromptPanel (components/ai-prompt-panel.js), a memo'd panel. */ aiPromptOpen && React.createElement(AiPromptPanel, {
-      _allResolvers: allResolvers,
-      aiError,
-      aiIncludeHistory,
-      aiLoading,
-      aiPrompt,
-      metaServiceConfigs,
-      metaServices,
-      resolverLoaderRef,
-      selectedAiResolver,
-      setAiError,
-      setAiPrompt,
-      setAiPromptOpen,
-      setMarketplaceCategory,
-      setSelectedAiResolver,
-      setSettingsTab,
-      ...aiPromptPanelHandlers
     }),
 
     // Results Sidebar (slides in from right, above playbar) - Refined dark theme
@@ -38363,16 +38165,6 @@ useEffect(() => {
       showToast,
       sidebarClosing,
       ...resultsPanelHandlers
-    }),
-
-    // AI Save Playlist Dialog - Refined dark theme
-    // The standard dialog (components/modal.js), a real form: Enter saves.
-    /* AiSaveDialog (components/ai-save-dialog.js), a memo'd dialog. */ aiSaveDialogOpen && React.createElement(AiSaveDialog, {
-      aiSavePlaylistName,
-      resultsSidebar,
-      setAiSaveDialogOpen,
-      setAiSavePlaylistName,
-      ...aiSaveDialogHandlers
     }),
 
     // New Playlist Dialog: a name, then the empty playlist opens.

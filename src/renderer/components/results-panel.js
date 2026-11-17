@@ -1,8 +1,8 @@
 // src/renderer/components/results-panel.js: the Shuffleupagus panel that
-// slides in from the right above the playbar: a generated playlist's
-// tracks (Play, Add to queue, Save), or the chat with Shuffleupagus (its
-// messages, the provider menu, the input and Share my data) (#1451, moved
-// out of app.js).
+// slides in from the right above the playbar: the chat with Shuffleupagus
+// (its messages, the provider menu, the input and Share my data) (#1451,
+// moved out of app.js). It also had a track-list mode for the one-shot AI
+// Playlist, removed with that panel (#1020).
 //
 // A React.memo'd panel fed stable props: state, setters, refs and
 // showToast by value, plain functions through useStableHandlers
@@ -14,20 +14,14 @@ const { BrandMark } = require('./brand-logos');
 const { Button } = require('./button');
 const { ProviderMenu } = require('./provider-menu');
 const { Switch, TextField } = require('./fields');
-const { EmptyState } = require('./states');
 const { transition } = require('../lib/motion');
-
-const { Play } = Icons;
 
 const RESULTS_PANEL_HANDLERS = [
   'clearAiChatHistory',
   'closeAiChat',
   'closeSidebarAnimated',
   'getChatServices',
-  'handleAiAddToPlaylist',
-  'handleAiAddToQueue',
   'handleAiChatSend',
-  'handleAiPlay',
   'isServiceEnabled',
   'renderChatContent',
   'showCopyFallback',
@@ -46,10 +40,7 @@ const ResultsPanel = React.memo(function ResultsPanel(props) {
     closeAiChat,
     closeSidebarAnimated,
     getChatServices,
-    handleAiAddToPlaylist,
-    handleAiAddToQueue,
     handleAiChatSend,
-    handleAiPlay,
     isServiceEnabled,
     lastAssistantMessageRef,
     lastUserMessageRef,
@@ -93,32 +84,22 @@ const ResultsPanel = React.memo(function ResultsPanel(props) {
         },
           React.createElement('div', { className: 'flex items-center justify-between' },
             React.createElement('div', { className: 'flex items-center gap-2' },
-              resultsSidebar.mode === 'chat'
-                ? React.createElement('span', { style: { color: 'var(--playbar-accent-hover)', width: '20px', height: '20px', display: 'inline-flex' } },
-                    React.createElement(BrandMark, { id: 'shuffleupagus', size: 20 })
-                  )
-                : React.createElement('span', { style: { color: 'var(--playbar-accent-hover)' } }, '✨'),
+              React.createElement('span', { style: { color: 'var(--playbar-accent-hover)', width: '20px', height: '20px', display: 'inline-flex' } },
+                React.createElement(BrandMark, { id: 'shuffleupagus', size: 20 })
+              ),
               React.createElement('h3', { style: { fontSize: '16px', fontWeight: '600', color: 'var(--on-dark-primary)' } }, resultsSidebar.title)
             ),
-            React.createElement(Button, { variant: 'icon', size: 'sm', tone: 'dark', onClick: () => {
-                if (resultsSidebar.mode === 'chat') {
-                  closeAiChat();
-                } else {
-                  closeSidebarAnimated();
-                }
-              }, 'aria-label': 'Close', 'data-tooltip': 'Close' }, React.createElement(Icons.X, { className: 'w-5 h-5' }))
+            React.createElement(Button, { variant: 'icon', size: 'sm', tone: 'dark', onClick: closeAiChat, 'aria-label': 'Close', 'data-tooltip': 'Close' }, React.createElement(Icons.X, { className: 'w-5 h-5' }))
           ),
-          // Provider selector for chat mode, subtitle for other modes
-          resultsSidebar.mode === 'chat'
-            ? React.createElement('div', { style: { marginTop: '8px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' } },
+          // The chat provider selector
+          React.createElement('div', { style: { marginTop: '8px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' } },
                 // "powered by:" label
                 React.createElement('span', { style: { fontSize: '12px', color: 'var(--on-dark-secondary)' } }, 'Powered by'),
                 // Custom dropdown button
                 (() => {
                   const enabledServices = getChatServices().filter(isServiceEnabled);
 
-                  // The AI provider picker (components/provider-menu.js),
-                  // the same control as the prompt panel's.
+                  // The AI provider picker (components/provider-menu.js).
                   return React.createElement(ProviderMenu, {
                     label: 'Chat provider',
                     services: enabledServices,
@@ -145,15 +126,10 @@ const ResultsPanel = React.memo(function ResultsPanel(props) {
                   });
                 })()
               )
-            : (resultsSidebar.subtitle && React.createElement('p', {
-                style: { fontSize: '13px', color: 'var(--on-dark-tertiary)', marginTop: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
-              }, resultsSidebar.subtitle))
         ),
 
-        // Content area - Chat mode vs Track list mode
-        resultsSidebar.mode === 'chat'
-          // ========== CHAT MODE ==========
-          ? React.createElement(React.Fragment, null,
+        // The chat
+        React.createElement(React.Fragment, null,
               // Chat messages area
               React.createElement('div', {
                 ref: chatMessagesRef,
@@ -330,82 +306,6 @@ const ResultsPanel = React.memo(function ResultsPanel(props) {
               )
             )
 
-          // ========== TRACK LIST MODE (Original) ==========
-          : React.createElement(React.Fragment, null,
-              // Track list or loading skeletons
-              React.createElement('div', { className: 'flex-1 overflow-y-auto', style: { padding: '8px' } },
-                // Loading skeletons
-                resultsSidebar.loading
-                  ? Array.from({ length: 12 }).map((_, index) =>
-                      React.createElement('div', {
-                        key: `skeleton-${index}`,
-                        className: 'flex items-center gap-3',
-                        style: { padding: '8px' }
-                      },
-                        // Skeleton track number
-                        React.createElement('div', {
-                          className: 'animate-pulse',
-                          style: { width: '24px', height: '16px', backgroundColor: 'var(--on-dark-line)', borderRadius: '4px' }
-                        }),
-                        // Skeleton track info
-                        React.createElement('div', { className: 'flex-1 min-w-0 space-y-2' },
-                          React.createElement('div', {
-                            className: 'animate-pulse',
-                            style: { height: '16px', backgroundColor: 'var(--on-dark-line)', borderRadius: '4px', width: `${60 + ((index * 37) % 30)}%`, animationDelay: `${index * 0.05}s` }
-                          }),
-                          React.createElement('div', {
-                            className: 'animate-pulse',
-                            style: { height: '12px', backgroundColor: 'var(--on-dark-faint)', borderRadius: '4px', width: `${40 + ((index * 23) % 25)}%`, animationDelay: `${index * 0.05 + 0.1}s` }
-                          })
-                        )
-                      )
-                    )
-                  : (resultsSidebar.tracks || []).map((track, index) =>
-                      React.createElement('div', {
-                        key: track.id || index,
-                        className: 'group flex items-center gap-3 transition-colors hover:!bg-[var(--on-dark-faint)]',
-                        style: { padding: '8px', borderRadius: '8px' },
-                      },
-                        // Track number
-                        React.createElement('span', { style: { width: '24px', textAlign: 'center', fontSize: '12px', color: 'var(--on-dark-secondary)' } }, index + 1),
-
-                        // Track info
-                        React.createElement('div', { className: 'flex-1 min-w-0' },
-                          React.createElement('div', { style: { fontSize: '14px', color: 'var(--on-dark-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, track.title),
-                          React.createElement('div', { style: { fontSize: '12px', color: 'var(--on-dark-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, track.artist)
-                        ),
-
-                        // Remove button
-                        React.createElement(Button, { variant: 'icon', size: 'sm', tone: 'dark', className: 'opacity-0 group-hover:opacity-100 hover:!text-[var(--on-dark-danger)]', 'aria-label': "Remove from the list", onClick: () => {
-                            setResultsSidebar(prev => ({
-                              ...prev,
-                              tracks: prev.tracks.filter((_, i) => i !== index)
-                            }));
-                          } }, React.createElement(Icons.X, { className: 'w-4 h-4' }))
-                      )
-                    )
-              ),
-
-              // Empty state (only show when not loading and no tracks)
-              !resultsSidebar.loading && (!resultsSidebar.tracks || resultsSidebar.tracks.length === 0) && React.createElement('div', {
-                className: 'flex-1 flex items-center justify-center',
-                style: { padding: '16px' }
-              },
-                React.createElement(EmptyState, { tone: 'dark', compact: true, icon: Icons.ListMusic, title: 'No tracks left', body: 'Ask Shuffleupagus for another playlist.' })
-              ),
-
-              // Actions - Three circular buttons
-              React.createElement('div', {
-                style: { padding: '16px', borderTop: '1px solid var(--on-dark-line)', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '16px' }
-              },
-                // Add to Playlist button
-                React.createElement(Button, { variant: 'icon', tone: 'dark', className: 'w-11 h-11 !rounded-full bg-white/10 enabled:hover:scale-110', onClick: handleAiAddToPlaylist, disabled: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0, 'aria-label': 'Add to playlist', 'data-tooltip': 'Add to playlist' }, React.createElement(Icons.Plus, { className: 'w-5 h-5' })),
-                // Play button (center, larger)
-                React.createElement(Button, { variant: 'icon', tone: 'dark', className: 'w-14 h-14 !rounded-full shadow-lg enabled:hover:scale-110', style: { backgroundColor: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0 ? 'var(--on-dark-disabled)' : 'var(--on-dark-primary)' }, onClick: handleAiPlay, disabled: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0, 'aria-label': 'Play now', 'data-tooltip': 'Play now' }, React.createElement(Play, { size: 24, className: 'ml-0.5', style: { color: 'var(--surface-dark-solid)' } })),
-                // Add to Queue button
-                React.createElement(Button, { variant: 'icon', tone: 'dark', className: 'w-11 h-11 !rounded-full bg-white/10 enabled:hover:scale-110', onClick: handleAiAddToQueue, disabled: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0, 'aria-label': 'Add to queue', 'data-tooltip': 'Add to queue' }, React.createElement(Icons.QueueAdd, { className: 'w-5 h-5', strokeWidth: 2 }))
-              )
-            )
       )
     );
 });
