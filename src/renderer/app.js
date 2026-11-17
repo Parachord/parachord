@@ -2019,7 +2019,8 @@ const { ChartsPage } = require('./components/charts-page');
 const { RaycastInfoDialog } = require('./components/raycast-info-dialog');
 const { ExtensionInfoDialog } = require('./components/extension-info-dialog');
 const { PluginSettingsDialog } = require('./components/plugin-settings-dialog');
-const { servicesWithCapability, hasScrobblerConnected: hasScrobblerConnectedTo } = require('./lib/ai-services');
+const { servicesWithCapability, aiPlaylistServices, hasScrobblerConnected: hasScrobblerConnectedTo } = require('./lib/ai-services');
+const { generateAiPlaylist } = require('./lib/ai-generate');
 const { PROVIDER_LABEL, getPlaylistMirrorTargets } = require('./lib/playlist-mirrors');
 const { playlistImportLabel } = require('./lib/playlist-import-sources');
 const { FirstRunTutorial } = require('./components/first-run-tutorial');
@@ -8542,8 +8543,9 @@ const Parachord = () => {
   // Cache for top tracks data (keyed by period)
   const topTracksCache = useRef({});
 
-  // Get meta services with AI generation capability
-  const getAiServices = () => servicesWithCapability('generate', resolverLoaderRef.current, metaServices);
+  // AI plug-ins that make playlists: their own generate, or chat through
+  // the shared fallback (lib/ai-generate.js)
+  const getAiServices = () => aiPlaylistServices(resolverLoaderRef.current, metaServices);
 
   // Get AI services with chat capability (for Conversational DJ)
   const getChatServices = () => servicesWithCapability('chat', resolverLoaderRef.current, metaServices);
@@ -8708,7 +8710,8 @@ const Parachord = () => {
         const metaServicesWithGenerate = metaServiceAxes.filter(axe =>
           axe.capabilities?.generate && axe.implementation?.generate
         );
-        // Meta services with chat capability (Conversational DJ)
+        // Meta services with chat capability (Conversational DJ, and AI
+        // playlists through the chat fallback in lib/ai-generate.js)
         const metaServicesWithChat = metaServiceAxes.filter(axe =>
           axe.capabilities?.chat && axe.implementation?.chat
         );
@@ -17066,7 +17069,7 @@ ${trackListXml}
     const enabledServices = aiServices.filter(isServiceEnabled);
 
     if (enabledServices.length === 0) {
-      setAiError('No AI plugins configured. Enable OpenAI or Gemini and add your API key in Settings → General.');
+      setAiError('No AI plug-ins are set up. Turn one on in Settings › Plug-Ins.');
       return;
     }
 
@@ -17106,8 +17109,8 @@ ${trackListXml}
         }
       }
 
-      // Call the service's generate function
-      const tracks = await service.generate(prompt, config, listeningContext);
+      // The plug-in's own generate, or the chat fallback for a chat-only one
+      const tracks = await generateAiPlaylist(service, prompt, config, listeningContext);
 
       if (!tracks || tracks.length === 0) {
         throw new Error('No tracks returned. Try a different prompt.');

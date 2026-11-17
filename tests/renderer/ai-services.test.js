@@ -28,3 +28,15 @@ test('a Last.fm or ListenBrainz username counts as connected', () => {
   expect(hasScrobblerConnected({ lastfm: {} })).toBe(false);
   expect(hasScrobblerConnected(undefined)).toBe(false);
 });
+
+test('AI playlist providers: generate plug-ins and chat-only ones (the chat fallback), by capability', () => {
+  const { aiPlaylistServices } = require('../../src/renderer/lib/ai-services');
+  const metas = [
+    { id: 'chatgpt', capabilities: { generate: true, chat: true } },
+    { id: 'claude', capabilities: { chat: true } },
+    { id: 'ollama', capabilities: { chat: true } },
+    { id: 'lastfm', capabilities: { recommendations: true } },
+  ];
+  expect(aiPlaylistServices(loader, metas).map(s => s.id)).toEqual(['chatgpt', 'claude', 'ollama']);
+  expect(servicesWithCapability(['generate', 'chat'], null, metas).map(s => s.id)).toEqual(['chatgpt', 'claude', 'ollama']);
+});

@@ -67,9 +67,10 @@ function hintFor(plugin) {
   // Each line says what the plug-in brings, built from its capabilities
   // ("Use for artist info" and "Use with Shuffleupagus" said nothing about
   // what that is, 2026-11-17).
-  if (caps.chat && caps.generate) return 'AI playlists and Shuffleupagus chat';
+  // A chat plug-in makes AI playlists too, through the shared fallback
+  // (lib/ai-generate.js), with or without its own generate.
+  if (caps.chat) return 'AI playlists and Shuffleupagus chat';
   if (caps.generate) return 'AI playlists';
-  if (caps.chat) return 'Shuffleupagus chat';
   if (caps.recommendations) {
     const parts = ['Recommendations'];
     if (caps.similarUsers) parts.push('similar listeners');

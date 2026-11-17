@@ -14,7 +14,7 @@ const Icons = require('./icons');
 const { Button } = require('./button');
 const { ProviderMenu } = require('./provider-menu');
 const { TextField } = require('./fields');
-const { servicesWithCapability, hasScrobblerConnected } = require('../lib/ai-services');
+const { aiPlaylistServices, hasScrobblerConnected } = require('../lib/ai-services');
 
 const AI_PROMPT_PANEL_HANDLERS = [
   'handleAiGenerate',
@@ -98,7 +98,7 @@ const AiPromptPanel = React.memo(function AiPromptPanel(props) {
 
       // Provider selector row (right-aligned)
       (() => {
-        const aiResolvers = servicesWithCapability('generate', resolverLoaderRef.current, metaServices);
+        const aiResolvers = aiPlaylistServices(resolverLoaderRef.current, metaServices);
         if (aiResolvers.length <= 1) return null;
         return React.createElement('div', { className: 'mt-3 flex items-center justify-end gap-2' },
           React.createElement('span', { style: { fontSize: '12px', color: 'var(--on-dark-secondary)' } }, 'Provider'),

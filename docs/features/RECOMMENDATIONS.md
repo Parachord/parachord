@@ -12,7 +12,7 @@ Related: [METADATA_SOURCES.md](../architecture/METADATA_SOURCES.md) (artist imag
 | Weekly Jams / Weekly Exploration | Weekly Exploration: Recommendations page, first in the Playlists section. Weekly Jams and Daily Jams: Home's "Made from your listening" (apps older than ListenBrainz 1.5.0 plugin support still show Weekly Jams here) | ListenBrainz `createdfor` playlists, through the plugin's `getRecommendations` | ListenBrainz's own weekly generation | Track playlists | ListenBrainz username |
 | Shuffleupagus suggestions | Home's "Albums you might love" row (albums only, "Shuffleupagus · <reason>" on each card, with the Refresh icon); Recommendations page, blended into the Albums and Artists sections | AI chat plugin, one prompt per visit (either page) | Listening history, collection, prior suggestions | Albums and artists (with reasons) | AI chat plugin + "Share my data" |
 | Shuffleupagus chat | Playbar AI button; Home; `parachord://chat` | AI chat plugin with tools | Listening history, collection, queue, playlists, friends | Anything the model plays, queues or saves | AI chat plugin |
-| AI Playlist (one shot) | Prompt panel | AI `generate` plugin | Listening history when sharing is on | Track list | AI generate plugin |
+| AI Playlist (one shot) | Prompt panel | AI `generate` or `chat` plugin | Listening history when sharing is on | Track list | AI plugin (own `generate`, else the chat fallback) |
 | Related Artists | Artist page tab | Last.fm `artist.getsimilar` merged with ListenBrainz labs `similar-artists` | The artist | Artists | Nothing |
 | Fresh Drops | Sidebar; Home "New from artists you love" | MusicBrainz release groups per artist | Collection, library, listening history | Release groups (albums, EPs, singles) | Nothing (empty with no collection or scrobbler) |
 | Critical Darlings | Sidebar; Home "Acclaimed by critics" | Achordion critics feed | Not personalized | Albums | Nothing |
@@ -111,9 +111,9 @@ Listening context (`fetchListeningContext`) is shared with the Home suggestions 
 
 Code: `handleAiGenerate` (src/renderer/app.js), which also renders the prompt panel.
 
-Sends the user's prompt to a plugin with the `generate` capability (ChatGPT, Gemini and Custom LLM have it; Claude and Ollama are chat only). When "Share my data" is on, the `fetchListeningContext` result is serialised into the system prompt. The result is a list of `{ title, artist }` shown in an "AI Playlist" sidebar with Play, Add to Queue and Add to Playlist. A "Surprise Me" button appears when sharing is on.
+Sends the user's prompt to an AI plugin through `generateAiPlaylist` (`src/renderer/lib/ai-generate.js`). A plugin with the `generate` capability (ChatGPT, Gemini, Custom LLM) builds the playlist itself; a chat-only plugin (Claude, Ollama, any future one) gets the same system prompt as ChatGPT's `generate`, sent through its `chat` as `[system, user]` with no tools, and the JSON array is read out of the reply (bare or in a code fence); a reply with no array is a user-readable error. The provider list is `aiPlaylistServices` (`lib/ai-services.js`): every plugin with `generate` or `chat`, by capability, never by name. When "Share my data" is on, the `fetchListeningContext` result is serialised into the system prompt. The result is a list of `{ title, artist }` shown in an "AI Playlist" sidebar with Play, Add to Queue and Add to Playlist. A "Surprise Me" button appears when sharing is on.
 
-The playbar AI button opens chat whenever any chat provider is enabled and only falls back to this panel otherwise. Every bundled plugin that can generate can also chat, so with bundled plugins this panel is not reachable from that button. See "Known gaps".
+The playbar AI button opens chat whenever any chat provider is enabled and only falls back to this panel otherwise. Every AI plugin can chat, so with any AI plugin enabled this panel is not reachable from that button. See "Known gaps".
 
 ## Related Artists (artist page)
 
@@ -199,7 +199,7 @@ Pinned and saved friends are polled every two minutes (15 seconds during listen-
 
 ## Meta-service plugin capabilities
 
-From the manifests in `plugins/*.axe`. The app reads `generate`, `chat`, `concerts`, `playbackTelemetry` and `recommendations`; `metadata` and `listeningHistory` are declared but not consulted.
+From the manifests in `plugins/*.axe`. The app reads `generate`, `chat` (which also makes AI playlists, through the chat fallback), `concerts`, `playbackTelemetry` and `recommendations`; `metadata` and `listeningHistory` are declared but not consulted.
 
 | Plugin | Capabilities | Auth |
 |---|---|---|

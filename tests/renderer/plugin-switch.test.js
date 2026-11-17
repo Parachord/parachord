@@ -28,13 +28,15 @@ describe('AI and concert plug-ins that need a key', () => {
   test('with a key it is on until switched off (isServiceEnabled / getConcertServices)', () => {
     expect(pluginSwitchState({ plugin: plugin('chatgpt'), config: { apiKey: 'sk-x' } })).toEqual({ checked: true, disabled: false, hint: 'AI playlists and Shuffleupagus chat' });
     expect(pluginSwitchState({ plugin: plugin('chatgpt'), config: { apiKey: 'sk-x', enabled: false } }).checked).toBe(false);
+    // Claude implements only chat; it makes AI playlists through lib/ai-generate.js.
+    expect(pluginSwitchState({ plugin: plugin('claude'), config: { apiKey: 'sk-x' } }).hint).toBe('AI playlists and Shuffleupagus chat');
     expect(pluginSwitchState({ plugin: plugin('bandsintown'), config: { appId: 'a' } })).toEqual({ checked: true, disabled: false, hint: 'Upcoming concerts and ticket links' });
   });
 });
 
 describe('AI plug-ins that need no key (Ollama, Custom LLM): on = enabled: true', () => {
   test('off until switched on; a key alone does not turn it on', () => {
-    expect(pluginSwitchState({ plugin: plugin('ollama'), config: {} })).toEqual({ checked: false, disabled: false, hint: 'Shuffleupagus chat' }); // chat only
+    expect(pluginSwitchState({ plugin: plugin('ollama'), config: {} })).toEqual({ checked: false, disabled: false, hint: 'AI playlists and Shuffleupagus chat' }); // chat only: AI playlists through the chat fallback
     expect(pluginSwitchState({ plugin: plugin('ollama'), config: { enabled: true } }).checked).toBe(true);
     expect(pluginSwitchState({ plugin: plugin('customllm'), config: { apiKey: 'k' } }).checked).toBe(false);
   });
