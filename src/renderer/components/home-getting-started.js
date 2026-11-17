@@ -128,7 +128,7 @@ function ConnectStep({ plugins, serviceStates, watchFolders, onConnect, onOpenPl
   const folders = Array.isArray(watchFolders) ? watchFolders.length : 0;
   const folder = plugins.folder;
   return e(React.Fragment, null,
-    e('p', { style: LINE }, 'Sign in to the services you use. Parachord finds each song wherever you have it and plays it here.'),
+    e('p', { style: LINE }, 'Sign in to the services you use, and your own music server if you have one. Parachord finds each song wherever you have it and plays it here.'),
     e(Group, { label: 'Services' },
       plugins.services.map((r) => {
         const s = serviceStates[r.id] || { state: 'connect' };

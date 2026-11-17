@@ -38,7 +38,8 @@ const FRIEND_SONG = { artist: 'Quarantine Angst', title: 'Lopped Off' };
 // no-account ones (never a list of names).
 const playingPlugins = (loadedResolvers) => {
   const p = stepOnePlugins(loadedResolvers);
-  return p.services.slice(0, 3).concat(p.free.slice(0, 1));
+  // Every service that needs an account (Plex among them once installed), then a no-account one.
+  return p.services.slice(0, 6).concat(p.free.slice(0, 1));
 };
 
 const PICTURE_STYLE = {
@@ -93,7 +94,7 @@ const TOUR_SCREENS = [
   {
     id: 'welcome',
     title: 'One player for all your music',
-    body: 'Spotify, Apple Music, Bandcamp, your own files: Parachord finds a song wherever you have it and plays it here.',
+    body: 'Spotify, Apple Music, Bandcamp, your Plex server, your own files: Parachord finds a song wherever you have it and plays it here.',
     picture: ({ loadedResolvers }) => e(React.Fragment, null,
       playingPlugins(loadedResolvers).map((r) => e(ServiceMark, { key: r.id, resolver: r })),
       e('span', {

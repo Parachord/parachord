@@ -67,6 +67,17 @@ function settingsMissing(resolver, saved) {
   return !keys.some((k) => saved && saved[k] !== undefined && saved[k] !== null && String(saved[k]).trim() !== '');
 }
 
+// Whether a plug-in the host has no sign-in for still needs setting up. A
+// plug-in that answers isConfigured(config) itself (Plex: signed in, with a
+// library picked) decides, as on Plug-Ins (settings-page.js); otherwise its
+// settings fields do (settingsMissing).
+function setupMissing(resolver, saved) {
+  if (resolver && typeof resolver.isConfigured === 'function') {
+    try { return !resolver.isConfigured(saved || {}); } catch (e) { return false; }
+  }
+  return settingsMissing(resolver, saved);
+}
+
 // `setupNeeded` maps a plug-in id to true while a required setting isn't
 // saved yet (the host knows: Spotify's own Client ID): its tile is 'setup',
 // and Connect opens its panel to fill it in.
@@ -151,6 +162,7 @@ module.exports = {
   needsAccount,
   requiredSetting,
   settingsMissing,
+  setupMissing,
   stepOnePlugins,
   serviceState,
   serviceConnected,

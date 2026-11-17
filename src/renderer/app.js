@@ -37482,13 +37482,14 @@ useEffect(() => {
   // A required setting not saved yet: Spotify needs your own Client ID
   // (release builds ship none; a dev .env one doesn't count, so a dev build
   // behaves as a release does). SoundCloud ships a fallback key.
-  // Any other plug-in the host has no sign-in for needs setup while its own
-  // settings are empty (Subsonic's server, username and password).
+  // Any other plug-in the host has no sign-in for needs setup until it says
+  // it's configured (isConfigured, Plex), or while its own settings are
+  // empty (Subsonic's server, username and password).
   const pluginSetupNeeded = useMemo(() => {
     const out = {};
     for (const r of loadedResolvers) {
       if (!Object.prototype.hasOwnProperty.call(pluginAccounts, r.id)) {
-        out[r.id] = GettingStartedModel.settingsMissing(r, metaServiceConfigs?.[r.id]);
+        out[r.id] = GettingStartedModel.setupMissing(r, metaServiceConfigs?.[r.id]);
       }
     }
     out.spotify = spotifyCredentialsSource !== 'user';

@@ -56,7 +56,25 @@ describe('step 1 comes from the registry', () => {
     expect(shipped.filter((r) => GS.settingsMissing(r, undefined) || GS.requiredSetting(r)).map((r) => r.id).sort()).toEqual(['spotify', 'subsonic']);
     // Switched on but not set up: Set up, never Connected.
     expect(GS.serviceState(subsonic, { setupNeeded: { subsonic: true }, playbackResolvers: ['subsonic'] })).toEqual({ state: 'setup', label: 'Set up' });
-    expect(app).toContain('out[r.id] = GettingStartedModel.settingsMissing(r, metaServiceConfigs?.[r.id]);');
+    expect(GS.setupMissing(subsonic, undefined)).toBe(true); // no isConfigured: its settings decide
+  });
+
+  test('Plex (#1056) lands in step 1 and reads Set up until it says it is configured', () => {
+    // Plex's manifest shape and its isConfigured (signed in, with a library picked).
+    const plex = {
+      id: 'plex', name: 'Plex', color: '#E5A00D',
+      capabilities: { resolve: true, search: true, stream: true, urlLookup: true, html5Stream: true },
+      requiresAuth: true, authType: 'custom', configurable: {},
+      isConfigured: (c) => !!(c && c.authToken && c.libraries && c.libraries.length),
+    };
+    expect(GS.stepOnePlugins([...registry, plex]).services.map((r) => r.id)).toContain('plex');
+    expect(GS.setupMissing(plex, {})).toBe(true);
+    expect(GS.setupMissing(plex, { authToken: 't' })).toBe(true);
+    expect(GS.setupMissing(plex, { authToken: 't', libraries: ['1'] })).toBe(false);
+    // On but not signed in: Set up, never Connected.
+    expect(GS.serviceState(plex, { setupNeeded: { plex: GS.setupMissing(plex, {}) }, playbackResolvers: ['plex'] }).state).toBe('setup');
+    expect(GS.serviceState(plex, { setupNeeded: { plex: false }, playbackResolvers: ['plex'] }).state).toBe('connected');
+    expect(app).toContain('out[r.id] = GettingStartedModel.setupMissing(r, metaServiceConfigs?.[r.id]);');
   });
 
   test('a required setting not saved yet makes the tile "Add your <field>", named by the manifest', () => {
