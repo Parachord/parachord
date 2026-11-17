@@ -18,7 +18,9 @@
     "urlLookup": true,
     "similarUsers": true,
     "metadata": true,
-    "listeningHistory": true
+    "listeningHistory": true,
+    "lovedTracks": true,
+    "playlistSync": true
   },
   "urlPatterns": [
     "listenbrainz.org/playlist/*",
