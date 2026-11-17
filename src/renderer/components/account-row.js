@@ -25,16 +25,21 @@
 //   signInDisabled the button shows but can't be pressed (what's missing is
 //                  in `status`)
 //   busy           a sign-in or sign-out in progress
+//   signInLabel / signOutLabel
+//                  the buttons' words when the row isn't a sign-in: Last.fm
+//                  and ListenBrainz read your history from a username alone
+//                  ("Save" / "Remove"); calling that "Signed in" sat above
+//                  a Scrobbling row asking you to sign in (2026-11-17)
 // Props-driven; loads under plain Node.
 
 const { Button } = require('./button');
 const { SettingRow } = require('./fields');
 const { readableTextOn } = require('../lib/readable-text');
 
-function AccountRow({ name, label, color, signedIn, status, onSignIn, onSignOut, signInDisabled = false, busy = false }) {
+function AccountRow({ name, label, color, signedIn, status, onSignIn, onSignOut, signInDisabled = false, busy = false, signInLabel, signOutLabel }) {
   const e = React.createElement;
   const button = signedIn
-    ? (onSignOut ? e(Button, { variant: 'secondary', busy, onClick: onSignOut, 'aria-label': `Sign out of ${name}` }, 'Sign out') : null)
+    ? (onSignOut ? e(Button, { variant: 'secondary', busy, onClick: onSignOut, 'aria-label': signOutLabel ? `${signOutLabel} ${name} username` : `Sign out of ${name}` }, signOutLabel || 'Sign out') : null)
     : (onSignIn ? e(Button, {
       variant: 'primary',
       pageColor: color || undefined,
@@ -44,8 +49,8 @@ function AccountRow({ name, label, color, signedIn, status, onSignIn, onSignOut,
       onClick: onSignIn,
       // SettingRow names a control after the row ("Spotify account") unless
       // it has its own name; the button's name is what it does.
-      'aria-label': `Sign in to ${name}`,
-    }, 'Sign in') : null);
+      'aria-label': signInLabel ? `${signInLabel} ${name} username` : `Sign in to ${name}`,
+    }, signInLabel || 'Sign in') : null);
   return e(SettingRow, {
     label: label || `${name} account`,
     hint: status || (signedIn ? 'Signed in' : 'Not signed in'),
