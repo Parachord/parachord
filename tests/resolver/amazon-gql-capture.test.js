@@ -154,7 +154,7 @@ describe('amazonGqlFetchHeaders (the replay-header filter, the _lib copy)', () =
       'csrf-rnd': '2128471272',
       'csrf-ts': '1791997974',
       'music-territory': 'US',
-      'x-amzn-device-id': '14354613042605242',
+      'x-amzn-device-id': '12345678901234567',
       Cookie: 'at-main=secret; session-id=143',
       Origin: 'https://music.amazon.com',
       Referer: 'https://music.amazon.com/',
