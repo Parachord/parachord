@@ -805,16 +805,36 @@ const { amazonPlanMessage } = require('./amazon-music-logic');
 // the bridge relays manifest/license operations to main-side providers per
 // resolver. amazon-dmls is the Amazon Music provider; amazon-web-player
 // keeps its search/sign-in/session role (the hornet audio engine is gone).
-// Sender gate for the license-oracle surface: only the main window's top
+// Sender gate, shared by the gated IPC bridges (the widevine license-oracle
+// surface and the webSession primitives below): only the main window's top
 // frame may call at all (relay gating rules in widevine-bridge.js).
-registerWidevineBridgeIpc({
+const isMainWindowTopFrameSender = (event) => {
+  if (!event || !event.sender || !mainWindow || mainWindow.isDestroyed()) return false;
+  if (event.sender.id !== mainWindow.webContents.id) return false;
+  const frame = event.senderFrame;
+  return !!frame && frame.top === frame;
+};
+registerWidevineBridgeIpc({ ipcMain, isAllowedSender: isMainWindowTopFrameSender });
+
+// The webSession IPC bridge (#1356): the channels are registered, but NO
+// session is yet — the live registration (Amazon's ONE createWebSessionHost
+// instance, the one owner of the persist:amazon-music partition's webRequest
+// slot, registered by reference and never re-created) moves to the layer that
+// first drives it through the bridge: the Amazon plugin's flow move (#1432
+// review, note 8 — this layer ships the module, its tests and the preload
+// wrapper code; the EXPOSURE, the session registration and the preload's
+// webSession block, moves with the layer that uses them). Until then every
+// webSession: call answers not-ready for every id. The bridge gates the sender
+// like the widevine bridge, scopes fetch/pageFetch to the session's allowed
+// hosts (exact hosts, https only, redirect hops re-checked host-side) and
+// load/signIn to the same allowed hosts, caps the caller budgets, and shuttles
+// the sign-in tick/decide/settled protocol (channel contract in
+// docs/architecture/web-session.md, "The IPC bridge").
+const { registerWebSessionBridgeIpc } = require('./main-process/ipc/web-session-bridge');
+registerWebSessionBridgeIpc({
   ipcMain,
-  isAllowedSender: (event) => {
-    if (!event || !event.sender || !mainWindow || mainWindow.isDestroyed()) return false;
-    if (event.sender.id !== mainWindow.webContents.id) return false;
-    const frame = event.senderFrame;
-    return !!frame && frame.top === frame;
-  }
+  isAllowedSender: isMainWindowTopFrameSender,
+  sendToRenderer: safeSendToRenderer
 });
 
 // macOS System Volume Monitor

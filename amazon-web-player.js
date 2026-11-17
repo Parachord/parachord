@@ -134,7 +134,21 @@ const webSession = createWebSessionHost({
   // (at-main, sess-at-main, x-main); music.amazon.com and www.amazon.com
   // cover the hosts a host-only auth-shaped rotation could land on. state()
   // reports names only; Electron's clear() still wipes the whole partition.
-  cookieDomains: ['amazon.com', 'music.amazon.com', 'www.amazon.com']
+  cookieDomains: ['amazon.com', 'music.amazon.com', 'www.amazon.com'],
+  // The EXACT hosts the session's data-source primitives may reach (#1432
+  // review, finding 1): fetch/pageFetch URLs, every redirect hop and
+  // capture prefixes are scoped to this list, which is deliberately much
+  // narrower than the cookie domains — amazon.com is the whole retail
+  // account, and a session-bearing fetcher scoped only by the cookie
+  // domains would read it. Exactly the hosts the flows call, nothing
+  // broader: the home/search/dmls/config.json/telemetry host and the gql
+  // host. A new host is added to this list deliberately, one entry per
+  // service surface — never by widening a domain or falling back to the
+  // cookie domains.
+  allowedHosts: ['music.amazon.com', 'gql.music.amazon.com'],
+  // The visible sign-in window's title (finding 3: host config, never a
+  // caller choice).
+  signInTitle: 'Sign in to Amazon Music'
 });
 
 function electron() {
@@ -450,7 +464,6 @@ const amazonWebPlayer = {
     const { signedIn } = await webSession.signIn(HOME_URL, {
       width: 980,
       height: 760,
-      title: 'Sign in to Amazon Music',
       decide: (tick) => {
         const hasCookie = amazonAuthCookieState(tick.cookieNames) !== 'none';
         const verdict = signInLanded({ url: tick.url, lastUrl, stableTicks, hasCookie });

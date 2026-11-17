@@ -99,6 +99,7 @@ Rules for an adapter:
 2. Cached marketplace plugins from `~/.parachord/plugins/`
 3. Version comparison: newer version always wins; same version prefers shipped over cached
 4. A cached copy whose `minAppVersion.desktop` is above this app's version is skipped (see "Minimum app version" below), so the shipped copy stays in use. The shipped copy is never checked: it was built with this app.
+5. In the renderer (`initResolvers`), a plugin whose `requires.hostBridges` this host doesn't supply is hidden — not loaded (see "Required host bridges" below).
 
 ### Minimum app version
 The marketplace serves only the latest copy of each plugin, and every installed app downloads it, so a plugin that needs a host feature an older app lacks (a new IPC surface, a native player) would otherwise reach that app and break there. A plugin can declare the oldest app it runs on, per platform, in its manifest:
@@ -113,6 +114,23 @@ The marketplace serves only the latest copy of each plugin, and every installed 
 - **`build-axes.js` validates the field and copies it to the marketplace entry**, so a client can skip a download without fetching the `.axe`; `--check` fails on drift.
 - **Apps released before the field existed ignore it** (v0.9.11 and earlier on desktop). Until most people have updated past that, a plugin that depends on a new host feature still has to detect the feature and fall back, not only declare the floor.
 - **Set the floor to the first release that has the feature.** During development `package.json` still carries the previous release, so a dev build skips the marketplace copy and runs its own bundled one, which is the copy you're working on.
+
+### Required host bridges
+
+A plugin that calls a host bridge (`window.electron.amazonMusic`, `window.electron.webSession`, …) declares the ones it needs as a top-level `.axe` field (#1355):
+
+```json
+"requires": { "hostBridges": ["webSession"] }
+```
+
+Each host advertises what it supplies — desktop's `preload.js` sets `window.__parachordHostBridges` (today `['amazonMusic']` — the `webSession` entry arrives with the live exposure of the bridge itself, held back for the layer that first calls it, #1432 review note 8; keep the list in step with the bridges the preload actually exposes); the mobile apps set the same global in their JS runtimes — and the plugin loader **hides** a plugin whose required bridges are not all supplied. Hidden, not refused: the same `.axe` installs everywhere and runs where the host has the bridge, so the marketplace serves one copy to every platform. A loaded plugin without its bridge would throw not-ready on every resolve, and a retrying resolver would keep re-asking it.
+
+**`requires.hostBridges` needs the `minAppVersion` companion (the CLAUDE.md invariant).** Apps released before the release that ships `requires.hostBridges` ignore `requires` — for them the hide rule doesn't exist, so the same `.axe` LOADS there and throws not-ready on every resolve. So a plugin that requires a host bridge must ALSO declare `manifest.minAppVersion` per platform (`desktop`, `android`, `ios` — the first release whose loader knows the hide rule, exactly like a plugin that depends on any new host feature; see "Minimum app version" above), AND keep the runtime fallback guard: detect the bridge (`window.electron.webSession` or the advertisement) and fall back, because until most people have updated past that release, the floor alone still ships the plugin to apps that ignore `requires`. The first plugin to need this is Amazon Music when its flows move onto the `webSession` bridge (#1356).
+
+- The rule shapes mirror minAppVersion's: absent is no requirement, and a malformed declaration is no requirement (`build-axes.js` rejects a malformed one at source, so a shipped plugin never carries one).
+- On desktop the hiding happens in the renderer's plugin loading — one rule, every `.axe` load path: the main `initResolvers` load, the fallback resolver load, the install/reload paths (install-from-file, marketplace install), and the meta-service hot-reload after a marketplace sync (`handlePluginsUpdated`), all through `hideAxesLackingHostBridges` (`src/renderer/lib/host-bridges-hide.js`), which reads the advertised list and runs the hide-filter the rules module carries (`hostBridgesHideFilter`); the rules live in `main-process/plugin-compat.js` (`pluginRequiredHostBridges`, `hostBridgesCompatibility`, `hostBridgesHideFilter`, `validateRequires`), mirrored by mobile's `PluginCompat.kt`.
+- Marketplace install and download do NOT check hostBridges — a plugin hidden on this host may still be installable there and run on the user's other devices' hosts; hiding is a load-time decision, not a download-time one. `minAppVersion` remains the field that gates downloads.
+- No shipped plugin declares a requirement yet — the first will be Amazon Music when its flows move onto the `webSession` bridge (#1356).
 
 ### How Updates Reach Users (No New Build Required)
 1. **Edit `plugins-src/<id>/implementation.js`** (or `manifest.json`) — and bump `manifest.version` in `plugins-src/<id>/manifest.json`
@@ -158,7 +176,7 @@ To keep a plugin's implementation text ES5-level, flag it with `{ "es5": true }`
 
 ## Authoring a plugin (.axe format)
 
-An `.axe` file is JSON with up to six top-level keys: `manifest`, `capabilities`, `urlPatterns`, `settings`, `embedPlayer` (only for an embedded-player resolver; see above) and `implementation`. For a bundled plugin you never write that JSON by hand. You write `plugins-src/<id>/manifest.json` (everything except `implementation`) and `plugins-src/<id>/implementation.js` (`module.exports = { search: async function (query, config) { ... }, ... }`), then run `node scripts/build-axes.js`, which serializes each exported function with `String(fn)` into the `.axe`. Because the source is a real module, modern syntax including template literals is fine, except in plugins flagged `es5` (see above). A community plugin installed from a file is the same JSON, however it was produced.
+An `.axe` file is JSON with up to seven top-level keys: `manifest`, `capabilities`, `urlPatterns`, `settings`, `embedPlayer` (only for an embedded-player resolver; see above), `requires` (only for a plugin that needs host bridges; see "Required host bridges" above) and `implementation`. For a bundled plugin you never write that JSON by hand. You write `plugins-src/<id>/manifest.json` (everything except `implementation`) and `plugins-src/<id>/implementation.js` (`module.exports = { search: async function (query, config) { ... }, ... }`), then run `node scripts/build-axes.js`, which serializes each exported function with `String(fn)` into the `.axe`. Because the source is a real module, modern syntax including template literals is fine, except in plugins flagged `es5` (see above). A community plugin installed from a file is the same JSON, however it was produced.
 
 ### Manifest
 

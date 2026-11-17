@@ -384,3 +384,15 @@ Not at parity (Parachord/parachord-mobile#693):
 - Conflicts: Android uses last write wins, desktop asks. A product decision; the ticket lays out both.
 - Covers: Android keeps its generated mosaic over the service's cover and takes Spotify's generated mosaic as a cover; desktop does the reverse (Parachord/parachord-mobile#676).
 
+
+### Android Parity Requirements (plugin host bridges)
+
+Desktop implemented #1355's per-platform loading rule: a plugin manifest may declare `"requires": { "hostBridges": ["webSession"] }` (a top-level `.axe` field), each host advertises what it supplies — desktop's `preload.js` sets `window.__parachordHostBridges` (today `['amazonMusic']`; the `webSession` entry arrives with the bridge's live exposure, held back for the layer that first calls it, #1432 review note 8) — and the plugin loader **hides** a plugin whose required bridges are not all supplied. From #1355's text: "This fits the existing plugin-compat check (`main-process/plugin-compat.js`, ported to mobile as `PluginCompat.kt`). Mobile would implement the same rule in `shared/.../plugin/PluginCompat.kt` and the same bootstrap globals in both apps' JS runtimes."
+
+Mobile must mirror three things:
+
+- The rule in `PluginCompat.kt`, beside `minAppVersion`: `pluginRequiredHostBridges(axe)` (absent or malformed is no requirement — an array of non-empty strings under `requires.hostBridges` only) and `hostBridgesCompatibility(axe, supplied)` → `{ ok, missing }` — hide the plugin when any required bridge is missing. Never load it to fail later: mobile's resolver retry (#566) would keep re-asking a plugin that throws not-ready on every resolve.
+- The same bootstrap global, `window.__parachordHostBridges`, set by the mobile JS runtime before the plugin loader runs, carrying only the bridges that host actually supplies (mobile's list will differ from desktop's — that is the point).
+- The `.axe` shape is shared marketplace data: `requires` is a top-level key (sibling of `capabilities`/`settings`), not inside `manifest`.
+
+What breaks if a client drifts: a plugin that needs a bridge the host doesn't supply loads and throws not-ready on every resolve (and mobile's retry re-asks it forever), or — the other direction — a host that advertises a bridge it doesn't really supply has plugins that load and fail at the call site.

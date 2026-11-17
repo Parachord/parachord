@@ -36,6 +36,7 @@ const { registerDiscordPresenceIpc } = require('../../main-process/ipc/discord-p
 const { registerAuthServerIpc } = require('../../main-process/ipc/auth-server');
 const { registerEmbeddedPlayerIpc } = require('../../main-process/ipc/embedded-player');
 const { createSyncLinks } = require('../../main-process/sync-links');
+const { registerWebSession, registerWebSessionBridgeIpc } = require('../../main-process/ipc/web-session-bridge');
 
 // Error classes that mean "the registration forgot something":
 // an undefined free variable, an undefined injected dep, or a dep object
@@ -127,6 +128,19 @@ function makeFakes() {
       pushPlaylistLinksToAchordion: async () => {},
     },
     syncLinks,
+    // A web-session host shaped for registerWebSession's validation: the six
+    // primitives + the declared cookieDomains and allowedHosts the bridge
+    // scopes load/signIn and fetch/pageFetch by.
+    webSessionHost: {
+      cookieDomains: ['smoke.example'],
+      allowedHosts: ['music.smoke.example', 'gql.smoke.example'],
+      load: async () => ({}),
+      pageFetch: async () => ({}),
+      fetch: async () => ({}),
+      state: async () => ({}),
+      clear: async () => ({ success: true }),
+      signIn: async () => ({ signedIn: false })
+    },
     ensureValidSpotifyToken: async () => 'SPOTIFY_TOKEN',
     getGeneratedMusicKitToken: async () => 'GENERATED_TOKEN',
     writeCollectionAtomic: async () => {},
@@ -212,6 +226,15 @@ describe('registration smoke — all IPC modules together', () => {
     getAuthServerState: () => ({ port: 8888, listening: true, error: null }),
   });
 
+  registerWebSession('smoke', fakes.webSessionHost);
+  registerWebSessionBridgeIpc({
+    ipcMain,
+    // Permissive by design here: the smoke run invokes handlers with generic
+    // args, and a null event is what the sender gate refuses.
+    isAllowedSender: () => true,
+    sendToRenderer: fakes.safeSendToRenderer,
+  });
+
   test('the full decomposed surface registers with no duplicate channels', () => {
     // Eight IPC modules + the sync-links factory. If a module silently stops
     // registering (or two claim one channel), this count or the shared
@@ -220,6 +243,7 @@ describe('registration smoke — all IPC modules together', () => {
     expect([...handlers.keys()].filter((c) => c.startsWith('discordrpc:')).length).toBe(7);
     expect([...handlers.keys()].filter((c) => c.startsWith('auth-server:')).length).toBe(2);
     expect([...handlers.keys()].filter((c) => c.startsWith('sync:')).length).toBeGreaterThanOrEqual(20);
+    expect([...handlers.keys()].filter((c) => c.startsWith('webSession:')).length).toBe(7); // the tick/settled events are sends, not handles
   });
 
   test.each([...handlers.keys()])('%s does not throw a missing-injection error on a minimal invocation', async (channel) => {

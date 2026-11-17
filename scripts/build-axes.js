@@ -50,6 +50,13 @@
 // writer validates it and copies it to the marketplace entry, so clients can
 // skip a download they can't run without fetching the .axe first.
 //
+// Required host bridges (#1355): an optional top-level .axe "requires"
+// ({ "hostBridges": ["webSession"] }) names the host bridges a plugin calls
+// (window.__parachordHostBridges is what each host advertises); a host that
+// doesn't supply every one hides the plugin at load. The writer validates the
+// field; the marketplace entry doesn't mirror it (nothing reads it there —
+// hiding is a load-time decision, not a download-time one).
+//
 // Reverse-sync (a community edit landing in plugins/<id>.axe via
 // .github/workflows/reverse-sync.yml): --check FAILS until `--import --plugin
 // <id>` absorbs the edit into plugins-src. Do not hand-edit the .axe to make
@@ -79,7 +86,7 @@ const SRC_DIR = path.join(ROOT, 'plugins-src');
 const PLUGINS_DIR = path.join(ROOT, 'plugins');
 const GENERATED_FALLBACK_PATH = path.join(ROOT, 'src', 'renderer', 'lib', 'fallback-resolvers.generated.js');
 const MARKETPLACE_PATH = path.join(ROOT, 'marketplace-manifest.json');
-const { validateMinAppVersion } = require('../main-process/plugin-compat');
+const { validateMinAppVersion, validateRequires } = require('../main-process/plugin-compat');
 
 // The marketplace entry mirrors the .axe manifest's minAppVersion (absent on
 // both, or the same object).
@@ -319,8 +326,10 @@ function runWrite() {
   // Validate before writing anything, so a bad field leaves no half-written output.
   for (const plan of plans) {
     const minAppProblems = validateMinAppVersion(plan.axe.manifest.minAppVersion);
-    if (minAppProblems.length > 0) {
-      fail(`plugins-src/${plan.id}/manifest.json: ${minAppProblems.join('; ')}`);
+    const requiresProblems = validateRequires(plan.axe.requires);
+    const problems = [...minAppProblems, ...requiresProblems];
+    if (problems.length > 0) {
+      fail(`plugins-src/${plan.id}/manifest.json: ${problems.join('; ')}`);
     }
   }
 
@@ -400,6 +409,9 @@ function runCheck() {
       failures.push(`marketplace-manifest.json ${plan.id} minAppVersion ${JSON.stringify(entry.minAppVersion || null)} ≠ .axe ${JSON.stringify(plan.axe.manifest.minAppVersion || null)} — run the writer`);
     }
     for (const problem of validateMinAppVersion(plan.axe.manifest.minAppVersion)) {
+      failures.push(`plugins-src/${plan.id}/manifest.json: ${problem}`);
+    }
+    for (const problem of validateRequires(plan.axe.requires)) {
       failures.push(`plugins-src/${plan.id}/manifest.json: ${problem}`);
     }
   }
