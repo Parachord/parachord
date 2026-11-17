@@ -172,8 +172,11 @@ function ensureLicenseScheme() {
     // Snapshot BEFORE the await: a license round-trip can outlive a variant
     // switch (the load-time pick handing over to our locked selection), and a
     // plan refusal must be attributed to the family whose group was ASKED
-    // FOR, not whichever variant is active when the denial lands.
+    // FOR, not whichever variant is active when the denial lands. The play
+    // token rides along for the same reason: a refusal that outlives its
+    // play (a skip mid-round-trip) must not act on the newer play's state.
     const factsAtRequest = currentVariantFacts();
+    const playTokenAtRequest = playToken;
     const result = await window.electron.widevine.relayLicense(resolverId, b64(request.body), sessionId);
     if (!result || result.success !== true) {
       const err = new Error((result && result.error) || 'license relay failed');
@@ -181,20 +184,29 @@ function ensureLicenseScheme() {
       // on it): propagate it, never drop it (review).
       err.reason = (result && result.reason) || 'playback-failed';
       if (result && result.licenseDenied) err.licenseDenied = true;
+      // The refused group's FAMILY: read off the variant that was active WHEN
+      // THE REQUEST FIRED — the CDM asks for the selected variant's group, and
+      // the challenge bytes are opaque.
+      const requestFamily = factsAtRequest && factsAtRequest.codec
+        ? widevineCodecFamily(String(factsAtRequest.codec).split('.')[0]) : null;
       // Eligibility refusals (CUSTOMER_NOT_ELIGIBLE — live-verified on a
       // Prime plan for the HD KID group) are account-level facts: stop asking
-      // for the refused family. Which group was refused is read off the
-      // variant that was active WHEN THE REQUEST FIRED — the CDM asks for
-      // the selected variant's group, and the challenge bytes are opaque.
-      // Family-keyed and codec-free (#1262): whatever family's KID was asked
-      // for is out, and the error this refusal causes is handed to the
-      // family-failure fallback (next-best re-selection) when it lands.
-      if (result && HD_CONTENT_DENIAL_STATUSES.has(result.denialReason)) {
-        const family = factsAtRequest && factsAtRequest.codec ? widevineCodecFamily(String(factsAtRequest.codec).split('.')[0]) : null;
-        if (family) {
-          blockedFamilies.set(family, 'license-denied');
-          pendingDenialLatch = { family, playToken };
-        }
+      // for the refused family. Family-keyed and codec-free (#1262): whatever
+      // family's KID was asked for is out, and the error this refusal causes
+      // is handed to the family-failure fallback (next-best re-selection)
+      // when it lands.
+      if (result && HD_CONTENT_DENIAL_STATUSES.has(result.denialReason) && requestFamily) {
+        blockedFamilies.set(requestFamily, 'license-denied');
+        pendingDenialLatch = { family: requestFamily, playToken };
+      }
+      // The FIRST-TRACK DEFENSIVE CLEAR (see firstTrackDefensiveClear): any
+      // parsed refusal — this handler is the one place BOTH relay paths'
+      // refusals are seen. A denialReason string is the refusal marker: the
+      // cert class carries licenseDenied instead (no group is refused — no
+      // license works at all), and a bridge failure or a session abort
+      // carries none.
+      if (result && requestFamily && typeof result.denialReason === 'string' && result.denialReason) {
+        firstTrackDefensiveClear(requestFamily, playTokenAtRequest);
       }
       throw err;
     }
@@ -233,6 +245,41 @@ const HD_CONTENT_DENIAL_STATUSES = new Set(['CUSTOMER_NOT_ELIGIBLE']);
 // Consumed by the error path; a stale one (the error never surfaced) is
 // simply overwritten by the next denial.
 let pendingDenialLatch = null; // { family, playToken } | null
+
+// The play whose refused-group chunk was already flushed once by the
+// FIRST-TRACK DEFENSIVE CLEAR — one clear per play, ever (see
+// firstTrackDefensiveClear in the licence scheme handler).
+let defensiveClearPlayToken = null;
+
+// A rendition-group refusal lands in the licence scheme handler AFTER the
+// post-load handover — and since that handover stopped clearing the buffer
+// (the clearBuffer fix), the refused rung's already-fetched chunk sits ahead
+// of the playhead with a key that never comes: a stall by construction. The
+// provider's refusal cache only shapes LATER manifests (the group label is
+// its own dialect — the engine never sees it), so the first track pays its
+// refusals live; when one lands for the still-live play and the ACTIVE
+// variant is still that family, flush the buffer once by re-running the tier
+// selection with clearBuffer: true. Family granularity only: SD and LD share
+// `opus`, so the one clear over-clears in that corner (both tiers' chunks
+// flush) — accepted, because it fires ONCE per play: the tier selection over
+// the still-unfiltered roster may re-land on the refused rung, and the honest
+// end of that is the track failing — the NEXT track is served a filtered
+// manifest. In adaptive mode the re-run may make no manual selection at all
+// (the manager roams) — the same floor the family fallback documents.
+function firstTrackDefensiveClear(family, requestPlayToken) {
+  // The refusal's play is over (a skip/stop raced the round-trip): never act
+  // on the newer play's state.
+  if (requestPlayToken !== playToken) return;
+  if (defensiveClearPlayToken === playToken) return; // once per play
+  const facts = currentVariantFacts();
+  const activeFamily = facts && facts.codec ? widevineCodecFamily(String(facts.codec).split('.')[0]) : null;
+  // The handover may already have moved the play off the refused family —
+  // then its ciphertext is not what streams next, and a clear would only
+  // re-fetch for nothing.
+  if (activeFamily !== family) return;
+  defensiveClearPlayToken = playToken;
+  void applyQuality({ clearBuffer: true }).catch(() => {});
+}
 
 // untilAudible(): resolves once the element is actually playing, rejects on a
 // CRITICAL Shaka error before that (a license 4xx arrives as an error event
@@ -340,8 +387,17 @@ function fallbackToNextBestFamily(err) {
   const roster = player ? playableVariants(player.getVariantTracks()) : [];
   if (!roster.length) return false;
   // Re-select (async, best-effort). If the switch does not take, the same
-  // family errors again — already blocked — and the error propagates.
-  void applyQuality().catch(() => {});
+  // family errors again — already blocked — and the error propagates. This is
+  // the one caller that always asks for the buffer to be cleared — the buffered
+  // bytes are exactly what this build's media stack rejected — but clearBuffer
+  // only reaches selectVariantTrack where a manual selection is actually made:
+  // in adaptive mode this re-selection only re-configures the manager and may
+  // perform NO selection at all, leaving the buffer alone while the manager
+  // roams its own candidate set — bounded by the bandwidth corridor, because
+  // blockedFamilies is not expressible to Shaka's ABR (the known floor in the
+  // docs: a blocked family cheaper than the corridor stays reachable, and the
+  // repeat then propagates honestly).
+  void applyQuality({ clearBuffer: true }).catch(() => {});
   return true;
 }
 
@@ -413,7 +469,7 @@ async function readPlaybackQuality() {
   return { tier, adaptive, spatial };
 }
 
-function applyConfig(config) {
+function applyConfig(config, { clearBuffer = false } = {}) {
   if (!player || !config) return;
   // maxBandwidth is ALWAYS sent — an empty restrictions object is a merge
   // no-op in Shaka config, so a previous tier's cap would persist forever
@@ -466,7 +522,12 @@ function applyConfig(config) {
         // family-failure attribution follows the LAST manual selection (the
         // vendor's active flag can still read the pre-switch rung mid-switch).
         if (trackSession) trackSession.lockedFamily = config.codecFamily;
-        try { player.selectVariantTrack(target, true); } catch { /* selection is best-effort */ }
+        // clearBuffer matters only HERE, at a manual selection actually
+        // made — and it defaults to false, matching the vendor's own ABR
+        // switch default (clearBufferSwitch:false): clearing at this handover
+        // discards what the pre-switch pick already downloaded, re-fetching
+        // from 0 — the start-of-track stutter.
+        try { player.selectVariantTrack(target, clearBuffer); } catch { /* selection is best-effort */ }
       }
     } else if (trackSession) {
       // No manual switch this round: the manager roams, and an error
@@ -496,7 +557,10 @@ function applyConfig(config) {
     // redundant best-effort re-anchor, a missed one re-confines ABR to the
     // wrong family.
     criteriaNarrowed = true;
-    try { player.selectVariantTrack(target, true); } catch { /* selection is best-effort */ }
+    // Same handover, same rule: clearBuffer defaults to false (the vendor's
+    // own ABR switch default) — only the family fallback and the first-track
+    // defensive clear may clear.
+    try { player.selectVariantTrack(target, clearBuffer); } catch { /* selection is best-effort */ }
   }
 }
 
@@ -1006,7 +1070,10 @@ async function playPlugin(audio, { resolverId, manifestResult, relayLicense, pla
 }
 
 // Live re-apply of the global quality setting against the active manifest.
-async function applyQuality() {
+// { clearBuffer: true } (the family fallback, the first-track defensive clear)
+// is the ONLY way a buffer flush rides this path — the default handover keeps
+// what the previous pick buffered.
+async function applyQuality({ clearBuffer = false } = {}) {
   if (!player || !activeResolverId || !trackSession) return;
   const { tier, adaptive, spatial } = await readPlaybackQuality();
   // Probe-consistent: the re-selection must see the same roster play()
@@ -1015,7 +1082,7 @@ async function applyQuality() {
   // unfiltered roster rides along for the family-drop cap (see play()).
   const allTracks = player.getVariantTracks();
   const config = shakaPlaybackConfig(await playableVariants(allTracks), tier, adaptive, { spatial, allVariants: allTracks });
-  if (config) applyConfig(config);
+  if (config) applyConfig(config, { clearBuffer });
 }
 
 async function stop({ token } = {}) {

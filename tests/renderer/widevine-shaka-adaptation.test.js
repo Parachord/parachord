@@ -295,3 +295,36 @@ describe('the real DashParser × the choice criteria (manifest.enableAudioGroups
     expect(set.map((v) => v.audio.codecs).sort()).toEqual(['fLaC', 'opus']);
   });
 });
+
+// The rendition-group refusal cache (amazon-music.md "Rendition groups") edits
+// the MPD as TEXT — a whole <AdaptationSet> block removed per refused
+// amz-music:trackType tier. The fixtures elsewhere are hand-built, so this is
+// the end-to-end proof over the REAL capture: the plugin's actual filter (its
+// _lib copy — the .axe the renderer loads, instantiated the way resolver-loader
+// does), run over the real captured MPD (tests/test-utils/amazon-live-mpd.js
+// — SegmentLists trimmed and the BaseURLs scrubbed, everything else verbatim:
+// Period@id, BaseURL, the ContentProtection pair with cenc:pssh, SegmentList,
+// the real attribute order), must leave an answer the REAL vendored DashParser
+// still accepts — with exactly the two LD rungs. A regex that cut a block in
+// the wrong place would die here with "Unexpected close tag" instead of
+// quietly shipping a corrupt manifest.
+const { loadAmazonAxe, instantiateAmazonPlugin } = require('../helpers/amazon-plugin-bridge');
+const { AMAZON_LIVE_MPD } = require('../test-utils/amazon-live-mpd');
+const { mpdDropRenditionGroups } = instantiateAmazonPlugin(loadAmazonAxe()).lib;
+
+describe('the rendition-group filter × the real vendored DashParser (live capture)', () => {
+  test('dropping SD+HD from the captured MPD parses, leaving exactly the two LD rungs', async () => {
+    const { manifest: filtered, dropped } = mpdDropRenditionGroups(AMAZON_LIVE_MPD, ['SD', 'HD']);
+    expect(dropped).toEqual(['HD', 'SD']);
+    expect(filtered).not.toBe(AMAZON_LIVE_MPD);
+    const { manifest } = await parseWithText(filtered, false);
+    expect(manifest.variants.map((v) => [v.audio.codecs, v.audio.bandwidth]))
+      .toEqual([['opus', 52988], ['opus', 164991]]);
+  });
+
+  test('the UNFILTERED capture parses too — the fixture itself is faithful', async () => {
+    const { manifest } = await parseWithText(AMAZON_LIVE_MPD, false);
+    expect(manifest.variants.map((v) => v.audio.bandwidth))
+      .toEqual([1144652, 52988, 196992, 324994, 52988, 164991]);
+  });
+});
