@@ -103,7 +103,7 @@ describe('ListenBrainz playlist links (urlLookup, lookupPlaylist)', () => {
 
   test('the manifest declares urlLookup and the patterns', () => {
     expect(axe.capabilities.urlLookup).toBe(true);
-    expect(axe.manifest.version).toBe('1.6.3');
+    expect(axe.manifest.version).toBe('1.6.4');
   });
 
   test.each([
