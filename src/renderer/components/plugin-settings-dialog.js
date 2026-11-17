@@ -552,10 +552,10 @@ React.createElement('div', {
             React.createElement('div', { className: 'flex items-center justify-between' },
               React.createElement('div', null,
                 React.createElement('p', { style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' } },
-                  'Auto-launch Spotify'
+                  'Open Spotify with Parachord'
                 ),
                 React.createElement('p', { style: { fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px', lineHeight: '1.5' } },
-                  'Start Spotify in background when Parachord opens. Ensures a device is always available for playback.'
+                  'Parachord plays Spotify songs through the Spotify app, so the app has to be open. Turn this on and it opens in the background whenever Parachord starts.'
                 )
               ),
               React.createElement(Switch, { checked: autoLaunchSpotify, onToggle: async () => {
