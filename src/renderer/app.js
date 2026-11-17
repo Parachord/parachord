@@ -37523,7 +37523,7 @@ useEffect(() => {
   // match FIRST_RUN_TUTORIAL_HANDLERS in first-run-tutorial.js),
   // below startGettingStarted, which it passes.
   const firstRunTutorialHandlers = useStableHandlers({
-    navigateTo, startGettingStarted,
+    getTrackArt, navigateTo, startGettingStarted,
   });
 
   const homePageHandlers = useStableHandlers({

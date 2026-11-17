@@ -16,7 +16,7 @@ const { Modal } = require('./modal');
 const { Badge } = require('./badge');
 const { Button } = require('./button');
 const { ReasonMark } = require('./reason-badge');
-const { FriendAvatar } = require('./friend-avatar');
+const { LISTENER_HEXAGON } = require('./listener-card');
 const { StepMarker, ServiceMark } = require('./home-getting-started');
 const { PAGE_COLORS } = require('../lib/page-colors');
 const { PAGE_ICONS } = require('../lib/page-icons');
@@ -25,9 +25,14 @@ const { stepOnePlugins } = require('../lib/getting-started');
 const e = React.createElement;
 
 const FIRST_RUN_TUTORIAL_HANDLERS = [
+  'getTrackArt',
   'navigateTo',
   'startGettingStarted',
 ];
+
+// The song the Friends screen's playbar is playing; its cover comes from the
+// album-art pipeline (getTrackArt), never a stored URL.
+const FRIEND_SONG = { artist: 'Quarantine Angst', title: 'Lopped Off' };
 
 // The plug-ins that play here, from the registry: services first, then the
 // no-account ones (never a list of names).
@@ -133,13 +138,34 @@ const TOUR_SCREENS = [
   {
     id: 'friends',
     title: 'Friends',
-    body: 'See what your friends are playing, and listen along.',
+    body: 'See what your friends are playing, in whatever app they use, and listen along. While you do, their badge sits on your queue button: their queue decides what plays next.',
     needs: 'Works once you connect Last.fm or ListenBrainz.',
-    picture: () => e(React.Fragment, null,
-      e(FriendAvatar, { name: 'Alex', size: 'md' }),
-      e(FriendAvatar, { name: 'Sam', size: 'md' }),
-      e('span', { className: 'text-ink-secondary', style: { display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px' } },
-        e(Icons.Headphones, { size: 16 }), 'Listening along')),
+    // The playbar listening along, in small: a friend's song playing, and
+    // their avatar hexagon on the queue button (playbar.js's
+    // listen-along badge), since their queue decides what's next.
+    picture: ({ friendArt, onFriendArtError }) => e('div', {
+      style: {
+        display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px', borderRadius: '12px',
+        backgroundColor: 'var(--surface-dark)', boxShadow: 'var(--card-shadow)',
+      },
+    },
+      e('span', { style: { width: '44px', height: '44px', borderRadius: '6px', overflow: 'hidden', backgroundColor: 'var(--surface-dark-placeholder)', flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--on-dark-tertiary)' } },
+        friendArt
+          ? e('img', { src: friendArt, alt: '', width: 44, height: 44, style: { objectFit: 'cover' }, onError: onFriendArtError })
+          : e(Icons.Music, { size: 18 })),
+      e('span', { style: { display: 'flex', flexDirection: 'column', gap: '2px', minWidth: '120px' } },
+        e('span', { style: { fontSize: '14px', fontWeight: 600, color: 'var(--on-dark-primary)' } }, FRIEND_SONG.title),
+        e('span', { style: { fontSize: '13px', color: 'var(--on-dark-secondary)' } }, FRIEND_SONG.artist)),
+      e('span', { style: { position: 'relative', marginLeft: '16px', display: 'inline-flex', color: 'var(--on-dark-primary)' } },
+        e(Icons.List, { size: 18, style: { opacity: 0.4 } }),
+        e('span', {
+          style: {
+            position: 'absolute', top: '-8px', right: '-10px', width: '20px', height: '20px', clipPath: LISTENER_HEXAGON,
+            backgroundColor: 'var(--accent-fill)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '11px', fontWeight: 600, color: 'var(--on-accent)',
+          },
+        }, 'A')),
+      e('span', { style: { marginLeft: '12px', fontSize: '12px', color: 'var(--on-dark-secondary)' } }, 'Listening along with Alex')),
   },
   {
     // Achordion (achordion.xyz) is the web companion: Copy link on a song,
@@ -164,11 +190,21 @@ const TOUR_SCREENS = [
 const FirstRunTutorial = React.memo(function FirstRunTutorial(props) {
   const {
     firstRunTutorial,
+    getTrackArt,
     loadedResolvers,
     navigateTo,
     setFirstRunTutorial,
     startGettingStarted,
   } = props;
+  // The Friends screen's cover, asked for once while the tour is open.
+  const [friendArt, setFriendArt] = React.useState(null);
+  React.useEffect(() => {
+    let live = true;
+    Promise.resolve(getTrackArt(FRIEND_SONG.artist, FRIEND_SONG.title))
+      .then((url) => { if (live) setFriendArt(url || null); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, []);
   const index = Math.max(0, TOUR_SCREENS.findIndex((s) => s.id === firstRunTutorial.step));
   const screen = TOUR_SCREENS[index];
   const last = index === TOUR_SCREENS.length - 1;
@@ -196,7 +232,7 @@ const FirstRunTutorial = React.memo(function FirstRunTutorial(props) {
     e('div', { style: { padding: '32px 32px 24px', minHeight: '360px' } },
       index === 0 && e('div', { style: { display: 'flex', justifyContent: 'center', marginBottom: '20px' } },
         e(ParachordWordmark, { fill: 'var(--text-primary)', height: 40 })),
-      e('div', { 'aria-hidden': 'true', style: PICTURE_STYLE }, screen.picture({ loadedResolvers })),
+      e('div', { 'aria-hidden': 'true', style: PICTURE_STYLE }, screen.picture({ loadedResolvers, friendArt, onFriendArtError: () => setFriendArt(null) })),
       e('h2', { className: 'text-ink-primary', style: { fontSize: '20px', fontWeight: 600, margin: '0 0 8px' } }, screen.title),
       e('p', { className: 'text-ink-secondary', style: { fontSize: '14px', lineHeight: 1.6, margin: 0 } }, screen.body),
       // The caveat (what a feature needs before it works), set apart in italics.

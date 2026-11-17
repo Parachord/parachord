@@ -179,7 +179,7 @@ describe('the welcome tour', () => {
     for (const [i, s] of TOUR_SCREENS.entries()) {
       const html = renderToStaticMarkup(React.createElement(FirstRunTutorial, {
         firstRunTutorial: { open: true, step: s.id }, loadedResolvers: registry,
-        navigateTo: noop, setFirstRunTutorial: noop, startGettingStarted: noop,
+        navigateTo: noop, getTrackArt: () => null, setFirstRunTutorial: noop, startGettingStarted: noop,
       }));
       expect(html).toContain(s.title);
       expect(html).toContain(`Screen ${i + 1} of ${TOUR_SCREENS.length}`);
