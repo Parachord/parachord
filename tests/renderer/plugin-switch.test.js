@@ -28,7 +28,7 @@ describe('AI and concert plug-ins that need a key', () => {
   test('with a key it is on until switched off (isServiceEnabled / getConcertServices)', () => {
     expect(pluginSwitchState({ plugin: plugin('chatgpt'), config: { apiKey: 'sk-x' } })).toEqual({ checked: true, disabled: false, hint: 'Use with Shuffleupagus' });
     expect(pluginSwitchState({ plugin: plugin('chatgpt'), config: { apiKey: 'sk-x', enabled: false } }).checked).toBe(false);
-    expect(pluginSwitchState({ plugin: plugin('bandsintown'), config: { appId: 'a' } })).toEqual({ checked: true, disabled: false, hint: 'Include in Concerts' });
+    expect(pluginSwitchState({ plugin: plugin('bandsintown'), config: { appId: 'a' } })).toEqual({ checked: true, disabled: false, hint: 'Upcoming concerts and ticket links' });
   });
 });
 
