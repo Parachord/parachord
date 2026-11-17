@@ -123,6 +123,20 @@ const TOUR_SCREENS = [
     picture: () => ['new-releases', 'critics-picks', 'discover', 'recommendations'].map(pageMark),
   },
   {
+    // The playbar's Spinoff button (playbar.js, startSpinoff in
+    // use-playback-engine.js): songs like the one playing, from Last.fm's
+    // similar tracks; your queue is kept and comes back when you stop.
+    id: 'spinoff',
+    title: 'Follow where a song leads',
+    body: 'Like what’s playing? Press the spin-off button in the player and Parachord keeps playing songs like it. Your queue waits: press it again and you’re back where you left off.',
+    picture: ({ friendArt, onFriendArtError }) => e(MiniPlaybar, {
+      art: friendArt, onArtError: onFriendArtError, title: FRIEND_SONG.title, artist: FRIEND_SONG.artist,
+      extra: e('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '8px', marginLeft: '16px', fontSize: '12px', color: 'var(--on-dark-secondary)' } },
+        e('span', { style: { display: 'inline-flex', color: 'var(--playbar-accent)' } }, e(Icons.Spinoff, { className: 'w-5 h-5' })),
+        'Playing songs like this'),
+    }),
+  },
+  {
     id: 'concerts',
     title: 'Never miss a show',
     body: 'See upcoming concerts near you from the artists you listen to, with tickets a click away. When an artist you’re playing is on tour near you, a dot appears beside their name in the player; click it for their dates.',
