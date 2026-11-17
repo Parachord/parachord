@@ -867,8 +867,10 @@ React.createElement(Button, { variant: 'primary', size: 'sm', onClick: saveApple
                   // A username reads your history; it isn't a sign-in (that's
                   // Scrobbling, under Enable), so the row doesn't say "Signed in".
                   React.createElement(AccountRow, {
-                    name: 'Last.fm', label: 'Listening history', color: getServiceColor('lastfm'), signedIn: true,
-                    status: `Using ${metaServiceConfigs.lastfm.username}’s history`, onSignOut: disconnectLastfm, signOutLabel: 'Remove',
+                    // The account Parachord reads from: "Listening history · Using
+                    // X's history" didn't say for what (2026-11-17).
+                    name: 'Last.fm', label: 'Last.fm username', color: getServiceColor('lastfm'), signedIn: true,
+                    status: `${metaServiceConfigs.lastfm.username} · your recommendations, similar listeners and history come from this account`, onSignOut: disconnectLastfm, signOutLabel: 'Remove',
                   })),
                   // Advanced accordion for API credentials (also shown when connected)
                   React.createElement(Disclosure, { open: lastfmAdvancedOpen, onToggle: () => setLastfmAdvancedOpen(!lastfmAdvancedOpen) },
@@ -940,7 +942,7 @@ React.createElement('div', { className: 'flex gap-2' },
                   // Sign in once there's a username; the fields are below.
                   React.createElement('div', { style: { marginBottom: '16px' } },
                     React.createElement(AccountRow, {
-                      name: 'Last.fm', label: 'Listening history', color: getServiceColor('lastfm'), signedIn: false,
+                      name: 'Last.fm', label: 'Last.fm username', color: getServiceColor('lastfm'), signedIn: false,
                       status: 'Enter your Last.fm username below', signInLabel: 'Save',
                       onSignIn: () => connectLastfm(lastfmUsernameInput, lastfmApiKeyInput, lastfmApiSecretInput),
                       signInDisabled: !lastfmUsernameInput.trim(), busy: lastfmConnecting,
@@ -1012,8 +1014,10 @@ React.createElement('div', null,
                   // A username reads your history; it isn't a sign-in (that's
                   // Scrobbling, under Enable), so the row doesn't say "Signed in".
                   React.createElement(AccountRow, {
-                    name: 'ListenBrainz', label: 'Listening history', color: getServiceColor('listenbrainz'), signedIn: true,
-                    status: `Using ${metaServiceConfigs.listenbrainz.username}’s history`, onSignOut: disconnectListenbrainz, signOutLabel: 'Remove',
+                    // The account Parachord reads from: "Listening history · Using
+                    // X's history" didn't say for what (2026-11-17).
+                    name: 'ListenBrainz', label: 'ListenBrainz username', color: getServiceColor('listenbrainz'), signedIn: true,
+                    status: `${metaServiceConfigs.listenbrainz.username} · your recommendations, similar listeners and history come from this account`, onSignOut: disconnectListenbrainz, signOutLabel: 'Remove',
                   }),
                   // Show token status if configured - masked like AI service API keys
                   metaServiceConfigs.listenbrainz.userToken && React.createElement('div', {
@@ -1039,7 +1043,7 @@ React.createElement('div', null,
                   // Sign in once there's a username; the fields are below.
                   React.createElement('div', { style: { marginBottom: '16px' } },
                     React.createElement(AccountRow, {
-                      name: 'ListenBrainz', label: 'Listening history', color: getServiceColor('listenbrainz'), signedIn: false,
+                      name: 'ListenBrainz', label: 'ListenBrainz username', color: getServiceColor('listenbrainz'), signedIn: false,
                       status: 'Enter your ListenBrainz username below', signInLabel: 'Save',
                       onSignIn: () => connectListenbrainz(listenbrainzUsernameInput, listenbrainzTokenInput),
                       signInDisabled: !listenbrainzUsernameInput.trim(), busy: listenbrainzConnecting,
