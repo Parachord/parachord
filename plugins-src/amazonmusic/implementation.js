@@ -3147,7 +3147,7 @@ module.exports = {
   // process for RECOMMENDATIONS_CACHE_TTL_MS (the renderer's per-provider
   // cache answers first). The cached result includes the synthesized
   // playlists section (withPlaylistsSection below) and holds EVERY section
-  // the walk parsed — the personal filter is applied on the way out, so the
+  // the walk parsed — the shelf filter is applied on the way out, so the
   // cache survives a filter change.
   getRecommendations: async function (config) {
     try {
@@ -3162,7 +3162,7 @@ module.exports = {
       }
       const cached = this._recommendationsCache;
       if (cached && (Date.now() - cached.fetchedAt) < lib.RECOMMENDATIONS_CACHE_TTL_MS) {
-        return { sections: this.personalSections(cached.sections) };
+        return { sections: this.pageSections(cached.sections) };
       }
       let sections = null;
       const fast = await this.tryMusicHomeWalk();
@@ -3195,7 +3195,7 @@ module.exports = {
       sections = await this.withPlaylistsSection(sections);
       this._recommendationsCache = { sections, fetchedAt: Date.now() };
       console.log('[Amazon] resolver recommendations', sections.length, 'sections,', sections.reduce((n, s) => n + s.items.length, 0), 'items');
-      return { sections: this.personalSections(sections) };
+      return { sections: this.pageSections(sections) };
     } catch (error) {
       if (error && error.notReady) throw error;
       var reason = error && error.reason;
@@ -3212,32 +3212,42 @@ module.exports = {
     }
   },
 
-  // The personal-shelf filter, applied on the way out of every
+  // The shelf filter (#1491), applied on the way out of every
   // getRecommendations answer (the walk parses and caches every section;
-  // only the personal ones reach the page). Only the personal sections:
-  // Amazon's personal shelves are named strategies
+  // every shelf but "Featured This Week" reaches the page, each under a
+  // category). Amazon's personal shelves are named strategies
   // ("…mp3YmlRecentPlaybackStrategy", "…playlistStrategy"); its editorial
-  // ones ("Top Playlists", "Featured This Week", "Amazon Music Live",
-  // "Recently Played") carry UUID ids and the onboarding shelf is
-  // GET_STARTED. The genre shelf ("Soundtracks") is a strategy but a promo,
-  // so it is named out. Live-captured 2026-11-12.
-  personalSections: function (sections) {
-    const EDITORIAL_STRATEGIES = { mp3GenreForYouStrategy: true };
+  // ones ("Top Playlists", "A Whole Mood", "On-Demand Albums This Week",
+  // "Amazon Music Live", "Recently Played") carry UUID ids, the onboarding
+  // shelf is GET_STARTED, and the genre shelf ("Soundtracks") is a strategy
+  // but a promo. Live-captured 2026-11-12. The UUID shelves carry no other
+  // mark, so the two that need telling apart ("Featured This Week",
+  // "Recently Played") go by title.
+  pageSections: function (sections) {
     const strategyName = (id) => String(id || '').split('/').pop().replace(/^(browse|music)-home_/, '');
-    const isPersonal = (id) => {
-      const last = strategyName(id);
-      return /Strategy$/.test(last) && !EDITORIAL_STRATEGIES[last];
+    const isStrategy = (id) => /Strategy$/.test(strategyName(id));
+    const isFeatured = (s) => /^\s*featured\b/i.test(String((s && s.title) || ''));
+    // The category the Recommendations page files a section under (its
+    // albums and playlists; songs and artists have no categories). A
+    // strategy it doesn't know sends none, so the page files it under
+    // "More …"; a shelf that isn't a strategy is Amazon's editors' pick.
+    const STRATEGY_CATEGORIES = {
+      playlistStrategy: 'personal',
+      mp3YmlRecentPlaybackStrategy: 'personal',
+      mp3PrimeAlbumsStrategy: 'personal',
+      mp3YourHeaviestListeningStrategy: 'personal',
+      newReleasesForYouStrategy: 'new',
+      mp3ByArtistStrategy: 'artist',
+      mp3CommunityPlaylistsStrategy: 'community',
+      mp3GenreForYouStrategy: 'editorial'
     };
-    // The category the Recommendations page files a playlist section under.
-    // The playlist strategies and the album strategies say; the rest send
-    // none (their items land in More playlists or More albums).
-    const categoryOf = (id) => {
-      const last = strategyName(id);
-      if (last === 'playlistStrategy') return 'personal';
-      if (last === 'mp3YmlRecentPlaybackStrategy' || last === 'mp3PrimeAlbumsStrategy') return 'personal';
-      if (last === 'mp3ByArtistStrategy') return 'artist';
-      if (last === 'mp3CommunityPlaylistsStrategy') return 'community';
-      return undefined;
+    const categoryOf = (s) => {
+      if (isStrategy(s.id)) {
+        const last = strategyName(s.id);
+        return Object.prototype.hasOwnProperty.call(STRATEGY_CATEGORIES, last) ? STRATEGY_CATEGORIES[last] : undefined;
+      }
+      if (/^\s*recently played\s*$/i.test(String(s.title || ''))) return 'personal';
+      return 'editorial';
     };
     // The artist a "by artist" shelf is seeded on: the one artist every
     // album shares (trimmed, case-insensitive, first spelling). Never read
@@ -3254,12 +3264,12 @@ module.exports = {
       return seed === null ? undefined : seed;
     };
     return (sections || [])
-      .filter((s) => s && Array.isArray(s.items) && s.items.length > 0 && isPersonal(s.id))
+      .filter((s) => s && Array.isArray(s.items) && s.items.length > 0 && !isFeatured(s))
       .map((s) => {
         // The synthesized "Playlists for You" section carries its first
         // page's continuation cursor — pass it through so the page's first
         // "Load more" starts from it.
-        const category = categoryOf(s.id);
+        const category = categoryOf(s);
         let out = s;
         if (s.nextCursor != null) {
           out = { id: s.id, title: s.title, description: s.description, items: s.items, nextCursor: String(s.nextCursor) };
@@ -3608,6 +3618,16 @@ module.exports = {
       }
       var id = (sectionId || '').trim();
       if (!id) return { items: [], nextCursor: null };
+      // Only a strategy shelf has a see-more page (the route is keyed on the
+      // strategy name). The editorial shelves (UUID ids, GET_STARTED) show
+      // what the home page sent, so their "Load more" is at its end at
+      // once, instead of loading a page that isn't there in the hidden view
+      // — which here would load /browse/music-items/home/recommendation/<uuid>
+      // (a route that does not exist), hold the page-flow queue for the
+      // capture budget, and throw not-ready: an error on the shelf instead
+      // of its end. The check rides ahead of any replay or load, so it
+      // answers even before the signed-in read.
+      if (!/Strategy$/.test(id.split('?')[0].split('/').pop())) return { items: [], nextCursor: null };
       var parsed = await this.expandRecommendationSectionParsed(id, afterCursor || null);
       var items = ((parsed && parsed.section && parsed.section.items) || []).filter(function (i) { return i && (i.name || i.title); });
       return { items: items, nextCursor: (parsed && parsed.nextCursor) || null };

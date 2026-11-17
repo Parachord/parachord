@@ -58,6 +58,33 @@ describe('Amazon Music sends playlist categories', () => {
     expect(axe.manifest.version).toBe('1.16.0');
   });
 
+  test('Amazon files its other shelves too, and drops only Featured', async () => {
+    // #1491: every shelf but "Featured This Week", each under a category —
+    // a UUID shelf titled "Recently Played" is personal, the other UUID and
+    // GET_STARTED shelves are editorial, and a title starting "Featured"
+    // (even "  featured artists  ") is dropped.
+    const editorial = 'uri:///recommendations/browse-home/';
+    const byId = (id, title, items) => ({ id, name: title, recommendedContent: { edges: items.map(node => ({ node })) } });
+    const { sections } = await runAmazon([
+      byId('uri:///recommendations/music-home/music-home_mp3YourHeaviestListeningStrategy', 'Your Frequent Plays', [album('X')]),
+      byId('uri:///recommendations/music-home/music-home_newReleasesForYouStrategy', 'New Releases for You', [album('Y')]),
+      byId(base + 'mp3GenreForYouStrategy', 'Soundtracks', [album('Z')]),
+      byId(editorial + 'f5c621d6-7ba8-4d44-9e72-433921bb5203', 'Recently Played', [album('W')]),
+      byId(editorial + '6a0d8250-d85c-42c0-868a-01dc91991473', 'Top Playlists', [album('V')]),
+      byId(editorial + 'GET_STARTED', "Let's Get Started", [album('U')]),
+      byId(editorial + '3cdd6257-e173-4d3b-bd27-e5e7b400492e', 'Featured This Week', [album('T')]),
+      byId(editorial + '11111111-2222-3333-4444-555555555555', '  featured artists  ', [album('S')])
+    ]);
+    expect(sections.map(s => [s.title, s.category])).toEqual([
+      ['Your Frequent Plays', 'personal'],
+      ['New Releases for You', 'new'],
+      ['Soundtracks', 'editorial'],
+      ['Recently Played', 'personal'],
+      ['Top Playlists', 'editorial'],
+      ["Let's Get Started", 'editorial']
+    ]);
+  });
+
   test('Amazon artist shelf with blank artists has no seed', async () => {
     const { sections } = await runAmazon([
       section('mp3ByArtistStrategy', 'Because you like someone', [album(''), album('   ')])

@@ -66,7 +66,7 @@ describe('amazonmusic .axe structure', () => {
       expect(typeof new Function('return ' + src)()).toBe('function');
     }
     expect(Object.keys(axe.implementation).sort()).toEqual(
-      ['_lib', 'assertPlanPlays', 'cacheSeeMorePage', 'cleanup', 'enqueuePageFlow', 'expandRecommendationSection', 'expandRecommendationSectionParsed', 'getPlan', 'getRecommendations', 'homePageFlow', 'init', 'isSignedIn', 'lookupAlbum', 'lookupAlbumFlow', 'lookupAlbumPageFlow', 'lookupPlaylist', 'lookupPlaylistFlow', 'lookupPlaylistPageFlow', 'musicHomePageFlow', 'personalSections', 'play', 'playlistImportPages', 'replayGql', 'requireLib', 'resolve', 'search', 'searchAlbums', 'searchArtistImage', 'seeMorePageFlow', 'sessionState', 'specSearch', 'specSearchPageFlow', 'specStructuralError', 'tryMusicHomeWalk', 'trySeeMoreReplay', 'trySpecReplay', 'walkMusicHomePages', 'withPlaylistsSection'].sort()
+      ['_lib', 'assertPlanPlays', 'cacheSeeMorePage', 'cleanup', 'enqueuePageFlow', 'expandRecommendationSection', 'expandRecommendationSectionParsed', 'getPlan', 'getRecommendations', 'homePageFlow', 'init', 'isSignedIn', 'lookupAlbum', 'lookupAlbumFlow', 'lookupAlbumPageFlow', 'lookupPlaylist', 'lookupPlaylistFlow', 'lookupPlaylistPageFlow', 'musicHomePageFlow', 'pageSections', 'play', 'playlistImportPages', 'replayGql', 'requireLib', 'resolve', 'search', 'searchAlbums', 'searchArtistImage', 'seeMorePageFlow', 'sessionState', 'specSearch', 'specSearchPageFlow', 'specStructuralError', 'tryMusicHomeWalk', 'trySeeMoreReplay', 'trySpecReplay', 'walkMusicHomePages', 'withPlaylistsSection'].sort()
     );
   });
 });

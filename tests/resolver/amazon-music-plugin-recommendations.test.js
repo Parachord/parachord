@@ -16,7 +16,8 @@
  *     freshest csrf-ts among the page's OWN captures (an echo never mints),
  *     the 294 browse fallback (session-sticky), the session caches (30 min,
  *     all dropped on the generation bump a sign-out carries), NOT plan-gated,
- *     and the personal-only filter incl. the genre strategy named out
+ *     and the shelf filter (#1491): every shelf but "Featured This Week",
+ *     each under a category
  *   - expandRecommendationSection: the see-more template replays with the
  *     id/afterCursor patched (the id is the SEE-MORE id — the browse-home
  *     prefix even for a music-home strategy); a cold template loads the
@@ -514,13 +515,13 @@ describe('the page-flow queue lane: the recommendations are background work', ()
   });
 });
 
-// ── The personal-shelf filter ──────────────────────────────────────────────
+// ── The shelf filter ──────────────────────────────────────────────────────
 
-describe('the personal-only shelf filter (getRecommendations output)', () => {
+describe('the shelf filter (getRecommendations output)', () => {
   // Live 2026-11-12, a Prime account's BrowseHomePage: the personal sections
   // are named strategies; editorial shelves carry UUID ids, the onboarding
   // shelf is GET_STARTED, and the genre shelf ("Soundtracks") is a strategy
-  // but a promo.
+  // but a promo. All of them come back except Featured This Week.
   const item = albumNode('B0G2TSTWXD', 'Tempelschlaf', 'The Ruins Of Beverast');
   const pl = playlistNode('PP1', 'A Mix');
   const base = 'uri:///recommendations/browse-home/';
@@ -537,7 +538,7 @@ describe('the personal-only shelf filter (getRecommendations output)', () => {
     seeMorePage: async () => amazonSeeMoreData([], { hasNextPage: false, token: null })
   });
 
-  test('keeps only the personal strategy sections, never Amazon\'s editorial shelves', async () => {
+  test('keeps every shelf but Featured This Week, each under a category', async () => {
     const sections = [
       sec('GET_STARTED', "Let's Get Started", [pl]),
       sec('mp3YmlRecentPlaybackStrategy', 'Based on Your Recents'),
@@ -549,7 +550,7 @@ describe('the personal-only shelf filter (getRecommendations output)', () => {
       sec('6a0d8250-d85c-42c0-868a-01dc91991473', 'Top Playlists', [pl]),
       sec('3cdd6257-e173-4d3b-bd27-e5e7b400492e', 'Featured This Week', [pl]),
       sec('23e18714-c11c-4576-bbc2-1dece54b3b16', 'On-Demand Albums This Week'),
-      // The genre shelf is a strategy but a promo, so it is named out.
+      // The genre shelf is a strategy but a promo — editorial, not dropped.
       sec('browse-home_mp3GenreForYouStrategy', 'Soundtracks', [pl, item]),
       sec('fab9f6f8-60d6-49f1-a0ff-9b26256c5e90', 'A Whole Mood', [pl]),
       sec('457820b0-616c-4fb0-baf4-6114cf1cc230', 'Amazon Music Live'),
@@ -558,8 +559,20 @@ describe('the personal-only shelf filter (getRecommendations output)', () => {
     const ws = homeWith(sections);
     const resolver = instantiateAmazonPlugin(axe);
     const out = await resolver.getRecommendations({});
-    expect(out.sections.map(s => s.title)).toEqual([
-      'Based on Your Recents', 'Albums for You', 'FIDLAR', 'Playlists for You', 'Community Playlists', 'New Releases for You'
+    expect(out.sections.map(s => [s.title, s.category])).toEqual([
+      ["Let's Get Started", 'editorial'],
+      ['Based on Your Recents', 'personal'],
+      ['Albums for You', 'personal'],
+      ['Recently Played', 'personal'],
+      ['FIDLAR', 'artist'],
+      ['Playlists for You', 'personal'],
+      ['Community Playlists', 'community'],
+      ['Top Playlists', 'editorial'],
+      ['On-Demand Albums This Week', 'editorial'],
+      ['Soundtracks', 'editorial'],
+      ['A Whole Mood', 'editorial'],
+      ['Amazon Music Live', 'editorial'],
+      ['New Releases for You', 'new']
     ]);
     expect(ws.sentRequests.length).toBe(1); // no playlists synthesis: the home carried some
   });
@@ -634,6 +647,25 @@ describe('expandRecommendationSection', () => {
     await expect(resolver.expandRecommendationSection(SECTION_ID, null, {})).rejects.toMatchObject({ notReady: true, code: 'not-signed-in' });
     expect(ws.pageFetch).not.toHaveBeenCalled();
     expect(ws.load).not.toHaveBeenCalled();
+  });
+
+  test('an editorial shelf (no strategy, no see-more page) is at its end without loading anything', async () => {
+    // #1491: the see-more route is keyed on the strategy, so a UUID or
+    // GET_STARTED shelf has no page to load — its Load more ends at once.
+    // Without the check the route flow would load
+    // /browse/music-items/home/recommendation/<uuid> (a route that does not
+    // exist), hold the page-flow queue for the capture budget, and throw
+    // not-ready — an error on the shelf instead of its end.
+    const ws = amazonRecommendationsMock({
+      homePage: async () => amazonMusicHomeData([albumSection(SECTION_ID, 'Albums for You')]),
+      seeMorePage: oneSeeMorePage([albumNode('B0G2TSTWXD', 'Tempelschlaf', 'The Ruins Of Beverast')])
+    });
+    const resolver = instantiateAmazonPlugin(axe);
+    for (const id of ['uri:///recommendations/browse-home/6a0d8250-d85c-42c0-868a-01dc91991473', 'uri:///recommendations/browse-home/GET_STARTED']) {
+      await expect(resolver.expandRecommendationSection(id, null, {})).resolves.toEqual({ items: [], nextCursor: null });
+    }
+    expect(ws.load).not.toHaveBeenCalled();
+    expect(ws.pageFetch).not.toHaveBeenCalled();
   });
 
   test('a fresh template replays with the id/afterCursor patched — the SEE-MORE id, hash and firstLimit intact', async () => {
@@ -750,13 +782,15 @@ describe('expandRecommendationSection', () => {
     await expect(resolver.expandRecommendationSection(SECTION_ID, null, {})).resolves.toEqual({ items: [], nextCursor: null });
   });
 
-  test('an empty id answers a quiet miss; a segment-less id is not-ready — never a request', async () => {
+  test('an empty or segment-less id answers a quiet miss — never a request', async () => {
     const ws = amazonRecommendationsMock({ seeMorePage: async () => amazonSeeMoreData([]) });
     const resolver = instantiateAmazonPlugin(axe);
     await expect(resolver.expandRecommendationSection('', null, {})).resolves.toEqual({ items: [], nextCursor: null });
-    // A bare strategy IS a valid section id (the helpers accept the full uri
-    // or the strategy); only an id with no uri segment at all is not one.
-    await expect(resolver.expandRecommendationSection('///', null, {})).rejects.toMatchObject({ notReady: true, code: 'not-ready' });
+    // #1491: any id whose last path segment doesn't end in Strategy (a
+    // segment-less one included) has no see-more page — its Load more is at
+    // its end at once, never a request. A bare strategy IS a valid section
+    // id (the helpers accept the full uri or the strategy).
+    await expect(resolver.expandRecommendationSection('///', null, {})).resolves.toEqual({ items: [], nextCursor: null });
     expect(ws.pageFetch).not.toHaveBeenCalled();
     expect(ws.load).not.toHaveBeenCalled();
   });
