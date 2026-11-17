@@ -14553,6 +14553,11 @@ ${trackListXml}
     });
   }, []);
 
+  // Does this plug-in sync loved tracks? Its manifest's `lovedTracks`
+  // capability (Last.fm, ListenBrainz), read from the loaded meta-services.
+  const serviceHasLovedTracks = (service) =>
+    !!(metaServicesRef.current || []).find(s => s.id === service)?.capabilities?.lovedTracks;
+
   // Manual backfill: walks the collection, pushes any track not yet
   // marked as pushed for this service. Soft rate-limit ~1 req/sec.
   // Idempotency cache means re-clicks are cheap.
@@ -14563,7 +14568,8 @@ ${trackListXml}
   // queue when MBIDs can't resolve).
   const runLoveBackfill = useCallback(async (service, { onlyIds } = {}) => {
     if (loveBackfillRunningRef.current[service]) return;
-    if (!['lastfm', 'listenbrainz'].includes(service)) return;
+    // A plug-in that declares `lovedTracks` (was two hard-coded names).
+    if (!serviceHasLovedTracks(service)) return;
     const scrobbler = service === 'lastfm' ? window.lastfmScrobbler : window.listenbrainzScrobbler;
     if (!scrobbler) { showToast(`${service} scrobbler not loaded`); return; }
     const isEnabled = await scrobbler.isEnabled();
@@ -14649,7 +14655,7 @@ ${trackListXml}
   //   6. One-way stays one-way: importing never unloves anything remotely.
 
   const runLoveImport = useCallback(async (service) => {
-    if (!['lastfm', 'listenbrainz'].includes(service)) return;
+    if (!serviceHasLovedTracks(service)) return;
     if (loveImportRunningRef.current[service]) return;
     const label = service === 'lastfm' ? 'Last.fm' : 'ListenBrainz';
     const otherService = service === 'lastfm' ? 'listenbrainz' : 'lastfm';

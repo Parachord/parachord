@@ -18,6 +18,7 @@ const render = (props) => renderToStaticMarkup(
   React.createElement(ScrobblerSettingsCard, {
     scrobbler: { id: 'lastfm', name: 'Last.fm' },
     config: connected,
+    lovedTracks: true, // the plug-in declares the lovedTracks capability
     ...(props || {}),
   })
 );
@@ -45,6 +46,10 @@ describe('the import button on the scrobbler card', () => {
 
   test('no button without the handler (Libre.fm)', () => {
     expect(importButton(render())).toBeNull();
+  });
+
+  test('no button for a plug-in that does not declare lovedTracks, whatever its id', () => {
+    expect(importButton(render({ onRunLoveImport: () => {}, lovedTracks: false }))).toBeNull();
   });
 
   test('both cards are wired (a reverted card wiring fails this)', () => {
