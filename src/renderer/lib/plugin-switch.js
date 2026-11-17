@@ -67,7 +67,12 @@ function hintFor(plugin) {
   if (caps.chat || caps.generate) return 'Use with Shuffleupagus';
   if (caps.recommendations) return 'Use for recommendations and your history';
   if (caps.scrobbling) return 'Scrobble what you play';
-  if (caps.metadata || caps.biography) return 'Use for artist info';
+  // What it brings, from its capabilities ("Use for artist info" said
+  // nothing about what that is, 2026-11-17).
+  if (caps.biography && caps.artistImages) return 'Artist biographies and photos';
+  if (caps.biography) return 'Artist biographies';
+  if (caps.artistImages) return 'Artist photos';
+  if (caps.metadata) return 'Artist info';
   return '';
 }
 

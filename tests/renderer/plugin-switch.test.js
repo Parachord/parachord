@@ -59,7 +59,7 @@ describe('everything else: enabled, or set up and not switched off; never disabl
     expect(pluginSwitchState({ plugin: plugin('discogs'), config: { enabled: false } }).checked).toBe(false);
   });
   test('Wikipedia and Discogs serve artist info; Achordion has no hint', () => {
-    expect(pluginSwitchState({ plugin: plugin('wikipedia'), config: { enabled: true } })).toEqual({ checked: true, disabled: false, hint: 'Use for artist info' });
+    expect(pluginSwitchState({ plugin: plugin('wikipedia'), config: { enabled: true } })).toEqual({ checked: true, disabled: false, hint: 'Artist biographies and photos' });
     expect(pluginSwitchState({ plugin: plugin('achordion'), config: {} })).toEqual({ checked: false, disabled: false, hint: '' });
   });
 });
