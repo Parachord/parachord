@@ -642,15 +642,11 @@ contextBridge.exposeInMainWorld('electron', {
     // searchTracks is gone (#1356 M5): the plugin's own spec-search runner
     // drives the session through window.electron.webSession instead.
     // searchAlbums / lookupAlbum / searchArtistImage are gone with it (M6:
-    // the album catalog flows moved into the plugin the same way), and
+    // the album catalog flows moved into the plugin the same way),
     // lookupPlaylist with them (M7: the playlist import drives the session
-    // through the webSession bridge too).
-    // The Recommendations provider: the home page's sections, and a titled
-    // section's next page (see-more route). Not plan-gated, like the album
-    // catalog and artist images.
-    getRecommendations: () => ipcRenderer.invoke('amazonmusic-get-recommendations'),
-    expandRecommendationSection: (sectionId, afterCursor) =>
-      ipcRenderer.invoke('amazonmusic-expand-recommendations', { sectionId, afterCursor: afterCursor || null }),
+    // through the webSession bridge too), and getRecommendations /
+    // expandRecommendationSection with those (M8: the recommendations flows
+    // — the music-home walk and the see-more route — ride the same bridge).
     // The account's plan changed ('unlimited' / 'prime' / 'unknown'; #1220).
     onPlanChanged: (callback) => {
       const handler = (event, data) => callback(data);
