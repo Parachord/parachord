@@ -21,7 +21,8 @@ const { Modal } = require('./modal');
 const { Badge } = require('./badge');
 const { Button } = require('./button');
 const { SecretField, Select, SettingRow, Switch, TextField } = require('./fields');
-const { pluginSwitchState } = require('../lib/plugin-switch');
+const { pluginSwitchState, keyLabel } = require('../lib/plugin-switch');
+const { librarySyncState } = require('../lib/library-sync-state');
 const { AccountRow } = require('./account-row');
 const { Disclosure } = require('./disclosure');
 const { EmptyState } = require('./states');
@@ -54,6 +55,7 @@ const PLUGIN_SETTINGS_DIALOG_HANDLERS = [
   'saveMetaServiceConfig',
   'saveSoundcloudCredentials',
   'saveSpotifyCredentials',
+  'setProviderSyncEnabled',
   'toggleResolver',
 ];
 
@@ -117,9 +119,11 @@ const PluginSettingsDialog = React.memo(function PluginSettingsDialog(props) {
     metaServiceConfigs,
     metaServices,
     openSyncSetupModal,
+    setProviderSyncEnabled,
     playbackLimits,
     resolverConfigCache,
     resolverSyncSettings,
+    syncSignedOut,
     runLoveBackfill,
     runLoveImport,
     saveAppleMusicDeveloperToken,
@@ -288,7 +292,7 @@ React.createElement('div', {
           // what to add first.
           (() => {
             const id = selectedResolver.id;
-            const state = pluginSwitchState({ plugin: selectedResolver, config: metaServiceConfigs[id], activeResolvers });
+            const state = pluginSwitchState({ plugin: selectedResolver, config: metaServiceConfigs[id], activeResolvers, limit: playbackLimits && playbackLimits[id] });
             const setOn = async (next) => {
               if (next) {
                 const isLoaded = allResolvers.some(r => r.id === id) || metaServices.some(s => s.id === id);
@@ -459,50 +463,30 @@ React.createElement('div', {
                 marginBottom: '14px'
               }
             }, 'Library Sync'),
-            resolverSyncSettings[selectedResolver.id]?.enabled
-              ? React.createElement('div', {
-                  style: { display: 'flex', flexDirection: 'column', gap: '12px' }
-                },
-                  // Status row
-                  React.createElement('div', {
-                    style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '13px' }
-                  },
-                    React.createElement('span', {
-                      style: { color: 'var(--text-secondary)' }
-                    }, 'Status'),
-                    React.createElement('span', {
-                      style: { color: 'var(--text-success)', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '500' }
-                    },
-                      React.createElement('span', {
-                        style: { width: '8px', height: '8px', backgroundColor: 'var(--success)', borderRadius: '50%' }
-                      }),
-                      'Active'
-                    )
-                  ),
-                  // Last synced row
-                  React.createElement('div', {
-                    style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '13px' }
-                  },
-                    React.createElement('span', {
-                      style: { color: 'var(--text-secondary)' }
-                    }, 'Last synced'),
-                    React.createElement('span', {
-                      style: { color: 'var(--text-primary)' }
-                    },
-                      resolverSyncSettings[selectedResolver.id]?.lastSyncAt
-                        ? new Date(resolverSyncSettings[selectedResolver.id].lastSyncAt).toLocaleString()
-                        : 'Never'
-                    )
-                  ),
-                  // Action buttons
-                  React.createElement('div', {
-                    style: { display: 'flex', gap: '8px', marginTop: '4px' }
-                  },
-                    React.createElement(Button, { variant: 'secondary', onClick: () => openSyncSetupModal(selectedResolver.id) }, 'Manage sync'),
-                    React.createElement(Button, { variant: 'destructive', onClick: () => setStopSyncDialog({ open: true, providerId: selectedResolver.id }) }, 'Stop syncing')
-                  )
-                )
-              : React.createElement(Button, { variant: 'primary', pageColor: syncProviderConfig[selectedResolver.id]?.color || 'var(--accent-fill)', className: 'w-full', onClick: () => openSyncSetupModal(selectedResolver.id) }, 'Set up library sync')
+            // What sync is doing (lib/library-sync-state.js): a paused sync
+            // used to offer "Set up", and a lapsed sign-in read "Active".
+            (() => {
+              const id = selectedResolver.id;
+              const settings = resolverSyncSettings[id];
+              const state = librarySyncState(settings, syncSignedOut && syncSignedOut[id]);
+              if (state === 'setup') {
+                return React.createElement(Button, { variant: 'primary', pageColor: syncProviderConfig[id]?.color || 'var(--accent-fill)', className: 'w-full', onClick: () => openSyncSetupModal(id) }, 'Set up library sync');
+              }
+              const last = settings?.lastSyncAt ? `Last synced ${new Date(settings.lastSyncAt).toLocaleString()}` : 'Not synced yet';
+              const hint = state === 'paused' ? `Paused. Your synced music stays. ${last}`
+                : state === 'signed-out' ? 'Signed out. Sign in above to keep syncing.'
+                : last;
+              return React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '12px' } },
+                React.createElement(SettingRow, { label: 'Sync your library', hint, style: { padding: 0 } },
+                  React.createElement(Switch, {
+                    checked: state !== 'paused',
+                    onToggle: () => setProviderSyncEnabled(id, state === 'paused'),
+                    'aria-label': 'Sync your library',
+                  })),
+                React.createElement('div', { style: { display: 'flex', gap: '8px' } },
+                  React.createElement(Button, { variant: 'secondary', onClick: () => openSyncSetupModal(id) }, 'Manage sync'),
+                  React.createElement(Button, { variant: 'destructive', onClick: () => setStopSyncDialog({ open: true, providerId: id }) }, 'Stop syncing')));
+            })()
           ),
 
           // Auto-launch Spotify section
@@ -778,9 +762,11 @@ React.createElement(Button, { variant: 'primary', size: 'sm', onClick: saveApple
             metaServiceConfigs.lastfm?.username
               ? React.createElement('div', null,
                   // The account (components/account-row.js, #1498 step 3).
+                  // A username reads your history; it isn't a sign-in (that's
+                  // the Scrobbling row below), so the row doesn't say "Signed in".
                   React.createElement(AccountRow, {
-                    name: 'Last.fm', color: getServiceColor('lastfm'), signedIn: true,
-                    status: `Signed in as ${metaServiceConfigs.lastfm.username}`, onSignOut: disconnectLastfm,
+                    name: 'Last.fm', label: 'Listening history', color: getServiceColor('lastfm'), signedIn: true,
+                    status: `Using ${metaServiceConfigs.lastfm.username}’s history`, onSignOut: disconnectLastfm, signOutLabel: 'Remove',
                   }),
                   // Advanced accordion for API credentials (also shown when connected)
                   React.createElement(Disclosure, { open: lastfmAdvancedOpen, onToggle: () => setLastfmAdvancedOpen(!lastfmAdvancedOpen) },
@@ -881,8 +867,8 @@ React.createElement('div', { className: 'flex gap-2' },
                   // Sign in once there's a username; the fields are below.
                   React.createElement('div', { style: { marginBottom: '16px' } },
                     React.createElement(AccountRow, {
-                      name: 'Last.fm', color: getServiceColor('lastfm'), signedIn: false,
-                      status: 'Enter your Last.fm username below to sign in',
+                      name: 'Last.fm', label: 'Listening history', color: getServiceColor('lastfm'), signedIn: false,
+                      status: 'Enter your Last.fm username below', signInLabel: 'Save',
                       onSignIn: () => connectLastfm(lastfmUsernameInput, lastfmApiKeyInput, lastfmApiSecretInput),
                       signInDisabled: !lastfmUsernameInput.trim(), busy: lastfmConnecting,
                     })),
@@ -949,9 +935,11 @@ React.createElement('div', null,
             metaServiceConfigs.listenbrainz?.username
               ? React.createElement('div', null,
                   // The account (components/account-row.js, #1498 step 3).
+                  // A username reads your history; it isn't a sign-in (that's
+                  // the Scrobbling row below), so the row doesn't say "Signed in".
                   React.createElement(AccountRow, {
-                    name: 'ListenBrainz', color: getServiceColor('listenbrainz'), signedIn: true,
-                    status: `Signed in as ${metaServiceConfigs.listenbrainz.username}`, onSignOut: disconnectListenbrainz,
+                    name: 'ListenBrainz', label: 'Listening history', color: getServiceColor('listenbrainz'), signedIn: true,
+                    status: `Using ${metaServiceConfigs.listenbrainz.username}’s history`, onSignOut: disconnectListenbrainz, signOutLabel: 'Remove',
                   }),
                   // Show token status if configured - masked like AI service API keys
                   metaServiceConfigs.listenbrainz.userToken && React.createElement('div', {
@@ -1006,8 +994,8 @@ React.createElement('div', null,
                   // Sign in once there's a username; the fields are below.
                   React.createElement('div', { style: { marginBottom: '16px' } },
                     React.createElement(AccountRow, {
-                      name: 'ListenBrainz', color: getServiceColor('listenbrainz'), signedIn: false,
-                      status: 'Enter your ListenBrainz username below to sign in',
+                      name: 'ListenBrainz', label: 'Listening history', color: getServiceColor('listenbrainz'), signedIn: false,
+                      status: 'Enter your ListenBrainz username below', signInLabel: 'Save',
                       onSignIn: () => connectListenbrainz(listenbrainzUsernameInput, listenbrainzTokenInput),
                       signInDisabled: !listenbrainzUsernameInput.trim(), busy: listenbrainzConnecting,
                     })),
@@ -1218,6 +1206,13 @@ React.createElement('div', null,
                     }
                   }, 100);
                 }, placeholder: authFieldSettings.placeholder || (selectedResolver.id === 'chatgpt' ? 'sk-…' : selectedResolver.id === 'gemini' ? 'AIza…' : selectedResolver.id === 'claude' ? 'sk-ant-…' : ''), 'aria-label': `${selectedResolver.name} API key`, className: 'w-full' }),
+              // Under the key: whether it's saved (left), where to get one (right).
+              React.createElement('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginTop: '6px', fontSize: '12px' } },
+              metaServiceConfigs[selectedResolver.id]?.[authFieldKey]
+                ? React.createElement('span', { className: 'flex items-center gap-1 text-ink-success' },
+                    React.createElement(Icons.Check, { className: 'w-4 h-4', 'aria-hidden': 'true' }),
+                    `${keyLabel(selectedResolver)} saved`)
+                : React.createElement('span', null),
               selectedResolver.homepage && React.createElement('a', {
                 href: '#',
                 onClick: (e) => {
@@ -1230,14 +1225,11 @@ React.createElement('div', null,
                   window.electron?.shell?.openExternal?.(urls[selectedResolver.id] || selectedResolver.homepage);
                 },
                 style: {
-                  display: 'inline-block',
-                  marginTop: '6px',
-                  fontSize: '12px',
                   color: 'var(--accent-primary)',
                   fontWeight: '500',
                   textDecoration: 'none'
                 }
-              }, 'Get your API key →')
+              }, 'Get your API key →'))
             ),
             // Model selector - supports both static and dynamic-select
             selectedResolver.settings?.configurable?.model && React.createElement('div', { style: { marginBottom: '16px' } },
@@ -1396,13 +1388,6 @@ React.createElement('div', null,
                         }, 'aria-label': fieldSetting.label || fieldKey, className: 'w-full' })
                 );
               }),
-            // Connection status
-            metaServiceConfigs[selectedResolver.id]?.[authFieldKey] && React.createElement('div', {
-              className: 'flex items-center gap-2 text-ink-success text-sm'
-            },
-              React.createElement('span', null, React.createElement(Icons.Check, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } })),
-              React.createElement('span', null, (authFieldSettings.label || 'API key') + ' configured')
-            )
           );
           })(),
 

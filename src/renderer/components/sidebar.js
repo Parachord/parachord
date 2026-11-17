@@ -369,7 +369,10 @@ const Sidebar = React.memo(function Sidebar(props) {
                       position: 'top',
                       variant: 'light'
                     },
-                      React.createElement(Button, { variant: 'icon', size: 'sm', className: `flex-shrink-0 ${listenAlongFriend?.id === friend.id ? '!text-accent hover:!bg-accent-tint' : 'opacity-0 group-hover:opacity-100 card-reveal'}`, 'aria-label': listenAlongFriend?.id === friend.id ? 'Stop listening along' : 'Listen along', onClick: (e) => {
+                      React.createElement(Button, { variant: 'icon', size: 'sm',
+                        // 32px tall beside a 20px name: the negative margin keeps
+                        // it from pushing the now-playing pill 12px down.
+                        style: { margin: '-6px 0' }, className: `flex-shrink-0 ${listenAlongFriend?.id === friend.id ? '!text-accent hover:!bg-accent-tint' : 'opacity-0 group-hover:opacity-100 card-reveal'}`, 'aria-label': listenAlongFriend?.id === friend.id ? 'Stop listening along' : 'Listen along', onClick: (e) => {
                           e.stopPropagation();
                           if (listenAlongFriend?.id === friend.id) {
                             deactivateListenAlong();

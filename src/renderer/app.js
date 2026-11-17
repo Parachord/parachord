@@ -9738,6 +9738,7 @@ const Parachord = () => {
       [providerId]: {
         ...prev[providerId],
         enabled: true,
+        stopped: false,
         ...settings,
         selectedPlaylistIds: selectedPlaylists
       }
@@ -10253,15 +10254,18 @@ const Parachord = () => {
       });
     }
 
-    // Disable sync in settings
+    // Disable sync in settings. `stopped` tells this apart from the Sync
+    // menu's pause (enabled: false alone, choices kept): a stopped service is
+    // set up again from scratch (lib/library-sync-state.js).
     await window.electron.syncSettings.setProvider(providerId, {
       ...resolverSyncSettings[providerId],
-      enabled: false
+      enabled: false,
+      stopped: true
     });
 
     setResolverSyncSettings(prev => ({
       ...prev,
-      [providerId]: { ...prev[providerId], enabled: false }
+      [providerId]: { ...prev[providerId], enabled: false, stopped: true }
     }));
 
     setStopSyncDialog({ open: false, providerId: null });
@@ -10277,8 +10281,8 @@ const Parachord = () => {
   // up opens the setup dialog instead.
   const setProviderSyncEnabled = async (providerId, enabled) => {
     const existing = resolverSyncSettingsRef.current[providerId];
-    // Never set up, or signed out: setup, which asks for the sign-in first.
-    if (enabled && (!existing || syncSignedOut[providerId])) { openSyncSetupModal(providerId); return; }
+    // Never set up, stopped, or signed out: setup, which asks for the sign-in first.
+    if (enabled && (!existing || existing.stopped || syncSignedOut[providerId])) { openSyncSetupModal(providerId); return; }
     const next = { ...existing, enabled };
     // The ref first: a love or unlove in the same tick reads it.
     resolverSyncSettingsRef.current = { ...resolverSyncSettingsRef.current, [providerId]: next };
@@ -20704,6 +20708,9 @@ ${trackListXml}
 
   // Fallback artist lookup via Discogs (artist search + releases)
   const fetchArtistFromDiscogs = async (artistName) => {
+    // Switched off in its plug-in settings (lib/plugin-switch.js: Wikipedia and
+    // Discogs are on unless switched off). Before, the switch changed nothing.
+    if (metaServiceConfigsRef.current?.discogs?.enabled === false) return null;
     try {
       const discogsConfig = metaServiceConfigs?.discogs || {};
       const token = discogsConfig.personalAccessToken;
@@ -33031,6 +33038,9 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
   // Fetch artist biography from Wikipedia via Wikidata (uses MBID)
   const getWikipediaBio = async (artistMbid) => {
+    // Switched off in its plug-in settings (lib/plugin-switch.js: Wikipedia and
+    // Discogs are on unless switched off). Before, the switch changed nothing.
+    if (metaServiceConfigsRef.current?.wikipedia?.enabled === false) return null;
     if (!artistMbid) {
       console.log('📚 Wikipedia bio skipped: no MBID');
       return null;
@@ -33097,7 +33107,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
   // Fetch artist image from Wikipedia/Wikidata (fallback when Spotify has no image)
   const getWikipediaArtistImage = async (artistMbid) => {
-    if (!artistMbid) return null;
+    if (!artistMbid || metaServiceConfigsRef.current?.wikipedia?.enabled === false) return null;
 
     try {
       // Step 1: the artist's Wikidata id (see getWikipediaBio)
@@ -33138,6 +33148,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
   // Fetch artist biography from Discogs (uses MBID or artist name)
   const getDiscogsBio = async (artistMbid, artistName) => {
+    if (metaServiceConfigsRef.current?.discogs?.enabled === false) return null;
     if (!artistMbid && !artistName) {
       console.log('📀 Discogs bio skipped: no MBID or name');
       return null;
@@ -33235,7 +33246,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
   // Fetch artist image from Discogs (fallback when Spotify and Wikipedia have no image)
   const getDiscogsArtistImage = async (artistMbid, artistName) => {
-    if (!artistName) return null;
+    if (!artistName || metaServiceConfigsRef.current?.discogs?.enabled === false) return null;
 
     try {
       // The ref first: getArtistImage calls this from stale closures.
@@ -37411,7 +37422,7 @@ useEffect(() => {
   // Stable function props for the memo'd PluginSettingsDialog (keys must
   // match PLUGIN_SETTINGS_DIALOG_HANDLERS in plugin-settings-dialog.js).
   const pluginSettingsDialogHandlers = useStableHandlers({
-    applyAmazonMusicStatus, connectAppleMusic, connectLastfm, connectListenbrainz, connectSoundcloud, connectSpotify, disconnectAppleMusic, disconnectLastfm, disconnectListenbrainz, disconnectSoundcloud, disconnectSpotify, fetchDynamicModels, getServiceColor, handleAddWatchFolder, handleInstallFromMarketplace, handleRemoveMissingFiles, handleRemoveWatchFolder, handleRescanAll, handleRescanFolder, handleUninstallResolver, manageAmazonMusic, openSyncSetupModal, saveAppleMusicDeveloperToken, saveMetaServiceConfig, saveSoundcloudCredentials, saveSpotifyCredentials, toggleResolver,
+    applyAmazonMusicStatus, connectAppleMusic, connectLastfm, connectListenbrainz, connectSoundcloud, connectSpotify, disconnectAppleMusic, disconnectLastfm, disconnectListenbrainz, disconnectSoundcloud, disconnectSpotify, fetchDynamicModels, getServiceColor, handleAddWatchFolder, handleInstallFromMarketplace, handleRemoveMissingFiles, handleRemoveWatchFolder, handleRescanAll, handleRescanFolder, handleUninstallResolver, manageAmazonMusic, openSyncSetupModal, saveAppleMusicDeveloperToken, saveMetaServiceConfig, saveSoundcloudCredentials, saveSpotifyCredentials, setProviderSyncEnabled, toggleResolver,
   });
 
   // Stable function props for the memo'd ChartsPage (keys must
@@ -38249,6 +38260,7 @@ useEffect(() => {
       playbackLimits,
       resolverConfigCache,
       resolverSyncSettings,
+      syncSignedOut,
       runLoveBackfill,
       runLoveImport,
       scanProgress,

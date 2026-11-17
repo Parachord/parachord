@@ -366,6 +366,9 @@ const ScrobblerSettingsCard = React.memo(({
   const usesToken = !usesPassword && scrobbler.id === 'listenbrainz';
   const status = isConnected
     ? (config?.username ? `Scrobbling as ${config.username}` : 'Signed in')
+    // The service ended the session (the loader clears it and keeps the
+    // reason): say so, and what it costs, rather than a plain "Sign in".
+    : config?.authError ? `${scrobbler.name} signed you out. Sign in again to scrobble.`
     : usesPassword ? 'Enter your username and password below'
     : usesToken ? 'Add your user token below to scrobble'
     : 'Sign in to scrobble what you play';
