@@ -1,17 +1,17 @@
 // Guards for amazon-player-preload.js. The preload is dead code unless it
 // stays loadable under sandbox: true — sandboxed preloads can only require
 // electron/events/timers/url, never local files. An earlier revision required
-// ./amazon-music-logic at the top of the preload, which threw "module not
-// found" and silently killed the whole preload (no __r trap, no visibility
-// stub), masked by the localStorage quality fallback. These tests keep that
-// failure mode from coming back, and keep the inlined trap copy from drifting
-// from amazon-music-logic.js.
+// ./amazon-music-logic at the top of the preload (the module and this file's
+// trap/capture batteries for it are both gone since #1356's teardown), which
+// threw "module not found" and silently killed the whole preload (no __r
+// trap, no visibility stub), masked by the localStorage quality fallback.
+// These tests keep that failure mode from coming back.
 //
-// The trap copy cannot be compared byte-for-byte (Function.prototype.toString
-// normalizes formatting), so parity is enforced behaviorally: the module's
-// function and the inlined copy run the same scenario battery and must leave
-// identical observable state. A fix applied to amazon-music-logic without the
-// preload copy fails here on the module tests' scenarios.
+// The inlined copies (the mediaSession hijack and the now-playing mirror,
+// both from embedded-player-kit.js) cannot be compared byte-for-byte
+// (Function.prototype.toString normalizes formatting), so parity is enforced
+// behaviorally: the kit's function and the inlined copy run the same scenario
+// battery and must leave identical observable state.
 
 const fs = require('fs');
 const path = require('path');
@@ -48,24 +48,10 @@ function inlinedMirror() {
   return text ? new Function(`return (${text})`)() : null;
 }
 
-// Scenario battery mirrored from the installAmazonRequireTrap describe block in
-// amazon-music-logic.test.js. Each scenario returns the observable state it
-// ends with, so the two implementations can be diffed.
-function makeMetroScope() {
-  const modules = {
-    123: { playbackController: { audioQualitySettings: { streamingQuality: 'STANDARD' } } },
-    456: { other: true }
-  };
-  return {
-    require(id) { return modules[id]; }
-  };
-}
-
-
-// Scenario battery for installMediaSessionHijack, same pattern as the trap
-// battery above: each scenario returns observable state so the kit module's
-// copy (embedded-player-kit.js) and the inlined preload copy can be diffed.
-// The same shape runs standalone in tests/preload/embedded-player-kit.test.js.
+// Scenario battery for installMediaSessionHijack: each scenario returns
+// observable state so the kit module's copy (embedded-player-kit.js) and the
+// inlined preload copy can be diffed. The same shape runs standalone in
+// tests/preload/embedded-player-kit.test.js.
 function runHijackScenarios(hijack) {
   const out = [];
 
@@ -162,88 +148,6 @@ function runHijackScenarios(hijack) {
   return out;
 }
 
-// Scenario battery for installAmazonStreamCapture, same pattern as the trap
-// battery above: each scenario returns observable state so the two copies can
-// be diffed. Runs against the module's copy in amazon-music-logic.test.js too.
-async function runCaptureScenarios(capture) {
-  const out = [];
-  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
-
-  // 1. a fetch-loaded manifest is captured via the cloned response text
-  {
-    const scope = {};
-    scope.fetch = async () => ({ clone: () => ({ text: () => Promise.resolve('<MPD/>') }), headers: { get: () => null } });
-    capture(scope);
-    await scope.fetch('https://cdn.example.com/a.mpd?sig=1');
-    await flush();
-    out.push(['fetch-manifest', scope.__parachordStreamCapture === true, JSON.stringify(scope.__parachordStreamCaps.manifests)]);
-  }
-
-  // 2. fetch passthrough hands back the original response object
-  {
-    const res = { clone: () => ({ text: () => Promise.resolve('') }), headers: { get: () => null } };
-    const scope = {};
-    scope.fetch = async () => res;
-    capture(scope);
-    const got = await scope.fetch('https://cdn.example.com/a.mpd');
-    out.push(['fetch-passthrough', got === res]);
-  }
-
-  // 3. a small init is captured; a media-sized response is not
-  {
-    const small = new ArrayBuffer(10);
-    const scope = {};
-    scope.fetch = async (input) => (String(input).endsWith('init.mp4')
-      ? { clone: () => ({ arrayBuffer: () => Promise.resolve(small) }), headers: { get: () => '10' } }
-      : { clone: () => ({ arrayBuffer: () => Promise.resolve(new ArrayBuffer(9)) }), headers: { get: () => '900000' } });
-    capture(scope);
-    await scope.fetch('https://cdn.example.com/init.mp4');
-    await scope.fetch('https://cdn.example.com/seg.m4s');
-    await flush();
-    out.push(['fetch-init', scope.__parachordStreamCaps.inits.length, scope.__parachordStreamCaps.inits[0].bytes === small]);
-  }
-
-  // 4. XHR-loaded manifest + arraybuffer init; statics and instanceof survive
-  {
-    class FakeXHR {
-      constructor() { this.responseType = ''; this._l = {}; }
-      open(m, u) { this._u = u; }
-      send(body) { this._b = body; }
-      addEventListener(t, fn) { (this._l[t] = this._l[t] || []).push(fn); }
-      fire() { (this._l.load || []).forEach((fn) => fn()); }
-    }
-    FakeXHR.UNSENT = 7;
-    const scope = { XMLHttpRequest: FakeXHR };
-    capture(scope);
-    const X = scope.XMLHttpRequest;
-    const x1 = new X();
-    x1.open('GET', 'https://cdn.example.com/b.mpd');
-    x1.responseText = '<MPD>xhr</MPD>';
-    x1.fire();
-    const x2 = new X();
-    x2.open('GET', 'https://cdn.example.com/i.m4s');
-    x2.responseType = 'arraybuffer';
-    const bytes = new ArrayBuffer(12);
-    x2.response = bytes;
-    x2.fire();
-    out.push(['xhr', X.UNSENT, x1 instanceof X, JSON.stringify(scope.__parachordStreamCaps.manifests), scope.__parachordStreamCaps.inits.length, scope.__parachordStreamCaps.inits[0].bytes === bytes]);
-  }
-
-  // 5. install is idempotent and a bare/absent scope is tolerated
-  {
-    const scope = {};
-    scope.fetch = async () => ({ clone: () => ({ text: () => Promise.resolve('') }), headers: { get: () => null } });
-    capture(scope);
-    const first = scope.fetch;
-    capture(scope);
-    capture({});
-    capture(null);
-    out.push(['idempotent', scope.fetch === first]);
-  }
-
-  return out;
-}
-
 describe('amazon-player-preload', () => {
   test('requires no local modules — sandboxed preloads cannot load them', () => {
     const localRequires = src.match(/require\(\s*['"]\./g) || [];
@@ -258,17 +162,11 @@ describe('amazon-player-preload', () => {
     }
   });
 
-
-
-
-
-
-
   test('the inlined mediaSession hijack is behaviorally identical to embedded-player-kit.js', () => {
-    // Same rationale as the trap: Function.prototype.toString normalizes under
-    // the test transform, so parity is enforced behaviorally — the kit's
-    // function and the inlined copy run the same scenario battery and must
-    // leave identical observable state.
+    // Function.prototype.toString normalizes under the test transform, so
+    // parity is enforced behaviorally — the kit's function and the inlined
+    // copy run the same scenario battery and must leave identical observable
+    // state.
     const inlined = inlinedHijack();
     expect(inlined).toBeInstanceOf(Function);
     expect(runHijackScenarios(inlined)).toEqual(runHijackScenarios(installMediaSessionHijack));
@@ -337,8 +235,7 @@ describe('amazon-player-preload', () => {
     expect(m).toBeTruthy();
     // The stub runs in the page world where window/document exist; give it
     // bare equivalents so a closure reference into the preload's scope (or a
-    // typo) fails here instead of inside Amazon's page. The trap/capture are
-    // spliced from their modules (amazon-music-logic), but the hijack and
+    // typo) fails here instead of inside Amazon's page. The hijack and
     // mirror are spliced from the INLINE sources in THIS file — running the
     // page stub against exactly what ships in the preload is the parity
     // net that catches an inlined drift the module batteries could miss.

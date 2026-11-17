@@ -243,10 +243,11 @@ describe('the live exposure', () => {
       require('../../preload');
     });
     expect(mockWorld.electron.webSession).toBeTruthy();
-    // The amazonMusic block is the diagnostic remnant since #1356 M10 (the
-    // session surfaces moved into the plugin) — still exposed, no longer
-    // advertised: nothing requires the old bridge.
-    expect(mockWorld.electron.amazonMusic).toBeTruthy();
+    // The amazonMusic block died with the teardown (#1356 M11 deleted the
+    // last host flow it served — the diagnostic capture moved into the
+    // plugin, which reaches the bridge like every other flow).
+    expect(mockWorld.electron.amazonMusic).toBeUndefined();
+    expect(mockWorld.electron.widevine).toBeTruthy();
     expect([...mockWorld.__parachordHostBridges]).toEqual(['webSession']);
   });
 });

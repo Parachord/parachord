@@ -258,14 +258,20 @@ describe('host-bridge enforcement wiring (#1355)', () => {
     expect(helper).toContain('hostBridgesHideFilter(axes, supplied)');
   });
 
-  test("main.js registers the amazon-music session with the webSession channels, under the widevine sender gate (live since #1356 M5 — the bridge's first consumer)", () => {
-    // The channels are registered AND the session is live: the track-search
-    // move (#1356 M5) is the bridge's first consumer, so that layer turned the
-    // exposure on (the #1432 review's note-8 option) — Amazon's ONE
-    // webSession instance, registered by reference, never re-created.
-    expect(main).toMatch(/registerWebSession\('amazon-music', amazonWebPlayer\.webSession\)/);
+
+  test("main.js registers Amazon's ONE webSession host under its session id, gated like the widevine bridge", () => {
+    // The ONE host instance lives in main-process/amazon-web-session.js (the
+    // #1356 M11 teardown: amazon-web-player.js is deleted); main.js registers
+    // it by reference, never re-created.
+    expect(main).toMatch(/const amazonWebSession = require\('.\/main-process\/amazon-web-session'\)/);
+    expect(main).toMatch(/registerWebSession\('amazon-music', amazonWebSession\)/);
+    expect(main).toMatch(/amazonWebSession\.setHost\(mainWindow\)/);
+
     expect(main).toMatch(/registerWebSessionBridgeIpc\(\{\s*ipcMain,\s*isAllowedSender: isMainWindowTopFrameSender,\s*sendToRenderer: safeSendToRenderer\s*\}\)/);
     // The widevine bridge and the webSession bridge share one sender predicate.
     expect(main).toMatch(/registerWidevineBridgeIpc\(\{ ipcMain, isAllowedSender: isMainWindowTopFrameSender \}\)/);
+    // The teardown deleted the host-side module and its last IPC channel.
+    expect(require('fs').existsSync(path.join(ROOT, 'amazon-web-player.js'))).toBe(false);
+    expect(main).not.toContain("ipcMain.handle('amazonmusic-debug-capture-gql'");
   });
 });

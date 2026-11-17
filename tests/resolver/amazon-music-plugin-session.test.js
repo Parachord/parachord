@@ -10,6 +10,9 @@
  *   - signInLanded (from tests/resolver/amazon-music-logic.test.js — the
  *     positive-signal rule: the cookie-rotation hedge, the walls, the
  *     stability count) and onMusicHost's HOST-only equality
+ *   - pageBlocksPlayback (from tests/resolver/amazon-music-logic.test.js —
+ *     the wall enumeration: the profile picker, the sign-in portal's every
+ *     /ap/ step, 2FA included)
  *   - isSignedIn (from tests/resolver/amazon-web-player.test.js — the host's
  *     composition died with M10's surface move): cookies first, then the
  *     sign-in window's URL
@@ -118,6 +121,31 @@ describe('signInLanded (the plugin _lib copy)', () => {
     // A URL that changed this tick is not stable yet.
     expect(lib.signInLanded({ url: track, lastUrl: home, stableTicks: 3, hasCookie: true }))
       .toEqual({ landed: false, stableTicks: 1 });
+  });
+});
+
+// ── _lib: the wall predicate ────────────────────────────────────────────────
+
+describe('pageBlocksPlayback (the plugin _lib copy)', () => {
+  const lib = plugin().lib;
+
+  test('profile picker and sign-in are not a finished session', () => {
+    expect(lib.pageBlocksPlayback('https://music.amazon.com/identity/who-is-listening')).toBe('not-signed-in');
+    expect(lib.pageBlocksPlayback('https://www.amazon.com/ap/signin?openid.return_to=music')).toBe('not-signed-in');
+  });
+
+  test('the player home is usable', () => {
+    expect(lib.pageBlocksPlayback('https://music.amazon.com/')).toBeNull();
+    expect(lib.pageBlocksPlayback('https://music.amazon.com/tracks/B000SNWG5Q')).toBeNull();
+  });
+
+  test('every step of the Amazon sign-in portal is a wall, 2FA included', () => {
+    const rt = '?openid.return_to=https%3A%2F%2Fmusic.amazon.com%2F';
+    for (const path of ['/ap/mfa', '/ap/cvf/approval', '/ap/cvf/request', '/ap/challenge', '/ap/accountfixup']) {
+      expect(lib.pageBlocksPlayback(`https://www.amazon.com${path}${rt}`)).toBe('not-signed-in');
+    }
+    expect(lib.pageBlocksPlayback('https://www.amazon.co.uk/ap/mfa?arb=x')).toBe('not-signed-in');
+    expect(lib.pageBlocksPlayback('https://music.amazon.com/albums/B0AP123')).toBeNull();
   });
 });
 

@@ -175,8 +175,8 @@ describe('plugins that report their own status (capabilities.status, #1356)', ()
     // the plugin threw, answered nothing shaped, or ran past the read budget.
     // No verdict for the limit map — but the row is honest about the failure.
     expect(pluginStatusRow(ResolverLoader.STATUS_READ_FAILED)).toEqual({
-      label: "Couldn't check",
-      message: "Parachord couldn't check this plug-in's status. Try opening this panel again."
+      label: "Couldn’t check",
+      message: "Parachord couldn’t check this plug-in’s status. Try opening this panel again."
     });
   });
 });

@@ -4,8 +4,9 @@
  * src)()` as every implementation entry, then invokes it exactly once per
  * resolver instance and exposes its return value to every method as
  * `this.lib`. This is the prerequisite for moving Amazon's logic into the
- * plugin (issue #1356): the ~60 shared helpers in amazon-music-logic.js have
- * to live somewhere a plugin's methods can all reach.
+ * plugin (issue #1356): the shared helpers that used to live in the deleted
+ * amazon-music-logic.js had to live somewhere a plugin's methods can all
+ * reach — its _lib copies are the only ones since the M11 teardown.
  *
  * The tests serialize real functions with String(fn) — the exact wire path
  * scripts/build-axes.js produces — so the contract is proven end to end:

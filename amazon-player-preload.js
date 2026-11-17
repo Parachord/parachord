@@ -2,12 +2,7 @@
 // Widevine element when the window blurs. The player view is 0×0 and must not
 // keep keyboard focus, so the page is told it is still visible.
 //
-// It also installs the window.__r trap: hornet's playbackController lives in
-// a Metro module whose id renumbers on every redeploy, and executing module
-// factories to find it wedges the page — so the trap only observes requires
-// that Amazon's own code makes and captures the store passively.
-//
-// And it hijacks navigator.mediaSession (embedded-player-kit.js): Amazon's
+// It also hijacks navigator.mediaSession (embedded-player-kit.js): Amazon's
 // page is the only audio playing in the app during Amazon playback, so
 // Chromium hands the OS media surface (MPRIS/SMTC/Control Center) and OS
 // media keys to the page's own media session. Our handlers on the real
@@ -23,17 +18,15 @@
 // — never local files. An earlier revision required ./amazon-music-logic here,
 // which throws "module not found" and silently killed the ENTIRE preload: no
 // trap, no visibility stub, with the localStorage quality fallback masking the
-// damage (verified live on Electron 39 +wvcus). So installAmazonRequireTrap
-// and installAmazonStreamCapture are inlined below as literal copies of the
-// ones in amazon-music-logic.js, installMediaSessionHijack + the
-// applyMediaSessionMirror relay of the ones in embedded-player-kit.js —
-// and the four copies are GENERATOR-OWNED (scripts/build-amazon-preload.js
-// regenerates the GENERATED-BEGIN/END blocks from .toString() of the
-// sources, prettier-canonicalized; the parity test + CI drift gate are the
-// guards now, no hand-edits), and
-// tests/resolver/amazon-player-preload.test.js fails the build if the copies
-// drift or if a local require ever comes back. Do not require local modules
-// from this file.
+// damage (verified live on Electron 39 +wvcus). So installMediaSessionHijack
+// + the applyMediaSessionMirror relay are inlined below as literal copies of
+// the ones in embedded-player-kit.js — and the two copies are
+// GENERATOR-OWNED (scripts/build-amazon-preload.js regenerates the
+// GENERATED-BEGIN/END blocks from .toString() of the sources,
+// prettier-canonicalized; the parity test + CI drift gate are the guards now,
+// no hand-edits), and tests/resolver/amazon-player-preload.test.js fails the
+// build if the copies drift or if a local require ever comes back. Do not
+// require local modules from this file.
 //
 // contextIsolation puts this file in a different world from the page. Patching
 // document here would not affect Amazon's scripts, so the stub is evaluated in

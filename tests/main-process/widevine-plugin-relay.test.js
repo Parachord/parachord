@@ -472,8 +472,8 @@ describe('the preload wrapper against the bridge (plugin-mediated relay, end to 
     // #1434 review: main takes the FIRST answer for a requestId, so a second
     // subscriber could race its own bytes ahead of the router's answer and
     // decide the play. The first registration owns the relay; later calls
-    // get a warning and a no-op unsubscribe — and the no-op must not
-    // unregister the owner either.
+    // get a warning and null instead of an unsubscribe, so they can tell they
+    // were refused, and nothing they do can unregister the owner.
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     const seenBy = [];
     const unsubscribeFirst = mockWorld.electron.widevine.onPluginLicenseRequest(async (request) => {
@@ -485,7 +485,9 @@ describe('the preload wrapper against the bridge (plugin-mediated relay, end to 
       return 'U0VDT05E';
     });
     expect(warn).toHaveBeenCalledTimes(1);
-    unsubscribeSecond(); // the no-op: the first handler stays subscribed
+    // A refused registration answers null, so the caller can tell (the
+    // player's router fails its play with a message that says why).
+    expect(unsubscribeSecond).toBeNull();
     const open = await mockWorld.electron.widevine.openSession('plugsvc', 4096, 'dash', 'widevine');
     const reply = await mockWorld.electron.widevine.relayLicense('plugsvc', 'Q0FRPQ==', open.sessionId);
     expect(reply).toMatchObject({ success: true, license: 'RklSU1Q=' });

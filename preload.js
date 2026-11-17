@@ -631,21 +631,6 @@ contextBridge.exposeInMainWorld('electron', {
     }
   },
 
-  // Amazon Music — the diagnostic capture only since #1356 M10 (the
-  // session surfaces — getStatus, openLogin, signOut, the plan-changed event
-  // — moved into the plugin with the status capability; the renderer drives
-  // them through the loaded resolver and window.electron.webSession).
-  // Hidden WebContentsViews (search parked offscreen) load music.amazon.com
-  // on the main window and castlabs Electron's Widevine CDM decrypts. The
-  // desktop app is not used.
-  amazonMusic: {
-    // Diagnostic (DevTools only): record an album or search page's gql into a
-    // file in userData. See main.js 'amazonmusic-debug-capture-gql'. The one
-    // host-side page flow left; it moves (or dies) with the teardown
-    // milestone.
-    debugCaptureGql: (url) => ipcRenderer.invoke('amazonmusic-debug-capture-gql', { url }),
-  },
-
   // The resolver-neutral Widevine/DASH bridge. The renderer's shared player
   // (lib/widevine-player.js) asks a main-side provider for the manifest and
   // relays license bytes through it, or — for a resolver that implements the
@@ -687,7 +672,8 @@ contextBridge.exposeInMainWorld('electron', {
     onPluginLicenseRequest: (callback) => {
       if (__pluginLicenseRelayUnsubscribe) {
         console.warn('widevine.onPluginLicenseRequest: a plugin license relay is already registered; ignoring the second registration');
-        return () => { /* no-op: the first registration owns the relay */ };
+        // null, not a no-op function: the caller can tell it was refused.
+        return null;
       }
       const handler = (_event, request) => {
         if (!request || typeof request.requestId !== 'string') return;

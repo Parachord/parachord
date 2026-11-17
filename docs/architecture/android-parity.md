@@ -361,7 +361,7 @@ Rules:
 - Every way in imports the same links: on desktop, dropping a link, the import dialog and `parachord://import?url=`; on Android, the import dialog, `parachord://import` and the share sheet.
 - Mobile routes import the same way, through its registry (`PluginManager.lookupPlaylist`, as `ProviderPlaylistResolver` already does for `play/playlist`), with native fast paths allowed in front. Then a new `.axe` adds the link type on both clients with no code, and only a new native path needs a mobile change.
 - A desktop change that adds or removes an import link type outside the registry (a native path, a new document format, a change to the hosted XSPF fallback) needs a mobile ticket.
-- A plugin whose `lookupPlaylist` needs a desktop-only host (Amazon's calls the main-process `window.electron.amazonMusic` bridge) needs an Android host or native client for that call; until then mobile reports the service as unavailable rather than fetching its page.
+- A plugin whose `lookupPlaylist` needs a desktop-only host (Amazon's drives the ONE host web-session instance through the `window.electron.webSession` bridge — the main-process `window.electron.amazonMusic` bridge died with the #1356 M11 teardown) needs an Android host or native client for that call; until then mobile reports the service as unavailable rather than fetching its page.
 - The imported record keeps desktop's shape: `sourceUrl` = the link, `source` = `${resolverId}-import` or `hosted-xspf`, the plugin's playlist image as the cover, and `autoUpdate` once mobile asks the keep-updated question.
 
 The rule covers iOS as well as Android (both are in parachord-mobile). Mobile tickets: Parachord/parachord-mobile#690 (every link type, Android), Parachord/parachord-mobile#689 (kept updated or a snapshot, Android), Parachord/parachord-mobile#691 (iOS: both, plus confirming `parachord://import`, which iOS ran without asking as of 2026-11-15). Both give service imports a `sourceUrl`, so mobile's hosted poller (`getHosted` is `WHERE sourceUrl IS NOT NULL`) has to skip `-import` sources in the same change.
@@ -387,7 +387,7 @@ Not at parity (Parachord/parachord-mobile#693):
 
 ### Android Parity Requirements (plugin host bridges)
 
-Desktop implemented #1355's per-platform loading rule: a plugin manifest may declare `"requires": { "hostBridges": ["webSession"] }` (a top-level `.axe` field), each host advertises what it supplies — desktop's `preload.js` sets `window.__parachordHostBridges` (today `['amazonMusic', 'webSession']`) — and the plugin loader **hides** a plugin whose required bridges are not all supplied. From #1355's text: "This fits the existing plugin-compat check (`main-process/plugin-compat.js`, ported to mobile as `PluginCompat.kt`). Mobile would implement the same rule in `shared/.../plugin/PluginCompat.kt` and the same bootstrap globals in both apps' JS runtimes."
+Desktop implemented #1355's per-platform loading rule: a plugin manifest may declare `"requires": { "hostBridges": ["webSession"] }` (a top-level `.axe` field), each host advertises what it supplies — desktop's `preload.js` sets `window.__parachordHostBridges` (today `['webSession']`) — and the plugin loader **hides** a plugin whose required bridges are not all supplied. From #1355's text: "This fits the existing plugin-compat check (`main-process/plugin-compat.js`, ported to mobile as `PluginCompat.kt`). Mobile would implement the same rule in `shared/.../plugin/PluginCompat.kt` and the same bootstrap globals in both apps' JS runtimes."
 
 Mobile must mirror three things:
 

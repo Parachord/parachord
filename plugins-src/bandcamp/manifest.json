@@ -2,7 +2,7 @@
   "manifest": {
     "id": "bandcamp",
     "name": "Bandcamp",
-    "version": "1.4.6",
+    "version": "1.4.7",
     "author": "Parachord Team",
     "description": "Find, play and purchase music on Bandcamp, through Bandcamp's own player.",
     "requirement": "Works right away. No account needed.",
@@ -31,6 +31,14 @@
     "*.bandcamp.com/track/*",
     "*.bandcamp.com/album/*"
   ],
+  "urlTypes": {
+    "album": [
+      "*.bandcamp.com/album/*"
+    ],
+    "track": [
+      "*.bandcamp.com/track/*"
+    ]
+  },
   "settings": {
     "requiresAuth": false,
     "authType": "none",

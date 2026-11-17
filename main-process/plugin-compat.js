@@ -88,9 +88,8 @@ function validateMinAppVersion(value) {
 
 // ── Required host bridges (#1355) ─────────────────────────────────────────────
 //
-// A plugin that calls a host bridge (window.electron.amazonMusic,
-// window.electron.webSession, ...) can declare the ones it needs, as a
-// top-level .axe field:
+// A plugin that calls a host bridge (window.electron.webSession, ...) can
+// declare the ones it needs, as a top-level .axe field:
 //
 //   "requires": { "hostBridges": ["webSession"] }
 //

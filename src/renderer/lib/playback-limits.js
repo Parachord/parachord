@@ -115,13 +115,13 @@ function pluginStatusLimits(pluginStatuses) {
 // loader's marker (resolver-loader.js STATUS_READ_FAILED — the plugin threw
 // or ran past the read budget), and the row says what happened and what to
 // do, not "Checking…" forever. statusMessage is the second line, or ''
-// when the plugin has none. Pure: the row's rendering stays in app.js.
+// when the plugin has none. Pure: the row renders in components/plugin-settings-dialog.js.
 function pluginStatusRow(status) {
   const reply = status && typeof status === 'object' ? status : null;
   if (reply && reply.failed === true) {
     return {
-      label: "Couldn't check",
-      message: "Parachord couldn't check this plug-in's status. Try opening this panel again."
+      label: "Couldn’t check",
+      message: "Parachord couldn’t check this plug-in’s status. Try opening this panel again."
     };
   }
   const label = reply && typeof reply.statusLabel === 'string' && reply.statusLabel ? reply.statusLabel
