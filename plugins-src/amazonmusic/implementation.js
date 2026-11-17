@@ -1,4 +1,4 @@
-// Source of truth for plugins/amazonmusic.axe v1.18.0.
+// Source of truth for plugins/amazonmusic.axe v1.19.0.
 // Imported from the .axe by `node scripts/build-axes.js --import`.
 // Edit here, bump manifest.version in manifest.json, then run `node scripts/build-axes.js`.
 // The functions materialize fully isolated (resolver-loader.js uses
@@ -7,16 +7,17 @@
 // instance, pure: helpers and constants only — no I/O, no timers, no window;
 // per-instance state lives on `this`).
 //
-// ── The searches, the catalog, the playlist import, the recommendations and
-// the DRM pair run in the plugin (#1356 M5–M9) ───────────────────────────
+// ── The searches, the catalog, the playlist import, the recommendations, the
+// DRM pair AND the session surfaces run in the plugin (#1356 M5–M10) ───────
 // The spec-search runner family (the SpecSearchSeeMorePage capture-and-replay
 // flows: the track search, M5, plus the album search and the artist-image
 // lookup, M6), the album-detail flow (lookupAlbum's candidate-ranking replay),
 // the playlist import (M7 — the playlistDetail capture, the verbatim replay
 // and the token-driven pagination), the recommendations (M8 — the
-// music-home walk, the see-more route and the synthesized playlists section)
-// and the DRM pair (M9 — getPlaybackManifest + relayLicense, the dmls
-// provider's flows with the csrf mint and the streaming telemetry) are the
+// music-home walk, the see-more route and the synthesized playlists section),
+// the DRM pair (M9 — getPlaybackManifest + relayLicense, the dmls
+// provider's flows with the csrf mint and the streaming telemetry) and the
+// session surfaces (M10 — the status reply, sign-in, sign-out) are the
 // plugin's: they drive the ONE host web-session instance (registered
 // as 'amazon-music') through the window.electron.webSession bridge —
 // pageFetch replays the captured request from the page world, load(url,
@@ -24,16 +25,19 @@
 // load (the quiet-bounded returned captures replace the old in-flow poll; our
 // own replay traffic arrives as echo-flagged captures and is never trusted),
 // fetch carries the session's cookie jar for the config/dmls/telemetry
-// requests, and state() supplies the facts the signed-in verdict composes —
-// and the session generation whose change (a sign-out the plugin cannot see
-// the event of) drops its session-scoped caches. The host-side runner that
-// used to serve the album/artist tabs, the host-side playlist import, the
-// host-side recommendations flows and the amazon-dmls.js provider (with its
-// main-process/amazon-telemetry.js reporter) are deleted; every helper those
+// requests, state() supplies the facts the signed-in verdict composes — and
+// the session generation whose change (a sign-out the plugin cannot see the
+// event of) drops its session-scoped caches — signIn() opens the visible
+// sign-in window with the plugin's own decide rule, and clear() behind
+// signOut() wipes the partition. The host-side runner that used to serve the
+// album/artist tabs, the host-side playlist import, the host-side
+// recommendations flows, the amazon-dmls.js provider (with its
+// main-process/amazon-telemetry.js reporter), the host's sign-in/out and its
+// getStatus (with its stopgap plan read) are deleted; every helper those
 // flows use lives here (copies of the amazon-music-logic.js originals, whose
-// remaining copies serve the diagnostic capture and getStatus until their
-// moves). What remains host-side is the diagnostic capture, sign-in/out and
-// getStatus (its plan read is a stopgap that dies with the status move).
+// remaining copies serve the diagnostic capture until the teardown milestone
+// deletes it). What remains host-side is the view machinery and the
+// diagnostic capture.
 module.exports = {
   // ── The plugin library (#1356) ────────────────────────────────────────
   // Pure helpers and constants, evaluated once per resolver instance and
@@ -42,10 +46,11 @@ module.exports = {
   // have moved (the track search in #1356 M5; the album search, album lookup
   // and artist images in M6; the playlist import in M7; the recommendations
   // in M8; the dmls bodies, the licence-refusal semantics, the MPD KID parse
-  // and the telemetry envelope in M9) are now the ONLY copy — the host's died
-  // with its flows. The rest still serve the host-side flows that have not
-  // moved (the diagnostic capture, getStatus's plan read); each copy notes
-  // which, and dies when its flow moves in.
+  // and the telemetry envelope in M9; the sign-in verdict, the sign-in
+  // window's completion gate, the prompt rule and the playback-limit mapping
+  // in M10) are now the ONLY copy — the host's died with its flows. The rest
+  // still serve the host-side flow that has not moved (the diagnostic
+  // capture); each copy notes which, and dies when its flow moves in.
   _lib: function () {
     // The session this plugin drives — the id main.js registered the ONE
     // host instance under (registerWebSession('amazon-music', …)). The
@@ -168,8 +173,10 @@ module.exports = {
       return err;
     }
 
-    // ── Walls and session cookies (amazon-music-logic.js owns the originals,
-    // which the host's sign-in/status flows still use) ───────────────────────
+    // ── Walls and session cookies (amazon-music-logic.js owns the original
+    // pageBlocksPlayback for the diagnostic capture; the rest of these copies
+    // are the ONLY ones since #1356 M10 moved the host's sign-in/status
+    // flows here) ──────────────────────────────────────────────────────────
 
     // Amazon's web player is not usable for search or play while it is still
     // on the account sign-in page or the post-login profile picker. Cookies
@@ -1404,6 +1411,102 @@ module.exports = {
       return AMAZON_PLAN_MESSAGES[plan] || null;
     }
 
+    // The playbackLimit entry for the plugin's own plan reading (the mapping
+    // src/renderer/lib/playback-limits.js's amazonPlaybackLimit ran on the
+    // host's getStatus reply — the wording is unchanged): null when there is
+    // no reading (signed out, or the read failed before the plugin knew),
+    // unblocked with searchesHeldBack on unlimited (an upgrade from a blocked
+    // reading must re-search), blocked with the tile label and the plan
+    // message on every refused plan — unknown blocks too.
+    const AMAZON_TILE_LABELS = {
+      prime: 'Prime: no playback',
+      unknown: 'Plan not confirmed'
+    };
+
+    function amazonPlaybackLimit(plan) {
+      if (!plan) return null;
+      if (plan === 'unlimited') {
+        return { blocked: false, planKey: 'unlimited', label: null, message: null, searchesHeldBack: true };
+      }
+      return {
+        blocked: true,
+        planKey: plan,
+        label: AMAZON_TILE_LABELS[plan] || AMAZON_TILE_LABELS.unknown,
+        message: amazonPlanMessage(plan),
+        searchesHeldBack: true
+      };
+    }
+
+    // ── The session surfaces (#1356 M10): the sign-in verdict and the prompt rule ──
+    // The sign-in window's completion gate and the not-signed-in prompt rule,
+    // moved from amazon-music-logic.js's signInLanded and
+    // src/renderer/lib/amazon-signin-prompt.js (whose copies died with the
+    // host's sign-in flows). Pure pieces only: the window itself opens through
+    // the webSession bridge's signIn protocol (the signIn method below).
+
+    // The home page the sign-in window opens. The visible window's size (the
+    // host's openLogin carried the same); the window's TITLE is host config
+    // (#1432 review, finding 3), never a caller choice.
+    const HOME_URL = 'https://music.amazon.com/';
+    const SIGN_IN_WINDOW = { width: 980, height: 760 };
+
+    // Whether a URL is a music.amazon.com page: HOST equality — the sign-in
+    // portal's URLs carry music.amazon.com in their return_to query, so a
+    // substring match passes them.
+    function onMusicHost(url) {
+      try {
+        return new URL(url).hostname.toLowerCase() === 'music.amazon.com';
+      } catch (e) {
+        return false;
+      }
+    }
+
+    // The sign-in window's completion gate (openLogin's, moved): "the URL is
+    // not a known wall" alone fails open — music.amazon.com/ itself is not a
+    // wall, and a logged-out first paint can sit there (or redirect slowly)
+    // for a second or more, which used to close the window and report success
+    // before the user touched the password field. Require a positive signal:
+    // a non-wall music.amazon.com URL stable for two consecutive ticks AND at
+    // least one of (an auth cookie, a path off the bare home page, or a third
+    // stable tick — the fallback for Amazon rotating the at-main/sess-at-main/
+    // at-acb cookie names, at the cost of a ~3s wait when a signed-in landing
+    // page really is /).
+    function signInLanded({ url, lastUrl = null, stableTicks = 0, hasCookie = false } = {}) {
+      const okUrl = !!url && onMusicHost(url) && !pageBlocksPlayback(url);
+      const ticks = okUrl ? (lastUrl === url ? stableTicks + 1 : 1) : 0;
+      let landed = false;
+      if (ticks >= 2) {
+        let path = '';
+        try { path = new URL(url).pathname; } catch (e) { /* not a URL */ }
+        landed = !!hasCookie || path !== '/' || ticks >= 3;
+      }
+      return { landed, stableTicks: ticks };
+    }
+
+    // Should a not-signed-in open the sign-in prompt? While the auth cookies
+    // say the session is live, a not-signed-in is first treated as a hiccup —
+    // Amazon refreshes its session token every so often (session-token
+    // reissued, the auth cookies untouched), and a page load caught in that
+    // refresh can be redirected to a sign-in or profile page; the prompt used
+    // to open on an app signed in for hours while the very next search
+    // worked. Only a streak of them lasting HICCUP_GRACE_MS (consecutive
+    // failures less than STREAK_GAP_MS apart) is real — most likely Amazon's
+    // profile picker waiting for a choice. No cookies, or another reason,
+    // prompts at once. streak: { firstAt, lastAt } (zeros when none); the
+    // caller keeps the returned streak between calls.
+    const HICCUP_GRACE_MS = 60 * 1000;
+    const STREAK_GAP_MS = 2 * 60 * 1000;
+
+    function signInPromptDecision({ reason, cookiesSignedIn, streak, now }) {
+      const none = { firstAt: 0, lastAt: 0 };
+      if (reason !== 'not-signed-in' || !cookiesSignedIn) return { prompt: true, streak: none };
+      const s = streak || none;
+      const continuing = s.lastAt && now - s.lastAt <= STREAK_GAP_MS;
+      const firstAt = continuing ? s.firstAt : now;
+      if (now - firstAt >= HICCUP_GRACE_MS) return { prompt: true, streak: none };
+      return { prompt: false, streak: { firstAt, lastAt: now } };
+    }
+
     // ── The DRM pair (#1356 M4, live for Amazon since M9) ───────────────────
     // The dmls request bodies, the licence-refusal semantics, the MPD KID
     // parse and the telemetry envelope builders — moved from
@@ -1749,15 +1852,20 @@ module.exports = {
       const time = typeof now === 'function' ? now : () => Date.now() / 1000;
       const uuid = typeof randomUUID === 'function' ? randomUUID : uuid4;
       const send = (actions) => {
-        if (!actions.length || typeof post !== 'function') return;
+        if (!actions.length || typeof post !== 'function') return null;
         const ctx = typeof context === 'function' ? (context() || {}) : {};
         try {
-          void Promise.resolve(post({
+          // The post's promise rides out: onStopped's callers await it —
+          // signOut posts the FINAL accounting before the session clears.
+          // The catch stays: telemetry never throws into playback, and a
+          // caller that drops the promise (the generation drop) can never
+          // see a rejection.
+          return Promise.resolve(post({
             deviceId: ctx.deviceId || null,
             deviceType: AMAZON_DEVICE_TYPE_ID,
             clientActionList: actions
           })).catch(() => {});
-        } catch { /* telemetry never throws into playback */ }
+        } catch { /* telemetry never throws into playback */ return null; }
       };
 
       const state = {
@@ -1824,7 +1932,7 @@ module.exports = {
           });
           actions.push(amazonClientAction('trackStreamed', streamed, { timestampSeconds: stamp, sdkEventId: sdkEventId() }));
         }
-        send(actions);
+        return send(actions);
       };
 
       const segmentElapsedSecs = () => (state.segmentStartSecs == null ? 0 : Math.max(0, time() - state.segmentStartSecs));
@@ -1905,13 +2013,16 @@ module.exports = {
         onStopped({ positionMs } = {}) {
           // Guard on the track session, not the open segment: pause-then-skip
           // still owes its FINAL trackStreamed (review I6; hornet's flow).
-          if (!state.current) return;
+          // Returns the post's promise: signOut awaits it before clearing
+          // the session, so the final accounting goes out while it lives.
+          if (!state.current) return null;
           const segmentSecs = state.trackTerminated ? 0 : segmentElapsedSecs();
           state.durationSumSecs += segmentSecs;
           state.segmentStartSecs = null;
           state.trackTerminated = true;
-          emitPair(TELEMETRY_TERMINATION.systemStop, { segmentSecs, progressSecs: Math.round((Number(positionMs) || 0) / 1000), final: true });
+          const post = emitPair(TELEMETRY_TERMINATION.systemStop, { segmentSecs, progressSecs: Math.round((Number(positionMs) || 0) / 1000), final: true });
           state.current = null;
+          return post;
         },
 
         // debug visibility
@@ -1980,6 +2091,14 @@ module.exports = {
       amazonPlanFromTier,
       tierFromConfig,
       amazonPlanMessage,
+      amazonPlaybackLimit,
+      HOME_URL,
+      SIGN_IN_WINDOW,
+      onMusicHost,
+      signInLanded,
+      signInPromptDecision,
+      HICCUP_GRACE_MS,
+      STREAK_GAP_MS,
       AMAZON_DEVICE_TYPE_ID,
       DML_TARGET_PREFIX,
       WIDEVINE_CERT_CHALLENGE,
@@ -2387,15 +2506,8 @@ module.exports = {
   // reason amazon-web-player.js's signOut nulls its own templates). Every
   // state read goes through here (isSignedIn, trySpecReplay), so the drop
   // lands on the first read after the switch — before any cache is served.
-  // The album/artist flows (M6) hold no session-scoped state of their own:
-  // the album search and the artist image ride the SHARED template above,
-  // and the album lookup caches nothing (every lookup is a fresh page
-  // load), so the two drops here cover them too. The recommendations state
-  // (M8) is dropped here the same way: the music-home/see-more templates
-  // embed the old session's csrf headers, the parsed caches carry the old
-  // account's content, and the music-home variant (a Prime account's refused
-  // music tab, #1328) belongs to the old account — the next may read the
-  // music tab.
+  // The drop itself is dropSessionState below (the shared sign-out reset
+  // list; signOut calls it directly, a generation change lands here).
   sessionState: async function () {
     const lib = this.requireLib();
     const ws = window.electron && window.electron.webSession;
@@ -2407,52 +2519,67 @@ module.exports = {
         this._sessionGeneration = state.generation;
       } else if (state.generation !== this._sessionGeneration) {
         this._sessionGeneration = state.generation;
-        this._planState = null;
-        this._specSearchTemplate = null;
-        // The recommendations caches and templates (M8) — the sign-out
-        // forgets the variant, the caches and the templates (the host's
-        // signOut dropped its own copies for exactly this reason).
-        this._musicHomeTemplate = null;
-        this._seeMoreTemplate = null;
-        this._recommendationsCache = null;
-        this._seeMorePages = new Map();
-        this._musicHomeVariant = null;
-        // The search breaker too: its failure counts may be session-shaped
-        // (a parked-wall run of structural misses), and a fresh session is
-        // the recovery path — a genuine hornet rename re-trips it in three.
-        this._searchBreaker = null;
-        // The DRM state (M9): the session context embeds the old session's
-        // csrf triplet and belongs to the old account; the cert warm, the
-        // telemetry instance and its health are session-scoped the same way.
-        // Do NOT rely on this drop to post the stream's FINAL accounting
-        // (trackStreamed): the plugin only sees the generation change on its
-        // first state read AFTER webSession.clear(), so the onStopped below
-        // always fires once the cookies are already gone and its post fails
-        // (best-effort). What posts the final pair in practice is the
-        // Settings sign-out button stopping the engine BEFORE it calls
-        // sign-out — that 'stopped' reaches the plugin's handlePlayerEvent
-        // while the session still lives.
-        try { this._telemetry && this._telemetry.onStopped({}); } catch { /* best-effort */ }
-        this._drmSessionContext = null;
-        this._drmSessionContextPromise = null;
-        this._certSessionReady = false;
-        this._telemetry = null;
-        this._telemetryHealth = { last: null, dropped: 0 };
-        // The mint's benign-query source too: account A's last search is not
-        // "already in the user's history" under account B — null it so the
-        // next mint falls back to the constant.
-        this._lastSearchText = null;
+        this.dropSessionState();
       }
     }
     return state;
   },
 
+  // The sign-out reset list (the M9 generation drop, named): everything the
+  // plugin holds that belongs to the signed-in account dies — the plan
+  // reading (the next sign-in may be another plan), the spec-search template
+  // and the recommendations state (M5/M8 — the templates embed the old
+  // session's csrf headers, the parsed caches carry the old account's
+  // content, and the music-home variant belongs to the old account), the
+  // search breaker (its failure counts may be session-shaped; a fresh session
+  // is the recovery path), the DRM state (M9 — the session context embeds
+  // the old session's csrf triplet; the cert warm, the telemetry instance
+  // and its health are session-scoped the same way) and the mint's benign
+  // query source (account A's last search is not "already in the user's
+  // history" under account B). The stream the old account was playing gets
+  // its FINAL accounting first (the old dmls onSignOut's
+  // trackStreamed-before-the-clear): the post's promise is RETURNED, and
+  // signOut awaits it before the clear, so the accounting goes out while the
+  // session still lives. The generation-drop caller cannot rely on it — the
+  // plugin only sees the generation change on its first state read AFTER
+  // webSession.clear(), so the onStopped there always fires once the cookies
+  // are gone and its post fails (best-effort, fire-and-forget); what posts
+  // the final pair in practice is the Settings sign-out button stopping the
+  // engine BEFORE it calls sign-out — that 'stopped' reaches
+  // handlePlayerEvent while the session still lives. _cdmProbe is process
+  // state, not session state — a CDM does not leave with the account.
+  dropSessionState: function () {
+    this._planState = null;
+    this._planPromise = null;
+    this._specSearchTemplate = null;
+    this._musicHomeTemplate = null;
+    this._seeMoreTemplate = null;
+    this._recommendationsCache = null;
+    this._seeMorePages = new Map();
+    this._musicHomeVariant = null;
+    this._searchBreaker = null;
+    // The final accounting (the returned promise is signOut's to await
+    // before the clear; every other caller fires it best-effort).
+    let finalPost = null;
+    try {
+      if (this._telemetry) finalPost = this._telemetry.onStopped({});
+    } catch (e) { /* best-effort */ }
+    this._drmSessionContext = null;
+    this._drmSessionContextPromise = null;
+    this._certSessionReady = false;
+    this._telemetry = null;
+    this._telemetryHealth = { last: null, dropped: 0 };
+    this._lastSearchText = null;
+    this._cookieWarned = false;
+    return finalPost;
+  },
+
   // ── The signed-in verdict ──────────────────────────────────────────────────
   // The plugin's composition of the host's facts (webSession.state() →
   // { url, signInUrl, cookieNames } — read through sessionState, which also
-  // runs the generation check) with Amazon's pure predicates — the same
-  // composition amazon-web-player.js's isSignedIn runs for the host's
-  // flows. Ready means signed in AND a profile chosen (a window still on the
+  // runs the generation check) with Amazon's pure predicates — the
+  // composition the host's isSignedIn ran until #1356 M10 moved every
+  // session surface here. Ready means signed in AND a profile chosen (a window still on the
   // profile picker is not ready, even with a cookie set); a page is never
   // proof of a session, and only the sign-in window's URL is authoritative
   // (the hidden view keeps whatever URL its last navigation left behind).
@@ -2483,11 +2610,11 @@ module.exports = {
   // and unknown BLOCKS (a format change on Amazon's side must show up as a
   // message, not as plays the plan may not cover). Search checks it only when
   // signed in — a signed-out search must still answer not-signed-in, the
-  // sign-in prompt — and before searching. The plugin cannot hear the host's
-  // amazonmusic-plan-changed event, so the refusal TTL is the upgrade path's
-  // backstop: an upgrade unblocks the search a minute later at the worst,
-  // sooner when the renderer's plan-changed handler drops this cache (it
-  // clears the resolver instance's _planState alongside the misses).
+  // sign-in prompt — and before searching. The plugin has no refresh channel,
+  // so the refusal TTL is the upgrade path's backstop: an upgrade unblocks
+  // the search a minute later at the worst. { refresh: true } skips the TTL
+  // cache (the status read's "read it from Amazon, not the cache" — the old
+  // host getStatus's refreshPlan).
   getPlan: async function ({ refresh } = {}) {
     const lib = this.requireLib();
     const ws = window.electron && window.electron.webSession;
@@ -2497,13 +2624,12 @@ module.exports = {
     // dmls's own shape (amazon-dmls.js getPlan): a FORCED re-read skips the
     // cache entirely — it exists to catch a change — and a scheduled read
     // serves it within the TTL. Only an UNLIMITED reading earns the 30-min
-    // TTL. The plugin cannot hear the host's amazonmusic-plan-changed event
-    // (Settings' refreshPlan path refreshes only the host's dmls cache), so a
-    // refused reading (prime / unknown) re-reads within the 1-min TTL: an
-    // upgrade unblocks search a minute later at the worst, without any
-    // refresh channel. The harmful error is a false refusal (an Unlimited
-    // account blocked); a false unlimited reading costs at most one failed
-    // play's manifest refusal.
+    // TTL. The plugin has no refresh channel, so a refused reading (prime /
+    // unknown) re-reads within the 1-min TTL: an upgrade unblocks search a
+    // minute later at the worst, and the status read (refresh: true) catches
+    // it at once where the person is looking. The harmful error is a false
+    // refusal (an Unlimited account blocked); a false unlimited reading costs
+    // at most one failed play's manifest refusal.
     if (!refresh && s) {
       const ttl = s.plan === 'unlimited' ? lib.PLAN_TTL_MS : lib.PLAN_UNKNOWN_TTL_MS;
       if (now - s.at < ttl) return s.plan;
@@ -2581,6 +2707,184 @@ module.exports = {
       throw err;
     }
     return plan;
+  },
+
+  // ── The session surfaces (#1356 M10): the status reply, sign-in, sign-out ──
+  // The host's sign-in window, sign-out and getStatus died with this move; the
+  // plugin is the session authority (docs/architecture/amazon-music.md,
+  // "Sign-in"). All three ride the ONE host web-session instance through the
+  // webSession bridge like every other flow.
+
+  // The status reply (capabilities.status, docs/architecture/plugins.md
+  // "Status and playback limits"): one answer feeds the playback limit map
+  // (pluginStatusLimit over playbackLimit), the resolver tile and the
+  // Settings sign-in row (pluginStatusRow over statusLabel/statusMessage).
+  // The plan is read FRESH — the old getStatus's refreshPlan: the read runs
+  // on the settings path (startup, Settings open, the panel, a plan
+  // refusal), where an upgrade must show at once, and a signed-out reply
+  // reads no plan at all (config.json needs the session). `cdm` is the
+  // build's Widevine verdict (cdmAvailable below) — an extra field the
+  // sign-in prompt gate reads so it never opens a window a build can't play
+  // from; everything else in the reply is the documented shape.
+  getStatus: async function () {
+    const lib = this.requireLib();
+    const signedIn = await this.isSignedIn();
+    let plan = null;
+    if (signedIn) {
+      try {
+        // FRESH on purpose, on every call — the background not-signed-in
+        // prompt decisions go through this reply too, so the prompt gate
+        // always sees the current plan (the one config.json round trip it
+        // costs is the price of that; #1440 review, note 4).
+        plan = await this.getPlan({ refresh: true });
+      } catch (e) { plan = 'unknown'; }
+    }
+    const cdm = await this.cdmAvailable();
+    const limit = signedIn ? lib.amazonPlaybackLimit(plan) : null;
+    return {
+      signedIn,
+      playbackLimit: limit,
+      // 'Setup required' is the signed-out wording — the tile's own badge
+      // and the Settings row agree (a signed-out Amazon still searches and
+      // plays nothing until the sign-in; the dialog opens only when the
+      // user asks for Amazon).
+      statusLabel: signedIn ? null : 'Setup required',
+      statusMessage: signedIn
+        // The blocked plan's message; nothing to add on unlimited. Signed out,
+        // the profile-picker hint rides along — choosing a profile is the
+        // step people miss (the docs' sign-in section exists because of it).
+        ? (limit && limit.blocked ? limit.message : null)
+        : (cdm
+          ? 'Sign in with your Amazon Music account, then choose a profile if Amazon asks.'
+          : 'This build cannot play DRM-protected Amazon streams'),
+      cdm
+    };
+  },
+
+  // Does this build carry a Widevine CDM at all? The old host read
+  // (electron.components.status() in main, via the IPC status) died with
+  // this move; the plugin's DRM pair runs in the renderer, and the
+  // renderer's own EME probe is the honest fact — requestMediaKeySystemAccess
+  // is the same gate playback itself passes (the shared engine's
+  // getSupportedCodecFamilies probes the same way; the minimal config, never
+  // a stricter robustness ask — one false-negatives on working L3 CDMs).
+  // Only a TRUE answer caches: a CDM never leaves a process, but a FALSE can
+  // be a moment, not a verdict — on a first launch the probe can run while
+  // castlabs is still installing the CDM (main.js's waitForWidevine gives up
+  // after 10s and opens the window anyway), and the old host read saw the
+  // install finish because it re-read components.status() on every
+  // getStatus. A latched false would show "cannot play DRM-protected streams"
+  // and turn every Sign in into the no-CDM toast until a restart, so a false
+  // re-probes on the next read; an in-flight probe is joined, never
+  // duplicated.
+  cdmAvailable: async function () {
+    if (this._cdmProbe !== true) {
+      const probe = this._cdmProbeInFlight || (this._cdmProbeInFlight = (async () => {
+        const nav = (typeof window !== 'undefined' && window.navigator) || (typeof navigator !== 'undefined' ? navigator : null);
+        if (!nav || typeof nav.requestMediaKeySystemAccess !== 'function') return false;
+        try {
+          const access = await nav.requestMediaKeySystemAccess('com.widevine.alpha', [{
+            initDataTypes: ['cenc'],
+            audioCapabilities: [{ contentType: 'audio/mp4; codecs="mp4a.40.2"' }]
+          }]);
+          return !!access;
+        } catch (e) {
+          return false;
+        }
+      })());
+      // Latch only a true. A false stays a false for THIS reply alone; the
+      // slot clears so the next read probes again — and an overlapping call
+      // joins this probe rather than starting a second one.
+      probe.then(
+        (verdict) => { this._cdmProbe = verdict; },
+        () => { this._cdmProbe = false; }
+      ).finally(() => {
+        if (this._cdmProbeInFlight === probe) this._cdmProbeInFlight = null;
+      });
+      try {
+        return await probe;
+      } catch (e) {
+        return false;
+      }
+    }
+    return true;
+  },
+
+  // The prompt rule for the renderer's sign-in flow (the pure decision the
+  // renderer's manageAmazonMusic calls through the loaded resolver): while
+  // the auth cookies say the session is live, a not-signed-in is a hiccup
+  // (Amazon's periodic session-token refresh catching a page load) — retry
+  // quietly; only a streak lasting a minute (most likely the profile picker
+  // waiting for a choice) prompts. See _lib's signInPromptDecision.
+  signInPromptDecision: function (inputs) {
+    return this.requireLib().signInPromptDecision(inputs);
+  },
+
+  // Sign-in: the visible window over the bridge's signIn protocol — the host
+  // shows the window (no preload; it must behave like a normal browser
+  // window), loads the page (unbudgeted on purpose: this is the one window
+  // the person watches) and ticks once a second with
+  // { url, cookieNames }; the plugin supplies the verdict, Amazon's own
+  // positive-signal rule (signInLanded: a non-wall music.amazon.com URL —
+  // HOST equality, never a substring — stable two ticks AND an auth cookie, a
+  // path off the bare home page, or a third stable tick; the cookie is one
+  // accepted signal, not a requirement, so Amazon rotating the cookie names
+  // cannot leave the window waiting forever). lastUrl/stableTicks are kept
+  // here because signInLanded's tick counting is its own. Resolves
+  // { success, signedIn } — the same shape the old host openLogin answered.
+  signIn: async function () {
+    const lib = this.requireLib();
+    const ws = window.electron && window.electron.webSession;
+    if (!ws || typeof ws.signIn !== 'function') {
+      return { success: false, error: 'no web-session bridge' };
+    }
+    let lastUrl = null;
+    let stableTicks = 0;
+    const out = await ws.signIn(lib.SESSION, lib.HOME_URL, {
+      window: { width: lib.SIGN_IN_WINDOW.width, height: lib.SIGN_IN_WINDOW.height },
+      decide: (tick) => {
+        const hasCookie = lib.amazonAuthCookieState(tick.cookieNames) !== 'none';
+        const verdict = lib.signInLanded({ url: tick.url, lastUrl, stableTicks, hasCookie });
+        lastUrl = tick.url;
+        stableTicks = verdict.stableTicks;
+        return verdict.landed;
+      }
+    });
+    return out || { success: false };
+  },
+
+  // Sign-out. The partition (persist:amazon-music) is Amazon-only, so the
+  // whole-session clear is correctly scoped — the machinery half is the
+  // host's clear() behind the bridge: the views die, the sign-in window
+  // closes, the webRequest capture detaches, the chain cuts and the storage
+  // clears. The plugin's half runs FIRST: every session-scoped state this
+  // instance holds drops (dropSessionState, which also posts the final
+  // telemetry accounting — the stream the old account was playing gets its
+  // trackStreamed pair), and the returned post is AWAITED before the clear:
+  // the accounting goes out while the session still lives, never racing the
+  // clear that destroys the cookies it needs. clear() bumps the generation
+  // too, but the next getStatus must not serve the old account's plan
+  // reading for even one read.
+  signOut: async function () {
+    const lib = this.requireLib();
+    const ws = window.electron && window.electron.webSession;
+    if (!ws || typeof ws.clear !== 'function') {
+      return { success: false, error: 'no web-session bridge' };
+    }
+    const finalPost = this.dropSessionState();
+    // Re-learn the generation on the next state read: the drop above already
+    // ran for THIS sign-out, and clear()'s bump must not run it twice.
+    this._sessionGeneration = null;
+    // The final accounting goes out while the session still lives: the post
+    // is AWAITED here, before the clear — its fetch needs the cookies the
+    // clear destroys. best-effort still: a failed post (or none) never
+    // blocks the sign-out.
+    if (finalPost) await finalPost;
+    const out = await ws.clear(lib.SESSION);
+    if (!out || out.success !== true) {
+      return { success: false, error: (out && out.error) || 'sign-out failed' };
+    }
+    return out;
   },
 
   // ── The DRM pair (#1356 M4, live since M9) ─────────────────────────────

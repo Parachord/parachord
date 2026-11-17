@@ -1,15 +1,16 @@
 /**
- * The search view's job queue, now the host's load chain in two lanes
- * (createLaneQueue + enqueue(fn, { lane }) in main-process/web-session.js;
- * enqueueSearch in amazon-web-player.js is the Amazon wrapper). One job at a
- * time; a foreground job starts before every queued background job (artist
- * photos, recommendations, catalog fallbacks); FIFO within a lane; a running
- * job is never interrupted; a throwing job rejects only itself. The lanes
- * live on webSession since the one-owner step (#1356) — the plugin no longer
- * owns a queue next to the host's. The playlist lookup that used to ride the
- * host's foreground lane moved into the plugin (#1356 M7): its own two-lane
- * queue (the plugin's mirror of these semantics) and its foreground playlist
- * lookup are pinned in tests/resolver/amazon-music-plugin-playlist.test.js.
+ * The host's load chain in two lanes (createLaneQueue + enqueue(fn, { lane })
+ * in main-process/web-session.js). One job at a time; a foreground job starts
+ * before every queued background job (the plugin's page flows — artist
+ * photos, recommendations, catalog fallbacks — ride the bridge's background
+ * lane); FIFO within a lane; a running job is never interrupted; a throwing
+ * job rejects only itself. The lanes live on webSession since the one-owner
+ * step (#1356). The plugin's page flows reach the chain through the bridge's
+ * load since the session move (#1356 M10 — the Amazon wrapper enqueueSearch
+ * died with the host's remaining plugin flows; the bridge's load, the session
+ * mint and the diagnostic capture are the host-side riders now); the plugin's
+ * own two-lane queue (its mirror of these semantics) and its foreground
+ * playlist lookup are pinned in tests/resolver/amazon-music-plugin-playlist.test.js.
  */
 
 const amazonWebPlayer = require('../../amazon-web-player');
@@ -77,7 +78,7 @@ describe('createLaneQueue', () => {
   });
 });
 
-describe('enqueueSearch lanes (the host chain under Amazon)', () => {
+describe('enqueue lanes (the host chain under Amazon)', () => {
   let savedChain;
   beforeEach(() => {
     savedChain = amazonWebPlayer.webSession._chain;
@@ -92,10 +93,10 @@ describe('enqueueSearch lanes (the host chain under Amazon)', () => {
   test('a playlist lookup goes ahead of queued background work', async () => {
     const order = [];
     const gate = deferred();
-    const running = amazonWebPlayer.enqueueSearch(async () => { order.push('recommendations'); await gate.promise; });
-    const photo1 = amazonWebPlayer.enqueueSearch(async () => { order.push('photo1'); });
-    const photo2 = amazonWebPlayer.enqueueSearch(async () => { order.push('photo2'); });
-    const playlist = amazonWebPlayer.enqueueSearch(async () => { order.push('playlist'); return 'tracks'; }, { lane: 'foreground' });
+    const running = amazonWebPlayer.webSession.enqueue(async () => { order.push('recommendations'); await gate.promise; });
+    const photo1 = amazonWebPlayer.webSession.enqueue(async () => { order.push('photo1'); });
+    const photo2 = amazonWebPlayer.webSession.enqueue(async () => { order.push('photo2'); });
+    const playlist = amazonWebPlayer.webSession.enqueue(async () => { order.push('playlist'); return 'tracks'; }, { lane: 'foreground' });
     expect(console.log).toHaveBeenCalledWith('[web-session amazon-music] foreground job goes ahead of 2 queued background job(s)');
     gate.resolve();
     await Promise.all([running, photo1, photo2]);
@@ -106,8 +107,8 @@ describe('enqueueSearch lanes (the host chain under Amazon)', () => {
   test('every job holds the host busy count while it runs, and releases it on throw', async () => {
     const before = amazonWebPlayer.webSession._chainBusy;
     let during = null;
-    await amazonWebPlayer.enqueueSearch(async () => { during = amazonWebPlayer.webSession._chainBusy; });
-    await expect(amazonWebPlayer.enqueueSearch(async () => { throw new Error('x'); })).rejects.toThrow('x');
+    await amazonWebPlayer.webSession.enqueue(async () => { during = amazonWebPlayer.webSession._chainBusy; });
+    await expect(amazonWebPlayer.webSession.enqueue(async () => { throw new Error('x'); })).rejects.toThrow('x');
     expect(during).toBe(before + 1);
     expect(amazonWebPlayer.webSession._chainBusy).toBe(before);
   });

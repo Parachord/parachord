@@ -26,7 +26,6 @@ const { transition } = require('../lib/motion');
 const { appendUniqueId, insertInCanonicalOrder } = require('../lib/resolver-order');
 
 const PLUGIN_SETTINGS_DIALOG_HANDLERS = [
-  'applyAmazonMusicStatus',
   'connectAppleMusic',
   'connectLastfm',
   'connectListenbrainz',
@@ -48,6 +47,7 @@ const PLUGIN_SETTINGS_DIALOG_HANDLERS = [
   'handleUninstallResolver',
   'manageAmazonMusic',
   'openSyncSetupModal',
+  'refreshPluginStatus',
   'saveAppleMusicDeveloperToken',
   'saveMetaServiceConfig',
   'saveSoundcloudCredentials',
@@ -59,13 +59,11 @@ const PluginSettingsDialog = React.memo(function PluginSettingsDialog(props) {
   const {
     activeResolvers,
     allResolvers,
-    amazonMusicStatus,
     appleMusicAdvancedOpen,
     appleMusicConnected,
     appleMusicDeveloperToken,
     appleMusicNativeAvailable,
     appleMusicTokenSaved,
-    applyAmazonMusicStatus,
     audioRef,
     authServerStatus,
     autoLaunchSpotify,
@@ -115,8 +113,8 @@ const PluginSettingsDialog = React.memo(function PluginSettingsDialog(props) {
     metaServiceConfigs,
     metaServices,
     openSyncSetupModal,
-    playbackLimits,
     pluginStatuses,
+    refreshPluginStatus,
     resolverConfigCache,
     resolverSyncSettings,
     runLoveBackfill,
@@ -130,7 +128,6 @@ const PluginSettingsDialog = React.memo(function PluginSettingsDialog(props) {
     scrobblerLovePushEnabled,
     selectedResolver,
     setActiveResolvers,
-    setAmazonMusicStatus,
     setAppleMusicAdvancedOpen,
     setAppleMusicDeveloperToken,
     setAutoLaunchSpotify,
@@ -308,24 +305,94 @@ React.createElement('div', {
 
           // A status-capable plugin's sign-in row (capabilities.status, the
           // generic surface of #1356): the plugin's own getStatus reply —
-          // label plus message — for any plugin that declares it. Amazon's
-          // own section below keeps its buttons and its IPC status until its
-          // plugin migration moves it onto this surface; no shipped plugin
-          // declares the capability yet, so nothing renders here today.
+          // label plus message — and, when the plugin implements the session
+          // methods (signIn/signOut — the web-session surface), the buttons
+          // that trigger them. Amazon rides this row since M10: its reply
+          // says 'Setup required' when signed out, and its signIn opens the
+          // window through the plugin's own prompt flow.
           selectedResolver?.capabilities?.status && typeof selectedResolver.getStatus === 'function' && (() => {
             const row = PlaybackLimits.pluginStatusRow(pluginStatuses[selectedResolver.id]);
+            const status = pluginStatuses[selectedResolver.id];
+            const signedIn = !!(status && status.signedIn === true);
+            const canSignOut = signedIn && typeof selectedResolver.signOut === 'function';
+            const canSignIn = !signedIn && typeof selectedResolver.signIn === 'function';
             return React.createElement('div', {
               style: {
                 padding: '16px 0',
                 borderTop: '1px solid var(--border-subtle)'
               }
             },
-              React.createElement('p', {
-                style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' }
-              }, row.label),
-              row.message ? React.createElement('p', {
-                style: { fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }
-              }, row.message) : null
+              React.createElement('div', {
+                className: 'flex items-center justify-between',
+                style: { padding: '12px', backgroundColor: 'var(--hover-bg-default)', borderRadius: '8px' }
+              },
+                React.createElement('div', null,
+                  React.createElement('p', {
+                    style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' }
+                  }, row.label),
+                  row.message ? React.createElement('p', {
+                    style: { fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }
+                  }, row.message) : null
+                ),
+                canSignOut ? React.createElement(Button, {
+                  variant: 'secondary',
+                  size: 'sm',
+                  onClick: async () => {
+                    // Stop the shared engine BEFORE the session dies — the
+                    // shaka session (license + buffered signed URLs) must not
+                    // keep playing a signed-out account's content, and the
+                    // plugin's final telemetry accounting needs a live session
+                    // for the last trackStreamed pair.
+                    if (window.__parachordWidevine && typeof window.__parachordWidevine.stop === 'function') {
+                      await window.__parachordWidevine.stop().catch(() => {});
+                      if (audioRef.current && currentTrackRef.current?._activeResolver === selectedResolver.id) {
+                        setIsPlaying(false);
+                      }
+                    }
+                    // Plan blocks are account-scoped (the FLAC/HD and
+                    // spatial/ec-3 KID-group latches). The next sign-in may
+                    // be an account that clears either; don't keep the
+                    // refused families off.
+                    if (window.__parachordWidevine && typeof window.__parachordWidevine.clearPlanBlocks === 'function') {
+                      window.__parachordWidevine.clearPlanBlocks();
+                    }
+                    const r = await selectedResolver.signOut();
+                    if (r && r.success) {
+                      showToast(`Signed out of ${selectedResolver.name}`, 'success');
+                      refreshPluginStatus(selectedResolver.id);
+                    } else {
+                      showToast((r && r.error) || `Could not sign out of ${selectedResolver.name}`, 'error');
+                    }
+                  }
+                }, 'Sign out') : canSignIn ? React.createElement(Button, {
+                  variant: 'primary',
+                  size: 'sm',
+                  onClick: async () => {
+                    // Amazon's sign-in carries its own prompt flow (the
+                    // consent dialog, single-flight, the 10-minute quiet
+                    // after a decline, the hiccup retry); every other plugin's
+                    // signIn is the window itself.
+                    //
+                    // TODO(#1440 review, note 3 — before a second web-session
+                    // plugin): this branch on the service name, the tile
+                    // badge's `resolver.id === 'amazonmusic'` needsConfiguration
+                    // arm and manageAmazonMusic's getResolver('amazonmusic')
+                    // are the generic surfaces that still branch on
+                    // 'amazonmusic' — the prompt flow is Amazon's UX today, but
+                    // a second web-session plugin must not copy the pattern;
+                    // the follow-up is a generic prompt-flow seam (the
+                    // plugin's own prompt decision, like signInPromptDecision)
+                    // so the row, the tile and the prompt read the plugin's
+                    // capabilities, never the id.
+                    if (selectedResolver.id === 'amazonmusic') {
+                      await manageAmazonMusic({ explicit: true, reason: 'not-signed-in', forcePrompt: true });
+                      return; // the flow refreshes the status itself
+                    }
+                    await selectedResolver.signIn().catch(() => null);
+                    refreshPluginStatus(selectedResolver.id);
+                  }
+                }, 'Sign in') : null
+              )
             );
           })(),
 
@@ -2017,94 +2084,9 @@ React.createElement('div', {
               })
           ),
 
-          // Amazon Music settings section (in-app sign-in)
-          selectedResolver.id === 'amazonmusic' && React.createElement('div', {
-            style: {
-              padding: '16px 0',
-              borderTop: '1px solid var(--border-subtle)'
-            }
-          },
-            React.createElement('h3', {
-              style: {
-                fontSize: '13px',
-                fontWeight: '500',
-                color: 'var(--text-primary)',
-                marginBottom: '8px'
-              }
-            }, 'Amazon Music'),
-            React.createElement('p', {
-              style: {
-                fontSize: '12px',
-                color: 'var(--text-secondary)',
-                marginBottom: '12px',
-                lineHeight: '1.5'
-              }
-            },
-              'Sign in once, and choose a profile if Amazon asks. Uses Amazon\'s web player and this app\'s Widevine CDM. The Amazon Music desktop app is not used.'
-            ),
-            React.createElement('div', {
-              className: 'flex items-center justify-between',
-              style: {
-                padding: '12px',
-                backgroundColor: 'var(--hover-bg-default)',
-                borderRadius: '8px',
-                marginBottom: '8px'
-              }
-            },
-              React.createElement('div', null,
-                React.createElement('p', {
-                  style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' }
-                }, !amazonMusicStatus ? 'Checking Amazon Music…' :
-                  amazonMusicStatus.web?.signedIn ? 'Signed in' :
-                  amazonMusicStatus.web?.cdm ? 'Ready — sign in to play' :
-                  'Can’t play in this version of Parachord'),
-                React.createElement('p', {
-                  style: { fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }
-                }, !amazonMusicStatus ? '' :
-                  amazonMusicStatus.web?.signedIn
-                    // Off Music Unlimited, nothing plays (#1220); say why.
-                    ? (PlaybackLimits.limitMessage(playbackLimits, 'amazonmusic') || '')
-                    : amazonMusicStatus.web?.cdm
-                      ? 'Sign in with your Amazon Music account'
-                      : 'This build cannot play DRM-protected Amazon streams')
-              ),
-              amazonMusicStatus?.web?.signedIn
-                ? React.createElement(Button, { variant: 'secondary', onClick: async () => {
-                      // Stop the shared engine BEFORE the session dies — the
-                      // shaka session (license + buffered signed URLs) must
-                      // not keep playing a signed-out account's content, and
-                      // the dmls side needs a live session for the FINAL
-                      // trackStreamed pair.
-                      if (window.__parachordWidevine && typeof window.__parachordWidevine.stop === 'function') {
-                        await window.__parachordWidevine.stop().catch(() => {});
-                        if (audioRef.current && currentTrackRef.current?._activeResolver === 'amazonmusic') {
-                          setIsPlaying(false);
-                        }
-                      }
-                      // Plan blocks are account-scoped (the FLAC/HD and
-                      // spatial/ec-3 KID-group latches). The next sign-in may
-                      // be an account that clears either; don't keep the
-                      // refused families off.
-                      if (window.__parachordWidevine && typeof window.__parachordWidevine.clearPlanBlocks === 'function') {
-                        window.__parachordWidevine.clearPlanBlocks();
-                      }
-                      const r = await window.electron.amazonMusic.signOut();
-                      if (r && r.success) {
-                        setAmazonMusicStatus({ success: true, engine: 'widevine', web: { cdm: !!(amazonMusicStatus && amazonMusicStatus.web && amazonMusicStatus.web.cdm), signedIn: false } });
-                        showToast('Signed out of Amazon Music', 'success');
-                      } else {
-                        showToast((r && r.error) || 'Could not sign out of Amazon Music', 'error');
-                      }
-                    } }, 'Sign out')
-                : React.createElement(Button, { variant: 'primary', onClick: async () => {
-                      const ok = await manageAmazonMusic({ explicit: true, reason: 'not-signed-in', forcePrompt: true });
-                      if (ok) {
-                        const s = await window.electron.amazonMusic.getStatus().catch(() => null);
-                        if (s && s.success) applyAmazonMusicStatus(s);
-                      }
-                    } }, 'Sign in')
-            ),
-          ),
+          // (Amazon Music's settings section died with #1356 M10: its rows are
+          // the generic status-capable plugin row above — the plugin's
+          // getStatus reply, its Sign in prompt flow and its Sign out.)
 
           // Local Files settings section
           selectedResolver.id === 'localfiles' && React.createElement('div', {

@@ -624,7 +624,6 @@ const {
   HOME_MIX_COVER_ATTEMPTS, HOME_MIX_COVER_RETRY_MS
 } = require('./lib/home-model');
 const { sourceBlockId, withoutTrackSource } = require('./lib/bad-match-report');
-const { amazonSignInPromptDecision } = require('./lib/amazon-signin-prompt');
 const PlaybackLimits = require('./lib/playback-limits');
 const { seekSpotify, spotifyPollPredatesSeek, SPOTIFY_SEEK_DEBOUNCE_MS } = require('./lib/spotify-seek');
 const { savedPluginConfig, sourcesChangedOnRecheck, shuffleAllowed, SHUFFLE_UNAVAILABLE_MESSAGE, LISTEN_ALONG_FAILED_POLLS_LIMIT, listenAlongWaitDecision, resumeStartPosition, trackPositionKey, REPEAT_UNAVAILABLE_MESSAGE, nextRepeatMode, normalizeRepeatMode, repeatModeFromLoop, loopFromRepeatMode, shouldRestoreQueue, trackBehindPlaceholder } = require('./lib/playback-helpers');
@@ -3416,7 +3415,7 @@ const Parachord = () => {
   });
   const amazonManageInFlightRef = useRef(null);
   const amazonManageDeclinedUntilRef = useRef(0);
-  const amazonSignInHiccupRef = useRef({ firstAt: 0, lastAt: 0 }); // not-signed-in while the cookies say signed in (amazon-signin-prompt.js)
+  const amazonSignInHiccupRef = useRef({ firstAt: 0, lastAt: 0 }); // not-signed-in while the cookies say signed in (the plugin's signInPromptDecision)
 
   // Track main content width for responsive layouts
   const [mainContentWidth, setMainContentWidth] = useState(800);
@@ -6144,19 +6143,17 @@ const Parachord = () => {
   const flushPlaylistSourcesRef = useRef(null); // Ref to access flush function from beforeunload
 
   const [selectedResolver, setSelectedResolver] = useState(null); // Resolver detail modal
-  // Amazon Music sign-in status from the in-app player:
-  // { success, engine: 'web', web: { cdm, signedIn }, plan, planMessage }
-  const [amazonMusicStatus, setAmazonMusicStatus] = useState(null);
   // Status replies from plugins that report their own sign-in/playback-limit
   // state (capabilities.status, the generic surface of #1356):
   // { [resolverId]: reply }. One reply feeds every consumer — the limit map
-  // below, the resolver tile (tileStatus) and the Settings sign-in row
-  // (pluginStatusRow). A failed read is the loader's marker
+  // below, the resolver tile (tileStatus), the Settings sign-in row
+  // (pluginStatusRow) and the sign-in prompt gate (the Amazon flow's CDM and
+  // signed-in facts). A failed read is the loader's marker
   // (resolver-loader.js STATUS_READ_FAILED — the plugin threw, answered
   // nothing shaped, or ran past the read budget): no verdict for the limit
-  // map, an honest "couldn't check" for the row. No shipped plugin declares
-  // the capability yet; Amazon keeps its own IPC status (amazonMusicStatus)
-  // until its plugin migration moves it onto this surface.
+  // map, an honest "couldn't check" for the row. Amazon is on this
+  // surface since #1356 M10 — the old IPC status and its per-service mapper
+  // (amazonPlaybackLimit) died with the move.
   const [pluginStatuses, setPluginStatuses] = useState({});
   // Resolvers that are enabled but can't play on the account's plan (Amazon
   // off Music Unlimited, #1220). Each service reports its limit into one map
@@ -6175,13 +6172,14 @@ const Parachord = () => {
   // entries go through pluginStatusLimits, which DROPS a no-verdict one
   // (a failed read, a reply with no playbackLimit), so it lands after the
   // mappers without overriding them — a plugin that can't answer never
-  // removes the host's own verdict (a Prime amazonmusic stays blocked while
-  // its plugin's read is down).
+  // removes the host's own verdict. Amazon reports its plan, its tile label
+  // and its wording through its getStatus reply since #1356 M10 (the
+  // per-service amazonPlaybackLimit mapper and the IPC status it fed are
+  // deleted).
   const playbackLimits = useMemo(() => ({
-    amazonmusic: PlaybackLimits.amazonPlaybackLimit(amazonMusicStatus),
     applemusic: PlaybackLimits.appleMusicPlaybackLimit({ checked: appleMusicAuthChecked, connected: appleMusicConnected }),
     ...PlaybackLimits.pluginStatusLimits(pluginStatuses)
-  }), [amazonMusicStatus, appleMusicAuthChecked, appleMusicConnected, pluginStatuses]);
+  }), [appleMusicAuthChecked, appleMusicConnected, pluginStatuses]);
   const planBlockedResolverIds = useMemo(() => PlaybackLimits.planBlockedIds(playbackLimits), [playbackLimits]);
   // For the plug-in tile menu's Raise / Lower Priority handler, registered once.
   const planBlockedResolverIdsRef = useRef(planBlockedResolverIds);
@@ -6192,24 +6190,6 @@ const Parachord = () => {
   );
   const playbackResolversRef = useRef(playbackResolvers);
   playbackResolversRef.current = playbackResolvers;
-  // Re-fetch Amazon Music status and audio quality when its detail modal opens.
-  useEffect(() => {
-    if (selectedResolver?.id !== 'amazonmusic') return;
-    let cancelled = false;
-    (async () => {
-      try {
-        // refreshPlan: read the plan from Amazon now, not the 30-minute cache,
-        // so an upgrade shows as soon as the panel opens (#1220).
-        const s = await window.electron.amazonMusic.getStatus({ refreshPlan: true });
-        if (cancelled) return;
-        const status = s && s.success ? s : { success: true, engine: 'widevine', web: { cdm: false, signedIn: false } };
-        setAmazonMusicStatus(status);
-      } catch (e) {
-        if (!cancelled) setAmazonMusicStatus({ success: true, engine: 'widevine', web: { cdm: false, signedIn: false } });
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [selectedResolver]);
   const [dynamicModelOptions, setDynamicModelOptions] = useState({}); // { [resolverId]: { loading, options: [{value,label}], error } }
 
   // Keep refs in sync with state
@@ -7495,14 +7475,25 @@ const Parachord = () => {
   }, []);
 
 
-  // Sign in to Amazon Music inside Parachord. Playback uses the web player
-  // and the Widevine CDM built into this Electron build. The desktop app is
-  // not launched. explicit:true always shows the dialog (play button, settings).
-  // explicit:false is the background-resolve prompt: one at a time, skipped
-  // during radio/auto-advance, and not repeated for 10 minutes after a decline.
-  // A second caller shares the in-flight promise so it cannot overwrite onResolve.
+  // Sign in to Amazon Music inside Parachord. Playback uses the shared
+  // Widevine player and the CDM built into this Electron build; the session
+  // itself is the plugin's since #1356 M10 — the flow below is the renderer's
+  // prompt UX (the consent dialog, single-flight, the decline quiet, the
+  // hiccup retry) over the plugin's methods: getStatus (the CDM verdict and
+  // the signed-in fact), signInPromptDecision (the hiccup rule) and signIn
+  // (the visible window with the plugin's own decide rule). The desktop app
+  // is not launched. explicit:true always shows the dialog (play button,
+  // settings). explicit:false is the background-resolve prompt: one at a
+  // time, skipped during radio/auto-advance, and not repeated for 10 minutes
+  // after a decline. A second caller shares the in-flight promise so it
+  // cannot overwrite onResolve.
   const manageAmazonMusic = async (opts = {}) => {
-    if (!window.electron?.amazonMusic) return false;
+    const loaded = resolverLoaderRef.current && typeof resolverLoaderRef.current.getResolver === 'function'
+      ? resolverLoaderRef.current.getResolver('amazonmusic')
+      : null;
+    // No prompt without the plugin (not loaded, or an old .axe with no
+    // session surface): the prompt IS the plugin's UX.
+    if (!loaded || typeof loaded.signIn !== 'function') return false;
     const explicit = opts.explicit !== false;
     if (!explicit && Date.now() < amazonManageDeclinedUntilRef.current) return false;
     // Settings → Sign in passes explicit:true. Radio must not swallow that.
@@ -7518,23 +7509,31 @@ const Parachord = () => {
     amazonManageInFlightRef.current = inFlight;
 
     const run = (async () => {
-      const status = await window.electron.amazonMusic.getStatus().catch(() => null);
-      if (status && status.web && !status.web.cdm) {
-        showToast('Amazon Music can’t play in this version of Parachord.', 'error');
+      // The plugin's status reply: the signed-in fact and this build's CDM
+      // verdict (the plugin's EME probe — the old host read died with the IPC
+      // status). Feeds the tile/settings row on the way by; a read that fails
+      // outright (the loader itself) is no verdict, like the old IPC catch.
+      const status = await refreshPluginStatus('amazonmusic').catch(() => null);
+      if (status && status.cdm === false) {
+        showToast('This Parachord build has no Widevine CDM, so Amazon Music cannot play.', 'error');
         return false;
       }
       // A not-signed-in while the auth cookies say the session is live is
       // usually Amazon's periodic session-token refresh catching a page load:
       // retry quietly instead of prompting. Only a streak lasting a minute
       // (most likely the profile picker) prompts. Settings' Sign in button
-      // passes forcePrompt and always gets the window.
+      // passes forcePrompt and always gets the window. The rule is the
+      // plugin's (signInPromptDecision); an old .axe without the method
+      // prompts at once, the pre-#1172 behavior.
       if (!opts.forcePrompt) {
-        const verdict = amazonSignInPromptDecision({
-          reason: opts.reason,
-          cookiesSignedIn: !!(status && status.web && status.web.signedIn),
-          streak: amazonSignInHiccupRef.current,
-          now: Date.now()
-        });
+        const verdict = typeof loaded.signInPromptDecision === 'function'
+          ? loaded.signInPromptDecision({
+              reason: opts.reason,
+              cookiesSignedIn: !!(status && status.signedIn),
+              streak: amazonSignInHiccupRef.current,
+              now: Date.now()
+            })
+          : { prompt: true, streak: { firstAt: 0, lastAt: 0 } };
         amazonSignInHiccupRef.current = verdict.streak;
         if (!verdict.prompt) {
           console.log('[Amazon] not signed in, but the session cookies are live: retrying quietly instead of prompting');
@@ -7550,9 +7549,9 @@ const Parachord = () => {
         return false;
       }
       setAmazonManageDialog({ show: true, onResolve: null, relaunching: true });
-      const login = await window.electron.amazonMusic.openLogin();
+      const login = await loaded.signIn();
       setAmazonManageDialog({ show: false, onResolve: null, relaunching: false });
-      refreshAmazonMusicStatus();
+      refreshPluginStatus('amazonmusic');
       if (login && login.signedIn) {
         amazonSignInHiccupRef.current = { firstAt: 0, lastAt: 0 };
         showToast('Signed in to Amazon Music', 'success');
@@ -7563,9 +7562,6 @@ const Parachord = () => {
       // declining the prompt. Without it the next background search's
       // not-signed-in reopened the prompt at once, and again after every close.
       amazonManageDeclinedUntilRef.current = Date.now() + 10 * 60 * 1000;
-      if (login && login.reason === 'no-cdm') {
-        console.error('Amazon sign-in: no CDM', login.error); showToast('Amazon Music can’t play in this version of Parachord.', 'error');
-      }
       return false;
     })().catch((error) => {
       setAmazonManageDialog({ show: false, onResolve: null, relaunching: false });
@@ -7583,51 +7579,14 @@ const Parachord = () => {
   };
   window.__parachordManageAmazonMusic = manageAmazonMusic;
 
-  // Amazon's sign-in state for the resolver grid's "Setup required" badge (the
-  // same treatment Spotify and Apple Music get when not connected). Refreshed
-  // after every sign-in attempt, on enable, and each time Settings opens, so
-  // a session that expired since is caught too. manageAmazonMusic above calls
-  // it at run time, after this render has defined it.
-  const applyAmazonMusicStatus = (s) => {
-    setAmazonMusicStatus(s);
-  };
-  const refreshAmazonMusicStatus = (opts) => {
-    if (!window.electron?.amazonMusic?.getStatus) return;
-    window.electron.amazonMusic.getStatus(opts)
-      .then((s) => applyAmazonMusicStatus(s && s.success ? s : { success: true, engine: 'web', web: { cdm: false, signedIn: false } }))
-      .catch(() => {});
-  };
-  const amazonMusicEnabled = activeResolvers.includes('amazonmusic');
-  useEffect(() => {
-    if (!cacheLoaded || !amazonMusicEnabled) return;
-    if (activeView !== 'settings' && amazonMusicStatus) return;
-    // Opening Settings reads the plan from Amazon, not the 30-minute cache,
-    // so an upgrade shows (and re-resolves) as soon as Settings opens (#1220).
-    refreshAmazonMusicStatus({ refreshPlan: activeView === 'settings' });
-  }, [cacheLoaded, amazonMusicEnabled, activeView]);
-  // Main reports a plan change (a session mint or a re-read found another
-  // plan): refresh the tile and settings, and re-resolve on an upgrade. The
-  // plugin's own plan cache (the track-search gate, #1356 M5) cannot hear
-  // this event — main's getStatus refreshPlan path refreshes only the host's
-  // dmls copy — so the handler drops it here too: the next search re-reads
-  // config.json at once instead of serving a refusal for up to its TTL. A
-  // plugin plan read already in flight may re-cache the old reading when it
-  // lands; the refusal TTL (1 min) is that corner's backstop.
-  useEffect(() => {
-    if (!cacheLoaded || !amazonMusicEnabled || !window.electron?.amazonMusic?.onPlanChanged) return;
-    return window.electron.amazonMusic.onPlanChanged(() => {
-      const amazonResolver = findLoadedResolver('amazonmusic');
-      if (amazonResolver) amazonResolver._planState = null;
-      refreshAmazonMusicStatus();
-    });
-  }, [cacheLoaded, amazonMusicEnabled]);
-
   // The generic plugin-status surface (capabilities.status, #1356): a plugin
   // that can report its sign-in/playback-limit state implements getStatus,
   // and the renderer asks it through the resolver registry (resolver-loader.js
   // getStatusResolvers/getStatus — direct, renderer-side, no new IPC). Amazon
-  // stays on its own IPC status above until its plugin migration; no shipped
-  // plugin declares the capability yet, so nothing below runs for one.
+  // is on this surface since #1356 M10: its tile's "Setup required"/
+  // "Prime: no playback", its settings row and its limit-map entry all read
+  // the plugin's reply, and the prompt flow above reads the same reply for
+  // the CDM gate and the hiccup rule.
 
   // One plugin's status read. The loader logs and swallows a throwing or
   // hung getStatus and bounds the read (STATUS_BUDGET_MS — a status outage
@@ -7636,11 +7595,14 @@ const Parachord = () => {
   // null; each is stored as-is — a failure is no verdict for the limit map
   // (lib/playback-limits.js pluginStatusLimit) and the honest error row
   // (pluginStatusRow), and a null (never asked) stays "Checking…".
+  // Returns the reply's promise (manageAmazonMusic reads it for the CDM gate),
+  // so a caller can both await the verdict and let it feed the map.
   const refreshPluginStatus = (resolverId) => {
     const loader = resolverLoaderRef.current;
-    if (!loader || typeof loader.getStatus !== 'function') return;
-    loader.getStatus(resolverId).then((status) => {
+    if (!loader || typeof loader.getStatus !== 'function') return Promise.resolve(null);
+    return loader.getStatus(resolverId).then((status) => {
       setPluginStatuses(prev => ({ ...prev, [resolverId]: status }));
+      return status;
     });
   };
 
@@ -7687,12 +7649,15 @@ const Parachord = () => {
     });
   };
 
-  // The trigger set is deliberately the Amazon status's own: once at startup
+  // The trigger set is the old Amazon status's own: once at startup
   // (after the plugins are loaded) and again each time Settings opens, so a
   // sign-in or plan change since the last read shows where the person looks.
   // Nothing else polls — a status read can be a network call (Amazon's asks
-  // the service) — and a plugin has no push channel yet (one would come with
-  // the web-session surface).
+  // the service) — and a plugin has no push channel. The plan read is fresh
+  // every time (the plugin's getStatus forces it), which is what replaces the
+  // old plan-changed event: an upgrade shows at the next read, at the worst
+  // when Settings opens — and the refused-plan TTL re-reads within a minute
+  // for the searches.
   const havePluginStatuses = Object.keys(pluginStatuses).length > 0;
   useEffect(() => {
     if (!cacheLoaded) return;
@@ -7702,12 +7667,12 @@ const Parachord = () => {
     // (loadCacheFromStore) both start at mount and race, so the startup
     // read must re-run when the registry lands; the guard above keeps that
     // a read only where one is due (startup, or Settings open).
-    // activeResolvers: like the Amazon effect's amazonMusicEnabled dep — an
-    // enabled plugin is read at once. The only enable path is the resolver
-    // panel, inside Settings, where the guard above passes.
+    // activeResolvers: an enabled plugin is read at once. The only enable
+    // path is the resolver panel, inside Settings, where the guard above
+    // passes.
   }, [cacheLoaded, activeView, havePluginStatuses, loadedResolvers, activeResolvers]);
 
-  // Opening a status-capable resolver's panel re-reads it (the Amazon
+  // Opening a status-capable resolver's panel re-reads it (the old Amazon
   // modal's refreshPlan read): the freshest sign-in/plan state shows right
   // where the person is looking at it, including a plugin enabled since the
   // startup read.
@@ -8000,13 +7965,11 @@ const Parachord = () => {
   // the refusal's own message is shown). A plugin checks this hook exists
   // before throwing plan-ineligible (docs/architecture/plugins.md).
   window.__parachordNotePlanRefusal = (resolverId, planKey) => {
-    if (resolverId === 'amazonmusic') {
-      refreshAmazonMusicStatus();
-      return null; // main's refusal already carries the Amazon wording
-    }
     // A status-capable plugin's refusal says its reported status is stale:
-    // re-read it. The refusal itself already carries the wording to show, so
-    // the reply only refreshes the map and the Settings row.
+    // re-read it. The refusal itself already carries the wording to show (the
+    // plugin's own plan message), so the reply only refreshes the map, the
+    // tile and the Settings row. Amazon is a status-capable plugin since
+    // #1356 M10, so the same path covers it.
     const statusLoader = resolverLoaderRef.current;
     if (statusLoader?.getStatusResolvers && statusLoader.getStatusResolvers().some(r => r.id === resolverId)) {
       refreshPluginStatus(resolverId);
@@ -37033,9 +36996,9 @@ useEffect(() => {
         try { const musicKitWeb = window.getMusicKitWeb(); if (musicKitWeb?.seek) { await musicKitWeb.seek(newPosition); } } catch (err) { /* not the active method */ }
       }
     }
-    // Amazon Music (remote-controlled app; seek position is in seconds)
-    if (activeResolver === 'amazonmusic' && window.electron?.amazonMusic) {
-    }
+    // Amazon Music seeks through the shared element like every widevine
+    // source (the seekEl above) — its old remote-controlled seek stub is
+    // gone with the IPC surface.
     if (seekTimeoutRef.current) clearTimeout(seekTimeoutRef.current);
     seekTimeoutRef.current = setTimeout(() => {
       seekingRef.current = false;
@@ -37607,7 +37570,7 @@ useEffect(() => {
   // Stable function props for the memo'd PluginSettingsDialog (keys must
   // match PLUGIN_SETTINGS_DIALOG_HANDLERS in plugin-settings-dialog.js).
   const pluginSettingsDialogHandlers = useStableHandlers({
-    applyAmazonMusicStatus, connectAppleMusic, connectLastfm, connectListenbrainz, connectSoundcloud, connectSpotify, disconnectAppleMusic, disconnectLastfm, disconnectListenbrainz, disconnectSoundcloud, disconnectSpotify, fetchDynamicModels, getServiceColor, handleAddWatchFolder, handleInstallFromMarketplace, handleRemoveMissingFiles, handleRemoveWatchFolder, handleRescanAll, handleRescanFolder, handleUninstallResolver, manageAmazonMusic, openSyncSetupModal, saveAppleMusicDeveloperToken, saveMetaServiceConfig, saveSoundcloudCredentials, saveSpotifyCredentials, toggleResolver,
+    connectAppleMusic, connectLastfm, connectListenbrainz, connectSoundcloud, connectSpotify, disconnectAppleMusic, disconnectLastfm, disconnectListenbrainz, disconnectSoundcloud, disconnectSpotify, fetchDynamicModels, getServiceColor, handleAddWatchFolder, handleInstallFromMarketplace, handleRemoveMissingFiles, handleRemoveWatchFolder, handleRescanAll, handleRescanFolder, handleUninstallResolver, manageAmazonMusic, openSyncSetupModal, refreshPluginStatus, saveAppleMusicDeveloperToken, saveMetaServiceConfig, saveSoundcloudCredentials, saveSpotifyCredentials, toggleResolver,
   });
 
   // Stable function props for the memo'd ChartsPage (keys must
@@ -38145,7 +38108,6 @@ useEffect(() => {
           albumArtCache,
           albumToReleaseIdCache,
           allResolvers,
-          amazonMusicStatus,
           appVersion,
           appleMusicConnected,
           artistDataCache,
@@ -38177,6 +38139,7 @@ useEffect(() => {
           playbackLimits,
           playbackQuality,
           playbackSpatial,
+          pluginStatuses,
           pluginsFilter,
           releaseDetailsCache,
           rememberQueue,
@@ -38408,7 +38371,6 @@ useEffect(() => {
     /* PluginSettingsDialog (components/plugin-settings-dialog.js), a memo'd dialog. */ selectedResolver && React.createElement(PluginSettingsDialog, {
       activeResolvers,
       allResolvers,
-      amazonMusicStatus,
       appleMusicAdvancedOpen,
       appleMusicConnected,
       appleMusicDeveloperToken,
@@ -38442,7 +38404,6 @@ useEffect(() => {
       marketplaceManifest,
       metaServiceConfigs,
       metaServices,
-      playbackLimits,
       pluginStatuses,
       resolverConfigCache,
       resolverSyncSettings,
@@ -38453,7 +38414,6 @@ useEffect(() => {
       scrobblerLovePushEnabled,
       selectedResolver,
       setActiveResolvers,
-      setAmazonMusicStatus,
       setAppleMusicAdvancedOpen,
       setAppleMusicDeveloperToken,
       setAutoLaunchSpotify,

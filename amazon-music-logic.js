@@ -112,33 +112,6 @@ function flacStreamInfoAt(b, at) {
 }
 
 
-// castlabs components.status() shape is not a documented contract. Read only
-// the status fields instead of substring-matching the whole JSON blob - an
-// unrelated "failed" elsewhere in the payload (a URL, a component name) used
-// to disable Amazon playback entirely. Optimistic when the shape is not
-// recognized: the EME probe is the real playback gate, and a spurious
-// "no CDM" disables the resolver outright. Cycle-safe.
-function cdmStatusHealthy(status) {
-  if (!status || typeof status !== 'object') return true;
-  if (Object.keys(status).length === 0) return false; // {} = nothing installed
-  const seen = new Set();
-  const stack = [status];
-  while (stack.length) {
-    const value = stack.pop();
-    if (!value || typeof value !== 'object' || seen.has(value)) continue;
-    seen.add(value);
-    for (const [key, entry] of Object.entries(value)) {
-      if (key === 'status') {
-        const s = String(entry).toLowerCase();
-        if (s === 'failed' || s.includes('component_update_error')) return false;
-      } else if (entry && typeof entry === 'object') {
-        stack.push(entry);
-      }
-    }
-  }
-  return true; // no status field found: assume present; the EME probe is the gate
-}
-
 // Amazon's web player is not usable for search or play while it is still
 // on the account sign-in page or the post-login profile picker. Cookies can
 // already exist at that point; the URL is the signal that selection finished.
@@ -170,39 +143,6 @@ function amazonAuthCookieState(names) {
   if (list.some(n => /^(at-main|sess-at-main|at-acb)/.test(n))) return 'known';
   if (list.some(n => /^(x-main|at-|sess-at-)/.test(n))) return 'rotated';
   return 'none';
-}
-
-// The Amazon Music web player's own host. A URL is on the player only when
-// its HOST is this: the sign-in portal's URLs carry music.amazon.com in their
-// return_to query, so a substring match passes them.
-function onMusicHost(url) {
-  try {
-    return new URL(url).hostname.toLowerCase() === 'music.amazon.com';
-  } catch (e) {
-    return false;
-  }
-}
-
-
-// openLogin's completion gate. "The URL is not a known wall" alone fails
-// open: music.amazon.com/ itself is not a wall, and a logged-out first paint
-// can sit there (or redirect slowly) for a second or more — the old timer
-// closed the sign-in window and reported success before the user touched the
-// password field. Require a positive signal: a non-wall music.amazon.com URL
-// that has been stable for two consecutive ticks AND at least one of (an
-// auth cookie is present, the page has moved off the bare home path, or three
-// stable ticks — the fallback for Amazon rotating its cookie names, at the
-// cost of a ~3s wait when a signed-in landing page really is /).
-function signInLanded({ url, lastUrl = null, stableTicks = 0, hasCookie = false } = {}) {
-  const okUrl = !!url && onMusicHost(url) && !pageBlocksPlayback(url);
-  const ticks = okUrl ? (lastUrl === url ? stableTicks + 1 : 1) : 0;
-  let landed = false;
-  if (ticks >= 2) {
-    let path = '';
-    try { path = new URL(url).pathname; } catch (e) { /* not a URL */ }
-    landed = !!hasCookie || path !== '/' || ticks >= 3;
-  }
-  return { landed, stableTicks: ticks };
 }
 
 // Search pages also render the mini player. Its title is a /tracks/ link
@@ -456,59 +396,6 @@ function amazonPlayGenerationStamp(generation) {
   return `window.__parachordPlayGen = ${generation | 0};`;
 }
 
-// ── config.json (the session facts reader) ──────────────────────────────────
-// #1356 M9: the dmls request bodies, the licence-refusal semantics, the MPD
-// KID parse and the telemetry envelope builders moved into the Amazon plugin's
-// _lib (plugins-src/amazonmusic/implementation.js) with the DRM pair; the host
-// copies died with amazon-dmls.js / main-process/amazon-telemetry.js. What
-// stays here is the config.json parse the getStatus plan stopgap
-// (amazon-web-player.js getPlan) reads — every field degrades to null.
-
-// GET https://music.amazon.com/config.json answers the session facts in one
-// shot (cookies only, no CSRF): customer, marketplace, territory, the dmls
-// region segment itself (siteRegion) and the tier. What remains host-side is
-// the plan read (the getStatus stopgap); the plugin's mint parses the same
-// file with its own copy. Parse defensively — every field degrades to null.
-function amazonNativeSessionFromConfig(json) {
-  const j = json && typeof json === 'object' ? json : {};
-  const str = (v) => (typeof v === 'string' && v ? v : null);
-  return {
-    customerId: str(j.customerId),
-    marketplaceId: str(j.marketplaceId),
-    territoryId: str(j.musicTerritory),
-    region: str(j.siteRegion),
-    deviceId: str(j.deviceId),
-    deviceType: str(j.deviceType),
-    tier: typeof j.tier === 'string' ? j.tier : (j.tier && typeof j.tier === 'object' ? (str(j.tier.name) || str(j.tier.tier) || null) : null)
-  };
-}
-
-// The account's plan, from config.json's `tier` (#1220). Only Music Unlimited
-// plays on demand in Parachord. Prime gives no on-demand playback, and a tier
-// we can't read or don't recognize blocks too ('unknown'), so a format change
-// on Amazon's side shows up as a message rather than as plays the plan may
-// not cover. Seen so far: 'PRIME' and values starting 'UNLIMITED'. The rule
-// lives here alone (the plugin's telemetry resourceType uses its own copy).
-function isUnlimitedTier(tier) {
-  return typeof tier === 'string' && /^UNLIMITED/i.test(tier.trim());
-}
-
-function amazonPlanFromTier(tier) {
-  if (isUnlimitedTier(tier)) return 'unlimited';
-  if (typeof tier === 'string' && tier.trim().toUpperCase() === 'PRIME') return 'prime';
-  return 'unknown';
-}
-
-// One wording for the tile, the settings panel and the play refusal.
-const AMAZON_PLAN_MESSAGES = {
-  prime: 'Amazon Prime: Amazon is used for album art, artist photos and links. Playing Amazon tracks in Parachord needs Music Unlimited.',
-  unknown: "Parachord couldn't confirm your Amazon Music plan, so Amazon playback is off until it can. Playing Amazon tracks in Parachord needs Music Unlimited."
-};
-
-function amazonPlanMessage(plan) {
-  return AMAZON_PLAN_MESSAGES[plan] || null;
-}
-
 // ── Streaming telemetry ─────────────────────────────────────────────────────
 // #1356 M9: the hornet /telemetry/v1/events envelope builders and the reporter
 // state machine moved into the Amazon plugin's _lib (createAmazonTelemetry —
@@ -546,10 +433,6 @@ function amazonNowPlayingMismatch(expectedTitle, nowPlaying) {
 }
 
 module.exports = {
-  amazonNativeSessionFromConfig,
-  isUnlimitedTier,
-  amazonPlanFromTier,
-  amazonPlanMessage,
   gqlCaptureSubject,
   gqlRequestsIn,
   gqlRequestIsAboutSubject,
@@ -559,12 +442,9 @@ module.exports = {
   amazonMediaPauseExpr,
   amazonPlayGenerationStamp,
   shouldRevealPlayerOnFailure,
-  cdmStatusHealthy,
   pageBlocksPlayback,
   amazonAuthCookieState,
-  onMusicHost,
   amazonNowPlayingMismatch,
-  signInLanded,
   asinFromPlayerUrl,
   amazonGqlFetchHeaders,
   GQL_PARTIAL_STATUS,

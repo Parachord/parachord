@@ -1,4 +1,4 @@
-// In-app Amazon Music player.
+// In-app Amazon Music player — the host half that remains after #1356.
 //
 // Parachord runs on castlabs Electron, which ships a Widevine CDM. Search
 // and the page flows run in a hidden WebContentsView on the main window
@@ -10,12 +10,17 @@
 // Every piece of web-session machinery here — the hidden view, the webRequest
 // capture, the page-world fetch, the load chain, the readers/writer gate,
 // the idle-park fuse, the sign-in window, sign-out — lives on ONE
-// createWebSessionHost instance (the module-scope `webSession` below). This
-// module owns the FLOWS: which URL loads, which request to capture and how to
-// patch, replay and parse it, what a wall or a session looks like. It
+// createWebSessionHost instance (the module-scope `webSession` below). Since
+// #1356 M5–M10 every Amazon FLOW is the plugin's (plugins-src/amazonmusic):
+// the searches, the catalog, the playlist import, the recommendations, the
+// DRM pair, sign-in/out and the status read drive that instance through the
+// window.electron.webSession bridge. What this module still owns is the
+// MACHINERY (the host instance, the offscreen layout, the park fuse — all of
+// it delegated to the host) and one page flow: the diagnostic capture. It
 // composes them over the host's primitives and never registers a webRequest
 // listener, creates a view, or takes a navigation outside that instance —
-// the partition's single webRequest slot has exactly one owner.
+// the partition's single webRequest slot has exactly one owner. The teardown
+// milestone deletes the rest.
 //
 // ── Amazon page contract ─────────────────────────────────────────────────────
 // Everything in this module scrapes or hooks music.amazon.com (hornet), and
@@ -32,7 +37,7 @@
 //   Sign-in walls   every /ap/ page on an account host (signin, 2FA, approval),
 //                   /identity/who-is-listening (pageBlocksPlayback)
 //   Cookies         at-main|sess-at-main|at-acb; any x-main / at-* / sess-at-*
-//                   if Amazon renames them (amazonAuthCookieState, isSignedIn).
+//                   if Amazon renames them (amazonAuthCookieState).
 //                   A page is never proof of a session: the logged-out home
 //                   page is a non-wall music.amazon.com page too
 //   Media element   the Widevine <video>; the page also has an empty <audio>
@@ -47,16 +52,18 @@
 //                   matched on variables.searchText — never the operation
 //                   name — and parsed pure; a page that never searches is a
 //                   structural failure (not-ready), an empty edges list is a
-//                   real miss. (#1356 M5–M9: the track search, the
+//                   real miss. (#1356 M5–M10: the track search, the
 //                   album/artist catalog flows, the playlist import, the
-//                   recommendations AND the DRM pair (the dmls manifest/
+//                   recommendations, the DRM pair (the dmls manifest/
 //                   licence flows, with their session-headers mint and the
-//                   streaming telemetry) moved into plugins-src/amazonmusic —
-//                   they drive this same host instance through the
-//                   window.electron.webSession bridge; the host-side runners
-//                   and the amazon-dmls.js provider that used to live here
-//                   are deleted. This module's remaining page flow — the
-//                   diagnostic capture — still rides the same
+//                   streaming telemetry) AND the session surfaces (sign-in,
+//                   sign-out, the status read with its plan gate) moved into
+//                   plugins-src/amazonmusic — they drive this same host
+//                   instance through the window.electron.webSession bridge;
+//                   the host-side runners, the amazon-dmls.js provider and the
+//                   host's sign-in/out and getStatus surfaces that used to
+//                   live here are deleted. This module's one remaining page
+//                   flow — the diagnostic capture — still rides the same
 //                   capture-and-replay pattern.)
 //   GraphQL         gql.music.amazon.com, persisted query (APQ) whose sha256Hash
 //                   renumbers per redeploy — capture the page's own request
@@ -73,31 +80,20 @@
 //                   signature refused (development certificate)
 
 const path = require('path');
-const HOME_URL = 'https://music.amazon.com/';
 const PARTITION = 'persist:amazon-music';
 const PRELOAD = path.join(__dirname, 'amazon-player-preload.js');
 const { createWebSessionHost, chromeUserAgent } = require('./main-process/web-session');
 const {
   pageBlocksPlayback,
-  signInLanded,
   amazonAuthCookieState,
-  cdmStatusHealthy,
   amazonGqlFetchHeaders,
   gqlReplayOutcome,
   gqlCaptureSubject,
   gqlRequestsIn,
   gqlRequestIsAboutSubject,
   redactGqlSample,
-  summarizeGqlRequest,
-  amazonNativeSessionFromConfig,
-  amazonPlanFromTier
+  summarizeGqlRequest
 } = require('./amazon-music-logic');
-
-// #1220 plan TTLs (the dmls gate's values, ported with the stopgap read): a
-// known plan is re-read every half hour; a failed or unrecognized reading
-// blocks playback, so it is retried soon.
-const PLAN_TTL_MS = 30 * 60 * 1000;
-const PLAN_UNKNOWN_TTL_MS = 60 * 1000;
 
 // ONE owner of the partition (see the header): every view, navigation, gate
 // entry, capture registration and sign-in window for persist:amazon-music
@@ -135,14 +131,21 @@ const webSession = createWebSessionHost({
   signInTitle: 'Sign in to Amazon Music'
 });
 
-function electron() {
-  return require('electron');
-}
-
 function notReady(reason, message) {
   const err = new Error(message || reason);
   err.reason = reason;
   return err;
+}
+
+// The diagnostic capture's signed-in guard (the plugin's isSignedIn is the
+// surface since #1356 M10; this is the same composition, private to this
+// module's one remaining flow): cookies first (the auth-cookie name hedge),
+// then the sign-in window's URL — a page is never proof of a session.
+async function signedInNow() {
+  const { signInUrl, cookieNames } = await webSession.state();
+  if (amazonAuthCookieState(cookieNames) === 'none') return false;
+  if (signInUrl && pageBlocksPlayback(signInUrl)) return false;
+  return true;
 }
 
 // How long the search view stays on its last Amazon page after a flow
@@ -164,30 +167,10 @@ const amazonWebPlayer = {
   webSession,
 
   // The hidden search view (the host's slot). An accessor pair, not a copy:
-  // preloadProbe and the flows read it, and the machinery tests drive fake
-  // views through it — it is always exactly the host's view.
+  // the diagnostic capture and the layout helper read it — it is always
+  // exactly the host's view.
   get searchView() { return webSession._view; },
   set searchView(view) { webSession._view = view; },
-
-  cookieWarned: false,
-
-  // castlabs Electron exposes electron.components. Stock Electron does not,
-  // and the old --widevine-cdm-path switch does nothing there. EME probe is
-  // the real playback gate; this only answers "does this binary have a CDM".
-  cdmAvailable() {
-    try {
-      const { components } = electron();
-      if (!components) return false;
-      if (typeof components.status !== 'function') return true;
-      // Read the status fields only (cdmStatusHealthy) - substring-matching the
-      // whole status JSON used to disable Amazon when an unrelated value
-      // mentioned "failed". Unrecognized shapes are optimistic; probeEme is
-      // the gate that actually matters.
-      return cdmStatusHealthy(components.status() || {});
-    } catch {
-      return false;
-    }
-  },
 
   // The partition's session, through the one owner — the host installs the
   // permission allowlist (['fullscreen'], warn-once per name) on first use.
@@ -195,42 +178,8 @@ const amazonWebPlayer = {
     return webSession.session();
   },
 
-  // Ready means signed in AND a profile has been chosen. A window still on
-  // the profile picker or the sign-in page is not ready, even if a cookie
-  // from an earlier step is already set. The composition is Amazon's (pure
-  // logic over the host's facts: state() → { url, signInUrl, cookieNames }).
-  async isSignedIn() {
-    const { signInUrl, cookieNames } = await webSession.state();
-    const cookies = amazonAuthCookieState(cookieNames);
-    if (cookies === 'none') return false;
-    // The auth-cookie names are an implementation detail Amazon can rotate.
-    // A jar with no known name but another auth-shaped one (x-main, at-*,
-    // sess-at-*) is a live session under new names: trust it, and say so
-    // once. This hedge used to trust any rendered non-wall music.amazon.com
-    // page instead, which Amazon Music's logged-out home page is: the app
-    // reported signed in before the user had signed in at all.
-    if (cookies === 'rotated' && !this.cookieWarned) {
-      this.cookieWarned = true;
-      console.warn('[Amazon] no auth cookie matched (at-main|sess-at-main|at-acb) but other Amazon session cookies are set — Amazon may have rotated cookie names');
-    }
-    // Only the sign-in window's URL is authoritative here. The player and
-    // search views keep whatever URL their last navigation left behind — a
-    // view that redirected to /ap/signin during an earlier failed search
-    // stays there (nothing navigates it until a search/play runs, and those
-    // refuse to while this returns false), so consulting them locked the
-    // account out right after a successful sign-in. A genuinely dead
-    // session is still caught mid-flight: search, lookup and play re-check
-    // the URL after every load and throw not-signed-in on a redirect.
-    if (signInUrl && pageBlocksPlayback(signInUrl)) return false;
-    return true;
-  },
-
   setHost(win) {
     webSession.setHost(win);
-  },
-
-  alive(target) {
-    return !!(target && target.webContents && !target.webContents.isDestroyed());
   },
 
   pageOf(view) {
@@ -285,164 +234,12 @@ const amazonWebPlayer = {
     return this.pageOf(webSession.ensureView());
   },
 
-  async evalOn(win, script) {
-    if (!this.alive(win)) throw new Error('Amazon Music web player window is closed');
-    return win.webContents.executeJavaScript(script);
-  },
-
-  // Diagnostic for the preload: did the stub/trap/hijack actually run in the
-  // live player page? null = no page loaded yet (fresh start, about:blank) or
-  // the page could not be read; false on a loaded music.amazon.com page means
-  // the preload did not run there — the exact failure mode that hid for weeks
-  // behind the localStorage fallback. storeCaptured is opportunistic: it
-  // flips true only if the page's own requires route through the global __r —
-  // observed false on track pages (2026-10), where the persisted localStorage
-  // entry is what quality actually uses. mediaSessionShim is the
-  // navigator.mediaSession hijack (embedded-player-kit.js) — on a loaded track
-  // page it must be true, or the page's session is driving the OS media
-  // surface again.
-  // The sandboxed-preload canary. The hornet's trap/store probes are gone
-  // with its player; the hijack install is what the preload provably DID.
-  async preloadProbe() {
-    const view = this.searchView;
-    if (!this.alive(view)) return { stub: null };
-    let url = '';
-    try { url = view.webContents.getURL(); } catch { /* destroyed */ }
-    if (!url || url === 'about:blank') return { stub: null };
-    try {
-      return await this.evalOn(view, `(() => ({
-        stub: window.__parachordMediaSessionHijack === true
-      }))()`);
-    } catch {
-      return { stub: null };
-    }
-  },
-
-  // Sign-in, through the one owner: the host shows the visible window (no
-  // preload — it must behave like a normal browser window), loads the page
-  // (unbudgeted on purpose: this is the one window the person watches), and
-  // ticks once a second with { url, cookieNames, stableTicks } (tracing every
-  // page it visits and the cookie names as they appear). The verdict is
-  // Amazon's: signInLanded over the tick's facts — positive signal only
-  // ("not on a known wall" used to close this window on a logged-out first
-  // paint of music.amazon.com/), the cookie one accepted signal, not a
-  // requirement (Amazon rotating the cookie names must not leave the window
-  // waiting forever; a path off / or a third stable tick stands in for it).
-  // lastUrl/stableTicks are maintained here because signInLanded's tick
-  // counting (an ok URL resets to 1, a wall to 0) is its own, not the host's.
-  async openLogin() {
-    let lastUrl = null;
-    let stableTicks = 0;
-    const { signedIn } = await webSession.signIn(HOME_URL, {
-      width: 980,
-      height: 760,
-      decide: (tick) => {
-        const hasCookie = amazonAuthCookieState(tick.cookieNames) !== 'none';
-        const verdict = signInLanded({ url: tick.url, lastUrl, stableTicks, hasCookie });
-        lastUrl = tick.url;
-        stableTicks = verdict.stableTicks;
-        return verdict.landed;
-      }
-    });
-    return { success: signedIn, signedIn };
-  },
-
-  // Serializes real page navigation: the host's own page flows (the
-  // diagnostic capture) share the one view and the webRequest
-  // listener slots, so they run one at a time — the host's chain, two lanes
-  // (webSession.enqueue(fn, { lane }), the #1423 semantics living in the host
-  // now). A FOREGROUND job starts before every queued BACKGROUND job; FIFO
-  // within a lane; a running job is never interrupted. The host's remaining
-  // riders are all background; the plugin's page flows — the spec searches,
-  // the album lookups, the playlist import, the recommendations — load through
-  // the bridge's webSession:load, which rides the same chain's background
-  // lane. Every enqueued job also holds the host's busy count, so the park
-  // fuse must not blank the view under a flow it cannot see.
-  enqueueSearch(fn, { lane = 'background' } = {}) {
-    return webSession.enqueue(fn, { lane });
-  },
-
-  // ── The plan read (#1220, a #1356 M9 stopgap) ────────────────────────
-  // amazon-dmls.getPlan's replacement: the dmls provider died with the DRM
-  // move (the plugin's own getPlan gates its searches and plays now), but
-  // getStatus still reads the plan for the tile, the settings panel and the
-  // playback-limits map — so the read lives here, over the ONE host web-session
-  // instance's fetch (config.json; the jar's cookies ride it), with the dmls
-  // gate's semantics: not-signed-in without auth cookies, cached 30 min
-  // (1 min when unknown), a forced re-read (opening Settings) that comes back
-  // without a tier keeps a known plan, and a reading that differs from the
-  // last is reported to the renderer (main.js wires the listener — the
-  // upgrade refresh). Until the teardown milestone removes it, the plan is
-  // read in TWO places — this stopgap for the surfaces above, the plugin's
-  // own read for plays — each with its own cache, so the two can disagree
-  // inside a TTL window; that window dies with this stopgap, when the
-  // plugin's status capability takes the surface over.
-  planState: null, // { plan: 'unlimited'|'prime'|'unknown', tier, at }
-  planPromise: null,
-  loggedTiers: new Set(),
-  planChange: null, // set by main.js (setPlanChangeListener)
-
-  setPlanChangeListener(fn) {
-    this.planChange = typeof fn === 'function' ? fn : null;
-  },
-
-  // Record a plan reading and tell the renderer when the plan changes, so
-  // an upgrade re-resolves Amazon without a restart. Logged once per tier
-  // value (the first read of a session is one line, not one per getStatus).
-  notePlan(tier, now = Date.now()) {
-    const plan = amazonPlanFromTier(tier);
-    const previous = this.planState && this.planState.plan;
-    this.planState = { plan, tier: tier || null, at: now };
-    const tierKey = String(tier);
-    if (!this.loggedTiers.has(tierKey)) {
-      this.loggedTiers.add(tierKey);
-      console.log(`[Amazon] plan: tier ${tier ? JSON.stringify(tier) : 'missing'} → ${plan}`);
-    }
-    if (previous !== plan && this.planChange) {
-      try { this.planChange({ plan, previous: previous || null }); } catch { /* best-effort */ }
-    }
-    return this.planState;
-  },
-
-  // The account's plan: 'unlimited', 'prime' or 'unknown'. Throws
-  // not-signed-in without auth cookies (config.json needs them). A failed
-  // fetch reads as no tier, so 'unknown', and is retried after a minute.
-  async getPlan({ refresh } = {}, now = Date.now()) {
-    const s = this.planState;
-    if (!refresh && s) {
-      const ttl = s.plan === 'unknown' ? PLAN_UNKNOWN_TTL_MS : PLAN_TTL_MS;
-      if (now - s.at < ttl) return s.plan;
-    }
-    if (!(await this.isSignedIn())) {
-      const err = new Error('Sign in to Amazon Music first');
-      err.reason = 'not-signed-in';
-      throw err;
-    }
-    if (this.planPromise) return this.planPromise;
-    this.planPromise = this.fetchConfigJson()
-      .then((config) => {
-        const tier = amazonNativeSessionFromConfig(config).tier;
-        // A forced re-read (opening Settings) that comes back without a tier,
-        // offline or a bad reply, doesn't overturn a known plan: that would
-        // block an Unlimited account for a minute because Settings opened.
-        if (refresh && !tier && s && s.plan !== 'unknown') return s.plan;
-        return this.notePlan(tier, now).plan;
-      })
-      .finally(() => { this.planPromise = null; });
-    return this.planPromise;
-  },
-
-  // config.json over the one owner's jar-carrying fetch (the dmls provider's
-  // own read, ported): a failed or unparseable reply reads as no tier.
-  async fetchConfigJson() {
-    const out = await webSession.fetch({
-      url: 'https://music.amazon.com/config.json',
-      method: 'GET',
-      headers: { Accept: 'application/json', Referer: 'https://music.amazon.com/' }
-    });
-    if (!out || out.status !== 200 || typeof out.text !== 'string') return {};
-    try { return JSON.parse(out.text); } catch { return {}; }
-  },
+  // (The session surfaces — preloadProbe, openLogin, isSignedIn, the plan
+  // read and signOut — moved into plugins-src/amazonmusic with #1356 M10:
+  // the plugin opens the sign-in window through the webSession bridge's
+  // signIn protocol with its own decide rule, composes the signed-in verdict
+  // from state(), reads the plan through fetch() and clears the session
+  // through clear(). The teardown milestone deletes what remains here.)
 
   // Capture gql requests (bodies from onBeforeRequest, headers paired by
   // request id) while a page loads and fires its own queries — the host's
@@ -490,8 +287,6 @@ const amazonWebPlayer = {
     return gqlReplayOutcome(replay, { acceptPartial: options.acceptPartial || null });
   },
 
-
-
   // Diagnostic (a developer tool, no UI): load one Amazon Music album page
   // (/albums/<ASIN>) or search page (/search/<text>/<tab>) in the search view
   // and record the gql operations it fires — the diagnostic the plugin's
@@ -507,10 +302,13 @@ const amazonWebPlayer = {
     if (!subject) {
       throw notReady('not-ready', 'Pass a music.amazon.com album URL (/albums/<ASIN>) or search URL (/search/<text>/<tab>)');
     }
-    if (!(await this.isSignedIn())) {
+    if (!(await signedInNow())) {
       throw notReady('not-signed-in', 'Sign in and choose an Amazon Music profile');
     }
-    return this.enqueueSearch(async () => {
+    // Serialized on the host's load chain (rule 1: the one view and the
+    // single webRequest listener slot) — webSession.enqueue directly, this
+    // flow being the chain's only remaining consumer since #1356 M10.
+    return webSession.enqueue(async () => {
       // A fuse armed by an earlier flow must not blank the view mid-load
       // (belt; the fuse's fire-time busy check is the suspenders).
       this.cancelSearchViewPark();
@@ -561,26 +359,6 @@ const amazonWebPlayer = {
         this.scheduleParkSearchView();
       }
     });
-  },
-
-  // Full sign-out. The partition (persist:amazon-music) is Amazon-only, so a
-  // whole-session clear is correctly scoped - no partial cookie-clear guessing
-  // like the Apple flow needs. The machinery half is the host's clear(): the
-  // views die, the sign-in window closes, the webRequest capture detaches,
-  // the chain cuts and the storage clears — and the clear() bumps the session
-  // generation, which is how the plugin (whose request templates and parsed
-  // caches are the old account's — the recommendations state since #1356 M8,
-  // the spec-search template since M5/M6, and the DRM session state since M9
-  // — its minted session context, cert warm and telemetry are plugin state
-  // now) learns of the sign-out it cannot see the event of: its next state
-  // read drops them.
-  async signOut() {
-    this.cookieWarned = false;
-    // The host-side plan stopgap forgets its reading too: the next sign-in
-    // may be another account (the old dmls onSignOut's plan reset).
-    this.planState = null;
-    this.planPromise = null;
-    return await webSession.clear();
   },
 };
 

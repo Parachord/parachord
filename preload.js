@@ -631,34 +631,19 @@ contextBridge.exposeInMainWorld('electron', {
     }
   },
 
-  // Amazon Music — in-app web player. Hidden WebContentsViews (player 0×0,
-  // search parked offscreen) load music.amazon.com on the main window and
-  // castlabs Electron's Widevine CDM decrypts. The desktop app is not used.
+  // Amazon Music — the diagnostic capture only since #1356 M10 (the
+  // session surfaces — getStatus, openLogin, signOut, the plan-changed event
+  // — moved into the plugin with the status capability; the renderer drives
+  // them through the loaded resolver and window.electron.webSession).
+  // Hidden WebContentsViews (search parked offscreen) load music.amazon.com
+  // on the main window and castlabs Electron's Widevine CDM decrypts. The
+  // desktop app is not used.
   amazonMusic: {
-    // { refreshPlan: true } reads the plan from Amazon instead of the cache.
-    getStatus: (opts) => ipcRenderer.invoke('amazonmusic-get-status', { refreshPlan: !!(opts && opts.refreshPlan) }),
-    openLogin: () => ipcRenderer.invoke('amazonmusic-open-login'),
-    signOut: () => ipcRenderer.invoke('amazonmusic-sign-out'),
-    // searchTracks is gone (#1356 M5): the plugin's own spec-search runner
-    // drives the session through window.electron.webSession instead.
-    // searchAlbums / lookupAlbum / searchArtistImage are gone with it (M6:
-    // the album catalog flows moved into the plugin the same way),
-    // lookupPlaylist with them (M7: the playlist import drives the session
-    // through the webSession bridge too), and getRecommendations /
-    // expandRecommendationSection with those (M8: the recommendations flows
-    // — the music-home walk and the see-more route — ride the same bridge).
-    // The account's plan changed ('unlimited' / 'prime' / 'unknown'; #1220).
-    onPlanChanged: (callback) => {
-      const handler = (event, data) => callback(data);
-      ipcRenderer.on('amazonmusic-plan-changed', handler);
-      return () => ipcRenderer.removeListener('amazonmusic-plan-changed', handler);
-    },
     // Diagnostic (DevTools only): record an album or search page's gql into a
-    // file in userData. See main.js 'amazonmusic-debug-capture-gql'.
+    // file in userData. See main.js 'amazonmusic-debug-capture-gql'. The one
+    // host-side page flow left; it moves (or dies) with the teardown
+    // milestone.
     debugCaptureGql: (url) => ipcRenderer.invoke('amazonmusic-debug-capture-gql', { url }),
-    // Audio plays through the shared widevine path (window.electron.widevine
-    // + the renderer's shared HTMLAudioElement); the old per-engine transport
-    // and polling IPCs are gone with the hornet view.
   },
 
   // The resolver-neutral Widevine/DASH bridge. The renderer's shared player
@@ -891,5 +876,5 @@ contextBridge.exposeInMainWorld('electron', {
 // bridge's first consumer — the advertisement moves WITH the wrapper).
 // (contextBridge is how a sandboxed preload reaches the page world — a bare
 // window assignment here stays preload-side.)
-const HOST_BRIDGES = ['amazonMusic', 'webSession'];
+const HOST_BRIDGES = ['webSession'];
 contextBridge.exposeInMainWorld('__parachordHostBridges', HOST_BRIDGES);

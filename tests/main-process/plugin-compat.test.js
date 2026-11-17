@@ -227,20 +227,21 @@ describe('host-bridge enforcement wiring (#1355)', () => {
   test('the preload advertises window.__parachordHostBridges, and every advertised bridge is a real exposed block', () => {
     // The webSession entry is LIVE since the track-search move (#1356 M5 —
     // the bridge's first consumer; it shipped held back in the layer below,
-    // the #1432 review's note-8 option).
+    // the #1432 review's note-8 option). The amazonMusic entry is gone since
+    // #1356 M10: the Amazon flows ride webSession, nothing requires the old
+    // bridge, and the exposed amazonMusic block is the diagnostic remnant
+    // (debugCaptureGql) only.
     // The entry list is a plain literal now (the env-seam spread is gone),
-    // so pin the whole line: amazonMusic + webSession, no flag.
+    // so pin the whole line: webSession, no flag.
     const match = preload.match(/const HOST_BRIDGES = .*/);
     expect(match).toBeTruthy();
-    expect(match[0]).toBe("const HOST_BRIDGES = ['amazonMusic', 'webSession'];");
-    for (const bridge of ['amazonMusic', 'webSession']) {
+    expect(match[0]).toBe("const HOST_BRIDGES = ['webSession'];");
+    for (const bridge of ['webSession']) {
       // Each advertised name must be a window.electron.<bridge> block the
       // preload actually exposes — the list is what the host supplies, so a
       // name with no block is a lie to every plugin that requires it.
       expect(preload).toMatch(new RegExp(`^\\s{2}${bridge}: \\{`, 'm'));
     }
-    // The wrapper block is exposed unconditionally (no seam anymore) and the
-    // advertisement is the same list.
     expect(preload).toMatch(/exposeInMainWorld\('__parachordHostBridges', HOST_BRIDGES\)/);
   });
 

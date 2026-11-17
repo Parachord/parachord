@@ -122,3 +122,81 @@ describe('summarizeGqlRequest', () => {
     expect(JSON.stringify(out)).not.toContain('SECRET');
   });
 });
+
+// ── the wiring: the flow over the host's seams ─────────────────────────────
+//
+// debugCaptureGql is the module's one remaining page flow, and it runs
+// end-to-end over the ONE host instance's primitives: the signed-in guard
+// (state), the load chain (enqueue — a #1356 M10 review caught the deleted
+// enqueueSearch wrapper making every diagnostic call a TypeError), the
+// offscreen view, the capture (attachCapture), the budgeted load, the
+// page-world replay (pageFetch) and the park fuse. The stubs below are the
+// host's own seams — the module loads under plain require (electron is only
+// touched inside the host's lazily-used methods), the pattern the deleted
+// tests/resolver/amazon-web-player.test.js used.
+describe('debugCaptureGql (the wiring)', () => {
+  const amazonWebPlayer = require('../../amazon-web-player');
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+    jest.useRealTimers();
+  });
+
+  test('rides the host chain and completes: load, capture, replay, redact, detach', async () => {
+    jest.useFakeTimers();
+    const host = amazonWebPlayer.webSession;
+    const spies = {
+      state: jest.spyOn(host, 'state').mockResolvedValue({ url: null, signInUrl: null, cookieNames: ['at-main', 'sess-at-main'] }),
+      // The regression: the flow rides the host's chain (the deleted
+      // enqueueSearch wrapper is the seam a TypeError used to hide behind).
+      enqueue: jest.spyOn(host, 'enqueue').mockImplementation((fn) => fn()),
+      cancelPark: jest.spyOn(host, 'cancelPark').mockImplementation(() => {}),
+      ensureView: jest.spyOn(host, 'ensureView').mockReturnValue({
+        webContents: {
+          isDestroyed: () => false,
+          getURL: () => 'https://music.amazon.com/albums/B0D1XYZ123'
+        }
+      }),
+      layoutOffscreen: jest.spyOn(host, 'layoutOffscreen').mockResolvedValue(undefined),
+      beginNavigation: jest.spyOn(host, 'beginNavigation').mockResolvedValue(undefined),
+      endNavigation: jest.spyOn(host, 'endNavigation').mockImplementation(() => {}),
+      loadURLBudgeted: jest.spyOn(host, 'loadURLBudgeted').mockResolvedValue('https://music.amazon.com/albums/B0D1XYZ123'),
+      pageFetch: jest.spyOn(host, 'pageFetch').mockResolvedValue({
+        status: 200,
+        text: JSON.stringify({ data: { album: { title: 'Still Coming Down', customerId: 'A1B2' } } })
+      }),
+      schedulePark: jest.spyOn(host, 'schedulePark').mockImplementation(() => {})
+    };
+    const detach = jest.fn();
+    jest.spyOn(host, 'attachCapture').mockReturnValue({
+      captured: [{
+        url: 'https://gql.music.amazon.com/graphql',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          operationName: 'albumDetail',
+          variables: { id: 'B0D1XYZ123' },
+          extensions: { persistedQuery: { sha256Hash: 'abc' } }
+        })
+      }],
+      detach
+    });
+    const log = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+    const run = amazonWebPlayer.debugCaptureGql('https://music.amazon.com/albums/B0D1XYZ123');
+    // The quiet window: the capture stops after 6 unchanged 500ms ticks.
+    for (let i = 0; i < 8; i++) await jest.advanceTimersByTimeAsync(500);
+    const out = await run;
+
+    expect(spies.enqueue).toHaveBeenCalledTimes(1); // it rode the host's chain
+    expect(spies.state).toHaveBeenCalledTimes(1);   // the signed-in guard ran
+    expect(spies.loadURLBudgeted).toHaveBeenCalledTimes(1);
+    expect(out.subject).toEqual({ kind: 'album', asin: 'B0D1XYZ123' });
+    expect(out.operations).toHaveLength(1);
+    expect(out.operations[0]).toMatchObject({ operationName: 'albumDetail', replayed: true });
+    // Only the redacted sample leaves the flow (header values never do).
+    expect(out.operations[0].response.data.album).toEqual({ title: 'Still Coming Down', customerId: '[redacted]' });
+    expect(detach).toHaveBeenCalledTimes(1);       // the capture came off
+    expect(spies.schedulePark).toHaveBeenCalledTimes(1); // the fuse re-armed
+    expect(log).toHaveBeenCalledTimes(1);
+  });
+});

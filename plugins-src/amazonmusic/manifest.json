@@ -2,7 +2,7 @@
   "manifest": {
     "id": "amazonmusic",
     "name": "Amazon Music",
-    "version": "1.18.0",
+    "version": "1.19.0",
     "minAppVersion": {
       "desktop": "0.9.13"
     },
@@ -24,7 +24,8 @@
     "artistImage": true,
     "widevine": true,
     "mobile": false,
-    "recommendations": true
+    "recommendations": true,
+    "status": true
   },
   "urlPatterns": [
     "music.amazon.com/playlists/*",

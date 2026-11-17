@@ -121,8 +121,8 @@ describe('the plan gate (#1220) before any search', () => {
   });
 
   test('only an unlimited reading earns the 30-min TTL — a refusal re-reads within a minute (the upgrade path)', async () => {
-    // The plugin cannot hear the host's amazonmusic-plan-changed event (the
-    // Settings refreshPlan path refreshes only the host's dmls cache), so a
+    // The plugin has no refresh channel (the status read's forced re-read is
+    // the closest thing, and it serves the tile — not the search gate), so a
     // refused reading must not sit for 30 minutes: an upgrade unblocks the
     // search a minute later at the worst. The plugin's own _lib constants pin
     // the TTLs; this pins which reading gets which.

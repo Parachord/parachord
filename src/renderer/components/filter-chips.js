@@ -83,5 +83,5 @@ function Chip({ label, icon, onClick, onRemove, removeLabel, fill, color, toolti
 }
 
 module.exports = {
-  FilterChips, Chip, CHIP_NEUTRAL_FILL, FILTER_CHIPS_ROW_STYLE, FILTER_CHIP_STYLE, FILTER_CHIP_DOT_STYLE,
+  FilterChips, Chip, CHIP_NEUTRAL_FILL, CHIP_NEUTRAL_TEXT, FILTER_CHIPS_ROW_STYLE, FILTER_CHIP_STYLE, FILTER_CHIP_DOT_STYLE,
 };

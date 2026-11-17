@@ -1,9 +1,10 @@
 /**
- * #1220: Amazon plays only on Music Unlimited. The gate itself (amazon-dmls
- * getPlan / assertPlanPlays / getManifest) is behavior-tested in
- * widevine-amazon-provider.test.js; this file pins the wiring around it that
- * lives in main.js, the preload, and the renderer, where a unit test can't
- * reach.
+ * #1220: Amazon plays only on Music Unlimited. The gate itself (the plugin's
+ * getPlan / assertPlanPlays / getPlaybackManifest) is behavior-tested in the
+ * plugin suites; this file pins the wiring around it that lives in the
+ * plugin source, main.js, the preload, and the renderer, where a unit test
+ * can't reach. Since #1356 M10 the status read is the plugin's too — the
+ * host's getStatus stopgap and its IPC are deleted.
  */
 
 const fs = require('fs');
@@ -79,31 +80,45 @@ describe('main process', () => {
     }
   });
 
-  test('getStatus reports the plan and its message once signed in', () => {
-    const handler = between(main, "ipcMain.handle('amazonmusic-get-status'", "ipcMain.handle('amazonmusic-open-login'");
-    expect(handler).toMatch(/if \(signedIn\) \{\s*try \{ plan = await amazonWebPlayer\.getPlan\(\{ refresh: !!refreshPlan \}\); \} catch \{ plan = 'unknown'; \}/);
-    // The plan read is the host-side stopgap (dying with the status move).
-    expect(read('amazon-web-player.js')).toMatch(/async getPlan\(\{ refresh \} = \{\}, now = Date\.now\(\)\) \{/);
-    expect(main).toMatch(/ipcMain\.handle\('amazonmusic-get-status', async \(event, \{ refreshPlan \} = \{\}\) => \{/);
-    expect(preload).toMatch(/getStatus: \(opts\) => ipcRenderer\.invoke\('amazonmusic-get-status', \{ refreshPlan: !!\(opts && opts\.refreshPlan\) \}\)/);
-    expect(handler).toMatch(/planMessage: plan \? amazonPlanMessage\(plan\) : null/);
+  test('the plugin\u2019s getStatus reports the plan and its message once signed in; the IPC status is gone', () => {
+    const impl = read('plugins-src/amazonmusic/implementation.js');
+    const getStatus = between(impl, 'getStatus: async function', 'cdmAvailable: async function');
+    expect(getStatus).toMatch(/plan = await this\.getPlan\(\{ refresh: true \}\)/);
+    expect(getStatus).toMatch(/playbackLimit: limit/);
+    // The mapping (the renderer\u2019s old amazonPlaybackLimit) is the plugin\u2019s
+    // _lib copy: the message and the tile labels live next to the gate.
+    expect(impl).toMatch(/function amazonPlaybackLimit\(plan\) \{/);
+    expect(impl).toMatch(/prime: 'Prime: no playback'/);
+    expect(impl).toMatch(/unknown: 'Plan not confirmed'/);
+    // The host handlers and their preload exposures are deleted.
+    for (const ch of ['amazonmusic-get-status', 'amazonmusic-open-login', 'amazonmusic-sign-out']) {
+      expect(main).not.toContain(`ipcMain.handle('${ch}'`);
+      expect(preload).not.toContain(`'${ch}'`);
+    }
+    expect(read('amazon-web-player.js')).not.toMatch(/async getPlan\(/);
   });
 
-  test('opening Settings or the Amazon panel reads the plan fresh', () => {
-    expect(app).toMatch(/refreshAmazonMusicStatus\(\{ refreshPlan: activeView === 'settings' \}\);/);
-    expect(app).toMatch(/window\.electron\.amazonMusic\.getStatus\(\{ refreshPlan: true \}\)/);
+  test('every status read is fresh \u2014 the old Settings/panel refreshPlan is the plugin\u2019s default', () => {
+    // The plugin's getPlan skips its TTL cache on { refresh: true }, and
+    // getStatus always passes it: the reads run on the settings path (the
+    // sweep at startup, Settings open, the panel, a plan refusal), where an
+    // upgrade must show at once.
+    const impl = read('plugins-src/amazonmusic/implementation.js');
+    expect(impl).toMatch(/getPlan: async function \(\{ refresh \} = \{\}\) \{/);
+    expect(impl).toMatch(/if \(!refresh && s\) \{/);
+    // The renderer asks the plugin through the registry \u2014 no IPC status.
+    expect(app).toMatch(/const refreshPluginStatuses = \(\) => \{/);
+    expect(app).not.toMatch(/refreshAmazonMusicStatus/);
   });
 
-  test('a plan change is sent to the renderer, and the renderer drops the plugin plan cache with it', () => {
-    expect(main).toMatch(/setPlanChangeListener\(\(\{ plan \}\) => safeSendToRenderer\('amazonmusic-plan-changed', \{ plan \}\)\)/);
-    // The plugin's own plan cache (the track-search gate, #1356 M5) cannot
-    // hear the event — main's refreshPlan path refreshes only the host-side
-    // stopgap copy — so the renderer's plan-changed handler drops the
-    // resolver instance's cache alongside refreshing the status: an upgrade
-    // unblocks the next search at once instead of after the 1-min refusal TTL.
-    const handler = between(app, 'return window.electron.amazonMusic.onPlanChanged(() => {', 'refreshAmazonMusicStatus();');
-    expect(handler).toMatch(/_planState = null/);
-    expect(preload).toMatch(/ipcRenderer\.on\('amazonmusic-plan-changed', handler\)/);
+  test('the plan-change push channel is gone \u2014 the sweep is the refresh path', () => {
+    expect(main).not.toContain('amazonmusic-plan-changed');
+    expect(preload).not.toContain('amazonmusic-plan-changed');
+    expect(read('amazon-web-player.js')).not.toContain('setPlanChangeListener');
+    // The renderer re-reads the plugin\u2019s status (startup, Settings, the
+    // panel, a plan refusal) and the limitTransition effect re-resolves on an
+    // upgrade \u2014 pinned in tests/renderer/playback-limits.test.js.
+    expect(app).toMatch(/window\.__parachordNotePlanRefusal = \(resolverId, planKey\) => \{/);
   });
 
   test('telemetry uses the shared Unlimited rule', () => {

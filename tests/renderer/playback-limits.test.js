@@ -11,7 +11,6 @@ const fs = require('fs');
 const path = require('path');
 const ResolverLoader = require('../../resolver-loader');
 const {
-  amazonPlaybackLimit,
   appleMusicPlaybackLimit,
   pluginStatusLimit,
   pluginStatusLimits,
@@ -36,28 +35,26 @@ const between = (src, start, end) => {
   return src.slice(i, j);
 };
 
+// Amazon's status reply since #1356 M10 is the plugin's (capabilities.status):
+// the plugin carries its plan, the tile labels and the wording itself, and the
+// renderer maps it with the generic pluginStatusLimit — the per-service
+// amazonPlaybackLimit mapper and the IPC status it fed are deleted (the
+// plugin's reply mapping is pinned in
+// tests/resolver/amazon-music-plugin-session.test.js).
 const PRIME_MESSAGE = 'Amazon Prime: Amazon is used for album art, artist photos and links. Playing Amazon tracks in Parachord needs Music Unlimited.';
-const amazonStatus = (plan, signedIn = true) => ({
-  success: true, web: { cdm: true, signedIn }, plan, planMessage: plan && plan !== 'unlimited' ? PRIME_MESSAGE : null
+const amazonReply = (plan) => ({
+  signedIn: true,
+  playbackLimit: plan === 'unlimited'
+    ? { blocked: false, planKey: 'unlimited', label: null, message: null, searchesHeldBack: true }
+    : { blocked: true, planKey: plan, label: plan === 'prime' ? 'Prime: no playback' : 'Plan not confirmed', message: PRIME_MESSAGE, searchesHeldBack: true },
+  statusLabel: null,
+  statusMessage: plan === 'unlimited' ? null : PRIME_MESSAGE
 });
+const amazonLimit = (plan) => pluginStatusLimit(amazonReply(plan));
 // A second service with a free tier that can't play on demand and whose
 // searches work on every plan: the shape a future mapper returns.
 const OTHER_MESSAGE = 'Other Free: Other is used for search and links. Playing Other tracks in Parachord needs Other Premium.';
 const otherLimit = (blocked) => ({ blocked, planKey: blocked ? 'free' : 'premium', label: blocked ? 'Free: no playback' : null, message: blocked ? OTHER_MESSAGE : null });
-
-describe('per-service limits', () => {
-  test('Amazon: only Music Unlimited plays; Prime and unknown block, and both held their searches back', () => {
-    expect(amazonPlaybackLimit(amazonStatus('unlimited'))).toEqual({ blocked: false, planKey: 'unlimited', label: null, message: null, searchesHeldBack: true });
-    expect(amazonPlaybackLimit(amazonStatus('prime'))).toEqual({ blocked: true, planKey: 'prime', label: 'Prime: no playback', message: PRIME_MESSAGE, searchesHeldBack: true });
-    expect(amazonPlaybackLimit(amazonStatus('unknown'))).toMatchObject({ blocked: true, label: 'Plan not confirmed' });
-  });
-
-  test('Amazon: nothing to say while signed out or before the status loads', () => {
-    expect(amazonPlaybackLimit(null)).toBeNull();
-    expect(amazonPlaybackLimit(amazonStatus('prime', false))).toBeNull();
-    expect(amazonPlaybackLimit(amazonStatus(null))).toBeNull();
-  });
-});
 
 describe('Apple Music: signed out leaves playback until it connects (2026-11)', () => {
   test('no verdict until the startup sign-in check has finished', () => {
@@ -76,7 +73,7 @@ describe('Apple Music: signed out leaves playback until it connects (2026-11)', 
   test('the app feeds it the startup check and the connection', () => {
     const map = between(app, 'const playbackLimits = useMemo(() => ({', '}), [');
     expect(map).toMatch(/applemusic: PlaybackLimits\.appleMusicPlaybackLimit\(\{ checked: appleMusicAuthChecked, connected: appleMusicConnected \}\)/);
-    expect(app).toMatch(/\}\), \[amazonMusicStatus, appleMusicAuthChecked, appleMusicConnected, pluginStatuses\]\);/);
+    expect(app).toMatch(/\}\), \[appleMusicAuthChecked, appleMusicConnected, pluginStatuses\]\);/);
     // The check marks itself finished whatever it decided.
     const check = between(app, 'const checkMusicKitAvailable = async () => {', 'checkMusicKitAvailable();');
     expect(check).toMatch(/finally \{\s*setAppleMusicAuthChecked\(true\);/);
@@ -90,7 +87,7 @@ describe('Apple Music: signed out leaves playback until it connects (2026-11)', 
 
 describe('what the map drives', () => {
   const limits = {
-    amazonmusic: amazonPlaybackLimit(amazonStatus('prime')),
+    amazonmusic: amazonLimit('prime'),
     other: otherLimit(true),
     soundcloud: null
   };
@@ -114,13 +111,14 @@ describe('what the map drives', () => {
   });
 
   test('an upgrade searches again only where searches were held back', () => {
-    // Amazon Prime -> Unlimited: search again.
-    expect(limitTransition('1', amazonPlaybackLimit(amazonStatus('unlimited')))).toEqual({ reresolve: true, store: '0' });
+    // Amazon Prime -> Unlimited: search again (the plugin's reply says
+    // searchesHeldBack even when unblocked — that is what re-triggers).
+    expect(limitTransition('1', amazonLimit('unlimited'))).toEqual({ reresolve: true, store: '0' });
     // A service whose searches ran all along: nothing to search again.
     expect(limitTransition('1', otherLimit(false))).toEqual({ reresolve: false, store: '0' });
     // Still blocked, first sighting, or no reading: nothing to do.
-    expect(limitTransition('1', amazonPlaybackLimit(amazonStatus('prime')))).toEqual({ reresolve: false, store: '1' });
-    expect(limitTransition(null, amazonPlaybackLimit(amazonStatus('unlimited')))).toEqual({ reresolve: false, store: '0' });
+    expect(limitTransition('1', amazonLimit('prime'))).toEqual({ reresolve: false, store: '1' });
+    expect(limitTransition(null, amazonLimit('unlimited'))).toEqual({ reresolve: false, store: '0' });
     expect(limitTransition('1', null)).toEqual({ reresolve: false, store: null });
     expect(limitStorageKey('amazonmusic')).toBe('playback_limit_blocked:amazonmusic');
   });
@@ -212,24 +210,27 @@ describe('plugin entries: a plugin wins only when it actually gives a verdict', 
     });
   });
 
-  test('the Amazon IPC status\u2019s block survives an amazonmusic plugin that can\u2019t answer', () => {
+  test('a mapper\u2019s own block survives a plugin that can\u2019t answer', () => {
     // The migration window: the host still owns the verdict
-    // (amazonPlaybackLimit of amazonMusicStatus) while the plugin's read is
-    // down — the map stays blocked.
-    const amazonMusicStatus = { success: true, web: { cdm: true, signedIn: true }, plan: 'prime' };
+    // (appleMusicPlaybackLimit — Amazon's own mapper died with its IPC
+    // status, #1356 M10) while the plugin's read is down — the map stays
+    // blocked.
     const limits = {
-      amazonmusic: amazonPlaybackLimit(amazonMusicStatus),
-      ...pluginStatusLimits({ amazonmusic: ResolverLoader.STATUS_READ_FAILED })
+      applemusic: appleMusicPlaybackLimit({ checked: true, connected: false }),
+      ...pluginStatusLimits({ applemusic: ResolverLoader.STATUS_READ_FAILED })
     };
-    expect(limits.amazonmusic.blocked).toBe(true);
-    expect(planBlockedIds(limits)).toEqual(['amazonmusic']);
+    expect(limits.applemusic.blocked).toBe(true);
+    expect(planBlockedIds(limits)).toEqual(['applemusic']);
   });
 });
 
 describe('app wiring', () => {
   test('one map, fed by each service, decides what plays', () => {
     const map = between(app, 'const playbackLimits = useMemo(() => ({', '}), [');
-    expect(map).toMatch(/amazonmusic: PlaybackLimits\.amazonPlaybackLimit\(amazonMusicStatus\)/);
+    expect(map).not.toMatch(/amazonmusic:/); // Amazon's entry is the plugin's reply
+    // The plugin entries spread after the mappers through the
+    // null-dropping helper (a no-verdict reply never lands over a mapper).
+    expect(map).toMatch(/\.\.\.PlaybackLimits\.pluginStatusLimits\(pluginStatuses\)/);
     expect(app).toMatch(/const planBlockedResolverIds = useMemo\(\(\) => PlaybackLimits\.planBlockedIds\(playbackLimits\), \[playbackLimits\]\);/);
     expect(app).toMatch(/PlaybackLimits\.playbackResolverIds\(activeResolvers, planBlockedResolverIds\)/);
     // No service is special-cased in the derivation any more.
@@ -260,14 +261,20 @@ describe('app wiring', () => {
     expect(app).toMatch(/draggable: reorderable,/);
     expect(app).toMatch(/onDrop: reorderable \? /);
     expect(app).not.toMatch(/setResolverOrder\([^)]*planBlocked/);
-    // Metadata still asks every active resolver.
-    expect(app).toMatch(/const amazonMusicEnabled = activeResolvers\.includes\('amazonmusic'\);/);
+    // Amazon stays in activeResolvers — the plugin-status sweep reads it there.
+    expect(app).toMatch(/\.filter\(r => activeResolvers\.includes\(r\.id\)\)/);
   });
 
-  test('the tile and the Amazon panel read the map', () => {
+  test('the tile and the panel read the map and the plugin reply', () => {
     expect(app).toMatch(/const planStatus = isActive \? PlaybackLimits\.tileStatus\(playbackLimits, resolver\.id\) : \{ statusLabel: null, statusTitle: null \};/);
     expect(app).toMatch(/statusLabel: planStatus\.statusLabel,\s*statusTitle: planStatus\.statusTitle,/);
-    expect(app).toMatch(/\? \(PlaybackLimits\.limitMessage\(playbackLimits, 'amazonmusic'\) \|\| ''\)/);
+    // The Settings row is the generic status-capable plugin row (the old
+    // Amazon section died with the IPC status): the plugin's own two lines,
+    // plus the signIn/signOut triggers.
+    expect(app).toMatch(/PlaybackLimits\.pluginStatusRow\(pluginStatuses\[selectedResolver\.id\]\)/);
+    expect(app).toMatch(/typeof selectedResolver\.signOut === 'function'/);
+    expect(app).toMatch(/typeof selectedResolver\.signIn === 'function'/);
+    expect(app).not.toMatch(/limitMessage\(playbackLimits, 'amazonmusic'\)/);
   });
 
   test('an upgrade searches again, remembered per resolver across restarts', () => {
@@ -283,10 +290,13 @@ describe('app wiring', () => {
     expect(clear).not.toMatch(/amazonmusic/);
   });
 
-  test('a plan refusal reports to the app, which records Amazon and supplies no wording of its own', () => {
+  test('a plan refusal reports to the app, which re-reads the refusing plugin and supplies no wording of its own', () => {
     const note = between(app, 'window.__parachordNotePlanRefusal = (resolverId, planKey) => {', '\n  };');
-    expect(note).toMatch(/refreshAmazonMusicStatus\(\);/);
+    expect(note).toMatch(/refreshPluginStatus\(resolverId\);/);
     expect(note).toMatch(/return null;\s*$/);
+    // Amazon is a status-capable plugin since M10 — the same path covers it,
+    // no special case left.
+    expect(note).not.toMatch(/amazonmusic/);
   });
 
   test('Spotify: no plan tracking; setup says the app owner needs Premium', () => {
