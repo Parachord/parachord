@@ -55,13 +55,14 @@ function requiredSetting(resolver) {
   return key ? { key, label: fields[key].label || key } : null;
 }
 
-// A plug-in whose settings panel takes values (Subsonic's server, username
-// and password: its manifest's non-advanced fields) and has none saved yet
-// (`saved`, its meta_service_configs entry). A plug-in with no such fields
-// needs none.
+// A plug-in whose settings panel needs values (Subsonic's server, username
+// and password: its manifest's fields that are neither advanced nor given a
+// default) and has none saved yet (`saved`, its meta_service_configs entry).
+// A field with a default (Apple Music's storefront, its optional token) is
+// filled already; a plug-in with no such fields needs none.
 function settingsMissing(resolver, saved) {
   const fields = (resolver && (resolver.configurable || (resolver.settings && resolver.settings.configurable))) || {};
-  const keys = Object.keys(fields).filter((k) => fields[k] && !fields[k].advanced);
+  const keys = Object.keys(fields).filter((k) => fields[k] && !fields[k].advanced && !('default' in fields[k]));
   if (keys.length === 0) return false;
   return !keys.some((k) => saved && saved[k] !== undefined && saved[k] !== null && String(saved[k]).trim() !== '');
 }

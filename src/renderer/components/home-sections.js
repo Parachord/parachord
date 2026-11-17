@@ -13,6 +13,7 @@
 // home-skeletons.js; change one, change the other.
 
 const { Button } = require('./button');
+const { ErrorState } = require('./states');
 const { filterBySource } = require('../lib/home-model');
 const { ReasonBadge, ReasonMark, shuffleupagusIcon } = require('./reason-badge');
 const Icons = require('./icons');
@@ -275,7 +276,7 @@ function AlbumsRow(props) {
 // and up to three album cards below on the page background. Fresh Drops +
 // Critical Darlings on Home, Critical Darlings + Pop of the Tops in the
 // getting-started layout's Explore row.
-function homeHalf(props, { id, title, view, items, loading, hero, icon }) {
+function homeHalf(props, { id, title, view, items, loading, hero, icon, error, onRetry }) {
   const { navigateTo, stacked = false } = props;
   return e('section', {
     key: id, 'aria-labelledby': id, 'aria-busy': loading ? 'true' : undefined,
@@ -301,7 +302,9 @@ function homeHalf(props, { id, title, view, items, loading, hero, icon }) {
         style: { font: 'inherit', fontSize: '13px', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer', whiteSpace: 'nowrap', padding: 0, color: ON_FILL }, // on-color
       }, 'See all')),
     e('div', { style: Object.assign({ padding: `${HOME_HALF_PANEL_PAD}px` }, SECTION_STYLE) },
-      loading
+      error
+        ? e(ErrorState, { compact: true, title: `Couldn’t load ${title}`, body: 'Check your connection, then try again.', onRetry })
+        : loading
         ? e(CardRowSkeleton, { count: HOME_HALF_ROW_CARDS, lines: 1 })
         : e('div', { style: grid(`repeat(${HOME_HALF_ROW_CARDS}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
           items.slice(0, HOME_HALF_ROW_CARDS).map((a, i) => e(HomeAlbumCard, Object.assign({ key: a.id || `${a.artist}-${a.title}-${i}`, album: a }, albumHandlers(props)))))));
@@ -323,16 +326,17 @@ function FreshCriticalRow(props) {
 // discovery pages that load with no setup, Critical Darlings and Pop of the
 // Tops, in the same halves. A half whose page failed to load leaves the row.
 function ExploreRow(props) {
-  const { critical, charts, criticalLoading, chartsLoading, stacked = false } = props;
+  const { critical, charts, criticalLoading, chartsLoading, chartsError, onRetryCharts, stacked = false } = props;
   const c = Array.isArray(critical) ? critical : [];
   const p = Array.isArray(charts) ? charts : [];
   const showC = c.length > 0 || !!criticalLoading;
-  const showP = p.length > 0 || !!chartsLoading;
+  // A failed load keeps its half, with Try again, rather than vanishing.
+  const showP = p.length > 0 || !!chartsLoading || !!chartsError;
   return e('section', { 'aria-labelledby': 'home-explore', style: SECTION_STYLE },
     e(SectionHeader, { id: 'home-explore', title: 'Explore while you set up', sub: 'Albums critics love, and the most played right now. Playing needs a connected service; Bandcamp plays some of these already.' }),
     (showC || showP) && e('div', { style: { display: 'flex', flexDirection: stacked ? 'column' : 'row', gap: `${HOME_HALF_GAP}px` } },
       showC && homeHalf(props, { id: 'home-explore-critical', title: 'Critical Darlings', view: 'critics-picks', items: c, loading: c.length === 0, hero: CRITICAL_HERO, icon: TrophyGlyph() }),
-      showP && homeHalf(props, { id: 'home-explore-charts', title: 'Pop of the Tops', view: 'discover', items: p, loading: p.length === 0, hero: CHARTS_HERO, icon: ChartsGlyph() })));
+      showP && homeHalf(props, { id: 'home-explore-charts', title: 'Pop of the Tops', view: 'discover', items: p, loading: p.length === 0, error: p.length === 0 && !chartsLoading && !!chartsError, onRetry: onRetryCharts, hero: CHARTS_HERO, icon: ChartsGlyph() })));
 }
 
 // A concert card is not clickable as a whole: Tickets is its only action

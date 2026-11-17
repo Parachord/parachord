@@ -153,22 +153,14 @@ function ConnectStep({ plugins, serviceStates, watchFolders, onConnect, onOpenPl
         key: 'more', icon: e(IconMark, { icon: Icons.Plus }), title: 'More plug-ins', description: 'Browse',
         onClick: onBrowsePlugins,
       })),
-    // More than one service: the order decides which plays, and quality is
-    // one setting for all of them (never a per-service one).
-    e(StepNote, {
-      icon: Icons.ListOrdered,
-      actions: [
-        e(Button, { key: 'order', variant: 'text', size: 'sm', onClick: onBrowsePlugins }, 'Set the order'),
-        e(Button, { key: 'quality', variant: 'text', size: 'sm', onClick: onOpenQuality }, 'Sound quality'),
-      ],
-    }, 'Connect more than one, and Parachord plays each song from the first service in your order that has it. Drag plug-ins to change the order, and pick your sound quality, up to lossless and Dolby Atmos where a service offers them.'),
     (folder || plugins.free.length > 0) && e(Group, { label: 'On already, no account needed' },
       folder && e(Tile, {
         key: 'folder',
         // The Local Files plug-in's own colour and logo, as on Plug-Ins.
         icon: e(ServiceMark, { resolver: folder }),
         title: 'Your music folder',
-        description: folders > 0 ? `On · ${countOf(folders, 'folder')}` : 'On · Add a folder',
+        // Local Files can be switched off on Plug-Ins: say so, never "On".
+        description: `${folder.active === false ? 'Off' : 'On'} · ${folders > 0 ? countOf(folders, 'folder') : 'Add a folder'}`,
         'aria-label': folders > 0 ? `Your music folder: ${countOf(folders, 'folder')}. Add another` : 'Add a music folder',
         onClick: onAddFolder,
       }),
@@ -178,7 +170,16 @@ function ConnectStep({ plugins, serviceStates, watchFolders, onConnect, onOpenPl
         title: r.name,
         description: r.active ? 'On' : 'Off',
         onClick: () => onOpenPlugin(r.id),
-      }))));
+      }))),
+    // Below every source: the order decides which plays, and quality is one
+    // setting for all of them (never a per-service one).
+    e(StepNote, {
+      icon: Icons.ListOrdered,
+      actions: [
+        e(Button, { key: 'order', variant: 'text', size: 'sm', onClick: onBrowsePlugins }, 'Set the order'),
+        e(Button, { key: 'quality', variant: 'text', size: 'sm', onClick: onOpenQuality }, 'Sound quality'),
+      ],
+    }, 'With more than one source, Parachord plays each song from the first one in your order that has it. Drag plug-ins to change the order, and pick your sound quality, up to lossless and Dolby Atmos where a service offers them.'));
 }
 
 function MusicStep({ scrobblers, scrobblerStates, onImportLink, onSyncLibrary, onOpenPlugin }) {

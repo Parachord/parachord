@@ -26369,13 +26369,37 @@ ${tracks}
     console.log('📊 Loading Charts...');
 
     try {
-      // Use JSON endpoint instead of RSS (RSS returns 500 intermittently)
-      const response = await fetch('https://rss.applemarketingtools.com/api/v2/us/music/most-played/50/albums.json');
-      if (!response.ok) {
-        throw new Error(`Failed to fetch charts: ${response.status}`);
+      // Use JSON endpoint instead of RSS (RSS returns 500 intermittently).
+      // Apple moved the feed to rss.marketingtools.apple.com (the old host
+      // answers with a 301 there): ask the new host directly. A request with
+      // no timeout could stall for good on a cold start and leave Pop of the
+      // Tops loading forever (#1493), so each try gives up after 5 s (the feed
+      // answers in under one), and a
+      // stalled or failed first try is tried once more.
+      const CHARTS_URL = 'https://rss.marketingtools.apple.com/api/v2/us/music/most-played/50/albums.json';
+      // The timeout covers reading the body too: a body that stalls after
+      // the headers hung the load just the same.
+      const fetchChartsOnce = async () => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 5000);
+        try {
+          // no-store: on a cold start the HTTP cache could hold this request
+          // until it timed out (it never stalled with the cache off).
+          const res = await fetch(CHARTS_URL, { signal: controller.signal, cache: 'no-store' });
+          if (!res.ok) throw new Error(`Failed to fetch charts: ${res.status}`);
+          return await res.json();
+        } finally {
+          clearTimeout(timer);
+        }
+      };
+      let data;
+      try {
+        data = await fetchChartsOnce();
+      } catch (firstError) {
+        console.warn('📊 Charts request failed, trying once more:', firstError?.name || firstError);
+        data = await fetchChartsOnce();
       }
 
-      const data = await response.json();
       const albums = parseChartsJSON(data);
 
       console.log(`📊 Parsed ${albums.length} albums from Charts`);
@@ -37490,7 +37514,11 @@ useEffect(() => {
       show: GS.showGettingStarted(homeGettingStarted, status),
       ready: loadedResolvers.length > 0,
       status,
-      plugins: { ...plugins, free: plugins.free.map(r => ({ ...r, active: activeResolvers.includes(r.id) })) },
+      plugins: {
+        ...plugins,
+        free: plugins.free.map(r => ({ ...r, active: activeResolvers.includes(r.id) })),
+        folder: plugins.folder ? { ...plugins.folder, active: activeResolvers.includes(plugins.folder.id) } : null
+      },
       serviceStates,
       scrobblers,
       scrobblerStates
@@ -37533,7 +37561,8 @@ useEffect(() => {
       spotify: pluginSetupNeeded.spotify ? null : connectSpotify,
       soundcloud: soundcloudCredentialsSource !== 'none' ? connectSoundcloud : null,
       applemusic: connectAppleMusic,
-      amazonmusic: () => manageAmazonMusic({ explicit: true, reason: 'not-signed-in', forcePrompt: true })
+      // Then read the sign-in back, so the tile shows it at once.
+      amazonmusic: () => manageAmazonMusic({ explicit: true, reason: 'not-signed-in', forcePrompt: true }).finally(() => refreshAmazonMusicStatus())
     }[pluginId];
     // Switched on only when the sign-in runs here: a plug-in that still needs
     // setup opens its panel as it is, where you set it up and turn it on.

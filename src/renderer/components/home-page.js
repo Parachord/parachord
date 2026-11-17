@@ -590,6 +590,8 @@ const HomePage = React.memo(function HomePage(props) {
       charts: chartCards,
       criticalLoading: criticalLoading,
       chartsLoading: !chartsError && (chartsLoading || !chartsLoaded),
+      chartsError: !!chartsError,
+      onRetryCharts: () => loadCharts(true),
       navigateTo,
       ...albumActions,
       onOpen: (album) => (album.homeRow === 'charts' ? openChartsAlbum(album) : openCriticsPicksAlbum(album)),

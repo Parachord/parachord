@@ -48,6 +48,12 @@ describe('step 1 comes from the registry', () => {
     expect(GS.settingsMissing(subsonic, { serverUrl: '  ' })).toBe(true);
     expect(GS.settingsMissing(subsonic, { serverUrl: 'http://nas:4533' })).toBe(false);
     expect(GS.settingsMissing(registry[5], undefined)).toBe(false); // Bandcamp: nothing to fill in
+    // Fields with defaults are filled already: Apple Music's never reads as unset.
+    const apple = { ...registry[1], configurable: JSON.parse(read('plugins-src/applemusic/manifest.json')).settings.configurable };
+    expect(GS.settingsMissing(apple, undefined)).toBe(false);
+    // Every shipped service plug-in: only Subsonic (a server to fill in) and Spotify (a required Client ID) need setup on a new profile.
+    const shipped = GS.stepOnePlugins(registry).services.map((r) => ({ ...r, configurable: JSON.parse(read(`plugins-src/${r.id}/manifest.json`)).settings.configurable }));
+    expect(shipped.filter((r) => GS.settingsMissing(r, undefined) || GS.requiredSetting(r)).map((r) => r.id).sort()).toEqual(['spotify', 'subsonic']);
     // Switched on but not set up: Set up, never Connected.
     expect(GS.serviceState(subsonic, { setupNeeded: { subsonic: true }, playbackResolvers: ['subsonic'] })).toEqual({ state: 'setup', label: 'Set up' });
     expect(app).toContain('out[r.id] = GettingStartedModel.settingsMissing(r, metaServiceConfigs?.[r.id]);');
@@ -127,6 +133,8 @@ describe('the layout', () => {
     expect(html).toContain('More plug-ins');
     expect(html).toContain('Your music folder');
     expect(html).toContain('On · Add a folder');
+    const off = render({ plugins: { ...base.plugins, folder: { ...base.plugins.folder, active: false } } });
+    expect(off).toContain('Off · Add a folder');
     expect(html).toMatch(/Bandcamp<\/span><span[^>]*>On</);
     expect(html).not.toContain('YouTube');
     expect((html.match(/aria-expanded="true"/g) || []).length).toBe(1);
@@ -134,7 +142,8 @@ describe('the layout', () => {
 
   test('step 1 explains the order and quality; the phone apps are offered, opened in the browser', () => {
     const html = render({});
-    expect(html).toContain('first service in your order that has it');
+    expect(html).toContain('first one in your order that has it');
+    expect(html.indexOf('Set the order')).toBeGreaterThan(html.indexOf('Bandcamp'));
     expect(html).toContain('Set the order');
     expect(html).toContain('Sound quality');
     expect(html).toContain('lossless and Dolby Atmos');
