@@ -163,7 +163,8 @@ describe('app wiring', () => {
   test('the tile and the Amazon panel read the map', () => {
     expect(app).toMatch(/const planStatus = isActive \? PlaybackLimits\.tileStatus\(playbackLimits, resolver\.id\) : \{ statusLabel: null, statusTitle: null \};/);
     expect(app).toMatch(/statusLabel: planStatus\.statusLabel,\s*statusTitle: planStatus\.statusTitle,/);
-    expect(app).toMatch(/\? \(PlaybackLimits\.limitMessage\(playbackLimits, 'amazonmusic'\) \|\| ''\)/);
+    // The Amazon account row's status line (components/account-row.js, #1498 step 3).
+    expect(app).toMatch(/\? \(PlaybackLimits\.limitMessage\(playbackLimits, 'amazonmusic'\) \|\| 'Signed in'\)/);
   });
 
   test('an upgrade searches again, remembered per resolver across restarts', () => {
