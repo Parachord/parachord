@@ -50,6 +50,7 @@
 - **Amazon playlists open sooner.** A playlist you open no longer waits behind artist photos and recommendations Parachord is loading from Amazon in the background, and a slow Amazon page no longer makes it fail after 30 seconds.
 - **Amazon Music updates on its own.** Amazon's support now lives entirely in its plug-in, so fixes to it reach you through plug-in updates instead of waiting for a new Parachord release. Thanks to @theli-ua, who did the whole move.
 - **Smoother starts on Amazon tracks.** Every Amazon track could stutter for a moment as it began, because Parachord threw away audio it had already downloaded while settling on a quality. It now keeps it. And on systems where some Amazon qualities can't be licensed (Linux, for example), Parachord remembers which ones were refused instead of asking again on every track. Thanks to @theli-ua.
+
 ## Bandcamp
 
 - **Bandcamp tracks play inside Parachord.** They used to open a small floating window with little control over playback. They now play through Bandcamp's own player, hidden in the app, with seek, volume, the real track length, and the queue moving on when a track ends. The Buy link is still there for any track on Bandcamp. A track Bandcamp won't play moves on to another source.
