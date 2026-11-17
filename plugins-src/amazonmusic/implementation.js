@@ -2742,10 +2742,18 @@ module.exports = {
   // is the same gate playback itself passes (the shared engine's
   // getSupportedCodecFamilies probes the same way; the minimal config, never
   // a stricter robustness ask — one false-negatives on working L3 CDMs).
-  // Cached per instance: the answer never changes in a process's life.
+  // Only a TRUE answer caches: a CDM never leaves a process, but a FALSE can
+  // be a moment, not a verdict — on a first launch the probe can run while
+  // castlabs is still installing the CDM (main.js's waitForWidevine gives up
+  // after 10s and opens the window anyway), and the old host read saw the
+  // install finish because it re-read components.status() on every
+  // getStatus. A latched false would show "cannot play DRM-protected streams"
+  // and turn every Sign in into the no-CDM toast until a restart, so a false
+  // re-probes on the next read; an in-flight probe is joined, never
+  // duplicated.
   cdmAvailable: async function () {
-    if (!this._cdmProbe) {
-      this._cdmProbe = (async () => {
+    if (this._cdmProbe !== true) {
+      const probe = this._cdmProbeInFlight || (this._cdmProbeInFlight = (async () => {
         const nav = (typeof window !== 'undefined' && window.navigator) || (typeof navigator !== 'undefined' ? navigator : null);
         if (!nav || typeof nav.requestMediaKeySystemAccess !== 'function') return false;
         try {
@@ -2757,13 +2765,23 @@ module.exports = {
         } catch (e) {
           return false;
         }
-      })();
+      })());
+      // Latch only a true. A false stays a false for THIS reply alone; the
+      // slot clears so the next read probes again — and an overlapping call
+      // joins this probe rather than starting a second one.
+      probe.then(
+        (verdict) => { this._cdmProbe = verdict; },
+        () => { this._cdmProbe = false; }
+      ).finally(() => {
+        if (this._cdmProbeInFlight === probe) this._cdmProbeInFlight = null;
+      });
+      try {
+        return await probe;
+      } catch (e) {
+        return false;
+      }
     }
-    try {
-      return await this._cdmProbe;
-    } catch (e) {
-      return false;
-    }
+    return true;
   },
 
   // The prompt rule for the renderer's sign-in flow (the pure decision the

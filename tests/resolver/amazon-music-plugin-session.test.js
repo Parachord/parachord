@@ -441,6 +441,26 @@ describe('cdmAvailable', () => {
     await expect(plugin().cdmAvailable()).resolves.toBe(false);
   });
 
+  test('a false is not latched — the next probe sees a CDM that finished installing', async () => {
+    // The first-launch window (#1440 review, finding 1): the startup status
+    // read probes while castlabs is still downloading the CDM, the probe
+    // rejects, and the download finishes later — the old host read saw it
+    // turn true because it re-read components.status() on every getStatus,
+    // so the plugin must re-probe a false instead of caching it.
+    const ws = sessionBridge({});
+    let installed = false;
+    global.window.navigator.requestMediaKeySystemAccess = jest.fn().mockImplementation(async () => {
+      if (!installed) throw new Error('the CDM is still installing');
+      return { keySystem: 'com.widevine.alpha' };
+    });
+    const p = plugin();
+    await expect(p.cdmAvailable()).resolves.toBe(false); // the download is mid-flight
+    installed = true; // castlabs finishes
+    await expect(p.cdmAvailable()).resolves.toBe(true);
+    await expect(p.cdmAvailable()).resolves.toBe(true); // a true latches
+    expect(global.window.navigator.requestMediaKeySystemAccess).toHaveBeenCalledTimes(2);
+  });
+
   test('no navigator at all is false', async () => {
     sessionBridge({ cdmProbe: 'none' });
     await expect(plugin().cdmAvailable()).resolves.toBe(false);
