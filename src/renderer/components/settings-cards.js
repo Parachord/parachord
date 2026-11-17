@@ -253,6 +253,9 @@ const ScrobblerSettingsCard = React.memo(({
   onRunLoveImport = null,
   loveImportRunning = false,
   loveImportProgress = null,
+  // The plug-in declares `lovedTracks` (its manifest): show the love
+  // import, push and backfill. Was a check on two service names.
+  lovedTracks = false,
   hasImportedLoves = false,
 }) => {
   const [connecting, setConnecting] = React.useState(false);
@@ -455,7 +458,7 @@ const ScrobblerSettingsCard = React.memo(({
         // service into the collection. Opt-in per service; Libre.fm stays
         // out (same scope as push — the card simply never passes
         // onRunLoveImport).
-        onRunLoveImport && (scrobbler.id === 'lastfm' || scrobbler.id === 'listenbrainz') &&
+        onRunLoveImport && lovedTracks &&
           React.createElement('div', { className: 'space-y-2' },
             React.createElement(Button, { variant: 'secondary', size: 'sm', className: 'w-full', onClick: onRunLoveImport, disabled: loveImportRunning }, loveImportRunning && loveImportProgress
                 ? (loveImportProgress.phase === 'confirm' ? 'Waiting for confirmation…'
@@ -465,7 +468,7 @@ const ScrobblerSettingsCard = React.memo(({
                 : hasImportedLoves ? 'Import new loves' : 'Import loved tracks')
           ),
         // Love-push toggle + backfill button (only for services that support it)
-        (scrobbler.id === 'lastfm' || scrobbler.id === 'listenbrainz') && onSetLovePushEnabled &&
+        lovedTracks && onSetLovePushEnabled &&
           React.createElement('div', { className: 'border-t border-line pt-3 space-y-2' },
             React.createElement('label', { className: 'flex items-center gap-2 text-sm cursor-pointer' },
               React.createElement(Checkbox, {
@@ -473,7 +476,7 @@ const ScrobblerSettingsCard = React.memo(({
                 onChange: (checked) => onSetLovePushEnabled(checked)
               }),
               React.createElement('span', { className: 'text-ink-secondary' },
-                `Push newly loved tracks to ${scrobbler.id === 'lastfm' ? 'Last.fm' : 'ListenBrainz'}`
+                `Push newly loved tracks to ${scrobbler.name}`
               )
             ),
             React.createElement(Button, { variant: 'text', size: 'sm', onClick: onRunBackfill, disabled: backfillRunning || unpushedCount === 0, className: 'w-full' }, backfillRunning && backfillProgress
