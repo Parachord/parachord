@@ -14,6 +14,8 @@
 //
 // Props:
 //   name           the service ("Spotify"); the row reads "Spotify account"
+//   label          the row's name instead, when the account is one part of a
+//                  service ("Scrobbling", under Last.fm's own account row)
 //   color          the service's colour (a hex from the plug-in)
 //   signedIn       which button to show
 //   status         the line under the name ("Signed in as …", what's
@@ -29,7 +31,7 @@ const { Button } = require('./button');
 const { SettingRow } = require('./fields');
 const { readableTextOn } = require('../lib/readable-text');
 
-function AccountRow({ name, color, signedIn, status, onSignIn, onSignOut, signInDisabled = false, busy = false }) {
+function AccountRow({ name, label, color, signedIn, status, onSignIn, onSignOut, signInDisabled = false, busy = false }) {
   const e = React.createElement;
   const button = signedIn
     ? (onSignOut ? e(Button, { variant: 'secondary', busy, onClick: onSignOut, 'aria-label': `Sign out of ${name}` }, 'Sign out') : null)
@@ -45,7 +47,7 @@ function AccountRow({ name, color, signedIn, status, onSignIn, onSignOut, signIn
       'aria-label': `Sign in to ${name}`,
     }, 'Sign in') : null);
   return e(SettingRow, {
-    label: `${name} account`,
+    label: label || `${name} account`,
     hint: status || (signedIn ? 'Signed in' : 'Not signed in'),
     style: { padding: 0 },
   }, button || e('span', null));
