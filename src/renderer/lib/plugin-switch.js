@@ -64,11 +64,19 @@ function hintFor(plugin) {
   const caps = plugin.capabilities || {};
   if (plugin.type !== 'meta-service') return 'Include it in search';
   if (caps.concerts) return 'Upcoming concerts and ticket links';
-  if (caps.chat || caps.generate) return 'Use with Shuffleupagus';
-  if (caps.recommendations) return 'Use for recommendations and your history';
-  if (caps.scrobbling) return 'Scrobble what you play';
-  // What it brings, from its capabilities ("Use for artist info" said
-  // nothing about what that is, 2026-11-17).
+  // Each line says what the plug-in brings, built from its capabilities
+  // ("Use for artist info" and "Use with Shuffleupagus" said nothing about
+  // what that is, 2026-11-17).
+  if (caps.chat && caps.generate) return 'AI playlists and Shuffleupagus chat';
+  if (caps.generate) return 'AI playlists';
+  if (caps.chat) return 'Shuffleupagus chat';
+  if (caps.recommendations) {
+    const parts = ['Recommendations'];
+    if (caps.similarUsers) parts.push('similar listeners');
+    parts.push('your listening history');
+    return parts.length === 2 ? parts.join(' and ') : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
+  }
+  if (caps.scrobbling) return 'Scrobbling, a log of what you play';
   if (caps.biography && caps.artistImages) return 'Artist biographies and photos';
   if (caps.biography) return 'Artist biographies';
   if (caps.artistImages) return 'Artist photos';

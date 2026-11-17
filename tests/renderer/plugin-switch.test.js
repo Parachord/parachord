@@ -26,7 +26,7 @@ describe('AI and concert plug-ins that need a key', () => {
     expect(pluginSwitchState({ plugin: plugin('seatgeek'), config: {} }).hint).toBe('Add your Client ID below first');
   });
   test('with a key it is on until switched off (isServiceEnabled / getConcertServices)', () => {
-    expect(pluginSwitchState({ plugin: plugin('chatgpt'), config: { apiKey: 'sk-x' } })).toEqual({ checked: true, disabled: false, hint: 'Use with Shuffleupagus' });
+    expect(pluginSwitchState({ plugin: plugin('chatgpt'), config: { apiKey: 'sk-x' } })).toEqual({ checked: true, disabled: false, hint: 'AI playlists and Shuffleupagus chat' });
     expect(pluginSwitchState({ plugin: plugin('chatgpt'), config: { apiKey: 'sk-x', enabled: false } }).checked).toBe(false);
     expect(pluginSwitchState({ plugin: plugin('bandsintown'), config: { appId: 'a' } })).toEqual({ checked: true, disabled: false, hint: 'Upcoming concerts and ticket links' });
   });
@@ -34,7 +34,7 @@ describe('AI and concert plug-ins that need a key', () => {
 
 describe('AI plug-ins that need no key (Ollama, Custom LLM): on = enabled: true', () => {
   test('off until switched on; a key alone does not turn it on', () => {
-    expect(pluginSwitchState({ plugin: plugin('ollama'), config: {} })).toEqual({ checked: false, disabled: false, hint: 'Use with Shuffleupagus' });
+    expect(pluginSwitchState({ plugin: plugin('ollama'), config: {} })).toEqual({ checked: false, disabled: false, hint: 'Shuffleupagus chat' }); // chat only
     expect(pluginSwitchState({ plugin: plugin('ollama'), config: { enabled: true } }).checked).toBe(true);
     expect(pluginSwitchState({ plugin: plugin('customllm'), config: { apiKey: 'k' } }).checked).toBe(false);
   });
@@ -42,8 +42,8 @@ describe('AI plug-ins that need no key (Ollama, Custom LLM): on = enabled: true'
 
 describe('everything else: enabled, or set up and not switched off; never disabled', () => {
   test('Last.fm is on by its fresh-install default, before any username', () => {
-    expect(pluginSwitchState({ plugin: plugin('lastfm'), config: { enabled: true } })).toEqual({ checked: true, disabled: false, hint: 'Use for recommendations and your history' });
-    expect(pluginSwitchState({ plugin: plugin('lastfm'), config: { enabled: false } })).toEqual({ checked: false, disabled: false, hint: 'Use for recommendations and your history' });
+    expect(pluginSwitchState({ plugin: plugin('lastfm'), config: { enabled: true } })).toEqual({ checked: true, disabled: false, hint: 'Recommendations, similar listeners and your listening history' });
+    expect(pluginSwitchState({ plugin: plugin('lastfm'), config: { enabled: false } })).toEqual({ checked: false, disabled: false, hint: 'Recommendations, similar listeners and your listening history' });
   });
   test('ListenBrainz is on once set up, unless switched off', () => {
     expect(pluginSwitchState({ plugin: plugin('listenbrainz'), config: { username: 'u' } }).checked).toBe(true);
@@ -51,7 +51,7 @@ describe('everything else: enabled, or set up and not switched off; never disabl
     expect(pluginSwitchState({ plugin: plugin('listenbrainz'), config: {} }).disabled).toBe(false);
   });
   test('Libre.fm only scrobbles, and says so', () => {
-    expect(pluginSwitchState({ plugin: plugin('librefm'), config: {} }).hint).toBe('Scrobble what you play');
+    expect(pluginSwitchState({ plugin: plugin('librefm'), config: {} }).hint).toBe('Scrobbling, a log of what you play');
   });
   test('Wikipedia and Discogs are on unless switched off (an old install has no `enabled`)', () => {
     expect(pluginSwitchState({ plugin: plugin('discogs'), config: undefined }).checked).toBe(true);
