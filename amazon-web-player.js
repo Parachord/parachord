@@ -347,8 +347,8 @@ const amazonWebPlayer = {
     return { success: signedIn, signedIn };
   },
 
-  // Serializes real page navigation: the host's own page flows (the session
-  // mint, the diagnostic capture) share the one view and the webRequest
+  // Serializes real page navigation: the host's own page flows (the
+  // diagnostic capture) share the one view and the webRequest
   // listener slots, so they run one at a time — the host's chain, two lanes
   // (webSession.enqueue(fn, { lane }), the #1423 semantics living in the host
   // now). A FOREGROUND job starts before every queued BACKGROUND job; FIFO

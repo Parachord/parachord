@@ -2031,7 +2031,8 @@ module.exports = {
   // createLaneQueue in _lib — the host's enqueue(fn, { lane }) in
   // main-process/web-session.js is the original). The FOREGROUND lane is for
   // a job the user is waiting on (a playlist they opened — lookupPlaylistFlow
-  // is its only rider): it starts before every queued BACKGROUND job (the
+  // — or a play needing a fresh session context — the csrf-triplet mint): it
+  // starts before every queued BACKGROUND job (the
   // spec searches, album lookups, artist-photo jobs), FIFO within a lane, and
   // a running job is never interrupted. The queue lives on the instance
   // (per-resolver state, dropped with it).
@@ -2134,9 +2135,10 @@ module.exports = {
     // mirroring the host's own (#1423's semantics, createLaneQueue in _lib):
     // this is the BACKGROUND lane — the spec searches are speculative work;
     // the album lookup and the recommendations flows ride the same lane, and
-    // a playlist the user opened (lookupPlaylistFlow, the foreground lane)
-    // goes ahead of every job queued here. The host's own remaining loads
-    // (the session mint, the diagnostic capture) serialize against them on
+    // a job the user is waiting on (a playlist they opened —
+    // lookupPlaylistFlow — or a play's csrf-triplet mint, the foreground
+    // lane) goes ahead of every job queued here. The host's own remaining loads
+    // (the diagnostic capture) serialize against them on
     // the host's chain.
     const run = this.enqueuePageFlow(() => {
       if (staleCheck && staleCheck()) {
@@ -2891,13 +2893,15 @@ module.exports = {
   // The csrf-triplet mint, as its own page flow on the plugin's two-lane
   // page-flow queue (serialized against the spec searches, the album
   // lookups, the playlist import and the recommendations — one flow's
-  // navigation never interleaves another's capture). It rides the BACKGROUND
-  // lane like the other speculative flows; a playlist the user opened
-  // (the foreground lane) goes ahead of it.
+  // navigation never interleaves another's capture). It rides the FOREGROUND
+  // lane: a play that needs a fresh session context is a click the user is
+  // waiting on, so it starts before every queued background flow (a spec
+  // search, an album lookup, a recommendations refresh — each a page load
+  // that can hold the queue for 15-30s), behind at most the one in progress.
   mintCsrfHeaders: async function (query) {
     const lib = this.requireLib();
     const q = String(query || lib.MINT_BENIGN_QUERY).slice(0, 120);
-    return this.enqueuePageFlow(() => this.mintCsrfPageFlow(q));
+    return this.enqueuePageFlow(() => this.mintCsrfPageFlow(q), { lane: 'foreground' });
   },
 
   mintCsrfPageFlow: async function (q) {

@@ -325,6 +325,53 @@ describe('the session-context mint', () => {
     expect(resolver._lastSearchText).toContain('"Around the World"');
   });
 
+  test('a play needing a fresh session context goes ahead of queued background page flows (the foreground lane)', async () => {
+    // New 3 (the #1439 review): the mint rides the FOREGROUND lane of the
+    // plugin's two-lane page-flow queue, like a playlist the user opened. A
+    // running job is never interrupted (the mint waits for the album lookup
+    // in progress); it starts before every QUEUED background job — a play
+    // click the user is waiting on must not wait behind every queued spec
+    // search, album lookup and recommendations refresh, each a page load
+    // that can hold the queue for 15-30s.
+    const order = [];
+    let releaseFirst;
+    const firstLoad = new Promise((resolve) => { releaseFirst = resolve; });
+    let seenFirst = false;
+    const { ws } = drmMock();
+    ws.load.mockImplementation(async (id, url) => {
+      order.push(url);
+      if (!seenFirst) {
+        seenFirst = true; // the RUNNING job: never interrupted
+        await firstLoad;
+      }
+      // Mint-shaped captures answer every load — enough for the mint; the
+      // album flows fail structurally on them (irrelevant here: the load
+      // ORDER is the point).
+      return { success: true, finalUrl: url, captures: [{ url: 'https://gql.music.amazon.com/', method: 'POST', headers: MINT_HEADERS, body: '{}', echo: false }] };
+    });
+    const resolver = instantiateAmazonPlugin(axe);
+    const running = resolver.lookupAlbumFlow('https://music.amazon.com/albums/B000ALBUM1').catch(() => 'album-failed');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const bg1 = resolver.lookupAlbumFlow('https://music.amazon.com/albums/B000ALBUM2').catch(() => 'album-failed');
+    const bg2 = resolver.lookupAlbumFlow('https://music.amazon.com/albums/B000ALBUM3').catch(() => 'album-failed');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const play = resolver.getPlaybackManifest(drmTrack(), {});
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    releaseFirst();
+    await Promise.all([running, bg1, bg2]);
+    const reply = await play;
+    expect(reply.manifest).toContain('<MPD'); // the flow completed; the load ORDER is the point
+    await flush(); // the fire-and-forget cert warm settles here
+    // The mint's load fired before both queued background jobs — behind only
+    // the one that was already running.
+    expect(order).toEqual([
+      'https://music.amazon.com/albums/B000ALBUM1',
+      'https://music.amazon.com/search/the/songs',
+      'https://music.amazon.com/albums/B000ALBUM2',
+      'https://music.amazon.com/albums/B000ALBUM3'
+    ]);
+  });
+
   test('not signed in fails with not-signed-in before any request', async () => {
     const { fetches, loads } = drmMock({ signedIn: false });
     const resolver = instantiateAmazonPlugin(axe);
