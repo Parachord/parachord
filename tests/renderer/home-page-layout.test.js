@@ -151,7 +151,7 @@ describe('render', () => {
     library: [], mixes: [], newReleases: [], newReleasesLoaded: true, newReleasesLoading: false,
     playlists: [], playlistsLoading: false, recommendationAlbums: [], recommendations: { sections: [], loading: false },
     setAddToPlaylistPanel: noop, setConcertsTicketFlyout: noop, setExtensionInfoOpen: noop, setHomeData: noop,
-    setRaycastInfoOpen: noop, setSettingsTab: noop, setShowUrlImportDialog: noop, showToast: noop, whatsNewUnread: false,
+    setSettingsTab: noop, setShowUrlImportDialog: noop, showToast: noop, whatsNewUnread: false,
     charts: [], chartsLoaded: true, chartsLoading: false, watchFolders: [], gettingStarted: null,
   };
   const render = (props) => renderToStaticMarkup(React.createElement(HomePage, { ...base, ...props }));
@@ -331,8 +331,9 @@ describe("Home's recommended albums (app.js recommendationAlbums)", () => {
 });
 
 describe('setup checklist housekeeping', () => {
-  test('opening the Raycast instructions completes its item (it has no way to detect an install)', () => {
-    expect(page).toContain("else if (id === 'raycast') { setRaycastInfoOpen(true); dismissHomeSetupItem('raycast'); }");
+  test('the pill has no Raycast item (no way to detect an install); skipped steps come back from it', () => {
+    expect(page).not.toContain("'raycast'");
+    expect(page).toContain("if (id === 'getting-started') startGettingStarted();");
   });
 
   test('Settings › Dialogs can bring dismissed checklist items back', () => {

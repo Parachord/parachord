@@ -129,9 +129,16 @@ function gettingStartedSteps({ connected = false, folderAdded = false, hasMusic 
 //   played  something has played since the layout came on
 // A profile from before this shipped has no key and tutorial_completed set:
 // it never gets the layout (the issue's lean on upgrades).
+//   skipped "Skip setup for now" was used: the "Finish setting up" pill then
+//           offers the steps until they're done
 function initialGettingStarted(saved, tutorialCompleted) {
-  if (saved && typeof saved === 'object') return { active: saved.active === true, played: saved.played === true };
-  return { active: !tutorialCompleted, played: false };
+  if (saved && typeof saved === 'object') return { active: saved.active === true, played: saved.played === true, skipped: saved.skipped === true };
+  return { active: !tutorialCompleted, played: false, skipped: false };
+}
+
+// The pill's "Finish getting started": skipped, and steps still open.
+function gettingStartedLeft(state, status) {
+  return !!(state && state.skipped && !state.active && status && !status.allDone);
 }
 
 function showGettingStarted(state, status) {
@@ -151,5 +158,6 @@ module.exports = {
   scrobblerPlugins,
   gettingStartedSteps,
   initialGettingStarted,
+  gettingStartedLeft,
   showGettingStarted,
 };

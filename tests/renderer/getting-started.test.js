@@ -98,9 +98,13 @@ describe('the steps', () => {
   });
 
   test('new installs get the layout, upgrades never do, and a saved state wins', () => {
-    expect(GS.initialGettingStarted(undefined, false)).toEqual({ active: true, played: false });
-    expect(GS.initialGettingStarted(undefined, true)).toEqual({ active: false, played: false });
-    expect(GS.initialGettingStarted({ active: false, played: true }, false)).toEqual({ active: false, played: true });
+    expect(GS.initialGettingStarted(undefined, false)).toEqual({ active: true, played: false, skipped: false });
+    expect(GS.initialGettingStarted(undefined, true)).toEqual({ active: false, played: false, skipped: false });
+    expect(GS.initialGettingStarted({ active: false, played: true }, false)).toEqual({ active: false, played: true, skipped: false });
+    // Skipped with steps open: the pill offers them; an upgrade (never skipped) isn't nagged.
+    expect(GS.gettingStartedLeft({ active: false, skipped: true }, GS.gettingStartedSteps({}))).toBe(true);
+    expect(GS.gettingStartedLeft({ active: false, skipped: false }, GS.gettingStartedSteps({}))).toBe(false);
+    expect(GS.gettingStartedLeft({ active: false, skipped: true }, GS.gettingStartedSteps({ connected: true, hasMusic: true, played: true }))).toBe(false);
     const open = GS.gettingStartedSteps({});
     expect(GS.showGettingStarted({ active: true }, open)).toBe(true);
     expect(GS.showGettingStarted({ active: false }, open)).toBe(false);
@@ -246,7 +250,7 @@ describe('app wiring', () => {
   test('playing marks step 3; all done or skipped switches to the normal Home', () => {
     expect(app).toMatch(/if \(isPlaying && homeGettingStarted\?\.active && !homeGettingStarted\.played\) \{\s*saveHomeGettingStarted\(\{ \.\.\.homeGettingStarted, played: true \}\);/);
     expect(app).toMatch(/if \(homeGettingStarted\?\.active && homeGettingStartedModel\.status\.allDone\) \{\s*saveHomeGettingStarted\(\{ \.\.\.homeGettingStarted, active: false \}\);/);
-    expect(app).toContain('const skipGettingStarted = () => saveHomeGettingStarted({ played: !!homeGettingStarted?.played, active: false });');
+    expect(app).toContain('const skipGettingStarted = () => saveHomeGettingStarted({ played: !!homeGettingStarted?.played, active: false, skipped: true });');
   });
 
   test('Connect switches the plug-in on and runs its sign-in, else opens its panel', () => {
@@ -259,5 +263,25 @@ describe('app wiring', () => {
 
   test('step 1 reads playbackResolvers and the playback limits, not activeResolvers alone', () => {
     expect(app).toContain('const opts = { accounts: pluginAccounts, setupNeeded: pluginSetupNeeded, playbackResolvers, playbackLimits };');
+  });
+});
+
+describe('the normal Home after setup', () => {
+  const { FreshCriticalRow } = require('../../src/renderer/components/home-sections');
+  const card = (i, row) => ({ id: `${row}-${i}`, title: `T${i}`, artist: 'A', homeRow: row });
+  const render = (p) => renderToStaticMarkup(React.createElement(FreshCriticalRow, { navigateTo: () => {}, ...p }));
+  test('Pop of the Tops takes an empty Fresh Drops half; Fresh Drops wins when it has releases', () => {
+    const critical = [0, 1, 2].map((i) => card(i, 'critical'));
+    const charts = [0, 1, 2].map((i) => card(i, 'charts'));
+    const noFresh = render({ fresh: [], critical, charts });
+    expect(noFresh).toContain('Pop of the Tops');
+    expect(noFresh).toContain('Critical Darlings');
+    // The same order as the getting-started layout's Explore row.
+    expect(noFresh.indexOf('Critical Darlings')).toBeLessThan(noFresh.indexOf('Pop of the Tops'));
+    const withFresh = render({ fresh: [0, 1, 2].map((i) => card(i, 'fresh')), critical, charts });
+    expect(withFresh).toContain('Fresh Drops');
+    expect(withFresh).not.toContain('Pop of the Tops');
+    // While its load fails, the half stays with Try again.
+    expect(render({ fresh: [], critical, charts: [], chartsError: true, onRetryCharts: () => {} })).toContain('Try again');
   });
 });

@@ -67,6 +67,7 @@ const HOME_PAGE_HANDLERS = [
   'queueServicePlaylist',
   'showHomeContextMenu',
   'skipGettingStarted',
+  'startGettingStarted',
 ];
 
 // Playing recent loves from Home: the context isActiveContext matches.
@@ -174,12 +175,12 @@ const HomePage = React.memo(function HomePage(props) {
     setCollectionSort,
     setCollectionTab,
     setExtensionInfoOpen,
-    setRaycastInfoOpen,
     setSettingsTab,
     setShowUrlImportDialog,
     showHomeContextMenu,
     showToast,
     skipGettingStarted,
+    startGettingStarted,
     sourceColors,
     watchFolders,
     whatsNewUnread,
@@ -190,23 +191,22 @@ const HomePage = React.memo(function HomePage(props) {
 
   // ---------------------------------------------------------------- setup
 
-  // The extras checklist (browser extension, Raycast) and What's New.
-  // Connecting a service and a scrobbler are the getting-started layout's
-  // steps now (#1493).
+  // The pill: the getting-started steps when they were skipped before they
+  // were done, the browser extension, and What's New. Connecting a service
+  // and a scrobbler are the getting-started layout's steps (#1493).
+  const gettingStartedLeft = !!(gettingStarted && gettingStarted.left);
   const homeSetup = React.useMemo(() => homeSetupItems({
+    gettingStartedLeft,
     extensionConnected,
-    isMac: typeof navigator !== 'undefined' && !!navigator.platform && navigator.platform.includes('Mac'),
     dismissed: homeSetupDismissed,
     appVersion,
     whatsNewUnread,
-  }), [extensionConnected, homeSetupDismissed, appVersion, whatsNewUnread]);
+  }), [gettingStartedLeft, extensionConnected, homeSetupDismissed, appVersion, whatsNewUnread]);
 
   const onSetupAction = (id) => {
-    if (id === 'browser-extension') setExtensionInfoOpen(true);
-    // Parachord can't tell whether the Raycast extension is installed, so
-    // opening its instructions is what completes the item: it leaves the
-    // list, and the checklist can reach "all done".
-    else if (id === 'raycast') { setRaycastInfoOpen(true); dismissHomeSetupItem('raycast'); }
+    // Brings the getting-started layout back, steps as they were.
+    if (id === 'getting-started') startGettingStarted();
+    else if (id === 'browser-extension') setExtensionInfoOpen(true);
   };
 
   // ------------------------------------------------------- background loads
@@ -242,13 +242,14 @@ const HomePage = React.memo(function HomePage(props) {
     // render's values, and the loaders guard against re-entry themselves.
   }, [cacheLoaded]);
 
-  // The getting-started layout (#1493) also shows Pop of the Tops, which
-  // Home doesn't load otherwise.
+  // Pop of the Tops: in the getting-started layout, and in Fresh Drops' half
+  // while Fresh Drops has nothing (#1493). One request; a return visit
+  // refetches nothing.
   const setupShown = !!(gettingStarted && gettingStarted.show);
   React.useEffect(() => {
-    if (!cacheLoaded || !setupShown) return;
+    if (!cacheLoaded) return;
     if (!chartsLoaded && !chartsLoading && !chartsError) loadCharts();
-  }, [cacheLoaded, setupShown]);
+  }, [cacheLoaded]);
 
   // ------------------------------------------------------------------- art
 
@@ -648,20 +649,25 @@ const HomePage = React.memo(function HomePage(props) {
 
         // One row for both halves, loaded or not: a half still loading draws
         // its skeleton in its own place, so nothing moves when it lands.
-        (show.fresh || show.critical || freshLoading || criticalLoading)
+        (show.fresh || show.critical || freshLoading || criticalLoading || chartCards.length > 0 || chartsLoading)
           && React.createElement(FreshCriticalRow, {
             stacked: homeHalvesStacked(contentWidth),
             fresh,
             critical,
             freshLoading,
             criticalLoading,
+            // Pop of the Tops stands in for an empty Fresh Drops.
+            charts: chartCards,
+            chartsLoading: !chartsError && (chartsLoading || !chartsLoaded),
+            chartsError: !!chartsError,
+            onRetryCharts: () => loadCharts(true),
             navigateTo,
             ...albumActions,
             // Each half opens its album the way its own page does; a Fresh
             // Drops card passes its release-group id, so no string search.
             onOpen: (album) => (album.homeRow === 'fresh'
               ? openTopAlbum({ ...album, name: album.title, image: album.imageUrl, releaseGroupId: album.id })
-              : openCriticsPicksAlbum(album)),
+              : album.homeRow === 'charts' ? openChartsAlbum(album) : openCriticsPicksAlbum(album)),
           }),
 
         show.concerts

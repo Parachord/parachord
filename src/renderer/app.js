@@ -37512,6 +37512,7 @@ useEffect(() => {
     });
     return {
       show: GS.showGettingStarted(homeGettingStarted, status),
+      left: GS.gettingStartedLeft(homeGettingStarted, status),
       ready: loadedResolvers.length > 0,
       status,
       plugins: {
@@ -37538,10 +37539,10 @@ useEffect(() => {
     }
   }, [homeGettingStarted, homeGettingStartedModel.status.allDone]);
   // "Skip setup for now": remembered, so Home doesn't keep asking.
-  const skipGettingStarted = () => saveHomeGettingStarted({ played: !!homeGettingStarted?.played, active: false });
+  const skipGettingStarted = () => saveHomeGettingStarted({ played: !!homeGettingStarted?.played, active: false, skipped: true });
   // The welcome tour's last screen: the layout on, Home showing.
   const startGettingStarted = () => {
-    saveHomeGettingStarted({ played: !!homeGettingStarted?.played, active: true });
+    saveHomeGettingStarted({ played: !!homeGettingStarted?.played, active: true, skipped: false });
     navigateTo('home');
   };
   // A plug-in's panel, over the current page (Plug-Ins' tile does the same).
@@ -37584,7 +37585,7 @@ useEffect(() => {
     loadCharts, loadConcerts, loadCriticsPicks, loadNewReleases, loadPlaylist,
     loadHomeHistoryMixes, loadHomeRecommendations, navigateTo, openChartsAlbum, openCriticsPicksAlbum, openHomeBannerCta, openPluginPanel, openServicePlaylist,
     openTopAlbum, openWhatsNew, playServicePlaylist, playTrackCollection, prefetchTopAlbumTracks,
-    queueServicePlaylist, showHomeContextMenu, skipGettingStarted,
+    queueServicePlaylist, showHomeContextMenu, skipGettingStarted, startGettingStarted,
   });
 
   // Stable function props for the memo'd CollectionPage: same identity on
@@ -37795,7 +37796,7 @@ useEffect(() => {
 
         // HOME view - dynamic personalized landing page
         activeView === 'home' && React.createElement(HomePage, {
-          allPlaylistCovers, appVersion, bannerItems, cacheLoaded, charts, chartsError, chartsLoaded, chartsLoading, chatAvailable: homeChatAvailable, collectionData, collectionLoading, concerts: homeConcerts, contentWidth: mainContentWidth, concertsArtistImages, concertsError, concertsLoaded, concertsLoading, concertsLocation, criticsPicks, criticsPicksError, criticsPicksLoaded, criticsPicksLoading, extensionConnected, gettingStarted: homeGettingStartedModel, homeActive, homeData, homeSetupDismissed, library, mixes: homeMixes, newReleases, newReleasesError, newReleasesLoaded, newReleasesLoading, playlists, playlistsLoading, recommendationAlbums, recommendations, setAddToPlaylistPanel, setCollectionSort, setCollectionTab, setExtensionInfoOpen, setRaycastInfoOpen, setSettingsTab, setShowUrlImportDialog, showToast, sourceColors: homeSourceColors, watchFolders, whatsNewUnread,
+          allPlaylistCovers, appVersion, bannerItems, cacheLoaded, charts, chartsError, chartsLoaded, chartsLoading, chatAvailable: homeChatAvailable, collectionData, collectionLoading, concerts: homeConcerts, contentWidth: mainContentWidth, concertsArtistImages, concertsError, concertsLoaded, concertsLoading, concertsLocation, criticsPicks, criticsPicksError, criticsPicksLoaded, criticsPicksLoading, extensionConnected, gettingStarted: homeGettingStartedModel, homeActive, homeData, homeSetupDismissed, library, mixes: homeMixes, newReleases, newReleasesError, newReleasesLoaded, newReleasesLoading, playlists, playlistsLoading, recommendationAlbums, recommendations, setAddToPlaylistPanel, setCollectionSort, setCollectionTab, setExtensionInfoOpen, setSettingsTab, setShowUrlImportDialog, showToast, sourceColors: homeSourceColors, watchFolders, whatsNewUnread,
           ...homePageHandlers
         }),
 

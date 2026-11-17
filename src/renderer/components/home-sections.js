@@ -311,15 +311,20 @@ function homeHalf(props, { id, title, view, items, loading, hero, icon, error, o
 }
 
 function FreshCriticalRow(props) {
-  const { fresh, critical, freshLoading, criticalLoading, stacked = false } = props;
+  const { fresh, critical, freshLoading, criticalLoading, charts, chartsLoading, chartsError, onRetryCharts, stacked = false } = props;
   const f = Array.isArray(fresh) ? fresh : [];
   const c = Array.isArray(critical) ? critical : [];
+  const p = Array.isArray(charts) ? charts : [];
   const showF = f.length > 0 || !!freshLoading;
   const showC = c.length > 0 || !!criticalLoading;
-  if (!showF && !showC) return null;
+  // With no Fresh Drops (a new profile follows no artists yet), Pop of the
+  // Tops takes its half, so Critical Darlings isn't left alone (#1493).
+  const showP = !showF && (p.length > 0 || !!chartsLoading || !!chartsError);
+  if (!showF && !showC && !showP) return null;
   return e('div', { style: { display: 'flex', flexDirection: stacked ? 'column' : 'row', gap: `${HOME_HALF_GAP}px` } },
     showF && homeHalf(props, { id: 'home-fresh', title: 'Fresh Drops', view: 'new-releases', items: f, loading: f.length === 0, hero: FRESH_HERO, icon: DropletGlyph() }),
-    showC && homeHalf(props, { id: 'home-critical', title: 'Critical Darlings', view: 'critics-picks', items: c, loading: c.length === 0, hero: CRITICAL_HERO, icon: TrophyGlyph() }));
+    showC && homeHalf(props, { id: 'home-critical', title: 'Critical Darlings', view: 'critics-picks', items: c, loading: c.length === 0, hero: CRITICAL_HERO, icon: TrophyGlyph() }),
+    showP && homeHalf(props, { id: 'home-charts', title: 'Pop of the Tops', view: 'discover', items: p, loading: p.length === 0, error: p.length === 0 && !chartsLoading && !!chartsError, onRetry: onRetryCharts, hero: CHARTS_HERO, icon: ChartsGlyph() }));
 }
 
 // The getting-started layout's "Explore while you set up" (#1493): the two

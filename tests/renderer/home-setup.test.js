@@ -10,7 +10,7 @@ const { HomeSetupButton } = require('../../src/renderer/components/home-setup');
 const read = (p) => fs.readFileSync(path.join(__dirname, '../..', p), 'utf8');
 
 const allDone = {
-  extensionConnected: true, isMac: false, dismissed: [],
+  extensionConnected: true, dismissed: [],
 };
 
 describe('homeSetupItems', () => {
@@ -29,15 +29,17 @@ describe('homeSetupItems', () => {
   });
 
   test('a dismissed id leaves items and total', () => {
-    const s = homeSetupItems({ ...allDone, isMac: true, dismissed: ['raycast'] });
+    const s = homeSetupItems({ ...allDone, gettingStartedLeft: true, dismissed: ['getting-started'] });
     expect(s.total).toBe(1);
-    expect(s.items.find((i) => i.id === 'raycast')).toBeUndefined();
-    expect(homeSetupItems({ ...allDone, isMac: true }).total).toBe(2);
+    expect(s.items.find((i) => i.id === 'getting-started')).toBeUndefined();
+    expect(homeSetupItems({ ...allDone, gettingStartedLeft: true }).total).toBe(2);
   });
 
-  test('connecting a service and a scrobbler are not items: they are the getting-started steps (#1493)', () => {
-    const ids = homeSetupItems({ isMac: true }).items.map((i) => i.id);
-    expect(ids).toEqual(['browser-extension', 'raycast']);
+  test('services and scrobblers are getting-started steps; skipped steps come back as one item; no Raycast (#1493)', () => {
+    expect(homeSetupItems({}).items.map((i) => i.id)).toEqual(['browser-extension']);
+    expect(homeSetupItems({ gettingStartedLeft: true }).items.map((i) => i.id)).toEqual(['getting-started', 'browser-extension']);
+    // Nothing left: the pill is What's New.
+    expect(homeSetupItems(allDone).mode).toBe('whats-new');
   });
 
   test('whatsNew is reported but never counted or listed', () => {
@@ -50,9 +52,9 @@ describe('homeSetupItems', () => {
   });
 
   test('order and labels: no item names a service', () => {
-    const s = homeSetupItems({ ...allDone, isMac: true });
+    const s = homeSetupItems({ ...allDone, gettingStartedLeft: true });
     expect(s.items.map((i) => i.label)).toEqual([
-      'Install the browser extension', 'Add the Raycast extension',
+      'Finish getting started', 'Install the browser extension',
     ]);
     expect(s.items.map((i) => i.label).join(' ')).not.toMatch(/Spotify|Last\.fm|ListenBrainz/);
   });
