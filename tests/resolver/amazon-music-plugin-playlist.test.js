@@ -83,7 +83,7 @@ const delisted = (n) => ({ cursor: n + ':delisted-' + n, node: null });
 // page after page. respond returns a response payload, or { busy: true } /
 // { fetchError } / { status, text } for the failure shapes. Every request
 // body the plugin sent is recorded on the mock (ws.sentRequests).
-const playlistMock = ({ captures, respond, loadResult, finalUrl, state, loadTimedOut } = {}) => {
+const playlistMock = ({ captures, respond, loadResult, finalUrl, state, loadTimedOut, timing } = {}) => {
   const mockOpts = {
     capturesFor: (url) => (captures !== undefined ? captures
       : (/\/playlists\//.test(String(url)) ? [amazonPlaylistDetailCapture(PLAYLIST_ID)] : [])),
@@ -92,6 +92,7 @@ const playlistMock = ({ captures, respond, loadResult, finalUrl, state, loadTime
   if (loadResult !== undefined) mockOpts.loadResult = loadResult;
   if (finalUrl !== undefined) mockOpts.finalUrl = finalUrl;
   if (loadTimedOut !== undefined) mockOpts.loadTimedOut = loadTimedOut;
+  if (timing !== undefined) mockOpts.timing = timing;
   const ws = amazonWebSessionMock(mockOpts);
   if (state) ws.state.mockImplementation(state);
   const sentRequests = [];
@@ -155,8 +156,9 @@ describe('lookupPlaylistFlow (the load + the replay + the pagination)', () => {
     expect(url).toBe(PLAYLIST_URL);
     expect(opts.capture).toEqual({
       urlPrefixes: ['https://gql.music.amazon.com/*'],
-      quietMs: 2500,
+      quietMs: 4500,
       budgetMs: 15000,
+      doneWhen: { bodyIncludes: '"playlistDetail"' },
       returnOnTimeout: true
     });
     // The replay went to the captured URL with the captured headers and the
@@ -505,6 +507,133 @@ describe('lookupPlaylistFlow (the load + the replay + the pagination)', () => {
     expect(ws.load).toHaveBeenCalledTimes(1);
     expect(log).toHaveBeenCalledWith('[Amazon] playlist page still loading after the load budget; proceeding with the captured requests');
     log.mockRestore();
+  });
+
+  test('the import goes ahead the moment playlistDetail is captured — BEFORE did-finish-load (#1423 slow-subresource shape, restored)', async () => {
+    // #1437 review round 2, item 2: on `main` the import went ahead the
+    // moment playlistDetail was captured. The bridge's doneWhen names the op
+    // (the quoted operation-name value the matcher keys on), so the window
+    // ends AT the op — the import answers at the op's landing time, not at
+    // the 30s load budget the escape waits out. This timeline: an unrelated
+    // gql at 1s, playlistDetail at 4.5s, did-finish-load still 20s out — the
+    // import answers at ~4.5s with the page still loading.
+    const unrelated = {
+      url: 'https://gql.music.amazon.com/',
+      method: 'POST',
+      body: JSON.stringify({ operationName: 'MusicHomePage', variables: {} }),
+      headers: { 'x-api-key': 'k' }
+    };
+    const ws = playlistMock({
+      timing: {
+        loadMs: 25000,
+        requests: [
+          { atMs: 1000, entry: unrelated },
+          { atMs: 4500, entry: amazonPlaylistDetailCapture(PLAYLIST_ID) }
+        ]
+      },
+      respond: () => amazonPlaylistPage(PLAYLIST, [track(1), track(2)], last)
+    });
+    const resolver = instantiateAmazonPlugin(axe);
+    jest.useFakeTimers();
+    const t0 = Date.now();
+    try {
+      let settled = false;
+      const pending = resolver.lookupPlaylistFlow(PLAYLIST_URL).then((out) => { settled = true; return out; });
+      for (let clock = 0; clock < 25000 && !settled; clock += 1) {
+        await jest.advanceTimersByTimeAsync(1);
+      }
+      const playlist = await pending;
+      expect(playlist.tracks).toHaveLength(2);
+      // The window ended AT the match: the load answered at the op's
+      // landing time, not at did-finish-load (25s out) and not at the load
+      // budget (30s) the escape would have waited out.
+      const elapsed = Date.now() - t0;
+      expect(elapsed).toBeLessThan(25000);
+      expect(elapsed).toBe(4500);
+      // The named match is the quoted operation-name value, the exact needle
+      // the matcher keys on — a rename falls back to the quiet window.
+      expect(ws.load.mock.calls[0][2].capture.doneWhen).toEqual({ bodyIncludes: '"playlistDetail"' });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('a playlistDetail lagging an early unrelated gql past the shared quiet window still imports (the round-2 concrete miss)', async () => {
+    // The maintainer's concrete case: an early unrelated gql at 1s, the page
+    // finishes loading at 4s, playlistDetail lands at 4.5s. Under the shared
+    // 2.5s window the first quiet poll after load sees 3s of silence and
+    // returns without it — "Playlist not found" for a live playlist. The
+    // playlist quiet window (the FALLBACK, wider than the shared one) keeps
+    // the window open past the lag — and doneWhen ends it AT the op the
+    // moment it lands anyway.
+    const LAG_MS = 3500; // playlistDetail 3.5s after the last capture
+    const unrelated = {
+      url: 'https://gql.music.amazon.com/',
+      method: 'POST',
+      body: JSON.stringify({ operationName: 'MusicHomePage', variables: {} }),
+      headers: { 'x-api-key': 'k' }
+    };
+    const resolver = instantiateAmazonPlugin(axe);
+    // The lag sits past the shared quiet window and inside the playlist one
+    // — the gap the fallback exists to cover.
+    expect(LAG_MS).toBeGreaterThan(resolver.lib.PAGE_CAPTURE_QUIET_MS);
+    expect(LAG_MS).toBeLessThan(resolver.lib.PLAYLIST_CAPTURE_QUIET_MS);
+    const ws = playlistMock({
+      timing: {
+        loadMs: 4000,
+        requests: [
+          { atMs: 1000, entry: unrelated },
+          { atMs: 4500, entry: amazonPlaylistDetailCapture(PLAYLIST_ID) }
+        ]
+      },
+      respond: () => amazonPlaylistPage(PLAYLIST, [track(1)], last)
+    });
+    const playlist = await resolver.lookupPlaylistFlow(PLAYLIST_URL);
+    expect(playlist.tracks).toHaveLength(1);
+    expect(ws.pageFetch).toHaveBeenCalledTimes(1);
+  });
+
+  test('a page that never fires playlistDetail waits out the quiet FALLBACK, then answers the miss (not found)', async () => {
+    // The quiet window is now the FALLBACK for "playlistDetail never came"
+    // (deleted/private/renamed — or the rename that also defeats doneWhen):
+    // an unrelated gql at 1s and did-finish-load at 4s leave the window open
+    // to 5.5s (the last capture + the playlist quiet width) before the flow
+    // answers its null — the old 2.5s window closed at 4s.
+    const unrelated = {
+      url: 'https://gql.music.amazon.com/',
+      method: 'POST',
+      body: JSON.stringify({ operationName: 'playlistSuggestions', variables: {} }),
+      headers: { 'x-api-key': 'k' }
+    };
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const ws = playlistMock({
+      timing: {
+        loadMs: 4000,
+        requests: [{ atMs: 1000, entry: unrelated }]
+      },
+      respond: () => ({ data: { playlist: null } })
+    });
+    const resolver = instantiateAmazonPlugin(axe);
+    jest.useFakeTimers();
+    const t0 = Date.now();
+    try {
+      let settled = false;
+      const pending = resolver.lookupPlaylistFlow(PLAYLIST_URL).then((out) => { settled = true; return out; });
+      // Drive the clock past the OLD window's close (4s): the fallback is
+      // still waiting — a playlistDetail that landed at 4.5s would still be
+      // inside the window.
+      for (let clock = 0; clock < 6000 && !settled; clock += 1) {
+        await jest.advanceTimersByTimeAsync(1);
+      }
+      await expect(pending).resolves.toBeNull();
+      // The window ran its full fallback width: last capture 1s + 4.5s.
+      expect(Date.now() - t0).toBe(5500);
+      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/page never requested playlistDetail for \w+; gql operations seen: playlistSuggestions/));
+      expect(ws.pageFetch).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+      jest.useRealTimers();
+    }
   });
 
   test('the playlist lookup goes ahead of queued background page flows (the foreground lane)', async () => {

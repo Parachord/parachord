@@ -82,6 +82,35 @@ module.exports = {
     // loads in ~2s still ends its window by ~7s, still capped by the shared
     // 15s budget.
     const ALBUM_CAPTURE_QUIET_MS = 4500;
+    // The playlist page's own stop condition and quiet window — the same
+    // two-mechanism rule as the album page's, sized for the import flow.
+    // The window ends the moment the page's own playlistDetail op lands:
+    // doneWhen (the host's data-only stop condition, rule 5) names the
+    // operation-name value the plugin's matcher keys on (the SAME quoted
+    // needle shape as the album's — the quoted JSON string can only match
+    // the gql body's operationName field, never another operation's GraphQL
+    // document text, and a hornet rename never matches and falls back to
+    // the quiet window). That restores #1423's slow-subresource fix the
+    // RIGHT way: on `main` the import went ahead the moment playlistDetail
+    // was captured, and doneWhen ends the window AT the op — before
+    // did-finish-load — instead of waiting out the 30s load budget for the
+    // budget escape to fire. The quiet window is the FALLBACK for a
+    // playlistDetail that never comes (deleted/private/other-region — or
+    // renamed), and it may NOT be the shared 2.5s: the #1437 round-2 miss
+    // had an early unrelated gql at 1s, did-finish-load at 4s and
+    // playlistDetail at 4.5s — a 3.5s gap after the last capture that the
+    // shared window closed on, reading a live playlist as "not found".
+    // 4500ms — the album layer's calibrated reference (the same SPA
+    // gql-burst page class, with a pinned 4s detail-op lag) — covers that
+    // miss with margin. The import has no renderer step budget the way the
+    // album catalog step does (it paginates up to 120s), so the window could
+    // stretch to ~8s, but the only case that ever pays the full window is
+    // the not-found/renamed miss whose answer is null either way — the
+    // calibrated reference beats the headroom. Still capped by the shared
+    // 15s budget; the found case pays nothing (doneWhen ends the window at
+    // the match).
+    const PLAYLIST_CAPTURE_QUIET_MS = 4500;
+    const PLAYLIST_DETAIL_OP_NAME = 'playlistDetail';
     // The operation-name value the album page fires for the album's detail —
     // live-captured 2026-10 (variables.id = the ASIN). The doneWhen needle is
     // the quoted JSON value, so it cannot match inside another operation's
@@ -1054,6 +1083,7 @@ module.exports = {
     return {
       SESSION, GQL_URL, CONFIG_URL,
       PAGE_CAPTURE_BUDGET_MS, PAGE_CAPTURE_QUIET_MS, ALBUM_CAPTURE_QUIET_MS, ALBUM_DETAIL_OP_NAME, ALBUM_JOB_STALE_MS,
+      PLAYLIST_CAPTURE_QUIET_MS, PLAYLIST_DETAIL_OP_NAME,
       PLAN_TTL_MS, PLAN_UNKNOWN_TTL_MS,
       notReady,
       pageBlocksPlayback,
@@ -2436,8 +2466,19 @@ module.exports = {
     const load = await ws.load(lib.SESSION, rawUrl, {
       capture: {
         urlPrefixes: [lib.GQL_URL + '*'],
-        quietMs: lib.PAGE_CAPTURE_QUIET_MS,
+        // The window ENDS AT the page's own playlistDetail op — doneWhen
+        // (the host's data-only stop condition, rule 5) names the operation
+        // the matcher below keys on, quoted so a rename only falls back to
+        // the quiet window — restoring #1423's slow-subresource fix the right
+        // way: the import proceeds the moment the op is captured, before
+        // did-finish-load, instead of waiting out the 30s budget for the
+        // escape below. The quiet window is the FALLBACK for a playlistDetail
+        // that never comes (not found / renamed), and it is the playlist one
+        // — wider than the shared 2.5s so a lagging playlistDetail survives
+        // an early unrelated gql (#1437 round 2).
+        quietMs: lib.PLAYLIST_CAPTURE_QUIET_MS,
         budgetMs: lib.PAGE_CAPTURE_BUDGET_MS,
+        doneWhen: { bodyIncludes: '"' + lib.PLAYLIST_DETAIL_OP_NAME + '"' },
         // Rule 5's budget escape, opted in per load: this flow is the ONE
         // caller that knows how to judge a half-loaded page's captures (the
         // matcher below reads playlistDetail off whatever the window holds,
@@ -2445,7 +2486,8 @@ module.exports = {
         // Every other flow keeps the default contract — a budget-out load
         // throws load-failed, which its callers already treat as transient —
         // so a slow page is never misread as a structural "never searched"
-        // or a not-found miss.
+        // or a not-found miss. The pathological case this still covers:
+        // playlistDetail never arrives but other captures are held.
         returnOnTimeout: true
       }
     });
