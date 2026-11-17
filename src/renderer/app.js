@@ -6147,6 +6147,17 @@ const Parachord = () => {
   // Amazon Music sign-in status from the in-app player:
   // { success, engine: 'web', web: { cdm, signedIn }, plan, planMessage }
   const [amazonMusicStatus, setAmazonMusicStatus] = useState(null);
+  // Status replies from plugins that report their own sign-in/playback-limit
+  // state (capabilities.status, the generic surface of #1356):
+  // { [resolverId]: reply }. One reply feeds every consumer — the limit map
+  // below, the resolver tile (tileStatus) and the Settings sign-in row
+  // (pluginStatusRow). A failed read is the loader's marker
+  // (resolver-loader.js STATUS_READ_FAILED — the plugin threw, answered
+  // nothing shaped, or ran past the read budget): no verdict for the limit
+  // map, an honest "couldn't check" for the row. No shipped plugin declares
+  // the capability yet; Amazon keeps its own IPC status (amazonMusicStatus)
+  // until its plugin migration moves it onto this surface.
+  const [pluginStatuses, setPluginStatuses] = useState({});
   // Resolvers that are enabled but can't play on the account's plan (Amazon
   // off Music Unlimited, #1220). Each service reports its limit into one map
   // (lib/playback-limits.js); another service with such a plan is one more
@@ -6156,10 +6167,21 @@ const Parachord = () => {
   // priority numbers.
   // Apple Music not signed in is in the same map (appleMusicPlaybackLimit):
   // it can't play, so it leaves the priority order until it connects.
+  // Plugins that report their own status (capabilities.status) join the same
+  // map: the plugin is the authority for its service, so its entry wins
+  // where a per-service mapper still exists — the migration order (a
+  // service's plugin entry takes over the moment it starts declaring the
+  // capability). But only when it actually gives a verdict: the plugin
+  // entries go through pluginStatusLimits, which DROPS a no-verdict one
+  // (a failed read, a reply with no playbackLimit), so it lands after the
+  // mappers without overriding them — a plugin that can't answer never
+  // removes the host's own verdict (a Prime amazonmusic stays blocked while
+  // its plugin's read is down).
   const playbackLimits = useMemo(() => ({
     amazonmusic: PlaybackLimits.amazonPlaybackLimit(amazonMusicStatus),
-    applemusic: PlaybackLimits.appleMusicPlaybackLimit({ checked: appleMusicAuthChecked, connected: appleMusicConnected })
-  }), [amazonMusicStatus, appleMusicAuthChecked, appleMusicConnected]);
+    applemusic: PlaybackLimits.appleMusicPlaybackLimit({ checked: appleMusicAuthChecked, connected: appleMusicConnected }),
+    ...PlaybackLimits.pluginStatusLimits(pluginStatuses)
+  }), [amazonMusicStatus, appleMusicAuthChecked, appleMusicConnected, pluginStatuses]);
   const planBlockedResolverIds = useMemo(() => PlaybackLimits.planBlockedIds(playbackLimits), [playbackLimits]);
   // For the plug-in tile menu's Raise / Lower Priority handler, registered once.
   const planBlockedResolverIdsRef = useRef(planBlockedResolverIds);
@@ -7590,6 +7612,101 @@ const Parachord = () => {
     return window.electron.amazonMusic.onPlanChanged(() => refreshAmazonMusicStatus());
   }, [cacheLoaded, amazonMusicEnabled]);
 
+  // The generic plugin-status surface (capabilities.status, #1356): a plugin
+  // that can report its sign-in/playback-limit state implements getStatus,
+  // and the renderer asks it through the resolver registry (resolver-loader.js
+  // getStatusResolvers/getStatus — direct, renderer-side, no new IPC). Amazon
+  // stays on its own IPC status above until its plugin migration; no shipped
+  // plugin declares the capability yet, so nothing below runs for one.
+
+  // One plugin's status read. The loader logs and swallows a throwing or
+  // hung getStatus and bounds the read (STATUS_BUDGET_MS — a status outage
+  // must not unplug playback, and one hung read must not stall the sweep
+  // below), so the reply here is a verdict, the loader's failed marker, or
+  // null; each is stored as-is — a failure is no verdict for the limit map
+  // (lib/playback-limits.js pluginStatusLimit) and the honest error row
+  // (pluginStatusRow), and a null (never asked) stays "Checking…".
+  const refreshPluginStatus = (resolverId) => {
+    const loader = resolverLoaderRef.current;
+    if (!loader || typeof loader.getStatus !== 'function') return;
+    loader.getStatus(resolverId).then((status) => {
+      setPluginStatuses(prev => ({ ...prev, [resolverId]: status }));
+    });
+  };
+
+  // Read every ACTIVE status-capable plugin. Only active ones: a disabled
+  // plugin's status has no reader (its tile is inactive, and playback never
+  // asks it). One sweep is ONE setPluginStatuses, the whole batch landing
+  // together (every setState is a full-app render — coalesce the burst); a
+  // throwing or hung getStatus never rejects it, because the loader has
+  // already logged the throw and answers its failed marker (a hung one
+  // settles at the read budget, STATUS_BUDGET_MS — one plugin's hang can't
+  // stall the batch, which is why the reads can be batched at all), stored
+  // as-is like the single read above (a real rejection is the loader itself
+  // failing, and that resolver gets no entry). The reads in flight are held
+  // per resolver (pluginStatusReadsRef), so a re-run while one is still
+  // pending — a startup dep changed — reads only what nothing is reading: no
+  // pending call is re-issued.
+  const pluginStatusReadsRef = useRef(new Set());
+  const refreshPluginStatuses = () => {
+    const loader = resolverLoaderRef.current;
+    if (!loader || typeof loader.getStatusResolvers !== 'function') return;
+    const ids = loader.getStatusResolvers()
+      .filter(r => activeResolvers.includes(r.id))
+      .map(r => r.id)
+      .filter(id => !pluginStatusReadsRef.current.has(id));
+    if (!ids.length) return;
+    ids.forEach(id => pluginStatusReadsRef.current.add(id));
+    Promise.allSettled(ids.map(id => loader.getStatus(id))).then((replies) => {
+      ids.forEach(id => pluginStatusReadsRef.current.delete(id));
+      // A sweep in flight when an uninstall lands must not write the
+      // uninstalled plugin's entry back: the reads started before the
+      // uninstall, so their replies are a dead plugin's. Re-check the loaded
+      // set HERE, when the batch lands — not only the set the sweep fired
+      // with — and through the ref (loadedResolversRef, kept current by the
+      // effect), not this render's loadedResolvers: the landing happens
+      // after the render the uninstall committed (the uninstall drops the
+      // entry itself; this keeps the drop held).
+      const stillLoaded = new Set((loadedResolversRef.current || []).map(r => r.id));
+      const statuses = {};
+      ids.forEach((id, i) => {
+        if (!stillLoaded.has(id)) return;
+        if (replies[i].status === 'fulfilled') statuses[id] = replies[i].value;
+      });
+      setPluginStatuses(prev => ({ ...prev, ...statuses }));
+    });
+  };
+
+  // The trigger set is deliberately the Amazon status's own: once at startup
+  // (after the plugins are loaded) and again each time Settings opens, so a
+  // sign-in or plan change since the last read shows where the person looks.
+  // Nothing else polls — a status read can be a network call (Amazon's asks
+  // the service) — and a plugin has no push channel yet (one would come with
+  // the web-session surface).
+  const havePluginStatuses = Object.keys(pluginStatuses).length > 0;
+  useEffect(() => {
+    if (!cacheLoaded) return;
+    if (activeView !== 'settings' && havePluginStatuses) return;
+    refreshPluginStatuses();
+    // loadedResolvers: the registry (initResolvers) and the caches
+    // (loadCacheFromStore) both start at mount and race, so the startup
+    // read must re-run when the registry lands; the guard above keeps that
+    // a read only where one is due (startup, or Settings open).
+    // activeResolvers: like the Amazon effect's amazonMusicEnabled dep — an
+    // enabled plugin is read at once. The only enable path is the resolver
+    // panel, inside Settings, where the guard above passes.
+  }, [cacheLoaded, activeView, havePluginStatuses, loadedResolvers, activeResolvers]);
+
+  // Opening a status-capable resolver's panel re-reads it (the Amazon
+  // modal's refreshPlan read): the freshest sign-in/plan state shows right
+  // where the person is looking at it, including a plugin enabled since the
+  // startup read.
+  useEffect(() => {
+    if (!selectedResolver?.id) return;
+    if (!(selectedResolver.capabilities?.status && typeof selectedResolver.getStatus === 'function')) return;
+    refreshPluginStatus(selectedResolver.id);
+  }, [selectedResolver]);
+
   // Leaving an Amazon track must blank the player view, not just pause it -
   // the module's own invariant ("pause is not enough": Amazon can start the
   // element a few hundred ms later, and the visibility stub keeps the page
@@ -7876,6 +7993,13 @@ const Parachord = () => {
     if (resolverId === 'amazonmusic') {
       refreshAmazonMusicStatus();
       return null; // main's refusal already carries the Amazon wording
+    }
+    // A status-capable plugin's refusal says its reported status is stale:
+    // re-read it. The refusal itself already carries the wording to show, so
+    // the reply only refreshes the map and the Settings row.
+    const statusLoader = resolverLoaderRef.current;
+    if (statusLoader?.getStatusResolvers && statusLoader.getStatusResolvers().some(r => r.id === resolverId)) {
+      refreshPluginStatus(resolverId);
     }
     return null;
   };
@@ -25660,6 +25784,17 @@ ${trackListXml}
       }
       setResolverOrder(prev => prev.filter(id => id !== resolverId));
       setActiveResolvers(prev => prev.filter(id => id !== resolverId));
+      // Drop its status reply too (a status-capable plugin): the entry is
+      // the last read's answer, and a reinstalled plugin starts fresh — the
+      // entry it left behind is neither its verdict nor anyone else's.
+      // (playbackResolverIds filters active ids anyway, so this is honesty,
+      // not correctness.)
+      setPluginStatuses(prev => {
+        if (!(resolverId in prev)) return prev;
+        const next = { ...prev };
+        delete next[resolverId];
+        return next;
+      });
 
       // Save the uninstalled resolver ID so it doesn't reappear on restart
       const uninstalledResolvers = await window.electron.store.get('uninstalled_resolvers') || [];
@@ -38298,6 +38433,7 @@ useEffect(() => {
       metaServiceConfigs,
       metaServices,
       playbackLimits,
+      pluginStatuses,
       resolverConfigCache,
       resolverSyncSettings,
       runLoveBackfill,

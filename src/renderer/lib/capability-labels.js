@@ -23,6 +23,7 @@ const LABELS = {
   resolvePicks: 'Picks resolution',
   concerts: 'Concerts',
   scrobbling: 'Scrobbling',
+  status: 'Status',
 };
 
 function capabilityLabel(cap) {
