@@ -38404,7 +38404,6 @@ useEffect(() => {
       marketplaceManifest,
       metaServiceConfigs,
       metaServices,
-      playbackLimits,
       pluginStatuses,
       resolverConfigCache,
       resolverSyncSettings,

@@ -329,7 +329,10 @@ describe('wiring', () => {
     expect(row).toContain('typeof selectedResolver.signIn === \'function\'');
     expect(row).toContain('await selectedResolver.signOut()');
     expect(dialog).toContain('pluginStatuses,');
-    expect(app).toMatch(/playbackLimits,\s*pluginStatuses,/);
+    // app.js feeds the dialog the replies (the call-site block, not the
+    // whole file: pluginStatuses reaches several consumers).
+    const callSite = between(app, 'React.createElement(PluginSettingsDialog, {', '...pluginSettingsDialogHandlers');
+    expect(callSite).toContain('pluginStatuses,');
     // The capabilities chip is labelled, not a raw id (lib/capability-labels.js).
     expect(read('src', 'renderer', 'lib', 'capability-labels.js')).toContain("status: 'Status'");
   });

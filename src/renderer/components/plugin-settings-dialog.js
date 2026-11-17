@@ -17,7 +17,6 @@ const { timeAgo } = require('../lib/time-ago');
 const { SERVICE_LOGOS } = require('./brand-logos');
 const { ScrobblerSettingsCard } = require('./settings-cards');
 const { capabilityLabel } = require('../lib/capability-labels');
-const { CHIP_NEUTRAL_FILL, CHIP_NEUTRAL_TEXT } = require('./filter-chips');
 const { Modal } = require('./modal');
 const { Badge } = require('./badge');
 const { Button } = require('./button');
@@ -114,7 +113,6 @@ const PluginSettingsDialog = React.memo(function PluginSettingsDialog(props) {
     metaServiceConfigs,
     metaServices,
     openSyncSetupModal,
-    playbackLimits,
     pluginStatuses,
     refreshPluginStatus,
     resolverConfigCache,
@@ -336,7 +334,9 @@ React.createElement('div', {
                     style: { fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }
                   }, row.message) : null
                 ),
-                canSignOut ? React.createElement('button', {
+                canSignOut ? React.createElement(Button, {
+                  variant: 'secondary',
+                  size: 'sm',
                   onClick: async () => {
                     // Stop the shared engine BEFORE the session dies — the
                     // shaka session (license + buffered signed URLs) must not
@@ -363,13 +363,10 @@ React.createElement('div', {
                     } else {
                       showToast((r && r.error) || `Could not sign out of ${selectedResolver.name}`, 'error');
                     }
-                  },
-                  style: {
-                    padding: '6px 12px', fontSize: '12px', fontWeight: '500',
-                    color: 'var(--text-primary)', backgroundColor: 'var(--hover-bg-default)',
-                    borderRadius: '8px'
                   }
-                }, 'Sign out') : canSignIn ? React.createElement('button', {
+                }, 'Sign out') : canSignIn ? React.createElement(Button, {
+                  variant: 'primary',
+                  size: 'sm',
                   onClick: async () => {
                     // Amazon's sign-in carries its own prompt flow (the
                     // consent dialog, single-flight, the 10-minute quiet
@@ -393,15 +390,6 @@ React.createElement('div', {
                     }
                     await selectedResolver.signIn().catch(() => null);
                     refreshPluginStatus(selectedResolver.id);
-                  },
-                  style: {
-                    padding: '6px 12px', fontSize: '12px', fontWeight: '500',
-                    // The fill-accent, not var(--accent-primary): white text
-                    // never sits on the accent var (it lightens to #a78bfa in
-                    // dark mode). CHIP_NEUTRAL_TEXT is the on-color the chips
-                    // themselves read on the same fill.
-                    color: CHIP_NEUTRAL_TEXT, backgroundColor: CHIP_NEUTRAL_FILL,
-                    borderRadius: '8px'
                   }
                 }, 'Sign in') : null
               )
