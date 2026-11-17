@@ -3,9 +3,10 @@
 //
 // Loads under plain Node (no window at module scope).
 
+// Connecting a service and a scrobbling service used to be items here; they
+// are the getting-started layout's steps now (#1493, lib/getting-started.js),
+// so the pill carries only the extras and What's New.
 function homeSetupItems({
-  servicesConnected = false,
-  scrobblingConnected = false,
   extensionConnected = null,
   isMac = false,
   dismissed = [],
@@ -13,14 +14,7 @@ function homeSetupItems({
   whatsNewUnread = false,
 } = {}) {
   const gone = new Set(Array.isArray(dismissed) ? dismissed : []);
-  // Scrobbling used to be one item per service ('lastfm', 'listenbrainz');
-  // someone who dismissed both has dismissed scrobbling.
-  if (gone.has('lastfm') && gone.has('listenbrainz')) gone.add('scrobbling');
-  // The items name no service, so a new plugin needs no change here.
   const all = [
-    // Done once a service beyond the ones that ship switched on is in use.
-    { id: 'resolvers', label: 'Connect your music services', done: !!servicesConnected },
-    { id: 'scrobbling', label: 'Connect a scrobbling service', done: !!scrobblingConnected },
     // Only open when explicitly false; null (unknown) counts as done.
     { id: 'browser-extension', label: 'Install the browser extension', done: extensionConnected !== false },
   ];

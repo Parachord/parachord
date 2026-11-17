@@ -626,6 +626,7 @@ const {
 const { sourceBlockId, withoutTrackSource } = require('./lib/bad-match-report');
 const { amazonSignInPromptDecision } = require('./lib/amazon-signin-prompt');
 const PlaybackLimits = require('./lib/playback-limits');
+const GettingStartedModel = require('./lib/getting-started');
 const { seekSpotify, spotifyPollPredatesSeek, SPOTIFY_SEEK_DEBOUNCE_MS } = require('./lib/spotify-seek');
 const { savedPluginConfig, sourcesChangedOnRecheck, shuffleAllowed, SHUFFLE_UNAVAILABLE_MESSAGE, LISTEN_ALONG_FAILED_POLLS_LIMIT, listenAlongWaitDecision, resumeStartPosition, trackPositionKey, REPEAT_UNAVAILABLE_MESSAGE, nextRepeatMode, normalizeRepeatMode, repeatModeFromLoop, loopFromRepeatMode, shouldRestoreQueue, trackBehindPlaceholder } = require('./lib/playback-helpers');
 const { parseFriendLink, buildFriendLink } = require('./lib/friend-link');
@@ -4154,15 +4155,19 @@ const Parachord = () => {
     setCleanupDuplicatesState({ loading: false, providerId: null });
   };
 
-  // First-run tutorial state
+  // The welcome tour (#1493): overview screens only; setup is Home's.
   const [firstRunTutorial, setFirstRunTutorial] = useState({
     open: false,
-    step: 'welcome', // 'welcome' | 'sources' | 'accounts' | 'complete'
-    // The accounts step's fields (#1387), filled from saved configs on entry.
-    lastfmUsername: '',
-    listenbrainzUsername: '',
-    connecting: false
+    step: 'welcome' // a screen id from first-run-tutorial.js TOUR_SCREENS
   });
+  // Home's getting-started layout (#1493, lib/getting-started.js):
+  // { active, played } from the store key 'home_getting_started'; null
+  // until the store answers.
+  const [homeGettingStarted, setHomeGettingStarted] = useState(null);
+  const saveHomeGettingStarted = (next) => {
+    setHomeGettingStarted(next);
+    if (window.electron?.store) window.electron.store.set('home_getting_started', next);
+  };
 
   // Background sync timer (every 15 minutes)
   // Use a ref so the sync callback always reads the latest settings
@@ -19220,7 +19225,7 @@ ${trackListXml}
         'concerts_location', 'concerts_location_coords', 'concerts_location_radius',
         // Queue & tutorial
         'saved_queue', 'saved_queue_position', 'saved_playback_context', 'saved_shuffle_state', 'repeat_mode',
-        'tutorial_completed', 'whats_new_dismissed_version', 'home_setup_dismissed',
+        'tutorial_completed', 'whats_new_dismissed_version', 'home_setup_dismissed', 'home_getting_started',
         // Loved-tracks push to LB/LFM (opt-in per service) + the import
         // cursor (newest loved-at seen per service, parachord#1071)
         'scrobbler_love_push_enabled', 'love_pushed_keys', 'love_import_cursor',
@@ -20044,6 +20049,11 @@ ${trackListXml}
       const tutorialCompleted = d['tutorial_completed'];
       const dismissedVersion = d['whats_new_dismissed_version'];
       if (Array.isArray(d['home_setup_dismissed'])) setHomeSetupDismissed(d['home_setup_dismissed']);
+      // Home's getting-started layout: on for a new install (no tour finished
+      // yet), never for a profile from before it shipped (#1493).
+      const gettingStarted = GettingStartedModel.initialGettingStarted(d['home_getting_started'], !!tutorialCompleted);
+      setHomeGettingStarted(gettingStarted);
+      if (!d['home_getting_started'] && gettingStarted.active) window.electron.store.set('home_getting_started', gettingStarted);
       // Repeat (#1319) is a player setting, restored whether or not the queue is.
       setRepeatMode(d['repeat_mode']);
 
@@ -37336,12 +37346,6 @@ useEffect(() => {
     activateListenAlong, deactivateListenAlong, getAlbumArt, handlePlaylistDrop, isOnAir, loadCharts, loadCriticsPicks, loadNewReleases, loadTopTracks, navigateBack, navigateForward, navigateTo, navigateToFriend, pinFriend, reorderPinnedFriends,
   });
 
-  // Stable function props for the memo'd FirstRunTutorial (keys must
-  // match FIRST_RUN_TUTORIAL_HANDLERS in first-run-tutorial.js).
-  const firstRunTutorialHandlers = useStableHandlers({
-    connectLastfm, connectListenbrainz, handleAddWatchFolder, navigateTo,
-  });
-
   // Stable function props for the memo'd AiPromptPanel (keys must
   // match AI_PROMPT_PANEL_HANDLERS in ai-prompt-panel.js).
   const aiPromptPanelHandlers = useStableHandlers({
@@ -37436,20 +37440,99 @@ useEffect(() => {
 
   // Stable function props for the memo'd HomePage (keys must match
   // HOME_PAGE_HANDLERS in home-page.js).
-  // The setup checklist's "Connect your music services": done once a service
-  // beyond the two that ship switched on (the activeResolvers initial state)
-  // is in use.
-  const homeServicesConnected = useMemo(
-    () => activeResolvers.some(id => id !== 'bandcamp' && id !== 'localfiles'),
-    [activeResolvers]
-  );
+  // Home's getting-started layout (#1493). The steps come from
+  // lib/getting-started.js; step 1's tiles from the plug-in registry.
+  // pluginAccounts is what the host knows about each sign-in (a plug-in it
+  // has no sign-in state for counts as connected once it plays).
+  const pluginAccounts = useMemo(() => ({
+    spotify: spotifyConnected,
+    applemusic: appleMusicConnected,
+    soundcloud: soundcloudConnected,
+    amazonmusic: !!amazonMusicStatus?.web?.signedIn
+  }), [spotifyConnected, appleMusicConnected, soundcloudConnected, amazonMusicStatus]);
+  const homeGettingStartedModel = useMemo(() => {
+    const GS = GettingStartedModel;
+    const plugins = GS.stepOnePlugins(loadedResolvers);
+    const opts = { accounts: pluginAccounts, playbackResolvers, playbackLimits };
+    const serviceStates = Object.fromEntries(plugins.services.map(r => [r.id, GS.serviceState(r, opts)]));
+    const scrobblers = GS.scrobblerPlugins(metaServices);
+    const scrobblerStates = Object.fromEntries(scrobblers.map(sv => [sv.id, !!metaServiceConfigs?.[sv.id]?.username]));
+    const hasMusic = (collectionData.tracks || []).length > 0 || (collectionData.albums || []).length > 0
+      || (collectionData.artists || []).length > 0 || (library || []).length > 0 || (playlists || []).length > 0;
+    const status = GS.gettingStartedSteps({
+      connected: GS.serviceConnected(plugins.services, opts),
+      folderAdded: watchFolders.length > 0,
+      hasMusic,
+      scrobbling: Object.values(scrobblerStates).some(Boolean),
+      played: !!homeGettingStarted?.played
+    });
+    return {
+      show: GS.showGettingStarted(homeGettingStarted, status),
+      ready: loadedResolvers.length > 0,
+      status,
+      plugins: { ...plugins, free: plugins.free.map(r => ({ ...r, active: activeResolvers.includes(r.id) })) },
+      serviceStates,
+      scrobblers,
+      scrobblerStates
+    };
+  }, [loadedResolvers, pluginAccounts, playbackResolvers, playbackLimits, activeResolvers, metaServices, metaServiceConfigs,
+    collectionData, library, playlists, watchFolders, homeGettingStarted]);
+  // Something played while the layout is up: step 3 is done.
+  useEffect(() => {
+    if (isPlaying && homeGettingStarted?.active && !homeGettingStarted.played) {
+      saveHomeGettingStarted({ ...homeGettingStarted, played: true });
+    }
+  }, [isPlaying, homeGettingStarted]);
+  // All three steps done: Home is the normal Home from now on.
+  useEffect(() => {
+    if (homeGettingStarted?.active && homeGettingStartedModel.status.allDone) {
+      saveHomeGettingStarted({ ...homeGettingStarted, active: false });
+    }
+  }, [homeGettingStarted, homeGettingStartedModel.status.allDone]);
+  // "Skip setup for now": remembered, so Home doesn't keep asking.
+  const skipGettingStarted = () => saveHomeGettingStarted({ played: !!homeGettingStarted?.played, active: false });
+  // The welcome tour's last screen: the layout on, Home showing.
+  const startGettingStarted = () => {
+    saveHomeGettingStarted({ played: !!homeGettingStarted?.played, active: true });
+    navigateTo('home');
+  };
+  // A plug-in's panel, over the current page (Plug-Ins' tile does the same).
+  const openPluginPanel = (pluginId) => {
+    const plugin = metaServices.find(sv => sv.id === pluginId)
+      || (loadedResolversRef.current || []).find(r => r.id === pluginId);
+    if (plugin) setSelectedResolver(plugin);
+  };
+  // Step 1's Connect: switch the plug-in on, then run the sign-in its panel
+  // runs. The host has a sign-in for these services; one that needs
+  // something typed first (Spotify's and SoundCloud's own client ids), and
+  // any other plug-in, opens its panel instead.
+  const connectPlugin = async (pluginId) => {
+    const plugin = (loadedResolversRef.current || []).find(r => r.id === pluginId);
+    if (!plugin) return;
+    if (!activeResolversRef.current.includes(pluginId)) toggleResolver(pluginId);
+    const signIn = {
+      spotify: spotifyCredentialsSource !== 'none' ? connectSpotify : null,
+      soundcloud: soundcloudCredentialsSource !== 'none' ? connectSoundcloud : null,
+      applemusic: connectAppleMusic,
+      amazonmusic: () => manageAmazonMusic({ explicit: true, reason: 'not-signed-in', forcePrompt: true })
+    }[pluginId];
+    if (signIn) await signIn();
+    else setSelectedResolver(plugin);
+  };
+  // Stable function props for the memo'd FirstRunTutorial (keys must
+  // match FIRST_RUN_TUTORIAL_HANDLERS in first-run-tutorial.js),
+  // below startGettingStarted, which it passes.
+  const firstRunTutorialHandlers = useStableHandlers({
+    navigateTo, startGettingStarted,
+  });
+
   const homePageHandlers = useStableHandlers({
-    addServicePlaylistToPlaylist, addToQueue, askShuffleupagus, copyParachordLink, dismissHomeBanner, dismissHomeSetupItem,
-    fetchAlbumTracksByName, getAlbumArt, handleCollectionAlbumClick, handleStartCollectionStation,
-    loadConcerts, loadCriticsPicks, loadNewReleases, loadPlaylist,
-    loadHomeHistoryMixes, loadHomeRecommendations, navigateTo, openCriticsPicksAlbum, openHomeBannerCta, openServicePlaylist,
+    addServicePlaylistToPlaylist, addToQueue, askShuffleupagus, connectPlugin, copyParachordLink, dismissHomeBanner, dismissHomeSetupItem,
+    fetchAlbumTracksByName, getAlbumArt, handleAddWatchFolder, handleCollectionAlbumClick, handleStartCollectionStation,
+    loadCharts, loadConcerts, loadCriticsPicks, loadNewReleases, loadPlaylist,
+    loadHomeHistoryMixes, loadHomeRecommendations, navigateTo, openChartsAlbum, openCriticsPicksAlbum, openHomeBannerCta, openPluginPanel, openServicePlaylist,
     openTopAlbum, openWhatsNew, playServicePlaylist, playTrackCollection, prefetchTopAlbumTracks,
-    queueServicePlaylist, showHomeContextMenu,
+    queueServicePlaylist, showHomeContextMenu, skipGettingStarted,
   });
 
   // Stable function props for the memo'd CollectionPage: same identity on
@@ -37660,7 +37743,7 @@ useEffect(() => {
 
         // HOME view - dynamic personalized landing page
         activeView === 'home' && React.createElement(HomePage, {
-          allPlaylistCovers, appVersion, bannerItems, cacheLoaded, chatAvailable: homeChatAvailable, collectionData, collectionLoading, concerts: homeConcerts, contentWidth: mainContentWidth, concertsArtistImages, concertsError, concertsLoaded, concertsLoading, concertsLocation, criticsPicks, criticsPicksError, criticsPicksLoaded, criticsPicksLoading, extensionConnected, homeActive, homeData, homeSetupDismissed, library, metaServiceConfigs, mixes: homeMixes, newReleases, newReleasesError, newReleasesLoaded, newReleasesLoading, playlists, playlistsLoading, recommendationAlbums, recommendations, setAddToPlaylistPanel, setCollectionSort, setCollectionTab, setExtensionInfoOpen, setRaycastInfoOpen, servicesConnected: homeServicesConnected, setSettingsTab, showToast, sourceColors: homeSourceColors, whatsNewUnread,
+          allPlaylistCovers, appVersion, bannerItems, cacheLoaded, charts, chartsError, chartsLoaded, chartsLoading, chatAvailable: homeChatAvailable, collectionData, collectionLoading, concerts: homeConcerts, contentWidth: mainContentWidth, concertsArtistImages, concertsError, concertsLoaded, concertsLoading, concertsLocation, criticsPicks, criticsPicksError, criticsPicksLoaded, criticsPicksLoading, extensionConnected, gettingStarted: homeGettingStartedModel, homeActive, homeData, homeSetupDismissed, library, mixes: homeMixes, newReleases, newReleasesError, newReleasesLoaded, newReleasesLoading, playlists, playlistsLoading, recommendationAlbums, recommendations, setAddToPlaylistPanel, setCollectionSort, setCollectionTab, setExtensionInfoOpen, setRaycastInfoOpen, setSettingsTab, setShowUrlImportDialog, showToast, sourceColors: homeSourceColors, watchFolders, whatsNewUnread,
           ...homePageHandlers
         }),
 
@@ -38503,19 +38586,9 @@ useEffect(() => {
 
     // First-Run Tutorial Modal - Cinematic Light design
     /* FirstRunTutorial (components/first-run-tutorial.js), a memo'd dialog. */ firstRunTutorial.open && React.createElement(FirstRunTutorial, {
-      activeResolvers,
-      activeResolversRef,
       firstRunTutorial,
       loadedResolvers,
-      metaServiceConfigs,
-      playbackResolvers,
-      resolverOrderRef,
-      savedActiveResolversRef,
-      setActiveResolvers,
       setFirstRunTutorial,
-      setResolverOrder,
-      setSettingsTab,
-      watchFolders,
       ...firstRunTutorialHandlers
     }),
 

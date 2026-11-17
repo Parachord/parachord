@@ -231,6 +231,13 @@ const ParachordWordmark = ({ fill = 'black', height = 40 }) => React.createEleme
   React.createElement('rect', { x: 57, y: 148, width: 25, height: 108.261, fill: fill })
 );
 
+// Parachord's app icon (the "p" on its dark square, the Dock's icon), for a
+// picture of the app itself: the welcome tour's first screen. Decorative.
+const ParachordAppIcon = ({ size = 44 }) => React.createElement('img', {
+  src: 'assets/icons/icon128.png', width: size, height: size, alt: '', 'aria-hidden': 'true',
+  style: { flexShrink: 0, borderRadius: `${Math.round(size * 0.22)}px`, boxShadow: 'var(--shadow-sm)' }
+});
+
 // Brand colours that aren't a plug-in's (a plug-in's comes from its
 // manifest): Raycast's, for its extension's info dialog.
 const BRAND_COLORS = {
@@ -243,4 +250,4 @@ const BRAND_COLORS = {
 // drawn as a brand.
 const NO_PLUGIN_COLOR = '#888888';
 
-module.exports = { NO_PLUGIN_COLOR, SERVICE_LOGO_PATHS, SERVICE_LOGO_IMAGES, ResolverIcon, SERVICE_LOGOS, BRAND_MARKS, BrandMark, ParachordWordmark, BRAND_COLORS };
+module.exports = { NO_PLUGIN_COLOR, SERVICE_LOGO_PATHS, SERVICE_LOGO_IMAGES, ResolverIcon, SERVICE_LOGOS, BRAND_MARKS, BrandMark, ParachordWordmark, ParachordAppIcon, BRAND_COLORS };

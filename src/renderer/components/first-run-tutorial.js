@@ -1,381 +1,224 @@
-// src/renderer/components/first-run-tutorial.js: the welcome tour shown on
-// first launch: what Parachord is, the plug-ins that play music, the
-// accounts (Last.fm, ListenBrainz), local files and where to go next
-// (#1451, moved out of app.js).
+// src/renderer/components/first-run-tutorial.js: the welcome tour, shown on
+// first launch (tutorial_completed) and from Settings › About › Show welcome
+// tour. It explains Parachord and asks you to set up nothing (#1493): one
+// idea per screen, each with a small picture made of the app's own pieces
+// and a line or two. The last screen hands over to Home's getting-started
+// layout, where the setup is.
 //
 // A React.memo'd dialog on the shared Modal, fed stable props: state,
-// setters, refs and memos by value, plain functions through
-// useStableHandlers (FIRST_RUN_TUTORIAL_HANDLERS, pinned by
-// tests/renderer/page-memo.test.js). The refs are read only inside click
-// handlers; window is read only inside handlers. The markup moved as it was.
+// setters and memos by value, plain functions through useStableHandlers
+// (FIRST_RUN_TUTORIAL_HANDLERS, pinned by tests/renderer/page-memo.test.js).
+// window is read only inside handlers.
 
 const Icons = require('./icons');
-const { countOf } = require('../lib/plural');
-const { appendUniqueId, insertInCanonicalOrder } = require('../lib/resolver-order');
-const { ParachordWordmark, SERVICE_LOGOS } = require('./brand-logos');
+const { ParachordWordmark, ParachordAppIcon, SERVICE_LOGOS } = require('./brand-logos');
 const { Modal } = require('./modal');
 const { Badge } = require('./badge');
 const { Button } = require('./button');
-const { TextField } = require('./fields');
+const { ReasonMark } = require('./reason-badge');
+const { FriendAvatar } = require('./friend-avatar');
+const { StepMarker, ServiceMark } = require('./home-getting-started');
+const { PAGE_COLORS } = require('../lib/page-colors');
+const { PAGE_ICONS } = require('../lib/page-icons');
+const { stepOnePlugins } = require('../lib/getting-started');
+
+const e = React.createElement;
 
 const FIRST_RUN_TUTORIAL_HANDLERS = [
-  'connectLastfm',
-  'connectListenbrainz',
-  'handleAddWatchFolder',
   'navigateTo',
+  'startGettingStarted',
+];
+
+// The plug-ins that play here, from the registry: services first, then the
+// no-account ones (never a list of names).
+const playingPlugins = (loadedResolvers) => {
+  const p = stepOnePlugins(loadedResolvers);
+  return p.services.slice(0, 3).concat(p.free.slice(0, 1));
+};
+
+const PICTURE_STYLE = {
+  height: '120px', borderRadius: '12px', backgroundColor: 'var(--bg-secondary)',
+  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', marginBottom: '24px',
+};
+
+const pageMark = (page) => {
+  const Icon = Icons[PAGE_ICONS[page]] || Icons.Music;
+  return e('span', {
+    key: page,
+    style: {
+      width: '44px', height: '44px', borderRadius: '12px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+      backgroundColor: 'var(--card-bg)', color: PAGE_COLORS[page] ? PAGE_COLORS[page].color : 'var(--accent-primary)', boxShadow: 'var(--card-shadow)',
+    },
+  }, e(Icon, { size: 22 }));
+};
+
+// One entry per screen: its title, its line, `needs` (the caveat: what the
+// feature needs before it works, an honest expectation, never a question;
+// shown in italics), and its picture. A screen describes what
+// a feature does rather than naming it: a new person doesn't know the
+// pages' names yet.
+const TOUR_SCREENS = [
+  {
+    id: 'welcome',
+    title: 'One player for all your music',
+    body: 'Spotify, Apple Music, Bandcamp, your own files: Parachord finds a song wherever you have it and plays it here.',
+    picture: ({ loadedResolvers }) => e(React.Fragment, null,
+      playingPlugins(loadedResolvers).map((r) => e(ServiceMark, { key: r.id, resolver: r })),
+      e('span', {
+        style: {
+          width: '36px', height: '36px', borderRadius: '8px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          backgroundColor: 'var(--accent-surface)', color: 'var(--accent-primary)',
+        },
+      }, e(Icons.Folder, { size: 18 })),
+      e(Icons.ArrowRight, { size: 20, className: 'text-ink-tertiary' }),
+      e(ParachordAppIcon, { size: 48 })),
+  },
+  {
+    id: 'collection',
+    title: 'Your collection and playlists, everywhere',
+    body: 'Import playlists and liked songs from any service, and keep a playlist in sync across the services you use.',
+    picture: ({ loadedResolvers }) => e('div', { style: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' } },
+      e('span', { className: 'text-ink-primary', style: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', fontWeight: 600 } },
+        e(Icons.ListMusic, { size: 18 }), 'Road trip'),
+      e('div', { style: { display: 'flex', gap: '6px' } },
+        stepOnePlugins(loadedResolvers).services.slice(0, 3).map((r) => e(Badge, { key: r.id, color: r.color || undefined }, r.name)))),
+  },
+  {
+    id: 'discover',
+    title: 'Find new music',
+    body: 'New releases from artists you follow, the albums critics love most, what’s most played right now, and picks made from your listening.',
+    needs: 'New releases and picks fill in once you connect a service or bring in your music.',
+    picture: () => ['new-releases', 'critics-picks', 'discover', 'recommendations'].map(pageMark),
+  },
+  {
+    id: 'concerts',
+    title: 'Never miss a show',
+    body: 'See upcoming concerts near you from the artists you listen to, with tickets a click away. When an artist you’re playing is on tour near you, a dot appears beside their name in the player; click it for their dates.',
+    needs: 'Works once you add a tickets plug-in and set your location.',
+    // The playbar's now-playing lines in small, on the player's dark surface,
+    // with its on-tour dot (playbar.js) in the Concerts colour.
+    picture: () => e('div', {
+      style: {
+        display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px', borderRadius: '12px',
+        backgroundColor: 'var(--surface-dark)', boxShadow: 'var(--card-shadow)',
+      },
+    },
+      e('span', { style: { width: '44px', height: '44px', borderRadius: '6px', backgroundColor: 'var(--surface-dark-placeholder)', flexShrink: 0 } }),
+      e('span', { style: { display: 'flex', flexDirection: 'column', gap: '2px' } },
+        e('span', { style: { fontSize: '14px', fontWeight: 600, color: 'var(--on-dark-primary)' } }, 'Now playing'),
+        e('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--on-dark-secondary)' } },
+          'The artist',
+          e('span', { style: { width: '7px', height: '7px', borderRadius: '9999px', backgroundColor: PAGE_COLORS.concerts.color } }))),
+      e('span', {
+        style: { display: 'inline-flex', alignItems: 'center', gap: '6px', marginLeft: '8px', fontSize: '12px', color: 'var(--on-dark-secondary)' },
+      }, e(Icons.Ticket, { size: 14 }), 'On tour near you')),
+  },
+  {
+    // What the chat can do comes from its DJ tools (tools/dj-tools.js): play,
+    // search, queue, shuffle, make and edit playlists, block a pick.
+    id: 'shuffleupagus',
+    title: 'Chat with your AI DJ',
+    body: 'Its name is Shuffleupagus. Ask for a mood or a moment, and it plays it. Ask it to queue more like what’s on, make a playlist or add to one, skip or shuffle, steer your recommendations, or answer a question about the music.',
+    needs: 'Works once you add an AI plug-in, from an online service or one that runs on your computer.',
+    // A chat exchange in small: your ask, and the DJ answering with its mark.
+    picture: () => e('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px', width: '78%' } },
+      e('span', {
+        style: { alignSelf: 'flex-end', padding: '8px 12px', borderRadius: '12px', fontSize: '13px', backgroundColor: 'var(--accent-fill)', color: 'var(--on-accent)' },
+      }, 'Something for a rainy Sunday'),
+      e('span', {
+        className: 'text-ink-primary',
+        style: { alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '8px 12px', borderRadius: '12px', fontSize: '13px', backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)' },
+      }, e(ReasonMark, { size: 22 }), 'Slow and warm: playing 20 tracks')),
+  },
+  {
+    id: 'friends',
+    title: 'Friends',
+    body: 'See what your friends are playing, and listen along.',
+    needs: 'Works once you connect Last.fm or ListenBrainz.',
+    picture: () => e(React.Fragment, null,
+      e(FriendAvatar, { name: 'Alex', size: 'md' }),
+      e(FriendAvatar, { name: 'Sam', size: 'md' }),
+      e('span', { className: 'text-ink-secondary', style: { display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px' } },
+        e(Icons.Headphones, { size: 16 }), 'Listening along')),
+  },
+  {
+    // Achordion (achordion.xyz) is the web companion: Copy link on a song,
+    // album, artist or playlist makes an Achordion link (app.js), which
+    // anyone can open and play on the service they use.
+    id: 'achordion',
+    title: 'Share music with anyone',
+    body: 'Achordion is Parachord’s companion on the web, for finding music and sharing what you listen to. Copy a link to any song, album, artist or playlist, and it opens on Achordion, where anyone can listen, whatever service they use. They don’t need Parachord.',
+    picture: ({ loadedResolvers }) => e(React.Fragment, null,
+      SERVICE_LOGOS.achordion && React.cloneElement(SERVICE_LOGOS.achordion, { className: undefined, style: { width: '48px', height: '48px' } }),
+      e(Icons.Link, { size: 20, className: 'text-ink-tertiary' }),
+      stepOnePlugins(loadedResolvers).services.slice(0, 3).map((r) => e(ServiceMark, { key: r.id, resolver: r }))),
+  },
+  {
+    id: 'setup',
+    title: 'Let’s get you set up',
+    body: 'Three steps on Home: connect where you listen, bring in your music, and start listening.',
+    picture: () => [0, 1, 2].map((i) => e(StepMarker, { key: i, index: i, done: false, current: i === 0 })),
+  },
 ];
 
 const FirstRunTutorial = React.memo(function FirstRunTutorial(props) {
   const {
-    activeResolvers,
-    activeResolversRef,
-    connectLastfm,
-    connectListenbrainz,
     firstRunTutorial,
-    handleAddWatchFolder,
     loadedResolvers,
-    metaServiceConfigs,
     navigateTo,
-    playbackResolvers,
-    resolverOrderRef,
-    savedActiveResolversRef,
-    setActiveResolvers,
     setFirstRunTutorial,
-    setResolverOrder,
-    setSettingsTab,
-    watchFolders,
+    startGettingStarted,
   } = props;
-  return React.createElement(Modal, { bare: true, label: "Welcome to Parachord", scrimClassName: 'z-50', dismissible: false, panelProps: { className: 'relative w-full max-w-xl mx-4 overflow-hidden', style: {
-          // Never taller than the window: the body scrolls instead.
-          maxHeight: 'calc(100vh - 48px)',
-          overflowY: 'auto',
-          backgroundColor: 'var(--card-bg)',
-          borderRadius: '16px',
-          boxShadow: 'var(--shadow-dialog)'
-        } } },
-firstRunTutorial.step === 'welcome' && React.createElement(React.Fragment, null,
-          // Accent bar
-          React.createElement('div', {
-            style: {
-              height: '4px',
-              backgroundColor: 'var(--accent-primary)'
-            }
-          }),
-          // Header
-          React.createElement('div', {
-            style: {
-              padding: '32px 32px 24px',
-              textAlign: 'center',
-              borderBottom: '1px solid var(--border-subtle)'
-            }
-          },
-            // Parachord wordmark logo - centered
-            React.createElement('div', {
-              style: { marginBottom: '12px', display: 'flex', justifyContent: 'center' }
-            },
-              React.createElement(ParachordWordmark, { fill: 'var(--text-primary)', height: 44 })
-            ),
-            React.createElement('p', {
-              style: { fontSize: '14px', color: 'var(--text-secondary)', lineHeight: '1.5' }
-            }, 'Your music is everywhere, but you shouldn\'t have to be.')
-          ),
-          // Content
-          React.createElement('div', {
-            style: { padding: '24px 32px' }
-          },
-            React.createElement('p', {
-              style: { fontSize: '14px', color: 'var(--nav-inactive)', lineHeight: '1.6', marginBottom: '20px' }
-            }, 'Parachord brings all your music together in one place. Search across multiple services, build unified playlists, and enjoy your music from wherever it lives.'),
-            // Feature highlights with SVG icons
-            React.createElement('div', {
-              style: { display: 'flex', flexDirection: 'column', gap: '12px' }
-            },
-              [
-                { icon: React.createElement(Icons.Music, { size: 18 , color: 'var(--accent-primary)' }), text: 'Play from the streaming services you use, your own files, and more' },
-                { icon: React.createElement(Icons.Search, { size: 18 , color: 'var(--accent-primary)' }), text: 'Search all your sources at once' },
-                { icon: React.createElement(Icons.FileText, { size: 18 , color: 'var(--accent-primary)' }), text: 'Create playlists that span services' },
-                { icon: React.createElement(Icons.Users, { size: 18 , color: 'var(--accent-primary)' }), text: 'Connect with friends on Last.fm & ListenBrainz' }
-              ].map((item, i) =>
-                React.createElement('div', {
-                  key: i,
-                  style: { display: 'flex', alignItems: 'center', gap: '12px' }
-                },
-                  React.createElement('div', {
-                    style: { width: '32px', height: '32px', borderRadius: '8px', backgroundColor: 'var(--accent-primary-alpha-08)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }
-                  }, item.icon),
-                  React.createElement('span', {
-                    style: { fontSize: '13px', color: 'var(--text-primary)' }
-                  }, item.text)
-                )
-              )
-            )
-          ),
-          // Footer
-          React.createElement('div', {
-            style: {
-              padding: '16px 32px 24px',
-              borderTop: '1px solid var(--border-subtle)',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center'
-            }
-          },
-            React.createElement(Button, { variant: 'text', size: 'sm', onClick: async () => {
-                await window.electron.store.set('tutorial_completed', true);
-                setFirstRunTutorial(prev => ({ ...prev, open: false }));
-              } }, 'Skip tutorial'),
-            React.createElement(Button, { variant: 'primary', onClick: () => setFirstRunTutorial(prev => ({ ...prev, step: 'sources' })) }, 'Get started')
-          )
-        ),
-firstRunTutorial.step === 'sources' && React.createElement(React.Fragment, null,
-          // Accent bar
-          React.createElement('div', {
-            style: { height: '4px', backgroundColor: 'var(--accent-primary)' }
-          }),
-          // Header
-          React.createElement('div', {
-            style: {
-              padding: '24px 32px 20px',
-              borderBottom: '1px solid var(--border-subtle)'
-            }
-          },
-            React.createElement('h2', {
-              style: { fontSize: '20px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '4px' }
-            }, 'Enable your music sources'),
-            React.createElement('p', {
-              style: { fontSize: '14px', color: 'var(--text-secondary)' }
-            }, 'Turn on the ones you use. You can change them any time in Plug-Ins.')
-          ),
-          // Content - Resolver cards grid (same design as Settings › Plug-Ins)
-          React.createElement('div', {
-            style: { padding: '24px 32px' }
-          },
-            React.createElement('div', {
-              style: { display: 'flex', flexWrap: 'wrap', gap: '16px', justifyContent: 'center' }
-            },
-              loadedResolvers.filter(r => r.capabilities?.resolve).map(resolver => {
-                const isActive = activeResolvers.includes(resolver.id);
-                const logo = SERVICE_LOGOS[resolver.id];
-                // Each tile says what the service needs (manifest.requirement,
-                // #1387); Local Files can choose its folder right here.
-                const needsFolder = resolver.id === 'localfiles' && isActive;
-                return React.createElement('div', {
-                  key: resolver.id,
-                  className: 'flex flex-col items-center',
-                  // Four across in the tour's 576px panel.
-                  style: { width: '110px' }
-                },
-                React.createElement('button', { type: 'button', 'aria-pressed': isActive,
-                  'aria-describedby': resolver.requirement ? `tour-req-${resolver.id}` : undefined,
-                  className: `flex flex-col items-center cursor-pointer transition-[opacity,filter] ${!isActive ? 'opacity-50 grayscale' : ''}`,
-                  style: { width: '100%' },
-                  onClick: () => {
-                    if (isActive) {
-                      setActiveResolvers(prev => prev.filter(id => id !== resolver.id));
-                      setResolverOrder(prev => prev.filter(id => id !== resolver.id));
-                      // Mark as explicitly disabled so reEnableResolver won't restore it
-                      if (savedActiveResolversRef.current) {
-                        savedActiveResolversRef.current = savedActiveResolversRef.current.filter(id => id !== resolver.id);
-                      }
-                    } else {
-                      setActiveResolvers(prev => appendUniqueId(prev, resolver.id));
-                      setResolverOrder(prev => insertInCanonicalOrder(prev, resolver.id));
-                      // Mark as explicitly enabled so reEnableResolver can restore it after auth failures
-                      if (savedActiveResolversRef.current && !savedActiveResolversRef.current.includes(resolver.id)) {
-                        savedActiveResolversRef.current = [...savedActiveResolversRef.current, resolver.id];
-                      }
-                    }
-                  }
-                },
-                  // Card with colored background
-                  React.createElement('div', {
-                    style: {
-                      width: '64px',
-                      height: '64px',
-                      borderRadius: '12px',
-                      backgroundColor: resolver.color || 'var(--fill-neutral)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      boxShadow: isActive ? 'var(--shadow-popover)' : 'var(--shadow-sm)',
-                      marginBottom: '8px'
-                    }
-                  },
-                    // The shared logos are drawn at 64px (w-16); the 64px tile
-                    // needs them smaller, or they fill it edge to edge.
-                    logo ? React.cloneElement(logo, { className: undefined, style: { ...(logo.props.style || {}), width: '44px', height: '44px' } }) : React.createElement('span', { className: 'text-3xl text-white' }, resolver.icon)
-                  ),
-                  // Name
-                  React.createElement('span', {
-                    style: { fontSize: '12px', fontWeight: '500', color: 'var(--text-primary)', textAlign: 'center' }
-                  }, resolver.name)
-                ),
-                resolver.requirement && React.createElement('p', {
-                  id: `tour-req-${resolver.id}`,
-                  className: 'text-ink-tertiary',
-                  style: { fontSize: '11px', lineHeight: 1.4, textAlign: 'center', marginTop: '4px' }
-                }, resolver.requirement),
-                needsFolder && (watchFolders.length > 0
-                  ? React.createElement('span', { className: 'text-ink-secondary', style: { fontSize: '11px', marginTop: '4px' } }, countOf(watchFolders.length, 'folder'))
-                  : React.createElement(Button, { variant: 'text', size: 'sm', className: 'mt-1', onClick: () => handleAddWatchFolder() }, 'Choose folder…'))
-                );
-              })
-            )
+  const index = Math.max(0, TOUR_SCREENS.findIndex((s) => s.id === firstRunTutorial.step));
+  const screen = TOUR_SCREENS[index];
+  const last = index === TOUR_SCREENS.length - 1;
+  const go = (i) => setFirstRunTutorial((prev) => ({ ...prev, step: TOUR_SCREENS[i].id }));
+  const close = async (setup) => {
+    await window.electron.store.set('tutorial_completed', true);
+    setFirstRunTutorial((prev) => ({ ...prev, open: false, step: 'welcome' }));
+    if (setup) startGettingStarted();
+    else navigateTo('home');
+  };
 
-          ),
-          // Footer
-          React.createElement('div', {
-            style: {
-              padding: '16px 32px 20px',
-              borderTop: '1px solid var(--border-subtle)',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center'
-            }
-          },
-            React.createElement(Button, { variant: 'secondary', onClick: () => setFirstRunTutorial(prev => ({ ...prev, step: 'welcome' })) }, React.createElement(Icons.ArrowLeft, { size: 16 }), 'Back'),
-            React.createElement(Button, { variant: 'primary', onClick: () => setFirstRunTutorial(prev => ({
-              ...prev, step: 'accounts',
-              lastfmUsername: prev.lastfmUsername || metaServiceConfigs.lastfm?.username || '',
-              listenbrainzUsername: prev.listenbrainzUsername || metaServiceConfigs.listenbrainz?.username || ''
-            })) }, 'Continue')
-          )
-        ),
-// Accounts (#1387): the welcome screen promises Last.fm and ListenBrainz;
-// this is where you connect them. Optional: Skip goes on. Continue checks
-// each name the way the plug-in panels do (connectLastfm /
-// connectListenbrainz keep any saved keys or token) and stays on a failure.
-firstRunTutorial.step === 'accounts' && (() => {
-          const t = firstRunTutorial;
-          const setField = (k) => (v) => setFirstRunTutorial(prev => ({ ...prev, [k]: v }));
-          const lastfm = metaServiceConfigs.lastfm || {};
-          const lb = metaServiceConfigs.listenbrainz || {};
-          const next = async () => {
-            setFirstRunTutorial(prev => ({ ...prev, connecting: true }));
-            let ok = true;
-            const lf = t.lastfmUsername.trim();
-            if (lf && lf !== (lastfm.username || '')) ok = (await connectLastfm(lf, lastfm.apiKey, lastfm.apiSecret)) !== false && ok;
-            const lbn = t.listenbrainzUsername.trim();
-            if (ok && lbn && lbn !== (lb.username || '')) ok = (await connectListenbrainz(lbn, lb.userToken)) !== false && ok;
-            setFirstRunTutorial(prev => ({ ...prev, connecting: false, step: ok ? 'complete' : prev.step }));
-          };
-          const field = (id, label, hint, key) => React.createElement('div', { style: { marginBottom: '16px' } },
-            React.createElement('label', { htmlFor: id, className: 'text-ink-primary', style: { display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px' } }, label),
-            React.createElement(TextField, { id, className: 'w-full', value: t[key], onChange: setField(key), placeholder: 'Username', autoComplete: 'off', spellCheck: false, 'aria-describedby': `${id}-hint` }),
-            React.createElement('p', { id: `${id}-hint`, className: 'text-ink-tertiary', style: { fontSize: '12px', marginTop: '4px' } }, hint)
-          );
-          return React.createElement(React.Fragment, null,
-            React.createElement('div', { style: { height: '4px', backgroundColor: 'var(--accent-primary)' } }),
-            React.createElement('div', { style: { padding: '24px 32px 20px', borderBottom: '1px solid var(--border-subtle)' } },
-              React.createElement('h2', { style: { fontSize: '20px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '4px' } }, 'Connect your listening history'),
-              React.createElement('p', { style: { fontSize: '14px', color: 'var(--text-secondary)' } }, 'Optional. With your Last.fm or ListenBrainz username, Parachord can recommend music and you can follow friends.')
-            ),
-            React.createElement('form', {
-              style: { padding: '24px 32px 8px' },
-              onSubmit: (e) => { e.preventDefault(); if (!t.connecting) next(); }
-            },
-              field('tour-lastfm', 'Last.fm username', 'Your profile name on last.fm.', 'lastfmUsername'),
-              field('tour-listenbrainz', 'ListenBrainz username', 'Your name on listenbrainz.org. Add your user token later in Plug-Ins to save listens there.', 'listenbrainzUsername'),
-              React.createElement('button', { type: 'submit', hidden: true, tabIndex: -1, 'aria-hidden': 'true' })
-            ),
-            React.createElement('div', { style: { padding: '16px 32px 20px', borderTop: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
-              React.createElement(Button, { variant: 'secondary', onClick: () => setFirstRunTutorial(prev => ({ ...prev, step: 'sources' })) }, 'Back'),
-              React.createElement('div', { className: 'flex items-center', style: { gap: '8px' } },
-                React.createElement(Button, { variant: 'text', onClick: () => setFirstRunTutorial(prev => ({ ...prev, step: 'complete' })) }, 'Skip'),
-                React.createElement(Button, { variant: 'primary', busy: t.connecting, onClick: next }, 'Continue')
-              )
-            )
-          );
-        })(),
-firstRunTutorial.step === 'complete' && (() => {
-          // Anything enabled that plays music (#1387): otherwise "Almost there".
-          const tutorialPlayable = loadedResolvers.some(r => r.capabilities?.resolve && playbackResolvers.includes(r.id));
-          const finishTutorial = async (where) => {
-            // Save tutorial completion and the plug-in choices (refs: no stale closure)
-            await window.electron.store.set('tutorial_completed', true);
-            await window.electron.store.set('active_resolvers', activeResolversRef.current);
-            await window.electron.store.set('resolver_order', resolverOrderRef.current);
-            setFirstRunTutorial(prev => ({ ...prev, open: false }));
-            if (where === 'plugins') { setSettingsTab('plugins'); navigateTo('settings'); }
-            else navigateTo('home');
-          };
-          return React.createElement(React.Fragment, null,
-          // Accent bar
-          React.createElement('div', {
-            style: { height: '4px', backgroundColor: 'var(--success)' }
-          }),
-          // Header: done, or almost (nothing that plays is enabled yet)
-          React.createElement('div', {
-            style: {
-              padding: '32px 32px 24px',
-              textAlign: 'center',
-              borderBottom: '1px solid var(--border-subtle)'
-            }
-          },
-            React.createElement('div', {
-              style: {
-                width: '56px',
-                height: '56px',
-                margin: '0 auto 16px',
-                borderRadius: '50%',
-                backgroundColor: tutorialPlayable ? 'color-mix(in srgb, var(--success) 12%, transparent)' : 'color-mix(in srgb, var(--warning) 12%, transparent)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }
-            },
-              React.createElement(tutorialPlayable ? Icons.Check : Icons.AlertTriangle, { size: 28, style: { color: tutorialPlayable ? 'var(--success)' : 'var(--warning)' } })
-            ),
-            React.createElement('h1', {
-              style: { fontSize: '20px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '6px' }
-            }, tutorialPlayable ? 'You’re all set' : 'Almost there'),
-            React.createElement('p', {
-              style: { fontSize: '14px', color: 'var(--text-secondary)' }
-            }, tutorialPlayable
-              ? 'Start listening, or open Plug-Ins to sign in, add music folders and more.'
-              : 'Nothing that plays music is enabled yet. Open Plug-Ins to enable one.')
-          ),
-          // Content - Show active sources
-          React.createElement('div', {
-            style: { padding: '24px 32px' }
-          },
-            // Active sources summary
-            loadedResolvers.filter(r => r.capabilities?.resolve && activeResolvers.includes(r.id)).length > 0 && React.createElement('div', {
-              style: { marginBottom: '16px' }
-            },
-              React.createElement('div', {
-                style: { fontSize: '12px', fontWeight: '600', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px' }
-              }, 'Active sources'),
-              React.createElement('div', {
-                style: { display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center' }
-              },
-                loadedResolvers.filter(r => r.capabilities?.resolve && activeResolvers.includes(r.id)).map(resolver =>
-                  // The shared pill (components/badge.js), in the plugin's colour.
-                  React.createElement(Badge, { key: resolver.id, color: resolver.color || undefined }, resolver.name)
-                )
-              )
-            ),
-            // Info text
-            React.createElement('p', {
-              style: { fontSize: '13px', color: 'var(--text-secondary)', textAlign: 'center', lineHeight: '1.6' }
-            }, 'Plug-Ins is where you sign in to services, add music folders and change what plays first.')
-          ),
-          // Footer
-          React.createElement('div', {
-            style: {
-              padding: '16px 32px 24px',
-              borderTop: '1px solid var(--border-subtle)',
-              display: 'flex',
-              justifyContent: 'center',
-              gap: '12px'
-            }
-          },
-            React.createElement(Button, { variant: 'text', onClick: () => setFirstRunTutorial(prev => ({ ...prev, step: 'accounts' })) }, 'Back'),
-            React.createElement(Button, { variant: tutorialPlayable ? 'secondary' : 'primary', onClick: () => finishTutorial('plugins') }, 'Open Plug-Ins'),
-            tutorialPlayable && React.createElement(Button, { variant: 'primary', onClick: () => finishTutorial('home') }, 'Start listening')
-          )
-        );
-        })());
+  return React.createElement(Modal, {
+    bare: true, label: 'Welcome to Parachord', scrimClassName: 'z-50', dismissible: false,
+    panelProps: {
+      className: 'relative w-full max-w-xl mx-4 overflow-hidden',
+      style: {
+        // Never taller than the window: the body scrolls instead.
+        maxHeight: 'calc(100vh - 48px)', overflowY: 'auto',
+        backgroundColor: 'var(--card-bg)', borderRadius: '16px', boxShadow: 'var(--shadow-dialog)',
+      },
+    },
+  },
+    e('div', { style: { height: '4px', backgroundColor: 'var(--accent-primary)' } }),
+    // One height for every screen, so Back and Next stay put as you step.
+    e('div', { style: { padding: '32px 32px 24px', minHeight: '360px' } },
+      index === 0 && e('div', { style: { display: 'flex', justifyContent: 'center', marginBottom: '20px' } },
+        e(ParachordWordmark, { fill: 'var(--text-primary)', height: 40 })),
+      e('div', { 'aria-hidden': 'true', style: PICTURE_STYLE }, screen.picture({ loadedResolvers })),
+      e('h2', { className: 'text-ink-primary', style: { fontSize: '20px', fontWeight: 600, margin: '0 0 8px' } }, screen.title),
+      e('p', { className: 'text-ink-secondary', style: { fontSize: '14px', lineHeight: 1.6, margin: 0 } }, screen.body),
+      // The caveat (what a feature needs before it works), set apart in italics.
+      screen.needs && e('p', { className: 'text-ink-tertiary', style: { fontSize: '13px', lineHeight: 1.5, margin: '8px 0 0', fontStyle: 'italic' } }, screen.needs)),
+    e('div', {
+      style: { padding: '16px 32px 24px', borderTop: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' },
+    },
+      last
+        ? e(Button, { variant: 'text', size: 'sm', onClick: () => close(false) }, 'Not now')
+        : e(Button, { variant: 'text', size: 'sm', onClick: () => close(false) }, 'Skip tour'),
+      // Where you are in the tour: dots, and the same in words for a screen reader.
+      e('div', { style: { display: 'flex', alignItems: 'center', gap: '6px' } },
+        e('span', { className: 'sr-only' }, `Screen ${index + 1} of ${TOUR_SCREENS.length}`),
+        TOUR_SCREENS.map((s, i) => e('span', {
+          key: s.id, 'aria-hidden': 'true',
+          style: { width: '6px', height: '6px', borderRadius: '9999px', backgroundColor: i === index ? 'var(--accent-primary)' : 'var(--border-default)' },
+        }))),
+      e('div', { style: { display: 'flex', gap: '8px' } },
+        index > 0 && e(Button, { variant: 'secondary', onClick: () => go(index - 1) }, 'Back'),
+        last
+          ? e(Button, { variant: 'primary', onClick: () => close(true) }, 'Set up on Home')
+          : e(Button, { variant: 'primary', onClick: () => go(index + 1) }, 'Next'))));
 });
 
-module.exports = { FirstRunTutorial, FIRST_RUN_TUTORIAL_HANDLERS };
+module.exports = { FirstRunTutorial, FIRST_RUN_TUTORIAL_HANDLERS, TOUR_SCREENS };

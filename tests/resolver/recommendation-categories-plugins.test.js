@@ -47,7 +47,7 @@ describe('Amazon Music sends playlist categories', () => {
     expect(sections[0].seedArtist).toBeUndefined();
     expect(sections[1].seedArtist).toBeUndefined();
     expect(sections[2].seedArtist).toBe('FIDLAR');
-    expect(axe.manifest.version).toBe('1.13.0');
+    expect(axe.manifest.version).toBe('1.13.1');
   });
 
   test('Amazon files its other shelves too, and drops only Featured', async () => {

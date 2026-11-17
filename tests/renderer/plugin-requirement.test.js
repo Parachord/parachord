@@ -1,6 +1,6 @@
 /**
  * #1387: each plug-in says what it needs (manifest.requirement), shown on
- * the welcome tour's tile and in its panel.
+ * its panel.
  */
 const fs = require('fs');
 const path = require('path');
@@ -24,10 +24,10 @@ test('meta-services that take a key or token say so', () => {
   }
 });
 
-test('the loader carries it; the tour and the panels show it', () => {
+test('the loader carries it; the panels show it (the welcome tour no longer lists plug-ins, #1493)', () => {
   expect(fs.readFileSync(path.join(ROOT, 'resolver-loader.js'), 'utf8')).toMatch(/requirement: typeof manifest\.requirement === 'string'/);
   const app = require('../helpers/renderer-source').appWithPages();
-  expect(app).toMatch(/resolver\.requirement && React\.createElement\('p', \{\s*id: `tour-req-\$\{resolver\.id\}`/);
-  expect(app).toMatch(/: React\.createElement\(Button, \{ variant: 'text', size: 'sm', className: 'mt-1', onClick: \(\) => handleAddWatchFolder\(\) \}, 'Choose folder…'\)/);
+  // Choosing a music folder moved from the tour to Home's setup (#1493).
+  expect(fs.readFileSync(path.join(ROOT, 'src/renderer/components/home-page.js'), 'utf8')).toContain("onAddFolder: () => handleAddWatchFolder(),");
   expect(app).toMatch(/selectedResolver\.requirement && React\.createElement\('p'/);
 });
