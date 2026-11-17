@@ -6217,6 +6217,17 @@ const Parachord = () => {
     ...PlaybackLimits.pluginStatusLimits(pluginStatuses)
   }), [appleMusicAuthChecked, appleMusicConnected, pluginStatuses]);
   const planBlockedResolverIds = useMemo(() => PlaybackLimits.planBlockedIds(playbackLimits), [playbackLimits]);
+  // Signed out for sync: the sync check's verdict, or the account's own
+  // sign-in check. The sync check only runs when a sync does, so after a
+  // recent sync an expired Apple Music sign-in showed "Sign in" on the
+  // account and an active sync beside it (2026-11-17).
+  const syncSignedOutView = useMemo(() => {
+    const out = { ...syncSignedOut };
+    for (const [id, limit] of Object.entries(playbackLimits)) {
+      if (limit && limit.blocked && limit.planKey === 'signed-out') out[id] = true;
+    }
+    return out;
+  }, [syncSignedOut, playbackLimits]);
   // For the plug-in tile menu's Raise / Lower Priority handler, registered once.
   const planBlockedResolverIdsRef = useRef(planBlockedResolverIds);
   planBlockedResolverIdsRef.current = planBlockedResolverIds;
@@ -10451,7 +10462,7 @@ const Parachord = () => {
   const setProviderSyncEnabled = async (providerId, enabled) => {
     const existing = resolverSyncSettingsRef.current[providerId];
     // Never set up, stopped, or signed out: setup, which asks for the sign-in first.
-    if (enabled && (!existing || existing.stopped || syncSignedOut[providerId])) { openSyncSetupModal(providerId); return; }
+    if (enabled && (!existing || existing.stopped || syncSignedOutView[providerId])) { openSyncSetupModal(providerId); return; }
     const next = { ...existing, enabled };
     // The ref first: a love or unlove in the same tick reads it.
     resolverSyncSettingsRef.current = { ...resolverSyncSettingsRef.current, [providerId]: next };
@@ -37715,7 +37726,7 @@ useEffect(() => {
 
         // Library view with collapsible hero header (matching Recommendations pattern)
         activeView === 'library' && React.createElement(CollectionPage, {
-          activeResolvers: playbackResolvers, allResolvers, autoPinnedFriendIds, collectionData, collectionHeaderCollapsed, collectionLoading, collectionObserverRef, collectionScrollContainerRef, collectionSearch, collectionSearchOpen, collectionSongsSorted, collectionSort, collectionTab, collectionTrackRowRefs, currentTrack, filterCollectionItems, friendSyncInProgress, friends, handleCollectionScrollContainerRef, isPlaying, library, libraryLoading, metaServiceConfigs, pinnedFriendIds, playbackContext, resolverOrder, resolverSyncSettings, syncPausedUntil, syncSignedOut, setAddFriendModalOpen, setAddToPlaylistPanel, setCollectionHeaderCollapsed, setCollectionSearch, setCollectionSearchOpen, setCollectionSort, setCollectionTab, setDraggingTrackForPlaylist, setSyncStatusModal, setTrackLoading, showToast, sortCollectionItems, syncProviderConfig, syncStatus, trackSources,
+          activeResolvers: playbackResolvers, allResolvers, autoPinnedFriendIds, collectionData, collectionHeaderCollapsed, collectionLoading, collectionObserverRef, collectionScrollContainerRef, collectionSearch, collectionSearchOpen, collectionSongsSorted, collectionSort, collectionTab, collectionTrackRowRefs, currentTrack, filterCollectionItems, friendSyncInProgress, friends, handleCollectionScrollContainerRef, isPlaying, library, libraryLoading, metaServiceConfigs, pinnedFriendIds, playbackContext, resolverOrder, resolverSyncSettings, syncPausedUntil, syncSignedOut: syncSignedOutView, setAddFriendModalOpen, setAddToPlaylistPanel, setCollectionHeaderCollapsed, setCollectionSearch, setCollectionSearchOpen, setCollectionSort, setCollectionTab, setDraggingTrackForPlaylist, setSyncStatusModal, setTrackLoading, showToast, sortCollectionItems, syncProviderConfig, syncStatus, trackSources,
           ...collectionPageHandlers
         }),
 
@@ -38266,7 +38277,7 @@ useEffect(() => {
       pluginStatuses,
       resolverConfigCache,
       resolverSyncSettings,
-      syncSignedOut,
+      syncSignedOut: syncSignedOutView,
       runLoveBackfill,
       runLoveImport,
       scanProgress,
