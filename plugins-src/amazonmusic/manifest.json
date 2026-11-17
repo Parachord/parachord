@@ -9,7 +9,6 @@
     "author": "Parachord Team",
     "description": "Plays Amazon Music through the shared Widevine player (DASH + license via Amazon session). Does not use the Amazon Music desktop app.",
     "requirement": "Needs Amazon Music Unlimited. With Prime, Amazon gives Parachord art and links only.",
-    "requirement": "Needs Amazon Music Unlimited. With Prime, Amazon gives Parachord art and links only.",
     "icon": "🎵",
     "color": "#25D1DA",
     "homepage": "https://music.amazon.com",
