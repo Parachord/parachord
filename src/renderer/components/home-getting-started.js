@@ -21,6 +21,12 @@ const { countOf } = require('../lib/plural');
 
 const e = React.createElement;
 
+// The phone apps' beta links (parachord.com's).
+const MOBILE_LINKS = {
+  ios: 'https://testflight.apple.com/join/zXvg5zxK',
+  android: 'https://play.google.com/store/apps/details?id=com.parachord.android',
+};
+
 const STEPS = [
   { id: 'connect', title: 'Connect where you listen' },
   { id: 'music', title: 'Bring in your music' },
@@ -102,7 +108,16 @@ function Group({ label, children }) {
 
 // ------------------------------------------------------------------ steps
 
-function ConnectStep({ plugins, serviceStates, watchFolders, onConnect, onOpenPlugin, onAddFolder, onBrowsePlugins }) {
+// A note under a step's tiles: an icon, a line, and its links.
+function StepNote({ icon: Icon, children, actions }) {
+  return e('div', { className: 'border border-line', style: { display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '12px 16px', borderRadius: '12px' } },
+    e('span', { 'aria-hidden': 'true', className: 'text-ink-tertiary', style: { display: 'inline-flex', marginTop: '2px' } }, e(Icon, { size: 18 })),
+    e('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', minWidth: 0 } },
+      e('p', { style: Object.assign({}, LINE, { fontSize: '13px' }) }, children),
+      actions && e('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '4px', marginLeft: '-12px' } }, actions)));
+}
+
+function ConnectStep({ plugins, serviceStates, watchFolders, onConnect, onOpenPlugin, onAddFolder, onBrowsePlugins, onOpenQuality }) {
   const folders = Array.isArray(watchFolders) ? watchFolders.length : 0;
   const folder = plugins.folder;
   return e(React.Fragment, null,
@@ -126,6 +141,15 @@ function ConnectStep({ plugins, serviceStates, watchFolders, onConnect, onOpenPl
         key: 'more', icon: e(IconMark, { icon: Icons.Plus }), title: 'More plug-ins', description: 'Browse',
         onClick: onBrowsePlugins,
       })),
+    // More than one service: the order decides which plays, and quality is
+    // one setting for all of them (never a per-service one).
+    e(StepNote, {
+      icon: Icons.ListOrdered,
+      actions: [
+        e(Button, { key: 'order', variant: 'text', size: 'sm', onClick: onBrowsePlugins }, 'Set the order'),
+        e(Button, { key: 'quality', variant: 'text', size: 'sm', onClick: onOpenQuality }, 'Sound quality'),
+      ],
+    }, 'Connect more than one, and Parachord plays each song from the first service in your order that has it. Drag plug-ins to change the order, and pick your sound quality, up to lossless and Dolby Atmos where a service offers them.'),
     (folder || plugins.free.length > 0) && e(Group, { label: 'On already, no account needed' },
       folder && e(Tile, {
         key: 'folder',
@@ -227,7 +251,16 @@ function GettingStarted(props) {
               e('span', { className: 'text-ink-tertiary', style: { fontSize: '12px' } },
                 s.done ? 'Done' : isCurrent ? 'Next' : 'Not yet')));
         })),
-      e('div', { id: 'home-getting-started-panel', role: 'region', 'aria-label': (STEPS.find((s) => s.id === open) || STEPS[0]).title, style: PANEL_STYLE }, panel)));
+      e('div', { id: 'home-getting-started-panel', role: 'region', 'aria-label': (STEPS.find((s) => s.id === open) || STEPS[0]).title, style: PANEL_STYLE }, panel)),
+    // The phone apps: they play from the same services, and stay in step
+    // with this computer through them (playlist sync, Library Sync, Loves).
+    e(StepNote, {
+      icon: Icons.Smartphone,
+      actions: [
+        e(Button, { key: 'ios', variant: 'text', size: 'sm', onClick: () => props.onOpenLink && props.onOpenLink(MOBILE_LINKS.ios) }, 'iPhone beta on TestFlight'),
+        e(Button, { key: 'android', variant: 'text', size: 'sm', onClick: () => props.onOpenLink && props.onOpenLink(MOBILE_LINKS.android) }, 'Android beta on Google Play'),
+      ],
+    }, 'Take it with you. Parachord for iPhone and Android (both in beta) plays from the same services. Connect the same accounts and turn on sync there, and your playlists, collection and Loves stay up to date between your phone and this computer.'));
 }
 
 // ---------------------------------------------------------------- skeleton

@@ -108,6 +108,20 @@ describe('the layout', () => {
     expect((html.match(/aria-expanded="true"/g) || []).length).toBe(1);
   });
 
+  test('step 1 explains the order and quality; the phone apps are offered, opened in the browser', () => {
+    const html = render({});
+    expect(html).toContain('first service in your order that has it');
+    expect(html).toContain('Set the order');
+    expect(html).toContain('Sound quality');
+    expect(html).toContain('lossless and Dolby Atmos');
+    expect(html).toContain('iPhone beta on TestFlight');
+    expect(html).toContain('Android beta on Google Play');
+    expect(html).toContain('stay up to date between your phone and this computer');
+    const page = read('src/renderer/components/home-page.js');
+    expect(page).toContain("onOpenQuality: () => { navigateTo('settings'); setSettingsTab('general'); },");
+    expect(page).toMatch(/onOpenLink: \(url\) => \{ const shell = globalThis\.electron && globalThis\.electron\.shell; if \(shell && shell\.openExternal\) shell\.openExternal\(url\); \},/);
+  });
+
   test('the current step is open; any step can be opened', () => {
     const html = render({ status: GS.gettingStartedSteps({ connected: true }) });
     expect(html).toContain('Import a playlist');
@@ -168,7 +182,7 @@ describe('Home', () => {
 
 describe('the welcome tour', () => {
   test('overview screens only, ending in set up', () => {
-    expect(TOUR_SCREENS.map((s) => s.id)).toEqual(['welcome', 'collection', 'discover', 'spinoff', 'concerts', 'shuffleupagus', 'friends', 'links', 'buy', 'achordion', 'setup']);
+    expect(TOUR_SCREENS.map((s) => s.id)).toEqual(['welcome', 'collection', 'discover', 'spinoff', 'concerts', 'shuffleupagus', 'friends', 'links', 'buy', 'achordion', 'apps', 'setup']);
     const src = read('src/renderer/components/first-run-tutorial.js');
     expect(src).not.toMatch(/'sources'|'accounts'|'complete'|connectLastfm|setActiveResolvers|TextField/);
   });

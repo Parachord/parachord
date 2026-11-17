@@ -11,7 +11,7 @@
 // window is read only inside handlers.
 
 const Icons = require('./icons');
-const { ParachordWordmark, ParachordAppIcon, SERVICE_LOGOS } = require('./brand-logos');
+const { ParachordWordmark, ParachordAppIcon, SERVICE_LOGOS, BRAND_COLORS } = require('./brand-logos');
 const { Modal } = require('./modal');
 const { Badge } = require('./badge');
 const { Button } = require('./button');
@@ -244,6 +244,31 @@ const TOUR_SCREENS = [
       stepOnePlugins(loadedResolvers).services.slice(0, 3).map((r) => e(ServiceMark, { key: r.id, resolver: r }))),
   },
   {
+    // Raycast (its extension, raycast-info-dialog.js) and AI assistants
+    // through Parachord's MCP server (Settings › General, McpSettingsSection).
+    id: 'apps',
+    title: 'Use it from your other apps',
+    body: 'Search, play and queue from Raycast without switching windows. Or ask an AI assistant such as Claude to play something, build a queue or skip a song, and it does it in Parachord.',
+    needs: 'Add the Raycast extension (on a Mac), or connect your assistant in Settings › General.',
+    // A launcher command and an assistant's ask, each with its mark.
+    picture: ({ metaServices }) => {
+      const row = (mark, text) => e('span', {
+        className: 'text-ink-primary',
+        style: { display: 'inline-flex', alignItems: 'center', gap: '10px', padding: '8px 12px', borderRadius: '12px', fontSize: '13px', backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)' },
+      }, mark, text);
+      // The assistant's mark on its plug-in's colour, from the registry
+      // (the MCP setup in Settings is for Claude Desktop).
+      const claude = (metaServices || []).find((m) => m.id === 'claude');
+      return e('div', { style: { display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '8px' } },
+        row(e('span', { style: { width: '24px', height: '24px', borderRadius: '6px', background: BRAND_COLORS.raycastGradient, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--on-accent)' } }, e(Icons.Search, { size: 14 })),
+          'Play Lopped Off'),
+        row(claude
+          ? e('span', { style: { transform: 'scale(0.67)', margin: '-6px' } }, e(ServiceMark, { resolver: claude }))
+          : e(Icons.Sparkles, { size: 16 }),
+          'Queue three more like this'));
+    },
+  },
+  {
     id: 'setup',
     title: 'Let’s get you set up',
     body: 'Three steps on Home: connect where you listen, bring in your music, and start listening.',
@@ -256,6 +281,7 @@ const FirstRunTutorial = React.memo(function FirstRunTutorial(props) {
     firstRunTutorial,
     getTrackArt,
     loadedResolvers,
+    metaServices,
     navigateTo,
     setFirstRunTutorial,
     startGettingStarted,
@@ -296,7 +322,7 @@ const FirstRunTutorial = React.memo(function FirstRunTutorial(props) {
     e('div', { style: { padding: '32px 32px 24px', minHeight: '360px' } },
       index === 0 && e('div', { style: { display: 'flex', justifyContent: 'center', marginBottom: '20px' } },
         e(ParachordWordmark, { fill: 'var(--text-primary)', height: 40 })),
-      e('div', { 'aria-hidden': 'true', style: PICTURE_STYLE }, screen.picture({ loadedResolvers, friendArt, onFriendArtError: () => setFriendArt(null) })),
+      e('div', { 'aria-hidden': 'true', style: PICTURE_STYLE }, screen.picture({ loadedResolvers, metaServices, friendArt, onFriendArtError: () => setFriendArt(null) })),
       e('h2', { className: 'text-ink-primary', style: { fontSize: '20px', fontWeight: 600, margin: '0 0 8px' } }, screen.title),
       e('p', { className: 'text-ink-secondary', style: { fontSize: '14px', lineHeight: 1.6, margin: 0 } }, screen.body),
       // The caveat (what a feature needs before it works), set apart in italics.

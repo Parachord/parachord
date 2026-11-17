@@ -571,6 +571,11 @@ const HomePage = React.memo(function HomePage(props) {
         onOpenPlugin: openPluginPanel,
         onAddFolder: () => handleAddWatchFolder(),
         onBrowsePlugins: () => { navigateTo('settings'); setSettingsTab('plugins'); },
+        // Playback Quality lives in Settings › General.
+        onOpenQuality: () => { navigateTo('settings'); setSettingsTab('general'); },
+        // apple.com links would open inside the app (main.js lets them
+        // through for Apple sign-in), so the beta links go to the browser.
+        onOpenLink: (url) => { const shell = globalThis.electron && globalThis.electron.shell; if (shell && shell.openExternal) shell.openExternal(url); },
         onImportLink: () => setShowUrlImportDialog(true),
         // Library Sync lives in Settings › General.
         onSyncLibrary: () => { navigateTo('settings'); setSettingsTab('general'); },

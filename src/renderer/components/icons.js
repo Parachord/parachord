@@ -30,6 +30,7 @@ const SHAPES = {
     ['path', { d: 'M19.07 4.93a10 10 0 0 1 0 14.14' }],
   ],
   Music: [['path', { d: 'M9 18V5l12-2v13' }], ['circle', { cx: 6, cy: 18, r: 3 }], ['circle', { cx: 18, cy: 16, r: 3 }]],
+  Smartphone: [['rect', { x: 5, y: 2, width: 14, height: 20, rx: 2, ry: 2 }], ['path', { d: 'M12 18h.01' }]],
   Headphones: [['path', { d: 'M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3' }]],
   List: [['line', { x1: 4, y1: 6, x2: 20, y2: 6 }], ['line', { x1: 4, y1: 12, x2: 20, y2: 12 }], ['line', { x1: 4, y1: 18, x2: 20, y2: 18 }]],
   Users: [
