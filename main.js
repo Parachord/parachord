@@ -5947,8 +5947,20 @@ async function fetchAppleMusicPublicPlaylistUrl(libraryId) {
   return `https://music.apple.com/us/playlist/${slug}/${globalId}`;
 }
 
+// Sends only what changed (main-process/achordion-submit-memo.js): every
+// ListenBrainz push used to re-send unchanged links, and the bursts came
+// back as 429s.
+const { playlistLinksFingerprint, createSubmitMemo } = require('./main-process/achordion-submit-memo');
+const achordionSubmitMemo = createSubmitMemo(store);
+
 async function pushPlaylistLinksToAchordion(localPlaylist) {
   if (!localPlaylist) return;
+  // Unchanged since Achordion last accepted it: nothing to send, and no
+  // Apple Music lookup either.
+  const fingerprint = playlistLinksFingerprint(localPlaylist);
+  const anchorMbid = localPlaylist.syncedTo?.listenbrainz?.externalId
+    || (localPlaylist.syncedFrom?.resolver === 'listenbrainz' && localPlaylist.syncedFrom.externalId);
+  if (achordionSubmitMemo.unchanged(anchorMbid, fingerprint)) return;
   const links = [];
   const syncedTo = localPlaylist.syncedTo || {};
   if (syncedTo.spotify?.externalId) {
@@ -6033,6 +6045,7 @@ async function pushPlaylistLinksToAchordion(localPlaylist) {
       console.warn(`[achordion] playlist-links submit returned HTTP ${res.status} for mbid=${lbMbid}`);
       return;
     }
+    achordionSubmitMemo.remember(lbMbid, fingerprint);
     console.log(`[achordion] playlist-links submitted: mbid=${lbMbid} links=${links.length}`);
   } catch (err) {
     console.warn('[achordion] playlist-links submit failed:', err && err.message ? err.message : err);
