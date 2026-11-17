@@ -856,12 +856,19 @@ async function loadManifestSession(audio, { resolverId, result, entity, trackCon
 // MID-LOAD requests too: Shaka fires the first licence request during
 // load(), before trackSession exists — the record predates the load, so the
 // first licence of a plugin play is answered, not refused.
+//
+// The subscription is single-owner (preload), so the router claims it when
+// this module loads, before any plug-in code runs, rather than on the first
+// plug-in play: code that subscribed first would otherwise own every licence
+// answer for the session. A refused claim (the preload answers null) leaves
+// the router unbound, so a plug-in play fails with a message that says why
+// instead of a licence error that doesn't.
 let pluginRelayRouterBound = false;
 function ensurePluginRelayRouter(bridge) {
   if (pluginRelayRouterBound) return true;
   if (!bridge || typeof bridge.onPluginLicenseRequest !== 'function') return false;
   pluginRelayRouterBound = true;
-  bridge.onPluginLicenseRequest(async (request) => {
+  const unsubscribe = bridge.onPluginLicenseRequest(async (request) => {
     const record = pluginRelayRecord;
     if (!record || record.sessionId !== request.sessionId || typeof record.relayLicense !== 'function') {
       const err = new Error('widevine-player: no live plugin license relay for this session');
@@ -876,8 +883,18 @@ function ensurePluginRelayRouter(bridge) {
     }
     return license;
   });
+  if (typeof unsubscribe !== 'function') {
+    pluginRelayRouterBound = false;
+    return false;
+  }
   return true;
 }
+// Claim the relay at load (see above). A test or plain Node has no bridge.
+try {
+  if (typeof window !== 'undefined' && window.electron && window.electron.widevine) {
+    ensurePluginRelayRouter(window.electron.widevine);
+  }
+} catch (_e) { /* claimed on the first plug-in play instead */ }
 
 // The plugin-mediated play path (#1356 M4): a resolver that implements
 // getPlaybackManifest supplies the manifest RENDERER-side (the engine calls
@@ -926,7 +943,9 @@ async function playPlugin(audio, { resolverId, manifestResult, relayLicense, pla
     throw err;
   }
   if (!ensurePluginRelayRouter(bridge)) {
-    throw new Error('widevine-player: plugin license router registration failed');
+    const err = new Error('widevine-player: the plug-in licence relay is held by another subscriber, so this play cannot be licensed');
+    err.reason = 'playback-failed';
+    throw err;
   }
 
   // A pre-claimed token (claimPlayToken — the engine claims before the

@@ -108,7 +108,7 @@ describe('ResolverLoader status', () => {
       // The marker is a failed read, not a verdict: no limit for the map,
       // the honest error line for the Settings row.
       expect(PlaybackLimits.pluginStatusLimit(settled)).toBeNull();
-      expect(PlaybackLimits.pluginStatusRow(settled).label).toBe("Couldn't check");
+      expect(PlaybackLimits.pluginStatusRow(settled).label).toBe("Couldn’t check");
     } finally {
       jest.useRealTimers();
     }

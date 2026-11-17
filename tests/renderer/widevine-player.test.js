@@ -164,7 +164,7 @@ function makeElectron({ manifestManifest = '<MPD/>', manifestOk = true, licenseO
       pluginSession = { sessionId: `plug-sess-${pluginSessionSeq}` };
       return { success: true, sessionId: pluginSession.sessionId };
     }),
-    onPluginLicenseRequest: (callback) => { pluginRouter = callback; },
+    onPluginLicenseRequest: jest.fn((callback) => { pluginRouter = callback; return () => { pluginRouter = null; }; }),
     relayLicense: jest.fn(async (resolverId, challenge, sessionId) => {
       if (pluginSession && sessionId === pluginSession.sessionId) {
         if (!pluginRouter) return { success: false, reason: 'playback-failed', error: 'no plugin relay registered' };
@@ -1520,5 +1520,25 @@ describe('error paths', () => {
     const audio = makeAudio();
     await expect(player.play(audio, { resolverId: 'amazonmusic', entity: { asin: 'B1' } }))
       .rejects.toMatchObject({ reason: 'not-signed-in' });
+  });
+});
+
+// #1434 review: the relay is single-owner, so the router claims it when the
+// module loads, before any plug-in code could, and a refused claim is
+// detectable rather than silently leaving plays to fail licensing.
+describe('the plug-in licence relay is claimed at load', () => {
+  test('loading the player registers its router once, before any play', () => {
+    const { el } = load();
+    expect(el.bridge.onPluginLicenseRequest).toHaveBeenCalledTimes(1);
+  });
+
+  test('a refused claim (another subscriber got there first) fails a plug-in play with a message that says why', async () => {
+    const el = makeElectron();
+    el.bridge.onPluginLicenseRequest = jest.fn(() => null); // the preload's refusal
+    const { player } = load({ electron: el });
+    const audio = makeAudio();
+    const manifestResult = { type: 'dash', drm: 'widevine', manifest: '<MPD/>', context: {} };
+    await expect(player.playPlugin(audio, { resolverId: 'plugsvc', manifestResult, relayLicense: async () => 'TElDRU5TRQ==' }))
+      .rejects.toThrow(/held by another subscriber/);
   });
 });

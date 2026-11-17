@@ -672,7 +672,8 @@ contextBridge.exposeInMainWorld('electron', {
     onPluginLicenseRequest: (callback) => {
       if (__pluginLicenseRelayUnsubscribe) {
         console.warn('widevine.onPluginLicenseRequest: a plugin license relay is already registered; ignoring the second registration');
-        return () => { /* no-op: the first registration owns the relay */ };
+        // null, not a no-op function: the caller can tell it was refused.
+        return null;
       }
       const handler = (_event, request) => {
         if (!request || typeof request.requestId !== 'string') return;
