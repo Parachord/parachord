@@ -542,6 +542,16 @@ React.createElement('div', {
                   } }, 'Clear')
               )
             ),
+            // Your own client ID, once signed in with one (components/disclosure.js).
+            spotifyConnected && spotifyCredentialsSource === 'user' && React.createElement(Disclosure, { label: 'Change client ID', open: spotifyAdvancedOpen, onToggle: () => setSpotifyAdvancedOpen(!spotifyAdvancedOpen) },
+              React.createElement('div', { style: { marginBottom: '10px' } },
+                React.createElement('label', {
+                  style: { fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }
+                }, 'Client ID'),
+                React.createElement(SecretField, { value: spotifyClientIdInput, onChange: (_v, e) => setSpotifyClientIdInput(e.target.value), placeholder: 'Your Spotify Client ID', 'aria-label': 'Your Spotify Client ID', className: 'w-full' })
+              ),
+              React.createElement(Button, { variant: 'primary', size: 'sm', onClick: saveSpotifyCredentials, disabled: !spotifyClientIdInput.trim() }, 'Save')
+            ),
             renderLibrarySync(),
             // Start Spotify at launch, so a device is there to play on.
             React.createElement('div', { style: SYNC_BLOCK },
@@ -558,16 +568,6 @@ React.createElement('div', {
                     showToast('Spotify launched in background', 'success');
                   }
                 }, 'aria-label': 'Open Spotify in the background at startup', }))),
-            // Your own client ID, once signed in with one (components/disclosure.js).
-            spotifyConnected && spotifyCredentialsSource === 'user' && React.createElement(Disclosure, { label: 'Change client ID', open: spotifyAdvancedOpen, onToggle: () => setSpotifyAdvancedOpen(!spotifyAdvancedOpen) },
-              React.createElement('div', { style: { marginBottom: '10px' } },
-                React.createElement('label', {
-                  style: { fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }
-                }, 'Client ID'),
-                React.createElement(SecretField, { value: spotifyClientIdInput, onChange: (_v, e) => setSpotifyClientIdInput(e.target.value), placeholder: 'Your Spotify Client ID', 'aria-label': 'Your Spotify Client ID', className: 'w-full' })
-              ),
-              React.createElement(Button, { variant: 'primary', size: 'sm', onClick: saveSpotifyCredentials, disabled: !spotifyClientIdInput.trim() }, 'Save')
-            )
           ),
 
           // SoundCloud authentication section
@@ -581,22 +581,14 @@ React.createElement('div', {
             },
               React.createElement(AccountRow, {
                 name: 'SoundCloud', color: getServiceColor('soundcloud'), signedIn: soundcloudConnected,
-                status: soundcloudConnected ? 'Signed in' : hasCredentials ? 'Sign in to search and stream SoundCloud' : 'Add your client ID and secret under Advanced first',
+                status: soundcloudConnected ? 'Signed in' : hasCredentials ? 'Sign in to search and stream SoundCloud' : 'Add your client ID and secret below first',
                 onSignIn: connectSoundcloud, onSignOut: disconnectSoundcloud, signInDisabled: !hasCredentials,
               }),
-              soundcloudConnected && React.createElement('p', {
-                style: {
-                  fontSize: '11px',
-                  color: 'var(--text-tertiary)',
-                  marginTop: '12px',
-                  lineHeight: '1.5'
-                }
-              },
-                'Note: Streaming availability depends on individual track permissions set by uploaders.'
-              ),
 
-              // API Credentials section - Advanced accordion with optional BYOK
-              React.createElement(Disclosure, { open: soundcloudAdvancedOpen, onToggle: () => setSoundcloudAdvancedOpen(!soundcloudAdvancedOpen) },
+              // The client ID and secret it signs in with, right under the
+              // sign-in: open until they're saved (it can't sign in without
+              // them), then folded under their own name, not "Advanced".
+              React.createElement(Disclosure, { label: 'Client ID and secret', alwaysOpen: !hasCredentials, open: soundcloudAdvancedOpen, onToggle: () => setSoundcloudAdvancedOpen(!soundcloudAdvancedOpen) },
 React.createElement('p', {
                     style: {
                       fontSize: '11px',
@@ -609,7 +601,7 @@ React.createElement('p', {
                       ? '✓ Using your custom SoundCloud API credentials.'
                       : soundcloudCredentialsSource === 'env'
                         ? '✓ Using credentials from environment variables.'
-                        : 'Optional: Use your own SoundCloud API credentials to avoid rate limiting.'
+                        : 'SoundCloud needs your own client ID and secret before you can sign in.'
                   ),
 React.createElement('div', { style: { marginBottom: '10px' } },
                     React.createElement('label', {
@@ -682,7 +674,10 @@ React.createElement('div', { className: 'flex gap-2' },
                           }
                         }
                       } }, 'Clear')
-                  ))
+                  )),
+              soundcloudConnected && React.createElement('p', {
+                style: { fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '12px', lineHeight: '1.5' }
+              }, 'Streaming depends on each track’s permissions, which its uploader sets.')
             );
           })(),
 
