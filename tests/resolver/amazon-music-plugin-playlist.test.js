@@ -146,7 +146,9 @@ describe('lookupPlaylistFlow (the load + the replay + the pagination)', () => {
     // The playlist page loaded on the plugin's own session with the gql
     // capture window inside the load — the same window the spec searches
     // use (explicit quietMs: a cold view's first gql fires well after
-    // load-finish; never later than the old poll's 15s budget).
+    // load-finish; never later than the old poll's 15s budget). The budget
+    // escape is OPTED IN here, and only here: this flow is the one caller
+    // that knows how to judge a half-loaded page's captures.
     expect(ws.load).toHaveBeenCalledTimes(1);
     const [sessionId, url, opts] = ws.load.mock.calls[0];
     expect(sessionId).toBe('amazon-music');
@@ -154,7 +156,8 @@ describe('lookupPlaylistFlow (the load + the replay + the pagination)', () => {
     expect(opts.capture).toEqual({
       urlPrefixes: ['https://gql.music.amazon.com/*'],
       quietMs: 2500,
-      budgetMs: 15000
+      budgetMs: 15000,
+      returnOnTimeout: true
     });
     // The replay went to the captured URL with the captured headers and the
     // page's own firstLimit — never raised, no variables patched.

@@ -2437,7 +2437,16 @@ module.exports = {
       capture: {
         urlPrefixes: [lib.GQL_URL + '*'],
         quietMs: lib.PAGE_CAPTURE_QUIET_MS,
-        budgetMs: lib.PAGE_CAPTURE_BUDGET_MS
+        budgetMs: lib.PAGE_CAPTURE_BUDGET_MS,
+        // Rule 5's budget escape, opted in per load: this flow is the ONE
+        // caller that knows how to judge a half-loaded page's captures (the
+        // matcher below reads playlistDetail off whatever the window holds,
+        // and a capture that holds no playlistDetail is the ordinary miss).
+        // Every other flow keeps the default contract — a budget-out load
+        // throws load-failed, which its callers already treat as transient —
+        // so a slow page is never misread as a structural "never searched"
+        // or a not-found miss.
+        returnOnTimeout: true
       }
     });
     if (!load || !load.success) {

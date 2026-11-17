@@ -253,11 +253,13 @@ function amazonPlaylistPage(playlist, tracks, pageInfo) {
 //   finalUrl         — the load's final URL (a wall redirect)
 //   loadResult       — the load's whole outcome ({ success: false, reason } for
 //                      the failure paths)
-//   loadTimedOut     — true simulates the host's rule-5 escape: the navigation
-//                      budget ran out with the capture already holding
-//                      requests, so the load returns them with
-//                      { loadTimedOut: true } instead of throwing
-//                      load-failed (nothing captured still fails — pass
+//   loadTimedOut     — true simulates the navigation budget FIRING (a slow
+//                      subresource holds did-finish-load past it); the mock
+//                      then answers by the host's OPT-IN rule: a caller that
+//                      passed capture.returnOnTimeout gets the held captures
+//                      back with { loadTimedOut: true } (rule 5's escape),
+//                      every other caller gets the old contract — load-failed
+//                      (nothing captured still fails either way — pass
 //                      loadResult for that)
 //   captureDelayMs   — the ms after load-finish the page's first capture fires
 //                      (default 0): the load returns it only when it fired
@@ -357,10 +359,19 @@ function amazonWebSessionMock(opts = {}) {
         if (at >= 0) captures = captures.slice(0, at + 1);
       }
       const out = { success: true, finalUrl: 'finalUrl' in opts ? opts.finalUrl : url, captures };
-      // The host's rule-5 escape, simulated at its decision point: the
-      // navigation budget ran out with the capture already holding requests,
-      // so the host returns them with the flag instead of throwing.
-      if (opts.loadTimedOut) out.loadTimedOut = true;
+      // The host's rule-5 escape, simulated at its decision point and under
+      // its OPT-IN rule: the navigation budget ran out with the capture
+      // already holding requests, so a caller that passed
+      // capture.returnOnTimeout gets them with the flag, and every other
+      // caller — the default contract — gets load-failed (a transient
+      // refusal its flow already handles, never a structural read).
+      if (opts.loadTimedOut) {
+        if (o && o.capture && o.capture.returnOnTimeout && captures.length) {
+          out.loadTimedOut = true;
+        } else {
+          return { success: false, reason: 'load-failed', error: 'page did not finish loading within 30000ms: ' + url };
+        }
+      }
       return out;
     }),
     pageFetch: jest.fn().mockImplementation(async (id, request) => {

@@ -96,7 +96,13 @@
 //      touched) — names the request the caller waits for, and the window ends
 //      the moment a header-complete, non-echo capture satisfies it, before
 //      did-finish-load included (the navigation keeps loading in the
-//      background). Echoed captures (rule 4) never satisfy it.
+//      background). Echoed captures (rule 4) never satisfy it. The budget
+//      has an OPT-IN escape in the same spirit (capture.returnOnTimeout: a
+//      boolean): a navigation budget that fires with captures held throws
+//      load-failed by default — the old contract every caller already treats
+//      as transient — and only the caller that opted in gets the held
+//      captures back with { loadTimedOut: true } instead, judging the
+//      half-loaded page's captures itself.
 //
 // The capture listener itself pairs bodies (onBeforeRequest) with headers
 // (onBeforeSendHeaders) by request id — onBeforeSendHeaders fires
@@ -836,11 +842,14 @@ function createWebSessionHost(config = {}) {
 
     // ── the primitives ─────────────────────────────────────────────────────
 
-    // load(url, { timeoutMs, capture: { urlPrefixes, quietMs, budgetMs, doneWhen } })
+    // load(url, { timeoutMs, capture: { urlPrefixes, quietMs, budgetMs, doneWhen, returnOnTimeout } })
     // → { finalUrl, captures } — captures present only when capture was asked
     // for. Serialized per session (rule 1); waits out in-flight pageFetches
     // (rule 2); captures flag echoes (rule 4) and end on quiet/budget, or on
-    // the caller's doneWhen match — the data-only early stop (rule 5).
+    // the caller's doneWhen match — the data-only early stop (rule 5). A
+    // budget that fires with captures held throws load-failed unless the
+    // caller OPTED IN to rule 5's escape (capture.returnOnTimeout — the
+    // caller that knows how to judge a half-loaded page's captures says so).
     async load(url, opts = {}) {
       // Validate before ANY state is touched: a bad argument must not leave
       // a created-but-never-laid-out view or a disarmed park fuse behind.
@@ -850,6 +859,10 @@ function createWebSessionHost(config = {}) {
       const doneWhenProblem = captureDoneWhenProblem(opts.capture && opts.capture.doneWhen);
       if (doneWhenProblem) {
         throw notReady('invalid', `[web-session ${cfg.id}] ${doneWhenProblem}`);
+      }
+      if (opts.capture && opts.capture.returnOnTimeout !== undefined && opts.capture.returnOnTimeout !== null
+        && typeof opts.capture.returnOnTimeout !== 'boolean') {
+        throw notReady('invalid', `[web-session ${cfg.id}] capture.returnOnTimeout must be a boolean (the opt-in to rule 5's budget escape)`);
       }
       return this.enqueue(async () => {
         const generation = this._generation; // clear() bumps this: a superseded load's teardown must not touch the new session state
@@ -879,15 +892,20 @@ function createWebSessionHost(config = {}) {
               await this.loadURLBudgeted(view, url, opts.timeoutMs);
             }
           } catch (error) {
-            // Rule 5's escape (the #1423 bug class): the navigation budget ran
-            // out, but the capture already holds requests — the page's requests
-            // were the point of the load, not the finished document (a slow
+            // Rule 5's escape (the #1423 bug class), OPT-IN ONLY
+            // (capture.returnOnTimeout): the navigation budget ran out, but
+            // the capture already holds requests — the page's requests were
+            // the point of the load, not the finished document (a slow
             // subresource keeps did-finish-load from firing long after the
             // page's gql). The host cannot know which request matters (the
-            // matcher is plugin-side), so it returns what it captured with the
-            // flag, and the caller decides. A budget timeout with NOTHING
-            // captured — or a genuine navigation failure — still throws.
-            if (captureState && error && error.loadTimedOut && captureState.snapshot().length) {
+            // matcher is plugin-side), so the caller that knows how to judge
+            // a half-loaded page's captures opts in and gets what was
+            // captured with the flag. Every other caller keeps the old
+            // contract: a budget timeout — with captures held or not — or a
+            // genuine navigation failure throws load-failed, which those
+            // callers already treat as transient (a spec search must not
+            // read a slow page as a structural "never searched").
+            if (captureState && opts.capture.returnOnTimeout && error && error.loadTimedOut && captureState.snapshot().length) {
               loadTimedOut = true;
             } else {
               throw error;
