@@ -168,7 +168,7 @@ describe('Home', () => {
 
 describe('the welcome tour', () => {
   test('overview screens only, ending in set up', () => {
-    expect(TOUR_SCREENS.map((s) => s.id)).toEqual(['welcome', 'collection', 'discover', 'concerts', 'shuffleupagus', 'friends', 'achordion', 'setup']);
+    expect(TOUR_SCREENS.map((s) => s.id)).toEqual(['welcome', 'collection', 'discover', 'concerts', 'shuffleupagus', 'friends', 'links', 'buy', 'achordion', 'setup']);
     const src = read('src/renderer/components/first-run-tutorial.js');
     expect(src).not.toMatch(/'sources'|'accounts'|'complete'|connectLastfm|setActiveResolvers|TextField/);
   });

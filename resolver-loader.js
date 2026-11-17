@@ -154,8 +154,8 @@ class ResolverLoader {
       icon: manifest.icon || '🎵',
       color: manifest.color || '#888888',
       // What the plug-in needs to work ("Spotify Premium, …", "Works right
-      // away"), one sentence from manifest.requirement; shown on the welcome
-      // tour's tile and in the plug-in's panel. null when the manifest has none.
+      // away"), one sentence from manifest.requirement; shown in the
+      // plug-in's panel. null when the manifest has none.
       requirement: typeof manifest.requirement === 'string' && manifest.requirement.trim() ? manifest.requirement.trim() : null,
       homepage: manifest.homepage,
       email: manifest.email,
@@ -675,6 +675,19 @@ class ResolverLoader {
    * @returns {string} - 'track', 'album', 'playlist', or 'unknown'
    */
   getUrlType(url) {
+    // The plug-in that claims the URL says, when it implements getUrlType
+    // (Achordion's links, #1493): a new service needs no branch here. The
+    // branches below are the older plug-ins', kept for them.
+    const ownerId = this.findResolverForUrl(url);
+    const owner = ownerId && this.resolvers.get(ownerId);
+    if (owner && typeof owner.getUrlType === 'function') {
+      try {
+        const type = owner.getUrlType(url);
+        if (type) return type;
+      } catch (error) {
+        console.error(`getUrlType error for ${ownerId}:`, error);
+      }
+    }
     // Spotify
     if (url.includes('spotify')) {
       if (url.includes('/album/') || url.includes('spotify:album:')) return 'album';

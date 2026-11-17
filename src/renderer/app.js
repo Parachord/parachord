@@ -8643,9 +8643,14 @@ const Parachord = () => {
         const metaServiceAxes = resolversToLoad.filter(axe =>
           axe.manifest.type === 'meta-service'
         );
-        // Meta services that have URL lookup capabilities need to be loaded for URL pattern matching
+        // Meta services that have URL lookup capabilities need to be loaded for URL pattern matching.
+        // One that the playback-telemetry load below brings in (Achordion,
+        // whose links open since #1493) is loaded there, once: a second load
+        // would register its patterns twice and could replace the instance
+        // its init() ran on.
         const metaServicesWithUrlLookup = metaServiceAxes.filter(axe =>
           axe.capabilities?.urlLookup && axe.urlPatterns?.length > 0
+          && !(axe.capabilities?.playbackTelemetry && axe.implementation?.init)
         );
         // Meta services with generate capability need implementation functions loaded
         const metaServicesWithGenerate = metaServiceAxes.filter(axe =>

@@ -9,7 +9,7 @@
 Any feature shaped like "given a provider URL or entity, do X" MUST route through the resolver-loader capability surface, never a hardcoded service switch. The surface (`resolver-loader.js`):
 
 - `findResolverForUrl(url)` → which resolver owns this URL (matches each `.axe`'s `urlPatterns`)
-- `getUrlType(url)` → `'track' | 'album' | 'playlist' | 'artist' | 'unknown'`
+- `getUrlType(url)` → `'track' | 'album' | 'playlist' | 'artist' | 'unknown'` — the owning plug-in answers first when it implements `getUrlType(url)` (returning a type, or null to defer), so a new service needs no branch in the loader; the hard-coded branches are the older plug-ins'. A meta-service can own links too: Achordion (v1.1.0, #1493) declares `capabilities.urlLookup` and `urlPatterns` for `achordion.xyz/recording|release-group|playlist/*`, and implements `getUrlType`, `lookupUrl` (by MBID through MusicBrainz, or by the `lookup?artist=&title=` links Parachord shares), `lookupAlbum` (the release group's earliest official release) and `lookupPlaylist` (Achordion's public XSPF). A dropped Achordion link then plays from your own services like any other link. A meta-service with `urlLookup` that the playback-telemetry load also brings in is loaded there, once.
 - `lookupUrl(url)` / `lookupAlbum(url)` / `lookupPlaylist(url)` → entity → tracks, dispatched to the owning resolver's capability
 - `resolve` / `search` on `loadedResolversRef` for playback + search
 - `listModels(config)` for AI `dynamic-select` plugins

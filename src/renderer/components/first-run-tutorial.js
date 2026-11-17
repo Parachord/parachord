@@ -57,6 +57,33 @@ const pageMark = (page) => {
   }, e(Icon, { size: 22 }));
 };
 
+// The playbar's now-playing block in small, on the player's dark surface:
+// cover (or a note), title, artist (with `artistExtra` after it), then
+// `extra` on the right. Concerts, Friends, links and buying draw it.
+function MiniPlaybar({ art, onArtError, title, artist, artistExtra, extra }) {
+  return e('div', {
+    style: {
+      display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px', borderRadius: '12px',
+      backgroundColor: 'var(--surface-dark)', boxShadow: 'var(--card-shadow)',
+    },
+  },
+    e('span', { style: { width: '44px', height: '44px', borderRadius: '6px', overflow: 'hidden', backgroundColor: 'var(--surface-dark-placeholder)', flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--on-dark-tertiary)' } },
+      art ? e('img', { src: art, alt: '', width: 44, height: 44, style: { objectFit: 'cover' }, onError: onArtError }) : e(Icons.Music, { size: 18 })),
+    e('span', { style: { display: 'flex', flexDirection: 'column', gap: '2px', minWidth: '110px' } },
+      e('span', { style: { fontSize: '14px', fontWeight: 600, color: 'var(--on-dark-primary)' } }, title),
+      e('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--on-dark-secondary)' } }, artist, artistExtra)),
+    extra);
+}
+
+// A service's link as the registry spells it (its first URL pattern, the
+// wildcards as an ellipsis): what a dragged link reads in the picture.
+const linkText = (r) => {
+  const patterns = (r && Array.isArray(r.urlPatterns) && r.urlPatterns) || [];
+  // A song's link reads best; else the plug-in's first.
+  const pattern = patterns.find((p) => /\/(track|song)s?\//.test(p)) || patterns[0] || '';
+  return pattern.replace(/^https?:\/\//, '').replace(/\/\*.*$/, '/…');
+};
+
 // One entry per screen: its title, its line, `needs` (the caveat: what the
 // feature needs before it works, an honest expectation, never a question;
 // shown in italics), and its picture. A screen describes what
@@ -100,23 +127,13 @@ const TOUR_SCREENS = [
     title: 'Never miss a show',
     body: 'See upcoming concerts near you from the artists you listen to, with tickets a click away. When an artist you’re playing is on tour near you, a dot appears beside their name in the player; click it for their dates.',
     needs: 'Works once you add a tickets plug-in and set your location.',
-    // The playbar's now-playing lines in small, on the player's dark surface,
-    // with its on-tour dot (playbar.js) in the Concerts colour.
-    picture: () => e('div', {
-      style: {
-        display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px', borderRadius: '12px',
-        backgroundColor: 'var(--surface-dark)', boxShadow: 'var(--card-shadow)',
-      },
-    },
-      e('span', { style: { width: '44px', height: '44px', borderRadius: '6px', backgroundColor: 'var(--surface-dark-placeholder)', flexShrink: 0 } }),
-      e('span', { style: { display: 'flex', flexDirection: 'column', gap: '2px' } },
-        e('span', { style: { fontSize: '14px', fontWeight: 600, color: 'var(--on-dark-primary)' } }, 'Now playing'),
-        e('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--on-dark-secondary)' } },
-          'The artist',
-          e('span', { style: { width: '7px', height: '7px', borderRadius: '9999px', backgroundColor: PAGE_COLORS.concerts.color } }))),
-      e('span', {
-        style: { display: 'inline-flex', alignItems: 'center', gap: '6px', marginLeft: '8px', fontSize: '12px', color: 'var(--on-dark-secondary)' },
-      }, e(Icons.Ticket, { size: 14 }), 'On tour near you')),
+    // The playbar with its on-tour dot (playbar.js) in the Concerts colour.
+    picture: () => e(MiniPlaybar, {
+      title: 'Now playing', artist: 'The artist',
+      artistExtra: e('span', { style: { width: '7px', height: '7px', borderRadius: '9999px', backgroundColor: PAGE_COLORS.concerts.color } }),
+      extra: e('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '6px', marginLeft: '8px', fontSize: '12px', color: 'var(--on-dark-secondary)' } },
+        e(Icons.Ticket, { size: 14 }), 'On tour near you'),
+    }),
   },
   {
     // What the chat can do comes from its DJ tools (tools/dj-tools.js): play,
@@ -140,32 +157,65 @@ const TOUR_SCREENS = [
     title: 'Friends',
     body: 'See what your friends are playing, in whatever app they use, and listen along. While you do, their badge sits on your queue button: their queue decides what plays next.',
     needs: 'Works once you connect Last.fm or ListenBrainz.',
-    // The playbar listening along, in small: a friend's song playing, and
-    // their avatar hexagon on the queue button (playbar.js's
-    // listen-along badge), since their queue decides what's next.
-    picture: ({ friendArt, onFriendArtError }) => e('div', {
-      style: {
-        display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px', borderRadius: '12px',
-        backgroundColor: 'var(--surface-dark)', boxShadow: 'var(--card-shadow)',
-      },
-    },
-      e('span', { style: { width: '44px', height: '44px', borderRadius: '6px', overflow: 'hidden', backgroundColor: 'var(--surface-dark-placeholder)', flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--on-dark-tertiary)' } },
-        friendArt
-          ? e('img', { src: friendArt, alt: '', width: 44, height: 44, style: { objectFit: 'cover' }, onError: onFriendArtError })
-          : e(Icons.Music, { size: 18 })),
-      e('span', { style: { display: 'flex', flexDirection: 'column', gap: '2px', minWidth: '120px' } },
-        e('span', { style: { fontSize: '14px', fontWeight: 600, color: 'var(--on-dark-primary)' } }, FRIEND_SONG.title),
-        e('span', { style: { fontSize: '13px', color: 'var(--on-dark-secondary)' } }, FRIEND_SONG.artist)),
-      e('span', { style: { position: 'relative', marginLeft: '16px', display: 'inline-flex', color: 'var(--on-dark-primary)' } },
-        e(Icons.List, { size: 18, style: { opacity: 0.4 } }),
+    // The playbar listening along: a friend's song playing, and their
+    // avatar hexagon on the queue button (playbar.js's listen-along badge),
+    // since their queue decides what's next.
+    picture: ({ friendArt, onFriendArtError }) => e(MiniPlaybar, {
+      art: friendArt, onArtError: onFriendArtError, title: FRIEND_SONG.title, artist: FRIEND_SONG.artist,
+      extra: e(React.Fragment, null,
+        e('span', { style: { position: 'relative', marginLeft: '16px', display: 'inline-flex', color: 'var(--on-dark-primary)' } },
+          e(Icons.List, { size: 18, style: { opacity: 0.4 } }),
+          e('span', {
+            style: {
+              position: 'absolute', top: '-8px', right: '-10px', width: '20px', height: '20px', clipPath: LISTENER_HEXAGON,
+              backgroundColor: 'var(--accent-fill)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: '11px', fontWeight: 600, color: 'var(--on-accent)',
+            },
+          }, 'A')),
+        e('span', { style: { marginLeft: '12px', fontSize: '12px', color: 'var(--on-dark-secondary)' } }, 'Listening along with Alex')),
+    }),
+  },
+  {
+    // A link from another service, dropped on the player or the queue
+    // (handleUrlDrop in app.js; DropZoneOverlay), plays from your own
+    // services. The link in the picture is a service plug-in's own pattern.
+    id: 'links',
+    title: 'Play any link someone sends you',
+    body: 'Someone shared a song, album or playlist from a service you don’t use? Drag the link onto the player to play it now, or onto the queue to play it next. Parachord finds it on the services you use. Links from Achordion work too.',
+    needs: 'To send a page from your web browser instead, add the browser extension.',
+    picture: ({ loadedResolvers }) => {
+      const services = stepOnePlugins(loadedResolvers).services;
+      const r = services.find((p) => /\/(track|song)s?\//.test(linkText(p))) || services.find((p) => linkText(p));
+      return e('div', { style: { display: 'flex', alignItems: 'center', gap: '12px' } },
+        r && e('span', {
+          className: 'text-ink-primary',
+          style: {
+            display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '6px 10px', borderRadius: '8px', fontSize: '12px',
+            backgroundColor: 'var(--card-bg)', boxShadow: 'var(--shadow-popover)', transform: 'rotate(-3deg)',
+          },
+        }, e(Icons.Link, { size: 14 }), linkText(r)),
+        e(Icons.ArrowRight, { size: 18, className: 'text-ink-tertiary' }),
+        // The drop overlay (drop-zone-overlay.js) over the player, in small.
         e('span', {
           style: {
-            position: 'absolute', top: '-8px', right: '-10px', width: '20px', height: '20px', clipPath: LISTENER_HEXAGON,
-            backgroundColor: 'var(--accent-fill)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: '11px', fontWeight: 600, color: 'var(--on-accent)',
+            display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '16px 20px', borderRadius: '12px',
+            backgroundColor: 'var(--surface-dark)', border: '2px dashed var(--accent-primary-alpha-50)',
+            color: 'var(--accent-tertiary)', fontSize: '14px', fontWeight: 600,
           },
-        }, 'A')),
-      e('span', { style: { marginLeft: '12px', fontSize: '12px', color: 'var(--on-dark-secondary)' } }, 'Listening along with Alex')),
+        }, e(Icons.Play, { size: 18 }), 'Drop to play now'));
+    },
+  },
+  {
+    // The playbar's buy button (playbar.js): a confident match on a store
+    // plug-in (capabilities.purchase, Bandcamp today), whatever source plays.
+    id: 'buy',
+    title: 'Buy the music you love',
+    body: 'When a song you’re playing is for sale on Bandcamp, a cart appears in the player, whatever service it’s playing from. Click it to buy straight from the artist.',
+    picture: ({ friendArt, onFriendArtError }) => e(MiniPlaybar, {
+      art: friendArt, onArtError: onFriendArtError, title: FRIEND_SONG.title, artist: FRIEND_SONG.artist,
+      extra: e('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '6px', marginLeft: '16px', fontSize: '12px', color: 'var(--on-dark-success)' } },
+        e(Icons.ShoppingCart, { size: 14 }), 'Buy on Bandcamp'),
+    }),
   },
   {
     // Achordion (achordion.xyz) is the web companion: Copy link on a song,
