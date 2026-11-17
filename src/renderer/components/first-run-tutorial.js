@@ -2,8 +2,8 @@
 // first launch (tutorial_completed) and from Settings › About › Show welcome
 // tour. It explains Parachord and asks you to set up nothing (#1493): one
 // idea per screen, each with a small picture made of the app's own pieces
-// and a line or two. The last screen hands over to Home's getting-started
-// layout, where the setup is.
+// and a line or two. The last screen's Get started hands over to Home's
+// getting-started layout, where the setup is.
 //
 // A React.memo'd dialog on the shared Modal, fed stable props: state,
 // setters and memos by value, plain functions through useStableHandlers
@@ -17,7 +17,7 @@ const { Badge } = require('./badge');
 const { Button } = require('./button');
 const { ReasonMark } = require('./reason-badge');
 const { LISTENER_HEXAGON } = require('./listener-card');
-const { StepMarker, ServiceMark } = require('./home-getting-started');
+const { ServiceMark } = require('./home-getting-started');
 const { PAGE_COLORS } = require('../lib/page-colors');
 const { PAGE_ICONS } = require('../lib/page-icons');
 const { stepOnePlugins } = require('../lib/getting-started');
@@ -268,12 +268,6 @@ const TOUR_SCREENS = [
           'Queue three more like this'));
     },
   },
-  {
-    id: 'setup',
-    title: 'Let’s get you set up',
-    body: 'Three steps on Home: connect where you listen, bring in your music, and start listening.',
-    picture: () => [0, 1, 2].map((i) => e(StepMarker, { key: i, index: i, done: false, current: i === 0 })),
-  },
 ];
 
 const FirstRunTutorial = React.memo(function FirstRunTutorial(props) {
@@ -343,7 +337,7 @@ const FirstRunTutorial = React.memo(function FirstRunTutorial(props) {
       e('div', { style: { display: 'flex', gap: '8px' } },
         index > 0 && e(Button, { variant: 'secondary', onClick: () => go(index - 1) }, 'Back'),
         last
-          ? e(Button, { variant: 'primary', onClick: () => close(true) }, 'Set up on Home')
+          ? e(Button, { variant: 'primary', onClick: () => close(true) }, 'Get started')
           : e(Button, { variant: 'primary', onClick: () => go(index + 1) }, 'Next'))));
 });
 

@@ -219,7 +219,7 @@ describe('Home', () => {
 
 describe('the welcome tour', () => {
   test('overview screens only, ending in set up', () => {
-    expect(TOUR_SCREENS.map((s) => s.id)).toEqual(['welcome', 'collection', 'discover', 'spinoff', 'concerts', 'shuffleupagus', 'friends', 'links', 'buy', 'achordion', 'apps', 'setup']);
+    expect(TOUR_SCREENS.map((s) => s.id)).toEqual(['welcome', 'collection', 'discover', 'spinoff', 'concerts', 'shuffleupagus', 'friends', 'links', 'buy', 'achordion', 'apps']);
     const src = read('src/renderer/components/first-run-tutorial.js');
     expect(src).not.toMatch(/'sources'|'accounts'|'complete'|connectLastfm|setActiveResolvers|TextField/);
   });
@@ -235,7 +235,7 @@ describe('the welcome tour', () => {
       expect(html).toContain(s.title);
       expect(html).toContain(`Screen ${i + 1} of ${TOUR_SCREENS.length}`);
       if (i > 0) expect(html).toContain('Back');
-      expect(html).toContain(i === TOUR_SCREENS.length - 1 ? 'Set up on Home' : 'Skip tour');
+      expect(html).toContain(i === TOUR_SCREENS.length - 1 ? 'Get started' : 'Skip tour');
     }
   });
 });

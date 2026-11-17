@@ -1,5 +1,5 @@
 /**
- * The welcome tour ends on "Set up on Home" (#1493: Home's getting-started
+ * The welcome tour ends on "Get started" (#1493: Home's getting-started
  * layout does the setup). It opens from About, not Developer Settings.
  */
 const fs = require('fs');
@@ -7,7 +7,7 @@ const path = require('path');
 const app = require('../helpers/renderer-source').appWithPages();
 
 test('the tour ends by handing over to Home: the setup is there, not in the tour (#1493)', () => {
-  expect(app).toContain("e(Button, { variant: 'primary', onClick: () => close(true) }, 'Set up on Home')");
+  expect(app).toContain("e(Button, { variant: 'primary', onClick: () => close(true) }, 'Get started')");
   expect(app).toMatch(/if \(setup\) startGettingStarted\(\);\s*else navigateTo\('home'\);/);
 });
 
