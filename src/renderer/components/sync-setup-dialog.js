@@ -12,9 +12,9 @@ const Icons = require('./icons');
 const { countOf } = require('../lib/plural');
 const { FilterChips } = require('./filter-chips');
 const { Modal } = require('./modal');
+const { ProgressBar } = require('./progress-bar');
 const { Button } = require('./button');
 const { Checkbox } = require('./fields');
-const { transition } = require('../lib/motion');
 
 const SYNC_SETUP_DIALOG_HANDLERS = [
   'setProviderSyncEnabled',
@@ -327,19 +327,10 @@ React.createElement('div', {
             syncSetupModal.progress.total > 0 && React.createElement('div', {
               style: { fontSize: '13px', color: 'var(--text-secondary)', marginTop: '4px' }
             }, `${syncSetupModal.progress.current} of ${syncSetupModal.progress.total}`),
-            syncSetupModal.progress.total > 0 && React.createElement('div', {
-              style: { height: '6px', backgroundColor: 'var(--border-subtle)', borderRadius: '9999px', overflow: 'hidden', marginTop: '16px' }
-            },
-              React.createElement('div', {
-                style: {
-                  height: '100%',
-                  backgroundColor: syncProviderConfig[syncSetupModal.providerId]?.color || 'var(--accent-fill)',
-                  borderRadius: '9999px',
-                  transition: transition('width', 'slow', 'out'),
-                  width: `${(syncSetupModal.progress.current / syncSetupModal.progress.total) * 100}%`
-                }
-              })
-            )
+            syncSetupModal.progress.total > 0 && React.createElement(ProgressBar, {
+              value: syncSetupModal.progress.current, max: syncSetupModal.progress.total,
+              color: syncProviderConfig[syncSetupModal.providerId]?.color, label: 'Syncing', style: { marginTop: '16px' },
+            })
           ),
 
           // Complete step

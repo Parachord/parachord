@@ -38319,7 +38319,6 @@ useEffect(() => {
       spotifyClientIdInput,
       spotifyConnected,
       spotifyCredentialsSource,
-      syncProviderConfig,
       watchFolders,
       ...pluginSettingsDialogHandlers
     }),
