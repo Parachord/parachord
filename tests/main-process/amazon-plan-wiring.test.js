@@ -25,12 +25,25 @@ const between = (src, start, end) => {
 
 describe('main process', () => {
   test('track search checks the plan only when signed in, before searching', () => {
-    const handler = between(main, "ipcMain.handle('amazonmusic-search-tracks'", "ipcMain.handle('amazonmusic-lookup-playlist'");
-    const gate = handler.indexOf('if (await amazonWebPlayer.isSignedIn()) await amazonDmls.assertPlanPlays();');
-    expect(gate).toBeGreaterThan(-1);
-    expect(gate).toBeLessThan(handler.indexOf('amazonWebPlayer.searchTracks('));
-    // The refusal's reason reaches the resolver verbatim.
-    expect(handler).toMatch(/reason: error\.reason/);
+    // #1356 M5: the track search (and with it the plan gate the deleted
+    // amazonmusic-search-tracks handler ran) moved into the plugin —
+    // plugins-src/amazonmusic/implementation.js drives the session through
+    // the webSession bridge, so the ordering pin reads the plugin source.
+    const impl = read('plugins-src/amazonmusic/implementation.js');
+    const search = between(impl, 'search: async function', 'resolve: async function');
+    const signIn = search.indexOf('if (!(await this.isSignedIn()))');
+    const plan = search.indexOf('await this.assertPlanPlays();');
+    const runner = search.indexOf('await this.specSearch({');
+    expect(signIn).toBeGreaterThan(-1);
+    expect(plan).toBeGreaterThan(signIn);   // only when signed in — a signed-out search answers not-signed-in (the prompt)
+    expect(plan).toBeLessThan(runner);      // and before searching
+    // The refusal reaches the resolver as notReady (never a 30-day noMatch).
+    expect(search).toMatch(/reason === 'plan-ineligible'/);
+    // The gate is the plugin's own copy of the dmls one: config.json via the
+    // webSession bridge, with the 30min/1min TTL cache.
+    expect(impl).toMatch(/getPlan: async function/);
+    expect(impl).toMatch(/PLAN_TTL_MS = 30 \* 60 \* 1000/);
+    expect(impl).toMatch(/PLAN_UNKNOWN_TTL_MS = 60 \* 1000/);
   });
 
   test('album search, artist photos and lookups do not check the plan', () => {
@@ -54,9 +67,16 @@ describe('main process', () => {
     expect(app).toMatch(/window\.electron\.amazonMusic\.getStatus\(\{ refreshPlan: true \}\)/);
   });
 
-  test('a plan change is sent to the renderer', () => {
+  test('a plan change is sent to the renderer, and the renderer drops the plugin plan cache with it', () => {
     expect(main).toMatch(/onPlanChange: \(\{ plan \}\) => safeSendToRenderer\('amazonmusic-plan-changed', \{ plan \}\)/);
     expect(preload).toMatch(/ipcRenderer\.on\('amazonmusic-plan-changed', handler\)/);
+    // The plugin's own plan cache (the track-search gate, #1356 M5) cannot
+    // hear the event — main's refreshPlan path refreshes only the host's
+    // dmls copy — so the renderer's plan-changed handler drops the resolver
+    // instance's cache alongside refreshing the status: an upgrade unblocks
+    // the next search at once instead of after the 1-min refusal TTL.
+    const handler = between(app, 'return window.electron.amazonMusic.onPlanChanged(() => {', 'refreshAmazonMusicStatus();');
+    expect(handler).toMatch(/_planState = null/);
   });
 
   test('telemetry uses the shared Unlimited rule', () => {

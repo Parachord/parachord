@@ -979,8 +979,75 @@ describe('the hidden view — the will-redirect leash (#1432 advisory, 2026-11-1
   });
 });
 
+describe('the hidden view — page-started navigations (#1432 advisory, round 3)', () => {
+  function fireNavigate(view, url) {
+    const event = { url, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } };
+    (view.webContents._handlers['will-navigate'] || []).forEach((cb) => cb(event, url));
+    return event.defaultPrevented;
+  }
+
+  test('a navigation the page starts that leaves the cookie domains is refused, like a redirect', async () => {
+    const { view } = await warmSession();
+    expect(fireNavigate(view, 'https://evil.example/')).toBe(true);
+    expect(fireNavigate(view, 'https://www.eviltestsvc.com/')).toBe(true);
+    expect(fireNavigate(view, 'not a url')).toBe(true);
+    // The service's own pages, identity host included, stay free.
+    expect(fireNavigate(view, 'https://www.testsvc.com/accounts/signin')).toBe(false);
+    expect(fireNavigate(view, 'https://music.testsvc.com/albums/x')).toBe(false);
+  });
+
+  test('the url comes from the event when the handler gets no second argument (newer Electron)', async () => {
+    const { view } = await warmSession();
+    const event = { url: 'https://evil.example/', defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } };
+    (view.webContents._handlers['will-navigate'] || []).forEach((cb) => cb(event));
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  test('the sign-in window gets no navigation guard either', async () => {
+    const { host } = await warmSession();
+    const run = host.signIn('https://music.testsvc.com/', { decide: () => false });
+    await jest.advanceTimersByTimeAsync(0);
+    const auth = mockAuthWindows[mockAuthWindows.length - 1];
+    expect(auth.webContents._handlers['will-navigate'] || []).toHaveLength(0);
+    auth.close();
+    await run;
+  });
+});
+
+describe('pageFetch runs only in a page on an allowed host (#1432 advisory, round 3)', () => {
+  test('a page on a cookie-domain host that is not on the allowlist runs nothing', async () => {
+    const { host, view } = await warmSession();
+    view.webContents._url = 'https://www.testsvc.com/accounts/signin';
+    view.webContents.executeJavaScript.mockResolvedValue({ status: 200, text: '{"secret":1}' });
+    await expect(host.pageFetch({ url: 'https://gql.testsvc.com/' })).resolves.toEqual({ error: 'page-off-host' });
+    expect(view.webContents.executeJavaScript).not.toHaveBeenCalled();
+  });
+
+  test('a page anywhere else runs nothing', async () => {
+    const { host, view } = await warmSession();
+    view.webContents._url = 'https://evil.example/';
+    await expect(host.pageFetch({ url: 'https://gql.testsvc.com/' })).resolves.toEqual({ error: 'page-off-host' });
+    expect(view.webContents.executeJavaScript).not.toHaveBeenCalled();
+  });
+
+  test('a result from a page that changed while the fetch ran is dropped', async () => {
+    const { host, view } = await warmSession();
+    view.webContents.executeJavaScript.mockImplementation(async () => {
+      view.webContents._url = 'https://www.testsvc.com/elsewhere';
+      return { status: 200, text: '{"secret":1}' };
+    });
+    await expect(host.pageFetch({ url: 'https://gql.testsvc.com/' })).resolves.toEqual({ error: 'page-off-host' });
+  });
+
+  test('on an allowed page it runs as before', async () => {
+    const { host, view } = await warmSession();
+    view.webContents.executeJavaScript.mockResolvedValue({ status: 200, text: '{}' });
+    await expect(host.pageFetch({ url: 'https://gql.testsvc.com/' })).resolves.toEqual({ status: 200, text: '{}' });
+  });
+});
+
 describe('state — the facts, nothing judged', () => {
-  test('url + signInUrl + cookie names (values never; empties dropped)', async () => {
+  test('url + signInUrl + cookie names + generation (values never; empties dropped)', async () => {
     mockJarCookies = [
       { name: 'at-main', value: 'SECRET', domain: '.testsvc.com' },
       { name: 'session-id', value: 'SID', domain: '.testsvc.com' },
@@ -993,8 +1060,23 @@ describe('state — the facts, nothing judged', () => {
     expect(state).toEqual({
       url: 'https://music.testsvc.com/search/x/songs',
       signInUrl: null,
-      cookieNames: ['at-main', 'session-id']
+      cookieNames: ['at-main', 'session-id'],
+      generation: 0
     });
+  });
+
+  test('clear() bumps the generation state() carries — the sign-out signal a plugin compares', async () => {
+    // A plugin cannot see the host's sign-out event; the generation is how
+    // it detects one — sign out, sign in as another account with no search
+    // between, and the next state read observes the bump and drops the
+    // caches minted under the old account (the plugin's plan reading and
+    // request template).
+    const { host } = await warmSession();
+    expect((await host.state()).generation).toBe(0);
+    await host.clear();
+    expect((await host.state()).generation).toBe(1);
+    await host.clear();
+    expect((await host.state()).generation).toBe(2);
   });
 });
 

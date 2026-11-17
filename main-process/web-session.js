@@ -32,9 +32,14 @@
 //                               returned headers carry set-cookie NAMES
 //                               only), it is budgeted like every other wait,
 //                               and the request aborts when the budget fires
-//   state()                  → { url, signInUrl, cookieNames } — the facts a
-//                               plugin composes its signed-in/wall verdicts
-//                               from (names only, never values)
+//   state()                  → { url, signInUrl, cookieNames, generation }
+//                               — the facts a plugin composes its
+//                               signed-in/wall verdicts from (names only,
+//                               never values); the generation is the
+//                               clear()-bumped session counter, a plugin's
+//                               only window onto a sign-out it cannot see
+//                               the event of (a cache minted under one
+//                               generation must not serve the next)
 //   signIn(url, { decide })  → { signedIn } — a visible window (title from
 //                               host config, never a caller choice) ticked at
 //                               the host; decide({url, cookieNames, stableTicks})
@@ -451,6 +456,17 @@ function createWebSessionHost(config = {}) {
             if (!urlUnderCookieDomains(url, cfg.cookieDomains)) event.preventDefault();
           } catch { /* a dying view refuses nothing */ }
         });
+        // The same rule for a navigation the PAGE starts (a script setting
+        // location, a meta refresh, a link or form): will-redirect sees only
+        // server redirects. The host's own loads (loadURL) don't fire
+        // will-navigate; their URLs are scoped at the bridge. will-navigate
+        // is main-frame only.
+        view.webContents.on('will-navigate', (event, url) => {
+          try {
+            const target = url || (event && event.url);
+            if (!urlUnderCookieDomains(target, cfg.cookieDomains)) event.preventDefault();
+          } catch { /* a dying view refuses nothing */ }
+        });
       } catch { /* destroyed */ }
       view.webContents.on('destroyed', () => {
         if (this._view === view) this._view = null;
@@ -802,6 +818,12 @@ function createWebSessionHost(config = {}) {
         // A fetch needs an origin page world (about:blank is a null origin:
         // no cookies, no CORS) — the caller reloads a page first.
         if (!href || href === 'about:blank') return { error: 'no-origin-page' };
+        // The page world the fetch runs in is the page's own, so only one of
+        // the session's allowed hosts may host it: a page anywhere else could
+        // have replaced window.fetch. Checked again after the fetch, in case
+        // the page changed while it ran; a result from another page is
+        // dropped.
+        if (!urlOnAllowedHost(href, cfg.allowedHosts)) return { error: 'page-off-host' };
         const body = request.body === undefined || request.body === null
           ? undefined
           : (typeof request.body === 'string' ? request.body : JSON.stringify(request.body));
@@ -820,6 +842,9 @@ function createWebSessionHost(config = {}) {
         } catch (error) {
           return { error: String((error && (error.message || error)) || error) };
         }
+        let hrefAfter = '';
+        try { hrefAfter = view.webContents.getURL(); } catch { /* destroyed */ }
+        if (!urlOnAllowedHost(hrefAfter, cfg.allowedHosts)) return { error: 'page-off-host' };
         if (!outcome || typeof outcome !== 'object') return { error: 'pageFetch returned nothing' };
         if (outcome.error) return { error: String(outcome.error) };
         return { status: outcome.status, text: outcome.text };
@@ -949,12 +974,15 @@ function createWebSessionHost(config = {}) {
       });
     },
 
-    // state() → { url, signInUrl, cookieNames } — the facts, nothing judged.
-    // url is the hidden view's current page (its last navigation — a plugin
-    // reads walls from it); signInUrl the sign-in window's (null when closed);
-    // cookieNames the names of the session's cookies under its declared
-    // domains, empty-valued entries dropped (an empty value is a deletion in
-    // flight, not a session).
+    // state() → { url, signInUrl, cookieNames, generation } — the facts,
+    // nothing judged. url is the hidden view's current page (its last
+    // navigation — a plugin reads walls from it); signInUrl the sign-in
+    // window's (null when closed); cookieNames the names of the session's
+    // cookies under its declared domains, empty-valued entries dropped (an
+    // empty value is a deletion in flight, not a session); generation the
+    // clear()-bumped session counter — the plugin cannot see the sign-out
+    // event, so this is how it detects one and drops the caches it minted
+    // under the old account.
     async state() {
       const url = this.viewUrl();
       let signInUrl = null;
@@ -962,7 +990,7 @@ function createWebSessionHost(config = {}) {
         try { signInUrl = this._authWindow.webContents.getURL(); } catch { /* destroyed */ }
       }
       const cookieNames = await this.cookieNames();
-      return { url, signInUrl, cookieNames };
+      return { url, signInUrl, cookieNames, generation: this._generation };
     },
 
     // Cookie names for the session's declared domains (a shared-cookie-store
@@ -1117,7 +1145,10 @@ function createWebSessionHost(config = {}) {
       // generation's captures are not its to detach, its fuse is not the
       // one to arm. The CURRENT registration is released here (not just
       // forgotten): a stale listener would keep recording the partition's
-      // requests — the sign-in window shares it — into a dead array.
+      // requests — the sign-in window shares it — into a dead array. The
+      // bump is also state()'s sign-out signal: a plugin holding
+      // session-scoped caches (a plan reading, a request template) compares
+      // the generation it cached state against.
       this._generation += 1;
       if (this._capture) this._capture.detach();
       this._capture = null;

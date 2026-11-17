@@ -30,27 +30,10 @@ const __initialTheme = (() => {
   }
 })();
 
-// The webSession surface's live exposure (#1432 review, note 8): the
-// wrapper code ships in this layer, but nothing calls it yet — the first
-// caller is the layer that moves the Amazon plugin's flows onto the bridge —
-// so the surface stays OFF window.electron (and out of the hostBridges
-// advertisement below) until that layer turns this flag on. Read once at
-// preload time; the env var is the test seam (no production code sets it —
-// the flip is a one-line change in this constant when the first caller
-// lands, together with the session registration in main.js).
-const __exposeWebSession = (() => {
-  try {
-    return process.env.PARACHORD_EXPOSE_WEB_SESSION === '1';
-  } catch {
-    return false;
-  }
-})();
-
 // The plugin-mediated licence relay's unsubscribe, while one is live — the
 // subscription is SINGLE-OWNER (see onPluginLicenseRequest below): the first
 // registration owns the relay until it unsubscribes.
 let __pluginLicenseRelayUnsubscribe = null;
-
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electron', {
@@ -656,8 +639,8 @@ contextBridge.exposeInMainWorld('electron', {
     getStatus: (opts) => ipcRenderer.invoke('amazonmusic-get-status', { refreshPlan: !!(opts && opts.refreshPlan) }),
     openLogin: () => ipcRenderer.invoke('amazonmusic-open-login'),
     signOut: () => ipcRenderer.invoke('amazonmusic-sign-out'),
-    searchTracks: (query) => ipcRenderer.invoke('amazonmusic-search-tracks',
-      query && typeof query === 'object' ? query : { query }),
+    // searchTracks is gone (#1356 M5): the plugin's own spec-search runner
+    // drives the session through window.electron.webSession instead.
     lookupPlaylist: (url) => ipcRenderer.invoke('amazonmusic-lookup-playlist', { url }),
     searchAlbums: (query) => ipcRenderer.invoke('amazonmusic-search-albums',
       query && typeof query === 'object' ? query : { query }),
@@ -759,11 +742,11 @@ contextBridge.exposeInMainWorld('electron', {
   // every forwarded tick, answers with the verdict, and resolves from the
   // settled event (the host promise settles on the main side).
   //
-  // SHIPS UNWIRED (__exposeWebSession above, #1432 review note 8): the
-  // wrapper block is present but installed on window.electron only when the
-  // flag is on — the layer that first calls the bridge (the Amazon plugin's
-  // move) turns it on together with the session registration in main.js.
-  ...(__exposeWebSession ? { webSession: {
+  // LIVE since the track-search move (#1356 M5 — the bridge's first
+  // consumer, the #1432 review's note-8 option: the layer that first drives
+  // the bridge turns the surface on together with the session registration
+  // in main.js).
+  webSession: {
     load: (id, url, opts) => ipcRenderer.invoke('webSession:load', { id, url, opts }),
     pageFetch: (id, request) => ipcRenderer.invoke('webSession:pageFetch', { id, request }),
     fetch: (id, request) => ipcRenderer.invoke('webSession:fetch', { id, request }),
@@ -858,7 +841,7 @@ contextBridge.exposeInMainWorld('electron', {
         resolve({ success: false, error: String((error && (error.message || error)) || error) });
       });
     })
-  } } : {}),
+  },
 
   // Ollama operations (local AI)
   ollama: {
@@ -907,9 +890,9 @@ contextBridge.exposeInMainWorld('electron', {
 // this host doesn't carry every one (docs/architecture/plugins.md, "Required
 // host bridges"). Keep the list in step with the window.electron blocks
 // above — a bridge missing from this list is a bridge no plugin can require.
-// The webSession entry moves WITH its exposure: the advertisement ships here
-// only when __exposeWebSession turns the wrapper on (the layer that first
-// calls the bridge). (contextBridge is how a sandboxed preload reaches the
-// page world — a bare window assignment here stays preload-side.)
-const HOST_BRIDGES = ['amazonMusic', ...(__exposeWebSession ? ['webSession'] : [])];
+// webSession is advertised since the track-search move (#1356 M5, the
+// bridge's first consumer — the advertisement moves WITH the wrapper).
+// (contextBridge is how a sandboxed preload reaches the page world — a bare
+// window assignment here stays preload-side.)
+const HOST_BRIDGES = ['amazonMusic', 'webSession'];
 contextBridge.exposeInMainWorld('__parachordHostBridges', HOST_BRIDGES);

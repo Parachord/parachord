@@ -45,9 +45,13 @@
 //                   with the exact searchText from the URL; the request is
 //                   captured (URL, headers, APQ hash) and replayed verbatim,
 //                   matched on variables.searchText — never the operation
-//                   name — and parsed pure (searchTracksFromGql); a page that
-//                   never searches is a structural failure (not-ready), an
-//                   empty edges list is a real miss
+//                   name — and parsed pure; a page that never searches is a
+//                   structural failure (not-ready), an empty edges list is a
+//                   real miss. (#1356 M5: the TRACK search moved into
+//                   plugins-src/amazonmusic — it drives this same host
+//                   instance through the window.electron.webSession bridge.
+//                   The spec-search runner below stays for the album/artist
+//                   tabs those flows still use; it moves when they do.)
 //   GraphQL         gql.music.amazon.com, persisted query (APQ) whose sha256Hash
 //                   renumbers per redeploy — capture the page's own
 //                   playlistDetail / SpecSearchSeeMorePage requests and
@@ -74,7 +78,6 @@ const {
   amazonNowPlayingMismatch,
   amazonAuthCookieState,
   cdmStatusHealthy,
-  amazonSongSearchUrl,
   amazonPlaylistIdFromUrl,
   amazonPlaylistDetailRequest,
   amazonSpecSearchRequest,
@@ -87,7 +90,6 @@ const {
   amazonAlbumDetailRequest,
   amazonAlbumDetailCandidates,
   albumTracksConnectionIn,
-  searchTracksFromGql,
   searchAlbumsFromGql,
   amazonArtistSearchUrl,
   searchArtistImageFromGql,
@@ -642,20 +644,25 @@ const amazonWebPlayer = {
     return gqlReplayOutcome(replay, { acceptPartial: options.acceptPartial || null });
   },
 
-  // Shared runner for the spec searches — the songs tab (/search/<q>/songs)
-  // fires the track-spec SpecSearchSeeMorePage, the albums tab (/search/<q>/
-  // albums) the album spec; everything else about the flow is identical.
-  // Search runs over the page's own GraphQL — the same capture-and-replay
-  // pattern as lookupPlaylist. The tab page fires SpecSearchSeeMorePage with
-  // our exact searchText; that request (URL, headers, APQ hash, variables) is
-  // captured while the page loads and replayed verbatim, and the result is
-  // parsed pure — no DOM scraping: no row-mount waits, no testid heuristics,
-  // no like-button ASIN exclusion dance, and the rows carry cover art the DOM
-  // never exposed. The request is matched on variables.searchText, not the
-  // operation name, so a hornet rename of the operation cannot break it — and
-  // only the requested spec is ever replayed: for tracks, an album/artist spec
-  // edge must never import as a track (an album ASIN in the track slot passes
-  // the confidence gate on self-titled releases).
+  // Shared runner for the spec searches — the albums tab (/search/<q>/
+  // albums) fires the album-spec SpecSearchSeeMorePage and the artists tab
+  // (/search/<q>/artists) the artist spec; everything else about the flow is
+  // identical. (The songs tab / track spec moved into the plugin — #1356 M5,
+  // plugins-src/amazonmusic/implementation.js — which drives this same host
+  // instance through the webSession bridge with its own copy of this runner;
+  // the matchers agree because both are copies of the same pure helpers in
+  // amazon-music-logic.js.) Search runs over the page's own GraphQL — the
+  // same capture-and-replay pattern as lookupPlaylist. The tab page fires
+  // SpecSearchSeeMorePage with our exact searchText; that request (URL,
+  // headers, APQ hash, variables) is captured while the page loads and
+  // replayed verbatim, and the result is parsed pure — no DOM scraping: no
+  // row-mount waits, no testid heuristics, no like-button ASIN exclusion
+  // dance, and the rows carry cover art the DOM never exposed. The request is
+  // matched on variables.searchText, not the operation name, so a hornet
+  // rename of the operation cannot break it — and only the requested spec is
+  // ever replayed: an album/artist spec edge must never import in the wrong
+  // slot (an album ASIN in the track slot passes the confidence gate on
+  // self-titled releases).
   //
   // Structural failures (the page never searched, another spec searched but
   // ours never came, or the response carried no spec search envelope) throw
@@ -832,7 +839,13 @@ const amazonWebPlayer = {
         // Another spec searched our text but ours has not arrived: give it
         // a short grace (the page may fire specs out of order), then
         // conclude structurally instead of burning the full window.
-        if (otherSpecSeenAt < 0 && amazonSpecSearchRequest(bodies, searchText, { anySpec: true })) {
+        // Echo-flagged captures are replay traffic, never the page's own
+        // request — the plugin's track-search replays (the moved #1356 M5
+        // flow, driving this same session through the bridge) do not bump
+        // this module's replayActivity counter, but the host flags every
+        // capture seen while a pageFetch was in flight, so the echo flag
+        // covers both replays and this module's own.
+        if (otherSpecSeenAt < 0 && amazonSpecSearchRequest(ready.filter(r => !r.echo).map(r => r.body), searchText, { anySpec: true })) {
           otherSpecSeenAt = i;
           console.warn(`[Amazon] search: a non-${specType} spec searched for ${JSON.stringify(searchText)}; waiting briefly for the ${specType} spec`);
         }
@@ -896,25 +909,6 @@ const amazonWebPlayer = {
       detach();
       this.scheduleParkSearchView();
     }
-  },
-
-  async searchTracks(input) {
-    const opts = typeof input === 'string' ? { query: input } : (input || {});
-    const spec = amazonSongSearchUrl(opts);
-    if (!spec) return [];
-    if (!(await this.isSignedIn())) {
-      throw notReady('not-signed-in', 'Sign in and choose an Amazon Music profile');
-    }
-    return this.specSearch({
-      url: spec.url,
-      searchText: spec.searchText,
-      specType: 'track',
-      noun: 'tracks',
-      parse: (data) => {
-        const { tracks, envelope } = searchTracksFromGql(data);
-        return { rows: tracks, envelope };
-      }
-    });
   },
 
   // Album search for the album-page catalog fallback (the plugin's

@@ -627,8 +627,9 @@ function gqlPrimaryImageUrl(images) {
 // One tracks.edges[] entry -> the lookupPlaylist track shape. Artist is the
 // joined contributing artists (PRIMARY first); album is the album shortTitle
 // (the detail response has no full album title). A row without asin + title +
-// artist is dropped (the import path filters on both anyway). The same mapper
-// serves the search response — its edges carry the same Track entity
+// artist is dropped (the import path filters on both anyway). The plugin's
+// track search (the #1356 M5 move, plugins-src/amazonmusic) carries its own
+// copy of this mapper — the search response's edges are the same Track entity
 // (live-verified 2026-10: id/title/contributingArtists/album/duration/images
 // Amazon renders the explicit tag as a marker INSIDE the title text
 // ("Kunnioita [Explicit]") — the gql Track node carries no explicit field.
@@ -648,8 +649,8 @@ function stripAmazonTitleMarker(title) {
 
 // are identical shapes), and the search flow additionally uses the art.
 // The joined artist credit for a contributingArtists connection: the
-// PRIMARY-role artists, else every named artist. Shared by the playlist and
-// search track mapper, the album search mapper, and the album detail mappers.
+// PRIMARY-role artists, else every named artist. Shared by the playlist
+// mapper, the album search mapper, and the album detail mappers.
 function gqlPrimaryArtistNames(connection) {
   const artists = (connection && Array.isArray(connection.edges)) ? connection.edges : [];
   const primary = artists.filter(a => a && a.node && a.node.name && a.role === 'PRIMARY');
@@ -752,32 +753,6 @@ function playlistEdgesFromGql(data) {
   return scan(data, 0);
 }
 
-// The SpecSearchSeeMorePage response -> the searchTracks result. The
-// response answers with data.specificationSearch.result[], the spec result
-// carrying edges[].node = the same Track entity the playlist detail returns
-// (shared edge mapper above). A miss is a present envelope with empty edges;
-// an absent envelope (hornet renamed the field) is a structural failure — the
-// caller must throw not-ready, not cache a 30-day noMatch. Returns
-// { tracks, envelope }.
-function searchTracksFromGql(data) {
-  const search = data && data.specificationSearch;
-  if (!search || typeof search !== 'object') return { tracks: [], envelope: false };
-  const results = Array.isArray(search.result) ? search.result : [];
-  let spec = null;
-  for (const r of results) {
-    if (r && Array.isArray(r.edges) && r.edges.length) { spec = r; break; }
-  }
-  if (!spec) {
-    for (const r of results) {
-      if (r && Array.isArray(r.edges)) { spec = r; break; }
-    }
-  }
-  const tracks = ((spec && spec.edges) || [])
-    .map(playlistTrackFromGqlEdge)
-    .filter(Boolean);
-  return { tracks, envelope: true };
-}
-
 // --- Album search / lookup (capabilities.albumSearch in the plugin) -------
 // The album-spec SpecSearchSeeMorePage response and the AlbumDetailPage
 // response (both shapes live-verified 2026-10 via the page's own requests,
@@ -809,8 +784,10 @@ function albumFromGqlSearchNode(node) {
 }
 
 // The album-spec response -> the searchAlbums bridge shape. Same envelope
-// semantics as searchTracksFromGql: a miss is a present envelope with no
-// usable edges; an absent envelope (hornet renamed the field) is structural.
+// semantics as the plugin's track-search parser (the #1356 M5 move; this
+// module's copy died with the host-side track search): a miss is a present
+// envelope with no usable edges; an absent envelope (hornet renamed the
+// field) is structural.
 function searchAlbumsFromGql(data) {
   const search = data && data.specificationSearch;
   if (!search || typeof search !== 'object') return { albums: [], envelope: false };
@@ -1885,7 +1862,6 @@ module.exports = {
   gqlReplayOutcome,
   playlistPartialIsUsable,
   capturedOperationNames,
-  searchTracksFromGql,
   albumFromGqlSearchNode,
   searchAlbumsFromGql,
   amazonArtistSearchUrl,

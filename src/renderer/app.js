@@ -7606,10 +7606,20 @@ const Parachord = () => {
     refreshAmazonMusicStatus({ refreshPlan: activeView === 'settings' });
   }, [cacheLoaded, amazonMusicEnabled, activeView]);
   // Main reports a plan change (a session mint or a re-read found another
-  // plan): refresh the tile and settings, and re-resolve on an upgrade.
+  // plan): refresh the tile and settings, and re-resolve on an upgrade. The
+  // plugin's own plan cache (the track-search gate, #1356 M5) cannot hear
+  // this event — main's getStatus refreshPlan path refreshes only the host's
+  // dmls copy — so the handler drops it here too: the next search re-reads
+  // config.json at once instead of serving a refusal for up to its TTL. A
+  // plugin plan read already in flight may re-cache the old reading when it
+  // lands; the refusal TTL (1 min) is that corner's backstop.
   useEffect(() => {
     if (!cacheLoaded || !amazonMusicEnabled || !window.electron?.amazonMusic?.onPlanChanged) return;
-    return window.electron.amazonMusic.onPlanChanged(() => refreshAmazonMusicStatus());
+    return window.electron.amazonMusic.onPlanChanged(() => {
+      const amazonResolver = findLoadedResolver('amazonmusic');
+      if (amazonResolver) amazonResolver._planState = null;
+      refreshAmazonMusicStatus();
+    });
   }, [cacheLoaded, amazonMusicEnabled]);
 
   // The generic plugin-status surface (capabilities.status, #1356): a plugin

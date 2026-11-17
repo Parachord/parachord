@@ -31,7 +31,7 @@ function makeFakeHost(overrides = {}) {
     load: jest.fn(async () => ({ finalUrl: 'https://music.amazon.com/' })),
     pageFetch: jest.fn(async () => ({ status: 200, text: '[]' })),
     fetch: jest.fn(async () => ({ status: 200, headers: { 'content-type': 'application/json' }, text: 'ok' })),
-    state: jest.fn(async () => ({ url: 'https://music.amazon.com/', signInUrl: null, cookieNames: ['at-main'] })),
+    state: jest.fn(async () => ({ url: 'https://music.amazon.com/', signInUrl: null, cookieNames: ['at-main'], generation: 0 })),
     clear: jest.fn(async () => ({ success: true })),
     signIn: jest.fn(),
     ...overrides
@@ -281,10 +281,10 @@ describe('webSession:load', () => {
 });
 
 describe('webSession:state / webSession:clear', () => {
-  test('state spreads the host facts', async () => {
+  test('state spreads the host facts (generation included — the clear()-bumped sign-out signal)', async () => {
     const { handlers } = makeBridge();
     const out = await handlers['webSession:state'](mainFrameEvent, { id: 'amazon-music' });
-    expect(out).toEqual({ success: true, url: 'https://music.amazon.com/', signInUrl: null, cookieNames: ['at-main'] });
+    expect(out).toEqual({ success: true, url: 'https://music.amazon.com/', signInUrl: null, cookieNames: ['at-main'], generation: 0 });
   });
 
   test('a host clear failure maps to clear-failed (the channel contract) like a throw does; success passes through', async () => {
