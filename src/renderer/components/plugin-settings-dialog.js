@@ -59,6 +59,8 @@ const PLUGIN_SETTINGS_DIALOG_HANDLERS = [
   'toggleResolver',
 ];
 
+const SYNC_BLOCK = { marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--border-subtle)' };
+
 const PluginSettingsDialog = React.memo(function PluginSettingsDialog(props) {
   const {
     activeResolvers,
@@ -171,6 +173,36 @@ const PluginSettingsDialog = React.memo(function PluginSettingsDialog(props) {
   } = props;
   // The bound local server port (main-process/auth-port.js), 8888 until known.
   const authPort = authServerStatus?.port || 8888;
+  // Library sync: one piece, placed under the account it needs in each
+  // service's section (a sync can't run signed out), above that section's
+  // Advanced settings. lib/library-sync-state.js says what it's doing: a
+  // paused sync used to offer "Set up", and a lapsed sign-in read "Active".
+  const renderLibrarySync = () => {
+              const id = selectedResolver.id;
+              const settings = resolverSyncSettings[id];
+              const state = librarySyncState(settings, syncSignedOut && syncSignedOut[id]);
+              if (state === 'setup') {
+                return React.createElement('div', { style: SYNC_BLOCK }, React.createElement(SettingRow, { label: 'Sync your library', hint: 'Bring your saved music and playlists into your Collection', style: { padding: 0 } },
+                  React.createElement(Button, { variant: 'secondary', onClick: () => openSyncSetupModal(id), 'aria-label': 'Set up library sync' }, 'Set up')));
+              }
+              const last = settings?.lastSyncAt ? `Last synced ${new Date(settings.lastSyncAt).toLocaleString()}` : 'Not synced yet';
+              const hint = state === 'paused' ? `Paused. Your synced music stays. ${last}`
+                : state === 'signed-out' ? 'Signed out. Sign in above to sync again.'
+                : last;
+              return React.createElement('div', { style: { ...SYNC_BLOCK, display: 'flex', flexDirection: 'column', gap: '12px' } },
+                React.createElement(SettingRow, { label: 'Sync your library', hint, style: { padding: 0 } },
+                  React.createElement(Switch, {
+                    // On only while it syncs, as the Collection's Sync menu
+                    // shows it; turning a signed-out one on asks for the sign-in.
+                    checked: state === 'active',
+                    onToggle: () => setProviderSyncEnabled(id, state !== 'active'),
+                    'aria-label': 'Sync your library',
+                  })),
+                React.createElement('div', { style: { display: 'flex', gap: '8px' } },
+                  React.createElement(Button, { variant: 'secondary', onClick: () => openSyncSetupModal(id) }, 'Manage sync'),
+                  React.createElement(Button, { variant: 'destructive', onClick: () => setStopSyncDialog({ open: true, providerId: id }) }, 'Stop syncing')));
+  };
+
   return React.createElement(Modal, { bare: true, label: "Plugin settings", scrimClassName: 'z-50', onClose: () => { setSelectedResolver(null); }, panelProps: { style: {
           backgroundColor: 'var(--card-bg)',
           borderRadius: '16px',
@@ -510,94 +542,11 @@ React.createElement('div', {
                   } }, 'Clear')
               )
             ),
-            // Your own client ID, once signed in with one (components/disclosure.js).
-            spotifyConnected && spotifyCredentialsSource === 'user' && React.createElement(Disclosure, { label: 'Change client ID', open: spotifyAdvancedOpen, onToggle: () => setSpotifyAdvancedOpen(!spotifyAdvancedOpen) },
-              React.createElement('div', { style: { marginBottom: '10px' } },
-                React.createElement('label', {
-                  style: { fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }
-                }, 'Client ID'),
-                React.createElement(SecretField, { value: spotifyClientIdInput, onChange: (_v, e) => setSpotifyClientIdInput(e.target.value), placeholder: 'Your Spotify Client ID', 'aria-label': 'Your Spotify Client ID', className: 'w-full' })
-              ),
-              React.createElement(Button, { variant: 'primary', size: 'sm', onClick: saveSpotifyCredentials, disabled: !spotifyClientIdInput.trim() }, 'Save')
-            )
-          ),
-
-          // Library Sync Section - shown for providers that support sync
-          (selectedResolver.id === 'spotify' || selectedResolver.id === 'applemusic') && React.createElement('div', {
-            style: {
-              marginTop: '20px',
-              padding: '16px',
-              backgroundColor: 'var(--hover-bg-default)',
-              borderRadius: '12px',
-              border: '1px solid var(--border-subtle)'
-            }
-          },
-            React.createElement('h4', {
-              style: {
-                fontSize: '11px',
-                fontWeight: '600',
-                color: 'var(--text-tertiary)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.08em',
-                marginBottom: '14px'
-              }
-            }, 'Library Sync'),
-            // What sync is doing (lib/library-sync-state.js): a paused sync
-            // used to offer "Set up", and a lapsed sign-in read "Active".
-            (() => {
-              const id = selectedResolver.id;
-              const settings = resolverSyncSettings[id];
-              const state = librarySyncState(settings, syncSignedOut && syncSignedOut[id]);
-              if (state === 'setup') {
-                return React.createElement(Button, { variant: 'primary', pageColor: syncProviderConfig[id]?.color || 'var(--accent-fill)', className: 'w-full', onClick: () => openSyncSetupModal(id) }, 'Set up library sync');
-              }
-              const last = settings?.lastSyncAt ? `Last synced ${new Date(settings.lastSyncAt).toLocaleString()}` : 'Not synced yet';
-              const hint = state === 'paused' ? `Paused. Your synced music stays. ${last}`
-                : state === 'signed-out' ? 'Signed out. Sign in above to keep syncing.'
-                : last;
-              return React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '12px' } },
-                React.createElement(SettingRow, { label: 'Sync your library', hint, style: { padding: 0 } },
-                  React.createElement(Switch, {
-                    checked: state !== 'paused',
-                    onToggle: () => setProviderSyncEnabled(id, state === 'paused'),
-                    'aria-label': 'Sync your library',
-                  })),
-                React.createElement('div', { style: { display: 'flex', gap: '8px' } },
-                  React.createElement(Button, { variant: 'secondary', onClick: () => openSyncSetupModal(id) }, 'Manage sync'),
-                  React.createElement(Button, { variant: 'destructive', onClick: () => setStopSyncDialog({ open: true, providerId: id }) }, 'Stop syncing')));
-            })()
-          ),
-
-          // Auto-launch Spotify section
-          selectedResolver.id === 'spotify' && React.createElement('div', {
-            style: {
-              marginTop: '20px',
-              padding: '16px',
-              backgroundColor: 'var(--hover-bg-default)',
-              borderRadius: '12px',
-              border: '1px solid var(--border-subtle)'
-            }
-          },
-            React.createElement('h4', {
-              style: {
-                fontSize: '11px',
-                fontWeight: '600',
-                color: 'var(--text-tertiary)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.08em',
-                marginBottom: '14px'
-              }
-            }, 'Startup'),
-            React.createElement('div', { className: 'flex items-center justify-between' },
-              React.createElement('div', null,
-                React.createElement('p', { style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' } },
-                  'Auto-launch Spotify'
-                ),
-                React.createElement('p', { style: { fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px', lineHeight: '1.5' } },
-                  'Start Spotify in background when Parachord opens. Ensures a device is always available for playback.'
-                )
-              ),
-              React.createElement(Switch, { checked: autoLaunchSpotify, onToggle: async () => {
+            renderLibrarySync(),
+            // Start Spotify at launch, so a device is there to play on.
+            React.createElement('div', { style: SYNC_BLOCK },
+              React.createElement(SettingRow, { label: 'Open Spotify at startup', hint: 'Start it in the background so there’s always a device to play on', style: { padding: 0 } },
+                React.createElement(Switch, { checked: autoLaunchSpotify, onToggle: async () => {
                   const newValue = !autoLaunchSpotify;
                   setAutoLaunchSpotify(newValue);
                   if (window.electron?.store) {
@@ -608,7 +557,16 @@ React.createElement('div', {
                     window.electron.spotify.launchInBackground();
                     showToast('Spotify launched in background', 'success');
                   }
-                }, 'aria-label': 'Open Spotify in the background at startup', style: { flexShrink: 0, marginLeft: '16px' } })
+                }, 'aria-label': 'Open Spotify in the background at startup', }))),
+            // Your own client ID, once signed in with one (components/disclosure.js).
+            spotifyConnected && spotifyCredentialsSource === 'user' && React.createElement(Disclosure, { label: 'Change client ID', open: spotifyAdvancedOpen, onToggle: () => setSpotifyAdvancedOpen(!spotifyAdvancedOpen) },
+              React.createElement('div', { style: { marginBottom: '10px' } },
+                React.createElement('label', {
+                  style: { fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }
+                }, 'Client ID'),
+                React.createElement(SecretField, { value: spotifyClientIdInput, onChange: (_v, e) => setSpotifyClientIdInput(e.target.value), placeholder: 'Your Spotify Client ID', 'aria-label': 'Your Spotify Client ID', className: 'w-full' })
+              ),
+              React.createElement(Button, { variant: 'primary', size: 'sm', onClick: saveSpotifyCredentials, disabled: !spotifyClientIdInput.trim() }, 'Save')
             )
           ),
 
@@ -794,6 +752,8 @@ React.createElement('div', { className: 'flex gap-2' },
               onSignOut: disconnectAppleMusic,
             }),
 
+            renderLibrarySync(),
+
             // Advanced accordion for MusicKit developer token
             React.createElement(Disclosure, { open: appleMusicAdvancedOpen, onToggle: () => setAppleMusicAdvancedOpen(!appleMusicAdvancedOpen) },
 React.createElement('p', {
@@ -847,6 +807,34 @@ React.createElement(Button, { variant: 'primary', size: 'sm', onClick: saveApple
                     name: 'Last.fm', label: 'Listening history', color: getServiceColor('lastfm'), signedIn: true,
                     status: `Using ${metaServiceConfigs.lastfm.username}’s history`, onSignOut: disconnectLastfm, signOutLabel: 'Remove',
                   }),
+                  // Scrobbling section for Last.fm
+                  React.createElement('div', {
+                    style: {
+                      marginTop: '16px',
+                      paddingTop: '16px',
+                      borderTop: '1px solid var(--border-subtle)'
+                    }
+                  },
+                    // Scrobbler card for Last.fm
+                    window.scrobblers && window.scrobblers.find(s => s.id === 'lastfm') &&
+                      React.createElement(ScrobblerSettingsCard, {
+                        scrobbler: window.scrobblers.find(s => s.id === 'lastfm'), color: getServiceColor('lastfm'), accountLabel: 'Scrobbling',
+                        config: scrobblerConfigs['lastfm'],
+                        onConfigChange: (id, newConfig) => {
+                          setScrobblerConfigs(prev => ({ ...prev, [id]: newConfig }));
+                        },
+                        lovePushEnabled: !!scrobblerLovePushEnabled.lastfm,
+                        onSetLovePushEnabled: (v) => setLovePushEnabled('lastfm', v),
+                        onRunBackfill: () => runLoveBackfill('lastfm'),
+                        backfillRunning: !!loveBackfillRunning.lastfm,
+                        backfillProgress: loveBackfillProgress.lastfm,
+                        unpushedCount: (collectionDataRef.current?.tracks || collectionData.tracks).filter(t => !lovePushedKeysRef.current[t.id]?.lastfm).length,
+                        onRunLoveImport: () => runLoveImport('lastfm'),
+                        loveImportRunning: !!loveImportRunning.lastfm,
+                        loveImportProgress: loveImportProgress.lastfm,
+                        hasImportedLoves: !!loveImportCursorRef.current?.lastfm,
+                      })
+                  ),
                   // Advanced accordion for API credentials (also shown when connected)
                   React.createElement(Disclosure, { open: lastfmAdvancedOpen, onToggle: () => setLastfmAdvancedOpen(!lastfmAdvancedOpen) },
 React.createElement('p', {
@@ -909,36 +897,7 @@ React.createElement('div', { className: 'flex gap-2' },
                             });
                             showToast('Custom credentials cleared. Using default credentials.', 'info');
                           } }, 'Clear')
-                      )),
-
-                  // Scrobbling section for Last.fm
-                  React.createElement('div', {
-                    style: {
-                      marginTop: '16px',
-                      paddingTop: '16px',
-                      borderTop: '1px solid var(--border-subtle)'
-                    }
-                  },
-                    // Scrobbler card for Last.fm
-                    window.scrobblers && window.scrobblers.find(s => s.id === 'lastfm') &&
-                      React.createElement(ScrobblerSettingsCard, {
-                        scrobbler: window.scrobblers.find(s => s.id === 'lastfm'), color: getServiceColor('lastfm'), accountLabel: 'Scrobbling',
-                        config: scrobblerConfigs['lastfm'],
-                        onConfigChange: (id, newConfig) => {
-                          setScrobblerConfigs(prev => ({ ...prev, [id]: newConfig }));
-                        },
-                        lovePushEnabled: !!scrobblerLovePushEnabled.lastfm,
-                        onSetLovePushEnabled: (v) => setLovePushEnabled('lastfm', v),
-                        onRunBackfill: () => runLoveBackfill('lastfm'),
-                        backfillRunning: !!loveBackfillRunning.lastfm,
-                        backfillProgress: loveBackfillProgress.lastfm,
-                        unpushedCount: (collectionDataRef.current?.tracks || collectionData.tracks).filter(t => !lovePushedKeysRef.current[t.id]?.lastfm).length,
-                        onRunLoveImport: () => runLoveImport('lastfm'),
-                        loveImportRunning: !!loveImportRunning.lastfm,
-                        loveImportProgress: loveImportProgress.lastfm,
-                        hasImportedLoves: !!loveImportCursorRef.current?.lastfm,
-                      })
-                  )
+                      ))
                 )
               // Not connected state
               : React.createElement('div', null,

@@ -14,7 +14,7 @@ const count = (re) => (src.match(re) || []).length;
 const LEFT = {
   // Sections keyed by one plug-in's id (Spotify's extras, Local Files' folders,
   // Ollama, Libre.fm, the scrobblers…): steps 4–5 make them manifest-driven.
-  serviceBranches: 15,
+  serviceBranches: 12,
   // Raw <button>s: the dialog's close button and Ollama's download link.
   rawButtons: 2,
   // Connect/Disconnect buttons: every account is an AccountRow now (#1498 step 3b).
