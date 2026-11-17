@@ -467,4 +467,39 @@ describe('the preload wrapper against the bridge (plugin-mediated relay, end to 
     expect(reply).toMatchObject({ success: false, reason: 'playback-failed', error: 'plugin bug' });
     unsubscribe();
   });
+
+  test('the licence relay subscription is single-owner: a second call does not replace the first handler', async () => {
+    // #1434 review: main takes the FIRST answer for a requestId, so a second
+    // subscriber could race its own bytes ahead of the router's answer and
+    // decide the play. The first registration owns the relay; later calls
+    // get a warning and a no-op unsubscribe — and the no-op must not
+    // unregister the owner either.
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const seenBy = [];
+    const unsubscribeFirst = mockWorld.electron.widevine.onPluginLicenseRequest(async (request) => {
+      seenBy.push(['first', request.challenge]);
+      return 'RklSU1Q=';
+    });
+    const unsubscribeSecond = mockWorld.electron.widevine.onPluginLicenseRequest(async () => {
+      seenBy.push(['second']);
+      return 'U0VDT05E';
+    });
+    expect(warn).toHaveBeenCalledTimes(1);
+    unsubscribeSecond(); // the no-op: the first handler stays subscribed
+    const open = await mockWorld.electron.widevine.openSession('plugsvc', 4096, 'dash', 'widevine');
+    const reply = await mockWorld.electron.widevine.relayLicense('plugsvc', 'Q0FRPQ==', open.sessionId);
+    expect(reply).toMatchObject({ success: true, license: 'RklSU1Q=' });
+    expect(seenBy).toEqual([['first', 'Q0FRPQ==']]); // the second callback never ran
+    warn.mockRestore();
+
+    // Ownership releases when the owner unsubscribes: a later call registers
+    // (the router is bound once per page today, but the release is the
+    // honest single-owner rule, not a forever-latch).
+    unsubscribeFirst();
+    const unsubscribeThird = mockWorld.electron.widevine.onPluginLicenseRequest(async () => 'VEhJUkQ=');
+    const open2 = await mockWorld.electron.widevine.openSession('plugsvc', 4096, 'dash', 'widevine');
+    const reply2 = await mockWorld.electron.widevine.relayLicense('plugsvc', 'Q0FRPQ==', open2.sessionId);
+    expect(reply2).toMatchObject({ success: true, license: 'VEhJUkQ=' });
+    unsubscribeThird();
+  });
 });

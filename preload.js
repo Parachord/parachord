@@ -46,6 +46,11 @@ const __exposeWebSession = (() => {
   }
 })();
 
+// The plugin-mediated licence relay's unsubscribe, while one is live — the
+// subscription is SINGLE-OWNER (see onPluginLicenseRequest below): the first
+// registration owns the relay until it unsubscribes.
+let __pluginLicenseRelayUnsubscribe = null;
+
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electron', {
@@ -705,7 +710,20 @@ contextBridge.exposeInMainWorld('electron', {
     // the same shape a provider relayLicense rejection produces. The wrapper
     // ALWAYS answers — main's relay timeout is the net for a callback that
     // never settles.
+    //
+    // SINGLE-OWNER (#1434 review): the player registers this exactly once
+    // (ensurePluginRelayRouter in lib/widevine-player.js), and main takes
+    // the FIRST answer for a requestId — so a second subscriber that raced
+    // its own answer ahead of the router would decide the play. The first
+    // call wins; every later call gets a warning and a no-op unsubscribe
+    // (a second registration is the caller's bug, not a supported relay).
+    // Ownership is released when the owner unsubscribes, so a re-register
+    // after a teardown is still possible.
     onPluginLicenseRequest: (callback) => {
+      if (__pluginLicenseRelayUnsubscribe) {
+        console.warn('widevine.onPluginLicenseRequest: a plugin license relay is already registered; ignoring the second registration');
+        return () => { /* no-op: the first registration owns the relay */ };
+      }
       const handler = (_event, request) => {
         if (!request || typeof request.requestId !== 'string') return;
         Promise.resolve()
@@ -724,7 +742,12 @@ contextBridge.exposeInMainWorld('electron', {
           .catch(() => { /* the answer is best-effort; main's timeout is the net */ });
       };
       ipcRenderer.on('widevine:plugin-license', handler);
-      return () => ipcRenderer.removeListener('widevine:plugin-license', handler);
+      const unsubscribe = () => {
+        ipcRenderer.removeListener('widevine:plugin-license', handler);
+        if (__pluginLicenseRelayUnsubscribe === unsubscribe) __pluginLicenseRelayUnsubscribe = null;
+      };
+      __pluginLicenseRelayUnsubscribe = unsubscribe;
+      return unsubscribe;
     }
   },
 
