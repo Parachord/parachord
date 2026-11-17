@@ -127,7 +127,8 @@ describe('app wiring', () => {
     const map = between(app, 'const playbackLimits = useMemo(() => ({', '}), [');
     expect(map).toMatch(/amazonmusic: PlaybackLimits\.amazonPlaybackLimit\(amazonMusicStatus\)/);
     expect(app).toMatch(/const planBlockedResolverIds = useMemo\(\(\) => PlaybackLimits\.planBlockedIds\(playbackLimits\), \[playbackLimits\]\);/);
-    expect(app).toMatch(/PlaybackLimits\.playbackResolverIds\(activeResolvers, planBlockedResolverIds\)/);
+    expect(app).toMatch(/PlaybackLimits\.notPlayingIds\(planBlockedResolverIds, playbackOffResolvers\)/);
+    expect(app).toMatch(/PlaybackLimits\.playbackResolverIds\(activeResolvers, notPlayingResolverIds\)/);
     // No service is special-cased in the derivation any more.
     expect(app).not.toMatch(/\? \['amazonmusic'\] : \[\]/);
   });
@@ -152,7 +153,7 @@ describe('app wiring', () => {
     // dropped on.
     expect(app).toMatch(/\[\.\.\.playingInOrder, \.\.\.planBlockedInOrder\]\.forEach\(\(resolverId, index\) => \{/);
     expect(app).toMatch(/priorityNumber: index < playingInOrder\.length \? index \+ 1 : null,/);
-    expect(app).toMatch(/const reorderable = isActive && !planBlockedResolverIds\.includes\(resolver\.id\);/);
+    expect(app).toMatch(/const reorderable = isActive && !notPlayingResolverIds\.includes\(resolver\.id\);/);
     expect(app).toMatch(/draggable: reorderable,/);
     expect(app).toMatch(/onDrop: reorderable \? /);
     expect(app).not.toMatch(/setResolverOrder\([^)]*planBlocked/);
@@ -161,7 +162,7 @@ describe('app wiring', () => {
   });
 
   test('the tile and the Amazon panel read the map', () => {
-    expect(app).toMatch(/const planStatus = isActive \? PlaybackLimits\.tileStatus\(playbackLimits, resolver\.id\) : \{ statusLabel: null, statusTitle: null \};/);
+    expect(app).toMatch(/const planStatus = isActive \? PlaybackLimits\.tileStatus\(playbackLimits, resolver\.id, playbackOffResolvers\) : \{ statusLabel: null, statusTitle: null \};/);
     expect(app).toMatch(/statusLabel: planStatus\.statusLabel,\s*statusTitle: planStatus\.statusTitle,/);
     // The Amazon account row's status line (components/account-row.js, #1498 step 3).
     expect(app).toMatch(/\? \(PlaybackLimits\.limitMessage\(playbackLimits, 'amazonmusic'\) \|\| 'Signed in'\)/);
@@ -222,5 +223,20 @@ describe('spotify.axe: unchanged by playback limits', () => {
     const axe = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'plugins', 'spotify.axe'), 'utf8'));
     expect(axe.implementation.play).not.toMatch(/plan-ineligible/);
     expect(axe.manifest.minAppVersion).toBeUndefined();
+  });
+});
+
+describe('the user\'s "Play from" choice joins the plan limits (#1505)', () => {
+  const PL = require('../../src/renderer/lib/playback-limits');
+  test('notPlayingIds: plan-blocked and switched-off, once each', () => {
+    expect(PL.notPlayingIds(['amazonmusic'], ['youtube', 'amazonmusic'])).toEqual(['amazonmusic', 'youtube']);
+    const blocked = ['amazonmusic'];
+    expect(PL.notPlayingIds(blocked, [])).toBe(blocked);
+  });
+  test('tileStatus: the plan\'s label wins; a switched-off one says what\'s left', () => {
+    const limits = { amazonmusic: { blocked: true, label: 'Prime: no playback', message: 'm' } };
+    expect(PL.tileStatus(limits, 'amazonmusic', ['amazonmusic']).statusLabel).toBe('Prime: no playback');
+    expect(PL.tileStatus(limits, 'youtube', ['youtube']).statusLabel).toBe('Search and links only');
+    expect(PL.tileStatus(limits, 'spotify', ['youtube']).statusLabel).toBe(null);
   });
 });

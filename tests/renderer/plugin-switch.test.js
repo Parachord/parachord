@@ -4,7 +4,7 @@
 // footer's Enable/Done, the body "Enable X" switches) changed.
 const fs = require('fs');
 const path = require('path');
-const { pluginSwitchState, keyLabel } = require('../../src/renderer/lib/plugin-switch');
+const { pluginSwitchState, playbackSwitchState, recommendationsSwitchState, keyLabel } = require('../../src/renderer/lib/plugin-switch');
 
 // A plug-in as the loader gives it: its manifest's fields, capabilities and settings.
 const plugin = (id) => {
@@ -14,15 +14,8 @@ const plugin = (id) => {
 
 describe('music plug-ins: on = in the active list', () => {
   test('Spotify follows activeResolvers and is never disabled', () => {
-    expect(pluginSwitchState({ plugin: plugin('spotify'), config: {}, activeResolvers: ['spotify'] })).toEqual({ checked: true, disabled: false, hint: 'Include in search and playback' });
+    expect(pluginSwitchState({ plugin: plugin('spotify'), config: {}, activeResolvers: ['spotify'] })).toEqual({ checked: true, disabled: false, hint: 'Search, covers, artist photos and links' });
     expect(pluginSwitchState({ plugin: plugin('spotify'), config: {}, activeResolvers: [] }).checked).toBe(false);
-  });
-  test('on but plan-blocked (Amazon on Prime): the hint says it cannot play, as the tile does', () => {
-    const limit = { blocked: true, label: 'Prime: no playback' };
-    expect(pluginSwitchState({ plugin: plugin('amazonmusic'), config: {}, activeResolvers: ['amazonmusic'], limit }))
-      .toEqual({ checked: true, disabled: false, hint: 'Search, covers and links only (Prime: no playback)' });
-    expect(pluginSwitchState({ plugin: plugin('amazonmusic'), config: {}, activeResolvers: ['amazonmusic'], limit: { blocked: false } }).hint).toBe('Include in search and playback');
-    expect(pluginSwitchState({ plugin: plugin('amazonmusic'), config: {}, activeResolvers: [], limit }).hint).toBe('Include in search and playback');
   });
 });
 
@@ -78,8 +71,44 @@ test('field labels read in sentence case', () => {
 
 test('the dialog has one on/off control: the switch, and a footer that only closes', () => {
   const src = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/plugin-settings-dialog.js'), 'utf8');
-  expect(src).toContain('pluginSwitchState({ plugin: selectedResolver, config: metaServiceConfigs[id], activeResolvers, limit: playbackLimits && playbackLimits[id] })');
+  expect(src).toContain('pluginSwitchState({ plugin: selectedResolver, config: metaServiceConfigs[id], activeResolvers })');
   expect(src).not.toMatch(/showEnable|'Enable Ollama'|`Enable \$\{selectedResolver/);
   expect(src).toContain("React.createElement(Button, { variant: 'primary', onClick: () => setSelectedResolver(null) }, 'Done')");
   expect((src.match(/React\.createElement\(Switch, \{ checked: state\.checked/g) || []).length).toBe(1);
+});
+
+describe('"Play from X" under a music plug-in\'s "Use X" (#1505)', () => {
+  test('shown only for a music plug-in that is on', () => {
+    expect(playbackSwitchState({ plugin: plugin('spotify'), active: true }).shown).toBe(true);
+    expect(playbackSwitchState({ plugin: plugin('spotify'), active: false }).shown).toBe(false);
+    expect(playbackSwitchState({ plugin: plugin('lastfm'), active: true }).shown).toBe(false);
+  });
+  test('on by default; off is the user\'s "search, covers and links only"', () => {
+    expect(playbackSwitchState({ plugin: plugin('youtube'), active: true })).toEqual({ shown: true, checked: true, disabled: false, hint: 'Plays tracks, in your priority order' });
+    expect(playbackSwitchState({ plugin: plugin('youtube'), active: true, playbackOff: true })).toMatchObject({ checked: false, disabled: false });
+  });
+  test('a plan limit switches it off and locks it, saying why', () => {
+    const limit = { blocked: true, label: 'Prime: no playback', message: 'Playing Amazon tracks in Parachord needs Music Unlimited.' };
+    expect(playbackSwitchState({ plugin: plugin('amazonmusic'), active: true, limit }))
+      .toEqual({ shown: true, checked: false, disabled: true, hint: 'Playing Amazon tracks in Parachord needs Music Unlimited.' });
+  });
+});
+
+describe('"Recommendations from X" (#1505)', () => {
+  test('shown for an on plug-in that offers recommendations, music or not', () => {
+    expect(recommendationsSwitchState({ plugin: plugin('amazonmusic'), active: true }).shown).toBe(true);
+    expect(recommendationsSwitchState({ plugin: plugin('lastfm'), active: true }).shown).toBe(true);
+    expect(recommendationsSwitchState({ plugin: plugin('spotify'), active: true }).shown).toBe(false);
+    expect(recommendationsSwitchState({ plugin: plugin('amazonmusic'), active: false }).shown).toBe(false);
+  });
+  test('on by default; off leaves its picks out', () => {
+    expect(recommendationsSwitchState({ plugin: plugin('amazonmusic'), active: true }).checked).toBe(true);
+    expect(recommendationsSwitchState({ plugin: plugin('amazonmusic'), active: true, recommendationsOff: true }).checked).toBe(false);
+  });
+});
+
+test('app.js leaves a switched-off provider out of Recommendations, and reloads when it changes', () => {
+  const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  expect(app).toMatch(/\.filter\(r => !recommendationsOffRef\.current\.includes\(r\.id\)\)/);
+  expect(app).toContain('metaServices, recommendationsOffResolvers]);');
 });

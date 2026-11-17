@@ -34,7 +34,7 @@ describe('Recommendations reload when the provider set changes', () => {
     // On Recommendations, and on Home once Home's own background load has
     // run (the ref is set), so it never starts Home's load before first paint.
     expect(body).toMatch(/if \(activeView !== 'recommendations' && !\(activeView === 'home' && recommendationProviderIdsRef\.current !== null\)\) return;/);
-    expect(body).toMatch(/loadRecommendations\(\);\s*\}, \[activeView, cacheLoaded, loadedResolvers, activeResolvers, metaServices\]\);/);
+    expect(body).toMatch(/loadRecommendations\(\);\s*\}, \[activeView, cacheLoaded, loadedResolvers, activeResolvers, metaServices, recommendationsOffResolvers\]\);/);
   });
 
   test('it is declared after the load-on-navigation effect, so a plain navigation loads once', () => {
