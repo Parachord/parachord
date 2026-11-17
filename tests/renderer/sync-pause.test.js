@@ -76,7 +76,7 @@ describe('Menu toggle items', () => {
 
 describe('the Sync menu', () => {
   test("each service's row has its switch; the row still opens setup", () => {
-    expect(coll).toMatch(/onSelect: \(\) => openSyncSetupModal\(pid\),[\s\S]{0,400}toggle: \{\s*checked: !!resolverSyncSettings\[pid\]\?\.enabled && !syncSignedOut\?\.\[pid\],\s*label: `Sync \$\{config\.name\}`,\s*onChange: \(next\) => setProviderSyncEnabled\(pid, next\),/);
+    expect(coll).toMatch(/onSelect: \(\) => openSyncSetupModal\(pid\),[\s\S]{0,1200}toggle: \{\s*checked: !!resolverSyncSettings\[pid\]\?\.enabled && !syncSignedOut\?\.\[pid\],\s*label: `Sync \$\{config\.name\}`,\s*onChange: \(next\) => setProviderSyncEnabled\(pid, next\),/);
     expect(coll).not.toContain("'aria-label': 'Sync on'");
   });
 });
@@ -121,7 +121,7 @@ describe('the setup dialog', () => {
 
 describe('signed out', () => {
   test("a service that's signed out shows its switch off, without new sign-in calls", () => {
-    expect(coll).toContain("trailing: syncSignedOut?.[pid] && React.createElement('span', { style: { fontSize: '11px', opacity: 0.7 } }, 'Signed out'),");
+    expect(coll).toMatch(/trailing: syncSignedOut\?\.\[pid\]\s*\? React\.createElement\('span', \{ style: \{ fontSize: '11px', opacity: 0\.7 \} \}, 'Signed out'\)/);
     // Fed by the checks the app already makes: the background loop, setup, Sync now.
     expect((app.match(/noteSyncAuth\(providerId, authStatus\);/g) || []).length).toBe(4);
   });

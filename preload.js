@@ -71,6 +71,15 @@ contextBridge.exposeInMainWorld('electron', {
     scrapePlaylist: (playlistId) => ipcRenderer.invoke('spotify-scrape-playlist', playlistId),
     getCredentials: () => ipcRenderer.invoke('spotify-get-credentials'),
     setCredentials: (credentials) => ipcRenderer.invoke('spotify-set-credentials', credentials),
+    // Spotify's rate-limit cooldown, kept by main across restarts (#909):
+    // { pauseUntil, until } in ms. Reading it asks Spotify nothing.
+    getCooldown: () => ipcRenderer.invoke('spotify-cooldown-get'),
+    notePause: (until) => ipcRenderer.send('spotify-pause-note', Number(until) || 0),
+    onCooldownChanged: (callback) => {
+      const handler = (_event, cooldown) => callback(cooldown);
+      ipcRenderer.on('spotify-cooldown-changed', handler);
+      return () => ipcRenderer.removeListener('spotify-cooldown-changed', handler);
+    },
 
     // Listen for auth success events from main process
     onAuthSuccess: (callback) => {
