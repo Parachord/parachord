@@ -298,6 +298,13 @@ class BaseScrobbler {
     throw new Error('Subclass must implement isEnabled()');
   }
 
+  // Signed in, whether or not scrobbling is switched on. Loved-track
+  // syncing reads this, not isEnabled(): the "Scrobble to X" switch pauses
+  // scrobbling only, and used to stop loved tracks too (2026-11-17).
+  async isSignedIn() {
+    return this.isEnabled();
+  }
+
   // Get current configuration
   async getConfig() {
     const config = await window.electron.store.get(`scrobbler-config-${this.id}`);
@@ -389,6 +396,11 @@ class ListenBrainzScrobbler extends BaseScrobbler {
   async isEnabled() {
     const config = await this.getConfig();
     return !!(config.enabled && config.userToken);
+  }
+
+  async isSignedIn() {
+    const config = await this.getConfig();
+    return !!config.userToken;
   }
 
   // Derive playback-source enrichment for ListenBrainz `additional_info`.
@@ -694,6 +706,11 @@ class LastFmScrobbler extends BaseScrobbler {
   async isEnabled() {
     const config = await this.getConfig();
     return !!(config.enabled && config.sessionKey && this.apiKey);
+  }
+
+  async isSignedIn() {
+    const config = await this.getConfig();
+    return !!(config.sessionKey && this.apiKey);
   }
 
   // Generate MD5 signature for Last.fm API
