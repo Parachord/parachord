@@ -63,7 +63,7 @@ function isArtistInfoOnly(plugin) {
 function hintFor(plugin) {
   const caps = plugin.capabilities || {};
   if (plugin.type !== 'meta-service') return 'Include it in search';
-  if (caps.concerts) return 'Include in Concerts';
+  if (caps.concerts) return 'Upcoming concerts and ticket links';
   if (caps.chat || caps.generate) return 'Use with Shuffleupagus';
   if (caps.recommendations) return 'Use for recommendations and your history';
   if (caps.scrobbling) return 'Scrobble what you play';
