@@ -90,7 +90,7 @@ test('every switch has role="switch", its state and a name', () => {
   const app = require('../helpers/renderer-source').appWithPages(); // app.js and the pages moved out of it (#1451)
   // Plugin panels name their switch; General's are named by their SettingRow.
   // The plug-in switch sits in a SettingRow, which names it (aria-labelledby) "Use <service>" (#1498 step 2).
-  expect(app).toMatch(/React\.createElement\(SettingRow, \{\s*label: `Use \$\{selectedResolver\.name\}`[\s\S]{0,200}React\.createElement\(Switch, \{ checked: state\.checked/);
+  expect(app).toMatch(/React\.createElement\(SettingRow, \{\s*label: `Enable \$\{selectedResolver\.name\}`[\s\S]{0,200}React\.createElement\(Switch, \{ checked: state\.checked/);
   // The scrobble switch sits in a SettingRow, which names it "Scrobble to <service>" (#1498 step 3b).
   expect(read('src/renderer/components/settings-cards.js')).toMatch(/React\.createElement\(SettingRow, \{ label: `Scrobble to \$\{scrobbler\.name\}`[^\n]*\n\s*React\.createElement\(Switch, \{ checked: !!config\?\.enabled, onToggle: handleToggleEnabled \}\)/);
   expect(app).toContain('React.createElement(Switch, { checked: skipExternalPrompt,');

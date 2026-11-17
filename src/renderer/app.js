@@ -3807,6 +3807,12 @@ const Parachord = () => {
   const [recommendationsOffResolvers, setRecommendationsOffResolvers] = useState([]);
   const recommendationsOffRef = useRef(recommendationsOffResolvers);
   recommendationsOffRef.current = recommendationsOffResolvers;
+  // Plug-ins whose metadata is switched off ("Use metadata from X", #1505):
+  // covers and artist photos come from the others. Saved as
+  // metadata_off_resolvers.
+  const [metadataOffResolvers, setMetadataOffResolvers] = useState([]);
+  const metadataOffRef = useRef(metadataOffResolvers);
+  metadataOffRef.current = metadataOffResolvers;
   const [resolverOrder, setResolverOrder] = useState(['bandcamp', 'localfiles']);
   const resolverSettingsLoaded = useRef(false);  // Track if we've loaded settings from storage
   const activeResolversRef = useRef(activeResolvers);  // Ref to avoid stale closure in save
@@ -6204,6 +6210,14 @@ const Parachord = () => {
     setRecommendationsOffResolvers(prev => {
       const next = on ? prev.filter(id => id !== resolverId) : (prev.includes(resolverId) ? prev : [...prev, resolverId]);
       window.electron.store.set('recommendations_off_resolvers', next).catch(err => console.error('[Plug-ins] Could not save Recommendations from:', err));
+      return next;
+    });
+  };
+  // The "Use metadata from X" switch (#1505): covers and artist photos.
+  const setResolverMetadataOn = (resolverId, on) => {
+    setMetadataOffResolvers(prev => {
+      const next = on ? prev.filter(id => id !== resolverId) : (prev.includes(resolverId) ? prev : [...prev, resolverId]);
+      window.electron.store.set('metadata_off_resolvers', next).catch(err => console.error('[Plug-ins] Could not save Use metadata from:', err));
       return next;
     });
   };
@@ -17171,7 +17185,8 @@ ${trackListXml}
     // resolver-limiter.js); 'background' for a cover lookup.
     const { earlyReturn = false, targetArtist, targetTitle, requireAlbumArt = false, lane = null } = options;
     const allResolvers = loadedResolversRef.current || [];
-    const activeIds = activeResolversRef.current || [];
+    // A cover lookup skips plug-ins whose metadata is switched off (#1505).
+    const activeIds = (activeResolversRef.current || []).filter(id => !(requireAlbumArt && metadataOffRef.current.includes(id)));
     const resolverOrder = resolverOrderRef.current || [];
     const results = [];
 
@@ -19261,7 +19276,7 @@ ${trackListXml}
         'cache_recommendations',
         'cache_critics_picks',
         // Resolver settings & user preferences
-        'active_resolvers', 'resolver_order', 'resolver_order_memory', 'playback_off_resolvers', 'recommendations_off_resolvers', 'meta_service_configs',
+        'active_resolvers', 'resolver_order', 'resolver_order_memory', 'playback_off_resolvers', 'recommendations_off_resolvers', 'metadata_off_resolvers', 'meta_service_configs',
         'applemusic_developer_token', 'friends', 'pinnedFriendIds',
         'autoPinnedFriendIds', 'hidden_friend_keys', 'resolver_volume_offsets', 'saved_volume',
         'skip_external_prompt', 'skip_unplayable_prompt',
@@ -19813,6 +19828,7 @@ ${trackListXml}
       const savedActiveResolvers = d['active_resolvers'];
       if (Array.isArray(d['playback_off_resolvers'])) setPlaybackOffResolvers(d['playback_off_resolvers']);
       if (Array.isArray(d['recommendations_off_resolvers'])) setRecommendationsOffResolvers(d['recommendations_off_resolvers']);
+      if (Array.isArray(d['metadata_off_resolvers'])) setMetadataOffResolvers(d['metadata_off_resolvers']);
       const savedResolverOrder = d['resolver_order'];
       const savedMetaServiceConfigs = d['meta_service_configs'];
       const savedAppleMusicDevToken = d['applemusic_developer_token'];
@@ -20566,7 +20582,7 @@ ${trackListXml}
   // Fallback artist lookup via Spotify API (when MusicBrainz has no results)
   const fetchArtistFromSpotify = async (artistName) => {
     const resolvers = loadedResolversRef.current || [];
-    const activeIds = activeResolversRef.current || [];
+    const activeIds = (activeResolversRef.current || []).filter(id => !metadataOffRef.current.includes(id));
     if (!activeIds.includes('spotify')) return null;
 
     try {
@@ -20637,7 +20653,7 @@ ${trackListXml}
 
   // Fallback artist lookup via MusicKit / Apple Music catalog
   const fetchArtistFromMusicKit = async (artistName) => {
-    const activeIds = activeResolversRef.current || [];
+    const activeIds = (activeResolversRef.current || []).filter(id => !metadataOffRef.current.includes(id));
     if (!activeIds.includes('applemusic')) return null;
 
     const musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
@@ -32850,7 +32866,8 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     // plug-in steps below. A saved sign-in outlives turning the plug-in off,
     // so a token alone sent every uncached artist photo to Spotify while the
     // user had switched it off (and kept tripping its rate-limit pause).
-    const activeIds = activeResolversRef.current || [];
+    // Nor one whose metadata is switched off ("Use metadata from X", #1505).
+    const activeIds = (activeResolversRef.current || []).filter(id => !metadataOffRef.current.includes(id));
 
     const steps = [];
     if (token && activeIds.includes('spotify')) {
@@ -37480,7 +37497,7 @@ useEffect(() => {
   // Stable function props for the memo'd PluginSettingsDialog (keys must
   // match PLUGIN_SETTINGS_DIALOG_HANDLERS in plugin-settings-dialog.js).
   const pluginSettingsDialogHandlers = useStableHandlers({
-    applyAmazonMusicStatus, connectAppleMusic, connectLastfm, connectListenbrainz, connectSoundcloud, connectSpotify, disconnectAppleMusic, disconnectLastfm, disconnectListenbrainz, disconnectSoundcloud, disconnectSpotify, fetchDynamicModels, getServiceColor, handleAddWatchFolder, handleInstallFromMarketplace, handleRemoveMissingFiles, handleRemoveWatchFolder, handleRescanAll, handleRescanFolder, handleUninstallResolver, manageAmazonMusic, openSyncSetupModal, saveAppleMusicDeveloperToken, saveMetaServiceConfig, saveSoundcloudCredentials, saveSpotifyCredentials, setProviderSyncEnabled, setResolverPlaybackOn, setResolverRecommendationsOn, toggleResolver,
+    applyAmazonMusicStatus, connectAppleMusic, connectLastfm, connectListenbrainz, connectSoundcloud, connectSpotify, disconnectAppleMusic, disconnectLastfm, disconnectListenbrainz, disconnectSoundcloud, disconnectSpotify, fetchDynamicModels, getServiceColor, handleAddWatchFolder, handleInstallFromMarketplace, handleRemoveMissingFiles, handleRemoveWatchFolder, handleRescanAll, handleRescanFolder, handleUninstallResolver, manageAmazonMusic, openSyncSetupModal, saveAppleMusicDeveloperToken, saveMetaServiceConfig, saveSoundcloudCredentials, saveSpotifyCredentials, setProviderSyncEnabled, setResolverMetadataOn, setResolverPlaybackOn, setResolverRecommendationsOn, toggleResolver,
   });
 
   // Stable function props for the memo'd ChartsPage (keys must
@@ -38319,6 +38336,7 @@ useEffect(() => {
       playbackLimits,
       playbackOffResolvers,
       recommendationsOffResolvers,
+      metadataOffResolvers,
       resolverConfigCache,
       resolverSyncSettings,
       syncSignedOut: syncSignedOutView,

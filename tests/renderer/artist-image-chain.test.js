@@ -158,7 +158,7 @@ describe('getArtistImage wiring', () => {
   // check alone sent every uncached artist photo to Spotify while it was off
   // (and tripped its rate-limit pause, 2026-11-16). Apple Music had the same gap.
   test('asks Spotify and Apple Music only when their plug-ins are on', () => {
-    expect(getArtistImage).toContain('const activeIds = activeResolversRef.current || [];');
+    expect(getArtistImage).toContain('const activeIds = (activeResolversRef.current || []).filter(id => !metadataOffRef.current.includes(id));');
     expect(getArtistImage).toContain("if (token && activeIds.includes('spotify')) {");
     expect(getArtistImage).toContain("if (musicKitAvailable && activeIds.includes('applemusic')) {");
     // One activeIds for every step, read before the first one.

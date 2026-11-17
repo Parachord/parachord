@@ -59,7 +59,10 @@ function fieldClassName({ size = 'md', tone = 'light', pill = false, bare = fals
   ].filter(Boolean).join(' ');
 }
 
-function SettingRow({ label, hint, id, children, className, style }) {
+// nested: a setting that only applies while the row above is on ("Play
+// from Spotify" under "Use Spotify"): indented, with a line on its left
+// tying it to its parent. Give its switch size 'sm'.
+function SettingRow({ label, hint, id, children, className, style, nested = false }) {
   const e = React.createElement;
   const auto = React.useId();
   const labelId = `${id || auto}-label`;
@@ -72,8 +75,8 @@ function SettingRow({ label, hint, id, children, className, style }) {
     })
     : children;
   return e('div', {
-    className: ['flex items-center justify-between gap-4', className].filter(Boolean).join(' '),
-    style: Object.assign({ padding: '10px 0' }, style),
+    className: ['flex items-center justify-between gap-4', nested ? 'border-l-2 border-line' : '', className].filter(Boolean).join(' '),
+    style: Object.assign({ padding: '10px 0' }, style, nested ? { marginLeft: '4px', paddingLeft: '16px' } : null),
   },
   e('div', { style: { minWidth: 0 } },
     e('div', { id: labelId, className: 'text-ink-primary', style: { fontSize: '13px', fontWeight: 500 } }, label),

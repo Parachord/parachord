@@ -69,7 +69,7 @@ test('plugin panels say "Use <service>", toggles use the chevron icon, installs 
   const app = require('../helpers/renderer-source').appWithPages();
   expect(app).not.toContain("'Enable Resolver'");
   // The one on/off switch, in a SettingRow named "Use <service>" (#1498 step 2).
-  expect(app).toContain('label: `Use ${selectedResolver.name}`,');
+  expect(app).toContain('label: `Enable ${selectedResolver.name}`,');
   expect(app).not.toMatch(/\? 'rotate-90' : ''\}`\n\s*\}, '▶'\)/);
   expect(app).not.toMatch(/title: 'Resolver (Updated|Installed)'/);
   expect(app).toContain("showToast(`${resolverName} installed`, 'success');");
@@ -153,4 +153,11 @@ describe('#1448: one set of form controls', () => {
     expect(css).toContain('.slider::-webkit-slider-thumb');
     expect(css).not.toMatch(/\.(progress|volume)-slider\s*\{/);
   });
+});
+
+test('a nested SettingRow is indented under a line, for a setting that depends on the row above', () => {
+  const out = html(h(F.SettingRow, { label: 'Play from Spotify', nested: true, id: 'pf' }, h(F.Switch, { size: 'sm', checked: true })));
+  expect(out).toContain('border-l-2 border-line');
+  expect(out).toContain('padding-left:16px');
+  expect(html(h(F.SettingRow, { label: 'Use Spotify', id: 'u' }, h(F.Switch, { checked: true })))).not.toContain('border-l-2');
 });
