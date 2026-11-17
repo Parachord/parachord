@@ -456,6 +456,17 @@ function createWebSessionHost(config = {}) {
             if (!urlUnderCookieDomains(url, cfg.cookieDomains)) event.preventDefault();
           } catch { /* a dying view refuses nothing */ }
         });
+        // The same rule for a navigation the PAGE starts (a script setting
+        // location, a meta refresh, a link or form): will-redirect sees only
+        // server redirects. The host's own loads (loadURL) don't fire
+        // will-navigate; their URLs are scoped at the bridge. will-navigate
+        // is main-frame only.
+        view.webContents.on('will-navigate', (event, url) => {
+          try {
+            const target = url || (event && event.url);
+            if (!urlUnderCookieDomains(target, cfg.cookieDomains)) event.preventDefault();
+          } catch { /* a dying view refuses nothing */ }
+        });
       } catch { /* destroyed */ }
       view.webContents.on('destroyed', () => {
         if (this._view === view) this._view = null;
@@ -807,6 +818,12 @@ function createWebSessionHost(config = {}) {
         // A fetch needs an origin page world (about:blank is a null origin:
         // no cookies, no CORS) — the caller reloads a page first.
         if (!href || href === 'about:blank') return { error: 'no-origin-page' };
+        // The page world the fetch runs in is the page's own, so only one of
+        // the session's allowed hosts may host it: a page anywhere else could
+        // have replaced window.fetch. Checked again after the fetch, in case
+        // the page changed while it ran; a result from another page is
+        // dropped.
+        if (!urlOnAllowedHost(href, cfg.allowedHosts)) return { error: 'page-off-host' };
         const body = request.body === undefined || request.body === null
           ? undefined
           : (typeof request.body === 'string' ? request.body : JSON.stringify(request.body));
@@ -825,6 +842,9 @@ function createWebSessionHost(config = {}) {
         } catch (error) {
           return { error: String((error && (error.message || error)) || error) };
         }
+        let hrefAfter = '';
+        try { hrefAfter = view.webContents.getURL(); } catch { /* destroyed */ }
+        if (!urlOnAllowedHost(hrefAfter, cfg.allowedHosts)) return { error: 'page-off-host' };
         if (!outcome || typeof outcome !== 'object') return { error: 'pageFetch returned nothing' };
         if (outcome.error) return { error: String(outcome.error) };
         return { status: outcome.status, text: outcome.text };
