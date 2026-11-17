@@ -200,7 +200,9 @@ const PluginSettingsDialog = React.memo(function PluginSettingsDialog(props) {
                   })),
                 React.createElement('div', { style: { display: 'flex', gap: '8px' } },
                   React.createElement(Button, { variant: 'secondary', onClick: () => openSyncSetupModal(id) }, 'Manage sync'),
-                  React.createElement(Button, { variant: 'destructive', onClick: () => setStopSyncDialog({ open: true, providerId: id }) }, 'Stop syncing')));
+                  // Ends sync for good (the switch above pauses it); works signed out,
+                  // so a service can be dropped without signing in again.
+                  React.createElement(Button, { variant: 'quietDestructive', onClick: () => setStopSyncDialog({ open: true, providerId: id }) }, 'Remove sync…')));
   };
 
   return React.createElement(Modal, { bare: true, label: "Plugin settings", scrimClassName: 'z-50', onClose: () => { setSelectedResolver(null); }, panelProps: { style: {

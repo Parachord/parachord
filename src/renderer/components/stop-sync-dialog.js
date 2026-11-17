@@ -27,14 +27,16 @@ const StopSyncDialog = React.memo(function StopSyncDialog(props) {
       });
       return React.createElement(Modal, {
         size: 'sm',
-        title: 'Stop syncing?',
-        description: 'What would you like to do with your synced items?',
+        // Named like the button that opens it (Remove sync…), and not the
+        // switch's pause: sync ends and its settings are cleared.
+        title: 'Remove library sync?',
+        description: 'Sync stops and its settings are cleared. What should happen to the music it added?',
         onClose: close,
         footer: React.createElement(Button, { variant: 'secondary', onClick: close }, 'Cancel')
       },
         React.createElement('div', { className: 'flex flex-col gap-2.5', style: { marginTop: '16px' } },
           option('keep', () => stopSyncing(stopSyncDialog.providerId, false), 'Keep imported items', 'Items stay in your Collection as local items'),
-          option('remove', () => stopSyncing(stopSyncDialog.providerId, true), 'Remove synced items', 'Remove everything synced from this provider', true)
+          option('remove', () => stopSyncing(stopSyncDialog.providerId, true), 'Remove synced items', 'Remove everything synced from this service', true)
         )
       );
     })();
