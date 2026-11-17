@@ -72,6 +72,14 @@ describe('the plugin path gate (checked by presence, like every capability gate)
     expect(engine).toContain('window.__parachordWidevine.playPlugin(audioRef.current, {\n            resolverId,\n            manifestResult,\n            // Bound: the router calls it detached later, and plugin methods\n            // use `this.` freely (the subsonic plugin does).\n            relayLicense: resolver.relayLicense.bind(resolver),\n            // The token claimed above the manifest fetch: a play that a\n            // stop() superseded during the fetch is refused here.\n            token: claimedToken,\n            startTime: startAt,');
   });
 
+  test('the plugin arm hands its player-event handler (telemetry) to playPlugin, bound the same way', () => {
+    // #1356 M9: on the plugin path no main-side provider exists to receive
+    // the bridge's player-event channel, so the engine hands the plugin's
+    // handlePlayerEvent to the shared engine (fanout beside the bridge IPC,
+    // whose session-close bookkeeping stays main-owned).
+    expect(engine).toContain("playerEvents: typeof resolver.handlePlayerEvent === 'function'\n              ? resolver.handlePlayerEvent.bind(resolver)\n              : null,");
+  });
+
   test('the provider fallback is intact: the provider play call and its entity are unchanged', () => {
     expect(engine).toMatch(/__parachordWidevine\.play\(audioRef\.current, \{\s*resolverId,\s*startTime: startAt,\s*entity: \{ asin \},/);
   });
@@ -92,13 +100,23 @@ describe('the plugin path gate (checked by presence, like every capability gate)
 
 describe('the seams the engine relies on below it', () => {
   test('the player exposes playPlugin + claimPlayToken and registers the licence router through the preload surface', () => {
-    expect(player).toContain('async function playPlugin(audio, { resolverId, manifestResult, relayLicense, trackContext, startTime, token } = {}) {');
+    expect(player).toContain('async function playPlugin(audio, { resolverId, manifestResult, relayLicense, playerEvents, trackContext, startTime, token } = {}) {');
     expect(player).toContain('bridge.onPluginLicenseRequest(async (request) => {');
     // The router answers from the record taken at open-session time (before
     // the load — Shaka asks for the first licence mid-load) and hands the
     // plugin its own context, held renderer-side.
     expect(player).toContain('record.relayLicense(request.challenge, record.context)');
     expect(player).toContain('function claimPlayToken() {');
+  });
+
+  test('the player routes lifecycle events to the plugin alongside the bridge IPC (the reply\'s asin rides the entity seam)', () => {
+    // #1356 M9: telemetry is plugin-owned on the plugin path — the bridge
+    // player-event call stays (main's matched session close), and the plugin's
+    // handler fans out beside it. The reply's asin fills the entity the
+    // play-started event reads, so the plugin's telemetry attributes the
+    // served pressing without plugin-side track memory.
+    expect(player).toContain('trackSession.pluginEvents(event)');
+    expect(player).toContain('entity: typeof reply.asin === \'string\' && reply.asin ? { asin: reply.asin } : {},');
   });
 
   test('the preload exposes openSession (by manifest LENGTH) + onPluginLicenseRequest on window.electron.widevine', () => {

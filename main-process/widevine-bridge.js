@@ -12,9 +12,6 @@
 //
 // Everything else — decoding, variant selection by the global quality
 // setting, transport, media session — is the shared renderer player.
-// Amazon's provider is amazon-dmls.js; a future Tidal/Qobuz resolver is one
-// provider registration away.
-//
 // The plugin-mediated path (#1356 M4) runs ALONGSIDE the provider: a
 // resolver that implements getPlaybackManifest supplies the manifest
 // RENDERER-side and declares it UP via widevine:open-session (its length —
@@ -25,12 +22,12 @@
 // answered on widevine:plugin-license-answer) — the challenge and its ids
 // only; the plugin's context stays renderer-side — so the plugin's
 // relayLicense runs renderer-side while the relay/session/cap gates stay
-// HERE. Plugins
-// run in the main window's top frame and pass the sender check like app
+// HERE. Amazon's
+// DRM pair has lived on it since #1356 M9; a future Tidal/Qobuz resolver is
+// one provider registration away.
+// Plugins run in the main window's top frame and pass the sender check like app
 // code (the scope note below), so a plugin-supplied manifest changes no
 // threat model — what it changes is where the service knowledge lives.
-// No shipped plugin implements it yet; Amazon stays on the provider path
-// until its dmls moves.
 //
 // Error contract: handlers return { success:false, reason?, error } — never
 // throw over IPC. 'reason' is provider-defined ('not-signed-in',

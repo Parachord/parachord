@@ -4,9 +4,9 @@
 // local files, SoundCloud and html5Stream resolvers share). Per-resolver
 // differences stop at the widevine bridge: getManifest (entity → DASH MPD
 // text) and relayLicense (CDM challenge bytes ↔ license bytes) are IPC
-// handled by main-process providers (amazon-dmls today) — or, on the
-// plugin-mediated path (#1356 M4), supplied renderer-side by a resolver
-// that implements getPlaybackManifest/relayLicense: playPlugin() declares the
+// handled by providers registered main-side — or, on the plugin-mediated
+// path (#1356 M4, Amazon's DRM pair since M9), supplied renderer-side by a
+// resolver that implements getPlaybackManifest/relayLicense: playPlugin() declares the
 // manifest UP to the bridge's session open (only its length crosses — the
 // text stays renderer-side), and the licence router answers main's forwarded
 // challenges through the plugin's relayLicense with the context held
@@ -19,7 +19,7 @@
 // Lifecycle:
 //   widevine-player.play(audio, { resolverId, entity })
 //      → bridge manifest → Shaka load → quality config → caller .play()s
-//   widevine-player.playPlugin(audio, { resolverId, manifestResult, relayLicense })
+//   widevine-player.playPlugin(audio, { resolverId, manifestResult, relayLicense, playerEvents })
 //      → bridge session open (manifest supplied renderer-side) → same load
 //   widevine-player.applyQuality()         live re-select after a setting change
 //   widevine-player.stop()                 unload; restore the element for plain URLs
@@ -80,15 +80,25 @@ function supersededError() {
   return err;
 }
 
-// Player lifecycle events to main (provider-owned telemetry; non-blocking).
+// Player lifecycle events to main (the bridge's session bookkeeping —
+// matched-close on stop/end — plus any provider-owned telemetry;
+// non-blocking) and, for a plugin-mediated session, to the PLUGIN's own
+// handlePlayerEvent (telemetry is plugin-owned on that path: no main-side
+// provider exists to receive them).
 function emitPlayerEvent(type, payload) {
-  if (!trackSession || !window.electron || !window.electron.widevine) return;
-  try {
-    // sessionId matches the event to its license session — the bridge only
-    // closes on a MATCH, so a late 'stopped' from an older play can't take
-    // the newer play's relays down with it.
-    void window.electron.widevine.playerEvent(trackSession.resolverId, { type, sessionId: trackSession.sessionId, ...payload });
-  } catch { /* telemetry must never reach playback */ }
+  if (!trackSession) return;
+  const event = { type, sessionId: trackSession.sessionId, ...payload };
+  if (window.electron && window.electron.widevine) {
+    try {
+      // sessionId matches the event to its license session — the bridge only
+      // closes on a MATCH, so a late 'stopped' from an older play can't take
+      // the newer play's relays down with it.
+      void window.electron.widevine.playerEvent(trackSession.resolverId, event);
+    } catch { /* telemetry must never reach playback */ }
+  }
+  if (trackSession.pluginEvents) {
+    try { Promise.resolve(trackSession.pluginEvents(event)).catch(() => {}); } catch { /* telemetry must never reach playback */ }
+  }
 }
 
 let elementEventsBound = false;
@@ -606,7 +616,7 @@ async function play(audio, { resolverId, entity, trackContext, startTime } = {})
 // superseded mid-load must not reach the element or close the newer play's
 // session. A plugin play's relay lives in pluginRelayRecord, taken before
 // this runs — Shaka asks for its first licence during load(), below.
-async function loadManifestSession(audio, { resolverId, result, entity, trackContext, startTime, mine }) {
+async function loadManifestSession(audio, { resolverId, result, entity, trackContext, startTime, mine, playerEvents }) {
   const shaka = window.shaka;
   if (!player) {
     player = new shaka.Player();
@@ -791,6 +801,10 @@ async function loadManifestSession(audio, { resolverId, result, entity, trackCon
     entity: { ...(entity || {}), ...(result.substituteAsin ? { asin: result.substituteAsin, requestedAsin: entity && entity.asin } : {}) },
     trackContext: trackContext || {},
     cdnType: result.cdnType || null,
+    // The plugin-mediated play's player-event handler (its handlePlayerEvent
+    // — telemetry), fanned out alongside the bridge IPC above; null on the
+    // provider path.
+    pluginEvents: typeof playerEvents === 'function' ? playerEvents : null,
     started: false
   };
 
@@ -877,7 +891,13 @@ function ensurePluginRelayRouter(bridge) {
 // (protectionSets/substituteAsin/cdnType) are optional fields on the plugin's
 // reply and ride the same seams; a plugin reply without them simply reports
 // no substitution and no KID annotation.
-async function playPlugin(audio, { resolverId, manifestResult, relayLicense, trackContext, startTime, token } = {}) {
+// The reply's `asin` (the plugin's own identifier extraction — the host
+// stopped pre-digesting one) fills the entity seam, so provenance and
+// play-started telemetry attribute the served pressing like the provider
+// path's engine-provided entity did. `playerEvents` is the plugin's
+// handlePlayerEvent (telemetry is plugin-owned here — no main-side provider
+// exists to receive the bridge's player-event channel).
+async function playPlugin(audio, { resolverId, manifestResult, relayLicense, playerEvents, trackContext, startTime, token } = {}) {
   if (!audio || !resolverId) throw new Error('widevine-player: audio element and resolverId are required');
   if (!ensureLicenseScheme()) throw new Error('widevine-player: shaka did not load (index.html script tag)');
   const bridge = window.electron && window.electron.widevine;
@@ -951,10 +971,18 @@ async function playPlugin(audio, { resolverId, manifestResult, relayLicense, tra
       substituteAsin: reply.substituteAsin,
       cdnType: reply.cdnType
     },
-    entity: {},
+    // The plugin's identifier extraction rides the entity seam the provider
+    // path's engine-provided entity filled; the loadManifestSession merge
+    // layers the SERVED asin (substituteAsin) over it, so play-started
+    // telemetry and provenance attribute the deliverable pressing.
+    // `asin` is Amazon's word on a GENERIC plugin contract — accepted for
+    // now (#1439 review); rename it to a neutral id when a second DRM
+    // service appears (a Tidal resolver must not return an `asin`).
+    entity: typeof reply.asin === 'string' && reply.asin ? { asin: reply.asin } : {},
     trackContext,
     startTime,
-    mine
+    mine,
+    playerEvents: typeof playerEvents === 'function' ? playerEvents : null
   });
 }
 

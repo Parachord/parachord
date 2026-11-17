@@ -329,6 +329,56 @@ describe('playPlugin (the plugin-mediated path, #1356 M4)', () => {
     expect(el.bridge.relayLicense).toHaveBeenCalledWith('amazonmusic', expect.any(String), 'plug-sess-1');
   });
 
+  test('lifecycle events reach the plugin\'s playerEvents (telemetry) with the served asin, beside the bridge IPC (#1356 M9)', async () => {
+    const { sh, el, player } = load();
+    const pluginEvents = [];
+    const audio = makeAudio();
+    // The reply's asin is the plugin's identifier extraction; substituteAsin
+    // layers the SERVED pressing over it on the entity seam.
+    await player.playPlugin(audio, {
+      resolverId: 'amazonmusic',
+      manifestResult: pluginReply({ asin: 'REQ1', substituteAsin: 'SUB9' }),
+      relayLicense: async () => 'TVBVRElOIExJQ0VOU0U=',
+      playerEvents: (event) => { pluginEvents.push(event); },
+      trackContext: { albumAsin: 'ALB1', durationMs: 210000 }
+    });
+    audio.fire('playing');
+    audio.currentTime = 42;
+    audio.fire('seeking');
+    await player.stop();
+    const types = pluginEvents.map((e) => e.type);
+    expect(types).toEqual(['play-started', 'seek', 'stopped']);
+    // The play-started event attributes the SERVED pressing and carries the
+    // same facts the provider path emitted (the bridge fanout stays identical).
+    const started = pluginEvents[0];
+    expect(started.asin).toBe('SUB9');
+    expect(started.albumAsin).toBe('ALB1');
+    expect(started.sessionId).toBe('plug-sess-1');
+    expect(el.playerEvents.map(([, e]) => e.type)).toEqual(types);
+    // A resolver with no handler (playerEvents absent) changes nothing on the
+    // bridge path.
+    const pluginEventsB = [];
+    await player.playPlugin(makeAudio(), {
+      resolverId: 'amazonmusic',
+      manifestResult: pluginReply({ asin: 'REQ2' }),
+      relayLicense: async () => 'TVBVRElOIExJQ0VOU0U='
+    });
+    makeAudio(); // (the second play owns the element; its events are the bridge's alone)
+    expect(pluginEventsB).toEqual([]);
+  });
+
+  test('a reply without an asin still plays (the field is an optional extra — telemetry simply has no asin to attribute)', async () => {
+    const { el, player } = load();
+    const reply = await player.playPlugin(makeAudio(), {
+      resolverId: 'amazonmusic',
+      manifestResult: pluginReply(), // no asin field
+      relayLicense: async () => 'TVBVRElOIExJQ0VOU0U=',
+      trackContext: { albumAsin: 'ALB1' }
+    });
+    expect(reply.token).toEqual(expect.any(Number));
+    expect(el.bridge.openSession).toHaveBeenCalled();
+  });
+
   test('a plugin rejection carries licenseDenied/denialReason into the same Shaka error path (the #1262 latch, unchanged)', async () => {
     const { sh, el, player } = load({
       electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: false } })

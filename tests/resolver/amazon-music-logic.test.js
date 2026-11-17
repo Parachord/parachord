@@ -1,17 +1,10 @@
 const {
-  amazonDmlsRegion,
-  licenseDenialSummary,
-  amazonDmlsManifestBody,
-  amazonDmlsLicenseBody,
-  dashCodecFamily,
-  WIDEVINE_CERT_CHALLENGE,
   reportedPlaybackAsin,
   shouldRevealPlayerOnFailure,
   cdmStatusHealthy,
   pageBlocksPlayback,
   signInLanded,
   amazonAuthCookieState,
-  AMAZON_QUALITY_OPTIONS,
   asinFromPlayerUrl,
   amazonGqlFetchHeaders,
   stripAmazonTitleMarker,
@@ -404,56 +397,10 @@ const LIVE_REPS = [
   { id: '12', codec: 'mhm1.0x0e', bandwidth: 1610228, sampleRate: 48000, channels: null, bitDepth: null }
 ];
 
-describe('amazonDmlsRegion', () => {
-  test('maps territories to the dmls region segment', () => {
-    expect(amazonDmlsRegion('US')).toBe('NA');
-    expect(amazonDmlsRegion('BR')).toBe('NA');
-    expect(amazonDmlsRegion('DE')).toBe('EU');
-    expect(amazonDmlsRegion('GB')).toBe('EU');
-    expect(amazonDmlsRegion('JP')).toBe('FE');
-    expect(amazonDmlsRegion('AU')).toBe('FE');
-    expect(amazonDmlsRegion(null)).toBe('NA');
-  });
-});
-
-describe('amazonDmlsManifestBody', () => {
-  const base = { asin: 'B00CRMX53S', customerId: 'CUST', marketplaceId: 'ATVPDKIKX0DER', territoryId: 'US', deviceId: '123', musicAgent: 'Agent/1.0' };
-  test('builds the captured shape', () => {
-    const body = amazonDmlsManifestBody(base);
-    expect(body.contentIdList).toEqual([{ identifier: 'B00CRMX53S', identifierType: 'ASIN' }]);
-    expect(body.deviceToken).toEqual({ deviceTypeId: 'A16ZV8BU3SN1N3', deviceId: '123' });
-    expect(body.customerId).toBe('CUST');
-    expect(body.customerInfo).toEqual({ marketplaceId: 'ATVPDKIKX0DER', territoryId: 'US' });
-    expect(body.musicDashVersionList).toEqual(['SIREN_KATANA']);
-    expect(body.contentProtectionList).toEqual(['TRACK_PSSH']);
-    expect(body.tryAsinSubstitution).toBe(true);
-    expect(body.appInfo).toEqual({ musicAgent: 'Agent/1.0' });
-  });
-  test('null without required identifiers', () => {
-    expect(amazonDmlsManifestBody({ ...base, asin: null })).toBeNull();
-    expect(amazonDmlsManifestBody({ ...base, customerId: null })).toBeNull();
-    expect(amazonDmlsManifestBody({ ...base, deviceId: null })).toBeNull();
-  });
-});
-
-describe('amazonDmlsLicenseBody', () => {
-  test('builds the Widevine relay shape, cert challenge included', () => {
-    const body = amazonDmlsLicenseBody({ challenge: WIDEVINE_CERT_CHALLENGE, customerId: 'CUST', deviceId: '123', musicAgent: 'Agent/1.0' });
-    expect(body.DrmType).toBe('WIDEVINE');
-    expect(body.licenseChallenge).toBe('CAQ=');
-    expect(body.customerId).toBe('CUST');
-    expect(body.deviceToken.deviceId).toBe('123');
-    expect(amazonDmlsLicenseBody({ challenge: null, customerId: 'C', deviceId: 'D' })).toBeNull();
-  });
-});
-
-describe('dashCodecFamily', () => {
-  test('buckets codec strings', () => {
-    expect(dashCodecFamily('flac')).toBe('flac');
-    expect(dashCodecFamily('opus')).toBe('opus');
-    expect(dashCodecFamily('mp4a.40.2')).toBe('aac');
-  });
-});
+// (The dmls request builders — amazonDmlsRegion / amazonDmlsManifestBody /
+// amazonDmlsLicenseBody / dashCodecFamily — were pinned here until #1356 M9
+// moved the DRM pair into the plugin; their cases now drive the _lib copies in
+// tests/resolver/amazon-music-plugin-drm.test.js.)
 
 describe('amazonAuthCookieState', () => {
   test('the auth cookies isSignedIn has always keyed on are known', () => {
@@ -476,41 +423,9 @@ describe('amazonAuthCookieState', () => {
   });
 });
 
-describe('licenseDenialSummary', () => {
-  // Shape of a live content refusal on a Prime account; the ids are fake.
-  const CONTENT_REFUSAL = 'customer is not eligible for content (EligibilityException CUSTOMER_NOT_ELIGIBLE) - '
-    + 'CustomerEligibility(customerId=AFAKECUSTOMER123, marketplaceId=ATVFAKEMARKET, eligibilities=[ROBIN, NIGHTWING]) '
-    + 'ContentEligibility(asin=B086Q41M9C, eligibilities=[KATANA])';
-
-  test('keeps the sentence before the eligibility dump', () => {
-    expect(licenseDenialSummary(CONTENT_REFUSAL))
-      .toBe('customer is not eligible for content (EligibilityException CUSTOMER_NOT_ELIGIBLE)');
-  });
-
-  test('drops an eligibility block that arrives without the separator', () => {
-    const out = licenseDenialSummary('not eligible CustomerEligibility(customerId=AFAKECUSTOMER123)');
-    expect(out).toBe('not eligible');
-  });
-
-  test('scrubs account identifiers anywhere in the text, JSON bodies included', () => {
-    expect(licenseDenialSummary('denied for customerId=AFAKECUSTOMER123, deviceId: 1234abcd'))
-      .toBe('denied for customerId=<redacted>, deviceId: <redacted>');
-    const body = licenseDenialSummary('{"customerId":"AFAKECUSTOMER123","message":"denied"}');
-    expect(body).not.toContain('AFAKECUSTOMER123');
-  });
-
-  test('leaves a plain message alone and caps a long one', () => {
-    expect(licenseDenialSummary('customer is not eligible for HD content (EligibilityException CUSTOMER_NOT_ELIGIBLE)'))
-      .toBe('customer is not eligible for HD content (EligibilityException CUSTOMER_NOT_ELIGIBLE)');
-    expect(licenseDenialSummary('x'.repeat(500))).toHaveLength(201);
-  });
-
-  test('non-strings and empty text give null', () => {
-    expect(licenseDenialSummary(null)).toBeNull();
-    expect(licenseDenialSummary(undefined)).toBeNull();
-    expect(licenseDenialSummary('   ')).toBeNull();
-  });
-});
+// (licenseDenialSummary moved with the licence-400 refusal semantics in
+// #1356 M9; its cases drive the _lib copy in
+// tests/resolver/amazon-music-plugin-drm.test.js.)
 
 // (The recommendation helpers — recommendationItemFromGqlNode /
 // amazonMusicHomeRequest / recommendationsFromMusicHome /

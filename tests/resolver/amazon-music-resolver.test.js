@@ -42,7 +42,7 @@ function instantiate(axeContent) {
 describe('amazonmusic .axe structure', () => {
   test('manifest identifies the resolver', () => {
     expect(axe.manifest.id).toBe('amazonmusic');
-    expect(axe.manifest.version).toBe('1.17.0');
+    expect(axe.manifest.version).toBe('1.18.0');
   });
 
   test('declares streaming capabilities without auth', () => {
@@ -66,7 +66,7 @@ describe('amazonmusic .axe structure', () => {
       expect(typeof new Function('return ' + src)()).toBe('function');
     }
     expect(Object.keys(axe.implementation).sort()).toEqual(
-      ['_lib', 'assertPlanPlays', 'cacheSeeMorePage', 'cleanup', 'enqueuePageFlow', 'expandRecommendationSection', 'expandRecommendationSectionParsed', 'getPlan', 'getRecommendations', 'homePageFlow', 'init', 'isSignedIn', 'lookupAlbum', 'lookupAlbumFlow', 'lookupAlbumPageFlow', 'lookupPlaylist', 'lookupPlaylistFlow', 'lookupPlaylistPageFlow', 'musicHomePageFlow', 'pageSections', 'play', 'playlistImportPages', 'replayGql', 'requireLib', 'resolve', 'search', 'searchAlbums', 'searchArtistImage', 'seeMorePageFlow', 'sessionState', 'specSearch', 'specSearchPageFlow', 'specStructuralError', 'tryMusicHomeWalk', 'trySeeMoreReplay', 'trySpecReplay', 'walkMusicHomePages', 'withPlaylistsSection'].sort()
+      ['_lib', 'appVersion', 'assertPlanPlays', 'cacheSeeMorePage', 'cleanup', 'dmls', 'enqueuePageFlow', 'drmAsinFromTrack', 'ensureSessionContext', 'expandRecommendationSection', 'expandRecommendationSectionParsed', 'fetchConfigJson', 'getPlan', 'getPlaybackManifest', 'getRecommendations', 'handlePlayerEvent', 'homePageFlow', 'init', 'isSignedIn', 'kickCertWarm', 'lookupAlbum', 'lookupAlbumFlow', 'lookupAlbumPageFlow', 'lookupPlaylist', 'lookupPlaylistFlow', 'lookupPlaylistPageFlow', 'mintCsrfHeaders', 'mintCsrfPageFlow', 'mintSessionContext', 'musicAgent', 'musicHomePageFlow', 'pageSections', 'play', 'playlistImportPages', 'postTelemetryEvent', 'relayLicense', 'replayGql', 'requireLib', 'resolve', 'search', 'searchAlbums', 'searchArtistImage', 'seeMorePageFlow', 'sessionState', 'specSearch', 'specSearchPageFlow', 'specStructuralError', 'telemetry', 'tryMusicHomeWalk', 'trySeeMoreReplay', 'trySpecReplay', 'walkMusicHomePages', 'warmCertSession', 'withPlaylistsSection'].sort()
     );
   });
 });

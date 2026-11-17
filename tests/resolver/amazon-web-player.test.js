@@ -70,3 +70,112 @@ describe('amazonWebPlayer.isSignedIn', () => {
     await expect(amazonWebPlayer.isSignedIn()).resolves.toBe(false);
   });
 });
+
+// ── The plan read (#1220, the #1356 M9 stopgap) ──────────────────────────────
+// amazon-dmls.getPlan's semantics, ported onto the ONE host web-session
+// instance's fetch: not-signed-in without auth cookies, config.json's tier
+// mapped by amazonPlanFromTier, 30-min cache (1 min when unknown), a forced
+// re-read (opening Settings) that comes back without a tier keeps a known
+// plan, single-flight, the change callback firing on a reading that differs,
+// and sign-out forgetting the reading. Dies with the teardown milestone's
+// status move; the plugin's own gate is pinned separately in
+// tests/resolver/amazon-music-plugin-drm.test.js.
+describe('amazonWebPlayer.getPlan (the host-side stopgap)', () => {
+  let stateSpy;
+  let fetchSpy;
+  let jar;
+  let state;
+  let configText;
+
+  beforeEach(() => {
+    jar = [{ name: 'at-main', value: 'a' }];
+    state = { url: null, signInUrl: null, cookieNames: [] };
+    configText = JSON.stringify({ tier: 'PRIME' });
+    stateSpy = jest.spyOn(amazonWebPlayer.webSession, 'state').mockImplementation(async () => ({
+      ...state,
+      cookieNames: [...new Set(jar.filter(c => c.value).map(c => c.name))]
+    }));
+    fetchSpy = jest.spyOn(amazonWebPlayer.webSession, 'fetch').mockImplementation(async (request) => ({
+      success: true, status: 200, headers: {}, text: configText
+    }));
+    amazonWebPlayer.planState = null;
+    amazonWebPlayer.planPromise = null;
+    amazonWebPlayer.planChange = null;
+  });
+
+  afterEach(() => {
+    stateSpy.mockRestore();
+    fetchSpy.mockRestore();
+    amazonWebPlayer.planState = null;
+    amazonWebPlayer.planPromise = null;
+  });
+
+  const configWithTier = (tier) => JSON.stringify({
+    customerId: 'CUST1', marketplaceId: 'MKT', musicTerritory: 'US', siteRegion: 'NA', deviceId: '1435',
+    ...(tier === undefined ? {} : { tier })
+  });
+
+  test('reads the tier from config.json over the host instance\'s fetch', async () => {
+    configText = configWithTier('UNLIMITED_HD');
+    await expect(amazonWebPlayer.getPlan()).resolves.toBe('unlimited');
+    expect(fetchSpy).toHaveBeenCalledWith(expect.objectContaining({ url: 'https://music.amazon.com/config.json' }));
+  });
+
+  test('needs the auth cookies — not-signed-in without a config read', async () => {
+    jar = [{ name: 'session-id', value: '1' }];
+    await expect(amazonWebPlayer.getPlan()).rejects.toMatchObject({ reason: 'not-signed-in' });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  test('caches a known plan for 30 minutes and an unknown one for a minute', async () => {
+    const t0 = 1_000_000;
+    configText = configWithTier('PRIME');
+    expect(await amazonWebPlayer.getPlan({}, t0)).toBe('prime');
+    expect(await amazonWebPlayer.getPlan({}, t0 + 29 * 60 * 1000)).toBe('prime'); // no fetch: cached
+    configText = configWithTier('UNLIMITED');
+    expect(await amazonWebPlayer.getPlan({}, t0 + 31 * 60 * 1000)).toBe('unlimited');
+
+    amazonWebPlayer.planState = null;
+    configText = ''; // a failed read
+    expect(await amazonWebPlayer.getPlan({}, t0)).toBe('unknown');
+    configText = configWithTier('UNLIMITED_HD');
+    expect(await amazonWebPlayer.getPlan({}, t0 + 61 * 1000)).toBe('unlimited');
+  });
+
+  test('a forced re-read (opening Settings) sees an upgrade at once; a failed one keeps a known plan', async () => {
+    const t0 = 2_000_000;
+    configText = configWithTier('PRIME');
+    expect(await amazonWebPlayer.getPlan({}, t0)).toBe('prime');
+    configText = configWithTier('UNLIMITED');
+    expect(await amazonWebPlayer.getPlan({ refresh: true }, t0 + 1000)).toBe('unlimited');
+    configText = ''; // offline / a bad reply
+    expect(await amazonWebPlayer.getPlan({ refresh: true }, t0 + 2000)).toBe('unlimited');
+    // The scheduled re-read still judges it: past the TTL, no tier is unknown.
+    configText = '';
+    expect(await amazonWebPlayer.getPlan({}, t0 + 31 * 60 * 1000)).toBe('unknown');
+  });
+
+  test('a plan change is reported, a repeat reading is not', async () => {
+    const onPlanChange = jest.fn();
+    amazonWebPlayer.setPlanChangeListener(onPlanChange);
+    configText = configWithTier('PRIME');
+    await amazonWebPlayer.getPlan();
+    configText = configWithTier('PRIME');
+    await amazonWebPlayer.getPlan({ refresh: true });
+    configText = configWithTier('UNLIMITED_HD');
+    await amazonWebPlayer.getPlan({ refresh: true });
+    expect(onPlanChange).toHaveBeenCalledTimes(2);
+    expect(onPlanChange.mock.calls.map((c) => c[0])).toEqual([
+      { plan: 'prime', previous: null },
+      { plan: 'unlimited', previous: 'prime' }
+    ]);
+  });
+
+  test('sign-out forgets the plan', async () => {
+    configText = configWithTier('PRIME');
+    await amazonWebPlayer.getPlan();
+    expect(amazonWebPlayer.planState).toMatchObject({ plan: 'prime' });
+    amazonWebPlayer.planState = null; // what signOut() resets
+    expect(amazonWebPlayer.planState).toBeNull();
+  });
+});

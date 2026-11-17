@@ -1,4 +1,4 @@
-// Source of truth for plugins/amazonmusic.axe v1.17.0.
+// Source of truth for plugins/amazonmusic.axe v1.18.0.
 // Imported from the .axe by `node scripts/build-axes.js --import`.
 // Edit here, bump manifest.version in manifest.json, then run `node scripts/build-axes.js`.
 // The functions materialize fully isolated (resolver-loader.js uses
@@ -7,29 +7,33 @@
 // instance, pure: helpers and constants only — no I/O, no timers, no window;
 // per-instance state lives on `this`).
 //
-// ── The searches, the catalog, the playlist import and the recommendations
-// run in the plugin (#1356 M5/M6/M7/M8) ──────────────────────────────────
+// ── The searches, the catalog, the playlist import, the recommendations and
+// the DRM pair run in the plugin (#1356 M5–M9) ───────────────────────────
 // The spec-search runner family (the SpecSearchSeeMorePage capture-and-replay
 // flows: the track search, M5, plus the album search and the artist-image
 // lookup, M6), the album-detail flow (lookupAlbum's candidate-ranking replay),
 // the playlist import (M7 — the playlistDetail capture, the verbatim replay
-// and the token-driven pagination) and the recommendations (M8 — the
+// and the token-driven pagination), the recommendations (M8 — the
 // music-home walk, the see-more route and the synthesized playlists section)
-// are the plugin's: they drive the ONE host web-session instance (registered
+// and the DRM pair (M9 — getPlaybackManifest + relayLicense, the dmls
+// provider's flows with the csrf mint and the streaming telemetry) are the
+// plugin's: they drive the ONE host web-session instance (registered
 // as 'amazon-music') through the window.electron.webSession bridge —
 // pageFetch replays the captured request from the page world, load(url,
 // {capture}) runs the chained page flow with the capture window inside the
 // load (the quiet-bounded returned captures replace the old in-flow poll; our
 // own replay traffic arrives as echo-flagged captures and is never trusted),
-// and state() supplies the facts the signed-in verdict composes — and the
-// session generation whose change (a sign-out the plugin cannot see the event
-// of) drops its session-scoped caches. The host-side runner that used to
-// serve the album/artist tabs, the host-side playlist import and the
-// host-side recommendations flows are deleted; every helper those flows use
-// lives here (copies of the amazon-music-logic.js originals, whose remaining
-// copies serve the session mint, the diagnostic capture and the dmls flow
-// until their moves). What remains host-side is the session mint, the
-// diagnostic capture, sign-in/out and getStatus.
+// fetch carries the session's cookie jar for the config/dmls/telemetry
+// requests, and state() supplies the facts the signed-in verdict composes —
+// and the session generation whose change (a sign-out the plugin cannot see
+// the event of) drops its session-scoped caches. The host-side runner that
+// used to serve the album/artist tabs, the host-side playlist import, the
+// host-side recommendations flows and the amazon-dmls.js provider (with its
+// main-process/amazon-telemetry.js reporter) are deleted; every helper those
+// flows use lives here (copies of the amazon-music-logic.js originals, whose
+// remaining copies serve the diagnostic capture and getStatus until their
+// moves). What remains host-side is the diagnostic capture, sign-in/out and
+// getStatus (its plan read is a stopgap that dies with the status move).
 module.exports = {
   // ── The plugin library (#1356) ────────────────────────────────────────
   // Pure helpers and constants, evaluated once per resolver instance and
@@ -37,10 +41,11 @@ module.exports = {
   // amazon-music-logic.js / amazon-web-player.js. The copies whose flows
   // have moved (the track search in #1356 M5; the album search, album lookup
   // and artist images in M6; the playlist import in M7; the recommendations
-  // in M8) are now the ONLY copy — the host's died with its flows. The rest
-  // still serve the host-side flows that have not moved (the session mint,
-  // the diagnostic capture, dmls); each copy notes which, and dies when its
-  // flow moves in.
+  // in M8; the dmls bodies, the licence-refusal semantics, the MPD KID parse
+  // and the telemetry envelope in M9) are now the ONLY copy — the host's died
+  // with its flows. The rest still serve the host-side flows that have not
+  // moved (the diagnostic capture, getStatus's plan read); each copy notes
+  // which, and dies when its flow moves in.
   _lib: function () {
     // The session this plugin drives — the id main.js registered the ONE
     // host instance under (registerWebSession('amazon-music', …)). The
@@ -1359,11 +1364,12 @@ module.exports = {
     }
 
     // ── The plan gate (#1220) ────────────────────────────────────────────────
-    // The host's dmls gate (amazon-dmls.js) reads the same file for playback;
-    // these copies feed the plugin's own search gate. UNLIMITED… →
-    // unlimited, PRIME → prime, anything else, missing or unreadable →
-    // unknown, which BLOCKS too (a format change on Amazon's side must show
-    // up as a message, not as plays the plan may not cover).
+    // The plugin's own DRM gate (assertPlanPlays in getPlaybackManifest)
+    // reads the same file for playback; these copies feed the plugin's own
+    // search gate. UNLIMITED… → unlimited, PRIME → prime, anything else,
+    // missing or unreadable → unknown, which BLOCKS too (a format change on
+    // Amazon's side must show up as a message, not as plays the plan may
+    // not cover).
 
     function isUnlimitedTier(tier) {
       return typeof tier === 'string' && /^UNLIMITED/i.test(tier.trim());
@@ -1396,6 +1402,521 @@ module.exports = {
 
     function amazonPlanMessage(plan) {
       return AMAZON_PLAN_MESSAGES[plan] || null;
+    }
+
+    // ── The DRM pair (#1356 M4, live for Amazon since M9) ───────────────────
+    // The dmls request bodies, the licence-refusal semantics, the MPD KID
+    // parse and the telemetry envelope builders — moved from
+    // amazon-music-logic.js / main-process/amazon-telemetry.js, whose host
+    // copies died with the dmls provider. Pure pieces only; the flow state
+    // (the session context, the cert warm, the telemetry health) lives on
+    // `this` in the methods below.
+
+    const AMAZON_DEVICE_TYPE_ID = 'A16ZV8BU3SN1N3';
+    const DML_TARGET_PREFIX = 'com.amazon.digitalmusiclocator.DigitalMusicLocatorServiceExternal.';
+    // An empty Widevine challenge the hornet page sends before its first real
+    // per-track license exchange (session/cert init). Mimic it once per session.
+    const WIDEVINE_CERT_CHALLENGE = 'CAQ=';
+    // A format-valid musicAgent is required by the dmls requests; the raw SDK
+    // pair alone is rejected. The app version rides the string like the old
+    // provider's did.
+    const MUSIC_AGENT_SDK = 'Vinyl/2.0';
+    const MUSIC_AGENT_CLIENT = 'GreenHornet_Web/1.0.1458';
+    // The mint page flow's capture lens (the old host mint's): the gql host
+    // always carries the csrf triplet, the api hosts carry it too.
+    const MINT_CAPTURE_URL_PREFIXES = ['https://gql.music.amazon.com/*', 'https://music.amazon.com/api/*', 'https://music.amazon.com/*/api/*'];
+    // The benign mint query before the plugin has seen a search of its own
+    // (the old host mint's default).
+    const MINT_BENIGN_QUERY = 'the';
+
+    // license-400 denialReason semantics (live captures): only these mean the
+    // build's certificate (development VMP) is what Amazon is refusing — the
+    // `licenseDenied` "no point trying another Amazon track" class. Everything
+    // else (HD entitlement, region, ...) is a per-content refusal the player
+    // routes around.
+    const CERTIFICATE_DENIAL_REASONS = new Set([
+      'UNTRUSTED_DEVICE_CERTIFICATE',
+      'DEVELOPMENT_CERTIFICATE_NOT_ALLOWED'
+    ]);
+    // Eligibility denials that mean the ACCOUNT lacks the HD tier (the Prime
+    // capture: CUSTOMER_NOT_ELIGIBLE on the HD KID group while the opus groups
+    // played fine). The renderer's #1262 family-failure table is the live
+    // latch on this class — the old provider's own hdSessionBlockedByPlan
+    // flag was set but never read, and is not ported.
+    const HD_CONTENT_DENIAL_REASONS = new Set([
+      'CUSTOMER_NOT_ELIGIBLE'
+    ]);
+    // A license denial's message is a sentence, then " - " and a dump of the
+    // account's and the title's eligibility that starts
+    // `CustomerEligibility(customerId=…, marketplaceId=…, …)`. The message ends
+    // up in logs and error text, and logs get pasted into issues, so keep the
+    // sentence only, and scrub an account identifier that turns up anyway.
+    const LICENSE_DENIAL_SUMMARY_MAX = 200;
+    function licenseDenialSummary(message) {
+      if (typeof message !== 'string') return null;
+      let text = message;
+      const separator = text.indexOf(' - ');
+      if (separator !== -1) text = text.slice(0, separator);
+      const eligibility = text.search(/\b(?:Customer|Content)Eligibility\s*\(/);
+      if (eligibility !== -1) text = text.slice(0, eligibility);
+      text = text
+        .replace(/\b(customerId|marketplaceId|deviceId)("?\s*[=:]\s*"?)[^,)"\s]+/gi, '$1$2<redacted>')
+        .trim();
+      if (text.length > LICENSE_DENIAL_SUMMARY_MAX) text = `${text.slice(0, LICENSE_DENIAL_SUMMARY_MAX)}…`;
+      return text || null;
+    }
+
+    // Region segment in the dmls URL, derived from the session territory.
+    const AMAZON_FE_TERRITORIES = new Set(['JP', 'AU', 'NZ', 'SG', 'MY', 'ID', 'TH', 'PH', 'KR', 'TW', 'IN', 'HK']);
+    const AMAZON_EU_TERRITORIES = new Set(['GB', 'DE', 'FR', 'IT', 'ES', 'NL', 'BE', 'AT', 'IE', 'SE', 'DK', 'NO', 'FI', 'PL', 'PT', 'CH', 'CZ', 'GR', 'HU', 'RO', 'TR']);
+    function amazonDmlsRegion(territoryId) {
+      const t = String(territoryId || '').toUpperCase();
+      if (AMAZON_FE_TERRITORIES.has(t)) return 'FE';
+      if (AMAZON_EU_TERRITORIES.has(t)) return 'EU';
+      return 'NA';
+    }
+
+    function amazonDmlsManifestBody({ asin, customerId, marketplaceId, territoryId, deviceId, musicAgent, dashVersions } = {}) {
+      if (!asin || !customerId || !deviceId) return null;
+      return {
+        appInfo: { musicAgent: String(musicAgent || '') },
+        customerId,
+        customerInfo: {
+          marketplaceId: String(marketplaceId || 'ATVPDKIKX0DER'),
+          territoryId: String(territoryId || 'US')
+        },
+        contentIdList: [{ identifier: String(asin), identifierType: 'ASIN' }],
+        deviceToken: { deviceTypeId: AMAZON_DEVICE_TYPE_ID, deviceId: String(deviceId) },
+        musicDashVersionList: Array.isArray(dashVersions) && dashVersions.length ? dashVersions.map(String) : ['SIREN_KATANA'],
+        contentProtectionList: ['TRACK_PSSH'],
+        tryAsinSubstitution: true
+      };
+    }
+
+    function amazonDmlsLicenseBody({ challenge, customerId, deviceId, musicAgent } = {}) {
+      if (!challenge || !customerId || !deviceId) return null;
+      return {
+        DrmType: 'WIDEVINE',
+        licenseChallenge: String(challenge),
+        customerId,
+        deviceToken: { deviceTypeId: AMAZON_DEVICE_TYPE_ID, deviceId: String(deviceId) },
+        appInfo: { musicAgent: String(musicAgent || '') }
+      };
+    }
+
+    // GET https://music.amazon.com/config.json answers the session facts the
+    // DRM pair needs in one shot (cookies only, no CSRF): customer,
+    // marketplace, territory, the dmls region segment itself (siteRegion) and
+    // the registered device. Parse defensively — every field degrades to
+    // null. (The host's copy in amazon-music-logic.js serves its getStatus
+    // plan stopgap; the plugin's mint is this one.)
+    function amazonNativeSessionFromConfig(json) {
+      const j = json && typeof json === 'object' ? json : {};
+      const str = (v) => (typeof v === 'string' && v ? v : null);
+      return {
+        customerId: str(j.customerId),
+        marketplaceId: str(j.marketplaceId),
+        territoryId: str(j.musicTerritory),
+        region: str(j.siteRegion),
+        deviceId: str(j.deviceId),
+        deviceType: str(j.deviceType),
+        tier: tierFromConfig(j)
+      };
+    }
+
+    // Codec bucket of a DASH codec string (mpdAudioRepresentations rep.codec).
+    function dashCodecFamily(codec) {
+      const c = String(codec || '').toLowerCase();
+      if (c.startsWith('flac')) return 'flac';
+      if (c.startsWith('opus')) return 'opus';
+      if (c.startsWith('mp4a') || c.startsWith('aac')) return 'aac';
+      return c || null;
+    }
+
+    // The manifest already says which playback tier carries which protection:
+    // every adaptation set's ContentProtection@default_KID. Amazon issues
+    // DIFFERENT Widevine keys per rendition group (lossy sets, FLAC set,
+    // spatial sets) — shaka 4012 (RESTRICTIONS_CANNOT_BE_MET) usually means a
+    // specific KID is missing output-absolution in the license, and the tier to
+    // blame is exactly the one named by its KID group. Pure parse from the MPD
+    // (defensive about malformed input). The player's protectionSets extras
+    // ride the plugin reply so per-KID error attribution keeps working.
+    function mpdContentProtectionSets(xml) {
+      const text = String(xml || '');
+      const sets = [];
+      if (!text) return sets;
+      const attr = (name, tag) => {
+        const m = (tag || '').match(new RegExp(name + '="([^"]*)"'));
+        return m ? m[1] : null;
+      };
+      for (const match of text.matchAll(/<AdaptationSet[\s\S]*?<\/AdaptationSet>/g)) {
+        const set = match[0];
+        const kids = [...set.matchAll(/cenc:default_KID="([^"]+)"/g)].map((m) => m[1]);
+        const kid = kids.length ? kids[0] : null;
+        const reps = [];
+        for (const rep of set.matchAll(/<Representation ([^>]*)>>?/g)) {
+          reps.push({
+            id: attr('id', rep[1]),
+            codecs: attr('codecs', rep[1]),
+            bandwidth: Number(attr('bandwidth', rep[1])) || null
+          });
+        }
+        const family = reps.length ? dashCodecFamily(reps[0].codecs) : null;
+        sets.push({ kid, family, reps });
+      }
+      return sets;
+    }
+
+    // hornet reports times relative to this offset format.
+    function deviceTimeZoneString() {
+      try {
+        const offsetMinutes = -new Date().getTimezoneOffset();
+        const sign = offsetMinutes >= 0 ? '+' : '-';
+        const abs = Math.abs(offsetMinutes);
+        return `${sign}${String(Math.floor(abs / 60)).padStart(2, '0')}:${String(abs % 60).padStart(2, '0')}`;
+      } catch {
+        return null;
+      }
+    }
+
+    // A randomUUID without a crypto binding requirement: the renderer's
+    // window.crypto.randomUUID when present (secure contexts only), else a
+    // Math.random uuid4 (session ids are unique-enough, not secret).
+    function uuid4() {
+      try {
+        if (typeof crypto === 'object' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+      } catch { /* old engines */ }
+      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+        const r = (Math.random() * 16) | 0;
+        return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+      });
+    }
+
+    // ── Streaming telemetry (the hornet /telemetry/v1/events vocabulary) ──
+    // Live-captured 2026-10: the web player reports streamingInitiated on
+    // play start, streamingTerminated at seek/pause/teardown/end, and
+    // trackStreamed paired with the FINAL terminated (carrying the
+    // accumulated durationSecondsSum). terminationReason: trackScrub (seek),
+    // userStop (pause), systemStop (teardown/advance), trackFinished (natural
+    // end). These builders produce clientActionList entries in that exact
+    // shape; the reporter (createAmazonTelemetry) owns session ids and sums.
+    // Dependency-injected for tests: { post, context, now, randomUUID }. All
+    // fields are strings, mirroring hornet's serialization.
+
+    const AMAZON_TELEMETRY_CONSTANTS = Object.freeze({
+      appVersion: '1.0.1458',
+      productId: '803',
+      productVersion: 'GREENHORNET',
+      platformName: 'WebPlayer',
+      mediaPlayerName: 'VINYL',
+      playbackSourceType: 'stream',
+      playbackCurrentSpeed: 'ONE',
+      pageType: 'trackDetail',
+      streamOrDRMTech: 'DASH_DRM',
+      cacheHitStatus: 'NONE',
+      enqueueState: 'audio',
+      offlineMode: 'ONLINE_MODE',
+      isOnDemandQueue: 'true',
+      isDirectedPlay: 'true',
+      isShufflePlay: 'false',
+      isVoiceInitiated: 'false',
+      isAugmentedTrack: 'false',
+      isExplicitLanguageFilterOn: 'false',
+      isCustomerSelectedEntity: 'true',
+      source: 'WIFI',
+      deviceConnectivity: 'WiFi',
+      locale: 'en_US'
+    });
+
+    const TELEMETRY_TERMINATION = Object.freeze({
+      scrub: 'trackScrub',
+      userStop: 'userStop',
+      systemStop: 'systemStop',
+      finished: 'trackFinished'
+    });
+
+    // Amazon's bitrate-tier labels (from captured UHD48 for 24/48 FLAC). The
+    // ladder below is approximate — conservative family+rate naming.
+    function amazonTelemetryBitrateLabel({ codec, sampleRate, bitDepth } = {}) {
+      const family = dashCodecFamily(codec);
+      const rate = Number(sampleRate) || 44.1;
+      const depth = Number(bitDepth) || 16;
+      if (family === 'flac') return depth >= 24 ? (rate > 44.1 ? 'UHD48' : 'UHD44') : (rate > 44.1 ? 'HD48' : 'HD44');
+      return 'SD';
+    }
+
+    function amazonClientAction(actionName, details, { timestampSeconds, sdkEventId } = {}) {
+      if (!actionName || !details) return null;
+      return {
+        actionName: String(actionName),
+        timestamp: Number(timestampSeconds) || 0,
+        contentInfo: [],
+        additionalDetails: {
+          ...details,
+          ...(sdkEventId ? { sdkEventId: String(sdkEventId) } : {})
+        }
+      };
+    }
+
+    // Streaming facts shared by all three event kinds (mirroring the captured
+    // blocks; every undefined input simply drops out).
+    function amazonStreamingDetails({
+      asin, albumAsin, territory, tier, playbackInstanceId, playQueueId,
+      subscriptionMode, resourceType, bitrates, durationSeconds, durationSecondsSum,
+      terminationReason, trackProgress, trackCount, initialPlaybackDelaySeconds,
+      rebufferCount, transferSpeedBPS, cdnType, customSessionId, csrf, deviceTimeZone,
+      appVersion
+    } = {}) {
+      const d = {
+        customSessionId,
+        customSessionType: 'foreground_session',
+        asin,
+        appVersion: appVersion || AMAZON_TELEMETRY_CONSTANTS.appVersion,
+        deviceTimeZone,
+        isDirectedPlay: AMAZON_TELEMETRY_CONSTANTS.isDirectedPlay,
+        isExplicitLanguageFilterOn: AMAZON_TELEMETRY_CONSTANTS.isExplicitLanguageFilterOn,
+        isShufflePlay: AMAZON_TELEMETRY_CONSTANTS.isShufflePlay,
+        isVoiceInitiated: AMAZON_TELEMETRY_CONSTANTS.isVoiceInitiated,
+        ...(albumAsin ? {
+          selectionSourceId: albumAsin,
+          selectionSourceSessionId: playQueueId,
+          selectionSourceType: 'ALBUM',
+          fulfillmentSourceId: albumAsin,
+          fulfillmentSourceType: 'ALBUM'
+        } : {}),
+        contentSubscriptionMode: subscriptionMode || tier,
+        subContentSubscriptionMode: subscriptionMode || tier,
+        pageType: AMAZON_TELEMETRY_CONSTANTS.pageType,
+        playbackCurrentSpeed: AMAZON_TELEMETRY_CONSTANTS.playbackCurrentSpeed,
+        playbackInstanceId,
+        playbackSourceType: AMAZON_TELEMETRY_CONSTANTS.playbackSourceType,
+        platformName: AMAZON_TELEMETRY_CONSTANTS.platformName,
+        isOnDemandQueue: AMAZON_TELEMETRY_CONSTANTS.isOnDemandQueue,
+        mediaPlayerName: AMAZON_TELEMETRY_CONSTANTS.mediaPlayerName,
+        playQueueId,
+        isCustomerSelectedEntity: AMAZON_TELEMETRY_CONSTANTS.isCustomerSelectedEntity,
+        productVersion: AMAZON_TELEMETRY_CONSTANTS.productVersion,
+        mrn: asin ? `mrn:1.0:catalog:track:asin:${asin}?territory=${territory || 'US'}` : undefined,
+        isAugmentedTrack: AMAZON_TELEMETRY_CONSTANTS.isAugmentedTrack,
+        source: AMAZON_TELEMETRY_CONSTANTS.source,
+        enqueueState: AMAZON_TELEMETRY_CONSTANTS.enqueueState,
+        deviceConnectivity: AMAZON_TELEMETRY_CONSTANTS.deviceConnectivity,
+        offlineMode: AMAZON_TELEMETRY_CONSTANTS.offlineMode,
+        productId: AMAZON_TELEMETRY_CONSTANTS.productId,
+        locale: AMAZON_TELEMETRY_CONSTANTS.locale
+      };
+      // event-specific fields only when meaningful
+      if (bitrates != null) d.bitrates = String(bitrates);
+      if (durationSeconds != null) d.durationSeconds = String(Number(durationSeconds.toFixed ? durationSeconds.toFixed(3) : durationSeconds));
+      if (durationSecondsSum != null) d.durationSecondsSum = String(Number(durationSecondsSum.toFixed ? durationSecondsSum.toFixed(3) : durationSecondsSum));
+      if (terminationReason != null) d.terminationReason = String(terminationReason);
+      if (trackProgress != null) d.trackProgress = String(Math.round(trackProgress));
+      if (trackCount != null) d.trackCount = String(trackCount);
+      if (initialPlaybackDelaySeconds != null) d.initialPlaybackDelaySeconds = String(initialPlaybackDelaySeconds);
+      if (rebufferCount != null) d.rebufferCount = String(rebufferCount);
+      if (transferSpeedBPS != null) d.transferSpeedBPS = String(Math.round(transferSpeedBPS));
+      if (cdnType != null) d.cdnType = String(cdnType);
+      if (resourceType != null) d.resourceType = String(resourceType);
+      if (csrf && csrf.csrfToken) {
+        d.csrf = JSON.stringify({ token: csrf.csrfToken, rnd: csrf.csrfRnd, ts: csrf.csrfTs });
+      }
+      // hornet serializes everything as strings; undefined never survives
+      const out = {};
+      for (const [k, v] of Object.entries(d)) {
+        if (v === undefined || v === null) continue;
+        out[k] = typeof v === 'string' ? v : String(v);
+      }
+      return out;
+    }
+
+    // The telemetry reporter, dependency-injected ({ post, context, now,
+    // randomUUID }) — moved from main-process/amazon-telemetry.js unchanged
+    // apart from the uuid fallback (the main process could require('crypto')).
+    //   post(envelope)      — one /telemetry/v1/events POST ({deviceId,
+    //                         deviceType, clientActionList})
+    //   context()           — { tier, territory, csrf…, deviceTimeZone }
+    //   now()               — seconds (Date.now()/1000)
+    //   randomUUID()        — session ids
+    // Player events (the host's handlePlayerEvent payload shapes):
+    //   play-started { asin, albumAsin?, durationMs?, initialDelaySeconds?,
+    //                  bitratesLabel?, cdnType? }
+    //   seek      { positionMs }
+    //   pause     { positionMs }
+    //   resume    { positionMs }
+    //   ended     { positionMs, durationMs }
+    //   stopped   { positionMs }   (teardown/skip/replace)
+    function createAmazonTelemetry({ post, context, now, randomUUID } = {}) {
+      const time = typeof now === 'function' ? now : () => Date.now() / 1000;
+      const uuid = typeof randomUUID === 'function' ? randomUUID : uuid4;
+      const send = (actions) => {
+        if (!actions.length || typeof post !== 'function') return;
+        const ctx = typeof context === 'function' ? (context() || {}) : {};
+        try {
+          void Promise.resolve(post({
+            deviceId: ctx.deviceId || null,
+            deviceType: AMAZON_DEVICE_TYPE_ID,
+            clientActionList: actions
+          })).catch(() => {});
+        } catch { /* telemetry never throws into playback */ }
+      };
+
+      const state = {
+        customSessionId: uuid(), // one per session (hornet's foreground session)
+        playbackInstanceId: null,
+        playQueueId: null,
+        current: null, // { asin, albumAsin, bitratesLabel, cdnType, durationMs }
+        segmentStartSecs: null,
+        durationSumSecs: 0,
+        trackTerminated: true
+      };
+
+      const ctxNow = () => (typeof context === 'function' ? (context() || {}) : {});
+      const sdkEventId = () => uuid();
+
+      const baseDetails = (extra) => {
+        const ctx = ctxNow();
+        return amazonStreamingDetails({
+          asin: state.current && state.current.asin,
+          albumAsin: state.current && state.current.albumAsin,
+          territory: ctx.territoryId,
+          tier: ctx.tier,
+          resourceType: isUnlimitedTier(ctx.tier) ? 'UNLIMITED_MUSIC' : 'PRIME_MUSIC',
+          playbackInstanceId: state.playbackInstanceId,
+          playQueueId: state.playQueueId,
+          subscriptionMode: ctx.tier,
+          bitrates: state.current && state.current.bitratesLabel,
+          cdnType: state.current && state.current.cdnType,
+          customSessionId: state.customSessionId,
+          csrf: ctx,
+          deviceTimeZone: ctx.deviceTimeZone,
+          ...extra
+        });
+      };
+
+      const emit = (actionName, extra) => send([amazonClientAction(actionName, baseDetails(extra), {
+        timestampSeconds: time(),
+        sdkEventId: sdkEventId()
+      })]);
+
+      const emitPair = (reason, { segmentSecs, progressSecs, final = false } = {}) => {
+        // streamingTerminated always; trackStreamed only for the track's FINAL
+        // termination (hornet pairs it there with the aggregate only). Both are
+        // built through ONE derivation (baseDetails) — re-serializing a flattened
+        // entry through the builder drops subscription/csrf/fulfillment fields
+        // and the territory (review B2).
+        const terminated = baseDetails({
+          durationSeconds: segmentSecs,
+          durationSecondsSum: state.durationSumSecs,
+          terminationReason: reason,
+          trackProgress: progressSecs,
+          trackCount: 1
+        });
+        const stamp = time();
+        const actions = [amazonClientAction('streamingTerminated', terminated, { timestampSeconds: stamp, sdkEventId: sdkEventId() })];
+        if (final) {
+          // trackStreamed: same facts, minus the per-segment durationSeconds —
+          // the aggregate travels in durationSecondsSum.
+          const streamed = baseDetails({
+            durationSecondsSum: state.durationSumSecs,
+            terminationReason: reason,
+            trackProgress: progressSecs,
+            trackCount: 1
+          });
+          actions.push(amazonClientAction('trackStreamed', streamed, { timestampSeconds: stamp, sdkEventId: sdkEventId() }));
+        }
+        send(actions);
+      };
+
+      const segmentElapsedSecs = () => (state.segmentStartSecs == null ? 0 : Math.max(0, time() - state.segmentStartSecs));
+
+      const closeSegment = (reason, progressSecs) => {
+        if (!state.current || state.trackTerminated) return;
+        const segmentSecs = segmentElapsedSecs();
+        state.durationSumSecs += segmentSecs;
+        state.segmentStartSecs = null;
+        state.trackTerminated = true;
+        emitPair(reason, { segmentSecs, progressSecs, final: true });
+      };
+
+      return {
+        onPlayStarted({ asin, albumAsin, durationMs, initialDelaySeconds, bitratesLabel, variantFacts, cdnType } = {}) {
+          if (!asin) return;
+          // Replacing a track without an explicit stop: hornet's flow shows the
+          // previous session closed as systemStop first.
+          closeSegment(TELEMETRY_TERMINATION.systemStop, 0);
+          state.playbackInstanceId = uuid();
+          state.playQueueId = uuid();
+          const label = bitratesLabel || (variantFacts ? amazonTelemetryBitrateLabel(variantFacts) : null);
+          state.current = {
+            asin: String(asin),
+            albumAsin: albumAsin ? String(albumAsin) : null,
+            durationMs: Number(durationMs) || 0,
+            bitratesLabel: label,
+            cdnType: cdnType || null
+          };
+          state.durationSumSecs = 0;
+          state.segmentStartSecs = time();
+          state.trackTerminated = false;
+          emit('streamingInitiated', {
+            timestamp: String(Math.round(time())),
+            initialPlaybackDelaySeconds: initialDelaySeconds != null
+              ? String(Number(initialDelaySeconds).toFixed(3))
+              : undefined
+          });
+        },
+
+        onSeek({ positionMs } = {}) {
+          if (!state.current || state.trackTerminated) return;
+          const segmentSecs = segmentElapsedSecs();
+          state.durationSumSecs += segmentSecs;
+          state.segmentStartSecs = time();
+          emitPair(TELEMETRY_TERMINATION.scrub, { segmentSecs, progressSecs: Math.round((Number(positionMs) || 0) / 1000) });
+          // A scrub opens a new segment with a fresh initiated, matching hornet.
+          emit('streamingInitiated', { timestamp: String(Math.round(time())) });
+        },
+
+        onPause({ positionMs } = {}) {
+          if (!state.current || state.trackTerminated) return;
+          const segmentSecs = segmentElapsedSecs();
+          state.durationSumSecs += segmentSecs;
+          state.segmentStartSecs = null;
+          state.trackTerminated = true;
+          emitPair(TELEMETRY_TERMINATION.userStop, { segmentSecs, progressSecs: Math.round((Number(positionMs) || 0) / 1000) });
+        },
+
+        onResume(_args) {
+          if (!state.current || !state.trackTerminated) return;
+          state.segmentStartSecs = time();
+          state.trackTerminated = false;
+          emit('streamingInitiated', { timestamp: String(Math.round(time())) });
+        },
+
+        onEnded({ positionMs, durationMs } = {}) {
+          if (!state.current) return;
+          const segmentSecs = state.trackTerminated ? 0 : segmentElapsedSecs();
+          state.durationSumSecs += segmentSecs;
+          state.segmentStartSecs = null;
+          state.trackTerminated = true;
+          const durationSecs = Math.round(((Number(durationMs) > 0 ? Number(durationMs) : 0) || state.current.durationMs || Number(positionMs) || 0) / 1000);
+          emitPair(TELEMETRY_TERMINATION.finished, { segmentSecs, progressSecs: durationSecs, final: true });
+          state.current = null;
+        },
+
+        onStopped({ positionMs } = {}) {
+          // Guard on the track session, not the open segment: pause-then-skip
+          // still owes its FINAL trackStreamed (review I6; hornet's flow).
+          if (!state.current) return;
+          const segmentSecs = state.trackTerminated ? 0 : segmentElapsedSecs();
+          state.durationSumSecs += segmentSecs;
+          state.segmentStartSecs = null;
+          state.trackTerminated = true;
+          emitPair(TELEMETRY_TERMINATION.systemStop, { segmentSecs, progressSecs: Math.round((Number(positionMs) || 0) / 1000), final: true });
+          state.current = null;
+        },
+
+        // debug visibility
+        _state: state
+      };
     }
 
     return {
@@ -1458,7 +1979,31 @@ module.exports = {
       recommendationsFromSeeMore,
       amazonPlanFromTier,
       tierFromConfig,
-      amazonPlanMessage
+      amazonPlanMessage,
+      AMAZON_DEVICE_TYPE_ID,
+      DML_TARGET_PREFIX,
+      WIDEVINE_CERT_CHALLENGE,
+      CERTIFICATE_DENIAL_REASONS,
+      HD_CONTENT_DENIAL_REASONS,
+      licenseDenialSummary,
+      amazonDmlsRegion,
+      amazonDmlsManifestBody,
+      amazonDmlsLicenseBody,
+      amazonNativeSessionFromConfig,
+      dashCodecFamily,
+      mpdContentProtectionSets,
+      MUSIC_AGENT_SDK,
+      MUSIC_AGENT_CLIENT,
+      MINT_CAPTURE_URL_PREFIXES,
+      MINT_BENIGN_QUERY,
+      deviceTimeZoneString,
+      uuid4,
+      AMAZON_TELEMETRY_CONSTANTS,
+      TELEMETRY_TERMINATION,
+      amazonTelemetryBitrateLabel,
+      amazonClientAction,
+      amazonStreamingDetails,
+      createAmazonTelemetry
     };
   },
 
@@ -1486,7 +2031,8 @@ module.exports = {
   // createLaneQueue in _lib — the host's enqueue(fn, { lane }) in
   // main-process/web-session.js is the original). The FOREGROUND lane is for
   // a job the user is waiting on (a playlist they opened — lookupPlaylistFlow
-  // is its only rider): it starts before every queued BACKGROUND job (the
+  // — or a play needing a fresh session context — the csrf-triplet mint): it
+  // starts before every queued BACKGROUND job (the
   // spec searches, album lookups, artist-photo jobs), FIFO within a lane, and
   // a running job is never interrupted. The queue lives on the instance
   // (per-resolver state, dropped with it).
@@ -1589,9 +2135,10 @@ module.exports = {
     // mirroring the host's own (#1423's semantics, createLaneQueue in _lib):
     // this is the BACKGROUND lane — the spec searches are speculative work;
     // the album lookup and the recommendations flows ride the same lane, and
-    // a playlist the user opened (lookupPlaylistFlow, the foreground lane)
-    // goes ahead of every job queued here. The host's own remaining loads
-    // (the session mint, the diagnostic capture) serialize against them on
+    // a job the user is waiting on (a playlist they opened —
+    // lookupPlaylistFlow — or a play's csrf-triplet mint, the foreground
+    // lane) goes ahead of every job queued here. The host's own remaining loads
+    // (the diagnostic capture) serialize against them on
     // the host's chain.
     const run = this.enqueuePageFlow(() => {
       if (staleCheck && staleCheck()) {
@@ -1874,6 +2421,27 @@ module.exports = {
         // (a parked-wall run of structural misses), and a fresh session is
         // the recovery path — a genuine hornet rename re-trips it in three.
         this._searchBreaker = null;
+        // The DRM state (M9): the session context embeds the old session's
+        // csrf triplet and belongs to the old account; the cert warm, the
+        // telemetry instance and its health are session-scoped the same way.
+        // Do NOT rely on this drop to post the stream's FINAL accounting
+        // (trackStreamed): the plugin only sees the generation change on its
+        // first state read AFTER webSession.clear(), so the onStopped below
+        // always fires once the cookies are already gone and its post fails
+        // (best-effort). What posts the final pair in practice is the
+        // Settings sign-out button stopping the engine BEFORE it calls
+        // sign-out — that 'stopped' reaches the plugin's handlePlayerEvent
+        // while the session still lives.
+        try { this._telemetry && this._telemetry.onStopped({}); } catch { /* best-effort */ }
+        this._drmSessionContext = null;
+        this._drmSessionContextPromise = null;
+        this._certSessionReady = false;
+        this._telemetry = null;
+        this._telemetryHealth = { last: null, dropped: 0 };
+        // The mint's benign-query source too: account A's last search is not
+        // "already in the user's history" under account B — null it so the
+        // next mint falls back to the constant.
+        this._lastSearchText = null;
       }
     }
     return state;
@@ -2006,9 +2574,517 @@ module.exports = {
     const lib = this.requireLib();
     const plan = await this.getPlan();
     if (plan !== 'unlimited') {
-      throw lib.notReady('plan-ineligible', lib.amazonPlanMessage(plan) || lib.amazonPlanMessage('unknown'));
+      const err = lib.notReady('plan-ineligible', lib.amazonPlanMessage(plan) || lib.amazonPlanMessage('unknown'));
+      // plugins.md's contract for the DRM pair: the plan as the service names
+      // it, the field the engine's refusal handlers read.
+      err.planKey = plan;
+      throw err;
     }
     return plan;
+  },
+
+  // ── The DRM pair (#1356 M4, live since M9) ─────────────────────────────
+  // getPlaybackManifest + relayLicense, moved from amazon-dmls.js (the
+  // main-side provider died with this move). The flows ride the same ONE host
+  // web-session instance through the window.electron.webSession bridge: the
+  // dmls POSTs and the telemetry events go out via webSession.fetch (the
+  // session's cookie jar rides them — Amazon's licence server needs the
+  // auth cookies, and Electron's net module attaches them reliably only that
+  // way), and the csrf triplet mints via a page flow's own capture (the old
+  // host mint's pattern, `load(url, {capture})` + the placeholder filter).
+  // The engine prefers this pair when it exists (use-playback-engine's
+  // pluginWidevine gate); main's widevine provider registration for
+  // 'amazonmusic' is gone, and the bridge's gates (sender, session, cap, the
+  // shared manifest rate window) still apply — the plugin hands the manifest
+  // UP through widevine:open-session and answers licence challenges forwarded
+  // back from main.
+
+  // The requested ASIN out of the WHOLE track the engine hands the plugin
+  // (M4: the plugin digs its own identifier; the host stopped pre-extracting
+  // one). The dig is the old host extraction's inputs verbatim — the track's
+  // amazonmusic source record carries `amazonAsin`.
+  drmAsinFromTrack: function (track) {
+    const t = track && typeof track === 'object' ? track : {};
+    const sources = t.sources && typeof t.sources === 'object' ? t.sources : {};
+    const byId = sources[this.id] || sources.amazonmusic;
+    return t.amazonAsin
+      || (byId && byId.amazonAsin)
+      || t.asin
+      || null;
+  },
+
+  getPlaybackManifest: async function (track, config) {
+    const lib = this.requireLib();
+    const asin = this.drmAsinFromTrack(track);
+    if (!asin) {
+      throw lib.notReady('invalid', 'Amazon Music: no ASIN to play');
+    }
+    if (!(await this.isSignedIn())) {
+      throw lib.notReady('not-signed-in', 'Sign in and choose an Amazon Music profile');
+    }
+    // The mint reads config.json (and records its plan reading), so the plan
+    // gate below rarely fetches again — but the gate itself is what refuses.
+    const ctx = await this.ensureSessionContext();
+    // Only Music Unlimited plays (#1220): refused BEFORE any manifest request.
+    await this.assertPlanPlays();
+    const body = lib.amazonDmlsManifestBody({
+      asin,
+      customerId: ctx.customerId,
+      marketplaceId: ctx.marketplaceId,
+      territoryId: ctx.territoryId,
+      deviceId: ctx.deviceId,
+      musicAgent: await this.musicAgent()
+    });
+    if (!body) throw lib.notReady('invalid', 'Amazon Music: manifest body incomplete');
+    const { status, text } = await this.dmls(ctx, 'getDashManifestsV2', body);
+    let json = null;
+    try { json = JSON.parse(text); } catch { /* fall through */ }
+    if (status !== 200 || !json) {
+      throw lib.notReady(status === -1 ? 'load-failed' : 'playback-failed',
+        'Amazon Music: manifest HTTP ' + status + ': ' + (lib.licenseDenialSummary(text) || '').slice(0, 160));
+    }
+    const entry = json.contentResponseList && json.contentResponseList[0];
+    if (!entry || entry.contentResponseStatusCode !== 'SUCCESS' || !entry.manifest) {
+      throw lib.notReady('playback-failed',
+        ('Amazon Music: manifest error ' + (entry ? entry.contentResponseStatusCode : 'empty') + ': ' + ((entry && entry.contentResponseStatusMessage) || '')).trim());
+    }
+    const substituteAsin = entry.substituteAsin || null;
+    const cdnType = entry.cdnType || null;
+    const musicDashVersion = entry.musicDashVersion || null;
+    const protectionSets = lib.mpdContentProtectionSets(entry.manifest);
+    console.log('[Amazon dmls] manifest ' + asin + (substituteAsin ? ' → substitute ' + substituteAsin : '')
+      + ' (' + Math.round(entry.manifest.length / 1024) + 'KB, '
+      + protectionSets.map((g) => g.family + ':KID-' + (g.kid || '?').slice(0, 6)).join(' ') + ')');
+    // CAQ= cert pre-charge once per session (the page world used to do this
+    // in its Shaka setup; warm it lazily on the first successful manifest).
+    this.kickCertWarm();
+    return {
+      manifest: entry.manifest,
+      type: 'dash',
+      drm: 'widevine',
+      // The plugin's identifier extraction, riding the reply's optional
+      // extras: the host's trackSession entity keys provenance and
+      // play-started telemetry off it, layering the SERVED asin over it when
+      // Amazon substitutes one.
+      asin: String(asin),
+      substituteAsin,
+      musicDashVersion,
+      cdnType,
+      protectionSets,
+      // The opaque context relayLicense + telemetry need, carried main-side on
+      // the licence session and forwarded back with every challenge (data,
+      // never closures — it crosses IPC by value).
+      context: {
+        customerId: ctx.customerId,
+        marketplaceId: ctx.marketplaceId,
+        territoryId: ctx.territoryId,
+        region: ctx.region,
+        tier: ctx.tier,
+        deviceType: ctx.deviceType,
+        deviceId: ctx.deviceId,
+        csrfToken: ctx.csrfToken,
+        csrfRnd: ctx.csrfRnd,
+        csrfTs: ctx.csrfTs,
+        substituteAsin,
+        musicDashVersion,
+        cdnType
+      }
+    };
+  },
+
+  relayLicense: async function (challengeB64, context) {
+    const lib = this.requireLib();
+    const challenge = String(challengeB64 || '');
+    // CDM challenges are ~7KB observed; b64 alphabet only. An oversize or
+    // non-b64 blob would 400 opaquely downstream.
+    if (!/^[A-Za-z0-9+/=]+$/.test(challenge) || challenge.length > 65536) {
+      throw new Error('Amazon Music: invalid license challenge');
+    }
+    // The licence body's session bits: the passed context is the snapshot the
+    // session opened with; the plugin's own mint is at least as fresh (an
+    // auth-rot re-mint updates it mid-session and the passed snapshot cannot —
+    // it is frozen main-side on the session). Prefer the live mint, fall back
+    // to the passed snapshot, and let the auth-rot retry below refresh
+    // whichever was used. The cert warm calls this with no context at all.
+    const ctx = this._drmSessionContext
+      || (context && typeof context === 'object' && context.customerId && context.csrfToken ? context : null)
+      || (await this.ensureSessionContext());
+    const body = lib.amazonDmlsLicenseBody({
+      challenge,
+      customerId: ctx.customerId,
+      deviceId: ctx.deviceId,
+      musicAgent: await this.musicAgent()
+    });
+    if (!body) throw new Error('Amazon Music: license body incomplete');
+    const { status, text } = await this.dmls(ctx, 'getLicenseForPlaybackV2', body);
+    if (status === 400) {
+      // A 400 is NOT always the certificate. Parse Amazon's body and branch
+      // on denialReason: only the cert reasons mean the build's VMP signature
+      // (licenseDenied — no point trying another Amazon track). Every other
+      // denial (CUSTOMER_NOT_ELIGIBLE for HD on a Prime plan, region, …) is a
+      // per-kid-group refusal the player must route around; carry Amazon's
+      // denialReason + message through, logging no session material. (The
+      // old provider's hdSessionBlockedByPlan latch is not ported — the
+      // renderer's #1262 family-failure table is the live mechanism.)
+      let refusal = null;
+      try { refusal = JSON.parse(text); } catch { /* opaque */ }
+      const denialReason = refusal && typeof refusal.denialReason === 'string' ? refusal.denialReason : null;
+      // Amazon's message carries the account's customer ID after its first
+      // sentence; only the sentence reaches the error and the log.
+      const message = lib.licenseDenialSummary(refusal && refusal.message);
+      if (lib.CERTIFICATE_DENIAL_REASONS.has(denialReason)) {
+        const err = new Error('Amazon refused the Widevine license. This build needs a production VMP signature.');
+        err.reason = 'playback-failed';
+        err.licenseDenied = true;
+        throw err;
+      }
+      const err = new Error('Amazon refused the license for this content'
+        + (denialReason ? ' (' + denialReason + ')' : '')
+        + (message ? ': ' + message : ''));
+      err.reason = 'playback-failed';
+      err.licenseDenied = false;
+      err.denialReason = denialReason;
+      console.warn('[Amazon dmls] license denied (' + (denialReason || 'unknown') + ')' + (message ? ': ' + message : ''));
+      throw err;
+    }
+    let json = null;
+    try { json = JSON.parse(text); } catch { /* fall through */ }
+    if (status !== 200 || !json || typeof json.license !== 'string' || !/^[A-Za-z0-9+/=]+$/.test(json.license)) {
+      throw lib.notReady(status === -1 ? 'load-failed' : 'playback-failed',
+        'Amazon Music: license HTTP ' + status + ': ' + (lib.licenseDenialSummary(text) || '').slice(0, 160));
+    }
+    return json.license;
+  },
+
+  // One dmls POST over the webSession bridge. The session's cookie jar rides
+  // the fetch (the host owns cookies in both directions; the old provider's
+  // explicit Cookie header existed because a bare net.request does not attach
+  // the partition's jar — the bridge's fetch does). Session rot — a 400 that
+  // smells like auth — drops the cached context, re-mints once, retries once.
+  // A second refusal is the session ITSELF being dead: map to not-signed-in
+  // so the renderer's prompt-then-retry contract applies (review I7).
+  dmls: async function (ctx, target, body, opts) {
+    const lib = this.requireLib();
+    const authRetry = !(opts && opts.authRetry === false);
+    const ws = window.electron && window.electron.webSession;
+    if (!ws) throw lib.notReady('not-ready', 'Amazon webSession bridge not available');
+    const out = await ws.fetch(lib.SESSION, {
+      url: 'https://music.amazon.com/' + ctx.region + '/api/dmls/',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Encoding': 'amz-1.0',
+        'X-Amz-Target': lib.DML_TARGET_PREFIX + target,
+        'csrf-token': ctx.csrfToken,
+        'csrf-rnd': ctx.csrfRnd,
+        'csrf-ts': ctx.csrfTs,
+        Referer: 'https://music.amazon.com/',
+        Origin: 'https://music.amazon.com',
+        Accept: '*/*'
+      },
+      body: JSON.stringify(body)
+    });
+    if (!out || !out.success) {
+      throw lib.notReady((out && out.reason) || 'load-failed',
+        'Amazon Music: dmls request failed (' + ((out && out.error) || (out && out.reason) || 'bridge unavailable') + ')');
+    }
+    if (out.status === 400 && /Unauthorized|Authentication|REQUIRED_COOKIES/i.test(out.text || '')) {
+      if (!authRetry) {
+        this._drmSessionContext = null;
+        throw lib.notReady('not-signed-in', 'Amazon Music session expired — sign in again');
+      }
+      console.log('[Amazon dmls] session rejected — refreshing context and retrying once');
+      this._drmSessionContext = null;
+      let fresh;
+      try {
+        fresh = await this.ensureSessionContext();
+      } catch (mintErr) {
+        this._drmSessionContext = null;
+        throw mintErr;
+      }
+      return this.dmls(fresh, target, body, { authRetry: false });
+    }
+    return { status: out.status, text: out.text };
+  },
+
+  // The DRM session context, single-flight. The mint's config.json read also
+  // records the plan (the old notePlan seam): a mint under an Unlimited tier
+  // feeds the gate below without a second read.
+  ensureSessionContext: async function () {
+    if (this._drmSessionContext) return this._drmSessionContext;
+    if (this._drmSessionContextPromise) return this._drmSessionContextPromise;
+    const startedGeneration = this._sessionGeneration;
+    this._drmSessionContextPromise = this.mintSessionContext().then((ctx) => {
+      this._drmSessionContextPromise = null;
+      // A sign-out raced the mint: the context belongs to the previous
+      // account and must not serve the next (the generation drop below is
+      // worthless if this write lands after it).
+      if (this._sessionGeneration === startedGeneration) {
+        this._drmSessionContext = ctx;
+        const plan = this.requireLib().amazonPlanFromTier(ctx.tier);
+        this._planState = { plan, at: Date.now() };
+        console.log('[Amazon dmls] session context ok (territory ' + ctx.territoryId + ', region ' + ctx.region + ', tier ' + (ctx.tier || 'unknown') + ')');
+        return ctx;
+      }
+      console.log('[Amazon dmls] session context minted under a new session — dropping it');
+      return ctx;
+    }).catch((err) => {
+      this._drmSessionContextPromise = null;
+      throw err;
+    });
+    return this._drmSessionContextPromise;
+  },
+
+  mintSessionContext: async function () {
+    const lib = this.requireLib();
+    if (!(await this.isSignedIn())) {
+      throw lib.notReady('not-signed-in', 'Sign in to Amazon Music first');
+    }
+    // config.json (the jar's cookies ride the fetch) plus the csrf triplet,
+    // minted by a page flow: one load of the songs search for a BENIGN query —
+    // the plugin's own last search text (it is already in the user's Amazon
+    // history, so the one-shot page flow pollutes nothing; the old host mint
+    // used the host store's search_history for the same reason), falling back
+    // to a constant when no search has run yet. Difference from the old host
+    // mint, known and accepted (#1439 review): _lastSearchText is in-memory
+    // only, while the host read the persisted search_history[0] — so the
+    // first mint after every launch uses the benign constant, not the user's
+    // last search.
+    const query = (this._lastSearchText && String(this._lastSearchText).trim()) || lib.MINT_BENIGN_QUERY;
+    const [config, headers] = await Promise.all([
+      this.fetchConfigJson(),
+      this.mintCsrfHeaders(query)
+    ]);
+    const session = lib.amazonNativeSessionFromConfig(config);
+    const ctx = {
+      customerId: session.customerId,
+      marketplaceId: session.marketplaceId || 'ATVPDKIKX0DER',
+      territoryId: session.territoryId || 'US',
+      region: session.region || lib.amazonDmlsRegion(session.territoryId),
+      tier: session.tier,
+      deviceType: session.deviceType || null,
+      // config.json's deviceId is the registered device; the captured header
+      // is the fallback (the page sometimes reports placeholder values).
+      deviceId: session.deviceId || (headers && headers.deviceId) || null,
+      csrfToken: headers && headers.csrfToken,
+      csrfRnd: headers && headers.csrfRnd,
+      csrfTs: headers && headers.csrfTs
+    };
+    if (!ctx.deviceId || !ctx.csrfToken) {
+      // transient — never a sign-in prompt
+      throw lib.notReady('load-failed', 'Amazon session context incomplete (no device id / csrf)');
+    }
+    return ctx;
+  },
+
+  fetchConfigJson: async function () {
+    const lib = this.requireLib();
+    const ws = window.electron && window.electron.webSession;
+    if (!ws) throw lib.notReady('not-ready', 'Amazon webSession bridge not available');
+    const out = await ws.fetch(lib.SESSION, {
+      url: lib.CONFIG_URL,
+      method: 'GET',
+      headers: { Accept: 'application/json', Referer: 'https://music.amazon.com/' }
+    });
+    if (!out || !out.success || typeof out.text !== 'string') return {};
+    try { return JSON.parse(out.text); } catch { return {}; }
+  },
+
+  // The csrf-triplet mint, as its own page flow on the plugin's two-lane
+  // page-flow queue (serialized against the spec searches, the album
+  // lookups, the playlist import and the recommendations — one flow's
+  // navigation never interleaves another's capture). It rides the FOREGROUND
+  // lane: a play that needs a fresh session context is a click the user is
+  // waiting on, so it starts before every queued background flow (a spec
+  // search, an album lookup, a recommendations refresh — each a page load
+  // that can hold the queue for 15-30s), behind at most the one in progress.
+  mintCsrfHeaders: async function (query) {
+    const lib = this.requireLib();
+    const q = String(query || lib.MINT_BENIGN_QUERY).slice(0, 120);
+    return this.enqueuePageFlow(() => this.mintCsrfPageFlow(q), { lane: 'foreground' });
+  },
+
+  mintCsrfPageFlow: async function (q) {
+    const lib = this.requireLib();
+    const ws = window.electron && window.electron.webSession;
+    if (!ws) throw lib.notReady('not-ready', 'Amazon webSession bridge not available');
+    console.log('[Amazon] session-headers mint: page flow for "' + q + '"');
+    // The capture window is the spec searches' (the quiet window sized for a
+    // cold view's late first gql), and the lens is the old host mint's (the
+    // gql host always carries the csrf triplet).
+    const load = await ws.load(lib.SESSION, 'https://music.amazon.com/search/' + encodeURIComponent(q) + '/songs', {
+      capture: {
+        urlPrefixes: lib.MINT_CAPTURE_URL_PREFIXES,
+        quietMs: lib.PAGE_CAPTURE_QUIET_MS,
+        budgetMs: lib.PAGE_CAPTURE_BUDGET_MS
+      }
+    });
+    if (!load || !load.success) {
+      throw lib.notReady((load && load.reason) || 'load-failed',
+        (load && load.error) || 'Amazon session-headers mint did not finish loading');
+    }
+    // A genuinely dead session is caught mid-flight (the page redirected to a
+    // sign-in wall while it loaded).
+    if (lib.pageBlocksPlayback(load.finalUrl)) {
+      console.warn('[Amazon] session-headers mint blocked: ' + load.finalUrl);
+      throw lib.notReady('not-signed-in', 'Choose an Amazon Music profile');
+    }
+    // The page emits PLACEHOLDER csrf values (literally foo/bar) on requests
+    // that do not need them — only the real spec-search-class requests carry
+    // live ones. A dmls call made with placeholders fails server-side (its
+    // "REQUIRED_COOKIES_MISSING" is the bad-csrf symptom, live-verified
+    // 2026-10), so only values that look real count. The page's OWN capture is
+    // preferred over our echo (an echoed capture is a replay of some template
+    // minted under this session — valid, but session-aged).
+    const tokenLooksReal = (h) =>
+      typeof h['csrf-token'] === 'string' && h['csrf-token'].length >= 20
+      && /^\d+$/.test(String(h['csrf-rnd'] || '')) && /^\d+$/.test(String(h['csrf-ts'] || ''));
+    const captured = (load.captures || []).filter((r) => r.headers && tokenLooksReal(r.headers));
+    const entry = captured.find((r) => !r.echo) || captured[0] || null;
+    if (entry) {
+      console.log('[Amazon] session-headers mint ok');
+      return {
+        csrfToken: entry.headers['csrf-token'],
+        csrfRnd: entry.headers['csrf-rnd'] || null,
+        csrfTs: entry.headers['csrf-ts'] || null,
+        deviceId: entry.headers['x-amzn-device-id'] || null
+      };
+    }
+    // transient — never a sign-in prompt
+    throw lib.notReady('load-failed', 'session headers: the page fired no captured request');
+  },
+
+  // The app version for musicAgent, off the renderer's own version surface
+  // (window.electron.updater.getVersion — the same IPC app.js's about line
+  // reads; the resolver config the engine hands the pair is the user's saved
+  // service settings, not app facts, so it is not that seam).
+  appVersion: async function () {
+    try {
+      const getter = window.electron && window.electron.updater && window.electron.updater.getVersion;
+      if (typeof getter === 'function') {
+        const v = await getter();
+        if (typeof v === 'string' && v) return v;
+      }
+    } catch { /* not ready */ }
+    return 'dev';
+  },
+
+  musicAgent: async function () {
+    const lib = this.requireLib();
+    return lib.MUSIC_AGENT_SDK + ' ' + lib.MUSIC_AGENT_CLIENT + ' (Parachord/' + (await this.appVersion()) + ')';
+  },
+
+  // CAQ= cert pre-charge once per session (the page world used to do this in
+  // its Shaka setup; the relay necessitates our side).
+  kickCertWarm: function () {
+    if (this._certSessionReady || this._certWarmInFlight) return;
+    this._certWarmInFlight = true;
+    void this.warmCertSession().catch(() => {}).finally(() => { this._certWarmInFlight = false; });
+  },
+
+  warmCertSession: async function () {
+    const lib = this.requireLib();
+    if (this._certSessionReady) return;
+    try {
+      await this.relayLicense(lib.WIDEVINE_CERT_CHALLENGE);
+      console.log('[Amazon dmls] license cert session warm');
+    } catch (e) {
+      // Tolerated: some sessions accept first-party challenges without it;
+      // the real per-track exchange decides.
+      console.log('[Amazon dmls] cert pre-charge failed (continuing):', e && e.message);
+    }
+    this._certSessionReady = true;
+  },
+
+  // ── Telemetry (the hornet /telemetry/v1/events streaming reports) ───────
+  // The player events the host's shared engine reports (handlePlayerEvent,
+  // wired through playPlugin's playerEvents since M9 — no main-side provider
+  // exists to receive them on the plugin path), mapped by _lib's
+  // createAmazonTelemetry onto the captured envelope and posted via the
+  // webSession bridge.
+  handlePlayerEvent: function (event) {
+    try {
+      const t = this.telemetry();
+      const e = event || {};
+      switch (e.type) {
+        case 'play-started': return t.onPlayStarted(e);
+        case 'seek': return t.onSeek(e);
+        case 'pause': return t.onPause(e);
+        case 'resume': return t.onResume(e);
+        case 'ended': return t.onEnded(e);
+        case 'stopped': return t.onStopped(e);
+        default: return undefined;
+      }
+    } catch (e) {
+      console.log('[Amazon telemetry] event dropped:', e && e.message);
+      return undefined;
+    }
+  },
+
+  telemetry: function () {
+    if (!this._telemetry) {
+      const lib = this.requireLib();
+      this._telemetry = lib.createAmazonTelemetry({
+        post: (envelope) => this.postTelemetryEvent(envelope),
+        context: () => ({
+          ...(this._drmSessionContext || {}),
+          deviceTimeZone: lib.deviceTimeZoneString()
+        }),
+        randomUUID: () => lib.uuid4()
+      });
+    }
+    return this._telemetry;
+  },
+
+  postTelemetryEvent: async function (envelope) {
+    const lib = this.requireLib();
+    const ws = window.electron && window.electron.webSession;
+    if (!ws) return { status: -1 };
+    const ctx = await this.ensureSessionContext();
+    // Captured hornet telemetry headers: csrf triplet + device registration
+    // (x-amz- spellings, distinct from the gql template's x-amzn-device-id).
+    const headers = {
+      'Content-Type': 'application/json',
+      'csrf-token': ctx.csrfToken,
+      'csrf-rnd': ctx.csrfRnd,
+      'csrf-ts': ctx.csrfTs,
+      'x-amz-device-type': ctx.deviceType || lib.AMAZON_DEVICE_TYPE_ID,
+      'x-amz-device-id': ctx.deviceId,
+      Referer: 'https://music.amazon.com/',
+      Origin: 'https://music.amazon.com',
+      Accept: '*/*'
+    };
+    const actionName = envelope.clientActionList && envelope.clientActionList[0] && envelope.clientActionList[0].actionName;
+    let status = -1;
+    let text = '';
+    try {
+      const out = await ws.fetch(lib.SESSION, {
+        url: 'https://music.amazon.com/telemetry/v1/events',
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ ...envelope, deviceId: ctx.deviceId || envelope.deviceId })
+      });
+      if (out && out.success) {
+        status = out.status;
+        text = out.text || '';
+      } else {
+        text = String((out && out.error) || (out && out.reason) || 'webSession bridge unavailable');
+      }
+    } catch (e) {
+      // bookkeeping still runs on a failed post
+      text = String((e && e.message) || e);
+    }
+    // Telemetry health surfaces in the plugin's status/diagnostics state (M10
+    // surfaces it in getStatus): plays must be reported or the subscription
+    // accounting drifts silently. Console.warn + the dropped counter make a
+    // rotated header set loud instead of invisible.
+    if (!this._telemetryHealth) this._telemetryHealth = { last: null, dropped: 0 };
+    this._telemetryHealth.last = { status, at: Date.now(), actionName: actionName || null };
+    if (status !== 200) {
+      this._telemetryHealth.dropped += 1;
+      console.warn('[Amazon telemetry] POST ' + (actionName || 'event') + ' -> ' + status + ': ' + (text || '').slice(0, 120));
+    }
+    return { status };
   },
 
   search: async function (query, config) {
@@ -2047,6 +3123,12 @@ module.exports = {
         typeof payload === 'string' ? { query: payload } : payload
       );
       if (!spec) return [];
+      // The DRM session-context mint's benign query (#1356 M9): the plugin's
+      // own most recent search text, already in the user's Amazon history via
+      // this very search — the old host mint read the host store's
+      // search_history for the same reason (the plugin cannot read the host
+      // store, so it keeps its own).
+      this._lastSearchText = spec.searchText;
       const rows = await this.specSearch({
         url: spec.url,
         searchText: spec.searchText,
@@ -2238,11 +3320,12 @@ module.exports = {
   },
   play: async function (track, config) {
     // Host-owned: with capabilities.widevine the host's handlePlay drives the
-    // shared Widevine player (Shaka on the shared audio element, manifest and
-    // license bytes via window.electron.widevine from the main-process dmls
-    // provider). What used to live here — playTrack IPC, prompt-then-retry —
-    // lives in the host's widevine branch, which also keeps the
-    // not-signed-in → prompt → retry contract.
+    // shared Widevine player (Shaka on the shared audio element, the manifest
+    // and license bytes supplied by this plugin's own DRM pair —
+    // getPlaybackManifest/relayLicense over the renderer-mediated path). What
+    // used to live here — playTrack IPC, prompt-then-retry — lives in the
+    // host's widevine branch, which also keeps the not-signed-in → prompt →
+    // retry contract.
     console.log('Amazon Music: play() is host-owned (capabilities.widevine branch in handlePlay); not handled here');
     return false;
   },

@@ -13,7 +13,9 @@ const read = (p) => fs.readFileSync(path.join(__dirname, '../..', p), 'utf8');
 const main = read('main.js');
 const preload = read('preload.js');
 const app = read('src/renderer/app.js');
-const telemetry = read('main-process/amazon-telemetry.js');
+// #1356 M9: the telemetry state machine (createAmazonTelemetry) moved into
+// the plugin's _lib with the DRM pair; the resourceType rule reads there.
+const telemetry = read('plugins-src/amazonmusic/implementation.js');
 
 const between = (src, start, end) => {
   const i = src.indexOf(start);
@@ -79,7 +81,9 @@ describe('main process', () => {
 
   test('getStatus reports the plan and its message once signed in', () => {
     const handler = between(main, "ipcMain.handle('amazonmusic-get-status'", "ipcMain.handle('amazonmusic-open-login'");
-    expect(handler).toMatch(/if \(signedIn\) \{\s*try \{ plan = await amazonDmls\.getPlan\(\{ refresh: !!refreshPlan \}\); \} catch \{ plan = 'unknown'; \}/);
+    expect(handler).toMatch(/if \(signedIn\) \{\s*try \{ plan = await amazonWebPlayer\.getPlan\(\{ refresh: !!refreshPlan \}\); \} catch \{ plan = 'unknown'; \}/);
+    // The plan read is the host-side stopgap (dying with the status move).
+    expect(read('amazon-web-player.js')).toMatch(/async getPlan\(\{ refresh \} = \{\}, now = Date\.now\(\)\) \{/);
     expect(main).toMatch(/ipcMain\.handle\('amazonmusic-get-status', async \(event, \{ refreshPlan \} = \{\}\) => \{/);
     expect(preload).toMatch(/getStatus: \(opts\) => ipcRenderer\.invoke\('amazonmusic-get-status', \{ refreshPlan: !!\(opts && opts\.refreshPlan\) \}\)/);
     expect(handler).toMatch(/planMessage: plan \? amazonPlanMessage\(plan\) : null/);
@@ -91,20 +95,24 @@ describe('main process', () => {
   });
 
   test('a plan change is sent to the renderer, and the renderer drops the plugin plan cache with it', () => {
-    expect(main).toMatch(/onPlanChange: \(\{ plan \}\) => safeSendToRenderer\('amazonmusic-plan-changed', \{ plan \}\)/);
-    expect(preload).toMatch(/ipcRenderer\.on\('amazonmusic-plan-changed', handler\)/);
+    expect(main).toMatch(/setPlanChangeListener\(\(\{ plan \}\) => safeSendToRenderer\('amazonmusic-plan-changed', \{ plan \}\)\)/);
     // The plugin's own plan cache (the track-search gate, #1356 M5) cannot
-    // hear the event — main's refreshPlan path refreshes only the host's
-    // dmls copy — so the renderer's plan-changed handler drops the resolver
-    // instance's cache alongside refreshing the status: an upgrade unblocks
-    // the next search at once instead of after the 1-min refusal TTL.
+    // hear the event — main's refreshPlan path refreshes only the host-side
+    // stopgap copy — so the renderer's plan-changed handler drops the
+    // resolver instance's cache alongside refreshing the status: an upgrade
+    // unblocks the next search at once instead of after the 1-min refusal TTL.
     const handler = between(app, 'return window.electron.amazonMusic.onPlanChanged(() => {', 'refreshAmazonMusicStatus();');
     expect(handler).toMatch(/_planState = null/);
+    expect(preload).toMatch(/ipcRenderer\.on\('amazonmusic-plan-changed', handler\)/);
   });
 
   test('telemetry uses the shared Unlimited rule', () => {
+    // #1356 M9: createAmazonTelemetry moved into the plugin's _lib, so the
+    // rule and its derivation now share one file — the pin is that the
+    // telemetry derives resourceType through isUnlimitedTier and the rule
+    // itself is defined exactly once.
     expect(telemetry).toMatch(/resourceType: isUnlimitedTier\(ctx\.tier\)/);
-    expect(telemetry).not.toMatch(/\/\^UNLIMITED\//);
+    expect(telemetry.match(/\^UNLIMITED/g)).toHaveLength(1);
   });
 });
 
