@@ -226,3 +226,66 @@ describe('minimum app version', () => {
     expect(manifest.manifest.minAppVersion).toEqual({ desktop: '0.9.13' });
   });
 });
+
+describe('discovery offers the plain local address as a fallback', () => {
+  test("each local connection's LAN address follows its secure name, ahead of remote ones and the relay", async () => {
+    installFakeFetch([
+      ['plex.tv/api/v2/resources', [{ name: 'Mac', clientIdentifier: 'srv9', provides: 'server', owned: true, accessToken: 'T', connections: [
+        { protocol: 'https', local: false, relay: true, address: '10.9.9.9', port: 8443, uri: 'https://relay.plex.direct:8443' },
+        { protocol: 'https', local: false, relay: false, address: '203.0.113.7', port: 21656, uri: 'https://remote.plex.direct:21656' },
+        { protocol: 'https', local: true, relay: false, address: '192.168.1.250', port: 32400, uri: 'https://local.plex.direct:32400' },
+      ] }]],
+    ]);
+    const { servers } = await plex.discoverLibraries({ authToken: 'ACCOUNT', clientId: 'c' });
+    expect(servers[0].connections).toEqual([
+      'https://local.plex.direct:32400',
+      'http://192.168.1.250:32400',
+      'https://remote.plex.direct:21656',
+      'https://relay.plex.direct:8443',
+    ]);
+  });
+
+  test('a hostname or a missing port adds no plain address', async () => {
+    installFakeFetch([
+      ['plex.tv/api/v2/resources', [{ name: 'Mac', clientIdentifier: 'srv9', provides: 'server', accessToken: 'T', connections: [
+        { protocol: 'https', local: true, relay: false, address: 'nas.local', port: 32400, uri: 'https://a.plex.direct:32400' },
+        { protocol: 'https', local: true, relay: false, address: '192.168.1.9', uri: 'https://b.plex.direct:32400' },
+      ] }]],
+    ]);
+    const { servers } = await plex.discoverLibraries({ authToken: 'ACCOUNT', clientId: 'c' });
+    expect(servers[0].connections).toEqual(['https://a.plex.direct:32400', 'https://b.plex.direct:32400']);
+  });
+});
+
+describe('the index answers typed searches too', () => {
+  // Found against a real server: a ready index matched only a query that
+  // contains a whole title (how track matching asks), so a typed search shorter
+  // than the title ("Cavalcade of Indignities" vs "... (#2)") found nothing,
+  // though the live search before the index was ready found it.
+  const lib = { serverId: 'srv1', key: '3' };
+  const seed = (titles) => {
+    global.window = global.window || {};
+    const byTitle = {};
+    titles.forEach((t, i) => {
+      const k = t.toLowerCase().normalize('NFKD').replace(/\p{M}/gu, '').replace(/[^\p{L}\p{N}]/gu, '');
+      (byTitle[k] = byTitle[k] || []).push({ id: 'plex-' + i, title: t });
+    });
+    window._plexIndex = { [plex._indexKey('srv1', '3')]: { status: 'ready', byTitle } };
+  };
+
+  test('a query shorter than the title finds it', () => {
+    seed(['Cavalcade of Indignities (#2)', 'Cavalcade of Indignities (#3)', 'Something Else']);
+    const out = plex._searchIndex({ libraries: [lib] }, 'Cavalcade of Indignities');
+    expect(out.map((t) => t.title).sort()).toEqual(['Cavalcade of Indignities (#2)', 'Cavalcade of Indignities (#3)']);
+  });
+
+  test('a query that contains the title (artist + title, as matching asks) still finds it', () => {
+    seed(['Everything in Its Right Place']);
+    expect(plex._searchIndex({ libraries: [lib] }, 'Radiohead Everything In Its Right Place').map((t) => t.title)).toEqual(['Everything in Its Right Place']);
+  });
+
+  test('one or two characters match nothing', () => {
+    seed(['ab', 'Abba Gold']);
+    expect(plex._searchIndex({ libraries: [lib] }, 'ab')).toEqual([]);
+  });
+});

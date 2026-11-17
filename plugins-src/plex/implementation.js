@@ -293,8 +293,13 @@ module.exports = {
     config.libraries.forEach(function (l) {
       var e = (window._plexIndex || {})[self._indexKey(l.serverId, l.key)];
       if (!e || e.status !== 'ready') return;
+      // Either way round: a resolve's query ("artist title") contains the
+      // title, and a typed search ("cavalcade of indignities") is contained in
+      // a longer title ("Cavalcade of Indignities (#2)"). Matching only the
+      // first way made a ready index answer typed searches with nothing, while
+      // the live search before it was ready found them.
       for (var titleKey in e.byTitle) {
-        if (titleKey && titleKey.length >= 3 && nq.indexOf(titleKey) !== -1) {
+        if (titleKey && titleKey.length >= 3 && (nq.indexOf(titleKey) !== -1 || (nq.length >= 3 && titleKey.indexOf(nq) !== -1))) {
           e.byTitle[titleKey].forEach(function (t) { if (!seen[t.id]) { seen[t.id] = 1; out.push(t); } });
         }
       }
@@ -383,10 +388,27 @@ module.exports = {
       });
       // Probe every server concurrently so discovery is fast even with several.
       var servers = await Promise.all(serverResources.map(async function (r) {
-        var conns = (r.connections || []).slice().sort(function (a, b) {
-          var score = function (c) { var s = 0; if (c.local) s -= 2; if (c.protocol === 'https') s -= 1; if (c.relay) s += 3; return s; };
+        // Each local connection also gets its plain address
+        // (http://<LAN IP>:<port>), as Plex's own apps fall back to it: many
+        // home routers drop DNS answers for *.plex.direct names that point at
+        // private addresses, and then the secure name never resolves. It ranks
+        // after the secure local URI and before anything remote; plex-fetch
+        // allows it only because plex.tv reported it in this answer.
+        var candidates = (r.connections || []).slice();
+        (r.connections || []).forEach(function (c) {
+          if (c && c.local && !c.relay && c.address && c.port && /^\d{1,3}(\.\d{1,3}){3}$/.test(String(c.address))) {
+            candidates.push({ uri: 'http://' + c.address + ':' + c.port, local: true, protocol: 'http', relay: false, plain: true });
+          }
+        });
+        var seen = {};
+        var conns = candidates.sort(function (a, b) {
+          var score = function (c) { var s = 0; if (c.local) s -= 2; if (c.protocol === 'https') s -= 1; if (c.plain) s += 0.5; if (c.relay) s += 3; return s; };
           return score(a) - score(b);
-        }).map(function (c) { return c.uri; }).filter(Boolean);
+        }).map(function (c) { return c.uri; }).filter(function (u) {
+          if (!u || seen[u]) return false;
+          seen[u] = true;
+          return true;
+        });
         var server = {
           serverId: r.clientIdentifier,
           serverName: r.name,

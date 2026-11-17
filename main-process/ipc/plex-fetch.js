@@ -20,6 +20,15 @@
 //    user chose).
 //  - Redirects are refused (a 3xx is an error), so a response can never bounce
 //    the token to another host.
+//  - A server's plain local address (http://<LAN IP>:<port>), but only one
+//    plex.tv itself reported as a LOCAL connection of the signed-in account,
+//    in a resources answer this handler relayed (plex.tv's TLS is verified),
+//    and only a private or loopback IP. Plex's apps fall back to it when the
+//    secure *.plex.direct name doesn't resolve: many home routers drop DNS
+//    answers that point at private addresses (DNS-rebinding protection), and
+//    then a server in the same room is unreachable by name. Remembered for the
+//    session only; once the user saves libraries, the address is in their
+//    saved connections like any other.
 //
 // `plexFetchPolicy` is pure and unit-tested; `registerPlexFetchIpc` is
 // dependency-injected (ipcMain, store, transports) so the handler is tested
@@ -37,6 +46,40 @@ function hostMatches(hostname, pattern) {
 }
 
 const PLEX_HOSTS = ['plex.tv', '*.plex.tv', '*.plex.direct'];
+
+// An IPv4 literal on a private or loopback range (RFC 1918, 127/8, and
+// 100.64/10 for CGNAT and Tailscale): the only addresses a reported local
+// connection may add.
+function isPrivateIPv4(host) {
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(String(host));
+  if (!m) return false;
+  const [a, b] = [Number(m[1]), Number(m[2])];
+  if ([m[1], m[2], m[3], m[4]].some((x) => Number(x) > 255)) return false;
+  return a === 10 || a === 127 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127);
+}
+
+// The plain local addresses ("host:port") in a plex.tv resources answer: each
+// LOCAL connection's address and port, private IPv4 only. Junk is ignored.
+function reportedLocalAddresses(resourcesText) {
+  const out = new Set();
+  let list;
+  try { list = JSON.parse(resourcesText); } catch (e) { return out; }
+  for (const r of (Array.isArray(list) ? list : [])) {
+    for (const c of (r && Array.isArray(r.connections) ? r.connections : [])) {
+      if (!c || c.local !== true || c.relay === true) continue;
+      const port = Number(c.port);
+      if (!isPrivateIPv4(c.address) || !Number.isInteger(port) || port <= 0 || port > 65535) continue;
+      out.add(`${c.address}:${port}`);
+    }
+  }
+  return out;
+}
+
+// Is this the account's server list on plex.tv (whose answer may teach us
+// local addresses)?
+function isResourcesUrl(u) {
+  return u.protocol === 'https:' && u.hostname.toLowerCase() === 'plex.tv' && u.pathname === '/api/v2/resources';
+}
 
 // Hosts (hostname[:port] not needed — hostname only) from the saved library
 // selection. Malformed entries are ignored.
@@ -56,7 +99,7 @@ function savedConnectionHosts(plexConfig) {
 
 // Decide whether a URL may be fetched and with what TLS posture.
 // Returns { allowed: false, error } or { allowed: true, rejectUnauthorized }.
-function plexFetchPolicy(url, plexConfig) {
+function plexFetchPolicy(url, plexConfig, reportedLocal) {
   let u;
   try {
     u = new URL(String(url));
@@ -73,15 +116,23 @@ function plexFetchPolicy(url, plexConfig) {
   if (savedConnectionHosts(plexConfig).has(hostname)) {
     return { allowed: true, rejectUnauthorized: false };
   }
+  // A plain local address plex.tv reported this session: http only, the
+  // exact host and port it reported.
+  const port = u.port || (u.protocol === 'https:' ? '443' : '80');
+  if (u.protocol === 'http:' && reportedLocal && reportedLocal.has(`${hostname}:${port}`)) {
+    return { allowed: true, rejectUnauthorized: true };
+  }
   return { allowed: false, error: `Host ${hostname} is not a Plex host or a saved Plex server connection` };
 }
 
 function registerPlexFetchIpc({ ipcMain, store, transports }) {
   const getTransports = () => transports || { 'http:': require('http'), 'https:': require('https') };
+  // Local addresses plex.tv reported this session (see the policy above).
+  const reportedLocal = new Set();
 
   ipcMain.handle('plex-fetch', async (event, url, options = {}) => {
     const plexConfig = (store.get('meta_service_configs') || {}).plex;
-    const policy = plexFetchPolicy(url, plexConfig);
+    const policy = plexFetchPolicy(url, plexConfig, reportedLocal);
     if (!policy.allowed) {
       return { ok: false, status: 0, error: policy.error };
     }
@@ -116,11 +167,13 @@ function registerPlexFetchIpc({ ipcMain, store, transports }) {
             }
             data += chunk;
           });
-          res.on('end', () => done({
-            ok: res.statusCode >= 200 && res.statusCode < 300,
-            status: res.statusCode,
-            text: data
-          }));
+          res.on('end', () => {
+            const ok = res.statusCode >= 200 && res.statusCode < 300;
+            if (ok && isResourcesUrl(urlObj)) {
+              for (const a of reportedLocalAddresses(data)) reportedLocal.add(a);
+            }
+            done({ ok, status: res.statusCode, text: data });
+          });
         });
       } catch (err) {
         done({ ok: false, status: 0, error: err.message });
@@ -134,4 +187,4 @@ function registerPlexFetchIpc({ ipcMain, store, transports }) {
   });
 }
 
-module.exports = { plexFetchPolicy, savedConnectionHosts, registerPlexFetchIpc, MAX_RESPONSE_BYTES };
+module.exports = { plexFetchPolicy, savedConnectionHosts, reportedLocalAddresses, isPrivateIPv4, registerPlexFetchIpc, MAX_RESPONSE_BYTES };

@@ -8,7 +8,7 @@
  */
 
 const { EventEmitter } = require('events');
-const { plexFetchPolicy, savedConnectionHosts, registerPlexFetchIpc } = require('../../main-process/ipc/plex-fetch');
+const { plexFetchPolicy, savedConnectionHosts, reportedLocalAddresses, isPrivateIPv4, registerPlexFetchIpc } = require('../../main-process/ipc/plex-fetch');
 
 const SAVED = {
   libraries: [
@@ -140,5 +140,60 @@ describe('plex-fetch handler', () => {
     expect((await fetch(null, 'http://192.168.1.5:32400/identity')).ok).toBe(false);
     expect((await fetch(null, 'https://192-168-1-5.abc123.plex.direct:32400/identity')).ok).toBe(true);
     expect(requests.length).toBe(1);
+  });
+});
+
+// The plain-local-address fallback: when a router drops DNS answers for
+// *.plex.direct names that point at private addresses, Plex's apps use the
+// server's LAN address instead. plex-fetch allows it only when plex.tv itself
+// reported it as a local connection of the account, this session.
+const RESOURCES = JSON.stringify([
+  { name: 'Mac', provides: 'server', connections: [
+    { protocol: 'https', local: true, relay: false, address: '192.168.1.250', port: 32400, uri: 'https://192-168-1-250.abc.plex.direct:32400' },
+    { protocol: 'https', local: false, relay: false, address: '203.0.113.7', port: 21656, uri: 'https://203-0-113-7.abc.plex.direct:21656' },
+    { protocol: 'https', local: false, relay: true, address: '10.9.9.9', port: 8443, uri: 'https://10-9-9-9.abc.plex.direct:8443' },
+  ] },
+  { name: 'Phone', provides: 'player', connections: [{ local: true, address: '8.8.8.8', port: 32500 }] },
+]);
+
+describe('reported local addresses', () => {
+  test('only local, non-relay connections on private IPv4 addresses, with their port', () => {
+    expect([...reportedLocalAddresses(RESOURCES)]).toEqual(['192.168.1.250:32400']);
+    expect([...reportedLocalAddresses('not json')]).toEqual([]);
+    expect([...reportedLocalAddresses('{"a":1}')]).toEqual([]);
+  });
+
+  test('isPrivateIPv4 knows the private and loopback ranges and nothing else', () => {
+    for (const ip of ['10.0.0.1', '127.0.0.1', '172.16.0.1', '172.31.255.255', '192.168.0.10', '100.64.0.1', '100.127.0.1']) expect([ip, isPrivateIPv4(ip)]).toEqual([ip, true]);
+    for (const ip of ['8.8.8.8', '172.32.0.1', '169.254.169.254', '100.128.0.1', '192.169.0.1', '256.1.1.1', 'plex.tv', '::1']) expect([ip, isPrivateIPv4(ip)]).toEqual([ip, false]);
+  });
+
+  test('the policy allows a reported address over http, at that port only', () => {
+    const reported = new Set(['192.168.1.250:32400']);
+    expect(plexFetchPolicy('http://192.168.1.250:32400/identity', null, reported)).toEqual({ allowed: true, rejectUnauthorized: true });
+    expect(plexFetchPolicy('http://192.168.1.250:8080/identity', null, reported).allowed).toBe(false);
+    expect(plexFetchPolicy('https://192.168.1.250:32400/identity', null, reported).allowed).toBe(false);
+    expect(plexFetchPolicy('http://192.168.1.251:32400/identity', null, reported).allowed).toBe(false);
+    expect(plexFetchPolicy('http://192.168.1.250:32400/identity', null, undefined).allowed).toBe(false);
+  });
+
+  test('the handler learns local addresses from the account\'s resources answer, and from nothing else', async () => {
+    const handlers = new Map();
+    let body = RESOURCES;
+    const { transports, requests } = makeTransport({ status: 200, get chunks() { return [body]; } });
+    registerPlexFetchIpc({ ipcMain: { handle: (c, fn) => handlers.set(c, fn) }, store: { get: () => ({}) }, transports });
+    const fetch = handlers.get('plex-fetch');
+    // Before plex.tv has reported it, the LAN address is refused.
+    expect((await fetch(null, 'http://192.168.1.250:32400/identity')).ok).toBe(false);
+    // Some other plex.tv answer that happens to contain connections teaches nothing.
+    await fetch(null, 'https://plex.tv/api/v2/user');
+    expect((await fetch(null, 'http://192.168.1.250:32400/identity')).ok).toBe(false);
+    // The resources answer does.
+    await fetch(null, 'https://plex.tv/api/v2/resources?includeHttps=1&includeRelay=1');
+    expect((await fetch(null, 'http://192.168.1.250:32400/identity')).ok).toBe(true);
+    // Its remote and relay addresses never become reachable this way.
+    expect((await fetch(null, 'http://203.0.113.7:21656/identity')).ok).toBe(false);
+    expect((await fetch(null, 'http://10.9.9.9:8443/identity')).ok).toBe(false);
+    expect(requests.filter((r) => r.url.startsWith('http://')).map((r) => r.url)).toEqual(['http://192.168.1.250:32400/identity']);
   });
 });
