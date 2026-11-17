@@ -273,10 +273,238 @@ describe('the plugin _lib dmls builders', () => {
       expect(licenseDenialSummary('   ')).toBeNull();
     });
   });
+
+  describe('the rendition-group dialect (labels, KIDs, the refusal scope, the MPD filter)', () => {
+    // Real MPD: the 2026-11 capture for ASIN B073N6C5XH (the dev-VMP session
+    // whose per-track refusals this feature caches), shared with
+    // tests/renderer/widevine-shaka-adaptation.test.js — segment lists
+    // trimmed and the BaseURLs scrubbed, everything else verbatim: three
+    // audio adaptation sets, one Widevine key group each, each named by
+    // <SupplementalProperty schemeIdUri="amz-music:trackType">. Identical
+    // structure on every track SERVED TO THIS UNVERIFIED BUILD; only the
+    // KIDs change (they are per-asset).
+    const { AMAZON_LIVE_MPD: LIVE_MPD, AMAZON_SYNTHESIZED_FIVE_SET_MPD } = require('../test-utils/amazon-live-mpd');
+    const {
+      mpdContentProtectionSets, mpdHasPlayableAudio, mpdRenditionGroupLabel,
+      amazonGroupLabelFromDenial, amazonGroupRefusalScope, mpdDropRenditionGroups,
+      licenseDenialSummary
+    } = instantiateAmazonPlugin(axe).lib;
+
+    test('every adaptation set carries its group label and its own key group', () => {
+      const sets = mpdContentProtectionSets(LIVE_MPD);
+      expect(sets.map((s) => s.groupLabel)).toEqual(['HD', 'SD', 'LD']);
+      expect(sets.map((s) => s.family)).toEqual(['flac', 'opus', 'opus']);
+      expect(sets.map((s) => (s.kids || []).length)).toEqual([1, 1, 1]);
+      expect(sets[0].reps.map((r) => r.bandwidth)).toEqual([1144652]);
+      expect(sets[1].reps.map((r) => r.bandwidth)).toEqual([52988, 196992, 324994]);
+      expect(sets[2].reps.map((r) => r.bandwidth)).toEqual([52988, 164991]);
+      expect(mpdRenditionGroupLabel(LIVE_MPD.match(/<AdaptationSet id="3"[\s\S]*?<\/AdaptationSet>/)[0])).toBe('LD');
+    });
+
+    test('a refusal names its group in the manifest\'s own vocabulary', () => {
+      // Live dev-VMP refusals (an unverified VMP signature gets the lowest tier only).
+      expect(amazonGroupLabelFromDenial('UNVERIFIED request not eligible for HD content (EligibilityException VMP_VALIDATION_FAILED)')).toBe('HD');
+      expect(amazonGroupLabelFromDenial('UNVERIFIED request not eligible for SD content (EligibilityException VMP_VALIDATION_FAILED)')).toBe('SD');
+      expect(amazonGroupLabelFromDenial('customer is not eligible for HD content (EligibilityException CUSTOMER_NOT_ELIGIBLE)')).toBe('HD');
+      // No phrase, no label: the caller keeps today's unfiltered behavior.
+      expect(amazonGroupLabelFromDenial('EligibilityException')).toBe(null);
+      expect(amazonGroupLabelFromDenial(null)).toBe(null);
+      expect(amazonGroupLabelFromDenial('')).toBe(null);
+    });
+
+    test('refusal scope: build-scoped only on a POSITIVE build signal, account-scoped only on a recognized eligibility reason — anything else records nothing', () => {
+      // The live dev-VMP refusals: the reason, and Amazon's own sentence, both say build.
+      expect(amazonGroupRefusalScope('VMP_VALIDATION_FAILED', 'UNVERIFIED request not eligible for HD content')).toBe('build-refused');
+      expect(amazonGroupRefusalScope('SOME_RENAMED_REASON', 'UNVERIFIED request not eligible for SD content')).toBe('build-refused');
+      // Eligibility denials are the account's: sign-out AND a plan upgrade end them.
+      expect(amazonGroupRefusalScope('CUSTOMER_NOT_ELIGIBLE', 'customer is not eligible for HD content')).toBe('license-denied');
+      // Anything else Amazon can ever return records NOTHING: an unrecognized
+      // reason (a per-title HD refusal, a reason invented tomorrow) must never
+      // take a tier away for the session — a recorded label keeps the tier out
+      // of every later manifest, so only a reason the scope positively
+      // recognizes may be cached at all.
+      expect(amazonGroupRefusalScope('SOME_FUTURE_REASON', 'this title is not eligible for HD content')).toBe(null);
+      expect(amazonGroupRefusalScope(null, null)).toBe(null);
+    });
+
+    test('the scope reads the RAW message — the summary slice can cut the build sentence away', () => {
+      // licenseDenialSummary keeps the text BEFORE the first " - ", so a refusal
+      // that puts its UNVERIFIED sentence after the separator loses it there.
+      // The scope is handed the RAW message precisely for that case, and its
+      // build signal is ANCHORED, so the PII tail can never impersonate it.
+      const raw = 'Amazon could not license this title - UNVERIFIED request not eligible for SD content (EligibilityException VMP_VALIDATION_FAILED)';
+      // The reason alone carries the build signal here; the anchored sentence read
+      // is unchanged by the tail (it does not sit at the start of the message).
+      expect(amazonGroupRefusalScope('VMP_VALIDATION_FAILED', raw)).toBe('build-refused');
+      expect(amazonGroupRefusalScope('SOME_FUTURE_REASON', raw)).toBe(null);
+      // The anchoring is what makes the raw message safe: the same words, buried
+      // in an account refusal's tail, record nothing.
+      expect(amazonGroupRefusalScope('CUSTOMER_NOT_ELIGIBLE', 'not eligible for HD content - CustomerEligibility(customerId=X, UNVERIFIED request)')).toBe('license-denied');
+      // And the PAIR as it stands, pinned rather than implied: the LABEL is still
+      // read from the summary slice, so this message yields no label at all —
+      // nothing is cached, and the manifests stay unfiltered.
+      expect(licenseDenialSummary(raw)).toBe('Amazon could not license this title');
+      expect(amazonGroupLabelFromDenial(licenseDenialSummary(raw))).toBe(null);
+      expect(amazonGroupLabelFromDenial(raw)).toBe('SD'); // why the raw message is NOT handed to the label reader
+    });
+
+    test('mpdDropRenditionGroups removes whole groups, by label, case-insensitively', () => {
+      const { manifest, dropped } = mpdDropRenditionGroups(LIVE_MPD, ['sd', 'HD']);
+      // Ordered by document position: the real capture serves HD first.
+      expect(dropped).toEqual(['HD', 'SD']);
+      expect(mpdContentProtectionSets(manifest).map((s) => s.groupLabel)).toEqual(['LD']);
+      expect(manifest).toContain('value="LD"');
+      expect(manifest).not.toContain('codecs="flac"');
+      // Nothing to drop: the manifest comes back untouched.
+      expect(mpdDropRenditionGroups(LIVE_MPD, [])).toEqual({ manifest: LIVE_MPD, dropped: [] });
+      expect(mpdDropRenditionGroups(LIVE_MPD, ['ULTRA'])).toEqual({ manifest: LIVE_MPD, dropped: [] });
+    });
+
+    test('the label is a TIER: two sets sharing value="HD" drop together and report ONCE; other tiers stay', () => {
+      // The synthesized five-set shape (the 2026-10 Ultra-HD set/rung count,
+      // the trackType labels carried over or guessed — see the fixture): both
+      // FLAC rungs ride separate sets under the SAME tier label, and the
+      // spatial rung carries its own. Family-scoping the cache was considered
+      // and rejected (see mpdDropRenditionGroups) — the refusal is about the tier.
+      const { manifest, dropped } = mpdDropRenditionGroups(AMAZON_SYNTHESIZED_FIVE_SET_MPD, ['HD']);
+      expect(dropped).toEqual(['HD']);
+      const kept = mpdContentProtectionSets(manifest);
+      expect(kept.map((s) => s.groupLabel)).toEqual(['LD', 'SD', 'SPATIAL_ATMOS_HIGH']);
+      expect(kept.some((s) => s.family === 'flac')).toBe(false); // BOTH FLAC rungs out
+      expect(manifest).toContain('value="SPATIAL_ATMOS_HIGH"'); // spatial tier untouched
+      expect(manifest).toContain('codecs="ec-3"');
+    });
+
+    test('the filter never empties a manifest — an over-eager cache must not unplay a track', () => {
+      const { manifest, dropped } = mpdDropRenditionGroups(LIVE_MPD, ['LD', 'SD', 'HD']);
+      expect(dropped).toEqual([]);
+      expect(manifest).toBe(LIVE_MPD);
+      expect(mpdContentProtectionSets(manifest)).toHaveLength(3);
+    });
+
+    test('the never-empty guard checks playability, not tag presence: a leftover video set does not count', () => {
+      // indexOf("<AdaptationSet") survived this document with EVERY audio set
+      // dropped — the engine then dies at "manifest carried no audio variant
+      // this build can play". The guard requires a surviving set with actual
+      // representations.
+      const withVideo = LIVE_MPD.replace('</Period>', '  <AdaptationSet id="9" contentType="video" mimeType="video/mp4">\n    <BaseURL>video/</BaseURL>\n    <SegmentTemplate media="v$Number$.m4s" initialization="v-init.mp4" duration="4" timescale="1"/>\n  </AdaptationSet>\n</Period>');
+      expect(mpdContentProtectionSets(withVideo)).toHaveLength(4);
+      const { manifest, dropped } = mpdDropRenditionGroups(withVideo, ['LD', 'SD', 'HD']);
+      expect(dropped).toEqual([]);
+      expect(manifest).toBe(withVideo); // served unfiltered, never audio-less
+    });
+
+    test('a VIDEO set with representations does not count as playable audio either', () => {
+      // The stronger half of the same guard: a video set is not a substitute for
+      // audio, so a manifest left with only video must be served unfiltered.
+      const withVideoReps = LIVE_MPD.replace('</Period>', '  <AdaptationSet id="9" contentType="video" mimeType="video/mp4">\n    <Representation id="v1" codecs="avc1.64001f" bandwidth="5200000"/>\n  </AdaptationSet>\n</Period>');
+      expect(mpdContentProtectionSets(withVideoReps).map((s) => s.contentType)).toEqual(['audio', 'audio', 'audio', 'video']);
+      expect(mpdHasPlayableAudio(withVideoReps)).toBe(true);
+      const { manifest, dropped } = mpdDropRenditionGroups(withVideoReps, ['LD', 'SD', 'HD']);
+      expect(dropped).toEqual([]);
+      expect(manifest).toBe(withVideoReps);
+      // And on the audio-less result itself the predicate says no.
+      expect(mpdHasPlayableAudio(withVideoReps.replace(/<AdaptationSet id="[123]"[\s\S]*?<\/AdaptationSet>/g, ''))).toBe(false);
+    });
+
+    test('mpdHasPlayableAudio: audio sets yes, video only no, untyped sets count', () => {
+      expect(mpdHasPlayableAudio(LIVE_MPD)).toBe(true);
+      expect(mpdHasPlayableAudio('<MPD><Period><AdaptationSet contentType="audio" mimeType="audio/mp4"><Representation id="a" codecs="opus" bandwidth="53059"/></AdaptationSet></Period></MPD>')).toBe(true);
+      expect(mpdHasPlayableAudio('<MPD><Period><AdaptationSet contentType="video"><Representation id="v" codecs="avc1.64001f" bandwidth="1000"/></AdaptationSet></Period></MPD>')).toBe(false);
+      // mimeType alone types the set too.
+      expect(mpdHasPlayableAudio('<MPD><Period><AdaptationSet mimeType="audio/mp4"><Representation id="a" codecs="opus" bandwidth="53059"/></AdaptationSet></Period></MPD>')).toBe(true);
+      // Nothing typed: any set with representations counts (an untyped document
+      // must not be treated as unplayable).
+      expect(mpdHasPlayableAudio('<MPD><Period><AdaptationSet><Representation id="a" codecs="opus" bandwidth="53059"/></AdaptationSet></Period></MPD>')).toBe(true);
+      expect(mpdHasPlayableAudio('<MPD><Period><AdaptationSet contentType="audio"/></AdaptationSet></Period></MPD>')).toBe(false);
+      expect(mpdHasPlayableAudio('')).toBe(false);
+    });
+
+    test('a nested adaptation set comes back unchanged — never a cut block', () => {
+      // DASH AdaptationSetType permits NESTED sets; the old non-greedy match cut
+      // the outer block at the INNER close tag, and the vendored Shaka parser
+      // rejects that output with "Unexpected close tag" — a hard manifest error
+      // instead of a graceful degrade. Matching is innermost-only, so the label
+      // on the OUTER set is never even seen — and the pre-rewrite nesting bail
+      // answers the document as it arrived, unfiltered.
+      const nested = `<MPD minBufferTime="PT2S"><Period id="0">
+  <AdaptationSet id="1" contentType="audio" selectionPriority="2000">
+    <SupplementalProperty schemeIdUri="amz-music:trackType" value="HD"/>
+    <AdaptationSet id="1a" subsegmentAlignment="true">
+      <Representation id="1" codecs="flac" bandwidth="1144652"/>
+    </AdaptationSet>
+  </AdaptationSet>
+  <AdaptationSet id="3" contentType="audio" selectionPriority="500">
+    <SupplementalProperty schemeIdUri="amz-music:trackType" value="LD"/>
+    <Representation id="3" codecs="opus" bandwidth="52988"/>
+  </AdaptationSet>
+</Period></MPD>`;
+      const { manifest, dropped } = mpdDropRenditionGroups(nested, ['HD']);
+      expect(manifest).toBe(nested);
+      expect(dropped).toEqual([]);
+    });
+
+    test('the label on the INNER set bails too — no empty outer shell left behind', () => {
+      // The innermost-only match WOULD have removed this block: it removes one
+      // open with its close, so the open/close balance guards can never see it —
+      // the result is a partially rewritten document with an EMPTY outer
+      // <AdaptationSet> where the refused tier used to be. That is not a graceful
+      // degrade, so the nesting is answered before any rewrite: byte-identical
+      // document, no drop.
+      const nestedInner = `<MPD minBufferTime="PT2S"><Period id="0">
+  <AdaptationSet id="1" contentType="audio" selectionPriority="2000">
+    <AdaptationSet id="1a" subsegmentAlignment="true">
+      <SupplementalProperty schemeIdUri="amz-music:trackType" value="HD"/>
+      <Representation id="1" codecs="flac" bandwidth="1144652"/>
+    </AdaptationSet>
+  </AdaptationSet>
+  <AdaptationSet id="3" contentType="audio" selectionPriority="500">
+    <SupplementalProperty schemeIdUri="amz-music:trackType" value="LD"/>
+    <Representation id="3" codecs="opus" bandwidth="52988"/>
+  </AdaptationSet>
+</Period></MPD>`;
+      const { manifest, dropped } = mpdDropRenditionGroups(nestedInner, ['HD']);
+      expect(manifest).toBe(nestedInner); // never a document with an empty outer set
+      expect(dropped).toEqual([]);
+    });
+
+    test('a self-closing set does not swallow its neighbour', () => {
+      // Three opens vs two closes: the old regex started a match AT the
+      // self-closing video set and deleted it TOGETHER WITH the following HD
+      // set (the block it spanned carried the HD label). An unbalanced document
+      // is now served as it arrived.
+      const selfClosing = `<MPD minBufferTime="PT2S"><Period id="0">
+  <AdaptationSet id="0" contentType="video" mimeType="video/mp4"/>
+  <AdaptationSet id="1" contentType="audio" selectionPriority="2000">
+    <SupplementalProperty schemeIdUri="amz-music:trackType" value="HD"/>
+    <Representation id="1" codecs="flac" bandwidth="1144652"/>
+  </AdaptationSet>
+  <AdaptationSet id="2" contentType="audio" selectionPriority="500">
+    <SupplementalProperty schemeIdUri="amz-music:trackType" value="LD"/>
+    <Representation id="2" codecs="opus" bandwidth="52988"/>
+  </AdaptationSet>
+</Period></MPD>`;
+      const { manifest, dropped } = mpdDropRenditionGroups(selfClosing, ['HD']);
+      expect(manifest).toBe(selfClosing);
+      expect(dropped).toEqual([]);
+    });
+
+    test('the attribute reader has a left boundary: subvalue="9" is not value', () => {
+      const tricky = `<MPD minBufferTime="PT2S"><Period id="0">
+  <AdaptationSet id="1" contentType="audio">
+    <SupplementalProperty schemeIdUri="amz-music:trackType" subvalue="9"/>
+    <Representation id="1" codecs="opus" bandwidth="52988"/>
+  </AdaptationSet>
+</Period></MPD>`;
+      expect(mpdRenditionGroupLabel(tricky.match(/<AdaptationSet[\s\S]*?<\/AdaptationSet>/)[0])).toBe(null);
+      const { manifest, dropped } = mpdDropRenditionGroups(tricky, ['9']);
+      expect(dropped).toEqual([]);
+      expect(manifest).toBe(tricky);
+    });
+  });
 });
 
 // ── the session-context mint ────────────────────────────────────────────────
-
 describe('the session-context mint', () => {
   test('mints from config.json + the captured csrf headers, preferring config deviceId', async () => {
     const { ws, fetches, loads } = drmMock();
@@ -830,5 +1058,237 @@ describe('the session-generation drop', () => {
     await resolver.getPlaybackManifest(drmTrack(), {});
     expect(gen1.loads).toHaveLength(1);
     expect(gen1.loads[0].url).toContain('/search/the/songs');
+  });
+});
+
+// ── the rendition-group refusal cache (#1446, ported to the plugin) ────────
+// Live-captured MPD shape: three audio adaptation sets, one Widevine key group
+// each, each named by <SupplementalProperty schemeIdUri="amz-music:trackType"
+// value="LD|SD|HD"/>. A key group in the manifest is a license request Shaka
+// makes whether or not anything selects it — so a refusal only helps if the
+// group stops appearing in the manifests the plugin serves.
+const GROUP_MPD = `<MPD minBufferTime="PT2S"><Period>
+  <AdaptationSet id="1" contentType="audio" selectionPriority="1000">
+    <SupplementalProperty schemeIdUri="amz-music:trackType" value="SD"/>
+    <ContentProtection schemeIdUri="urn:mpeg:dash:mp4protection:2011" value="cenc" cenc:default_KID="a52f9a11-0000-0000-0000-000000000000"/>
+    <Representation id="1" codecs="opus" bandwidth="53059"/>
+    <Representation id="2" codecs="opus" bandwidth="197343"/>
+    <Representation id="3" codecs="opus" bandwidth="325595"/>
+  </AdaptationSet>
+  <AdaptationSet id="2" contentType="audio" selectionPriority="500">
+    <SupplementalProperty schemeIdUri="amz-music:trackType" value="LD"/>
+    <ContentProtection schemeIdUri="urn:mpeg:dash:mp4protection:2011" value="cenc" cenc:default_KID="6d02ab22-0000-0000-0000-000000000000"/>
+    <Representation id="4" codecs="opus" bandwidth="53059"/>
+    <Representation id="5" codecs="opus" bandwidth="165280"/>
+  </AdaptationSet>
+  <AdaptationSet id="3" contentType="audio" selectionPriority="2000">
+    <SupplementalProperty schemeIdUri="amz-music:trackType" value="HD"/>
+    <ContentProtection schemeIdUri="urn:mpeg:dash:mp4protection:2011" value="cenc" cenc:default_KID="28ea2833-0000-0000-0000-000000000000"/>
+    <Representation id="6" codecs="fLaC" bandwidth="1191000"/>
+  </AdaptationSet>
+</Period></MPD>`;
+
+describe('the rendition-group refusal cache (the per-track re-request and the start-of-track stutter)', () => {
+  const groupEntry = (manifest = GROUP_MPD) => ({ contentResponseStatusCode: 'SUCCESS', manifest, musicDashVersion: 'SIREN_KATANA' });
+  const licenseDenial = (denialReason, message) => ({
+    status: 400, text: JSON.stringify({ denialReason, message })
+  });
+  // The plugin sees a refusal only through relayLicense's 400 branch, so the
+  // tests drive it directly, each against a fresh mock standing in for the
+  // session (the cert warm stays idle — a manifest would otherwise fire its
+  // own CAQ= relay into the queue).
+  test('a refused group is out of every later manifest this session', async () => {
+    drmMock({ dmls: [
+      { status: 200, text: JSON.stringify({ contentResponseList: [groupEntry()] }) }
+    ] });
+    const resolver = instantiateAmazonPlugin(axe);
+    resolver._certSessionReady = true; // keep the cert warm idle
+    const first = await resolver.getPlaybackManifest(drmTrack(), {});
+    expect(first.protectionSets.map((s) => s.groupLabel)).toEqual(['SD', 'LD', 'HD']);
+
+    // The live Linux dev-VMP shape: two refusals per play, ~1.4s in, for the
+    // SD and HD groups, while LD keys fine and is what plays.
+    drmMock({ dmls: [licenseDenial('VMP_VALIDATION_FAILED', 'UNVERIFIED request not eligible for SD content (EligibilityException VMP_VALIDATION_FAILED)')] });
+    await expect(resolver.relayLicense('CAQ=', {})).rejects.toMatchObject({ groupLabel: 'SD', licenseDenied: false });
+    drmMock({ dmls: [licenseDenial('VMP_VALIDATION_FAILED', 'UNVERIFIED request not eligible for HD content (EligibilityException VMP_VALIDATION_FAILED)')] });
+    await expect(resolver.relayLicense('CAQ=', {})).rejects.toMatchObject({ groupLabel: 'HD' });
+    expect(Object.fromEntries(resolver._refusedGroups)).toEqual({ SD: 'build-refused', HD: 'build-refused' });
+
+    // Track 2: the refused groups never reach the player, so no init segment,
+    // no license round-trip and no buffered-then-discarded chunk for them.
+    drmMock({ dmls: [
+      { status: 200, text: JSON.stringify({ contentResponseList: [groupEntry()] }) }
+    ] });
+    const reply = await resolver.getPlaybackManifest(drmTrack('B2'), {});
+    expect(reply.protectionSets.map((s) => s.groupLabel)).toEqual(['LD']);
+    expect(reply.manifest).not.toContain('value="SD"');
+    expect(reply.manifest).not.toContain('fLaC');
+    expect(reply.manifest).toContain('value="LD"');
+  });
+
+  test('an eligibility refusal is the account\'s (cleared on the sign-out generation drop); an unverified request is the build\'s', async () => {
+    const resolver = instantiateAmazonPlugin(axe);
+    // The production order: the manifest flow's mint records the plan reading
+    // BEFORE any licence refusal can be recorded, so a refusal never sits in
+    // the cache ahead of a first plan reading (whose unlimited-turn clear
+    // would otherwise wipe it — an artifact, not the upgrade path).
+    drmMock({});
+    await resolver.getPlan();
+    drmMock({ dmls: [licenseDenial('CUSTOMER_NOT_ELIGIBLE', 'customer is not eligible for HD content (EligibilityException CUSTOMER_NOT_ELIGIBLE)')] });
+    await expect(resolver.relayLicense('CAQ=', {})).rejects.toMatchObject({ groupLabel: 'HD' });
+    drmMock({ dmls: [licenseDenial('VMP_VALIDATION_FAILED', 'UNVERIFIED request not eligible for SD content')] });
+    await expect(resolver.relayLicense('CAQ=', {})).rejects.toMatchObject({ groupLabel: 'SD' });
+    expect(Object.fromEntries(resolver._refusedGroups)).toEqual({ HD: 'license-denied', SD: 'build-refused' });
+    // The sign-out the plugin cannot see the event of: the generation bump on
+    // the next state read drops the account-scoped entries and keeps the
+    // build-scoped ones (another account changes nothing about this build's
+    // VMP signature).
+    const gen1 = drmMock({ generation: 1 });
+    await resolver.sessionState();
+    expect(Object.fromEntries(resolver._refusedGroups)).toEqual({ SD: 'build-refused' });
+  });
+
+  test('a refusal without a group phrase changes nothing (no filtering, no crash)', async () => {
+    const resolver = instantiateAmazonPlugin(axe);
+    drmMock({ dmls: [licenseDenial('REGION_NOT_SUPPORTED', 'content is not available here')] });
+    await expect(resolver.relayLicense('CAQ=', {})).rejects.toMatchObject({ groupLabel: null });
+    expect(resolver._refusedGroups).toBeUndefined();
+    drmMock({ dmls: [
+      { status: 200, text: JSON.stringify({ contentResponseList: [groupEntry()] }) }
+    ] });
+    const reply = await resolver.getPlaybackManifest(drmTrack('B3'), {});
+    expect(reply.protectionSets.map((s) => s.groupLabel)).toEqual(['SD', 'LD', 'HD']);
+  });
+
+  test('every group refused: the manifest is served unfiltered rather than unplayable', async () => {
+    const resolver = instantiateAmazonPlugin(axe);
+    resolver._refusedGroups = new Map([['LD', 'build-refused'], ['SD', 'build-refused'], ['HD', 'build-refused']]);
+    drmMock({ dmls: [
+      { status: 200, text: JSON.stringify({ contentResponseList: [groupEntry()] }) }
+    ] });
+    const reply = await resolver.getPlaybackManifest(drmTrack('B4'), {});
+    expect(reply.protectionSets.map((s) => s.groupLabel)).toEqual(['SD', 'LD', 'HD']);
+  });
+
+  test('an unrecognized refusal reason records NOTHING — never even an account-scoped entry', async () => {
+    // A per-content refusal ("this title isn't licensed in HD") must not take
+    // the tier away for the session: only a reason the scope positively
+    // recognizes may be cached at all, and this one is not.
+    const resolver = instantiateAmazonPlugin(axe);
+    drmMock({ dmls: [licenseDenial('SOME_FUTURE_REASON', 'this title is not eligible for HD content')] });
+    await expect(resolver.relayLicense('CAQ=', {})).rejects.toMatchObject({ groupLabel: 'HD' });
+    expect(resolver._refusedGroups).toBeUndefined();
+    const gen1 = drmMock({ generation: 1 });
+    await resolver.sessionState();
+    expect(resolver._refusedGroups).toBeUndefined();
+    drmMock({ dmls: [
+      { status: 200, text: JSON.stringify({ contentResponseList: [groupEntry()] }) }
+    ] });
+    const reply = await resolver.getPlaybackManifest(drmTrack('B5'), {});
+    expect(reply.protectionSets.map((s) => s.groupLabel)).toEqual(['SD', 'LD', 'HD']);
+  });
+
+  test('a certificate-class refusal records no group at all', async () => {
+    // A cert refusal means NO license works on this build — caching group
+    // labels from it would be noise, so the cert branch throws before the
+    // refusal cache is ever reached.
+    const resolver = instantiateAmazonPlugin(axe);
+    drmMock({ dmls: [licenseDenial('DEVELOPMENT_CERTIFICATE_NOT_ALLOWED', 'development VMP certificate not allowed - not eligible for HD content')] });
+    const certErr = await resolver.relayLicense('CAQ=').catch((e) => e);
+    expect(certErr).toMatchObject({ licenseDenied: true });
+    expect(certErr.groupLabel).toBeUndefined();
+    expect(resolver._refusedGroups).toBeUndefined();
+  });
+
+  test('a group label can never come from the CustomerEligibility PII dump', async () => {
+    // The label is read from licenseDenialSummary's first sentence, never the
+    // raw message: this refusal's "not eligible for HD" sits only inside the
+    // `CustomerEligibility(customerId=…)` tail, so nothing is recorded.
+    const resolver = instantiateAmazonPlugin(axe);
+    drmMock({ dmls: [licenseDenial('SOME_FUTURE_REASON', 'sorry - CustomerEligibility(customerId=X, note=not eligible for HD content)')] });
+    await expect(resolver.relayLicense('CAQ=', {})).rejects.toMatchObject({ groupLabel: null });
+    expect(resolver._refusedGroups).toBeUndefined();
+  });
+
+  test('a later account-shaped refusal never DOWNGRADES a build-scoped label', async () => {
+    // The cache entry's scope is a claim about WHY the key was refused, and
+    // 'build-refused' survives sign-out. Overwriting it with a later refusal's
+    // account-shaped reason would hand the refused group back to every manifest
+    // after the next sign-in, which is exactly what the entry exists to stop.
+    const resolver = instantiateAmazonPlugin(axe);
+    drmMock({}); // the production order: the plan reading precedes any refusal
+    await resolver.getPlan();
+    drmMock({ dmls: [licenseDenial('CUSTOMER_NOT_ELIGIBLE', 'this title is not eligible for HD content')] });
+    await expect(resolver.relayLicense('CAQ=', {})).rejects.toMatchObject({ groupLabel: 'HD' });
+    expect(Object.fromEntries(resolver._refusedGroups)).toEqual({ HD: 'license-denied' });
+    // A positive build signal still upgrades the entry (account → build).
+    drmMock({ dmls: [licenseDenial('VMP_VALIDATION_FAILED', 'UNVERIFIED request not eligible for HD content')] });
+    await expect(resolver.relayLicense('CAQ=', {})).rejects.toMatchObject({ groupLabel: 'HD' });
+    expect(Object.fromEntries(resolver._refusedGroups)).toEqual({ HD: 'build-refused' });
+    // And back down it must not go.
+    drmMock({ dmls: [licenseDenial('CUSTOMER_NOT_ELIGIBLE', 'this title is not eligible for HD content')] });
+    await expect(resolver.relayLicense('CAQ=', {})).rejects.toMatchObject({ groupLabel: 'HD' });
+    expect(Object.fromEntries(resolver._refusedGroups)).toEqual({ HD: 'build-refused' });
+    const gen1 = drmMock({ generation: 1 });
+    await resolver.sessionState();
+    expect(Object.fromEntries(resolver._refusedGroups)).toEqual({ HD: 'build-refused' });
+  });
+
+  test('a build sentence the summary cut away records no label (documented, not filtered)', async () => {
+    // The label comes from licenseDenialSummary's FIRST SENTENCE (a label mined
+    // from the PII tail would be worse than none), and that slice stops at " - ";
+    // a refusal that puts its `UNVERIFIED request not eligible for HD content`
+    // sentence after the separator therefore caches NOTHING, even though the
+    // refusal's scope — read from the raw message — is build-scoped. The
+    // manifest stays unfiltered rather than filtering on a guessed label.
+    const resolver = instantiateAmazonPlugin(axe);
+    drmMock({ dmls: [licenseDenial('VMP_VALIDATION_FAILED', 'Amazon could not license this title - UNVERIFIED request not eligible for HD content (EligibilityException VMP_VALIDATION_FAILED)')] });
+    await expect(resolver.relayLicense('CAQ=', {})).rejects.toMatchObject({ groupLabel: null, denialReason: 'VMP_VALIDATION_FAILED' });
+    expect(resolver._refusedGroups).toBeUndefined();
+    drmMock({ dmls: [
+      { status: 200, text: JSON.stringify({ contentResponseList: [groupEntry()] }) }
+    ] });
+    const reply = await resolver.getPlaybackManifest(drmTrack('B6'), {});
+    expect(reply.protectionSets.map((s) => s.groupLabel)).toEqual(['SD', 'LD', 'HD']);
+  });
+
+  test('a plan reading turning unlimited clears the account-scoped labels; a re-read clears nothing', async () => {
+    // On this stack a Prime account never reaches a licence (assertPlanPlays
+    // refuses first), so the reachable path is unlimited → unknown (a bad
+    // reply on a scheduled re-read) → unlimited — the return to unlimited is
+    // the moment the old refusals must not outlive.
+    const resolver = instantiateAmazonPlugin(axe);
+    resolver._refusedGroups = new Map([['HD', 'license-denied'], ['SD', 'build-refused']]);
+    const prime = drmMock({ tier: 'PRIME' });
+    await resolver.getPlan({ refresh: true });
+    expect(resolver._planState.plan).toBe('prime');
+    expect(Object.fromEntries(resolver._refusedGroups)).toEqual({ HD: 'license-denied', SD: 'build-refused' });
+    // The upgrade: an unlimited reading clears the account-scoped label and
+    // keeps the build-scoped one.
+    const unlimited = drmMock({ tier: 'UNLIMITED_HD' });
+    await resolver.getPlan({ refresh: true });
+    expect(resolver._planState.plan).toBe('unlimited');
+    expect(Object.fromEntries(resolver._refusedGroups)).toEqual({ SD: 'build-refused' });
+    // A RE-read of an already-unlimited plan is not a turn: it clears nothing.
+    resolver._refusedGroups.set('HD', 'license-denied');
+    await resolver.getPlan({ refresh: true });
+    expect(Object.fromEntries(resolver._refusedGroups)).toEqual({ SD: 'build-refused', HD: 'license-denied' });
+  });
+
+  test('only the groups a refusal named leave the manifest — other tiers ride on', async () => {
+    // The synthesized five-set shape (LD, SD, TWO sets sharing the HD tier, a
+    // spatial tier of its own — see tests/test-utils/amazon-live-mpd.js): a
+    // refused HD drops both FLAC sets and touches nothing else. The drop is
+    // per TIER — family-scoping the cache was considered and rejected.
+    const { AMAZON_SYNTHESIZED_FIVE_SET_MPD } = require('../test-utils/amazon-live-mpd');
+    const resolver = instantiateAmazonPlugin(axe);
+    resolver._refusedGroups = new Map([['HD', 'build-refused']]);
+    drmMock({ dmls: [
+      { status: 200, text: JSON.stringify({ contentResponseList: [groupEntry(AMAZON_SYNTHESIZED_FIVE_SET_MPD)] }) }
+    ] });
+    const reply = await resolver.getPlaybackManifest(drmTrack('B5'), {});
+    expect(reply.protectionSets.map((s) => s.groupLabel)).toEqual(['LD', 'SD', 'SPATIAL_ATMOS_HIGH']);
+    expect(reply.manifest).toContain('value="SPATIAL_ATMOS_HIGH"');
+    expect(reply.manifest).not.toContain('codecs="flac"');
   });
 });
