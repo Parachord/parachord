@@ -37,7 +37,7 @@ function instantiate(axeContent) {
 describe('amazonmusic .axe structure', () => {
   test('manifest identifies the resolver', () => {
     expect(axe.manifest.id).toBe('amazonmusic');
-    expect(axe.manifest.version).toBe('1.14.0');
+    expect(axe.manifest.version).toBe('1.15.0');
   });
 
   test('declares streaming capabilities without auth', () => {
@@ -61,7 +61,7 @@ describe('amazonmusic .axe structure', () => {
       expect(typeof new Function('return ' + src)()).toBe('function');
     }
     expect(Object.keys(axe.implementation).sort()).toEqual(
-      ['_lib', 'assertPlanPlays', 'cleanup', 'expandRecommendationSection', 'getPlan', 'getRecommendations', 'init', 'isSignedIn', 'lookupAlbum', 'lookupPlaylist', 'play', 'replayGql', 'requireLib', 'resolve', 'search', 'searchAlbums', 'searchArtistImage', 'sessionState', 'specSearch', 'specSearchPageFlow', 'specStructuralError', 'trySpecReplay'].sort()
+      ['_lib', 'assertPlanPlays', 'cleanup', 'expandRecommendationSection', 'getPlan', 'getRecommendations', 'init', 'isSignedIn', 'lookupAlbum', 'lookupAlbumFlow', 'lookupAlbumPageFlow', 'lookupPlaylist', 'play', 'replayGql', 'requireLib', 'resolve', 'search', 'searchAlbums', 'searchArtistImage', 'sessionState', 'specSearch', 'specSearchPageFlow', 'specStructuralError', 'trySpecReplay'].sort()
     );
   });
 });
@@ -452,41 +452,35 @@ describe('amazonmusic lookupPlaylist', () => {
 });
 
 describe('amazonmusic searchAlbums', () => {
-  // The bridge shape (amazon-web-player.searchAlbums -> searchAlbumsFromGql):
-  // asin/name/artist/albumArt/url/explicit. The album search spec carries no
-  // releaseDate or trackCount.
-  const bridgeAlbums = {
-    success: true,
-    engine: 'web',
-    albums: [
-      { asin: 'B0FMW6FYGN', name: 'Dulling The Horns (Deluxe Edition)', artist: 'Wild Pink', albumArt: 'https://m.media-amazon.com/images/I/91OrDh0ADYL.jpg', url: 'https://music.amazon.com/albums/B0FMW6FYGN', explicit: true },
-      { asin: 'B07CMLR17Z', name: 'Yolk in the Fur', artist: 'Wild Pink', albumArt: 'https://m.media-amazon.com/images/I/61t5hojNMAL.jpg', url: 'https://music.amazon.com/albums/B07CMLR17Z', explicit: false }
-    ]
-  };
+  // The flow runs in the plugin (#1356 M6) over the webSession bridge; the
+  // flow mechanics (the albums-tab URL, the album spec, the staleness check,
+  // the breaker) are pinned in amazon-music-plugin-catalog.test.js. Here: the
+  // resolver contract — the mapping to the albumSearch shape and the miss vs
+  // notReady policy.
+  const albums = [
+    { asin: 'B0FMW6FYGN', name: 'Dulling The Horns (Deluxe Edition)', artist: 'Wild Pink', albumArt: 'https://m.media-amazon.com/images/I/91OrDh0ADYL.jpg', explicit: true },
+    { asin: 'B07CMLR17Z', name: 'Yolk in the Fur', artist: 'Wild Pink', albumArt: 'https://m.media-amazon.com/images/I/61t5hojNMAL.jpg', explicit: false }
+  ];
 
   beforeEach(() => {
-    global.window = {
-      electron: {
-        amazonMusic: {
-          searchAlbums: jest.fn().mockResolvedValue(bridgeAlbums)
-        }
-      }
-    };
+    amazonWebSessionMock({ albums });
   });
 
   afterEach(() => {
     delete global.window;
   });
 
-  test('maps bridge albums to the albumSearch contract shape', async () => {
+  test('maps the flow rows to the albumSearch contract shape', async () => {
     const resolver = instantiate(axe);
-    const albums = await resolver.searchAlbums({ artist: 'Wild Pink', title: 'Dulling the Horns' }, {});
-    expect(albums).toEqual([
+    const found = await resolver.searchAlbums({ artist: 'Wild Pink', title: 'Dulling the Horns' }, {});
+    expect(found).toEqual([
       {
         id: 'amazonmusic-album-B0FMW6FYGN',
         name: 'Dulling The Horns (Deluxe Edition)',
         artist: 'Wild Pink',
         albumArt: 'https://m.media-amazon.com/images/I/91OrDh0ADYL.jpg',
+        // The album search spec carries no releaseDate or trackCount; the
+        // plugin contract allows both to be null.
         releaseDate: null,
         trackCount: null,
         url: 'https://music.amazon.com/albums/B0FMW6FYGN',
@@ -503,15 +497,6 @@ describe('amazonmusic searchAlbums', () => {
         explicit: false
       }
     ]);
-    // the { artist, title } payload passes through to the bridge untouched
-    expect(global.window.electron.amazonMusic.searchAlbums)
-      .toHaveBeenCalledWith({ artist: 'Wild Pink', title: 'Dulling the Horns' });
-  });
-
-  test('free text from Search passes through trimmed', async () => {
-    const resolver = instantiate(axe);
-    await resolver.searchAlbums('  wild pink  ', {});
-    expect(global.window.electron.amazonMusic.searchAlbums).toHaveBeenCalledWith('wild pink');
   });
 
   test('too short or empty queries never reach the bridge', async () => {
@@ -519,52 +504,51 @@ describe('amazonmusic searchAlbums', () => {
     expect(await resolver.searchAlbums('d', {})).toEqual([]);
     expect(await resolver.searchAlbums('', {})).toEqual([]);
     expect(await resolver.searchAlbums({}, {})).toEqual([]);
-    expect(global.window.electron.amazonMusic.searchAlbums).not.toHaveBeenCalled();
+    expect(global.window.electron.webSession.load).not.toHaveBeenCalled();
   });
 
-  test('a plain miss returns [] and notReady failures throw, like search()', async () => {
+  test('a plain miss returns [] and readiness failures throw, like search()', async () => {
+    amazonWebSessionMock({ envelope: { data: { specificationSearch: { result: [{ edges: [] }] } } } });
     const resolver = instantiate(axe);
-    global.window.electron.amazonMusic.searchAlbums.mockResolvedValue({ success: true, albums: [] });
     expect(await resolver.searchAlbums('nothing anywhere', {})).toEqual([]);
-    for (const reason of ['not-ready', 'not-signed-in', 'no-cdm', 'load-failed']) {
-      global.window.electron.amazonMusic.searchAlbums.mockResolvedValue({ success: false, reason });
-      await expect(resolver.searchAlbums('wild pink', {})).rejects.toMatchObject({ notReady: true, code: reason });
+    // superseded too: a sign-out mid-load is a readiness failure (search's
+    // list) — never a miss the album catalog caches.
+    for (const reason of ['not-ready', 'not-signed-in', 'load-failed', 'superseded']) {
+      // A fresh resolver per case: one that already minted a spec-search
+      // template answers the next search on the fast path, past the load.
+      amazonWebSessionMock({
+        albums,
+        loadResult: { success: false, reason, error: reason + ' happened' },
+      });
+      await expect(instantiate(axe).searchAlbums('wild pink', {})).rejects.toMatchObject({ notReady: true, code: reason });
     }
   });
 
-  test('no bridge returns []', async () => {
-    delete global.window.electron;
+  test('no webSession bridge returns []', async () => {
+    global.window = {};
     const resolver = instantiate(axe);
     expect(await resolver.searchAlbums('wild pink', {})).toEqual([]);
   });
 });
 
 describe('amazonmusic searchArtistImage', () => {
-  // The bridge shape (amazon-web-player.searchArtistImage ->
-  // searchArtistImageFromGql): success + imageUrl (an https m.media-amazon
-  // CDN URL) on a hit, success + imageUrl null on a miss — including
-  // not-signed-in, which is null WITHOUT a request: unlike the searches, an
-  // artist photo never prompts for sign-in (the chain moves on to Deezer).
+  // The flow runs in the plugin (#1356 M6) over the webSession bridge; the
+  // flow mechanics are pinned in amazon-music-plugin-catalog.test.js. Here:
+  // the resolver contract — a photo URL or null, never a throw.
   const photo = 'https://m.media-amazon.com/images/I/71KKtoQJVeL.jpg';
+  const artists = [{ asin: 'B00V07PBMY', name: 'The Warning', images: [{ url: photo, width: 1366, height: 1366, imageType: 'PROFILE' }] }];
 
   beforeEach(() => {
-    global.window = {
-      electron: {
-        amazonMusic: {
-          searchArtistImage: jest.fn().mockResolvedValue({ success: true, engine: 'web', imageUrl: photo })
-        }
-      }
-    };
+    amazonWebSessionMock({ artists });
   });
 
   afterEach(() => {
     delete global.window;
   });
 
-  test('returns the bridge photo URL for a hit', async () => {
+  test('returns the flow photo URL for a hit', async () => {
     const resolver = instantiate(axe);
     expect(await resolver.searchArtistImage('The Warning', {})).toBe(photo);
-    expect(global.window.electron.amazonMusic.searchArtistImage).toHaveBeenCalledWith('The Warning');
   });
 
   test('too short or empty names never reach the bridge', async () => {
@@ -573,78 +557,91 @@ describe('amazonmusic searchArtistImage', () => {
     expect(await resolver.searchArtistImage('', {})).toBeNull();
     expect(await resolver.searchArtistImage('   ', {})).toBeNull();
     expect(await resolver.searchArtistImage(null, {})).toBeNull();
-    expect(global.window.electron.amazonMusic.searchArtistImage).not.toHaveBeenCalled();
+    expect(global.window.electron.webSession.state).not.toHaveBeenCalled();
   });
 
-  test('a miss (imageUrl null, not-signed-in included) is null, never a throw', async () => {
+  test('a miss (no exact name, not-signed-in included) is null, never a throw', async () => {
     const resolver = instantiate(axe);
-    global.window.electron.amazonMusic.searchArtistImage.mockResolvedValue({ success: true, engine: 'web', imageUrl: null });
-    expect(await resolver.searchArtistImage('Nobody', {})).toBeNull();
-    global.window.electron.amazonMusic.searchArtistImage.mockResolvedValue({ success: false, reason: 'not-ready' });
-    expect(await resolver.searchArtistImage('Nobody', {})).toBeNull();
-    global.window.electron.amazonMusic.searchArtistImage.mockRejectedValue(new Error('boom'));
-    expect(await resolver.searchArtistImage('Nobody', {})).toBeNull();
-  });
-
-  test('a URL that is not a bare https URL never leaves this plugin — the cache persists it', async () => {
-    const resolver = instantiate(axe);
-    for (const bad of [
-      'http://m.media-amazon.com/images/I/x.jpg',
-      'https://m.media-amazon.com/images/I/x.jpg?token=abc',
-      'data:image/png;base64,AAAA',
-      42
-    ]) {
-      global.window.electron.amazonMusic.searchArtistImage.mockResolvedValue({ success: true, engine: 'web', imageUrl: bad });
-      expect(await resolver.searchArtistImage('The Warning', {})).toBeNull();
-    }
-  });
-
-  test('a host whose bridge predates the capability is a quiet no-op', async () => {
-    delete global.window.electron.amazonMusic.searchArtistImage;
-    const resolver = instantiate(axe);
+    amazonWebSessionMock({ artists });
+    expect(await resolver.searchArtistImage('Warrant', {})).toBeNull();
+    amazonWebSessionMock({ artists, signedIn: false });
     expect(await resolver.searchArtistImage('The Warning', {})).toBeNull();
-    delete global.window.electron;
+  });
+
+  test('no webSession bridge is a quiet null', async () => {
+    global.window = {};
+    const resolver = instantiate(axe);
     expect(await resolver.searchArtistImage('The Warning', {})).toBeNull();
   });
 });
 
 describe('amazonmusic lookupAlbum', () => {
+  // The flow runs in the plugin (#1356 M6) over the webSession bridge; the
+  // flow mechanics (the candidate ranking, the AlbumSeo skip, the miss vs
+  // lookup-failed semantics, the disc numbering) are pinned in
+  // amazon-music-plugin-catalog.test.js. Here: the resolver contract — the
+  // mapping to the albumSearch shape, the sign-in prompt, and the miss vs
+  // notReady policy.
   const albumUrl = 'https://music.amazon.com/albums/B07558DQJL';
 
-  const bridgeAlbum = {
-    success: true,
-    engine: 'web',
-    album: {
-      asin: 'B07558DQJL',
-      name: 'Master of Puppets (Remastered)',
-      artist: 'Metallica',
-      albumArt: 'https://m.media-amazon.com/images/I/71RlRk9uwIL.jpg',
-      releaseDate: '1986-02-21T00:00:00.000Z',
-      trackCount: 8,
-      url: albumUrl,
-      explicit: false,
-      tracks: [
-        { asin: 'B07554FHF5', title: 'Battery (Remastered)', artist: 'Metallica', duration: 312, trackNumber: 1, discNumber: 1, explicit: false },
-        { asin: 'B0755C8JX3', title: 'Master Of Puppets (Remastered)', artist: 'Metallica', duration: 515, trackNumber: 2, discNumber: 1, explicit: false }
-      ]
-    }
+  const detailAlbum = {
+    asin: 'B07558DQJL',
+    name: 'Master of Puppets (Remastered)',
+    artist: 'Metallica',
+    albumArt: 'https://m.media-amazon.com/images/I/71RlRk9uwIL.jpg',
+    releaseDate: '1986-02-21T00:00:00.000Z',
+    trackCount: 8,
+    url: albumUrl,
+    explicit: false,
+    tracks: [
+      { asin: 'B07554FHF5', title: 'Battery (Remastered)', artist: 'Metallica', duration: 312, trackNumber: 1, discNumber: 1, explicit: false },
+      { asin: 'B0755C8JX3', title: 'Master Of Puppets (Remastered)', artist: 'Metallica', duration: 515, trackNumber: 2, discNumber: 1, explicit: false }
+    ]
   };
 
-  beforeEach(() => {
-    global.window = {
-      electron: {
-        amazonMusic: {
-          lookupAlbum: jest.fn().mockResolvedValue(bridgeAlbum)
-        }
-      }
-    };
-  });
+  // A webSession mock whose album lookup answers the given album-detail
+  // response (or { reason } for the failure paths).
+  const lookupMock = (album) => {
+    const response = album
+      ? { data: { album: {
+          id: album.asin, title: album.name, shortTitle: album.name,
+          trackCount: album.trackCount, releaseDate: album.releaseDate,
+          images: [{ url: album.albumArt, width: 1200, height: 1200, imageType: 'PRIMARY' }],
+          contributingArtists: { edges: [{ role: 'PRIMARY', node: { name: album.artist } }] },
+          tracksConnection: { edges: album.tracks.map((t) => ({ node: {
+            __typename: 'Track', id: t.asin, title: t.title, trackNumber: t.trackNumber, duration: t.duration,
+            contributingArtists: { edges: [{ role: 'PRIMARY', node: { name: t.artist } }] }
+          } })) }
+        } } }
+      : null;
+    const ws = amazonWebSessionMock({
+      capturesFor: (url) => (/\/albums\//.test(String(url))
+        ? [{
+            url: 'https://gql.music.amazon.com/',
+            method: 'POST',
+            body: JSON.stringify({
+              operationName: 'AlbumDetailPage',
+              variables: { id: 'B07558DQJL', isAuthenticated: true },
+              extensions: { clientLibrary: { name: '@apollo/client' }, persistedQuery: { version: 1, sha256Hash: 'hash' } }
+            }),
+            headers: { 'x-api-key': 'k', 'csrf-token': 't', 'csrf-rnd': 'r', 'csrf-ts': '1' }
+          }]
+        : []),
+      envelope: {}
+    });
+    ws.pageFetch.mockImplementation(async () => ({
+      success: true, status: 200, text: JSON.stringify(response || { data: { album: null } })
+    }));
+    return ws;
+  };
 
   afterEach(() => {
+    delete global.window.__parachordManageAmazonMusic;
     delete global.window;
   });
 
-  test('maps the bridge album to the albumSearch contract shape', async () => {
+  test('maps the flow album to the albumSearch contract shape', async () => {
+    lookupMock(detailAlbum);
     const resolver = instantiate(axe);
     const album = await resolver.lookupAlbum(albumUrl, {});
     expect(album).toEqual(expect.objectContaining({
@@ -671,63 +668,76 @@ describe('amazonmusic lookupAlbum', () => {
       albumArt: 'https://m.media-amazon.com/images/I/71RlRk9uwIL.jpg'
     }));
     // trackCount stays the server's 8 even though only 2 rows mapped — a
-    // truncated load must be visible the way the playlist import's is.
+    // truncated load is visible the way the playlist import's is.
     expect(album.tracks).toHaveLength(2);
-    expect(global.window.electron.amazonMusic.lookupAlbum).toHaveBeenCalledWith(albumUrl);
   });
 
   describe('not signed in', () => {
-    let managePrompt;
-
-    const makeResolver = () => {
-      managePrompt = jest.fn().mockResolvedValue(true);
-      global.window.__parachordManageAmazonMusic = managePrompt;
-      return instantiate(axe);
-    };
-
     test('prompts for sign-in and retries once, like lookupPlaylist', async () => {
-      const resolver = makeResolver();
-      global.window.electron.amazonMusic.lookupAlbum
-        .mockResolvedValueOnce({ success: false, reason: 'not-signed-in' })
-        .mockResolvedValueOnce(bridgeAlbum);
+      const ws = lookupMock(detailAlbum);
+      let signedOut = true;
+      ws.state.mockImplementation(async () => ({
+        success: true,
+        url: 'https://music.amazon.com/search/x/songs',
+        signInUrl: null,
+        cookieNames: signedOut ? ['session-id', 'ubid-main'] : ['at-main', 'sess-at-main'],
+        generation: 0
+      }));
+      const resolver = instantiate(axe);
+      const managePrompt = jest.fn(async () => { signedOut = false; return true; });
+      global.window.__parachordManageAmazonMusic = managePrompt;
       const album = await resolver.lookupAlbum(albumUrl, {});
       expect(album.name).toBe('Master of Puppets (Remastered)');
       expect(managePrompt).toHaveBeenCalledTimes(1);
-      expect(global.window.electron.amazonMusic.lookupAlbum).toHaveBeenCalledTimes(2);
+      // The refused run never loaded a page; only the retry did.
+      expect(ws.load).toHaveBeenCalledTimes(1);
     });
 
     test('declined sign-in throws notReady', async () => {
-      const resolver = makeResolver();
-      managePrompt.mockResolvedValue(false);
-      global.window.electron.amazonMusic.lookupAlbum.mockResolvedValue({
-        success: false, reason: 'not-signed-in'
-      });
+      const ws = lookupMock(detailAlbum);
+      ws.state.mockImplementation(async () => ({
+        success: true,
+        url: 'https://music.amazon.com/search/x/songs',
+        signInUrl: null,
+        cookieNames: ['session-id', 'ubid-main'],
+        generation: 0
+      }));
+      const resolver = instantiate(axe);
+      global.window.__parachordManageAmazonMusic = jest.fn(async () => false);
       await expect(resolver.lookupAlbum(albumUrl, {})).rejects.toMatchObject({
         notReady: true,
         code: 'not-signed-in'
       });
-      expect(global.window.electron.amazonMusic.lookupAlbum).toHaveBeenCalledTimes(1);
+      expect(ws.load).not.toHaveBeenCalled();
     });
   });
 
-  test('a legitimate miss (deleted / other region) is null, not a throw', async () => {
-    global.window.electron.amazonMusic.lookupAlbum.mockResolvedValue({ success: true, album: null });
+  test('a legitimate miss (no connection ever, deleted / other region) is null, not a throw', async () => {
+    lookupMock(null); // every replay answers data.album: null — no winner
     const resolver = instantiate(axe);
     await expect(resolver.lookupAlbum(albumUrl, {})).resolves.toBeNull();
   });
 
   test('transient and structural failures throw notReady — never a bogus miss', async () => {
-    const resolver = instantiate(axe);
-    for (const reason of ['load-failed', 'no-cdm', 'not-ready', 'lookup-failed']) {
-      global.window.electron.amazonMusic.lookupAlbum.mockResolvedValue({
-        success: false, reason, error: reason + ' happened'
+    // superseded too: a sign-out mid-lookup is a readiness failure — its
+    // captures belong to the old account, and the catalog fallback must not
+    // cache it as a missing album.
+    for (const reason of ['load-failed', 'not-ready', 'lookup-failed', 'superseded']) {
+      amazonWebSessionMock({
+        loadResult: { success: false, reason, error: reason + ' happened' },
+        capturesFor: () => [],
+        envelope: {}
       });
-      await expect(resolver.lookupAlbum(albumUrl, {})).rejects.toMatchObject({ notReady: true, code: reason });
+      await expect(instantiate(axe).lookupAlbum(albumUrl, {})).rejects.toMatchObject({ notReady: true, code: reason });
     }
+    // An errored replay is lookup-failed.
+    lookupMock(detailAlbum).pageFetch.mockImplementation(async () => ({ success: true, error: 'Amazon gql query failed (500)' }));
+    await expect(instantiate(axe).lookupAlbum(albumUrl, {})).rejects.toMatchObject({ notReady: true, code: 'lookup-failed' });
   });
 
-  test('a bridge rejection surfaces as null, not a throw', async () => {
-    global.window.electron.amazonMusic.lookupAlbum.mockRejectedValue(new Error('ipc broke'));
+  test('a flow rejection surfaces as null, not a throw', async () => {
+    const ws = lookupMock(detailAlbum);
+    ws.load.mockRejectedValue(new Error('ipc broke'));
     const resolver = instantiate(axe);
     await expect(resolver.lookupAlbum(albumUrl, {})).resolves.toBeNull();
   });

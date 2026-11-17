@@ -23,6 +23,20 @@ const between = (src, start, end) => {
   return src.slice(i, j);
 };
 
+// A plugin method's body: from its `name: async function` line to the exact
+// two-space `},` line that closes it (the methods sit at that one indent
+// level). A plain indexOf('  },\n') would stop at the first NESTED `},` with
+// ≥2 leading spaces and silently truncate the scan — anything after that
+// point would go unread — so the terminator is matched at the method's own
+// indent, exactly.
+const methodBody = (src, method) => {
+  const start = src.indexOf(method);
+  expect(start).toBeGreaterThan(-1);
+  const end = src.slice(start).search(/\n  \},\n/);
+  expect(end).toBeGreaterThan(-1);
+  return src.slice(start, start + end);
+};
+
 describe('main process', () => {
   test('track search checks the plan only when signed in, before searching', () => {
     // #1356 M5: the track search (and with it the plan gate the deleted
@@ -47,11 +61,24 @@ describe('main process', () => {
   });
 
   test('album search, artist photos and lookups do not check the plan', () => {
-    for (const ch of ['amazonmusic-search-albums', 'amazonmusic-search-artist-image', 'amazonmusic-lookup-album', 'amazonmusic-lookup-playlist']) {
-      const start = main.indexOf(`ipcMain.handle('${ch}'`);
-      const next = main.indexOf('ipcMain.handle(', start + 10);
-      expect(main.slice(start, next)).not.toMatch(/assertPlanPlays|getPlan/);
+    // #1356 M6: the album catalog flows moved into the plugin, so the pin
+    // reads the plugin source — their methods must not touch the plan gate
+    // (the plan gate stops playback, not discovery) — and the IPC handlers
+    // that used to carry them are gone (the plugin drives the session
+    // through the webSession bridge).
+    const impl = read('plugins-src/amazonmusic/implementation.js');
+    for (const method of ['searchAlbums: async function', 'searchArtistImage: async function', 'lookupAlbumFlow: async function']) {
+      expect(methodBody(impl, method)).not.toMatch(/assertPlanPlays|getPlan|plan-ineligible/);
     }
+    // The handlers are deleted, and the preload no longer exposes them.
+    for (const ch of ['amazonmusic-search-albums', 'amazonmusic-search-artist-image', 'amazonmusic-lookup-album']) {
+      expect(main).not.toContain(`ipcMain.handle('${ch}'`);
+      expect(preload).not.toContain(`'${ch}'`);
+    }
+    // The playlist import (still host-side) stays un-gated too.
+    const start = main.indexOf("ipcMain.handle('amazonmusic-lookup-playlist'");
+    const next = main.indexOf('ipcMain.handle(', start + 10);
+    expect(main.slice(start, next)).not.toMatch(/assertPlanPlays|getPlan/);
   });
 
   test('getStatus reports the plan and its message once signed in', () => {

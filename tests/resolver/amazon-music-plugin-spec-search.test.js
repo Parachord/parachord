@@ -3,10 +3,10 @@
  * implementation.js) — the machinery pins from amazon-web-player-template.test.js
  * ported to drive the PLUGIN methods against a mocked window.electron.webSession
  * bridge (the preload wrappers' shapes; docs/architecture/web-session.md,
- * "The IPC bridge"). The host file still pins the host-side runner the
- * album/artist searches use until their milestone; the matchers agree because
- * both are copies of the same pure helpers (amazon-music-logic.js owns the
- * host copies, the plugin's _lib the moved ones).
+ * "The IPC bridge"). The album/artist catalog flows that ride the same runner
+ * moved in M6; their pins live in amazon-music-plugin-catalog.test.js. The
+ * matchers below are the plugin's own _lib copies (the host copies in
+ * amazon-music-logic.js died with the host runner).
  *
  * Pinned here:
  *   - the plan gate: not-signed-in when signed out, plan-ineligible when the
@@ -144,6 +144,54 @@ describe('the plan gate (#1220) before any search', () => {
     expect(ws.fetch).toHaveBeenCalledTimes(3); // still the cached unlimited reading
   });
 
+  test("a SCHEDULED read past the TTL that comes back without a tier stays the judge — dmls's rule", async () => {
+    // The plugin's gate mirrors the dmls gate exactly (amazon-dmls.js
+    // getPlan): only a FORCED re-read keeps a known plan when the tier read
+    // fails. A scheduled re-read reads what came back — unknown — so a
+    // hornet rename of `tier` blocks the plugin's search (plan-ineligible,
+    // re-read within the 1-min TTL) exactly as it blocks the host's, instead
+    // of the plugin serving its last Unlimited reading until a restart or
+    // sign-out.
+    const ws = amazonWebSessionMock({ tracks: TRACKS, tier: 'UNLIMITED_AUDIO' });
+    const resolver = instantiateAmazonPlugin(axe);
+    await search(resolver, 'daft punk'); // caches the unlimited reading
+    expect(ws.fetch).toHaveBeenCalledTimes(1);
+    resolver._planState.at = Date.now() - (31 * 60 * 1000); // the TTL elapsed
+    ws.fetch.mockResolvedValue({ success: true, status: 200, headers: {}, text: 'not json' });
+    await expect(search(resolver, 'daft punk')).rejects.toMatchObject({
+      notReady: true,
+      code: 'plan-ineligible'
+    });
+    expect(ws.fetch).toHaveBeenCalledTimes(2); // the scheduled re-read ran, and it read unknown
+  });
+
+  test("a FORCED re-read that comes back without a tier keeps a known plan without re-caching it — dmls's rule", async () => {
+    // dmls's other half (amazon-dmls.js getPlan, the Settings refreshPlan
+    // path): a forced re-read failing on a network blip must not overturn a
+    // known plan — that would block an Unlimited account for a minute
+    // because Settings opened. The plugin's reads are scheduled (its
+    // searches), so this drives getPlan's forced option directly — and the
+    // kept reading is NOT re-cached: the stale timestamp stands, so the
+    // scheduled re-read that follows still re-reads.
+    const ws = amazonWebSessionMock({ tracks: TRACKS, tier: 'UNLIMITED_AUDIO' });
+    const resolver = instantiateAmazonPlugin(axe);
+    await search(resolver, 'daft punk'); // caches the unlimited reading
+    expect(ws.fetch).toHaveBeenCalledTimes(1);
+    resolver._planState.at = Date.now() - (31 * 60 * 1000); // the TTL elapsed
+    const staleAt = resolver._planState.at;
+    ws.fetch.mockResolvedValue({ success: true, status: 200, headers: {}, text: 'not json' });
+    await expect(resolver.getPlan({ refresh: true })).resolves.toBe('unlimited'); // keeps the known plan
+    expect(ws.fetch).toHaveBeenCalledTimes(2); // the forced read skips the cache entirely
+    expect(resolver._planState.at).toBe(staleAt); // not re-cached
+    // The scheduled re-read that follows stays the judge: unknown, not the
+    // kept reading.
+    await expect(search(resolver, 'daft punk')).rejects.toMatchObject({
+      notReady: true,
+      code: 'plan-ineligible'
+    });
+    expect(ws.fetch).toHaveBeenCalledTimes(3);
+  });
+
   test('an unlimited tier searches (the gate passes through)', async () => {
     const ws = amazonWebSessionMock({ tracks: TRACKS, tier: 'UNLIMITED_AUDIO' });
     const resolver = instantiateAmazonPlugin(axe);
@@ -221,24 +269,24 @@ describe('the page flow (webSession.load with the capture window inside it)', ()
   });
 
   test('a cold view whose first gql lands after the host default quiet window is still captured and matched', async () => {
-    // The review fix: the host's awaitCaptureQuiet returns ~quietMs after
-    // load-finish when ZERO captures exist, so a cold view whose first gql
-    // lands >1s after load-finish under the host default (1000ms) would read
-    // as "the page never fired the search" — a structural failure and a
-    // breaker tick. The plugin's explicit window (2500ms) keeps the late
-    // request inside it.
+    // The zero-capture rule: a page that has fired nothing yet is not quiet,
+    // so the wait runs to budgetMs for the FIRST request and only closes
+    // quietMs after the last one. A cold view whose first gql lands 1.2s
+    // after load-finish is inside the window under both the plugin's explicit
+    // window (2500ms quiet, 15s budget) and the host defaults (1000ms quiet,
+    // 8s budget) — the returned capture is matched and replayed.
     const ws = amazonWebSessionMock({ tracks: TRACKS, captureDelayMs: 1200 });
     const resolver = instantiateAmazonPlugin(axe);
     const rows = await search(resolver, 'daft punk');
     expect(rows).toHaveLength(2);
     // The late capture was returned AND matched — the flow replayed it.
     expect(ws.pageFetch).toHaveBeenCalledTimes(1);
-    // The mock simulates the window honestly: the SAME 1200ms-late capture
-    // under the host's default 1000ms window is not returned — the window
-    // closed before the request fired. The wider window the plugin passes
-    // is the only reason the capture above survived.
+    // The mock simulates the window honestly: the SAME 1200ms-late FIRST
+    // capture under a window that closes at 1s for it (quietMs 1000 AND
+    // budgetMs 1000) is not returned — the wait for the first request ended
+    // before it fired.
     const late = await ws.load('amazon-music', 'https://music.amazon.com/search/x/songs', {
-      capture: { urlPrefixes: ['https://gql.music.amazon.com/*'], quietMs: 1000 }
+      capture: { urlPrefixes: ['https://gql.music.amazon.com/*'], quietMs: 1000, budgetMs: 1000 }
     });
     expect(late.captures).toEqual([]);
   });
@@ -312,6 +360,19 @@ describe('the page flow (webSession.load with the capture window inside it)', ()
       const loadsBefore = ws.load.mock.calls.length;
       await expect(search(resolver, 'daft punk')).rejects.toMatchObject({ code: 'not-ready' });
       expect(ws.load.mock.calls.length).toBe(loadsBefore);
+      // ...and with a FRESH TEMPLATE SEEDED, the fail-fast still precedes the
+      // fast path: a reordering that replayed first (or minted on a breaker
+      // tick) would pageFetch here.
+      resolver._specSearchTemplate = resolver.lib.makeSpecSearchTemplate({
+        url: 'https://gql.music.amazon.com/',
+        headers: { 'x-api-key': 'k', 'csrf-token': 't', 'csrf-rnd': 'r', 'csrf-ts': '1' },
+        body: { operationName: 'SpecSearchSeeMorePage', variables: { searchText: 'seed', specType: 'track', firstLimit: 30 }, extensions: { clientLibrary: { name: '@apollo/client' }, persistedQuery: { version: 1, sha256Hash: 'h' } } },
+        capturedAt: Date.now()
+      });
+      ws.pageFetch.mockClear();
+      await expect(search(resolver, 'daft punk')).rejects.toMatchObject({ code: 'not-ready' });
+      expect(ws.load.mock.calls.length).toBe(loadsBefore);
+      expect(ws.pageFetch).not.toHaveBeenCalled();
     } finally {
       warn.mockRestore();
     }
@@ -374,7 +435,7 @@ describe('the page flow (webSession.load with the capture window inside it)', ()
     // session-aged headers with a fresh capturedAt. The warmed retry at flow
     // entry fails busy (a navigation holds the gate), the load then sees the
     // echo, and the mint is skipped.
-    let echoNow = true;
+    let echoNow = false; // the seed flow's capture is the page's own — it mints
     const ws = amazonWebSessionMock({
       tracks: TRACKS,
       capturesFor: (url) => {
@@ -385,6 +446,8 @@ describe('the page flow (webSession.load with the capture window inside it)', ()
     const resolver = instantiateAmazonPlugin(axe);
     await search(resolver, 'daft punk'); // one real page flow mints the template
     const minted = resolver._specSearchTemplate;
+    expect(minted).toBeTruthy();
+    echoNow = true; // from here every capture is our own replay echoing back
     // The two warmed retries fail busy (a navigation holds the gate); each
     // page flow's own replay after the load answers the envelope.
     const outcomes = [
@@ -522,16 +585,59 @@ describe('the fast path (template replay via webSession.pageFetch)', () => {
     expect(ws.load).toHaveBeenCalledTimes(1);
   });
 
-  test('a wall URL on the warm view is not-signed-in without replaying', async () => {
+  test('a wall URL on the warm view falls to the page flow — a parked wall is a miss, not a verdict', async () => {
+    // The view keeps whatever URL its last navigation left behind, so a
+    // token-refresh redirect can park it on a wall with a LIVE session: a
+    // throw here would block the very page flow that navigates it off. The
+    // fast path misses (no replay), the page flow loads — and ITS verdict
+    // decides: a genuinely dead session still lands on the wall.
     const ws = amazonWebSessionMock({ tracks: TRACKS });
     const resolver = await seededResolver(ws);
     ws.state.mockResolvedValue({ success: true, url: 'https://music.amazon.com/ap/signin', signInUrl: null, cookieNames: ['at-main'] });
     ws.pageFetch.mockClear();
+    ws.load.mockClear();
+    // The loaded page lands on the wall too — the session is genuinely dead.
+    ws.load.mockImplementation(async (id, url) => ({
+      success: true,
+      finalUrl: 'https://www.amazon.com/ap/signin',
+      captures: []
+    }));
     await expect(search(resolver, 'daft punk')).rejects.toMatchObject({
       notReady: true,
       code: 'not-signed-in'
     });
+    // The fast path did not replay the stale template off the wall view...
     expect(ws.pageFetch).not.toHaveBeenCalled();
+    // ...but the page flow RAN (the healing navigation).
+    expect(ws.load).toHaveBeenCalledTimes(1);
+  });
+
+  test('a parked wall with a LIVE session heals: the page flow navigates it off', async () => {
+    // The stale view URL says /ap/signin, but the session is fine (a
+    // token-refresh redirect parked it there): the fast path misses and the
+    // page flow's fresh load answers the search.
+    const ws = amazonWebSessionMock({ tracks: TRACKS });
+    const resolver = await seededResolver(ws);
+    ws.state.mockImplementation(async (id) => ({
+      success: true,
+      // The state read still reports the parked wall URL...
+      url: 'https://music.amazon.com/ap/signin',
+      signInUrl: null,
+      cookieNames: ['at-main', 'sess-at-main'],
+      generation: 0
+    }));
+    // ...but the fresh page load lands on the tab, not the wall.
+    const m = decodeURIComponent('https://music.amazon.com/search/daft%20punk/songs');
+    ws.load.mockImplementation(async (id, url) => ({
+      success: true,
+      finalUrl: url,
+      captures: [require('../helpers/amazon-plugin-bridge').amazonSearchCapture('daft punk')]
+    }));
+    ws.pageFetch.mockClear();
+    ws.load.mockClear();
+    const rows = await search(resolver, 'daft punk');
+    expect(rows).toHaveLength(2);
+    expect(ws.load).toHaveBeenCalledTimes(1);
   });
 
   test('a parked (about:blank) view means the page flow runs — a replay needs an origin page world', async () => {
@@ -870,5 +976,199 @@ describe('the plan mapping (amazonPlanFromTier / tierFromConfig)', () => {
     expect(lib.tierFromConfig({ tier: { tier: 'PRIME' } })).toBe('PRIME');
     expect(lib.tierFromConfig({})).toBeNull();
     expect(lib.tierFromConfig(null)).toBeNull();
+  });
+});
+
+
+describe('the runner helpers (the _lib copies, ported from amazon-music-logic.test.js)', () => {
+  const lib = instantiateAmazonPlugin(axe).lib;
+
+describe('amazonSongSearchUrl', () => {
+  test('quotes both terms and ORs the by-form with the two phrase orders — Amazon matching is order-sensitive in both directions', () => {
+    expect(lib.amazonSongSearchUrl({ title: 'stations', artist: 'Warning' })).toEqual({
+      url: 'https://music.amazon.com/search/' + encodeURIComponent('"stations" by "Warning" OR "stations" "Warning" OR "Warning" "stations"') + '/songs',
+      searchText: '"stations" by "Warning" OR "stations" "Warning" OR "Warning" "stations"'
+    });
+    // The case that surfaced the two-order OR: "Яйца" "ХЛЕБ" returns nothing
+    // on Amazon; the reversed clause is what surfaces ХЛЕБ — Яйца.
+    expect(lib.amazonSongSearchUrl({ title: 'Яйца', artist: 'ХЛЕБ' }).searchText)
+      .toBe('"Яйца" by "ХЛЕБ" OR "Яйца" "ХЛЕБ" OR "ХЛЕБ" "Яйца"');
+    // The case that surfaced the by-clause (live-verified 2026-11 through
+    // the app): both bare orders bury Backstabbed's "Out Of Body Experience"
+    // past the spec search's 30-row first page — every row is a track by an
+    // artist literally named "Out of Body Experience" — while the by-form
+    // returns it as row 1. The by-clause is a supplement, never a replacement:
+    // alone it returns zero rows for Яйца/ХЛЕБ and misses Stations/Warning.
+    expect(lib.amazonSongSearchUrl({ title: 'out of body experience', artist: 'backstabbed' }).searchText)
+      .toBe('"out of body experience" by "backstabbed" OR "out of body experience" "backstabbed" OR "backstabbed" "out of body experience"');
+  });
+
+  test('still uses the songs tab when only one field is present', () => {
+    expect(lib.amazonSongSearchUrl({ title: 'stations' }).url).toMatch(/\/songs$/);
+    expect(lib.amazonSongSearchUrl({ artist: 'Warning' }).url).toMatch(/\/songs$/);
+  });
+
+  test('a bare query goes to the songs tab too — that is the page which fires the track search', () => {
+    expect(lib.amazonSongSearchUrl({ query: 'eisenherz' })).toEqual({
+      url: 'https://music.amazon.com/search/eisenherz/songs',
+      searchText: 'eisenherz'
+    });
+  });
+
+  test('returns null when there is nothing to search', () => {
+    expect(lib.amazonSongSearchUrl({ query: '   ' })).toBeNull();
+    expect(lib.amazonSongSearchUrl({})).toBeNull();
+    // A lone surrogate in metadata is a miss, not an exception (the callers'
+    // catch would cache the throw as a noMatch); a well-formed pair searches.
+    expect(lib.amazonSongSearchUrl({ title: 'AC\uD83DDC', artist: 'X' })).toBeNull();
+    expect(lib.amazonSongSearchUrl({ title: 'AC\uD83D\uDE00DC', artist: 'X' })).not.toBeNull();
+    // Control characters in metadata fold to a space — a junk string must not
+    // wedge the matcher for a request it can never match (the same fold
+    // amazonArtistSearchUrl applies to a name).
+    expect(lib.amazonSongSearchUrl({ title: 'Around\nthe World', artist: 'Daft Punk' }).searchText)
+      .toBe('"Around the World" by "Daft Punk" OR "Around the World" "Daft Punk" OR "Daft Punk" "Around the World"');
+    expect(lib.amazonSongSearchUrl({ query: 'a\tb' }).searchText).toBe('a b');
+  });
+});
+
+// The search request the songs page fires (live-captured 2026-10, hornet
+// 1.18x): SpecSearchSeeMorePage, specType track, our exact searchText, an APQ
+// hash that renumbers per hornet redeploy. The parser matches on
+// variables.searchText, never the operationName.
+describe('amazonSpecSearchRequest', () => {
+  const search = (searchText, specType) => JSON.stringify({
+    operationName: 'SpecSearchSeeMorePage',
+    variables: {
+      searchText, specType, firstLimit: 30, isAuthenticated: true,
+      audiobooksEnabled: true, merchEnabled: true, categoryInEntityUnionEnabled: false
+    },
+    extensions: {
+      clientLibrary: { name: '@apollo/client', version: '4.1.6' },
+      persistedQuery: { version: 1, sha256Hash: '56f888fd039c581a348e8057e0d61b9495ce835870a2d1ab7b6f2c900e54e15c' }
+    }
+  });
+
+  test('finds the search request for our text among everything the page fires', () => {
+    const bodies = [
+      JSON.stringify({ operationName: 'IdentityStoreSeed', variables: {} }),
+      search('"Eisenherz" "Juli"', 'track'),
+      JSON.stringify({ operationName: 'Transport', variables: { id: 'mrn:x' } }),
+      '{not json'
+    ];
+    const req = lib.amazonSpecSearchRequest(bodies, '"Eisenherz" "Juli"');
+    expect(req.operationName).toBe('SpecSearchSeeMorePage');
+    expect(req.variables.searchText).toBe('"Eisenherz" "Juli"');
+    expect(req.variables.specType).toBe('track');
+    expect(req.extensions.persistedQuery.sha256Hash).toBe('56f888fd039c581a348e8057e0d61b9495ce835870a2d1ab7b6f2c900e54e15c');
+  });
+
+  test('matching is case-insensitive and trim-tolerant, and batch arrays are tolerated', () => {
+    const batch = JSON.stringify([
+      { operationName: 'AppChromeHeaderLeft', variables: {} },
+      { operationName: 'SpecSearchSeeMorePage', variables: { searchText: '  EiSenHerz ', specType: 'track' } }
+    ]);
+    expect(lib.amazonSpecSearchRequest([batch], 'eisenherz')).not.toBeNull();
+  });
+
+  test('only the track spec is ever accepted — even alone, an album/artist spec never matches', () => {
+    // The album-spec request carries the SAME searchText and an ASIN-shaped
+    // node that maps to a track — first-arrival must not win it the replay.
+    // This is the album-ASIN failure the DOM-era exclusion dance existed to
+    // prevent, on its gql successor.
+    expect(lib.amazonSpecSearchRequest([search('eisenherz', 'album')], 'eisenherz')).toBeNull();
+    expect(lib.amazonSpecSearchRequest([search('eisenherz', 'artist')], 'eisenherz')).toBeNull();
+    const bodies = [
+      search('eisenherz', 'album'),
+      search('eisenherz', 'track')
+    ];
+    expect(lib.amazonSpecSearchRequest(bodies, 'eisenherz').variables.specType).toBe('track');
+  });
+
+  test('a body with no specType at all is accepted (older deploys)', () => {
+    expect(lib.amazonSpecSearchRequest([search('eisenherz', undefined)], 'eisenherz').variables.specType).toBeUndefined();
+  });
+
+  test('the anySpec mode matches any spec — used only to detect the grace condition, never for replay', () => {
+    expect(lib.amazonSpecSearchRequest([search('eisenherz', 'album')], 'eisenherz', { anySpec: true }).variables.specType).toBe('album');
+    expect(lib.amazonSpecSearchRequest([search('eisenherz', 'album')], 'eisenherz', { anySpec: false })).toBeNull();
+  });
+
+  test('another query\'s search, a missing text, and empty captures are not ours', () => {
+    expect(lib.amazonSpecSearchRequest([search('something else', 'track')], 'eisenherz')).toBeNull();
+    expect(lib.amazonSpecSearchRequest([JSON.stringify({ operationName: 'Transport', variables: { id: 1 } })], 'eisenherz')).toBeNull();
+    expect(lib.amazonSpecSearchRequest([], 'eisenherz')).toBeNull();
+    expect(lib.amazonSpecSearchRequest([search('eisenherz', 'track')], '  ')).toBeNull();
+    expect(lib.amazonSpecSearchRequest(null, 'eisenherz')).toBeNull();
+  });
+});
+
+// The breaker bounds the damage of a hornet rename: without it every search
+// burns the full capture window and fails not-ready, serially on the search
+// chain — a resolution run of 100 tracks spends ~25 minutes there and starves
+// playlist imports too.
+describe('createSearchBreaker', () => {
+  const ms = (t) => () => t;
+  const step = () => { t += 1; return t; };
+  let t;
+
+  beforeEach(() => { t = 0; });
+
+  test('stays closed under the threshold and opens at it', () => {
+    const b = lib.createSearchBreaker({ threshold: 3, cooldownMs: 600000, now: step });
+    expect(b.allows()).toBe(true);
+    b.recordFailure();
+    b.recordFailure();
+    expect(b.allows()).toBe(true);
+    b.recordFailure();
+    expect(b.allows()).toBe(false);
+    expect(b.state()).toEqual({ failures: 3, openUntil: 600001, open: true });
+  });
+
+  test('a success closes it; a probe after the cooldown re-opens on failure', () => {
+    const b = lib.createSearchBreaker({ threshold: 2, cooldownMs: 100, now: step });
+    b.recordFailure();
+    b.recordFailure();
+    expect(b.allows()).toBe(false);
+    t = 200; // cooldown elapsed — this search is a probe
+    expect(b.allows()).toBe(true);
+    expect(b.isProbe()).toBe(true);
+    b.recordFailure();
+    expect(b.allows()).toBe(false);
+    b.recordSuccess();
+    expect(b.allows()).toBe(true);
+    expect(b.isProbe()).toBe(false);
+    expect(b.state()).toEqual({ failures: 0, openUntil: 0, open: false });
+  });
+
+  test('a success mid-count resets the run of failures', () => {
+    const b = lib.createSearchBreaker({ threshold: 3, cooldownMs: 100, now: step });
+    b.recordFailure();
+    b.recordFailure();
+    b.recordSuccess();
+    b.recordFailure();
+    b.recordFailure();
+    expect(b.allows()).toBe(true);
+  });
+});
+
+  test('specBodyWithVars patches searchText and specType, keeps hash and flags, never mutates', () => {
+    const body = {
+      operationName: 'SpecSearchSeeMorePage',
+      variables: { searchText: '"daft punk"', specType: 'track', firstLimit: 30, isAuthenticated: true },
+      extensions: { clientLibrary: { name: '@apollo/client' }, persistedQuery: { version: 1, sha256Hash: 'abc123' } }
+    };
+    const before = JSON.parse(JSON.stringify(body));
+    const out = lib.specBodyWithVars(body, { searchText: '"metallica"', specType: 'album' });
+    expect(out.variables.searchText).toBe('"metallica"');
+    expect(out.variables.specType).toBe('album');
+    expect(out.variables.firstLimit).toBe(30);
+    expect(out.variables.isAuthenticated).toBe(true);
+    expect(out.extensions.persistedQuery.sha256Hash).toBe('abc123');
+    expect(out.operationName).toBe('SpecSearchSeeMorePage');
+    // The template is untouched — later searches patch their own copy.
+    expect(body).toEqual(before);
+    // searchText alone (specType left as captured) and vice versa.
+    expect(lib.specBodyWithVars(body, { searchText: 'x' }).variables.specType).toBe('track');
+    expect(lib.specBodyWithVars(body, { specType: 'artist' }).variables.searchText).toBe('"daft punk"');
   });
 });

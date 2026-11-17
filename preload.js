@@ -641,11 +641,9 @@ contextBridge.exposeInMainWorld('electron', {
     signOut: () => ipcRenderer.invoke('amazonmusic-sign-out'),
     // searchTracks is gone (#1356 M5): the plugin's own spec-search runner
     // drives the session through window.electron.webSession instead.
+    // searchAlbums / lookupAlbum / searchArtistImage are gone with it (M6:
+    // the album catalog flows moved into the plugin the same way).
     lookupPlaylist: (url) => ipcRenderer.invoke('amazonmusic-lookup-playlist', { url }),
-    searchAlbums: (query) => ipcRenderer.invoke('amazonmusic-search-albums',
-      query && typeof query === 'object' ? query : { query }),
-    lookupAlbum: (url) => ipcRenderer.invoke('amazonmusic-lookup-album', { url }),
-    searchArtistImage: (artistName) => ipcRenderer.invoke('amazonmusic-search-artist-image', { artistName }),
     // The Recommendations provider: the home page's sections, and a titled
     // section's next page (see-more route). Not plan-gated, like the album
     // catalog and artist images.

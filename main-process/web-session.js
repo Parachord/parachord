@@ -84,12 +84,19 @@
 //      flagged echo: true — the plugin's matchers use that to skip template
 //      re-mints and degrade fast-fail graces (the #1152 class: an echoed
 //      replay once poisoned a template and left a breaker open for a day).
-//   5. THE CAPTURE WINDOW IS QUIET-BOUNDED. A load returns its captures when
-//      the page's request burst goes quiet (quietMs without a new capture
-//      after the load finishes), never later than budgetMs. The matcher is
+//   5. THE CAPTURE WINDOW IS QUIET-BOUNDED, AND CAN END ON THE CALLER'S OWN
+//      NAMED MATCH. A load returns its captures when the page's request burst
+//      goes quiet (quietMs without a new capture after the last capture,
+//      never later than budgetMs; with zero captures the wait runs to budgetMs
+//      — a page that has fired nothing has not started). The matcher is
 //      the plugin's (pure, over the returned captures); the host cannot know
 //      which request matters, so it must not stop early on a match it can't
-//      see.
+//      see. The ONE exception is data: capture.doneWhen — a small declarative
+//      record (bodyIncludes/urlIncludes, validated before any state is
+//      touched) — names the request the caller waits for, and the window ends
+//      the moment a header-complete, non-echo capture satisfies it, before
+//      did-finish-load included (the navigation keeps loading in the
+//      background). Echoed captures (rule 4) never satisfy it.
 //
 // The capture listener itself pairs bodies (onBeforeRequest) with headers
 // (onBeforeSendHeaders) by request id — onBeforeSendHeaders fires
@@ -185,6 +192,47 @@ function urlOnAllowedHost(url, hosts) {
   } catch {
     return false;
   }
+}
+
+// Rule 5's data-only stop condition: `capture.doneWhen`, a small DECLARATIVE
+// record the caller passes with the capture — `{ bodyIncludes?, urlIncludes? }`,
+// each value a short non-empty string — naming the request it waits for. The
+// host applies it and never invents one (a host-chosen match would be a
+// service name in host code); this validator is the whole shape, shared by
+// the IPC bridge so both seams enforce one rule. Returns null when the record
+// is well-formed (or absent — no early stop), else the refusal message:
+// known keys only, non-empty strings capped at 512 chars (a needle the caller
+// writes, not a page to scan), at least one key (a condition that matches
+// nothing is a caller bug, not a wait).
+const DONE_WHEN_KEYS = ['bodyIncludes', 'urlIncludes'];
+const DONE_WHEN_MAX_LEN = 512;
+function captureDoneWhenProblem(doneWhen) {
+  if (doneWhen === undefined || doneWhen === null) return null;
+  if (typeof doneWhen !== 'object' || Array.isArray(doneWhen)) {
+    return 'capture.doneWhen must be an object (a declarative stop condition: { bodyIncludes?, urlIncludes? })';
+  }
+  const keys = Object.keys(doneWhen);
+  if (!keys.length) return `capture.doneWhen needs at least one of ${DONE_WHEN_KEYS.join(', ')}`;
+  for (const key of keys) {
+    if (!DONE_WHEN_KEYS.includes(key)) return `capture.doneWhen has an unknown key (${key}; known: ${DONE_WHEN_KEYS.join(', ')})`;
+    const value = doneWhen[key];
+    if (typeof value !== 'string' || !value.length) return `capture.doneWhen.${key} must be a non-empty string`;
+    if (value.length > DONE_WHEN_MAX_LEN) return `capture.doneWhen.${key} must be at most ${DONE_WHEN_MAX_LEN} chars`;
+  }
+  return null;
+}
+
+// A header-complete capture satisfies a caller's doneWhen record: every
+// present needle a substring of the capture's own field (bodyIncludes of the
+// request body — a null body never matches; urlIncludes of the URL). Echoes
+// (rule 4: our own in-flight pageFetch traffic) never satisfy it — the page's
+// answer is what the caller named, not our own replay of it.
+function captureSatisfiesDoneWhen(doneWhen, entry) {
+  if (!doneWhen || !entry || !entry.headers) return false;
+  if (entry.echo) return false;
+  if (doneWhen.bodyIncludes && !(typeof entry.body === 'string' && entry.body.includes(doneWhen.bodyIncludes))) return false;
+  if (doneWhen.urlIncludes && !(typeof entry.url === 'string' && entry.url.includes(doneWhen.urlIncludes))) return false;
+  return true;
 }
 
 // The hidden view parks at a real size LEFT OF the window, not at 0×0: SPAs
@@ -600,7 +648,7 @@ function createWebSessionHost(config = {}) {
     // single listener slot per method per session, which is exactly why loads
     // serialize (rule 1).
 
-    attachCapture(urlPrefixes) {
+    attachCapture(urlPrefixes, doneWhen = null) {
       const ses = this.session();
       const filter = { urls: urlPrefixes };
       const captured = [];
@@ -643,7 +691,28 @@ function createWebSessionHost(config = {}) {
       // registration carries its own detach so clear() can release the
       // CURRENT one (a stale listener would record the partition's requests
       // into a dead array).
-      const registration = { captured, detached: false, detach: null, snapshot: null };
+      const registration = { captured, detached: false, detach: null, snapshot: null, matched: false };
+      // Rule 5's data-only early stop: when the caller names its match
+      // (doneWhen), the window ends the moment a HEADER-COMPLETE capture
+      // satisfies it — so the check lives here, on the pairing listener, not
+      // in a poll: the stop fires exactly when the named request's headers
+      // land (a body seen alone is not yet a capture — the pairing rule
+      // above). whenDone() lets load() race the navigation against it (the
+      // window can end before did-finish-load); awaitCaptureQuiet checks
+      // `matched` and stops waiting. An echo (rule 4 — our own pageFetch
+      // traffic carrying the same needle) never ends the window: the page's
+      // answer is what the caller named, not our own replay of it.
+      const doneWaiters = [];
+      registration.whenDone = () => new Promise((resolve) => {
+        if (registration.matched) resolve();
+        else doneWaiters.push(resolve);
+      });
+      const doneWhenSatisfied = (entry) => {
+        if (registration.matched || !captureSatisfiesDoneWhen(doneWhen, entry)) return;
+        registration.matched = true;
+        for (const resolve of doneWaiters) resolve();
+        doneWaiters.length = 0;
+      };
       const onRequest = (details, callback) => {
         try {
           if (!isDataRequest(details)) { callback({}); return; }
@@ -685,6 +754,9 @@ function createWebSessionHost(config = {}) {
             headers[name] = value;
           }
           mine.headers = headers;
+          // The early stop fires on the PAIRED entry (body + headers), the
+          // same header-complete bar a snapshot's consumers see.
+          doneWhenSatisfied(mine);
         }
         callback({ requestHeaders: details.requestHeaders });
       };
@@ -710,15 +782,26 @@ function createWebSessionHost(config = {}) {
 
     // The quiet window (rule 5): after the navigation settles, keep capturing
     // until quietMs passes with no new captured request, never longer than
-    // budgetMs.
+    // budgetMs. A page that has fired NOTHING yet is not quiet — it has not
+    // started: with zero captures the wait runs to budgetMs (the old in-flow
+    // poll's unconditional window), so a cold view whose first gql lands well
+    // after load-finish is captured instead of reading "never fired". A
+    // doneWhen match (checked every poll, and once at entry — it can fire
+    // while the navigation still runs) ends the wait the moment it lands.
     async awaitCaptureQuiet(state, { quietMs = cfg.captureQuietMs, budgetMs = cfg.captureBudgetMs } = {}, generation) {
       const startAt = Date.now();
       for (;;) {
+        if (state.matched) return; // the caller's named match ended the window
         await sleep(cfg.capturePollMs);
         // A clear() superseded this load: stop waiting — the session moved on.
         if (generation !== undefined && generation !== this._generation) return;
+        if (state.matched) return;
         const elapsed = Date.now() - startAt;
-        const lastAt = state.captured.length ? state.captured[state.captured.length - 1].at : startAt;
+        if (!state.captured.length) {
+          if (elapsed >= budgetMs) return;
+          continue;
+        }
+        const lastAt = state.captured[state.captured.length - 1].at;
         if (Date.now() - lastAt >= quietMs) return;
         if (elapsed >= budgetMs) return;
       }
@@ -746,15 +829,20 @@ function createWebSessionHost(config = {}) {
 
     // ── the primitives ─────────────────────────────────────────────────────
 
-    // load(url, { timeoutMs, capture: { urlPrefixes, quietMs, budgetMs } })
+    // load(url, { timeoutMs, capture: { urlPrefixes, quietMs, budgetMs, doneWhen } })
     // → { finalUrl, captures } — captures present only when capture was asked
     // for. Serialized per session (rule 1); waits out in-flight pageFetches
-    // (rule 2); captures flag echoes (rule 4) and end on quiet/budget (rule 5).
+    // (rule 2); captures flag echoes (rule 4) and end on quiet/budget, or on
+    // the caller's doneWhen match — the data-only early stop (rule 5).
     async load(url, opts = {}) {
       // Validate before ANY state is touched: a bad argument must not leave
       // a created-but-never-laid-out view or a disarmed park fuse behind.
       if (opts.capture && (!Array.isArray(opts.capture.urlPrefixes) || !opts.capture.urlPrefixes.every((p) => typeof p === 'string'))) {
         throw notReady('invalid', `[web-session ${cfg.id}] capture needs urlPrefixes (an array of URL patterns)`);
+      }
+      const doneWhenProblem = captureDoneWhenProblem(opts.capture && opts.capture.doneWhen);
+      if (doneWhenProblem) {
+        throw notReady('invalid', `[web-session ${cfg.id}] ${doneWhenProblem}`);
       }
       return this.enqueue(async () => {
         const generation = this._generation; // clear() bumps this: a superseded load's teardown must not touch the new session state
@@ -765,15 +853,40 @@ function createWebSessionHost(config = {}) {
         // this — a load without it captures nothing).
         this.layoutOffscreen(view);
         this.cancelPark();
-        const captureState = opts.capture ? this.attachCapture(opts.capture.urlPrefixes) : null;
+        const captureState = opts.capture ? this.attachCapture(opts.capture.urlPrefixes, opts.capture.doneWhen) : null;
         try {
           await this.beginNavigation();
           try {
-            await this.loadURLBudgeted(view, url, opts.timeoutMs);
+            if (captureState && opts.capture.doneWhen) {
+              // The data-only early stop (rule 5): the caller's named match
+              // can land while the page is still loading — the window ends
+              // AT the match, without waiting out did-finish-load (a slow
+              // subresource must not hold the answer hostage). The loser
+              // navigation keeps loading in the background; its late
+              // rejection is handled here, never an unhandled one.
+              const nav = this.loadURLBudgeted(view, url, opts.timeoutMs);
+              nav.catch(() => {}); // the loser's late failure never surfaces as unhandled
+              await Promise.race([nav, captureState.whenDone()]);
+            } else {
+              await this.loadURLBudgeted(view, url, opts.timeoutMs);
+            }
           } finally {
             this.endNavigation();
           }
-          if (captureState) await this.awaitCaptureQuiet(captureState, opts.capture, generation);
+          if (captureState) {
+            // The quiet window (rule 5) — raced against the caller's named
+            // match when there is one: the window ends AT the match, not at
+            // the next poll (a match that fired mid-navigation already
+            // resolved whenDone, and this race is a no-op).
+            if (opts.capture.doneWhen) {
+              await Promise.race([
+                this.awaitCaptureQuiet(captureState, opts.capture, generation),
+                captureState.whenDone()
+              ]);
+            } else {
+              await this.awaitCaptureQuiet(captureState, opts.capture, generation);
+            }
+          }
           // A clear() superseded this load: its captures belong to the OLD
           // account (a caller could mint a session-template from them) — the
           // load rejects, the plugin treats it as failed.
@@ -1165,4 +1278,4 @@ function createWebSessionHost(config = {}) {
   return host;
 }
 
-module.exports = { createWebSessionHost, createLaneQueue, chromeUserAgent, urlOnAllowedHost };
+module.exports = { createWebSessionHost, createLaneQueue, chromeUserAgent, urlOnAllowedHost, captureDoneWhenProblem };

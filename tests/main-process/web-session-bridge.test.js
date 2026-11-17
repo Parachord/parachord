@@ -252,6 +252,43 @@ describe('webSession:load', () => {
     expect(host.load).toHaveBeenLastCalledWith('https://music.amazon.com/', { timeoutMs: 'forever' });
   });
 
+  test('capture.doneWhen passes through when well-formed and is rejected like a bad prefix when not (rule 5\'s data-only stop, as data)', async () => {
+    const host = makeFakeHost();
+    const { handlers } = makeBridge({ host });
+    // Well-formed: the host's own shape, keys and all — one rule at both
+    // seams (the host re-checks it; the bridge is the boundary the renderer
+    // crosses). A doneWhen is data, not a budget — nothing is clamped.
+    const doneWhen = { bodyIncludes: '"AlbumDetailPage"', urlIncludes: '/gql' };
+    const out = await handlers['webSession:load'](mainFrameEvent, {
+      id: 'amazon-music',
+      url: 'https://music.amazon.com/albums/B1',
+      opts: { capture: { urlPrefixes: ['https://gql.music.amazon.com/*'], quietMs: 4500, budgetMs: 15000, doneWhen } }
+    });
+    expect(out).toMatchObject({ success: true });
+    expect(host.load).toHaveBeenCalledWith('https://music.amazon.com/albums/B1', {
+      capture: { urlPrefixes: ['https://gql.music.amazon.com/*'], quietMs: 4500, budgetMs: 15000, doneWhen }
+    });
+    // Malformed: rejected before the host is touched, like a bad prefix — a
+    // stop condition is a wait-ending power, so an unknown key or a
+    // non-string value must not ride through on a typo.
+    for (const bad of [
+      '"AlbumDetailPage"',            // a string, not the declarative record
+      {},                             // no condition — matches nothing
+      { needle: 'AlbumDetailPage' },  // an unknown key
+      { bodyIncludes: 42 },           // not a string
+      { bodyIncludes: '' },           // matches everything — a bug, not a wait
+      { bodyIncludes: 'x'.repeat(513) } // not a needle the caller writes
+    ]) {
+      const refused = await handlers['webSession:load'](mainFrameEvent, {
+        id: 'amazon-music',
+        url: 'https://music.amazon.com/albums/B1',
+        opts: { capture: { urlPrefixes: ['https://gql.music.amazon.com/*'], doneWhen: bad } }
+      });
+      expect(refused).toMatchObject({ success: false, reason: 'invalid' });
+    }
+    expect(host.load).toHaveBeenCalledTimes(1); // only the well-formed one reached the host
+  });
+
   test('a host reason crosses verbatim; a reasonless throw maps to load-failed', async () => {
     const host = makeFakeHost({
       load: jest.fn(async () => {

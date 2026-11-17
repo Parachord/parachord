@@ -3881,15 +3881,6 @@ ipcMain.handle('amazonmusic-get-status', async (event, { refreshPlan } = {}) => 
       // Live proof the search-view preload is alive (sandboxed-preload
       // failure surface).
       preload,
-      // Replay-first template state (specSearch): whether the fast path is
-      // armed, and how fresh the captured request is. Metadata only — the
-      // captured headers and APQ hash never leave the main process.
-      specSearchTemplate: amazonWebPlayer.specSearchTemplate
-        ? {
-            capturedAt: new Date(amazonWebPlayer.specSearchTemplate.capturedAt).toISOString(),
-            ageMs: Date.now() - amazonWebPlayer.specSearchTemplate.capturedAt
-          }
-        : null,
       // The dmls provider's session internals.
       native: amazonDmls.debugState()
     };
@@ -3923,55 +3914,6 @@ ipcMain.handle('amazonmusic-lookup-playlist', async (event, { url } = {}) => {
     return { success: true, engine: 'web', playlist };
   } catch (error) {
     console.warn(`[Amazon] IPC playlist failed: ${error && error.reason} ${error && error.message}`);
-    return {
-      success: false,
-      reason: error.reason,
-      error: error.message
-    };
-  }
-});
-
-ipcMain.handle('amazonmusic-search-albums', async (event, payload) => {
-  console.log(`[Amazon] IPC album search ${JSON.stringify(payload)}`);
-  try {
-    const albums = await amazonWebPlayer.searchAlbums(payload || {});
-    console.log(`[Amazon] IPC album search done ${(albums && albums.length) || 0} albums`);
-    return { success: true, engine: 'web', albums };
-  } catch (error) {
-    console.warn(`[Amazon] IPC album search failed: ${error && error.reason} ${error && error.message}`);
-    // Same reason passthrough as track search — the resolver decides which
-    // reasons are notReady and which are plain misses.
-    return {
-      success: false,
-      reason: error.reason,
-      error: error.message
-    };
-  }
-});
-
-// Artist photos for the artist-image chain (capabilities.artistImage in the
-// .axe). searchArtistImage resolves to a URL or null and never throws for a
-// miss — not-signed-in included (null without a request, unlike the searches
-// which prompt): an artist photo is always optional and the chain moves on.
-ipcMain.handle('amazonmusic-search-artist-image', async (event, { artistName } = {}) => {
-  try {
-    const imageUrl = await amazonWebPlayer.searchArtistImage(artistName);
-    console.log(`[Amazon] IPC artist image ${JSON.stringify(artistName)} -> ${imageUrl ? 'hit' : 'null'}`);
-    return { success: true, engine: 'web', imageUrl };
-  } catch (error) {
-    console.warn(`[Amazon] IPC artist image failed: ${error && error.reason} ${error && error.message}`);
-    return { success: false, reason: error.reason, error: error.message };
-  }
-});
-
-ipcMain.handle('amazonmusic-lookup-album', async (event, { url } = {}) => {
-  console.log(`[Amazon] IPC album lookup ${url}`);
-  try {
-    const album = await amazonWebPlayer.lookupAlbum(url);
-    console.log(`[Amazon] IPC album done ${(album && album.tracks && album.tracks.length) || 0} tracks`);
-    return { success: true, engine: 'web', album };
-  } catch (error) {
-    console.warn(`[Amazon] IPC album lookup failed: ${error && error.reason} ${error && error.message}`);
     return {
       success: false,
       reason: error.reason,
