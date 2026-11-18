@@ -626,6 +626,8 @@ const {
 const { sourceBlockId, withoutTrackSource } = require('./lib/bad-match-report');
 const PlaybackLimits = require('./lib/playback-limits');
 const GettingStartedModel = require('./lib/getting-started');
+const PluginSetup = require('./lib/plugin-setup');
+const { deactivateResolver: deactivateResolverFrom } = require('./lib/deactivate-resolver');
 const { seekSpotify, spotifyPollPredatesSeek, SPOTIFY_SEEK_DEBOUNCE_MS } = require('./lib/spotify-seek');
 const { savedPluginConfig, sourcesChangedOnRecheck, shuffleAllowed, SHUFFLE_UNAVAILABLE_MESSAGE, LISTEN_ALONG_FAILED_POLLS_LIMIT, listenAlongWaitDecision, resumeStartPosition, trackPositionKey, REPEAT_UNAVAILABLE_MESSAGE, nextRepeatMode, normalizeRepeatMode, repeatModeFromLoop, loopFromRepeatMode, shouldRestoreQueue, trackBehindPlaceholder } = require('./lib/playback-helpers');
 const { parseFriendLink, buildFriendLink } = require('./lib/friend-link');
@@ -35526,6 +35528,13 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
   // Add Spotify authentication functions
 
+  // Take a plug-in out of play when its account signs out (#1522): its
+  // sources leave every track, and it leaves the active list and the saved
+  // one, so reEnableResolver (below) treats the sign-out as the person's
+  // choice. Every sign-out that turns its plug-in off calls this one path
+  // (lib/deactivate-resolver.js).
+  const deactivateResolver = (resolverId) => deactivateResolverFrom({ removeResolverSources, setActiveResolvers, savedActiveResolversRef }, resolverId);
+
   // Re-enable a resolver that was removed by a failed startup auth check,
   // restoring it to its saved position in the user's priority order.
   // Only re-enables if the resolver was in the user's saved active_resolvers list
@@ -35662,13 +35671,8 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       await window.electron.spotify.disconnect();
       setSpotifyToken(null);
       setSpotifyConnected(false);
-      // Remove Spotify sources from all tracks and remove from active resolvers
-      removeResolverSources('spotify');
-      setActiveResolvers(prev => prev.filter(id => id !== 'spotify'));
-      // Update saved ref so re-enable logic respects explicit disconnect
-      if (savedActiveResolversRef.current) {
-        savedActiveResolversRef.current = savedActiveResolversRef.current.filter(id => id !== 'spotify');
-      }
+      // Its sources leave every track, and it leaves both active lists.
+      deactivateResolver('spotify');
     }
   };
 
@@ -35844,13 +35848,8 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       await window.electron.soundcloud.disconnect();
       setSoundcloudToken(null);
       setSoundcloudConnected(false);
-      // Remove SoundCloud sources from all tracks and remove from active resolvers
-      removeResolverSources('soundcloud');
-      setActiveResolvers(prev => prev.filter(id => id !== 'soundcloud'));
-      // Mark as explicitly disabled so reEnableResolver won't restore it
-      if (savedActiveResolversRef.current) {
-        savedActiveResolversRef.current = savedActiveResolversRef.current.filter(id => id !== 'soundcloud');
-      }
+      // Its sources leave every track, and it leaves both active lists.
+      deactivateResolver('soundcloud');
     }
   };
 
@@ -36359,13 +36358,8 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       await window.electron.store.delete('applemusic_user_token');
     }
 
-    // Remove Apple Music sources from all tracks
-    removeResolverSources('applemusic');
-    setActiveResolvers(prev => prev.filter(id => id !== 'applemusic'));
-    // Mark as explicitly disabled so reEnableResolver won't restore it
-    if (savedActiveResolversRef.current) {
-      savedActiveResolversRef.current = savedActiveResolversRef.current.filter(id => id !== 'applemusic');
-    }
+    // Its sources leave every track, and it leaves both active lists.
+    deactivateResolver('applemusic');
 
     showToast('Apple Music disconnected', 'info');
   };
@@ -37677,18 +37671,26 @@ useEffect(() => {
   // has no sign-in state for counts as connected once it plays).
   // A plug-in that reports its own status (capabilities.status, Amazon
   // today) says whether it's signed in, in its reply; any such plug-in counts
-  // here without naming it.
-  const pluginAccounts = useMemo(() => {
-    const out = {
-      spotify: spotifyConnected,
-      applemusic: appleMusicConnected,
-      soundcloud: soundcloudConnected
-    };
-    for (const [id, reply] of Object.entries(pluginStatuses || {})) {
-      if (reply && typeof reply.signedIn === 'boolean') out[id] = reply.signedIn;
-    }
-    return out;
-  }, [spotifyConnected, appleMusicConnected, soundcloudConnected, pluginStatuses]);
+  // here without naming it (lib/plugin-setup.js signedInMap).
+  // hostSignIns is the sign-ins whose tokens live here in app.js, keyed by
+  // plug-in id: the one place the host's own facts are named.
+  const hostSignIns = useMemo(() => ({
+    spotify: spotifyConnected,
+    applemusic: appleMusicConnected,
+    soundcloud: soundcloudConnected
+  }), [spotifyConnected, appleMusicConnected, soundcloudConnected]);
+  const pluginAccounts = useMemo(() => PluginSetup.signedInMap(hostSignIns, pluginStatuses), [hostSignIns, pluginStatuses]);
+  // Settings › Plug-Ins marks an enabled plug-in "Needs setup" from this
+  // map ({ [id]: true }), so the page never names a service (#1522). The
+  // facts are the same ones: the plug-in's own status reply first, then
+  // what the host holds (the sign-ins above, and the music folders the
+  // Local Files plug-in plays from), then its manifest (isConfigured, or
+  // the settings fields it needs). lib/plugin-setup.js has the rule.
+  const pluginNeedsSetup = useMemo(() => PluginSetup.needsSetupMap(loadedResolvers, {
+    host: { ...hostSignIns, [GettingStartedModel.LOCAL_FILES_ID]: watchFolders.length > 0 },
+    statuses: pluginStatuses,
+    configs: metaServiceConfigs
+  }), [loadedResolvers, hostSignIns, watchFolders, pluginStatuses, metaServiceConfigs]);
   // A required setting not saved yet: Spotify needs your own Client ID
   // (release builds ship none; a dev .env one doesn't count, so a dev build
   // behaves as a release does). SoundCloud ships a fallback key.
@@ -38301,7 +38303,6 @@ useEffect(() => {
           albumToReleaseIdCache,
           allResolvers,
           appVersion,
-          appleMusicConnected,
           artistDataCache,
           artistImageCache,
           authPortInput,
@@ -38332,7 +38333,7 @@ useEffect(() => {
           playbackLimits,
           playbackQuality,
           playbackSpatial,
-          pluginStatuses,
+          pluginNeedsSetup,
           pluginsFilter,
           releaseDetailsCache,
           rememberQueue,
@@ -38372,12 +38373,9 @@ useEffect(() => {
           skipExternalPrompt,
           skipUnplayablePrompt,
           skipUnsavedFriendWarning,
-          soundcloudConnected,
-          spotifyConnected,
           syncProviderConfig,
           themePref,
           uiZoom,
-          watchFolders,
           ...settingsPageHandlers
         }) // Close wrapper (sidebar + content)
     ) // Close settings container
