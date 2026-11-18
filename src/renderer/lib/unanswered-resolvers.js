@@ -16,13 +16,15 @@ const UNANSWERED_RETRY_MS = 10 * 60 * 1000;
 
 // The ids in `resolverIds` that have no answer in `entry` and are outside the
 // retry window. `entry` null means there is nothing saved (a full resolve,
-// not a retry), so nothing is listed.
-function resolversToAskAgain(entry, resolverIds, now = Date.now()) {
+// not a retry), so nothing is listed. `isStale(id, saved)`, when given, says a
+// saved answer no longer holds (a miss from an older plug-in version,
+// lib/cached-miss.js), so that service counts as unanswered too.
+function resolversToAskAgain(entry, resolverIds, now = Date.now(), isStale = null) {
   if (!entry || !Array.isArray(resolverIds)) return [];
   const sources = entry.sources || {};
   const failedAt = entry.unanswered || {};
   return resolverIds.filter((id) => {
-    if (sources[id]) return false;
+    if (sources[id] && !(typeof isStale === 'function' && isStale(id, sources[id]))) return false;
     const at = failedAt[id];
     return !(typeof at === 'number' && now - at < UNANSWERED_RETRY_MS);
   });

@@ -613,6 +613,8 @@ const {
 const { carriedReleaseArt, withArchiveCover, createReleaseGroupPicks } = require('./lib/release-open');
 const { firstNonEmptyList, entriesFromMusicBrainzRelease, entriesFromCatalogRelease, pickReleaseGroup } = require('./lib/album-track-list');
 const { resolversToAskAgain, nextUnanswered } = require('./lib/unanswered-resolvers');
+// A plug-in's cached miss holds only for the version that gave it (#1535).
+const { isMiss, newMiss, isStaleMiss } = require('./lib/cached-miss');
 const { pickRelease } = require('./lib/release-pick');
 const { uniqueReleases, freshDropsWindow, withinFreshDropsWindow } = require('./lib/fresh-drops-releases');
 const { uniqueConcerts, concertSourceKeys, concertMatchesSource } = require('./lib/concert-events');
@@ -6981,6 +6983,22 @@ const Parachord = () => {
       .map(id => currentResolvers.find(r => r.id === id))
       .filter(r => r && r.capabilities.resolve);
 
+    // Whether a track already has this plug-in's answer: a source, or a miss
+    // from the plug-in version loaded now (lib/cached-miss.js, #1535). A
+    // stale miss is asked again; if the plug-in still finds nothing, the miss
+    // is renewed with the current version so it isn't asked again.
+    const startedAt = Date.now();
+    const hasAnswer = (track, resolver) => {
+      const saved = track.sources[resolver.id];
+      return !!saved && !isStaleMiss(saved, resolver.version, startedAt, CACHE_TTL.persistedSources);
+    };
+    const renewStaleMiss = (track, resolver) => {
+      if (isMiss(track.sources[resolver.id])) track.sources[resolver.id] = newMiss(resolver);
+    };
+    // Saved entries that still answer (every key but a stale miss).
+    const answeredCount = (track) => Object.entries(track.sources).filter(([id, saved]) =>
+      !isStaleMiss(saved, currentResolvers.find(r => r.id === id)?.version, startedAt, CACHE_TTL.persistedSources)).length;
+
     // Helper: flush resolved sources to the queue state so the UI updates incrementally
     const flushToQueue = () => {
       setCurrentQueue(prev => prev.map(queueTrack => {
@@ -7013,13 +7031,14 @@ const Parachord = () => {
 
     // Resolve all tracks across normal resolvers in parallel (no batching needed)
     const normalPromise = Promise.all(tracks.map(async (track) => {
-      if (Object.keys(track.sources).length >= enabledResolvers.length) return;
+      if (answeredCount(track) >= enabledResolvers.length) return;
 
       await Promise.all(normalResolvers.map(async (resolver) => {
-        if (track.sources[resolver.id]) return;
+        if (hasAnswer(track, resolver)) return;
         try {
           const config = await getResolverConfig(resolver.id);
           const result = await resolver.resolve(track.artist, track.title, track.album, config);
+          if (!result) renewStaleMiss(track, resolver);
           if (result) {
             // Score before stamping. Wrong-artist matches collapse to 0.50
             // and the source-selection floor will drop them — but skip the
@@ -7028,6 +7047,7 @@ const Parachord = () => {
             const confidence = calculateConfidence(track, result);
             if (confidence < MIN_CONFIDENCE_THRESHOLD) {
               console.warn(`  ⚠️ ${resolver.name}: Rejecting "${result.title}" by "${result.artist}" — does not match "${track.title}" by "${track.artist}"`);
+              renewStaleMiss(track, resolver);
               return;
             }
             track.sources[resolver.id] = { ...result, confidence };
@@ -7048,15 +7068,17 @@ const Parachord = () => {
     const rateLimitedPromise = (async () => {
       for (const resolver of rateLimitedResolvers) {
         for (const track of tracks) {
-          if (track.sources[resolver.id]) continue;
-          if (Object.keys(track.sources).length >= enabledResolvers.length) continue;
+          if (hasAnswer(track, resolver)) continue;
+          if (answeredCount(track) >= enabledResolvers.length) continue;
           try {
             const config = await getResolverConfig(resolver.id);
             const result = await resolver.resolve(track.artist, track.title, track.album, config);
+            if (!result) renewStaleMiss(track, resolver);
             if (result) {
               const confidence = calculateConfidence(track, result);
               if (confidence < MIN_CONFIDENCE_THRESHOLD) {
                 console.warn(`  ⚠️ ${resolver.name}: Rejecting "${result.title}" by "${result.artist}" — does not match "${track.title}" by "${track.artist}"`);
+                renewStaleMiss(track, resolver);
               } else {
                 track.sources[resolver.id] = { ...result, confidence };
                 if (!track.album && result.album) track.album = result.album;
@@ -9130,7 +9152,10 @@ const Parachord = () => {
         if (sourceKeys.length === 0) continue; // Truly unresolved — leave to normal scheduler
         const hasReal = sourceKeys.some(k => sources[k] && !sources[k].noMatch);
         if (!hasReal) continue;
-        const missing = enabled.some(r => !sources[r]);
+        // A plug-in with no answer, or whose cached miss came from an older
+        // version of it (lib/cached-miss.js, #1535).
+        const missing = enabled.some(r => !sources[r] || isStaleMiss(sources[r],
+          (loadedResolversRef.current || []).find(x => x.id === r)?.version, Date.now(), CACHE_TTL.persistedSources));
         if (!missing) continue;
         return t;
       }
@@ -22956,9 +22981,18 @@ ${trackListXml}
     // source or a noMatch sentinel, and a service that threw or ran past
     // RESOLVE_BUDGET_MS left no entry (lib/unanswered-resolvers.js). Reading that
     // gap as "no match" kept a timed-out service unasked for the whole TTL.
+    // A cached miss holds only for the plug-in version that gave it, and for
+    // the persisted TTL (lib/cached-miss.js, #1535). A stale one reads as
+    // unanswered, so the plug-in is asked again now that the track is being
+    // resolved anyway; there is no sweep of the cache.
+    const loadedVersionOf = id => currentResolvers.find(r => r.id === id)?.version;
+    const missIsStale = (id, saved) => isStaleMiss(saved, loadedVersionOf(id), now, CACHE_TTL.persistedSources);
     const cachedResolverIds = cachedData ? Object.keys(cachedData.sources) : [];
     const persistedResolverIds = Object.keys(persistedSources);
-    const availableResolverIds = [...new Set([...cachedResolverIds, ...persistedResolverIds])];
+    const availableResolverIds = [...new Set([
+      ...cachedResolverIds.filter(id => !missIsStale(id, cachedData.sources[id])),
+      ...persistedResolverIds.filter(id => !missIsStale(id, persistedSources[id]))
+    ])];
     const canResolve = id => {
       const r = currentResolvers.find(x => x.id === id);
       return !!(r?.capabilities?.resolve && r.play);
@@ -22968,7 +23002,7 @@ ${trackListXml}
     const askAgainIds = currentActiveResolvers.filter(id =>
       canResolve(id) && (playbackResolversRef.current || currentActiveResolvers).includes(id));
     const missingResolvers = cacheValid
-      ? resolversToAskAgain(cachedData, askAgainIds, now)
+      ? resolversToAskAgain(cachedData, askAgainIds, now, missIsStale)
       : currentActiveResolvers.filter(id =>
         !availableResolverIds.includes(id) &&
         currentResolvers.find(r => r.id === id)?.capabilities?.resolve
@@ -23176,8 +23210,11 @@ ${trackListXml}
     if (!cacheValid && hasValidPersistedSources && missingResolvers.length > 0) {
       console.log(`🔍 Persisted sources found but missing ${missingResolvers.length} resolver(s), querying: ${missingResolvers.join(', ')}`);
 
-      // Start with persisted sources
+      // Start with persisted sources. A stale miss being asked again is no
+      // answer: if the plug-in fails this time it leaves no entry, like any
+      // failure, rather than the old miss.
       const sources = { ...persistedSources };
+      for (const id of missingResolvers) if (isMiss(sources[id])) delete sources[id];
 
       // Query only missing resolvers
       const missingResolverInstances = missingResolvers
@@ -23202,14 +23239,14 @@ ${trackListXml}
             if (confidence < MIN_CONFIDENCE_THRESHOLD) {
               console.warn(`  ⚠️ ${resolver.name}: Rejecting "${result.title}" by "${result.artist}" — does not match "${track.title}" by "${artistName}"`);
               // Store no-match sentinel so this resolver isn't re-queried (treats wrong-song as no-match)
-              sources[resolver.id] = { noMatch: true, resolvedAt: now };
+              sources[resolver.id] = newMiss(resolver, now);
             } else {
               sources[resolver.id] = { ...result, confidence };
               console.log(`  ✅ ${resolver.name}: Found match (confidence: ${(confidence * 100).toFixed(0)}%)`);
             }
           } else {
             // Store no-match sentinel so this resolver isn't re-queried on next resolution
-            sources[resolver.id] = { noMatch: true, resolvedAt: now };
+            sources[resolver.id] = newMiss(resolver, now);
             console.log(`  ⚪ ${resolver.name}: No match found`);
           }
         } catch (error) {
@@ -23259,8 +23296,9 @@ ${trackListXml}
     if (askAgainOnly) {
       console.log(`🔍 Cache valid but missing ${missingResolvers.length} resolver(s), querying: ${missingResolvers.join(', ')}`);
 
-      // Start with cached sources
+      // Start with cached sources, minus the stale misses being asked again
       const sources = { ...cachedData.sources };
+      for (const id of missingResolvers) if (isMiss(sources[id])) delete sources[id];
 
       // Query only missing resolvers
       const missingResolverInstances = missingResolvers
@@ -23300,7 +23338,7 @@ ${trackListXml}
             if (confidence < MIN_CONFIDENCE_THRESHOLD) {
               console.warn(`  ⚠️ ${resolver.name}: Rejecting "${result.title}" by "${result.artist}" — does not match "${track.title}" by "${artistName}"`);
               // An answer, so it isn't asked again (same as the other branches)
-              sources[resolver.id] = { noMatch: true, resolvedAt: Date.now() };
+              sources[resolver.id] = newMiss(resolver);
             } else {
               sources[resolver.id] = { ...result, confidence };
               console.log(`  ✅ ${resolver.name}: Found match (confidence: ${(confidence * 100).toFixed(0)}%)`);
@@ -23309,7 +23347,7 @@ ${trackListXml}
               }
             }
           } else {
-            sources[resolver.id] = { noMatch: true, resolvedAt: Date.now() };
+            sources[resolver.id] = newMiss(resolver);
             console.log(`  ⚪ ${resolver.name}: No match found`);
           }
         } catch (error) {
@@ -23468,7 +23506,7 @@ ${trackListXml}
             console.warn(`  ⚠️ ${resolver.name}: Rejecting "${result.title}" by "${result.artist}" — does not match "${track.title}" by "${artistName}"`);
             // Skip-attach below floor; no flush. A wrong song is an answer
             // ("no match"), so it's saved as one and not asked again.
-            sources[resolver.id] = existingRealSources[resolver.id] || { noMatch: true, resolvedAt: Date.now() };
+            sources[resolver.id] = existingRealSources[resolver.id] || newMiss(resolver);
             return;
           }
           sources[resolver.id] = { ...result, confidence };
@@ -23498,7 +23536,7 @@ ${trackListXml}
             sources[resolver.id] = existingRealSources[resolver.id];
             console.log(`  ⚪ ${resolver.name}: No match found (preserving existing source)`);
           } else {
-            sources[resolver.id] = { noMatch: true, resolvedAt: Date.now() };
+            sources[resolver.id] = newMiss(resolver);
             console.log(`  ⚪ ${resolver.name}: No match found`);
           }
         }
