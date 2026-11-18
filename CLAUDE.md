@@ -225,6 +225,14 @@ When tagging a new version, three places must agree on the version string. Missi
 
 Then commit (`X.Y.Z` is conventional for the commit subject), push, and `git tag vX.Y.Z` + `git push origin vX.Y.Z`. The CI build picks up from the tag.
 
+**Every time a release publishes, replace its GitHub release body with its release notes**, without being asked. The tag's Build creates the GitHub release with an auto-generated list of PRs as its body (`generate_release_notes` in `build.yml`), and the app's What's New reads the GitHub release body first (`parseHighlights` in `main.js`: each `##` heading and its first bullet), falling back to the bundled `RELEASE_NOTES.md` only when that fails. Left alone, What's New shows nothing useful. Once the release exists (the Build's `release` job has finished), run:
+
+```bash
+node scripts/release-notes-section.js vX.Y.Z | gh release edit vX.Y.Z --notes-file -
+```
+
+It prints the version's `RELEASE_NOTES.md` section without its `# Parachord vX.Y.Z` heading (the release's title is the tag). Then check the release page shows the notes.
+
 PRs and `main` build Mac on Apple Silicon; the Intel build runs only on tags and manual runs (`build.yml`). PRs skipped Mac from 2026-11-04 to 2026-11-11 while hosted Mac runners were short (#1252, #1251). A job that never gets a runner during a Mac shortage is retried up to 3 times by `rerun-unacquired.yml`, on PRs, `main` and tags.
 
 Two release-only failure modes to know about:
