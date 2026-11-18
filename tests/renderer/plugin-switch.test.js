@@ -131,3 +131,21 @@ describe('"Use metadata from X" (#1505)', () => {
     expect(app).toContain("const activeIds = (activeResolversRef.current || []).filter(id => !metadataOffRef.current.includes(id));");
   });
 });
+
+// The Use switch's handler (components/plugin-settings-dialog.js): installing
+// a music plug-in from the marketplace already turns it on (it joins the
+// active list), so the handler must not then toggle it too. The toggle reads
+// the active list from before the install and would switch the plug-in
+// straight back off (found reviewing #1501).
+test('turning on a not-yet-installed music plug-in installs it and leaves it on', () => {
+  const src = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/components/plugin-settings-dialog.js'), 'utf8');
+  const i = src.indexOf('const setOn = async (next) => {');
+  expect(i).toBeGreaterThan(-1);
+  const body = src.slice(i, src.indexOf('\n            };', i));
+  const install = body.indexOf('await handleInstallFromMarketplace(marketplaceItem);');
+  const bail = body.indexOf("if (selectedResolver.type !== 'meta-service') return;");
+  const toggle = body.indexOf('toggleResolver(id);');
+  expect(install).toBeGreaterThan(-1);
+  expect(bail).toBeGreaterThan(install);
+  expect(toggle).toBeGreaterThan(bail);
+});

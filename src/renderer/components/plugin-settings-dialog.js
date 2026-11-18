@@ -375,6 +375,11 @@ React.createElement('div', {
                   if (uninstalled.includes(id)) await window.electron.store.set('uninstalled_resolvers', uninstalled.filter(x => x !== id));
                   const marketplaceItem = (marketplaceManifest?.plugins || []).find(r => r.id === id);
                   if (marketplaceItem) await handleInstallFromMarketplace(marketplaceItem);
+                  // Installing a music plug-in also turns it on (it joins the
+                  // active list). Toggling it here as well would read the
+                  // active list from before the install and switch it straight
+                  // back off.
+                  if (selectedResolver.type !== 'meta-service') return;
                 }
               }
               if (selectedResolver.type === 'meta-service') {
