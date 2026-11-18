@@ -38,9 +38,18 @@ describe('manageAmazonMusic', () => {
 
 describe('resolver grid', () => {
   test('an enabled Amazon resolver that is not signed in needs configuration (the plugin reply)', () => {
-    expect(src).toMatch(/resolver\.id === 'amazonmusic' && pluginStatuses\.amazonmusic && pluginStatuses\.amazonmusic\.signedIn === false\)\s*\{/);
-    // Unknown status (not fetched yet, or the plugin threw — a null reply) is
-    // not flagged.
+    // #1522: the grid reads app.js's pluginNeedsSetup map, built from the
+    // plugin's own status reply (lib/plugin-setup.js), not a branch on its id.
+    const { needsSetupMap } = require('../../src/renderer/lib/plugin-setup');
+    const m = JSON.parse(fs.readFileSync(path.join(__dirname, '../../plugins-src/amazonmusic/manifest.json'), 'utf8'));
+    const amazon = { id: 'amazonmusic', capabilities: m.capabilities };
+    expect(needsSetupMap([amazon], { statuses: { amazonmusic: { signedIn: false } } })).toEqual({ amazonmusic: true });
+    expect(needsSetupMap([amazon], { statuses: { amazonmusic: { signedIn: true } } })).toEqual({});
+    // Unknown status (not fetched yet, or the plugin threw: the loader's
+    // failed marker) is not flagged.
+    expect(needsSetupMap([amazon], { statuses: {} })).toEqual({});
+    expect(needsSetupMap([amazon], { statuses: { amazonmusic: { failed: true } } })).toEqual({});
+    expect(src).toMatch(/PluginSetup\.needsSetupMap\(loadedResolvers, \{/);
     expect(src).not.toMatch(/amazonMusicStatus/);
   });
 });

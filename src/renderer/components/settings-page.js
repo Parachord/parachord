@@ -59,7 +59,6 @@ const SettingsPage = React.memo(function SettingsPage(props) {
     albumToReleaseIdCache,
     allResolvers,
     appVersion,
-    appleMusicConnected,
     artistDataCache,
     artistImageCache,
     authPortInput,
@@ -104,7 +103,7 @@ const SettingsPage = React.memo(function SettingsPage(props) {
     playbackLimits,
     playbackQuality,
     playbackSpatial,
-    pluginStatuses,
+    pluginNeedsSetup,
     pluginsFilter,
     releaseDetailsCache,
     rememberQueue,
@@ -146,13 +145,10 @@ const SettingsPage = React.memo(function SettingsPage(props) {
     skipExternalPrompt,
     skipUnplayablePrompt,
     skipUnsavedFriendWarning,
-    soundcloudConnected,
-    spotifyConnected,
     startNwayMigration,
     syncProviderConfig,
     themePref,
     uiZoom,
-    watchFolders,
   } = props;
   // The bound local server port (main-process/auth-port.js), 8888 until known.
   const authPort = authServerStatus?.port || 8888;
@@ -449,32 +445,11 @@ const SettingsPage = React.memo(function SettingsPage(props) {
                         const isInstalling = installingResolvers.has(resolver.id);
                         const isLoaded = allResolvers.some(r => r.id === resolver.id);
 
-                        // Determine if enabled resolver needs configuration
-                        let needsConfiguration = false;
-                        if (isActive) {
-                          if (resolver.id === 'spotify' && !spotifyConnected) {
-                            needsConfiguration = true;
-                          } else if (resolver.id === 'applemusic' && !appleMusicConnected) {
-                            needsConfiguration = true;
-                          } else if (resolver.id === 'soundcloud' && !soundcloudConnected) {
-                            needsConfiguration = true;
-                          } else if (resolver.id === 'amazonmusic' && pluginStatuses.amazonmusic && pluginStatuses.amazonmusic.signedIn === false) {
-                            // The plugin's status reply (capabilities.status,
-                            // #1356 M10). Unknown status (not fetched yet, or
-                            // the plugin threw and answered null) is not
-                            // flagged — no verdict is the safe reading.
-                            needsConfiguration = true;
-                          } else if (resolver.id === 'localfiles' && watchFolders.length === 0) {
-                            needsConfiguration = true;
-                          } else {
-                            // A plugin that knows its own config shape (Subsonic,
-                            // ...) answers isConfigured(config) from its .axe.
-                            const loadedForConfig = allResolvers.find(r => r.id === resolver.id);
-                            if (typeof loadedForConfig?.isConfigured === 'function') {
-                              try { needsConfiguration = !loadedForConfig.isConfigured(metaServiceConfigs[resolver.id] || {}); } catch (e) { /* treat as configured */ }
-                            }
-                          }
-                        }
+                        // An enabled plug-in that still needs setting up:
+                        // app.js's pluginNeedsSetup map, from the plug-in's
+                        // own status reply, what the host holds for it, or
+                        // its manifest (lib/plugin-setup.js, #1522).
+                        const needsConfiguration = isActive && !!(pluginNeedsSetup && pluginNeedsSetup[resolver.id]);
 
                         // Amazon signed in but not on Music Unlimited: set up,
                         // but it plays nothing (#1220). The tooltip says why.

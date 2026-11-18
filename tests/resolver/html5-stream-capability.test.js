@@ -66,7 +66,12 @@ describe('capabilities.html5Stream', () => {
 
 describe('plugin-owned configuration', () => {
   test('the card asks the plugin whether it is configured', () => {
-    expect(appSrc).toContain("if (typeof loadedForConfig?.isConfigured === 'function') {");
+    // #1522: the Plug-Ins grid's setup map (lib/plugin-setup.js) falls back
+    // to getting-started.js setupMissing, which asks isConfigured first.
+    expect(appSrc).toContain('PluginSetup.needsSetupMap(loadedResolvers, {');
+    const { needsSetup } = require('../../src/renderer/lib/plugin-setup');
+    expect(needsSetup({ id: 'plex', capabilities: {}, isConfigured: () => false }, {})).toBe(true);
+    expect(needsSetup({ id: 'plex', capabilities: {}, isConfigured: () => true }, {})).toBe(false);
     expect(typeof plex.implementation.isConfigured).toBe('string');
     expect(typeof subsonic.implementation.isConfigured).toBe('string');
   });
