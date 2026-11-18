@@ -128,26 +128,52 @@ describe('isConfigured', () => {
 // hands over React and config read/write, the plugin owns the markup. Static
 // render only — effects (library discovery, index polling) need a window.
 describe('renderSettings', () => {
+  // The panel draws only with the host's shared parts (ctx.components), as
+  // plugin-settings-dialog.js passes them, so it renders with the real ones.
   const React = require('react');
+  global.React = React;
   const { renderToStaticMarkup } = require('react-dom/server');
-  const render = (config) => renderToStaticMarkup(React.createElement(() => plex.renderSettings({
-    React, config, resolver: plex, isActive: false,
-    saveConfig: async () => {}, clearConfig: async () => {}, setActive: () => {},
+  const { AccountRow } = require('../../src/renderer/components/account-row');
+  const { SettingRow, NestedSettings, Switch } = require('../../src/renderer/components/fields');
+  const { Button } = require('../../src/renderer/components/button');
+  const { ProgressBar } = require('../../src/renderer/components/progress-bar');
+  const { EmptyState, ErrorState } = require('../../src/renderer/components/states');
+  const { Disclosure } = require('../../src/renderer/components/disclosure');
+  const components = { AccountRow, SettingRow, NestedSettings, Switch, Button, ProgressBar, EmptyState, ErrorState, Disclosure };
+  const render = (config, extra = {}) => renderToStaticMarkup(React.createElement(() => plex.renderSettings({
+    React, config, resolver: { ...plex, color: '#E5A00D' }, isActive: false, components,
+    saveConfig: async () => {}, clearConfig: async () => {}, setActive: () => {}, ...extra,
   })));
 
-  test('signed out: offers the sign-in button and no library list', () => {
+  test('signed out: the shared account row offers Sign in, and no library list', () => {
     const html = render({});
-    expect(html).toContain('Sign in with Plex');
-    expect(html).not.toContain('Disconnect');
+    expect(html).toContain('Plex account');
+    expect(html).toContain('aria-label="Sign in to Plex"');
+    expect(html).not.toContain('Sign out');
     expect(html).not.toContain('Music libraries');
   });
 
-  test('signed in: shows the account, the disconnect button and the library section', () => {
+  test('signed in: the account row says who, offers Sign out, and the library section shows', () => {
     const html = render({ ...CONFIG, username: 'jp' });
     expect(html).toContain('Signed in as jp');
-    expect(html).toContain('Disconnect');
+    expect(html).toContain('aria-label="Sign out of Plex"');
     expect(html).toContain('Music libraries');
-    expect(html).not.toContain('Sign in with Plex');
+    expect(html).toContain('Refresh');
+    expect(html).not.toContain('Sign in to Plex');
+  });
+
+  test('it builds nothing of its own: no raw buttons, inputs, checkboxes or hex colours in its markup', () => {
+    const src = require('fs').readFileSync(require('path').join(__dirname, '../../plugins-src/plex/implementation.js'), 'utf8');
+    const i = src.indexOf('renderSettings: function (ctx) {');
+    const body = src.slice(i, src.indexOf('\n  },\n', i));
+    expect(body).not.toMatch(/h\('(button|input|label|select)'/);
+    expect(body).not.toMatch(/type: 'checkbox'/);
+    // The one hex is the account row's fallback colour for a host that sends none.
+    expect((body.match(/#[0-9a-fA-F]{6}/g) || []).filter((c) => c !== '#E5A00D')).toEqual([]);
+  });
+
+  test('a host without the shared parts gets no panel rather than a broken one', () => {
+    expect(render({}, { components: undefined })).toBe('');
   });
 });
 

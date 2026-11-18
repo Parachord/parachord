@@ -26,7 +26,7 @@ const { librarySyncState } = require('../lib/library-sync-state');
 const { ProgressBar } = require('./progress-bar');
 const { AccountRow } = require('./account-row');
 const { Disclosure } = require('./disclosure');
-const { EmptyState } = require('./states');
+const { EmptyState, ErrorState } = require('./states');
 
 const PLUGIN_SETTINGS_DIALOG_HANDLERS = [
   'connectAppleMusic',
@@ -1106,6 +1106,11 @@ React.createElement('div', null,
             if (!loaded || typeof loaded.renderSettings !== 'function') return null;
             const ctx = {
               React,
+              // The shared parts a plug-in-drawn panel builds with, so it looks
+              // and behaves like every other plug-in's settings (CLAUDE.md,
+              // "every plug-in's settings are one layout"). A panel draws with
+              // these only, never its own buttons, inputs or colours.
+              components: { AccountRow, SettingRow, NestedSettings, Switch, Button, ProgressBar, EmptyState, ErrorState, Disclosure },
               resolver: loaded,
               config: metaServiceConfigs[pluginId] || {},
               saveConfig: async (next) => {

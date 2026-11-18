@@ -430,7 +430,10 @@ module.exports = {
               var dirs = (secData.MediaContainer && secData.MediaContainer.Directory) || [];
               for (var j = 0; j < dirs.length; j++) {
                 if (dirs[j].type === 'artist') {
-                  server.libraries.push({ key: String(dirs[j].key), title: dirs[j].title });
+                  // The library's folder tells apart two libraries with the
+                  // same name (two "Music" libraries on one server).
+                  const loc = Array.isArray(dirs[j].Location) && dirs[j].Location[0] && dirs[j].Location[0].path;
+                  server.libraries.push({ key: String(dirs[j].key), title: dirs[j].title, folder: loc ? String(loc).split(/[\\/]/).filter(Boolean).pop() || null : null });
                 }
               }
             }
@@ -808,7 +811,7 @@ module.exports = {
       setError(null);
       try {
         const disc = await self.discoverLibraries(acct);
-        if (disc && disc.error) setError(disc.error);
+        if (disc && disc.error) setError('Parachord couldn\u2019t list your Plex servers. Check your connection, then try again.');
         const found = (disc && disc.servers) || [];
         setServers(found);
         const next = savedLibIds.length
@@ -821,7 +824,8 @@ module.exports = {
         // it persists without a Save button. No-op when it already matches.
         if (Array.from(next).sort().join('|') !== savedKey) await persistSelection(next, acct, found);
       } catch (e) {
-        setError(e.message);
+        console.error('Plex library discovery failed:', e);
+        setError('Parachord couldn\u2019t list your Plex servers. Check your connection, then try again.');
       } finally {
         setDiscovering(false);
       }
@@ -834,7 +838,8 @@ module.exports = {
       try {
         const res = await self.connect({ clientId: saved.clientId });
         if (!res || !res.success) {
-          setError((res && res.error) || 'Plex sign-in failed.');
+          console.error('Plex sign-in failed:', res && res.error);
+          setError('Plex sign-in didn\u2019t finish. Approve Parachord on the Plex page in your browser, then try again.');
           return;
         }
         const acct = { authToken: res.authToken, clientId: res.clientId, username: res.username };
@@ -843,7 +848,8 @@ module.exports = {
         setStatus('Finding your servers and music libraries…');
         await loadLibraries(acct);
       } catch (e) {
-        setError(e.message);
+        console.error('Plex sign-in failed:', e);
+        setError('Plex sign-in didn\u2019t finish. Approve Parachord on the Plex page in your browser, then try again.');
       } finally {
         setConnecting(false);
         setStatus('');
@@ -884,74 +890,82 @@ module.exports = {
       return function () { clearInterval(id); };
     }, [savedKey]);
 
-    const secondary = { fontSize: '12px', color: 'var(--text-secondary)' };
-    const button = function (label, onClick, opts) {
-      return h('button', {
-        onClick: onClick, disabled: !!opts.disabled, className: 'transition-colors',
-        style: { padding: '8px 14px', fontSize: '13px', fontWeight: '500', color: opts.color, backgroundColor: opts.bg, border: 'none', borderRadius: '8px', cursor: opts.disabled ? 'default' : 'pointer' }
-      }, label);
-    };
+    // Drawn only with the host's shared parts (ctx.components), so this panel
+    // looks and behaves like every other plug-in's settings: the account row,
+    // setting rows with switches, the progress bar, the empty and error
+    // states. A plug-in-drawn panel builds nothing of its own.
+    const C = ctx.components || {};
+    const AccountRow = C.AccountRow, SettingRow = C.SettingRow, NestedSettings = C.NestedSettings;
+    const Switch = C.Switch, Button = C.Button, ProgressBar = C.ProgressBar;
+    const EmptyState = C.EmptyState, ErrorState = C.ErrorState;
+    if (!AccountRow || !SettingRow || !Switch || !Button) return null; // a host without the parts
 
+    const libraryRows = [];
+    servers.forEach(function (srv) {
+      srv.libraries.forEach(function (lib) {
+        // Two libraries with one name (two "Music" libraries) are told apart
+        // by their folder.
+        const sameName = srv.libraries.filter(function (o) { return o.title === lib.title; }).length > 1;
+        libraryRows.push(h(SettingRow, {
+          key: srv.serverId + ':' + lib.key,
+          label: lib.title,
+          hint: srv.serverName + (srv.owned ? '' : ' (shared with you)') + (sameName && lib.folder ? ' \u00b7 ' + lib.folder : ''),
+        }, h(Switch, {
+          size: 'sm',
+          checked: selected.has(libId(srv.serverId, lib.key)),
+          onToggle: function () { toggleLibrary(srv.serverId, lib.key); },
+          'aria-label': 'Use ' + lib.title + ' on ' + srv.serverName,
+        })));
+      });
+    });
+
+    const indexRows = indexStatus.map(function (st, i) {
+      const ready = st.status === 'ready';
+      const hint = ready ? ('Indexed ' + (st.scanned || 0).toLocaleString() + ' tracks')
+        : st.status === 'error' ? 'Couldn\u2019t scan this library. Try Refresh.'
+          : st.status === 'building' ? ('Scanning ' + (st.scanned || 0).toLocaleString() + (st.total ? ' of ' + st.total.toLocaleString() : '') + '\u2026')
+            : 'Waiting to scan\u2026';
+      return h(SettingRow, {
+        key: (st.serverName || '') + ':' + (st.libraryTitle || '') + ':' + i,
+        label: (st.libraryTitle || 'Library') + ' search index',
+        hint: hint,
+      }, ready || !ProgressBar ? h('span', null) : h(ProgressBar, {
+        value: st.scanned || 0, max: st.total || 0, color: 'var(--accent-fill)', label: 'Scanning ' + (st.libraryTitle || 'library'),
+        style: { width: '96px' },
+      }));
+    });
+
+    const anyLibraries = libraryRows.length > 0;
     return h('div', { style: { padding: '16px 0', borderTop: '1px solid var(--border-subtle)' } },
-      h('div', { className: 'flex items-center justify-between' },
-        h('div', null,
-          h('span', { style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' } }, 'Plex Account'),
-          h('p', { style: Object.assign({ marginTop: '2px' }, secondary) },
-            connected ? ('Signed in' + (account.username ? ' as ' + account.username : '')) : 'Sign in to stream from your Plex servers')
-        ),
-        connected
-          ? button('Disconnect', disconnect, { color: '#dc2626', bg: 'rgba(220, 38, 38, 0.08)' })
-          : button(connecting ? 'Signing in…' : 'Sign in with Plex', connect, { disabled: connecting, color: '#ffffff', bg: connecting ? '#9ca3af' : '#E5A00D' })
-      ),
-      connecting && status && h('p', { style: Object.assign({ marginTop: '10px' }, secondary) }, status),
-      error && h('p', { style: { marginTop: '10px', fontSize: '12px', color: '#dc2626' } }, error),
-      connected && h('div', { style: { marginTop: '16px' } },
-        h('div', { className: 'flex items-center justify-between', style: { marginBottom: '8px' } },
-          h('span', { style: { fontSize: '12px', fontWeight: '500', color: 'var(--text-primary)' } }, 'Music libraries'),
-          h('button', {
-            onClick: function () { loadLibraries(account); }, disabled: discovering,
-            style: { fontSize: '11px', color: 'var(--text-secondary)', background: 'none', border: 'none', cursor: discovering ? 'default' : 'pointer', textDecoration: 'underline' }
-          }, 'Refresh')
-        ),
-        discovering && servers.length === 0 && h('div', { className: 'flex items-center gap-2', style: secondary },
-          h('div', { className: 'animate-spin', style: { width: '12px', height: '12px', border: '2px solid var(--border-subtle)', borderTopColor: '#E5A00D', borderRadius: '50%', flexShrink: 0 } }),
-          h('span', null, 'Loading your libraries…')
-        ),
-        !discovering && servers.length === 0 && h('p', { style: secondary }, 'No music libraries found on your servers.'),
-        servers.map(function (srv) {
-          return h('div', { key: srv.serverId, style: { marginBottom: '12px' } },
-            h('div', { style: { fontSize: '11px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '4px' } }, srv.serverName + (srv.owned ? '' : ' (shared)')),
-            srv.libraries.length === 0
-              ? h('div', { style: { fontSize: '11px', color: 'var(--text-secondary)', fontStyle: 'italic', paddingLeft: '4px' } }, 'No music libraries (or server unreachable)')
-              : srv.libraries.map(function (lib) {
-                  return h('label', { key: lib.key, className: 'flex items-center gap-2', style: { fontSize: '12px', color: 'var(--text-primary)', padding: '4px 0', cursor: 'pointer' } },
-                    h('input', { type: 'checkbox', checked: selected.has(libId(srv.serverId, lib.key)), onChange: function () { toggleLibrary(srv.serverId, lib.key); } }),
-                    h('span', null, lib.title)
-                  );
-                })
-          );
+      h(AccountRow, {
+        name: 'Plex',
+        color: (ctx.resolver && ctx.resolver.color) || '#E5A00D',
+        signedIn: connected,
+        status: connected
+          ? ('Signed in' + (account.username ? ' as ' + account.username : ''))
+          : (connecting && status ? status : 'Sign in to stream from your Plex servers'),
+        onSignIn: connect,
+        onSignOut: disconnect,
+        busy: connecting,
+      }),
+      error && ErrorState && h(ErrorState, {
+        compact: true, align: 'start', title: 'Couldn\u2019t reach Plex', body: error,
+        onRetry: connected ? function () { loadLibraries(account); } : connect,
+      }),
+      connected && NestedSettings && h(NestedSettings, { style: { marginTop: '12px' } },
+        h(SettingRow, {
+          label: 'Music libraries',
+          hint: discovering ? 'Looking for your servers and libraries\u2026' : 'Choose which to search and play',
+        }, h(Button, { variant: 'secondary', size: 'sm', busy: discovering, disabled: discovering, onClick: function () { loadLibraries(account); } }, 'Refresh')),
+        !discovering && !anyLibraries && !error && EmptyState && h(EmptyState, {
+          compact: true, align: 'start', icon: null,
+          title: servers.length ? 'No music libraries yet' : 'No Plex servers found',
+          body: servers.length
+            ? 'Add a Music library in Plex, or check that the server is on and reachable, then Refresh.'
+            : 'Check that your Plex Media Server is running and signed in to this account, then Refresh.',
         }),
-        indexStatus.length > 0 && h('div', { style: { marginTop: '14px', paddingTop: '12px', borderTop: '1px solid var(--border-subtle)' } },
-          h('span', { style: { fontSize: '12px', fontWeight: '500', color: 'var(--text-primary)' } }, 'Search index'),
-          h('p', { style: { fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px', marginBottom: '8px', lineHeight: '1.4' } }, 'Your libraries are scanned once, for quick matching.'),
-          indexStatus.map(function (st, i) {
-            const pct = st.total > 0 ? Math.min(100, Math.round((st.scanned / st.total) * 100)) : (st.status === 'ready' ? 100 : 0);
-            const label = st.status === 'ready' ? ('Indexed ' + (st.scanned || 0).toLocaleString() + ' tracks')
-              : st.status === 'error' ? ('Failed: ' + (st.error || 'error'))
-                : st.status === 'building' ? ('Scanning… ' + (st.scanned || 0).toLocaleString() + (st.total ? ' / ' + st.total.toLocaleString() : ''))
-                  : 'Queued…';
-            return h('div', { key: (st.serverName || '') + ':' + (st.libraryTitle || '') + ':' + i, style: { marginBottom: '8px' } },
-              h('div', { className: 'flex items-center justify-between', style: { fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '3px' } },
-                h('span', null, (st.libraryTitle || 'Library') + (st.serverName ? ' · ' + st.serverName : '')),
-                h('span', null, st.status === 'ready' ? 'Ready' : (pct + '%'))
-              ),
-              h('div', { style: { height: '5px', backgroundColor: 'var(--hover-bg-default)', borderRadius: '3px', overflow: 'hidden' } },
-                h('div', { style: { height: '100%', width: pct + '%', backgroundColor: st.status === 'error' ? '#dc2626' : '#E5A00D', transition: 'width 0.3s' } })
-              ),
-              h('div', { style: { fontSize: '10px', color: 'var(--text-secondary)', marginTop: '2px' } }, label)
-            );
-          })
-        )
+        libraryRows,
+        indexRows
       )
     );
   },
