@@ -253,7 +253,7 @@ function UsernameAccount({ plugin, config, account, color, children }) {
       e(TextField, { value: values.username || '', onChange: (_v, ev) => setValue('username', ev.target.value), placeholder: `Your ${plugin.name} username`, 'aria-label': `Your ${plugin.name} username`, className: 'w-full' })),
     children,
     // Optional keys, saved with the username.
-    e(AdvancedKeys, { plugin, values, setValue, open: account.advancedOpen, setOpen: account.setAdvancedOpen }));
+    e(AdvancedKeys, { plugin, values, setValue, open: account.advancedOpen, setOpen: account.setAdvancedOpen, notice: account.advancedNotice }));
 }
 
 // LibrarySync: capabilities.librarySync, the service's saved music and

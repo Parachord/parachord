@@ -1409,7 +1409,7 @@ const { timeAgo } = require('./lib/time-ago');
 const { untilLabel } = require('./lib/until-label');
 const { chartLoadView } = require('./lib/chart-load-view');
 const { userError, errorText } = require('./lib/error-copy');
-const { OWN_KEY_REFUSED_NOTICE: LASTFM_OWN_KEY_REFUSED_NOTICE, OWN_KEY_REFUSED_HINT: LASTFM_OWN_KEY_REFUSED_HINT } = require('./lib/lastfm-key');
+const { OWN_KEY_REFUSED_NOTICE: LASTFM_OWN_KEY_REFUSED_NOTICE, OWN_KEY_REFUSED_HINT: LASTFM_OWN_KEY_REFUSED_HINT, RATE_LIMIT_NOTICE: LASTFM_RATE_LIMIT_NOTICE } = require('./lib/lastfm-key');
 const { trackDurationLabel } = require('./lib/track-duration');
 const { contextPlaylistTarget, playlistRef } = require('./lib/playlist-context');
 const { pulledOpenPlaylist } = require('./lib/playlist-sync-banner');
@@ -8137,28 +8137,32 @@ const Parachord = () => {
   // The Last.fm API key a request uses: the person's own (the plug-in's
   // Advanced settings) unless Last.fm turned it down this session, else the
   // built-in one. Chosen only by window.lastfmKeys (lib/lastfm-key.js, #1538),
-  // which is fed here during render so a key saved in Settings counts at once.
+  // fed from the plug-in's saved settings whenever they change. This effect
+  // is declared before every effect that fetches, so it runs first.
   const lastfmKeys = window.lastfmKeys;
-  lastfmKeys?.setOwn(metaServiceConfigs.lastfm);
+  useEffect(() => {
+    lastfmKeys?.setOwn(metaServiceConfigs.lastfm);
+  }, [lastfmKeys, metaServiceConfigs.lastfm?.apiKey, metaServiceConfigs.lastfm?.apiSecret]);
   const getLastfmApiKey = () => {
     if (lastfmKeys) return lastfmKeys.apiKey();
     return lastfmApiKey.current;
   };
   // Set while the person's own key is the one Last.fm turned down: the
-  // plug-in's Advanced section says so. The toast is once per session.
+  // plug-in's Advanced section says so, every time it changes. The toast is
+  // once per session, with a way to the Last.fm plug-in.
   const [lastfmOwnKeyRefused, setLastfmOwnKeyRefused] = useState(false);
+  const openPluginSettingsRef = useRef(null);
   useEffect(() => {
     if (!lastfmKeys) return undefined;
-    if (lastfmKeys.ownKeyRefused()) setLastfmOwnKeyRefused(true);
-    return lastfmKeys.onFallback(() => {
-      setLastfmOwnKeyRefused(true);
-      showToastRef.current?.(LASTFM_OWN_KEY_REFUSED_NOTICE, 'warning', null, { duration: 10000 });
+    setLastfmOwnKeyRefused(lastfmKeys.ownKeyRefused());
+    const offChange = lastfmKeys.onChange((refused) => setLastfmOwnKeyRefused(refused));
+    const offFirst = lastfmKeys.onFirstRefusal(() => {
+      showToastRef.current?.(LASTFM_OWN_KEY_REFUSED_NOTICE, 'warning',
+        { label: 'Open Last.fm', onClick: () => openPluginSettingsRef.current?.('lastfm') },
+        { duration: 10000 });
     });
+    return () => { offChange(); offFirst(); };
   }, [lastfmKeys]);
-  // A different key saved later is tried afresh, so the line goes with it.
-  useEffect(() => {
-    if (lastfmOwnKeyRefused && lastfmKeys && !lastfmKeys.ownKeyRefused()) setLastfmOwnKeyRefused(false);
-  }, [lastfmOwnKeyRefused, lastfmKeys, metaServiceConfigs.lastfm?.apiKey]);
 
   // Wrapper for Last.fm API fetches that detects rate limiting and suggests BYOK
   const lastfmRateLimitShown = useRef(0);
@@ -8169,12 +8173,9 @@ const Parachord = () => {
       // Debounce: show toast at most once per 5 minutes
       if (now - lastfmRateLimitShown.current > 5 * 60 * 1000) {
         lastfmRateLimitShown.current = now;
-        const isUsingOwnKey = !!lastfmKeys?.readPair().own;
-        if (!isUsingOwnKey) {
-          showToast('Last.fm rate limit hit. Add your own API key in Settings to avoid this.', 'error');
-        } else {
-          showToast('Last.fm rate limit hit. Try again in a moment.', 'error');
-        }
+        // A key of your own needs Last.fm Pro now, so this doesn't send
+        // people to one (#1538).
+        showToast(LASTFM_RATE_LIMIT_NOTICE, 'warning');
       }
     }
     return response;
@@ -9493,6 +9494,9 @@ const Parachord = () => {
       || (loadedResolversRef.current || []).find(r => r.id === pluginId);
     if (plugin) setSelectedResolver(plugin);
   };
+  // For callbacks made before this point in the component (the Last.fm key
+  // toast's action).
+  useEffect(() => { openPluginSettingsRef.current = openPluginSettings; });
 
   // History's error state. "Not connected" offers to connect the service
   // that's missing (its plugin's detail), instead of a "Try Again" that
@@ -36277,6 +36281,9 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       apiKey: apiKey?.trim() || null,
       apiSecret: apiSecret?.trim() || null
     });
+    // Keys saved again are tried again at once, even one Last.fm turned down
+    // earlier this session (lib/lastfm-key.js).
+    window.lastfmKeys?.clearRefusal();
 
     // The scrobbler picks the saved key and secret up from window.lastfmKeys
     // (lib/lastfm-key.js). Scrobbling also needs its own sign-in
@@ -36304,10 +36311,14 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     const apiKey = keyInput?.trim() || null;
     const apiSecret = secretInput?.trim() || null;
     await saveMetaServiceConfig('lastfm', { ...metaServiceConfigs.lastfm, apiKey, apiSecret });
+    // Saving the keys again (say after buying Last.fm Pro) tries them again
+    // at once, without a relaunch (lib/lastfm-key.js).
+    window.lastfmKeys?.clearRefusal();
     showToast(apiKey ? 'API credentials saved' : 'API credentials cleared', 'success');
   };
   const clearLastfmApiKeys = async () => {
     await saveMetaServiceConfig('lastfm', { ...metaServiceConfigs.lastfm, apiKey: null, apiSecret: null });
+    window.lastfmKeys?.clearRefusal();
     showToast('Custom credentials cleared. Using default credentials.', 'info');
   };
 

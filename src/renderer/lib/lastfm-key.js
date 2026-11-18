@@ -5,25 +5,33 @@
 // owns it has Last.fm Pro
 // (https://support.last.fm/t/api-keys-will-require-pro-from-1st-december/121030).
 // A person can enter their own key and secret in the Last.fm plug-in's
-// Advanced settings, and the app uses them in place of its built-in pair. When
-// Last.fm refuses that key (error 10, invalid API key, or 26, suspended), the
-// app stops using it for the rest of the session, retries the request once
-// with the built-in pair and says so once. A refusal of the built-in key
-// throws "Last.fm unavailable": never an empty answer a caller could cache as
-// a miss (CLAUDE.md "No resolver holds a row").
+// Advanced settings, and the app uses them in place of its built-in pair.
+//
+// Reads (unsigned GETs): when Last.fm refuses the person's key (error 10,
+// invalid API key, or 26, suspended), reads stop using it for the rest of the
+// session and the request is retried once with the built-in key. That is
+// harmless: a read carries no session.
+//
+// Signed calls that carry a session (`sk`: scrobble, now playing, love) never
+// switch keys: a session belongs to the API key it was made with, so they are
+// signed with that session's pair (pairForKey(sessionApiKey)) whatever reads
+// are doing. scrobbler-loader.js decides what a refusal there means.
+//
+// A refusal of the built-in key throws "Last.fm unavailable": never an empty
+// answer a caller could cache as a miss (CLAUDE.md "No resolver holds a row").
 //
 // The ONE place a Last.fm key is chosen. Two integration points use it:
 //   - app.js's window.fetch interceptor (installLastfmKeyFallback): every
 //     renderer GET to ws.audioscrobbler.com (app.js, the Last.fm plug-in,
 //     spinoff-pool, the charts URL from charts-utils) has its api_key set
 //     from readPair() and runs through call();
-//   - scrobbler-loader.js's LastFmScrobbler (main-process proxyFetch, signed
-//     calls): signs with signedPair() and runs through call().
-// A key and secret are always switched together as a pair: a signed call
-// never mixes the person's key with the built-in secret.
+//   - scrobbler-loader.js's LastFmScrobbler (main-process proxyFetch).
+// A key and secret are always used together as a pair: a signed call never
+// mixes the person's key with the built-in secret.
 //
-// Plain module; loads under plain Node. The session flag lives in memory, so
-// it needs no store key, and a relaunch tries the person's key again.
+// Plain module; loads under plain Node. The refused state lives in memory, so
+// it needs no store key; a relaunch, or saving the keys again, tries the
+// person's key again.
 
 'use strict';
 
@@ -33,10 +41,15 @@ const LASTFM_API_HOST = 'ws.audioscrobbler.com';
 // Last.fm's "this key is no good" codes: 10 invalid API key, 26 suspended.
 const KEY_REFUSED_CODES = [10, 26];
 
-// The toast, once per session, when the person's own key is turned down.
-const OWN_KEY_REFUSED_NOTICE = 'Your own Last.fm API key was turned down, so Parachord is using its own for now. Your key needs Last.fm Pro since 1 December.';
-// The same news in the plug-in's Advanced section, while the session flag is set.
-const OWN_KEY_REFUSED_HINT = 'Last.fm turned down your API key, so Parachord is using its own for now. Your key needs Last.fm Pro.';
+// The toast, once per session, when the person's own key is turned down. A
+// refusal can also mean a mistyped, revoked or suspended key, so it doesn't
+// claim Pro is the cause.
+const OWN_KEY_REFUSED_NOTICE = 'Last.fm turned down your own API key, so Parachord is using its own for now. Your key may need Last.fm Pro: check it or remove it in the Last.fm plug-in.';
+// The same news in the plug-in's Advanced section, while the key is refused.
+const OWN_KEY_REFUSED_HINT = 'Last.fm turned down your own API key, so Parachord is using its own for now. Your key may need Last.fm Pro: check it, or clear it below.';
+// Last.fm's rate limit (HTTP 429 / error 29). It doesn't send people to a key
+// of their own, which needs Pro now.
+const RATE_LIMIT_NOTICE = 'Last.fm asked Parachord to slow down. Try again in a moment.';
 // What a request says when no key Last.fm accepts is left.
 const UNAVAILABLE_MESSAGE = 'Last.fm isn’t available right now. Try again later.';
 
@@ -64,19 +77,39 @@ const clean = (v) => (typeof v === 'string' && v.trim() ? v.trim() : null);
 function createLastfmKeys() {
   let own = { apiKey: null, apiSecret: null };
   let builtin = { apiKey: null, apiSecret: null };
+  // Keys of the person's from earlier in the session: a URL built with one
+  // is still ours to re-key.
+  const pastOwnKeys = new Set();
   // The person's key Last.fm turned down this session. A different key saved
-  // later is tried afresh; the notice still shows only once.
+  // later, or the same one saved again (clearRefusal), is tried afresh.
   let refusedKey = null;
-  let noticeGiven = false;
-  const listeners = new Set();
+  let toastGiven = false;
+  const changeListeners = new Set();
+  const firstListeners = new Set();
+  let lastRefused = false;
 
   const ownRefused = () => !!own.apiKey && own.apiKey === refusedKey;
   const ownPair = () => ({ apiKey: own.apiKey, apiSecret: own.apiSecret, own: true });
   const builtinPair = () => ({ apiKey: builtin.apiKey, apiSecret: builtin.apiSecret, own: false });
+  const emit = (set) => {
+    for (const cb of Array.from(set)) {
+      try { cb(ownRefused()); } catch (_e) { /* a listener's failure isn't the request's */ }
+    }
+  };
+  // Tells the change listeners whenever "the person's key is refused" flips.
+  const notifyChange = () => {
+    const now = ownRefused();
+    if (now === lastRefused) return;
+    lastRefused = now;
+    emit(changeListeners);
+  };
 
   const keys = {
     setOwn(pair) {
-      own = { apiKey: clean(pair && pair.apiKey), apiSecret: clean(pair && pair.apiSecret) };
+      const apiKey = clean(pair && pair.apiKey);
+      if (own.apiKey && own.apiKey !== apiKey) pastOwnKeys.add(own.apiKey);
+      own = { apiKey, apiSecret: clean(pair && pair.apiSecret) };
+      notifyChange();
     },
     // Merges: the key and the secret arrive from separate launch reads.
     setBuiltin(pair) {
@@ -85,50 +118,83 @@ function createLastfmKeys() {
         apiSecret: clean(pair && pair.apiSecret) || builtin.apiSecret,
       };
     },
+    // Saving the keys again (say after buying Pro) tries them again at once.
+    clearRefusal() {
+      refusedKey = null;
+      notifyChange();
+    },
     // For a read (api_key only): the person's key if set and not refused.
     readPair() {
       return own.apiKey && !ownRefused() ? ownPair() : builtinPair();
     },
-    // For a signed call: the person's key AND secret, or the built-in pair.
+    // For a signed call that carries no session yet (auth.getToken and
+    // auth.getSession): the person's key AND secret if both are set and the
+    // key isn't refused, else the built-in pair. The session made from it
+    // belongs to that pair.
     signedPair() {
       return own.apiKey && own.apiSecret && !ownRefused() ? ownPair() : builtinPair();
+    },
+    // The pair a session was made with, by its key; null when this app no
+    // longer holds that key's secret.
+    pairForKey(apiKey) {
+      if (!apiKey) return null;
+      if (apiKey === own.apiKey && own.apiSecret) return ownPair();
+      if (apiKey === builtin.apiKey && builtin.apiSecret) return builtinPair();
+      return null;
+    },
+    // The pair a session from before sessionApiKey was recorded was most
+    // likely made with: what signedPair() was before any refusal (a read's
+    // refusal must not move a session onto another key).
+    storedSignedPair() {
+      return own.apiKey && own.apiSecret ? ownPair() : builtinPair();
     },
     apiKey() {
       return keys.readPair().apiKey;
     },
-    // A key this app chose (the person's or the built-in one). The fetch
-    // interceptor only touches requests made with one of these.
+    // A key this app chose (the person's, one of theirs from earlier in the
+    // session, or the built-in one). The fetch interceptor only touches
+    // requests made with one of these.
     isKnownKey(key) {
-      return !!key && (key === own.apiKey || key === builtin.apiKey);
+      return !!key && (key === own.apiKey || key === builtin.apiKey || pastOwnKeys.has(key));
     },
     // True while the person's saved key is the one turned down this session.
     ownKeyRefused: ownRefused,
     // What a reply made with `pair` means: 'ok' (not a key refusal), 'retry'
     // (the person's key was refused and another key is there to try) or
-    // 'unavailable' (no key left that Last.fm hasn't turned down).
+    // 'unavailable' (no key left that Last.fm hasn't turned down). A refusal
+    // of the person's current key marks it refused for reads.
     noteReply(pair, code) {
       if (!isKeyRefused(code)) return 'ok';
       if (!pair || !pair.own) return 'unavailable';
       if (pair.apiKey && pair.apiKey === own.apiKey) {
         refusedKey = pair.apiKey;
-        if (!noticeGiven) {
-          noticeGiven = true;
-          for (const cb of Array.from(listeners)) {
-            try { cb(); } catch (_e) { /* a listener's failure isn't the request's */ }
-          }
+        notifyChange();
+        if (!toastGiven) {
+          toastGiven = true;
+          emit(firstListeners);
         }
       }
       const next = keys.readPair();
       return next.apiKey && next.apiKey !== pair.apiKey ? 'retry' : 'unavailable';
     },
-    // Called once per session, at the first refusal of the person's key.
-    onFallback(cb) {
-      listeners.add(cb);
-      return () => listeners.delete(cb);
+    // cb(refused) whenever "the person's key is refused" changes (the
+    // Advanced section's line).
+    onChange(cb) {
+      changeListeners.add(cb);
+      return () => changeListeners.delete(cb);
     },
-    // Runs `attempt(pair)` (→ { code, result }) with the chosen pair; on a
-    // refusal of the person's key, once more with the built-in pair. Returns
-    // the result, or throws lastfmUnavailableError. Never retries twice.
+    // cb() once per session, at the first refusal of a key of the person's
+    // (the toast).
+    onFirstRefusal(cb) {
+      firstListeners.add(cb);
+      return () => firstListeners.delete(cb);
+    },
+    unavailableError: lastfmUnavailableError,
+    // Runs `attempt(pair)` (→ { code, result }) for a read with readPair();
+    // on a refusal of the person's key, once more with the built-in pair.
+    // Returns the result, or throws lastfmUnavailableError. Never retries
+    // twice. (`signed` picks signedPair(), for the sign-in calls that carry
+    // no session yet.)
     async call({ signed = false } = {}, attempt) {
       const choose = () => (signed ? keys.signedPair() : keys.readPair());
       let pair = choose();
@@ -148,7 +214,9 @@ function createLastfmKeys() {
 }
 
 // A GET to Last.fm's API made with one of our keys, as a URL; else null
-// (other hosts, POSTs, Request objects, someone else's key pass through).
+// (other hosts, POSTs, Request objects, someone else's key pass through, and
+// so does a signed or session-carrying URL: re-keying one would break its
+// api_sig, error 13).
 function lastfmApiGetUrl(input, init, keys) {
   if (typeof input !== 'string' && !(input && typeof input.href === 'string' && input.searchParams)) return null;
   const method = String((init && init.method) || 'GET').toUpperCase();
@@ -156,6 +224,7 @@ function lastfmApiGetUrl(input, init, keys) {
   let url;
   try { url = new URL(String(input)); } catch (_e) { return null; }
   if (url.hostname !== LASTFM_API_HOST) return null;
+  if (url.searchParams.has('api_sig') || url.searchParams.has('sk')) return null;
   const key = url.searchParams.get('api_key');
   return keys.isKnownKey(key) ? url : null;
 }
@@ -197,6 +266,7 @@ module.exports = {
   KEY_REFUSED_CODES,
   OWN_KEY_REFUSED_NOTICE,
   OWN_KEY_REFUSED_HINT,
+  RATE_LIMIT_NOTICE,
   UNAVAILABLE_MESSAGE,
   lastfmErrorCode,
   lastfmUnavailableError,

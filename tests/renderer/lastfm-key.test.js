@@ -1,19 +1,26 @@
 /**
- * Last.fm API key fallback (#1538): src/renderer/lib/lastfm-key.js.
+ * Last.fm API key fallback (#1538): src/renderer/lib/lastfm-key.js and the
+ * scrobbler's use of it.
  *
  * From 1 December 2026 a Last.fm API key needs Last.fm Pro. When Last.fm turns
- * the person's own key down (error 10 or 26), the app drops it for the session,
- * retries once with the built-in pair, and says so once. A refused built-in key
- * throws "Last.fm unavailable", never an empty answer.
+ * the person's own key down (error 10 or 26), reads drop it and retry once
+ * with the built-in key. Session calls (scrobble, now playing, love) keep the
+ * pair their session was made with, and sign out only when that key's refusal
+ * repeats. A refused built-in key throws "Last.fm unavailable", never an empty
+ * answer. No scrobble is lost.
  *
- * No real keys: every key and secret here is a placeholder.
+ * No real keys: every key, secret and session here is a placeholder.
  */
 
 const fs = require('fs');
 const path = require('path');
+
+global.React = require('react');
+const { renderToStaticMarkup } = require('react-dom/server');
+
 const {
   createLastfmKeys, createLastfmFetch, lastfmErrorCode, lastfmApiGetUrl,
-  OWN_KEY_REFUSED_NOTICE, OWN_KEY_REFUSED_HINT, KEY_REFUSED_CODES,
+  OWN_KEY_REFUSED_NOTICE, OWN_KEY_REFUSED_HINT, RATE_LIMIT_NOTICE, KEY_REFUSED_CODES,
 } = require('../../src/renderer/lib/lastfm-key');
 
 const OWN = { apiKey: 'own-key', apiSecret: 'own-secret' };
@@ -46,10 +53,19 @@ describe('createLastfmKeys: which pair', () => {
     keys.setBuiltin({ apiKey: null });
     expect(keys.signedPair()).toEqual({ ...BUILTIN, own: false });
   });
+
+  test('pairForKey gives a session its own pair, whatever reads are doing', () => {
+    const keys = keysWith();
+    keys.noteReply(keys.readPair(), 10);
+    expect(keys.pairForKey('own-key')).toEqual({ ...OWN, own: true });
+    expect(keys.pairForKey('builtin-key')).toEqual({ ...BUILTIN, own: false });
+    expect(keys.pairForKey('a-key-no-longer-held')).toBeNull();
+    expect(keys.storedSignedPair()).toEqual({ ...OWN, own: true });
+  });
 });
 
-describe('noteReply: what a refusal does', () => {
-  test.each(KEY_REFUSED_CODES)('error %i on the person’s key switches to the built-in key and pair', (code) => {
+describe('noteReply: what a refusal does to reads', () => {
+  test.each(KEY_REFUSED_CODES)('error %i on the person’s key switches reads and sign-in to the built-in pair', (code) => {
     const keys = keysWith();
     expect(keys.noteReply(keys.readPair(), code)).toBe('retry');
     expect(keys.ownKeyRefused()).toBe(true);
@@ -83,29 +99,86 @@ describe('noteReply: what a refusal does', () => {
     expect(keys.ownKeyRefused()).toBe(false);
     expect(keys.readPair()).toEqual({ apiKey: 'new-own-key', apiSecret: 'new-own-secret', own: true });
   });
+
+  test('saving the keys again clears the refused state, so the same key is tried again', () => {
+    const keys = keysWith();
+    const changes = [];
+    keys.onChange((refused) => changes.push(refused));
+    keys.noteReply(keys.readPair(), 10);
+    keys.clearRefusal();
+    expect(keys.ownKeyRefused()).toBe(false);
+    expect(keys.readPair()).toEqual({ ...OWN, own: true });
+    expect(changes).toEqual([true, false]);
+  });
 });
 
 describe('the notice', () => {
-  test('fires once per session, however many requests are refused', () => {
+  test('the toast fires once per session, however many keys are refused', () => {
     const keys = keysWith();
-    const seen = jest.fn();
-    keys.onFallback(seen);
+    const toast = jest.fn();
+    keys.onFirstRefusal(toast);
     keys.noteReply({ ...OWN, own: true }, 10);
     keys.noteReply({ ...OWN, own: true }, 26);
     keys.setOwn({ apiKey: 'new-own-key', apiSecret: 'x' });
     keys.noteReply(keys.readPair(), 10);
-    expect(seen).toHaveBeenCalledTimes(1);
+    expect(toast).toHaveBeenCalledTimes(1);
   });
 
-  test('the copy follows the UI rules', () => {
-    for (const line of [OWN_KEY_REFUSED_NOTICE, OWN_KEY_REFUSED_HINT]) {
-      expect(line).not.toMatch(/—|\.\.\.|'/);
-      expect(line).toMatch(/Last\.fm Pro/);
+  test('the Advanced line follows every change: a second refused key shows it again', () => {
+    const keys = keysWith();
+    const changes = [];
+    keys.onChange((refused) => changes.push(refused));
+    keys.noteReply(keys.readPair(), 10); // first key refused
+    keys.setOwn({ apiKey: 'new-own-key', apiSecret: 'x' }); // a new one: tried afresh
+    keys.noteReply(keys.readPair(), 26); // refused too
+    expect(changes).toEqual([true, false, true]);
+    expect(keys.ownKeyRefused()).toBe(true);
+  });
+
+  test('the copy says what happened and what to do, without blaming Pro', () => {
+    expect(OWN_KEY_REFUSED_NOTICE).toBe('Last.fm turned down your own API key, so Parachord is using its own for now. Your key may need Last.fm Pro: check it or remove it in the Last.fm plug-in.');
+    expect(OWN_KEY_REFUSED_HINT).toMatch(/^Last\.fm turned down your own API key, so Parachord is using its own for now\. Your key may need Last\.fm Pro/);
+    for (const line of [OWN_KEY_REFUSED_NOTICE, OWN_KEY_REFUSED_HINT, RATE_LIMIT_NOTICE]) {
+      expect(line).not.toMatch(/—|\.\.\.|'|since/);
     }
+    // The rate limit no longer sends people to a key of their own.
+    expect(RATE_LIMIT_NOTICE).toBe('Last.fm asked Parachord to slow down. Try again in a moment.');
+    expect(RATE_LIMIT_NOTICE).not.toMatch(/API key|Settings/);
+  });
+
+  test('the toast offers a way to the Last.fm plug-in; the rate-limit toast uses the new copy', () => {
+    const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+    expect(app).toMatch(/showToastRef\.current\?\.\(LASTFM_OWN_KEY_REFUSED_NOTICE, 'warning',\s*\{ label: 'Open Last\.fm', onClick: \(\) => openPluginSettingsRef\.current\?\.\('lastfm'\) \}/);
+    expect(app).toMatch(/showToast\(LASTFM_RATE_LIMIT_NOTICE, 'warning'\)/);
+    expect(app).not.toMatch(/Add your own API key in Settings to avoid this/);
+    // Saving or clearing the keys tries them again.
+    for (const fn of ['saveLastfmApiKeys', 'clearLastfmApiKeys', 'connectLastfm']) {
+      const i = app.indexOf(`const ${fn} = async`);
+      expect(app.slice(i, app.indexOf('\n  };', i))).toMatch(/window\.lastfmKeys\?\.clearRefusal\(\);/);
+    }
+  });
+
+  test('the Advanced section shows the notice, with a username and without one', () => {
+    global.window = { scrobblers: [], electron: {} };
+    const { UsernameAccount } = require('../../src/renderer/components/plugin-extras');
+    const plugin = {
+      id: 'lastfm', name: 'Last.fm',
+      settings: {
+        account: { type: 'username', advancedHint: 'Optional hint.' },
+        configurable: { username: { type: 'text', label: 'Username' }, apiKey: { type: 'text', label: 'API key', advanced: true } },
+      },
+    };
+    const account = { connect: async () => true, remove: () => {}, advancedOpen: true, setAdvancedOpen: () => {}, advancedNotice: OWN_KEY_REFUSED_HINT };
+    for (const config of [{ username: 'someone', apiKey: 'own-key' }, { apiKey: 'own-key' }]) {
+      const html = renderToStaticMarkup(React.createElement(UsernameAccount, { plugin, config, account: { ...account, saveAdvanced: config.username ? () => {} : undefined } }));
+      expect(html).toContain('Last.fm turned down your own API key');
+      expect(html).not.toContain('Optional hint.');
+    }
+    delete global.window;
   });
 });
 
-describe('call: the retry', () => {
+describe('call: the retry for reads', () => {
   const refused = (code) => ({ code, result: null });
 
   test('a refused own key retries exactly once, with the built-in pair', async () => {
@@ -124,7 +197,6 @@ describe('call: the retry', () => {
     const attempt = jest.fn().mockResolvedValue(refused(26));
     await expect(keys.call({}, attempt)).rejects.toMatchObject({ lastfmUnavailable: true, lastfmError: 26 });
     expect(attempt).toHaveBeenCalledTimes(2);
-    // The next request goes straight to the built-in key: one request.
     attempt.mockClear();
     await expect(keys.call({}, attempt)).rejects.toMatchObject({ lastfmUnavailable: true });
     expect(attempt).toHaveBeenCalledTimes(1);
@@ -157,7 +229,7 @@ describe('createLastfmFetch: the ws.audioscrobbler.com interceptor', () => {
     clone() { return { json: async () => body }; },
     json: async () => body,
   });
-  const url = (key) => `https://ws.audioscrobbler.com/2.0/?method=artist.getinfo&artist=Cher&api_key=${key}&format=json`;
+  const url = (key, extra = '') => `https://ws.audioscrobbler.com/2.0/?method=artist.getinfo&artist=Cher&api_key=${key}&format=json${extra}`;
   const sentKey = (u) => new URL(u).searchParams.get('api_key');
 
   test('a refused own key: the request is sent again once with the built-in key', async () => {
@@ -170,16 +242,19 @@ describe('createLastfmFetch: the ws.audioscrobbler.com interceptor', () => {
     expect(inner).toHaveBeenCalledTimes(2);
     expect(sentKey(inner.mock.calls[0][0])).toBe('own-key');
     expect(sentKey(inner.mock.calls[1][0])).toBe('builtin-key');
-    // The rest of the query is kept.
     expect(new URL(inner.mock.calls[1][0]).searchParams.get('artist')).toBe('Cher');
   });
 
-  test('a URL built with the refused key afterwards goes out with the built-in key', async () => {
+  test('a URL built with the refused key, or an earlier key of the person’s, goes out with the current choice', async () => {
     const keys = keysWith();
     keys.noteReply(keys.readPair(), 10);
     const inner = jest.fn().mockResolvedValue(jsonResponse(200, {}));
-    await createLastfmFetch({ fetch: inner, keys })(url('own-key'));
+    const wrapped = createLastfmFetch({ fetch: inner, keys });
+    await wrapped(url('own-key'));
     expect(sentKey(inner.mock.calls[0][0])).toBe('builtin-key');
+    keys.setOwn({ apiKey: 'new-own-key', apiSecret: 'x' });
+    await wrapped(url('own-key'));
+    expect(sentKey(inner.mock.calls[1][0])).toBe('new-own-key');
   });
 
   test('a refused built-in key throws, never a reply a caller could cache as a miss', async () => {
@@ -198,16 +273,26 @@ describe('createLastfmFetch: the ws.audioscrobbler.com interceptor', () => {
     expect(keys.ownKeyRefused()).toBe(false);
   });
 
-  test('other hosts, POSTs and someone else’s key pass straight through', async () => {
+  test('other hosts, POSTs, someone else’s key and signed URLs pass straight through', async () => {
     const keys = keysWith();
+    keys.noteReply(keys.readPair(), 10); // reads would otherwise be re-keyed
     const inner = jest.fn().mockResolvedValue(jsonResponse(403, { error: 10 }));
     const wrapped = createLastfmFetch({ fetch: inner, keys });
-    await wrapped('https://musicbrainz.org/ws/2/artist?query=x');
-    await wrapped(url('own-key'), { method: 'POST' });
-    await wrapped(url('another-apps-key'));
-    expect(inner).toHaveBeenCalledTimes(3);
-    expect(keys.ownKeyRefused()).toBe(false);
-    expect(lastfmApiGetUrl(url('another-apps-key'), undefined, keys)).toBeNull();
+    const inputs = [
+      'https://musicbrainz.org/ws/2/artist?query=x',
+      url('own-key'),
+      url('another-apps-key'),
+      url('own-key', '&api_sig=abc'),
+      url('own-key', '&sk=session'),
+    ];
+    await wrapped(inputs[0]);
+    await wrapped(inputs[1], { method: 'POST' });
+    await wrapped(inputs[2]);
+    await wrapped(inputs[3]);
+    await wrapped(inputs[4]);
+    expect(inner).toHaveBeenCalledTimes(5);
+    expect(inner.mock.calls.map((c) => c[0])).toEqual(inputs);
+    expect(lastfmApiGetUrl(url('own-key', '&api_sig=abc'), undefined, keys)).toBeNull();
   });
 
   test('lastfmErrorCode reads the error number', () => {
@@ -218,9 +303,9 @@ describe('createLastfmFetch: the ws.audioscrobbler.com interceptor', () => {
   });
 });
 
-describe('the scrobbler’s signed calls use the same pair rules', () => {
-  const { LastFmScrobbler } = require('../../scrobbler-loader');
-  let stored;
+describe('the scrobbler: session calls keep their session’s pair', () => {
+  const { LastFmScrobbler, ScrobbleManager } = require('../../scrobbler-loader');
+  let stores;
   let calls;
   let events;
   const install = (replies) => {
@@ -228,7 +313,7 @@ describe('the scrobbler’s signed calls use the same pair rules', () => {
     events = [];
     global.window = {
       electron: {
-        store: { get: async () => stored, set: async (_k, v) => { stored = v; } },
+        store: { get: async (k) => stores[k], set: async (k, v) => { stores[k] = v; } },
         proxyFetch: async (u, init) => { calls.push({ url: u, body: init && init.body }); return replies.shift(); },
         crypto: { md5: async (s) => `md5(${s})` },
       },
@@ -237,84 +322,154 @@ describe('the scrobbler’s signed calls use the same pair rules', () => {
     global.CustomEvent = class { constructor(type, init) { this.type = type; this.detail = init && init.detail; } };
   };
   const reply = (status, body) => ({ success: status < 300, status, text: JSON.stringify(body) });
+  const ok = () => reply(200, { scrobbles: {} });
+  const refusedReply = (code = 10) => reply(403, { error: code, message: 'Invalid API key' });
   const sent = (call) => new URLSearchParams(call.body);
+  const session = () => stores['scrobbler-config-lastfm'];
+  const scrobblerWith = (keys, config) => {
+    stores = { 'scrobbler-config-lastfm': config };
+    const scrobbler = new LastFmScrobbler();
+    scrobbler.setKeySource(keys);
+    return scrobbler;
+  };
+  const track = { artist: 'A', title: 'T' };
 
   afterEach(() => { delete global.window; delete global.CustomEvent; });
 
-  test('a refused own pair: the scrobble is re-signed with the built-in key AND secret', async () => {
-    stored = { enabled: true, sessionKey: 'sk', sessionApiKey: 'builtin-key' };
-    install([reply(403, { error: 10, message: 'Invalid API key' }), reply(200, { scrobbles: {} })]);
-    const scrobbler = new LastFmScrobbler();
+  test('a Pro user’s signed calls use their own pair, even after a read was refused once', async () => {
+    install([ok()]);
     const keys = keysWith();
-    scrobbler.setKeySource(keys);
-    await scrobbler.scrobble({ artist: 'A', title: 'T' }, 1);
-    expect(calls).toHaveLength(2);
+    const scrobbler = scrobblerWith(keys, { enabled: true, sessionKey: 'sk', sessionApiKey: 'own-key' });
+    keys.noteReply(keys.readPair(), 10); // one refused read: reads switch...
+    await scrobbler.scrobble(track, 1); // ...the session doesn't
     expect(sent(calls[0]).get('api_key')).toBe('own-key');
     expect(sent(calls[0]).get('api_sig')).toMatch(/own-secret\)$/);
-    expect(sent(calls[1]).get('api_key')).toBe('builtin-key');
-    expect(sent(calls[1]).get('api_sig')).toMatch(/builtin-secret\)$/);
+    expect(session().sessionKey).toBe('sk');
   });
 
-  test('a refused built-in key throws "unavailable" and keeps the session', async () => {
-    stored = { enabled: true, sessionKey: 'sk' };
-    install([reply(403, { error: 26, message: 'Suspended API key' })]);
-    const scrobbler = new LastFmScrobbler();
-    scrobbler.setKeySource(keysWith({ own: null }));
-    await expect(scrobbler.scrobble({ artist: 'A', title: 'T' }, 1)).rejects.toMatchObject({ lastfmUnavailable: true });
-    expect(calls).toHaveLength(1);
-    expect(stored.sessionKey).toBe('sk');
+  test('a session made with the built-in key keeps using the built-in pair', async () => {
+    install([ok()]);
+    const scrobbler = scrobblerWith(keysWith(), { enabled: true, sessionKey: 'sk', sessionApiKey: 'builtin-key' });
+    await scrobbler.scrobble(track, 1);
+    expect(sent(calls[0]).get('api_key')).toBe('builtin-key');
+    expect(sent(calls[0]).get('api_sig')).toMatch(/builtin-secret\)$/);
   });
 
-  test('a session made with the refused key: one error 9, then "sign in again", no loop', async () => {
-    stored = { enabled: true, sessionKey: 'sk', sessionApiKey: 'own-key' };
-    install([reply(403, { error: 10 }), reply(403, { error: 9, message: 'Invalid session key' })]);
-    const scrobbler = new LastFmScrobbler();
-    scrobbler.setKeySource(keysWith());
-    const err = await scrobbler.scrobble({ artist: 'A', title: 'T' }, 1).catch((e) => e);
-    expect(err.authError).toBe(true);
+  test('an older session signs with the saved pair and records it from the first call that works', async () => {
+    install([ok(), ok()]);
+    const keys = keysWith();
+    const scrobbler = scrobblerWith(keys, { enabled: true, sessionKey: 'sk' });
+    keys.noteReply(keys.readPair(), 10); // a refused read doesn't move it
+    await scrobbler.scrobble(track, 1);
+    expect(sent(calls[0]).get('api_key')).toBe('own-key');
+    expect(session().sessionApiKey).toBe('own-key');
+  });
+
+  test('a single 10 or 26 on a read never signs out a session', async () => {
+    install([ok()]);
+    const keys = keysWith();
+    const scrobbler = scrobblerWith(keys, { enabled: true, sessionKey: 'sk', sessionApiKey: 'own-key' });
+    const inner = jest.fn().mockResolvedValue({ ok: false, status: 403, clone: () => ({ json: async () => ({ error: 26 }) }) });
+    await createLastfmFetch({ fetch: inner, keys })('https://ws.audioscrobbler.com/2.0/?method=user.getinfo&api_key=own-key&format=json').catch(() => {});
+    await scrobbler.scrobble(track, 1);
+    expect(session()).toMatchObject({ sessionKey: 'sk', enabled: true });
+    expect(events).toEqual([]);
+  });
+
+  test('one refusal of the session’s own key keeps the session; the second in a row signs out', async () => {
+    install([refusedReply(10), refusedReply(26)]);
+    const keys = keysWith();
+    const scrobbler = scrobblerWith(keys, { enabled: true, sessionKey: 'sk', sessionApiKey: 'own-key' });
+    const first = await scrobbler.scrobble(track, 1).catch((e) => e);
+    expect(first.authErrorTransient).toBe(true);
+    expect(session().sessionKey).toBe('sk');
+    expect(keys.ownKeyRefused()).toBe(true); // reads switched at once
+    const second = await scrobbler.scrobble(track, 2).catch((e) => e);
+    expect(second.authError).toBe(true);
     expect(calls).toHaveLength(2);
-    expect(stored).toMatchObject({ sessionKey: null, enabled: false });
+    // Both went out with the session's own pair: no switch mid-session.
+    expect(calls.map((c) => sent(c).get('api_key'))).toEqual(['own-key', 'own-key']);
+    expect(session()).toMatchObject({ sessionKey: null, enabled: false });
     expect(events.map((ev) => ev.type)).toEqual(['scrobbler-auth-error']);
     expect(events[0].detail.userMessage).toMatch(/Sign in to Last\.fm again/);
-    // Signed out: nothing more is sent.
     expect(await scrobbler.isEnabled()).toBe(false);
   });
 
-  test('a session from before sessionApiKey was recorded counts as made with the refused key', async () => {
-    stored = { enabled: true, sessionKey: 'sk' };
-    install([reply(403, { error: 10 }), reply(403, { error: 9, message: 'Invalid session key' })]);
-    const scrobbler = new LastFmScrobbler();
-    scrobbler.setKeySource(keysWith());
-    await scrobbler.scrobble({ artist: 'A', title: 'T' }, 1).catch(() => {});
-    expect(stored.sessionKey).toBeNull();
+  test('a refusal between successes never adds up to a sign-out', async () => {
+    install([refusedReply(10), ok(), refusedReply(10)]);
+    const scrobbler = scrobblerWith(keysWith(), { enabled: true, sessionKey: 'sk', sessionApiKey: 'own-key' });
+    for (let i = 0; i < 3; i += 1) await scrobbler.scrobble(track, i).catch(() => {});
+    expect(session().sessionKey).toBe('sk');
   });
 
-  test('a plain error 9 with no key switch is still treated as transient first', async () => {
-    stored = { enabled: true, sessionKey: 'sk' };
-    install([reply(403, { error: 9, message: 'Invalid session key' })]);
-    const scrobbler = new LastFmScrobbler();
-    scrobbler.setKeySource(keysWith());
-    const err = await scrobbler.scrobble({ artist: 'A', title: 'T' }, 1).catch((e) => e);
-    expect(err.authErrorTransient).toBe(true);
-    expect(stored.sessionKey).toBe('sk');
+  test('the built-in session key refused: "unavailable", the session kept', async () => {
+    install([refusedReply(26)]);
+    const scrobbler = scrobblerWith(keysWith({ own: null }), { enabled: true, sessionKey: 'sk', sessionApiKey: 'builtin-key' });
+    await expect(scrobbler.scrobble(track, 1)).rejects.toMatchObject({ lastfmUnavailable: true });
+    expect(session().sessionKey).toBe('sk');
   });
 
-  test('sign-in keeps the pair its token was asked with, and records the session’s key', async () => {
-    stored = {};
-    install([
-      reply(403, { error: 10 }),
-      reply(200, { token: 'tok' }),
-      reply(200, { session: { key: 'new-sk', name: 'someone' } }),
-    ]);
-    const scrobbler = new LastFmScrobbler();
-    scrobbler.setKeySource(keysWith());
+  test('a re-sign-in after the refusal makes a session with the built-in pair, and records it', async () => {
+    install([reply(200, { token: 'tok' }), reply(200, { session: { key: 'new-sk', name: 'someone' } })]);
+    const keys = keysWith();
+    keys.noteReply(keys.readPair(), 10);
+    const scrobbler = scrobblerWith(keys, {});
     const token = await scrobbler.getAuthToken();
-    expect(token).toBe('tok');
     expect(scrobbler.getAuthUrl(token)).toContain('api_key=builtin-key');
-    const session = await scrobbler.getSession(token);
-    expect(new URL(calls[2].url).searchParams.get('api_key')).toBe('builtin-key');
-    expect(new URL(calls[2].url).searchParams.get('api_sig')).toMatch(/builtin-secret\)$/);
-    expect(session.apiKey).toBe('builtin-key');
+    const s = await scrobbler.getSession(token);
+    expect(new URL(calls[1].url).searchParams.get('api_sig')).toMatch(/builtin-secret\)$/);
+    expect(s.apiKey).toBe('builtin-key');
+  });
+
+  test('sign-in with a refused own key retries the token with the built-in pair', async () => {
+    install([refusedReply(10), reply(200, { token: 'tok' })]);
+    const scrobbler = scrobblerWith(keysWith(), {});
+    expect(await scrobbler.getAuthToken()).toBe('tok');
+    expect(calls.map((c) => new URL(c.url).searchParams.get('api_key'))).toEqual(['own-key', 'builtin-key']);
+  });
+
+  describe('no scrobble is lost', () => {
+    const managerWith = (scrobbler) => {
+      const manager = new ScrobbleManager();
+      manager.registerPlugin(scrobbler);
+      manager.currentTrack = { ...track, duration: 200 };
+      manager.trackStartTime = 1000;
+      return manager;
+    };
+    const queued = () => stores['scrobble-failed-queue'] || [];
+
+    test('the scrobble that triggers the key sign-out is queued', async () => {
+      install([refusedReply(10), refusedReply(10)]);
+      const scrobbler = scrobblerWith(keysWith(), { enabled: true, sessionKey: 'sk', sessionApiKey: 'own-key' });
+      await scrobbler.scrobble(track, 1).catch(() => {}); // first refusal
+      const manager = managerWith(scrobbler);
+      await manager.submitScrobble(); // second: signs out
+      expect(session().sessionKey).toBeNull();
+      expect(queued()).toHaveLength(1);
+      expect(queued()[0]).toMatchObject({ pluginId: 'lastfm', track: { artist: 'A', title: 'T' } });
+    });
+
+    test('the scrobble on the third error-9 strike is queued', async () => {
+      install([refusedReply(9), refusedReply(9), refusedReply(9)]);
+      const scrobbler = scrobblerWith(keysWith(), { enabled: true, sessionKey: 'sk', sessionApiKey: 'own-key' });
+      await scrobbler.scrobble(track, 1).catch(() => {});
+      await scrobbler.scrobble(track, 2).catch(() => {});
+      const manager = managerWith(scrobbler);
+      await manager.submitScrobble();
+      expect(session().sessionKey).toBeNull();
+      expect(queued()).toHaveLength(1);
+    });
+
+    test('a queued scrobble waits for a signed-out scrobbler instead of being dropped', async () => {
+      install([]);
+      const scrobbler = scrobblerWith(keysWith(), { enabled: false, sessionKey: null });
+      stores['scrobble-failed-queue'] = [{ pluginId: 'lastfm', track, timestamp: 1, attempts: 1, queuedAt: Date.now() }];
+      const manager = new ScrobbleManager();
+      manager.registerPlugin(scrobbler);
+      await manager.retryFailedScrobbles();
+      expect(queued()).toHaveLength(1);
+      expect(calls).toHaveLength(0);
+    });
   });
 });
 
