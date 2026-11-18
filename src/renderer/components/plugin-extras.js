@@ -190,6 +190,16 @@ function AdvancedKeys({ plugin, values, setValue, saved = false, onSave, onClear
       onClear && saved && e(Button, { variant: 'secondary', size: 'sm', onClick: onClear }, 'Clear')));
 }
 
+// What an Advanced key field shows, and so what Save stores: what's typed,
+// else what's saved. Saving only the typed values stored an untouched field
+// as empty, so pressing Save (say after buying Last.fm Pro) cleared the keys;
+// Clear is the one way to remove them.
+function shownKeyValues(fields, typed, saved) {
+  const t = typed || {};
+  const s = saved || {};
+  return Object.fromEntries((fields || []).map(([k]) => [k, t[k] || s[k] || '']));
+}
+
 // UsernameAccount: settings.account.type 'username', an account read from a
 // username with no sign-in (Last.fm, ListenBrainz): its history,
 // recommendations and similar listeners. "Save" / "Remove", never "Signed
@@ -212,6 +222,7 @@ function UsernameAccount({ plugin, config, account, color, children }) {
   if (c.username) {
     const fields = advancedFieldsOf(plugin);
     const savedAny = fields.some(([k]) => c[k]);
+    const shownAdvanced = shownKeyValues(fields, values, c);
     return e('div', { style: SECTION },
       e(AccountRow, {
         name: plugin.name, label, color, signedIn: true,
@@ -222,22 +233,30 @@ function UsernameAccount({ plugin, config, account, color, children }) {
       account.saveAdvanced
         ? e(AdvancedKeys, {
           plugin,
-          // What's typed, else what's saved.
-          values: Object.fromEntries(fields.map(([k]) => [k, values[k] || c[k] || ''])),
+          // What's typed, else what's saved: what the fields show.
+          values: shownAdvanced,
           setValue,
           saved: savedAny,
           open: account.advancedOpen, setOpen: account.setAdvancedOpen,
           notice: account.advancedNotice,
-          onSave: () => account.saveAdvanced(values),
+          // Save what the fields show, not only what was typed: a field left
+          // as it was keeps its saved value instead of saving as empty
+          // (pressing Save after buying Last.fm Pro cleared the keys). Clear
+          // is the one way to remove them.
+          onSave: async () => { await account.saveAdvanced(shownAdvanced); setValues({}); },
           onClear: account.clearAdvanced ? async () => { setValues({}); await account.clearAdvanced(); } : undefined,
         })
         // Saved with the username: shown, not edited here.
         : savedAny && e(AdvancedKeys, { plugin, values: c, readOnly: true, saved: true, open: account.advancedOpen, setOpen: account.setAdvancedOpen, notice: account.advancedNotice }));
   }
+  // Keys saved before the username was removed stay saved (Remove keeps
+  // them): the fields show them, and saving the username keeps them.
+  const keyFields = advancedFieldsOf(plugin);
+  const shownKeys = shownKeyValues(keyFields, values, c);
   const connect = async () => {
     setBusy(true);
     try {
-      if (await account.connect({ username: values.username || '', ...values })) setValues({});
+      if (await account.connect({ ...values, ...shownKeys, username: values.username || '' })) setValues({});
     } finally {
       setBusy(false);
     }
@@ -253,7 +272,7 @@ function UsernameAccount({ plugin, config, account, color, children }) {
       e(TextField, { value: values.username || '', onChange: (_v, ev) => setValue('username', ev.target.value), placeholder: `Your ${plugin.name} username`, 'aria-label': `Your ${plugin.name} username`, className: 'w-full' })),
     children,
     // Optional keys, saved with the username.
-    e(AdvancedKeys, { plugin, values, setValue, open: account.advancedOpen, setOpen: account.setAdvancedOpen, notice: account.advancedNotice }));
+    e(AdvancedKeys, { plugin, values: { ...values, ...shownKeys }, setValue, saved: keyFields.some(([k]) => c[k]), open: account.advancedOpen, setOpen: account.setAdvancedOpen, notice: account.advancedNotice }));
 }
 
 // LibrarySync: capabilities.librarySync, the service's saved music and
@@ -358,5 +377,4 @@ function WatchFolders({ watchFolders, isScanning, scanProgress, localFilesStats,
 
 module.exports = {
   ServiceAccount, ClientKeys, AdvancedKeys, UsernameAccount, LibrarySync, StartupRow, InstallCallout, WatchFolders,
-  settingsOf, configurableOf, authTypeOf, accountOf, advancedFieldsOf, DEFAULT_AUTH_PORT,
-};
+  settingsOf, configurableOf, authTypeOf, accountOf, advancedFieldsOf, DEFAULT_AUTH_PORT, shownKeyValues };
