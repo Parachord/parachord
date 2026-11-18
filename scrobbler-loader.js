@@ -688,6 +688,15 @@ class ListenBrainzScrobbler extends BaseScrobbler {
 // LastFmScrobbler - Last.fm scrobbler with API key + session key + MD5 sigs
 // ============================================================================
 
+// A Last.fm error code from a parsed reply body, or null. (The same rule as
+// lastfmErrorCode in src/renderer/lib/lastfm-key.js; this file is a classic
+// script and can't require it.)
+function lastfmReplyCode(body) {
+  if (!body || typeof body !== 'object' || body.error === undefined || body.error === null) return null;
+  const code = Number(body.error);
+  return Number.isFinite(code) ? code : null;
+}
+
 class LastFmScrobbler extends BaseScrobbler {
   constructor() {
     super('lastfm', 'Last.fm');
@@ -697,24 +706,52 @@ class LastFmScrobbler extends BaseScrobbler {
     this.apiSecret = null;
   }
 
-  // Set API credentials (called during app init)
+  // Set API credentials (called during app init). Last.fm's own scrobbler
+  // then reads them from its key source instead (setKeySource); these stay
+  // the pair for a scrobbler without one (Libre.fm, tests).
   setApiCredentials(apiKey, apiSecret) {
     this.apiKey = apiKey;
     this.apiSecret = apiSecret;
   }
 
+  // The app's Last.fm key state (src/renderer/lib/lastfm-key.js,
+  // window.lastfmKeys): the person's own key and secret unless Last.fm turned
+  // them down this session, else the built-in pair. Read at every call, so a
+  // key saved in Settings, or a fallback, counts at once (#1538).
+  setKeySource(keys) {
+    this.keySource = keys || null;
+  }
+
+  // The key and secret for a call, always as a pair.
+  credentials(signed = true) {
+    if (this.keySource) return signed ? this.keySource.signedPair() : this.keySource.readPair();
+    return { apiKey: this.apiKey, apiSecret: this.apiSecret, own: false };
+  }
+
+  // Runs attempt(pair) → { code, result } with the chosen pair. With a key
+  // source, a refusal of the person's key (error 10/26) retries once with the
+  // built-in pair, and a refusal of the built-in key throws "Last.fm
+  // unavailable" (err.lastfmUnavailable): the scrobble stays queued.
+  async withKey(signed, attempt) {
+    if (this.keySource && typeof this.keySource.call === 'function') {
+      return this.keySource.call({ signed }, attempt);
+    }
+    return (await attempt(this.credentials(signed))).result;
+  }
+
   async isEnabled() {
     const config = await this.getConfig();
-    return !!(config.enabled && config.sessionKey && this.apiKey);
+    return !!(config.enabled && config.sessionKey && this.credentials().apiKey);
   }
 
   async isSignedIn() {
     const config = await this.getConfig();
-    return !!(config.sessionKey && this.apiKey);
+    return !!(config.sessionKey && this.credentials().apiKey);
   }
 
-  // Generate MD5 signature for Last.fm API
-  async generateSignature(params) {
+  // Generate MD5 signature for Last.fm API. `apiSecret` is the secret of the
+  // pair the call is made with (never another pair's).
+  async generateSignature(params, apiSecret = this.credentials().apiSecret) {
     // Sort parameters alphabetically and concatenate
     const sortedKeys = Object.keys(params).sort();
     let sigString = '';
@@ -723,7 +760,7 @@ class LastFmScrobbler extends BaseScrobbler {
         sigString += key + params[key];
       }
     }
-    sigString += this.apiSecret;
+    sigString += apiSecret;
 
     // MD5 hash - use IPC to main process for crypto
     return window.electron.crypto.md5(sigString);
@@ -733,51 +770,81 @@ class LastFmScrobbler extends BaseScrobbler {
   async apiRequest(method, params, httpMethod = 'POST') {
     const config = await this.getConfig();
 
-    const requestParams = {
-      method,
-      api_key: this.apiKey,
-      sk: config.sessionKey,
-      format: 'json',
-      ...params
-    };
+    // Signed with the session's key and secret as a pair; a refusal of the
+    // person's own key retries once with the built-in pair (withKey).
+    let usedPair = null;
+    const { response, data } = await this.withKey(true, async (pair) => {
+      usedPair = pair;
+      const requestParams = {
+        method,
+        api_key: pair.apiKey,
+        sk: config.sessionKey,
+        format: 'json',
+        ...params
+      };
 
-    // Generate signature (excluding 'format' parameter)
-    const sig = await this.generateSignature(requestParams);
-    requestParams.api_sig = sig;
+      // Generate signature (excluding 'format' parameter)
+      const sig = await this.generateSignature(requestParams, pair.apiSecret);
+      requestParams.api_sig = sig;
 
-    // Build form body
-    const body = new URLSearchParams();
-    for (const [key, value] of Object.entries(requestParams)) {
-      if (value !== undefined) {
-        body.append(key, value);
+      // Build form body
+      const body = new URLSearchParams();
+      for (const [key, value] of Object.entries(requestParams)) {
+        if (value !== undefined) {
+          body.append(key, value);
+        }
       }
-    }
 
-    const response = await window.electron.proxyFetch(this.apiBase, {
-      method: httpMethod,
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded'
-      },
-      body: body.toString()
+      const reply = await window.electron.proxyFetch(this.apiBase, {
+        method: httpMethod,
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: body.toString()
+      });
+
+      // Parse response body (Last.fm returns JSON with error details even on non-2xx status)
+      let parsed;
+      const responseText = reply.text || '';
+      try {
+        parsed = JSON.parse(responseText);
+      } catch (parseErr) {
+        // If we can't parse JSON and the request failed, throw with HTTP status
+        if (!reply.success) {
+          throw new Error(`Last.fm API request failed: ${reply.error || `HTTP ${reply.status}`}`);
+        }
+        throw new Error(`Failed to parse API response as JSON: ${responseText.substring(0, 200)}`);
+      }
+      return { code: parsed && parsed.error ? Number(parsed.error) : null, result: { response: reply, data: parsed } };
     });
-
-    // Parse response body (Last.fm returns JSON with error details even on non-2xx status)
-    let data;
-    const responseText = response.text || '';
-    try {
-      data = JSON.parse(responseText);
-    } catch (parseErr) {
-      // If we can't parse JSON and the request failed, throw with HTTP status
-      if (!response.success) {
-        throw new Error(`Last.fm API request failed: ${response.error || `HTTP ${response.status}`}`);
-      }
-      throw new Error(`Failed to parse API response as JSON: ${responseText.substring(0, 200)}`);
-    }
 
     // Check for Last.fm API error in the parsed response
     if (data.error) {
-      const errorCode = data.error;
+      const errorCode = Number(data.error);
       const errorMessage = data.message || 'Unknown error';
+
+      // A session key belongs to the API key it was issued for. After the
+      // person's own key was turned down and the call went out with the
+      // built-in pair, error 9 means the session was made with their key: it
+      // can never work with this one, so ask them to sign in again now
+      // rather than after three tries (#1538). sessionApiKey is recorded at
+      // sign-in; an older session without one counts as made with their key.
+      const sessionForOtherKey = errorCode === 9 && usedPair && (config.sessionApiKey
+        ? config.sessionApiKey !== usedPair.apiKey
+        : (!usedPair.own && !!this.keySource?.ownKeyRefused?.()));
+      if (sessionForOtherKey) {
+        console.warn(`[${this.name}] Session was made with another API key (error 9 after the key switch). Clearing session key.`);
+        const userMessage = 'Your Last.fm sign-in was made with a different API key. Sign in to Last.fm again to keep scrobbling.';
+        await this.setConfig({ ...config, sessionKey: null, sessionApiKey: null, enabled: false, authError: userMessage });
+        window.dispatchEvent(new CustomEvent('scrobbler-auth-error', {
+          detail: { scrobblerId: this.id, errorCode, errorMessage, userMessage }
+        }));
+        this._consecutiveAuthErrors = 0;
+        const err = new Error(`${this.name} API error ${errorCode}: ${errorMessage}`);
+        err.authError = true;
+        err.userMessage = userMessage;
+        throw err;
+      }
 
       // Auth errors (9, 10, 26): session key invalid, API key invalid, or suspended.
       // Last.fm returns these for genuine session expiry but ALSO occasionally
@@ -870,87 +937,110 @@ class LastFmScrobbler extends BaseScrobbler {
   // list rather than an error.
   async getLovedTracksPage({ page = 1, count = 200 } = {}) {
     const config = await this.getConfig();
-    if (!config.username || !this.apiKey) {
+    if (!config.username || !this.credentials(false).apiKey) {
       throw new Error('Not connected');
     }
-    const params = new URLSearchParams({
-      method: 'user.getLovedTracks',
-      user: config.username,
-      api_key: this.apiKey,
-      format: 'json',
-      page: String(page),
-      limit: String(count),
+    const data = await this.withKey(false, async (pair) => {
+      const params = new URLSearchParams({
+        method: 'user.getLovedTracks',
+        user: config.username,
+        api_key: pair.apiKey,
+        format: 'json',
+        page: String(page),
+        limit: String(count),
+      });
+      const { response, data: body } = await this.getJson(`${this.apiBase}?${params.toString()}`);
+      const code = lastfmReplyCode(body);
+      if (code !== null) return { code, result: body };
+      if (!response.success) {
+        throw new Error(`Last.fm request failed: ${response.error || `HTTP ${response.status}`}`);
+      }
+      if (body === undefined) {
+        throw new Error(`Failed to parse API response as JSON: ${(response.text || '').substring(0, 200)}`);
+      }
+      return { code: null, result: body };
     });
-    const response = await window.electron.proxyFetch(`${this.apiBase}?${params.toString()}`);
-    if (!response.success) {
-      throw new Error(`Last.fm request failed: ${response.error || `HTTP ${response.status}`}`);
-    }
-    let data;
-    try {
-      data = JSON.parse(response.text);
-    } catch (parseErr) {
-      throw new Error(`Failed to parse API response as JSON: ${(response.text || '').substring(0, 200)}`);
-    }
     if (data && data.error) {
       throw new Error(data.message || `Last.fm error ${data.error}`);
     }
     return data;
   }
 
-  // Get auth token for desktop auth flow
-  async getAuthToken() {
-    const response = await window.electron.proxyFetch(
-      `${this.apiBase}?method=auth.getToken&api_key=${this.apiKey}&format=json`
-    );
-    if (!response.success) {
-      throw new Error(`Failed to get auth token: ${response.error || response.status}`);
-    }
+  // A GET through main's proxyFetch: the reply and its parsed JSON body
+  // (undefined when it isn't JSON). Last.fm sends a JSON error body with a
+  // non-2xx status, so the body is read either way.
+  async getJson(url) {
+    const response = await window.electron.proxyFetch(url);
     let data;
-    try {
-      data = JSON.parse(response.text);
-    } catch (parseErr) {
-      throw new Error(`Failed to parse API response as JSON: ${(response.text || '').substring(0, 200)}`);
-    }
-    if (data.error) {
-      throw new Error(`Failed to get auth token: ${data.message}`);
-    }
-    return data.token;
+    try { data = JSON.parse(response.text); } catch (_e) { data = undefined; }
+    return { response, data };
+  }
+
+  // Get auth token for desktop auth flow. The token belongs to the API key
+  // it was asked with, so that pair is kept (authPair) for the sign-in page
+  // and the session exchange.
+  async getAuthToken() {
+    return this.withKey(true, async (pair) => {
+      const { response, data } = await this.getJson(
+        `${this.apiBase}?method=auth.getToken&api_key=${encodeURIComponent(pair.apiKey)}&format=json`
+      );
+      const code = lastfmReplyCode(data);
+      if (code === 10 || code === 26) return { code, result: null };
+      if (code !== null) {
+        throw new Error(`Failed to get auth token: ${data.message}`);
+      }
+      if (!response.success) {
+        throw new Error(`Failed to get auth token: ${response.error || response.status}`);
+      }
+      if (data === undefined) {
+        throw new Error(`Failed to parse API response as JSON: ${(response.text || '').substring(0, 200)}`);
+      }
+      this.authPair = pair;
+      return { code: null, result: data.token };
+    });
   }
 
   // Get auth URL for user to authorize
-  getAuthUrl(token) {
-    return `https://www.last.fm/api/auth/?api_key=${this.apiKey}&token=${token}`;
+  getAuthUrl(token, pair = this.authPair || this.credentials()) {
+    return `https://www.last.fm/api/auth/?api_key=${pair.apiKey}&token=${token}`;
   }
 
-  // Exchange token for session key after user authorizes
-  async getSession(token) {
+  // Exchange token for session key after user authorizes, with the pair the
+  // token was asked with (a token is no good with another key). A refused key
+  // (10/26) or a dead token (4 invalid, 15 expired) can't come right by
+  // polling: the error asks for a new sign-in and stops the poll.
+  async getSession(token, pair = this.authPair || this.credentials()) {
     const params = {
       method: 'auth.getSession',
-      api_key: this.apiKey,
+      api_key: pair.apiKey,
       token: token
     };
-    const sig = await this.generateSignature(params);
+    const sig = await this.generateSignature(params, pair.apiSecret);
 
-    const response = await window.electron.proxyFetch(
-      `${this.apiBase}?method=auth.getSession&api_key=${this.apiKey}&token=${token}&api_sig=${sig}&format=json`
+    const { response, data } = await this.getJson(
+      `${this.apiBase}?method=auth.getSession&api_key=${pair.apiKey}&token=${token}&api_sig=${sig}&format=json`
     );
+    const code = lastfmReplyCode(data);
+    if (code !== null) {
+      const err = new Error(`Failed to get session: ${data.message}`);
+      if (code === 10 || code === 26 || code === 4 || code === 15) {
+        if (this.keySource && typeof this.keySource.noteReply === 'function') this.keySource.noteReply(pair, code);
+        err.stopPolling = true;
+        err.userMessage = `Couldn’t finish signing in to ${this.name}. Sign in to ${this.name} again.`;
+      }
+      throw err;
+    }
     if (!response.success) {
       throw new Error(`Failed to get session: ${response.error || response.status}`);
     }
-    let data;
-    try {
-      data = JSON.parse(response.text);
-    } catch (parseErr) {
+    if (data === undefined) {
       throw new Error(`Failed to parse API response as JSON: ${(response.text || '').substring(0, 200)}`);
-    }
-
-    if (data.error) {
-      throw new Error(`Failed to get session: ${data.message}`);
     }
 
     return {
       sessionKey: data.session.key,
-      username: data.session.name
+      username: data.session.name,
+      apiKey: pair.apiKey
     };
   }
 
@@ -998,6 +1088,8 @@ class LastFmScrobbler extends BaseScrobbler {
         await this.setConfig({
           enabled: true,
           sessionKey: session.sessionKey,
+          // The API key the session belongs to (apiRequest's error 9 check).
+          sessionApiKey: session.apiKey || null,
           username: session.username,
           connectedAt: Date.now(),
           pendingToken: null,
@@ -1009,6 +1101,18 @@ class LastFmScrobbler extends BaseScrobbler {
           detail: { scrobblerId: this.id, username: session.username }
         }));
       } catch (error) {
+        // A refused key or a dead token: stop, and ask for a new sign-in.
+        if (error && error.stopPolling) {
+          console.warn(`[${this.name}] Auth polling stopped: ${error.message}`);
+          clearInterval(this.authPollInterval);
+          this.authPollInterval = null;
+          const config = await this.getConfig();
+          await this.setConfig({ ...config, pendingToken: null, authPolling: false });
+          window.dispatchEvent(new CustomEvent('scrobbler-auth-error', {
+            detail: { scrobblerId: this.id, errorMessage: error.message, userMessage: error.userMessage }
+          }));
+          return;
+        }
         // Token not yet authorized, keep polling
         if (attempts >= maxAttempts) {
           console.log(`[${this.name}] Auth polling timed out after ${maxAttempts} attempts`);
@@ -1048,6 +1152,7 @@ class LastFmScrobbler extends BaseScrobbler {
     await this.setConfig({
       enabled: true,
       sessionKey: session.sessionKey,
+      sessionApiKey: session.apiKey || null,
       username: session.username,
       connectedAt: Date.now(),
       pendingToken: null
@@ -1193,6 +1298,11 @@ async function initializeScrobblers(config = {}) {
   // Set Last.fm API credentials if provided
   if (config.lastfmApiKey && config.lastfmApiSecret) {
     lastfmScrobbler.setApiCredentials(config.lastfmApiKey, config.lastfmApiSecret);
+  }
+  // The app's key state (src/renderer/lib/lastfm-key.js): Last.fm's key and
+  // secret are read from it at each call from now on.
+  if (config.lastfmKeys) {
+    lastfmScrobbler.setKeySource(config.lastfmKeys);
   }
 
   // Register all scrobblers with the manager

@@ -756,6 +756,21 @@ const {
   };
 })();
 
+// Last.fm's API key (src/renderer/lib/lastfm-key.js, #1538). Every renderer
+// GET to ws.audioscrobbler.com goes through here: app.js's own reads, the
+// Last.fm plug-in, Spinoff's pool and the charts. The request goes out with
+// the session's key (the person's own from the plug-in's Advanced settings,
+// else the built-in one), and when Last.fm turns the person's key down it is
+// dropped for the session and the request is retried once with the built-in
+// key. The scrobbler's signed calls use the same `window.lastfmKeys`.
+(function installLastfmKeyFallback() {
+  if (typeof window.fetch !== 'function') return;
+  const { createLastfmKeys, createLastfmFetch } = require('./lib/lastfm-key');
+  const keys = createLastfmKeys();
+  window.lastfmKeys = keys;
+  window.fetch = createLastfmFetch({ fetch: window.fetch, keys });
+})();
+
 // Global rate limiter for non-AM resolver search fan-out (parachord#797).
 // Covers YouTube, SoundCloud, Bandcamp (and any future search-capable
 // resolver that hits a CDN-backed search endpoint).
@@ -1394,6 +1409,7 @@ const { timeAgo } = require('./lib/time-ago');
 const { untilLabel } = require('./lib/until-label');
 const { chartLoadView } = require('./lib/chart-load-view');
 const { userError, errorText } = require('./lib/error-copy');
+const { OWN_KEY_REFUSED_NOTICE: LASTFM_OWN_KEY_REFUSED_NOTICE, OWN_KEY_REFUSED_HINT: LASTFM_OWN_KEY_REFUSED_HINT } = require('./lib/lastfm-key');
 const { trackDurationLabel } = require('./lib/track-duration');
 const { contextPlaylistTarget, playlistRef } = require('./lib/playlist-context');
 const { pulledOpenPlaylist } = require('./lib/playlist-sync-banner');
@@ -8118,14 +8134,31 @@ const Parachord = () => {
   // Set once the Last.fm key lookup at launch has finished (with a key or without).
   const [lastfmKeyLoaded, setLastfmKeyLoaded] = useState(false);
 
-  // Helper to get effective Last.fm API key: user-configured > environment/fallback
+  // The Last.fm API key a request uses: the person's own (the plug-in's
+  // Advanced settings) unless Last.fm turned it down this session, else the
+  // built-in one. Chosen only by window.lastfmKeys (lib/lastfm-key.js, #1538),
+  // which is fed here during render so a key saved in Settings counts at once.
+  const lastfmKeys = window.lastfmKeys;
+  lastfmKeys?.setOwn(metaServiceConfigs.lastfm);
   const getLastfmApiKey = () => {
-    // User-configured key takes priority
-    const userKey = metaServiceConfigs.lastfm?.apiKey;
-    if (userKey) return userKey;
-    // Fall back to environment-loaded key
+    if (lastfmKeys) return lastfmKeys.apiKey();
     return lastfmApiKey.current;
   };
+  // Set while the person's own key is the one Last.fm turned down: the
+  // plug-in's Advanced section says so. The toast is once per session.
+  const [lastfmOwnKeyRefused, setLastfmOwnKeyRefused] = useState(false);
+  useEffect(() => {
+    if (!lastfmKeys) return undefined;
+    if (lastfmKeys.ownKeyRefused()) setLastfmOwnKeyRefused(true);
+    return lastfmKeys.onFallback(() => {
+      setLastfmOwnKeyRefused(true);
+      showToastRef.current?.(LASTFM_OWN_KEY_REFUSED_NOTICE, 'warning', null, { duration: 10000 });
+    });
+  }, [lastfmKeys]);
+  // A different key saved later is tried afresh, so the line goes with it.
+  useEffect(() => {
+    if (lastfmOwnKeyRefused && lastfmKeys && !lastfmKeys.ownKeyRefused()) setLastfmOwnKeyRefused(false);
+  }, [lastfmOwnKeyRefused, lastfmKeys, metaServiceConfigs.lastfm?.apiKey]);
 
   // Wrapper for Last.fm API fetches that detects rate limiting and suggests BYOK
   const lastfmRateLimitShown = useRef(0);
@@ -8136,7 +8169,7 @@ const Parachord = () => {
       // Debounce: show toast at most once per 5 minutes
       if (now - lastfmRateLimitShown.current > 5 * 60 * 1000) {
         lastfmRateLimitShown.current = now;
-        const isUsingOwnKey = !!metaServiceConfigs.lastfm?.apiKey;
+        const isUsingOwnKey = !!lastfmKeys?.readPair().own;
         if (!isUsingOwnKey) {
           showToast('Last.fm rate limit hit. Add your own API key in Settings to avoid this.', 'error');
         } else {
@@ -8650,6 +8683,7 @@ const Parachord = () => {
 
       if (lfmKey) {
         lastfmApiKey.current = lfmKey;
+        window.lastfmKeys?.setBuiltin({ apiKey: lfmKey });
         console.log('🔑 Last.fm API key loaded from environment');
       }
       // The key is a ref, so nothing re-renders when it lands: History,
@@ -8935,7 +8969,10 @@ const Parachord = () => {
               console.log('[App] Last.fm API credentials loaded from environment');
             }
           }
-          await window.initializeScrobblers(config);
+          // The built-in pair, and the scrobbler reads its key and secret
+          // from window.lastfmKeys from now on (lib/lastfm-key.js).
+          window.lastfmKeys?.setBuiltin({ apiKey: config.lastfmApiKey, apiSecret: config.lastfmApiSecret });
+          await window.initializeScrobblers({ ...config, lastfmKeys: window.lastfmKeys });
           console.log('[App] Scrobblers initialized');
           setScrobblersInitialized(true);
         } catch (error) {
@@ -9032,12 +9069,8 @@ const Parachord = () => {
     const syncScrobblersWithMetaServices = async () => {
       if (!scrobblersInitialized || !window.scrobblers || Object.keys(metaServiceConfigs).length === 0) return;
 
-      // Sync Last.fm API credentials
-      const lastfmConfig = metaServiceConfigs.lastfm;
-      if (lastfmConfig?.apiKey && lastfmConfig?.apiSecret && window.lastfmScrobbler) {
-        window.lastfmScrobbler.setApiCredentials(lastfmConfig.apiKey, lastfmConfig.apiSecret);
-        console.log('[App] Synced Last.fm API credentials with scrobbler');
-      }
+      // Last.fm's API key and secret: the scrobbler reads them from
+      // window.lastfmKeys at each call (lib/lastfm-key.js), nothing to sync.
 
       // Sync ListenBrainz token if scrobbler isn't already enabled
       const listenbrainzConfig = metaServiceConfigs.listenbrainz;
@@ -13147,13 +13180,14 @@ ${trackListXml}
     );
     // Last.fm's API calls (its getSimilarUsers) need a key, and its saved
     // config only carries one when the user set their own in Settings: give it
-    // the effective key (the user's, else the app's). Never logged. Before the
+    // the effective key (the user's, else the app's, and the app's once Last.fm
+    // turned the user's down: lib/lastfm-key.js). Never logged. Before the
     // app's key has loaded (IPC at launch) there is none yet: the config says
     // so (credentialsPending), and a caller whose call needs the key treats
     // that as "not ready" instead of taking the plugin's keyless [] as an
     // answer.
     if (resolverId === 'lastfm') {
-      const apiKey = saved.apiKey || getLastfmApiKey();
+      const apiKey = getLastfmApiKey();
       return apiKey ? { ...saved, apiKey } : { ...saved, credentialsPending: true };
     }
     return saved;
@@ -31218,7 +31252,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       };
     }
     if (service === 'lastfm') {
-      const apiKey = await window.electron?.config?.get('LASTFM_API_KEY');
+      const apiKey = getLastfmApiKey();
       if (!apiKey) return null;
       const resp = await fetch(
         `https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=${encodeURIComponent(user)}&api_key=${apiKey}&format=json&limit=1`
@@ -36244,12 +36278,9 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       apiSecret: apiSecret?.trim() || null
     });
 
-    // Also set API credentials on the scrobbler for scrobbling support
-    // Note: Last.fm scrobbling also requires OAuth (sessionKey) which is done via ScrobblerSettingsCard
-    if (apiKey?.trim() && apiSecret?.trim() && window.lastfmScrobbler) {
-      window.lastfmScrobbler.setApiCredentials(apiKey.trim(), apiSecret.trim());
-      console.log('🎧 Last.fm scrobbler API credentials set');
-    }
+    // The scrobbler picks the saved key and secret up from window.lastfmKeys
+    // (lib/lastfm-key.js). Scrobbling also needs its own sign-in
+    // (ScrobblerSettingsCard).
 
     console.log(`🎧 Connected to Last.fm as ${username}`);
     return true;
@@ -36273,9 +36304,6 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     const apiKey = keyInput?.trim() || null;
     const apiSecret = secretInput?.trim() || null;
     await saveMetaServiceConfig('lastfm', { ...metaServiceConfigs.lastfm, apiKey, apiSecret });
-    if (apiKey && apiSecret && window.lastfmScrobbler) {
-      window.lastfmScrobbler.setApiCredentials(apiKey, apiSecret);
-    }
     showToast(apiKey ? 'API credentials saved' : 'API credentials cleared', 'success');
   };
   const clearLastfmApiKeys = async () => {
@@ -37383,6 +37411,8 @@ useEffect(() => {
         remove: h.disconnectLastfm,
         saveAdvanced: (v) => h.saveLastfmApiKeys(v),
         clearAdvanced: () => h.clearLastfmApiKeys(),
+        // Last.fm turned the person's own key down this session (#1538).
+        advancedNotice: lastfmOwnKeyRefused ? LASTFM_OWN_KEY_REFUSED_HINT : undefined,
       },
       listenbrainz: {
         connect: (v) => h.connectListenbrainz(v.username, v.userToken),
@@ -37392,7 +37422,7 @@ useEffect(() => {
         setAdvancedOpen: setListenbrainzAdvancedOpen,
       },
     };
-  }, [hostAccountHandlers, spotifyConnected, spotifyCredentialsSource, spotifyClientIdInput, autoLaunchSpotify, soundcloudConnected, soundcloudCredentialsSource, soundcloudClientIdInput, soundcloudClientSecretInput, soundcloudAdvancedOpen, listenbrainzAdvancedOpen, appleMusicConnected, appleMusicCanSignIn, appleMusicNativeAvailable, appleMusicDeveloperToken, appleMusicTokenSaved]);
+  }, [hostAccountHandlers, spotifyConnected, spotifyCredentialsSource, spotifyClientIdInput, autoLaunchSpotify, soundcloudConnected, soundcloudCredentialsSource, soundcloudClientIdInput, soundcloudClientSecretInput, soundcloudAdvancedOpen, listenbrainzAdvancedOpen, appleMusicConnected, appleMusicCanSignIn, appleMusicNativeAvailable, appleMusicDeveloperToken, appleMusicTokenSaved, lastfmOwnKeyRefused]);
 
   // Stable function props for the memo'd ChartsPage (keys must
   // match CHARTS_PAGE_HANDLERS in charts-page.js).

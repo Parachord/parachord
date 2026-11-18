@@ -138,6 +138,8 @@ LASTFM_API_SECRET=your_shared_secret_here
 
 `LASTFM_SHARED_SECRET` is accepted as an alternative name for the secret. Get your own at https://www.last.fm/api/account/create if the shared key is rate-limited.
 
+**Your own key needs Last.fm Pro.** From 1 December 2026 a Last.fm API key only works while the account that owns it has Last.fm Pro ([announcement](https://support.last.fm/t/api-keys-will-require-pro-from-1st-december/121030)). That applies to a key in `.env` and to one entered in the Last.fm plug-in's Advanced settings. If Last.fm turns down a key entered in Settings, Parachord uses its built-in key for the rest of the session and says so once (see "Last.fm's API key" in [docs/architecture/scrobbling.md](../architecture/scrobbling.md)). If your scrobbling session was made with your key, you'll be asked to sign in to Last.fm again.
+
 ---
 
 ### ⚪ **Apple Music / MusicKit** (Optional)

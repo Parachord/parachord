@@ -12,6 +12,8 @@
 //
 // Pure apart from the fetchJson it is given, so it loads under plain Node.
 // fetchJson(url) resolves to the parsed body, or null when the request failed.
+// apiKey is the caller's getLastfmApiKey() (src/renderer/lib/lastfm-key.js), and
+// the request goes through the renderer's Last.fm fetch interceptor (#1538).
 
 'use strict';
 

@@ -283,7 +283,7 @@ describe('the grouped model wiring (similar users, weekly sections, readers)', (
   test("_fetchResolverConfig gives lastfm the effective key from getLastfmApiKey()", () => {
     const i = app.indexOf('const _fetchResolverConfig = async (resolverId) => {');
     const fn = app.slice(i, app.indexOf('\n  };', i));
-    expect(fn).toMatch(/if \(resolverId === 'lastfm'\) \{\s*const apiKey = saved\.apiKey \|\| getLastfmApiKey\(\);\s*return apiKey \? \{ \.\.\.saved, apiKey \} : \{ \.\.\.saved, credentialsPending: true \};/);
+    expect(fn).toMatch(/if \(resolverId === 'lastfm'\) \{\s*const apiKey = getLastfmApiKey\(\);\s*return apiKey \? \{ \.\.\.saved, apiKey \} : \{ \.\.\.saved, credentialsPending: true \};/);
   });
 
   test('a similar-users config whose credential is not ready is "not ready": not asked, not stored, retried next load', () => {

@@ -47,7 +47,7 @@ const SECTION = { padding: '16px 0', borderTop: '1px solid var(--border-subtle)'
 // A block inside a section, divided from what's above it by a line.
 const BLOCK = { marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--border-subtle)' };
 const NOTE = { fontSize: '11px', lineHeight: '1.5' };
-const TONE = { success: 'var(--text-success)', secondary: 'var(--text-secondary)' };
+const TONE = { success: 'var(--text-success)', secondary: 'var(--text-secondary)', warning: 'var(--text-warning)' };
 
 // The plug-in's settings block. The loader also flattens authType and
 // configurable onto the plug-in, so read both.
@@ -161,7 +161,9 @@ function ClientKeys({ plugin, keys, authPort, showToast }) {
 //   readOnly            show the saved values only
 //   justSaved           the Save button reads "Saved" for a moment
 //   open / setOpen      the host's, when it opens the section from elsewhere
-function AdvancedKeys({ plugin, values, setValue, saved = false, onSave, onClear, readOnly = false, justSaved = false, open: hostOpen, setOpen: hostSetOpen }) {
+//   notice              the host's line about the saved keys, shown in
+//                       place of the hint (Last.fm turned the key down, #1538)
+function AdvancedKeys({ plugin, values, setValue, saved = false, onSave, onClear, readOnly = false, justSaved = false, open: hostOpen, setOpen: hostSetOpen, notice }) {
   const e = React.createElement;
   const [ownOpen, setOwnOpen] = React.useState(false);
   const open = hostSetOpen ? !!hostOpen : ownOpen;
@@ -169,9 +171,10 @@ function AdvancedKeys({ plugin, values, setValue, saved = false, onSave, onClear
   const fields = advancedFieldsOf(plugin);
   if (fields.length === 0) return null;
   const a = accountOf(plugin) || {};
-  const hint = saved && a.advancedSavedHint ? a.advancedSavedHint : a.advancedHint;
+  const hint = notice || (saved && a.advancedSavedHint ? a.advancedSavedHint : a.advancedHint);
+  const tone = notice ? TONE.warning : saved && a.advancedSavedHint ? TONE.success : TONE.secondary;
   return e(Disclosure, { open, onToggle: () => setOpen(!open) },
-    hint && e('p', { style: { ...NOTE, color: saved && a.advancedSavedHint ? TONE.success : TONE.secondary, marginBottom: '12px' } }, hint),
+    hint && e('p', { style: { ...NOTE, color: tone, marginBottom: '12px' } }, hint),
     fields.map(([k, f]) => e(StackedField, { key: k, label: f.label || k, description: f.description, link: !readOnly && f.helpUrl ? { url: f.helpUrl, label: `Get your ${midSentence(f.label || k)}` } : undefined },
       readOnly
         ? e(SecretField, { 'aria-label': `${plugin.name} ${midSentence(f.label || k)}`, defaultValue: values[k] || '', readOnly: true, className: 'w-full' })
@@ -194,7 +197,8 @@ function AdvancedKeys({ plugin, values, setValue, saved = false, onSave, onClear
 //   config   the plug-in's saved settings (config.username once saved)
 //   account  the host's: { connect(values) → true when saved, remove(),
 //            saveAdvanced?(values), clearAdvanced?(), advancedOpen?,
-//            setAdvancedOpen? }
+//            setAdvancedOpen?, advancedNotice? (a line about the saved
+//            keys, in place of the Advanced hint) }
 //   children what needs a sign-in on top of the username (the nested
 //            Scrobbling section): after the account, before Advanced
 function UsernameAccount({ plugin, config, account, color, children }) {
@@ -223,11 +227,12 @@ function UsernameAccount({ plugin, config, account, color, children }) {
           setValue,
           saved: savedAny,
           open: account.advancedOpen, setOpen: account.setAdvancedOpen,
+          notice: account.advancedNotice,
           onSave: () => account.saveAdvanced(values),
           onClear: account.clearAdvanced ? async () => { setValues({}); await account.clearAdvanced(); } : undefined,
         })
         // Saved with the username: shown, not edited here.
-        : savedAny && e(AdvancedKeys, { plugin, values: c, readOnly: true, saved: true, open: account.advancedOpen, setOpen: account.setAdvancedOpen }));
+        : savedAny && e(AdvancedKeys, { plugin, values: c, readOnly: true, saved: true, open: account.advancedOpen, setOpen: account.setAdvancedOpen, notice: account.advancedNotice }));
   }
   const connect = async () => {
     setBusy(true);

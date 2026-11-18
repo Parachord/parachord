@@ -66,6 +66,10 @@ module.exports = {
   // caches nothing empty); only "you have no friends" is a miss ([]).
   // Isolated (new Function): the pacer, fetch wrapper and cosine live inside.
   // The API key is only ever encoded into request URLs, never into a message.
+  // config.apiKey is the app's choice (getLastfmApiKey, lib/lastfm-key.js),
+  // and every request goes through the app's ws.audioscrobbler.com fetch
+  // interceptor: a refused own key is swapped for the built-in one and the
+  // request retried once; a refused built-in key throws (#1538).
   getSimilarUsers: async function (config) {
     const username = config && config.username;
     const apiKey = config && config.apiKey;

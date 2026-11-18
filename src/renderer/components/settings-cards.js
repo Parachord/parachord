@@ -288,7 +288,9 @@ const ScrobblerSettingsCard = React.memo(({
     const handleAuthError = async (event) => {
       if (event.detail.scrobblerId === scrobbler.id) {
         console.warn(`[ScrobblerSettingsCard] Auth error for ${scrobbler.id}:`, event.detail.errorMessage);
-        setError(`Session expired — please re-authenticate`);
+        // The scrobbler's own line when it has one (Last.fm switched API
+        // keys and the session belonged to the old one, #1538).
+        setError(event.detail.userMessage || `Session expired — please re-authenticate`);
         onConfigChange(scrobbler.id, await scrobbler.getConfig());
       }
     };
