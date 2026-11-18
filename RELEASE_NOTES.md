@@ -1,6 +1,6 @@
-# Parachord (unreleased)
+# Parachord v0.9.13
 
-**Release date:** not yet released
+**Release date:** 2026-11-18
 
 > A new Home gets you playing in one click and walks a new install through setup, and the whole app now shares one look that works in both themes and from the keyboard. Plug-ins do more: your services' plug-ins now feed Recommendations, Home's mixes and the people you might like to follow, Amazon Music lives entirely in its plug-in so its fixes arrive as plug-in updates, and a new Plex plug-in plays from your own server. The music files on your computer join your Collection, and every plug-in's settings now look and work the same way.
 
