@@ -20,7 +20,7 @@ const { renderToStaticMarkup } = require('react-dom/server');
 const ResolverLoader = require('../../resolver-loader');
 const { purchaseSource } = require('../../src/renderer/lib/purchase-source');
 const { sourceUrlHint, sourceFromUrlHint } = require('../../src/renderer/lib/source-url-hint');
-const { FirstRunTutorial, tourAssistant } = require('../../src/renderer/components/first-run-tutorial');
+const { FirstRunTutorial } = require('../../src/renderer/components/first-run-tutorial');
 
 const root = path.join(__dirname, '../..');
 const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
@@ -102,37 +102,23 @@ describe('a track\'s own link: routed by the registry', () => {
   });
 });
 
-describe('the tour\'s assistant: any AI plug-in that is set up', () => {
-  const meta = (id) => {
-    const m = manifest(id);
-    return { id, name: m.manifest.name, type: m.manifest.type, color: m.manifest.color, capabilities: m.capabilities, settings: m.settings };
-  };
-  const services = ['claude', 'chatgpt', 'ollama', 'lastfm'].map(meta);
-
-  test('none set up: no assistant', () => {
-    expect(tourAssistant(services, {})).toBeNull();
-    expect(tourAssistant(services, { lastfm: { username: 'x' } })).toBeNull();
-  });
-
-  test('the first chat plug-in that is set up, whichever it is', () => {
-    expect(tourAssistant(services, { chatgpt: { apiKey: 'k' } }).id).toBe('chatgpt');
-    expect(tourAssistant(services, { ollama: { enabled: true } }).id).toBe('ollama');
-    expect(tourAssistant(services, { claude: { apiKey: 'k', enabled: false }, ollama: { enabled: true } }).id).toBe('ollama');
-  });
-
-  test('the Apps screen draws the set-up plug-in\'s mark, or a sparkle, and the copy names no assistant', () => {
+describe('the tour\'s Apps screen: a neutral assistant mark', () => {
+  // The assistant row is Parachord's MCP server, which any assistant that
+  // speaks MCP can use. An in-app chat plug-in (Ollama, ChatGPT) can't drive
+  // Parachord over MCP, so its logo there would mislead: the mark is always
+  // the sparkle, and the copy names no assistant.
+  test('always the sparkle, whatever chat plug-in is set up', () => {
     global.window = global.window || {};
-    const render = (configs) => renderToStaticMarkup(React.createElement(FirstRunTutorial, {
-      firstRunTutorial: { open: true, step: 'apps' }, loadedResolvers: [], metaServices: services, metaServiceConfigs: configs,
+    const html = renderToStaticMarkup(React.createElement(FirstRunTutorial, {
+      firstRunTutorial: { open: true, step: 'apps' }, loadedResolvers: [],
       navigateTo: () => {}, getTrackArt: () => null, setFirstRunTutorial: () => {}, startGettingStarted: () => {},
     }));
-    const none = render({});
-    const withChatgpt = render({ chatgpt: { apiKey: 'k' } });
-    expect(none).not.toEqual(withChatgpt);
-    expect(none).toContain('Or ask an AI assistant to play something');
-    expect(none).not.toContain('such as Claude');
+    expect(html).toContain('Or ask an AI assistant to play something');
+    expect(html).not.toContain('such as Claude');
     const src = read('src/renderer/components/first-run-tutorial.js');
     expect(src).not.toMatch(/\.id === 'claude'/);
+    expect(src).not.toMatch(/capabilities\.chat/);
+    expect(src).not.toMatch(/metaServiceConfigs/);
   });
 });
 

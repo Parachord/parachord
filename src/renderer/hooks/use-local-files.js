@@ -23,9 +23,9 @@
 // What stays in app.js, reading this hook's return: the stale-local-source
 // reconcile (it writes the track-sources cache, the collection, playlists and
 // the queue), the re-resolve on localLibraryVersion (it reads the open album
-// and playlist), the plug-in dialog's stats load (a 'localfiles' id check
-// that #1520 is replacing), resolveTrack's stale-path checks, and the ID3
-// editor's library patch.
+// and playlist), the plug-in dialog's stats load (keyed on
+// isLocalResolver since #1520), resolveTrack's stale-path checks, and the
+// ID3 editor's library patch.
 //
 // Rules for this file (the extracted-module rule for hooks):
 //   - React.-qualified hooks only (React.useState etc.), never bare
