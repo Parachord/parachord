@@ -310,34 +310,42 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                   setSelectedPlaylist({ ...newPlaylist, isEphemeral: false });
                 } }, 'Save'),
               // A playlist imported from a link is kept updated from it or a
-              // snapshot (lib/playlist-update-mode.js). Kept updated: check
-              // now, or stop. A snapshot never changes, so it has no refresh;
-              // "Keep updated" turns updating on (and updates it now).
+              // snapshot (lib/playlist-update-mode.js). One control for both:
+              // the button says which ("Auto-update · On/Off"), and its menu
+              // has the on/off switch and, while it's on, "Refresh now". A
+              // snapshot never changes, so it has no refresh; switching
+              // auto-update on brings it up to date at once. It replaced two
+              // buttons (Check now + Stop updating, or Keep updated) whose
+              // pairing read as two unrelated actions.
               (() => {
                 if (selectedPlaylist?.isEphemeral || playlistEditMode) return null;
                 const mode = linkUpdateMode(selectedPlaylist);
                 if (!mode) return null;
                 const id = selectedPlaylist.id;
-                if (mode === 'snapshot') {
-                  return React.createElement(HeaderControl, {
-                    onClick: () => setPlaylistUpdateMode(id, 'auto'),
-                    'data-tooltip': 'A snapshot of its link. Keep it updated from the link instead'
-                  }, 'Keep updated');
-                }
-                return React.createElement(React.Fragment, null,
-                  React.createElement(HeaderControl, {
-                    onClick: async () => {
-                      if (refreshingPlaylist === id) return;
-                      setRefreshingPlaylist(id);
-                      try { await refreshHostedPlaylist(id); }
-                      finally { setRefreshingPlaylist(null); }
-                    },
-                    'data-tooltip': 'Updates on its own from its link. This checks now'
-                  }, refreshingPlaylist === id ? 'Checking…' : 'Check now'),
-                  React.createElement(HeaderControl, {
-                    onClick: () => setPlaylistUpdateMode(id, 'snapshot'),
-                    'data-tooltip': 'Keep it as it is now and stop updating it'
-                  }, 'Stop updating'));
+                const on = mode === 'auto';
+                const refreshing = refreshingPlaylist === id;
+                const setOn = (next) => setPlaylistUpdateMode(id, next ? 'auto' : 'snapshot');
+                const refreshNow = async () => {
+                  if (refreshingPlaylist === id) return;
+                  setRefreshingPlaylist(id);
+                  try { await refreshHostedPlaylist(id); }
+                  finally { setRefreshingPlaylist(null); }
+                };
+                return React.createElement(Menu, {
+                  label: 'Auto-update',
+                  align: 'right',
+                  minWidth: 240,
+                  items: [
+                    { key: 'auto', label: 'Keep updated from its link', onSelect: () => setOn(!on),
+                      toggle: { checked: on, onChange: setOn, label: 'Keep updated from its link' } },
+                    ...(on ? [{ key: 'refresh', label: refreshing ? 'Refreshing…' : 'Refresh now', disabled: refreshing, onSelect: refreshNow }] : []),
+                  ],
+                  renderTrigger: (t) => React.createElement(HeaderControl, Object.assign({}, t, {
+                    'data-tooltip': on ? 'Updates on its own from its link' : 'A snapshot: it stays as it is'
+                  }),
+                    refreshing ? 'Updating…' : (on ? 'Auto-update · On' : 'Auto-update · Off'),
+                    React.createElement(Icons.ChevronDown, { className: 'w-4 h-4', style: { marginLeft: '4px' } })),
+                });
               })(),
               // Edit / Cancel+Done buttons (only for non-ephemeral playlists)
               !selectedPlaylist?.isEphemeral && (playlistEditMode ? React.createElement(React.Fragment, null,

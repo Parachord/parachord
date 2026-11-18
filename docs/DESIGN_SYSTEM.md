@@ -231,8 +231,9 @@ Components use `React.createElement()` (no JSX) and live in `src/renderer/compon
 
 | You need | Use | Module | Notes |
 |----------|-----|--------|-------|
-| A button | `Button` | `button.js` | `variant`: primary (one per view), secondary, destructive, text, icon (needs `aria-label`); `size` sm/md; `busy`; `tone: 'dark'` on the always-dark surfaces; `pageColor` for a hero's fill |
+| A button | `Button` | `button.js` | `variant`: primary (one per view), secondary, destructive, quietDestructive (red text on a secondary button, for a rare destructive action that opens a confirmation), text, icon (needs `aria-label`); `size` sm/md; `busy`; `tone: 'dark'` on the always-dark surfaces; `pageColor` for a hero's fill |
 | A page or drawer header's Close / Edit / Save / Cancel | `HeaderControl` | `header-control.js` | The shared `Button`, small and sentence case; `close` is an icon-only ✕ with its label as name and tooltip; tones default / primary / dark |
+| How far along something is | `ProgressBar` | `progress-bar.js` | `value`, `max`, `color` (a service's, else the accent), `label` for screen readers |
 | A dialog | `Modal` | `modal.js` | Focus moves in and comes back, Escape and the scrim close it, one title size and three widths. `ConfirmModal` for confirm/cancel (the confirm button named for its action, `destructive` for red); `DontShowAgain` for the checkbox |
 | A panel that slides out beside the sidebar (Add to playlist) | `SidePanel` | `modal.js` | `Modal`'s focus handling and labelling; Escape goes to an inner field first; its scrim can leave the sidebar uncovered |
 | A success, info or error message | `showToast(message, type, action, options)` | `toast.js` (`ToastRegion`) | Success is a toast, never a dialog |
@@ -266,7 +267,7 @@ Components use `React.createElement()` (no JSX) and live in `src/renderer/compon
 | Pick-one filter buttons | `FilterChips` | `filter-chips.js` | Home's source filter style |
 | Tabs in a hero | `HeroTabs` | `hero-tabs.js` | `role="tablist"`, arrow keys |
 | A section of Settings (its card and heading) | `SettingsSection` | `settings-cards.js` | The card, the small-capitals heading (written in Title Case), an optional line under it |
-| A setting row, text field, secret field, select, checkbox, slider, switch or radio group | `SettingRow`, `TextField`, `SecretField`, `Select`, `Checkbox`, `Slider`, `Switch`, `RadioGroup` | `fields.js` | Every field has a label; on/off in a setting is a `Switch`; `tone: 'dark'` on the dark panels; no raw `<input>` / `<select>` (`inputCopies` 0) |
+| A setting row, text field, secret field, select, checkbox, slider, switch or radio group | `SettingRow`, `TextField`, `SecretField`, `Select`, `Checkbox`, `Slider`, `Switch`, `RadioGroup` | `fields.js` | Every field has a label; on/off in a setting is a `Switch`; a setting that only applies while the one above is on is a `SettingRow` with `nested` (indented under a line) and a `size: 'sm'` switch, and a group of them (a sign-in with what needs it) is `NestedSettings`; `tone: 'dark'` on the dark panels; no raw `<input>` / `<select>` (`inputCopies` 0) |
 | The AI provider picker | `ProviderMenu` | `provider-menu.js` | The shared `Menu` of AI plug-ins, on both Shuffleupagus panels |
 | A pick-one row of equal tiles, each with an icon (Settings' theme) | `SegmentedChoice` | `fields.js` | `role="radiogroup"`; the current tile has an accent border and tint |
 | Nothing to show yet / a load that failed | `EmptyState` / `ErrorState` | `states.js` | `ErrorState` has "Try again" (`onRetry`); `tone: 'dark'` on the dark panels, `icon: null` for none |
@@ -541,7 +542,7 @@ Every transition and short animation runs on these (`index.html`, #1450). Reduce
 | `menuIn` | `[role="menu"]`, `[role="listbox"]` | Menus and pick lists (`Menu`, `SortMenu`) fade and drop 4px in, on `--motion-base` |
 | `sidePanelIn` | a modal dialog that isn't `.modal-panel` | The Add to playlist panel slides 16px out from the sidebar, on `--motion-slow` |
 | `motionFadeIn` | `.motion-fade-in` | Content that swaps as it mounts: the page hero's full and collapsed sides, so they don't pop while its height animates |
-| `toastIn` | `.motion-rise-in` | The Shuffleupagus prompt panel rises in above the playbar |
+| `toastIn` | `.motion-rise-in` | Rises an element in from below; no current user (the Shuffleupagus prompt panel it was made for was removed in #1020) |
 | `fadeIn` | inline `animation` | Concert rows appearing |
 
 ### Queue
@@ -635,6 +636,15 @@ Custom scrollbar styling for three contexts:
 All scrollbars use rounded thumbs (`border-radius: 10px` or `3px`) with transparent-to-subtle hover states.
 
 ---
+
+## Auditing
+
+Two kinds of drift, two kinds of check:
+
+- **Element drift** (a sixth button colour, a hand-built input, a hex value) is what `scripts/design-drift.js` counts; the ratchet (`tests/ci/design-drift.test.js`) fails when a count rises. That includes `serviceNameBranches`, code that branches on one plug-in's id instead of the registry.
+- **Structural drift** (one job done with different controls across a surface's variants) passes every count: each variant uses the shared `Button` and fields, just differently. Find it by comparing variants side by side and by task: for each job (turn on, sign in, enter a key, save, remove), list how every variant does it; one job should be one control. `scripts/ui-contact-sheet.js` (`npm run ui-sheets -- <recipe>`) captures every variant of a surface, light and dark, with a structural summary (headings, buttons, fields, switches, links) per variant. The plug-in settings audit (`docs/plans/2026-11-17-plugin-settings-audit.md`) is the example: 23 dialogs, zero drift counts, five ways to enter a key.
+
+Copy that reaches the UI from plug-in manifests is checked by `tests/plugins/manifest-copy.test.js` (no developer text in descriptions, a label for every capability).
 
 ## Focus & Accessibility
 

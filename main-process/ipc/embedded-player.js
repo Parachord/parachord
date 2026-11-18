@@ -7,9 +7,11 @@
 // forgeable by design — any script in the embedded page (including
 // cross-origin iframes posting to the window) can send a transport action or
 // a mirror payload. What bounds that:
-//   - only the PLAYER view is registered (not the search view, which loads
-//     live Amazon pages during background resolution/import whatever is
-//     playing) — registration happens in amazon-web-player.js ensureView;
+//   - only the PLAYER view is registered (never a search/import view, which
+//     loads live third-party pages during background resolution whatever is
+//     playing) — the resolver that owns an embedded player registers it; no
+//     production caller exists today (Amazon's player view died with the
+//     hornet pipeline), so the registry is exercised by the tests only;
 //   - keys are accepted only while that resolver OWNS playback (the
 //     registration's isOwned() — <provider-owned player state> (hornet-era example: amazonWebPlayer.currentAsin, deleted with the hornet player) is non-null
 //     exactly while the Amazon player owns it), so a parked view cannot

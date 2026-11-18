@@ -3,9 +3,9 @@
     "id": "discogs",
     "name": "Discogs",
     "type": "meta-service",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "author": "Parachord Team",
-    "description": "Artist biographies and images from Discogs",
+    "description": "Artist biographies and photos from Discogs.",
     "icon": "📀",
     "color": "#333333",
     "homepage": "https://www.discogs.com"

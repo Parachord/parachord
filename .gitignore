@@ -72,3 +72,6 @@ resources/keys/*.p8
 # Generated fallback-resolvers module (parachord#1099 bucket C — built by
 # scripts/build-axes.js from plugins-src/, no longer inline in src/renderer/app.js)
 /src/renderer/lib/fallback-resolvers.generated.js
+
+# scripts/ui-contact-sheet.js output (contact sheets of UI variants)
+ui-sheets/

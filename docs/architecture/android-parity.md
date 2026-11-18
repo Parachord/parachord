@@ -361,7 +361,7 @@ Rules:
 - Every way in imports the same links: on desktop, dropping a link, the import dialog and `parachord://import?url=`; on Android, the import dialog, `parachord://import` and the share sheet.
 - Mobile routes import the same way, through its registry (`PluginManager.lookupPlaylist`, as `ProviderPlaylistResolver` already does for `play/playlist`), with native fast paths allowed in front. Then a new `.axe` adds the link type on both clients with no code, and only a new native path needs a mobile change.
 - A desktop change that adds or removes an import link type outside the registry (a native path, a new document format, a change to the hosted XSPF fallback) needs a mobile ticket.
-- A plugin whose `lookupPlaylist` needs a desktop-only host (Amazon's calls the main-process `window.electron.amazonMusic` bridge) needs an Android host or native client for that call; until then mobile reports the service as unavailable rather than fetching its page.
+- A plugin whose `lookupPlaylist` needs a desktop-only host (Amazon's drives the ONE host web-session instance through the `window.electron.webSession` bridge — the main-process `window.electron.amazonMusic` bridge died with the #1356 M11 teardown) needs an Android host or native client for that call; until then mobile reports the service as unavailable rather than fetching its page.
 - The imported record keeps desktop's shape: `sourceUrl` = the link, `source` = `${resolverId}-import` or `hosted-xspf`, the plugin's playlist image as the cover, and `autoUpdate` once mobile asks the keep-updated question.
 
 The rule covers iOS as well as Android (both are in parachord-mobile). Mobile tickets: Parachord/parachord-mobile#690 (every link type, Android), Parachord/parachord-mobile#689 (kept updated or a snapshot, Android), Parachord/parachord-mobile#691 (iOS: both, plus confirming `parachord://import`, which iOS ran without asking as of 2026-11-15). Both give service imports a `sourceUrl`, so mobile's hosted poller (`getHosted` is `WHERE sourceUrl IS NOT NULL`) has to skip `-import` sources in the same change.
@@ -384,3 +384,15 @@ Not at parity (Parachord/parachord-mobile#693):
 - Conflicts: Android uses last write wins, desktop asks. A product decision; the ticket lays out both.
 - Covers: Android keeps its generated mosaic over the service's cover and takes Spotify's generated mosaic as a cover; desktop does the reverse (Parachord/parachord-mobile#676).
 
+
+### Android Parity Requirements (plugin host bridges)
+
+Desktop implemented #1355's per-platform loading rule: a plugin manifest may declare `"requires": { "hostBridges": ["webSession"] }` (a top-level `.axe` field), each host advertises what it supplies — desktop's `preload.js` sets `window.__parachordHostBridges` (today `['webSession']`) — and the plugin loader **hides** a plugin whose required bridges are not all supplied. From #1355's text: "This fits the existing plugin-compat check (`main-process/plugin-compat.js`, ported to mobile as `PluginCompat.kt`). Mobile would implement the same rule in `shared/.../plugin/PluginCompat.kt` and the same bootstrap globals in both apps' JS runtimes."
+
+Mobile must mirror three things:
+
+- The rule in `PluginCompat.kt`, beside `minAppVersion`: `pluginRequiredHostBridges(axe)` (absent or malformed is no requirement — an array of non-empty strings under `requires.hostBridges` only) and `hostBridgesCompatibility(axe, supplied)` → `{ ok, missing }` — hide the plugin when any required bridge is missing. Never load it to fail later: mobile's resolver retry (#566) would keep re-asking a plugin that throws not-ready on every resolve.
+- The same bootstrap global, `window.__parachordHostBridges`, set by the mobile JS runtime before the plugin loader runs, carrying only the bridges that host actually supplies (mobile's list will differ from desktop's — that is the point).
+- The `.axe` shape is shared marketplace data: `requires` is a top-level key (sibling of `capabilities`/`settings`), not inside `manifest`.
+
+What breaks if a client drifts: a plugin that needs a bridge the host doesn't supply loads and throws not-ready on every resolve (and mobile's retry re-asks it forever), or — the other direction — a host that advertises a bridge it doesn't really supply has plugins that load and fail at the call site.

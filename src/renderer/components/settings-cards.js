@@ -9,7 +9,8 @@
 const { FriendMiniPlaybar } = require('./friend-mini-playbar');
 const Icons = require('./icons');
 const { Button } = require('./button');
-const { TextField, SecretField, Switch, Checkbox } = require('./fields');
+const { TextField, SecretField, SettingRow, Switch, Checkbox } = require('./fields');
+const { AccountRow } = require('./account-row');
 const { Tooltip, SERVICE_LOGOS } = require('./ui-atoms');
 const { menuKeyHandler } = require('./card-button');
 
@@ -21,9 +22,11 @@ const { menuKeyHandler } = require('./card-button');
 //   4. Installing (spinner overlay)
 // statusLabel (with statusTitle as its tooltip) replaces "Setup required" for
 // a resolver that is set up but limited, e.g. Amazon without Music Unlimited.
-// unplayable: enabled but left out of playback (a playback limit: Amazon
-// without Music Unlimited, Apple Music not signed in). Grayed like an
-// available card, keeping its checkmark and label.
+// An enabled plug-in left out of playback (a playback limit: Amazon
+// without Music Unlimited, Apple Music not signed in) is on (search,
+// covers, links), so the tile keeps its full colour and checkmark; the
+// warning line under the name says it can't play, and the Plug-Ins grid
+// gives it no priority number. Greying it read as "off" (2026-11-17).
 // An enabled card's problem shows one way, as the warning line under its
 // name ("Setup required" or the statusLabel); there was also an orange "!" on
 // the tile for setup alone, so Apple Music and Amazon read differently.
@@ -35,7 +38,6 @@ const ResolverCard = React.memo(({
   needsConfiguration,
   statusLabel = null,
   statusTitle = null,
-  unplayable = false,
   priorityNumber,
   onClick,
   onDragStart,
@@ -52,7 +54,7 @@ const ResolverCard = React.memo(({
   const logo = SERVICE_LOGOS[resolver.id];
   const isEnabled = isActive === true;
   const isAvailable = !isEnabled && !isInstalling;
-  const isGrayed = isAvailable || (isEnabled && unplayable);
+  const isGrayed = isAvailable;
 
   return React.createElement('div', {
     className: `flex flex-col items-center relative ${isDragging ? 'opacity-50' : ''}`,
@@ -238,6 +240,10 @@ const McpSettingsSection = () => {
 // ScrobblerSettingsCard component - Settings card for individual scrobbler services
 const ScrobblerSettingsCard = React.memo(({
   scrobbler, config, onConfigChange, color,
+  // The account row's name when this card is one part of a service's
+  // settings ("Scrobbling", under Last.fm's own account row); by default
+  // "<Service> account".
+  accountLabel,
   lovePushEnabled = false,
   onSetLovePushEnabled = null,
   onRunBackfill = null,
@@ -247,6 +253,9 @@ const ScrobblerSettingsCard = React.memo(({
   onRunLoveImport = null,
   loveImportRunning = false,
   loveImportProgress = null,
+  // The plug-in declares `lovedTracks` (its manifest): show the love
+  // import, push and backfill. Was a check on two service names.
+  lovedTracks = false,
   hasImportedLoves = false,
 }) => {
   const [connecting, setConnecting] = React.useState(false);
@@ -255,7 +264,10 @@ const ScrobblerSettingsCard = React.memo(({
   const [usernameInput, setUsernameInput] = React.useState('');
   const [passwordInput, setPasswordInput] = React.useState('');
 
-  const isConnected = config?.enabled && (config?.sessionKey || config?.userToken);
+  // Signed in = has a session, whether or not scrobbling is switched on.
+  // (It used to need `enabled` too, so switching scrobbling off looked like
+  // signing out and offered the sign-in form again.)
+  const isConnected = !!(config?.sessionKey || config?.userToken);
   const isPolling = config?.authPolling && config?.pendingToken;
 
   // Listen for auth completion events from polling
@@ -349,35 +361,33 @@ const ScrobblerSettingsCard = React.memo(({
     }
   };
 
-  // Get scrobbler-specific styling
+  // The account row (components/account-row.js, #1498 step 3): Libre.fm's
+  // whole account; Last.fm's and ListenBrainz's scrobbling session, under
+  // their own account rows, so it's labelled "Scrobbling" there.
+  // How this scrobbler signs in: a password (it has connectWithPassword), a
+  // pasted user token, or the browser.
+  const usesPassword = typeof scrobbler.connectWithPassword === 'function';
+  const usesToken = !usesPassword && scrobbler.id === 'listenbrainz';
+  const status = isConnected
+    ? (config?.username ? `Scrobbling as ${config.username}` : 'Signed in')
+    // The service ended the session (the loader clears it and keeps the
+    // reason): say so, and what it costs, rather than a plain "Sign in".
+    : config?.authError ? `${scrobbler.name} signed you out. Sign in again to scrobble${lovedTracks ? ' and sync loved tracks' : ''}.`
+    : usesPassword ? 'Enter your username and password below'
+    : usesToken ? 'Add your user token below to scrobble'
+    : lovedTracks ? 'Sign in to scrobble and sync loved tracks'
+    : 'Sign in to scrobble what you play';
+  const signInDisabled = isPolling || (usesToken && !tokenInput) || (usesPassword && (!usernameInput || !passwordInput));
 
-  return React.createElement('div', {
-    className: 'bg-surface-card rounded-xl p-4 shadow-sm border border-line hover:shadow-md hover:border-line-strong transition-[box-shadow,border-color]'
-  },
-    // Header row with icon, name, and toggle
-    React.createElement('div', { className: 'flex items-center justify-between mb-3' },
-      React.createElement('div', { className: 'flex items-center gap-3' },
-        // Service icon
-        React.createElement('div', {
-          // The plugin's own colour (its manifest's color), never a per-id copy.
-          className: 'w-10 h-10 rounded-lg flex items-center justify-center',
-          style: { backgroundColor: color || 'var(--fill-neutral)' }
-        },
-          React.createElement('span', { className: 'text-white text-lg font-bold' },
-            scrobbler.name[0]
-          )
-        ),
-        // Service name and connection status
-        React.createElement('div', null,
-          React.createElement('h3', { className: 'font-medium text-ink-primary' }, scrobbler.name),
-          isConnected && config?.username && React.createElement('p', {
-            className: 'text-sm text-ink-tertiary'
-          }, `Connected as ${config.username}`)
-        )
-      ),
-      // Enabled toggle (only when connected)
-      isConnected && React.createElement(Switch, { checked: config?.enabled, onToggle: handleToggleEnabled, 'aria-label': `Scrobble to ${scrobbler.name}` })
-    ),
+  return React.createElement('div', null,
+    React.createElement(AccountRow, {
+      name: scrobbler.name, label: accountLabel, color,
+      signedIn: isConnected, status, onSignIn: handleConnect, onSignOut: handleDisconnect,
+      signInDisabled, busy: connecting,
+    }),
+    // Scrobbling on or off, once signed in.
+    isConnected && React.createElement(SettingRow, { label: `Scrobble to ${scrobbler.name}`, hint: 'Send what you play', style: { padding: '12px 0 0' } },
+      React.createElement(Switch, { checked: !!config?.enabled, onToggle: handleToggleEnabled })),
 
     // Error message
     error && React.createElement('div', {
@@ -385,9 +395,9 @@ const ScrobblerSettingsCard = React.memo(({
     }, error),
 
     // Connection UI
-    !isConnected ? React.createElement('div', { className: 'space-y-3' },
+    !isConnected ? React.createElement('div', { className: 'space-y-3', style: { marginTop: '12px' } },
       // ListenBrainz token input
-      scrobbler.id === 'listenbrainz' && React.createElement('div', null,
+      usesToken && React.createElement('div', null,
         React.createElement('label', { className: 'block text-sm text-ink-secondary mb-1' },
           'User Token',
           React.createElement('a', {
@@ -403,7 +413,7 @@ const ScrobblerSettingsCard = React.memo(({
       ),
 
       // Libre.fm username/password inputs
-      scrobbler.id === 'librefm' && React.createElement('div', { className: 'space-y-2' },
+      usesPassword && React.createElement('div', { className: 'space-y-2' },
         React.createElement('label', { className: 'block text-sm text-ink-secondary mb-1' },
           'Username',
           React.createElement('a', {
@@ -420,8 +430,6 @@ const ScrobblerSettingsCard = React.memo(({
         React.createElement(SecretField, { value: passwordInput, onChange: (_v, e) => setPasswordInput(e.target.value), placeholder: 'Your Libre.fm password', 'aria-label': 'Your Libre.fm password', className: 'w-full' })
       ),
 
-      // Connect button
-      React.createElement(Button, { variant: 'primary', busy: connecting, onClick: handleConnect, disabled: connecting || isPolling || (scrobbler.id === 'listenbrainz' && !tokenInput) || (scrobbler.id === 'librefm' && (!usernameInput || !passwordInput)), className: 'w-full' }, connecting ? 'Authenticating…' : scrobbler.id === 'lastfm' ? 'Authenticate Scrobbling' : 'Connect'),
 
       // Waiting for authorization (auto-polling active)
       isPolling && React.createElement('div', {
@@ -446,12 +454,12 @@ const ScrobblerSettingsCard = React.memo(({
       config?.pendingToken && !isPolling && React.createElement(Button, { variant: 'primary', pageColor: 'var(--fill-success)', className: 'w-full', onClick: handleCompleteAuth, disabled: connecting }, connecting ? 'Completing…' : 'Complete authorization')
     ) : (
       // Connected state: the import action, love-push controls + Disconnect
-      React.createElement('div', { className: 'space-y-3' },
+      React.createElement('div', { className: 'space-y-3', style: { marginTop: '12px' } },
         // Loved-tracks import (issue #1071): pull the user's loves on this
         // service into the collection. Opt-in per service; Libre.fm stays
         // out (same scope as push — the card simply never passes
         // onRunLoveImport).
-        onRunLoveImport && (scrobbler.id === 'lastfm' || scrobbler.id === 'listenbrainz') &&
+        onRunLoveImport && lovedTracks &&
           React.createElement('div', { className: 'space-y-2' },
             React.createElement(Button, { variant: 'secondary', size: 'sm', className: 'w-full', onClick: onRunLoveImport, disabled: loveImportRunning }, loveImportRunning && loveImportProgress
                 ? (loveImportProgress.phase === 'confirm' ? 'Waiting for confirmation…'
@@ -461,7 +469,7 @@ const ScrobblerSettingsCard = React.memo(({
                 : hasImportedLoves ? 'Import new loves' : 'Import loved tracks')
           ),
         // Love-push toggle + backfill button (only for services that support it)
-        (scrobbler.id === 'lastfm' || scrobbler.id === 'listenbrainz') && onSetLovePushEnabled &&
+        lovedTracks && onSetLovePushEnabled &&
           React.createElement('div', { className: 'border-t border-line pt-3 space-y-2' },
             React.createElement('label', { className: 'flex items-center gap-2 text-sm cursor-pointer' },
               React.createElement(Checkbox, {
@@ -469,7 +477,7 @@ const ScrobblerSettingsCard = React.memo(({
                 onChange: (checked) => onSetLovePushEnabled(checked)
               }),
               React.createElement('span', { className: 'text-ink-secondary' },
-                `Push newly loved tracks to ${scrobbler.id === 'lastfm' ? 'Last.fm' : 'ListenBrainz'}`
+                `Push newly loved tracks to ${scrobbler.name}`
               )
             ),
             React.createElement(Button, { variant: 'text', size: 'sm', onClick: onRunBackfill, disabled: backfillRunning || unpushedCount === 0, className: 'w-full' }, backfillRunning && backfillProgress
@@ -480,9 +488,7 @@ const ScrobblerSettingsCard = React.memo(({
             React.createElement('p', { className: 'text-xs text-ink-tertiary' },
               'Backfilled loves are stamped at the time of push (the remote service has no backdate API).'
             )
-          ),
-        // Disconnect
-        React.createElement(Button, { variant: 'secondary', className: 'w-full', onClick: handleDisconnect }, 'Disconnect')
+          )
       )
     )
   );
@@ -506,10 +512,26 @@ function SettingsSection({ title, description, children, ...rest }) {
     children);
 }
 
+// Settings panel for a plug-in that draws its own UI: settings.authType
+// 'custom' in the manifest and renderSettings(ctx) in the .axe (Plex is the
+// first). This wrapper is a real component, so the plug-in may call hooks
+// through ctx.React as long as it calls them unconditionally. A render error
+// shows in place instead of taking the settings dialog down.
+const PluginSettingsPanel = ({ resolver, ctx }) => {
+  try {
+    return resolver.renderSettings(ctx) || null;
+  } catch (e) {
+    console.error(`${resolver.id} renderSettings failed:`, e);
+    return React.createElement('p', { style: { padding: '16px 0', fontSize: '12px', color: 'var(--text-danger)' } },
+      `${resolver.name || resolver.id} couldn’t show its settings. Try reinstalling the plug-in.`);
+  }
+};
+
 module.exports = {
   SettingsSection,
   ResolverCard,
   McpSettingsSection,
   ScrobblerSettingsCard,
   FriendMiniPlaybar,
+  PluginSettingsPanel,
 };

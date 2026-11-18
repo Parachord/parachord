@@ -33,6 +33,7 @@ const { ArtistCard } = require('./artist-card');
 const { ListenerCard } = require('./listener-card');
 const { countOf } = require('../lib/plural');
 const { PAGE_COLORS } = require('../lib/page-colors');
+const { untilLabel } = require('../lib/until-label');
 const { CollectionRadioButton } = require('./collection-radio-button');
 const { Button, buttonClassName } = require('./button');
 
@@ -108,6 +109,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
     playbackContext,
     resolverOrder,
     resolverSyncSettings,
+    syncPausedUntil,
     syncSignedOut,
     setProviderSyncEnabled,
     setAddFriendModalOpen,
@@ -231,7 +233,14 @@ React.createElement('div', { className: 'ml-auto' },
                     onSelect: () => openSyncSetupModal(pid),
                     // Signed out: nothing syncs, so the switch shows off
                     // (its saved setting stays, and it resumes once signed in).
-                    trailing: syncSignedOut?.[pid] && React.createElement('span', { style: { fontSize: '11px', opacity: 0.7 } }, 'Signed out'),
+                    // A rate-limit cooldown (#909) shows when it ends: sync
+                    // waits it out on its own, so the switch stays as set.
+                    trailing: syncSignedOut?.[pid]
+                      ? React.createElement('span', { style: { fontSize: '11px', opacity: 0.7 } }, 'Signed out')
+                      : (syncPausedUntil?.[pid] > Date.now() && React.createElement('span', {
+                          style: { fontSize: '11px', opacity: 0.7 },
+                          'data-tooltip': `${config.name} asked Parachord to slow down. Sync and ${config.name} searches pick up again then.`
+                        }, `Paused until ${untilLabel(syncPausedUntil[pid])}`)),
                     toggle: {
                       checked: !!resolverSyncSettings[pid]?.enabled && !syncSignedOut?.[pid],
                       label: `Sync ${config.name}`,

@@ -1,13 +1,23 @@
 /**
- * The Amazon search view's job queue (createLaneQueue in amazon-music-logic.js,
- * enqueueSearch in amazon-web-player.js). One job at a time; a foreground job
- * (a playlist the user opened) starts before every queued background job
- * (artist photos, recommendations, catalog fallbacks); FIFO within a lane; a
- * running job is never interrupted; a throwing job rejects only itself.
+ * The host's load chain in two lanes (createLaneQueue + enqueue(fn, { lane })
+ * in main-process/web-session.js). One job at a time; a foreground job starts
+ * before every queued background job (the plugin's page flows — artist
+ * photos, recommendations, catalog fallbacks — ride the bridge's background
+ * lane); FIFO within a lane; a running job is never interrupted; a throwing
+ * job rejects only itself. The lanes live on webSession since the one-owner
+ * step (#1356). The plugin's page flows reach the chain through the bridge's
+ * load since the session move (#1356 M10 — the Amazon wrapper enqueueSearch
+ * died with the host's remaining plugin flows; the bridge's load, the session
+ * mint and the diagnostic capture are the host-side riders now); the plugin's
+ * own two-lane queue (its mirror of these semantics) and its foreground
+ * playlist lookup are pinned in tests/resolver/amazon-music-plugin-playlist.test.js.
+ * The host instance the enqueue lanes below drive has lived in
+ * main-process/amazon-web-session.js since the teardown (#1356 M11 deleted
+ * amazon-web-player.js, its previous owner).
  */
 
-const { createLaneQueue } = require('../../amazon-music-logic');
-const amazonWebPlayer = require('../../amazon-web-player');
+const amazonWebSession = require('../../main-process/amazon-web-session');
+const { createLaneQueue } = require('../../main-process/web-session');
 
 const deferred = () => {
   let resolve;
@@ -71,47 +81,38 @@ describe('createLaneQueue', () => {
   });
 });
 
-describe('enqueueSearch lanes', () => {
-  let saved;
+describe('enqueue lanes (the host chain under Amazon)', () => {
+  let savedChain;
   beforeEach(() => {
-    saved = amazonWebPlayer.searchQueue;
-    amazonWebPlayer.searchQueue = createLaneQueue();
+    savedChain = amazonWebSession._chain;
+    amazonWebSession._chain = createLaneQueue();
     jest.spyOn(console, 'log').mockImplementation(() => {});
   });
   afterEach(() => {
-    amazonWebPlayer.searchQueue = saved;
+    amazonWebSession._chain = savedChain;
     console.log.mockRestore();
   });
 
   test('a playlist lookup goes ahead of queued background work', async () => {
     const order = [];
     const gate = deferred();
-    const running = amazonWebPlayer.enqueueSearch(async () => { order.push('recommendations'); await gate.promise; });
-    const photo1 = amazonWebPlayer.enqueueSearch(async () => { order.push('photo1'); });
-    const photo2 = amazonWebPlayer.enqueueSearch(async () => { order.push('photo2'); });
-    const playlist = amazonWebPlayer.enqueueSearch(async () => { order.push('playlist'); return 'tracks'; }, { lane: 'foreground' });
-    expect(console.log).toHaveBeenCalledWith('[Amazon] search queue: foreground job goes ahead of 2 queued background job(s)');
+    const running = amazonWebSession.enqueue(async () => { order.push('recommendations'); await gate.promise; });
+    const photo1 = amazonWebSession.enqueue(async () => { order.push('photo1'); });
+    const photo2 = amazonWebSession.enqueue(async () => { order.push('photo2'); });
+    const playlist = amazonWebSession.enqueue(async () => { order.push('playlist'); return 'tracks'; }, { lane: 'foreground' });
+    expect(console.log).toHaveBeenCalledWith('[web-session amazon-music] foreground job goes ahead of 2 queued background job(s)');
     gate.resolve();
     await Promise.all([running, photo1, photo2]);
     expect(await playlist).toBe('tracks');
     expect(order).toEqual(['recommendations', 'playlist', 'photo1', 'photo2']);
   });
 
-  test('every job holds searchViewBusy while it runs, and releases it on throw', async () => {
-    const before = amazonWebPlayer.searchViewBusy;
+  test('every job holds the host busy count while it runs, and releases it on throw', async () => {
+    const before = amazonWebSession._chainBusy;
     let during = null;
-    await amazonWebPlayer.enqueueSearch(async () => { during = amazonWebPlayer.searchViewBusy; });
-    await expect(amazonWebPlayer.enqueueSearch(async () => { throw new Error('x'); })).rejects.toThrow('x');
+    await amazonWebSession.enqueue(async () => { during = amazonWebSession._chainBusy; });
+    await expect(amazonWebSession.enqueue(async () => { throw new Error('x'); })).rejects.toThrow('x');
     expect(during).toBe(before + 1);
-    expect(amazonWebPlayer.searchViewBusy).toBe(before);
-  });
-
-  test('lookupPlaylist uses the foreground lane', async () => {
-    const spy = jest.spyOn(amazonWebPlayer, 'enqueueSearch').mockResolvedValue(null);
-    const signed = jest.spyOn(amazonWebPlayer, 'isSignedIn').mockResolvedValue(true);
-    await amazonWebPlayer.lookupPlaylist('https://music.amazon.com/user-playlists/d1670975fc554eed80edd41f03d355f4sune');
-    expect(spy).toHaveBeenCalledWith(expect.any(Function), { lane: 'foreground' });
-    spy.mockRestore();
-    signed.mockRestore();
+    expect(amazonWebSession._chainBusy).toBe(before);
   });
 });

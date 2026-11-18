@@ -20,10 +20,32 @@ const LABELS = {
   generate: 'AI playlists',
   chat: 'Conversational DJ',
   embedPlayer: 'Embedded player',
-  resolvePicks: 'Picks resolution',
   concerts: 'Concerts',
   scrobbling: 'Scrobbling',
+  status: 'Status',
+  // Labelled in the plug-in settings audit (#1498): these showed as their
+  // spelled-out code names.
+  artistImage: 'Artist photos',
+  artistImages: 'Artist photos',
+  biography: 'Biographies',
+  historyMixes: 'History mixes',
+  similarUsers: 'Similar listeners',
+  listeningHistory: 'Listening history',
+  lovedTracks: 'Loved tracks',
+  playlistSync: 'Playlist sync',
 };
+
+// Capabilities that describe how a plug-in works inside the app, not
+// anything a listener chooses it for. They stay in the manifest (the app
+// reads them) and never show as chips: "Widevine", "Html5 stream" and
+// "Mobile" meant nothing in a settings dialog (#1498).
+const HIDDEN = new Set(['playbackTelemetry', 'widevine', 'mobile', 'html5Stream', 'resolvePicks']);
+
+// The capabilities to show for a plug-in, in its manifest's order: the
+// declared, enabled ones that aren't hidden.
+function visibleCapabilities(capabilities) {
+  return Object.entries(capabilities || {}).filter(([cap, on]) => on && !HIDDEN.has(cap)).map(([cap]) => cap);
+}
 
 function capabilityLabel(cap) {
   if (LABELS[cap]) return LABELS[cap];
@@ -31,4 +53,4 @@ function capabilityLabel(cap) {
   return words ? words.charAt(0).toUpperCase() + words.slice(1) : '';
 }
 
-module.exports = { capabilityLabel, CAPABILITY_LABELS: LABELS };
+module.exports = { capabilityLabel, visibleCapabilities, CAPABILITY_LABELS: LABELS, HIDDEN_CAPABILITIES: HIDDEN };

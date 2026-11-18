@@ -1,7 +1,6 @@
 // src/renderer/lib/ai-services.js: which AI plug-ins offer a capability
-// (generate for the playlist prompt, chat for Shuffleupagus), and whether a
-// listening-history account is connected. Pure, so the app and the memo'd
-// AI prompt panel share one rule.
+// (chat for Shuffleupagus), and whether a listening-history account is
+// connected. Pure, so the app and its memo'd panels share one rule.
 
 // Plug-ins with `capability`: the loader's (they carry the implementation)
 // first, then meta services that have it but haven't loaded yet, so a

@@ -143,9 +143,46 @@ function makeShaka({ loadGate } = {}) {
 
 function makeElectron({ manifestManifest = '<MPD/>', manifestOk = true, licenseOk = true, licenseDenied = false, storeValues = {} } = {}) {
   const playerEvents = [];
+  // The plugin-mediated half, faked as faithfully as the bridge behaves: an
+  // openSession (called with the manifest's LENGTH — the text never crosses)
+  // mints the resolver's CURRENT session, a provider manifest rotates it
+  // away, and a relayLicense naming the plugin session forwards the challenge
+  // to the router the player registered (the bridge's widevine:plugin-license
+  // push — challenge and ids only, NO context: the plugin's context stays
+  // renderer-side, in the player's relay record). A provider session answers
+  // directly — the bridge routes by the session record, not the challenge.
+  let pluginSession = null; // { sessionId } | null
+  let pluginRouter = null; // the player's registered onPluginLicenseRequest callback
+  let pluginSessionSeq = 0;
   const bridge = {
-    getManifest: jest.fn(async () => (manifestOk ? { success: true, manifest: manifestManifest, substituteAsin: 'SUB1', cdnType: 'cf-x' } : { success: false, reason: 'not-signed-in', error: 'denied' })),
-    relayLicense: jest.fn(async (resolverId, challenge) => (licenseOk ? { success: true, license: 'TElDRU5TRQ==' } : { success: false, licenseDenied, error: 'refused' })),
+    getManifest: jest.fn(async () => {
+      pluginSession = null; // a provider manifest rotates the resolver's session
+      return manifestOk ? { success: true, manifest: manifestManifest, substituteAsin: 'SUB1', cdnType: 'cf-x' } : { success: false, reason: 'not-signed-in', error: 'denied' };
+    }),
+    openSession: jest.fn(async (resolverId, manifestLength, type, drm) => {
+      pluginSessionSeq += 1;
+      pluginSession = { sessionId: `plug-sess-${pluginSessionSeq}` };
+      return { success: true, sessionId: pluginSession.sessionId };
+    }),
+    onPluginLicenseRequest: jest.fn((callback) => { pluginRouter = callback; return () => { pluginRouter = null; }; }),
+    relayLicense: jest.fn(async (resolverId, challenge, sessionId) => {
+      if (pluginSession && sessionId === pluginSession.sessionId) {
+        if (!pluginRouter) return { success: false, reason: 'playback-failed', error: 'no plugin relay registered' };
+        try {
+          const license = await pluginRouter({ requestId: 'fake-req', resolverId, sessionId, challenge });
+          return { success: true, license };
+        } catch (error) {
+          return {
+            success: false,
+            reason: (error && error.reason) || 'playback-failed',
+            licenseDenied: !!(error && error.licenseDenied),
+            denialReason: (error && error.denialReason) || null,
+            error: String((error && error.message) || error)
+          };
+        }
+      }
+      return licenseOk ? { success: true, license: 'TElDRU5TRQ==' } : { success: false, licenseDenied, error: 'refused' };
+    }),
     playerEvent: jest.fn(async (resolverId, event) => { playerEvents.push([resolverId, event]); return { success: true }; })
   };
   const store = {
@@ -153,7 +190,7 @@ function makeElectron({ manifestManifest = '<MPD/>', manifestOk = true, licenseO
     set: jest.fn(async (key, value) => { storeValues[key] = value; }),
     __values: storeValues
   };
-  return { bridge, store, playerEvents };
+  return { bridge, store, playerEvents, pluginRouter: (request) => (pluginRouter ? pluginRouter(request) : Promise.reject(new Error('no plugin relay registered'))) };
 }
 
 function load({ shaka, electron, codecSupport } = {}) {
@@ -241,6 +278,245 @@ describe('license scheme relay', () => {
     const handler = sh.schemeHandlers.get('parachord-license');
     await expect(handler('parachord-license://amazonmusic', { body: new ArrayBuffer(4), uris: [] }))
       .rejects.toMatchObject({ licenseDenied: true, message: 'refused' });
+  });
+});
+
+describe('playPlugin (the plugin-mediated path, #1356 M4)', () => {
+  const pluginReply = (over = {}) => ({
+    manifest: '<MPD the plugin fetched/>',
+    type: 'dash',
+    drm: 'widevine',
+    context: { asin: 'B1', csrf: 'tok' },
+    ...over
+  });
+
+  test('opens the bridge session with the plugin\'s manifest and plays it: same load, session-scoped licence URL', async () => {
+    const { sh, el, player } = load();
+    const audio = makeAudio();
+    const result = await player.playPlugin(audio, {
+      resolverId: 'amazonmusic',
+      manifestResult: pluginReply({ substituteAsin: 'SUB9', cdnType: 'cf-y' }),
+      relayLicense: async () => 'TElDRU5TRQ==',
+      trackContext: { albumAsin: 'ALB1', durationMs: 210000 }
+    });
+    // The plugin supplied the manifest; the host only opened the session —
+    // by LENGTH (the text never crosses IPC).
+    expect(el.bridge.getManifest).not.toHaveBeenCalled();
+    expect(el.bridge.openSession).toHaveBeenCalledWith('amazonmusic', '<MPD the plugin fetched/>'.length, 'dash', 'widevine');
+    expect(sh.playerInstances[0].loadedUris).toContain('blob:mock-mpd');
+    const drmCfg = sh.playerInstances[0].configureCalls.find((c) => c.drm && c.drm.servers);
+    expect(drmCfg.drm.servers['com.widevine.alpha']).toBe('parachord-license://amazonmusic?s=plug-sess-1');
+    // The optional extras ride the provider reply's own fields.
+    expect(result).toMatchObject({ resolverId: 'amazonmusic', substituteAsin: 'SUB9' });
+    expect(typeof result.token).toBe('number');
+  });
+
+  test('the challenge reaches the plugin\'s relayLicense with the session\'s context; its licence bytes return to Shaka', async () => {
+    const { sh, el, player } = load();
+    const relayLicense = jest.fn(async () => 'TVBVRElOIExJQ0VOU0U=');
+    const audio = makeAudio();
+    await player.playPlugin(audio, { resolverId: 'amazonmusic', manifestResult: pluginReply(), relayLicense });
+    const handler = sh.schemeHandlers.get('parachord-license');
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    const response = await handler('parachord-license://amazonmusic?s=plug-sess-1', { body: bytes.buffer, uris: [] });
+    // The plugin saw its own context — the one from ITS manifest reply, held
+    // renderer-side in the player's relay record (never carried main-side,
+    // never on the forward) — not the whole track, not the entity.
+    expect(relayLicense).toHaveBeenCalledWith(Buffer.from(bytes.buffer).toString('base64'), { asin: 'B1', csrf: 'tok' });
+    // The licence is the PLUGIN's bytes (not the fake provider's).
+    expect(new Uint8Array(response.data)).toEqual(new Uint8Array([...Buffer.from('TVBVRElOIExJQ0VOU0U=', 'base64')]));
+    // And the relay crossed the bridge channel gated like any other.
+    expect(el.bridge.relayLicense).toHaveBeenCalledWith('amazonmusic', expect.any(String), 'plug-sess-1');
+  });
+
+  test('lifecycle events reach the plugin\'s playerEvents (telemetry) with the served asin, beside the bridge IPC (#1356 M9)', async () => {
+    const { sh, el, player } = load();
+    const pluginEvents = [];
+    const audio = makeAudio();
+    // The reply's asin is the plugin's identifier extraction; substituteAsin
+    // layers the SERVED pressing over it on the entity seam.
+    await player.playPlugin(audio, {
+      resolverId: 'amazonmusic',
+      manifestResult: pluginReply({ asin: 'REQ1', substituteAsin: 'SUB9' }),
+      relayLicense: async () => 'TVBVRElOIExJQ0VOU0U=',
+      playerEvents: (event) => { pluginEvents.push(event); },
+      trackContext: { albumAsin: 'ALB1', durationMs: 210000 }
+    });
+    audio.fire('playing');
+    audio.currentTime = 42;
+    audio.fire('seeking');
+    await player.stop();
+    const types = pluginEvents.map((e) => e.type);
+    expect(types).toEqual(['play-started', 'seek', 'stopped']);
+    // The play-started event attributes the SERVED pressing and carries the
+    // same facts the provider path emitted (the bridge fanout stays identical).
+    const started = pluginEvents[0];
+    expect(started.asin).toBe('SUB9');
+    expect(started.albumAsin).toBe('ALB1');
+    expect(started.sessionId).toBe('plug-sess-1');
+    expect(el.playerEvents.map(([, e]) => e.type)).toEqual(types);
+    // A resolver with no handler (playerEvents absent) changes nothing on the
+    // bridge path.
+    const pluginEventsB = [];
+    await player.playPlugin(makeAudio(), {
+      resolverId: 'amazonmusic',
+      manifestResult: pluginReply({ asin: 'REQ2' }),
+      relayLicense: async () => 'TVBVRElOIExJQ0VOU0U='
+    });
+    makeAudio(); // (the second play owns the element; its events are the bridge's alone)
+    expect(pluginEventsB).toEqual([]);
+  });
+
+  test('a reply without an asin still plays (the field is an optional extra — telemetry simply has no asin to attribute)', async () => {
+    const { el, player } = load();
+    const reply = await player.playPlugin(makeAudio(), {
+      resolverId: 'amazonmusic',
+      manifestResult: pluginReply(), // no asin field
+      relayLicense: async () => 'TVBVRElOIExJQ0VOU0U=',
+      trackContext: { albumAsin: 'ALB1' }
+    });
+    expect(reply.token).toEqual(expect.any(Number));
+    expect(el.bridge.openSession).toHaveBeenCalled();
+  });
+
+  test('a plugin rejection carries licenseDenied/denialReason into the same Shaka error path (the #1262 latch, unchanged)', async () => {
+    const { sh, el, player } = load({
+      electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: false } })
+    });
+    const relayLicense = jest.fn(async () => {
+      const err = new Error('Amazon refused the license for this content (CUSTOMER_NOT_ELIGIBLE): not eligible');
+      err.reason = 'playback-failed';
+      err.licenseDenied = false;
+      err.denialReason = 'CUSTOMER_NOT_ELIGIBLE';
+      throw err;
+    });
+    const audio = makeAudio();
+    await player.playPlugin(audio, { resolverId: 'amazonmusic', manifestResult: pluginReply(), relayLicense });
+    // First play at max starts locked on flac (the full roster).
+    expect(sh.playerInstances[0].selected.bandwidth).toBe(1902230);
+    const handler = sh.schemeHandlers.get('parachord-license');
+    await expect(handler('parachord-license://amazonmusic?s=plug-sess-1', { body: new ArrayBuffer(4), uris: [] }))
+      .rejects.toMatchObject({ message: 'Amazon refused the license for this content (CUSTOMER_NOT_ELIGIBLE): not eligible' });
+    // The family-failure latch keyed on the error fields exactly as the
+    // provider path's does: FLAC is out for the session.
+    expect(player.getState().blockedFamilies).toEqual({ flac: 'license-denied' });
+  });
+
+  test('an open-session refusal surfaces with its reason', async () => {
+    const el = makeElectron();
+    el.bridge.openSession.mockResolvedValueOnce({ success: false, reason: 'rate-limited', error: 'too many manifest requests' });
+    const { player } = load({ electron: el });
+    await expect(player.playPlugin(makeAudio(), {
+      resolverId: 'amazonmusic', manifestResult: pluginReply(), relayLicense: async () => 'TElDRU5TRQ=='
+    })).rejects.toMatchObject({ reason: 'rate-limited' });
+  });
+
+  test('a malformed plugin reply never opens a session', async () => {
+    const { el, player } = load();
+    const audio = makeAudio();
+    const bad = [null, {}, { type: 'dash', drm: 'widevine' }, { manifest: '<MPD/>', type: 'hls', drm: 'widevine' }, { manifest: '<MPD/>', type: 'dash', drm: 'fairplay' }];
+    for (const manifestResult of bad) {
+      await expect(player.playPlugin(audio, { resolverId: 'amazonmusic', manifestResult, relayLicense: async () => 'TElDRU5TRQ==' }))
+        .rejects.toMatchObject({ reason: 'playback-failed' });
+    }
+    expect(el.bridge.openSession).not.toHaveBeenCalled();
+  });
+
+  test('a forward naming any session other than the live plugin play is refused renderer-side too', async () => {
+    const { el, player } = load();
+    await player.playPlugin(makeAudio(), {
+      resolverId: 'amazonmusic', manifestResult: pluginReply(), relayLicense: async () => 'TElDRU5TRQ=='
+    });
+    // A stale session's forward (if one raced through main's gates) finds no
+    // router target: the live play is the only session that relays.
+    await expect(el.pluginRouter({ requestId: 'x', resolverId: 'amazonmusic', sessionId: 'not-the-live-one', challenge: 'Q0FRPQ==' }))
+      .rejects.toMatchObject({ reason: 'playback-failed' });
+    // And after stop() there is no live plugin play at all.
+    await player.stop();
+    await expect(el.pluginRouter({ requestId: 'x', resolverId: 'amazonmusic', sessionId: 'plug-sess-1', challenge: 'Q0FRPQ==' }))
+      .rejects.toMatchObject({ reason: 'playback-failed' });
+  });
+
+  test('a licence request fired MID-LOAD (Shaka asks while load() is still pending) reaches the plugin relay — the FIRST licence of a plugin play is not refused', async () => {
+    // The review's blocker: Shaka sends the licence request during load() (as
+    // soon as the DRM engine has init data), long before loadManifestSession
+    // assigns trackSession — a router that read trackSession refused the
+    // first licence of every plugin play. The router must answer from the
+    // record taken at open-session time, before the load starts.
+    let finishLoad;
+    const loadGate = new Promise((res) => { finishLoad = res; });
+    const { sh, el, player } = load({ shaka: makeShaka({ loadGate }) });
+    const relayLicense = jest.fn(async () => 'TVBVRElOIExJQ0VOU0U=');
+    const audio = makeAudio();
+    const played = player.playPlugin(audio, { resolverId: 'amazonmusic', manifestResult: pluginReply(), relayLicense });
+    await new Promise((r) => setTimeout(r, 25)); // the play parks inside load()
+    const p = sh.playerInstances[0];
+    expect(p.loadedUris).toHaveLength(0); // the gate holds: still mid-load
+    expect(p.configureCalls.some((c) => c.drm && c.drm.servers)).toBe(true); // DRM config is set — Shaka would ask NOW
+    const handler = sh.schemeHandlers.get('parachord-license');
+    const licenceP = handler('parachord-license://amazonmusic?s=plug-sess-1', { body: new ArrayBuffer(4), uris: [] });
+    // The relay answered MID-LOAD, with the plugin's own context from the
+    // renderer-side record.
+    expect(relayLicense).toHaveBeenCalledTimes(1);
+    expect(relayLicense).toHaveBeenCalledWith(Buffer.from(new ArrayBuffer(4)).toString('base64'), { asin: 'B1', csrf: 'tok' });
+    const response = await licenceP;
+    expect(new Uint8Array(response.data)).toEqual(new Uint8Array([...Buffer.from('TVBVRElOIExJQ0VOU0U=', 'base64')]));
+    finishLoad();
+    const result = await played; // and the play proceeds
+    expect(result).toMatchObject({ resolverId: 'amazonmusic' });
+  });
+
+  test('a pre-claimed token (claimPlayToken, taken before the plugin\'s manifest fetch) makes a bare stop() during that fetch supersede the play before it starts', async () => {
+    // The engine claims before the manifest await (the provider path\'s rule):
+    // a stop() with no newer handlePlay must not leave the stopped play
+    // opening a session and loading the element.
+    const { el, player } = load();
+    const token = player.claimPlayToken();
+    await player.stop(); // the bare stop (the sign-out shape)
+    await expect(player.playPlugin(makeAudio(), {
+      resolverId: 'amazonmusic', manifestResult: pluginReply(), relayLicense: async () => 'TElDRU5TRQ==', token
+    })).rejects.toMatchObject({ reason: 'superseded' });
+    expect(el.bridge.openSession).not.toHaveBeenCalled();
+  });
+
+  test('the happy pre-claim: playPlugin runs under the engine\'s token and returns it', async () => {
+    const { el, player } = load();
+    const token = player.claimPlayToken();
+    const result = await player.playPlugin(makeAudio(), {
+      resolverId: 'amazonmusic', manifestResult: pluginReply(), relayLicense: async () => 'TElDRU5TRQ==', token
+    });
+    expect(result).toMatchObject({ resolverId: 'amazonmusic', token });
+    expect(el.bridge.openSession).toHaveBeenCalledTimes(1);
+  });
+
+  test('a licence refusal\'s .reason propagates through the scheme handler (the documented contract)', async () => {
+    const { sh, el, player } = load();
+    el.bridge.relayLicense.mockResolvedValueOnce({ success: false, reason: 'load-failed', error: 'licence host 503' });
+    const audio = makeAudio();
+    await player.play(audio, { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    const handler = sh.schemeHandlers.get('parachord-license');
+    await expect(handler('parachord-license://amazonmusic', { body: new ArrayBuffer(4), uris: [] }))
+      .rejects.toMatchObject({ reason: 'load-failed', message: 'licence host 503' });
+  });
+
+  test('a provider play after a plugin play takes the session back (supersession both ways)', async () => {
+    const { sh, el, player } = load();
+    const audio = makeAudio();
+    await player.playPlugin(audio, { resolverId: 'amazonmusic', manifestResult: pluginReply(), relayLicense: async () => 'TVBVRElOIExJQ0VOU0U=' });
+    const audio2 = makeAudio();
+    await player.play(audio2, { resolverId: 'amazonmusic', entity: { asin: 'B2' } });
+    // The provider play superseded the plugin one: a forward still naming the
+    // plugin session (if one raced through main's gates) finds no router
+    // target — the relay record died with the superseded play.
+    await expect(el.pluginRouter({ requestId: 'x', resolverId: 'amazonmusic', sessionId: 'plug-sess-1', challenge: 'Q0FRPQ==' }))
+      .rejects.toMatchObject({ reason: 'playback-failed' });
+    // The provider session owns the element now; its licence URL names the
+    // provider session, and the provider relay answers.
+    const drmCfg = sh.playerInstances[0].configureCalls.filter((c) => c.drm && c.drm.servers).pop();
+    expect(drmCfg.drm.servers['com.widevine.alpha']).not.toContain('plug-sess');
+    const handler = sh.schemeHandlers.get('parachord-license');
+    const response = await handler(drmCfg.drm.servers['com.widevine.alpha'], { body: new ArrayBuffer(4), uris: [] });
+    expect(new Uint8Array(response.data)).toEqual(new Uint8Array([...Buffer.from('TElDRU5TRQ==', 'base64')]));
   });
 });
 
@@ -1244,5 +1520,188 @@ describe('error paths', () => {
     const audio = makeAudio();
     await expect(player.play(audio, { resolverId: 'amazonmusic', entity: { asin: 'B1' } }))
       .rejects.toMatchObject({ reason: 'not-signed-in' });
+  });
+});
+
+// #1434 review: the relay is single-owner, so the router claims it when the
+// module loads, before any plug-in code could, and a refused claim is
+// detectable rather than silently leaving plays to fail licensing.
+describe('the plug-in licence relay is claimed at load', () => {
+  test('loading the player registers its router once, before any play', () => {
+    const { el } = load();
+    expect(el.bridge.onPluginLicenseRequest).toHaveBeenCalledTimes(1);
+  });
+
+  test('a refused claim (another subscriber got there first) fails a plug-in play with a message that says why', async () => {
+    const el = makeElectron();
+    el.bridge.onPluginLicenseRequest = jest.fn(() => null); // the preload's refusal
+    const { player } = load({ electron: el });
+    const audio = makeAudio();
+    const manifestResult = { type: 'dash', drm: 'widevine', manifest: '<MPD/>', context: {} };
+    await expect(player.playPlugin(audio, { resolverId: 'plugsvc', manifestResult, relayLicense: async () => 'TElDRU5TRQ==' }))
+      .rejects.toThrow(/held by another subscriber/);
+  });
+});
+
+// The start-of-track stutter: player.load() picks a variant itself, and
+// applyConfig then re-anchors it — the handover that DISCARDED the load-time
+// pick's chunks happens DURING play(), so the fake class is wrapped BEFORE
+// play(). selectVariantTrack's second argument is clearBuffer — passing true
+// throws away what the pick already had, a one-time hiccup on every track.
+// The vendor's own ABR switches default to clearBufferSwitch:false for exactly
+// this reason.
+describe('the quality handover keeps the buffer the load-time pick downloaded', () => {
+  function captureSelects(p) {
+    const selects = [];
+    const real = p.selectVariantTrack.bind(p);
+    p.selectVariantTrack = (t, clearBuffer) => { selects.push({ codecs: t.codecs, bps: t.bandwidth, clearBuffer }); real(t); };
+    return selects;
+  }
+  // Prototype-level spy: installed before play(), it captures the post-load
+  // locked handover itself, not just later mid-play switches.
+  function spyOnSelects(sh) {
+    const selects = [];
+    const proto = sh.Player.prototype;
+    const real = proto.selectVariantTrack;
+    proto.selectVariantTrack = function (t, clearBuffer) {
+      selects.push({ codecs: t.codecs, bps: t.bandwidth, clearBuffer });
+      return real.call(this, t);
+    };
+    return { selects, restore: () => { proto.selectVariantTrack = real; } };
+  }
+  function fireShakaError(p, code) {
+    p.listeners.find(([ev]) => ev === 'error')[1]({ detail: { severity: 2, code, message: 'Shaka Error ' + code } });
+  }
+  async function settle() {
+    for (let i = 0; i < 6; i += 1) await new Promise((r) => setImmediate(r));
+  }
+
+  test('the post-load locked handover DURING play() passes clearBuffer=false', async () => {
+    const { sh, player } = load({ electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: false } }) });
+    const spy = spyOnSelects(sh);
+    try {
+      await player.play(makeAudio(), { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    } finally {
+      spy.restore();
+    }
+    const p = sh.playerInstances[0];
+    expect(p.selected.codecs).toBe('flac'); // locked max
+    const handover = spy.selects.filter((s) => s.codecs === 'flac');
+    expect(handover).toHaveLength(1);
+    expect(handover[0].clearBuffer).toBe(false);
+  });
+
+  test('the spatial-locked pick DURING play() passes clearBuffer=false too', async () => {
+    const { sh, player } = load({
+      electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: true, playback_spatial: true } })
+    });
+    const spy = spyOnSelects(sh);
+    try {
+      await player.play(makeAudio(), { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    } finally {
+      spy.restore();
+    }
+    const p = sh.playerInstances[0];
+    expect(p.selected.codecs).toBe('ec-3'); // the spatial pick is locked even in adaptive mode
+    const handover = spy.selects.filter((s) => s.codecs === 'ec-3');
+    expect(handover).toHaveLength(1);
+    expect(handover[0].clearBuffer).toBe(false);
+  });
+
+  test('a mid-play tier switch selects with clearBuffer=false', async () => {
+    const { sh, player } = load({ electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: false } }) });
+    await player.play(makeAudio(), { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    const p = sh.playerInstances[0];
+    expect(p.selected.codecs).toBe('flac'); // locked max
+    const selects = captureSelects(p);
+    await window.electron.store.set('playback_quality', 'standard');
+    await player.applyQuality();
+    expect(selects.length).toBeGreaterThan(0);
+    expect(selects.every((s) => s.clearBuffer === false)).toBe(true);
+    expect(p.selected.bandwidth).toBe(53059); // the 200k standard corridor's rung
+  });
+
+  test('the criteria RE-ANCHOR after a locked play selects with clearBuffer=false too', async () => {
+    // applyConfig's second manual-selection path: a locked (ABR-off) play
+    // confined the choice criteria to its family, and an adaptive flip whose
+    // tier rung sits in ANOTHER family re-anchors with selectVariantTrack. Only
+    // the family fallback may clear — this handover keeps the buffered bytes.
+    const { sh, player, el } = load({
+      electron: makeElectron({ storeValues: { playback_quality: 'high', playback_abr: false, playback_spatial: false } })
+    });
+    await player.play(makeAudio(), { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    const p = sh.playerInstances[0];
+    expect(p.selected.codecs).toBe('opus'); // locked high: the 500k corridor's top rung
+    expect(p.selected.bandwidth).toBe(325595);
+    const selects = captureSelects(p);
+    // Flip to adaptive MAX: the tier's target rung is FLAC, a different family,
+    // and the criteria is narrowed (criteriaNarrowed) — the re-anchor fires.
+    el.store.__values.playback_quality = 'max';
+    el.store.__values.playback_abr = true;
+    await player.applyQuality();
+    const reanchor = selects.filter((s) => s.codecs === 'flac');
+    expect(reanchor).toHaveLength(1);
+    expect(reanchor[0].clearBuffer).toBe(false);
+    expect(p.selected.codecs).toBe('flac'); // the criteria re-anchored onto the tier's family
+  });
+
+  test('the family-failure fallback is the one switch that DOES clear — those bytes are what the build rejected', async () => {
+    const { sh, player } = load({
+      electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: true, playback_spatial: true } })
+    });
+    await player.play(makeAudio(), { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    const p = sh.playerInstances[0];
+    expect(p.selected.codecs).toBe('ec-3'); // the locked spatial pick
+    const selects = captureSelects(p);
+    fireShakaError(p, 3014); // SourceBuffer rejected the spatial data
+    await settle();
+    expect(player.getState().blockedFamilies).toEqual({ ec3: 'playback-failed' });
+    expect(selects.some((s) => s.codecs === 'flac' && s.clearBuffer === true)).toBe(true);
+    expect(p.selected.codecs).toBe('flac');
+  });
+});
+
+// A rendition-group refusal (VMP_VALIDATION_FAILED — the Linux dev-VMP shape)
+// is never the ENGINE's to answer: with more than one key session open Shaka
+// raises no error at all, drops the refused session, and once the survivors
+// have loaded its key-status handler restricts the variant whose key never
+// arrived; a restricted ACTIVE variant re-chooses through chooseVariantAndSwitch,
+// whose clearBuffer defaults to true — the refused rung's chunk is flushed and
+// the play continues on the rung whose key arrived (amazon-music.md "Buffer
+// handover"). The licence scheme handler therefore records nothing, clears
+// nothing, and re-picks nothing: an engine-side clear would run the tier
+// selection over the still-unfiltered roster (the group label is the
+// provider's dialect) and re-pick the SAME refused rung, and on an SD refusal
+// during an LD play (both opus) it would flush the good LD buffer — the
+// start-of-track stutter, once per launch. The plugin's refusal cache shapes
+// the NEXT track's manifest.
+describe('a rendition-group refusal is the player\'s to handle, never the engine\'s', () => {
+  const refusal = { success: false, reason: 'playback-failed', licenseDenied: false, denialReason: 'VMP_VALIDATION_FAILED', error: 'UNVERIFIED request not eligible for HD content' };
+  function fireRefusal(sh) {
+    const handler = sh.schemeHandlers.get('parachord-license');
+    return handler('parachord-license://amazonmusic?s=s1', { body: new ArrayBuffer(4), uris: [] });
+  }
+  async function settle() {
+    for (let i = 0; i < 6; i += 1) await new Promise((r) => setImmediate(r));
+  }
+
+  test('a per-group refusal records no block, clears no buffer, and re-picks no rung', async () => {
+    const { sh, el, player } = load({ electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: false } }) });
+    await player.play(makeAudio(), { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    const p = sh.playerInstances[0];
+    expect(p.selected.codecs).toBe('flac'); // the locked max pick — the refused HD group's family
+    const selects = [];
+    const real = p.selectVariantTrack.bind(p);
+    p.selectVariantTrack = (t, clearBuffer) => { selects.push({ codecs: t.codecs, clearBuffer }); real(t); };
+    el.bridge.relayLicense.mockResolvedValueOnce(refusal);
+    // The refusal still propagates (the CDM's update rejects) — but the engine
+    // adds nothing on top: the buffer flush is the player's own
+    // restriction-and-switch on the variant whose key never arrives, and the
+    // play stays on its rung until that switch takes it off.
+    await expect(fireRefusal(sh)).rejects.toBeTruthy();
+    await settle();
+    expect(selects).toEqual([]); // no engine clear, no re-pick of the refused rung
+    expect(p.selected.codecs).toBe('flac');
+    expect(player.getState().blockedFamilies).toEqual({}); // a group refusal is not the #1262 family table's to answer
   });
 });

@@ -1,0 +1,317 @@
+/**
+ * plugins-src/plex/implementation.js — the parts of the Plex resolver that
+ * carry invariants rather than network glue:
+ *   - a track never carries the server token or connection list (they are
+ *     persisted into the saved queue and playlists), and ISRC is normalised
+ *     and validated at capture;
+ *   - the stream URL is built from the SAVED config, not the track;
+ *   - an album share link answered by lookupUrl comes back as the album;
+ *   - the index is freed on cleanup.
+ * Driven with a fake window.electron.plex.fetch.
+ */
+
+const plex = require('../../plugins-src/plex/implementation');
+
+const SERVER = { serverId: 'srv1', serverName: 'Attic', accessToken: 'TOKEN-1', connections: ['http://192.168.1.5:32400'] };
+const CONFIG = {
+  authToken: 'ACCOUNT',
+  clientId: 'parachord-x',
+  libraries: [{ serverId: 'srv1', serverName: 'Attic', accessToken: 'TOKEN-1', connections: ['http://192.168.1.5:32400'], key: '3', title: 'Music' }],
+};
+const TRACK_META = {
+  ratingKey: '42', title: 'Everything in Its Right Place', grandparentTitle: 'Radiohead', parentTitle: 'Kid A',
+  duration: 251000, index: 1, thumb: '/library/metadata/41/thumb/1', guid: 'plex://track/abc',
+  Guid: [{ id: 'mbid://2c6cf4f6-1a4f-4b8b-9b67-4c6c6a2f1c11' }, { id: 'isrc://  gbayk0000001 ' }],
+  Media: [{ Part: [{ key: '/library/parts/99/file.flac' }] }],
+};
+
+function installFakeFetch(routes) {
+  const calls = [];
+  global.window = {
+    electron: {
+      plex: {
+        fetch: async (url, options) => {
+          calls.push({ url, options });
+          for (const [pattern, body] of routes) {
+            if (url.includes(pattern)) return { ok: true, status: 200, text: JSON.stringify(typeof body === 'function' ? body(url) : body) };
+          }
+          return { ok: false, status: 404, text: '' };
+        },
+      },
+    },
+  };
+  return calls;
+}
+
+afterEach(() => { delete global.window; });
+
+describe('_mapTrack', () => {
+  test('keeps only the stable Plex ids, never the token or connections', () => {
+    const t = plex._mapTrack(TRACK_META, SERVER, 'http://192.168.1.5:32400');
+    expect(t).toMatchObject({
+      id: 'plex-srv1-42', title: 'Everything in Its Right Place', artist: 'Radiohead', album: 'Kid A', duration: 251,
+      plexRatingKey: '42', plexServerId: 'srv1', plexServerName: 'Attic', plexPartKey: '/library/parts/99/file.flac',
+    });
+    expect(t.plexToken).toBeUndefined();
+    expect(t.plexConnections).toBeUndefined();
+    expect(Object.keys(t).filter((k) => k !== 'albumArt').some((k) => String(t[k]).includes('TOKEN-1'))).toBe(false);
+  });
+
+  test('ISRC is upper-cased, trimmed and validated; MBID is carried under both names', () => {
+    const t = plex._mapTrack(TRACK_META, SERVER, 'http://192.168.1.5:32400');
+    expect(t.isrc).toBe('GBAYK0000001');
+    expect(t.mbid).toBe('2c6cf4f6-1a4f-4b8b-9b67-4c6c6a2f1c11');
+    expect(t.recordingMbid).toBe(t.mbid);
+    const bad = plex._mapTrack({ ...TRACK_META, Guid: [{ id: 'isrc://not-an-isrc' }] }, SERVER, 'http://x');
+    expect(bad.isrc).toBeUndefined();
+  });
+});
+
+describe('getStreamUrl / play', () => {
+  test('builds the stream URL from the saved config, not from the track', async () => {
+    installFakeFetch([['/identity', { MediaContainer: {} }]]);
+    const track = plex._mapTrack(TRACK_META, SERVER, 'http://192.168.1.5:32400');
+    const url = await plex.getStreamUrl(track, CONFIG);
+    expect(url).toBe('http://192.168.1.5:32400/library/parts/99/file.flac?X-Plex-Token=TOKEN-1');
+    await expect(plex.play(track, CONFIG)).resolves.toEqual({ type: 'local', url });
+  });
+
+  test('a server missing from the saved selection cannot be streamed', async () => {
+    installFakeFetch([['/identity', {}]]);
+    const track = { ...plex._mapTrack(TRACK_META, SERVER, 'http://x'), plexServerId: 'srv-unknown' };
+    await expect(plex.getStreamUrl(track, { libraries: CONFIG.libraries })).resolves.toBeNull();
+    await expect(plex.play(track, { libraries: CONFIG.libraries })).resolves.toBe(false);
+  });
+});
+
+describe('lookupUrl', () => {
+  test('a track key returns the track; an album key returns the album with its tracks', async () => {
+    installFakeFetch([
+      ['/identity', {}],
+      ['/library/metadata/41/children', { MediaContainer: { Metadata: [TRACK_META] } }],
+      ['/library/metadata/41?', { MediaContainer: { Metadata: [{ type: 'album', ratingKey: '41', title: 'Kid A', parentTitle: 'Radiohead', thumb: '/t' }] } }],
+      ['/library/metadata/42?', { MediaContainer: { Metadata: [{ ...TRACK_META, type: 'track' }] } }],
+    ]);
+    const base = 'https://app.plex.tv/desktop/#!/server/srv1/details?key=';
+    const track = await plex.lookupUrl(base + encodeURIComponent('/library/metadata/42'), CONFIG);
+    expect(track.id).toBe('plex-srv1-42');
+    expect(track.tracks).toBeUndefined();
+    const album = await plex.lookupUrl(base + encodeURIComponent('/library/metadata/41'), CONFIG);
+    expect(album).toMatchObject({ id: 'plex-album-41', name: 'Kid A', artist: 'Radiohead', trackCount: 1 });
+    expect(album.tracks[0].id).toBe('plex-srv1-42');
+  });
+});
+
+describe('index lifecycle', () => {
+  test('cleanup frees the index and the connection cache', async () => {
+    installFakeFetch([]);
+    global.window._plexIndex = { 'srv1::3': { status: 'ready' } };
+    global.window._plexBaseCache = { srv1: { baseUrl: 'http://x', ts: Date.now() } };
+    expect(plex._allIndexed(CONFIG)).toBe(true);
+    await plex.cleanup();
+    expect(global.window._plexIndex).toBeUndefined();
+    expect(global.window._plexBaseCache).toBeUndefined();
+    expect(plex._allIndexed(CONFIG)).toBe(false);
+  });
+});
+
+describe('isConfigured', () => {
+  test('needs a token and at least one selected library', () => {
+    expect(plex.isConfigured(CONFIG)).toBe(true);
+    expect(plex.isConfigured({ authToken: 'ACCOUNT', libraries: [] })).toBe(false);
+    expect(plex.isConfigured({ libraries: CONFIG.libraries })).toBe(false);
+    expect(plex.isConfigured(undefined)).toBe(false);
+  });
+});
+
+// The settings panel is plugin-rendered (settings.authType 'custom'): the host
+// hands over React and config read/write, the plugin owns the markup. Static
+// render only — effects (library discovery, index polling) need a window.
+describe('renderSettings', () => {
+  // The panel draws only with the host's shared parts (ctx.components), as
+  // plugin-settings-dialog.js passes them, so it renders with the real ones.
+  const React = require('react');
+  global.React = React;
+  const { renderToStaticMarkup } = require('react-dom/server');
+  const { AccountRow } = require('../../src/renderer/components/account-row');
+  const { SettingRow, NestedSettings, Switch } = require('../../src/renderer/components/fields');
+  const { Button } = require('../../src/renderer/components/button');
+  const { ProgressBar } = require('../../src/renderer/components/progress-bar');
+  const { EmptyState, ErrorState } = require('../../src/renderer/components/states');
+  const { Disclosure } = require('../../src/renderer/components/disclosure');
+  const components = { AccountRow, SettingRow, NestedSettings, Switch, Button, ProgressBar, EmptyState, ErrorState, Disclosure };
+  const render = (config, extra = {}) => renderToStaticMarkup(React.createElement(() => plex.renderSettings({
+    React, config, resolver: { ...plex, color: '#E5A00D' }, isActive: false, components,
+    saveConfig: async () => {}, clearConfig: async () => {}, setActive: () => {}, ...extra,
+  })));
+
+  test('signed out: the shared account row offers Sign in, and no library list', () => {
+    const html = render({});
+    expect(html).toContain('Plex account');
+    expect(html).toContain('aria-label="Sign in to Plex"');
+    expect(html).not.toContain('Sign out');
+    expect(html).not.toContain('Music libraries');
+  });
+
+  test('signed in: the account row says who, offers Sign out, and the library section shows', () => {
+    const html = render({ ...CONFIG, username: 'jp' });
+    expect(html).toContain('Signed in as jp');
+    expect(html).toContain('aria-label="Sign out of Plex"');
+    expect(html).toContain('Music libraries');
+    expect(html).toContain('Refresh');
+    expect(html).not.toContain('Sign in to Plex');
+  });
+
+  test('it builds nothing of its own: no raw buttons, inputs, checkboxes or hex colours in its markup', () => {
+    const src = require('fs').readFileSync(require('path').join(__dirname, '../../plugins-src/plex/implementation.js'), 'utf8');
+    const i = src.indexOf('renderSettings: function (ctx) {');
+    const body = src.slice(i, src.indexOf('\n  },\n', i));
+    expect(body).not.toMatch(/h\('(button|input|label|select)'/);
+    expect(body).not.toMatch(/type: 'checkbox'/);
+    // The one hex is the account row's fallback colour for a host that sends none.
+    expect((body.match(/#[0-9a-fA-F]{6}/g) || []).filter((c) => c !== '#E5A00D')).toEqual([]);
+  });
+
+  test('a host without the shared parts gets no panel rather than a broken one', () => {
+    expect(render({}, { components: undefined })).toBe('');
+  });
+});
+
+describe('finding a reachable connection', () => {
+  const LAN = 'https://lan.plex.direct:32400';
+  const HTTP = 'http://192.168.1.10:32400';
+  const RELAY = 'https://relay.plex.direct:8443';
+  const serverWith = (connections) => ({ serverId: 'srv1', accessToken: 'TOKEN-1', connections });
+
+  // Each connection answers per `answers`: { ok, after } in ms, or 'never'.
+  function fakeServers(answers) {
+    const calls = [];
+    global.window = {
+      electron: {
+        plex: {
+          fetch: (url) => {
+            calls.push(url);
+            const base = Object.keys(answers).find((b) => url.startsWith(b));
+            const a = answers[base];
+            if (a === 'never') return new Promise(() => {});
+            return new Promise((resolve) => setTimeout(() => resolve({ ok: a.ok, status: a.ok ? 200 : 0, text: '' }), a.after || 0));
+          },
+        },
+      },
+    };
+    return calls;
+  }
+
+  const baseUrl = (server) => plex._baseUrl(server);
+
+  test('an address that never answers does not hold up the one that does', async () => {
+    fakeServers({ [LAN]: 'never', [RELAY]: { ok: true } });
+    const started = Date.now();
+    await expect(baseUrl(serverWith([LAN, RELAY]))).resolves.toBe(RELAY);
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
+  test('a better-ranked connection answering just after a worse one still wins', async () => {
+    fakeServers({ [LAN]: { ok: true, after: 50 }, [HTTP]: { ok: true } });
+    await expect(baseUrl(serverWith([LAN, HTTP]))).resolves.toBe(LAN);
+  });
+
+  test('the best-ranked connection answering first does not wait for the others', async () => {
+    fakeServers({ [LAN]: { ok: true }, [RELAY]: 'never' });
+    const started = Date.now();
+    await expect(baseUrl(serverWith([LAN, RELAY]))).resolves.toBe(LAN);
+    expect(Date.now() - started).toBeLessThan(250);
+  });
+
+  test('a better-ranked connection that fails does not wait out the grace period', async () => {
+    fakeServers({ [LAN]: { ok: false, after: 10 }, [RELAY]: { ok: true } });
+    const started = Date.now();
+    await expect(baseUrl(serverWith([LAN, RELAY]))).resolves.toBe(RELAY);
+    expect(Date.now() - started).toBeLessThan(250);
+  });
+
+  test('no connection answering gives null, and nothing is cached', async () => {
+    fakeServers({ [LAN]: { ok: false }, [RELAY]: { ok: false } });
+    await expect(baseUrl(serverWith([LAN, RELAY]))).resolves.toBeNull();
+    expect(global.window._plexBaseCache.srv1).toBeUndefined();
+    expect(global.window._plexBaseProbes.srv1).toBeUndefined();
+  });
+
+  test('callers during a probe share it, and later ones use the cache', async () => {
+    const calls = fakeServers({ [LAN]: { ok: true, after: 10 } });
+    const server = serverWith([LAN]);
+    await expect(Promise.all([baseUrl(server), baseUrl(server), baseUrl(server)])).resolves.toEqual([LAN, LAN, LAN]);
+    await expect(baseUrl(server)).resolves.toBe(LAN);
+    expect(calls).toHaveLength(1);
+  });
+});
+
+describe('minimum app version', () => {
+  test('the manifest declares the desktop release that has plex-fetch and the plugin settings panel', () => {
+    const manifest = require('../../plugins-src/plex/manifest.json');
+    expect(manifest.manifest.minAppVersion).toEqual({ desktop: '0.9.13' });
+  });
+});
+
+describe('discovery offers the plain local address as a fallback', () => {
+  test("each local connection's LAN address follows its secure name, ahead of remote ones and the relay", async () => {
+    installFakeFetch([
+      ['plex.tv/api/v2/resources', [{ name: 'Mac', clientIdentifier: 'srv9', provides: 'server', owned: true, accessToken: 'T', connections: [
+        { protocol: 'https', local: false, relay: true, address: '10.9.9.9', port: 8443, uri: 'https://relay.plex.direct:8443' },
+        { protocol: 'https', local: false, relay: false, address: '203.0.113.7', port: 21656, uri: 'https://remote.plex.direct:21656' },
+        { protocol: 'https', local: true, relay: false, address: '192.168.1.250', port: 32400, uri: 'https://local.plex.direct:32400' },
+      ] }]],
+    ]);
+    const { servers } = await plex.discoverLibraries({ authToken: 'ACCOUNT', clientId: 'c' });
+    expect(servers[0].connections).toEqual([
+      'https://local.plex.direct:32400',
+      'http://192.168.1.250:32400',
+      'https://remote.plex.direct:21656',
+      'https://relay.plex.direct:8443',
+    ]);
+  });
+
+  test('a hostname or a missing port adds no plain address', async () => {
+    installFakeFetch([
+      ['plex.tv/api/v2/resources', [{ name: 'Mac', clientIdentifier: 'srv9', provides: 'server', accessToken: 'T', connections: [
+        { protocol: 'https', local: true, relay: false, address: 'nas.local', port: 32400, uri: 'https://a.plex.direct:32400' },
+        { protocol: 'https', local: true, relay: false, address: '192.168.1.9', uri: 'https://b.plex.direct:32400' },
+      ] }]],
+    ]);
+    const { servers } = await plex.discoverLibraries({ authToken: 'ACCOUNT', clientId: 'c' });
+    expect(servers[0].connections).toEqual(['https://a.plex.direct:32400', 'https://b.plex.direct:32400']);
+  });
+});
+
+describe('the index answers typed searches too', () => {
+  // Found against a real server: a ready index matched only a query that
+  // contains a whole title (how track matching asks), so a typed search shorter
+  // than the title ("Cavalcade of Indignities" vs "... (#2)") found nothing,
+  // though the live search before the index was ready found it.
+  const lib = { serverId: 'srv1', key: '3' };
+  const seed = (titles) => {
+    global.window = global.window || {};
+    const byTitle = {};
+    titles.forEach((t, i) => {
+      const k = t.toLowerCase().normalize('NFKD').replace(/\p{M}/gu, '').replace(/[^\p{L}\p{N}]/gu, '');
+      (byTitle[k] = byTitle[k] || []).push({ id: 'plex-' + i, title: t });
+    });
+    window._plexIndex = { [plex._indexKey('srv1', '3')]: { status: 'ready', byTitle } };
+  };
+
+  test('a query shorter than the title finds it', () => {
+    seed(['Cavalcade of Indignities (#2)', 'Cavalcade of Indignities (#3)', 'Something Else']);
+    const out = plex._searchIndex({ libraries: [lib] }, 'Cavalcade of Indignities');
+    expect(out.map((t) => t.title).sort()).toEqual(['Cavalcade of Indignities (#2)', 'Cavalcade of Indignities (#3)']);
+  });
+
+  test('a query that contains the title (artist + title, as matching asks) still finds it', () => {
+    seed(['Everything in Its Right Place']);
+    expect(plex._searchIndex({ libraries: [lib] }, 'Radiohead Everything In Its Right Place').map((t) => t.title)).toEqual(['Everything in Its Right Place']);
+  });
+
+  test('one or two characters match nothing', () => {
+    seed(['ab', 'Abba Gold']);
+    expect(plex._searchIndex({ libraries: [lib] }, 'ab')).toEqual([]);
+  });
+});

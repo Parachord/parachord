@@ -30,6 +30,10 @@ const __initialTheme = (() => {
   }
 })();
 
+// The plugin-mediated licence relay's unsubscribe, while one is live — the
+// subscription is SINGLE-OWNER (see onPluginLicenseRequest below): the first
+// registration owns the relay until it unsubscribes.
+let __pluginLicenseRelayUnsubscribe = null;
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electron', {
@@ -71,6 +75,15 @@ contextBridge.exposeInMainWorld('electron', {
     scrapePlaylist: (playlistId) => ipcRenderer.invoke('spotify-scrape-playlist', playlistId),
     getCredentials: () => ipcRenderer.invoke('spotify-get-credentials'),
     setCredentials: (credentials) => ipcRenderer.invoke('spotify-set-credentials', credentials),
+    // Spotify's rate-limit cooldown, kept by main across restarts (#909):
+    // { pauseUntil, until } in ms. Reading it asks Spotify nothing.
+    getCooldown: () => ipcRenderer.invoke('spotify-cooldown-get'),
+    notePause: (until) => ipcRenderer.send('spotify-pause-note', Number(until) || 0),
+    onCooldownChanged: (callback) => {
+      const handler = (_event, cooldown) => callback(cooldown);
+      ipcRenderer.on('spotify-cooldown-changed', handler);
+      return () => ipcRenderer.removeListener('spotify-cooldown-changed', handler);
+    },
 
     // Listen for auth success events from main process
     onAuthSuccess: (callback) => {
@@ -163,6 +176,14 @@ contextBridge.exposeInMainWorld('electron', {
   // MusicBrainz / Cover Art Archive over IPv4, the fallback when their IPv6
   // endpoint fails (src/renderer/lib/metabrainz-ipv4.js)
   metabrainzFetchIpv4: (url, options) => ipcRenderer.invoke('metabrainz-fetch-ipv4', url, options),
+  // Plex talks to the user's own servers on the LAN (private IPs, *.plex.direct
+  // hosts, sometimes self-signed TLS). Renderer fetch is blocked by CORS and
+  // proxy-fetch refuses private IPs, so Plex requests go through a dedicated
+  // main-process handler scoped to Plex hosts and the user's saved servers
+  // (main-process/ipc/plex-fetch.js).
+  plex: {
+    fetch: (url, options) => ipcRenderer.invoke('plex-fetch', url, options)
+  },
 
   // Crypto utilities for scrobbling
   crypto: {
@@ -627,50 +648,184 @@ contextBridge.exposeInMainWorld('electron', {
     }
   },
 
-  // Amazon Music — in-app web player. Hidden WebContentsViews (player 0×0,
-  // search parked offscreen) load music.amazon.com on the main window and
-  // castlabs Electron's Widevine CDM decrypts. The desktop app is not used.
-  amazonMusic: {
-    // { refreshPlan: true } reads the plan from Amazon instead of the cache.
-    getStatus: (opts) => ipcRenderer.invoke('amazonmusic-get-status', { refreshPlan: !!(opts && opts.refreshPlan) }),
-    openLogin: () => ipcRenderer.invoke('amazonmusic-open-login'),
-    signOut: () => ipcRenderer.invoke('amazonmusic-sign-out'),
-    searchTracks: (query) => ipcRenderer.invoke('amazonmusic-search-tracks',
-      query && typeof query === 'object' ? query : { query }),
-    lookupPlaylist: (url) => ipcRenderer.invoke('amazonmusic-lookup-playlist', { url }),
-    searchAlbums: (query) => ipcRenderer.invoke('amazonmusic-search-albums',
-      query && typeof query === 'object' ? query : { query }),
-    lookupAlbum: (url) => ipcRenderer.invoke('amazonmusic-lookup-album', { url }),
-    searchArtistImage: (artistName) => ipcRenderer.invoke('amazonmusic-search-artist-image', { artistName }),
-    // The Recommendations provider: the home page's sections, and a titled
-    // section's next page (see-more route). Not plan-gated, like the album
-    // catalog and artist images.
-    getRecommendations: () => ipcRenderer.invoke('amazonmusic-get-recommendations'),
-    expandRecommendationSection: (sectionId, afterCursor) =>
-      ipcRenderer.invoke('amazonmusic-expand-recommendations', { sectionId, afterCursor: afterCursor || null }),
-    // The account's plan changed ('unlimited' / 'prime' / 'unknown'; #1220).
-    onPlanChanged: (callback) => {
-      const handler = (event, data) => callback(data);
-      ipcRenderer.on('amazonmusic-plan-changed', handler);
-      return () => ipcRenderer.removeListener('amazonmusic-plan-changed', handler);
-    },
-    // Diagnostic (DevTools only): record an album or search page's gql into a
-    // file in userData. See main.js 'amazonmusic-debug-capture-gql'.
-    debugCaptureGql: (url) => ipcRenderer.invoke('amazonmusic-debug-capture-gql', { url }),
-    // Audio plays through the shared widevine path (window.electron.widevine
-    // + the renderer's shared HTMLAudioElement); the old per-engine transport
-    // and polling IPCs are gone with the hornet view.
-  },
-
   // The resolver-neutral Widevine/DASH bridge. The renderer's shared player
   // (lib/widevine-player.js) asks a main-side provider for the manifest and
-  // relays license bytes through it; providers register per resolver (Amazon
-  // Music is amazon-dmls.js). This is the ONLY surface a stream resolver
-  // needs beyond its search/sign-in channels.
+  // relays license bytes through it, or — for a resolver that implements the
+  // plugin-mediated pair (#1356 M4; Amazon's DRM pair since M9) — takes the
+  // plugin-supplied manifest and forwards licence challenges back to the
+  // plugin. This is the ONLY surface a stream resolver needs beyond its
+  // search/sign-in channels.
+  //
+  // The plugin-mediated half (#1356 M4): a resolver that implements
+  // getPlaybackManifest supplies the manifest renderer-side and declares it
+  // UP (openSession carries only its length — the text stays renderer-side),
+  // and its relayLicense answers main's forwarded license challenges
+  // (onPluginLicenseRequest) — main keeps the sender/session/cap gates
+  // either way. The plugin's context never crosses IPC: the renderer-side
+  // router holds it and hands it back to the plugin's relayLicense.
   widevine: {
     getManifest: (resolverId, entity) => ipcRenderer.invoke('widevine:manifest', { resolverId, entity }),
     relayLicense: (resolverId, challenge, sessionId) => ipcRenderer.invoke('widevine:license', { resolverId, challenge, sessionId }),
-    playerEvent: (resolverId, event) => ipcRenderer.invoke('widevine:player-event', { resolverId, event })
+    playerEvent: (resolverId, event) => ipcRenderer.invoke('widevine:player-event', { resolverId, event }),
+    openSession: (resolverId, manifestLength, type, drm) =>
+      ipcRenderer.invoke('widevine:open-session', { resolverId, manifestLength, type, drm }),
+    // A plugin-mediated session's license challenges arrive here, one push
+    // per relay. The callback gets { requestId, resolverId, sessionId,
+    // challenge } and returns the license (base64) — no context rides the
+    // push (the caller holds the plugin's context renderer-side). A thrown
+    // error's fields (reason/licenseDenied/denialReason/message) answer in
+    // the same shape a provider relayLicense rejection produces. The wrapper
+    // ALWAYS answers — main's relay timeout is the net for a callback that
+    // never settles.
+    //
+    // SINGLE-OWNER (#1434 review): the player registers this exactly once
+    // (ensurePluginRelayRouter in lib/widevine-player.js), and main takes
+    // the FIRST answer for a requestId — so a second subscriber that raced
+    // its own answer ahead of the router would decide the play. The first
+    // call wins; every later call gets a warning and a no-op unsubscribe
+    // (a second registration is the caller's bug, not a supported relay).
+    // Ownership is released when the owner unsubscribes, so a re-register
+    // after a teardown is still possible.
+    onPluginLicenseRequest: (callback) => {
+      if (__pluginLicenseRelayUnsubscribe) {
+        console.warn('widevine.onPluginLicenseRequest: a plugin license relay is already registered; ignoring the second registration');
+        // null, not a no-op function: the caller can tell it was refused.
+        return null;
+      }
+      const handler = (_event, request) => {
+        if (!request || typeof request.requestId !== 'string') return;
+        Promise.resolve()
+          .then(() => callback(request))
+          .then((license) => ipcRenderer.invoke('widevine:plugin-license-answer', { requestId: request.requestId, ok: true, license }))
+          .catch((error) => ipcRenderer.invoke('widevine:plugin-license-answer', {
+            requestId: request.requestId,
+            ok: false,
+            error: {
+              message: String((error && (error.message || error)) || 'plugin license relay failed'),
+              reason: (error && error.reason) || undefined,
+              licenseDenied: !!(error && error.licenseDenied),
+              denialReason: (error && typeof error.denialReason === 'string') ? error.denialReason : null
+            }
+          }))
+          .catch(() => { /* the answer is best-effort; main's timeout is the net */ });
+      };
+      ipcRenderer.on('widevine:plugin-license', handler);
+      const unsubscribe = () => {
+        ipcRenderer.removeListener('widevine:plugin-license', handler);
+        if (__pluginLicenseRelayUnsubscribe === unsubscribe) __pluginLicenseRelayUnsubscribe = null;
+      };
+      __pluginLicenseRelayUnsubscribe = unsubscribe;
+      return unsubscribe;
+    }
+  },
+
+  // The generic web-session bridge (#1356): a registered web-session host's
+  // primitives over IPC, named per session (Amazon's is 'amazon-music').
+  // Thin invoke wrappers for load/pageFetch/fetch/state/clear — payload and
+  // error contract in docs/architecture/web-session.md, "The IPC bridge".
+  // signIn keeps the host's shape: the wrapper runs the plugin's decide() on
+  // every forwarded tick, answers with the verdict, and resolves from the
+  // settled event (the host promise settles on the main side).
+  //
+  // LIVE since the track-search move (#1356 M5 — the bridge's first
+  // consumer, the #1432 review's note-8 option: the layer that first drives
+  // the bridge turns the surface on together with the session registration
+  // in main.js).
+  webSession: {
+    load: (id, url, opts) => ipcRenderer.invoke('webSession:load', { id, url, opts }),
+    pageFetch: (id, request) => ipcRenderer.invoke('webSession:pageFetch', { id, request }),
+    fetch: (id, request) => ipcRenderer.invoke('webSession:fetch', { id, request }),
+    state: (id) => ipcRenderer.invoke('webSession:state', { id }),
+    clear: (id) => ipcRenderer.invoke('webSession:clear', { id }),
+    // signIn(id, url, { decide, window }) → { success, signedIn }:
+    // decide({ url, cookieNames, stableTicks }) is the plugin's pure verdict,
+    // called once per tick; window is { width, height } for the visible
+    // sign-in window — the window's TITLE is host config (#1432 review,
+    // finding 3), never a caller choice. The promise always resolves:
+    // settled { signedIn } on success, { success: false, reason, error } when
+    // the invoke itself is refused (an unknown session, a gated sender).
+    signIn: (id, url, opts = {}) => new Promise((resolve) => {
+      let callId = null;   // set when the invoke's reply lands
+      let stopped = false; // the promise settled: no listener or flush may act again
+      // The race this buffers around: the bridge can settle a run BEFORE the
+      // invoke's reply names our callId (a synchronous host.signIn throw
+      // settles inside the handler, and the settled event can reach us ahead
+      // of the reply). A callId filter alone would drop that settle and wedge
+      // the promise forever — so while the invoke is outstanding, tick and
+      // settled payloads are buffered, keyed by their own payload callIds:
+      // when the reply lands, a buffered settle for OUR callId resolves the
+      // promise, buffered ticks for our callId run their decide late (in
+      // order), and payloads for any other callId (another window's concurrent
+      // call) are discarded harmlessly. The refused-invoke paths never see a
+      // callId: the buffers die with the failure.
+      const earlySettled = [];
+      const earlyTicks = [];
+      const decide = typeof opts.decide === 'function' ? opts.decide : () => false;
+      const stop = () => {
+        if (stopped) return; // the listeners come off exactly once per call
+        stopped = true;
+        ipcRenderer.removeListener('webSession:sign-in-tick', onTick);
+        ipcRenderer.removeListener('webSession:sign-in-settled', onSettled);
+      };
+      const runTick = (tick) => {
+        // The plugin's decide sees the host's tick shape — the callId is the
+        // protocol's routing key, not plugin input.
+        const { callId: _callId, ...facts } = tick;
+        let verdict = false;
+        // A throwing decide is the plugin's bug, not a failed sign-in — the
+        // host ignores one too (web-session.js ticks on).
+        try { verdict = !!decide(facts); } catch { verdict = false; }
+        ipcRenderer.invoke('webSession:sign-in-decide', { callId: tick.callId, verdict }).catch(() => {});
+      };
+      const settle = (settled) => {
+        stop();
+        resolve({ success: true, signedIn: !!settled.signedIn, ...(settled.error ? { error: settled.error } : {}) });
+      };
+      const onTick = (_event, tick) => {
+        if (stopped || !tick || typeof tick.callId !== 'string') return;
+        if (callId === null) { earlyTicks.push(tick); return; } // pre-reply: buffered, flushed when the reply names our callId
+        if (tick.callId !== callId) return;
+        runTick(tick);
+      };
+      const onSettled = (_event, settled) => {
+        if (stopped || !settled || typeof settled.callId !== 'string') return;
+        if (callId === null) { earlySettled.push(settled); return; } // pre-reply: buffered, resolved when the reply names our callId
+        if (settled.callId !== callId) return;
+        settle(settled);
+      };
+      // Subscribed before the invoke so no event of the run is MISSED; what
+      // protects an event that beats the reply is the buffer above, not this
+      // order — subscription order alone would leave the settle dropped by
+      // the callId filter.
+      ipcRenderer.on('webSession:sign-in-tick', onTick);
+      ipcRenderer.on('webSession:sign-in-settled', onSettled);
+      ipcRenderer.invoke('webSession:signIn', {
+        id,
+        url,
+        // { width, height } only — the title is host config (finding 3).
+        window: opts.window && typeof opts.window === 'object'
+          ? { width: opts.window.width, height: opts.window.height }
+          : undefined
+      }).then((reply) => {
+        if (stopped) return;
+        if (!reply || !reply.success) {
+          stop();
+          resolve({ success: false, reason: reply && reply.reason, error: reply && reply.error });
+          return;
+        }
+        callId = reply.callId;
+        // A settle that raced the reply (the synchronous host throw) resolves
+        // now; ticks that raced it run their decide late, in order — the
+        // verdict's answer is one tick late exactly like every other one.
+        const raced = earlySettled.find((s) => s.callId === callId);
+        if (raced) { settle(raced); return; }
+        for (const tick of earlyTicks) if (tick.callId === callId) runTick(tick);
+      }, (error) => {
+        if (stopped) return;
+        stop();
+        resolve({ success: false, error: String((error && (error.message || error)) || error) });
+      });
+    })
   },
 
   // Ollama operations (local AI)
@@ -714,3 +869,15 @@ contextBridge.exposeInMainWorld('electron', {
 
   // Generic invoke removed for security — use specific API methods above
 });
+
+// What host bridges this app supplies (#1355): a plugin declares
+// "requires": { "hostBridges": [...] } and the plugin loader hides it when
+// this host doesn't carry every one (docs/architecture/plugins.md, "Required
+// host bridges"). Keep the list in step with the window.electron blocks
+// above — a bridge missing from this list is a bridge no plugin can require.
+// webSession is advertised since the track-search move (#1356 M5, the
+// bridge's first consumer — the advertisement moves WITH the wrapper).
+// (contextBridge is how a sandboxed preload reaches the page world — a bare
+// window assignment here stays preload-side.)
+const HOST_BRIDGES = ['webSession'];
+contextBridge.exposeInMainWorld('__parachordHostBridges', HOST_BRIDGES);

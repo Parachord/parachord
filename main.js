@@ -196,6 +196,26 @@ const SPOTIFY_API_TIMEOUT_MS = 5000;
 // Spotify's rate-limit pause for the main process (sync-providers/spotify-pause.js),
 // shared with the sync provider: no Spotify request while Retry-After runs.
 const { sharedPause, pausedResponse: spotifyPausedResponse } = require('./sync-providers/spotify-pause');
+// The pause outlives a restart (#909): restored from the store before anything
+// can call Spotify, and saved on every lengthening. Without this, each launch
+// sent one more request into a running limit (and showed the slow-down toast
+// again). The renderer hears every change (preload `spotifyPause`).
+sharedPause.extendTo(store.get('spotify_pause_until'));
+// When Spotify is next free for this app: the pause, or the sync breaker's
+// cooldown (sync-engine/spotify-breaker.js, saved as spotify_breaker_state),
+// whichever ends later. Local arithmetic only: reading it asks Spotify nothing.
+function spotifyCooldown() {
+  const breaker = store.get('spotify_breaker_state');
+  const breakerUntil = (breaker && Number(breaker.openUntil)) || 0;
+  return { pauseUntil: sharedPause.until(), until: Math.max(sharedPause.until(), breakerUntil) };
+}
+function announceSpotifyCooldown() {
+  safeSendToRenderer('spotify-cooldown-changed', spotifyCooldown());
+}
+sharedPause.onChange((until) => {
+  try { store.set('spotify_pause_until', until); } catch (e) { console.warn('[spotify-pause] save failed:', e && e.message); }
+  announceSpotifyCooldown();
+});
 // Quitting waits on the pause, so it gets less.
 const SPOTIFY_QUIT_PAUSE_TIMEOUT_MS = 3000;
 
@@ -796,25 +816,61 @@ const appleMusicPoller = {
   }
 };
 
-const amazonWebPlayer = require('./amazon-web-player');
-const { registerWidevineProvider, registerWidevineBridgeIpc } = require('./main-process/widevine-bridge');
-const { registerAmazonDmlsProvider, amazonDmls } = require('./amazon-dmls');
-const { amazonPlanMessage } = require('./amazon-music-logic');
+// Amazon Music's ONE web-session host instance (#1356 M11, the teardown:
+// amazon-web-player.js is deleted — the plugin owns every Amazon flow, the
+// host owns the machinery). The instance lives in
+// main-process/amazon-web-session.js and is registered with the bridge by
+// reference, never re-created.
+const amazonWebSession = require('./main-process/amazon-web-session');
+const { registerWidevineBridgeIpc } = require('./main-process/widevine-bridge');
 
 // Widevine playback runs in the renderer (Shaka on the shared HTMLAudioElement);
 // the bridge relays manifest/license operations to main-side providers per
-// resolver. amazon-dmls is the Amazon Music provider; amazon-web-player
-// keeps its search/sign-in/session role (the hornet audio engine is gone).
-// Sender gate for the license-oracle surface: only the main window's top
+// resolver, OR to the renderer-mediated plugin pair (#1356 M4 — a resolver
+// implementing getPlaybackManifest + relayLicense supplies the manifest itself
+// and answers main-forwarded licence challenges; Amazon's DRM pair lives in
+// the plugin since M9, so no provider is registered for 'amazonmusic').
+// Sender gate, shared by the gated IPC bridges (the widevine license-oracle
+// surface and the webSession primitives below): only the main window's top
 // frame may call at all (relay gating rules in widevine-bridge.js).
-registerWidevineBridgeIpc({
+const isMainWindowTopFrameSender = (event) => {
+  if (!event || !event.sender || !mainWindow || mainWindow.isDestroyed()) return false;
+  if (event.sender.id !== mainWindow.webContents.id) return false;
+  const frame = event.senderFrame;
+  return !!frame && frame.top === frame;
+};
+registerWidevineBridgeIpc({ ipcMain, isAllowedSender: isMainWindowTopFrameSender });
+
+// #1220's plan-change push died with #1356 M10's status move: the plugin
+// reads its own plan (its getStatus forces a fresh read on the settings
+// path), and the renderer's status sweep — startup, Settings open, the
+// resolver panel, a plan refusal — is what refreshes the tile. No plan-change
+// event crosses this boundary anymore.
+
+// The webSession IPC bridge (#1356): registered web-session hosts exposed to
+// the renderer. Amazon's session is the ONE createWebSessionHost instance
+// main-process/amazon-web-session.js owns (the one owner of the
+// persist:amazon-music partition's webRequest slot) — registered here by
+// reference, never re-created. The registration is LIVE as of the
+// track-search move (#1356 M5): that layer is the bridge's first consumer
+// (the plugin's spec-search runner drives this session through
+// window.electron.webSession), the #1432 review's note-8 option — the
+// exposure went on together with the preload's webSession block and its
+// hostBridges entry. The bridge gates the sender like the widevine bridge,
+// scopes fetch/pageFetch to the session's allowed hosts (exact hosts, https
+// only, redirect hops re-checked host-side) and load/signIn to the same
+// allowed hosts, caps the caller budgets, and shuttles the sign-in
+// tick/decide/settled protocol (channel contract in
+// docs/architecture/web-session.md, "The IPC bridge"). Every Amazon flow is
+// the plugin's since #1356 — searches, catalog, playlists, recommendations,
+// the DRM pair, sign-in/out, the status read and the diagnostic capture; the
+// plugin drives the session through window.electron.webSession.
+const { registerWebSession, registerWebSessionBridgeIpc } = require('./main-process/ipc/web-session-bridge');
+registerWebSession('amazon-music', amazonWebSession);
+registerWebSessionBridgeIpc({
   ipcMain,
-  isAllowedSender: (event) => {
-    if (!event || !event.sender || !mainWindow || mainWindow.isDestroyed()) return false;
-    if (event.sender.id !== mainWindow.webContents.id) return false;
-    const frame = event.senderFrame;
-    return !!frame && frame.top === frame;
-  }
+  isAllowedSender: isMainWindowTopFrameSender,
+  sendToRenderer: safeSendToRenderer
 });
 
 // macOS System Volume Monitor
@@ -1034,14 +1090,7 @@ function createWindow() {
     if (template) Menu.buildFromTemplate(template).popup({ window: mainWindow });
   });
 
-  amazonWebPlayer.setHost(mainWindow);
-  registerAmazonDmlsProvider({
-    registerWidevineProvider,
-    store,
-    // #1220: the renderer refreshes the Amazon status (tile, settings) and,
-    // on an upgrade, re-resolves Amazon.
-    onPlanChange: ({ plan }) => safeSendToRenderer('amazonmusic-plan-changed', { plan })
-  });
+  amazonWebSession.setHost(mainWindow);
   mainWindow.loadFile('index.html');
 
   let windowShown = false;
@@ -1164,7 +1213,7 @@ function createWindow() {
   });
 
   mainWindow.on('closed', () => {
-    amazonWebPlayer.setHost(null);
+    amazonWebSession.setHost(null);
     mainWindow = null;
   });
 
@@ -1940,7 +1989,8 @@ app.whenReady().then(async () => {
     if (spProvider && typeof spProvider._setBreakerStore === 'function') {
       spProvider._setBreakerStore({
         load: () => store.get('spotify_breaker_state'),
-        save: (s) => store.set('spotify_breaker_state', s),
+        // Every breaker transition also moves the cooldown the Sync menu shows.
+        save: (s) => { store.set('spotify_breaker_state', s); announceSpotifyCooldown(); },
       });
     }
   } catch (e) { console.warn('[spotify-breaker] persistence wiring failed:', e && e.message); }
@@ -3160,6 +3210,10 @@ registerAuthServerIpc({ ipcMain, store, getAuthServerState: () => authServerStat
 // (2026-11-01): main-process/ipc/metabrainz-ipv4.js.
 const { registerMetaBrainzIpv4Ipc } = require('./main-process/ipc/metabrainz-ipv4');
 registerMetaBrainzIpv4Ipc({ ipcMain, userAgent: METABRAINZ_UA });
+// Plex-scoped HTTP for the Plex resolver (plex.tv, *.plex.direct and the
+// user's saved server connections only; see main-process/ipc/plex-fetch.js).
+const { registerPlexFetchIpc } = require('./main-process/ipc/plex-fetch');
+registerPlexFetchIpc({ ipcMain, store });
 
 // ─── In-app announcements ────────────────────────────────────────────────────
 // Polls a public JSON file on achordion.xyz for product announcements
@@ -3397,6 +3451,13 @@ ipcMain.handle('musickit:token-status', async () => {
 });
 
 // Spotify OAuth handler
+// Spotify's cooldown for the renderer (#909): its fetch gate adopts
+// `pauseUntil`, and the Sync menu shows `until`. Asks Spotify nothing.
+ipcMain.handle('spotify-cooldown-get', () => spotifyCooldown());
+// A 429 the renderer got: main adopts it, saves it, and re-announces it.
+// extendTo only lengthens and caps at 24h, so a bad value can't do more.
+ipcMain.on('spotify-pause-note', (_event, until) => { sharedPause.extendTo(until); });
+
 ipcMain.handle('spotify-auth', async () => {
   const { clientId, source } = getSpotifyCredentials();
   const redirectUri = spotifyRedirectUri();
@@ -3828,209 +3889,6 @@ ipcMain.handle('applemusic-polling-status', async () => {
     expectedSongId: appleMusicPoller.expectedSongId
   };
 });
-
-// Amazon Music IPC. Playback runs through the widevine bridge (Shaka in the renderer;
-// amazon-dmls is the provider). Search/sign-in/session mints stay on the
-// hidden search view.
-// Errors come back as { success: false, error|reason } rather than thrown IPC
-// rejections so the resolver can branch (not-ready must not be cached as noMatch).
-ipcMain.handle('amazonmusic-get-status', async (event, { refreshPlan } = {}) => {
-  try {
-    const cdm = amazonWebPlayer.cdmAvailable();
-    const signedIn = await amazonWebPlayer.isSignedIn();
-    const preload = await amazonWebPlayer.preloadProbe();
-    // #1220: only Music Unlimited plays. Read once signed in; null when
-    // signed out. Cached for 30 minutes, except that opening Settings or the
-    // Amazon panel asks for a fresh read (refreshPlan), so an upgrade shows
-    // up there at once.
-    let plan = null;
-    if (signedIn) {
-      try { plan = await amazonDmls.getPlan({ refresh: !!refreshPlan }); } catch { plan = 'unknown'; }
-    }
-    return {
-      success: true,
-      platform: process.platform,
-      engine: 'widevine',
-      // The settings UI reads web.{cdm,signedIn} — the shape is kept; audio
-      // plays in the main renderer through the widevine bridge.
-      web: { cdm, signedIn },
-      plan,
-      planMessage: plan ? amazonPlanMessage(plan) : null,
-      // Live proof the search-view preload is alive (sandboxed-preload
-      // failure surface).
-      preload,
-      // Replay-first template state (specSearch): whether the fast path is
-      // armed, and how fresh the captured request is. Metadata only — the
-      // captured headers and APQ hash never leave the main process.
-      specSearchTemplate: amazonWebPlayer.specSearchTemplate
-        ? {
-            capturedAt: new Date(amazonWebPlayer.specSearchTemplate.capturedAt).toISOString(),
-            ageMs: Date.now() - amazonWebPlayer.specSearchTemplate.capturedAt
-          }
-        : null,
-      // The dmls provider's session internals.
-      native: amazonDmls.debugState()
-    };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle('amazonmusic-open-login', async () => {
-  try {
-    return await amazonWebPlayer.openLogin();
-  } catch (error) {
-    return { success: false, reason: error.reason, error: error.message };
-  }
-});
-
-ipcMain.handle('amazonmusic-sign-out', async () => {
-  try {
-    amazonDmls.onSignOut();
-    return await amazonWebPlayer.signOut();
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle('amazonmusic-search-tracks', async (event, payload) => {
-  console.log(`[Amazon] IPC search ${JSON.stringify(payload)}`);
-  try {
-    // #1220: off Music Unlimited, offer no playable tracks. Checked only when
-    // signed in, so a signed-out search still answers not-signed-in (the
-    // sign-in prompt). The resolver treats plan-ineligible as not-ready, so
-    // nothing is cached as a miss and an upgrade re-resolves.
-    if (await amazonWebPlayer.isSignedIn()) await amazonDmls.assertPlanPlays();
-    const tracks = await amazonWebPlayer.searchTracks(payload || {});
-    console.log(`[Amazon] IPC search done ${(tracks && tracks.length) || 0} tracks`);
-    return { success: true, engine: 'web', tracks };
-  } catch (error) {
-    console.warn(`[Amazon] IPC search failed: ${error && error.reason} ${error && error.message}`);
-    // Pass the reason through verbatim — the resolver (.axe) decides which
-    // reasons are notReady (skipped from the noMatch cache) and which are
-    // plain misses.
-    return {
-      success: false,
-      reason: error.reason,
-      error: error.message
-    };
-  }
-});
-
-ipcMain.handle('amazonmusic-lookup-playlist', async (event, { url } = {}) => {
-  console.log(`[Amazon] IPC playlist lookup ${url}`);
-  try {
-    const playlist = await amazonWebPlayer.lookupPlaylist(url);
-    console.log(`[Amazon] IPC playlist done ${(playlist && playlist.tracks && playlist.tracks.length) || 0} tracks`);
-    return { success: true, engine: 'web', playlist };
-  } catch (error) {
-    console.warn(`[Amazon] IPC playlist failed: ${error && error.reason} ${error && error.message}`);
-    return {
-      success: false,
-      reason: error.reason,
-      error: error.message
-    };
-  }
-});
-
-ipcMain.handle('amazonmusic-search-albums', async (event, payload) => {
-  console.log(`[Amazon] IPC album search ${JSON.stringify(payload)}`);
-  try {
-    const albums = await amazonWebPlayer.searchAlbums(payload || {});
-    console.log(`[Amazon] IPC album search done ${(albums && albums.length) || 0} albums`);
-    return { success: true, engine: 'web', albums };
-  } catch (error) {
-    console.warn(`[Amazon] IPC album search failed: ${error && error.reason} ${error && error.message}`);
-    // Same reason passthrough as track search — the resolver decides which
-    // reasons are notReady and which are plain misses.
-    return {
-      success: false,
-      reason: error.reason,
-      error: error.message
-    };
-  }
-});
-
-// Artist photos for the artist-image chain (capabilities.artistImage in the
-// .axe). searchArtistImage resolves to a URL or null and never throws for a
-// miss — not-signed-in included (null without a request, unlike the searches
-// which prompt): an artist photo is always optional and the chain moves on.
-ipcMain.handle('amazonmusic-search-artist-image', async (event, { artistName } = {}) => {
-  try {
-    const imageUrl = await amazonWebPlayer.searchArtistImage(artistName);
-    console.log(`[Amazon] IPC artist image ${JSON.stringify(artistName)} -> ${imageUrl ? 'hit' : 'null'}`);
-    return { success: true, engine: 'web', imageUrl };
-  } catch (error) {
-    console.warn(`[Amazon] IPC artist image failed: ${error && error.reason} ${error && error.message}`);
-    return { success: false, reason: error.reason, error: error.message };
-  }
-});
-
-ipcMain.handle('amazonmusic-lookup-album', async (event, { url } = {}) => {
-  console.log(`[Amazon] IPC album lookup ${url}`);
-  try {
-    const album = await amazonWebPlayer.lookupAlbum(url);
-    console.log(`[Amazon] IPC album done ${(album && album.tracks && album.tracks.length) || 0} tracks`);
-    return { success: true, engine: 'web', album };
-  } catch (error) {
-    console.warn(`[Amazon] IPC album lookup failed: ${error && error.reason} ${error && error.message}`);
-    return {
-      success: false,
-      reason: error.reason,
-      error: error.message
-    };
-  }
-});
-
-// The Recommendations page's Amazon provider: the home page sections
-// (getRecommendations) and a titled section's next page
-// (expandRecommendationSection — the see-more route). NOT plan-gated, like
-// the album catalog and artist images: the plan gate stops playback, not
-// discovery (docs/architecture/amazon-music.md, "Recommendations").
-ipcMain.handle('amazonmusic-get-recommendations', async (event) => {
-  try {
-    const sections = await amazonWebPlayer.getRecommendations();
-    console.log(`[Amazon] IPC recommendations -> ${sections.length} sections`);
-    return { success: true, engine: 'web', sections };
-  } catch (error) {
-    console.warn(`[Amazon] IPC recommendations failed: ${error && error.reason} ${error && error.message}`);
-    return { success: false, reason: error.reason, error: error.message };
-  }
-});
-
-ipcMain.handle('amazonmusic-expand-recommendations', async (event, { sectionId, afterCursor } = {}) => {
-  try {
-    const page = await amazonWebPlayer.expandRecommendationSection(sectionId, afterCursor);
-    console.log(`[Amazon] IPC recommendations see-more ${sectionId} -> ${page.items.length} items`);
-    return { success: true, engine: 'web', items: page.items, nextCursor: page.nextCursor };
-  } catch (error) {
-    console.warn(`[Amazon] IPC recommendations see-more failed: ${error && error.reason} ${error && error.message}`);
-    return { success: false, reason: error.reason, error: error.message };
-  }
-});
-
-// Diagnostic, no UI: record the gql an Amazon Music album or search page
-// fires (amazonWebPlayer.debugCaptureGql) into a JSON file in userData, for
-// building the plugin's album search. Run from DevTools:
-//   await window.electron.amazonMusic.debugCaptureGql('https://music.amazon.com/albums/<ASIN>')
-// Header values and credential-like fields never reach the file; review it
-// before sharing anyway (docs/architecture/amazon-music.md, "gql capture").
-ipcMain.handle('amazonmusic-debug-capture-gql', async (event, { url } = {}) => {
-  try {
-    const capture = await amazonWebPlayer.debugCaptureGql(url);
-    const file = path.join(app.getPath('userData'), `amazon-gql-capture-${capture.subject.kind}-${Date.now()}.json`);
-    await fs.promises.writeFile(file, JSON.stringify(capture, null, 2));
-    console.log(`[Amazon] gql capture written to ${file}`);
-    return {
-      success: true,
-      file,
-      operations: capture.operations.map(o => `${o.operationName || '(unnamed)'}${o.replayed ? ' (replayed)' : ''}`)
-    };
-  } catch (error) {
-    return { success: false, reason: error && error.reason, error: error && error.message };
-  }
-});
-
 
 // Bandcamp plays in a hidden embed the main process drives: main-process/ipc/bandcamp-embed.js.
 const { registerBandcampEmbedIpc } = require('./main-process/ipc/bandcamp-embed');

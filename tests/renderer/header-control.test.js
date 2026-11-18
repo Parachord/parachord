@@ -32,7 +32,12 @@ test('no uppercase header-control style is left, and labels stay sentence case',
 test('the page headers and the queue drawer use it', () => {
   // app.js and the panels moved out of it (#1451): the queue drawer's are in queue-drawer.js.
   expect((require('../helpers/renderer-source').appWithPages().match(/React\.createElement\(HeaderControl, \{/g) || []).length).toBeGreaterThanOrEqual(6);
-  // 8: Refresh became Keep updated / Check now + Stop updating (a playlist
-  // link kept updated or a snapshot); 9 with the loading state's (#1451).
-  expect((read('src/renderer/components/playlist-view-page.js').match(/React\.createElement\(HeaderControl, \{/g) || []).length).toBe(9);
+  // 7: the link-update buttons (Check now + Stop updating, or Keep updated)
+  // became one Auto-update menu trigger, a HeaderControl too (2026-11-17);
+  // the loading state's is counted since #1451.
+  const pvp = read('src/renderer/components/playlist-view-page.js');
+  expect((pvp.match(/React\.createElement\(HeaderControl, (?:\{|Object\.assign\()/g) || []).length).toBe(7);
+  expect(pvp).toMatch(/label: 'Auto-update',/);
+  expect(pvp).toMatch(/toggle: \{ checked: on, onChange: setOn/);
+  expect(pvp).not.toMatch(/'Stop updating'|'Check now'/);
 });

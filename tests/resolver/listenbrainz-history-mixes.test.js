@@ -98,12 +98,15 @@ describe('ListenBrainz playlist links (urlLookup, lookupPlaylist)', () => {
   const loader = () => {
     const l = new ResolverLoader();
     for (const pattern of axe.urlPatterns) l.urlPatterns.push({ pattern, resolverId: 'listenbrainz' });
+    for (const [type, patterns] of Object.entries(axe.urlTypes || {})) {
+      for (const pattern of patterns) l.urlTypedPatterns.push({ pattern, type, resolverId: 'listenbrainz' });
+    }
     return l;
   };
 
   test('the manifest declares urlLookup and the patterns', () => {
     expect(axe.capabilities.urlLookup).toBe(true);
-    expect(axe.manifest.version).toBe('1.6.2');
+    expect(axe.manifest.version).toBe('1.6.5');
   });
 
   test.each([

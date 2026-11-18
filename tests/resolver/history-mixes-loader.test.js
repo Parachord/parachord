@@ -169,7 +169,7 @@ describe('wiring', () => {
   test('both meta-service gates load a plugin that only has history mixes', () => {
     const first = app.slice(app.indexOf('const metaServicesWithRecommendations = metaServiceAxes.filter('));
     expect(first.slice(0, first.indexOf(');'))).toContain('(axe.capabilities?.historyMixes && axe.implementation?.getHistoryMixes)');
-    const second = app.slice(app.indexOf('const withRecommendations = filteredAxes.filter('));
+    const second = app.slice(app.indexOf('const withRecommendations = visibleAxes.filter('));
     expect(second.slice(0, second.indexOf(');'))).toContain('(axe.capabilities?.historyMixes && axe.implementation?.getHistoryMixes)');
   });
 

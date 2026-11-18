@@ -107,7 +107,7 @@ test('every dialog shell in app.js is a Modal; the plain ones use its title, clo
   // app.js and the dialogs moved out of it (#1451); those moved into their own
   // modules (WhatsNewDialog, KeyboardShortcutsDialog) render Modal there.
   const app = require('../helpers/renderer-source').appWithPages();
-  expect((app.match(/React\.createElement\((Modal|WhatsNewDialog|KeyboardShortcutsDialog), \{/g) || []).length).toBeGreaterThanOrEqual(20);
+  expect((app.match(/React\.createElement\((Modal|WhatsNewDialog|KeyboardShortcutsDialog), \{/g) || []).length).toBeGreaterThanOrEqual(19); // 20 until the AI save dialog went (#1020)
   // Redone on the standard parts (no longer bare).
   for (const label of ['Unsaved friend', 'Delete synced playlist', 'Stop syncing', 'Switch sync engine', 'Open in browser', 'Save AI playlist', 'Save queue as playlist', 'Import playlist', 'Add friend', 'Amazon Music sign-in', 'Edit tags']) {
     expect([label, app.includes(`bare: true, label: "${label}"`)]).toEqual([label, false]);

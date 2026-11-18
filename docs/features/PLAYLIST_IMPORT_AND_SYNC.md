@@ -175,7 +175,7 @@ Apple Music writes degrade to append-only when Apple rejects PUT; removals stay 
 
 **Chat.** The `create_playlist` tool (in the inline `djTools` list, dispatched by `executeDjTool`) calls `createPlaylistFromChat`, which saves `ai-chat-${Date.now()}` with creator "Shuffleupagus". It is not behind the "Share my data" gate; the other playlist tools (`get_playlists`, `get_playlist_tracks`, `add_to_playlist`, `remove_from_playlist`, `reorder_playlist`, `rename_playlist`, `delete_playlist`) are.
 
-**One-shot AI Playlist.** Plugins with the `generate` capability (ChatGPT, Gemini) return a track list shown in a sidebar with Play, Add to Queue and Add to Playlist (`handleAiAddToPlaylist`, which opens the Add-to-Playlist panel). `handleAiSavePlaylist` and its dialog are defined but never called. The panel itself is only reachable when no chat-capable plugin is enabled.
+**One-shot AI Playlist: removed** (parachord#1020). Its prompt panel, the results sidebar's track-list mode (Play, Add to Queue, Add to Playlist) and the never-called save dialog were taken out: no bundled plugin could reach the panel, since chat takes the playbar button whenever a chat plugin is on. Playlists from AI come from chat's `create_playlist`.
 
 **MCP server.** `services/mcp-server.js` serves `tools/dj-tools.js` on 127.0.0.1:9421. All eight playlist tools work: the playlist methods are built once by `buildPlaylistToolContext` and spread into both the chat and MCP tool contexts (parachord#1008). The MCP context has no "Share my data" gate, since that setting belongs to in-app chat and the MCP server is its own opt-in.
 

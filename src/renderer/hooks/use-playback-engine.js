@@ -75,6 +75,14 @@ const widevineErrorToastState = { at: 0 };
 // reason as the throttle above.
 const planRefusalExplained = new Set();
 
+// The plugin manifest budget (#1356 M4 review): getPlaybackManifest is a
+// plugin's own network code, and a plugin hung in it must not leave
+// trackLoading up forever — past the budget the play fails as an ordinary
+// playback error. The resolver limiter's RESOLVE_BUDGET_MS (8 s, one search
+// round trip) spirit, sized for a manifest fetch's heavier sequence
+// (auth, catalog, MPD); documented in plugins.md.
+const PLUGIN_MANIFEST_BUDGET_MS = 10000;
+
 function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
   volume,        // useVolume's return object
   queue,         // usePlaybackQueue's return object
@@ -1317,6 +1325,9 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       else if (trackOrSource.bandcampUrl) resolverId = 'bandcamp';
       else if (trackOrSource.soundcloudId) resolverId = 'soundcloud';
       else if (trackOrSource.filePath || trackOrSource.fileUrl) resolverId = 'localfiles';
+      // A resolver result tags itself with `sources: ['<id>']` (every bundled
+      // .axe does), which covers plugins with no host-known id field.
+      else if (Array.isArray(trackOrSource.sources) && typeof trackOrSource.sources[0] === 'string') resolverId = trackOrSource.sources[0];
       // Fallback: use the 'source' property if set (added by search tagging)
       else if (trackOrSource.source && typeof trackOrSource.source === 'string') {
         resolverId = trackOrSource.source;
@@ -1762,6 +1773,15 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     // license bytes relayed the same way, variant per the global quality
     // setting. The .axe never touches audio (same host-owned shape as
     // html5Stream above it).
+    // The plugin-mediated path (#1356 M4): a resolver that implements
+    // getPlaybackManifest + relayLicense supplies that DRM plumbing itself,
+    // renderer-side — the engine passes the WHOLE track (the plugin extracts
+    // its own identifier; the host stops pre-digesting it here) plus the
+    // resolver config, then declares the reply UP via playPlugin so main
+    // opens the licence session under its existing gates (the manifest text
+    // and the plugin's context stay renderer-side). No shipped plugin
+    // implements the pair yet — Amazon keeps the provider path below until
+    // its dmls moves.
     if (isWidevineResolver(resolverId)) {
       const streamLabel = resolver.name || resolverId;
       console.log(`🔐 Playing ${streamLabel} track via Widevine:`, sourceToPlay.title);
@@ -1802,30 +1822,107 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         }
       }
 
-      const asin = trackOrSource.amazonAsin
-        || trackOrSource.sources?.[resolverId]?.amazonAsin
-        || trackOrSource.sources?.amazonmusic?.amazonAsin
-        || trackOrSource.asin;
-      if (!asin) {
-        console.error(`❌ ${streamLabel}: track carries no playable identifier`);
-        if (autoSkipIfAdvancing(`${streamLabel}: no stream identifier`)) return;
-        setTrackLoading(false);
-        return;
+      // The plugin path needs BOTH methods (checked by presence, like every
+      // other capability gate): a half-implemented resolver falls back to the
+      // provider path rather than opening a session whose licences cannot
+      // relay.
+      const pluginWidevine = typeof resolver.getPlaybackManifest === 'function'
+        && typeof resolver.relayLicense === 'function';
+
+      // The provider path's identifier, dug out host-side (the plugin path
+      // digs its own out of the whole track below — the host stops
+      // pre-extracting there).
+      let asin = null;
+      if (!pluginWidevine) {
+        asin = trackOrSource.amazonAsin
+          || trackOrSource.sources?.[resolverId]?.amazonAsin
+          || trackOrSource.sources?.amazonmusic?.amazonAsin
+          || trackOrSource.asin;
+        if (!asin) {
+          console.error(`❌ ${streamLabel}: track carries no playable identifier`);
+          if (autoSkipIfAdvancing(`${streamLabel}: no stream identifier`)) return;
+          setTrackLoading(false);
+          return;
+        }
       }
 
       let widevinePlayToken = null;
       const startWidevine = async () => {
         // Tag the stream owner like html5Stream does (error dialogs key on it).
         ensureSharedAudioElement({ ...trackOrSource, _streamOwner: resolverId });
-        const wvResult = await window.__parachordWidevine.play(audioRef.current, {
-          resolverId,
-          startTime: startAt,
-          entity: { asin },
-          trackContext: {
-            albumAsin: sourceToPlay.albumAsin || trackOrSource.albumAsin || null,
-            durationMs: (sourceToPlay.duration || trackOrSource.duration || 0) * 1000
+        let wvResult;
+        if (pluginWidevine) {
+          // Claim the play token BEFORE the plugin's manifest fetch (the
+          // provider path's play() claims ahead of its manifest mint): a
+          // bare stop() during the fetch — the sign-out path, which bumps no
+          // playback generation — makes the play superseded instead of
+          // loading onto a stopped engine. The token rides into playPlugin,
+          // which refuses it when stale.
+          const claimedToken = window.__parachordWidevine.claimPlayToken();
+          // The plugin's manifest fetch is a DIRECT renderer call — the thrown
+          // error fields (reason/planKey on plan-ineligible, not-signed-in, …)
+          // survive the plugin boundary because no IPC serializes them, so
+          // the catch below routes them through the same handlers the
+          // provider path's bridge replies feed.
+          const pluginConfig = await getResolverConfig(resolverId);
+          // The budget above: a hung fetch fails the play instead of leaving
+          // trackLoading up forever.
+          let budgetTimer = null;
+          const manifestResult = await Promise.race([
+            resolver.getPlaybackManifest({ ...trackOrSource }, pluginConfig),
+            new Promise((_resolve, reject) => {
+              budgetTimer = setTimeout(() => {
+                const err = new Error(`${streamLabel}: getPlaybackManifest timed out`);
+                err.reason = 'playback-failed';
+                reject(err);
+              }, PLUGIN_MANIFEST_BUDGET_MS);
+            })
+          ]);
+          clearTimeout(budgetTimer);
+          // The manifest fetch can outlive its play: a newer handlePlay may
+          // have started while it was in flight. The token claimed above is
+          // this play's OWN, so an older play reaching playPlugin is refused
+          // there as superseded — but abort here anyway, the same generation
+          // check every other await in handlePlay carries, so the dead play
+          // never mints a session at all.
+          if (playbackGenerationRef.current !== thisGeneration) {
+            const err = new Error('widevine: plugin manifest superseded');
+            err.reason = 'superseded';
+            throw err;
           }
-        });
+          wvResult = await window.__parachordWidevine.playPlugin(audioRef.current, {
+            resolverId,
+            manifestResult,
+            // Bound: the router calls it detached later, and plugin methods
+            // use `this.` freely (the subsonic plugin does).
+            relayLicense: resolver.relayLicense.bind(resolver),
+            // The token claimed above the manifest fetch: a play that a
+            // stop() superseded during the fetch is refused here.
+            token: claimedToken,
+            startTime: startAt,
+            // The plugin's player-event handler (telemetry), bound the same
+            // way: on the plugin path no main-side provider exists to receive
+            // the bridge's player-event channel, so the shared engine fans
+            // lifecycle events out to the plugin itself.
+            playerEvents: typeof resolver.handlePlayerEvent === 'function'
+              ? resolver.handlePlayerEvent.bind(resolver)
+              : null,
+            trackContext: {
+              albumAsin: sourceToPlay.albumAsin || trackOrSource.albumAsin || null,
+              durationMs: (sourceToPlay.duration || trackOrSource.duration || 0) * 1000
+            }
+          });
+        } else {
+          wvResult = await window.__parachordWidevine.play(audioRef.current, {
+            resolverId,
+            startTime: startAt,
+            entity: { asin },
+            trackContext: {
+              albumAsin: sourceToPlay.albumAsin || trackOrSource.albumAsin || null,
+              durationMs: (sourceToPlay.duration || trackOrSource.duration || 0) * 1000
+            }
+          });
+        }
         widevinePlayToken = (wvResult && wvResult.token) || null;
         const volumeToApply = isMutedRef.current ? 0 : volumeRef.current;
         const effectiveVolume = getEffectiveVolume(volumeToApply, resolverId, sourceToPlay.id || trackOrSource.id);
@@ -1855,7 +1952,12 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
           return;
         }
         if (handlePlanRefusal(error, resolverId, streamLabel)) return;
-        if (error && error.reason === 'not-signed-in' && window.__parachordManageAmazonMusic) {
+        // The sign-in prompt-retry is Amazon's own UX (the .axe's old play
+        // path), so it stays gated to the Amazon resolver: a future
+        // non-Amazon plugin's not-signed-in must not open Amazon's sign-in
+        // window. The generic sign-in flow arrives with each plugin's own
+        // migration (the web-session surface).
+        if (error && error.reason === 'not-signed-in' && resolverId === 'amazonmusic' && window.__parachordManageAmazonMusic) {
           // reason is what #1172's quiet-retry keys on. explicit skips the
           // radio/hidden gates; forcePrompt is NOT set, so live cookies
           // retry once instead of opening the sign-in window.
@@ -1979,7 +2081,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       return;
     }
 
-    // HTML5 stream resolvers (capabilities.html5Stream: Subsonic, or any
+    // HTML5 stream resolvers (capabilities.html5Stream: Subsonic, Plex, or any
     // self-hosted server): the .axe's getStreamUrl builds a direct stream URL
     // from the saved config (never from the track) and the shared element
     // fetches it cross-origin with Range support. The host does not name them.

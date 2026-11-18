@@ -43,7 +43,8 @@
 - **View on Achordion.** ListenBrainz playlists, ListenBrainz users, a friend's now-playing track and an album's Share menu link to their page on Achordion.
 - **Concerts.** Tickets buttons and date badges are in the Concerts teal everywhere, including on Home. The Refresh button is gone: listings refresh themselves daily, and again when you change your location. An artist's On Tour tab appears only when they have shows coming up.
 - **Settings.** Light, Dark and System are three tiles again. Clear cache asks before it clears. A plug-in that needs attention says so in one place, the line under its name, and its capabilities read in plain words; Last.fm and ListenBrainz now list Scrobbling.
-- **Smaller fixes.** History's Recently played shows when each track played. Search's playlist results show their covers. An artist photo that fails to load shows the artist's initials. An album's title is no longer cut off by its type badge. Live and compilation releases have their own colours instead of the Singles pink. Home's and Recommendations' albums show their release year. A disabled playbar button is dimmed but still readable.
+- **One Auto-update menu for a playlist from a link.** A playlist you imported from a link had separate Check now, Stop updating and Keep updated buttons. Its header now has one Auto-update button showing whether it's on, with a menu to switch it and, while it's on, to refresh now.
+- **Smaller fixes.** History's Recently played shows when each track played. Search's playlist results show their covers. An artist photo that fails to load shows the artist's initials. An album's title is no longer cut off by its type badge. Live and compilation releases have their own colours instead of the Singles pink. Home's and Recommendations' albums show their release year. A disabled playbar button is dimmed but still readable. Wikipedia's logo on source badges and its plug-in tile no longer draws a W with a chunk cut out of it.
 
 ## Amazon Music
 
@@ -53,6 +54,8 @@
 - **Prefer Dolby Atmos mixes.** A new option in Settings, under Playback Quality, plays the 5.1 core of a track's Atmos mix on Amazon Music when one is available. This isn't full Atmos: it's mixed down on stereo output, and it replaces lossless FLAC at the Max tier, so it's off by default. Saver and Standard keep their data limits and play stereo when no Atmos version fits. Thanks to @theli-ua.
 - **Amazon community playlists open.** Playlists made by other Amazon Music listeners, such as the ones under From other listeners on Recommendations, failed to open with an error. They now load all their tracks, however long the playlist is.
 - **Amazon playlists open sooner.** A playlist you open no longer waits behind artist photos and recommendations Parachord is loading from Amazon in the background, and a slow Amazon page no longer makes it fail after 30 seconds.
+- **Amazon Music updates on its own.** Amazon's support now lives entirely in its plug-in, so fixes to it reach you through plug-in updates instead of waiting for a new Parachord release. Thanks to @theli-ua, who did the whole move.
+- **Smoother starts on Amazon tracks.** Every Amazon track could stutter for a moment as it began, because Parachord threw away audio it had already downloaded while settling on a quality. It now keeps it. And on systems where some Amazon qualities can't be licensed (Linux, for example), Parachord remembers which ones were refused instead of asking again on every track. Thanks to @theli-ua.
 
 ## Bandcamp
 
@@ -63,6 +66,10 @@
 - **One SoundCloud app for desktop and phone.** If you use your own SoundCloud app, the Redirect URI hint now says it also works with Parachord on Android and iOS, from their next update. If you've changed Parachord's local server port, it says the phones always sign in on port 8888.
 - **More SoundCloud tracks play.** Tracks that SoundCloud serves only in encrypted form were refused by its player inside the app. They play now.
 - **A dropped connection no longer hides SoundCloud.** When a SoundCloud search failed (offline, signed out on SoundCloud's side, or SoundCloud down), Parachord treated it as "not on SoundCloud". It now treats it as unanswered and asks again later.
+
+## Plex
+
+- **Play from your own Plex server.** A new Plex plug-in signs in with your Plex account (you approve Parachord on Plex's page in your browser), finds your servers, and lets you pick which music libraries to use. Your Plex tracks show up in search and as a source on songs you already have, and play inside Parachord. It reaches a server on your home network even when your router blocks Plex's secure address, the way Plex's own apps do. Your Plex library doesn't fill your Collection yet; that's planned (#1515). Thanks to @jphastings, who wrote it.
 
 ## Library
 
@@ -115,6 +122,7 @@
 - **Spotify plays the studio recording, not a live or outtake version.** Spotify labels remastered studio tracks, while live albums and outtake sets keep the bare title, so asking for Ramones' "Judy Is a Punk" could play the live version from *It's Alive*. A remaster label no longer counts against a track when Parachord picks the match.
 - **Quitting Parachord pauses Spotify.** Spotify plays in its own app, so quitting Parachord has to pause it. An hour after Parachord last refreshed its Spotify sign-in, Spotify refused that pause and played on, through the end of the song and into the album, with nothing in control. Parachord now refreshes the sign-in first.
 - **Parachord backs off when Spotify asks it to.** When Spotify limits how often Parachord can call it, it says how long to wait, which can be hours. Parachord kept searching and checking playback, which can make the limit last longer, and it saved songs it searched for meanwhile as not on Spotify. Now it stops calling Spotify until the wait is over, says when Spotify will be back, and asks again about any song it couldn't look up. Other services keep working meanwhile.
+- **A Spotify pause survives a restart, and you can see it.** When Spotify asks Parachord to slow down, Parachord now remembers it across a restart instead of asking Spotify again straight away, which could stretch the wait and showed the slow-down message again. Collection's Sync menu shows when Spotify will be available again ("Paused until 4:05 PM"); sync stays switched on and picks up on its own afterwards.
 - **A service you turn off stays off for artist photos.** With Spotify's plug-in off, Parachord still asked Spotify for the photo on every artist card it hadn't seen before, as long as you'd signed in once. That kept using up Spotify's limit and could show the "slow down" message while Spotify was off. Artist photos now ask Spotify and Apple Music only while their plug-ins are on.
 - **The progress bar starts the next song at 0:00.** Clicking another song while a Spotify or Apple Music track played left the bar counting on under the loading animation, though the old song had already stopped. It now goes to 0:00 as soon as you click and starts counting when the new song plays. Resuming your queue after a restart still starts where you left off.
 - **SoundCloud and Bandcamp pick the song, not a demo or a medley.** SoundCloud took its first search result, so Ramones' "Judy Is a Punk" played a 1975 demo, and Bandcamp accepted a medley whose title listed "Her Majesty" among nine songs. Both now prefer the track itself, and a medley counts as another version, as a live cut or a cover already did.
@@ -173,6 +181,9 @@
 
 ## Settings
 
+- **Every plug-in's settings look and work the same way.** One switch turns a plug-in on, and Done just closes. Every service signs in and out from the same account row, with Sign in in the service's own colour. Advanced sections open the same way everywhere. Descriptions say plainly what each plug-in does for you, and the capability tags leave out the technical ones.
+- **Choose what each service is used for.** Under a plug-in's switch you can now turn off Play from it (it stays in search, covers and links but never plays, and keeps its place in your order for when you turn it back on), Use metadata from it (covers and artist photos come from the others), and Use recommendations from it (its picks stay off Recommendations and Home). A plan that can't play, such as Amazon on Prime, shows Play from switched off and says why.
+- **Settings say what's really on.** Library sync shows when it's paused or you're signed out, instead of offering to set it up again. Discogs and Wikipedia now follow their switch. Last.fm and ListenBrainz show your listening history separately from scrobbling, and turning scrobbling off no longer makes it look as if you're signed out.
 - **The Ticketmaster key link goes to the right place.** The link for getting a Ticketmaster API key, in the plugin's settings and in its error message, pointed to the wrong Ticketmaster site. It now opens developer.ticketmaster.com.
 - **Tidier Discover and Scrobbling settings.** A long description under a Discover switch no longer runs up against the switch and squeezes it, and the note under Enable Scrobbling lines up with the rest of the section instead of sitting centered.
 

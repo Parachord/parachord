@@ -10,57 +10,70 @@ const load = (name) => JSON.parse(fs.readFileSync(path.join(__dirname, `../../pl
 describe('Amazon Music sends playlist categories', () => {
   afterEach(() => { delete global.window; });
 
+  // #1356 M8: the recommendations run in the plugin against the webSession
+  // bridge — the categories are driven through the real getRecommendations
+  // flow (a home walk whose sections are the fixture below; the synthesis
+  // answers nothing, so the home sections stand alone).
+  const { loadAmazonAxe, instantiateAmazonPlugin, amazonRecommendationsMock, amazonMusicHomeData, amazonSeeMoreData } = require('../helpers/amazon-plugin-bridge');
+  const axe = loadAmazonAxe();
+
+  const album = (artist) => ({ __typename: 'Album', id: 'A' + Math.random(), title: 'An Album', shortTitle: 'An Album', images: [], url: 'https://music.amazon.com/albums/A1', contributingArtists: { edges: [{ role: 'PRIMARY', node: { name: artist } }] } });
+  const pl = { __typename: 'Playlist', id: 'PP1', title: 'A Mix', images: [], url: 'https://music.amazon.com/playlists/PP1' };
+  const base = 'uri:///recommendations/browse-home/browse-home_';
+  const section = (id, title, items) => ({ id: base + id, name: title, recommendedContent: { edges: items.map(node => ({ node })) } });
+
+  const runAmazon = async (sections) => {
+    amazonRecommendationsMock({
+      homePage: async () => amazonMusicHomeData(sections),
+      seeMorePage: async () => amazonSeeMoreData([], { hasNextPage: false, token: null })
+    });
+    const resolver = instantiateAmazonPlugin(axe);
+    const out = await resolver.getRecommendations({});
+    return { axe, sections: out.sections };
+  };
+
   test('Amazon maps its playlist strategies', async () => {
-    const axe = load('amazonmusic');
-    const item = { type: 'playlist', id: 'PP1', name: 'A Mix' };
-    const base = 'uri:///recommendations/browse-home/browse-home_';
-    global.window = { electron: { amazonMusic: { getRecommendations: jest.fn().mockResolvedValue({ success: true, sections: [
-      { id: base + 'playlistStrategy', title: 'Playlists for You', items: [item], nextCursor: 12 },
-      { id: base + 'mp3CommunityPlaylistsStrategy', title: 'Community', items: [item] },
-      { id: base + 'mp3PrimeAlbumsStrategy', title: 'Albums for You', items: [item] },
-      { id: base + 'mp3OtherShelfStrategy', title: 'Something else', items: [item] }
-    ] }) } } };
-    const getRecommendations = new Function('return ' + axe.implementation.getRecommendations)();
-    const { sections } = await getRecommendations({});
+    const item = album('X');
+    const { sections } = await runAmazon([
+      section('playlistStrategy', 'Playlists for You', [pl]),
+      section('mp3CommunityPlaylistsStrategy', 'Community', [pl]),
+      section('mp3PrimeAlbumsStrategy', 'Albums for You', [item]),
+      section('mp3OtherShelfStrategy', 'Something else', [item])
+    ]);
     expect(sections.map(s => s.category)).toEqual(['personal', 'community', 'personal', undefined]);
     expect(sections[3].category).toBeUndefined();
     expect(sections[3].seedArtist).toBeUndefined();
-    expect(sections[0].nextCursor).toBe('12');
   });
 
-  const runAmazon = async (sections) => {
-    const axe = load('amazonmusic');
-    global.window = { electron: { amazonMusic: { getRecommendations: jest.fn().mockResolvedValue({ success: true, sections }) } } };
-    const getRecommendations = new Function('return ' + axe.implementation.getRecommendations)();
-    return { axe, ...(await getRecommendations({})) };
-  };
-  const albumBase = 'uri:///recommendations/browse-home/browse-home_';
-  const album = (artist) => ({ type: 'album', id: 'A' + Math.random(), name: 'An Album', artist });
-
   test('Amazon maps its album strategies', async () => {
-    const { axe, sections } = await runAmazon([
-      { id: albumBase + 'mp3YmlRecentPlaybackStrategy', title: 'Recent', items: [album('X')] },
-      { id: albumBase + 'mp3PrimeAlbumsStrategy', title: 'Prime', items: [album('Y')] },
-      { id: albumBase + 'mp3ByArtistStrategy', title: 'Because you like FIDLAR', items: [album('FIDLAR'), album(' fidlar ')] }
+    const { sections } = await runAmazon([
+      section('mp3YmlRecentPlaybackStrategy', 'Recent', [album('X')]),
+      section('mp3PrimeAlbumsStrategy', 'Prime', [album('Y')]),
+      section('mp3ByArtistStrategy', 'Because you like FIDLAR', [album('FIDLAR'), album(' fidlar ')])
     ]);
     expect(sections.map(s => s.category)).toEqual(['personal', 'personal', 'artist']);
     expect(sections[0].seedArtist).toBeUndefined();
     expect(sections[1].seedArtist).toBeUndefined();
     expect(sections[2].seedArtist).toBe('FIDLAR');
-    expect(axe.manifest.version).toBe('1.13.1');
+    expect(axe.manifest.version).toBe('1.21.2');
   });
 
   test('Amazon files its other shelves too, and drops only Featured', async () => {
+    // #1491: every shelf but "Featured This Week", each under a category —
+    // a UUID shelf titled "Recently Played" is personal, the other UUID and
+    // GET_STARTED shelves are editorial, and a title starting "Featured"
+    // (even "  featured artists  ") is dropped.
     const editorial = 'uri:///recommendations/browse-home/';
+    const byId = (id, title, items) => ({ id, name: title, recommendedContent: { edges: items.map(node => ({ node })) } });
     const { sections } = await runAmazon([
-      { id: 'uri:///recommendations/music-home/music-home_mp3YourHeaviestListeningStrategy', title: 'Your Frequent Plays', items: [album('X')] },
-      { id: 'uri:///recommendations/music-home/music-home_newReleasesForYouStrategy', title: 'New Releases for You', items: [album('Y')] },
-      { id: albumBase + 'mp3GenreForYouStrategy', title: 'Soundtracks', items: [album('Z')] },
-      { id: editorial + 'f5c621d6-7ba8-4d44-9e72-433921bb5203', title: 'Recently Played', items: [album('W')] },
-      { id: editorial + '6a0d8250-d85c-42c0-868a-01dc91991473', title: 'Top Playlists', items: [album('V')] },
-      { id: editorial + 'GET_STARTED', title: "Let's Get Started", items: [album('U')] },
-      { id: editorial + '3cdd6257-e173-4d3b-bd27-e5e7b400492e', title: 'Featured This Week', items: [album('T')] },
-      { id: editorial + '11111111-2222-3333-4444-555555555555', title: '  featured artists  ', items: [album('S')] }
+      byId('uri:///recommendations/music-home/music-home_mp3YourHeaviestListeningStrategy', 'Your Frequent Plays', [album('X')]),
+      byId('uri:///recommendations/music-home/music-home_newReleasesForYouStrategy', 'New Releases for You', [album('Y')]),
+      byId(base + 'mp3GenreForYouStrategy', 'Soundtracks', [album('Z')]),
+      byId(editorial + 'f5c621d6-7ba8-4d44-9e72-433921bb5203', 'Recently Played', [album('W')]),
+      byId(editorial + '6a0d8250-d85c-42c0-868a-01dc91991473', 'Top Playlists', [album('V')]),
+      byId(editorial + 'GET_STARTED', "Let's Get Started", [album('U')]),
+      byId(editorial + '3cdd6257-e173-4d3b-bd27-e5e7b400492e', 'Featured This Week', [album('T')]),
+      byId(editorial + '11111111-2222-3333-4444-555555555555', '  featured artists  ', [album('S')])
     ]);
     expect(sections.map(s => [s.title, s.category])).toEqual([
       ['Your Frequent Plays', 'personal'],
@@ -74,7 +87,7 @@ describe('Amazon Music sends playlist categories', () => {
 
   test('Amazon artist shelf with blank artists has no seed', async () => {
     const { sections } = await runAmazon([
-      { id: albumBase + 'mp3ByArtistStrategy', title: 'Because you like someone', items: [album(''), album('   ')] }
+      section('mp3ByArtistStrategy', 'Because you like someone', [album(''), album('   ')])
     ]);
     expect(sections[0].category).toBe('artist');
     expect(sections[0].seedArtist).toBeUndefined();
@@ -82,7 +95,7 @@ describe('Amazon Music sends playlist categories', () => {
 
   test('Amazon artist shelf with mixed artists has no seed', async () => {
     const { sections } = await runAmazon([
-      { id: albumBase + 'mp3ByArtistStrategy', title: 'Because you like FIDLAR', items: [album('FIDLAR'), album('Wavves')] }
+      section('mp3ByArtistStrategy', 'Because you like FIDLAR', [album('FIDLAR'), album('Wavves')])
     ]);
     expect(sections[0].category).toBe('artist');
     expect(sections[0].seedArtist).toBeUndefined();
@@ -105,7 +118,7 @@ describe('ListenBrainz sends playlist categories', () => {
     const weekly = sections.filter(s => s.id === 'weekly-exploration' || s.id === 'weekly-jams');
     expect(weekly).toHaveLength(2);
     expect(weekly.every(s => s.category === 'personal')).toBe(true);
-    expect(axe.manifest.version).toBe('1.6.2');
+    expect(axe.manifest.version).toBe('1.6.5');
   });
 });
 
@@ -135,7 +148,7 @@ describe('Apple Music sends playlist categories', () => {
     ])]);
     const items = sections.flatMap(s => s.items);
     expect(items.map(i => i.category)).toEqual(['personal', 'editorial', 'community', undefined]);
-    expect(axe.manifest.version).toBe('1.5.1');
+    expect(axe.manifest.version).toBe('1.5.3');
   });
 
   test('Apple ignores inherited property names as playlistType', async () => {

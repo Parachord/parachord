@@ -276,7 +276,7 @@ describe('the grouped model wiring (similar users, weekly sections, readers)', (
     expect((app.match(gate) || []).length).toBe(2);
     const startup = app.slice(app.indexOf('const metaServicesWithRecommendations = metaServiceAxes.filter(axe =>'), app.indexOf('const metaServicesWithPlaybackTelemetry'));
     expect(startup).toMatch(gate);
-    const reload = app.slice(app.indexOf('const withRecommendations = filteredAxes.filter(axe =>'), app.indexOf('const withPlaybackTelemetry'));
+    const reload = app.slice(app.indexOf('const withRecommendations = visibleAxes.filter(axe =>'), app.indexOf('const withPlaybackTelemetry'));
     expect(reload).toMatch(gate);
   });
 

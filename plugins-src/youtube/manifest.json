@@ -2,9 +2,9 @@
   "manifest": {
     "id": "youtube",
     "name": "YouTube",
-    "version": "1.0.5",
+    "version": "1.0.7",
     "author": "Parachord Team",
-    "description": "Search and play music videos from YouTube. Free with ads. Opens videos in your browser.",
+    "description": "Search and play music videos from YouTube. Free, with ads.",
     "requirement": "No account needed. Videos play in your web browser.",
     "icon": "🎥",
     "color": "#FF0000",
@@ -32,6 +32,24 @@
     "www.youtube.com/playlist?list=*",
     "music.youtube.com/playlist?list=*"
   ],
+  "urlTypes": {
+    "playlist": [
+      "youtube.com/playlist?list=*",
+      "www.youtube.com/playlist?list=*",
+      "music.youtube.com/playlist?list=*",
+      "youtube.com/watch?v=*&list=*",
+      "www.youtube.com/watch?v=*&list=*",
+      "m.youtube.com/watch?v=*&list=*",
+      "music.youtube.com/watch?v=*&list=*"
+    ],
+    "track": [
+      "youtube.com/watch?v=*",
+      "www.youtube.com/watch?v=*",
+      "m.youtube.com/watch?v=*",
+      "music.youtube.com/watch?v=*",
+      "youtu.be/*"
+    ]
+  },
   "settings": {
     "requiresAuth": false,
     "authType": "none",

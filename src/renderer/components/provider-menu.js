@@ -1,9 +1,9 @@
 // src/renderer/components/provider-menu.js: the AI provider picker on the
-// always-dark Shuffleupagus panels: the prompt panel's "Provider" and the
-// chat panel's "Powered by".
+// always-dark Shuffleupagus chat panel ("Powered by").
 //
-// The prompt panel had a native <select> and the chat panel the shared Menu:
-// one choice, two controls (design audit §4.9). Both are this: the shared
+// The one-shot prompt panel (removed in #1020) had a native <select> and the
+// chat panel the shared Menu: one choice, two controls (design audit §4.9).
+// Both became this: the shared
 // Menu (components/menu.js) of the AI plug-ins, each with its logo and a
 // check on the current one, behind a small dark secondary button.
 //

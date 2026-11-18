@@ -1,5 +1,5 @@
 // lib/ai-services.js: the AI provider list and the scrobbler check that the
-// app and the AI prompt panel share.
+// app and its panels share.
 const { servicesWithCapability, hasScrobblerConnected } = require('../../src/renderer/lib/ai-services');
 
 const loader = { getAllResolvers: () => [

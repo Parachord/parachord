@@ -2,14 +2,14 @@
   "manifest": {
     "id": "amazonmusic",
     "name": "Amazon Music",
-    "version": "1.13.1",
+    "version": "1.21.2",
     "minAppVersion": {
-      "desktop": "0.9.12"
+      "desktop": "0.9.13"
     },
     "author": "Parachord Team",
-    "description": "Plays Amazon Music through the shared Widevine player (DASH + license via Amazon session). Does not use the Amazon Music desktop app.",
+    "description": "Search and play Amazon Music in Parachord, without the Amazon Music app.",
     "requirement": "Needs Amazon Music Unlimited. With Prime, Amazon gives Parachord art and links only.",
-    "icon": "🎵",
+    "icon": "\ud83c\udfb5",
     "color": "#25D1DA",
     "homepage": "https://music.amazon.com",
     "email": "support@parachord.dev"
@@ -24,7 +24,8 @@
     "artistImage": true,
     "widevine": true,
     "mobile": false,
-    "recommendations": true
+    "recommendations": true,
+    "status": true
   },
   "urlPatterns": [
     "music.amazon.com/playlists/*",
@@ -32,6 +33,25 @@
     "music.amazon.com/user-playlists/*",
     "music.amazon.com/albums/*"
   ],
+  "urlTypes": {
+    "track": [
+      "music.amazon.com/albums/*?trackAsin=*",
+      "music.amazon.com/albums/*?*trackAsin=*"
+    ],
+    "album": [
+      "music.amazon.com/albums/*"
+    ],
+    "playlist": [
+      "music.amazon.com/playlists/*",
+      "music.amazon.com/my/playlists/*",
+      "music.amazon.com/user-playlists/*"
+    ]
+  },
+  "requires": {
+    "hostBridges": [
+      "webSession"
+    ]
+  },
   "settings": {
     "requiresAuth": false,
     "authType": "web-session",

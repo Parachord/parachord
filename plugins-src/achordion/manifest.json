@@ -5,7 +5,7 @@
     "type": "meta-service",
     "version": "1.1.0",
     "author": "Parachord Team",
-    "description": "Speed up resolver matches across the community. After a verified playback, sends the recording's MusicBrainz ID and the high-confidence streaming URLs from every resolver that matched the track to Achordion's match cache so other Parachord users can skip the search step. Also exposes window.achordion.fetchEntityLink for share-link URL generation. No personal data is sent. Opens achordion.xyz links (a song, an album or a playlist someone shared, dropped on the player or the queue) by finding each track on your own services.",
+    "description": "After you play a song, tells Achordion where it was found, so other Parachord users find it faster, and makes the links you share. Achordion links someone sends you (a song, an album or a playlist) play here when you drop them on the player or the queue. No personal data is sent.",
     "icon": "📡",
     "color": "#7c3aed",
     "homepage": "https://achordion.xyz",
@@ -23,6 +23,20 @@
     "www.achordion.xyz/release-group/*",
     "www.achordion.xyz/playlist/*"
   ],
+  "urlTypes": {
+    "track": [
+      "achordion.xyz/recording/*",
+      "www.achordion.xyz/recording/*"
+    ],
+    "album": [
+      "achordion.xyz/release-group/*",
+      "www.achordion.xyz/release-group/*"
+    ],
+    "playlist": [
+      "achordion.xyz/playlist/*",
+      "www.achordion.xyz/playlist/*"
+    ]
+  },
   "settings": {
     "requiresAuth": false,
     "configurable": {}

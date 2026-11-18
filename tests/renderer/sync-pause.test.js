@@ -76,7 +76,7 @@ describe('Menu toggle items', () => {
 
 describe('the Sync menu', () => {
   test("each service's row has its switch; the row still opens setup", () => {
-    expect(coll).toMatch(/onSelect: \(\) => openSyncSetupModal\(pid\),[\s\S]{0,400}toggle: \{\s*checked: !!resolverSyncSettings\[pid\]\?\.enabled && !syncSignedOut\?\.\[pid\],\s*label: `Sync \$\{config\.name\}`,\s*onChange: \(next\) => setProviderSyncEnabled\(pid, next\),/);
+    expect(coll).toMatch(/onSelect: \(\) => openSyncSetupModal\(pid\),[\s\S]{0,1200}toggle: \{\s*checked: !!resolverSyncSettings\[pid\]\?\.enabled && !syncSignedOut\?\.\[pid\],\s*label: `Sync \$\{config\.name\}`,\s*onChange: \(next\) => setProviderSyncEnabled\(pid, next\),/);
     expect(coll).not.toContain("'aria-label': 'Sync on'");
   });
 });
@@ -85,7 +85,7 @@ describe('pause semantics', () => {
   const fn = app.slice(app.indexOf('const setProviderSyncEnabled = async (providerId, enabled) => {'));
   const body = fn.slice(0, fn.indexOf('\n  };\n'));
   test('only enabled changes; setup opens for a service never set up', () => {
-    expect(body).toContain('if (enabled && (!existing || syncSignedOut[providerId])) { openSyncSetupModal(providerId); return; }');
+    expect(body).toContain('if (enabled && (!existing || existing.stopped || syncSignedOutView[providerId])) { openSyncSetupModal(providerId); return; }');
     expect(body).toContain('const next = { ...existing, enabled };');
     expect(body).toContain('await window.electron.syncSettings.setProvider(providerId, next);');
     expect(body).toContain('if (!enabled) window.electron.sync.cancel(providerId).catch(() => {});');
@@ -121,7 +121,7 @@ describe('the setup dialog', () => {
 
 describe('signed out', () => {
   test("a service that's signed out shows its switch off, without new sign-in calls", () => {
-    expect(coll).toContain("trailing: syncSignedOut?.[pid] && React.createElement('span', { style: { fontSize: '11px', opacity: 0.7 } }, 'Signed out'),");
+    expect(coll).toMatch(/trailing: syncSignedOut\?\.\[pid\]\s*\? React\.createElement\('span', \{ style: \{ fontSize: '11px', opacity: 0\.7 \} \}, 'Signed out'\)/);
     // Fed by the checks the app already makes: the background loop, setup, Sync now.
     expect((app.match(/noteSyncAuth\(providerId, authStatus\);/g) || []).length).toBe(4);
   });

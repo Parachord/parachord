@@ -8,6 +8,12 @@ class ResolverLoader {
   constructor() {
     this.resolvers = new Map();
     this.urlPatterns = []; // Array of { pattern: string, resolverId: string }
+    // TYPED patterns ("urlTypes" in a manifest): { pattern: string, type:
+    // 'track'|'album'|'playlist'|'artist', resolverId: string }, flattened in
+    // registration order (the manifest's own key order — most-specific first)
+    // and matched by getUrlType first-match-wins over matchUrlPattern — scoped
+    // by getUrlType to the resolver findResolverForUrl routes the URL to.
+    this.urlTypedPatterns = [];
   }
 
   /**
@@ -39,6 +45,35 @@ class ResolverLoader {
           this.urlPatterns.push({ pattern, resolverId: id });
         }
         console.log(`  📎 Registered ${axe.urlPatterns.length} URL pattern(s) for ${id}`);
+      }
+
+      // Register TYPED patterns ("urlTypes": { "track|album|playlist|artist":
+      // [patterns...] }): what getUrlType classifies a matched URL as, as
+      // manifest data instead of a per-host switch in this file. The object's
+      // key order IS the priority — most-specific first (the Amazon manifest
+      // lists "track" before "album" so `albums/*?trackAsin=*` beats
+      // `albums/*`; SoundCloud lists "playlist" before "track" before
+      // "artist" so the sets/segment patterns win over the one-segment
+      // artist pattern). The pattern language is the same matchUrlPattern
+      // glob urlPatterns uses (a pattern with `?` matches the query string,
+      // the shape that expresses Apple's `?i=` / Amazon's `?trackAsin=` /
+      // YouTube's `?list=`). A malformed declaration is no declaration (the
+      // urlPatterns rule), never a load failure.
+      if (axe.urlTypes && typeof axe.urlTypes === 'object' && !Array.isArray(axe.urlTypes)) {
+        let typedCount = 0;
+        for (const [type, patterns] of Object.entries(axe.urlTypes)) {
+          if (!['track', 'album', 'playlist', 'artist'].includes(type)) {
+            console.warn(`⚠️ Unknown urlTypes key "${type}" in resolver ${id} (expected track|album|playlist|artist) — skipped`);
+            continue;
+          }
+          if (!Array.isArray(patterns)) continue;
+          for (const pattern of patterns) {
+            if (typeof pattern !== 'string' || !pattern) continue;
+            this.urlTypedPatterns.push({ pattern, type, resolverId: id });
+            typedCount += 1;
+          }
+        }
+        if (typedCount) console.log(`  🎯 Registered ${typedCount} typed URL pattern(s) for ${id}`);
       }
 
       console.log(`✅ Loaded resolver: ${axe.manifest.name} v${axe.manifest.version}`);
@@ -127,6 +162,9 @@ class ResolverLoader {
       '__proto__', 'constructor', 'prototype',
       'id', 'name', 'version', 'author', 'description', 'icon', 'color',
       'homepage', 'email', 'capabilities', 'urlPatterns', 'embedPlayer',
+      // The typed URL patterns (#1356 M11): the resolver field urlTypes, like
+      // urlPatterns — an implementation method of this name would clobber it.
+      'urlTypes',
       'requiresAuth', 'authType', 'configurable', 'enabled', 'weight', 'config',
       '_bindContext',
       // The plugin library and its reserved name (#1356): `lib` is the
@@ -164,6 +202,9 @@ class ResolverLoader {
       capabilities: capabilities || {},
       // URL patterns for URL lookup
       urlPatterns: axe.urlPatterns || [],
+      // Typed URL patterns for getUrlType (manifest "urlTypes") — null when
+      // the plugin declares none (its matched URLs classify as 'unknown').
+      urlTypes: (axe.urlTypes && typeof axe.urlTypes === 'object' && !Array.isArray(axe.urlTypes)) ? axe.urlTypes : null,
       // Embedded player (capabilities.embedPlayer): which host adapter plays
       // it. Kept outside `capabilities`, whose values every client (Android
       // and iOS decode a Map<String, Boolean>) reads as booleans.
@@ -238,6 +279,7 @@ class ResolverLoader {
     this.resolvers.delete(id);
     // Remove URL patterns for this resolver
     this.urlPatterns = this.urlPatterns.filter(p => p.resolverId !== id);
+    this.urlTypedPatterns = this.urlTypedPatterns.filter(p => p.resolverId !== id);
     console.log(`🗑️ Unloaded resolver: ${id}`);
   }
 
@@ -618,6 +660,88 @@ class ResolverLoader {
   }
 
   /**
+   * Resolvers that can report their own sign-in and playback-limit state to
+   * the app: they declare capabilities.status and implement getStatus
+   * (docs/architecture/plugins.md, "Status and playback limits"). A
+   * marketplace install can be older than the app, so the method is checked,
+   * not just the flag.
+   * @returns {object[]}
+   */
+  getStatusResolvers() {
+    return this.getAllResolvers().filter(r =>
+      r.capabilities?.status &&
+      typeof r.getStatus === 'function'
+    );
+  }
+
+  /**
+   * A status read gets this long, in the spirit of RESOLVE_BUDGET_MS
+   * (resolver-limiter.js): a getStatus can be a network call, and the app
+   * reads every status-capable plugin in one batch (refreshPluginStatuses),
+   * so one read that never settles would stall the whole sweep — the batch
+   * never lands, and every id in it stays "in flight", skipped by every
+   * later read. Past the budget the read answers the failed marker below,
+   * the same "no verdict" every other status failure maps to.
+   */
+  static STATUS_BUDGET_MS = 8000;
+
+  // What a failed status read answers: the plugin threw, answered nothing
+  // object-shaped, or ran past STATUS_BUDGET_MS. The limit map reads it as
+  // no verdict (lib/playback-limits.js pluginStatusLimit — the marker carries
+  // no playbackLimit), and the Settings row reads it as "couldn't check"
+  // (pluginStatusRow) instead of "Checking…" forever. Frozen: one shared
+  // object, never mistaken for a plugin's own reply.
+  static STATUS_READ_FAILED = Object.freeze({ failed: true });
+
+  /**
+   * Ask one resolver for its status.
+   * @param {string} resolverId
+   * @param {object} configOverride - Optional config to override resolver's stored config
+   * @returns {Promise<object|null>} the plugin's reply — { signedIn: boolean|null,
+   *          playbackLimit: { blocked, planKey, label, message, searchesHeldBack }|null,
+   *          statusLabel: string|null, statusMessage: string|null } (docs/
+   *          architecture/plugins.md, "Status and playback limits") — or
+   *          STATUS_READ_FAILED when the read happened but yielded no reply:
+   *          the plugin threw (logged here — this is the one accessor that
+   *          swallows a plugin error on purpose), answered nothing
+   *          object-shaped, or ran past STATUS_BUDGET_MS. A status outage
+   *          must not read as a blocked resolver and unplug playback, and
+   *          "unknown" is the safe reading for every consumer (lib/
+   *          playback-limits.js maps the reply and drops a missing one), so
+   *          no caller ever needs to tell a miss from a failure — which is
+   *          what every other accessor rejects for. Null is only for a
+   *          resolver that was never asked (no such resolver, or it lacks
+   *          the capability).
+   */
+  async getStatus(resolverId, configOverride = null) {
+    const resolver = this.resolvers.get(resolverId);
+    if (!resolver || !resolver.capabilities?.status || typeof resolver.getStatus !== 'function') {
+      return null;
+    }
+    // The budget races the call: a hung getStatus settles the race (the
+    // call itself keeps running — a promise can't be cancelled — but its
+    // answer, whenever it lands, is dropped).
+    let timer = null;
+    const budget = new Promise((resolve) => {
+      timer = setTimeout(() => resolve(ResolverLoader.STATUS_READ_FAILED), ResolverLoader.STATUS_BUDGET_MS);
+      if (timer && typeof timer.unref === 'function') timer.unref();
+    });
+    try {
+      const status = await Promise.race([
+        Promise.resolve().then(() => resolver.getStatus(configOverride || resolver.config || {})),
+        budget
+      ]);
+      return status && typeof status === 'object' ? status : ResolverLoader.STATUS_READ_FAILED;
+    } catch (error) {
+      // The message only: a config can carry a token.
+      console.error(`Status error for ${resolverId}:`, error?.message || error);
+      return ResolverLoader.STATUS_READ_FAILED;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /**
    * Load an album that searchAlbums returned, from the resolver that returned
    * it. Not routed by URL pattern: an album url can be private to its plugin
    * (subsonic:album:<id>, localfiles:album:...) and match no urlPatterns.
@@ -670,72 +794,53 @@ class ResolverLoader {
   }
 
   /**
-   * Detect URL type (track, album, or playlist)
+   * Detect URL type (track, album, playlist, or artist) — MANIFEST DATA
+   * (#1356 M11): a plugin's "urlTypes" declaration (see loadResolver), the
+   * per-service arms this method used to hardcode. SCOPED TO THE ROUTED
+   * RESOLVER (#1441 review, note 2): findResolverForUrl(url) picks the
+   * resolver first, then only THAT resolver's typed patterns classify — the
+   * type can never disagree with the routing (a broad typed pattern in a
+   * plugin loaded earlier classifies only its own resolver's URLs). Within
+   * the routed resolver, first-match-wins over its registered patterns in
+   * registration order — a manifest lists its most-specific patterns first
+   * (Amazon's `albums/*?trackAsin=*` before `albums/*`; YouTube's
+   * `watch?v=*&list=*` before `watch?v=*`; SoundCloud's sets pattern before
+   * its two-segment track pattern before its one-segment artist pattern).
+   * The pattern language is matchUrlPattern's glob: a pattern containing `?`
+   * matches the query string, which is how the query-param cases are
+   * expressed — Apple's `?i=` and Amazon's `?trackAsin=` (one track of the
+   * album, never the album) and YouTube's `&list=` (a video in a playlist).
+   * A URL no resolver routes, or one whose resolver declares no typed
+   * patterns (or matches none of them), is 'unknown'. Note the glob's
+   * exactness bounds, inherited from urlPatterns: a query-param pattern
+   * matches the param in the position the pattern spells — a service whose
+   * share links put the param after other params declares each position its
+   * own pattern (Amazon carries both `albums/*?trackAsin=*` and
+   * `albums/*?*trackAsin=`, the `?ref=dm_sh&trackAsin=` song-share shape,
+   * both listed before its album pattern) — and the host must be spelled as
+   * the pattern spells it (no implicit www./m. aliases — urlPatterns routing
+   * never accepted those either, so a host-shape typed miss is a URL no
+   * resolver was found for in the first place).
    * @param {string} url - The URL to analyze
-   * @returns {string} - 'track', 'album', 'playlist', or 'unknown'
+   * @returns {string} - 'track', 'album', 'playlist', 'artist', or 'unknown'
    */
   getUrlType(url) {
-    // The plug-in that claims the URL says, when it implements getUrlType
-    // (Achordion's links, #1493): a new service needs no branch here. The
-    // branches below are the older plug-ins', kept for them.
-    const ownerId = this.findResolverForUrl(url);
-    const owner = ownerId && this.resolvers.get(ownerId);
-    if (owner && typeof owner.getUrlType === 'function') {
-      try {
-        const type = owner.getUrlType(url);
-        if (type) return type;
-      } catch (error) {
-        console.error(`getUrlType error for ${ownerId}:`, error);
+    const routedTo = this.findResolverForUrl(url);
+    if (!routedTo) return 'unknown';
+    for (const { pattern, type, resolverId } of this.urlTypedPatterns) {
+      if (resolverId !== routedTo) continue;
+      if (this.matchUrlPattern(url, pattern)) return type;
+    }
+    // Plex (app.plex.tv share links). Album and track links share the same
+    // /library/metadata/<key> shape and can't be told apart from the URL, so
+    // only playlists are classified here; everything else goes through the
+    // single-track lookup, and the Plex resolver's lookupUrl answers an album
+    // key with the album (its result carries `tracks`).
+    if (url.includes('plex.tv')) {
+      if (url.includes('/playlists/') || url.includes('%2Fplaylists%2F') || url.includes('/playlist?')) {
+        return 'playlist';
       }
-    }
-    // Spotify
-    if (url.includes('spotify')) {
-      if (url.includes('/album/') || url.includes('spotify:album:')) return 'album';
-      if (url.includes('/playlist/') || url.includes('spotify:playlist:')) return 'playlist';
-      if (url.includes('/track/') || url.includes('spotify:track:')) return 'track';
-    }
-    // Apple Music
-    if (url.includes('music.apple.com') || url.includes('itunes.apple.com')) {
-      if (url.includes('/playlist/')) return 'playlist';
-      // Album URLs have ?i= param for specific track, without it's an album
-      if (url.includes('/album/')) {
-        return url.includes('?i=') ? 'track' : 'album';
-      }
-      if (url.includes('/song/')) return 'track';
-    }
-    // ListenBrainz (a playlist page, e.g. a Daily or Weekly Jams mix)
-    if (url.includes('listenbrainz.org')) {
-      if (/listenbrainz\.org\/playlist\/[^/?#]+/i.test(url)) return 'playlist';
-    }
-    // YouTube
-    if (url.includes('youtube.com') || url.includes('youtu.be')) {
-      if (url.includes('/playlist?list=') || url.includes('&list=')) return 'playlist';
       return 'track';
-    }
-    // Amazon Music
-    if (url.includes('music.amazon.com')) {
-      // /user-playlists/<id> is the share-link shape for user-created playlists;
-      // it does not contain the literal '/playlists/' substring.
-      if (url.includes('/playlists/') || url.includes('/user-playlists/')) return 'playlist';
-      // A song share link is the ALBUM page with ?trackAsin=<trackASIN> — like
-      // Apple Music's ?i=, it is one track, not the album.
-      if (url.includes('/albums/')) return url.includes('trackAsin=') ? 'track' : 'album';
-      if (url.includes('/tracks/')) return 'track';
-    }
-    // Bandcamp
-    if (url.includes('bandcamp.com')) {
-      if (url.includes('/album/')) return 'album';
-      if (url.includes('/track/')) return 'track';
-    }
-    // SoundCloud
-    if (url.includes('soundcloud.com')) {
-      if (url.includes('/sets/')) return 'playlist';
-      // Artist page: soundcloud.com/username (no additional path segments for tracks)
-      // Track page: soundcloud.com/username/trackname
-      const path = url.replace(/^https?:\/\/(www\.)?soundcloud\.com\/?/, '');
-      const segments = path.split('/').filter(s => s && !s.startsWith('?'));
-      if (segments.length >= 2) return 'track';
-      if (segments.length === 1) return 'artist';
     }
     return 'unknown';
   }

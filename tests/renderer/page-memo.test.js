@@ -40,10 +40,8 @@ const { Playbar, PLAYBAR_HANDLERS } = require('../../src/renderer/components/pla
 const { Sidebar, SIDEBAR_HANDLERS } = require('../../src/renderer/components/sidebar');
 const { PluginSettingsDialog, PLUGIN_SETTINGS_DIALOG_HANDLERS } = require('../../src/renderer/components/plugin-settings-dialog');
 const { FirstRunTutorial, FIRST_RUN_TUTORIAL_HANDLERS } = require('../../src/renderer/components/first-run-tutorial');
-const { AiPromptPanel, AI_PROMPT_PANEL_HANDLERS } = require('../../src/renderer/components/ai-prompt-panel');
 const { ExternalTrackPrompt, EXTERNAL_TRACK_PROMPT_HANDLERS } = require('../../src/renderer/components/external-track-prompt');
 const { UnsavedFriendDialog, UNSAVED_FRIEND_DIALOG_HANDLERS } = require('../../src/renderer/components/unsaved-friend-dialog');
-const { AiSaveDialog, AI_SAVE_DIALOG_HANDLERS } = require('../../src/renderer/components/ai-save-dialog');
 const { NewPlaylistDialog, NEW_PLAYLIST_DIALOG_HANDLERS } = require('../../src/renderer/components/new-playlist-dialog');
 const { QueueSaveDialog, QUEUE_SAVE_DIALOG_HANDLERS } = require('../../src/renderer/components/queue-save-dialog');
 const { UrlImportDialog, URL_IMPORT_DIALOG_HANDLERS } = require('../../src/renderer/components/url-import-dialog');
@@ -78,10 +76,8 @@ const PAGES = [
   { component: 'Sidebar', file: 'sidebar.js', handlersVar: 'sidebarHandlers', handlers: SIDEBAR_HANDLERS, memo: Sidebar },
   { component: 'PluginSettingsDialog', file: 'plugin-settings-dialog.js', handlersVar: 'pluginSettingsDialogHandlers', handlers: PLUGIN_SETTINGS_DIALOG_HANDLERS, memo: PluginSettingsDialog },
   { component: 'FirstRunTutorial', file: 'first-run-tutorial.js', handlersVar: 'firstRunTutorialHandlers', handlers: FIRST_RUN_TUTORIAL_HANDLERS, memo: FirstRunTutorial },
-  { component: 'AiPromptPanel', file: 'ai-prompt-panel.js', handlersVar: 'aiPromptPanelHandlers', handlers: AI_PROMPT_PANEL_HANDLERS, memo: AiPromptPanel },
   { component: 'ExternalTrackPrompt', file: 'external-track-prompt.js', handlersVar: 'externalTrackPromptHandlers', handlers: EXTERNAL_TRACK_PROMPT_HANDLERS, memo: ExternalTrackPrompt },
   { component: 'UnsavedFriendDialog', file: 'unsaved-friend-dialog.js', handlersVar: 'unsavedFriendDialogHandlers', handlers: UNSAVED_FRIEND_DIALOG_HANDLERS, memo: UnsavedFriendDialog },
-  { component: 'AiSaveDialog', file: 'ai-save-dialog.js', handlersVar: 'aiSaveDialogHandlers', handlers: AI_SAVE_DIALOG_HANDLERS, memo: AiSaveDialog },
   { component: 'NewPlaylistDialog', file: 'new-playlist-dialog.js', handlersVar: 'newPlaylistDialogHandlers', handlers: NEW_PLAYLIST_DIALOG_HANDLERS, memo: NewPlaylistDialog },
   { component: 'QueueSaveDialog', file: 'queue-save-dialog.js', handlersVar: 'queueSaveDialogHandlers', handlers: QUEUE_SAVE_DIALOG_HANDLERS, memo: QueueSaveDialog },
   { component: 'UrlImportDialog', file: 'url-import-dialog.js', handlersVar: 'urlImportDialogHandlers', handlers: URL_IMPORT_DIALOG_HANDLERS, memo: UrlImportDialog },

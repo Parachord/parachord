@@ -1,14 +1,13 @@
 #!/usr/bin/env node
-// scripts/build-amazon-preload.js — codegen for the sandboxed trap/capture/
-// hijack function copies inside amazon-player-preload.js (parachord#1099
-// bucket D).
+// scripts/build-amazon-preload.js — codegen for the sandboxed hijack function
+// copies inside amazon-player-preload.js (parachord#1099 bucket D).
 //
 // Why this exists: amazon-player-preload.js runs sandboxed in Amazon's WebView
 // — a sandboxed preload can only require 'electron'/'events'/'timers'/'url',
-// never local files — so the four page-world functions
-// (installMediaSessionHijack from embedded-player-kit.js)
-// must be INLINED as literal copies. They used to be maintained by hand with
-// a behavioral parity test policing drift. This generator makes the copies
+// never local files — so the page-world functions (installMediaSessionHijack
+// and applyMediaSessionMirror, both from embedded-player-kit.js) must be
+// INLINED as literal copies. They used to be maintained by hand with a
+// behavioral parity test policing drift. This generator makes the copies
 // mechanically: it .toString()s the source functions and rewrites the
 // GENERATED-BEGIN/END blocks in the preload, so editing the source is the
 // whole change. The behavioral parity test (tests/resolver/amazon-player-
@@ -128,7 +127,7 @@ async function runCheck() {
     console.error(`   regenerate with: node scripts/build-amazon-preload.js`);
     process.exit(1);
   }
-  console.log(`✅ amazon-player-preload.js matches amazon-music-logic.js + embedded-player-kit.js`);
+  console.log(`✅ amazon-player-preload.js matches embedded-player-kit.js`);
 }
 
 const mode = process.argv.slice(2).includes('--check') ? 'check' : 'write';

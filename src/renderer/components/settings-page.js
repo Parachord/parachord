@@ -25,6 +25,7 @@ const { RadioGroup, SegmentedChoice, Select, SettingRow, Slider, Switch, TextFie
 const { EmptyState, ErrorState } = require('./states');
 const { priorityMoves } = require('../lib/priority-order');
 const { pluginMatchesQuery } = require('../lib/plugin-search');
+const { pluginSwitchState } = require('../lib/plugin-switch');
 const { DISCORD_PRESENCE_STATUS_LABELS, discordPresenceStatusTone } = require('../lib/discord-presence-status');
 
 // Raycast's brand colour and gradient (its extension's info card).
@@ -57,7 +58,6 @@ const SettingsPage = React.memo(function SettingsPage(props) {
     albumArtCache,
     albumToReleaseIdCache,
     allResolvers,
-    amazonMusicStatus,
     appVersion,
     appleMusicConnected,
     artistDataCache,
@@ -98,11 +98,13 @@ const SettingsPage = React.memo(function SettingsPage(props) {
     navigateBack,
     nwayEngineMode,
     openSyncSetupModal,
-    planBlockedResolverIds,
+    notPlayingResolverIds,
+    playbackOffResolvers,
     playbackAbr,
     playbackLimits,
     playbackQuality,
     playbackSpatial,
+    pluginStatuses,
     pluginsFilter,
     releaseDetailsCache,
     rememberQueue,
@@ -374,8 +376,8 @@ const SettingsPage = React.memo(function SettingsPage(props) {
                     // Display only — resolverOrder keeps its slot, so an
                     // upgrade puts it back where it was.
                     const installedInOrder = resolverOrder.filter(resolverId => allResolvers.some(r => r.id === resolverId));
-                    const playingInOrder = installedInOrder.filter(resolverId => !planBlockedResolverIds.includes(resolverId));
-                    const planBlockedInOrder = installedInOrder.filter(resolverId => planBlockedResolverIds.includes(resolverId));
+                    const playingInOrder = installedInOrder.filter(resolverId => !notPlayingResolverIds.includes(resolverId));
+                    const planBlockedInOrder = installedInOrder.filter(resolverId => notPlayingResolverIds.includes(resolverId));
                     [...playingInOrder, ...planBlockedInOrder].forEach((resolverId, index) => {
                         const resolver = allResolvers.find(r => r.id === resolverId);
                         const marketplaceResolver = marketplaceContentResolvers.find(r => r.id === resolver.id);
@@ -456,8 +458,11 @@ const SettingsPage = React.memo(function SettingsPage(props) {
                             needsConfiguration = true;
                           } else if (resolver.id === 'soundcloud' && !soundcloudConnected) {
                             needsConfiguration = true;
-                          } else if (resolver.id === 'amazonmusic' && amazonMusicStatus && !amazonMusicStatus.web?.signedIn) {
-                            // Unknown status (not fetched yet) is not flagged.
+                          } else if (resolver.id === 'amazonmusic' && pluginStatuses.amazonmusic && pluginStatuses.amazonmusic.signedIn === false) {
+                            // The plugin's status reply (capabilities.status,
+                            // #1356 M10). Unknown status (not fetched yet, or
+                            // the plugin threw and answered null) is not
+                            // flagged — no verdict is the safe reading.
                             needsConfiguration = true;
                           } else if (resolver.id === 'localfiles' && watchFolders.length === 0) {
                             needsConfiguration = true;
@@ -476,10 +481,10 @@ const SettingsPage = React.memo(function SettingsPage(props) {
                         // Only resolvers with a playback priority can be dragged
                         // or dropped on: a plan-blocked one sits outside the
                         // numbered order (#1220), so its slot isn't a position.
-                        const reorderable = isActive && !planBlockedResolverIds.includes(resolver.id);
+                        const reorderable = isActive && !notPlayingResolverIds.includes(resolver.id);
                         // Enabled but limited by the account's plan: the label
                         // and its tooltip come from the resolver's limit.
-                        const planStatus = isActive ? PlaybackLimits.tileStatus(playbackLimits, resolver.id) : { statusLabel: null, statusTitle: null };
+                        const planStatus = isActive ? PlaybackLimits.tileStatus(playbackLimits, resolver.id, playbackOffResolvers) : { statusLabel: null, statusTitle: null };
 
                         return React.createElement(ResolverCard, {
                           key: resolver.id,
@@ -489,7 +494,6 @@ const SettingsPage = React.memo(function SettingsPage(props) {
                           needsConfiguration: needsConfiguration,
                           statusLabel: planStatus.statusLabel,
                           statusTitle: planStatus.statusTitle,
-                          unplayable: isActive && planBlockedResolverIds.includes(resolver.id),
                           priorityNumber: resolver.priorityNumber,
                           isInstalling: isInstalling,
                           draggable: reorderable,
@@ -509,7 +513,7 @@ const SettingsPage = React.memo(function SettingsPage(props) {
                           onContextMenu: isActive ? (e) => {
                             e.preventDefault();
                             if (window.electron?.resolvers?.showContextMenu) {
-                              const isNumbered = (id) => activeResolvers.includes(id) && !planBlockedResolverIds.includes(id);
+                              const isNumbered = (id) => activeResolvers.includes(id) && !notPlayingResolverIds.includes(id);
                               window.electron.resolvers.showContextMenu(resolver.id, priorityMoves(resolverOrder, resolver.id, isNumbered));
                             }
                           } : undefined
@@ -586,8 +590,7 @@ const SettingsPage = React.memo(function SettingsPage(props) {
                           if (!pluginMatchesQuery(service, marketplaceSearchQuery)) return false;
                         }
                         // Install status filter - based on active state, not loaded state
-                        const config = metaServiceConfigs[service.id];
-                        const isServiceEnabled = !!(config?.enabled || config?.apiKey || config?.username);
+                        const isServiceEnabled = pluginSwitchState({ plugin: service, config: metaServiceConfigs[service.id] }).checked;
                         if (pluginsFilter === 'installed' && !isServiceEnabled) return false;
                         if (pluginsFilter === 'available' && isServiceEnabled) return false;
                         // Category filter
@@ -604,35 +607,31 @@ const SettingsPage = React.memo(function SettingsPage(props) {
                         const isInstalling = installingResolvers.has(service.id);
                         const config = metaServiceConfigs[service.id];
 
-                        // Determine active state and configuration needs per service type
+                        // On or off is the dialog switch's rule (lib/plugin-switch.js),
+                        // so a tile and its dialog never disagree: Discogs and
+                        // Wikipedia read on here and off in the dialog (2026-11-17).
+                        // Only "needs setting up" is decided here.
                         let needsConfiguration = false;
-                        let isServiceActive = false;
+                        const isServiceActive = pluginSwitchState({ plugin: service, config }).checked;
                         const isAiService = service.capabilities?.generate || service.capabilities?.chat;
                         if (isAiService) {
                           const hasApiKey = !!config?.apiKey;
                           const isExplicitlyEnabled = config?.enabled === true;
-                          isServiceActive = hasApiKey || isExplicitlyEnabled;
-                          if (isServiceActive && !hasApiKey && service.settings?.requiresAuth) {
+                          if ((hasApiKey || isExplicitlyEnabled) && !hasApiKey && service.settings?.requiresAuth) {
                             needsConfiguration = true;
                           }
                         } else if (service.id === 'lastfm') {
-                          isServiceActive = true;
                           needsConfiguration = !config?.username;
                         } else if (service.id === 'listenbrainz' || service.id === 'librefm') {
                           const isEnabled = !!config?.enabled || !!config?.username;
-                          isServiceActive = !!config?.username;
                           needsConfiguration = isEnabled && !config?.username;
                         } else if (service.capabilities?.concerts) {
                           // Concert services (Bandsintown, Songkick, SeatGeek): require API key
                           const hasApiKey = !!(config?.apiKey || config?.appId || config?.clientId);
                           const isExplicitlyEnabled = config?.enabled === true;
-                          isServiceActive = hasApiKey || isExplicitlyEnabled;
-                          if (isServiceActive && !hasApiKey && service.settings?.requiresAuth) {
+                          if ((hasApiKey || isExplicitlyEnabled) && !hasApiKey && service.settings?.requiresAuth) {
                             needsConfiguration = true;
                           }
-                        } else {
-                          // Wikipedia, Discogs, etc.: always active
-                          isServiceActive = true;
                         }
 
                         return React.createElement(ResolverCard, {

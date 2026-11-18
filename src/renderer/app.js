@@ -624,13 +624,21 @@ const {
   HOME_MIX_COVER_ATTEMPTS, HOME_MIX_COVER_RETRY_MS
 } = require('./lib/home-model');
 const { sourceBlockId, withoutTrackSource } = require('./lib/bad-match-report');
-const { amazonSignInPromptDecision } = require('./lib/amazon-signin-prompt');
 const PlaybackLimits = require('./lib/playback-limits');
 const GettingStartedModel = require('./lib/getting-started');
 const { seekSpotify, spotifyPollPredatesSeek, SPOTIFY_SEEK_DEBOUNCE_MS } = require('./lib/spotify-seek');
 const { savedPluginConfig, sourcesChangedOnRecheck, shuffleAllowed, SHUFFLE_UNAVAILABLE_MESSAGE, LISTEN_ALONG_FAILED_POLLS_LIMIT, listenAlongWaitDecision, resumeStartPosition, trackPositionKey, REPEAT_UNAVAILABLE_MESSAGE, nextRepeatMode, normalizeRepeatMode, repeatModeFromLoop, loopFromRepeatMode, shouldRestoreQueue, trackBehindPlaceholder } = require('./lib/playback-helpers');
 const { parseFriendLink, buildFriendLink } = require('./lib/friend-link');
 const { listenBrainzCoverUrl } = require('./lib/listenbrainz-cover');
+// The host-bridge compatibility rule (#1355) — the same pure module mobile
+// mirrors as PluginCompat.kt, required here like sync-providers/track-match
+// so the renderer and the Kotlin port read one rule, not two copies. The
+// loader's hide-filter (hostBridgesHideFilter) lives there too; the renderer
+// plumbing around it (the advertisement read + the log) is
+// lib/host-bridges-hide.js — the ONE copy every .axe load path runs (#1432
+// review, note 7: initResolvers, the fallback load, and the install/reload
+// paths).
+const { hideAxesLackingHostBridges } = require('./lib/host-bridges-hide');
 const {
   searchResolversFor, catalogTracksToSearchResults, catalogAlbumsToSearchResults,
   catalogArtistsFromResults, mergeTrackResults, mergeAlbumResults, withoutLocalDuplicates, localSearchRows,
@@ -696,11 +704,36 @@ const {
 // requests sent meanwhile can stretch the limit; any 429 starts or extends the
 // pause. The first one of a pause is announced with the
 // `parachord:spotify-paused` event (the toast in Parachord).
+//
+// The pause is shared with main and outlives a restart (#909): this side
+// adopts main's (the saved one on load, then every change) and hands main its
+// own 429s. A restored pause therefore blocks the first call after a launch,
+// so no request goes out and no toast repeats. Every change of the cooldown
+// (this pause or the sync breaker's) is re-announced as
+// `parachord:spotify-cooldown` with { until } for the Sync menu.
 (function installSpotifyPause() {
   if (typeof window.fetch !== 'function') return;
   const { createSpotifyPause, isSpotifyApiUrl, pausedResponse } = require('../../sync-providers/spotify-pause');
   const spotifyPause = createSpotifyPause();
   window.spotifyPause = spotifyPause;
+  const bridge = window.electron && window.electron.spotify;
+  const announce = (until) => {
+    try { window.dispatchEvent(new CustomEvent('parachord:spotify-cooldown', { detail: { until: Number(until) || 0 } })); } catch (_e) { /* no event */ }
+  };
+  const adopt = (cooldown) => {
+    if (!cooldown) return;
+    spotifyPause.extendTo(cooldown.pauseUntil);
+    window.spotifyCooldownUntil = Math.max(Number(cooldown.until) || 0, spotifyPause.until());
+    announce(window.spotifyCooldownUntil);
+  };
+  // This side's own 429s go to main, which saves and re-announces them.
+  spotifyPause.onChange((until) => {
+    if (bridge && typeof bridge.notePause === 'function') bridge.notePause(until);
+  });
+  if (bridge && typeof bridge.getCooldown === 'function') {
+    bridge.getCooldown().then(adopt).catch(() => { /* main not ready: its change event still arrives */ });
+  }
+  if (bridge && typeof bridge.onCooldownChanged === 'function') bridge.onCooldownChanged(adopt);
   const innerFetch = window.fetch;
   window.fetch = function (input, init) {
     if (!isSpotifyApiUrl(input)) return innerFetch(input, init);
@@ -1355,6 +1388,7 @@ const {
 const { countOf } = require('./lib/plural');
 const { movePriority, priorityMoves } = require('./lib/priority-order');
 const { timeAgo } = require('./lib/time-ago');
+const { untilLabel } = require('./lib/until-label');
 const { chartLoadView } = require('./lib/chart-load-view');
 const { userError, errorText } = require('./lib/error-copy');
 const { trackDurationLabel } = require('./lib/track-duration');
@@ -1961,7 +1995,7 @@ const FALLBACK_RESOLVERS = require('./lib/fallback-resolvers.generated.js');
 
 
 // The canonical plug-in order and its helpers (lib/resolver-order.js).
-const { CANONICAL_RESOLVER_ORDER, appendUniqueId, insertInCanonicalOrder } = require('./lib/resolver-order');
+const { CANONICAL_RESOLVER_ORDER, appendUniqueId, insertRemembered, rememberOrder } = require('./lib/resolver-order');
 
 // Charts page country options (lib/charts-countries.js).
 const { CHARTS_COUNTRIES } = require('./lib/charts-countries');
@@ -2024,7 +2058,6 @@ const { servicesWithCapability, hasScrobblerConnected: hasScrobblerConnectedTo }
 const { PROVIDER_LABEL, getPlaylistMirrorTargets } = require('./lib/playlist-mirrors');
 const { playlistImportLabel } = require('./lib/playlist-import-sources');
 const { FirstRunTutorial } = require('./components/first-run-tutorial');
-const { AiPromptPanel } = require('./components/ai-prompt-panel');
 const { StopSyncDialog } = require('./components/stop-sync-dialog');
 const { SyncChannelDisableDialog } = require('./components/sync-channel-disable-dialog');
 const { NwayMigrationDialog } = require('./components/nway-migration-dialog');
@@ -2033,7 +2066,6 @@ const { AmazonManageDialog } = require('./components/amazon-manage-dialog');
 const { UrlImportDialog } = require('./components/url-import-dialog');
 const { QueueSaveDialog } = require('./components/queue-save-dialog');
 const { NewPlaylistDialog } = require('./components/new-playlist-dialog');
-const { AiSaveDialog } = require('./components/ai-save-dialog');
 const { UnsavedFriendDialog } = require('./components/unsaved-friend-dialog');
 const { ExternalTrackPrompt } = require('./components/external-track-prompt');
 const { PlaylistsPage } = require('./components/playlists-page');
@@ -3408,26 +3440,19 @@ const Parachord = () => {
   });
   const amazonManageInFlightRef = useRef(null);
   const amazonManageDeclinedUntilRef = useRef(0);
-  const amazonSignInHiccupRef = useRef({ firstAt: 0, lastAt: 0 }); // not-signed-in while the cookies say signed in (amazon-signin-prompt.js)
+  const amazonSignInHiccupRef = useRef({ firstAt: 0, lastAt: 0 }); // not-signed-in while the cookies say signed in (the plugin's signInPromptDecision)
 
   // Track main content width for responsive layouts
   const [mainContentWidth, setMainContentWidth] = useState(800);
   const mainContentRef = useRef(null);
 
-  // AI Playlist Generation state
-  const [aiPromptOpen, setAiPromptOpen] = useState(false);
-  const [aiPrompt, setAiPrompt] = useState('');
-  const [aiLoading, setAiLoading] = useState(false);
+  // Whether Shuffleupagus may read the listening history
   const [aiIncludeHistory, setAiIncludeHistory] = useState(false);
   const aiIncludeHistoryRef = useRef(false); // Ref for toggle to avoid stale closures in cached getContext
   const [recommendationBlocklist, setRecommendationBlocklist] = useState({ artists: [], albums: [], tracks: [] });
   const recommendationBlocklistRef = useRef({ artists: [], albums: [], tracks: [] }); // Ref for blocklist to avoid stale closures
   const [resolverBlocklist, setResolverBlocklist] = useState([]); // Array of { artist, title, resolverId, blockedAt }
   const resolverBlocklistRef = useRef([]); // Ref for blocklist to avoid stale closures
-  const [aiError, setAiError] = useState(null);
-  const [selectedAiResolver, setSelectedAiResolver] = useState(null);
-  const [aiSaveDialogOpen, setAiSaveDialogOpen] = useState(false);
-  const [aiSavePlaylistName, setAiSavePlaylistName] = useState('');
 
   // Results sidebar state (generic/reusable)
   const [resultsSidebar, setResultsSidebar] = useState(null);
@@ -3799,6 +3824,21 @@ const Parachord = () => {
   const queueTrackSources = (key, value, opts) => trackSourcesWriterRef.current.queue(key, value, opts);
   const flushTrackSources = () => trackSourcesWriterRef.current.flush();
   const [activeResolvers, setActiveResolvers] = useState(['bandcamp', 'localfiles']);
+  // Music plug-ins that are on but switched not to play ("Play from X" off,
+  // #1505): search, covers and links only. Saved as playback_off_resolvers.
+  const [playbackOffResolvers, setPlaybackOffResolvers] = useState([]);
+  // Plug-ins whose recommendations are switched off ("Recommendations from
+  // X", #1505): the Recommendations page and Home skip them. Saved as
+  // recommendations_off_resolvers.
+  const [recommendationsOffResolvers, setRecommendationsOffResolvers] = useState([]);
+  const recommendationsOffRef = useRef(recommendationsOffResolvers);
+  recommendationsOffRef.current = recommendationsOffResolvers;
+  // Plug-ins whose metadata is switched off ("Use metadata from X", #1505):
+  // covers and artist photos come from the others. Saved as
+  // metadata_off_resolvers.
+  const [metadataOffResolvers, setMetadataOffResolvers] = useState([]);
+  const metadataOffRef = useRef(metadataOffResolvers);
+  metadataOffRef.current = metadataOffResolvers;
   const [resolverOrder, setResolverOrder] = useState(['bandcamp', 'localfiles']);
   const resolverSettingsLoaded = useRef(false);  // Track if we've loaded settings from storage
   const activeResolversRef = useRef(activeResolvers);  // Ref to avoid stale closure in save
@@ -3806,7 +3846,11 @@ const Parachord = () => {
   // at ~7.6k; useRef identity is mount-agnostic).
   const resolverConfigCache = useRef({});
   const resolverOrderRef = useRef(resolverOrder);  // Ref to avoid stale closure in save
-  const savedResolverOrderRef = useRef(null);  // Persisted order from storage — used to restore priority position when re-enabling
+  // The user's whole priority ranking, disabled plug-ins included
+  // (lib/resolver-order.js rememberOrder): a plug-in turned back on, or back
+  // after a sign-in, returns to its place, not the canonical default. Kept
+  // current on every order change and saved as resolver_order_memory.
+  const savedResolverOrderRef = useRef(null);
   const savedActiveResolversRef = useRef(null);  // Persisted active_resolvers from storage — used to distinguish auth-gated removal from user-disabled
   const [draggedResolver, setDraggedResolver] = useState(null);
   const [dragOverResolver, setDragOverResolver] = useState(null);  // Which resolver is being dragged over
@@ -4027,6 +4071,25 @@ const Parachord = () => {
   // app already makes (no extra calls); a check that couldn't reach the
   // service changes nothing.
   const [syncSignedOut, setSyncSignedOut] = useState({});
+  // A sync service's rate-limit cooldown, { [providerId]: until ms }, for the
+  // Sync menu's "Paused until …" (#909). Spotify's comes from its pause and
+  // sync breaker (installSpotifyPause's `parachord:spotify-cooldown`); it is
+  // cleared when it runs out, so the label goes without a re-check.
+  const [syncPausedUntil, setSyncPausedUntil] = useState({});
+  useEffect(() => {
+    let timer = null;
+    const apply = (until) => {
+      clearTimeout(timer);
+      const left = (Number(until) || 0) - Date.now();
+      if (left <= 0) { setSyncPausedUntil(prev => (prev.spotify ? {} : prev)); return; }
+      setSyncPausedUntil(prev => (prev.spotify === until ? prev : { ...prev, spotify: until }));
+      timer = setTimeout(() => apply(0), Math.min(left + 500, 2147483647));
+    };
+    const onCooldown = (event) => apply(event && event.detail && event.detail.until);
+    apply(window.spotifyCooldownUntil);
+    window.addEventListener('parachord:spotify-cooldown', onCooldown);
+    return () => { clearTimeout(timer); window.removeEventListener('parachord:spotify-cooldown', onCooldown); };
+  }, []);
   const noteSyncAuth = (providerId, authStatus) => {
     if (!authStatus) return;
     let out = null;
@@ -6140,9 +6203,18 @@ const Parachord = () => {
   const flushPlaylistSourcesRef = useRef(null); // Ref to access flush function from beforeunload
 
   const [selectedResolver, setSelectedResolver] = useState(null); // Resolver detail modal
-  // Amazon Music sign-in status from the in-app player:
-  // { success, engine: 'web', web: { cdm, signedIn }, plan, planMessage }
-  const [amazonMusicStatus, setAmazonMusicStatus] = useState(null);
+  // Status replies from plugins that report their own sign-in/playback-limit
+  // state (capabilities.status, the generic surface of #1356):
+  // { [resolverId]: reply }. One reply feeds every consumer — the limit map
+  // below, the resolver tile (tileStatus), the Settings sign-in row
+  // (pluginStatusRow) and the sign-in prompt gate (the Amazon flow's CDM and
+  // signed-in facts). A failed read is the loader's marker
+  // (resolver-loader.js STATUS_READ_FAILED — the plugin threw, answered
+  // nothing shaped, or ran past the read budget): no verdict for the limit
+  // map, an honest "couldn't check" for the row. Amazon is on this
+  // surface since #1356 M10 — the old IPC status and its per-service mapper
+  // (amazonPlaybackLimit) died with the move.
+  const [pluginStatuses, setPluginStatuses] = useState({});
   // Resolvers that are enabled but can't play on the account's plan (Amazon
   // off Music Unlimited, #1220). Each service reports its limit into one map
   // (lib/playback-limits.js); another service with such a plan is one more
@@ -6152,38 +6224,75 @@ const Parachord = () => {
   // priority numbers.
   // Apple Music not signed in is in the same map (appleMusicPlaybackLimit):
   // it can't play, so it leaves the priority order until it connects.
+  // Plugins that report their own status (capabilities.status) join the same
+  // map: the plugin is the authority for its service, so its entry wins
+  // where a per-service mapper still exists — the migration order (a
+  // service's plugin entry takes over the moment it starts declaring the
+  // capability). But only when it actually gives a verdict: the plugin
+  // entries go through pluginStatusLimits, which DROPS a no-verdict one
+  // (a failed read, a reply with no playbackLimit), so it lands after the
+  // mappers without overriding them — a plugin that can't answer never
+  // removes the host's own verdict. Amazon reports its plan, its tile label
+  // and its wording through its getStatus reply since #1356 M10 (the
+  // per-service amazonPlaybackLimit mapper and the IPC status it fed are
+  // deleted).
   const playbackLimits = useMemo(() => ({
-    amazonmusic: PlaybackLimits.amazonPlaybackLimit(amazonMusicStatus),
-    applemusic: PlaybackLimits.appleMusicPlaybackLimit({ checked: appleMusicAuthChecked, connected: appleMusicConnected })
-  }), [amazonMusicStatus, appleMusicAuthChecked, appleMusicConnected]);
+    applemusic: PlaybackLimits.appleMusicPlaybackLimit({ checked: appleMusicAuthChecked, connected: appleMusicConnected }),
+    ...PlaybackLimits.pluginStatusLimits(pluginStatuses)
+  }), [appleMusicAuthChecked, appleMusicConnected, pluginStatuses]);
   const planBlockedResolverIds = useMemo(() => PlaybackLimits.planBlockedIds(playbackLimits), [playbackLimits]);
-  // For the plug-in tile menu's Raise / Lower Priority handler, registered once.
-  const planBlockedResolverIdsRef = useRef(planBlockedResolverIds);
-  planBlockedResolverIdsRef.current = planBlockedResolverIds;
-  const playbackResolvers = useMemo(
-    () => PlaybackLimits.playbackResolverIds(activeResolvers, planBlockedResolverIds),
-    [activeResolvers, planBlockedResolverIds]
+  // Signed out for sync: the sync check's verdict, or the account's own
+  // sign-in check. The sync check only runs when a sync does, so after a
+  // recent sync an expired Apple Music sign-in showed "Sign in" on the
+  // account and an active sync beside it (2026-11-17).
+  const syncSignedOutView = useMemo(() => {
+    const out = { ...syncSignedOut };
+    for (const [id, limit] of Object.entries(playbackLimits)) {
+      if (limit && limit.blocked && limit.planKey === 'signed-out') out[id] = true;
+    }
+    return out;
+  }, [syncSignedOut, playbackLimits]);
+  // On but not playing: the plan's (above) and the user's own "Play from"
+  // switched off (#1505). Everything about playing reads this one list.
+  const notPlayingResolverIds = useMemo(
+    () => PlaybackLimits.notPlayingIds(planBlockedResolverIds, playbackOffResolvers),
+    [planBlockedResolverIds, playbackOffResolvers]
   );
+  // For the plug-in tile menu's Raise / Lower Priority handler, registered once.
+  const notPlayingResolverIdsRef = useRef(notPlayingResolverIds);
+  notPlayingResolverIdsRef.current = notPlayingResolverIds;
+  const playbackResolvers = useMemo(
+    () => PlaybackLimits.playbackResolverIds(activeResolvers, notPlayingResolverIds),
+    [activeResolvers, notPlayingResolverIds]
+  );
+  // The "Play from X" switch (#1505). Off leaves the plug-in on for search,
+  // covers and links; resolverOrder keeps its slot, so on puts it back there.
+  const setResolverPlaybackOn = (resolverId, on) => {
+    setPlaybackOffResolvers(prev => {
+      const next = on ? prev.filter(id => id !== resolverId) : (prev.includes(resolverId) ? prev : [...prev, resolverId]);
+      window.electron.store.set('playback_off_resolvers', next).catch(err => console.error('[Plug-ins] Could not save Play from:', err));
+      return next;
+    });
+  };
+  // The "Recommendations from X" switch (#1505), for a plug-in with the
+  // recommendations capability. The Recommendations page reloads without it.
+  const setResolverRecommendationsOn = (resolverId, on) => {
+    setRecommendationsOffResolvers(prev => {
+      const next = on ? prev.filter(id => id !== resolverId) : (prev.includes(resolverId) ? prev : [...prev, resolverId]);
+      window.electron.store.set('recommendations_off_resolvers', next).catch(err => console.error('[Plug-ins] Could not save Recommendations from:', err));
+      return next;
+    });
+  };
+  // The "Use metadata from X" switch (#1505): covers and artist photos.
+  const setResolverMetadataOn = (resolverId, on) => {
+    setMetadataOffResolvers(prev => {
+      const next = on ? prev.filter(id => id !== resolverId) : (prev.includes(resolverId) ? prev : [...prev, resolverId]);
+      window.electron.store.set('metadata_off_resolvers', next).catch(err => console.error('[Plug-ins] Could not save Use metadata from:', err));
+      return next;
+    });
+  };
   const playbackResolversRef = useRef(playbackResolvers);
   playbackResolversRef.current = playbackResolvers;
-  // Re-fetch Amazon Music status and audio quality when its detail modal opens.
-  useEffect(() => {
-    if (selectedResolver?.id !== 'amazonmusic') return;
-    let cancelled = false;
-    (async () => {
-      try {
-        // refreshPlan: read the plan from Amazon now, not the 30-minute cache,
-        // so an upgrade shows as soon as the panel opens (#1220).
-        const s = await window.electron.amazonMusic.getStatus({ refreshPlan: true });
-        if (cancelled) return;
-        const status = s && s.success ? s : { success: true, engine: 'widevine', web: { cdm: false, signedIn: false } };
-        setAmazonMusicStatus(status);
-      } catch (e) {
-        if (!cancelled) setAmazonMusicStatus({ success: true, engine: 'widevine', web: { cdm: false, signedIn: false } });
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [selectedResolver]);
   const [dynamicModelOptions, setDynamicModelOptions] = useState({}); // { [resolverId]: { loading, options: [{value,label}], error } }
 
   // Keep refs in sync with state
@@ -7372,6 +7481,16 @@ const Parachord = () => {
   // Display-name lookup for engine-side labels/toasts — id→name via the
   // registry, never === 'service' arms (capability-not-id rule).
   window.resolverLabelById = (id) => (findLoadedResolver(id)?.name) || id || 'Stream';
+  // DevTools accessor for a loaded resolver INSTANCE (its plugin methods).
+  // The plugin owns every service surface since #1356 — sign-in flows ask
+  // `window.__parachordResolver('amazonmusic').signIn()` through the loaded
+  // registry, and the plugin's diagnostic capture (debugCaptureGql) is
+  // reached the same way from the console (docs/architecture/amazon-music.md,
+  // "gql capture"). Null while the resolvers load or for an unknown id.
+  window.__parachordResolver = (id) => {
+    const loader = resolverLoaderRef.current;
+    return (loader && typeof loader.getResolver === 'function') ? (loader.getResolver(id) || null) : null;
+  };
   const isHtml5StreamResolver = (id) => !!findLoadedResolver(id)?.capabilities?.html5Stream;
   // Widevine resolvers (capabilities.widevine: Amazon Music today) play
   // encrypted adaptive streams through Shaka on the SAME shared element —
@@ -7469,14 +7588,25 @@ const Parachord = () => {
   }, []);
 
 
-  // Sign in to Amazon Music inside Parachord. Playback uses the web player
-  // and the Widevine CDM built into this Electron build. The desktop app is
-  // not launched. explicit:true always shows the dialog (play button, settings).
-  // explicit:false is the background-resolve prompt: one at a time, skipped
-  // during radio/auto-advance, and not repeated for 10 minutes after a decline.
-  // A second caller shares the in-flight promise so it cannot overwrite onResolve.
+  // Sign in to Amazon Music inside Parachord. Playback uses the shared
+  // Widevine player and the CDM built into this Electron build; the session
+  // itself is the plugin's since #1356 M10 — the flow below is the renderer's
+  // prompt UX (the consent dialog, single-flight, the decline quiet, the
+  // hiccup retry) over the plugin's methods: getStatus (the CDM verdict and
+  // the signed-in fact), signInPromptDecision (the hiccup rule) and signIn
+  // (the visible window with the plugin's own decide rule). The desktop app
+  // is not launched. explicit:true always shows the dialog (play button,
+  // settings). explicit:false is the background-resolve prompt: one at a
+  // time, skipped during radio/auto-advance, and not repeated for 10 minutes
+  // after a decline. A second caller shares the in-flight promise so it
+  // cannot overwrite onResolve.
   const manageAmazonMusic = async (opts = {}) => {
-    if (!window.electron?.amazonMusic) return false;
+    const loaded = resolverLoaderRef.current && typeof resolverLoaderRef.current.getResolver === 'function'
+      ? resolverLoaderRef.current.getResolver('amazonmusic')
+      : null;
+    // No prompt without the plugin (not loaded, or an old .axe with no
+    // session surface): the prompt IS the plugin's UX.
+    if (!loaded || typeof loaded.signIn !== 'function') return false;
     const explicit = opts.explicit !== false;
     if (!explicit && Date.now() < amazonManageDeclinedUntilRef.current) return false;
     // Settings → Sign in passes explicit:true. Radio must not swallow that.
@@ -7492,23 +7622,31 @@ const Parachord = () => {
     amazonManageInFlightRef.current = inFlight;
 
     const run = (async () => {
-      const status = await window.electron.amazonMusic.getStatus().catch(() => null);
-      if (status && status.web && !status.web.cdm) {
-        showToast('Amazon Music can’t play in this version of Parachord.', 'error');
+      // The plugin's status reply: the signed-in fact and this build's CDM
+      // verdict (the plugin's EME probe — the old host read died with the IPC
+      // status). Feeds the tile/settings row on the way by; a read that fails
+      // outright (the loader itself) is no verdict, like the old IPC catch.
+      const status = await refreshPluginStatus('amazonmusic').catch(() => null);
+      if (status && status.cdm === false) {
+        showToast('This Parachord build has no Widevine CDM, so Amazon Music cannot play.', 'error');
         return false;
       }
       // A not-signed-in while the auth cookies say the session is live is
       // usually Amazon's periodic session-token refresh catching a page load:
       // retry quietly instead of prompting. Only a streak lasting a minute
       // (most likely the profile picker) prompts. Settings' Sign in button
-      // passes forcePrompt and always gets the window.
+      // passes forcePrompt and always gets the window. The rule is the
+      // plugin's (signInPromptDecision); an old .axe without the method
+      // prompts at once, the pre-#1172 behavior.
       if (!opts.forcePrompt) {
-        const verdict = amazonSignInPromptDecision({
-          reason: opts.reason,
-          cookiesSignedIn: !!(status && status.web && status.web.signedIn),
-          streak: amazonSignInHiccupRef.current,
-          now: Date.now()
-        });
+        const verdict = typeof loaded.signInPromptDecision === 'function'
+          ? loaded.signInPromptDecision({
+              reason: opts.reason,
+              cookiesSignedIn: !!(status && status.signedIn),
+              streak: amazonSignInHiccupRef.current,
+              now: Date.now()
+            })
+          : { prompt: true, streak: { firstAt: 0, lastAt: 0 } };
         amazonSignInHiccupRef.current = verdict.streak;
         if (!verdict.prompt) {
           console.log('[Amazon] not signed in, but the session cookies are live: retrying quietly instead of prompting');
@@ -7524,9 +7662,9 @@ const Parachord = () => {
         return false;
       }
       setAmazonManageDialog({ show: true, onResolve: null, relaunching: true });
-      const login = await window.electron.amazonMusic.openLogin();
+      const login = await loaded.signIn();
       setAmazonManageDialog({ show: false, onResolve: null, relaunching: false });
-      refreshAmazonMusicStatus();
+      refreshPluginStatus('amazonmusic');
       if (login && login.signedIn) {
         amazonSignInHiccupRef.current = { firstAt: 0, lastAt: 0 };
         showToast('Signed in to Amazon Music', 'success');
@@ -7537,9 +7675,6 @@ const Parachord = () => {
       // declining the prompt. Without it the next background search's
       // not-signed-in reopened the prompt at once, and again after every close.
       amazonManageDeclinedUntilRef.current = Date.now() + 10 * 60 * 1000;
-      if (login && login.reason === 'no-cdm') {
-        console.error('Amazon sign-in: no CDM', login.error); showToast('Amazon Music can’t play in this version of Parachord.', 'error');
-      }
       return false;
     })().catch((error) => {
       setAmazonManageDialog({ show: false, onResolve: null, relaunching: false });
@@ -7557,34 +7692,108 @@ const Parachord = () => {
   };
   window.__parachordManageAmazonMusic = manageAmazonMusic;
 
-  // Amazon's sign-in state for the resolver grid's "Setup required" badge (the
-  // same treatment Spotify and Apple Music get when not connected). Refreshed
-  // after every sign-in attempt, on enable, and each time Settings opens, so
-  // a session that expired since is caught too. manageAmazonMusic above calls
-  // it at run time, after this render has defined it.
-  const applyAmazonMusicStatus = (s) => {
-    setAmazonMusicStatus(s);
+  // The generic plugin-status surface (capabilities.status, #1356): a plugin
+  // that can report its sign-in/playback-limit state implements getStatus,
+  // and the renderer asks it through the resolver registry (resolver-loader.js
+  // getStatusResolvers/getStatus — direct, renderer-side, no new IPC). Amazon
+  // is on this surface since #1356 M10: its tile's "Setup required"/
+  // "Prime: no playback", its settings row and its limit-map entry all read
+  // the plugin's reply, and the prompt flow above reads the same reply for
+  // the CDM gate and the hiccup rule.
+
+  // One plugin's status read. The loader logs and swallows a throwing or
+  // hung getStatus and bounds the read (STATUS_BUDGET_MS — a status outage
+  // must not unplug playback, and one hung read must not stall the sweep
+  // below), so the reply here is a verdict, the loader's failed marker, or
+  // null; each is stored as-is — a failure is no verdict for the limit map
+  // (lib/playback-limits.js pluginStatusLimit) and the honest error row
+  // (pluginStatusRow), and a null (never asked) stays "Checking…".
+  // Returns the reply's promise (manageAmazonMusic reads it for the CDM gate),
+  // so a caller can both await the verdict and let it feed the map.
+  const refreshPluginStatus = (resolverId) => {
+    const loader = resolverLoaderRef.current;
+    if (!loader || typeof loader.getStatus !== 'function') return Promise.resolve(null);
+    return loader.getStatus(resolverId).then((status) => {
+      setPluginStatuses(prev => ({ ...prev, [resolverId]: status }));
+      return status;
+    });
   };
-  const refreshAmazonMusicStatus = (opts) => {
-    if (!window.electron?.amazonMusic?.getStatus) return;
-    window.electron.amazonMusic.getStatus(opts)
-      .then((s) => applyAmazonMusicStatus(s && s.success ? s : { success: true, engine: 'web', web: { cdm: false, signedIn: false } }))
-      .catch(() => {});
+
+  // Read every ACTIVE status-capable plugin. Only active ones: a disabled
+  // plugin's status has no reader (its tile is inactive, and playback never
+  // asks it). One sweep is ONE setPluginStatuses, the whole batch landing
+  // together (every setState is a full-app render — coalesce the burst); a
+  // throwing or hung getStatus never rejects it, because the loader has
+  // already logged the throw and answers its failed marker (a hung one
+  // settles at the read budget, STATUS_BUDGET_MS — one plugin's hang can't
+  // stall the batch, which is why the reads can be batched at all), stored
+  // as-is like the single read above (a real rejection is the loader itself
+  // failing, and that resolver gets no entry). The reads in flight are held
+  // per resolver (pluginStatusReadsRef), so a re-run while one is still
+  // pending — a startup dep changed — reads only what nothing is reading: no
+  // pending call is re-issued.
+  const pluginStatusReadsRef = useRef(new Set());
+  const refreshPluginStatuses = () => {
+    const loader = resolverLoaderRef.current;
+    if (!loader || typeof loader.getStatusResolvers !== 'function') return;
+    const ids = loader.getStatusResolvers()
+      .filter(r => activeResolvers.includes(r.id))
+      .map(r => r.id)
+      .filter(id => !pluginStatusReadsRef.current.has(id));
+    if (!ids.length) return;
+    ids.forEach(id => pluginStatusReadsRef.current.add(id));
+    Promise.allSettled(ids.map(id => loader.getStatus(id))).then((replies) => {
+      ids.forEach(id => pluginStatusReadsRef.current.delete(id));
+      // A sweep in flight when an uninstall lands must not write the
+      // uninstalled plugin's entry back: the reads started before the
+      // uninstall, so their replies are a dead plugin's. Re-check the loaded
+      // set HERE, when the batch lands — not only the set the sweep fired
+      // with — and through the ref (loadedResolversRef, kept current by the
+      // effect), not this render's loadedResolvers: the landing happens
+      // after the render the uninstall committed (the uninstall drops the
+      // entry itself; this keeps the drop held).
+      const stillLoaded = new Set((loadedResolversRef.current || []).map(r => r.id));
+      const statuses = {};
+      ids.forEach((id, i) => {
+        if (!stillLoaded.has(id)) return;
+        if (replies[i].status === 'fulfilled') statuses[id] = replies[i].value;
+      });
+      setPluginStatuses(prev => ({ ...prev, ...statuses }));
+    });
   };
-  const amazonMusicEnabled = activeResolvers.includes('amazonmusic');
+
+  // The trigger set is the old Amazon status's own: once at startup
+  // (after the plugins are loaded) and again each time Settings opens, so a
+  // sign-in or plan change since the last read shows where the person looks.
+  // Nothing else polls — a status read can be a network call (Amazon's asks
+  // the service) — and a plugin has no push channel. The plan read is fresh
+  // every time (the plugin's getStatus forces it), which is what replaces the
+  // old plan-changed event: an upgrade shows at the next read, at the worst
+  // when Settings opens — and the refused-plan TTL re-reads within a minute
+  // for the searches.
+  const havePluginStatuses = Object.keys(pluginStatuses).length > 0;
   useEffect(() => {
-    if (!cacheLoaded || !amazonMusicEnabled) return;
-    if (activeView !== 'settings' && amazonMusicStatus) return;
-    // Opening Settings reads the plan from Amazon, not the 30-minute cache,
-    // so an upgrade shows (and re-resolves) as soon as Settings opens (#1220).
-    refreshAmazonMusicStatus({ refreshPlan: activeView === 'settings' });
-  }, [cacheLoaded, amazonMusicEnabled, activeView]);
-  // Main reports a plan change (a session mint or a re-read found another
-  // plan): refresh the tile and settings, and re-resolve on an upgrade.
+    if (!cacheLoaded) return;
+    if (activeView !== 'settings' && havePluginStatuses) return;
+    refreshPluginStatuses();
+    // loadedResolvers: the registry (initResolvers) and the caches
+    // (loadCacheFromStore) both start at mount and race, so the startup
+    // read must re-run when the registry lands; the guard above keeps that
+    // a read only where one is due (startup, or Settings open).
+    // activeResolvers: an enabled plugin is read at once. The only enable
+    // path is the resolver panel, inside Settings, where the guard above
+    // passes.
+  }, [cacheLoaded, activeView, havePluginStatuses, loadedResolvers, activeResolvers]);
+
+  // Opening a status-capable resolver's panel re-reads it (the old Amazon
+  // modal's refreshPlan read): the freshest sign-in/plan state shows right
+  // where the person is looking at it, including a plugin enabled since the
+  // startup read.
   useEffect(() => {
-    if (!cacheLoaded || !amazonMusicEnabled || !window.electron?.amazonMusic?.onPlanChanged) return;
-    return window.electron.amazonMusic.onPlanChanged(() => refreshAmazonMusicStatus());
-  }, [cacheLoaded, amazonMusicEnabled]);
+    if (!selectedResolver?.id) return;
+    if (!(selectedResolver.capabilities?.status && typeof selectedResolver.getStatus === 'function')) return;
+    refreshPluginStatus(selectedResolver.id);
+  }, [selectedResolver]);
 
   // Leaving an Amazon track must blank the player view, not just pause it -
   // the module's own invariant ("pause is not enough": Amazon can start the
@@ -7869,9 +8078,14 @@ const Parachord = () => {
   // the refusal's own message is shown). A plugin checks this hook exists
   // before throwing plan-ineligible (docs/architecture/plugins.md).
   window.__parachordNotePlanRefusal = (resolverId, planKey) => {
-    if (resolverId === 'amazonmusic') {
-      refreshAmazonMusicStatus();
-      return null; // main's refusal already carries the Amazon wording
+    // A status-capable plugin's refusal says its reported status is stale:
+    // re-read it. The refusal itself already carries the wording to show (the
+    // plugin's own plan message), so the reply only refreshes the map, the
+    // tile and the Settings row. Amazon is a status-capable plugin since
+    // #1356 M10, so the same path covers it.
+    const statusLoader = resolverLoaderRef.current;
+    if (statusLoader?.getStatusResolvers && statusLoader.getStatusResolvers().some(r => r.id === resolverId)) {
+      refreshPluginStatus(resolverId);
     }
     return null;
   };
@@ -8485,9 +8699,6 @@ const Parachord = () => {
   // Cache for top tracks data (keyed by period)
   const topTracksCache = useRef({});
 
-  // Get meta services with AI generation capability
-  const getAiServices = () => servicesWithCapability('generate', resolverLoaderRef.current, metaServices);
-
   // Get AI services with chat capability (for Conversational DJ)
   const getChatServices = () => servicesWithCapability('chat', resolverLoaderRef.current, metaServices);
 
@@ -8636,6 +8847,14 @@ const Parachord = () => {
           }
         }
 
+        // A plugin whose required host bridges this host doesn't supply is
+        // HIDDEN, not loaded (#1355): a loaded plugin without its bridge would
+        // throw not-ready on every resolve, and a retrying resolver would keep
+        // re-asking it. The one rule lives in lib/host-bridges-hide.js — the
+        // same copy the fallback load and the install/reload paths run (#1432
+        // review, note 7).
+        resolversToLoad = hideAxesLackingHostBridges(resolversToLoad);
+
         // Separate content resolvers from meta services by manifest type
         const contentResolverAxes = resolversToLoad.filter(axe =>
           !axe.manifest.type || axe.manifest.type === 'resolver'
@@ -8755,7 +8974,11 @@ const Parachord = () => {
         console.log('💾 Attempting to use fallback resolvers...');
         
         try {
-          const resolvers = await resolverLoader.current.loadResolvers(FALLBACK_RESOLVERS);
+          // The same hostBridges hide rule as the primary load path (#1432
+          // review, note 7): the fallback axes are this app's own builds, so
+          // on desktop nothing hides — but the rule says such a plugin is
+          // hidden, and this path must not be the one place it isn't.
+          const resolvers = await resolverLoader.current.loadResolvers(hideAxesLackingHostBridges(FALLBACK_RESOLVERS));
           // Same wrapping as the primary load path (parachord#797).
           window.wrapResolverSearchesWithLimiter(resolvers);
           setLoadedResolvers(resolvers);
@@ -8794,16 +9017,24 @@ const Parachord = () => {
           return !!(metaConfig?.enabled || metaConfig?.apiKey);
         });
 
+        // The hostBridges hide rule, same as every .axe load path (#1432
+        // review, note 7): this hot reload materializes .axe content into
+        // live resolvers — a plugin whose required bridges this host doesn't
+        // supply would throw not-ready on every resolve. The rule runs before
+        // the capability splits, so the loads AND the meta-services state
+        // below all derive from visible axes only.
+        const visibleAxes = hideAxesLackingHostBridges(filteredAxes);
+
         // Re-load meta services with generate/chat/recommendations/playback-telemetry capabilities into resolver loader
-        const withGenerate = filteredAxes.filter(axe =>
+        const withGenerate = visibleAxes.filter(axe =>
           axe.capabilities?.generate && axe.implementation?.generate);
-        const withChat = filteredAxes.filter(axe =>
+        const withChat = visibleAxes.filter(axe =>
           axe.capabilities?.chat && axe.implementation?.chat);
-        const withRecommendations = filteredAxes.filter(axe =>
+        const withRecommendations = visibleAxes.filter(axe =>
           (axe.capabilities?.recommendations && axe.implementation?.getRecommendations)
           || (axe.capabilities?.similarUsers && axe.implementation?.getSimilarUsers)
           || (axe.capabilities?.historyMixes && axe.implementation?.getHistoryMixes));
-        const withPlaybackTelemetry = filteredAxes.filter(axe =>
+        const withPlaybackTelemetry = visibleAxes.filter(axe =>
           axe.capabilities?.playbackTelemetry && axe.implementation?.init);
 
         await Promise.all([
@@ -8826,7 +9057,7 @@ const Parachord = () => {
         ]);
 
         // Update meta services state so UI reflects new capabilities
-        const metaServicesData = filteredAxes.map(axe => ({
+        const metaServicesData = visibleAxes.map(axe => ({
           id: axe.manifest.id,
           name: axe.manifest.name,
           type: axe.manifest.type,
@@ -9505,7 +9736,7 @@ const Parachord = () => {
       });
       setResolverOrder(prev => {
         if (!prev.includes('applemusic')) {
-          return insertInCanonicalOrder(prev, 'applemusic');
+          return insertRemembered(prev, 'applemusic', savedResolverOrderRef.current);
         }
         return prev;
       });
@@ -9614,7 +9845,7 @@ const Parachord = () => {
               });
               setResolverOrder(prev => {
                 if (!prev.includes('applemusic')) {
-                  return insertInCanonicalOrder(prev, 'applemusic');
+                  return insertRemembered(prev, 'applemusic', savedResolverOrderRef.current);
                 }
                 return prev;
               });
@@ -9748,6 +9979,7 @@ const Parachord = () => {
       [providerId]: {
         ...prev[providerId],
         enabled: true,
+        stopped: false,
         ...settings,
         selectedPlaylistIds: selectedPlaylists
       }
@@ -10263,15 +10495,18 @@ const Parachord = () => {
       });
     }
 
-    // Disable sync in settings
+    // Disable sync in settings. `stopped` tells this apart from the Sync
+    // menu's pause (enabled: false alone, choices kept): a stopped service is
+    // set up again from scratch (lib/library-sync-state.js).
     await window.electron.syncSettings.setProvider(providerId, {
       ...resolverSyncSettings[providerId],
-      enabled: false
+      enabled: false,
+      stopped: true
     });
 
     setResolverSyncSettings(prev => ({
       ...prev,
-      [providerId]: { ...prev[providerId], enabled: false }
+      [providerId]: { ...prev[providerId], enabled: false, stopped: true }
     }));
 
     setStopSyncDialog({ open: false, providerId: null });
@@ -10287,8 +10522,8 @@ const Parachord = () => {
   // up opens the setup dialog instead.
   const setProviderSyncEnabled = async (providerId, enabled) => {
     const existing = resolverSyncSettingsRef.current[providerId];
-    // Never set up, or signed out: setup, which asks for the sign-in first.
-    if (enabled && (!existing || syncSignedOut[providerId])) { openSyncSetupModal(providerId); return; }
+    // Never set up, stopped, or signed out: setup, which asks for the sign-in first.
+    if (enabled && (!existing || existing.stopped || syncSignedOutView[providerId])) { openSyncSetupModal(providerId); return; }
     const next = { ...existing, enabled };
     // The ref first: a love or unlove in the same tick reads it.
     resolverSyncSettingsRef.current = { ...resolverSyncSettingsRef.current, [providerId]: next };
@@ -12793,7 +13028,7 @@ ${trackListXml}
         } else if (data.action === 'raise-priority' || data.action === 'lower-priority') {
           // The tile's numbered neighbours only: the same set the drag
           // reorders (active, not blocked by the account's plan).
-          const isNumbered = (id) => activeResolversRef.current.includes(id) && !planBlockedResolverIdsRef.current.includes(id);
+          const isNumbered = (id) => activeResolversRef.current.includes(id) && !notPlayingResolverIdsRef.current.includes(id);
           setResolverOrder(prev => movePriority(prev, data.resolverId, data.action === 'raise-priority' ? -1 : 1, isNumbered));
         }
       });
@@ -12947,7 +13182,7 @@ ${trackListXml}
             }
             newOrder = [...newOrder.slice(0, insertAt), id, ...newOrder.slice(insertAt)];
           } else {
-            newOrder = insertInCanonicalOrder(newOrder, id);
+            newOrder = insertRemembered(newOrder, id, savedResolverOrderRef.current);
           }
         }
       }
@@ -13426,7 +13661,7 @@ ${trackListXml}
     const onPaused = (event) => {
       const until = event && event.detail && event.detail.until;
       if (!until || until - Date.now() < 60 * 1000) return;
-      const at = new Date(until).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      const at = untilLabel(until);
       showToast(`Spotify asked Parachord to slow down. Spotify searches and controls resume at ${at}; other services keep working.`, 'warning', null, { duration: 10000 });
     };
     window.addEventListener('parachord:spotify-paused', onPaused);
@@ -14193,8 +14428,8 @@ ${trackListXml}
     if (enabled.lastfm && !pushed.lastfm && window.lastfmScrobbler) {
       tasks.push((async () => {
         try {
-          const isEnabled = await window.lastfmScrobbler.isEnabled();
-          if (!isEnabled) return;
+          // Signed in is enough: "Scrobble to Last.fm" pauses scrobbling only.
+          if (!(await window.lastfmScrobbler.isSignedIn())) return;
           await window.lastfmScrobbler.loveTrack({
             artist: track.artist, title: track.title,
             mbid: track.mbid && /^[a-f0-9-]{36}$/i.test(track.mbid) ? track.mbid : undefined,
@@ -14211,8 +14446,7 @@ ${trackListXml}
     if (enabled.listenbrainz && !pushed.listenbrainz && window.listenbrainzScrobbler) {
       tasks.push((async () => {
         try {
-          const isEnabled = await window.listenbrainzScrobbler.isEnabled();
-          if (!isEnabled) return;
+          if (!(await window.listenbrainzScrobbler.isSignedIn())) return;
           const mbid = await window.resolveMbidForLove(track);
           if (!mbid) {
             console.log(`[love-push] LB skip "${track.title}" — no MBID`);
@@ -14328,6 +14562,11 @@ ${trackListXml}
     });
   }, []);
 
+  // Does this plug-in sync loved tracks? Its manifest's `lovedTracks`
+  // capability (Last.fm, ListenBrainz), read from the loaded meta-services.
+  const serviceHasLovedTracks = (service) =>
+    !!(metaServicesRef.current || []).find(s => s.id === service)?.capabilities?.lovedTracks;
+
   // Manual backfill: walks the collection, pushes any track not yet
   // marked as pushed for this service. Soft rate-limit ~1 req/sec.
   // Idempotency cache means re-clicks are cheap.
@@ -14338,11 +14577,12 @@ ${trackListXml}
   // queue when MBIDs can't resolve).
   const runLoveBackfill = useCallback(async (service, { onlyIds } = {}) => {
     if (loveBackfillRunningRef.current[service]) return;
-    if (!['lastfm', 'listenbrainz'].includes(service)) return;
+    // A plug-in that declares `lovedTracks` (was two hard-coded names).
+    if (!serviceHasLovedTracks(service)) return;
     const scrobbler = service === 'lastfm' ? window.lastfmScrobbler : window.listenbrainzScrobbler;
     if (!scrobbler) { showToast(`${service} scrobbler not loaded`); return; }
-    const isEnabled = await scrobbler.isEnabled();
-    if (!isEnabled) { showToast(`${service} not connected`); return; }
+    // Signed in is enough: the scrobbling switch doesn't stop loved tracks.
+    if (!(await scrobbler.isSignedIn())) { showToast(`Sign in to ${scrobbler.name} to sync loved tracks`); return; }
 
     const tracks = (collectionDataRef.current?.tracks || []);
     const todo = tracks.filter(t => !lovePushedKeysRef.current[t.id]?.[service] && (!onlyIds || onlyIds.has(t.id)));
@@ -14424,7 +14664,7 @@ ${trackListXml}
   //   6. One-way stays one-way: importing never unloves anything remotely.
 
   const runLoveImport = useCallback(async (service) => {
-    if (!['lastfm', 'listenbrainz'].includes(service)) return;
+    if (!serviceHasLovedTracks(service)) return;
     if (loveImportRunningRef.current[service]) return;
     const label = service === 'lastfm' ? 'Last.fm' : 'ListenBrainz';
     const otherService = service === 'lastfm' ? 'listenbrainz' : 'lastfm';
@@ -14446,7 +14686,7 @@ ${trackListXml}
     setLoveImportProgress(prev => ({ ...prev, [service]: { done: 0, total: 0 } }));
     try {
       let connected = false;
-      try { connected = await scrobbler.isEnabled(); } catch (e) { connected = false; }
+      try { connected = await scrobbler.isSignedIn(); } catch (e) { connected = false; }
       if (!connected) { showToast(`${label} is not connected`, 'error'); return; }
 
       // Cross-service propagation, confirmed up front (issue #1071 rule 2).
@@ -14457,7 +14697,7 @@ ${trackListXml}
       const otherScrobbler = otherService === 'lastfm' ? window.lastfmScrobbler : window.listenbrainzScrobbler;
       if (scrobblerLovePushEnabledRef.current?.[otherService] && otherScrobbler) {
         let otherConnected = false;
-        try { otherConnected = await otherScrobbler.isEnabled(); } catch (e) { otherConnected = false; }
+        try { otherConnected = await otherScrobbler.isSignedIn(); } catch (e) { otherConnected = false; }
         if (otherConnected) {
           setLoveImportProgress(prev => ({ ...prev, [service]: { done: 0, total: 0, phase: 'confirm' } }));
           crossConfirm = await new Promise((resolve) => {
@@ -15554,6 +15794,8 @@ ${trackListXml}
   useEffect(() => {
     activeResolversRef.current = activeResolvers;
     resolverOrderRef.current = resolverOrder;
+    // Remember every ranking change, disabled plug-ins kept in place.
+    if (resolverSettingsLoaded.current) savedResolverOrderRef.current = rememberOrder(savedResolverOrderRef.current, resolverOrder);
   }, [activeResolvers, resolverOrder]);
 
   // Ready to play (#1287): the saved settings have loaded (the active resolvers)
@@ -17001,116 +17243,6 @@ ${trackListXml}
     return null;
   };
 
-  // AI Playlist Generation
-  const handleAiGenerate = async (prompt) => {
-    const aiServices = getAiServices();
-    // Filter to only enabled services with valid config
-    const enabledServices = aiServices.filter(isServiceEnabled);
-
-    if (enabledServices.length === 0) {
-      setAiError('No AI plugins configured. Enable OpenAI or Gemini and add your API key in Settings → General.');
-      return;
-    }
-
-    // Use selected service or first available
-    const service = selectedAiResolver
-      ? enabledServices.find(s => s.id === selectedAiResolver) || enabledServices[0]
-      : enabledServices[0];
-
-    setAiLoading(true);
-    setAiError(null);
-
-    // Open sidebar immediately with loading state
-    setResultsSidebar({
-      title: '✨ AI Playlist',
-      subtitle: `"${prompt.length > 50 ? prompt.substring(0, 50) + '…' : prompt}"`,
-      tracks: [],
-      source: 'ai',
-      prompt: prompt,
-      provider: { id: service.id, name: service.name },
-      loading: true
-    });
-
-    // Close prompt input immediately
-    setAiPromptOpen(false);
-    setAiPrompt('');
-
-    try {
-      // Get service config from metaServiceConfigs
-      const config = metaServiceConfigs[service.id] || {};
-
-      // Fetch listening context if toggle is enabled
-      let listeningContext = null;
-      if (aiIncludeHistory) {
-        listeningContext = await fetchListeningContext();
-        if (!listeningContext) {
-          console.log('🎵 No listening context available, proceeding without');
-        }
-      }
-
-      // Call the service's generate function
-      const tracks = await service.generate(prompt, config, listeningContext);
-
-      if (!tracks || tracks.length === 0) {
-        throw new Error('No tracks returned. Try a different prompt.');
-      }
-
-      // Update sidebar with the generated tracks
-      setResultsSidebar({
-        title: '✨ AI Playlist',
-        subtitle: `"${prompt.length > 50 ? prompt.substring(0, 50) + '…' : prompt}"`,
-        tracks: tracks.map((t, i) => ({
-          id: `ai-${Date.now()}-${i}`,
-          title: t.title,
-          artist: t.artist,
-          album: t.album || '',
-          sources: {} // Will be resolved when added to queue
-        })),
-        source: 'ai',
-        prompt: prompt,
-        provider: { id: service.id, name: service.name },
-        loading: false
-      });
-    } catch (error) {
-      console.error('AI generation error:', error);
-      setAiError(error.message || 'Failed to generate playlist');
-      // Close sidebar on error, reopen prompt
-      closeSidebarAnimated();
-      setAiPromptOpen(true);
-    } finally {
-      setAiLoading(false);
-    }
-  };
-
-  // Handle adding AI results to queue
-  const handleAiAddToQueue = () => {
-    if (!resultsSidebar?.tracks) return;
-    // Use aiPlaylist context type (not navigable, unlike recommendations page)
-    const context = { type: 'aiPlaylist', name: 'AI Playlist' };
-    addToQueue(resultsSidebar.tracks, context);
-    closeSidebarAnimated();
-  };
-
-  // Handle playing AI results now (replace queue)
-  const handleAiPlay = () => {
-    if (!resultsSidebar?.tracks || resultsSidebar.tracks.length === 0) return;
-    const context = { type: 'aiPlaylist', name: 'AI Playlist' };
-    playTrackCollection(resultsSidebar.tracks, context);
-    closeSidebarAnimated();
-  };
-
-  // Handle adding AI results to existing/new playlist
-  const handleAiAddToPlaylist = () => {
-    if (!resultsSidebar?.tracks || resultsSidebar.tracks.length === 0) return;
-    setAddToPlaylistPanel({
-      open: true,
-      tracks: resultsSidebar.tracks,
-      sourceName: resultsSidebar.prompt || 'AI Playlist',
-      sourceType: 'playlist'
-    });
-    closeSidebarAnimated();
-  };
-
   // ============================================
   // Conversational DJ (AI Chat) Functions
   // ============================================
@@ -17127,7 +17259,8 @@ ${trackListXml}
     // resolver-limiter.js); 'background' for a cover lookup.
     const { earlyReturn = false, targetArtist, targetTitle, requireAlbumArt = false, lane = null } = options;
     const allResolvers = loadedResolversRef.current || [];
-    const activeIds = activeResolversRef.current || [];
+    // A cover lookup skips plug-ins whose metadata is switched off (#1505).
+    const activeIds = (activeResolversRef.current || []).filter(id => !(requireAlbumArt && metadataOffRef.current.includes(id)));
     const resolverOrder = resolverOrderRef.current || [];
     const results = [];
 
@@ -19217,7 +19350,7 @@ ${trackListXml}
         'cache_recommendations',
         'cache_critics_picks',
         // Resolver settings & user preferences
-        'active_resolvers', 'resolver_order', 'meta_service_configs',
+        'active_resolvers', 'resolver_order', 'resolver_order_memory', 'playback_off_resolvers', 'recommendations_off_resolvers', 'metadata_off_resolvers', 'meta_service_configs',
         'applemusic_developer_token', 'friends', 'pinnedFriendIds',
         'autoPinnedFriendIds', 'hidden_friend_keys', 'resolver_volume_offsets', 'saved_volume',
         'skip_external_prompt', 'skip_unplayable_prompt',
@@ -19767,6 +19900,9 @@ ${trackListXml}
 
       // Resolver settings and user preferences (already loaded in batch)
       const savedActiveResolvers = d['active_resolvers'];
+      if (Array.isArray(d['playback_off_resolvers'])) setPlaybackOffResolvers(d['playback_off_resolvers']);
+      if (Array.isArray(d['recommendations_off_resolvers'])) setRecommendationsOffResolvers(d['recommendations_off_resolvers']);
+      if (Array.isArray(d['metadata_off_resolvers'])) setMetadataOffResolvers(d['metadata_off_resolvers']);
       const savedResolverOrder = d['resolver_order'];
       const savedMetaServiceConfigs = d['meta_service_configs'];
       const savedAppleMusicDevToken = d['applemusic_developer_token'];
@@ -19859,7 +19995,9 @@ ${trackListXml}
         const removedResolvers = ['qobuz'];
         const dedupedOrder = [...new Set(savedResolverOrder)].filter(id => !removedResolvers.includes(id));
         setResolverOrder(dedupedOrder);
-        savedResolverOrderRef.current = dedupedOrder;
+        // The ranking memory, or (before it existed) the saved order.
+        const savedMemory = Array.isArray(d['resolver_order_memory']) ? d['resolver_order_memory'].filter(id => !removedResolvers.includes(id)) : null;
+        savedResolverOrderRef.current = rememberOrder(savedMemory, dedupedOrder);
         console.log(`📦 Loaded resolver order from storage (${dedupedOrder.length} resolvers)`);
       }
 
@@ -20245,6 +20383,7 @@ ${trackListXml}
       // Save resolver settings (use refs to ensure we have current values, not stale closure)
       await window.electron.store.set('active_resolvers', activeResolversRef.current);
       await window.electron.store.set('resolver_order', resolverOrderRef.current);
+      if (savedResolverOrderRef.current) await window.electron.store.set('resolver_order_memory', savedResolverOrderRef.current);
 
       // Save volume normalization offsets (use ref to avoid stale closure)
       await window.electron.store.set('resolver_volume_offsets', resolverVolumeOffsetsRef.current);
@@ -20522,7 +20661,7 @@ ${trackListXml}
   // Fallback artist lookup via Spotify API (when MusicBrainz has no results)
   const fetchArtistFromSpotify = async (artistName) => {
     const resolvers = loadedResolversRef.current || [];
-    const activeIds = activeResolversRef.current || [];
+    const activeIds = (activeResolversRef.current || []).filter(id => !metadataOffRef.current.includes(id));
     if (!activeIds.includes('spotify')) return null;
 
     try {
@@ -20593,7 +20732,7 @@ ${trackListXml}
 
   // Fallback artist lookup via MusicKit / Apple Music catalog
   const fetchArtistFromMusicKit = async (artistName) => {
-    const activeIds = activeResolversRef.current || [];
+    const activeIds = (activeResolversRef.current || []).filter(id => !metadataOffRef.current.includes(id));
     if (!activeIds.includes('applemusic')) return null;
 
     const musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
@@ -20719,6 +20858,9 @@ ${trackListXml}
 
   // Fallback artist lookup via Discogs (artist search + releases)
   const fetchArtistFromDiscogs = async (artistName) => {
+    // Switched off in its plug-in settings (lib/plugin-switch.js: Wikipedia and
+    // Discogs are on unless switched off). Before, the switch changed nothing.
+    if (metaServiceConfigsRef.current?.discogs?.enabled === false) return null;
     try {
       const discogsConfig = metaServiceConfigs?.discogs || {};
       const token = discogsConfig.personalAccessToken;
@@ -25389,7 +25531,7 @@ ${trackListXml}
       // Enabling: add to resolverOrder in canonical position
       setResolverOrder(prev => {
         if (!prev.includes(resolverId)) {
-          return insertInCanonicalOrder(prev, resolverId);
+          return insertRemembered(prev, resolverId, savedResolverOrderRef.current);
         }
         return prev;
       });
@@ -25527,6 +25669,14 @@ ${trackListXml}
       // Hot-reload: Load the new resolver without restarting
       try {
                 axe._filename = filename;
+        // The hostBridges hide rule, same as the main load path (#1432 review,
+        // note 7): the install itself is NOT gated (the .axe runs where the
+        // host has its bridges — a file-installed plugin may target another
+        // host), but this host does not LOAD one whose bridges it lacks.
+        if (hideAxesLackingHostBridges([axe]).length === 0) {
+          showToast(`${resolverName} installed but hidden on this host (it needs bridges this app doesn't supply)`, 'info');
+          return;
+        }
         const newResolverInstance = await resolverLoader.current.loadResolver(axe);
         // Wrap the newly-loaded resolver's search through the global limiter
         // (parachord#797) — same treatment as the primary load path.
@@ -25638,6 +25788,17 @@ ${trackListXml}
       }
       setResolverOrder(prev => prev.filter(id => id !== resolverId));
       setActiveResolvers(prev => prev.filter(id => id !== resolverId));
+      // Drop its status reply too (a status-capable plugin): the entry is
+      // the last read's answer, and a reinstalled plugin starts fresh — the
+      // entry it left behind is neither its verdict nor anyone else's.
+      // (playbackResolverIds filters active ids anyway, so this is honesty,
+      // not correctness.)
+      setPluginStatuses(prev => {
+        if (!(resolverId in prev)) return prev;
+        const next = { ...prev };
+        delete next[resolverId];
+        return next;
+      });
 
       // Save the uninstalled resolver ID so it doesn't reappear on restart
       const uninstalledResolvers = await window.electron.store.get('uninstalled_resolvers') || [];
@@ -25799,6 +25960,20 @@ ${trackListXml}
         await window.electron.store.set('uninstalled_resolvers', uninstalledResolvers.filter(id => id !== resolverId));
       }
 
+      // The hostBridges hide rule, same as the main load path (#1432 review,
+      // note 7): installed but not LOADED on a host that lacks its bridges —
+      // the marketplace download itself is not gated (hiding is a load-time
+      // decision, not a download-time one), so the install completes and the
+      // plugin runs on hosts that supply its bridges.
+      if (hideAxesLackingHostBridges([axe]).length === 0) {
+        showConfirmDialog({
+          type: 'info',
+          title: 'Hidden on this host',
+          message: `${resolverName} is installed, but this app doesn't supply the host bridges it needs. It stays available on hosts that do.`
+        });
+        return;
+      }
+
       if (isMetaService) {
         // Load meta-service implementation into resolver loader
         await resolverLoader.current.loadResolver(axe);
@@ -25948,48 +26123,6 @@ ${trackListXml}
 ${tracks}
   </trackList>
 </playlist>`;
-  };
-
-  // Open save dialog for AI playlist
-  const handleAiSavePlaylist = () => {
-    if (!resultsSidebar?.tracks) return;
-
-    // Set default name based on prompt
-    const defaultName = resultsSidebar.prompt
-      ? resultsSidebar.prompt.substring(0, 50)
-      : 'AI Generated Playlist';
-
-    setAiSavePlaylistName(defaultName);
-    setAiSaveDialogOpen(true);
-  };
-
-  // Actually save the AI playlist with the chosen name
-  const handleAiSavePlaylistConfirm = async () => {
-    if (!resultsSidebar?.tracks || !aiSavePlaylistName.trim()) return;
-
-    const playlistId = `ai-${Date.now()}`;
-    const providerName = resultsSidebar.provider?.name || 'AI';
-
-    const newPlaylist = {
-      id: playlistId,
-      title: aiSavePlaylistName.trim(),
-      creator: providerName,
-      tracks: resultsSidebar.tracks,
-      createdAt: Date.now(),
-      addedAt: Date.now(),
-      lastModified: Date.now()
-    };
-
-    // Add to playlists state (prepend so it appears at top immediately)
-    setPlaylists(prev => [newPlaylist, ...prev]);
-
-    // Save to unified local storage (electron-store)
-    await savePlaylistToStore(newPlaylist);
-
-    // Close dialogs
-    setAiSaveDialogOpen(false);
-    closeSidebarAnimated();
-    showSidebarBadge('playlists');
   };
 
   // Save playlist to local storage (electron-store)
@@ -28315,7 +28448,10 @@ Return ONLY the JSON array, no other text.`;
     const order = resolverOrderRef.current || [];
     const metaIds = new Set((metaServicesRef.current || []).map(s => s.id));
     return orderCatalogResolvers(
-      loader.getRecommendationResolvers().filter(r => activeIds.includes(r.id) || metaIds.has(r.id)),
+      loader.getRecommendationResolvers()
+        .filter(r => activeIds.includes(r.id) || metaIds.has(r.id))
+        // Its "Recommendations from X" switched off (#1505).
+        .filter(r => !recommendationsOffRef.current.includes(r.id)),
       { activeIds, order }
     );
   };
@@ -29939,7 +30075,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     if (activeView !== 'recommendations' && !(activeView === 'home' && recommendationProviderIdsRef.current !== null)) return;
     if (recommendationProviderKey(recommendationProviders()) === recommendationProviderIdsRef.current) return;
     loadRecommendations();
-  }, [activeView, cacheLoaded, loadedResolvers, activeResolvers, metaServices]);
+  }, [activeView, cacheLoaded, loadedResolvers, activeResolvers, metaServices, recommendationsOffResolvers]);
 
   // Home loads its own discovery data (recommendations, Fresh Drops,
   // Critical Darlings, concerts) in one idle-time effect in home-page.js.
@@ -32824,7 +32960,8 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     // plug-in steps below. A saved sign-in outlives turning the plug-in off,
     // so a token alone sent every uncached artist photo to Spotify while the
     // user had switched it off (and kept tripping its rate-limit pause).
-    const activeIds = activeResolversRef.current || [];
+    // Nor one whose metadata is switched off ("Use metadata from X", #1505).
+    const activeIds = (activeResolversRef.current || []).filter(id => !metadataOffRef.current.includes(id));
 
     const steps = [];
     if (token && activeIds.includes('spotify')) {
@@ -33070,6 +33207,9 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
   // Fetch artist biography from Wikipedia via Wikidata (uses MBID)
   const getWikipediaBio = async (artistMbid) => {
+    // Switched off in its plug-in settings (lib/plugin-switch.js: Wikipedia and
+    // Discogs are on unless switched off). Before, the switch changed nothing.
+    if (metaServiceConfigsRef.current?.wikipedia?.enabled === false) return null;
     if (!artistMbid) {
       console.log('📚 Wikipedia bio skipped: no MBID');
       return null;
@@ -33136,7 +33276,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
   // Fetch artist image from Wikipedia/Wikidata (fallback when Spotify has no image)
   const getWikipediaArtistImage = async (artistMbid) => {
-    if (!artistMbid) return null;
+    if (!artistMbid || metaServiceConfigsRef.current?.wikipedia?.enabled === false) return null;
 
     try {
       // Step 1: the artist's Wikidata id (see getWikipediaBio)
@@ -33177,6 +33317,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
   // Fetch artist biography from Discogs (uses MBID or artist name)
   const getDiscogsBio = async (artistMbid, artistName) => {
+    if (metaServiceConfigsRef.current?.discogs?.enabled === false) return null;
     if (!artistMbid && !artistName) {
       console.log('📀 Discogs bio skipped: no MBID or name');
       return null;
@@ -33274,7 +33415,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
   // Fetch artist image from Discogs (fallback when Spotify and Wikipedia have no image)
   const getDiscogsArtistImage = async (artistMbid, artistName) => {
-    if (!artistName) return null;
+    if (!artistName || metaServiceConfigsRef.current?.discogs?.enabled === false) return null;
 
     try {
       // The ref first: getArtistImage calls this from stale closures.
@@ -36113,7 +36254,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         });
         setResolverOrder(prev => {
           if (!prev.includes('applemusic')) {
-            return insertInCanonicalOrder(prev, 'applemusic');
+            return insertRemembered(prev, 'applemusic', savedResolverOrderRef.current);
           }
           return prev;
         });
@@ -36398,8 +36539,14 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     return true;
   };
 
+  // Remove (the username row): forget the username only. It used to
+  // delete the plug-in's whole settings record, which also switched
+  // "Enable" off and wiped the Advanced API keys (2026-11-17). Enable stays
+  // as it was (a username counted as on), and the scrobbling session is the
+  // Scrobbling section's own.
   const disconnectLastfm = async () => {
-    await clearMetaServiceConfig('lastfm');
+    const { username: _username, ...rest } = metaServiceConfigs.lastfm || {};
+    await saveMetaServiceConfig('lastfm', { ...rest, enabled: rest.enabled !== false });
     console.log('🎧 Disconnected from Last.fm');
   };
 
@@ -36491,8 +36638,14 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     return true;
   };
 
+  // Remove (the username row): forget the username only. It used to
+  // delete the plug-in's whole settings record, which also switched
+  // "Enable" off and wiped the Advanced API keys (2026-11-17). Enable stays
+  // as it was (a username counted as on), and the scrobbling session is the
+  // Scrobbling section's own.
   const disconnectListenbrainz = async () => {
-    await clearMetaServiceConfig('listenbrainz');
+    const { username: _username, ...rest } = metaServiceConfigs.listenbrainz || {};
+    await saveMetaServiceConfig('listenbrainz', { ...rest, enabled: rest.enabled !== false });
     console.log('🎵 Disconnected from ListenBrainz');
   };
 
@@ -36876,9 +37029,9 @@ useEffect(() => {
         try { const musicKitWeb = window.getMusicKitWeb(); if (musicKitWeb?.seek) { await musicKitWeb.seek(newPosition); } } catch (err) { /* not the active method */ }
       }
     }
-    // Amazon Music (remote-controlled app; seek position is in seconds)
-    if (activeResolver === 'amazonmusic' && window.electron?.amazonMusic) {
-    }
+    // Amazon Music seeks through the shared element like every widevine
+    // source (the seekEl above) — its old remote-controlled seek stub is
+    // gone with the IPC surface.
     if (seekTimeoutRef.current) clearTimeout(seekTimeoutRef.current);
     seekTimeoutRef.current = setTimeout(() => {
       seekingRef.current = false;
@@ -37330,7 +37483,7 @@ useEffect(() => {
   // Stable function props for the memo'd ResultsPanel (keys must
   // match RESULTS_PANEL_HANDLERS in results-panel.js).
   const resultsPanelHandlers = useStableHandlers({
-    clearAiChatHistory, closeAiChat, closeSidebarAnimated, getChatServices, handleAiAddToPlaylist, handleAiAddToQueue, handleAiChatSend, handleAiPlay, isServiceEnabled, renderChatContent, showCopyFallback,
+    clearAiChatHistory, closeAiChat, closeSidebarAnimated, getChatServices, handleAiChatSend, isServiceEnabled, renderChatContent, showCopyFallback,
   });
 
   // Stable function props for the memo'd QueueDrawer (keys must
@@ -37366,19 +37519,13 @@ useEffect(() => {
   // Stable function props for the memo'd Playbar (keys must
   // match PLAYBAR_HANDLERS in playbar.js).
   const playbarHandlers = useStableHandlers({
-    closeAiChat, fetchArtistData, getAiServices, getChatServices, handleDragEnter, handleDragLeave, handleDragOver, handleDrop, handlePlaylistDragEnd, haversineDistance, isServiceEnabled, mediaElementFor, openAiChat, openAlbumForTrack, playsInApp, requestRepeat, requestShuffle,
+    closeAiChat, fetchArtistData, getChatServices, handleDragEnter, handleDragLeave, handleDragOver, handleDrop, handlePlaylistDragEnd, haversineDistance, isServiceEnabled, mediaElementFor, openAiChat, openAlbumForTrack, playsInApp, requestRepeat, requestShuffle,
   });
 
   // Stable function props for the memo'd Sidebar (keys must
   // match SIDEBAR_HANDLERS in sidebar.js).
   const sidebarHandlers = useStableHandlers({
     activateListenAlong, deactivateListenAlong, getAlbumArt, handlePlaylistDrop, isOnAir, loadCharts, loadCriticsPicks, loadNewReleases, loadTopTracks, navigateBack, navigateForward, navigateTo, navigateToFriend, pinFriend, reorderPinnedFriends,
-  });
-
-  // Stable function props for the memo'd AiPromptPanel (keys must
-  // match AI_PROMPT_PANEL_HANDLERS in ai-prompt-panel.js).
-  const aiPromptPanelHandlers = useStableHandlers({
-    handleAiGenerate, navigateTo,
   });
 
   // Stable function props for the memo'd ExternalTrackPrompt (keys must
@@ -37391,12 +37538,6 @@ useEffect(() => {
   // match UNSAVED_FRIEND_DIALOG_HANDLERS in unsaved-friend-dialog.js).
   const unsavedFriendDialogHandlers = useStableHandlers({
     confirmUnpinFriend, saveFriendToCollection,
-  });
-
-  // Stable function props for the memo'd AiSaveDialog (keys must
-  // match AI_SAVE_DIALOG_HANDLERS in ai-save-dialog.js).
-  const aiSaveDialogHandlers = useStableHandlers({
-    handleAiSavePlaylistConfirm,
   });
 
   // Stable function props for the memo'd NewPlaylistDialog (keys must
@@ -37444,7 +37585,7 @@ useEffect(() => {
   // Stable function props for the memo'd PluginSettingsDialog (keys must
   // match PLUGIN_SETTINGS_DIALOG_HANDLERS in plugin-settings-dialog.js).
   const pluginSettingsDialogHandlers = useStableHandlers({
-    applyAmazonMusicStatus, connectAppleMusic, connectLastfm, connectListenbrainz, connectSoundcloud, connectSpotify, disconnectAppleMusic, disconnectLastfm, disconnectListenbrainz, disconnectSoundcloud, disconnectSpotify, fetchDynamicModels, getServiceColor, handleAddWatchFolder, handleInstallFromMarketplace, handleRemoveMissingFiles, handleRemoveWatchFolder, handleRescanAll, handleRescanFolder, handleUninstallResolver, manageAmazonMusic, openSyncSetupModal, saveAppleMusicDeveloperToken, saveMetaServiceConfig, saveSoundcloudCredentials, saveSpotifyCredentials, toggleResolver,
+    clearMetaServiceConfig, connectAppleMusic, connectLastfm, connectListenbrainz, connectSoundcloud, connectSpotify, disconnectAppleMusic, disconnectLastfm, disconnectListenbrainz, disconnectSoundcloud, disconnectSpotify, fetchDynamicModels, getServiceColor, handleAddWatchFolder, handleInstallFromMarketplace, handleRemoveMissingFiles, handleRemoveWatchFolder, handleRescanAll, handleRescanFolder, handleUninstallResolver, manageAmazonMusic, openSyncSetupModal, refreshPluginStatus, saveAppleMusicDeveloperToken, saveMetaServiceConfig, saveSoundcloudCredentials, saveSpotifyCredentials, setProviderSyncEnabled, setResolverMetadataOn, setResolverPlaybackOn, setResolverRecommendationsOn, showConfirmDialog, toggleResolver,
   });
 
   // Stable function props for the memo'd ChartsPage (keys must
@@ -37473,12 +37614,20 @@ useEffect(() => {
   // lib/getting-started.js; step 1's tiles from the plug-in registry.
   // pluginAccounts is what the host knows about each sign-in (a plug-in it
   // has no sign-in state for counts as connected once it plays).
-  const pluginAccounts = useMemo(() => ({
-    spotify: spotifyConnected,
-    applemusic: appleMusicConnected,
-    soundcloud: soundcloudConnected,
-    amazonmusic: !!amazonMusicStatus?.web?.signedIn
-  }), [spotifyConnected, appleMusicConnected, soundcloudConnected, amazonMusicStatus]);
+  // A plug-in that reports its own status (capabilities.status, Amazon
+  // today) says whether it's signed in, in its reply; any such plug-in counts
+  // here without naming it.
+  const pluginAccounts = useMemo(() => {
+    const out = {
+      spotify: spotifyConnected,
+      applemusic: appleMusicConnected,
+      soundcloud: soundcloudConnected
+    };
+    for (const [id, reply] of Object.entries(pluginStatuses || {})) {
+      if (reply && typeof reply.signedIn === 'boolean') out[id] = reply.signedIn;
+    }
+    return out;
+  }, [spotifyConnected, appleMusicConnected, soundcloudConnected, pluginStatuses]);
   // A required setting not saved yet: Spotify needs your own Client ID
   // (release builds ship none; a dev .env one doesn't count, so a dev build
   // behaves as a release does). SoundCloud ships a fallback key.
@@ -37553,9 +37702,10 @@ useEffect(() => {
     if (plugin) setSelectedResolver(plugin);
   };
   // Step 1's Connect: switch the plug-in on, then run the sign-in its panel
-  // runs. The host has a sign-in for these services; one that needs
-  // something typed first (Spotify's own Client ID, pluginSetupNeeded), and
-  // any other plug-in, opens its panel instead.
+  // runs. The host has a sign-in for these services; a plug-in that reports
+  // its own status signs in with its own signIn() (the dialog's AccountRow
+  // does the same); one that needs something typed first (Spotify's own
+  // Client ID, pluginSetupNeeded), and any other plug-in, opens its panel.
   const connectPlugin = async (pluginId) => {
     const plugin = (loadedResolversRef.current || []).find(r => r.id === pluginId);
     if (!plugin) return;
@@ -37563,9 +37713,12 @@ useEffect(() => {
       spotify: pluginSetupNeeded.spotify ? null : connectSpotify,
       soundcloud: soundcloudCredentialsSource !== 'none' ? connectSoundcloud : null,
       applemusic: connectAppleMusic,
-      // Then read the sign-in back, so the tile shows it at once.
-      amazonmusic: () => manageAmazonMusic({ explicit: true, reason: 'not-signed-in', forcePrompt: true }).finally(() => refreshAmazonMusicStatus())
-    }[pluginId];
+      // Amazon's sign-in carries its own prompt flow, as in the plug-in
+      // dialog; the flow refreshes the status itself.
+      amazonmusic: () => manageAmazonMusic({ explicit: true, reason: 'not-signed-in', forcePrompt: true })
+    }[pluginId] || (plugin.capabilities?.status && typeof plugin.signIn === 'function'
+      ? () => Promise.resolve(plugin.signIn()).catch(() => null).then(() => refreshPluginStatus(pluginId))
+      : null);
     // Switched on only when the sign-in runs here: a plug-in that still needs
     // setup opens its panel as it is, where you set it up and turn it on.
     if (signIn) {
@@ -37803,7 +37956,7 @@ useEffect(() => {
 
         // Library view with collapsible hero header (matching Recommendations pattern)
         activeView === 'library' && React.createElement(CollectionPage, {
-          activeResolvers: playbackResolvers, allResolvers, autoPinnedFriendIds, collectionData, collectionHeaderCollapsed, collectionLoading, collectionObserverRef, collectionScrollContainerRef, collectionSearch, collectionSearchOpen, collectionSongsSorted, collectionSort, collectionTab, collectionTrackRowRefs, currentTrack, filterCollectionItems, friendSyncInProgress, friends, handleCollectionScrollContainerRef, isPlaying, library, libraryLoading, metaServiceConfigs, pinnedFriendIds, playbackContext, resolverOrder, resolverSyncSettings, syncSignedOut, setAddFriendModalOpen, setAddToPlaylistPanel, setCollectionHeaderCollapsed, setCollectionSearch, setCollectionSearchOpen, setCollectionSort, setCollectionTab, setDraggingTrackForPlaylist, setSyncStatusModal, setTrackLoading, showToast, sortCollectionItems, syncProviderConfig, syncStatus, trackSources,
+          activeResolvers: playbackResolvers, allResolvers, autoPinnedFriendIds, collectionData, collectionHeaderCollapsed, collectionLoading, collectionObserverRef, collectionScrollContainerRef, collectionSearch, collectionSearchOpen, collectionSongsSorted, collectionSort, collectionTab, collectionTrackRowRefs, currentTrack, filterCollectionItems, friendSyncInProgress, friends, handleCollectionScrollContainerRef, isPlaying, library, libraryLoading, metaServiceConfigs, pinnedFriendIds, playbackContext, resolverOrder, resolverSyncSettings, syncPausedUntil, syncSignedOut: syncSignedOutView, setAddFriendModalOpen, setAddToPlaylistPanel, setCollectionHeaderCollapsed, setCollectionSearch, setCollectionSearchOpen, setCollectionSort, setCollectionTab, setDraggingTrackForPlaylist, setSyncStatusModal, setTrackLoading, showToast, sortCollectionItems, syncProviderConfig, syncStatus, trackSources,
           ...collectionPageHandlers
         }),
 
@@ -38086,7 +38239,6 @@ useEffect(() => {
           albumArtCache,
           albumToReleaseIdCache,
           allResolvers,
-          amazonMusicStatus,
           appVersion,
           appleMusicConnected,
           artistDataCache,
@@ -38113,11 +38265,13 @@ useEffect(() => {
           metaServiceConfigs,
           metaServices,
           nwayEngineMode,
-          planBlockedResolverIds,
+          notPlayingResolverIds,
+          playbackOffResolvers,
           playbackAbr,
           playbackLimits,
           playbackQuality,
           playbackSpatial,
+          pluginStatuses,
           pluginsFilter,
           releaseDetailsCache,
           rememberQueue,
@@ -38179,7 +38333,6 @@ useEffect(() => {
       _cacheLoaded: cacheLoaded,
       addTrackToCollection,
       aiChatOpen,
-      aiPromptOpen,
       allResolvers,
       applyLocalFileVolume,
       browserPlaybackActive,
@@ -38222,7 +38375,6 @@ useEffect(() => {
       resolverBlocklist,
       resolverVolumeOffsets,
       resumePending,
-      setAiPromptOpen,
       setDraggingTrackForPlaylist,
       setIsMuted,
       setPlaybarAlbumArt,
@@ -38242,26 +38394,6 @@ useEffect(() => {
       trackSourcesCache,
       volume,
       ...playbarHandlers
-    }),
-
-    // AI Prompt Input Panel (floating above playbar, aligned with AI button on left) - Refined dark theme
-    /* AiPromptPanel (components/ai-prompt-panel.js), a memo'd panel. */ aiPromptOpen && React.createElement(AiPromptPanel, {
-      _allResolvers: allResolvers,
-      aiError,
-      aiIncludeHistory,
-      aiLoading,
-      aiPrompt,
-      metaServiceConfigs,
-      metaServices,
-      resolverLoaderRef,
-      selectedAiResolver,
-      setAiError,
-      setAiPrompt,
-      setAiPromptOpen,
-      setMarketplaceCategory,
-      setSelectedAiResolver,
-      setSettingsTab,
-      ...aiPromptPanelHandlers
     }),
 
     // Results Sidebar (slides in from right, above playbar) - Refined dark theme
@@ -38286,16 +38418,6 @@ useEffect(() => {
       showToast,
       sidebarClosing,
       ...resultsPanelHandlers
-    }),
-
-    // AI Save Playlist Dialog - Refined dark theme
-    // The standard dialog (components/modal.js), a real form: Enter saves.
-    /* AiSaveDialog (components/ai-save-dialog.js), a memo'd dialog. */ aiSaveDialogOpen && React.createElement(AiSaveDialog, {
-      aiSavePlaylistName,
-      resultsSidebar,
-      setAiSaveDialogOpen,
-      setAiSavePlaylistName,
-      ...aiSaveDialogHandlers
     }),
 
     // New Playlist Dialog: a name, then the empty playlist opens.
@@ -38349,7 +38471,6 @@ useEffect(() => {
     /* PluginSettingsDialog (components/plugin-settings-dialog.js), a memo'd dialog. */ selectedResolver && React.createElement(PluginSettingsDialog, {
       activeResolvers,
       allResolvers,
-      amazonMusicStatus,
       appleMusicAdvancedOpen,
       appleMusicConnected,
       appleMusicDeveloperToken,
@@ -38384,16 +38505,20 @@ useEffect(() => {
       metaServiceConfigs,
       metaServices,
       playbackLimits,
+      pluginStatuses,
+      playbackOffResolvers,
+      recommendationsOffResolvers,
+      metadataOffResolvers,
       resolverConfigCache,
+      resolverLoaderRef,
       resolverSyncSettings,
+      syncSignedOut: syncSignedOutView,
       runLoveBackfill,
       runLoveImport,
       scanProgress,
       scrobblerConfigs,
       scrobblerLovePushEnabled,
       selectedResolver,
-      setActiveResolvers,
-      setAmazonMusicStatus,
       setAppleMusicAdvancedOpen,
       setAppleMusicDeveloperToken,
       setAutoLaunchSpotify,
@@ -38406,7 +38531,6 @@ useEffect(() => {
       setListenbrainzTokenInput,
       setListenbrainzUsernameInput,
       setLovePushEnabled,
-      setResolverOrder,
       setScrobblerConfigs,
       setSelectedResolver,
       setSoundcloudAdvancedOpen,
@@ -38426,7 +38550,6 @@ useEffect(() => {
       spotifyClientIdInput,
       spotifyConnected,
       spotifyCredentialsSource,
-      syncProviderConfig,
       watchFolders,
       ...pluginSettingsDialogHandlers
     }),

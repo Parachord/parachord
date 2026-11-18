@@ -357,19 +357,14 @@ module.exports = {
     }
     return true;
   },
-  // Links to achordion.xyz (#1493): a song, an album or a playlist someone
-  // shared, dropped on the player or the queue (or opened any other way the
-  // app opens a service link). Achordion pages are MusicBrainz entities, so a
+  // Links to achordion.xyz (#1493; their types are the manifest's urlTypes):
+  // a song, an album or a playlist someone shared, dropped on the player or
+  // the queue (or opened any other way the app opens a service link). Achordion pages are MusicBrainz entities, so a
   // link names a recording, a release group or a ListenBrainz playlist, by
   // MBID or (Parachord's own fallback links) by artist and title. The app
   // then finds each track on the listener's own services. MusicBrainz
   // requests go through the renderer's MusicBrainz limiter (its fetch
   // interceptor), so these are plain fetches.
-  getUrlType: function (url) {
-    const m = /achordion\.xyz\/(recording|release-group|playlist|artist)(?:[/?#]|$)/i.exec(String(url || ''));
-    if (!m) return null;
-    return { recording: 'track', 'release-group': 'album', playlist: 'playlist', artist: 'artist' }[m[1].toLowerCase()];
-  },
   lookupUrl: async function (url) {
     const MBID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     let u;
