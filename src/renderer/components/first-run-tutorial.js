@@ -21,7 +21,6 @@ const { ServiceMark } = require('./home-getting-started');
 const { PAGE_COLORS } = require('../lib/page-colors');
 const { PAGE_ICONS } = require('../lib/page-icons');
 const { stepOnePlugins } = require('../lib/getting-started');
-const { pluginSwitchState } = require('../lib/plugin-switch');
 
 const e = React.createElement;
 
@@ -34,14 +33,6 @@ const FIRST_RUN_TUTORIAL_HANDLERS = [
 // The song the Friends screen's playbar is playing; its cover comes from the
 // album-art pipeline (getTrackArt), never a stored URL.
 const FRIEND_SONG = { artist: 'Quarantine Angst', title: 'Lopped Off' };
-
-// The AI plug-in to show as "your assistant": the first chat plug-in that's
-// set up (its key added, or switched on when it needs none: the rule its
-// settings switch uses, lib/plugin-switch.js), or null when none is. Was
-// Claude's by id (#1523).
-const tourAssistant = (metaServices, metaServiceConfigs) => (metaServices || []).find((m) =>
-  m && m.capabilities && m.capabilities.chat
-  && pluginSwitchState({ plugin: m, config: (metaServiceConfigs || {})[m.id] }).checked) || null;
 
 // The plug-ins that play here, from the registry: services first, then the
 // no-account ones (never a list of names).
@@ -261,20 +252,20 @@ const TOUR_SCREENS = [
     body: 'Search, play and queue from Raycast without switching windows. Or ask an AI assistant to play something, build a queue or skip a song, and it does it in Parachord.',
     needs: 'Add the Raycast extension (on a Mac), or connect your assistant in Settings › General.',
     // A launcher command and an assistant's ask, each with its mark.
-    picture: ({ metaServices, metaServiceConfigs }) => {
+    picture: () => {
       const row = (mark, text) => e('span', {
         className: 'text-ink-primary',
         style: { display: 'inline-flex', alignItems: 'center', gap: '10px', padding: '8px 12px', borderRadius: '12px', fontSize: '13px', backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)' },
       }, mark, text);
-      // The mark of an AI plug-in you've set up, on its colour; with none
-      // set up, a plain sparkle (the copy names no assistant either way).
-      const assistant = tourAssistant(metaServices, metaServiceConfigs);
+      // The assistant row is the MCP server, which any assistant that speaks
+      // MCP can use, so it shows a neutral sparkle, never an in-app chat
+      // plug-in's logo: Ollama or ChatGPT in Parachord's own chat can't drive
+      // Parachord over MCP. (#1530 had it show the first chat plug-in set
+      // up; before that it was Claude's by id.)
       return e('div', { style: { display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '8px' } },
         row(e('span', { style: { width: '24px', height: '24px', borderRadius: '6px', background: BRAND_COLORS.raycastGradient, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--on-accent)' } }, e(Icons.Search, { size: 14 })),
           'Play Lopped Off'),
-        row(assistant
-          ? e('span', { style: { transform: 'scale(0.67)', margin: '-6px' } }, e(ServiceMark, { resolver: assistant }))
-          : e(Icons.Sparkles, { size: 16 }),
+        row(e(Icons.Sparkles, { size: 16 }),
           'Queue three more like this'));
     },
   },
@@ -285,8 +276,6 @@ const FirstRunTutorial = React.memo(function FirstRunTutorial(props) {
     firstRunTutorial,
     getTrackArt,
     loadedResolvers,
-    metaServices,
-    metaServiceConfigs,
     navigateTo,
     setFirstRunTutorial,
     startGettingStarted,
@@ -327,7 +316,7 @@ const FirstRunTutorial = React.memo(function FirstRunTutorial(props) {
     e('div', { style: { padding: '32px 32px 24px', minHeight: '360px' } },
       index === 0 && e('div', { style: { display: 'flex', justifyContent: 'center', marginBottom: '20px' } },
         e(ParachordWordmark, { fill: 'var(--text-primary)', height: 40 })),
-      e('div', { 'aria-hidden': 'true', style: PICTURE_STYLE }, screen.picture({ loadedResolvers, metaServices, metaServiceConfigs, friendArt, onFriendArtError: () => setFriendArt(null) })),
+      e('div', { 'aria-hidden': 'true', style: PICTURE_STYLE }, screen.picture({ loadedResolvers, friendArt, onFriendArtError: () => setFriendArt(null) })),
       e('h2', { className: 'text-ink-primary', style: { fontSize: '20px', fontWeight: 600, margin: '0 0 8px' } }, screen.title),
       e('p', { className: 'text-ink-secondary', style: { fontSize: '14px', lineHeight: 1.6, margin: 0 } }, screen.body),
       // The caveat (what a feature needs before it works), set apart in italics.
@@ -352,4 +341,4 @@ const FirstRunTutorial = React.memo(function FirstRunTutorial(props) {
           : e(Button, { variant: 'primary', onClick: () => go(index + 1) }, 'Next'))));
 });
 
-module.exports = { FirstRunTutorial, FIRST_RUN_TUTORIAL_HANDLERS, TOUR_SCREENS, tourAssistant };
+module.exports = { FirstRunTutorial, FIRST_RUN_TUTORIAL_HANDLERS, TOUR_SCREENS };

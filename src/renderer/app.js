@@ -38407,8 +38407,6 @@ useEffect(() => {
     /* FirstRunTutorial (components/first-run-tutorial.js), a memo'd dialog. */ firstRunTutorial.open && React.createElement(FirstRunTutorial, {
       firstRunTutorial,
       loadedResolvers,
-      metaServices,
-      metaServiceConfigs,
       setFirstRunTutorial,
       ...firstRunTutorialHandlers
     }),
