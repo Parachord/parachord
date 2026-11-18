@@ -506,7 +506,7 @@ describe('app.js integration', () => {
     // through usesSharedAudio / isHtml5StreamResolver.
     expect(axe.capabilities.html5Stream).toBe(true);
     expect(appSrc).toContain("const isHtml5StreamResolver = (id) => !!findLoadedResolver(id)?.capabilities?.html5Stream;");
-    expect(appSrc).toContain("const usesSharedAudio = (id) => id === 'localfiles' || isHtml5StreamResolver(id) || isWidevineResolver(id);");
+    expect(appSrc).toContain("const usesSharedAudio = (id) => isLocalResolver(id) || isHtml5StreamResolver(id) || isWidevineResolver(id);");
     // play/pause toggle
     expect(appSrc).toContain('audioRef.current && usesSharedAudio(currentTrack?._activeResolver)');
     // seek keys off the resolver actually playing, not "has a subsonic source":
@@ -547,11 +547,13 @@ describe('app.js integration', () => {
   });
 
   test('shared HTML5 element is created once and every path uses it', () => {
-    // localfiles hands the track over as-is (SoundCloud plays in its widget
-    // now, not the shared element); the shared html5Stream branch tags it
-    // with the owning resolver because every such resolver plays http(s) URLs
-    // and the element's src can't tell them apart.
-    expect(appSrc.match(/ensureSharedAudioElement\(trackOrSource\)/g)).toHaveLength(1);
+    // Every path that loads the element (SoundCloud plays in its widget
+    // now, not the shared element) tags the track with the owning resolver:
+    // the html5Stream and Widevine branches because every such resolver
+    // plays http(s) URLs and the element's src can't tell them apart, the
+    // local branch because its owner is any capabilities.local plug-in
+    // (#1520), not a named one.
+    expect(appSrc).not.toMatch(/ensureSharedAudioElement\(trackOrSource\)/);
     expect(appSrc).toContain('ensureSharedAudioElement({ ...trackOrSource, _streamOwner: resolverId })');
     expect(appSrc).toContain('const audio = new Audio()');
     expect(appSrc).not.toContain('audioRef.current = new Audio()');
