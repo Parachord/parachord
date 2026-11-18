@@ -39,7 +39,8 @@ describe('Collection songs list is memoized', () => {
     // in the component is a TDZ crash (see docs/architecture/renderer-patterns.md "useEffect dep array TDZ").
     const memoAt = app.indexOf('const collectionSongsSorted = useMemo(');
     for (const decl of [
-      'const [library, setLibrary] = useState(',
+      // library comes from the Local Files hook's call (#1487).
+      '} = useLocalFiles({',
       'const [collectionData, setCollectionData] = useState(',
       'const filterCollectionItems = useCallback(',
       'const sortCollectionItems = useCallback(',

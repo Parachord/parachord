@@ -27,7 +27,7 @@ Subsystem detail lives in `docs/architecture/`, moved there verbatim from this f
 | Playlist sync (Spotify, Apple Music, ListenBrainz), mirrors, hosted XSPF, loved tracks | [sync.md](docs/architecture/sync.md) | `main-process/ipc/sync-*.js`, `main-process/sync-links.js`, `sync-engine/`, `sync-providers/` |
 | What the Android client must match (sync, protocol handlers) | [android-parity.md](docs/architecture/android-parity.md) | (the parachord-mobile repo) |
 | Friend sync | [friends.md](docs/architecture/friends.md) | friend sync in `src/renderer/app.js` |
-| Local files library | [local-files.md](docs/architecture/local-files.md) | `local-files/`, `main-process/ipc/local-files.js` |
+| Local files library | [local-files.md](docs/architecture/local-files.md) | `local-files/`, `main-process/ipc/local-files.js`, `src/renderer/hooks/use-local-files.js` |
 | Persistence: bulk load, store allowlist, split store | [state-persistence.md](docs/architecture/state-persistence.md) | `main-process/ipc/store.js`, `main-process/split-store.js` |
 | MBID mapper and its outage fallback | [mbid-mapper.md](docs/architecture/mbid-mapper.md) | `mbid-lookup.js` |
 | Scrobbling; the Achordion submit plugin | [scrobbling.md](docs/architecture/scrobbling.md) | `scrobbler-loader.js`, `plugins-src/achordion/` |
