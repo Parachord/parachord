@@ -33,6 +33,7 @@ const { VirtualizedTrackList, TrackRow, TrackRowSkeleton } = require('./track-li
 const { playlistPlaybackContext } = require('../lib/playlist-context');
 const { trackSlug } = require('../lib/track-slug');
 const { countOf } = require('../lib/plural');
+const { pluginName, importSourcePluginId } = require('../lib/plugin-names');
 const { syncBannerState } = require('../lib/playlist-sync-banner');
 const { tracksFingerprint } = require('../../../sync-engine/auto-pull');
 
@@ -414,7 +415,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
             if (pendingProviders.length === 0) return null;
 
             return pendingProviders.map(([providerId, _info]) => {
-              const providerName = providerId === 'spotify' ? 'Spotify' : providerId === 'applemusic' ? 'Apple Music' : providerId;
+              const providerName = pluginName(providerId);
               return React.createElement('div', {
                 key: `remote-deleted-${providerId}`,
                 className: `mx-4 mt-3 p-3 rounded-lg border`,
@@ -476,7 +477,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
             const provider = playlist.syncedFrom.resolver;
             // The service's name from its plugin (anything not Spotify showed
             // its raw id: "applemusic", "listenbrainz").
-            const providerName = (allResolvers || []).find(r => r.id === provider)?.name || provider;
+            const providerName = pluginName(provider);
             const syncState = banner.state; // 'push' | 'conflict'
             const localIsNewer = banner.localIsNewer;
 
@@ -826,18 +827,16 @@ const tracksWithIds = (playlistTracks || []).map(track => ({
                   const source = selectedPlaylist.source || selectedPlaylist.syncedFrom?.resolver;
                   const sourceUrl = selectedPlaylist.sourceUrl;
 
-                  // Determine display text based on source type
+                  // Determine display text based on source type. A service's
+                  // name comes from its plug-in: '<id>-sync' / '<id>-import',
+                  // or a bare id (older records, syncedFrom.resolver) when it
+                  // is a playback plug-in. A recommendation playlist a meta
+                  // service made (source 'listenbrainz') shows no source line.
+                  const sourcePlugin = importSourcePluginId(source)
+                    || ((allResolvers || []).some(r => r.id === source) ? source : null);
                   let sourceLabel = null;
-                  if (source === 'spotify-sync' || source === 'spotify-import' || source === 'spotify') {
-                    sourceLabel = 'Spotify';
-                  } else if (source === 'applemusic-sync' || source === 'applemusic-import' || source === 'applemusic') {
-                    sourceLabel = 'Apple Music';
-                  } else if (source === 'amazonmusic-import' || source === 'amazonmusic') {
-                    sourceLabel = 'Amazon Music';
-                  } else if (source === 'soundcloud-import' || source === 'soundcloud') {
-                    sourceLabel = 'SoundCloud';
-                  } else if (source === 'youtube-import' || source === 'youtube') {
-                    sourceLabel = 'YouTube';
+                  if (sourcePlugin) {
+                    sourceLabel = pluginName(sourcePlugin);
                   } else if (source === 'hosted-xspf' || (sourceUrl && !source)) {
                     sourceLabel = 'A playlist link';
                   } else if (source === 'imported-xspf') {

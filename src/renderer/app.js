@@ -2121,6 +2121,7 @@ const { ProviderMenu } = require('./components/provider-menu');
 const { HeroTabs } = require('./components/hero-tabs');
 const { EmptyState, ErrorState } = require('./components/states');
 const { setSellerColorLookup, sellerColor, sellerTextColor, sellerBadgeBg, sellerShortName, sellerName } = require('./lib/ticket-sellers');
+const { setPluginLookup, pluginName } = require('./lib/plugin-names');
 const { withCollectionState } = require('./lib/menu-collection-state');
 const { runPlaybackControl } = require('../../tools/playback-control');
 const { runQueueAdd } = require('../../tools/queue-add');
@@ -7478,9 +7479,16 @@ const Parachord = () => {
   // today, any self-hosted server tomorrow. Local files and SoundCloud
   // share the element but have their own play paths.
   const findLoadedResolver = (id) => (id ? (loadedResolversRef.current || []).find(r => r.id === id) : undefined);
-  // Display-name lookup for engine-side labels/toasts — id→name via the
-  // registry, never === 'service' arms (capability-not-id rule).
-  window.resolverLabelById = (id) => (findLoadedResolver(id)?.name) || id || 'Stream';
+  // A plug-in's display name, from the registry (lib/plugin-names.js, #1521):
+  // playback plug-ins, then meta services (Last.fm, ListenBrainz, concert
+  // sellers), then anything else the loader holds. Read at call time, so
+  // handing it over on every render costs nothing.
+  setPluginLookup((id) => findLoadedResolver(id)
+    || (metaServicesRef.current || []).find(s => s.id === id)
+    || (resolverLoaderRef.current?.getAllResolvers?.() || []).find(r => r.id === id));
+  // The same lookup on window for engine-side labels/toasts, never
+  // === 'service' arms (capability-not-id rule).
+  window.resolverLabelById = (id) => (id ? pluginName(id) : 'Stream');
   // DevTools accessor for a loaded resolver INSTANCE (its plugin methods).
   // The plugin owns every service surface since #1356 — sign-in flows ask
   // `window.__parachordResolver('amazonmusic').signIn()` through the loaded
@@ -12559,7 +12567,7 @@ const Parachord = () => {
               if (!friend) {
                 const cachedRecentTrack = await fetchTransientFriendNowPlaying(service, user);
                 if (!cachedRecentTrack) {
-                  showToast(`${user} is not currently listening on ${service === 'listenbrainz' ? 'ListenBrainz' : 'Last.fm'}`);
+                  showToast(`${user} is not currently listening on ${pluginName(service)}`);
                   break;
                 }
                 friend = {
@@ -12573,7 +12581,7 @@ const Parachord = () => {
               } else if (!existingFriend.cachedRecentTrack) {
                 const cached = await fetchTransientFriendNowPlaying(service, user);
                 if (!cached) {
-                  showToast(`${user} is not currently listening on ${service === 'listenbrainz' ? 'ListenBrainz' : 'Last.fm'}`);
+                  showToast(`${user} is not currently listening on ${pluginName(service)}`);
                   break;
                 }
                 friend = { ...existingFriend, cachedRecentTrack: cached };
@@ -14587,7 +14595,7 @@ ${trackListXml}
     const tracks = (collectionDataRef.current?.tracks || []);
     const todo = tracks.filter(t => !lovePushedKeysRef.current[t.id]?.[service] && (!onlyIds || onlyIds.has(t.id)));
     if (todo.length === 0) {
-      if (!onlyIds) showToast(`Already up to date: no loves to push to ${service === 'lastfm' ? 'Last.fm' : 'ListenBrainz'}`);
+      if (!onlyIds) showToast(`Already up to date: no loves to push to ${pluginName(service)}`);
       return;
     }
 
@@ -14631,7 +14639,7 @@ ${trackListXml}
     setLoveBackfillRunning(prev => ({ ...prev, [service]: false }));
     setLoveBackfillProgress(prev => ({ ...prev, [service]: null }));
 
-    const label = service === 'lastfm' ? 'Last.fm' : 'ListenBrainz';
+    const label = pluginName(service);
     let msg = `Backfilled ${pushed} love${pushed === 1 ? '' : 's'} to ${label}`;
     if (skipped > 0) msg += ` (${skipped} skipped: no MBID)`;
     if (removedMidRun > 0) msg += ` (${removedMidRun} removed during the run)`;
@@ -14666,9 +14674,9 @@ ${trackListXml}
   const runLoveImport = useCallback(async (service) => {
     if (!serviceHasLovedTracks(service)) return;
     if (loveImportRunningRef.current[service]) return;
-    const label = service === 'lastfm' ? 'Last.fm' : 'ListenBrainz';
+    const label = pluginName(service);
     const otherService = service === 'lastfm' ? 'listenbrainz' : 'lastfm';
-    const otherLabel = service === 'lastfm' ? 'ListenBrainz' : 'Last.fm';
+    const otherLabel = pluginName(otherService);
     // A not-yet-loaded collection reads as empty: the dedupe would add
     // every love as new. Same guard class as saveCollection (#758).
     if (collectionLoadingRef.current) {
@@ -28034,12 +28042,9 @@ ${tracks}
         aiProvider: event.aiProvider || null,
         aiProviderName: event.aiProviderName || null,
         ticketUrl: event.ticketUrl || event.url || null,
-        label: event.source === 'bandsintown' ? 'Bandsintown'
-          : event.source === 'songkick' ? 'Songkick'
-          : event.source === 'seatgeek' ? 'SeatGeek'
-          : event.source === 'ticketmaster' ? 'Ticketmaster'
-          : event.source === 'ai' ? (event.aiProviderName || 'AI')
-          : event.source || 'Unknown'
+        // The seller's plug-in name; AI-found dates name their AI provider.
+        label: event.source === 'ai' ? (event.aiProviderName || 'AI')
+          : pluginName(event.source)
       });
 
       // Helper to add an event with dedup — merges ticket sources on match
@@ -28310,11 +28315,7 @@ Return ONLY the JSON array, no other text.`;
       const makeTicketSource = (event) => ({
         source: event.source,
         ticketUrl: event.ticketUrl || event.url || null,
-        label: event.source === 'bandsintown' ? 'Bandsintown'
-          : event.source === 'songkick' ? 'Songkick'
-          : event.source === 'seatgeek' ? 'SeatGeek'
-          : event.source === 'ticketmaster' ? 'Ticketmaster'
-          : event.source || 'Unknown'
+        label: pluginName(event.source)
       });
 
       const addEventDeduped = (event) => {
