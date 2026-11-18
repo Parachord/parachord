@@ -55,6 +55,7 @@
 - **Amazon community playlists open.** Playlists made by other Amazon Music listeners, such as the ones under From other listeners on Recommendations, failed to open with an error. They now load all their tracks, however long the playlist is.
 - **Amazon playlists open sooner.** A playlist you open no longer waits behind artist photos and recommendations Parachord is loading from Amazon in the background, and a slow Amazon page no longer makes it fail after 30 seconds.
 - **Amazon Music updates on its own.** Amazon's support now lives entirely in its plug-in, so fixes to it reach you through plug-in updates instead of waiting for a new Parachord release. Thanks to @theli-ua, who did the whole move.
+- **Signing in to Amazon Music works on a new install.** The sign-in window could close by itself a few seconds after opening, before you'd signed in, because Amazon now shows signed-out visitors its home page and Parachord took that for a finished sign-in. The window now stays open until you've actually signed in.
 - **Smoother starts on Amazon tracks.** Every Amazon track could stutter for a moment as it began, because Parachord threw away audio it had already downloaded while settling on a quality. It now keeps it. And on systems where some Amazon qualities can't be licensed (Linux, for example), Parachord remembers which ones were refused instead of asking again on every track. Thanks to @theli-ua.
 
 ## Bandcamp
