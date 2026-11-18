@@ -595,11 +595,12 @@ const SettingsPage = React.memo(function SettingsPage(props) {
                           if ((hasApiKey || isExplicitlyEnabled) && !hasApiKey && service.settings?.requiresAuth) {
                             needsConfiguration = true;
                           }
-                        } else if (service.id === 'lastfm') {
-                          needsConfiguration = !config?.username;
-                        } else if (service.id === 'listenbrainz' || service.id === 'librefm') {
-                          const isEnabled = !!config?.enabled || !!config?.username;
-                          needsConfiguration = isEnabled && !config?.username;
+                        } else if (service.settings?.configurable?.username) {
+                          // A plug-in whose account is a username (Last.fm,
+                          // ListenBrainz, Libre.fm): switched on with no username
+                          // saved needs setting up. Read from the manifest's
+                          // settings, never the id (#1522).
+                          needsConfiguration = (isServiceActive || config?.enabled === true) && !config?.username;
                         } else if (service.capabilities?.concerts) {
                           // Concert services (Bandsintown, Songkick, SeatGeek): require API key
                           const hasApiKey = !!(config?.apiKey || config?.appId || config?.clientId);
@@ -858,9 +859,16 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column', 
                     loadedResolvers
                       .filter(r => r.capabilities?.resolve && activeResolvers.includes(r.id))
                       .map(resolver => {
-                        // Resolvers where in-app volume control is not available
-                        const isVolumeDisabled = (!resolver.capabilities?.stream && !resolver.capabilities?.embedPlayer) || resolver.id === 'applemusic';
-                        const disabledReason = resolver.id === 'applemusic' ? 'System vol' : 'Browser';
+                        // Plug-ins whose volume Parachord can't set: one that plays in
+                        // the browser (neither stream nor embedPlayer), or one that
+                        // declares capabilities.systemVolume (its player follows the
+                        // system volume: Apple Music's MusicKit). Never an id (#1522).
+                        const systemVolume = !!resolver.capabilities?.systemVolume;
+                        const isVolumeDisabled = (!resolver.capabilities?.stream && !resolver.capabilities?.embedPlayer) || systemVolume;
+                        const disabledReason = systemVolume ? 'System vol' : 'Browser';
+                        const disabledTip = systemVolume
+                          ? `Use system volume to control ${resolver.name}`
+                          : 'Browser playback - volume control not available';
                         const offset = resolverVolumeOffsets[resolver.id] || 0;
 
                         return React.createElement('div', {
@@ -890,7 +898,7 @@ React.createElement('div', { style: { display: 'flex', flexDirection: 'column', 
                             className: 'flex-1',
                             disabled: isVolumeDisabled,
                             'aria-valuetext': `${offset > 0 ? '+' : ''}${offset} dB`,
-                            'aria-label': isVolumeDisabled ? (resolver.id === 'applemusic' ? 'Use system volume to control Apple Music' : 'Browser playback - volume control not available') : `${resolver.name} volume`, 'data-tooltip': isVolumeDisabled ? (resolver.id === 'applemusic' ? 'Use system volume to control Apple Music' : 'Browser playback - volume control not available') : undefined
+                            'aria-label': isVolumeDisabled ? disabledTip : `${resolver.name} volume`, 'data-tooltip': isVolumeDisabled ? disabledTip : undefined
                           }),
                           React.createElement('span', {
                             style: {
