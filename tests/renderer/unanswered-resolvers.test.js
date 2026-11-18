@@ -85,7 +85,8 @@ describe('resolveTrack wiring', () => {
   test('the cache-valid retry stores a noMatch sentinel for a miss, like the other branches', () => {
     const branch = body.slice(body.indexOf('if (askAgainOnly) {'));
     const head = branch.slice(0, branch.indexOf('await Promise.all(resolverPromises)'));
-    expect((head.match(/sources\[resolver\.id\] = \{ noMatch: true/g) || []).length).toBe(2);
+    // A miss is built by newMiss (lib/cached-miss.js, #1535).
+    expect((head.match(/sources\[resolver\.id\] = newMiss\(resolver\);/g) || []).length).toBe(2);
   });
 });
 
@@ -105,6 +106,6 @@ describe('full fan-out', () => {
   const fanout = src.slice(start, src.indexOf('// Keep resolveTrackRef in sync', start));
 
   test('a wrong-song result is saved as an answer, not left as a gap', () => {
-    expect(fanout).toMatch(/sources\[resolver\.id\] = existingRealSources\[resolver\.id\] \|\| \{ noMatch: true, resolvedAt: Date\.now\(\) \};\s*return;/);
+    expect(fanout).toMatch(/sources\[resolver\.id\] = existingRealSources\[resolver\.id\] \|\| newMiss\(resolver\);\s*return;/);
   });
 });
