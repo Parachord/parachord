@@ -98,7 +98,8 @@ const SettingsPage = React.memo(function SettingsPage(props) {
     navigateBack,
     nwayEngineMode,
     openSyncSetupModal,
-    planBlockedResolverIds,
+    notPlayingResolverIds,
+    playbackOffResolvers,
     playbackAbr,
     playbackLimits,
     playbackQuality,
@@ -375,8 +376,8 @@ const SettingsPage = React.memo(function SettingsPage(props) {
                     // Display only — resolverOrder keeps its slot, so an
                     // upgrade puts it back where it was.
                     const installedInOrder = resolverOrder.filter(resolverId => allResolvers.some(r => r.id === resolverId));
-                    const playingInOrder = installedInOrder.filter(resolverId => !planBlockedResolverIds.includes(resolverId));
-                    const planBlockedInOrder = installedInOrder.filter(resolverId => planBlockedResolverIds.includes(resolverId));
+                    const playingInOrder = installedInOrder.filter(resolverId => !notPlayingResolverIds.includes(resolverId));
+                    const planBlockedInOrder = installedInOrder.filter(resolverId => notPlayingResolverIds.includes(resolverId));
                     [...playingInOrder, ...planBlockedInOrder].forEach((resolverId, index) => {
                         const resolver = allResolvers.find(r => r.id === resolverId);
                         const marketplaceResolver = marketplaceContentResolvers.find(r => r.id === resolver.id);
@@ -480,10 +481,10 @@ const SettingsPage = React.memo(function SettingsPage(props) {
                         // Only resolvers with a playback priority can be dragged
                         // or dropped on: a plan-blocked one sits outside the
                         // numbered order (#1220), so its slot isn't a position.
-                        const reorderable = isActive && !planBlockedResolverIds.includes(resolver.id);
+                        const reorderable = isActive && !notPlayingResolverIds.includes(resolver.id);
                         // Enabled but limited by the account's plan: the label
                         // and its tooltip come from the resolver's limit.
-                        const planStatus = isActive ? PlaybackLimits.tileStatus(playbackLimits, resolver.id) : { statusLabel: null, statusTitle: null };
+                        const planStatus = isActive ? PlaybackLimits.tileStatus(playbackLimits, resolver.id, playbackOffResolvers) : { statusLabel: null, statusTitle: null };
 
                         return React.createElement(ResolverCard, {
                           key: resolver.id,
@@ -512,7 +513,7 @@ const SettingsPage = React.memo(function SettingsPage(props) {
                           onContextMenu: isActive ? (e) => {
                             e.preventDefault();
                             if (window.electron?.resolvers?.showContextMenu) {
-                              const isNumbered = (id) => activeResolvers.includes(id) && !planBlockedResolverIds.includes(id);
+                              const isNumbered = (id) => activeResolvers.includes(id) && !notPlayingResolverIds.includes(id);
                               window.electron.resolvers.showContextMenu(resolver.id, priorityMoves(resolverOrder, resolver.id, isNumbered));
                             }
                           } : undefined

@@ -20,8 +20,8 @@ const { capabilityLabel, visibleCapabilities } = require('../lib/capability-labe
 const { Modal } = require('./modal');
 const { Badge } = require('./badge');
 const { Button } = require('./button');
-const { SecretField, Select, SettingRow, Switch, TextField } = require('./fields');
-const { pluginSwitchState, keyLabel } = require('../lib/plugin-switch');
+const { NestedSettings, SecretField, Select, SettingRow, Switch, TextField } = require('./fields');
+const { pluginSwitchState, metadataSwitchState, playbackSwitchState, recommendationsSwitchState, keyLabel } = require('../lib/plugin-switch');
 const { librarySyncState } = require('../lib/library-sync-state');
 const { ProgressBar } = require('./progress-bar');
 const { AccountRow } = require('./account-row');
@@ -56,6 +56,9 @@ const PLUGIN_SETTINGS_DIALOG_HANDLERS = [
   'saveSoundcloudCredentials',
   'saveSpotifyCredentials',
   'setProviderSyncEnabled',
+  'setResolverMetadataOn',
+  'setResolverPlaybackOn',
+  'setResolverRecommendationsOn',
   'toggleResolver',
 ];
 
@@ -122,7 +125,13 @@ const PluginSettingsDialog = React.memo(function PluginSettingsDialog(props) {
     pluginStatuses,
     refreshPluginStatus,
     setProviderSyncEnabled,
+    setResolverMetadataOn,
+    setResolverPlaybackOn,
+    setResolverRecommendationsOn,
     playbackLimits,
+    playbackOffResolvers,
+    recommendationsOffResolvers,
+    metadataOffResolvers,
     resolverConfigCache,
     resolverSyncSettings,
     syncSignedOut,
@@ -176,6 +185,32 @@ const PluginSettingsDialog = React.memo(function PluginSettingsDialog(props) {
   // service's section (a sync can't run signed out), above that section's
   // Advanced settings. lib/library-sync-state.js says what it's doing: a
   // paused sync used to offer "Set up", and a lapsed sign-in read "Active".
+  // Scrobbling, nested under "Enable X" for a plug-in that does more than
+  // scrobble (Last.fm, ListenBrainz): the one part that needs a sign-in, so
+  // its sign-in, its switch and the loved-tracks controls sit together, and
+  // "Enable X" can be on (recommendations, history) while it's signed out.
+  // A scrobbling-only plug-in (Libre.fm) draws the card as its account.
+  const renderScrobbling = (id) => {
+    const scrobbler = window.scrobblers && window.scrobblers.find(s => s.id === id);
+    if (!scrobbler) return null;
+    return React.createElement(ScrobblerSettingsCard, {
+      scrobbler, color: getServiceColor(id) || selectedResolver.color, accountLabel: 'Scrobbling',
+      lovedTracks: !!selectedResolver.capabilities?.lovedTracks,
+      config: scrobblerConfigs[id],
+      onConfigChange: (sid, newConfig) => { setScrobblerConfigs(prev => ({ ...prev, [sid]: newConfig })); },
+      lovePushEnabled: !!scrobblerLovePushEnabled[id],
+      onSetLovePushEnabled: (v) => setLovePushEnabled(id, v),
+      onRunBackfill: () => runLoveBackfill(id),
+      backfillRunning: !!loveBackfillRunning[id],
+      backfillProgress: loveBackfillProgress[id],
+      unpushedCount: (collectionDataRef.current?.tracks || collectionData.tracks).filter(t => !lovePushedKeysRef.current[t.id]?.[id]).length,
+      onRunLoveImport: () => runLoveImport(id),
+      loveImportRunning: !!loveImportRunning[id],
+      loveImportProgress: loveImportProgress[id],
+      hasImportedLoves: !!loveImportCursorRef.current?.[id],
+    });
+  };
+
   const renderLibrarySync = () => {
               const id = selectedResolver.id;
               const settings = resolverSyncSettings[id];
@@ -324,7 +359,12 @@ React.createElement('div', {
           // what to add first.
           (() => {
             const id = selectedResolver.id;
-            const state = pluginSwitchState({ plugin: selectedResolver, config: metaServiceConfigs[id], activeResolvers, limit: playbackLimits && playbackLimits[id] });
+            const state = pluginSwitchState({ plugin: selectedResolver, config: metaServiceConfigs[id], activeResolvers });
+            const caps = selectedResolver.capabilities || {};
+            const scrobblingNested = state.checked && !!caps.scrobbling && !!caps.recommendations;
+            const meta = metadataSwitchState({ plugin: selectedResolver, active: state.checked, metadataOff: (metadataOffResolvers || []).includes(id) });
+            const recs = recommendationsSwitchState({ plugin: selectedResolver, active: state.checked, recommendationsOff: (recommendationsOffResolvers || []).includes(id) });
+            const play = playbackSwitchState({ plugin: selectedResolver, active: state.checked, playbackOff: (playbackOffResolvers || []).includes(id), limit: playbackLimits && playbackLimits[id] });
             const setOn = async (next) => {
               if (next) {
                 const isLoaded = allResolvers.some(r => r.id === id) || metaServices.some(s => s.id === id);
@@ -335,6 +375,11 @@ React.createElement('div', {
                   if (uninstalled.includes(id)) await window.electron.store.set('uninstalled_resolvers', uninstalled.filter(x => x !== id));
                   const marketplaceItem = (marketplaceManifest?.plugins || []).find(r => r.id === id);
                   if (marketplaceItem) await handleInstallFromMarketplace(marketplaceItem);
+                  // Installing a music plug-in also turns it on (it joins the
+                  // active list). Toggling it here as well would read the
+                  // active list from before the install and switch it straight
+                  // back off.
+                  if (selectedResolver.type !== 'meta-service') return;
                 }
               }
               if (selectedResolver.type === 'meta-service') {
@@ -343,11 +388,37 @@ React.createElement('div', {
                 toggleResolver(id);
               }
             };
-            return React.createElement(SettingRow, {
-              label: `Use ${selectedResolver.name}`,
-              hint: state.hint || undefined,
-              style: { padding: '16px 0', borderTop: '1px solid var(--border-subtle)' },
-            }, React.createElement(Switch, { checked: state.checked, disabled: state.disabled, onToggle: () => setOn(!state.checked) }));
+            return React.createElement('div', { style: { padding: '16px 0', borderTop: '1px solid var(--border-subtle)' } },
+              React.createElement(SettingRow, {
+                label: `Enable ${selectedResolver.name}`,
+                hint: state.hint || undefined,
+                style: { padding: 0 },
+              }, React.createElement(Switch, { checked: state.checked, disabled: state.disabled, onToggle: () => setOn(!state.checked) })),
+              // "Play from X" under it, while it's on (#1505): off keeps it for
+              // search, covers and links and takes it out of the priority
+              // order; a plan that can't play locks it off, saying why.
+              play.shown && React.createElement(SettingRow, {
+                label: `Play from ${selectedResolver.name}`,
+                hint: play.hint,
+                nested: true,
+                style: { padding: '6px 0', marginTop: '12px' },
+              }, React.createElement(Switch, { size: 'sm', checked: play.checked, disabled: play.disabled, onToggle: () => setResolverPlaybackOn(id, !play.checked) })),
+              // "Use metadata from X": covers and artist photos (#1505).
+              meta.shown && React.createElement(SettingRow, {
+                label: `Use metadata from ${selectedResolver.name}`,
+                hint: meta.hint,
+                nested: true,
+                style: { padding: '6px 0' },
+              }, React.createElement(Switch, { size: 'sm', checked: meta.checked, onToggle: () => setResolverMetadataOn(id, !meta.checked) })),
+              // "Use recommendations from X", for a plug-in that offers them (#1505).
+              recs.shown && React.createElement(SettingRow, {
+                label: `Use recommendations from ${selectedResolver.name}`,
+                hint: recs.hint,
+                nested: true,
+                style: { padding: '6px 0', marginTop: (play.shown || meta.shown) ? '0' : '12px' },
+              }, React.createElement(Switch, { size: 'sm', checked: recs.checked, onToggle: () => setResolverRecommendationsOn(id, !recs.checked) })),
+              // Scrobbling, for a plug-in that does more than scrobble.
+              scrobblingNested && React.createElement(NestedSettings, { style: { marginTop: '12px' } }, renderScrobbling(id)));
           })(),
 
           // A status-capable plugin's sign-in row (capabilities.status, the
@@ -797,36 +868,14 @@ React.createElement(Button, { variant: 'primary', size: 'sm', onClick: saveApple
             metaServiceConfigs.lastfm?.username
               ? React.createElement('div', null,
                   // The account (components/account-row.js, #1498 step 3).
-                  // Scrobbling section for Last.fm
-                  // Scrobbling first: it's the sign-in (#1498: sign-in, then
-                  // what needs it); the username's history comes under it.
                   React.createElement('div', null,
-                    // Scrobbler card for Last.fm
-                    window.scrobblers && window.scrobblers.find(s => s.id === 'lastfm') &&
-                      React.createElement(ScrobblerSettingsCard, {
-                        scrobbler: window.scrobblers.find(s => s.id === 'lastfm'), color: getServiceColor('lastfm'), accountLabel: 'Scrobbling',
-                        config: scrobblerConfigs['lastfm'],
-                        onConfigChange: (id, newConfig) => {
-                          setScrobblerConfigs(prev => ({ ...prev, [id]: newConfig }));
-                        },
-                        lovePushEnabled: !!scrobblerLovePushEnabled.lastfm,
-                        onSetLovePushEnabled: (v) => setLovePushEnabled('lastfm', v),
-                        onRunBackfill: () => runLoveBackfill('lastfm'),
-                        backfillRunning: !!loveBackfillRunning.lastfm,
-                        backfillProgress: loveBackfillProgress.lastfm,
-                        unpushedCount: (collectionDataRef.current?.tracks || collectionData.tracks).filter(t => !lovePushedKeysRef.current[t.id]?.lastfm).length,
-                        onRunLoveImport: () => runLoveImport('lastfm'),
-                        loveImportRunning: !!loveImportRunning.lastfm,
-                        loveImportProgress: loveImportProgress.lastfm,
-                        hasImportedLoves: !!loveImportCursorRef.current?.lastfm,
-                      })
-                  ),
-                  React.createElement('div', { style: SYNC_BLOCK },
                   // A username reads your history; it isn't a sign-in (that's
-                  // the Scrobbling row above), so the row doesn't say "Signed in".
+                  // Scrobbling, under Enable), so the row doesn't say "Signed in".
                   React.createElement(AccountRow, {
-                    name: 'Last.fm', label: 'Listening history', color: getServiceColor('lastfm'), signedIn: true,
-                    status: `Using ${metaServiceConfigs.lastfm.username}’s history`, onSignOut: disconnectLastfm, signOutLabel: 'Remove',
+                    // The account Parachord reads from: "Listening history · Using
+                    // X's history" didn't say for what (2026-11-17).
+                    name: 'Last.fm', label: 'Last.fm username', color: getServiceColor('lastfm'), signedIn: true,
+                    status: `${metaServiceConfigs.lastfm.username} · your recommendations, similar listeners and history come from this account`, onSignOut: disconnectLastfm, signOutLabel: 'Remove',
                   })),
                   // Advanced accordion for API credentials (also shown when connected)
                   React.createElement(Disclosure, { open: lastfmAdvancedOpen, onToggle: () => setLastfmAdvancedOpen(!lastfmAdvancedOpen) },
@@ -898,7 +947,7 @@ React.createElement('div', { className: 'flex gap-2' },
                   // Sign in once there's a username; the fields are below.
                   React.createElement('div', { style: { marginBottom: '16px' } },
                     React.createElement(AccountRow, {
-                      name: 'Last.fm', label: 'Listening history', color: getServiceColor('lastfm'), signedIn: false,
+                      name: 'Last.fm', label: 'Last.fm username', color: getServiceColor('lastfm'), signedIn: false,
                       status: 'Enter your Last.fm username below', signInLabel: 'Save',
                       onSignIn: () => connectLastfm(lastfmUsernameInput, lastfmApiKeyInput, lastfmApiSecretInput),
                       signInDisabled: !lastfmUsernameInput.trim(), busy: lastfmConnecting,
@@ -966,36 +1015,14 @@ React.createElement('div', null,
             metaServiceConfigs.listenbrainz?.username
               ? React.createElement('div', null,
                   // The account (components/account-row.js, #1498 step 3).
-                  // Scrobbling section for ListenBrainz
-                  // Scrobbling first: it's the sign-in (#1498: sign-in, then
-                  // what needs it); the username's history comes under it.
                   React.createElement('div', null,
-                    // Scrobbler card for ListenBrainz
-                    window.scrobblers && window.scrobblers.find(s => s.id === 'listenbrainz') &&
-                      React.createElement(ScrobblerSettingsCard, {
-                        scrobbler: window.scrobblers.find(s => s.id === 'listenbrainz'), color: getServiceColor('listenbrainz'), accountLabel: 'Scrobbling',
-                        config: scrobblerConfigs['listenbrainz'],
-                        onConfigChange: (id, newConfig) => {
-                          setScrobblerConfigs(prev => ({ ...prev, [id]: newConfig }));
-                        },
-                        lovePushEnabled: !!scrobblerLovePushEnabled.listenbrainz,
-                        onSetLovePushEnabled: (v) => setLovePushEnabled('listenbrainz', v),
-                        onRunBackfill: () => runLoveBackfill('listenbrainz'),
-                        backfillRunning: !!loveBackfillRunning.listenbrainz,
-                        backfillProgress: loveBackfillProgress.listenbrainz,
-                        unpushedCount: (collectionDataRef.current?.tracks || collectionData.tracks).filter(t => !lovePushedKeysRef.current[t.id]?.listenbrainz).length,
-                        onRunLoveImport: () => runLoveImport('listenbrainz'),
-                        loveImportRunning: !!loveImportRunning.listenbrainz,
-                        loveImportProgress: loveImportProgress.listenbrainz,
-                        hasImportedLoves: !!loveImportCursorRef.current?.listenbrainz,
-                      })
-                  ),
-                  React.createElement('div', { style: SYNC_BLOCK },
                   // A username reads your history; it isn't a sign-in (that's
-                  // the Scrobbling row above), so the row doesn't say "Signed in".
+                  // Scrobbling, under Enable), so the row doesn't say "Signed in".
                   React.createElement(AccountRow, {
-                    name: 'ListenBrainz', label: 'Listening history', color: getServiceColor('listenbrainz'), signedIn: true,
-                    status: `Using ${metaServiceConfigs.listenbrainz.username}’s history`, onSignOut: disconnectListenbrainz, signOutLabel: 'Remove',
+                    // The account Parachord reads from: "Listening history · Using
+                    // X's history" didn't say for what (2026-11-17).
+                    name: 'ListenBrainz', label: 'ListenBrainz username', color: getServiceColor('listenbrainz'), signedIn: true,
+                    status: `${metaServiceConfigs.listenbrainz.username} · your recommendations, similar listeners and history come from this account`, onSignOut: disconnectListenbrainz, signOutLabel: 'Remove',
                   }),
                   // Show token status if configured - masked like AI service API keys
                   metaServiceConfigs.listenbrainz.userToken && React.createElement('div', {
@@ -1021,7 +1048,7 @@ React.createElement('div', null,
                   // Sign in once there's a username; the fields are below.
                   React.createElement('div', { style: { marginBottom: '16px' } },
                     React.createElement(AccountRow, {
-                      name: 'ListenBrainz', label: 'Listening history', color: getServiceColor('listenbrainz'), signedIn: false,
+                      name: 'ListenBrainz', label: 'ListenBrainz username', color: getServiceColor('listenbrainz'), signedIn: false,
                       status: 'Enter your ListenBrainz username below', signInLabel: 'Save',
                       onSignIn: () => connectListenbrainz(listenbrainzUsernameInput, listenbrainzTokenInput),
                       signInDisabled: !listenbrainzUsernameInput.trim(), busy: listenbrainzConnecting,
@@ -1564,7 +1591,7 @@ React.createElement('div', null,
             // Scrobbler card for Libre.fm
             window.scrobblers && window.scrobblers.find(s => s.id === 'librefm') &&
               React.createElement(ScrobblerSettingsCard, {
-                scrobbler: window.scrobblers.find(s => s.id === 'librefm'), color: getServiceColor('librefm') || selectedResolver.color,
+                scrobbler: window.scrobblers.find(s => s.id === 'librefm'), color: getServiceColor('librefm') || selectedResolver.color, lovedTracks: !!selectedResolver.capabilities?.lovedTracks,
                 config: scrobblerConfigs['librefm'],
                 onConfigChange: (id, newConfig) => {
                   setScrobblerConfigs(prev => ({ ...prev, [id]: newConfig }));

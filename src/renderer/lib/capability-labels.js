@@ -31,6 +31,8 @@ const LABELS = {
   historyMixes: 'History mixes',
   similarUsers: 'Similar listeners',
   listeningHistory: 'Listening history',
+  lovedTracks: 'Loved tracks',
+  playlistSync: 'Playlist sync',
 };
 
 // Capabilities that describe how a plug-in works inside the app, not

@@ -3823,6 +3823,21 @@ const Parachord = () => {
   const queueTrackSources = (key, value, opts) => trackSourcesWriterRef.current.queue(key, value, opts);
   const flushTrackSources = () => trackSourcesWriterRef.current.flush();
   const [activeResolvers, setActiveResolvers] = useState(['bandcamp', 'localfiles']);
+  // Music plug-ins that are on but switched not to play ("Play from X" off,
+  // #1505): search, covers and links only. Saved as playback_off_resolvers.
+  const [playbackOffResolvers, setPlaybackOffResolvers] = useState([]);
+  // Plug-ins whose recommendations are switched off ("Recommendations from
+  // X", #1505): the Recommendations page and Home skip them. Saved as
+  // recommendations_off_resolvers.
+  const [recommendationsOffResolvers, setRecommendationsOffResolvers] = useState([]);
+  const recommendationsOffRef = useRef(recommendationsOffResolvers);
+  recommendationsOffRef.current = recommendationsOffResolvers;
+  // Plug-ins whose metadata is switched off ("Use metadata from X", #1505):
+  // covers and artist photos come from the others. Saved as
+  // metadata_off_resolvers.
+  const [metadataOffResolvers, setMetadataOffResolvers] = useState([]);
+  const metadataOffRef = useRef(metadataOffResolvers);
+  metadataOffRef.current = metadataOffResolvers;
   const [resolverOrder, setResolverOrder] = useState(['bandcamp', 'localfiles']);
   const resolverSettingsLoaded = useRef(false);  // Track if we've loaded settings from storage
   const activeResolversRef = useRef(activeResolvers);  // Ref to avoid stale closure in save
@@ -6232,13 +6247,45 @@ const Parachord = () => {
     }
     return out;
   }, [syncSignedOut, playbackLimits]);
-  // For the plug-in tile menu's Raise / Lower Priority handler, registered once.
-  const planBlockedResolverIdsRef = useRef(planBlockedResolverIds);
-  planBlockedResolverIdsRef.current = planBlockedResolverIds;
-  const playbackResolvers = useMemo(
-    () => PlaybackLimits.playbackResolverIds(activeResolvers, planBlockedResolverIds),
-    [activeResolvers, planBlockedResolverIds]
+  // On but not playing: the plan's (above) and the user's own "Play from"
+  // switched off (#1505). Everything about playing reads this one list.
+  const notPlayingResolverIds = useMemo(
+    () => PlaybackLimits.notPlayingIds(planBlockedResolverIds, playbackOffResolvers),
+    [planBlockedResolverIds, playbackOffResolvers]
   );
+  // For the plug-in tile menu's Raise / Lower Priority handler, registered once.
+  const notPlayingResolverIdsRef = useRef(notPlayingResolverIds);
+  notPlayingResolverIdsRef.current = notPlayingResolverIds;
+  const playbackResolvers = useMemo(
+    () => PlaybackLimits.playbackResolverIds(activeResolvers, notPlayingResolverIds),
+    [activeResolvers, notPlayingResolverIds]
+  );
+  // The "Play from X" switch (#1505). Off leaves the plug-in on for search,
+  // covers and links; resolverOrder keeps its slot, so on puts it back there.
+  const setResolverPlaybackOn = (resolverId, on) => {
+    setPlaybackOffResolvers(prev => {
+      const next = on ? prev.filter(id => id !== resolverId) : (prev.includes(resolverId) ? prev : [...prev, resolverId]);
+      window.electron.store.set('playback_off_resolvers', next).catch(err => console.error('[Plug-ins] Could not save Play from:', err));
+      return next;
+    });
+  };
+  // The "Recommendations from X" switch (#1505), for a plug-in with the
+  // recommendations capability. The Recommendations page reloads without it.
+  const setResolverRecommendationsOn = (resolverId, on) => {
+    setRecommendationsOffResolvers(prev => {
+      const next = on ? prev.filter(id => id !== resolverId) : (prev.includes(resolverId) ? prev : [...prev, resolverId]);
+      window.electron.store.set('recommendations_off_resolvers', next).catch(err => console.error('[Plug-ins] Could not save Recommendations from:', err));
+      return next;
+    });
+  };
+  // The "Use metadata from X" switch (#1505): covers and artist photos.
+  const setResolverMetadataOn = (resolverId, on) => {
+    setMetadataOffResolvers(prev => {
+      const next = on ? prev.filter(id => id !== resolverId) : (prev.includes(resolverId) ? prev : [...prev, resolverId]);
+      window.electron.store.set('metadata_off_resolvers', next).catch(err => console.error('[Plug-ins] Could not save Use metadata from:', err));
+      return next;
+    });
+  };
   const playbackResolversRef = useRef(playbackResolvers);
   playbackResolversRef.current = playbackResolvers;
   const [dynamicModelOptions, setDynamicModelOptions] = useState({}); // { [resolverId]: { loading, options: [{value,label}], error } }
@@ -12971,7 +13018,7 @@ ${trackListXml}
         } else if (data.action === 'raise-priority' || data.action === 'lower-priority') {
           // The tile's numbered neighbours only: the same set the drag
           // reorders (active, not blocked by the account's plan).
-          const isNumbered = (id) => activeResolversRef.current.includes(id) && !planBlockedResolverIdsRef.current.includes(id);
+          const isNumbered = (id) => activeResolversRef.current.includes(id) && !notPlayingResolverIdsRef.current.includes(id);
           setResolverOrder(prev => movePriority(prev, data.resolverId, data.action === 'raise-priority' ? -1 : 1, isNumbered));
         }
       });
@@ -14371,8 +14418,8 @@ ${trackListXml}
     if (enabled.lastfm && !pushed.lastfm && window.lastfmScrobbler) {
       tasks.push((async () => {
         try {
-          const isEnabled = await window.lastfmScrobbler.isEnabled();
-          if (!isEnabled) return;
+          // Signed in is enough: "Scrobble to Last.fm" pauses scrobbling only.
+          if (!(await window.lastfmScrobbler.isSignedIn())) return;
           await window.lastfmScrobbler.loveTrack({
             artist: track.artist, title: track.title,
             mbid: track.mbid && /^[a-f0-9-]{36}$/i.test(track.mbid) ? track.mbid : undefined,
@@ -14389,8 +14436,7 @@ ${trackListXml}
     if (enabled.listenbrainz && !pushed.listenbrainz && window.listenbrainzScrobbler) {
       tasks.push((async () => {
         try {
-          const isEnabled = await window.listenbrainzScrobbler.isEnabled();
-          if (!isEnabled) return;
+          if (!(await window.listenbrainzScrobbler.isSignedIn())) return;
           const mbid = await window.resolveMbidForLove(track);
           if (!mbid) {
             console.log(`[love-push] LB skip "${track.title}" — no MBID`);
@@ -14506,6 +14552,11 @@ ${trackListXml}
     });
   }, []);
 
+  // Does this plug-in sync loved tracks? Its manifest's `lovedTracks`
+  // capability (Last.fm, ListenBrainz), read from the loaded meta-services.
+  const serviceHasLovedTracks = (service) =>
+    !!(metaServicesRef.current || []).find(s => s.id === service)?.capabilities?.lovedTracks;
+
   // Manual backfill: walks the collection, pushes any track not yet
   // marked as pushed for this service. Soft rate-limit ~1 req/sec.
   // Idempotency cache means re-clicks are cheap.
@@ -14516,11 +14567,12 @@ ${trackListXml}
   // queue when MBIDs can't resolve).
   const runLoveBackfill = useCallback(async (service, { onlyIds } = {}) => {
     if (loveBackfillRunningRef.current[service]) return;
-    if (!['lastfm', 'listenbrainz'].includes(service)) return;
+    // A plug-in that declares `lovedTracks` (was two hard-coded names).
+    if (!serviceHasLovedTracks(service)) return;
     const scrobbler = service === 'lastfm' ? window.lastfmScrobbler : window.listenbrainzScrobbler;
     if (!scrobbler) { showToast(`${service} scrobbler not loaded`); return; }
-    const isEnabled = await scrobbler.isEnabled();
-    if (!isEnabled) { showToast(`${service} not connected`); return; }
+    // Signed in is enough: the scrobbling switch doesn't stop loved tracks.
+    if (!(await scrobbler.isSignedIn())) { showToast(`Sign in to ${scrobbler.name} to sync loved tracks`); return; }
 
     const tracks = (collectionDataRef.current?.tracks || []);
     const todo = tracks.filter(t => !lovePushedKeysRef.current[t.id]?.[service] && (!onlyIds || onlyIds.has(t.id)));
@@ -14602,7 +14654,7 @@ ${trackListXml}
   //   6. One-way stays one-way: importing never unloves anything remotely.
 
   const runLoveImport = useCallback(async (service) => {
-    if (!['lastfm', 'listenbrainz'].includes(service)) return;
+    if (!serviceHasLovedTracks(service)) return;
     if (loveImportRunningRef.current[service]) return;
     const label = service === 'lastfm' ? 'Last.fm' : 'ListenBrainz';
     const otherService = service === 'lastfm' ? 'listenbrainz' : 'lastfm';
@@ -14624,7 +14676,7 @@ ${trackListXml}
     setLoveImportProgress(prev => ({ ...prev, [service]: { done: 0, total: 0 } }));
     try {
       let connected = false;
-      try { connected = await scrobbler.isEnabled(); } catch (e) { connected = false; }
+      try { connected = await scrobbler.isSignedIn(); } catch (e) { connected = false; }
       if (!connected) { showToast(`${label} is not connected`, 'error'); return; }
 
       // Cross-service propagation, confirmed up front (issue #1071 rule 2).
@@ -14635,7 +14687,7 @@ ${trackListXml}
       const otherScrobbler = otherService === 'lastfm' ? window.lastfmScrobbler : window.listenbrainzScrobbler;
       if (scrobblerLovePushEnabledRef.current?.[otherService] && otherScrobbler) {
         let otherConnected = false;
-        try { otherConnected = await otherScrobbler.isEnabled(); } catch (e) { otherConnected = false; }
+        try { otherConnected = await otherScrobbler.isSignedIn(); } catch (e) { otherConnected = false; }
         if (otherConnected) {
           setLoveImportProgress(prev => ({ ...prev, [service]: { done: 0, total: 0, phase: 'confirm' } }));
           crossConfirm = await new Promise((resolve) => {
@@ -17197,7 +17249,8 @@ ${trackListXml}
     // resolver-limiter.js); 'background' for a cover lookup.
     const { earlyReturn = false, targetArtist, targetTitle, requireAlbumArt = false, lane = null } = options;
     const allResolvers = loadedResolversRef.current || [];
-    const activeIds = activeResolversRef.current || [];
+    // A cover lookup skips plug-ins whose metadata is switched off (#1505).
+    const activeIds = (activeResolversRef.current || []).filter(id => !(requireAlbumArt && metadataOffRef.current.includes(id)));
     const resolverOrder = resolverOrderRef.current || [];
     const results = [];
 
@@ -19287,7 +19340,7 @@ ${trackListXml}
         'cache_recommendations',
         'cache_critics_picks',
         // Resolver settings & user preferences
-        'active_resolvers', 'resolver_order', 'resolver_order_memory', 'meta_service_configs',
+        'active_resolvers', 'resolver_order', 'resolver_order_memory', 'playback_off_resolvers', 'recommendations_off_resolvers', 'metadata_off_resolvers', 'meta_service_configs',
         'applemusic_developer_token', 'friends', 'pinnedFriendIds',
         'autoPinnedFriendIds', 'hidden_friend_keys', 'resolver_volume_offsets', 'saved_volume',
         'skip_external_prompt', 'skip_unplayable_prompt',
@@ -19837,6 +19890,9 @@ ${trackListXml}
 
       // Resolver settings and user preferences (already loaded in batch)
       const savedActiveResolvers = d['active_resolvers'];
+      if (Array.isArray(d['playback_off_resolvers'])) setPlaybackOffResolvers(d['playback_off_resolvers']);
+      if (Array.isArray(d['recommendations_off_resolvers'])) setRecommendationsOffResolvers(d['recommendations_off_resolvers']);
+      if (Array.isArray(d['metadata_off_resolvers'])) setMetadataOffResolvers(d['metadata_off_resolvers']);
       const savedResolverOrder = d['resolver_order'];
       const savedMetaServiceConfigs = d['meta_service_configs'];
       const savedAppleMusicDevToken = d['applemusic_developer_token'];
@@ -20590,7 +20646,7 @@ ${trackListXml}
   // Fallback artist lookup via Spotify API (when MusicBrainz has no results)
   const fetchArtistFromSpotify = async (artistName) => {
     const resolvers = loadedResolversRef.current || [];
-    const activeIds = activeResolversRef.current || [];
+    const activeIds = (activeResolversRef.current || []).filter(id => !metadataOffRef.current.includes(id));
     if (!activeIds.includes('spotify')) return null;
 
     try {
@@ -20661,7 +20717,7 @@ ${trackListXml}
 
   // Fallback artist lookup via MusicKit / Apple Music catalog
   const fetchArtistFromMusicKit = async (artistName) => {
-    const activeIds = activeResolversRef.current || [];
+    const activeIds = (activeResolversRef.current || []).filter(id => !metadataOffRef.current.includes(id));
     if (!activeIds.includes('applemusic')) return null;
 
     const musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
@@ -28353,7 +28409,10 @@ Return ONLY the JSON array, no other text.`;
     const order = resolverOrderRef.current || [];
     const metaIds = new Set((metaServicesRef.current || []).map(s => s.id));
     return orderCatalogResolvers(
-      loader.getRecommendationResolvers().filter(r => activeIds.includes(r.id) || metaIds.has(r.id)),
+      loader.getRecommendationResolvers()
+        .filter(r => activeIds.includes(r.id) || metaIds.has(r.id))
+        // Its "Recommendations from X" switched off (#1505).
+        .filter(r => !recommendationsOffRef.current.includes(r.id)),
       { activeIds, order }
     );
   };
@@ -29977,7 +30036,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     if (activeView !== 'recommendations' && !(activeView === 'home' && recommendationProviderIdsRef.current !== null)) return;
     if (recommendationProviderKey(recommendationProviders()) === recommendationProviderIdsRef.current) return;
     loadRecommendations();
-  }, [activeView, cacheLoaded, loadedResolvers, activeResolvers, metaServices]);
+  }, [activeView, cacheLoaded, loadedResolvers, activeResolvers, metaServices, recommendationsOffResolvers]);
 
   // Home loads its own discovery data (recommendations, Fresh Drops,
   // Critical Darlings, concerts) in one idle-time effect in home-page.js.
@@ -32862,7 +32921,8 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     // plug-in steps below. A saved sign-in outlives turning the plug-in off,
     // so a token alone sent every uncached artist photo to Spotify while the
     // user had switched it off (and kept tripping its rate-limit pause).
-    const activeIds = activeResolversRef.current || [];
+    // Nor one whose metadata is switched off ("Use metadata from X", #1505).
+    const activeIds = (activeResolversRef.current || []).filter(id => !metadataOffRef.current.includes(id));
 
     const steps = [];
     if (token && activeIds.includes('spotify')) {
@@ -36440,8 +36500,14 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     return true;
   };
 
+  // Remove (the username row): forget the username only. It used to
+  // delete the plug-in's whole settings record, which also switched
+  // "Enable" off and wiped the Advanced API keys (2026-11-17). Enable stays
+  // as it was (a username counted as on), and the scrobbling session is the
+  // Scrobbling section's own.
   const disconnectLastfm = async () => {
-    await clearMetaServiceConfig('lastfm');
+    const { username: _username, ...rest } = metaServiceConfigs.lastfm || {};
+    await saveMetaServiceConfig('lastfm', { ...rest, enabled: rest.enabled !== false });
     console.log('🎧 Disconnected from Last.fm');
   };
 
@@ -36533,8 +36599,14 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     return true;
   };
 
+  // Remove (the username row): forget the username only. It used to
+  // delete the plug-in's whole settings record, which also switched
+  // "Enable" off and wiped the Advanced API keys (2026-11-17). Enable stays
+  // as it was (a username counted as on), and the scrobbling session is the
+  // Scrobbling section's own.
   const disconnectListenbrainz = async () => {
-    await clearMetaServiceConfig('listenbrainz');
+    const { username: _username, ...rest } = metaServiceConfigs.listenbrainz || {};
+    await saveMetaServiceConfig('listenbrainz', { ...rest, enabled: rest.enabled !== false });
     console.log('🎵 Disconnected from ListenBrainz');
   };
 
@@ -37480,7 +37552,7 @@ useEffect(() => {
   // Stable function props for the memo'd PluginSettingsDialog (keys must
   // match PLUGIN_SETTINGS_DIALOG_HANDLERS in plugin-settings-dialog.js).
   const pluginSettingsDialogHandlers = useStableHandlers({
-    connectAppleMusic, connectLastfm, connectListenbrainz, connectSoundcloud, connectSpotify, disconnectAppleMusic, disconnectLastfm, disconnectListenbrainz, disconnectSoundcloud, disconnectSpotify, fetchDynamicModels, getServiceColor, handleAddWatchFolder, handleInstallFromMarketplace, handleRemoveMissingFiles, handleRemoveWatchFolder, handleRescanAll, handleRescanFolder, handleUninstallResolver, manageAmazonMusic, openSyncSetupModal, refreshPluginStatus, saveAppleMusicDeveloperToken, saveMetaServiceConfig, saveSoundcloudCredentials, saveSpotifyCredentials, setProviderSyncEnabled, toggleResolver,
+    connectAppleMusic, connectLastfm, connectListenbrainz, connectSoundcloud, connectSpotify, disconnectAppleMusic, disconnectLastfm, disconnectListenbrainz, disconnectSoundcloud, disconnectSpotify, fetchDynamicModels, getServiceColor, handleAddWatchFolder, handleInstallFromMarketplace, handleRemoveMissingFiles, handleRemoveWatchFolder, handleRescanAll, handleRescanFolder, handleUninstallResolver, manageAmazonMusic, openSyncSetupModal, refreshPluginStatus, saveAppleMusicDeveloperToken, saveMetaServiceConfig, saveSoundcloudCredentials, saveSpotifyCredentials, setProviderSyncEnabled, setResolverMetadataOn, setResolverPlaybackOn, setResolverRecommendationsOn, toggleResolver,
   });
 
   // Stable function props for the memo'd ChartsPage (keys must
@@ -38044,7 +38116,8 @@ useEffect(() => {
           metaServiceConfigs,
           metaServices,
           nwayEngineMode,
-          planBlockedResolverIds,
+          notPlayingResolverIds,
+          playbackOffResolvers,
           playbackAbr,
           playbackLimits,
           playbackQuality,
@@ -38284,6 +38357,9 @@ useEffect(() => {
       metaServices,
       playbackLimits,
       pluginStatuses,
+      playbackOffResolvers,
+      recommendationsOffResolvers,
+      metadataOffResolvers,
       resolverConfigCache,
       resolverSyncSettings,
       syncSignedOut: syncSignedOutView,
