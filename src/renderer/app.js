@@ -2043,6 +2043,8 @@ const { useVolume } = require('./hooks/use-volume');
 const { usePlaybackQueue } = require('./hooks/use-playback-queue');
 const { usePlaybackEngine } = require('./hooks/use-playback-engine');
 const { useLocalFiles } = require('./hooks/use-local-files');
+// The Collection's albums from local files (#1532): derived, merged, hidden.
+const { deriveLocalAlbums, mergeCollectionAlbums, hideLocalAlbum, unhideLocalAlbum, planAlbumRemoval } = require('./lib/local-albums');
 const { HomePage } = require('./components/home-page');
 const { PlaylistViewPage, PlaylistViewLoading } = require('./components/playlist-view-page');
 const { ArtistPage } = require('./components/artist-page');
@@ -5692,6 +5694,26 @@ const Parachord = () => {
     return sortCollectionItems(filtered, 'tracks');
   }, [library, collectionData.tracks, filterCollectionItems, sortCollectionItems]);
 
+  // Collection → Albums: the saved albums plus the albums of the local
+  // library (#1532, src/renderer/lib/local-albums.js). Derived on every
+  // library change, never written into collectionData.albums or persisted as
+  // albums, so a rescan or a removed folder updates the tab by itself. A
+  // local album that is also saved (same generateAlbumId id) shows once, as
+  // the saved record carrying the local tracks. Removing a local album only
+  // hides it: its id goes into hiddenLocalAlbumIds (persisted as
+  // collection_hidden_local_albums); the files and the library stay, and
+  // adding the album to the Collection clears the hide.
+  const [hiddenLocalAlbumIds, setHiddenLocalAlbumIds] = useState([]);
+  const collectionLocalAlbums = useMemo(() => deriveLocalAlbums(library), [library]);
+  // Read by removeAlbumFromCollection (a stable useCallback the context-menu
+  // listener closes over), so it never re-registers on a library change.
+  const collectionLocalAlbumIdsRef = useRef(new Set());
+  collectionLocalAlbumIdsRef.current = useMemo(() => new Set(collectionLocalAlbums.map(a => a.id)), [collectionLocalAlbums]);
+  const collectionAlbums = useMemo(
+    () => mergeCollectionAlbums(collectionData.albums, collectionLocalAlbums, hiddenLocalAlbumIds),
+    [collectionData.albums, collectionLocalAlbums, hiddenLocalAlbumIds]
+  );
+
   // Auto-select a populated collection tab when entering the library view
   // This fixes the issue where sidebar navigation lands on an empty tab
   // (e.g., 'artists' tab with no data) while other tabs have synced content
@@ -5701,7 +5723,7 @@ const Parachord = () => {
     const currentTabHasData = (() => {
       switch (collectionTab) {
         case 'artists': return collectionData.artists.length > 0;
-        case 'albums': return collectionData.albums.length > 0;
+        case 'albums': return collectionAlbums.length > 0;
         case 'tracks': return (library.length + collectionData.tracks.length) > 0;
         case 'friends': return friends.length > 0;
         default: return false;
@@ -5712,7 +5734,7 @@ const Parachord = () => {
 
     // Current tab is empty - switch to the first tab that has data
     const tabsWithData = [
-      { key: 'albums', hasData: collectionData.albums.length > 0 },
+      { key: 'albums', hasData: collectionAlbums.length > 0 },
       { key: 'tracks', hasData: (library.length + collectionData.tracks.length) > 0 },
       { key: 'artists', hasData: collectionData.artists.length > 0 },
       { key: 'friends', hasData: friends.length > 0 }
@@ -5722,7 +5744,7 @@ const Parachord = () => {
     if (bestTab) {
       setCollectionTab(bestTab.key);
     }
-  }, [activeView, collectionLoading, collectionTab, collectionData, library, friends]);
+  }, [activeView, collectionLoading, collectionTab, collectionData, collectionAlbums, library, friends]);
 
   const handleThemeChange = async (newPref) => {
     setThemePref(newPref);
@@ -14774,6 +14796,8 @@ ${trackListXml}
   // Add album to collection
   const addAlbumToCollection = useCallback((album) => {
     const albumId = generateAlbumId(album.artist, album.title);
+    // A local album the user removed earlier comes back with it (#1532).
+    setHiddenLocalAlbumIds(prev => unhideLocalAlbum(prev, albumId));
 
     setCollectionData(prev => {
       // Check for duplicate
@@ -14954,6 +14978,17 @@ ${trackListXml}
 
   // Remove album from collection
   const removeAlbumFromCollection = useCallback((album) => {
+    // An album of the local library (#1532) is hidden, never deleted: the
+    // files and the library stay, and a local-only album writes no tombstone
+    // and asks no service to unsave it. A saved album that is also local is
+    // unsaved as before AND hidden, or it would come straight back as a
+    // local album.
+    const removal = planAlbumRemoval(album, collectionLocalAlbumIdsRef.current, collectionDataRef.current?.albums);
+    if (removal.hideId) setHiddenLocalAlbumIds(prev => hideLocalAlbum(prev, removal.hideId));
+    if (!removal.unsave) {
+      showToast(`Removed ${album.title} from Collection`);
+      return;
+    }
     setCollectionData(prev => {
       // Try to find by stored ID first, then fall back to generated ID
       let existingIndex = -1;
@@ -15716,6 +15751,14 @@ ${trackListXml}
       if (typeof unsubscribe === 'function') unsubscribe();
     };
   }, []);
+
+  // Persist the hidden local albums (#1532), only after the cache has loaded
+  // so the empty initial list never overwrites the saved one.
+  useEffect(() => {
+    if (cacheLoaded && window.electron?.store) {
+      window.electron.store.set('collection_hidden_local_albums', hiddenLocalAlbumIds);
+    }
+  }, [hiddenLocalAlbumIds, cacheLoaded]);
 
   // Persist hidden friend keys to storage (only after cache is loaded to avoid overwriting)
   useEffect(() => {
@@ -18963,7 +19006,7 @@ ${trackListXml}
         // Resolver settings & user preferences
         'active_resolvers', 'resolver_order', 'resolver_order_memory', 'playback_off_resolvers', 'recommendations_off_resolvers', 'metadata_off_resolvers', 'meta_service_configs',
         'applemusic_developer_token', 'friends', 'pinnedFriendIds',
-        'autoPinnedFriendIds', 'hidden_friend_keys', 'resolver_volume_offsets', 'saved_volume',
+        'autoPinnedFriendIds', 'hidden_friend_keys', 'collection_hidden_local_albums', 'resolver_volume_offsets', 'saved_volume',
         'skip_external_prompt', 'skip_unplayable_prompt',
         'auto_launch_spotify', 'skip_unsaved_friend_warning', 'remember_queue',
         'show_discovery_badges', 'home_suggestions_auto_refresh', 'playlists_view_mode', 'ai_include_history',
@@ -19521,6 +19564,10 @@ ${trackListXml}
       const savedPinnedFriendIds = d['pinnedFriendIds'];
       const savedAutoPinnedFriendIds = d['autoPinnedFriendIds'];
       const savedHiddenFriendKeys = d['hidden_friend_keys'];
+      // Local albums removed from the Collection (#1532): ids only.
+      if (Array.isArray(d['collection_hidden_local_albums'])) {
+        setHiddenLocalAlbumIds([...new Set(d['collection_hidden_local_albums'].filter(k => typeof k === 'string'))]);
+      }
       const savedVolumeOffsets = d['resolver_volume_offsets'];
       const savedVolume = d['saved_volume'];
       const savedSkipExternalPrompt = d['skip_external_prompt'];
@@ -37641,7 +37688,7 @@ useEffect(() => {
 
         // Library view with collapsible hero header (matching Recommendations pattern)
         activeView === 'library' && React.createElement(CollectionPage, {
-          activeResolvers: playbackResolvers, allResolvers, autoPinnedFriendIds, collectionData, collectionHeaderCollapsed, collectionLoading, collectionObserverRef, collectionScrollContainerRef, collectionSearch, collectionSearchOpen, collectionSongsSorted, collectionSort, collectionTab, collectionTrackRowRefs, currentTrack, filterCollectionItems, friendSyncInProgress, friends, handleCollectionScrollContainerRef, isPlaying, library, libraryLoading, metaServiceConfigs, pinnedFriendIds, playbackContext, resolverOrder, resolverSyncSettings, syncPausedUntil, syncSignedOut: syncSignedOutView, setAddFriendModalOpen, setAddToPlaylistPanel, setCollectionHeaderCollapsed, setCollectionSearch, setCollectionSearchOpen, setCollectionSort, setCollectionTab, setDraggingTrackForPlaylist, setSyncStatusModal, setTrackLoading, showToast, sortCollectionItems, syncProviderConfig, syncStatus, trackSources,
+          activeResolvers: playbackResolvers, allResolvers, autoPinnedFriendIds, collectionAlbums, collectionData, collectionHeaderCollapsed, collectionLoading, collectionObserverRef, collectionScrollContainerRef, collectionSearch, collectionSearchOpen, collectionSongsSorted, collectionSort, collectionTab, collectionTrackRowRefs, currentTrack, filterCollectionItems, friendSyncInProgress, friends, handleCollectionScrollContainerRef, isPlaying, library, libraryLoading, metaServiceConfigs, pinnedFriendIds, playbackContext, resolverOrder, resolverSyncSettings, syncPausedUntil, syncSignedOut: syncSignedOutView, setAddFriendModalOpen, setAddToPlaylistPanel, setCollectionHeaderCollapsed, setCollectionSearch, setCollectionSearchOpen, setCollectionSort, setCollectionTab, setDraggingTrackForPlaylist, setSyncStatusModal, setTrackLoading, showToast, sortCollectionItems, syncProviderConfig, syncStatus, trackSources,
           ...collectionPageHandlers
         }),
 
