@@ -305,3 +305,26 @@ test('the scrobbler card picks its sign-in by what the scrobbler implements, nev
   expect(cards).toMatch(/typeof scrobbler\.connectWithPassword === 'function'/);
   expect(cards).toMatch(/typeof scrobbler\.startAuth === 'function'/);
 });
+
+// An Advanced key field shows what's typed, else what's saved, and Save stores
+// what it shows: an untouched field keeps its saved key. Saving only the typed
+// values stored it as empty, so pressing Save (say after buying Last.fm Pro)
+// cleared the keys, and re-saving the username after Remove wiped them too.
+describe('Advanced keys: Save keeps an untouched field', () => {
+  const { shownKeyValues } = require('../../src/renderer/components/plugin-extras');
+  const fields = [['apiKey', {}], ['apiSecret', {}]];
+
+  test('an untouched field keeps the saved value; a typed one replaces it', () => {
+    expect(shownKeyValues(fields, {}, { apiKey: 'savedK', apiSecret: 'savedS' })).toEqual({ apiKey: 'savedK', apiSecret: 'savedS' });
+    expect(shownKeyValues(fields, { apiKey: 'newK' }, { apiKey: 'savedK', apiSecret: 'savedS' })).toEqual({ apiKey: 'newK', apiSecret: 'savedS' });
+    expect(shownKeyValues(fields, {}, {})).toEqual({ apiKey: '', apiSecret: '' });
+    expect(shownKeyValues(fields, undefined, undefined)).toEqual({ apiKey: '', apiSecret: '' });
+  });
+
+  test('both Saves send what the fields show, never only the typed values', () => {
+    const src = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/components/plugin-extras.js'), 'utf8');
+    expect(src).toContain('onSave: async () => { await account.saveAdvanced(shownAdvanced); setValues({}); }');
+    expect(src).not.toContain('account.saveAdvanced(values)');
+    expect(src).toMatch(/account\.connect\(\{ \.\.\.values, \.\.\.shownKeys, username:/);
+  });
+});

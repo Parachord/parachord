@@ -157,7 +157,7 @@ function buildAppleMusicSongsURL(countryCode = 'us', limit = 50) {
 
 /**
  * Build Last.fm API URL for charts
- * @param {string} apiKey - Last.fm API key
+ * @param {string} apiKey - Last.fm API key: the caller passes getLastfmApiKey() (src/renderer/lib/lastfm-key.js chooses it; the renderer fetch interceptor swaps a refused own key)
  * @param {string|null} country - Country code (null for global charts)
  * @param {number} limit - Number of results (default 50)
  * @returns {string} API URL
