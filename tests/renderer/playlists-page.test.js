@@ -71,7 +71,7 @@ test("a playlist's page: shared sync banner, fields and Delete; the breadcrumb s
   expect(page).not.toMatch(/'Push Local'|'Pull Remote'|'Sync Conflict'|'Local Changes'/);
   expect(page).toMatch(/'Keep my version'/);
   expect(page).toMatch(/`Use \$\{providerName\}’s version`/);
-  expect(page).toContain("const providerName = (allResolvers || []).find(r => r.id === provider)?.name || provider;");
+  expect(page).toContain('const providerName = pluginName(provider);');
   expect(page).not.toContain('bg-green-600');
   expect(page).toContain("}, 'Delete playlist…')");
   expect(page).not.toContain("'Hosted XSPF'");
