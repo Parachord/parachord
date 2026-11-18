@@ -118,7 +118,7 @@ describe('ListenBrainz sends playlist categories', () => {
     const weekly = sections.filter(s => s.id === 'weekly-exploration' || s.id === 'weekly-jams');
     expect(weekly).toHaveLength(2);
     expect(weekly.every(s => s.category === 'personal')).toBe(true);
-    expect(axe.manifest.version).toBe('1.6.4');
+    expect(axe.manifest.version).toBe('1.6.5');
   });
 });
 
