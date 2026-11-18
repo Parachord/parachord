@@ -62,6 +62,10 @@
 - **More SoundCloud tracks play.** Tracks that SoundCloud serves only in encrypted form were refused by its player inside the app. They play now.
 - **A dropped connection no longer hides SoundCloud.** When a SoundCloud search failed (offline, signed out on SoundCloud's side, or SoundCloud down), Parachord treated it as "not on SoundCloud". It now treats it as unanswered and asks again later.
 
+## Plex
+
+- **Play from your own Plex server.** A new Plex plug-in signs in with your Plex account (you approve Parachord on Plex's page in your browser), finds your servers, and lets you pick which music libraries to use. Your Plex tracks show up in search and as a source on songs you already have, and play inside Parachord. It reaches a server on your home network even when your router blocks Plex's secure address, the way Plex's own apps do. Your Plex library doesn't fill your Collection yet; that's planned (#1515). Thanks to @jphastings, who wrote it.
+
 ## Library
 
 - **Pick which edition of an album to show.** The card under an album's cover now shows where its track list came from: the date, region and song count, and a MusicBrainz release or one of your services. Click it to switch to another edition, such as the deluxe version, a different country's release, or the one Apple Music or Bandcamp carries. Your pick sticks for the rest of the session, including when you open the album from the playbar or the artist page. Thanks to @theli-ua.
