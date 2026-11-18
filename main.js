@@ -5950,17 +5950,18 @@ async function fetchAppleMusicPublicPlaylistUrl(libraryId) {
 // Sends only what changed (main-process/achordion-submit-memo.js): every
 // ListenBrainz push used to re-send unchanged links, and the bursts came
 // back as 429s.
-const { playlistLinksFingerprint, createSubmitMemo } = require('./main-process/achordion-submit-memo');
+const { playlistLinksAnchor, playlistLinksFingerprint, createSubmitMemo } = require('./main-process/achordion-submit-memo');
 const achordionSubmitMemo = createSubmitMemo(store);
 
 async function pushPlaylistLinksToAchordion(localPlaylist) {
   if (!localPlaylist) return;
   // Unchanged since Achordion last accepted it: nothing to send, and no
   // Apple Music lookup either.
+  // The LB MBID is the cross-platform anchor for Achordion's keyspace: from
+  // syncedTo (Parachord pushed local→LB) or syncedFrom (imported LB→local).
+  const lbMbid = playlistLinksAnchor(localPlaylist);
   const fingerprint = playlistLinksFingerprint(localPlaylist);
-  const anchorMbid = localPlaylist.syncedTo?.listenbrainz?.externalId
-    || (localPlaylist.syncedFrom?.resolver === 'listenbrainz' && localPlaylist.syncedFrom.externalId);
-  if (achordionSubmitMemo.unchanged(anchorMbid, fingerprint)) return;
+  if (achordionSubmitMemo.unchanged(lbMbid, fingerprint)) return;
   const links = [];
   const syncedTo = localPlaylist.syncedTo || {};
   if (syncedTo.spotify?.externalId) {
@@ -5999,12 +6000,11 @@ async function pushPlaylistLinksToAchordion(localPlaylist) {
       label: 'ListenBrainz',
     });
   }
-  // The LB MBID is the cross-platform anchor for Achordion's keyspace.
-  // It can come from either syncedTo (Parachord pushed local→LB) or
-  // syncedFrom (Parachord imported LB→local). Either works as the key.
-  const lbMbid = syncedTo.listenbrainz?.externalId
-    || (localPlaylist.syncedFrom?.resolver === 'listenbrainz' && localPlaylist.syncedFrom.externalId);
   if (!lbMbid || links.length === 0) return;
+  // An Apple Music copy whose public link couldn't be had (not shared in the
+  // Music app yet, or the lookup failed): remembered as partial, so it's
+  // looked up again tomorrow rather than in a month.
+  const partial = !!syncedTo.applemusic?.externalId && !links.some((l) => l.host === 'music.apple.com');
 
   // Build the payload with `name`/`creatorName` ONLY when they're non-empty
   // strings. Achordion's zod schema declares these as `.optional()` — accepts
@@ -6045,7 +6045,7 @@ async function pushPlaylistLinksToAchordion(localPlaylist) {
       console.warn(`[achordion] playlist-links submit returned HTTP ${res.status} for mbid=${lbMbid}`);
       return;
     }
-    achordionSubmitMemo.remember(lbMbid, fingerprint);
+    achordionSubmitMemo.remember(lbMbid, fingerprint, { partial });
     console.log(`[achordion] playlist-links submitted: mbid=${lbMbid} links=${links.length}`);
   } catch (err) {
     console.warn('[achordion] playlist-links submit failed:', err && err.message ? err.message : err);

@@ -1,4 +1,4 @@
-const { playlistLinksFingerprint, createSubmitMemo, STORE_KEY, REFRESH_MS } = require('../../main-process/achordion-submit-memo');
+const { playlistLinksAnchor, playlistLinksFingerprint, createSubmitMemo, STORE_KEY, REFRESH_MS, PARTIAL_REFRESH_MS } = require('../../main-process/achordion-submit-memo');
 const fs = require('fs');
 const path = require('path');
 
@@ -14,6 +14,15 @@ const fakeStore = (init = {}) => {
   const data = { ...init };
   return { data, get: (k) => data[k], set: (k, v) => { data[k] = JSON.parse(JSON.stringify(v)); } };
 };
+
+describe('playlistLinksAnchor', () => {
+  test('pushed to ListenBrainz, imported from it, or none', () => {
+    expect(playlistLinksAnchor(pl())).toBe('mbid-1');
+    expect(playlistLinksAnchor(pl({ syncedTo: {}, syncedFrom: { resolver: 'listenbrainz', externalId: 'mbid-2' } }))).toBe('mbid-2');
+    expect(playlistLinksAnchor(pl({ syncedTo: {}, syncedFrom: { resolver: 'spotify', externalId: 'sp' } }))).toBe(null);
+    expect(playlistLinksAnchor(null)).toBe(null);
+  });
+});
 
 describe('playlistLinksFingerprint', () => {
   test('none without a ListenBrainz anchor', () => {
@@ -53,6 +62,23 @@ describe('createSubmitMemo', () => {
     expect(memo.unchanged('mbid-1', 'fp')).toBe(false);
     expect(REFRESH_MS).toBeLessThan(90 * 24 * 60 * 60 * 1000);
   });
+  test('a partial send (a mirror\'s link left out) is looked at again after a day, and saved as partial', () => {
+    let t = 1000;
+    const store = fakeStore();
+    const memo = createSubmitMemo(store, () => t);
+    memo.remember('mbid-1', 'fp', { partial: true });
+    expect(store.data[STORE_KEY]['mbid-1'].partial).toBe(true);
+    t += PARTIAL_REFRESH_MS - 1;
+    expect(memo.unchanged('mbid-1', 'fp')).toBe(true);
+    t += 2;
+    expect(memo.unchanged('mbid-1', 'fp')).toBe(false);
+    expect(PARTIAL_REFRESH_MS).toBeLessThan(REFRESH_MS);
+    // A complete send afterwards gets the full window and drops the flag.
+    memo.remember('mbid-1', 'fp');
+    expect(store.data[STORE_KEY]['mbid-1'].partial).toBeUndefined();
+    t += PARTIAL_REFRESH_MS + 1;
+    expect(memo.unchanged('mbid-1', 'fp')).toBe(true);
+  });
   test('a store that throws still works for the session', () => {
     const memo = createSubmitMemo({ get() { throw new Error('x'); }, set() { throw new Error('x'); } });
     memo.remember('m', 'f');
@@ -68,4 +94,10 @@ test('main.js skips an unchanged submit before any network call, and remembers o
   expect(skip).toBeLessThan(fn.indexOf('fetchAppleMusicPublicPlaylistUrl('));
   const remember = fn.indexOf('achordionSubmitMemo.remember(');
   expect(remember).toBeGreaterThan(fn.indexOf('if (res && !res.ok)'));
+  // An Apple Music copy whose public link was left out is remembered as partial.
+  expect(fn).toMatch(/const partial = !!syncedTo\.applemusic\?\.externalId && !links\.some\(/);
+  expect(fn).toContain('achordionSubmitMemo.remember(lbMbid, fingerprint, { partial })');
+  // One anchor formula: the helper, not a copy.
+  expect(fn).toContain('playlistLinksAnchor(localPlaylist)');
+  expect(fn).not.toMatch(/syncedFrom\?\.resolver === 'listenbrainz'/);
 });
