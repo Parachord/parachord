@@ -90,18 +90,48 @@ describe('signInLanded (the plugin _lib copy)', () => {
     expect(v).toEqual({ landed: true, stableTicks: 2 });
   });
 
-  test('the bare home path without a cookie waits a third tick (the logged-out first paint)', () => {
-    let v = lib.signInLanded({ url: home, hasCookie: false });
-    v = lib.signInLanded({ url: home, lastUrl: home, stableTicks: v.stableTicks, hasCookie: false });
+  test('after the sign-in pages, the bare home path without a cookie waits a third tick (the logged-out first paint)', () => {
+    let v = lib.signInLanded({ url: home, hasCookie: false, sawSignInPage: true });
+    v = lib.signInLanded({ url: home, lastUrl: home, stableTicks: v.stableTicks, hasCookie: false, sawSignInPage: true });
     expect(v.landed).toBe(false);
-    v = lib.signInLanded({ url: home, lastUrl: home, stableTicks: v.stableTicks, hasCookie: false });
-    expect(v.landed).toBe(true); // rotation fallback: nothing but stability
+    v = lib.signInLanded({ url: home, lastUrl: home, stableTicks: v.stableTicks, hasCookie: false, sawSignInPage: true });
+    expect(v.landed).toBe(true); // rotation fallback: stability after a real sign-in
   });
 
-  test('a page off the home path lands after two stable ticks without a cookie', () => {
-    let v = lib.signInLanded({ url: track, hasCookie: false });
-    v = lib.signInLanded({ url: track, lastUrl: track, stableTicks: v.stableTicks, hasCookie: false });
+  test('after the sign-in pages, a page off the home path lands after two stable ticks without a cookie', () => {
+    let v = lib.signInLanded({ url: track, hasCookie: false, sawSignInPage: true });
+    v = lib.signInLanded({ url: track, lastUrl: track, stableTicks: v.stableTicks, hasCookie: false, sawSignInPage: true });
     expect(v.landed).toBe(true);
+  });
+
+  test('a logged-out visitor never lands: no cookie and no sign-in pages, however long the window sits (2026-11-17)', () => {
+    // Amazon Music shows a signed-out person its home page; the fallback
+    // used to close the window on it after three ticks, before they could
+    // click Sign in.
+    let v = { stableTicks: 0 };
+    let last = null;
+    for (let i = 0; i < 10; i++) {
+      v = lib.signInLanded({ url: home, lastUrl: last, stableTicks: v.stableTicks, hasCookie: false });
+      last = home;
+      expect(v.landed).toBe(false);
+    }
+    // Browsing to another page while logged out doesn't land either.
+    v = lib.signInLanded({ url: track, hasCookie: false });
+    v = lib.signInLanded({ url: track, lastUrl: track, stableTicks: v.stableTicks, hasCookie: false });
+    expect(v.landed).toBe(false);
+    // A cookie alone still lands (a sign-in that returned straight to /).
+    v = lib.signInLanded({ url: home, lastUrl: home, stableTicks: 1, hasCookie: true });
+    expect(v.landed).toBe(true);
+  });
+
+  test('signInTickLeftMusicHost: Amazon\'s account pages count, music.amazon.com and non-URLs do not', () => {
+    expect(lib.signInTickLeftMusicHost('https://www.amazon.com/ap/signin?openid.return_to=https%3A%2F%2Fmusic.amazon.com%2F')).toBe(true);
+    expect(lib.signInTickLeftMusicHost('https://www.amazon.com/ap/mfa')).toBe(true);
+    expect(lib.signInTickLeftMusicHost(home)).toBe(false);
+    expect(lib.signInTickLeftMusicHost(track)).toBe(false);
+    expect(lib.signInTickLeftMusicHost('about:blank')).toBe(false);
+    expect(lib.signInTickLeftMusicHost('')).toBe(false);
+    expect(lib.signInTickLeftMusicHost(null)).toBe(false);
   });
 
   test('walls, foreign URLs and navigation churn reset the stability count', () => {
@@ -262,6 +292,37 @@ describe('signIn', () => {
     const reply = await plugin().signIn();
     expect(seen).toEqual([false, false, true]); // the positive-signal rule
     expect(reply).toEqual({ success: true, signedIn: true });
+  });
+
+  test('a logged-out visitor on the home page keeps the window open; a sign-in through the password pages lands without a known cookie (2026-11-17)', async () => {
+    const ws = sessionBridge({});
+    let logout;
+    let through;
+    ws.signIn.mockImplementationOnce(async (id, url, opts) => {
+      const anon = ['session-id', 'session-token', 'ubid-main'];
+      logout = [];
+      for (let i = 0; i < 6; i++) logout.push(opts.decide({ url: 'https://music.amazon.com/', cookieNames: anon }));
+      return { success: true, signedIn: logout[logout.length - 1] };
+    });
+    const first = await plugin().signIn();
+    expect(logout.every((v) => v === false)).toBe(true); // the window stayed open
+    expect(first.signedIn).toBe(false);
+    ws.signIn.mockImplementationOnce(async (id, url, opts) => {
+      // Renamed auth cookies (none the hedge knows) after the password step:
+      // stability on / after the sign-in pages still lands.
+      const renamed = ['session-id', 'ubid-main', 'zz-new-auth'];
+      through = [
+        opts.decide({ url: 'https://music.amazon.com/', cookieNames: renamed }),
+        opts.decide({ url: 'https://www.amazon.com/ap/signin', cookieNames: renamed }),
+        opts.decide({ url: 'https://music.amazon.com/', cookieNames: renamed }),
+        opts.decide({ url: 'https://music.amazon.com/', cookieNames: renamed }),
+        opts.decide({ url: 'https://music.amazon.com/', cookieNames: renamed })
+      ];
+      return { success: true, signedIn: through[through.length - 1] };
+    });
+    const second = await plugin().signIn();
+    expect(through).toEqual([false, false, false, false, true]);
+    expect(second.signedIn).toBe(true);
   });
 
   test('a wall never lands, stable or not; churn resets the count', async () => {

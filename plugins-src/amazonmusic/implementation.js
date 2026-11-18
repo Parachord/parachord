@@ -1469,21 +1469,33 @@ module.exports = {
     // wall, and a logged-out first paint can sit there (or redirect slowly)
     // for a second or more, which used to close the window and report success
     // before the user touched the password field. Require a positive signal:
-    // a non-wall music.amazon.com URL stable for two consecutive ticks AND at
-    // least one of (an auth cookie, a path off the bare home page, or a third
-    // stable tick — the fallback for Amazon rotating the at-main/sess-at-main/
-    // at-acb cookie names, at the cost of a ~3s wait when a signed-in landing
-    // page really is /).
-    function signInLanded({ url, lastUrl = null, stableTicks = 0, hasCookie = false } = {}) {
+    // a non-wall music.amazon.com URL stable for two consecutive ticks AND
+    // either an auth cookie, or — the fallback for Amazon rotating the
+    // at-main/sess-at-main/at-acb cookie names — a page off the bare home path
+    // or a third stable tick, but only once this window has been through
+    // Amazon's sign-in pages (`sawSignInPage`: any host other than
+    // music.amazon.com). Without that last condition the fallback closed the
+    // window on a logged-out visitor: Amazon Music shows a signed-out person
+    // its home page rather than sending them to sign in, so a fresh profile's
+    // window sat on / for three ticks and closed, reporting success, before
+    // the person could click Sign in (2026-11-17).
+    function signInLanded({ url, lastUrl = null, stableTicks = 0, hasCookie = false, sawSignInPage = false } = {}) {
       const okUrl = !!url && onMusicHost(url) && !pageBlocksPlayback(url);
       const ticks = okUrl ? (lastUrl === url ? stableTicks + 1 : 1) : 0;
       let landed = false;
       if (ticks >= 2) {
         let path = '';
         try { path = new URL(url).pathname; } catch (e) { /* not a URL */ }
-        landed = !!hasCookie || path !== '/' || ticks >= 3;
+        landed = !!hasCookie || (!!sawSignInPage && (path !== '/' || ticks >= 3));
       }
       return { landed, stableTicks: ticks };
+    }
+
+    // Whether a sign-in window tick shows it off music.amazon.com: the
+    // password, 2FA and account pages live on Amazon's account hosts, so a
+    // window that has been on one has been through sign-in.
+    function signInTickLeftMusicHost(url) {
+      return !!url && !onMusicHost(url) && /^https:/i.test(String(url));
     }
 
     // Should a not-signed-in open the sign-in prompt? While the auth cookies
@@ -2363,6 +2375,7 @@ module.exports = {
       SIGN_IN_WINDOW,
       onMusicHost,
       signInLanded,
+      signInTickLeftMusicHost,
       signInPromptDecision,
       HICCUP_GRACE_MS,
       STREAK_GAP_MS,
@@ -3236,10 +3249,12 @@ module.exports = {
   // the person watches) and ticks once a second with
   // { url, cookieNames }; the plugin supplies the verdict, Amazon's own
   // positive-signal rule (signInLanded: a non-wall music.amazon.com URL —
-  // HOST equality, never a substring — stable two ticks AND an auth cookie, a
-  // path off the bare home page, or a third stable tick; the cookie is one
-  // accepted signal, not a requirement, so Amazon rotating the cookie names
-  // cannot leave the window waiting forever). lastUrl/stableTicks are kept
+  // HOST equality, never a substring — stable two ticks AND an auth cookie,
+  // or, once the window has been through Amazon's sign-in pages, a path off
+  // the bare home page or a third stable tick; the cookie is one accepted
+  // signal, not a requirement, so Amazon rotating the cookie names cannot
+  // leave the window waiting forever, and a logged-out visitor parked on the
+  // home page is never taken for a sign-in). lastUrl/stableTicks are kept
   // here because signInLanded's tick counting is its own. Resolves
   // { success, signedIn } — the same shape the old host openLogin answered.
   signIn: async function () {
@@ -3250,11 +3265,13 @@ module.exports = {
     }
     let lastUrl = null;
     let stableTicks = 0;
+    let sawSignInPage = false;
     const out = await ws.signIn(lib.SESSION, lib.HOME_URL, {
       window: { width: lib.SIGN_IN_WINDOW.width, height: lib.SIGN_IN_WINDOW.height },
       decide: (tick) => {
         const hasCookie = lib.amazonAuthCookieState(tick.cookieNames) !== 'none';
-        const verdict = lib.signInLanded({ url: tick.url, lastUrl, stableTicks, hasCookie });
+        if (lib.signInTickLeftMusicHost(tick.url)) sawSignInPage = true;
+        const verdict = lib.signInLanded({ url: tick.url, lastUrl, stableTicks, hasCookie, sawSignInPage });
         lastUrl = tick.url;
         stableTicks = verdict.stableTicks;
         return verdict.landed;

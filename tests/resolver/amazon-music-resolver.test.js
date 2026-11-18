@@ -42,7 +42,7 @@ function instantiate(axeContent) {
 describe('amazonmusic .axe structure', () => {
   test('manifest identifies the resolver', () => {
     expect(axe.manifest.id).toBe('amazonmusic');
-    expect(axe.manifest.version).toBe('1.21.2');
+    expect(axe.manifest.version).toBe('1.21.3');
   });
 
   test('declares streaming capabilities without auth', () => {
