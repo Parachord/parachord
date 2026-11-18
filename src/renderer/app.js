@@ -2043,8 +2043,9 @@ const { useVolume } = require('./hooks/use-volume');
 const { usePlaybackQueue } = require('./hooks/use-playback-queue');
 const { usePlaybackEngine } = require('./hooks/use-playback-engine');
 const { useLocalFiles } = require('./hooks/use-local-files');
-// The Collection's albums from local files (#1532): derived, merged, hidden.
-const { deriveLocalAlbums, mergeCollectionAlbums, hideLocalAlbum, unhideLocalAlbum, planAlbumRemoval } = require('./lib/local-albums');
+// The Collection with local files merged in (#1532): one song list, one
+// album list, every source on each entry.
+const { albumIdentity, mergeCollectionSongs, deriveLocalAlbums, mergeCollectionAlbums, deriveLocalArtists, mergeCollectionArtists, hideLocalAlbum, unhideLocalAlbum, planAlbumRemoval } = require('./lib/local-albums');
 const { HomePage } = require('./components/home-page');
 const { PlaylistViewPage, PlaylistViewLoading } = require('./components/playlist-view-page');
 const { ArtistPage } = require('./components/artist-page');
@@ -5682,9 +5683,19 @@ const Parachord = () => {
   // object, not copied: the MBID/artwork enrichment mutates library tracks in
   // place (enrichTrackWithMbid, enrichLocalTracksWithArtwork), and a memoized
   // copy would keep serving the pre-enrichment fields.
+  //
+  // #1532: a saved song with a matching local file is ONE row (the saved
+  // record plus the file's Local Files source; lib/local-albums.js has the
+  // rules), so collectionSongs is the merged, unsorted list every Collection
+  // consumer reads (the Songs tab, its resolution, Collection Radio, the
+  // albums' tracklists).
+  const collectionSongs = useMemo(
+    () => mergeCollectionSongs(library, collectionData.tracks),
+    [library, collectionData.tracks]
+  );
   const collectionSongsSorted = useMemo(() => {
     const trackMap = new Map();
-    for (const track of [...library, ...collectionData.tracks]) {
+    for (const track of collectionSongs) {
       const trackId = track.id || generateTrackId(track.artist, track.title, track.album);
       if (!trackMap.has(trackId)) {
         trackMap.set(trackId, track.id ? track : { ...track, id: trackId });
@@ -5692,26 +5703,43 @@ const Parachord = () => {
     }
     const filtered = filterCollectionItems(Array.from(trackMap.values()), 'tracks');
     return sortCollectionItems(filtered, 'tracks');
-  }, [library, collectionData.tracks, filterCollectionItems, sortCollectionItems]);
+  }, [collectionSongs, filterCollectionItems, sortCollectionItems]);
 
   // Collection → Albums: the saved albums plus the albums of the local
   // library (#1532, src/renderer/lib/local-albums.js). Derived on every
   // library change, never written into collectionData.albums or persisted as
   // albums, so a rescan or a removed folder updates the tab by itself. A
-  // local album that is also saved (same generateAlbumId id) shows once, as
-  // the saved record carrying the local tracks. Removing a local album only
-  // hides it: its id goes into hiddenLocalAlbumIds (persisted as
+  // local album that is also saved (same artist and title, store suffix
+  // dropped) is one card: the saved record, with the union of its saved songs
+  // and its files as `tracks`. Removing a local album only hides it: its
+  // album key goes into hiddenLocalAlbumKeys (persisted as
   // collection_hidden_local_albums); the files and the library stay, and
   // adding the album to the Collection clears the hide.
-  const [hiddenLocalAlbumIds, setHiddenLocalAlbumIds] = useState([]);
+  const [hiddenLocalAlbumKeys, setHiddenLocalAlbumKeys] = useState([]);
   const collectionLocalAlbums = useMemo(() => deriveLocalAlbums(library), [library]);
   // Read by removeAlbumFromCollection (a stable useCallback the context-menu
   // listener closes over), so it never re-registers on a library change.
-  const collectionLocalAlbumIdsRef = useRef(new Set());
-  collectionLocalAlbumIdsRef.current = useMemo(() => new Set(collectionLocalAlbums.map(a => a.id)), [collectionLocalAlbums]);
+  const collectionLocalAlbumKeysRef = useRef(new Set());
+  collectionLocalAlbumKeysRef.current = useMemo(() => new Set(collectionLocalAlbums.map(a => a.key)), [collectionLocalAlbums]);
   const collectionAlbums = useMemo(
-    () => mergeCollectionAlbums(collectionData.albums, collectionLocalAlbums, hiddenLocalAlbumIds),
-    [collectionData.albums, collectionLocalAlbums, hiddenLocalAlbumIds]
+    () => mergeCollectionAlbums(collectionData.albums, collectionLocalAlbums, hiddenLocalAlbumKeys, collectionSongs),
+    [collectionData.albums, collectionLocalAlbums, hiddenLocalAlbumKeys, collectionSongs]
+  );
+  // Read by the artist page's local-library fallback (fetchArtistFromLocalLibrary).
+  const collectionLocalAlbumsRef = useRef([]);
+  collectionLocalAlbumsRef.current = collectionLocalAlbums;
+
+  // Collection → Artists: the saved (followed) artists plus the artists of
+  // the local library (album artist, else track artist), one card per artist
+  // (same generateArtistId id or folded name). Showing is not saving: a
+  // local-only artist is never written into collectionData.artists, so the
+  // star, the menus and the follow push (all read collectionData.artists)
+  // see them as not followed. Following one is the normal add; unfollowing
+  // leaves them listed, unstarred.
+  const collectionLocalArtists = useMemo(() => deriveLocalArtists(library), [library]);
+  const collectionArtists = useMemo(
+    () => mergeCollectionArtists(collectionData.artists, collectionLocalArtists),
+    [collectionData.artists, collectionLocalArtists]
   );
 
   // Auto-select a populated collection tab when entering the library view
@@ -5722,9 +5750,9 @@ const Parachord = () => {
 
     const currentTabHasData = (() => {
       switch (collectionTab) {
-        case 'artists': return collectionData.artists.length > 0;
+        case 'artists': return collectionArtists.length > 0;
         case 'albums': return collectionAlbums.length > 0;
-        case 'tracks': return (library.length + collectionData.tracks.length) > 0;
+        case 'tracks': return collectionSongs.length > 0;
         case 'friends': return friends.length > 0;
         default: return false;
       }
@@ -5735,8 +5763,8 @@ const Parachord = () => {
     // Current tab is empty - switch to the first tab that has data
     const tabsWithData = [
       { key: 'albums', hasData: collectionAlbums.length > 0 },
-      { key: 'tracks', hasData: (library.length + collectionData.tracks.length) > 0 },
-      { key: 'artists', hasData: collectionData.artists.length > 0 },
+      { key: 'tracks', hasData: collectionSongs.length > 0 },
+      { key: 'artists', hasData: collectionArtists.length > 0 },
       { key: 'friends', hasData: friends.length > 0 }
     ];
 
@@ -5744,7 +5772,7 @@ const Parachord = () => {
     if (bestTab) {
       setCollectionTab(bestTab.key);
     }
-  }, [activeView, collectionLoading, collectionTab, collectionData, collectionAlbums, library, friends]);
+  }, [activeView, collectionLoading, collectionTab, collectionArtists, collectionAlbums, collectionSongs, friends]);
 
   const handleThemeChange = async (newPref) => {
     setThemePref(newPref);
@@ -14797,7 +14825,7 @@ ${trackListXml}
   const addAlbumToCollection = useCallback((album) => {
     const albumId = generateAlbumId(album.artist, album.title);
     // A local album the user removed earlier comes back with it (#1532).
-    setHiddenLocalAlbumIds(prev => unhideLocalAlbum(prev, albumId));
+    setHiddenLocalAlbumKeys(prev => unhideLocalAlbum(prev, albumIdentity(album.artist, album.title)));
 
     setCollectionData(prev => {
       // Check for duplicate
@@ -14983,8 +15011,8 @@ ${trackListXml}
     // and asks no service to unsave it. A saved album that is also local is
     // unsaved as before AND hidden, or it would come straight back as a
     // local album.
-    const removal = planAlbumRemoval(album, collectionLocalAlbumIdsRef.current, collectionDataRef.current?.albums);
-    if (removal.hideId) setHiddenLocalAlbumIds(prev => hideLocalAlbum(prev, removal.hideId));
+    const removal = planAlbumRemoval(album, collectionLocalAlbumKeysRef.current, collectionDataRef.current?.albums);
+    if (removal.hideKey) setHiddenLocalAlbumKeys(prev => hideLocalAlbum(prev, removal.hideKey));
     if (!removal.unsave) {
       showToast(`Removed ${album.title} from Collection`);
       return;
@@ -15756,9 +15784,9 @@ ${trackListXml}
   // so the empty initial list never overwrites the saved one.
   useEffect(() => {
     if (cacheLoaded && window.electron?.store) {
-      window.electron.store.set('collection_hidden_local_albums', hiddenLocalAlbumIds);
+      window.electron.store.set('collection_hidden_local_albums', hiddenLocalAlbumKeys);
     }
-  }, [hiddenLocalAlbumIds, cacheLoaded]);
+  }, [hiddenLocalAlbumKeys, cacheLoaded]);
 
   // Persist hidden friend keys to storage (only after cache is loaded to avoid overwriting)
   useEffect(() => {
@@ -16486,8 +16514,8 @@ ${trackListXml}
 
   // Start Collection Station - shuffle and play all collection tracks
   const handleStartCollectionStation = () => {
-    // Merge local files with collection tracks
-    const allTracks = [...library, ...collectionData.tracks];
+    // Local files and collection tracks, one row per song (#1532)
+    const allTracks = collectionSongs;
 
     if (allTracks.length === 0) {
       showToast('No tracks in your collection yet');
@@ -19566,7 +19594,7 @@ ${trackListXml}
       const savedHiddenFriendKeys = d['hidden_friend_keys'];
       // Local albums removed from the Collection (#1532): ids only.
       if (Array.isArray(d['collection_hidden_local_albums'])) {
-        setHiddenLocalAlbumIds([...new Set(d['collection_hidden_local_albums'].filter(k => typeof k === 'string'))]);
+        setHiddenLocalAlbumKeys([...new Set(d['collection_hidden_local_albums'].filter(k => typeof k === 'string'))]);
       }
       const savedVolumeOffsets = d['resolver_volume_offsets'];
       const savedVolume = d['saved_volume'];
@@ -20514,6 +20542,31 @@ ${trackListXml}
     }
   };
 
+  // Fallback artist lookup in the local library (#1532): an artist on the
+  // Collection's Artists tab only because of the user's files, whom no
+  // service knows, opens on their local albums. Each album opens through the
+  // album page's catalogs (the Local Files plug-in among them) and its
+  // tracks resolve against every enabled plug-in, as any release's do.
+  const fetchArtistFromLocalLibrary = async (artistName) => {
+    const wanted = albumIdentity(artistName, 'x');
+    if (!wanted) return null;
+    const albums = (collectionLocalAlbumsRef.current || []).filter(a => albumIdentity(a.artist, 'x') === wanted);
+    if (albums.length === 0) return null;
+    return {
+      artist: { name: albums[0].artist, mbid: null, country: null, disambiguation: null, type: null },
+      releases: albums.map(a => ({
+        id: `local-album-${a.id}`,
+        title: a.title,
+        date: a.year ? String(a.year) : null,
+        releaseType: 'album',
+        secondaryTypes: [],
+        disambiguation: '',
+        albumArt: a.art || undefined
+      })),
+      source: 'local'
+    };
+  };
+
   // Fallback artist lookup via Discogs (artist search + releases)
   const fetchArtistFromDiscogs = async (artistName) => {
     // Switched off in its plug-in settings (lib/plugin-switch.js: Wikipedia and
@@ -20880,7 +20933,9 @@ ${trackListXml}
           fetchArtistFromSpotify,
           fetchArtistFromMusicKit,
           fetchArtistFromLastfm,
-          fetchArtistFromDiscogs
+          fetchArtistFromDiscogs,
+          // Last: an artist only the user's own files know (#1532).
+          fetchArtistFromLocalLibrary
         ];
 
         let fallbackResult = null;
@@ -22554,10 +22609,15 @@ ${trackListXml}
       id: null
     };
     const collectionPlaceholderId = `collection-${album.artist}-${album.title}`.toLowerCase();
+    // An album with local files (#1532) asks the catalog its files come from
+    // first (the plug-in named by their source key, never a named one).
+    const localSourceId = (album.tracks || album.localTracks || [])
+      .map(t => Object.keys(t.sources || {}).find(id => isLocalResolver(id)))
+      .find(Boolean) || null;
     // MusicBrainz failed or doesn't have it: the services' catalogs
     // (loadAlbumFromCatalogs), which include the user's own local files.
     const openFromCatalogs = async () => {
-      const found = await loadAlbumFromCatalogs({ artist: album.artist, title: album.title });
+      const found = await loadAlbumFromCatalogs({ artist: album.artist, title: album.title, preferResolverId: localSourceId });
       return !!found && showCatalogRelease({
         found,
         requested: { id: collectionPlaceholderId, title: album.title, albumArt: album.albumArt || null, releaseType: 'album' },
@@ -22661,6 +22721,20 @@ ${trackListXml}
       const artistMatches = results.filter(r =>
         r['artist-credit']?.[0]?.name?.toLowerCase() === album.artist?.toLowerCase()
       );
+
+      // An album with local files (#1532) only takes a result with its own
+      // title (store suffix dropped): a search for a home recording returns
+      // whatever MusicBrainz has nearby, and the page would show someone
+      // else's album. With no such result, its files' catalog opens it.
+      if (localSourceId) {
+        const wanted = albumIdentity(album.artist, album.title);
+        const titled = results.filter(r => albumIdentity(r['artist-credit']?.[0]?.name || '', r.title) === wanted);
+        if (titled.length === 0) {
+          if (await openFromCatalogs()) return;
+        } else {
+          artistMatches.splice(0, artistMatches.length, ...titled);
+        }
+      }
 
       // Priority: 1) Studio album with artist match, 2) Any album with artist match, 3) Studio album, 4) First result
       const match = artistMatches.find(isStudioAlbum)
@@ -23844,8 +23918,8 @@ ${trackListXml}
 
   // Keep refs in sync for observer and background resolution callbacks
   useEffect(() => {
-    collectionTracksRef.current = [...library, ...collectionData.tracks];
-  }, [library, collectionData.tracks]);
+    collectionTracksRef.current = collectionSongs;
+  }, [collectionSongs]);
 
   useEffect(() => {
     allPlaylistsRef.current = playlists;
@@ -23860,8 +23934,8 @@ ${trackListXml}
       return;
     }
 
-    // Get all tracks (local + collection merged)
-    const allTracks = [...library, ...collectionData.tracks];
+    // Get all tracks (local + collection merged, one row per song: #1532)
+    const allTracks = collectionSongs;
     if (allTracks.length === 0) return;
 
     // Wait for scroll container to be available
@@ -23910,7 +23984,7 @@ ${trackListXml}
     });
 
     return () => collectionObserverRef.current?.disconnect();
-  }, [activeView, collectionTab, library, collectionData.tracks, updateSchedulerVisibility, collectionScrollContainerReady]);
+  }, [activeView, collectionTab, collectionSongs, updateSchedulerVisibility, collectionScrollContainerReady]);
 
   // Register page context for release page tracks resolution.
   //
@@ -37688,7 +37762,7 @@ useEffect(() => {
 
         // Library view with collapsible hero header (matching Recommendations pattern)
         activeView === 'library' && React.createElement(CollectionPage, {
-          activeResolvers: playbackResolvers, allResolvers, autoPinnedFriendIds, collectionAlbums, collectionData, collectionHeaderCollapsed, collectionLoading, collectionObserverRef, collectionScrollContainerRef, collectionSearch, collectionSearchOpen, collectionSongsSorted, collectionSort, collectionTab, collectionTrackRowRefs, currentTrack, filterCollectionItems, friendSyncInProgress, friends, handleCollectionScrollContainerRef, isPlaying, library, libraryLoading, metaServiceConfigs, pinnedFriendIds, playbackContext, resolverOrder, resolverSyncSettings, syncPausedUntil, syncSignedOut: syncSignedOutView, setAddFriendModalOpen, setAddToPlaylistPanel, setCollectionHeaderCollapsed, setCollectionSearch, setCollectionSearchOpen, setCollectionSort, setCollectionTab, setDraggingTrackForPlaylist, setSyncStatusModal, setTrackLoading, showToast, sortCollectionItems, syncProviderConfig, syncStatus, trackSources,
+          activeResolvers: playbackResolvers, allResolvers, autoPinnedFriendIds, collectionAlbums, collectionArtists, collectionData, collectionHeaderCollapsed, collectionSongs, collectionLoading, collectionObserverRef, collectionScrollContainerRef, collectionSearch, collectionSearchOpen, collectionSongsSorted, collectionSort, collectionTab, collectionTrackRowRefs, currentTrack, filterCollectionItems, friendSyncInProgress, friends, handleCollectionScrollContainerRef, isPlaying, libraryLoading, metaServiceConfigs, pinnedFriendIds, playbackContext, resolverOrder, resolverSyncSettings, syncPausedUntil, syncSignedOut: syncSignedOutView, setAddFriendModalOpen, setAddToPlaylistPanel, setCollectionHeaderCollapsed, setCollectionSearch, setCollectionSearchOpen, setCollectionSort, setCollectionTab, setDraggingTrackForPlaylist, setSyncStatusModal, setTrackLoading, showToast, sortCollectionItems, syncProviderConfig, syncStatus, trackSources,
           ...collectionPageHandlers
         }),
 

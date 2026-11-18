@@ -1,53 +1,65 @@
 /**
- * The Collection's albums from local files (#1532). Albums of the Local Files
- * library are derived from `library` (src/renderer/lib/local-albums.js) and
- * merged with the saved albums on the Albums tab; removing one only hides it.
+ * The Collection with local files merged in (#1532). Local and saved albums,
+ * artists and songs are each one list, every merged entry carries every
+ * source (src/renderer/lib/local-albums.js), and showing is not saving: an
+ * entry that is there only because of local files is never followed,
+ * hearted or loved, and no push sends it.
  */
 
 const fs = require('fs');
 const path = require('path');
 
 const {
+  albumIdentity,
+  trackAlbumKeyOf,
+  trackArtistNameOf,
+  isJunkAlbumTitle,
+  mergeCollectionSongs,
   deriveLocalAlbums,
   mergeCollectionAlbums,
+  deriveLocalArtists,
+  mergeCollectionArtists,
   hideLocalAlbum,
   unhideLocalAlbum,
   planAlbumRemoval,
-  isJunkAlbumTitle,
-  localAlbumIdOf,
 } = require('../../src/renderer/lib/local-albums');
-const { generateAlbumId } = require('../../sync-engine/collection-id');
+const { generateAlbumId, generateArtistId, generateTrackId } = require('../../sync-engine/collection-id');
+const { artistInCollection, albumInCollection, withCollectionState } = require('../../src/renderer/lib/menu-collection-state');
 
-const local = (over) => ({
-  id: `local-${over.title}`,
-  artist: 'Artist',
-  sources: { localfiles: { filePath: `/m/${over.title}.mp3` } },
-  filePath: `/m/${over.title}.mp3`,
+let nextId = 1;
+const local = (over) => {
+  const filePath = `/m/${nextId}-${over.title}.mp3`;
+  return {
+    id: `local-${nextId++}`,
+    artist: 'Artist',
+    filePath,
+    sources: { localfiles: { filePath, fileUrl: `file://${filePath}`, confidence: 1 } },
+    ...over,
+  };
+};
+const saved = (over) => ({
+  id: generateTrackId(over.artist, over.title, over.album),
+  addedAt: 1,
+  sources: { spotify: { spotifyId: `sp-${over.title}`, confidence: 1 } },
   ...over,
 });
+const deepFreeze = (o) => { Object.values(o).forEach(v => v && typeof v === 'object' && deepFreeze(v)); return Object.freeze(o); };
 
 describe('deriveLocalAlbums', () => {
   test('groups by album artist, else artist, and album title', () => {
     const library = [
       local({ title: 'b', album: 'Kid A', artist: 'Radiohead', trackNumber: 2, year: 2000, indexedAt: 500 }),
       local({ title: 'a', album: 'Kid A', artist: 'Radiohead', trackNumber: 1, albumArt: 'file:///c.jpg', indexedAt: 300 }),
-      // A compilation: the album artist holds the tracks together.
       local({ title: 'x', album: 'Hits', artist: 'One', albumArtist: 'Various Artists' }),
       local({ title: 'y', album: 'Hits', artist: 'Two', albumArtist: 'Various Artists' }),
-      // Same title, different artist: another album.
       local({ title: 'z', album: 'Kid A', artist: 'Someone Else' }),
     ];
     const albums = deriveLocalAlbums(library);
     expect(albums).toHaveLength(3);
-
     const kidA = albums.find(a => a.artist === 'Radiohead');
-    expect(kidA).toMatchObject({
-      title: 'Kid A', year: 2000, art: 'file:///c.jpg', trackCount: 2, addedAt: 300, isLocal: true,
-    });
-    // Disc and track order, and the library rows themselves (they play the file).
+    expect(kidA).toMatchObject({ title: 'Kid A', year: 2000, art: 'file:///c.jpg', trackCount: 2, addedAt: 300, isLocal: true });
     expect(kidA.localTracks.map(t => t.title)).toEqual(['a', 'b']);
     expect(kidA.localTracks[0]).toBe(library[1]);
-
     const hits = albums.find(a => a.title === 'Hits');
     expect(hits.artist).toBe('Various Artists');
     expect(hits.trackCount).toBe(2);
@@ -58,7 +70,17 @@ describe('deriveLocalAlbums', () => {
     expect(album.id).toBe(generateAlbumId('Björk', 'Björk Album'));
     const [cjk] = deriveLocalAlbums([local({ title: 't', album: '初恋', artist: '宇多田ヒカル' })]);
     expect(cjk.id).toBe(generateAlbumId('宇多田ヒカル', '初恋'));
-    expect(localAlbumIdOf(local({ title: 't', album: 'X', albumArtist: 'AA', artist: 'B' }))).toBe(generateAlbumId('AA', 'X'));
+    expect(cjk.key).toBe(albumIdentity('宇多田ヒカル', '初恋'));
+  });
+
+  test('"X" and "X - EP" by one artist, in any case, are one album; an edition is another', () => {
+    const albums = deriveLocalAlbums([
+      local({ title: '1', album: 'Fences - EP', artist: 'Band' }),
+      local({ title: '2', album: 'fences', artist: 'BAND' }),
+      local({ title: '3', album: 'Fences (Deluxe Edition)', artist: 'Band' }),
+    ]);
+    expect(albums.map(a => a.trackCount).sort()).toEqual([1, 2]);
+    expect(albumIdentity('Band', 'Fences - Single')).toBe(albumIdentity('band', 'Fences'));
   });
 
   test('albums without a title, or with a placeholder one, stay off the tab', () => {
@@ -74,9 +96,9 @@ describe('deriveLocalAlbums', () => {
       local({ title: '9', album: 'Real Album' }),
     ]);
     expect(albums.map(a => a.title)).toEqual(['Real Album']);
-    // Real titles that look like placeholders stay.
     expect(isJunkAlbumTitle('Untitled')).toBe(false);
     expect(isJunkAlbumTitle('None')).toBe(false);
+    expect(trackAlbumKeyOf(local({ title: 'x', album: 'Unknown Album' }))).toBeNull();
   });
 
   test('an empty or missing library gives no albums', () => {
@@ -85,41 +107,174 @@ describe('deriveLocalAlbums', () => {
   });
 });
 
-describe('mergeCollectionAlbums', () => {
-  const localAlbums = deriveLocalAlbums([
-    local({ title: 'a', album: 'In Rainbows', artist: 'Radiohead', albumArt: 'file:///ir.jpg' }),
-    local({ title: 'b', album: 'Amnesiac', artist: 'Radiohead' }),
-  ]);
+describe('mergeCollectionSongs', () => {
+  test('a song that is both local and saved shows once, with both sources, the saved id and its love', () => {
+    const file = local({ title: 'Reckoner', artist: 'Radiohead', album: 'In Rainbows', albumArt: 'file:///ir.jpg', duration: 290 });
+    const song = saved({ title: 'Reckoner', artist: 'Radiohead', album: 'In Rainbows', syncSources: { manual: { addedAt: 1 } } });
+    const rows = mergeCollectionSongs([file], [song]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe(song.id);
+    expect(rows[0].syncSources).toEqual(song.syncSources);
+    expect(Object.keys(rows[0].sources).sort()).toEqual(['localfiles', 'spotify']);
+    expect(rows[0].sources.localfiles.filePath).toBe(file.filePath);
+    expect(rows[0].albumArt).toBe('file:///ir.jpg');
+    // Its heart reads the saved rows: loved.
+    expect(withCollectionState({ type: 'track', track: rows[0] }, { tracks: [song] }).isInCollection).toBe(true);
+  });
 
-  test('a local album that is also saved shows once, as the saved record with the local tracks', () => {
-    const saved = [{ id: generateAlbumId('Radiohead', 'In Rainbows'), title: 'In Rainbows', artist: 'Radiohead', year: 2007, art: null, trackCount: 10, addedAt: 42 }];
-    const merged = mergeCollectionAlbums(saved, localAlbums, []);
-    expect(merged).toHaveLength(2);
-    const ir = merged.filter(a => a.title === 'In Rainbows');
-    expect(ir).toHaveLength(1);
-    expect(ir[0]).toMatchObject({ year: 2007, trackCount: 10, addedAt: 42, art: 'file:///ir.jpg' });
-    expect(ir[0].isLocal).toBeUndefined();
-    expect(ir[0].localTracks.map(t => t.title)).toEqual(['a']);
-    // Ids are unique, so the card keys are.
+  test('names compare folded, and a store suffix or a placeholder album still matches', () => {
+    const rows = mergeCollectionSongs(
+      [
+        local({ title: 'Twin Size Mattress', artist: 'The Front Bottoms', album: 'Back on Top' }),
+        local({ title: 'Jóga', artist: 'Björk', album: null }),
+      ],
+      [
+        saved({ title: 'twin size mattress', artist: 'the front bottoms', album: 'Back On Top - Single' }),
+        saved({ title: 'Joga', artist: 'Bjork', album: 'Homogenic' }),
+      ]
+    );
+    expect(rows).toHaveLength(2);
+    for (const r of rows) expect(r.sources.localfiles).toBeTruthy();
+  });
+
+  test('two real, different albums stay two rows', () => {
+    const rows = mergeCollectionSongs(
+      [local({ title: 'Song', artist: 'A', album: 'Live at Leeds' })],
+      [saved({ title: 'Song', artist: 'A', album: 'Studio Album' })]
+    );
+    expect(rows).toHaveLength(2);
+  });
+
+  test('a file matches one saved row at most; unmatched rows are the same objects', () => {
+    const file = local({ title: 'Song', artist: 'A', album: 'X' });
+    const other = local({ title: 'Other', artist: 'A', album: 'X' });
+    const s1 = saved({ title: 'Song', artist: 'A', album: 'X' });
+    const s2 = saved({ title: 'Song', artist: 'A', album: '' });
+    const rows = mergeCollectionSongs([file, other], [s1, s2]);
+    expect(rows).toHaveLength(3);
+    expect(rows).toContain(other);
+    expect(rows).toContain(s2);
+    expect(rows.filter(r => r.sources.localfiles && r.sources.spotify)).toHaveLength(1);
+  });
+
+  test('a local-only song is not loved', () => {
+    const file = local({ title: 'Home Demo', artist: 'Me', album: 'Tapes' });
+    const [row] = mergeCollectionSongs([file], []);
+    expect(row).toBe(file);
+    expect(withCollectionState({ type: 'track', track: row }, { tracks: [] }).isInCollection).toBe(false);
+  });
+});
+
+describe('mergeCollectionAlbums', () => {
+  const library = [
+    local({ title: 'Reckoner', artist: 'Radiohead', album: 'In Rainbows', trackNumber: 7, albumArt: 'file:///ir.jpg' }),
+    local({ title: 'Nude', artist: 'Radiohead', album: 'In Rainbows', trackNumber: 3 }),
+    local({ title: 'Pyramid Song', artist: 'Radiohead', album: 'Amnesiac', trackNumber: 2 }),
+  ];
+  const localAlbums = deriveLocalAlbums(library);
+  const savedAlbum = { id: generateAlbumId('Radiohead', 'In Rainbows'), title: 'In Rainbows', artist: 'Radiohead', year: 2007, art: null, trackCount: 10, addedAt: 42 };
+  const savedTracks = [
+    saved({ title: 'Reckoner', artist: 'Radiohead', album: 'In Rainbows', trackNumber: 7 }),
+    saved({ title: '15 Step', artist: 'Radiohead', album: 'In Rainbows', trackNumber: 1 }),
+  ];
+  const songs = mergeCollectionSongs(library, savedTracks);
+
+  test('a local and a saved copy of one album give one entry with the union of tracks and sources', () => {
+    const merged = mergeCollectionAlbums([savedAlbum], localAlbums, [], songs);
+    expect(merged.map(a => a.title).sort()).toEqual(['Amnesiac', 'In Rainbows']);
+    const ir = merged.find(a => a.title === 'In Rainbows');
+    expect(ir).toMatchObject({ id: savedAlbum.id, year: 2007, trackCount: 10, addedAt: 42, art: 'file:///ir.jpg' });
+    expect(ir.isLocal).toBeUndefined();
+    expect(ir.tracks.map(t => t.title)).toEqual(['15 Step', 'Nude', 'Reckoner']);
+    const sourcesOf = (title) => Object.keys(ir.tracks.find(t => t.title === title).sources).sort();
+    expect(sourcesOf('15 Step')).toEqual(['spotify']);
+    expect(sourcesOf('Nude')).toEqual(['localfiles']);
+    expect(sourcesOf('Reckoner')).toEqual(['localfiles', 'spotify']);
     expect(new Set(merged.map(a => a.id)).size).toBe(merged.length);
   });
 
+  test('a saved "X - EP" and local "X" are one entry', () => {
+    const ep = { id: generateAlbumId('Radiohead', 'Amnesiac - EP'), title: 'Amnesiac - EP', artist: 'Radiohead' };
+    const merged = mergeCollectionAlbums([ep], localAlbums, [], songs);
+    expect(merged.filter(a => /Amnesiac/.test(a.title))).toEqual([expect.objectContaining({ id: ep.id })]);
+  });
+
   test("the saved album's own cover wins", () => {
-    const saved = [{ id: generateAlbumId('Radiohead', 'In Rainbows'), title: 'In Rainbows', artist: 'Radiohead', art: 'https://x/ir.jpg' }];
-    expect(mergeCollectionAlbums(saved, localAlbums, [])[0].art).toBe('https://x/ir.jpg');
+    const withArt = { ...savedAlbum, art: 'https://x/ir.jpg' };
+    expect(mergeCollectionAlbums([withArt], localAlbums, [], songs)[0].art).toBe('https://x/ir.jpg');
+  });
+
+  test('a local-only album is listed but not saved', () => {
+    const merged = mergeCollectionAlbums([], localAlbums, [], songs);
+    const amnesiac = merged.find(a => a.title === 'Amnesiac');
+    expect(amnesiac.isLocal).toBe(true);
+    expect(albumInCollection([], amnesiac)).toBe(false);
   });
 
   test('hidden local albums are left out; saved albums always show', () => {
-    const amnesiac = generateAlbumId('Radiohead', 'Amnesiac');
-    const ir = generateAlbumId('Radiohead', 'In Rainbows');
-    expect(mergeCollectionAlbums([], localAlbums, [amnesiac]).map(a => a.title)).toEqual(['In Rainbows']);
-    const saved = [{ id: ir, title: 'In Rainbows', artist: 'Radiohead' }];
-    expect(mergeCollectionAlbums(saved, localAlbums, [ir, amnesiac]).map(a => a.title)).toEqual(['In Rainbows']);
+    const amnesiac = albumIdentity('Radiohead', 'Amnesiac');
+    const ir = albumIdentity('Radiohead', 'In Rainbows');
+    expect(mergeCollectionAlbums([], localAlbums, [amnesiac], songs).map(a => a.title)).toEqual(['In Rainbows']);
+    expect(mergeCollectionAlbums([savedAlbum], localAlbums, [ir, amnesiac], songs).map(a => a.title)).toEqual(['In Rainbows']);
   });
 
   test('with no local albums the saved list is returned as is', () => {
-    const saved = [{ id: 'x', title: 'X', artist: 'Y' }];
-    expect(mergeCollectionAlbums(saved, [], [])).toBe(saved);
+    const list = [{ id: 'x', title: 'X', artist: 'Y' }];
+    expect(mergeCollectionAlbums(list, [], [], [])).toBe(list);
+  });
+});
+
+describe('artists', () => {
+  const library = [
+    local({ title: '1', artist: 'Mitski', album: 'Puberty 2', indexedAt: 9 }),
+    local({ title: '2', artist: 'Mitski', album: 'Puberty 2', indexedAt: 4 }),
+    local({ title: '3', artist: 'Guest', albumArtist: 'Sufjan Stevens', album: 'Carrie & Lowell' }),
+    local({ title: '4', artist: 'Real One', albumArtist: 'Various Artists', album: 'Comp' }),
+    local({ title: '5', artist: 'Unknown Artist', album: 'Mystery' }),
+  ];
+
+  test('derived from album artist, else artist; placeholders skipped', () => {
+    const artists = deriveLocalArtists(library);
+    expect(artists.map(a => a.name).sort()).toEqual(['Mitski', 'Real One', 'Sufjan Stevens']);
+    const mitski = artists.find(a => a.name === 'Mitski');
+    expect(mitski).toMatchObject({ id: generateArtistId('Mitski'), trackCount: 2, addedAt: 4, isLocal: true });
+    expect(trackArtistNameOf({ albumArtist: 'Various', artist: 'X' })).toBe('X');
+  });
+
+  test('a local-only artist appears unstarred; following stars them once; unfollowing leaves them listed, unstarred', () => {
+    const localArtists = deriveLocalArtists(library);
+    // Not followed: listed, not in collectionData.artists, the star is off.
+    let savedArtists = [];
+    let merged = mergeCollectionArtists(savedArtists, localArtists);
+    expect(merged.filter(a => a.name === 'Mitski')).toHaveLength(1);
+    expect(artistInCollection(savedArtists, 'Mitski')).toBe(false);
+    // Followed: the user's add puts one row in the saved list; one card.
+    savedArtists = [{ id: generateArtistId('mitski'), name: 'mitski', addedAt: 99 }];
+    merged = mergeCollectionArtists(savedArtists, localArtists);
+    const cards = merged.filter(a => a.name.toLowerCase() === 'mitski');
+    expect(cards).toHaveLength(1);
+    expect(cards[0]).toMatchObject({ addedAt: 99, trackCount: 2 });
+    expect(cards[0].isLocal).toBeUndefined();
+    expect(artistInCollection(savedArtists, 'Mitski')).toBe(true);
+    // Unfollowed: off the saved list, still on the tab, unstarred.
+    savedArtists = [];
+    merged = mergeCollectionArtists(savedArtists, localArtists);
+    expect(merged.filter(a => a.name === 'Mitski')).toHaveLength(1);
+    expect(artistInCollection(savedArtists, 'Mitski')).toBe(false);
+  });
+
+  test('merging never changes the saved lists', () => {
+    const savedArtists = deepFreeze([{ id: generateArtistId('Mitski'), name: 'Mitski' }]);
+    const savedAlbums = deepFreeze([{ id: generateAlbumId('Mitski', 'Puberty 2'), title: 'Puberty 2', artist: 'Mitski' }]);
+    const savedTracks = deepFreeze([saved({ title: '1', artist: 'Mitski', album: 'Puberty 2' })]);
+    expect(() => {
+      mergeCollectionArtists(savedArtists, deriveLocalArtists(library));
+      const songs = mergeCollectionSongs(library, savedTracks);
+      mergeCollectionAlbums(savedAlbums, deriveLocalAlbums(library), [], songs);
+    }).not.toThrow();
+    expect(savedArtists).toHaveLength(1);
+    expect(savedAlbums).toHaveLength(1);
+    expect(savedTracks).toHaveLength(1);
   });
 });
 
@@ -136,21 +291,20 @@ describe('hiding', () => {
 });
 
 describe('planAlbumRemoval', () => {
-  const id = generateAlbumId('Radiohead', 'Amnesiac');
-  const album = { id, title: 'Amnesiac', artist: 'Radiohead' };
+  const key = albumIdentity('Radiohead', 'Amnesiac');
+  const album = { id: generateAlbumId('Radiohead', 'Amnesiac'), title: 'Amnesiac', artist: 'Radiohead' };
 
   test('a local-only album is hidden and nothing is unsaved', () => {
-    expect(planAlbumRemoval(album, new Set([id]), [])).toEqual({ hideId: id, unsave: false });
-    // Matched by artist and title when the menu sent no id.
-    expect(planAlbumRemoval({ title: 'Amnesiac', artist: 'Radiohead' }, new Set([id]), [])).toEqual({ hideId: id, unsave: false });
+    expect(planAlbumRemoval(album, new Set([key]), [])).toEqual({ hideKey: key, unsave: false });
+    expect(planAlbumRemoval({ title: 'Amnesiac', artist: 'Radiohead' }, new Set([key]), [])).toEqual({ hideKey: key, unsave: false });
   });
 
   test('a saved album that is also local is unsaved and hidden', () => {
-    expect(planAlbumRemoval(album, new Set([id]), [album])).toEqual({ hideId: id, unsave: true });
+    expect(planAlbumRemoval(album, new Set([key]), [album])).toEqual({ hideKey: key, unsave: true });
   });
 
   test('a saved album with no local files is only unsaved', () => {
-    expect(planAlbumRemoval(album, new Set(), [album])).toEqual({ hideId: null, unsave: true });
+    expect(planAlbumRemoval(album, new Set(), [album])).toEqual({ hideKey: null, unsave: true });
   });
 });
 
@@ -177,19 +331,45 @@ describe('app.js wiring', () => {
   });
 
   test('adding an album clears its hide', () => {
-    expect(fnBody('addAlbumToCollection')).toMatch(/setHiddenLocalAlbumIds\(prev => unhideLocalAlbum\(prev, albumId\)\)/);
+    expect(fnBody('addAlbumToCollection')).toMatch(/setHiddenLocalAlbumKeys\(prev => unhideLocalAlbum\(prev, albumIdentity\(album\.artist, album\.title\)\)\)/);
   });
 
-  test('the Albums tab reads the merged list, never collectionData.albums', () => {
+  test('showing is not saving: no derived list reaches a collection write, a sync push or the love push', () => {
+    const derived = ['collectionSongs', 'collectionAlbums', 'collectionArtists', 'collectionLocalAlbums', 'collectionLocalArtists', 'collectionTracksRef'];
+    const writes = /setCollectionData|saveCollection|collection\.save|electron\.sync\.|runLoveBackfill|lovePush|tombstones/;
+    // Line by line (the render expression is one long statement): a line
+    // that writes the collection, pushes to a service or pushes loves never
+    // names a derived list.
+    for (const line of src.split('\n')) {
+      if (!writes.test(line)) continue;
+      for (const name of derived) expect({ name, line: line.includes(name) ? line.trim() : null }).toEqual({ name, line: null });
+    }
+    // And no derived list is ever handed to a setter of collectionData.
+    expect(src).not.toMatch(/setCollectionData\(\s*(collectionSongs|collectionAlbums|collectionArtists)/);
+    // The pushes read what was saved: the persisted collection or collectionDataRef.
+    expect(src).toMatch(/const tracks = \(collectionDataRef\.current\?\.tracks \|\| \[\]\);\s*\n\s*const todo = tracks\.filter\(t => !lovePushedKeysRef/);
+  });
+
+  test('every Collection consumer reads the merged song list', () => {
+    expect(src).toMatch(/const collectionSongs = useMemo\(\s*\(\) => mergeCollectionSongs\(library, collectionData\.tracks\)/);
+    expect(src).toContain('for (const track of collectionSongs)');
+    expect(src).toContain('collectionTracksRef.current = collectionSongs;');
+    expect(src).not.toContain('[...library, ...collectionData.tracks]');
+  });
+
+  test('the tabs read the merged lists, never collectionData.albums / .artists', () => {
     const page = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'components', 'collection-page.js'), 'utf8');
     const code = page.replace(/^\s*\/\/.*$/gm, '');
     expect(code).not.toMatch(/collectionData\.albums/);
-    expect(page).toMatch(/filterCollectionItems\(collectionAlbums, 'albums'\)/);
+    expect(code).not.toMatch(/collectionData\.artists/);
+    expect(code).toMatch(/filterCollectionItems\(collectionAlbums, 'albums'\)/);
+    expect(code).toMatch(/filterCollectionItems\(collectionArtists, 'artists'\)/);
+    expect(code).not.toMatch(/library\.length/);
   });
 
   test('the hidden list is persisted under an allowlisted key', () => {
     const store = fs.readFileSync(path.join(__dirname, '..', '..', 'main-process', 'ipc', 'store.js'), 'utf8');
     expect(store).toContain("'collection_hidden_local_albums'");
-    expect(src).toContain("window.electron.store.set('collection_hidden_local_albums', hiddenLocalAlbumIds)");
+    expect(src).toContain("window.electron.store.set('collection_hidden_local_albums', hiddenLocalAlbumKeys)");
   });
 });

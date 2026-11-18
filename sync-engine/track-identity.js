@@ -273,7 +273,11 @@ function matchTracks(remoteItems, localItems, { providerId, nativeIdOf } = {}) {
 
 module.exports = {
   isPlaceholderAlbum,
+  hasPlaceholderAlbum,
   albumsCompatible,
+  albumKey,
+  nameOf,
+  nameKey,
   nativeIdsOf,
   pickKeeper,
   mergeRows,

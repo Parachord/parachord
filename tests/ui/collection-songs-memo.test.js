@@ -18,7 +18,10 @@ const page = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer',
 describe('Collection songs list is memoized', () => {
   test('built once per input change, at component scope', () => {
     expect(app).toMatch(/const collectionSongsSorted = useMemo\(\(\) => \{/);
-    expect(app).toMatch(/\}, \[library, collectionData\.tracks, filterCollectionItems, sortCollectionItems\]\);/);
+    // #1532: the merge (local + saved, one row per song) is its own memo,
+    // and the sorted list is built from it.
+    expect(app).toMatch(/const collectionSongs = useMemo\(\s*\(\) => mergeCollectionSongs\(library, collectionData\.tracks\),\s*\[library, collectionData\.tracks\]\s*\);/);
+    expect(app).toMatch(/\}, \[collectionSongs, filterCollectionItems, sortCollectionItems\]\);/);
   });
 
   test('tracks with an id are reused, not copied (in-place enrichment must show through)', () => {

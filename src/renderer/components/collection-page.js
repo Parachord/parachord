@@ -62,9 +62,12 @@ const COLLECTION_PAGE_HANDLERS = [
   'syncFriendsFromServices',
 ];
 
-// collectionAlbums: the saved albums plus the local library's (#1532; app.js
-// builds it with lib/local-albums.js). The Albums tab and its count read it,
-// never collectionData.albums.
+// collectionAlbums: the saved albums plus the local library's, one card per
+// album (#1532; app.js builds it with lib/local-albums.js). The Albums tab
+// and its count read it, never collectionData.albums. collectionSongs is
+// the Songs tab's rows before filter and sort (its count): local and saved
+// songs, one per song. collectionArtists
+// is the Artists tab's: followed and local artists, one per artist.
 const CollectionPage = React.memo(function CollectionPage(props) {
   const {
     activeResolvers,
@@ -73,6 +76,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
     allResolvers,
     autoPinnedFriendIds,
     collectionAlbums,
+    collectionArtists,
     collectionData,
     collectionHeaderCollapsed,
     collectionLoading,
@@ -80,6 +84,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
     collectionScrollContainerRef,
     collectionSearch,
     collectionSearchOpen,
+    collectionSongs,
     collectionSongsSorted,
     collectionSort,
     collectionTab,
@@ -101,7 +106,6 @@ const CollectionPage = React.memo(function CollectionPage(props) {
     handleStartCollectionStation,
     isOnAir,
     isPlaying,
-    library,
     libraryLoading,
     metaServiceConfigs,
     navigateToFriend,
@@ -150,9 +154,9 @@ React.createElement('div', {
                   style: { textShadow: 'var(--hero-text-shadow-line)' }
                 },
                   React.createElement(HeroTabs, { items: [
-                    { key: 'artists', label: collectionLoading ? null : countOf(collectionData.artists.length, 'Artist'), staticLabel: 'Artists' },
+                    { key: 'artists', label: collectionLoading ? null : countOf(collectionArtists.length, 'Artist'), staticLabel: 'Artists' },
                     { key: 'albums', label: collectionLoading ? null : countOf(collectionAlbums.length, 'Album'), staticLabel: 'Albums' },
-                    { key: 'tracks', label: collectionLoading ? null : countOf(library.length + collectionData.tracks.length, 'Track'), staticLabel: 'Tracks' },
+                    { key: 'tracks', label: collectionLoading ? null : countOf(collectionSongs.length, 'Track'), staticLabel: 'Tracks' },
                     { key: 'friends', label: countOf(friends.length, 'Friend'), staticLabel: 'Friends' }
                   ], isSelected: (tab) => collectionTab === tab.key, onSelect: (tab) => { setCollectionTab(tab.key); }, renderLabel: (tab) => tab.label !== null ? tab.label : React.createElement('span', { className: 'flex items-center gap-1' },
                       React.createElement('span', { className: 'inline-block w-6 h-4 bg-white/30 rounded animate-pulse' }),
@@ -171,9 +175,9 @@ React.createElement('div', {
                   style: { textShadow: 'var(--hero-text-shadow-line)' }
                 },
                   React.createElement(HeroTabs, { items: [
-                    { key: 'artists', label: collectionLoading ? null : countOf(collectionData.artists.length, 'Artist'), staticLabel: 'Artists' },
+                    { key: 'artists', label: collectionLoading ? null : countOf(collectionArtists.length, 'Artist'), staticLabel: 'Artists' },
                     { key: 'albums', label: collectionLoading ? null : countOf(collectionAlbums.length, 'Album'), staticLabel: 'Albums' },
-                    { key: 'tracks', label: collectionLoading ? null : countOf(library.length + collectionData.tracks.length, 'Track'), staticLabel: 'Tracks' },
+                    { key: 'tracks', label: collectionLoading ? null : countOf(collectionSongs.length, 'Track'), staticLabel: 'Tracks' },
                     { key: 'friends', label: countOf(friends.length, 'Friend'), staticLabel: 'Friends' }
                   ], isSelected: (tab) => collectionTab === tab.key, onSelect: (tab) => { setCollectionTab(tab.key); }, renderLabel: (tab) => tab.label !== null ? tab.label : React.createElement('span', { className: 'flex items-center gap-1' },
                       React.createElement('span', { className: 'inline-block w-6 h-4 bg-white/30 rounded animate-pulse' }),
@@ -433,7 +437,9 @@ React.createElement('div', { className: 'ml-auto' },
                 return null;
               }
 
-              const filtered = filterCollectionItems(collectionData.artists, 'artists');
+              // Saved and local artists, one card each (#1532): a local-only
+              // artist is not followed (the menu offers Add to Collection).
+              const filtered = filterCollectionItems(collectionArtists, 'artists');
               const sorted = sortCollectionItems(filtered, 'artists');
 
               if (sorted.length === 0 && collectionSearch) {
@@ -450,7 +456,7 @@ React.createElement('div', { className: 'ml-auto' },
               },
                 sorted.map((artist, index) =>
                   React.createElement(ArtistCard, {
-                    key: artist.name,
+                    key: artist.id || artist.name,
                     artist: { id: slug(artist.name || 'unknown'), name: artist.name },
                     getArtistImage: getArtistImage,
                     onOpen: () => fetchArtistData(artist.name),
@@ -503,19 +509,16 @@ React.createElement('div', { className: 'ml-auto' },
                   // The shared album card (components/album-card.js); it looks up
                   // its own cover (getAlbumArt).
                   (() => {
-                    // Its saved tracks, else its local files (#1532: a local
-                    // album, or a saved one with none of its tracks saved,
-                    // plays from the files; localTracks are library rows in
-                    // disc and track order).
-                    const tracksOf = () => {
-                      const saved = collectionData.tracks
-                        .filter(t => t.artist === album.artist && t.album === album.title)
-                        .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
-                      return saved.length > 0 || !album.localTracks ? saved : album.localTracks;
-                    };
+                    // An album with local files carries `tracks` (#1532): its
+                    // saved songs and its files, one row per song with every
+                    // source, in disc and track order. Otherwise its saved
+                    // songs, as before.
+                    const tracksOf = () => album.tracks || collectionData.tracks
+                      .filter(t => t.artist === album.artist && t.album === album.title)
+                      .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
                     // The menu sends the album over IPC and back for Remove
                     // from Collection; its tracks travel separately.
-                    const { localTracks: _localTracks, ...menuAlbum } = album;
+                    const { localTracks: _localTracks, tracks: _tracks, ...menuAlbum } = album;
                     return React.createElement(AlbumCard, Object.assign({
                       key: albumKey(album),
                       role: 'listitem',
@@ -523,7 +526,7 @@ React.createElement('div', { className: 'ml-auto' },
                       getAlbumArt: getAlbumArt,
                       // The year and track count, as the old Collection card showed.
                       subtitle: [album.year, (() => {
-                        const n = album.trackCount ?? (collectionData.tracks.filter(t => t.artist === album.artist && t.album === album.title).length || (album.localTracks ? album.localTracks.length : 0));
+                        const n = album.trackCount ?? (album.tracks ? album.tracks.length : collectionData.tracks.filter(t => t.artist === album.artist && t.album === album.title).length);
                         return n ? countOf(n, 'track') : null;
                       })()].filter(Boolean).join(' · ') || null,
                       animationDelay: Math.min(index * 30, 300),
