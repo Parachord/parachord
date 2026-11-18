@@ -217,7 +217,10 @@
       if (typeof r.search !== 'function') continue;
       if (r.__limiterWrapped) continue;
       const original = r.search.bind(r);
-      r.search = (query, config) => lim.run(() => original(query, config), laneRunOptions(config));
+      // Every argument passes through: a plugin's own resolve can ask its
+      // search for more than a page (Bandcamp's `limit`, #1532), and a
+      // two-argument wrapper dropped it, so resolve saw only 20 rows.
+      r.search = (query, config, ...rest) => lim.run(() => original(query, config, ...rest), laneRunOptions(config));
       r.__limiterWrapped = true;
     }
     return resolvers;

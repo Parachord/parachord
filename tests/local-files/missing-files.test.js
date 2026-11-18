@@ -111,7 +111,10 @@ describe('wiring', () => {
     // It used to send isInCollection: true for every row, library-only ones
     // included, so "Remove from Collection" failed with "not in your collection".
     expect(collectionPage).not.toMatch(/isInCollection: true\s+\/\/ Collection tracks are always in collection/);
-    expect(collectionPage).toMatch(/isLibraryTrack: !inCollection && !!\(track\.filePath \|\| track\.sources\?\.localfiles\?\.filePath\)/);
+    expect(collectionPage).toMatch(/isInCollection: inCollection,/);
+    // A row with a file gets the file's items whether or not it is also saved
+    // (#1532: a saved song merged with its file offers Show in Finder too).
+    expect(collectionPage).toMatch(/isLibraryTrack: !!\(track\.filePath \|\| track\.sources\?\.localfiles\?\.filePath\)/);
   });
 
   test('library-only tracks get Show in Folder, or Remove Missing File when the file is gone', () => {

@@ -396,3 +396,18 @@ Mobile must mirror three things:
 - The `.axe` shape is shared marketplace data: `requires` is a top-level key (sibling of `capabilities`/`settings`), not inside `manifest`.
 
 What breaks if a client drifts: a plugin that needs a bridge the host doesn't supply loads and throws not-ready on every resolve (and mobile's retry re-asks it forever), or — the other direction — a host that advertises a bridge it doesn't really supply has plugins that load and fail at the call site.
+
+### Android Parity Requirements (Collection: local and saved merged)
+
+Desktop #1534 (parachord#1532). Mobile ticket: [Parachord/parachord-mobile#713](https://github.com/Parachord/parachord-mobile/issues/713). Reference module: `src/renderer/lib/local-albums.js`; how desktop shows it: "In the Collection" in [local-files.md](local-files.md).
+
+**The rule.** The Collection's Songs, Albums and Artists list the local library merged with what the user saved, deduplicated: one entry per song, album and artist, every track with every source (the file and every service it resolves on). Showing is not saving: an item that is there only because of local files is never written to the saved collection, never shows as loved, hearted, starred or followed, and is never pushed by library sync or the love push and backfill. Only the user's own heart, save or follow makes it saved; undoing that leaves it listed, unsaved.
+
+**Identity rules.**
+- Same song: the same artist and title through `normalizeStr` (case, accents, spaces and punctuation dropped), and compatible albums (the same album without a store's " - Single" / " - EP" suffix, or a placeholder album on either side). The merged row keeps the saved record's id, love state and sync sources, and adds the file's source and path.
+- Same album: the same album artist (else track artist) and title, folded the same way, store suffix dropped; "X" and "X - EP" are one album, and saved copies of one album are one card too (display only). Saving an album already saved under another copy is a duplicate that writes nothing. Albums with no title or a placeholder one ("Unknown Album", "Single", a service's name) are left off; their tracks stay on Songs. Desktop ids: `generateAlbumId` (`sync-engine/collection-id.js`).
+- Same artist: the album artist, else the track artist ("Various Artists" and "Unknown Artist" skipped), folded; desktop id `generateArtistId`.
+
+**Hidden local albums.** Removing a local-only album hides it and touches nothing else (no saved-collection write, no tombstone, no service call; the files and the library stay). Store key `collection_hidden_local_albums`, a JSON array of album keys `"<artist>:<title>"`, each side folded through `normalizeStr` with the store suffix dropped (for example `"radiohead:inrainbows"`). Adding the album to the Collection clears its key.
+
+**What breaks if a client drifts.** A client that saves local items to the collection, or counts them as loves or follows, pushes them to the user's shared services: every scanned file becomes a love on ListenBrainz or Last.fm, every local artist a follow on Spotify, and the other clients import them back as saved. That is the #705 failure on mobile. A client that doesn't deduplicate shows a song or album twice, and removing one copy leaves the other.

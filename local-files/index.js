@@ -321,6 +321,9 @@ class LocalFilesService {
       filePath: track.file_path,
       hasEmbeddedArt: !!track.has_embedded_art,
       folderArtPath: track.folder_art_path,
+      // When the file was (last) indexed: the Collection's "Recently added"
+      // sort for local albums (#1532).
+      indexedAt: track.indexed_at || null,
       sources: {
         localfiles: {
           filePath: track.file_path,

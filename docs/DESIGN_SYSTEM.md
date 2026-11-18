@@ -437,7 +437,7 @@ The words are part of the design system: one concept, one name. The audit (#1388
 | **enable** | Turn a plug-in on | activate |
 | **service** | Spotify, Apple Music, Bandcamp and so on | provider |
 | **source** | Where a track plays from | resolver |
-| **Collection** | Your saved tracks, albums and artists (capitalised: a feature name) | library, Your Music |
+| **Collection** | Your saved tracks, albums and artists, with your local files merged in (capitalised: a feature name) | library, Your Music |
 | **Loves** | Tracks you've loved | favourites, likes (a service's own "Liked Songs" keeps its name) |
 | **Shuffleupagus** | The AI DJ ("your AI DJ" on first mention) | the assistant, the AI |
 | **track** | One recording | song |

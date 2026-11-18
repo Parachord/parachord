@@ -202,6 +202,29 @@ describe('wrapResolverSearchesWithLimiter', () => {
     expect(bandcamp.__limiterWrapped).toBe(true);
   });
 
+  test('passes every argument through (#1532: Bandcamp resolve asks its search for a limit)', async () => {
+    const lim = makeStubLimiter();
+    const original = jest.fn().mockResolvedValue([]);
+    const bandcamp = { id: 'bandcamp', search: original };
+    wrapResolverSearchesWithLimiter([bandcamp], lim);
+    await bandcamp.search('Radiohead Nude', { a: 1 }, 50);
+    expect(original).toHaveBeenCalledWith('Radiohead Nude', { a: 1 }, 50);
+  });
+
+  test("a plugin's resolve reaches past 20 rows through the wrapped search", async () => {
+    const bc = require('../../plugins-src/bandcamp/implementation');
+    const rows = [
+      ...Array.from({ length: 31 }, (_, i) => ({ title: `Radiohead - Nude (Remix ${i})`, artist: `Remixer ${i}` })),
+      { title: 'Nude', artist: 'Radiohead', album: 'In Rainbows' },
+    ];
+    const lim = makeStubLimiter();
+    // The plugin's search, stubbed to honour its limit as the real one does.
+    const resolver = { id: 'bandcamp', search: async (q, c, limit) => rows.slice(0, limit > 0 ? limit : 20), resolve: bc.resolve };
+    wrapResolverSearchesWithLimiter([resolver], lim);
+    const found = await resolver.resolve('Radiohead', 'Nude', 'In Rainbows', {});
+    expect(found).toMatchObject({ title: 'Nude', artist: 'Radiohead' });
+  });
+
   test('does NOT wrap applemusic / spotify / localfiles', () => {
     const lim = makeStubLimiter();
     const am = { id: 'applemusic', search: jest.fn() };

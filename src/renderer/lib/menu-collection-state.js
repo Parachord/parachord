@@ -11,6 +11,7 @@
 // Pure; loads under plain Node.
 
 const { findSavedTrack, generateAlbumId, generateArtistId } = require('./collection-ids');
+const { albumIdentity } = require('./local-albums');
 
 const lower = (s) => String(s || '').trim().toLowerCase();
 
@@ -20,7 +21,11 @@ function albumInCollection(albums, album) {
   if (album.id && list.some((a) => a.id === album.id)) return true;
   const id = generateAlbumId(album.artist, album.title);
   if (list.some((a) => a.id === id)) return true;
-  return list.some((a) => lower(a.title) === lower(album.title) && lower(a.artist) === lower(album.artist));
+  if (list.some((a) => lower(a.title) === lower(album.title) && lower(a.artist) === lower(album.artist))) return true;
+  // Another saved copy of the same album ("X" for "X - EP", #1532): the
+  // Albums tab shows them as one card, and Remove takes them all.
+  const key = albumIdentity(album.artist, album.title);
+  return !!key && list.some((a) => albumIdentity(a.artist, a.title) === key);
 }
 
 function artistInCollection(artists, artist) {

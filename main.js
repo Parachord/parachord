@@ -4621,10 +4621,12 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
       }
     });
 
-    // A track that is in the local library but not the collection (#1002):
-    // the Collection view lists these too, and its only removal action used
-    // to be "Remove from Collection", which cannot apply. Offer what does:
-    // show the file, or drop the row when the file is gone.
+    // A track whose file is in the local library (#1002): the Collection
+    // view lists these too, and for one that isn't saved its only removal
+    // action used to be "Remove from Collection", which cannot apply. Offer
+    // what does: show the file, or drop the row when the file is gone. A
+    // saved song merged with its file (#1532) gets these as well as Remove
+    // from Collection (isInCollection), which still means the saved record.
     if (data.isLibraryTrack) {
       const service = await waitForLocalFilesService().catch(() => null);
       const status = service ? await service.fileStatus(trackFilePath).catch(() => 'unknown') : 'unknown';
