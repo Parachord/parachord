@@ -342,6 +342,13 @@ Each milestone is one PR (M9 is a time window, not a PR), shippable alone, with 
 - An Amazon liked-and-purchased library is possible later on the same contract. It would validate the bridge for a plug-in that rides `webSession`.
 - #1519's friends and charts become ordinary plug-in capabilities (`friends`, `charts`) read through `resolver-loader.js`, like `getRecommendations`. They are not sync, have no state to protect, and can land any time after M2.
 
+**Where #1487's hook moves go.** #1487 moves each area of `src/renderer/app.js` into a hook, byte for byte, one area per PR. Three of its areas are code this plan rewrites. Each is moved first, as a plain move with no behavior change, so the milestone then changes a small hook instead of `app.js`:
+- **Sync** (setup, status, mirrors, the push loops: `useSyncPushLoops` in #1487) moves before **M2**. M2's renderer changes and M12's deletion of the loops then happen inside the hook.
+- **Scrobbling and Loves** moves before **M5**. M5 then rewires `runLoveBackfill`, `runLoveImport` and `pushLoveToScrobblers` inside it.
+- **Plug-ins and resolvers** (loading, marketplace, `metaServices`) moves before **M3**, since the renderer's `sync-plugin-host` reads the loaded resolver instances.
+
+#1487's other areas (Search, History, AI chat, the discovery pages, Local Files) don't touch this plan and can move at any time.
+
 **Where the other issues sit:**
 - **#1494** (Amazon Prime purchases) doesn't depend on this plan. Its owned list belongs inside the plug-in.
 - **#1520** (Local Files capabilities) is independent and can land any time.
