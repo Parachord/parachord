@@ -121,8 +121,11 @@ describe('wiring', () => {
   });
 
   test('Settings asks before deleting anything', () => {
-    const start = app.indexOf('const handleRemoveMissingFiles = async () => {');
-    const body = app.slice(start, app.indexOf('\n  };', start));
+    // The action lives in the Local Files hook (#1487).
+    const hook = fs.readFileSync(path.join(root, 'src', 'renderer', 'hooks', 'use-local-files.js'), 'utf8');
+    const start = hook.indexOf('const handleRemoveMissingFiles = async () => {');
+    expect(start).toBeGreaterThan(-1);
+    const body = hook.slice(start, hook.indexOf('\n  };', start));
     expect(body.indexOf('await confirmAsync(')).toBeGreaterThan(-1);
     expect(body.indexOf('await confirmAsync(')).toBeLessThan(body.indexOf('bridge.removeMissing('));
   });

@@ -50,6 +50,15 @@ function declaredAbove(name, line) {
       if (declLine < line) return true;
     }
   }
+  // A name destructured from an extracted state-domain hook
+  // (`const {\n    forgetMissingLocalFile, ...\n  } = useLocalFiles({`, #1487)
+  // is declared on the destructure's opening line.
+  for (const m of appSrc.matchAll(/\n {2}const \{\n([\s\S]*?)\n {2}\} = use\w+\(/g)) {
+    if (new RegExp(`(^|[\\s,])${name}(,|$)`, 'm').test(m[1])) {
+      const declLine = appSrc.slice(0, m.index + 1).split('\n').length;
+      if (declLine < line) return true;
+    }
+  }
   return false;
 }
 

@@ -42,6 +42,8 @@ const PAGE_MODULES = [
   'components/raycast-info-dialog.js',
   'components/playlists-page.js',
   'components/playlist-view-page.js',
+  // State-domain hooks moved out of the Parachord component (#1487).
+  'hooks/use-local-files.js',
   // Module-level code moved out of app.js with them.
   'lib/resolver-order.js',
   'lib/ai-services.js',

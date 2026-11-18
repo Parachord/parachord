@@ -112,7 +112,10 @@ describe('albumArtGroupKey', () => {
 });
 
 describe('app.js wiring', () => {
-  const app = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
+  // The library load, the change applier and the art passes live in the
+  // Local Files hook (#1487); app.js's startup effect calls them.
+  const app = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8') +
+    fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'hooks', 'use-local-files.js'), 'utf8');
 
   test('library changes are applied incrementally, with a full-reload fallback', () => {
     expect(app).toMatch(/const plan = classifyLibraryChanges\(changes\);/);
