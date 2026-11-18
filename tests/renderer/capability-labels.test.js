@@ -16,7 +16,7 @@ test('internal capabilities never show as chips; the rest keep their manifest or
   expect(visibleCapabilities({ resolve: true, widevine: true, mobile: true, html5Stream: true, search: true, playbackTelemetry: true, resolvePicks: true, stream: false }))
     .toEqual(['resolve', 'search']);
   expect(visibleCapabilities(undefined)).toEqual([]);
-  expect([...HIDDEN_CAPABILITIES].sort()).toEqual(['html5Stream', 'local', 'mobile', 'playbackTelemetry', 'resolvePicks', 'widevine']);
+  expect([...HIDDEN_CAPABILITIES].sort()).toEqual(['html5Stream', 'local', 'mobile', 'playbackTelemetry', 'resolvePicks', 'systemVolume', 'widevine']);
   expect(capabilityLabel('artistImages')).toBe('Artist photos');
   expect(capabilityLabel('similarUsers')).toBe('Similar listeners');
 });

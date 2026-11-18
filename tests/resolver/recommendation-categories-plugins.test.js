@@ -148,7 +148,7 @@ describe('Apple Music sends playlist categories', () => {
     ])]);
     const items = sections.flatMap(s => s.items);
     expect(items.map(i => i.category)).toEqual(['personal', 'editorial', 'community', undefined]);
-    expect(axe.manifest.version).toBe('1.5.4');
+    expect(axe.manifest.version).toBe('1.5.5');
   });
 
   test('Apple ignores inherited property names as playlistType', async () => {

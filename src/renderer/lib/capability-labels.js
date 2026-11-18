@@ -43,7 +43,7 @@ const LABELS = {
 // reads them) and never show as chips: "Widevine", "Html5 stream" and
 // "Mobile" meant nothing in a settings dialog (#1498). `local` (#1520) says
 // how Local Files plays, which its description already tells.
-const HIDDEN = new Set(['playbackTelemetry', 'widevine', 'mobile', 'html5Stream', 'resolvePicks', 'local']);
+const HIDDEN = new Set(['playbackTelemetry', 'widevine', 'mobile', 'html5Stream', 'resolvePicks', 'local', 'systemVolume']);
 
 // The capabilities to show for a plug-in, in its manifest's order: the
 // declared, enabled ones that aren't hidden.
