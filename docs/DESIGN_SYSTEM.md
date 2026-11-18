@@ -633,6 +633,15 @@ All scrollbars use rounded thumbs (`border-radius: 10px` or `3px`) with transpar
 
 ---
 
+## Auditing
+
+Two kinds of drift, two kinds of check:
+
+- **Element drift** (a sixth button colour, a hand-built input, a hex value) is what `scripts/design-drift.js` counts; the ratchet (`tests/ci/design-drift.test.js`) fails when a count rises. That includes `serviceNameBranches`, code that branches on one plug-in's id instead of the registry.
+- **Structural drift** (one job done with different controls across a surface's variants) passes every count: each variant uses the shared `Button` and fields, just differently. Find it by comparing variants side by side and by task: for each job (turn on, sign in, enter a key, save, remove), list how every variant does it; one job should be one control. `scripts/ui-contact-sheet.js` (`npm run ui-sheets -- <recipe>`) captures every variant of a surface, light and dark, with a structural summary (headings, buttons, fields, switches, links) per variant. The plug-in settings audit (`docs/plans/2026-11-17-plugin-settings-audit.md`) is the example: 23 dialogs, zero drift counts, five ways to enter a key.
+
+Copy that reaches the UI from plug-in manifests is checked by `tests/plugins/manifest-copy.test.js` (no developer text in descriptions, a label for every capability).
+
 ## Focus & Accessibility
 
 - **Keyboard focus:** `:focus-visible` shows a `2px solid var(--accent-primary)` outline with `2px` offset
