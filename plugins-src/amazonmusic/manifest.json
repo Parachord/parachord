@@ -2,7 +2,7 @@
   "manifest": {
     "id": "amazonmusic",
     "name": "Amazon Music",
-    "version": "1.21.1",
+    "version": "1.21.2",
     "minAppVersion": {
       "desktop": "0.9.13"
     },
@@ -54,7 +54,7 @@
   },
   "settings": {
     "requiresAuth": false,
-    "authType": "none",
+    "authType": "web-session",
     "configurable": {}
   }
 }

@@ -62,7 +62,7 @@ describe('source', () => {
 
   test('the import card leads to Library Sync in Settings, which offers each service\'s sync setup', () => {
     expect(page).toContain("onImport: () => { navigateTo('settings'); setSettingsTab('general'); },");
-    expect(page).not.toContain("navigateTo('search')");
+    expect(page.slice(page.indexOf('React.createElement(JumpBackIn'))).not.toContain("navigateTo('search')");
     // With nothing synced, the card is a way forward, not a dead-end sentence.
     const card = app.slice(app.indexOf('// Nothing synced yet: offer each service'), app.indexOf('// Nothing synced yet: offer each service') + 1800);
     expect(card).toContain('onClick: () => openSyncSetupModal(pid) }');
@@ -70,13 +70,10 @@ describe('source', () => {
     expect(app).not.toContain('No sync providers connected.');
   });
 
-  test('the checklist\'s services and scrobbling items open Plug-Ins, where both are connected', () => {
-    expect(page).toContain("if (id === 'resolvers' || id === 'scrobbling') { navigateTo('settings'); setSettingsTab('plugins'); }");
-    expect(page).not.toContain("openSyncSetupModal('spotify')");
-    // Scrobbling is connected once any plugin has an account name saved.
-    expect(page).toContain('Object.values(metaServiceConfigs || {}).some((c) => c && c.username)');
-    // Services: something beyond the two that ship switched on.
-    expect(app).toMatch(/const homeServicesConnected = useMemo\(\s*\(\) => activeResolvers\.some\(id => id !== 'bandcamp' && id !== 'localfiles'\),/);
+  test('the pill carries only the extras: services and scrobbling are getting-started steps (#1493)', () => {
+    expect(page).not.toContain("id === 'resolvers'");
+    expect(page).not.toContain('servicesConnected');
+    expect(app).not.toContain('homeServicesConnected');
   });
 
   test('Spotify sync setup with no Client ID opens the Spotify plugin and says why', () => {
@@ -151,10 +148,11 @@ describe('render', () => {
     concerts: [], concertsLoaded: true, concertsLoading: false, concertsLocation: '',
     criticsPicks: [], criticsPicksLoaded: true, criticsPicksLoading: false,
     extensionConnected: null, homeActive: {}, homeData: {}, homeSetupDismissed: [],
-    library: [], metaServiceConfigs: {}, mixes: [], newReleases: [], newReleasesLoaded: true, newReleasesLoading: false,
+    library: [], mixes: [], newReleases: [], newReleasesLoaded: true, newReleasesLoading: false,
     playlists: [], playlistsLoading: false, recommendationAlbums: [], recommendations: { sections: [], loading: false },
     setAddToPlaylistPanel: noop, setConcertsTicketFlyout: noop, setExtensionInfoOpen: noop, setHomeData: noop,
-    setRaycastInfoOpen: noop, setSettingsTab: noop, showToast: noop, servicesConnected: false, whatsNewUnread: false,
+    setSettingsTab: noop, setShowUrlImportDialog: noop, showToast: noop, whatsNewUnread: false,
+    charts: [], chartsLoaded: true, chartsLoading: false, watchFolders: [], gettingStarted: null,
   };
   const render = (props) => renderToStaticMarkup(React.createElement(HomePage, { ...base, ...props }));
 
@@ -333,8 +331,9 @@ describe("Home's recommended albums (app.js recommendationAlbums)", () => {
 });
 
 describe('setup checklist housekeeping', () => {
-  test('opening the Raycast instructions completes its item (it has no way to detect an install)', () => {
-    expect(page).toContain("else if (id === 'raycast') { setRaycastInfoOpen(true); dismissHomeSetupItem('raycast'); }");
+  test('the pill has no Raycast item (no way to detect an install); skipped steps come back from it', () => {
+    expect(page).not.toContain("'raycast'");
+    expect(page).toContain("if (id === 'getting-started') startGettingStarted();");
   });
 
   test('Settings › Dialogs can bring dismissed checklist items back', () => {

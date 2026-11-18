@@ -625,6 +625,7 @@ const {
 } = require('./lib/home-model');
 const { sourceBlockId, withoutTrackSource } = require('./lib/bad-match-report');
 const PlaybackLimits = require('./lib/playback-limits');
+const GettingStartedModel = require('./lib/getting-started');
 const { seekSpotify, spotifyPollPredatesSeek, SPOTIFY_SEEK_DEBOUNCE_MS } = require('./lib/spotify-seek');
 const { savedPluginConfig, sourcesChangedOnRecheck, shuffleAllowed, SHUFFLE_UNAVAILABLE_MESSAGE, LISTEN_ALONG_FAILED_POLLS_LIMIT, listenAlongWaitDecision, resumeStartPosition, trackPositionKey, REPEAT_UNAVAILABLE_MESSAGE, nextRepeatMode, normalizeRepeatMode, repeatModeFromLoop, loopFromRepeatMode, shouldRestoreQueue, trackBehindPlaceholder } = require('./lib/playback-helpers');
 const { parseFriendLink, buildFriendLink } = require('./lib/friend-link');
@@ -4217,15 +4218,19 @@ const Parachord = () => {
     setCleanupDuplicatesState({ loading: false, providerId: null });
   };
 
-  // First-run tutorial state
+  // The welcome tour (#1493): overview screens only; setup is Home's.
   const [firstRunTutorial, setFirstRunTutorial] = useState({
     open: false,
-    step: 'welcome', // 'welcome' | 'sources' | 'accounts' | 'complete'
-    // The accounts step's fields (#1387), filled from saved configs on entry.
-    lastfmUsername: '',
-    listenbrainzUsername: '',
-    connecting: false
+    step: 'welcome' // a screen id from first-run-tutorial.js TOUR_SCREENS
   });
+  // Home's getting-started layout (#1493, lib/getting-started.js):
+  // { active, played } from the store key 'home_getting_started'; null
+  // until the store answers.
+  const [homeGettingStarted, setHomeGettingStarted] = useState(null);
+  const saveHomeGettingStarted = (next) => {
+    setHomeGettingStarted(next);
+    if (window.electron?.store) window.electron.store.set('home_getting_started', next);
+  };
 
   // Background sync timer (every 15 minutes)
   // Use a ref so the sync callback always reads the latest settings
@@ -8857,9 +8862,14 @@ const Parachord = () => {
         const metaServiceAxes = resolversToLoad.filter(axe =>
           axe.manifest.type === 'meta-service'
         );
-        // Meta services that have URL lookup capabilities need to be loaded for URL pattern matching
+        // Meta services that have URL lookup capabilities need to be loaded for URL pattern matching.
+        // One that the playback-telemetry load below brings in (Achordion,
+        // whose links open since #1493) is loaded there, once: a second load
+        // would register its patterns twice and could replace the instance
+        // its init() ran on.
         const metaServicesWithUrlLookup = metaServiceAxes.filter(axe =>
           axe.capabilities?.urlLookup && axe.urlPatterns?.length > 0
+          && !(axe.capabilities?.playbackTelemetry && axe.implementation?.init)
         );
         // Meta services with generate capability need implementation functions loaded
         const metaServicesWithGenerate = metaServiceAxes.filter(axe =>
@@ -19353,7 +19363,7 @@ ${trackListXml}
         'concerts_location', 'concerts_location_coords', 'concerts_location_radius',
         // Queue & tutorial
         'saved_queue', 'saved_queue_position', 'saved_playback_context', 'saved_shuffle_state', 'repeat_mode',
-        'tutorial_completed', 'whats_new_dismissed_version', 'home_setup_dismissed',
+        'tutorial_completed', 'whats_new_dismissed_version', 'home_setup_dismissed', 'home_getting_started',
         // Loved-tracks push to LB/LFM (opt-in per service) + the import
         // cursor (newest loved-at seen per service, parachord#1071)
         'scrobbler_love_push_enabled', 'love_pushed_keys', 'love_import_cursor',
@@ -20182,6 +20192,11 @@ ${trackListXml}
       const tutorialCompleted = d['tutorial_completed'];
       const dismissedVersion = d['whats_new_dismissed_version'];
       if (Array.isArray(d['home_setup_dismissed'])) setHomeSetupDismissed(d['home_setup_dismissed']);
+      // Home's getting-started layout: on for a new install (no tour finished
+      // yet), never for a profile from before it shipped (#1493).
+      const gettingStarted = GettingStartedModel.initialGettingStarted(d['home_getting_started'], !!tutorialCompleted);
+      setHomeGettingStarted(gettingStarted);
+      if (!d['home_getting_started'] && gettingStarted.active) window.electron.store.set('home_getting_started', gettingStarted);
       // Repeat (#1319) is a player setting, restored whether or not the queue is.
       setRepeatMode(d['repeat_mode']);
 
@@ -26487,13 +26502,37 @@ ${tracks}
     console.log('📊 Loading Charts...');
 
     try {
-      // Use JSON endpoint instead of RSS (RSS returns 500 intermittently)
-      const response = await fetch('https://rss.applemarketingtools.com/api/v2/us/music/most-played/50/albums.json');
-      if (!response.ok) {
-        throw new Error(`Failed to fetch charts: ${response.status}`);
+      // Use JSON endpoint instead of RSS (RSS returns 500 intermittently).
+      // Apple moved the feed to rss.marketingtools.apple.com (the old host
+      // answers with a 301 there): ask the new host directly. A request with
+      // no timeout could stall for good on a cold start and leave Pop of the
+      // Tops loading forever (#1493), so each try gives up after 5 s (the feed
+      // answers in under one), and a
+      // stalled or failed first try is tried once more.
+      const CHARTS_URL = 'https://rss.marketingtools.apple.com/api/v2/us/music/most-played/50/albums.json';
+      // The timeout covers reading the body too: a body that stalls after
+      // the headers hung the load just the same.
+      const fetchChartsOnce = async () => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 5000);
+        try {
+          // no-store: on a cold start the HTTP cache could hold this request
+          // until it timed out (it never stalled with the cache off).
+          const res = await fetch(CHARTS_URL, { signal: controller.signal, cache: 'no-store' });
+          if (!res.ok) throw new Error(`Failed to fetch charts: ${res.status}`);
+          return await res.json();
+        } finally {
+          clearTimeout(timer);
+        }
+      };
+      let data;
+      try {
+        data = await fetchChartsOnce();
+      } catch (firstError) {
+        console.warn('📊 Charts request failed, trying once more:', firstError?.name || firstError);
+        data = await fetchChartsOnce();
       }
 
-      const data = await response.json();
       const albums = parseChartsJSON(data);
 
       console.log(`📊 Parsed ${albums.length} albums from Charts`);
@@ -37489,12 +37528,6 @@ useEffect(() => {
     activateListenAlong, deactivateListenAlong, getAlbumArt, handlePlaylistDrop, isOnAir, loadCharts, loadCriticsPicks, loadNewReleases, loadTopTracks, navigateBack, navigateForward, navigateTo, navigateToFriend, pinFriend, reorderPinnedFriends,
   });
 
-  // Stable function props for the memo'd FirstRunTutorial (keys must
-  // match FIRST_RUN_TUTORIAL_HANDLERS in first-run-tutorial.js).
-  const firstRunTutorialHandlers = useStableHandlers({
-    connectLastfm, connectListenbrainz, handleAddWatchFolder, navigateTo,
-  });
-
   // Stable function props for the memo'd ExternalTrackPrompt (keys must
   // match EXTERNAL_TRACK_PROMPT_HANDLERS in external-track-prompt.js).
   const externalTrackPromptHandlers = useStableHandlers({
@@ -37577,20 +37610,136 @@ useEffect(() => {
 
   // Stable function props for the memo'd HomePage (keys must match
   // HOME_PAGE_HANDLERS in home-page.js).
-  // The setup checklist's "Connect your music services": done once a service
-  // beyond the two that ship switched on (the activeResolvers initial state)
-  // is in use.
-  const homeServicesConnected = useMemo(
-    () => activeResolvers.some(id => id !== 'bandcamp' && id !== 'localfiles'),
-    [activeResolvers]
-  );
+  // Home's getting-started layout (#1493). The steps come from
+  // lib/getting-started.js; step 1's tiles from the plug-in registry.
+  // pluginAccounts is what the host knows about each sign-in (a plug-in it
+  // has no sign-in state for counts as connected once it plays).
+  // A plug-in that reports its own status (capabilities.status, Amazon
+  // today) says whether it's signed in, in its reply; any such plug-in counts
+  // here without naming it.
+  const pluginAccounts = useMemo(() => {
+    const out = {
+      spotify: spotifyConnected,
+      applemusic: appleMusicConnected,
+      soundcloud: soundcloudConnected
+    };
+    for (const [id, reply] of Object.entries(pluginStatuses || {})) {
+      if (reply && typeof reply.signedIn === 'boolean') out[id] = reply.signedIn;
+    }
+    return out;
+  }, [spotifyConnected, appleMusicConnected, soundcloudConnected, pluginStatuses]);
+  // A required setting not saved yet: Spotify needs your own Client ID
+  // (release builds ship none; a dev .env one doesn't count, so a dev build
+  // behaves as a release does). SoundCloud ships a fallback key.
+  // Any other plug-in the host has no sign-in for needs setup until it says
+  // it's configured (isConfigured, Plex), or while its own settings are
+  // empty (Subsonic's server, username and password).
+  const pluginSetupNeeded = useMemo(() => {
+    const out = {};
+    for (const r of loadedResolvers) {
+      if (!Object.prototype.hasOwnProperty.call(pluginAccounts, r.id)) {
+        out[r.id] = GettingStartedModel.setupMissing(r, metaServiceConfigs?.[r.id]);
+      }
+    }
+    out.spotify = spotifyCredentialsSource !== 'user';
+    return out;
+  }, [loadedResolvers, pluginAccounts, metaServiceConfigs, spotifyCredentialsSource]);
+  const homeGettingStartedModel = useMemo(() => {
+    const GS = GettingStartedModel;
+    const plugins = GS.stepOnePlugins(loadedResolvers);
+    const opts = { accounts: pluginAccounts, setupNeeded: pluginSetupNeeded, playbackResolvers, playbackLimits };
+    const serviceStates = Object.fromEntries(plugins.services.map(r => [r.id, GS.serviceState(r, opts)]));
+    const scrobblers = GS.scrobblerPlugins(metaServices);
+    const scrobblerStates = Object.fromEntries(scrobblers.map(sv => [sv.id, !!metaServiceConfigs?.[sv.id]?.username]));
+    const hasMusic = (collectionData.tracks || []).length > 0 || (collectionData.albums || []).length > 0
+      || (collectionData.artists || []).length > 0 || (library || []).length > 0 || (playlists || []).length > 0;
+    const status = GS.gettingStartedSteps({
+      connected: GS.serviceConnected(plugins.services, opts),
+      folderAdded: watchFolders.length > 0,
+      hasMusic,
+      scrobbling: Object.values(scrobblerStates).some(Boolean),
+      played: !!homeGettingStarted?.played
+    });
+    return {
+      show: GS.showGettingStarted(homeGettingStarted, status),
+      left: GS.gettingStartedLeft(homeGettingStarted, status),
+      ready: loadedResolvers.length > 0,
+      status,
+      plugins: {
+        ...plugins,
+        free: plugins.free.map(r => ({ ...r, active: activeResolvers.includes(r.id) })),
+        folder: plugins.folder ? { ...plugins.folder, active: activeResolvers.includes(plugins.folder.id) } : null
+      },
+      serviceStates,
+      scrobblers,
+      scrobblerStates
+    };
+  }, [loadedResolvers, pluginAccounts, pluginSetupNeeded, playbackResolvers, playbackLimits, activeResolvers, metaServices, metaServiceConfigs,
+    collectionData, library, playlists, watchFolders, homeGettingStarted]);
+  // Something played while the layout is up: step 3 is done.
+  useEffect(() => {
+    if (isPlaying && homeGettingStarted?.active && !homeGettingStarted.played) {
+      saveHomeGettingStarted({ ...homeGettingStarted, played: true });
+    }
+  }, [isPlaying, homeGettingStarted]);
+  // All three steps done: Home is the normal Home from now on.
+  useEffect(() => {
+    if (homeGettingStarted?.active && homeGettingStartedModel.status.allDone) {
+      saveHomeGettingStarted({ ...homeGettingStarted, active: false });
+    }
+  }, [homeGettingStarted, homeGettingStartedModel.status.allDone]);
+  // "Skip setup for now": remembered, so Home doesn't keep asking.
+  const skipGettingStarted = () => saveHomeGettingStarted({ played: !!homeGettingStarted?.played, active: false, skipped: true });
+  // The welcome tour's last screen: the layout on, Home showing.
+  const startGettingStarted = () => {
+    saveHomeGettingStarted({ played: !!homeGettingStarted?.played, active: true, skipped: false });
+    navigateTo('home');
+  };
+  // A plug-in's panel, over the current page (Plug-Ins' tile does the same).
+  const openPluginPanel = (pluginId) => {
+    const plugin = metaServices.find(sv => sv.id === pluginId)
+      || (loadedResolversRef.current || []).find(r => r.id === pluginId);
+    if (plugin) setSelectedResolver(plugin);
+  };
+  // Step 1's Connect: switch the plug-in on, then run the sign-in its panel
+  // runs. The host has a sign-in for these services; a plug-in that reports
+  // its own status signs in with its own signIn() (the dialog's AccountRow
+  // does the same); one that needs something typed first (Spotify's own
+  // Client ID, pluginSetupNeeded), and any other plug-in, opens its panel.
+  const connectPlugin = async (pluginId) => {
+    const plugin = (loadedResolversRef.current || []).find(r => r.id === pluginId);
+    if (!plugin) return;
+    const signIn = {
+      spotify: pluginSetupNeeded.spotify ? null : connectSpotify,
+      soundcloud: soundcloudCredentialsSource !== 'none' ? connectSoundcloud : null,
+      applemusic: connectAppleMusic,
+      // Amazon's sign-in carries its own prompt flow, as in the plug-in
+      // dialog; the flow refreshes the status itself.
+      amazonmusic: () => manageAmazonMusic({ explicit: true, reason: 'not-signed-in', forcePrompt: true })
+    }[pluginId] || (plugin.capabilities?.status && typeof plugin.signIn === 'function'
+      ? () => Promise.resolve(plugin.signIn()).catch(() => null).then(() => refreshPluginStatus(pluginId))
+      : null);
+    // Switched on only when the sign-in runs here: a plug-in that still needs
+    // setup opens its panel as it is, where you set it up and turn it on.
+    if (signIn) {
+      if (!activeResolversRef.current.includes(pluginId)) toggleResolver(pluginId);
+      await signIn();
+    } else setSelectedResolver(plugin);
+  };
+  // Stable function props for the memo'd FirstRunTutorial (keys must
+  // match FIRST_RUN_TUTORIAL_HANDLERS in first-run-tutorial.js),
+  // below startGettingStarted, which it passes.
+  const firstRunTutorialHandlers = useStableHandlers({
+    getTrackArt, navigateTo, startGettingStarted,
+  });
+
   const homePageHandlers = useStableHandlers({
-    addServicePlaylistToPlaylist, addToQueue, askShuffleupagus, copyParachordLink, dismissHomeBanner, dismissHomeSetupItem,
-    fetchAlbumTracksByName, getAlbumArt, handleCollectionAlbumClick, handleStartCollectionStation,
-    loadConcerts, loadCriticsPicks, loadNewReleases, loadPlaylist,
-    loadHomeHistoryMixes, loadHomeRecommendations, navigateTo, openCriticsPicksAlbum, openHomeBannerCta, openServicePlaylist,
+    addServicePlaylistToPlaylist, addToQueue, askShuffleupagus, connectPlugin, copyParachordLink, dismissHomeBanner, dismissHomeSetupItem,
+    fetchAlbumTracksByName, getAlbumArt, handleAddWatchFolder, handleCollectionAlbumClick, handleStartCollectionStation,
+    loadCharts, loadConcerts, loadCriticsPicks, loadNewReleases, loadPlaylist,
+    loadHomeHistoryMixes, loadHomeRecommendations, navigateTo, openChartsAlbum, openCriticsPicksAlbum, openHomeBannerCta, openPluginPanel, openServicePlaylist,
     openTopAlbum, openWhatsNew, playServicePlaylist, playTrackCollection, prefetchTopAlbumTracks,
-    queueServicePlaylist, showHomeContextMenu,
+    queueServicePlaylist, showHomeContextMenu, skipGettingStarted, startGettingStarted,
   });
 
   // Stable function props for the memo'd CollectionPage: same identity on
@@ -37801,7 +37950,7 @@ useEffect(() => {
 
         // HOME view - dynamic personalized landing page
         activeView === 'home' && React.createElement(HomePage, {
-          allPlaylistCovers, appVersion, bannerItems, cacheLoaded, chatAvailable: homeChatAvailable, collectionData, collectionLoading, concerts: homeConcerts, contentWidth: mainContentWidth, concertsArtistImages, concertsError, concertsLoaded, concertsLoading, concertsLocation, criticsPicks, criticsPicksError, criticsPicksLoaded, criticsPicksLoading, extensionConnected, homeActive, homeData, homeSetupDismissed, library, metaServiceConfigs, mixes: homeMixes, newReleases, newReleasesError, newReleasesLoaded, newReleasesLoading, playlists, playlistsLoading, recommendationAlbums, recommendations, setAddToPlaylistPanel, setCollectionSort, setCollectionTab, setExtensionInfoOpen, setRaycastInfoOpen, servicesConnected: homeServicesConnected, setSettingsTab, showToast, sourceColors: homeSourceColors, whatsNewUnread,
+          allPlaylistCovers, appVersion, bannerItems, cacheLoaded, charts, chartsError, chartsLoaded, chartsLoading, chatAvailable: homeChatAvailable, collectionData, collectionLoading, concerts: homeConcerts, contentWidth: mainContentWidth, concertsArtistImages, concertsError, concertsLoaded, concertsLoading, concertsLocation, criticsPicks, criticsPicksError, criticsPicksLoaded, criticsPicksLoading, extensionConnected, gettingStarted: homeGettingStartedModel, homeActive, homeData, homeSetupDismissed, library, mixes: homeMixes, newReleases, newReleasesError, newReleasesLoaded, newReleasesLoading, playlists, playlistsLoading, recommendationAlbums, recommendations, setAddToPlaylistPanel, setCollectionSort, setCollectionTab, setExtensionInfoOpen, setSettingsTab, setShowUrlImportDialog, showToast, sourceColors: homeSourceColors, watchFolders, whatsNewUnread,
           ...homePageHandlers
         }),
 
@@ -38614,19 +38763,10 @@ useEffect(() => {
 
     // First-Run Tutorial Modal - Cinematic Light design
     /* FirstRunTutorial (components/first-run-tutorial.js), a memo'd dialog. */ firstRunTutorial.open && React.createElement(FirstRunTutorial, {
-      activeResolvers,
-      activeResolversRef,
       firstRunTutorial,
       loadedResolvers,
-      metaServiceConfigs,
-      playbackResolvers,
-      resolverOrderRef,
-      savedActiveResolversRef,
-      setActiveResolvers,
+      metaServices,
       setFirstRunTutorial,
-      setResolverOrder,
-      setSettingsTab,
-      watchFolders,
       ...firstRunTutorialHandlers
     }),
 

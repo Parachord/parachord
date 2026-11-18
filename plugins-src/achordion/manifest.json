@@ -3,16 +3,39 @@
     "id": "achordion",
     "name": "Achordion",
     "type": "meta-service",
-    "version": "1.0.10",
+    "version": "1.1.0",
     "author": "Parachord Team",
-    "description": "After you play a song, tells Achordion where it was found, so other Parachord users find it faster, and makes the links you share. No personal data is sent.",
+    "description": "After you play a song, tells Achordion where it was found, so other Parachord users find it faster, and makes the links you share. Achordion links someone sends you (a song, an album or a playlist) play here when you drop them on the player or the queue. No personal data is sent.",
     "icon": "📡",
     "color": "#7c3aed",
     "homepage": "https://achordion.xyz",
     "email": "support@parachord.dev"
   },
   "capabilities": {
-    "playbackTelemetry": true
+    "playbackTelemetry": true,
+    "urlLookup": true
+  },
+  "urlPatterns": [
+    "achordion.xyz/recording/*",
+    "achordion.xyz/release-group/*",
+    "achordion.xyz/playlist/*",
+    "www.achordion.xyz/recording/*",
+    "www.achordion.xyz/release-group/*",
+    "www.achordion.xyz/playlist/*"
+  ],
+  "urlTypes": {
+    "track": [
+      "achordion.xyz/recording/*",
+      "www.achordion.xyz/recording/*"
+    ],
+    "album": [
+      "achordion.xyz/release-group/*",
+      "www.achordion.xyz/release-group/*"
+    ],
+    "playlist": [
+      "achordion.xyz/playlist/*",
+      "www.achordion.xyz/playlist/*"
+    ]
   },
   "settings": {
     "requiresAuth": false,

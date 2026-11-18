@@ -192,8 +192,8 @@ class ResolverLoader {
       icon: manifest.icon || '🎵',
       color: manifest.color || '#888888',
       // What the plug-in needs to work ("Spotify Premium, …", "Works right
-      // away"), one sentence from manifest.requirement; shown on the welcome
-      // tour's tile and in the plug-in's panel. null when the manifest has none.
+      // away"), one sentence from manifest.requirement; shown in the
+      // plug-in's panel. null when the manifest has none.
       requirement: typeof manifest.requirement === 'string' && manifest.requirement.trim() ? manifest.requirement.trim() : null,
       homepage: manifest.homepage,
       email: manifest.email,

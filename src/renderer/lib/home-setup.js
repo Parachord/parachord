@@ -3,28 +3,26 @@
 //
 // Loads under plain Node (no window at module scope).
 
+// Connecting a service and a scrobbling service used to be items here; they
+// are the getting-started layout's steps now (#1493, lib/getting-started.js).
+// The pill carries what's left: the getting-started steps when they were
+// skipped before they were done (its action brings the layout back), the
+// browser extension, and What's New. Raycast's item is gone: Parachord can't
+// tell whether that extension is installed, so it could never be done.
 function homeSetupItems({
-  servicesConnected = false,
-  scrobblingConnected = false,
+  gettingStartedLeft = false,
   extensionConnected = null,
-  isMac = false,
   dismissed = [],
   appVersion = null,
   whatsNewUnread = false,
 } = {}) {
   const gone = new Set(Array.isArray(dismissed) ? dismissed : []);
-  // Scrobbling used to be one item per service ('lastfm', 'listenbrainz');
-  // someone who dismissed both has dismissed scrobbling.
-  if (gone.has('lastfm') && gone.has('listenbrainz')) gone.add('scrobbling');
-  // The items name no service, so a new plugin needs no change here.
-  const all = [
-    // Done once a service beyond the ones that ship switched on is in use.
-    { id: 'resolvers', label: 'Connect your music services', done: !!servicesConnected },
-    { id: 'scrobbling', label: 'Connect a scrobbling service', done: !!scrobblingConnected },
-    // Only open when explicitly false; null (unknown) counts as done.
-    { id: 'browser-extension', label: 'Install the browser extension', done: extensionConnected !== false },
-  ];
-  if (isMac) all.push({ id: 'raycast', label: 'Add the Raycast extension', done: false });
+  const all = [];
+  // Only listed while it's open: finishing the steps (or bringing the layout
+  // back) takes it off.
+  if (gettingStartedLeft) all.push({ id: 'getting-started', label: 'Finish getting started', done: false });
+  // Only open when explicitly false; null (unknown) counts as done.
+  all.push({ id: 'browser-extension', label: 'Install the browser extension', done: extensionConnected !== false });
 
   const items = all.filter((i) => !gone.has(i.id)).map((i) => ({ ...i, action: i.id }));
   const done = items.filter((i) => i.done).length;

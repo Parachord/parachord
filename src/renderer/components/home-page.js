@@ -21,7 +21,8 @@ const { HomeBanner } = require('./home-banner');
 const { HomeSetupButton } = require('./home-setup');
 // (Single-line destructures above the props one: page-memo.test.js reads
 // the first multi-line `const {` block as the props list.)
-const { JumpBackIn, MixesRow, PlaylistsRow, AlbumsRow, FreshCriticalRow, ConcertsRow, AskShuffleupagus } = require('./home-sections');
+const { JumpBackIn, MixesRow, PlaylistsRow, AlbumsRow, FreshCriticalRow, ExploreRow, ConcertsRow, AskShuffleupagus } = require('./home-sections');
+const { GettingStarted, GettingStartedSkeleton } = require('./home-getting-started');
 const { JumpBackInSkeleton, CardRowSkeleton, ConcertRowSkeleton, HOME_HALF_ROW_CARDS, HOME_ROW_CARDS, homeRowCards, homeConcertCards, homeHalvesStacked } = require('./home-skeletons');
 // The app's section title, which a loading row's heading uses.
 const { SECTION_TITLE_STYLE: H2_STYLE } = require('./section-header');
@@ -36,13 +37,16 @@ const HOME_PAGE_HANDLERS = [
   'addServicePlaylistToPlaylist',
   'addToQueue',
   'askShuffleupagus',
+  'connectPlugin',
   'copyParachordLink',
   'dismissHomeBanner',
   'dismissHomeSetupItem',
   'fetchAlbumTracksByName',
   'getAlbumArt',
+  'handleAddWatchFolder',
   'handleCollectionAlbumClick',
   'handleStartCollectionStation',
+  'loadCharts',
   'loadConcerts',
   'loadCriticsPicks',
   'loadHomeHistoryMixes',
@@ -50,8 +54,10 @@ const HOME_PAGE_HANDLERS = [
   'loadNewReleases',
   'loadPlaylist',
   'navigateTo',
+  'openChartsAlbum',
   'openCriticsPicksAlbum',
   'openHomeBannerCta',
+  'openPluginPanel',
   'openServicePlaylist',
   'openTopAlbum',
   'openWhatsNew',
@@ -60,6 +66,8 @@ const HOME_PAGE_HANDLERS = [
   'prefetchTopAlbumTracks',
   'queueServicePlaylist',
   'showHomeContextMenu',
+  'skipGettingStarted',
+  'startGettingStarted',
 ];
 
 // Playing recent loves from Home: the context isActiveContext matches.
@@ -102,6 +110,10 @@ const HomePage = React.memo(function HomePage(props) {
     askShuffleupagus,
     bannerItems,
     cacheLoaded,
+    charts,
+    chartsError,
+    chartsLoaded,
+    chartsLoading,
     chatAvailable,
     collectionData,
     collectionLoading,
@@ -112,6 +124,7 @@ const HomePage = React.memo(function HomePage(props) {
     concertsLoaded,
     concertsLoading,
     concertsLocation,
+    connectPlugin,
     copyParachordLink,
     criticsPicks,
     criticsPicksError,
@@ -122,27 +135,31 @@ const HomePage = React.memo(function HomePage(props) {
     extensionConnected,
     fetchAlbumTracksByName,
     getAlbumArt,
+    gettingStarted,
+    handleAddWatchFolder,
     handleCollectionAlbumClick,
     handleStartCollectionStation,
     homeActive,
     homeData,
     homeSetupDismissed,
     library,
+    loadCharts,
     loadConcerts,
     loadCriticsPicks,
     loadHomeHistoryMixes,
     loadHomeRecommendations,
     loadNewReleases,
     loadPlaylist,
-    metaServiceConfigs,
     mixes,
     navigateTo,
     newReleases,
     newReleasesError,
     newReleasesLoaded,
     newReleasesLoading,
+    openChartsAlbum,
     openCriticsPicksAlbum,
     openHomeBannerCta,
+    openPluginPanel,
     openServicePlaylist,
     openTopAlbum,
     openWhatsNew,
@@ -158,12 +175,14 @@ const HomePage = React.memo(function HomePage(props) {
     setCollectionSort,
     setCollectionTab,
     setExtensionInfoOpen,
-    setRaycastInfoOpen,
     setSettingsTab,
+    setShowUrlImportDialog,
     showHomeContextMenu,
-    servicesConnected,
     showToast,
+    skipGettingStarted,
+    startGettingStarted,
     sourceColors,
+    watchFolders,
     whatsNewUnread,
   } = props;
   // Card counts that fit the content width (#1389); the skeletons use the same.
@@ -172,27 +191,22 @@ const HomePage = React.memo(function HomePage(props) {
 
   // ---------------------------------------------------------------- setup
 
-  // The setup checklist. Scrobbling counts as connected once any plugin has
-  // an account name saved (Last.fm, ListenBrainz, Libre.fm, or a new one).
-  const scrobblingConnected = Object.values(metaServiceConfigs || {}).some((c) => c && c.username);
+  // The pill: the getting-started steps when they were skipped before they
+  // were done, the browser extension, and What's New. Connecting a service
+  // and a scrobbler are the getting-started layout's steps (#1493).
+  const gettingStartedLeft = !!(gettingStarted && gettingStarted.left);
   const homeSetup = React.useMemo(() => homeSetupItems({
-    servicesConnected: !!servicesConnected,
-    scrobblingConnected,
+    gettingStartedLeft,
     extensionConnected,
-    isMac: typeof navigator !== 'undefined' && !!navigator.platform && navigator.platform.includes('Mac'),
     dismissed: homeSetupDismissed,
     appVersion,
     whatsNewUnread,
-  }), [servicesConnected, scrobblingConnected, extensionConnected, homeSetupDismissed, appVersion, whatsNewUnread]);
+  }), [gettingStartedLeft, extensionConnected, homeSetupDismissed, appVersion, whatsNewUnread]);
 
-  // Services and scrobbling are both connected in Settings › Plug-Ins.
   const onSetupAction = (id) => {
-    if (id === 'resolvers' || id === 'scrobbling') { navigateTo('settings'); setSettingsTab('plugins'); }
+    // Brings the getting-started layout back, steps as they were.
+    if (id === 'getting-started') startGettingStarted();
     else if (id === 'browser-extension') setExtensionInfoOpen(true);
-    // Parachord can't tell whether the Raycast extension is installed, so
-    // opening its instructions is what completes the item: it leaves the
-    // list, and the checklist can reach "all done".
-    else if (id === 'raycast') { setRaycastInfoOpen(true); dismissHomeSetupItem('raycast'); }
   };
 
   // ------------------------------------------------------- background loads
@@ -226,6 +240,15 @@ const HomePage = React.memo(function HomePage(props) {
     return () => clearTimeout(timer);
     // Keyed on mount and the cache restore: the guards above read this
     // render's values, and the loaders guard against re-entry themselves.
+  }, [cacheLoaded]);
+
+  // Pop of the Tops: in the getting-started layout, and in Fresh Drops' half
+  // while Fresh Drops has nothing (#1493). One request; a return visit
+  // refetches nothing.
+  const setupShown = !!(gettingStarted && gettingStarted.show);
+  React.useEffect(() => {
+    if (!cacheLoaded) return;
+    if (!chartsLoaded && !chartsLoading && !chartsError) loadCharts();
   }, [cacheLoaded]);
 
   // ------------------------------------------------------------------- art
@@ -347,6 +370,9 @@ const HomePage = React.memo(function HomePage(props) {
   })), [newReleases, art]);
   const critical = React.useMemo(() => (criticsPicks || []).slice(0, HOME_HALF_ROW_CARDS)
     .map((c) => ({ ...c, imageUrl: coverFor(c.artist, c.title, c.albumArt), homeRow: 'critical' })), [criticsPicks, art]);
+
+  const chartCards = React.useMemo(() => (charts || []).slice(0, HOME_HALF_ROW_CARDS)
+    .map((c) => ({ ...c, imageUrl: coverFor(c.artist, c.title, c.albumArt), homeRow: 'charts' })), [charts, art]);
 
   // Covers Home resolves itself: the album tile and recommended albums that
   // came without one (the first six of the whole list and of each source's,
@@ -525,6 +551,53 @@ const HomePage = React.memo(function HomePage(props) {
       // The shared button (components/collection-radio-button.js).
       hasCollection && React.createElement(CollectionRadioButton, { onClick: handleStartCollectionStation })));
 
+  // While setup isn't done (or skipped), a getting-started layout replaces
+  // the sections (#1493): the three steps, then Critical Darlings and Pop of
+  // the Tops. The setup pill isn't shown; it carries only the extras later.
+  const gettingStartedLayout = setupShown && React.createElement('div', {
+    style: { display: 'flex', flexDirection: 'column', gap: '40px', padding: '28px 24px 40px', maxWidth: '1400px' },
+  },
+    gettingStarted.ready
+      ? React.createElement(GettingStarted, {
+        status: gettingStarted.status,
+        plugins: gettingStarted.plugins,
+        serviceStates: gettingStarted.serviceStates,
+        scrobblers: gettingStarted.scrobblers,
+        scrobblerStates: gettingStarted.scrobblerStates,
+        watchFolders,
+        hasCollection,
+        playlists: homePlaylists,
+        onSkip: skipGettingStarted,
+        onConnect: connectPlugin,
+        onOpenPlugin: openPluginPanel,
+        onAddFolder: () => handleAddWatchFolder(),
+        onBrowsePlugins: () => { navigateTo('settings'); setSettingsTab('plugins'); },
+        // Playback Quality lives in Settings › General.
+        onOpenQuality: () => { navigateTo('settings'); setSettingsTab('general'); },
+        // apple.com links would open inside the app (main.js lets them
+        // through for Apple sign-in), so the beta links go to the browser.
+        onOpenLink: (url) => { const shell = globalThis.electron && globalThis.electron.shell; if (shell && shell.openExternal) shell.openExternal(url); },
+        onImportLink: () => setShowUrlImportDialog(true),
+        // Library Sync lives in Settings › General.
+        onSyncLibrary: () => { navigateTo('settings'); setSettingsTab('general'); },
+        onCollectionRadio: handleStartCollectionStation,
+        onOpenPlaylist: (p) => loadPlaylist(p),
+        onSearch: () => navigateTo('search'),
+      })
+      : React.createElement(GettingStartedSkeleton),
+    React.createElement(ExploreRow, {
+      stacked: homeHalvesStacked(contentWidth),
+      critical,
+      charts: chartCards,
+      criticalLoading: criticalLoading,
+      chartsLoading: !chartsError && (chartsLoading || !chartsLoaded),
+      chartsError: !!chartsError,
+      onRetryCharts: () => loadCharts(true),
+      navigateTo,
+      ...albumActions,
+      onOpen: (album) => (album.homeRow === 'charts' ? openChartsAlbum(album) : openCriticsPicksAlbum(album)),
+    }));
+
   return React.createElement('div', {
     className: 'flex-1 flex flex-col h-full',
     style: { overflow: 'hidden', minHeight: 0, backgroundColor: 'var(--bg-primary)' },
@@ -548,7 +621,7 @@ const HomePage = React.memo(function HomePage(props) {
         }, 'Home'))),
     React.createElement('div', { className: 'flex-1 overflow-y-auto scrollable-content scroll-edge', style: { minHeight: 0 } },
       banner,
-      React.createElement('div', {
+      setupShown ? gettingStartedLayout : React.createElement('div', {
         style: { display: 'flex', flexDirection: 'column', gap: '40px', padding: '28px 24px 40px', maxWidth: '1400px' },
       },
         header,
@@ -576,20 +649,25 @@ const HomePage = React.memo(function HomePage(props) {
 
         // One row for both halves, loaded or not: a half still loading draws
         // its skeleton in its own place, so nothing moves when it lands.
-        (show.fresh || show.critical || freshLoading || criticalLoading)
+        (show.fresh || show.critical || freshLoading || criticalLoading || chartCards.length > 0 || chartsLoading)
           && React.createElement(FreshCriticalRow, {
             stacked: homeHalvesStacked(contentWidth),
             fresh,
             critical,
             freshLoading,
             criticalLoading,
+            // Pop of the Tops stands in for an empty Fresh Drops.
+            charts: chartCards,
+            chartsLoading: !chartsError && (chartsLoading || !chartsLoaded),
+            chartsError: !!chartsError,
+            onRetryCharts: () => loadCharts(true),
             navigateTo,
             ...albumActions,
             // Each half opens its album the way its own page does; a Fresh
             // Drops card passes its release-group id, so no string search.
             onOpen: (album) => (album.homeRow === 'fresh'
               ? openTopAlbum({ ...album, name: album.title, image: album.imageUrl, releaseGroupId: album.id })
-              : openCriticsPicksAlbum(album)),
+              : album.homeRow === 'charts' ? openChartsAlbum(album) : openCriticsPicksAlbum(album)),
           }),
 
         show.concerts

@@ -630,9 +630,10 @@ React.createElement('div', {
               React.createElement(Button, { variant: 'primary', size: 'sm', onClick: saveSpotifyCredentials, disabled: !spotifyClientIdInput.trim() }, 'Save')
             ),
             renderLibrarySync(),
-            // Start Spotify at launch, so a device is there to play on.
+            // Start Spotify at launch: Spotify songs play through the Spotify
+            // app (Spotify Connect), so a device is there to play on.
             React.createElement('div', { style: SYNC_BLOCK },
-              React.createElement(SettingRow, { label: 'Open Spotify at startup', hint: 'Start it in the background so there’s always a device to play on', style: { padding: 0 } },
+              React.createElement(SettingRow, { label: 'Open Spotify at startup', hint: 'Parachord plays Spotify songs through the Spotify app, so it has to be open. This opens it in the background when Parachord starts.', style: { padding: 0 } },
                 React.createElement(Switch, { checked: autoLaunchSpotify, onToggle: async () => {
                   const newValue = !autoLaunchSpotify;
                   setAutoLaunchSpotify(newValue);

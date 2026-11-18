@@ -1,4 +1,4 @@
-// Source of truth for plugins/achordion.axe v1.0.9.
+// Source of truth for plugins/achordion.axe v1.1.0.
 // Imported from the .axe by `node scripts/build-axes.js --import`.
 // Edit here, bump manifest.version in manifest.json, then run `node scripts/build-axes.js`.
 // The functions materialize fully isolated (resolver-loader.js uses
@@ -356,6 +356,120 @@ module.exports = {
       );
     }
     return true;
+  },
+  // Links to achordion.xyz (#1493; their types are the manifest's urlTypes):
+  // a song, an album or a playlist someone shared, dropped on the player or
+  // the queue (or opened any other way the app opens a service link). Achordion pages are MusicBrainz entities, so a
+  // link names a recording, a release group or a ListenBrainz playlist, by
+  // MBID or (Parachord's own fallback links) by artist and title. The app
+  // then finds each track on the listener's own services. MusicBrainz
+  // requests go through the renderer's MusicBrainz limiter (its fetch
+  // interceptor), so these are plain fetches.
+  lookupUrl: async function (url) {
+    const MBID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    let u;
+    try { u = new URL(url); } catch (e) { return null; }
+    const parts = u.pathname.split('/').filter(Boolean);
+    if ((parts[0] || '').toLowerCase() !== 'recording') return null;
+    if (parts[1] === 'lookup') {
+      const artist = (u.searchParams.get('artist') || '').trim();
+      const title = (u.searchParams.get('title') || '').trim();
+      if (!artist || !title) return null;
+      return { title, artist, album: (u.searchParams.get('album') || '').trim() };
+    }
+    if (!MBID.test(parts[1] || '')) return null;
+    const res = await fetch(`https://musicbrainz.org/ws/2/recording/${parts[1]}?inc=artist-credits+releases&fmt=json`, { headers: { Accept: 'application/json' } });
+    if (!res.ok) throw new Error(`MusicBrainz answered ${res.status}`);
+    const rec = await res.json();
+    const artist = (rec['artist-credit'] || []).map((c) => (c.name || (c.artist && c.artist.name) || '') + (c.joinphrase || '')).join('').trim();
+    if (!rec.title || !artist) return null;
+    const release = (rec.releases || [])[0];
+    return {
+      title: rec.title,
+      artist,
+      album: release ? release.title : '',
+      duration: rec.length ? Math.round(rec.length / 1000) : null,
+      mbid: rec.id,
+    };
+  },
+  lookupAlbum: async function (url) {
+    const MBID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const MB = 'https://musicbrainz.org/ws/2';
+    const get = async (path) => {
+      const res = await fetch(`${MB}/${path}`, { headers: { Accept: 'application/json' } });
+      if (!res.ok) throw new Error(`MusicBrainz answered ${res.status}`);
+      return res.json();
+    };
+    const credit = (ac) => (ac || []).map((c) => (c.name || (c.artist && c.artist.name) || '') + (c.joinphrase || '')).join('').trim();
+    let u;
+    try { u = new URL(url); } catch (e) { return null; }
+    const parts = u.pathname.split('/').filter(Boolean);
+    if ((parts[0] || '').toLowerCase() !== 'release-group') return null;
+    let rgid = parts[1];
+    if (rgid === 'lookup') {
+      const artist = (u.searchParams.get('artist') || '').trim();
+      const title = (u.searchParams.get('title') || '').trim();
+      if (!artist || !title) return null;
+      const q = `releasegroup:"${title.replace(/"/g, '')}" AND artist:"${artist.replace(/"/g, '')}"`;
+      const found = await get(`release-group?query=${encodeURIComponent(q)}&limit=1&fmt=json`);
+      rgid = found['release-groups'] && found['release-groups'][0] && found['release-groups'][0].id;
+    }
+    if (!MBID.test(rgid || '')) return null;
+    // The release group's earliest official release stands in for it.
+    const group = await get(`release-group/${rgid}?inc=releases+artist-credits&fmt=json`);
+    const releases = (group.releases || []).slice().sort((a, b) =>
+      ((a.status === 'Official' ? 0 : 1) - (b.status === 'Official' ? 0 : 1)) || String(a.date || '9999').localeCompare(String(b.date || '9999')));
+    if (releases.length === 0) return null;
+    const release = await get(`release/${releases[0].id}?inc=recordings+artist-credits&fmt=json`);
+    const albumArtist = credit(group['artist-credit']) || credit(release['artist-credit']);
+    const tracks = [];
+    for (const medium of release.media || []) {
+      for (const t of medium.tracks || []) {
+        tracks.push({
+          title: t.title || (t.recording && t.recording.title) || '',
+          artist: credit(t['artist-credit'] || (t.recording && t.recording['artist-credit'])) || albumArtist,
+          album: group.title,
+          duration: t.length ? Math.round(t.length / 1000) : null,
+          trackNumber: tracks.length + 1,
+          mbid: t.recording && t.recording.id,
+        });
+      }
+    }
+    if (tracks.length === 0) return null;
+    return {
+      id: `achordion-release-group-${rgid}`,
+      name: group.title,
+      artist: albumArtist,
+      albumArt: null,
+      releaseDate: group['first-release-date'] || null,
+      trackCount: tracks.length,
+      tracks,
+      url,
+    };
+  },
+  lookupPlaylist: async function (url) {
+    let u;
+    try { u = new URL(url); } catch (e) { return null; }
+    const parts = u.pathname.split('/').filter(Boolean);
+    if ((parts[0] || '').toLowerCase() !== 'playlist' || !/^[0-9a-f-]{36}$/i.test(parts[1] || '')) return null;
+    const id = parts[1].toLowerCase();
+    // Achordion's public XSPF for a ListenBrainz playlist.
+    const res = await fetch(`https://achordion.xyz/api/playlist/${id}/xspf`);
+    if (!res.ok) throw new Error(`Achordion answered ${res.status}`);
+    const doc = new DOMParser().parseFromString(await res.text(), 'application/xml');
+    const text = (el, tag) => {
+      const n = el.getElementsByTagName(tag)[0];
+      return n && n.textContent ? n.textContent.trim() : '';
+    };
+    const root = doc.getElementsByTagName('playlist')[0];
+    if (!root) return null;
+    const tracks = Array.from(doc.getElementsByTagName('track')).map((t) => {
+      const ms = parseInt(text(t, 'duration'), 10);
+      return { title: text(t, 'title'), artist: text(t, 'creator'), album: text(t, 'album'), duration: ms > 0 ? Math.round(ms / 1000) : null };
+    }).filter((t) => t.title && t.artist);
+    if (tracks.length === 0) return null;
+    const titleEl = Array.from(root.childNodes).find((n) => n.nodeName === 'title');
+    return { id: `achordion-playlist-${id}`, name: (titleEl && titleEl.textContent.trim()) || 'Playlist', tracks, url };
   },
   cleanup: async function () {
     if (window.scrobbleManager && typeof window.scrobbleManager.unregisterPlugin === 'function') {

@@ -13,6 +13,7 @@
 // home-skeletons.js; change one, change the other.
 
 const { Button } = require('./button');
+const { ErrorState } = require('./states');
 const { filterBySource } = require('../lib/home-model');
 const { ReasonBadge, ReasonMark, shuffleupagusIcon } = require('./reason-badge');
 const Icons = require('./icons');
@@ -41,6 +42,7 @@ const SHUFFLE_COLOR = 'var(--accent-fill)'; // fill-accent: the accent var turns
 // the collapsed hero title's shadow, which the halves' bands copy.
 const FRESH_HERO = PAGE_COLORS['new-releases'].hero;
 const CRITICAL_HERO = PAGE_COLORS['critics-picks'].hero;
+const CHARTS_HERO = PAGE_COLORS.discover.hero;
 const HERO_TEXT_SHADOW = 'var(--hero-text-shadow-bar)';
 // Inner padding of the Fresh Drops / Critical Darlings panels.
 const HOME_HALF_PANEL_PAD = 20;
@@ -138,6 +140,7 @@ function JumpBackIn({ tiles, onOpenTile, onPlayTile, onContextMenu, onImport, on
 // The sidebar's Critical Darlings icon.
 const DropletGlyph = () => e(Icons.Droplet, { size: 16 });
 const TrophyGlyph = () => e(Icons.Trophy, { size: 16 });
+const ChartsGlyph = () => e(Icons.ListOrdered, { size: 16 });
 
 // The round badge in the art's lower right corner: Shuffleupagus's reason, or a
 // Critical Darlings pick's review summary. A critics pick with no summary
@@ -267,13 +270,15 @@ function AlbumsRow(props) {
 // row less half the gap), so a half that is alone stays half width, and a
 // half still loading draws its skeleton in its own place while the other
 // shows its cards. A half that is neither loading nor has cards is left out.
-function FreshCriticalRow(props) {
-  const { fresh, critical, freshLoading, criticalLoading, navigateTo, stacked = false } = props;
-  // Each half is a card that opens with a slim hero band copied from its
-  // page's hero (the same gradient classes, and the collapsed hero's
-  // uppercase light title and shadow), the sidebar's icon beside the title.
-  // The cards sit below on the page background.
-  const half = (id, title, page, view, items, loading, hero, icon) => e('section', {
+// A half of a two-panel row: a card that opens with a slim hero band copied
+// from its page's hero (the same gradient classes, and the collapsed hero's
+// uppercase light title and shadow), the sidebar's icon beside the title,
+// and up to three album cards below on the page background. Fresh Drops +
+// Critical Darlings on Home, Critical Darlings + Pop of the Tops in the
+// getting-started layout's Explore row.
+function homeHalf(props, { id, title, view, items, loading, hero, icon, error, onRetry }) {
+  const { navigateTo, stacked = false } = props;
+  return e('section', {
     key: id, 'aria-labelledby': id, 'aria-busy': loading ? 'true' : undefined,
     style: {
       flex: stacked ? '0 0 auto' : HOME_HALF_FLEX, minWidth: 0, display: 'flex', flexDirection: 'column',
@@ -293,22 +298,50 @@ function FreshCriticalRow(props) {
         },
       }, icon, title),
       e('button', {
-        type: 'button', 'aria-label': `See all in ${page}`, onClick: () => navigateTo && navigateTo(view),
+        type: 'button', 'aria-label': `See all in ${title}`, onClick: () => navigateTo && navigateTo(view),
         style: { font: 'inherit', fontSize: '13px', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer', whiteSpace: 'nowrap', padding: 0, color: ON_FILL }, // on-color
       }, 'See all')),
     e('div', { style: Object.assign({ padding: `${HOME_HALF_PANEL_PAD}px` }, SECTION_STYLE) },
-      loading
+      error
+        ? e(ErrorState, { compact: true, title: `Couldn’t load ${title}`, body: 'Check your connection, then try again.', onRetry })
+        : loading
         ? e(CardRowSkeleton, { count: HOME_HALF_ROW_CARDS, lines: 1 })
         : e('div', { style: grid(`repeat(${HOME_HALF_ROW_CARDS}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
           items.slice(0, HOME_HALF_ROW_CARDS).map((a, i) => e(HomeAlbumCard, Object.assign({ key: a.id || `${a.artist}-${a.title}-${i}`, album: a }, albumHandlers(props)))))));
+}
+
+function FreshCriticalRow(props) {
+  const { fresh, critical, freshLoading, criticalLoading, charts, chartsLoading, chartsError, onRetryCharts, stacked = false } = props;
   const f = Array.isArray(fresh) ? fresh : [];
   const c = Array.isArray(critical) ? critical : [];
+  const p = Array.isArray(charts) ? charts : [];
   const showF = f.length > 0 || !!freshLoading;
   const showC = c.length > 0 || !!criticalLoading;
-  if (!showF && !showC) return null;
+  // With no Fresh Drops (a new profile follows no artists yet), Pop of the
+  // Tops takes its half, so Critical Darlings isn't left alone (#1493).
+  const showP = !showF && (p.length > 0 || !!chartsLoading || !!chartsError);
+  if (!showF && !showC && !showP) return null;
   return e('div', { style: { display: 'flex', flexDirection: stacked ? 'column' : 'row', gap: `${HOME_HALF_GAP}px` } },
-    showF && half('home-fresh', 'Fresh Drops', 'Fresh Drops', 'new-releases', f, f.length === 0, FRESH_HERO, DropletGlyph()),
-    showC && half('home-critical', 'Critical Darlings', 'Critical Darlings', 'critics-picks', c, c.length === 0, CRITICAL_HERO, TrophyGlyph()));
+    showF && homeHalf(props, { id: 'home-fresh', title: 'Fresh Drops', view: 'new-releases', items: f, loading: f.length === 0, hero: FRESH_HERO, icon: DropletGlyph() }),
+    showC && homeHalf(props, { id: 'home-critical', title: 'Critical Darlings', view: 'critics-picks', items: c, loading: c.length === 0, hero: CRITICAL_HERO, icon: TrophyGlyph() }),
+    showP && homeHalf(props, { id: 'home-charts', title: 'Pop of the Tops', view: 'discover', items: p, loading: p.length === 0, error: p.length === 0 && !chartsLoading && !!chartsError, onRetry: onRetryCharts, hero: CHARTS_HERO, icon: ChartsGlyph() }));
+}
+
+// The getting-started layout's "Explore while you set up" (#1493): the two
+// discovery pages that load with no setup, Critical Darlings and Pop of the
+// Tops, in the same halves. A half whose page failed to load leaves the row.
+function ExploreRow(props) {
+  const { critical, charts, criticalLoading, chartsLoading, chartsError, onRetryCharts, stacked = false } = props;
+  const c = Array.isArray(critical) ? critical : [];
+  const p = Array.isArray(charts) ? charts : [];
+  const showC = c.length > 0 || !!criticalLoading;
+  // A failed load keeps its half, with Try again, rather than vanishing.
+  const showP = p.length > 0 || !!chartsLoading || !!chartsError;
+  return e('section', { 'aria-labelledby': 'home-explore', style: SECTION_STYLE },
+    e(SectionHeader, { id: 'home-explore', title: 'Explore while you set up', sub: 'Albums critics love, and the most played right now. Playing needs a connected service; Bandcamp plays some of these already.' }),
+    (showC || showP) && e('div', { style: { display: 'flex', flexDirection: stacked ? 'column' : 'row', gap: `${HOME_HALF_GAP}px` } },
+      showC && homeHalf(props, { id: 'home-explore-critical', title: 'Critical Darlings', view: 'critics-picks', items: c, loading: c.length === 0, hero: CRITICAL_HERO, icon: TrophyGlyph() }),
+      showP && homeHalf(props, { id: 'home-explore-charts', title: 'Pop of the Tops', view: 'discover', items: p, loading: p.length === 0, error: p.length === 0 && !chartsLoading && !!chartsError, onRetry: onRetryCharts, hero: CHARTS_HERO, icon: ChartsGlyph() })));
 }
 
 // A concert card is not clickable as a whole: Tickets is its only action
@@ -447,5 +480,5 @@ function AskShuffleupagus({ initialPrompt, chatAvailable, onAsk, onSetup }) {
 
 module.exports = {
   JumpBackIn, AlbumCard: HomeAlbumCard, PlaylistCard, SourceFilter, MixesRow, PlaylistsRow, AlbumsRow,
-  FreshCriticalRow, ConcertsRow, AskShuffleupagus, ArtBox,
+  FreshCriticalRow, ExploreRow, ConcertsRow, AskShuffleupagus, ArtBox,
 };

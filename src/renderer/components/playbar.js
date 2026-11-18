@@ -20,7 +20,7 @@ const { isOtherVersion } = require('../lib/track-variants');
 const { sourceBlockId } = require('../lib/bad-match-report');
 const { ResolverIcon, Tooltip, PlaybackProgress } = require('./ui-atoms');
 const { PAGE_COLORS } = require('../lib/page-colors');
-const { NO_PLUGIN_COLOR } = require('./brand-logos');
+const { NO_PLUGIN_COLOR, ParachordAppIcon } = require('./brand-logos');
 const { LISTENER_HEXAGON } = require('./listener-card');
 const { Button } = require('./button');
 const { PlaybarLineSkeleton } = require('./playbar-skeleton');
@@ -631,11 +631,17 @@ const Playbar = React.memo(function Playbar(props) {
               })()
             )
           ] : React.createElement(React.Fragment, null,
-            // Skeleton album art
-            React.createElement('div', {
-              className: `flex-shrink-0 rounded ${trackLoading ? 'shimmer-dark animate-shimmer' : 'bg-surface-dark-placeholder'}`,
-              style: { width: '61px', height: '61px', ...(trackLoading ? { backgroundSize: '200% 100%' } : {}) }
-            }),
+            // The art spot: a shimmer while a track loads; with nothing to
+            // show (a first run, an empty queue), Parachord's own icon.
+            trackLoading
+              ? React.createElement('div', {
+                  className: 'flex-shrink-0 rounded shimmer-dark animate-shimmer',
+                  style: { width: '61px', height: '61px', backgroundSize: '200% 100%' }
+                })
+              // The art box keeps its placeholder square; the icon sits inside
+              // it with 10px of room on each side.
+              : React.createElement('div', { className: 'flex-shrink-0 rounded bg-surface-dark-placeholder flex items-center justify-center', style: { width: '61px', height: '61px' } },
+                  React.createElement(ParachordAppIcon, { size: 41 })),
             // Skeleton track info: the three lines at their real heights
             // (components/playbar-skeleton.js), so the track replaces it in place.
             React.createElement('div', { className: 'min-w-0' },
@@ -668,7 +674,12 @@ const Playbar = React.memo(function Playbar(props) {
           ),
           // Heart/favorite button
           (() => {
-            if (!currentTrack) return null;
+            // No track: the button stays in place, disabled, so the playbar
+            // doesn't shift when the first track loads (it took 44px with it).
+            if (!currentTrack) {
+              return React.createElement(Button, { variant: 'icon', size: 'sm', tone: 'dark', 'aria-label': 'Save to collection', disabled: true },
+                React.createElement(Icons.Heart, { className: 'w-5 h-5', strokeWidth: 2, fill: 'none' }));
+            }
             const isInCollection = !!findSavedTrack(collectionData.tracks, currentTrack);
             return React.createElement(Tooltip, {
               content: isInCollection ? 'Remove from collection' : 'Save to collection',

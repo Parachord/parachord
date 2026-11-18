@@ -1,19 +1,14 @@
 /**
- * #1387: the welcome tour ends on "Start listening" (Home), with "Open
- * Plug-Ins" beside it; with nothing playable on it says "Almost there" and
- * Open Plug-Ins is the main button. It opens from About, not Developer
- * Settings.
+ * The welcome tour ends on "Get started" (#1493: Home's getting-started
+ * layout does the setup). It opens from About, not Developer Settings.
  */
 const fs = require('fs');
 const path = require('path');
 const app = require('../helpers/renderer-source').appWithPages();
 
-test('the last step offers Start listening and Open Plug-Ins', () => {
-  expect(app).toContain("tutorialPlayable && React.createElement(Button, { variant: 'primary', onClick: () => finishTutorial('home') }, 'Start listening')");
-  expect(app).toContain("React.createElement(Button, { variant: tutorialPlayable ? 'secondary' : 'primary', onClick: () => finishTutorial('plugins') }, 'Open Plug-Ins')");
-  expect(app).toContain("tutorialPlayable ? 'You’re all set' : 'Almost there'");
-  expect(app).toContain("const tutorialPlayable = loadedResolvers.some(r => r.capabilities?.resolve && playbackResolvers.includes(r.id));");
-  expect(app).toMatch(/if \(where === 'plugins'\) \{ setSettingsTab\('plugins'\); navigateTo\('settings'\); \}\s*else navigateTo\('home'\);/);
+test('the tour ends by handing over to Home: the setup is there, not in the tour (#1493)', () => {
+  expect(app).toContain("e(Button, { variant: 'primary', onClick: () => close(true) }, 'Get started')");
+  expect(app).toMatch(/if \(setup\) startGettingStarted\(\);\s*else navigateTo\('home'\);/);
 });
 
 test('the tour opens from About, and Developer Settings no longer has it', () => {

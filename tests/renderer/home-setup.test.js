@@ -10,8 +10,7 @@ const { HomeSetupButton } = require('../../src/renderer/components/home-setup');
 const read = (p) => fs.readFileSync(path.join(__dirname, '../..', p), 'utf8');
 
 const allDone = {
-  servicesConnected: true, scrobblingConnected: true,
-  extensionConnected: true, isMac: false, dismissed: [],
+  extensionConnected: true, dismissed: [],
 };
 
 describe('homeSetupItems', () => {
@@ -19,8 +18,8 @@ describe('homeSetupItems', () => {
     const s = homeSetupItems(allDone);
     expect(s.mode).toBe('whats-new');
     expect(s.visible).toBeUndefined();
-    expect(s.done).toBe(3);
-    expect(s.total).toBe(3);
+    expect(s.done).toBe(1);
+    expect(s.total).toBe(1);
   });
 
   test('extensionConnected null counts as done', () => {
@@ -30,45 +29,32 @@ describe('homeSetupItems', () => {
   });
 
   test('a dismissed id leaves items and total', () => {
-    const s = homeSetupItems({ ...allDone, isMac: true, dismissed: ['raycast'] });
-    expect(s.total).toBe(3);
-    expect(s.items.find((i) => i.id === 'raycast')).toBeUndefined();
-    expect(homeSetupItems({ ...allDone, isMac: true }).total).toBe(4);
+    const s = homeSetupItems({ ...allDone, gettingStartedLeft: true, dismissed: ['getting-started'] });
+    expect(s.total).toBe(1);
+    expect(s.items.find((i) => i.id === 'getting-started')).toBeUndefined();
+    expect(homeSetupItems({ ...allDone, gettingStartedLeft: true }).total).toBe(2);
   });
 
-  test('no service connected yet gives one open services item', () => {
-    const s = homeSetupItems({ ...allDone, servicesConnected: false });
-    const r = s.items.filter((i) => i.id === 'resolvers');
-    expect(r).toHaveLength(1);
-    expect(r[0]).toMatchObject({ label: 'Connect your music services', done: false, action: 'resolvers' });
-    expect(s.mode).toBe('setup');
-    // A fresh profile starts with it open (it used to be ticked on day one).
-    expect(homeSetupItems().items.find((i) => i.id === 'resolvers').done).toBe(false);
+  test('services and scrobblers are getting-started steps; skipped steps come back as one item; no Raycast (#1493)', () => {
+    expect(homeSetupItems({}).items.map((i) => i.id)).toEqual(['browser-extension']);
+    expect(homeSetupItems({ gettingStartedLeft: true }).items.map((i) => i.id)).toEqual(['getting-started', 'browser-extension']);
+    // Nothing left: the pill is What's New.
+    expect(homeSetupItems(allDone).mode).toBe('whats-new');
   });
 
   test('whatsNew is reported but never counted or listed', () => {
-    const s = homeSetupItems({ ...allDone, servicesConnected: false, appVersion: '0.9.14', whatsNewUnread: true });
+    const s = homeSetupItems({ ...allDone, extensionConnected: false, appVersion: '0.9.14', whatsNewUnread: true });
     expect(s.whatsNew).toEqual({ version: '0.9.14', unread: true });
-    expect(s.total).toBe(3);
-    expect(s.done).toBe(2);
+    expect(s.total).toBe(1);
+    expect(s.done).toBe(0);
     expect(s.items.some((i) => /new/i.test(i.id))).toBe(false);
     expect(homeSetupItems(allDone).whatsNew.unread).toBe(false);
   });
 
-  test('scrobbling is one item; dismissing both old per-service items dismissed it', () => {
-    const open = homeSetupItems({ ...allDone, scrobblingConnected: false });
-    expect(open.items.filter((i) => i.id === 'scrobbling')).toEqual([
-      expect.objectContaining({ label: 'Connect a scrobbling service', done: false }),
-    ]);
-    expect(homeSetupItems({ ...allDone, dismissed: ['lastfm'] }).items.some((i) => i.id === 'scrobbling')).toBe(true);
-    expect(homeSetupItems({ ...allDone, dismissed: ['lastfm', 'listenbrainz'] }).items.some((i) => i.id === 'scrobbling')).toBe(false);
-  });
-
   test('order and labels: no item names a service', () => {
-    const s = homeSetupItems({ ...allDone, isMac: true });
+    const s = homeSetupItems({ ...allDone, gettingStartedLeft: true });
     expect(s.items.map((i) => i.label)).toEqual([
-      'Connect your music services', 'Connect a scrobbling service',
-      'Install the browser extension', 'Add the Raycast extension',
+      'Finish getting started', 'Install the browser extension',
     ]);
     expect(s.items.map((i) => i.label).join(' ')).not.toMatch(/Spotify|Last\.fm|ListenBrainz/);
   });
