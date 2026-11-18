@@ -388,6 +388,19 @@ function unhideLocalAlbum(hiddenKeys, key) {
 }
 
 /**
+ * The saved record that already stands for `album`, or null: the same id,
+ * generateAlbumId of its artist and title, or the same album identity (a
+ * saved "X - EP" for "X", and the reverse). Saving an album uses it, so a
+ * second copy of an album already saved is a duplicate like an exact one,
+ * the same rule the Albums tab merges by (#1532).
+ */
+function findSavedAlbumCopy(album, savedAlbums) {
+  const saved = Array.isArray(savedAlbums) ? savedAlbums : [];
+  const ids = new Set(savedAlbumIdsFor(album, saved));
+  return saved.find(s => s && ids.has(s.id)) || null;
+}
+
+/**
  * What "Remove from Collection" does to an album:
  *   { hideKey, unsave }
  * `hideKey` is the local album to hide (null when the album isn't in the
@@ -407,6 +420,7 @@ function planAlbumRemoval(album, localKeys, savedAlbums) {
 }
 
 module.exports = {
+  findSavedAlbumCopy,
   savedAlbumIdsFor,
   pickCardCopy,
   trackArtistNameOf,

@@ -23,6 +23,7 @@ const {
   unhideLocalAlbum,
   planAlbumRemoval,
   savedAlbumIdsFor,
+  findSavedAlbumCopy,
 } = require('../../src/renderer/lib/local-albums');
 const { generateAlbumId, generateArtistId, generateTrackId } = require('../../sync-engine/collection-id');
 const { artistInCollection, albumInCollection, withCollectionState } = require('../../src/renderer/lib/menu-collection-state');
@@ -357,6 +358,30 @@ describe('saved copies of one album', () => {
   });
 });
 
+describe('saving recognises an already-saved copy', () => {
+  const plain = { id: generateAlbumId('Band', 'Fences'), title: 'Fences', artist: 'Band' };
+  const ep = { id: generateAlbumId('Band', 'Fences - EP'), title: 'Fences - EP', artist: 'Band' };
+  // addAlbumToCollection's write, as a pure function of the saved list.
+  const save = (albums, album) => (findSavedAlbumCopy(album, albums) ? albums : [...albums, { id: generateAlbumId(album.artist, album.title), title: album.title, artist: album.artist }]);
+
+  test('saving the suffixed copy when the plain one is saved writes nothing', () => {
+    const albums = [plain];
+    expect(findSavedAlbumCopy({ title: 'Fences - EP', artist: 'Band' }, albums)).toBe(plain);
+    expect(save(albums, { title: 'Fences - EP', artist: 'Band' })).toBe(albums);
+  });
+
+  test('and the reverse', () => {
+    const albums = [ep];
+    expect(findSavedAlbumCopy({ title: 'fences', artist: 'BAND' }, albums)).toBe(ep);
+    expect(save(albums, { title: 'Fences', artist: 'Band' })).toBe(albums);
+  });
+
+  test('another album, or another edition, is still saved', () => {
+    expect(findSavedAlbumCopy({ title: 'Fences (Deluxe Edition)', artist: 'Band' }, [plain])).toBeNull();
+    expect(save([plain], { title: 'Other', artist: 'Band' })).toHaveLength(2);
+  });
+});
+
 describe('hiding', () => {
   test('hide and unhide', () => {
     let hidden = [];
@@ -414,6 +439,14 @@ describe('app.js wiring', () => {
     expect(body).toMatch(/const matchIds = new Set\(savedAlbumIdsFor\(album, prev\.albums\)\);/);
     expect(body).toMatch(/for \(const existingAlbum of prev\.albums\.filter\(a => matchIds\.has\(a\.id\)\)\)/);
     expect(body).toMatch(/const newAlbums = prev\.albums\.filter\(a => !matchIds\.has\(a\.id\)\);/);
+  });
+
+  test('adding an album checks for any saved copy before writing', () => {
+    const body = fnBody('addAlbumToCollection');
+    const check = body.indexOf('if (findSavedAlbumCopy(album, prev.albums))');
+    expect(check).toBeGreaterThan(-1);
+    expect(body.indexOf('albums: [...prev.albums, newAlbum]')).toBeGreaterThan(check);
+    expect(body).not.toMatch(/prev\.albums\.some\(a => a\.id === albumId\)/);
   });
 
   test('adding an album clears its hide', () => {

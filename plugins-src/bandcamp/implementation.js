@@ -4,7 +4,13 @@
 // The functions materialize fully isolated (resolver-loader.js uses
 // new Function) — no shared scope between them; helpers must be embedded per function.
 module.exports = {
-  search: async function (query, config) {
+  // limit: how many results to keep (default 20, a page of search results).
+  // resolve asks for every row the API returns (it returns up to 50): the
+  // artist's own recording often ranks below 20 remixes and covers ("Radiohead
+  // Nude": the In Rainbows track is row 31), and a 20-row cut left resolve
+  // only rows the confidence gate rejects (#1532).
+  search: async function (query, config, limit) {
+    var maxResults = typeof limit === 'number' && limit > 0 ? limit : 20;
     // parachord#977: Bandcamp's HTML search page (bandcamp.com/search) now serves a
     // bot "Client Challenge" page, so scraping it returns nothing. Use the JSON API
     // that bandcamp.com's own search box calls (tracks only), falling back to the
@@ -88,7 +94,7 @@ module.exports = {
         }
       }
       var results = [];
-      for (var i = 0; i < items.length && results.length < 20; i++) {
+      for (var i = 0; i < items.length && results.length < maxResults; i++) {
         var t = toResult(items[i]);
         if (t) results.push(t);
       }
@@ -212,7 +218,9 @@ module.exports = {
     var isVariant = function (r) {
       return hasVariant(r.title, track) || hasVariant(r.artist, artist) || joinsSongs(r.title);
     };
-    var results = await this.search(((artist || '') + ' ' + (track || '')).trim(), config);
+    // Every row the search API returns, not the search page's 20: the
+    // original often ranks below a page of remixes and covers (#1532).
+    var results = await this.search(((artist || '') + ' ' + (track || '')).trim(), config, 50);
     if (results.length === 0) return null;
     var i;
     if (targetArtist && targetTitle) {

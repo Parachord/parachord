@@ -2047,7 +2047,7 @@ const { useLocalFiles } = require('./hooks/use-local-files');
 // album list, every source on each entry.
 // When resolveTrack's local-file gate applies: everything not on screen (#1532).
 const { isOnScreenResolution, skipsLocalFill } = require('./lib/enrichment-gate');
-const { albumIdentity, mergeCollectionSongs, deriveLocalAlbums, mergeCollectionAlbums, deriveLocalArtists, mergeCollectionArtists, hideLocalAlbum, unhideLocalAlbum, planAlbumRemoval, savedAlbumIdsFor } = require('./lib/local-albums');
+const { albumIdentity, mergeCollectionSongs, deriveLocalAlbums, mergeCollectionAlbums, deriveLocalArtists, mergeCollectionArtists, hideLocalAlbum, unhideLocalAlbum, planAlbumRemoval, savedAlbumIdsFor, findSavedAlbumCopy } = require('./lib/local-albums');
 const { HomePage } = require('./components/home-page');
 const { PlaylistViewPage, PlaylistViewLoading } = require('./components/playlist-view-page');
 const { ArtistPage } = require('./components/artist-page');
@@ -14830,8 +14830,10 @@ ${trackListXml}
     setHiddenLocalAlbumKeys(prev => unhideLocalAlbum(prev, albumIdentity(album.artist, album.title)));
 
     setCollectionData(prev => {
-      // Check for duplicate
-      if (prev.albums.some(a => a.id === albumId)) {
+      // Check for duplicate: the same id, or another saved copy of the same
+      // album ("X" when "X - EP" is saved, and the reverse), which the
+      // Albums tab already shows as this album (#1532, findSavedAlbumCopy).
+      if (findSavedAlbumCopy(album, prev.albums)) {
         showToast(`${album.title} is already in your collection`);
         return prev;
       }
