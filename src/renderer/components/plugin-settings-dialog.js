@@ -16,7 +16,7 @@ const { countOf } = require('../lib/plural');
 const { timeAgo } = require('../lib/time-ago');
 const { SERVICE_LOGOS } = require('./brand-logos');
 const { ScrobblerSettingsCard } = require('./settings-cards');
-const { capabilityLabel } = require('../lib/capability-labels');
+const { capabilityLabel, visibleCapabilities } = require('../lib/capability-labels');
 const { Modal } = require('./modal');
 const { Badge } = require('./badge');
 const { Button } = require('./button');
@@ -257,8 +257,10 @@ React.createElement('div', {
             style: { fontSize: '13px', lineHeight: '1.6', marginBottom: '24px' }
           }, selectedResolver.requirement),
 
-          // Capabilities
-          React.createElement('div', { style: { marginBottom: '24px' } },
+          // Capabilities: the ones a listener chooses a plug-in for
+          // (visibleCapabilities hides the internal ones), and none at all
+          // when nothing's left to show.
+          visibleCapabilities(selectedResolver.capabilities).length > 0 && React.createElement('div', { style: { marginBottom: '24px' } },
             React.createElement('h3', {
               style: {
                 fontSize: '11px',
@@ -270,9 +272,9 @@ React.createElement('div', {
               }
             }, 'Capabilities'),
             React.createElement('div', { className: 'flex flex-wrap gap-2' },
-              Object.entries(selectedResolver.capabilities || {}).map(([cap, enabled]) =>
+              visibleCapabilities(selectedResolver.capabilities).map((cap) =>
                 // The shared pill and the one label helper (lib/capability-labels.js).
-                enabled ? React.createElement(Badge, { key: cap, tone: 'accent' }, capabilityLabel(cap)) : null)
+                React.createElement(Badge, { key: cap, tone: 'accent' }, capabilityLabel(cap)))
             )
           ),
 
@@ -1889,15 +1891,7 @@ React.createElement('div', {
                 color: 'var(--text-primary)'
               }
             }, 'Ollama Configuration'),
-            React.createElement('p', {
-              style: {
-                fontSize: '12px',
-                color: 'var(--text-secondary)',
-                marginTop: '4px',
-                marginBottom: '12px',
-                lineHeight: '1.5'
-              }
-            }, 'Run AI locally with Ollama. Free, private, and works offline.'),
+            // (Its intro sentence repeated the plug-in's description; #1498.)
             // Download/install callout
             React.createElement('div', {
               style: {
@@ -2053,10 +2047,7 @@ React.createElement('div', {
             className: 'py-3 border-t border-line-light'
           },
             React.createElement('div', { className: 'mb-4' },
-              React.createElement('span', { className: 'font-medium text-ink-primary' }, 'Libre.fm Scrobbling'),
-              React.createElement('p', { className: 'text-xs text-ink-tertiary mt-1' },
-                'Open-source scrobbling service - an alternative to Last.fm. Report your listening history to Libre.fm.'
-              )
+              React.createElement('span', { className: 'font-medium text-ink-primary' }, 'Libre.fm Scrobbling')
             ),
             // Scrobbler card for Libre.fm
             window.scrobblers && window.scrobblers.find(s => s.id === 'librefm') &&

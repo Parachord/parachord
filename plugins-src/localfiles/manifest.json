@@ -2,9 +2,9 @@
   "manifest": {
     "id": "localfiles",
     "name": "Local Files",
-    "version": "1.1.1",
+    "version": "1.1.2",
     "author": "Parachord Team",
-    "description": "Play music from your local library. Configure watch folders in settings.",
+    "description": "Play the music files on your computer.",
     "requirement": "Choose the folders your music is in.",
     "icon": "📁",
     "color": "#6366f1",

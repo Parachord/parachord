@@ -6,14 +6,15 @@
 // fell back to their code names ("Html5 stream", "Widevine", "Mobile"),
 // because nothing checked either.
 //
-// This test fails on a NEW offender. The ones already there are listed in
-// KNOWN_* below; fixing one means deleting its line (the test fails while a
-// fixed one is still listed), so the lists only shrink. #1498 step 1 empties
-// them.
+// The known lists started with today's offenders and only shrink; #1498
+// step 1 rewrote the descriptions and labelled or hid every capability, so
+// they're empty. Keep them empty: fix new text, and give a new capability a
+// label in lib/capability-labels.js or add it to HIDDEN there if it's
+// internal.
 
 const fs = require('fs');
 const path = require('path');
-const { CAPABILITY_LABELS } = require('../../src/renderer/lib/capability-labels');
+const { CAPABILITY_LABELS, HIDDEN_CAPABILITIES } = require('../../src/renderer/lib/capability-labels');
 
 const PLUGINS = path.join(__dirname, '../../plugins-src');
 
@@ -26,32 +27,13 @@ const DEV_TEXT = [
   [/https?:\/\//, 'a raw URL'],
 ];
 
-const KNOWN_TEXT = new Set([
-  'achordion.description: resolver',
-  'achordion.description: window.',
-]);
+const KNOWN_TEXT = new Set([]);
 
 // Capabilities with no label in lib/capability-labels.js (they show as their
 // spelled-out code name). Each needs a user-facing label, or hiding from the
 // dialog if it isn't something a listener cares about (widevine, mobile,
 // html5Stream, playbackTelemetry).
-const KNOWN_UNLABELLED = new Set([
-  'achordion: playbackTelemetry',
-  'amazonmusic: artistImage',
-  'amazonmusic: widevine',
-  'applemusic: historyMixes',
-  'discogs: biography',
-  'discogs: artistImages',
-  'lastfm: similarUsers',
-  'listenbrainz: historyMixes',
-  'listenbrainz: similarUsers',
-  'listenbrainz: listeningHistory',
-  'subsonic: mobile',
-  'subsonic: html5Stream',
-  'subsonic: artistImage',
-  'wikipedia: biography',
-  'wikipedia: artistImages',
-]);
+const KNOWN_UNLABELLED = new Set([]);
 
 function manifests() {
   return fs.readdirSync(PLUGINS, { withFileTypes: true })
@@ -76,7 +58,7 @@ function unlabelled() {
   const out = [];
   for (const [id, m] of manifests()) {
     for (const [cap, on] of Object.entries(m.capabilities || {})) {
-      if (on && !CAPABILITY_LABELS[cap]) out.push(`${id}: ${cap}`);
+      if (on && !CAPABILITY_LABELS[cap] && !HIDDEN_CAPABILITIES.has(cap)) out.push(`${id}: ${cap}`);
     }
   }
   return out;
@@ -89,7 +71,7 @@ test('no new developer text in a plug-in description or "needs" line', () => {
   expect([...KNOWN_TEXT].filter((o) => !now.includes(o))).toEqual([]);
 });
 
-test('every capability a plug-in declares has a label (no new code names as chips)', () => {
+test('every capability a plug-in declares has a label or is hidden (no code names as chips)', () => {
   const now = unlabelled();
   expect(now.filter((o) => !KNOWN_UNLABELLED.has(o))).toEqual([]);
   expect([...KNOWN_UNLABELLED].filter((o) => !now.includes(o))).toEqual([]);

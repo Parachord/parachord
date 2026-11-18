@@ -2,12 +2,12 @@
   "manifest": {
     "id": "amazonmusic",
     "name": "Amazon Music",
-    "version": "1.21.0",
+    "version": "1.21.1",
     "minAppVersion": {
       "desktop": "0.9.13"
     },
     "author": "Parachord Team",
-    "description": "Plays Amazon Music through the shared Widevine player (DASH + license via Amazon session). Does not use the Amazon Music desktop app.",
+    "description": "Search and play Amazon Music in Parachord, without the Amazon Music app.",
     "requirement": "Needs Amazon Music Unlimited. With Prime, Amazon gives Parachord art and links only.",
     "icon": "\ud83c\udfb5",
     "color": "#25D1DA",
