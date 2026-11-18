@@ -80,3 +80,9 @@ describe('bannerViewId', () => {
     expect(app.indexOf('const bannerItems = useMemo')).toBeLessThan(i);
   });
 });
+
+test('the body line is the on-colour secondary token, not a raw opacity', () => {
+  const out = render({ items: [{ id: 'a', title: 'T', body: 'Body text', severity: 'info' }] });
+  expect(out).toMatch(/color:var\(--on-color-secondary\)[^"]*"[^>]*>Body text/);
+  expect(out).not.toContain('opacity:0.9');
+});
