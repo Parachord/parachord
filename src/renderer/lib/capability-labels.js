@@ -33,6 +33,9 @@ const LABELS = {
   listeningHistory: 'Listening history',
   lovedTracks: 'Loved tracks',
   playlistSync: 'Playlist sync',
+  // Brings your saved music and playlists into the Collection (Spotify,
+  // Apple Music): picks the plug-in dialog's library sync section (#1498).
+  librarySync: 'Library sync',
 };
 
 // Capabilities that describe how a plug-in works inside the app, not

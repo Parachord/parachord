@@ -18,6 +18,17 @@
 //                with the focus ring; the caller's <label> holds its text.
 //   Slider       a native range input on one track-and-thumb look
 //                (.slider in index.html); onChange gets a number.
+//   StackedField a field with its name over it (12px, 500), an optional
+//                action at the right of the name (a refresh button) and a
+//                line under it (11px, tertiary): for values too long for a
+//                SettingRow's right side (keys, URLs, usernames). Every
+//                plug-in's keys and fields use it (#1498). Under the line,
+//                `status` (left: "API key saved") and `link` ({ url, label },
+//                right) share one row; the link is a HelpLink.
+//   HelpLink     where to get a key or make an account: accent text with an
+//                arrow, no underline, opened in the browser. The one style
+//                for a field's help link ("Get your API key →", "Create a
+//                Libre.fm account →").
 //
 // The field look: 36px tall (32 for size="sm", 48 for size="lg"), 13px text
 // (16 for lg), 8px radius (12 for lg, full for `pill`), --bg-elevated on a
@@ -92,6 +103,32 @@ function SettingRow({ label, hint, id, children, className, style, nested = fals
     e('div', { id: labelId, className: 'text-ink-primary', style: { fontSize: '13px', fontWeight: 500 } }, label),
     hint && e('div', { id: hintId, className: 'text-ink-secondary', style: { fontSize: '12px', marginTop: '2px', lineHeight: 1.45 } }, hint)),
   e('div', { className: 'flex-shrink-0' }, control));
+}
+
+function HelpLink({ url, children }) {
+  return React.createElement('a', {
+    href: '#',
+    'data-help-link': '',
+    onClick: (ev) => {
+      ev.preventDefault();
+      if (window.electron?.shell?.openExternal) window.electron.shell.openExternal(url);
+      else window.open(url, '_blank');
+    },
+    style: { color: 'var(--accent-primary)', fontSize: '12px', fontWeight: 500, textDecoration: 'none' },
+  }, children, ' \u2192');
+}
+
+function StackedField({ label, action, description, status, link, children, style }) {
+  const e = React.createElement;
+  return e('div', { style: Object.assign({ marginBottom: '12px' }, style) },
+    e('div', { className: 'flex items-center justify-between gap-2', style: { marginBottom: '4px' } },
+      e('div', { className: 'text-ink-primary', style: { fontSize: '12px', fontWeight: 500 } }, label),
+      action || null),
+    children,
+    description && e('div', { className: 'text-ink-tertiary', style: { fontSize: '11px', lineHeight: 1.5, marginTop: '4px' } }, description),
+    (status || (link && link.url)) && e('div', { className: 'flex items-center justify-between gap-2', style: { marginTop: '6px', fontSize: '12px' } },
+      status || e('span', null),
+      link && link.url ? e(HelpLink, { url: link.url }, link.label) : null));
 }
 
 function Select({ value, onChange, options, size = 'md', className, style, ...rest }) {
@@ -267,4 +304,4 @@ function SegmentedChoice({ value, options, onChange, label }) {
     }));
 }
 
-module.exports = { NestedSettings, SettingRow, Select, TextField, SecretField, Switch, Checkbox, Slider, RadioGroup, SegmentedChoice, fieldClassName, FIELD_CLASS: FIELD };
+module.exports = { NestedSettings, SettingRow, StackedField, HelpLink, Select, TextField, SecretField, Switch, Checkbox, Slider, RadioGroup, SegmentedChoice, fieldClassName, FIELD_CLASS: FIELD };

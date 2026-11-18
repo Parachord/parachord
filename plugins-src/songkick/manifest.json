@@ -3,7 +3,7 @@
     "id": "songkick",
     "name": "Songkick",
     "type": "meta-service",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "author": "Parachord Team",
     "description": "Concerts and live music near you.",
     "requirement": "Needs your own Songkick API key.",
@@ -20,10 +20,11 @@
     "configurable": {
       "apiKey": {
         "type": "text",
-        "label": "API Key",
-        "description": "Your Songkick API key from https://www.songkick.com/developer",
+        "label": "API key",
+        "description": "Your Songkick API key.",
         "placeholder": "your-api-key",
-        "required": true
+        "required": true,
+        "helpUrl": "https://www.songkick.com/developer"
       }
     }
   }

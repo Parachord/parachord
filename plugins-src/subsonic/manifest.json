@@ -2,7 +2,7 @@
   "manifest": {
     "id": "subsonic",
     "name": "Subsonic",
-    "version": "0.3.5",
+    "version": "0.3.6",
     "author": "Parachord Team",
     "description": "Stream from your own music server: Navidrome, Airsonic, Gonic or anything Subsonic-compatible.",
     "requirement": "Needs your own Subsonic-compatible server, such as Navidrome.",
@@ -34,13 +34,12 @@
       "serverUrl": {
         "type": "text",
         "label": "Server URL",
-        "description": "Your server's address, such as http://navidrome.local:4533.",
+        "description": "Your server’s address, with its port.",
         "placeholder": "http://navidrome.local:4533"
       },
       "username": {
         "type": "text",
         "label": "Username",
-        "description": "Your Subsonic account username.",
         "placeholder": "admin"
       },
       "password": {

@@ -3,7 +3,7 @@
     "id": "ticketmaster",
     "name": "Ticketmaster",
     "type": "meta-service",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "author": "Parachord Team",
     "description": "Concerts and live events, with links to buy tickets.",
     "requirement": "Needs your own free Ticketmaster API key.",
@@ -20,10 +20,11 @@
     "configurable": {
       "apiKey": {
         "type": "text",
-        "label": "API Key",
-        "description": "Your Ticketmaster API key from https://developer.ticketmaster.com/",
+        "label": "API key",
+        "description": "Your Ticketmaster API key.",
         "placeholder": "your-api-key",
-        "required": true
+        "required": true,
+        "helpUrl": "https://developer.ticketmaster.com/"
       }
     }
   }

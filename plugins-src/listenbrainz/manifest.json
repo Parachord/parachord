@@ -3,7 +3,7 @@
     "id": "listenbrainz",
     "name": "ListenBrainz",
     "type": "meta-service",
-    "version": "1.6.5",
+    "version": "1.6.6",
     "author": "Parachord Team",
     "description": "Scrobble what you play to ListenBrainz, and get recommendations and mixes from your listening history.",
     "requirement": "Needs your ListenBrainz username, and your user token to save listens.",
@@ -38,16 +38,23 @@
     "configurable": {
       "username": {
         "type": "text",
-        "label": "ListenBrainz Username",
+        "label": "ListenBrainz username",
         "required": true
       },
       "userToken": {
         "type": "text",
-        "label": "User Token",
+        "label": "User token",
         "required": false,
         "advanced": true,
-        "description": "Required for submitting listens and accessing private data"
+        "description": "Required for submitting listens and accessing private data",
+        "placeholder": "Your ListenBrainz user token",
+        "helpUrl": "https://listenbrainz.org/settings/"
       }
+    },
+    "account": {
+      "type": "username",
+      "usage": "your recommendations, similar listeners and history come from this account",
+      "advancedHint": "Optional: add your user token to save listens and see private data. It’s on your ListenBrainz settings page."
     }
   }
 }

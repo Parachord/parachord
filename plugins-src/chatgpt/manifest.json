@@ -3,7 +3,7 @@
     "id": "chatgpt",
     "name": "ChatGPT",
     "type": "meta-service",
-    "version": "2.2.3",
+    "version": "2.2.4",
     "author": "Parachord Team",
     "description": "Ask Shuffleupagus for playlists and talk music with it, using ChatGPT.",
     "requirement": "Needs your own OpenAI API key.",
@@ -21,8 +21,10 @@
     "configurable": {
       "apiKey": {
         "type": "password",
-        "label": "API Key",
-        "description": "Your OpenAI API key from platform.openai.com"
+        "label": "API key",
+        "description": "Your OpenAI API key.",
+        "placeholder": "sk-…",
+        "helpUrl": "https://platform.openai.com/api-keys"
       },
       "model": {
         "type": "dynamic-select",

@@ -2054,6 +2054,8 @@ const { ChartsPage } = require('./components/charts-page');
 const { RaycastInfoDialog } = require('./components/raycast-info-dialog');
 const { ExtensionInfoDialog } = require('./components/extension-info-dialog');
 const { PluginSettingsDialog } = require('./components/plugin-settings-dialog');
+// A meta service's entry in metaServices, from its .axe (lib/meta-service.js).
+const { metaServiceFromAxe } = require('./lib/meta-service');
 const { servicesWithCapability, hasScrobblerConnected: hasScrobblerConnectedTo } = require('./lib/ai-services');
 const { PROVIDER_LABEL, getPlaylistMirrorTargets } = require('./lib/playlist-mirrors');
 const { playlistImportLabel } = require('./lib/playlist-import-sources');
@@ -3941,7 +3943,6 @@ const Parachord = () => {
   const spotifyTokenRef = useRef(null); // Ref for cleanup on unmount
   const [spotifyConnected, setSpotifyConnected] = useState(false);
   const [spotifyDevice, setSpotifyDevice] = useState(null); // Current Spotify playback device { name, type, supports_volume }
-  const [spotifyAdvancedOpen, setSpotifyAdvancedOpen] = useState(false); // Advanced settings accordion
   const [spotifyClientIdInput, setSpotifyClientIdInput] = useState(''); // Client ID input
   const [spotifyCredentialsSource, setSpotifyCredentialsSource] = useState('none'); // 'user' | 'env' | 'none'
   const [queueDrawerOpen, setQueueDrawerOpen] = useState(false);
@@ -3957,7 +3958,7 @@ const Parachord = () => {
   const [queueSavePlaylistName, setQueueSavePlaylistName] = useState(''); // Name for saved queue playlist
   const [soundcloudToken, setSoundcloudToken] = useState(null);
   const [soundcloudConnected, setSoundcloudConnected] = useState(false);
-  const [soundcloudAdvancedOpen, setSoundcloudAdvancedOpen] = useState(false); // Advanced settings accordion
+  const [soundcloudAdvancedOpen, setSoundcloudAdvancedOpen] = useState(false); // its client keys section, opened when a sign-in needs them
   const [soundcloudClientIdInput, setSoundcloudClientIdInput] = useState(''); // Client ID input
   const [soundcloudClientSecretInput, setSoundcloudClientSecretInput] = useState(''); // Client Secret input
   const [soundcloudCredentialsSource, setSoundcloudCredentialsSource] = useState('none'); // 'user' | 'env' | 'none'
@@ -3969,7 +3970,7 @@ const Parachord = () => {
   const [appleMusicAuthChecked, setAppleMusicAuthChecked] = useState(false);
   const [appleMusicUserToken, setAppleMusicUserToken] = useState(null);
   const [appleMusicDeveloperToken, setAppleMusicDeveloperToken] = useState('');
-  const [appleMusicAdvancedOpen, setAppleMusicAdvancedOpen] = useState(false);
+  const [listenbrainzAdvancedOpen, setListenbrainzAdvancedOpen] = useState(false); // its Advanced section (the user token), opened by Share
   const [appleMusicTokenSaved, setAppleMusicTokenSaved] = useState(false);
   const musicKitInstanceRef = useRef(null);
 
@@ -3997,17 +3998,8 @@ const Parachord = () => {
   const metaServicesRef = useRef([]); // Ref for async paths (the recommendations provider list)
   useEffect(() => { metaServicesRef.current = metaServices; }, [metaServices]);
   const [metaServiceConfigs, setMetaServiceConfigs] = useState({}); // { lastfm: { username, apiKey }, listenbrainz: { username, userToken } }
-  const [lastfmAdvancedOpen, setLastfmAdvancedOpen] = useState(false); // Advanced section accordion state
-  const [lastfmUsernameInput, setLastfmUsernameInput] = useState(''); // Input field value
-  const [lastfmApiKeyInput, setLastfmApiKeyInput] = useState(''); // Advanced: API key input
-  const [lastfmApiSecretInput, setLastfmApiSecretInput] = useState(''); // Advanced: API secret input
-  const [lastfmConnecting, setLastfmConnecting] = useState(false); // Loading state during connection
 
   // ListenBrainz state
-  const [listenbrainzAdvancedOpen, setListenbrainzAdvancedOpen] = useState(false); // Advanced section accordion state
-  const [listenbrainzUsernameInput, setListenbrainzUsernameInput] = useState(''); // Input field value
-  const [listenbrainzTokenInput, setListenbrainzTokenInput] = useState(''); // User token input
-  const [listenbrainzConnecting, setListenbrainzConnecting] = useState(false); // Loading state during connection
 
   // Scrobbler settings state
   const [scrobblersInitialized, setScrobblersInitialized] = useState(false);
@@ -8960,20 +8952,7 @@ const Parachord = () => {
 
         // Set meta services directly (they don't need the resolver pipeline for playback)
         if (metaServiceAxes.length > 0) {
-          const metaServicesData = metaServiceAxes.map(axe => ({
-            id: axe.manifest.id,
-            name: axe.manifest.name,
-            type: axe.manifest.type,
-            version: axe.manifest.version,
-            author: axe.manifest.author,
-            description: axe.manifest.description,
-            icon: axe.manifest.icon,
-            color: axe.manifest.color,
-            homepage: axe.manifest.homepage,
-            capabilities: axe.capabilities,
-            settings: axe.settings,
-            _filename: axe._filename
-          }));
+          const metaServicesData = metaServiceAxes.map(axe => metaServiceFromAxe(axe));
           setMetaServices(metaServicesData);
           console.log(`✅ Loaded ${metaServicesData.length} meta services:`, metaServicesData.map(s => s.name).join(', '));
         }
@@ -9065,20 +9044,7 @@ const Parachord = () => {
         ]);
 
         // Update meta services state so UI reflects new capabilities
-        const metaServicesData = visibleAxes.map(axe => ({
-          id: axe.manifest.id,
-          name: axe.manifest.name,
-          type: axe.manifest.type,
-          version: axe.manifest.version,
-          author: axe.manifest.author,
-          description: axe.manifest.description,
-          icon: axe.manifest.icon,
-          color: axe.manifest.color,
-          homepage: axe.manifest.homepage,
-          capabilities: axe.capabilities,
-          settings: axe.settings,
-          _filename: axe._filename
-        }));
+        const metaServicesData = visibleAxes.map(axe => metaServiceFromAxe(axe));
 
         setMetaServices(metaServicesData);
         console.log(`✅ Hot-reloaded ${metaServicesData.length} meta services after marketplace sync`);
@@ -25987,20 +25953,7 @@ ${trackListXml}
         await resolverLoader.current.loadResolver(axe);
 
         // Add to metaServices state
-        const metaServiceData = {
-          id: axe.manifest.id,
-          name: axe.manifest.name,
-          type: axe.manifest.type,
-          version: axe.manifest.version,
-          author: axe.manifest.author,
-          description: axe.manifest.description,
-          icon: axe.manifest.icon,
-          color: axe.manifest.color,
-          homepage: axe.manifest.homepage,
-          capabilities: axe.capabilities,
-          settings: axe.settings,
-          _filename: filename
-        };
+        const metaServiceData = metaServiceFromAxe(axe, filename);
 
         const existingMeta = metaServices.find(s => s.id === resolverId);
         if (existingMeta) {
@@ -35719,6 +35672,21 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     }
   };
 
+  // Open Spotify at startup (the plug-in dialog's startup row): Spotify songs
+  // play through the Spotify app (Spotify Connect), so a device is there.
+  const toggleAutoLaunchSpotify = async () => {
+    const newValue = !autoLaunchSpotify;
+    setAutoLaunchSpotify(newValue);
+    if (window.electron?.store) {
+      await window.electron.store.set('auto_launch_spotify', newValue);
+    }
+    // If enabling, launch Spotify now
+    if (newValue && window.electron?.spotify?.launchInBackground) {
+      window.electron.spotify.launchInBackground();
+      showToast('Spotify launched in background', 'success');
+    }
+  };
+
   // Save Spotify credentials (client ID only — PKCE flow doesn't need a secret)
   const saveSpotifyCredentials = async (clientIdOverride) => {
     if (!window.electron?.spotify?.setCredentials) {
@@ -35815,6 +35783,18 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         title: 'Error',
         message: result.error || 'Failed to save SoundCloud credentials'
       });
+    }
+  };
+
+  // Back to the built-in SoundCloud credentials (the plug-in dialog's Clear).
+  const clearSoundcloudCredentials = async () => {
+    if (!window.electron?.soundcloud?.setCredentials) return;
+    const result = await window.electron.soundcloud.setCredentials({ clientId: '', clientSecret: '' });
+    if (result.success) {
+      setSoundcloudClientIdInput('');
+      setSoundcloudClientSecretInput('');
+      setSoundcloudCredentialsSource(result.source);
+      showToast('Custom credentials cleared. Using default credentials.', 'info');
     }
   };
 
@@ -36492,13 +36472,10 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       return false;
     }
 
-    setLastfmConnecting(true);
-
     // Validate username exists by checking the recommendations endpoint
     try {
       const response = await fetch(`https://www.last.fm/player/station/user/${encodeURIComponent(username.trim())}/recommended`);
       if (!response.ok) {
-        setLastfmConnecting(false);
         showConfirmDialog({
           type: 'error',
           title: 'Invalid username',
@@ -36508,7 +36485,6 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       }
     } catch (error) {
       console.error('Last.fm validation error:', error);
-      setLastfmConnecting(false);
       showConfirmDialog({
         type: 'error',
         title: 'Connection error',
@@ -36530,12 +36506,6 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       console.log('🎧 Last.fm scrobbler API credentials set');
     }
 
-    setLastfmConnecting(false);
-    // Clear inputs after successful connection
-    setLastfmUsernameInput('');
-    setLastfmApiKeyInput('');
-    setLastfmApiSecretInput('');
-
     console.log(`🎧 Connected to Last.fm as ${username}`);
     return true;
   };
@@ -36551,6 +36521,23 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     console.log('🎧 Disconnected from Last.fm');
   };
 
+  // Your own Last.fm API key and secret, once a username is saved (the
+  // plug-in dialog's Advanced section): saved as typed, so saving empty
+  // fields clears them.
+  const saveLastfmApiKeys = async ({ apiKey: keyInput, apiSecret: secretInput } = {}) => {
+    const apiKey = keyInput?.trim() || null;
+    const apiSecret = secretInput?.trim() || null;
+    await saveMetaServiceConfig('lastfm', { ...metaServiceConfigs.lastfm, apiKey, apiSecret });
+    if (apiKey && apiSecret && window.lastfmScrobbler) {
+      window.lastfmScrobbler.setApiCredentials(apiKey, apiSecret);
+    }
+    showToast(apiKey ? 'API credentials saved' : 'API credentials cleared', 'success');
+  };
+  const clearLastfmApiKeys = async () => {
+    await saveMetaServiceConfig('lastfm', { ...metaServiceConfigs.lastfm, apiKey: null, apiSecret: null });
+    showToast('Custom credentials cleared. Using default credentials.', 'info');
+  };
+
   // ListenBrainz specific helpers
   const connectListenbrainz = async (username, userToken) => {
     if (!username?.trim()) {
@@ -36562,13 +36549,10 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       return false;
     }
 
-    setListenbrainzConnecting(true);
-
     // Validate username exists by checking the user endpoint
     try {
       const response = await fetch(`https://api.listenbrainz.org/1/user/${encodeURIComponent(username.trim())}/listen-count`);
       if (!response.ok) {
-        setListenbrainzConnecting(false);
         showConfirmDialog({
           type: 'error',
           title: 'Invalid username',
@@ -36578,7 +36562,6 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       }
     } catch (error) {
       console.error('ListenBrainz validation error:', error);
-      setListenbrainzConnecting(false);
       showConfirmDialog({
         type: 'error',
         title: 'Connection error',
@@ -36597,8 +36580,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         });
         const tokenData = await tokenResponse.json();
         if (!tokenData.valid) {
-          setListenbrainzConnecting(false);
-          showConfirmDialog({
+            showConfirmDialog({
             type: 'error',
             title: 'Invalid token',
             message: 'The user token is invalid. Please check and try again, or leave it blank to connect without a token.'
@@ -36629,11 +36611,6 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         // Non-fatal - meta service still works for recommendations
       }
     }
-
-    setListenbrainzConnecting(false);
-    // Clear inputs after successful connection
-    setListenbrainzUsernameInput('');
-    setListenbrainzTokenInput('');
 
     console.log(`🎵 Connected to ListenBrainz as ${username}`);
     return true;
@@ -37586,8 +37563,91 @@ useEffect(() => {
   // Stable function props for the memo'd PluginSettingsDialog (keys must
   // match PLUGIN_SETTINGS_DIALOG_HANDLERS in plugin-settings-dialog.js).
   const pluginSettingsDialogHandlers = useStableHandlers({
-    clearMetaServiceConfig, connectAppleMusic, connectLastfm, connectListenbrainz, connectSoundcloud, connectSpotify, disconnectAppleMusic, disconnectLastfm, disconnectListenbrainz, disconnectSoundcloud, disconnectSpotify, fetchDynamicModels, getServiceColor, handleAddWatchFolder, handleInstallFromMarketplace, handleRemoveMissingFiles, handleRemoveWatchFolder, handleRescanAll, handleRescanFolder, handleUninstallResolver, manageAmazonMusic, openSyncSetupModal, refreshPluginStatus, saveAppleMusicDeveloperToken, saveMetaServiceConfig, saveSoundcloudCredentials, saveSpotifyCredentials, setProviderSyncEnabled, setResolverMetadataOn, setResolverPlaybackOn, setResolverRecommendationsOn, showConfirmDialog, toggleResolver,
+    clearMetaServiceConfig, fetchDynamicModels, getServiceColor, handleAddWatchFolder, handleInstallFromMarketplace, handleRemoveMissingFiles, handleRemoveWatchFolder, handleRescanAll, handleRescanFolder, handleUninstallResolver, manageAmazonMusic, openSyncSetupModal, refreshPluginStatus, saveMetaServiceConfig, setProviderSyncEnabled, setResolverMetadataOn, setResolverPlaybackOn, setResolverRecommendationsOn, showConfirmDialog, toggleResolver,
   });
+
+  // The accounts the app itself signs in to, for the plug-in settings
+  // dialog: hostAccounts[pluginId] is what the dialog's shared sections draw
+  // (components/plugin-extras.js). The dialog picks the section from the
+  // plug-in's manifest (settings.account.type 'sign-in' or 'username',
+  // settings.clientKeys, settings.startup, configurable fields marked
+  // `advanced`), never from its id; this is where the host's own sign-in
+  // flows (main-process OAuth, MusicKit, a username check) meet it, keyed
+  // like pluginAccounts and connectPlugin's sign-ins. A plug-in that signs
+  // in itself uses capabilities.status with signIn/signOut instead.
+  const hostAccountHandlers = useStableHandlers({
+    clearLastfmApiKeys, clearSoundcloudCredentials, connectAppleMusic, connectLastfm, connectListenbrainz, connectSoundcloud, connectSpotify, disconnectAppleMusic, disconnectLastfm, disconnectListenbrainz, disconnectSoundcloud, disconnectSpotify, saveAppleMusicDeveloperToken, saveLastfmApiKeys, saveSoundcloudCredentials, saveSpotifyCredentials, toggleAutoLaunchSpotify,
+  });
+  const appleMusicCanSignIn = appleMusicNativeAvailable || !!(typeof window !== 'undefined' && window.electron?.musicKit?.openAuthWindow);
+  const hostAccounts = useMemo(() => {
+    const h = hostAccountHandlers;
+    return {
+      spotify: {
+        signedIn: spotifyConnected, signIn: h.connectSpotify, signOut: h.disconnectSpotify,
+        keys: {
+          source: spotifyCredentialsSource,
+          values: { clientId: spotifyClientIdInput },
+          setValue: (_k, v) => setSpotifyClientIdInput(v),
+          save: () => h.saveSpotifyCredentials(),
+          // Pass the cleared value: the input state hasn't updated yet, and
+          // reading it re-saved the old Client ID.
+          clear: () => { setSpotifyClientIdInput(''); h.saveSpotifyCredentials(''); },
+          canClear: !!spotifyClientIdInput,
+        },
+        startup: { on: autoLaunchSpotify, toggle: h.toggleAutoLaunchSpotify },
+      },
+      soundcloud: {
+        signedIn: soundcloudConnected, signIn: h.connectSoundcloud, signOut: h.disconnectSoundcloud,
+        keys: {
+          source: soundcloudCredentialsSource,
+          values: { clientId: soundcloudClientIdInput, clientSecret: soundcloudClientSecretInput },
+          setValue: (k, v) => (k === 'clientSecret' ? setSoundcloudClientSecretInput : setSoundcloudClientIdInput)(v),
+          save: () => h.saveSoundcloudCredentials(),
+          clear: () => h.clearSoundcloudCredentials(),
+          canClear: soundcloudCredentialsSource === 'user',
+          // A sign-in without them opens the section (connectSoundcloud).
+          open: soundcloudAdvancedOpen,
+          setOpen: setSoundcloudAdvancedOpen,
+        },
+      },
+      applemusic: {
+        signedIn: appleMusicConnected,
+        // Either sign-in path: native MusicKit (macOS) or the auth window
+        // (parachord#834); without one there's no button.
+        signIn: appleMusicCanSignIn ? h.connectAppleMusic : null,
+        signOut: h.disconnectAppleMusic,
+        // The row's line says how it plays on this computer: native
+        // MusicKit (a Mac with the helper), the Apple Music sign-in window
+        // (parachord#834: any platform without the helper, including a Mac
+        // build without it), or neither.
+        status: appleMusicConnected
+          ? (appleMusicNativeAvailable ? 'Signed in · plays directly on this Mac' : 'Signed in')
+          : appleMusicNativeAvailable ? undefined
+          : appleMusicCanSignIn ? 'Sign in with your Apple Account in an Apple Music window to play here'
+          : 'Search and links work; playback opens in your browser',
+        advanced: {
+          values: { developerToken: appleMusicDeveloperToken },
+          setValue: (_k, v) => setAppleMusicDeveloperToken(v),
+          saved: !!appleMusicDeveloperToken,
+          save: () => h.saveAppleMusicDeveloperToken(),
+          justSaved: appleMusicTokenSaved,
+        },
+      },
+      lastfm: {
+        connect: (v) => h.connectLastfm(v.username, v.apiKey, v.apiSecret),
+        remove: h.disconnectLastfm,
+        saveAdvanced: (v) => h.saveLastfmApiKeys(v),
+        clearAdvanced: () => h.clearLastfmApiKeys(),
+      },
+      listenbrainz: {
+        connect: (v) => h.connectListenbrainz(v.username, v.userToken),
+        remove: h.disconnectListenbrainz,
+        // Sharing needs the token: Share opens the section on it.
+        advancedOpen: listenbrainzAdvancedOpen,
+        setAdvancedOpen: setListenbrainzAdvancedOpen,
+      },
+    };
+  }, [hostAccountHandlers, spotifyConnected, spotifyCredentialsSource, spotifyClientIdInput, autoLaunchSpotify, soundcloudConnected, soundcloudCredentialsSource, soundcloudClientIdInput, soundcloudClientSecretInput, soundcloudAdvancedOpen, listenbrainzAdvancedOpen, appleMusicConnected, appleMusicCanSignIn, appleMusicNativeAvailable, appleMusicDeveloperToken, appleMusicTokenSaved]);
 
   // Stable function props for the memo'd ChartsPage (keys must
   // match CHARTS_PAGE_HANDLERS in charts-page.js).
@@ -38472,29 +38532,15 @@ useEffect(() => {
     /* PluginSettingsDialog (components/plugin-settings-dialog.js), a memo'd dialog. */ selectedResolver && React.createElement(PluginSettingsDialog, {
       activeResolvers,
       allResolvers,
-      appleMusicAdvancedOpen,
-      appleMusicConnected,
-      appleMusicDeveloperToken,
-      appleMusicNativeAvailable,
-      appleMusicTokenSaved,
       audioRef,
       authServerStatus,
-      autoLaunchSpotify,
       collectionData,
       collectionDataRef,
       currentTrackRef,
       dynamicModelOptions,
+      hostAccounts,
       installingResolvers,
       isScanning,
-      lastfmAdvancedOpen,
-      lastfmApiKeyInput,
-      lastfmApiSecretInput,
-      lastfmConnecting,
-      lastfmUsernameInput,
-      listenbrainzAdvancedOpen,
-      listenbrainzConnecting,
-      listenbrainzTokenInput,
-      listenbrainzUsernameInput,
       localFilesStats,
       loveBackfillProgress,
       loveBackfillRunning,
@@ -38520,37 +38566,12 @@ useEffect(() => {
       scrobblerConfigs,
       scrobblerLovePushEnabled,
       selectedResolver,
-      setAppleMusicAdvancedOpen,
-      setAppleMusicDeveloperToken,
-      setAutoLaunchSpotify,
       setIsPlaying,
-      setLastfmAdvancedOpen,
-      setLastfmApiKeyInput,
-      setLastfmApiSecretInput,
-      setLastfmUsernameInput,
-      setListenbrainzAdvancedOpen,
-      setListenbrainzTokenInput,
-      setListenbrainzUsernameInput,
       setLovePushEnabled,
       setScrobblerConfigs,
       setSelectedResolver,
-      setSoundcloudAdvancedOpen,
-      setSoundcloudClientIdInput,
-      setSoundcloudClientSecretInput,
-      setSoundcloudCredentialsSource,
-      setSpotifyAdvancedOpen,
-      setSpotifyClientIdInput,
       setStopSyncDialog,
       showToast,
-      soundcloudAdvancedOpen,
-      soundcloudClientIdInput,
-      soundcloudClientSecretInput,
-      soundcloudConnected,
-      soundcloudCredentialsSource,
-      spotifyAdvancedOpen,
-      spotifyClientIdInput,
-      spotifyConnected,
-      spotifyCredentialsSource,
       watchFolders,
       ...pluginSettingsDialogHandlers
     }),

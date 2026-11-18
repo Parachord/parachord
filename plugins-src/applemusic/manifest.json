@@ -2,7 +2,7 @@
   "manifest": {
     "id": "applemusic",
     "name": "Apple Music",
-    "version": "1.5.3",
+    "version": "1.5.4",
     "author": "Parachord Team",
     "description": "Search and play Apple Music, and open music.apple.com links.",
     "requirement": "Needs an Apple Music subscription. Sign in with your Apple Account.",
@@ -19,7 +19,8 @@
     "urlLookup": true,
     "albumSearch": true,
     "recommendations": true,
-    "historyMixes": true
+    "historyMixes": true,
+    "librarySync": true
   },
   "urlPatterns": [
     "music.apple.com/*/album/*/*",
@@ -49,9 +50,11 @@
     "configurable": {
       "developerToken": {
         "type": "text",
-        "label": "MusicKit Developer Token",
+        "label": "MusicKit developer token",
         "default": "",
-        "description": "Optional: JWT from Apple Developer account for enhanced features"
+        "description": "Get a token from the Apple Developer Portal (needs an Apple Developer account). It lets Parachord search the Apple Music catalog directly.",
+        "advanced": true,
+        "placeholder": "eyJ…"
       },
       "storefront": {
         "type": "text",
@@ -59,6 +62,12 @@
         "default": "us",
         "description": "Apple Music storefront code (e.g., us, gb, jp)"
       }
+    },
+    "account": {
+      "type": "sign-in",
+      "signInHint": "Sign in with your Apple Account to play from Apple Music",
+      "advancedHint": "Add a developer token for faster, more reliable search.",
+      "advancedSavedHint": "Using your developer token for faster search."
     }
   }
 }

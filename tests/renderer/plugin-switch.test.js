@@ -74,7 +74,7 @@ test('field labels read in sentence case', () => {
 
 test('the dialog has one on/off control: the switch, and a footer that only closes', () => {
   const src = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/plugin-settings-dialog.js'), 'utf8');
-  expect(src).toContain('pluginSwitchState({ plugin: selectedResolver, config: metaServiceConfigs[id], activeResolvers })');
+  expect(src).toContain('pluginSwitchState({ plugin: selectedResolver, config: metaServiceConfigs[selectedResolver.id], activeResolvers })');
   expect(src).not.toMatch(/showEnable|'Enable Ollama'/);
   // "Enable X" is the one switch's label (#1505); a second one would be a copy.
   expect((src.match(/`Enable \$\{selectedResolver\.name\}`/g) || []).length).toBe(1);

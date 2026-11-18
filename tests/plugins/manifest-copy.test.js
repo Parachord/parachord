@@ -76,3 +76,20 @@ test('every capability a plug-in declares has a label or is hidden (no code name
   expect(now.filter((o) => !KNOWN_UNLABELLED.has(o))).toEqual([]);
   expect([...KNOWN_UNLABELLED].filter((o) => !now.includes(o))).toEqual([]);
 });
+
+// A settings field's help shows under it in the plug-in's dialog: a raw URL
+// there read as developer text (Bandsintown's and Gemini's, #1498). Where to
+// get a key is the field's helpUrl, which the dialog draws as a short link.
+test('no raw URL or developer text in a settings field\'s label or help', () => {
+  const out = [];
+  for (const [id, m] of manifests()) {
+    for (const [key, field] of Object.entries((m.settings && m.settings.configurable) || {})) {
+      for (const prop of ['label', 'description']) {
+        const v = field && field[prop];
+        if (typeof v !== 'string') continue;
+        for (const [re, why] of DEV_TEXT) if (re.test(v)) out.push(`${id}.${key}.${prop}: ${why}`);
+      }
+    }
+  }
+  expect(out).toEqual([]);
+});

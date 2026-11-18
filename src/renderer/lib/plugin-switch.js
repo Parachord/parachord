@@ -88,9 +88,10 @@ function hintFor(plugin) {
   return '';
 }
 
-// The label of the field to fill in first, in sentence case ("API key").
-function keyLabel(plugin) {
-  const field = configurableOf(plugin)[authFieldOf(plugin)] || {};
+// The label of the field to fill in first (or of `key`), in sentence case
+// ("API key", "App ID").
+function keyLabel(plugin, key) {
+  const field = configurableOf(plugin)[key || authFieldOf(plugin)] || {};
   const label = String(field.label || 'API key').trim().toLowerCase().replace(/\bapi\b/g, 'API').replace(/\bid\b/g, 'ID');
   return label.charAt(0).toUpperCase() + label.slice(1);
 }

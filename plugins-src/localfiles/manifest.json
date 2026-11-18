@@ -2,7 +2,7 @@
   "manifest": {
     "id": "localfiles",
     "name": "Local Files",
-    "version": "1.1.2",
+    "version": "1.1.3",
     "author": "Parachord Team",
     "description": "Play the music files on your computer.",
     "requirement": "Choose the folders your music is in.",
@@ -22,6 +22,8 @@
   "urlPatterns": [],
   "settings": {
     "requiresAuth": false,
-    "configurable": {}
+    "configurable": {},
+    "removable": false,
+    "watchFolders": true
   }
 }

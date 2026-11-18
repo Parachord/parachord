@@ -2,7 +2,7 @@
   "manifest": {
     "id": "soundcloud",
     "name": "SoundCloud",
-    "version": "1.3.7",
+    "version": "1.3.8",
     "author": "Parachord Team",
     "description": "Search and stream SoundCloud.",
     "requirement": "Needs a SoundCloud account. Sign in from its panel.",
@@ -52,13 +52,33 @@
       "clientId": {
         "type": "text",
         "label": "Client ID",
-        "advanced": true
+        "advanced": true,
+        "placeholder": "Your SoundCloud client ID"
       },
       "clientSecret": {
         "type": "text",
-        "label": "Client Secret",
-        "advanced": true
+        "label": "Client secret",
+        "advanced": true,
+        "placeholder": "Your SoundCloud client secret"
       }
+    },
+    "account": {
+      "type": "sign-in",
+      "signInHint": "Sign in to search and stream SoundCloud",
+      "signedInNote": "Streaming depends on each track’s permissions, which its uploader sets."
+    },
+    "clientKeys": {
+      "fields": [
+        "clientId",
+        "clientSecret"
+      ],
+      "label": "Client ID and secret",
+      "help": "SoundCloud needs your own client ID and secret before you can sign in.",
+      "redirectUris": [
+        "http://127.0.0.1:{port}/callback/soundcloud"
+      ],
+      "redirectHint": "Add this to your SoundCloud app’s redirect URI. The same app also works with Parachord on Android and iOS.",
+      "redirectHintOtherPort": "Add this to your SoundCloud app’s redirect URI. Parachord’s local server is on port {port}, so signing in to SoundCloud needs your own app credentials here: the built-in sign-in only works on port 8888. Parachord on Android and iOS always signs in on port 8888, so an app registered for port {port} won’t sign in on your phone."
     }
   }
 }
