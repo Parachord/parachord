@@ -38,7 +38,7 @@
 
 const { pickTrackMatch } = require('../../../sync-providers/track-match');
 const { sourceBlockId } = require('../lib/bad-match-report');
-const { trackToHoldAfterFailure, OFFLINE_PLAY_MESSAGE, isDeviceOffline, unsupportedAudioMessage, dropSubsonicSecrets, playbackDurationSeconds, compareCandidateSources, playableSourceIds, previousAction, RADIO_SEED_PROBE_COUNT, noPlayableSimilarTracksMessage, hasPlayableSource, advanceAction, leaveSessionTrigger, repeatLap, pushPlayHistory, historyForReplacedTrack, isSameTrack, pendingStartAt, trackPositionKey } = require('../lib/playback-helpers');
+const { fallbackAfter, trackToHoldAfterFailure, OFFLINE_PLAY_MESSAGE, isDeviceOffline, unsupportedAudioMessage, dropSubsonicSecrets, playbackDurationSeconds, compareCandidateSources, playableSourceIds, previousAction, RADIO_SEED_PROBE_COUNT, noPlayableSimilarTracksMessage, hasPlayableSource, advanceAction, leaveSessionTrigger, repeatLap, pushPlayHistory, historyForReplacedTrack, isSameTrack, pendingStartAt, trackPositionKey } = require('../lib/playback-helpers');
 const { reconcileEnginePlayState, musicKitStatePlaying, musicKitWebHoldsTrack, playStartPending, restartPositionForResume, PLAY_START_PATIENCE_MS, nativeAppleMusicPlaying, spotifyPlayingTrack, EXTERNAL_RESUME_POLL_MS } = require('../lib/play-state');
 // The shared Widevine player (Shaka on audioRef's element; manifest + license
 // via the main-process bridge). Registered on window for resolvers/cleanup;
@@ -174,6 +174,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     confidenceForSourceRef,
     isHtml5StreamResolver,
     isWidevineResolver,
+    isLocalResolver,
     findLoadedResolver,
     usesSharedAudio,
     embedPlayerKind,
@@ -430,7 +431,9 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     const ownerOf = (el) => {
       if (!el) return null;
       const src = el.src || '';
-      if (src.startsWith('local-audio:')) return 'localfiles';
+      // local-audio: is a local-library resolver's file (capabilities.local);
+      // its play branch tags the track with _streamOwner like the others.
+      if (src.startsWith('local-audio:')) return html5AudioTrackRef.current?._streamOwner || html5AudioTrackRef.current?._activeResolver || null;
       // blob: is Shaka's MediaSource attach — the _streamOwner tag decides.
       // (SoundCloud's downloaded-blob path is gone: it plays in its widget.)
       if (src.startsWith('blob:')) return html5AudioTrackRef.current?._streamOwner || html5AudioTrackRef.current?._activeResolver || null;
@@ -584,7 +587,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       // held. Clearing it on this event itself loops: a seek retry sets
       // currentTime from loadedmetadata, 'playing' fires, the budget drops
       // to 0, and the seek error immediately retries again.
-      if (ownerOf(audioRef.current) !== 'localfiles') return;
+      if (!isLocalResolver(ownerOf(audioRef.current))) return;
       const generation = playbackGenerationRef.current;
       setTimeout(() => {
         const el = audioRef.current;
@@ -598,7 +601,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     audio.addEventListener('error', (e) => {
       const owner = ownerOf(e.target);
       const mediaError = e.target.error;
-      if (owner === 'localfiles') {
+      if (owner && isLocalResolver(owner)) {
         console.error('🎵 Audio error:', mediaError);
         if (localFileFallbackInProgressRef.current) {
           console.log('🔄 Audio error during fallback attempt, skipping dialog');
@@ -607,7 +610,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         let errorMessage = 'Could not play this file. It may have been moved or deleted.';
         if (mediaError?.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED) {
           const failed = localFilePlaybackTrackRef.current;
-          const filePath = failed?.filePath || failed?.sources?.localfiles?.filePath || '';
+          const filePath = failed?.filePath || failed?.sources?.[owner]?.filePath || '';
           const ext = filePath.split('.').pop()?.toLowerCase();
           errorMessage = unsupportedAudioMessage(ext);
         } else if (mediaError?.code === MediaError.MEDIA_ERR_NETWORK) {
@@ -656,15 +659,13 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
             }
             localFileRetryCommitRef.current = null;
             const failedTrack = localFilePlaybackTrackRef.current;
-            const otherSources = failedTrack?.sources
-              ? Object.keys(failedTrack.sources).filter(id => id !== 'localfiles' && !failedTrack.sources[id]?.noMatch)
-              : [];
-            if (otherSources.length > 0 && !localFileFallbackInProgressRef.current && handlePlayRef.current) {
+            const fallback = failedTrack?.sources ? fallbackAfter(failedTrack.sources, owner) : { ids: [] };
+            if (fallback.ids.length > 0 && !localFileFallbackInProgressRef.current && handlePlayRef.current) {
               console.log('🔄 Local file still failing after retry — falling back to next available source...');
               localFileFallbackInProgressRef.current = true;
               handlePlayRef.current({
                 ...failedTrack,
-                sources: Object.fromEntries(Object.entries(failedTrack.sources).filter(([id]) => id !== 'localfiles'))
+                sources: fallback.sources
               });
               return;
             }
@@ -1351,8 +1352,9 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     // YouTube embedding is blocked in Electron, use resolver's play method instead
     // (which opens in external browser)
 
-    // Handle local file playback directly with HTML5 Audio
-    if (resolverId === 'localfiles') {
+    // Local-library resolvers (capabilities.local: Local Files today) play
+    // the file directly through the shared HTML5 element (#1520).
+    if (resolver.capabilities?.local) {
       console.log('🎵 Playing local file:', sourceToPlay.filePath || sourceToPlay.fileUrl);
       console.log('🎵 Source details:', JSON.stringify(sourceToPlay, null, 2));
 
@@ -1367,13 +1369,11 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         if (fileStatus === 'missing') {
           console.warn('🎵 Local file is no longer on disk:', localPath);
           forgetMissingLocalFile(localPath);
-          const others = trackOrSource.sources
-            ? Object.keys(trackOrSource.sources).filter(id => id !== 'localfiles' && !trackOrSource.sources[id]?.noMatch)
-            : [];
-          if (others.length > 0) {
+          const fallback = trackOrSource.sources ? fallbackAfter(trackOrSource.sources, resolverId) : { ids: [] };
+          if (fallback.ids.length > 0) {
             handlePlay({
               ...trackOrSource,
-              sources: Object.fromEntries(Object.entries(trackOrSource.sources).filter(([id]) => id !== 'localfiles'))
+              sources: fallback.sources
             });
             return;
           }
@@ -1424,7 +1424,9 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         streamingPlaybackActiveRef.current = false;
       }
 
-      ensureSharedAudioElement(trackOrSource);
+      // Tagged with its owner, like the stream branch: the element's
+      // listeners read the owner from the tag, never from a named id.
+      ensureSharedAudioElement({ ...trackOrSource, _streamOwner: resolverId });
       // Store the track for potential fallback handling
       localFilePlaybackTrackRef.current = trackOrSource;
       localFileFallbackInProgressRef.current = false;
@@ -1444,9 +1446,9 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       audioRef.current.src = audioUrl;
       // Apply normalized volume for local files (respect mute state)
       const volumeToApply = isMutedRef.current ? 0 : volumeRef.current;
-      const effectiveVolume = getEffectiveVolume(volumeToApply, 'localfiles', sourceToPlay.id || trackOrSource.id);
+      const effectiveVolume = getEffectiveVolume(volumeToApply, resolverId, sourceToPlay.id || trackOrSource.id);
       audioRef.current.volume = effectiveVolume / 100;
-      console.log(`🔊 Applied volume: ${volumeToApply}% -> ${effectiveVolume.toFixed(1)}% (offset: ${resolverVolumeOffsets.localfiles || 0}dB)${isMutedRef.current ? ' [MUTED]' : ''}`);
+      console.log(`🔊 Applied volume: ${volumeToApply}% -> ${effectiveVolume.toFixed(1)}% (offset: ${resolverVolumeOffsets[resolverId] || 0}dB)${isMutedRef.current ? ' [MUTED]' : ''}`);
 
       // Explicitly load to trigger metadata events
       audioRef.current.load();
@@ -1558,17 +1560,15 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
 
         // Try fallback to next available source if we have the original track with sources
         if (trackOrSource.sources && Object.keys(trackOrSource.sources).filter(id => !trackOrSource.sources[id]?.noMatch).length > 1) {
-          const otherSources = Object.keys(trackOrSource.sources).filter(id => id !== 'localfiles' && !trackOrSource.sources[id]?.noMatch);
-          if (otherSources.length > 0) {
+          const fallback = fallbackAfter(trackOrSource.sources, resolverId);
+          if (fallback.ids.length > 0) {
             console.log('🔄 Falling back to next available source...');
             // Set flag to prevent error event listener from showing duplicate dialog
             localFileFallbackInProgressRef.current = true;
-            // Create a modified track without localfiles source to trigger fallback
+            // Create a modified track without the local source to trigger fallback
             const fallbackTrack = {
               ...trackOrSource,
-              sources: Object.fromEntries(
-                Object.entries(trackOrSource.sources).filter(([id]) => id !== 'localfiles')
-              )
+              sources: fallback.sources
             };
             handlePlay(fallbackTrack);
             return;
@@ -2432,7 +2432,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         console.error(`❌ ${resolver.name} playback failed`);
         // Offline: no retry, no "not available on Apple Music" fallback, no
         // forced re-resolve; stop on the track (#1297).
-        if (stopIfOffline({ needsNetwork: resolverId !== 'localfiles' })) return;
+        if (stopIfOffline({ needsNetwork: !resolver.capabilities?.local })) return;
 
         // For Spotify, retry once after a short delay (device may need to wake up)
         if (resolverId === 'spotify' && !sourceToPlay._spotifyRetried) {
@@ -2633,7 +2633,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       }
       console.error(`❌ Error playing with ${resolver.name}:`, error);
       setTrackLoading(false); // Clear loading state on error
-      if (stopIfOffline({ needsNetwork: resolverId !== 'localfiles' })) return;
+      if (stopIfOffline({ needsNetwork: !resolver.capabilities?.local })) return;
 
       // On error, also try to re-resolve. This path used to be silent: the
       // spinner cleared and nothing happened. Say what failed, same as the

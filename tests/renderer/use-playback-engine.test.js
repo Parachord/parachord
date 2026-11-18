@@ -90,6 +90,7 @@ describe('usePlaybackEngine (Node render probe)', () => {
         resolveTrackRef: ref(),
         confidenceForSourceRef: ref(),
         isHtml5StreamResolver: noop,
+        isLocalResolver: noop,
         findLoadedResolver: noop,
         usesSharedAudio: noop,
         resolveTracksInBackground: noop,

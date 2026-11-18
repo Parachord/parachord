@@ -86,6 +86,16 @@ function playableSourceIds(sources) {
   });
 }
 
+// What is left to try when the source `failedId` can't play (a local file
+// that's gone or won't read): `ids`, the other sources that aren't no-match
+// markers, and `sources`, the track's sources without the failed one, for the
+// retry. Keyed on the resolver that failed, never on a named one (#1520).
+function fallbackAfter(sources, failedId) {
+  const rest = Object.fromEntries(Object.entries(sources || {}).filter(([id]) => id !== failedId));
+  const ids = Object.keys(rest).filter((id) => !rest[id]?.noMatch);
+  return { ids, sources: rest };
+}
+
 // Whether the background re-check of a cached entry found something new. Only
 // real sources count on either side: a sentinel holds the resolver's id, so
 // comparing raw keys read `{ a: noMatch }` against a fresh `{ a: real }` as
@@ -362,6 +372,7 @@ function shouldRestoreQueue({ hasCurrentTrack, playRequested }) {
 }
 
 module.exports = {
+  fallbackAfter,
   shouldRestoreQueue,
   PLAY_HISTORY_MAX,
   isSameTrack,

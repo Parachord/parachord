@@ -1363,6 +1363,7 @@ const {
   withoutStaleLocalSource,
   tracksWithoutStaleLocalSources,
 } = require('./lib/local-sources');
+const { isLocalResolver: isLocalResolverIn } = require('./lib/resolver-capabilities');
 // ─── Cards (src/renderer/components/cards.js) ──────────────────────────────
 // The card family (search/collection/artist pages) + generateArtistPattern
 // (exported back — the in-component call sites keep the same binding) move
@@ -6640,7 +6641,7 @@ const Parachord = () => {
 
   // Load local files data when resolver modal is opened
   useEffect(() => {
-    if (selectedResolver?.id === 'localfiles' && window.electron?.localFiles) {
+    if (isLocalResolver(selectedResolver?.id) && window.electron?.localFiles) {
       window.electron.localFiles.getStats().then(setLocalFilesStats);
       window.electron.localFiles.getWatchFolders().then(setWatchFolders);
     }
@@ -7456,7 +7457,13 @@ const Parachord = () => {
   // encrypted adaptive streams through Shaka on the SAME shared element —
   // manifest/license bytes come from main via window.electron.widevine.
   const isWidevineResolver = (id) => !!findLoadedResolver(id)?.capabilities?.widevine;
-  const usesSharedAudio = (id) => id === 'localfiles' || isHtml5StreamResolver(id) || isWidevineResolver(id);
+  // Local-library resolvers (capabilities.local: Local Files today) play files
+  // on disk through the shared element's local-audio: path, need no network,
+  // and a source whose file has left the library is a miss (#1520). Asked
+  // before the registry loads too (a restored track, a page's first
+  // resolutions), when the bundled copy answers: lib/resolver-capabilities.js.
+  const isLocalResolver = (id) => isLocalResolverIn(id, loadedResolversRef.current, FALLBACK_RESOLVERS);
+  const usesSharedAudio = (id) => isLocalResolver(id) || isHtml5StreamResolver(id) || isWidevineResolver(id);
   // Embedded-player resolvers play in the service's own player, outside the
   // shared element: `capabilities.embedPlayer: true`, with the host adapter
   // (lib/embed-players.js) named by the .axe's top-level
@@ -8403,6 +8410,7 @@ const Parachord = () => {
       confidenceForSourceRef,
       isHtml5StreamResolver,
       isWidevineResolver,
+      isLocalResolver,
       findLoadedResolver,
       usesSharedAudio,
       embedPlayerKind,
@@ -9224,7 +9232,7 @@ const Parachord = () => {
   // principle we apply to background sync.
   //
   // Why this exists: the eager-enrichment gate in resolveTrack (search for
-  // `hasLocalfilesSource`) skips missing-resolver fills for localfiles-
+  // `hasLocalSource`) skips missing-resolver fills for localfiles-
   // backed tracks during library navigation, which stops a Bandcamp-search
   // burst that pinwheels the app for users with many local-only tracks.
   // Without a second path to enrich those tracks, local-only listeners
@@ -9254,7 +9262,7 @@ const Parachord = () => {
 
     const findCandidate = () => {
       const tracks = collectionTracksRef.current || [];
-      const enabled = (activeResolversRef.current || []).filter(id => id !== 'localfiles');
+      const enabled = (activeResolversRef.current || []).filter(id => !isLocalResolver(id));
       if (enabled.length === 0 || tracks.length === 0) return null;
 
       const attempted = enrichmentAttemptedRef.current;
@@ -13543,7 +13551,7 @@ ${trackListXml}
     // Use _activeResolver to determine the actual playback source, not just what sources exist
     const activeResolver = currentTrack?._activeResolver;
     const isStreamingTrack = activeResolver === 'spotify' || activeResolver === 'applemusic' || activeResolver === 'amazonmusic';
-    const isLocalFile = activeResolver === 'localfiles';
+    const isLocalFile = isLocalResolver(activeResolver); // Local Files, ... (capabilities.local)
     const isEmbedPlayer = !!embedPlayerKind(activeResolver); // SoundCloud's widget, ... (capabilities.embedPlayer)
     const isHtml5Stream = isHtml5StreamResolver(activeResolver); // Subsonic, ... (capabilities.html5Stream)
     const isBrowserTrack = browserPlaybackActive || isExternalPlayback;
@@ -15708,8 +15716,8 @@ ${trackListXml}
     // Skip initial render (version 0)
     if (localLibraryVersion === 0) return;
 
-    // Only re-resolve if localfiles is an active resolver
-    if (!activeResolvers.includes('localfiles')) return;
+    // Only re-resolve if a local-library resolver (capabilities.local) is active
+    if (!activeResolvers.some(isLocalResolver)) return;
 
     // Re-resolve release tracks if viewing an artist release.
     // Uses forceRefresh: true to bypass the in-memory cache (the cached
@@ -23135,7 +23143,7 @@ ${trackListXml}
             // Must be from an active resolver
             if (!currentActiveResolvers.includes(resolverId)) return false;
             // A local file that has left the library (#1002) is not a source
-            if (resolverId === 'localfiles' && isStaleLocalSource(sourceData, libraryFilePathsRef.current)) return false;
+            if (isLocalResolver(resolverId) && isStaleLocalSource(sourceData, libraryFilePathsRef.current)) return false;
             // Sources without resolvedAt are from sync (Spotify) - always valid
             if (!sourceData.resolvedAt) return true;
             // Check if source is within persisted TTL
@@ -23318,8 +23326,8 @@ ${trackListXml}
     // every resolver has already been tried and found nothing — don't re-query.
     const realPersistedSources = filterNoMatch(persistedSources);
     const hasRealPersistedSources = Object.keys(realPersistedSources).length > 0;
-    // Eager-enrichment gate (localfiles-specific): if the track has a
-    // localfiles source backed by a real file on disk, it's instantly
+    // Eager-enrichment gate (local-library sources, capabilities.local): if
+    // the track has a local source backed by a real file on disk, it's instantly
     // playable AND a local-only track is unlikely to also exist on streaming
     // services (Bandcamp/Spotify/AM). Treat it the same as the "all resolvers
     // covered" case below — use persisted sources, skip burst-querying the
@@ -23337,12 +23345,11 @@ ${trackListXml}
     //
     // Speculative cross-resolver enrichment for local tracks will run
     // separately at idle priority (see follow-up ticket).
-    const localfilesSource = realPersistedSources.localfiles;
-    const hasLocalfilesSource = !!(
-      localfilesSource
-      && !localfilesSource.noMatch
-      && (typeof localfilesSource.confidence !== 'number' || localfilesSource.confidence >= 1.0)
-    );
+    const hasLocalSource = Object.entries(realPersistedSources).some(([resolverId, source]) =>
+      isLocalResolver(resolverId)
+      && source
+      && !source.noMatch
+      && (typeof source.confidence !== 'number' || source.confidence >= 1.0));
     if (!cacheValid && hasValidPersistedSources && !hasRealPersistedSources && missingResolvers.length === 0) {
       if (DEBUG_RESOLUTION) console.log(`📦 All persisted sources are noMatch for: ${track.title} — skipping re-resolve`);
       // Cache the all-noMatch state in memory so we don't re-check persisted sources next time
@@ -23355,7 +23362,7 @@ ${trackListXml}
       };
       return {};
     }
-    if (!cacheValid && hasRealPersistedSources && (missingResolvers.length === 0 || (hasLocalfilesSource && !forceEnrichment))) {
+    if (!cacheValid && hasRealPersistedSources && (missingResolvers.length === 0 || (hasLocalSource && !forceEnrichment))) {
       if (DEBUG_RESOLUTION) console.log(`📦 Using persisted sources for: ${track.title} (sources: ${persistedResolverIds.join(', ')})`);
 
       // Re-score confidence under current calculateConfidence semantics so any
@@ -23534,8 +23541,8 @@ ${trackListXml}
             } else {
               sources[resolver.id] = { ...result, confidence };
               console.log(`  ✅ ${resolver.name}: Found match (confidence: ${(confidence * 100).toFixed(0)}%)`);
-              if (resolver.id === 'localfiles') {
-                console.log(`  📁 LocalFiles source structure:`, JSON.stringify(sources[resolver.id], null, 2));
+              if (resolver.capabilities?.local) {
+                console.log(`  📁 Local source structure:`, JSON.stringify(sources[resolver.id], null, 2));
               }
             }
           } else {
@@ -32687,7 +32694,8 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   }, [currentTrack?.artist, currentTrack?.album, currentTrack?.albumArt]);
 
   // Stream-quality backfill for the PLAYING track (stream-quality.js contract).
-  // This effect is the localfiles path: the file is on disk, so we parse it at
+  // This effect is the local-library path (capabilities.local, Local Files
+  // today): the file is on disk, so we parse it at
   // play time (via the localFiles:stream-info IPC — main process caches by
   // path+mtime, so replays are free) instead of persisting codec/bit-depth
   // columns in the scan DB. The Amazon Music path attaches its measured
@@ -32702,12 +32710,14 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   //
   // Keyed to the resolver ACTUALLY playing (track._activeResolver via
   // determineResolverIdFromTrack), not a preferred source: a Spotify-played
-  // track with a localfiles source attached streams through Spotify.
+  // track with a localfiles source attached streams through Spotify. Before
+  // the registry loads (a restored track), the bundled Local Files answers.
+  const streamInfoResolverId = currentTrack ? determineResolverIdFromTrack(currentTrack) : null;
   useEffect(() => {
     if (!currentTrack || !window.electron?.localFiles?.getStreamInfo) return;
-    const playingResolverId = determineResolverIdFromTrack(currentTrack);
-    if (playingResolverId !== 'localfiles') return;
-    const filePath = currentTrack.sources?.localfiles?.filePath || currentTrack.filePath;
+    const playingResolverId = streamInfoResolverId;
+    if (!isLocalResolver(playingResolverId)) return;
+    const filePath = currentTrack.sources?.[playingResolverId]?.filePath || currentTrack.filePath;
     if (!filePath) return;
     let cancelled = false;
     window.electron.localFiles.getStreamInfo(filePath).then(info => {
@@ -32720,14 +32730,14 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         if (!prev
           || prev.id !== currentTrack.id
           || (prev.artist !== currentTrack.artist || prev.title !== currentTrack.title)) return prev;
-        const existing = prev.sources?.localfiles?.streamQuality;
+        const existing = prev.sources?.[playingResolverId]?.streamQuality;
         if (existing && JSON.stringify(existing) === JSON.stringify(next)) return prev;
         return {
           ...prev,
           sources: {
             ...(prev.sources || {}),
-            localfiles: {
-              ...(prev.sources?.localfiles || {}),
+            [playingResolverId]: {
+              ...(prev.sources?.[playingResolverId] || {}),
               streamQuality: next
             }
           }
@@ -32735,7 +32745,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       });
     });
     return () => { cancelled = true; };
-  }, [currentTrack?.id, currentTrack?.artist, currentTrack?.title, currentTrack?._activeResolver, currentTrack?.sources?.localfiles?.streamQuality]);
+  }, [currentTrack?.id, currentTrack?.artist, currentTrack?.title, currentTrack?._activeResolver, streamInfoResolverId, currentTrack?.sources?.[streamInfoResolverId]?.streamQuality]);
 
   // Fetch artist bio for playbar tooltip when track changes
   useEffect(() => {

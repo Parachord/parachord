@@ -133,7 +133,7 @@ describe('app.js wiring', () => {
   });
 
   test('resolution ignores a stale local source, persisted or cached', () => {
-    expect(app).toMatch(/resolverId === 'localfiles' && isStaleLocalSource\(sourceData, libraryFilePathsRef\.current\)/);
+    expect(app).toMatch(/isLocalResolver\(resolverId\) && isStaleLocalSource\(sourceData, libraryFilePathsRef\.current\)/);
     expect(app).toMatch(/isStaleLocalSource\(cachedData\.sources\.localfiles, libraryFilePathsRef\.current\)/);
   });
 

@@ -155,7 +155,7 @@ describe('every failure path stops on the track when offline (#1297)', () => {
   });
 
   test('a refused or thrown play stops before any retry, fallback or forced re-resolve', () => {
-    const offlineCheck = "if (stopIfOffline({ needsNetwork: resolverId !== 'localfiles' })) return;";
+    const offlineCheck = 'if (stopIfOffline({ needsNetwork: !resolver.capabilities?.local })) return;';
     const refused = bodyOf('if (!success) {', "\n    } catch (error) {");
     expect(refused.indexOf(offlineCheck)).toBeGreaterThan(-1);
     for (const later of ["resolverId === 'spotify' && !sourceToPlay._spotifyRetried", "resolverId === 'applemusic' && !trackOrSource._appleMusicFallback", 'forceRefresh: true']) {
