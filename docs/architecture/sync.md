@@ -220,7 +220,7 @@ Either way the link wins for a kept-updated playlist: a change there replaces th
 
 ### Hosted XSPF Semantics
 
-A playlist with `sourceUrl` is a **hosted XSPF** — it mirrors a remote URL polled every 5 minutes (`pollHostedPlaylists` effect, app.js ~L37104). The XSPF is canonical; Spotify (if linked) is a passive mirror.
+A playlist with `sourceUrl` is a **hosted XSPF** — it mirrors a remote URL polled every 5 minutes (`pollHostedPlaylists` effect, app.js ~L37104). The XSPF is canonical; Spotify (if linked) is a passive mirror. Its playlist-level `<image>`, when it's a public http(s) URL, becomes the playlist's cover ("An XSPF names its cover" in [album-art.md](album-art.md), #1410).
 
 **A provider playlist page is NOT a hosted XSPF (2026-10 fix).** A `sourceUrl` owned by a resolver as a playlist page (`window.isProviderPlaylistUrl(url, resolverLoaderRef.current)` — mirrored in `tests/helpers/playlist-url-classify.js`, tested in `tests/protocol/playlist-url-classify.test.js`) means the playlist was a **resolver import** (Spotify/Apple Music/Amazon/SoundCloud) — a snapshot, not a mirror. The provider page's fetched HTML never equals the stored XSPF, so the poller's content-compare re-runs a full resolver import every 5 minutes forever; and before resolvers finish loading, `handleImportPlaylistFromUrl`'s dispatch falls into the XSPF branch and shows "Import Failed / Failed to parse XSPF file from URL" at startup for a playlist that imported fine (observed with an Amazon playlist import — Electron's `file://` renderer does NOT enforce CORS on these fetches, so the provider page HTML reaches `parseXSPF` and parses to zero tracks). Rules:
 

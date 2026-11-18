@@ -2069,6 +2069,9 @@ const { PluginSettingsDialog } = require('./components/plugin-settings-dialog');
 const { metaServiceFromAxe } = require('./lib/meta-service');
 const { servicesWithCapability, hasScrobblerConnected: hasScrobblerConnectedTo } = require('./lib/ai-services');
 const { PROVIDER_LABEL, getPlaylistMirrorTargets } = require('./lib/playlist-mirrors');
+// A playlist's own cover in XSPF (#1410): read from a document's playlist-level
+// <image> only when it's a public http(s) URL, and written back out on export.
+const { playlistImageUrl, playlistImageXml, withPlaylistImage } = require('./lib/xspf-image');
 const { playlistImportLabel } = require('./lib/playlist-import-sources');
 const { FirstRunTutorial } = require('./components/first-run-tutorial');
 const { StopSyncDialog } = require('./components/stop-sync-dialog');
@@ -25822,6 +25825,11 @@ ${trackListXml}
         date: parsedDate, // Original creation date from XSPF
         tracks: []
       };
+      // The playlist's own cover: the <image> directly under <playlist>, never
+      // a track's, and only a public http(s) URL (lib/xspf-image.js, #1410).
+      // The import paths already carry parsed.coverArt onto the saved record.
+      const coverArt = playlistImageUrl(xml.documentElement && xml.documentElement.children, window.isPublicHttpUrl);
+      if (coverArt) playlist.coverArt = coverArt;
       
       const trackElements = xml.querySelectorAll('track');
       trackElements.forEach(trackEl => {
@@ -25867,7 +25875,7 @@ ${trackListXml}
 <playlist version="1" xmlns="http://xspf.org/ns/0/">
   <title>${escapeXml(playlist.title)}</title>
   <creator>${escapeXml(playlist.creator || 'Parachord')}</creator>
-  <date>${date}</date>
+${playlistImageXml(playlist.coverArt, window.isPublicHttpUrl)}  <date>${date}</date>
   <trackList>
 ${tracks}
   </trackList>
@@ -35274,12 +35282,15 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         showToast('Nothing to export: this playlist has no tracks', 'error');
         return;
       }
-      const content = playlist.xspf || generateXSPF({
+      // Every exported playlist carries its cover (#1410): a stored document
+      // that doesn't name one gets the record's coverArt added.
+      const content = withPlaylistImage(playlist.xspf || generateXSPF({
         title: playlist.title || playlist.name || 'Playlist',
         creator: playlist.creator,
         createdAt: playlist.createdAt,
+        coverArt: playlist.coverArt,
         tracks
-      });
+      }), playlist.coverArt, window.isPublicHttpUrl);
       const slug = String(playlist.title || playlist.name || playlist.id || 'playlist')
         .trim().replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ').slice(0, 80) || 'playlist';
       const defaultFilename = playlist.filename || `${slug}.xspf`;
