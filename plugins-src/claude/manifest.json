@@ -20,7 +20,7 @@
     "configurable": {
       "apiKey": {
         "type": "password",
-        "label": "API Key",
+        "label": "API key",
         "description": "Your Anthropic API key",
         "placeholder": "sk-ant-…",
         "helpUrl": "https://console.anthropic.com/settings/keys"

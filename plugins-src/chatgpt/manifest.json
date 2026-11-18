@@ -21,8 +21,8 @@
     "configurable": {
       "apiKey": {
         "type": "password",
-        "label": "API Key",
-        "description": "Your OpenAI API key from platform.openai.com",
+        "label": "API key",
+        "description": "Your OpenAI API key.",
         "placeholder": "sk-…",
         "helpUrl": "https://platform.openai.com/api-keys"
       },

@@ -18,6 +18,11 @@
 //                with the focus ring; the caller's <label> holds its text.
 //   Slider       a native range input on one track-and-thumb look
 //                (.slider in index.html); onChange gets a number.
+//   StackedField a field with its name over it (12px, 500), an optional
+//                action at the right of the name (a refresh button) and a
+//                line under it (11px, tertiary): for values too long for a
+//                SettingRow's right side (keys, URLs, usernames). Every
+//                plug-in's keys and fields use it (#1498).
 //
 // The field look: 36px tall (32 for size="sm", 48 for size="lg"), 13px text
 // (16 for lg), 8px radius (12 for lg, full for `pill`), --bg-elevated on a
@@ -92,6 +97,16 @@ function SettingRow({ label, hint, id, children, className, style, nested = fals
     e('div', { id: labelId, className: 'text-ink-primary', style: { fontSize: '13px', fontWeight: 500 } }, label),
     hint && e('div', { id: hintId, className: 'text-ink-secondary', style: { fontSize: '12px', marginTop: '2px', lineHeight: 1.45 } }, hint)),
   e('div', { className: 'flex-shrink-0' }, control));
+}
+
+function StackedField({ label, action, description, children, style }) {
+  const e = React.createElement;
+  return e('div', { style: Object.assign({ marginBottom: '12px' }, style) },
+    e('div', { className: 'flex items-center justify-between gap-2', style: { marginBottom: '4px' } },
+      e('div', { className: 'text-ink-primary', style: { fontSize: '12px', fontWeight: 500 } }, label),
+      action || null),
+    children,
+    description && e('div', { className: 'text-ink-tertiary', style: { fontSize: '11px', lineHeight: 1.5, marginTop: '4px' } }, description));
 }
 
 function Select({ value, onChange, options, size = 'md', className, style, ...rest }) {
@@ -267,4 +282,4 @@ function SegmentedChoice({ value, options, onChange, label }) {
     }));
 }
 
-module.exports = { NestedSettings, SettingRow, Select, TextField, SecretField, Switch, Checkbox, Slider, RadioGroup, SegmentedChoice, fieldClassName, FIELD_CLASS: FIELD };
+module.exports = { NestedSettings, SettingRow, StackedField, Select, TextField, SecretField, Switch, Checkbox, Slider, RadioGroup, SegmentedChoice, fieldClassName, FIELD_CLASS: FIELD };

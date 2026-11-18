@@ -21,8 +21,8 @@
     "configurable": {
       "apiKey": {
         "type": "password",
-        "label": "API Key",
-        "description": "Your API key from Google AI Studio. Get one at https://aistudio.google.com/app/apikey — click 'Create API Key' and Gemini is auto-enabled on the backing project.",
+        "label": "API key",
+        "description": "Your Google AI Studio API key. Choose Create API key there; Gemini is turned on for its project.",
         "placeholder": "AIza…",
         "helpUrl": "https://aistudio.google.com/app/apikey"
       },

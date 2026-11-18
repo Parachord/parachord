@@ -3,7 +3,7 @@
     "id": "bandsintown",
     "name": "Bandsintown",
     "type": "meta-service",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "author": "Parachord Team",
     "description": "Upcoming concerts for the artists you love, with links to buy tickets.",
     "requirement": "Needs your own Bandsintown app ID.",
@@ -21,9 +21,10 @@
       "appId": {
         "type": "text",
         "label": "App ID",
-        "description": "Your Bandsintown app_id — see https://help.artists.bandsintown.com/en/articles/7053475-what-is-the-bandsintown-api",
+        "description": "Your Bandsintown app ID.",
         "placeholder": "my-app-id",
-        "required": true
+        "required": true,
+        "helpUrl": "https://help.artists.bandsintown.com/en/articles/7053475-what-is-the-bandsintown-api"
       }
     }
   }

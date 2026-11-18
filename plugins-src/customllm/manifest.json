@@ -3,7 +3,7 @@
     "id": "customllm",
     "name": "Custom LLM",
     "type": "meta-service",
-    "version": "1.1.3",
+    "version": "1.1.4",
     "icon": "🔌",
     "color": "#8b5cf6",
     "author": "Parachord Team",
@@ -21,9 +21,9 @@
     "configurable": {
       "apiKey": {
         "type": "password",
-        "label": "API Key",
+        "label": "API key",
         "description": "Your endpoint's API key, if it requires one. Leave empty for local servers (LM Studio, llama.cpp, vLLM) that don't.",
-        "placeholder": "sk-... (optional)"
+        "placeholder": "sk-… (optional)"
       },
       "api": {
         "type": "select",
@@ -44,7 +44,7 @@
       "baseUrl": {
         "type": "text",
         "label": "Base URL",
-        "description": "Server root URL. OpenAI-compatible: include the version path, e.g. http://localhost:1234/v1 or https://openrouter.ai/api/v1. Anthropic: just the host, e.g. https://api.anthropic.com",
+        "description": "Your server’s root address. For an OpenAI-compatible server, include the version path; for Anthropic, just the host.",
         "placeholder": "http://localhost:1234/v1"
       },
       "model": {
@@ -53,19 +53,19 @@
         "label": "Model",
         "description": "Model id served by your endpoint",
         "default": "",
-        "placeholder": "e.g. qwen2.5-coder:7b",
+        "placeholder": "For example, qwen2.5-coder:7b",
         "fallbackOptions": []
       },
       "maxTokens": {
         "type": "text",
-        "label": "Max Tokens (optional)",
-        "description": "Response token limit. Anthropic requires it - defaults to 1024. Thinking models need headroom for reasoning plus the answer.",
+        "label": "Max tokens (optional)",
+        "description": "The longest reply, in tokens. Anthropic needs one and uses 1024 if it’s empty. Thinking models need room for their reasoning as well as the answer.",
         "placeholder": "1024"
       },
       "reasoningEffort": {
         "type": "select",
         "label": "Reasoning",
-        "description": "Thinking effort for reasoning models (GLM, Qwen3, DeepSeek-R1, ...). Auto (default) sends nothing and leaves it to the model; Off best-effort disables thinking, which helps when a thinking model spends its whole token budget reasoning. On the Anthropic dialect, chat turns that can call tools never use thinking.",
+        "description": "How hard a reasoning model (GLM, Qwen3, DeepSeek-R1…) thinks. Auto leaves it to the model; Off tries to turn thinking off, which helps when a model spends its whole reply on reasoning. With Anthropic, chat turns that can use tools never think.",
         "options": [
           {
             "value": "off",

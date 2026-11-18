@@ -30,7 +30,7 @@
 
 const Icons = require('./icons');
 const { Button } = require('./button');
-const { SecretField, SettingRow, Switch, TextField } = require('./fields');
+const { SecretField, SettingRow, StackedField, Switch, TextField } = require('./fields');
 const { AccountRow } = require('./account-row');
 const { Disclosure } = require('./disclosure');
 const { ProgressBar } = require('./progress-bar');
@@ -47,7 +47,7 @@ const SECTION = { padding: '16px 0', borderTop: '1px solid var(--border-subtle)'
 // A block inside a section, divided from what's above it by a line.
 const BLOCK = { marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--border-subtle)' };
 const NOTE = { fontSize: '11px', lineHeight: '1.5' };
-const TONE = { success: 'var(--text-success)', info: 'var(--text-info)', danger: 'var(--text-danger)', secondary: 'var(--text-secondary)', tertiary: 'var(--text-tertiary)' };
+const TONE = { success: 'var(--text-success)', secondary: 'var(--text-secondary)' };
 
 // The plug-in's settings block. The loader also flattens authType and
 // configurable onto the plug-in, so read both.
@@ -76,16 +76,6 @@ function ExternalLink({ url, children }) {
   }, children);
 }
 
-// A field with its name over it and an optional line under it: the keys and
-// usernames, which are too long for a SettingRow's right-hand side.
-function StackedField({ label, description, children, style }) {
-  const e = React.createElement;
-  return e('div', { style: Object.assign({ marginBottom: '10px' }, style) },
-    e('div', { className: 'text-ink-primary', style: { fontSize: '12px', fontWeight: 500, marginBottom: '4px' } }, label),
-    children,
-    description && e('p', { className: 'text-ink-tertiary', style: { ...NOTE, marginTop: '4px' } }, description));
-}
-
 // The configurable fields marked `advanced`, minus the client keys (those
 // have their own section).
 function advancedFieldsOf(plugin) {
@@ -95,8 +85,9 @@ function advancedFieldsOf(plugin) {
 
 // ServiceAccount: a sign-in the app runs for the plug-in (OAuth, MusicKit).
 //   account   the host's account for it: { signedIn, signIn, signOut,
-//             status?, note?: { tone, text } }. signIn is omitted when this
-//             computer has no way to sign in (no button then).
+//             status? }. status is the row's line when the host knows more
+//             than the manifest (how it plays on this computer); signIn is
+//             omitted when this computer has no way to sign in (no button).
 //   keysMissing  the client keys it signs in with aren't saved yet
 //   children  the keys section, drawn right under the sign-in
 function ServiceAccount({ plugin, account, color, keysMissing = false, keysLabel, children }) {
@@ -107,7 +98,6 @@ function ServiceAccount({ plugin, account, color, keysMissing = false, keysLabel
       : keysMissing ? `Add your ${midSentence(keysLabel || 'keys')} below first`
       : a.signInHint || `Sign in to use ${plugin.name}`);
   return e('div', { style: SECTION },
-    account.note && e('p', { style: { ...NOTE, fontSize: '12px', color: TONE[account.note.tone] || TONE.secondary, marginBottom: '12px' } }, account.note.text),
     e(AccountRow, {
       name: plugin.name, color, signedIn: !!account.signedIn, status,
       onSignIn: account.signIn || undefined, onSignOut: account.signOut,
@@ -213,7 +203,9 @@ function AdvancedKeys({ plugin, values, setValue, saved = false, onSave, onClear
 //   account  the host's: { connect(values) → true when saved, remove(),
 //            saveAdvanced?(values), clearAdvanced?(), advancedOpen?,
 //            setAdvancedOpen? }
-function UsernameAccount({ plugin, config, account, color }) {
+//   children what needs a sign-in on top of the username (the nested
+//            Scrobbling section): after the account, before Advanced
+function UsernameAccount({ plugin, config, account, color, children }) {
   const e = React.createElement;
   const [values, setValues] = React.useState({});
   const [busy, setBusy] = React.useState(false);
@@ -230,6 +222,7 @@ function UsernameAccount({ plugin, config, account, color }) {
         status: a.usage ? `${c.username} · ${a.usage}` : c.username,
         onSignOut: account.remove, signOutLabel: 'Remove',
       }),
+      children,
       account.saveAdvanced
         ? e(AdvancedKeys, {
           plugin,
@@ -261,6 +254,7 @@ function UsernameAccount({ plugin, config, account, color }) {
       })),
     e(StackedField, { label: 'Username', style: { marginBottom: 0 } },
       e(TextField, { value: values.username || '', onChange: (_v, ev) => setValue('username', ev.target.value), placeholder: `Your ${plugin.name} username`, 'aria-label': `Your ${plugin.name} username`, className: 'w-full' })),
+    children,
     // Optional keys, saved with the username.
     e(AdvancedKeys, { plugin, values, setValue, open: account.advancedOpen, setOpen: account.setAdvancedOpen }));
 }

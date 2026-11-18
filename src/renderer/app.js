@@ -37653,11 +37653,15 @@ useEffect(() => {
         // (parachord#834); without one there's no button.
         signIn: appleMusicCanSignIn ? h.connectAppleMusic : null,
         signOut: h.disconnectAppleMusic,
-        status: appleMusicConnected || appleMusicCanSignIn ? undefined : 'Search and links work; playback opens in your browser',
-        // How it plays here: native MusicKit, the sign-in window, or neither.
-        note: appleMusicNativeAvailable ? { tone: 'success', text: 'Apple Music can play directly on this Mac.' }
-          : appleMusicCanSignIn ? { tone: 'info', text: 'Sign-in opens an Apple Music window for direct Apple ID authentication. Your subscription playback works the same as on macOS.' }
-          : { tone: 'danger', text: 'Apple Music can only play inside Parachord on macOS.' },
+        // The row's line says how it plays on this computer: native
+        // MusicKit (a Mac with the helper), the Apple Music sign-in window
+        // (parachord#834: any platform without the helper, including a Mac
+        // build without it), or neither.
+        status: appleMusicConnected
+          ? (appleMusicNativeAvailable ? 'Signed in · plays directly on this Mac' : 'Signed in')
+          : appleMusicNativeAvailable ? undefined
+          : appleMusicCanSignIn ? 'Sign in with your Apple Account in an Apple Music window to play here'
+          : 'Search and links work; playback opens in your browser',
         advanced: {
           values: { developerToken: appleMusicDeveloperToken },
           setValue: (_k, v) => setAppleMusicDeveloperToken(v),

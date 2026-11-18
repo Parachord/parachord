@@ -149,7 +149,7 @@ describe('each extra section shows for its signal and not otherwise', () => {
     const html = render(base({ type: 'meta-service', capabilities: { scrobbling: true }, homepage: 'https://example.org' }));
     expect(html).toContain('New Service account');
     expect(html).toContain('Enter your username and password below');
-    expect(html).toContain('Create account');
+    expect(html).toContain('Create a New Service account');
   });
 
   test('a key field: its placeholder and where to get one come from the manifest', () => {
@@ -169,6 +169,53 @@ describe('each extra section shows for its signal and not otherwise', () => {
   test('Remove: every plug-in but one whose manifest says settings.removable: false', () => {
     expect(render(base())).toContain('>Remove<');
     expect(render(base({ settings: { removable: false } }))).not.toContain('>Remove<');
+  });
+});
+
+describe('one layout (the #1498 contact-sheet review)', () => {
+  test('a username account comes before its nested Scrobbling sign-in', () => {
+    global.window.scrobblers = [{ id: 'newservice', name: 'New Service', startAuth: noop }];
+    const plugin = base({
+      type: 'meta-service', capabilities: { scrobbling: true, recommendations: true },
+      configurable: { username: { label: 'New Service username' }, apiKey: { label: 'API key', advanced: true } },
+      settings: { account: { type: 'username', usage: 'your picks come from it' } },
+    });
+    const html = render(plugin, { hostAccounts: { newservice: { connect: noop, remove: noop } }, metaServiceConfigs: { newservice: { enabled: true } } });
+    const account = html.indexOf('New Service username');
+    const scrobbling = html.indexOf('data-section="scrobbling"');
+    expect(account).toBeGreaterThan(-1);
+    expect(scrobbling).toBeGreaterThan(account);
+    // Still nested (NestedSettings' line on its left).
+    expect(html.slice(scrobbling, scrobbling + 200)).toContain('border-l-2');
+    // Advanced stays last.
+    expect(html.indexOf('>Advanced<')).toBeGreaterThan(scrobbling);
+  });
+
+  test('a sign-in note is the account row\'s own line, never a coloured paragraph', () => {
+    const plugin = base({ settings: { account: { type: 'sign-in', signInHint: 'Sign in here' } } });
+    const html = render(plugin, { hostAccounts: { newservice: { signedIn: false, signIn: noop, signOut: noop, status: 'Sign in in a window to play here', note: { tone: 'info', text: 'A loose note' } } } });
+    expect(html).toContain('Sign in in a window to play here');
+    expect(html).not.toContain('A loose note');
+    expect(html).not.toContain('var(--text-info)');
+  });
+
+  test.each([
+    ['an AI key', { type: 'meta-service', capabilities: { chat: true }, settings: { requiresAuth: true, authType: 'apikey', configurable: { apiKey: { type: 'password', label: 'API key', description: 'Your key.' }, model: { type: 'select', label: 'Model', options: [{ value: 'a', label: 'A' }] } } } }],
+    ['a concert key', { type: 'meta-service', capabilities: { concerts: true }, settings: { requiresAuth: true, authType: 'apikey', configurable: { appId: { type: 'text', label: 'App ID', helpUrl: 'https://example.org' } } } }],
+    ['a server and account', { settings: { requiresAuth: true, authType: 'userpass', configurable: { serverUrl: { type: 'text', label: 'Server URL' }, username: { type: 'text', label: 'Username' }, password: { type: 'password', label: 'Password' } } } }],
+  ])('%s: flat stacked fields, no heading of its own, no grey card', (_name, over) => {
+    const html = render(base(over));
+    expect(html).not.toContain('API Configuration');
+    // The footer is the dialog's one grey surface.
+    expect((html.match(/background-color:var\(--hover-bg-default\)/g) || []).length).toBe(1);
+  });
+
+  test('the dialog and the scrobbler card draw no section headings or inline label links of their own', () => {
+    expect(dialogSrc).not.toContain("'API Configuration'");
+    expect(dialogSrc).not.toMatch(/borderRadius: '10px'/);
+    const cards = fs.readFileSync(path.join(ROOT, 'src/renderer/components/settings-cards.js'), 'utf8');
+    expect(cards).not.toContain('ml-2 text-accent hover:underline');
+    expect(cards).toMatch(/React\.createElement\(StackedField, \{\s*label: 'User token'/);
   });
 });
 

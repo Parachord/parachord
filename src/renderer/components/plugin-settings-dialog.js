@@ -24,13 +24,13 @@ const { capabilityLabel, visibleCapabilities } = require('../lib/capability-labe
 const { Modal } = require('./modal');
 const { Badge } = require('./badge');
 const { Button } = require('./button');
-const { NestedSettings, SecretField, Select, SettingRow, Switch, TextField } = require('./fields');
+const { NestedSettings, SecretField, Select, SettingRow, StackedField, Switch, TextField } = require('./fields');
 const { pluginSwitchState, metadataSwitchState, playbackSwitchState, recommendationsSwitchState, keyLabel } = require('../lib/plugin-switch');
 const { ProgressBar } = require('./progress-bar');
 const { AccountRow } = require('./account-row');
 const { Disclosure } = require('./disclosure');
 const { EmptyState, ErrorState } = require('./states');
-const { ServiceAccount, ClientKeys, AdvancedKeys, UsernameAccount, LibrarySync, StartupRow, InstallCallout, WatchFolders, settingsOf, authTypeOf } = require('./plugin-extras');
+const { ServiceAccount, ClientKeys, AdvancedKeys, UsernameAccount, LibrarySync, StartupRow, InstallCallout, WatchFolders, settingsOf, configurableOf, authTypeOf } = require('./plugin-extras');
 
 const PLUGIN_SETTINGS_DIALOG_HANDLERS = [
   'fetchDynamicModels',
@@ -131,6 +131,12 @@ const PluginSettingsDialog = React.memo(function PluginSettingsDialog(props) {
   const caps = selectedResolver.capabilities || {};
   // A plug-in that only scrobbles (Libre.fm): its scrobbler is its account.
   const scrobblingOnly = !!caps.scrobbling && !caps.recommendations;
+  // The one on/off switch (lib/plugin-switch.js).
+  const switchState = pluginSwitchState({ plugin: selectedResolver, config: metaServiceConfigs[selectedResolver.id], activeResolvers });
+  // Scrobbling, for a plug-in that does more than scrobble (Last.fm,
+  // ListenBrainz), while it's on: nested under its account (the account
+  // comes first, then what needs the sign-in).
+  const scrobblingNested = switchState.checked && !!caps.scrobbling && !!caps.recommendations;
 
   // Scrobbling (capabilities.scrobbling). Nested under "Enable X" for a
   // plug-in that does more than scrobble (Last.fm, ListenBrainz): the one
@@ -279,8 +285,7 @@ React.createElement('div', {
           // what to add first.
           (() => {
             const id = selectedResolver.id;
-            const state = pluginSwitchState({ plugin: selectedResolver, config: metaServiceConfigs[id], activeResolvers });
-            const scrobblingNested = state.checked && !!caps.scrobbling && !!caps.recommendations;
+            const state = switchState;
             const meta = metadataSwitchState({ plugin: selectedResolver, active: state.checked, metadataOff: (metadataOffResolvers || []).includes(id) });
             const recs = recommendationsSwitchState({ plugin: selectedResolver, active: state.checked, recommendationsOff: (recommendationsOffResolvers || []).includes(id) });
             const play = playbackSwitchState({ plugin: selectedResolver, active: state.checked, playbackOff: (playbackOffResolvers || []).includes(id), limit: playbackLimits && playbackLimits[id] });
@@ -335,9 +340,7 @@ React.createElement('div', {
                 hint: recs.hint,
                 nested: true,
                 style: { padding: '6px 0', marginTop: (play.shown || meta.shown) ? '0' : '12px' },
-              }, React.createElement(Switch, { size: 'sm', checked: recs.checked, onToggle: () => setResolverRecommendationsOn(id, !recs.checked) })),
-              // Scrobbling, for a plug-in that does more than scrobble.
-              scrobblingNested && React.createElement(NestedSettings, { style: { marginTop: '12px' } }, renderScrobbling(id)));
+              }, React.createElement(Switch, { size: 'sm', checked: recs.checked, onToggle: () => setResolverRecommendationsOn(id, !recs.checked) })));
           })(),
 
           // A status-capable plugin's sign-in row (capabilities.status, the
@@ -441,7 +444,11 @@ React.createElement('div', {
             config: metaServiceConfigs[selectedResolver.id],
             account: hostAccount,
             color: getServiceColor(selectedResolver.id) || selectedResolver.color,
-          }),
+          },
+            // Scrobbling: its own sign-in, its switch and loved tracks,
+            // nested under the account it adds to, before Advanced.
+            scrobblingNested && React.createElement('div', { 'data-section': 'scrobbling', style: { marginTop: '16px' } },
+              React.createElement(NestedSettings, null, renderScrobbling(selectedResolver.id)))),
 
           // What needs the sign-in: library sync (capabilities.librarySync),
           // then opening the service's app at startup (settings.startup).
@@ -485,30 +492,12 @@ React.createElement('div', {
             return React.createElement(PluginSettingsPanel, { key: pluginId, resolver: loaded, ctx });
           })(),
 
-          // Username + password credentials (Subsonic). Not an API key: no
-          // "get a key" link, and the pair is rendered together rather than
-          // split across an API-key slot and the extra-field list. The loader
-          // flattens authType/configurable onto the resolver (no .settings
-          // wrapper), so check both.
-          ((selectedResolver.settings?.authType === 'userpass') || selectedResolver.authType === 'userpass') && (() => {
-            const configurable = selectedResolver.settings?.configurable || selectedResolver.configurable || {};
+          // Username and password (settings.authType 'userpass': Subsonic):
+          // its fields in the manifest's order, saved as you leave each one,
+          // as flat stacked fields like every plug-in's keys.
+          authTypeOf(selectedResolver) === 'userpass' && (() => {
+            const configurable = configurableOf(selectedResolver);
             const saved = metaServiceConfigs[selectedResolver.id] || {};
-            const inputStyle = {
-              width: '100%',
-              padding: '10px 12px',
-              fontSize: '13px',
-              color: 'var(--text-primary)',
-              backgroundColor: 'var(--card-bg)',
-              border: '1px solid var(--border-subtle)',
-              borderRadius: '8px'
-            };
-            const labelStyle = {
-              display: 'block',
-              fontSize: '12px',
-              fontWeight: '500',
-              color: 'var(--text-primary)',
-              marginBottom: '6px'
-            };
             const saveField = (fieldKey, value) => {
               saveMetaServiceConfig(selectedResolver.id, {
                 ...metaServiceConfigs[selectedResolver.id],
@@ -516,76 +505,35 @@ React.createElement('div', {
               });
               delete resolverConfigCache.current[selectedResolver.id];
             };
-            const otherFields = Object.entries(configurable).filter(([key, setting]) =>
-              setting && key !== 'username' && key !== 'password' && key !== 'model'
-            );
-            const usernameSetting = configurable.username;
-            const passwordSetting = configurable.password;
-            const credentialNote = passwordSetting?.description || usernameSetting?.description;
+            // The server first, then the account.
+            const fields = Object.entries(configurable).filter(([key, setting]) => setting && key !== 'model')
+              .sort(([a], [b]) => (a === 'username' || a === 'password' ? 1 : 0) - (b === 'username' || b === 'password' ? 1 : 0));
             const configured = !!(saved.username && saved.password && (!configurable.serverUrl || saved.serverUrl));
-            return React.createElement('div', {
-              style: {
-                padding: '16px 0',
-                borderTop: '1px solid var(--border-subtle)'
-              }
-            },
-              ...otherFields.map(([fieldKey, fieldSetting]) =>
-                React.createElement('div', { key: fieldKey, style: { marginBottom: '16px' } },
-                  React.createElement('label', { style: labelStyle }, fieldSetting.label || fieldKey),
-                  fieldSetting.description && React.createElement('p', {
-                    style: {
-                      fontSize: '12px',
-                      color: 'var(--text-secondary)',
-                      marginTop: '-2px',
-                      marginBottom: '8px',
-                      lineHeight: '1.5'
-                    }
-                  }, fieldSetting.description),
-                  React.createElement(TextField, { defaultValue: saved[fieldKey] || fieldSetting.default || '', placeholder: fieldSetting.placeholder || '', spellCheck: false, onBlur: (e) => saveField(fieldKey, fieldSetting.type === 'password' ? e.target.value : e.target.value.trim()), 'aria-label': fieldSetting.label || fieldKey, className: 'w-full' })
-                )
-              ),
-              (usernameSetting || passwordSetting) && React.createElement('div', {
-                style: {
-                  display: 'flex',
-                  gap: '12px',
-                  flexWrap: 'wrap',
-                  padding: '12px',
-                  backgroundColor: 'var(--hover-bg-default)',
-                  borderRadius: '10px'
-                }
-              },
-                usernameSetting && React.createElement('div', { style: { flex: '1 1 140px', minWidth: 0 } },
-                  React.createElement('label', { style: labelStyle }, usernameSetting.label || 'Username'),
-                  React.createElement(TextField, { defaultValue: saved.username || '', placeholder: usernameSetting.placeholder || '', autoComplete: 'username', spellCheck: false, onBlur: (e) => saveField('username', e.target.value.trim()), 'aria-label': usernameSetting.label || 'Username', className: 'w-full' })
-                ),
-                passwordSetting && React.createElement('div', { style: { flex: '1 1 140px', minWidth: 0 } },
-                  React.createElement('label', { style: labelStyle }, passwordSetting.label || 'Password'),
-                  React.createElement(SecretField, { defaultValue: saved.password || '', placeholder: passwordSetting.placeholder || '', autoComplete: 'current-password', spellCheck: false, onBlur: (e) => saveField('password', e.target.value), 'aria-label': passwordSetting.label || 'Password', className: 'w-full' })
-                ),
-                credentialNote && React.createElement('p', {
-                  style: {
-                    flex: '1 1 100%',
-                    fontSize: '11px',
-                    color: 'var(--text-secondary)',
-                    margin: 0,
-                    lineHeight: '1.5'
-                  }
-                }, credentialNote)
-              ),
-              configured && React.createElement('div', {
-                className: 'flex items-center gap-2',
-                style: { marginTop: '12px', fontSize: '12px', color: 'var(--text-success)' }
-              },
-                React.createElement('span', null, '\u2713'),
-                React.createElement('span', null, 'Credentials saved')
-              )
+            return React.createElement('div', { style: { padding: '16px 0', borderTop: '1px solid var(--border-subtle)' } },
+              ...fields.map(([fieldKey, fieldSetting]) => {
+                const secret = fieldSetting.type === 'password' || fieldKey === 'password';
+                return React.createElement(StackedField, { key: fieldKey, label: fieldSetting.label || fieldKey, description: fieldSetting.description },
+                  React.createElement(secret ? SecretField : TextField, {
+                    defaultValue: saved[fieldKey] || fieldSetting.default || '',
+                    placeholder: fieldSetting.placeholder || '',
+                    autoComplete: fieldKey === 'username' ? 'username' : secret ? 'current-password' : undefined,
+                    spellCheck: false,
+                    onBlur: (e) => saveField(fieldKey, secret ? e.target.value : e.target.value.trim()),
+                    'aria-label': fieldSetting.label || fieldKey,
+                    className: 'w-full',
+                  }));
+              }),
+              configured && React.createElement('div', { className: 'flex items-center gap-1 text-ink-success', style: { fontSize: '12px' } },
+                React.createElement(Icons.Check, { className: 'w-4 h-4', 'aria-hidden': 'true' }), 'Credentials saved')
             );
           })(),
 
           // Software the plug-in needs installed first (settings.installCallout: Ollama).
           settingsOf(selectedResolver).installCallout && React.createElement(InstallCallout, { plugin: selectedResolver }),
 
-          // AI Service / credential configuration - generic based on plugin settings
+          // Keys and options from settings.configurable (the AI plug-ins, the
+          // concert services, Ollama): one flat section of stacked fields,
+          // each with its help under it; no heading of its own.
           // Check both .axe settings and top-level marketplace manifest properties.
           // The resolver loader flattens requiresAuth/authType/configurable onto
           // the resolver object (no .settings wrapper), so fall back to the
@@ -610,33 +558,8 @@ React.createElement('div', {
               borderTop: '1px solid var(--border-subtle)'
             }
           },
-            authFieldKey && React.createElement('span', {
-              style: {
-                fontSize: '13px',
-                fontWeight: '500',
-                color: 'var(--text-primary)'
-              }
-            }, 'API Configuration'),
-            authFieldKey && React.createElement('p', {
-              style: {
-                fontSize: '12px',
-                color: 'var(--text-secondary)',
-                marginTop: '4px',
-                marginBottom: '16px',
-                lineHeight: '1.5'
-              }
-            }, authFieldSettings.description || `Enter your API key to enable ${selectedResolver.name}.`),
-            // API Key input
-            authFieldKey && React.createElement('div', { style: { marginBottom: '16px' } },
-              React.createElement('label', {
-                style: {
-                  display: 'block',
-                  fontSize: '12px',
-                  fontWeight: '500',
-                  color: 'var(--text-primary)',
-                  marginBottom: '6px'
-                }
-              }, authFieldSettings.label || 'API Key'),
+            // The key, with its help under it and where to get one.
+            authFieldKey && React.createElement(StackedField, { label: keyLabel(selectedResolver, authFieldKey), style: { marginBottom: '16px' } },
               React.createElement(SecretField, { defaultValue: metaServiceConfigs[selectedResolver.id]?.[authFieldKey] || '', onBlur: (e) => {
                   // Services whose key is optional (requiresAuth: false, e.g. local
                   // custom-LLM endpoints) keep their explicit enabled toggle — blurring
@@ -662,12 +585,15 @@ React.createElement('div', {
                     }
                   }, 100);
                 }, placeholder: authFieldSettings.placeholder || '', 'aria-label': `${selectedResolver.name} API key`, className: 'w-full' }),
+              // Its help (the manifest's description: never a raw URL; the
+              // link is helpUrl's, below).
+              authFieldSettings.description && React.createElement('div', { className: 'text-ink-tertiary', style: { fontSize: '11px', lineHeight: 1.5, marginTop: '4px' } }, authFieldSettings.description),
               // Under the key: whether it's saved (left), where to get one (right).
               React.createElement('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginTop: '6px', fontSize: '12px' } },
               metaServiceConfigs[selectedResolver.id]?.[authFieldKey]
                 ? React.createElement('span', { className: 'flex items-center gap-1 text-ink-success' },
                     React.createElement(Icons.Check, { className: 'w-4 h-4', 'aria-hidden': 'true' }),
-                    `${keyLabel(selectedResolver)} saved`)
+                    `${keyLabel(selectedResolver, authFieldKey)} saved`)
                 : React.createElement('span', null),
               keyUrl && React.createElement('a', {
                 href: '#',
@@ -680,24 +606,17 @@ React.createElement('div', {
                   fontWeight: '500',
                   textDecoration: 'none'
                 }
-              }, 'Get your API key →'))
+              }, `Get your ${keyLabel(selectedResolver, authFieldKey)} →`))
             ),
             // Model selector - supports both static and dynamic-select
-            selectedResolver.settings?.configurable?.model && React.createElement('div', { style: { marginBottom: '16px' } },
-              React.createElement('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' } },
-                React.createElement('label', {
-                  style: {
-                    fontSize: '12px',
-                    fontWeight: '500',
-                    color: 'var(--text-primary)'
-                  }
-                }, selectedResolver.settings?.configurable?.model?.label || 'Model'),
-                // Refresh button for dynamic-select
-                selectedResolver.settings?.configurable?.model?.type === 'dynamic-select' && React.createElement(Button, { variant: 'icon', size: 'sm', 'aria-label': "Refresh models", onClick: () => {
-                    const resolver = metaServices.find(s => s.id === selectedResolver.id) || selectedResolver;
-                    fetchDynamicModels(resolver, metaServiceConfigs[selectedResolver.id]);
-                  }, 'data-tooltip': 'Refresh models' }, React.createElement(Icons.RefreshCw, { className: 'w-4 h-4' }))
-              ),
+            selectedResolver.settings?.configurable?.model && React.createElement(StackedField, {
+              label: selectedResolver.settings?.configurable?.model?.label || 'Model',
+              style: { marginBottom: '16px' },
+              action: selectedResolver.settings?.configurable?.model?.type === 'dynamic-select' && React.createElement(Button, { variant: 'icon', size: 'sm', 'aria-label': "Refresh models", onClick: () => {
+                  const resolver = metaServices.find(s => s.id === selectedResolver.id) || selectedResolver;
+                  fetchDynamicModels(resolver, metaServiceConfigs[selectedResolver.id]);
+                }, 'data-tooltip': 'Refresh models' }, React.createElement(Icons.RefreshCw, { className: 'w-4 h-4' })),
+            },
               (() => {
                 const modelSetting = selectedResolver.settings?.configurable?.model;
                 const isDynamic = modelSetting?.type === 'dynamic-select';
@@ -797,25 +716,7 @@ React.createElement('div', {
                       }, 100);
                     }
                   : null;
-                return React.createElement('div', { key: fieldKey, style: { marginBottom: '16px' } },
-                  React.createElement('label', {
-                    style: {
-                      display: 'block',
-                      fontSize: '12px',
-                      fontWeight: '500',
-                      color: 'var(--text-primary)',
-                      marginBottom: '6px'
-                    }
-                  }, fieldSetting.label || fieldKey),
-                  fieldSetting.description && React.createElement('p', {
-                    style: {
-                      fontSize: '12px',
-                      color: 'var(--text-secondary)',
-                      marginTop: '-2px',
-                      marginBottom: '8px',
-                      lineHeight: '1.5'
-                    }
-                  }, fieldSetting.description),
+                return React.createElement(StackedField, { key: fieldKey, label: fieldSetting.label || fieldKey, description: fieldSetting.description, style: { marginBottom: '16px' } },
                   fieldSetting.type === 'select'
                     ? React.createElement(Select, {
                         'aria-label': fieldSetting.label || fieldKey,
