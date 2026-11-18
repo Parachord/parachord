@@ -3,7 +3,7 @@
     "id": "lastfm",
     "name": "Last.fm",
     "type": "meta-service",
-    "version": "1.2.5",
+    "version": "1.2.6",
     "author": "Parachord Team",
     "description": "Scrobble what you play to Last.fm, and get recommendations from your listening history.",
     "requirement": "Needs your Last.fm username.",
@@ -24,19 +24,27 @@
     "configurable": {
       "username": {
         "type": "text",
-        "label": "Last.fm Username",
+        "label": "Last.fm username",
         "required": true
       },
       "apiKey": {
         "type": "text",
-        "label": "API Key",
-        "advanced": true
+        "label": "API key",
+        "advanced": true,
+        "placeholder": "Your Last.fm API key"
       },
       "apiSecret": {
         "type": "text",
-        "label": "API Secret",
-        "advanced": true
+        "label": "API secret",
+        "advanced": true,
+        "placeholder": "Your Last.fm API secret"
       }
+    },
+    "account": {
+      "type": "username",
+      "usage": "your recommendations, similar listeners and history come from this account",
+      "advancedHint": "Optional: use your own Last.fm API credentials to avoid rate limiting.",
+      "advancedSavedHint": "Using your own Last.fm API credentials."
     }
   }
 }

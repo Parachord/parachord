@@ -3,7 +3,7 @@
     "id": "claude",
     "name": "Claude",
     "type": "meta-service",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "icon": "🧡",
     "color": "#D97757",
     "author": "Parachord Team",
@@ -22,7 +22,8 @@
         "type": "password",
         "label": "API Key",
         "description": "Your Anthropic API key",
-        "placeholder": "sk-ant-..."
+        "placeholder": "sk-ant-…",
+        "helpUrl": "https://console.anthropic.com/settings/keys"
       },
       "model": {
         "type": "select",

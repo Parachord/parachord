@@ -303,7 +303,9 @@ describe('app wiring', () => {
   test('Spotify: no plan tracking; setup says the app owner needs Premium', () => {
     expect(app).not.toMatch(/spotifyProduct|__parachordNotePlanPlays/);
     expect(engine).not.toMatch(/__parachordNotePlanPlays/);
-    expect(app).toMatch(/The Spotify account that creates the app needs Spotify Premium, and the app stops working if that Premium lapses\./);
+    // The setup text is the plug-in's manifest (settings.clientKeys.help, #1498).
+    const spotify = require('../../plugins-src/spotify/manifest.json');
+    expect(spotify.settings.clientKeys.help).toMatch(/The Spotify account that creates the app needs Spotify Premium, and the app stops working if that Premium lapses\./);
   });
 });
 

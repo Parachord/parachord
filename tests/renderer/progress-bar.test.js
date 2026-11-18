@@ -18,9 +18,11 @@ test('nothing to count yet: an empty bar, never NaN', () => {
 
 test('the scan and the sync setup use it, not their own divs', () => {
   const fs = require('fs'); const path = require('path');
-  for (const f of ['plugin-settings-dialog.js', 'sync-setup-dialog.js']) {
+  // The folder scan is the plug-in dialog's watch-folders section
+  // (components/plugin-extras.js, #1498 step 5).
+  for (const f of ['plugin-extras.js', 'sync-setup-dialog.js']) {
     const src = fs.readFileSync(path.join(__dirname, '../../src/renderer/components', f), 'utf8');
-    expect(src).toContain('React.createElement(ProgressBar,');
+    expect(src).toMatch(/(?:React\.createElement|\be)\(ProgressBar,/);
     expect(src).not.toMatch(/\* 100\}%`/);
   }
 });

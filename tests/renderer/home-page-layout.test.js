@@ -452,7 +452,11 @@ describe('design-audit small fixes (#1382)', () => {
   });
 
   test('saving an empty key or URL does not switch a plugin on', () => {
-    expect((app.match(/enabled: !!e\.target\.value\.trim\(\)/g) || []).length).toBe(1);
+    // Only the API key's save touches `enabled` (a key-gated plug-in is on
+    // once it has a key); a URL or other field never does. Ollama's URL
+    // used to switch it on; the one switch does that now (#1498).
+    expect((app.match(/enabled: !!e\.target\.value\.trim\(\)/g) || []).length).toBe(0);
+    expect(app).toMatch(/enabled: keyRequired\s*\? !!e\.target\.value/);
   });
 
   test('text fields and selections get a native Cut / Copy / Paste menu', () => {

@@ -6,7 +6,7 @@
     "description": "Play Spotify through the Spotify app, controlled from Parachord.",
     "requirement": "Needs Spotify Premium, the Spotify app and your own free Spotify developer Client ID.",
     "icon": "♫",
-    "version": "1.2.7",
+    "version": "1.2.8",
     "color": "#1DB954",
     "homepage": "https://spotify.com",
     "email": "support@harmonix.app"
@@ -17,7 +17,8 @@
     "stream": true,
     "browse": false,
     "urlLookup": true,
-    "albumSearch": true
+    "albumSearch": true,
+    "librarySync": true
   },
   "urlPatterns": [
     "open.spotify.com/track/*",
@@ -67,6 +68,34 @@
         "required": true,
         "helpUrl": "https://developer.spotify.com/dashboard"
       }
+    },
+    "removable": false,
+    "account": {
+      "type": "sign-in",
+      "signInHint": "Sign in to play from Spotify"
+    },
+    "clientKeys": {
+      "fields": [
+        "clientId"
+      ],
+      "label": "Client ID",
+      "help": "Spotify requires your own API credentials. Create a free app to get your Client ID. The Spotify account that creates the app needs Spotify Premium, and the app stops working if that Premium lapses.",
+      "helpUrl": "https://developer.spotify.com/dashboard",
+      "helpLinkLabel": "developer.spotify.com/dashboard",
+      "steps": [
+        "Create a new app (name it anything)",
+        "Add both redirect URIs below to it",
+        "Under “APIs used”, tick both Web API and Web Playback SDK",
+        "Copy your Client ID and paste it below"
+      ],
+      "redirectUris": [
+        "http://127.0.0.1:{port}/callback",
+        "http://[::1]:{port}/callback"
+      ],
+      "redirectHint": "Add both URLs to your Spotify app’s redirect URIs (IPv4 and IPv6)."
+    },
+    "startup": {
+      "hint": "Parachord plays Spotify songs through the Spotify app, so it has to be open. This opens it in the background when Parachord starts."
     }
   }
 }

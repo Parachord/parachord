@@ -3,7 +3,7 @@
     "id": "ollama",
     "name": "Ollama (Local)",
     "type": "meta-service",
-    "version": "1.1.3",
+    "version": "1.1.4",
     "icon": "🦙",
     "color": "#000000",
     "author": "Parachord Team",
@@ -46,6 +46,12 @@
         "default": "http://localhost:11434",
         "placeholder": "http://localhost:11434"
       }
+    },
+    "installCallout": {
+      "title": "Ollama must be installed separately",
+      "text": "Download and install Ollama, then pull a model (for example, ollama pull llama3.1) before you turn it on.",
+      "url": "https://ollama.ai",
+      "linkLabel": "Download Ollama"
     }
   }
 }

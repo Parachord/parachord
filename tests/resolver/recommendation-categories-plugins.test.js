@@ -118,7 +118,7 @@ describe('ListenBrainz sends playlist categories', () => {
     const weekly = sections.filter(s => s.id === 'weekly-exploration' || s.id === 'weekly-jams');
     expect(weekly).toHaveLength(2);
     expect(weekly.every(s => s.category === 'personal')).toBe(true);
-    expect(axe.manifest.version).toBe('1.6.5');
+    expect(axe.manifest.version).toBe('1.6.6');
   });
 });
 
@@ -148,7 +148,7 @@ describe('Apple Music sends playlist categories', () => {
     ])]);
     const items = sections.flatMap(s => s.items);
     expect(items.map(i => i.category)).toEqual(['personal', 'editorial', 'community', undefined]);
-    expect(axe.manifest.version).toBe('1.5.3');
+    expect(axe.manifest.version).toBe('1.5.4');
   });
 
   test('Apple ignores inherited property names as playlistType', async () => {

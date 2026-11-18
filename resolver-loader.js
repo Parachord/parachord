@@ -165,7 +165,7 @@ class ResolverLoader {
       // The typed URL patterns (#1356 M11): the resolver field urlTypes, like
       // urlPatterns — an implementation method of this name would clobber it.
       'urlTypes',
-      'requiresAuth', 'authType', 'configurable', 'enabled', 'weight', 'config',
+      'requiresAuth', 'authType', 'configurable', 'settings', 'enabled', 'weight', 'config',
       '_bindContext',
       // The plugin library and its reserved name (#1356): `lib` is the
       // once-evaluated factory result the loader injects; a method named
@@ -214,6 +214,10 @@ class ResolverLoader {
       requiresAuth: settings?.requiresAuth || false,
       authType: settings?.authType || 'none',
       configurable: settings?.configurable || {},
+      // The whole settings block, as meta services carry it: the settings
+      // dialog picks its shared sections from fields here (account,
+      // clientKeys, startup, watchFolders, installCallout, removable; #1498).
+      settings: settings || {},
 
       // State
       enabled: false,

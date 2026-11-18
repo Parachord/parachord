@@ -320,7 +320,7 @@ describe('wiring', () => {
     // #1451 moved the resolver detail panel's markup into its own component;
     // the row moved with the panel, and app.js feeds it the replies.
     const dialog = read('src', 'renderer', 'components', 'plugin-settings-dialog.js');
-    const row = between(dialog, "A status-capable plugin's sign-in row", '// Authentication section (for services that require it)');
+    const row = between(dialog, "A status-capable plugin's sign-in row", '// The account, for a plug-in the app signs in to itself');
     expect(row).toContain('selectedResolver?.capabilities?.status && typeof selectedResolver.getStatus === \'function\'');
     expect(row).toContain('PlaybackLimits.pluginStatusRow(pluginStatuses[selectedResolver.id])');
     // The signIn/signOut triggers ride the row when the plugin implements

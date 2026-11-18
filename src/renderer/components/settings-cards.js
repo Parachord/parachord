@@ -10,6 +10,7 @@ const { FriendMiniPlaybar } = require('./friend-mini-playbar');
 const Icons = require('./icons');
 const { Button } = require('./button');
 const { TextField, SecretField, SettingRow, Switch, Checkbox } = require('./fields');
+const { countOf } = require('../lib/plural');
 const { AccountRow } = require('./account-row');
 const { Tooltip, SERVICE_LOGOS } = require('./ui-atoms');
 const { menuKeyHandler } = require('./card-button');
@@ -257,6 +258,10 @@ const ScrobblerSettingsCard = React.memo(({
   // import, push and backfill. Was a check on two service names.
   lovedTracks = false,
   hasImportedLoves = false,
+  // From the plug-in's manifest: where to get a user token (a token
+  // sign-in) and where to make an account (a password sign-in).
+  tokenUrl = null,
+  signUpUrl = null,
 }) => {
   const [connecting, setConnecting] = React.useState(false);
   const [error, setError] = React.useState(null);
@@ -296,24 +301,29 @@ const ScrobblerSettingsCard = React.memo(({
     };
   }, [scrobbler, onConfigChange]);
 
+  // How this scrobbler signs in, from what it implements (never its id): a
+  // password (connectWithPassword: Libre.fm), the browser (startAuth:
+  // Last.fm), or a pasted user token (connect: ListenBrainz).
+  const usesPassword = typeof scrobbler.connectWithPassword === 'function';
+  const usesBrowser = !usesPassword && typeof scrobbler.startAuth === 'function';
+  const usesToken = !usesPassword && !usesBrowser;
+
   const handleConnect = async () => {
     setConnecting(true);
     setError(null);
 
     try {
-      if (scrobbler.id === 'listenbrainz') {
-        // Token-based auth
+      if (usesToken) {
         await scrobbler.connect(tokenInput);
         onConfigChange(scrobbler.id, await scrobbler.getConfig());
         setTokenInput('');
-      } else if (scrobbler.id === 'librefm') {
-        // Username/password auth for Libre.fm
+      } else if (usesPassword) {
         await scrobbler.connectWithPassword(usernameInput, passwordInput);
         onConfigChange(scrobbler.id, await scrobbler.getConfig());
         setUsernameInput('');
         setPasswordInput('');
       } else {
-        // OAuth flow (Last.fm)
+        // The browser: the service's own page, then a poll for the result.
         const { authUrl } = await scrobbler.startAuth();
         window.electron.shell.openExternal(authUrl);
         // Update config to show pending state
@@ -364,10 +374,6 @@ const ScrobblerSettingsCard = React.memo(({
   // The account row (components/account-row.js, #1498 step 3): Libre.fm's
   // whole account; Last.fm's and ListenBrainz's scrobbling session, under
   // their own account rows, so it's labelled "Scrobbling" there.
-  // How this scrobbler signs in: a password (it has connectWithPassword), a
-  // pasted user token, or the browser.
-  const usesPassword = typeof scrobbler.connectWithPassword === 'function';
-  const usesToken = !usesPassword && scrobbler.id === 'listenbrainz';
   const status = isConnected
     ? (config?.username ? `Scrobbling as ${config.username}` : 'Signed in')
     // The service ended the session (the loader clears it and keeps the
@@ -397,37 +403,38 @@ const ScrobblerSettingsCard = React.memo(({
     // Connection UI
     !isConnected ? React.createElement('div', { className: 'space-y-3', style: { marginTop: '12px' } },
       // ListenBrainz token input
+      // A user token (ListenBrainz)
       usesToken && React.createElement('div', null,
         React.createElement('label', { className: 'block text-sm text-ink-secondary mb-1' },
-          'User Token',
-          React.createElement('a', {
+          'User token',
+          tokenUrl && React.createElement('a', {
             href: '#',
             onClick: (e) => {
               e.preventDefault();
-              window.electron.shell.openExternal('https://listenbrainz.org/settings/');
+              window.electron.shell.openExternal(tokenUrl);
             },
             className: 'ml-2 text-accent hover:underline'
           }, 'Get token')
         ),
-        React.createElement(TextField, { value: tokenInput, onChange: (_v, e) => setTokenInput(e.target.value), placeholder: 'Enter your ListenBrainz token', 'aria-label': 'Enter your ListenBrainz token', className: 'w-full' })
+        React.createElement(TextField, { value: tokenInput, onChange: (_v, e) => setTokenInput(e.target.value), placeholder: `Your ${scrobbler.name} user token`, 'aria-label': `Your ${scrobbler.name} user token`, className: 'w-full' })
       ),
 
-      // Libre.fm username/password inputs
+      // A username and password (Libre.fm)
       usesPassword && React.createElement('div', { className: 'space-y-2' },
         React.createElement('label', { className: 'block text-sm text-ink-secondary mb-1' },
           'Username',
-          React.createElement('a', {
+          signUpUrl && React.createElement('a', {
             href: '#',
             onClick: (e) => {
               e.preventDefault();
-              window.electron.shell.openExternal('https://libre.fm/');
+              window.electron.shell.openExternal(signUpUrl);
             },
             className: 'ml-2 text-accent hover:underline'
           }, 'Create account')
         ),
-        React.createElement(TextField, { value: usernameInput, onChange: (_v, e) => setUsernameInput(e.target.value), placeholder: 'Your Libre.fm username', 'aria-label': 'Your Libre.fm username', className: 'w-full' }),
+        React.createElement(TextField, { value: usernameInput, onChange: (_v, e) => setUsernameInput(e.target.value), placeholder: `Your ${scrobbler.name} username`, 'aria-label': `Your ${scrobbler.name} username`, className: 'w-full' }),
         React.createElement('label', { className: 'block text-sm text-ink-secondary mb-1' }, 'Password'),
-        React.createElement(SecretField, { value: passwordInput, onChange: (_v, e) => setPasswordInput(e.target.value), placeholder: 'Your Libre.fm password', 'aria-label': 'Your Libre.fm password', className: 'w-full' })
+        React.createElement(SecretField, { value: passwordInput, onChange: (_v, e) => setPasswordInput(e.target.value), placeholder: `Your ${scrobbler.name} password`, 'aria-label': `Your ${scrobbler.name} password`, className: 'w-full' })
       ),
 
 
@@ -443,11 +450,7 @@ const ScrobblerSettingsCard = React.memo(({
         React.createElement('p', { className: 'text-xs text-ink-tertiary mb-2' },
           'Complete authorization in your browser. This will auto-detect when done.'
         ),
-        React.createElement('button', {
-          onClick: handleCompleteAuth,
-          disabled: connecting,
-          className: 'text-xs text-accent hover:underline'
-        }, 'Complete manually')
+        React.createElement(Button, { variant: 'text', size: 'sm', onClick: handleCompleteAuth, disabled: connecting }, 'Complete manually')
       ),
 
       // Complete Authorization button (fallback for pending token without polling)
@@ -483,7 +486,7 @@ const ScrobblerSettingsCard = React.memo(({
             React.createElement(Button, { variant: 'text', size: 'sm', onClick: onRunBackfill, disabled: backfillRunning || unpushedCount === 0, className: 'w-full' }, backfillRunning && backfillProgress
                 ? `Pushing… ${backfillProgress.done}/${backfillProgress.total}`
                 : unpushedCount > 0
-                  ? `Backfill ${unpushedCount} loved track${unpushedCount === 1 ? '' : 's'} → ${scrobbler.id === 'lastfm' ? 'Last.fm' : 'ListenBrainz'}`
+                  ? `Backfill ${countOf(unpushedCount, 'loved track')} → ${scrobbler.name}`
                   : 'All loves already pushed'),
             React.createElement('p', { className: 'text-xs text-ink-tertiary' },
               'Backfilled loves are stamped at the time of push (the remote service has no backdate API).'

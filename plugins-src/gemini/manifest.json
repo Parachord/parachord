@@ -3,7 +3,7 @@
     "id": "gemini",
     "name": "Google Gemini",
     "type": "meta-service",
-    "version": "2.3.3",
+    "version": "2.3.4",
     "author": "Parachord Team",
     "description": "Ask Shuffleupagus for playlists and talk music with it, using Google Gemini.",
     "requirement": "Needs your own Google AI Studio API key.",
@@ -22,7 +22,9 @@
       "apiKey": {
         "type": "password",
         "label": "API Key",
-        "description": "Your API key from Google AI Studio. Get one at https://aistudio.google.com/app/apikey — click 'Create API Key' and Gemini is auto-enabled on the backing project."
+        "description": "Your API key from Google AI Studio. Get one at https://aistudio.google.com/app/apikey — click 'Create API Key' and Gemini is auto-enabled on the backing project.",
+        "placeholder": "AIza…",
+        "helpUrl": "https://aistudio.google.com/app/apikey"
       },
       "model": {
         "type": "dynamic-select",
