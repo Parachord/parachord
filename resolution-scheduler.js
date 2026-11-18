@@ -20,6 +20,8 @@
     sidebar: 5,
     background: 6
   };
+  const priorityType = (priority) =>
+    Object.keys(CONTEXT_PRIORITY).find(type => CONTEXT_PRIORITY[type] === priority) || null;
 
   class ResolutionScheduler {
     constructor() {
@@ -495,7 +497,15 @@
           return;
         }
 
-        await this.resolveCallback(data, abortController.signal);
+        // The third argument says why the track is being resolved: the
+        // context type of its (possibly promoted) priority, 'hover' for the
+        // hovered row. resolveTrack treats a 'page' or 'hover' resolution
+        // as on screen (#1532: a track with a local file then still gets
+        // the cross-resolver fill; lib/enrichment-gate.js).
+        await this.resolveCallback(data, abortController.signal, {
+          contextId: next.contextId,
+          contextType: next.isHover ? 'hover' : priorityType(next.priority),
+        });
 
         // Only mark as resolved if the resolution wasn't aborted
         // The callback may return early without throwing if signal was aborted

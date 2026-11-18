@@ -414,13 +414,17 @@ React.createElement('div', { className: 'ml-auto' },
                       // This tab lists local-library tracks too, and those are
                       // not in the collection: claiming they were offered
                       // "Remove from Collection", which could only fail with
-                      // "not in your collection" (#1002).
+                      // "not in your collection" (#1002). A row with a file
+                      // (local only, or a saved song merged with its file,
+                      // #1532) also gets the file's items (Show in Finder,
+                      // or Remove Missing File); Remove from Collection
+                      // still means the saved record.
                       const inCollection = collectionData.tracks.some(t => t.id === track.id);
                       window.showItemMenu({
                         type: 'track',
                         track: track,
                         isInCollection: inCollection,
-                        isLibraryTrack: !inCollection && !!(track.filePath || track.sources?.localfiles?.filePath)
+                        isLibraryTrack: !!(track.filePath || track.sources?.localfiles?.filePath)
                       });
                     },
                     cells: [{ key: 'album', content: track.album || '', onClick: track.album ? () => openChartsAlbum({ artist: track.artist, title: track.album, albumArt: track.albumArt }) : undefined }]

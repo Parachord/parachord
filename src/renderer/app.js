@@ -2045,7 +2045,9 @@ const { usePlaybackEngine } = require('./hooks/use-playback-engine');
 const { useLocalFiles } = require('./hooks/use-local-files');
 // The Collection with local files merged in (#1532): one song list, one
 // album list, every source on each entry.
-const { albumIdentity, mergeCollectionSongs, deriveLocalAlbums, mergeCollectionAlbums, deriveLocalArtists, mergeCollectionArtists, hideLocalAlbum, unhideLocalAlbum, planAlbumRemoval } = require('./lib/local-albums');
+// When resolveTrack's local-file gate applies: everything not on screen (#1532).
+const { isOnScreenResolution, skipsLocalFill } = require('./lib/enrichment-gate');
+const { albumIdentity, mergeCollectionSongs, deriveLocalAlbums, mergeCollectionAlbums, deriveLocalArtists, mergeCollectionArtists, hideLocalAlbum, unhideLocalAlbum, planAlbumRemoval, savedAlbumIdsFor } = require('./lib/local-albums');
 const { HomePage } = require('./components/home-page');
 const { PlaylistViewPage, PlaylistViewLoading } = require('./components/playlist-view-page');
 const { ArtistPage } = require('./components/artist-page');
@@ -15018,40 +15020,33 @@ ${trackListXml}
       return;
     }
     setCollectionData(prev => {
-      // Try to find by stored ID first, then fall back to generated ID
-      let existingIndex = -1;
-      let matchId = null;
-      if (album.id) {
-        existingIndex = prev.albums.findIndex(a => a.id === album.id);
-        matchId = album.id;
-      }
-      if (existingIndex === -1) {
-        const generatedId = generateAlbumId(album.artist, album.title);
-        existingIndex = prev.albums.findIndex(a => a.id === generatedId);
-        matchId = generatedId;
-      }
-      if (existingIndex === -1) {
+      // Every saved copy the album stands for (#1532): the one it names (its
+      // id, else the generated id) and the other copies of the same album
+      // ("X" and "X - EP"), which the Albums tab shows as one card. Each is
+      // removed the way one saved album always was.
+      const matchIds = new Set(savedAlbumIdsFor(album, prev.albums));
+      if (matchIds.size === 0) {
         showToast(`${album.title} is not in your collection`);
         return prev;
       }
 
-      const existingAlbum = prev.albums[existingIndex];
-
-      // Remove from connected sync providers
-      const syncSettings = resolverSyncSettingsRef.current;
-      if (window.electron?.sync) {
-        // Only while Spotify sync is on: a paused service is never called
-        // (the tombstone keeps the next sync from bringing it back).
-        if (syncSettings?.spotify?.enabled && existingAlbum.spotifyId) {
-          window.electron.sync.removeAlbums('spotify', [existingAlbum.spotifyId])
-            .then(result => {
-              if (result.success) console.log(`[Sync] Removed "${album.title}" from Spotify Saved Albums`);
-            })
-            .catch(err => console.warn('[Sync] Failed to remove album from Spotify:', err.message));
+      for (const existingAlbum of prev.albums.filter(a => matchIds.has(a.id))) {
+        // Remove from connected sync providers
+        const syncSettings = resolverSyncSettingsRef.current;
+        if (window.electron?.sync) {
+          // Only while Spotify sync is on: a paused service is never called
+          // (the tombstone keeps the next sync from bringing it back).
+          if (syncSettings?.spotify?.enabled && existingAlbum.spotifyId) {
+            window.electron.sync.removeAlbums('spotify', [existingAlbum.spotifyId])
+              .then(result => {
+                if (result.success) console.log(`[Sync] Removed "${existingAlbum.title}" from Spotify Saved Albums`);
+              })
+              .catch(err => console.warn('[Sync] Failed to remove album from Spotify:', err.message));
+          }
         }
       }
 
-      const newAlbums = prev.albums.filter(a => a.id !== matchId);
+      const newAlbums = prev.albums.filter(a => !matchIds.has(a.id));
       const newData = { ...prev, albums: newAlbums };
       saveCollection(newData);
       showToast(`Removed ${album.title} from Collection`);
@@ -21184,7 +21179,8 @@ ${trackListXml}
   const resolveAlbumTrack = (track, artistName) => {
     const inFlight = albumResolutionsInFlight.current;
     if (inFlight.has(track.id)) return inFlight.get(track.id);
-    const pending = Promise.resolve(resolveTrack(track, artistName, {}))
+    // The open album is on screen: its tracks get every source (#1532).
+    const pending = Promise.resolve(resolveTrack(track, artistName, { onScreen: true }))
       .catch(() => {})
       .finally(() => inFlight.delete(track.id));
     inFlight.set(track.id, pending);
@@ -22849,7 +22845,10 @@ ${trackListXml}
   // Resolve a single track across all active resolvers
   // isQueueResolution: when true, this is a priority queue resolution that won't yield
   const resolveTrack = async (track, artistName, options = {}) => {
-    const { forceRefresh = false, isQueueResolution = false, signal, playlistId, forceEnrichment = false } = options;
+    // onScreen: the track is on screen (a page's visible row, the hovered
+    // row, the open album), so the local-file gate below doesn't apply
+    // (lib/enrichment-gate.js, #1532).
+    const { forceRefresh = false, isQueueResolution = false, signal, playlistId, forceEnrichment = false, onScreen = false } = options;
 
     // Validate required parameters
     if (!track || !track.title) {
@@ -23100,8 +23099,13 @@ ${trackListXml}
     // fired one Bandcamp search per track at ~150ms cadence on every library
     // load — all returning 0 results. This gate stops that burst.
     //
-    // Speculative cross-resolver enrichment for local tracks will run
-    // separately at idle priority (see follow-up ticket).
+    // The gate only applies off screen (#1532, lib/enrichment-gate.js): a
+    // visible or hovered row (a 'page' scheduler context) and the open
+    // album's tracks pass `onScreen` and fill like any track, so a local
+    // track the user is looking at shows every source up front. The
+    // whole-library passes (the scheduler's background pass, queue and pool
+    // look-ahead, the library-change re-resolve) stay gated; the idle
+    // trickle below fills those in the background (`forceEnrichment`).
     const hasLocalSource = Object.entries(realPersistedSources).some(([resolverId, source]) =>
       isLocalResolver(resolverId)
       && source
@@ -23119,7 +23123,7 @@ ${trackListXml}
       };
       return {};
     }
-    if (!cacheValid && hasRealPersistedSources && (missingResolvers.length === 0 || (hasLocalSource && !forceEnrichment))) {
+    if (!cacheValid && hasRealPersistedSources && (missingResolvers.length === 0 || skipsLocalFill({ hasLocalSource, forceEnrichment, onScreen }))) {
       if (DEBUG_RESOLUTION) console.log(`📦 Using persisted sources for: ${track.title} (sources: ${persistedResolverIds.join(', ')})`);
 
       // Re-score confidence under current calculateConfidence semantics so any
@@ -23588,11 +23592,13 @@ ${trackListXml}
 
   // Set resolve callback (needs to be updated when resolveTrack changes)
   useEffect(() => {
-    resolutionScheduler.setResolveCallback(async (trackData, signal) => {
+    resolutionScheduler.setResolveCallback(async (trackData, signal, info) => {
       await resolveTrack(trackData.track, trackData.artistName, {
         signal,
         isQueueResolution: trackData.isQueueResolution,
-        playlistId: trackData.playlistId // For background playlist resolution
+        playlistId: trackData.playlistId, // For background playlist resolution
+        // A visible or hovered row resolves fully, local file or not (#1532).
+        onScreen: isOnScreenResolution(info)
       });
     });
   }, [resolveTrack]);

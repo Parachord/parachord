@@ -155,8 +155,13 @@ function mergeCollectionSongs(library, savedTracks) {
     }
     if (!match) { rows.push(s); continue; }
     used.add(match);
+    // The file's path rides along (from the row, else its local source), so
+    // the row's menu offers Show in Finder like a local-only row's; its id
+    // and everything else stay the saved record's.
+    const localSource = Object.values(match.sources || {}).find(src => src && src.filePath) || null;
     rows.push({
       ...s,
+      filePath: match.filePath || (localSource && localSource.filePath) || s.filePath,
       sources: { ...(s.sources || {}), ...(match.sources || {}) },
       albumArt: s.albumArt || match.albumArt || null,
       duration: s.duration || match.duration,
@@ -217,46 +222,105 @@ function deriveLocalAlbums(library) {
   return albums;
 }
 
+// A store's own suffix on an album title (Apple Music's "X - Single" /
+// "X - EP"), the part albumKey drops.
+const STORE_SUFFIX = /\s+-\s+(single|ep)\s*$/i;
+
+// The copy a merged card shows when several saved copies are one album: the
+// one without a store suffix, else the earliest saved; ties keep list order.
+const pickCardCopy = (copies) => {
+  const rank = (a) => [STORE_SUFFIX.test(a.title || '') ? 1 : 0, Number.isFinite(a.addedAt) ? a.addedAt : Infinity];
+  let best = copies[0];
+  for (const c of copies.slice(1)) {
+    const [bs, bt] = rank(best);
+    const [cs, ct] = rank(c);
+    if (cs < bs || (cs === bs && ct < bt)) best = c;
+  }
+  return best;
+};
+
 /**
- * The Albums tab's list: every saved album, then each local album that isn't
- * saved (same album identity) or hidden. A saved album that is also local
- * keeps its own record (id, title, art, year, track count, addedAt); a cover
- * it lacks comes from the files. `songs` (mergeCollectionSongs' rows) give
- * each merged or local album its `tracks`: the union of its saved songs and
- * its files, one row per song with every source, in disc and track order.
- * `hiddenKeys` hides local albums only: a saved album always shows.
+ * The Albums tab's list: one card per album. Saved copies of one album (the
+ * same identity: "X" and "X - EP" by one artist) are one card, and a local
+ * album that is also saved joins it; each local album that isn't saved or
+ * hidden is a card of its own. Display only: the saved records are never
+ * changed.
+ *
+ * A merged card is the record of the copy pickCardCopy chooses (its id,
+ * title, track count and addedAt), with `savedIds` (every saved copy it
+ * stands for; removing the card removes them all), a cover and year from the
+ * first copy that has one, else the files. `songs` (mergeCollectionSongs'
+ * rows) give a merged card its `tracks`: the union of the copies' saved
+ * songs and the files, one row per song with every source, in disc and
+ * track order. `hiddenKeys` hides local albums only: a saved album always
+ * shows.
  */
 function mergeCollectionAlbums(savedAlbums, localAlbums, hiddenKeys, songs) {
   const saved = Array.isArray(savedAlbums) ? savedAlbums : [];
   const local = Array.isArray(localAlbums) ? localAlbums : [];
-  if (local.length === 0) return saved;
   const hidden = hiddenKeys instanceof Set ? hiddenKeys : new Set(Array.isArray(hiddenKeys) ? hiddenKeys : []);
   const localByKey = new Map(local.map(a => [a.key, a]));
+
+  // Saved copies by album identity, in list order of each album's first copy.
+  const groups = new Map();
+  const order = [];
+  for (const album of saved) {
+    const key = album ? albumIdentity(album.artist, album.title) : null;
+    if (!key) { order.push({ single: album }); continue; }
+    if (!groups.has(key)) { groups.set(key, []); order.push({ key }); }
+    groups.get(key).push(album);
+  }
+  const merges = (key) => (groups.get(key) || []).length > 1 || localByKey.has(key);
+  if (local.length === 0 && ![...groups.keys()].some(merges)) return saved;
+
   const tracksByKey = new Map();
   for (const t of Array.isArray(songs) ? songs : []) {
     const k = trackAlbumKeyOf(t);
-    if (!k || !localByKey.has(k)) continue;
+    if (!k || !(localByKey.has(k) || (groups.get(k) || []).length > 1)) continue;
     if (!tracksByKey.has(k)) tracksByKey.set(k, []);
     tracksByKey.get(k).push(t);
   }
   for (const list of tracksByKey.values()) list.sort(byDiscAndTrack);
-  const savedKeys = new Set();
-  const out = saved.map(album => {
-    const key = album ? albumIdentity(album.artist, album.title) : null;
-    const match = key ? localByKey.get(key) : null;
-    if (!match) return album;
-    savedKeys.add(key);
-    return {
-      ...album,
-      art: album.art || match.art || null,
-      tracks: tracksByKey.get(key) || match.localTracks,
-    };
-  });
+
+  const out = [];
+  for (const entry of order) {
+    if (entry.single) { out.push(entry.single); continue; }
+    const { key } = entry;
+    const copies = groups.get(key);
+    const match = localByKey.get(key) || null;
+    if (copies.length === 1 && !match) { out.push(copies[0]); continue; }
+    const card = pickCardCopy(copies);
+    out.push({
+      ...card,
+      art: card.art || (copies.find(c => c.art) || {}).art || (match && match.art) || null,
+      year: card.year || (copies.find(c => c.year) || {}).year || (match && match.year) || null,
+      savedIds: copies.map(c => c.id),
+      tracks: tracksByKey.get(key) || (match ? match.localTracks : undefined),
+    });
+  }
   for (const album of local) {
-    if (savedKeys.has(album.key) || hidden.has(album.key)) continue;
+    if (groups.has(album.key) || hidden.has(album.key)) continue;
     out.push({ ...album, tracks: tracksByKey.get(album.key) || album.localTracks });
   }
   return out;
+}
+
+/**
+ * The ids of the saved albums "Remove from Collection" (or un-hearting)
+ * removes for `album`: the copy it names (its id, its `savedIds`, or
+ * generateAlbumId of its artist and title) and every other saved copy of the
+ * same album (the same identity), since the Albums tab shows them as one
+ * card.
+ */
+function savedAlbumIdsFor(album, savedAlbums) {
+  const a = album || {};
+  const saved = Array.isArray(savedAlbums) ? savedAlbums : [];
+  const generated = generateAlbumId(a.artist, a.title);
+  const key = albumIdentity(a.artist, a.title);
+  const named = new Set([a.id, generated, ...(Array.isArray(a.savedIds) ? a.savedIds : [])].filter(Boolean));
+  return saved
+    .filter(s => s && (named.has(s.id) || (key && albumIdentity(s.artist, s.title) === key)))
+    .map(s => s.id);
 }
 
 /**
@@ -338,13 +402,13 @@ function planAlbumRemoval(album, localKeys, savedAlbums) {
   const keys = localKeys instanceof Set ? localKeys : new Set(localKeys || []);
   const key = albumIdentity(a.artist, a.title);
   const hideKey = key && keys.has(key) ? key : null;
-  const generated = generateAlbumId(a.artist, a.title);
-  const saved = Array.isArray(savedAlbums) ? savedAlbums : [];
-  const isSaved = saved.some(s => s && (s.id === generated || (a.id && s.id === a.id)));
+  const isSaved = savedAlbumIdsFor(a, savedAlbums).length > 0;
   return { hideKey, unsave: isSaved || !hideKey };
 }
 
 module.exports = {
+  savedAlbumIdsFor,
+  pickCardCopy,
   trackArtistNameOf,
   deriveLocalArtists,
   mergeCollectionArtists,

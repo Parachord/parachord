@@ -22,6 +22,7 @@ const {
   hideLocalAlbum,
   unhideLocalAlbum,
   planAlbumRemoval,
+  savedAlbumIdsFor,
 } = require('../../src/renderer/lib/local-albums');
 const { generateAlbumId, generateArtistId, generateTrackId } = require('../../sync-engine/collection-id');
 const { artistInCollection, albumInCollection, withCollectionState } = require('../../src/renderer/lib/menu-collection-state');
@@ -278,6 +279,84 @@ describe('artists', () => {
   });
 });
 
+describe('a merged song carries its file', () => {
+  test('the file path rides on the saved row, so its menu offers Show in Finder', () => {
+    const file = local({ title: 'Reckoner', artist: 'Radiohead', album: 'In Rainbows' });
+    const song = saved({ title: 'Reckoner', artist: 'Radiohead', album: 'In Rainbows' });
+    const [row] = mergeCollectionSongs([file], [song]);
+    expect(row.id).toBe(song.id);
+    expect(row.filePath).toBe(file.filePath);
+    // From the local source when the library row has no top-level path.
+    const bare = { ...file, filePath: undefined };
+    expect(mergeCollectionSongs([bare], [song])[0].filePath).toBe(file.sources.localfiles.filePath);
+    // Remove from Collection still means the saved record.
+    expect(withCollectionState({ type: 'track', track: row }, { tracks: [song] }).isInCollection).toBe(true);
+  });
+});
+
+describe('saved copies of one album', () => {
+  const x = { id: generateAlbumId('Band', 'Fences'), title: 'Fences', artist: 'Band', addedAt: 50, art: null, year: 2019 };
+  const xEp = { id: generateAlbumId('Band', 'Fences - EP'), title: 'Fences - EP', artist: 'Band', addedAt: 10, art: 'https://x/ep.jpg' };
+  const other = { id: generateAlbumId('Band', 'Other'), title: 'Other', artist: 'Band', addedAt: 5 };
+  const savedTracks = [
+    saved({ title: 'One', artist: 'Band', album: 'Fences', trackNumber: 1 }),
+    saved({ title: 'Two', artist: 'Band', album: 'Fences - EP', trackNumber: 2 }),
+  ];
+
+  test('two saved copies give one entry: the copy without the store suffix, the first cover, both ids, the union of tracks', () => {
+    const songs = mergeCollectionSongs([], savedTracks);
+    const merged = mergeCollectionAlbums([xEp, other, x], [], [], songs);
+    expect(merged.map(a => a.title)).toEqual(['Fences', 'Other']);
+    const card = merged[0];
+    expect(card).toMatchObject({ id: x.id, title: 'Fences', year: 2019, art: 'https://x/ep.jpg' });
+    expect(card.savedIds.sort()).toEqual([x.id, xEp.id].sort());
+    expect(card.tracks.map(t => t.title)).toEqual(['One', 'Two']);
+    // Shows as saved.
+    expect(card.isLocal).toBeUndefined();
+    expect(albumInCollection([xEp], { title: 'Fences', artist: 'Band' })).toBe(true);
+  });
+
+  test('with no copy free of a store suffix, the earliest saved wins', () => {
+    const single = { id: 'band-fences-single', title: 'Fences - Single', artist: 'Band', addedAt: 30 };
+    const merged = mergeCollectionAlbums([single, xEp], [], [], []);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].id).toBe(xEp.id);
+  });
+
+  test('display only: the saved records are not changed', () => {
+    const list = deepFreeze([{ ...x }, { ...xEp }]);
+    expect(() => mergeCollectionAlbums(list, [], [], [])).not.toThrow();
+    expect(list.map(a => a.id)).toEqual([x.id, xEp.id]);
+  });
+
+  test('removing the merged card removes every saved copy it stands for, and nothing else', () => {
+    const merged = mergeCollectionAlbums([x, xEp, other], [], [], []);
+    const card = merged.find(a => a.title === 'Fences');
+    // What the menu sends back (the card without its tracks).
+    const { tracks: _t, ...menuAlbum } = card;
+    expect(savedAlbumIdsFor(menuAlbum, [x, xEp, other]).sort()).toEqual([x.id, xEp.id].sort());
+    // Named by either title (an album page's menu), the same.
+    expect(savedAlbumIdsFor({ title: 'Fences - EP', artist: 'Band' }, [x, xEp, other]).sort()).toEqual([x.id, xEp.id].sort());
+    expect(planAlbumRemoval(menuAlbum, new Set(), [x, xEp, other])).toEqual({ hideKey: null, unsave: true });
+  });
+
+  test('a saved copy, a local copy and a second saved copy all merge into one', () => {
+    const library = [
+      local({ title: 'Three', artist: 'Band', album: 'Fences', trackNumber: 3 }),
+      local({ title: 'One', artist: 'Band', album: 'Fences', trackNumber: 1 }),
+    ];
+    const songs = mergeCollectionSongs(library, savedTracks);
+    const merged = mergeCollectionAlbums([xEp, x], deriveLocalAlbums(library), [], songs);
+    expect(merged).toHaveLength(1);
+    const card = merged[0];
+    expect(card.id).toBe(x.id);
+    expect(card.savedIds.sort()).toEqual([x.id, xEp.id].sort());
+    expect(card.tracks.map(t => t.title)).toEqual(['One', 'Two', 'Three']);
+    const one = card.tracks.find(t => t.title === 'One');
+    expect(Object.keys(one.sources).sort()).toEqual(['localfiles', 'spotify']);
+  });
+});
+
 describe('hiding', () => {
   test('hide and unhide', () => {
     let hidden = [];
@@ -328,6 +407,13 @@ describe('app.js wiring', () => {
       const at = body.indexOf(marker);
       if (at !== -1) expect(at).toBeGreaterThan(early);
     }
+  });
+
+  test('removing an album removes every saved copy savedAlbumIdsFor names, each the old way', () => {
+    const body = fnBody('removeAlbumFromCollection');
+    expect(body).toMatch(/const matchIds = new Set\(savedAlbumIdsFor\(album, prev\.albums\)\);/);
+    expect(body).toMatch(/for \(const existingAlbum of prev\.albums\.filter\(a => matchIds\.has\(a\.id\)\)\)/);
+    expect(body).toMatch(/const newAlbums = prev\.albums\.filter\(a => !matchIds\.has\(a\.id\)\);/);
   });
 
   test('adding an album clears its hide', () => {

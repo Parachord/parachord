@@ -157,7 +157,7 @@ The playbar Spinoff button seeds from the playing track with Last.fm `track.gets
 
 Code: `handleStartCollectionStation`, context name "Collection Station".
 
-Shuffles the local library plus collection tracks, deduplicated. Play Collection Radio in the Home header, a button on the Collection page, a menu entry, `parachord://collection-radio`, and the chat tool `collection_radio`. There is no recommendation step; it only plays what the user already has.
+Shuffles the local library plus collection tracks, deduplicated (one per song: a saved song and its file count once, #1532). Play Collection Radio in the Home header, a button on the Collection page, a menu entry, `parachord://collection-radio`, and the chat tool `collection_radio`. There is no recommendation step; it only plays what the user already has.
 
 ## Protocol radio (`parachord://play/radio`)
 
