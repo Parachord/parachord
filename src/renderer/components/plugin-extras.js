@@ -30,7 +30,7 @@
 
 const Icons = require('./icons');
 const { Button } = require('./button');
-const { SecretField, SettingRow, StackedField, Switch, TextField } = require('./fields');
+const { HelpLink, SecretField, SettingRow, StackedField, Switch, TextField } = require('./fields');
 const { AccountRow } = require('./account-row');
 const { Disclosure } = require('./disclosure');
 const { ProgressBar } = require('./progress-bar');
@@ -66,15 +66,6 @@ const openExternal = (url) => {
   if (window.electron?.shell?.openExternal) window.electron.shell.openExternal(url);
   else window.open(url, '_blank');
 };
-
-// A link out of the app, in the accent colour, as the dialog's other links.
-function ExternalLink({ url, children }) {
-  return React.createElement('a', {
-    href: '#',
-    onClick: (e) => { e.preventDefault(); openExternal(url); },
-    style: { color: 'var(--accent-primary)', fontWeight: 500, textDecoration: 'underline' },
-  }, children);
-}
 
 // The configurable fields marked `advanced`, minus the client keys (those
 // have their own section).
@@ -132,10 +123,11 @@ function ClientKeys({ plugin, keys, authPort, showToast }) {
   const copy = (uri) => { navigator.clipboard.writeText(uri); showToast('Copied to clipboard', 'success'); };
   return e(Disclosure, { label, alwaysOpen: !saved, open, onToggle: () => setOpen(!open) },
     source === 'none'
-      ? e('p', { style: { ...NOTE, color: TONE.secondary, marginBottom: '12px' } },
-        ck.help || `${plugin.name} needs your own ${midSentence(label)} before you can sign in.`,
-        ck.helpUrl && ' ',
-        ck.helpUrl && e(ExternalLink, { url: ck.helpUrl }, ck.helpLinkLabel || 'Get one'))
+      ? e('div', { style: { marginBottom: '12px' } },
+        e('p', { style: { ...NOTE, color: TONE.secondary } },
+          ck.help || `${plugin.name} needs your own ${midSentence(label)} before you can sign in.`),
+        ck.helpUrl && e('div', { style: { textAlign: 'right', marginTop: '6px' } },
+          e(HelpLink, { url: ck.helpUrl }, ck.helpLinkLabel || `Get your ${midSentence(label)}`)))
       : e('p', { style: { ...NOTE, color: TONE.success, marginBottom: '12px' } },
         source === 'env' ? `Using the ${midSentence(label)} from an environment variable.` : `Using your own ${midSentence(label)}.`),
     source === 'none' && ck.steps && ck.steps.length > 0 && e('ol', {
@@ -180,7 +172,7 @@ function AdvancedKeys({ plugin, values, setValue, saved = false, onSave, onClear
   const hint = saved && a.advancedSavedHint ? a.advancedSavedHint : a.advancedHint;
   return e(Disclosure, { open, onToggle: () => setOpen(!open) },
     hint && e('p', { style: { ...NOTE, color: saved && a.advancedSavedHint ? TONE.success : TONE.secondary, marginBottom: '12px' } }, hint),
-    fields.map(([k, f]) => e(StackedField, { key: k, label: f.label || k, description: f.description },
+    fields.map(([k, f]) => e(StackedField, { key: k, label: f.label || k, description: f.description, link: !readOnly && f.helpUrl ? { url: f.helpUrl, label: `Get your ${midSentence(f.label || k)}` } : undefined },
       readOnly
         ? e(SecretField, { 'aria-label': `${plugin.name} ${midSentence(f.label || k)}`, defaultValue: values[k] || '', readOnly: true, className: 'w-full' })
         : e(SecretField, {

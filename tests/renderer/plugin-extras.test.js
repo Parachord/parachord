@@ -219,6 +219,67 @@ describe('one layout (the #1498 contact-sheet review)', () => {
   });
 });
 
+describe('one help-link style (HelpLink in fields.js)', () => {
+  const HELP = /<a href="#" data-help-link="" style="color:var\(--accent-primary\);font-size:12px;font-weight:500;text-decoration:none">([^<]*) →<\/a>/g;
+  const links = (html) => [...html.matchAll(HELP)].map((m) => m[1]);
+  const allAnchors = (html) => (html.match(/<a /g) || []).length;
+
+  test.each([
+    ['a key', base({ type: 'meta-service', capabilities: { chat: true }, settings: { requiresAuth: true, authType: 'apikey', configurable: { apiKey: { type: 'password', label: 'API key', helpUrl: 'https://example.org' } } } }), ['Get your API key']],
+    ['an optional advanced key', base({ type: 'meta-service', capabilities: { recommendations: true }, configurable: { username: { label: 'U' }, userToken: { label: 'User token', advanced: true, helpUrl: 'https://example.org' } }, settings: { account: { type: 'username' } } }), []],
+    ['client keys', base({ configurable: { clientId: { label: 'Client ID' } }, settings: { account: { type: 'sign-in' }, clientKeys: { fields: ['clientId'], help: 'Bring one.', helpUrl: 'https://example.org', helpLinkLabel: 'Open the dashboard' } } }), ['Open the dashboard']],
+  ])('%s: every link is the HelpLink', (_n, plugin, expected) => {
+    const hostAccounts = { newservice: { signedIn: false, signIn: noop, signOut: noop, connect: noop, remove: noop, keys: { source: 'none', values: {}, setValue: noop, save: noop, clear: noop } } };
+    const html = render(plugin, { hostAccounts });
+    expect(links(html)).toEqual(expected);
+    expect(allAnchors(html)).toBe(expected.length);
+  });
+
+  test('a scrobbler\'s token and sign-up links are HelpLinks too', () => {
+    global.window.scrobblers = [{ id: 'newservice', name: 'New Service', connectWithPassword: noop }];
+    const html = render(base({ type: 'meta-service', capabilities: { scrobbling: true }, homepage: 'https://example.org' }));
+    expect(links(html)).toEqual(['Create a New Service account']);
+    expect(allAnchors(html)).toBe(1);
+    global.window.scrobblers = [{ id: 'newservice', name: 'New Service', connect: noop }];
+    const token = render(base({ type: 'meta-service', capabilities: { scrobbling: true }, configurable: { userToken: { label: 'User token', helpUrl: 'https://example.org' } } }));
+    expect(links(token)).toEqual(['Get your user token']);
+  });
+
+  test('no other link style is left in the dialog\'s parts', () => {
+    for (const f of ['plugin-settings-dialog.js', 'plugin-extras.js', 'settings-cards.js']) {
+      const src = fs.readFileSync(path.join(ROOT, 'src/renderer/components', f), 'utf8');
+      expect([f, /createElement\('a',|\be\('a',/.test(src)]).toEqual([f, false]);
+    }
+  });
+});
+
+describe('a meta service\'s "Needs …" line', () => {
+  const { metaServiceFromAxe } = require('../../src/renderer/lib/meta-service');
+  test('the one builder carries manifest.requirement, and the dialog shows it', () => {
+    const svc = metaServiceFromAxe({ manifest: { id: 'newservice', name: 'New Service', type: 'meta-service', requirement: '  Needs your own key.  ' }, capabilities: { chat: true }, settings: {} });
+    expect(svc.requirement).toBe('Needs your own key.');
+    expect(render(svc)).toContain('Needs your own key.');
+    expect(metaServiceFromAxe({ manifest: { id: 'x' }, capabilities: {} }).requirement).toBeNull();
+  });
+
+  test('every path that builds a meta service uses it', () => {
+    const app = fs.readFileSync(path.join(ROOT, 'src/renderer/app.js'), 'utf8');
+    expect((app.match(/metaServiceFromAxe\(axe/g) || []).length).toBe(3);
+    // No hand-built copy that would drop a field again.
+    expect(app).not.toMatch(/description: axe\.manifest\.description,/);
+  });
+
+  test('every shipped meta service with a requirement reaches its dialog', () => {
+    for (const id of fs.readdirSync(path.join(ROOT, 'plugins-src'))) {
+      const f = path.join(ROOT, 'plugins-src', id, 'manifest.json');
+      if (!fs.existsSync(f)) continue;
+      const axe = JSON.parse(fs.readFileSync(f, 'utf8'));
+      if (axe.manifest.type !== 'meta-service' || !axe.manifest.requirement) continue;
+      expect([id, render(metaServiceFromAxe(axe)).includes(axe.manifest.requirement.replace(/'/g, '&#x27;'))]).toEqual([id, true]);
+    }
+  });
+});
+
 test('the shipped manifests declare the signals their sections need', () => {
   const m = (id) => JSON.parse(fs.readFileSync(path.join(ROOT, 'plugins-src', id, 'manifest.json'), 'utf8'));
   expect(m('spotify').capabilities.librarySync).toBe(true);

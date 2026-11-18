@@ -238,15 +238,6 @@ const McpSettingsSection = () => {
   );
 };
 
-// A link out of the app, as the plug-in dialog's help links.
-function ExternalLink({ url, children }) {
-  return React.createElement('a', {
-    href: '#',
-    onClick: (e) => { e.preventDefault(); window.electron.shell.openExternal(url); },
-    style: { color: 'var(--accent-primary)', fontWeight: 500, textDecoration: 'underline' },
-  }, children);
-}
-
 // ScrobblerSettingsCard component - Settings card for individual scrobbler services
 const ScrobblerSettingsCard = React.memo(({
   scrobbler, config, onConfigChange, color,
@@ -418,7 +409,7 @@ const ScrobblerSettingsCard = React.memo(({
       // helpUrl / homepage).
       usesToken && React.createElement(StackedField, {
         label: 'User token',
-        description: tokenUrl && React.createElement(ExternalLink, { url: tokenUrl }, 'Get your user token'),
+        link: { url: tokenUrl, label: 'Get your user token' },
         style: { marginBottom: 0 },
       },
         React.createElement(TextField, { value: tokenInput, onChange: (_v, e) => setTokenInput(e.target.value), placeholder: `Your ${scrobbler.name} user token`, 'aria-label': `Your ${scrobbler.name} user token`, className: 'w-full' })
@@ -429,7 +420,7 @@ const ScrobblerSettingsCard = React.memo(({
           React.createElement(TextField, { value: usernameInput, onChange: (_v, e) => setUsernameInput(e.target.value), placeholder: `Your ${scrobbler.name} username`, 'aria-label': `Your ${scrobbler.name} username`, className: 'w-full' })),
         React.createElement(StackedField, {
           label: 'Password',
-          description: signUpUrl && React.createElement(ExternalLink, { url: signUpUrl }, `Create a ${scrobbler.name} account`),
+          link: { url: signUpUrl, label: `Create a ${scrobbler.name} account` },
           style: { marginBottom: 0 },
         },
           React.createElement(SecretField, { value: passwordInput, onChange: (_v, e) => setPasswordInput(e.target.value), placeholder: `Your ${scrobbler.name} password`, 'aria-label': `Your ${scrobbler.name} password`, className: 'w-full' }))

@@ -559,7 +559,19 @@ React.createElement('div', {
             }
           },
             // The key, with its help under it and where to get one.
-            authFieldKey && React.createElement(StackedField, { label: keyLabel(selectedResolver, authFieldKey), style: { marginBottom: '16px' } },
+            authFieldKey && React.createElement(StackedField, {
+              label: keyLabel(selectedResolver, authFieldKey),
+              // Its help (the manifest's description: never a raw URL), then
+              // whether it's saved and where to get one (the HelpLink).
+              description: authFieldSettings.description,
+              status: metaServiceConfigs[selectedResolver.id]?.[authFieldKey]
+                ? React.createElement('span', { className: 'flex items-center gap-1 text-ink-success' },
+                    React.createElement(Icons.Check, { className: 'w-4 h-4', 'aria-hidden': 'true' }),
+                    `${keyLabel(selectedResolver, authFieldKey)} saved`)
+                : null,
+              link: { url: keyUrl, label: `Get your ${keyLabel(selectedResolver, authFieldKey)}` },
+              style: { marginBottom: '16px' },
+            },
               React.createElement(SecretField, { defaultValue: metaServiceConfigs[selectedResolver.id]?.[authFieldKey] || '', onBlur: (e) => {
                   // Services whose key is optional (requiresAuth: false, e.g. local
                   // custom-LLM endpoints) keep their explicit enabled toggle — blurring
@@ -585,28 +597,6 @@ React.createElement('div', {
                     }
                   }, 100);
                 }, placeholder: authFieldSettings.placeholder || '', 'aria-label': `${selectedResolver.name} API key`, className: 'w-full' }),
-              // Its help (the manifest's description: never a raw URL; the
-              // link is helpUrl's, below).
-              authFieldSettings.description && React.createElement('div', { className: 'text-ink-tertiary', style: { fontSize: '11px', lineHeight: 1.5, marginTop: '4px' } }, authFieldSettings.description),
-              // Under the key: whether it's saved (left), where to get one (right).
-              React.createElement('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginTop: '6px', fontSize: '12px' } },
-              metaServiceConfigs[selectedResolver.id]?.[authFieldKey]
-                ? React.createElement('span', { className: 'flex items-center gap-1 text-ink-success' },
-                    React.createElement(Icons.Check, { className: 'w-4 h-4', 'aria-hidden': 'true' }),
-                    `${keyLabel(selectedResolver, authFieldKey)} saved`)
-                : React.createElement('span', null),
-              keyUrl && React.createElement('a', {
-                href: '#',
-                onClick: (e) => {
-                  e.preventDefault();
-                  window.electron?.shell?.openExternal?.(keyUrl);
-                },
-                style: {
-                  color: 'var(--accent-primary)',
-                  fontWeight: '500',
-                  textDecoration: 'none'
-                }
-              }, `Get your ${keyLabel(selectedResolver, authFieldKey)} →`))
             ),
             // Model selector - supports both static and dynamic-select
             selectedResolver.settings?.configurable?.model && React.createElement(StackedField, {

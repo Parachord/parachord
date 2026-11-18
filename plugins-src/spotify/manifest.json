@@ -81,7 +81,7 @@
       "label": "Client ID",
       "help": "Spotify requires your own API credentials. Create a free app to get your Client ID. The Spotify account that creates the app needs Spotify Premium, and the app stops working if that Premium lapses.",
       "helpUrl": "https://developer.spotify.com/dashboard",
-      "helpLinkLabel": "developer.spotify.com/dashboard",
+      "helpLinkLabel": "Open the Spotify developer dashboard",
       "steps": [
         "Create a new app (name it anything)",
         "Add both redirect URIs below to it",

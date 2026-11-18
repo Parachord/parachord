@@ -2054,6 +2054,8 @@ const { ChartsPage } = require('./components/charts-page');
 const { RaycastInfoDialog } = require('./components/raycast-info-dialog');
 const { ExtensionInfoDialog } = require('./components/extension-info-dialog');
 const { PluginSettingsDialog } = require('./components/plugin-settings-dialog');
+// A meta service's entry in metaServices, from its .axe (lib/meta-service.js).
+const { metaServiceFromAxe } = require('./lib/meta-service');
 const { servicesWithCapability, hasScrobblerConnected: hasScrobblerConnectedTo } = require('./lib/ai-services');
 const { PROVIDER_LABEL, getPlaylistMirrorTargets } = require('./lib/playlist-mirrors');
 const { playlistImportLabel } = require('./lib/playlist-import-sources');
@@ -8950,20 +8952,7 @@ const Parachord = () => {
 
         // Set meta services directly (they don't need the resolver pipeline for playback)
         if (metaServiceAxes.length > 0) {
-          const metaServicesData = metaServiceAxes.map(axe => ({
-            id: axe.manifest.id,
-            name: axe.manifest.name,
-            type: axe.manifest.type,
-            version: axe.manifest.version,
-            author: axe.manifest.author,
-            description: axe.manifest.description,
-            icon: axe.manifest.icon,
-            color: axe.manifest.color,
-            homepage: axe.manifest.homepage,
-            capabilities: axe.capabilities,
-            settings: axe.settings,
-            _filename: axe._filename
-          }));
+          const metaServicesData = metaServiceAxes.map(axe => metaServiceFromAxe(axe));
           setMetaServices(metaServicesData);
           console.log(`✅ Loaded ${metaServicesData.length} meta services:`, metaServicesData.map(s => s.name).join(', '));
         }
@@ -9055,20 +9044,7 @@ const Parachord = () => {
         ]);
 
         // Update meta services state so UI reflects new capabilities
-        const metaServicesData = visibleAxes.map(axe => ({
-          id: axe.manifest.id,
-          name: axe.manifest.name,
-          type: axe.manifest.type,
-          version: axe.manifest.version,
-          author: axe.manifest.author,
-          description: axe.manifest.description,
-          icon: axe.manifest.icon,
-          color: axe.manifest.color,
-          homepage: axe.manifest.homepage,
-          capabilities: axe.capabilities,
-          settings: axe.settings,
-          _filename: axe._filename
-        }));
+        const metaServicesData = visibleAxes.map(axe => metaServiceFromAxe(axe));
 
         setMetaServices(metaServicesData);
         console.log(`✅ Hot-reloaded ${metaServicesData.length} meta services after marketplace sync`);
@@ -25977,20 +25953,7 @@ ${trackListXml}
         await resolverLoader.current.loadResolver(axe);
 
         // Add to metaServices state
-        const metaServiceData = {
-          id: axe.manifest.id,
-          name: axe.manifest.name,
-          type: axe.manifest.type,
-          version: axe.manifest.version,
-          author: axe.manifest.author,
-          description: axe.manifest.description,
-          icon: axe.manifest.icon,
-          color: axe.manifest.color,
-          homepage: axe.manifest.homepage,
-          capabilities: axe.capabilities,
-          settings: axe.settings,
-          _filename: filename
-        };
+        const metaServiceData = metaServiceFromAxe(axe, filename);
 
         const existingMeta = metaServices.find(s => s.id === resolverId);
         if (existingMeta) {
