@@ -1994,7 +1994,7 @@ const FALLBACK_RESOLVERS = require('./lib/fallback-resolvers.generated.js');
 
 
 // The canonical plug-in order and its helpers (lib/resolver-order.js).
-const { CANONICAL_RESOLVER_ORDER, appendUniqueId, insertInCanonicalOrder } = require('./lib/resolver-order');
+const { CANONICAL_RESOLVER_ORDER, appendUniqueId, insertRemembered, rememberOrder } = require('./lib/resolver-order');
 
 // Charts page country options (lib/charts-countries.js).
 const { CHARTS_COUNTRIES } = require('./lib/charts-countries');
@@ -3830,7 +3830,11 @@ const Parachord = () => {
   // at ~7.6k; useRef identity is mount-agnostic).
   const resolverConfigCache = useRef({});
   const resolverOrderRef = useRef(resolverOrder);  // Ref to avoid stale closure in save
-  const savedResolverOrderRef = useRef(null);  // Persisted order from storage — used to restore priority position when re-enabling
+  // The user's whole priority ranking, disabled plug-ins included
+  // (lib/resolver-order.js rememberOrder): a plug-in turned back on, or back
+  // after a sign-in, returns to its place, not the canonical default. Kept
+  // current on every order change and saved as resolver_order_memory.
+  const savedResolverOrderRef = useRef(null);
   const savedActiveResolversRef = useRef(null);  // Persisted active_resolvers from storage — used to distinguish auth-gated removal from user-disabled
   const [draggedResolver, setDraggedResolver] = useState(null);
   const [dragOverResolver, setDragOverResolver] = useState(null);  // Which resolver is being dragged over
@@ -6217,6 +6221,17 @@ const Parachord = () => {
     ...PlaybackLimits.pluginStatusLimits(pluginStatuses)
   }), [appleMusicAuthChecked, appleMusicConnected, pluginStatuses]);
   const planBlockedResolverIds = useMemo(() => PlaybackLimits.planBlockedIds(playbackLimits), [playbackLimits]);
+  // Signed out for sync: the sync check's verdict, or the account's own
+  // sign-in check. The sync check only runs when a sync does, so after a
+  // recent sync an expired Apple Music sign-in showed "Sign in" on the
+  // account and an active sync beside it (2026-11-17).
+  const syncSignedOutView = useMemo(() => {
+    const out = { ...syncSignedOut };
+    for (const [id, limit] of Object.entries(playbackLimits)) {
+      if (limit && limit.blocked && limit.planKey === 'signed-out') out[id] = true;
+    }
+    return out;
+  }, [syncSignedOut, playbackLimits]);
   // For the plug-in tile menu's Raise / Lower Priority handler, registered once.
   const planBlockedResolverIdsRef = useRef(planBlockedResolverIds);
   planBlockedResolverIdsRef.current = planBlockedResolverIds;
@@ -9664,7 +9679,7 @@ const Parachord = () => {
       });
       setResolverOrder(prev => {
         if (!prev.includes('applemusic')) {
-          return insertInCanonicalOrder(prev, 'applemusic');
+          return insertRemembered(prev, 'applemusic', savedResolverOrderRef.current);
         }
         return prev;
       });
@@ -9773,7 +9788,7 @@ const Parachord = () => {
               });
               setResolverOrder(prev => {
                 if (!prev.includes('applemusic')) {
-                  return insertInCanonicalOrder(prev, 'applemusic');
+                  return insertRemembered(prev, 'applemusic', savedResolverOrderRef.current);
                 }
                 return prev;
               });
@@ -9907,6 +9922,7 @@ const Parachord = () => {
       [providerId]: {
         ...prev[providerId],
         enabled: true,
+        stopped: false,
         ...settings,
         selectedPlaylistIds: selectedPlaylists
       }
@@ -10422,15 +10438,18 @@ const Parachord = () => {
       });
     }
 
-    // Disable sync in settings
+    // Disable sync in settings. `stopped` tells this apart from the Sync
+    // menu's pause (enabled: false alone, choices kept): a stopped service is
+    // set up again from scratch (lib/library-sync-state.js).
     await window.electron.syncSettings.setProvider(providerId, {
       ...resolverSyncSettings[providerId],
-      enabled: false
+      enabled: false,
+      stopped: true
     });
 
     setResolverSyncSettings(prev => ({
       ...prev,
-      [providerId]: { ...prev[providerId], enabled: false }
+      [providerId]: { ...prev[providerId], enabled: false, stopped: true }
     }));
 
     setStopSyncDialog({ open: false, providerId: null });
@@ -10446,8 +10465,8 @@ const Parachord = () => {
   // up opens the setup dialog instead.
   const setProviderSyncEnabled = async (providerId, enabled) => {
     const existing = resolverSyncSettingsRef.current[providerId];
-    // Never set up, or signed out: setup, which asks for the sign-in first.
-    if (enabled && (!existing || syncSignedOut[providerId])) { openSyncSetupModal(providerId); return; }
+    // Never set up, stopped, or signed out: setup, which asks for the sign-in first.
+    if (enabled && (!existing || existing.stopped || syncSignedOutView[providerId])) { openSyncSetupModal(providerId); return; }
     const next = { ...existing, enabled };
     // The ref first: a love or unlove in the same tick reads it.
     resolverSyncSettingsRef.current = { ...resolverSyncSettingsRef.current, [providerId]: next };
@@ -13106,7 +13125,7 @@ ${trackListXml}
             }
             newOrder = [...newOrder.slice(0, insertAt), id, ...newOrder.slice(insertAt)];
           } else {
-            newOrder = insertInCanonicalOrder(newOrder, id);
+            newOrder = insertRemembered(newOrder, id, savedResolverOrderRef.current);
           }
         }
       }
@@ -15713,6 +15732,8 @@ ${trackListXml}
   useEffect(() => {
     activeResolversRef.current = activeResolvers;
     resolverOrderRef.current = resolverOrder;
+    // Remember every ranking change, disabled plug-ins kept in place.
+    if (resolverSettingsLoaded.current) savedResolverOrderRef.current = rememberOrder(savedResolverOrderRef.current, resolverOrder);
   }, [activeResolvers, resolverOrder]);
 
   // Ready to play (#1287): the saved settings have loaded (the active resolvers)
@@ -19266,7 +19287,7 @@ ${trackListXml}
         'cache_recommendations',
         'cache_critics_picks',
         // Resolver settings & user preferences
-        'active_resolvers', 'resolver_order', 'meta_service_configs',
+        'active_resolvers', 'resolver_order', 'resolver_order_memory', 'meta_service_configs',
         'applemusic_developer_token', 'friends', 'pinnedFriendIds',
         'autoPinnedFriendIds', 'hidden_friend_keys', 'resolver_volume_offsets', 'saved_volume',
         'skip_external_prompt', 'skip_unplayable_prompt',
@@ -19908,7 +19929,9 @@ ${trackListXml}
         const removedResolvers = ['qobuz'];
         const dedupedOrder = [...new Set(savedResolverOrder)].filter(id => !removedResolvers.includes(id));
         setResolverOrder(dedupedOrder);
-        savedResolverOrderRef.current = dedupedOrder;
+        // The ranking memory, or (before it existed) the saved order.
+        const savedMemory = Array.isArray(d['resolver_order_memory']) ? d['resolver_order_memory'].filter(id => !removedResolvers.includes(id)) : null;
+        savedResolverOrderRef.current = rememberOrder(savedMemory, dedupedOrder);
         console.log(`📦 Loaded resolver order from storage (${dedupedOrder.length} resolvers)`);
       }
 
@@ -20289,6 +20312,7 @@ ${trackListXml}
       // Save resolver settings (use refs to ensure we have current values, not stale closure)
       await window.electron.store.set('active_resolvers', activeResolversRef.current);
       await window.electron.store.set('resolver_order', resolverOrderRef.current);
+      if (savedResolverOrderRef.current) await window.electron.store.set('resolver_order_memory', savedResolverOrderRef.current);
 
       // Save volume normalization offsets (use ref to avoid stale closure)
       await window.electron.store.set('resolver_volume_offsets', resolverVolumeOffsetsRef.current);
@@ -20763,6 +20787,9 @@ ${trackListXml}
 
   // Fallback artist lookup via Discogs (artist search + releases)
   const fetchArtistFromDiscogs = async (artistName) => {
+    // Switched off in its plug-in settings (lib/plugin-switch.js: Wikipedia and
+    // Discogs are on unless switched off). Before, the switch changed nothing.
+    if (metaServiceConfigsRef.current?.discogs?.enabled === false) return null;
     try {
       const discogsConfig = metaServiceConfigs?.discogs || {};
       const token = discogsConfig.personalAccessToken;
@@ -25433,7 +25460,7 @@ ${trackListXml}
       // Enabling: add to resolverOrder in canonical position
       setResolverOrder(prev => {
         if (!prev.includes(resolverId)) {
-          return insertInCanonicalOrder(prev, resolverId);
+          return insertRemembered(prev, resolverId, savedResolverOrderRef.current);
         }
         return prev;
       });
@@ -33081,6 +33108,9 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
   // Fetch artist biography from Wikipedia via Wikidata (uses MBID)
   const getWikipediaBio = async (artistMbid) => {
+    // Switched off in its plug-in settings (lib/plugin-switch.js: Wikipedia and
+    // Discogs are on unless switched off). Before, the switch changed nothing.
+    if (metaServiceConfigsRef.current?.wikipedia?.enabled === false) return null;
     if (!artistMbid) {
       console.log('📚 Wikipedia bio skipped: no MBID');
       return null;
@@ -33147,7 +33177,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
   // Fetch artist image from Wikipedia/Wikidata (fallback when Spotify has no image)
   const getWikipediaArtistImage = async (artistMbid) => {
-    if (!artistMbid) return null;
+    if (!artistMbid || metaServiceConfigsRef.current?.wikipedia?.enabled === false) return null;
 
     try {
       // Step 1: the artist's Wikidata id (see getWikipediaBio)
@@ -33188,6 +33218,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
   // Fetch artist biography from Discogs (uses MBID or artist name)
   const getDiscogsBio = async (artistMbid, artistName) => {
+    if (metaServiceConfigsRef.current?.discogs?.enabled === false) return null;
     if (!artistMbid && !artistName) {
       console.log('📀 Discogs bio skipped: no MBID or name');
       return null;
@@ -33285,7 +33316,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
   // Fetch artist image from Discogs (fallback when Spotify and Wikipedia have no image)
   const getDiscogsArtistImage = async (artistMbid, artistName) => {
-    if (!artistName) return null;
+    if (!artistName || metaServiceConfigsRef.current?.discogs?.enabled === false) return null;
 
     try {
       // The ref first: getArtistImage calls this from stale closures.
@@ -36124,7 +36155,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         });
         setResolverOrder(prev => {
           if (!prev.includes('applemusic')) {
-            return insertInCanonicalOrder(prev, 'applemusic');
+            return insertRemembered(prev, 'applemusic', savedResolverOrderRef.current);
           }
           return prev;
         });
@@ -37449,7 +37480,7 @@ useEffect(() => {
   // Stable function props for the memo'd PluginSettingsDialog (keys must
   // match PLUGIN_SETTINGS_DIALOG_HANDLERS in plugin-settings-dialog.js).
   const pluginSettingsDialogHandlers = useStableHandlers({
-    connectAppleMusic, connectLastfm, connectListenbrainz, connectSoundcloud, connectSpotify, disconnectAppleMusic, disconnectLastfm, disconnectListenbrainz, disconnectSoundcloud, disconnectSpotify, fetchDynamicModels, getServiceColor, handleAddWatchFolder, handleInstallFromMarketplace, handleRemoveMissingFiles, handleRemoveWatchFolder, handleRescanAll, handleRescanFolder, handleUninstallResolver, manageAmazonMusic, openSyncSetupModal, refreshPluginStatus, saveAppleMusicDeveloperToken, saveMetaServiceConfig, saveSoundcloudCredentials, saveSpotifyCredentials, toggleResolver,
+    connectAppleMusic, connectLastfm, connectListenbrainz, connectSoundcloud, connectSpotify, disconnectAppleMusic, disconnectLastfm, disconnectListenbrainz, disconnectSoundcloud, disconnectSpotify, fetchDynamicModels, getServiceColor, handleAddWatchFolder, handleInstallFromMarketplace, handleRemoveMissingFiles, handleRemoveWatchFolder, handleRescanAll, handleRescanFolder, handleUninstallResolver, manageAmazonMusic, openSyncSetupModal, refreshPluginStatus, saveAppleMusicDeveloperToken, saveMetaServiceConfig, saveSoundcloudCredentials, saveSpotifyCredentials, setProviderSyncEnabled, toggleResolver,
   });
 
   // Stable function props for the memo'd ChartsPage (keys must
@@ -37704,7 +37735,7 @@ useEffect(() => {
 
         // Library view with collapsible hero header (matching Recommendations pattern)
         activeView === 'library' && React.createElement(CollectionPage, {
-          activeResolvers: playbackResolvers, allResolvers, autoPinnedFriendIds, collectionData, collectionHeaderCollapsed, collectionLoading, collectionObserverRef, collectionScrollContainerRef, collectionSearch, collectionSearchOpen, collectionSongsSorted, collectionSort, collectionTab, collectionTrackRowRefs, currentTrack, filterCollectionItems, friendSyncInProgress, friends, handleCollectionScrollContainerRef, isPlaying, library, libraryLoading, metaServiceConfigs, pinnedFriendIds, playbackContext, resolverOrder, resolverSyncSettings, syncPausedUntil, syncSignedOut, setAddFriendModalOpen, setAddToPlaylistPanel, setCollectionHeaderCollapsed, setCollectionSearch, setCollectionSearchOpen, setCollectionSort, setCollectionTab, setDraggingTrackForPlaylist, setSyncStatusModal, setTrackLoading, showToast, sortCollectionItems, syncProviderConfig, syncStatus, trackSources,
+          activeResolvers: playbackResolvers, allResolvers, autoPinnedFriendIds, collectionData, collectionHeaderCollapsed, collectionLoading, collectionObserverRef, collectionScrollContainerRef, collectionSearch, collectionSearchOpen, collectionSongsSorted, collectionSort, collectionTab, collectionTrackRowRefs, currentTrack, filterCollectionItems, friendSyncInProgress, friends, handleCollectionScrollContainerRef, isPlaying, library, libraryLoading, metaServiceConfigs, pinnedFriendIds, playbackContext, resolverOrder, resolverSyncSettings, syncPausedUntil, syncSignedOut: syncSignedOutView, setAddFriendModalOpen, setAddToPlaylistPanel, setCollectionHeaderCollapsed, setCollectionSearch, setCollectionSearchOpen, setCollectionSort, setCollectionTab, setDraggingTrackForPlaylist, setSyncStatusModal, setTrackLoading, showToast, sortCollectionItems, syncProviderConfig, syncStatus, trackSources,
           ...collectionPageHandlers
         }),
 
@@ -38251,9 +38282,11 @@ useEffect(() => {
       marketplaceManifest,
       metaServiceConfigs,
       metaServices,
+      playbackLimits,
       pluginStatuses,
       resolverConfigCache,
       resolverSyncSettings,
+      syncSignedOut: syncSignedOutView,
       runLoveBackfill,
       runLoveImport,
       scanProgress,
@@ -38291,7 +38324,6 @@ useEffect(() => {
       spotifyClientIdInput,
       spotifyConnected,
       spotifyCredentialsSource,
-      syncProviderConfig,
       watchFolders,
       ...pluginSettingsDialogHandlers
     }),

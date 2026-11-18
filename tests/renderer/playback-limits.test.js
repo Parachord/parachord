@@ -78,10 +78,10 @@ describe('Apple Music: signed out leaves playback until it connects (2026-11)', 
     const check = between(app, 'const checkMusicKitAvailable = async () => {', 'checkMusicKitAvailable();');
     expect(check).toMatch(/finally \{\s*setAppleMusicAuthChecked\(true\);/);
   });
-  test('a tile that can\'t play is grayed out', () => {
-    expect(app).toMatch(/unplayable: isActive && planBlockedResolverIds\.includes\(resolver\.id\),/);
+  test('a tile that can\'t play stays in full colour (it is on), unnumbered, with its warning line', () => {
     const card = read('src/renderer/components/settings-cards.js');
-    expect(card).toMatch(/const isGrayed = isAvailable \|\| \(isEnabled && unplayable\);/);
+    expect(card).toMatch(/const isGrayed = isAvailable;/);
+    expect(app).toMatch(/priorityNumber: index < playingInOrder\.length \? index \+ 1 : null,/);
   });
 });
 

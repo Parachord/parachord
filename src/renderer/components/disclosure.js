@@ -10,15 +10,25 @@
 // section stays open across re-renders) and flips it in `onToggle`.
 //
 // Props: label ("Advanced"), open, onToggle(), children.
+//   alwaysOpen  show the panel with no toggle: what's inside is required
+//               before anything else works (SoundCloud's client ID and
+//               secret, before its sign-in), so it isn't hidden behind a
+//               click. Once set, the caller drops it and the section folds.
 // Props-driven; hooks are qualified; loads under plain Node.
 
 const Icons = require('./icons');
 const { Button } = require('./button');
 const { transition } = require('../lib/motion');
 
-function Disclosure({ label = 'Advanced', open = false, onToggle, children }) {
+function Disclosure({ label = 'Advanced', open = false, onToggle, alwaysOpen = false, children }) {
   const e = React.createElement;
   const panelId = `${React.useId()}-panel`;
+  if (alwaysOpen) {
+    return e('div', {
+      id: panelId,
+      style: { marginTop: '16px', padding: '12px', backgroundColor: 'var(--hover-bg-default)', borderRadius: '8px' },
+    }, children);
+  }
   return e('div', { style: { marginTop: '16px' } },
     e(Button, {
       variant: 'text',

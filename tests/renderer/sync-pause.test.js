@@ -85,7 +85,7 @@ describe('pause semantics', () => {
   const fn = app.slice(app.indexOf('const setProviderSyncEnabled = async (providerId, enabled) => {'));
   const body = fn.slice(0, fn.indexOf('\n  };\n'));
   test('only enabled changes; setup opens for a service never set up', () => {
-    expect(body).toContain('if (enabled && (!existing || syncSignedOut[providerId])) { openSyncSetupModal(providerId); return; }');
+    expect(body).toContain('if (enabled && (!existing || existing.stopped || syncSignedOutView[providerId])) { openSyncSetupModal(providerId); return; }');
     expect(body).toContain('const next = { ...existing, enabled };');
     expect(body).toContain('await window.electron.syncSettings.setProvider(providerId, next);');
     expect(body).toContain('if (!enabled) window.electron.sync.cancel(providerId).catch(() => {});');

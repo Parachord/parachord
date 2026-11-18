@@ -17,6 +17,13 @@ describe('music plug-ins: on = in the active list', () => {
     expect(pluginSwitchState({ plugin: plugin('spotify'), config: {}, activeResolvers: ['spotify'] })).toEqual({ checked: true, disabled: false, hint: 'Include in search and playback' });
     expect(pluginSwitchState({ plugin: plugin('spotify'), config: {}, activeResolvers: [] }).checked).toBe(false);
   });
+  test('on but plan-blocked (Amazon on Prime): the hint says it cannot play, as the tile does', () => {
+    const limit = { blocked: true, label: 'Prime: no playback' };
+    expect(pluginSwitchState({ plugin: plugin('amazonmusic'), config: {}, activeResolvers: ['amazonmusic'], limit }))
+      .toEqual({ checked: true, disabled: false, hint: 'Search, covers and links only (Prime: no playback)' });
+    expect(pluginSwitchState({ plugin: plugin('amazonmusic'), config: {}, activeResolvers: ['amazonmusic'], limit: { blocked: false } }).hint).toBe('Include in search and playback');
+    expect(pluginSwitchState({ plugin: plugin('amazonmusic'), config: {}, activeResolvers: [], limit }).hint).toBe('Include in search and playback');
+  });
 });
 
 describe('AI and concert plug-ins that need a key', () => {
@@ -53,6 +60,11 @@ describe('everything else: enabled, or set up and not switched off; never disabl
   test('Libre.fm only scrobbles, and says so', () => {
     expect(pluginSwitchState({ plugin: plugin('librefm'), config: {} }).hint).toBe('Scrobble what you play');
   });
+  test('Wikipedia and Discogs are on unless switched off (an old install has no `enabled`)', () => {
+    expect(pluginSwitchState({ plugin: plugin('discogs'), config: undefined }).checked).toBe(true);
+    expect(pluginSwitchState({ plugin: plugin('discogs'), config: {} }).checked).toBe(true);
+    expect(pluginSwitchState({ plugin: plugin('discogs'), config: { enabled: false } }).checked).toBe(false);
+  });
   test('Wikipedia and Discogs serve artist info; Achordion has no hint', () => {
     expect(pluginSwitchState({ plugin: plugin('wikipedia'), config: { enabled: true } })).toEqual({ checked: true, disabled: false, hint: 'Use for artist info' });
     expect(pluginSwitchState({ plugin: plugin('achordion'), config: {} })).toEqual({ checked: false, disabled: false, hint: '' });
@@ -66,7 +78,7 @@ test('field labels read in sentence case', () => {
 
 test('the dialog has one on/off control: the switch, and a footer that only closes', () => {
   const src = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/plugin-settings-dialog.js'), 'utf8');
-  expect(src).toContain('pluginSwitchState({ plugin: selectedResolver, config: metaServiceConfigs[id], activeResolvers })');
+  expect(src).toContain('pluginSwitchState({ plugin: selectedResolver, config: metaServiceConfigs[id], activeResolvers, limit: playbackLimits && playbackLimits[id] })');
   expect(src).not.toMatch(/showEnable|'Enable Ollama'|`Enable \$\{selectedResolver/);
   expect(src).toContain("React.createElement(Button, { variant: 'primary', onClick: () => setSelectedResolver(null) }, 'Done')");
   expect((src.match(/React\.createElement\(Switch, \{ checked: state\.checked/g) || []).length).toBe(1);

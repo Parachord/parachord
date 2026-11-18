@@ -26,6 +26,11 @@ const VARIANTS = {
   primary: 'bg-accent-fill text-ink-on-accent hover:bg-accent-fill-hover',
   secondary: 'bg-surface-card text-ink-primary border border-line-strong hover:bg-surface-hover',
   destructive: 'bg-status-error text-ink-on-accent hover:bg-status-error-hover',
+  // A destructive action that isn't the view's main one (Remove sync…): a
+  // secondary button in danger text; the confirmation it opens is the
+  // safety catch. A filled red button outweighed everything else in a
+  // plug-in's settings for an action people rarely take.
+  quietDestructive: 'bg-surface-card text-ink-danger border border-line-strong hover:bg-tint-danger',
   text: 'text-accent hover:bg-accent-tint',
   icon: 'text-ink-secondary hover:text-ink-primary hover:bg-surface-hover',
 };
@@ -34,6 +39,7 @@ const DARK = {
   primary: VARIANTS.primary,
   secondary: 'bg-white/5 text-white border border-white/15 hover:bg-white/10',
   destructive: VARIANTS.destructive,
+  quietDestructive: VARIANTS.quietDestructive,
   text: 'text-white/80 hover:text-white hover:bg-white/10',
   icon: 'text-white/70 hover:text-white hover:bg-white/10',
 };

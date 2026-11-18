@@ -1,10 +1,13 @@
 const { readableTextOn } = require('../../src/renderer/lib/readable-text');
 
 describe('readableTextOn', () => {
-  test('light and mid brand colours get dark text', () => {
-    expect(readableTextOn('#FA243C')).toBe('var(--on-art-ink)'); // Apple Music, 3.9:1 on white
+  test('light brand colours, where white fails 3:1, get dark text', () => {
     expect(readableTextOn('#25D1DA')).toBe('var(--on-art-ink)'); // Amazon Music
-    expect(readableTextOn('#1DB954')).toBe('var(--on-art-ink)'); // Spotify
+    expect(readableTextOn('#1DB954')).toBe('var(--on-art-ink)'); // Spotify, 2.6:1 on white
+  });
+  test('mid colours where white reads get white, like the plug-in header', () => {
+    expect(readableTextOn('#FA243C')).toBe('var(--on-accent)'); // Apple Music, 3.9:1
+    expect(readableTextOn('#FF5500')).toBe('var(--on-accent)'); // SoundCloud, 3.2:1
   });
   test('dark and deep colours get white', () => {
     expect(readableTextOn('#333333')).toBe('var(--on-accent)');

@@ -14,6 +14,10 @@
 //                                  With no key the switch is disabled, and
 //                                  says what to add first.
 //   no-key AI and concert ones:    on = enabled: true (Ollama, Custom LLM)
+//   artist-info only (Wikipedia,   on = not switched off: they need nothing
+//   Discogs):                      set up, so the Plug-Ins tile always showed
+//                                  them on while this read an old install's
+//                                  missing `enabled` as off (2026-11-17)
 //   everything else (scrobblers,   on = enabled: true, or set up and not
 //   metadata, Achordion):          switched off: the rule the footer button
 //                                  used. Never disabled: Last.fm, for one,
@@ -49,6 +53,12 @@ function isGatedService(plugin) {
   return !!(caps.chat || caps.generate || caps.concerts);
 }
 
+// Artist info and nothing else to set up (Wikipedia, Discogs).
+function isArtistInfoOnly(plugin) {
+  const caps = plugin.capabilities || {};
+  return !!(caps.metadata || caps.biography) && !caps.scrobbling && !caps.recommendations;
+}
+
 // What the switch's hint line says when nothing's missing.
 function hintFor(plugin) {
   const caps = plugin.capabilities || {};
@@ -68,18 +78,28 @@ function keyLabel(plugin) {
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
-// pluginSwitchState({ plugin, config, activeResolvers }) →
+// pluginSwitchState({ plugin, config, activeResolvers, limit }) →
 //   { checked, disabled, hint }
-function pluginSwitchState({ plugin, config, activeResolvers }) {
+// `limit` is the plug-in's playback limit (lib/playback-limits.js). A music
+// plug-in the account's plan can't play stays on (search, covers, links) but
+// its tile says it can't play, so the switch's hint says so too: the tile
+// read "Prime: no playback" while the dialog read "Include in search and
+// playback".
+function pluginSwitchState({ plugin, config, activeResolvers, limit }) {
   const c = config || {};
   if (plugin.type !== 'meta-service') {
-    return { checked: (activeResolvers || []).includes(plugin.id), disabled: false, hint: hintFor(plugin) };
+    const checked = (activeResolvers || []).includes(plugin.id);
+    const hint = checked && limit && limit.blocked
+      ? `Search, covers and links only (${limit.label || 'no playback'})`
+      : hintFor(plugin);
+    return { checked, disabled: false, hint };
   }
   if (isGatedService(plugin)) {
     if (!needsKey(plugin)) return { checked: c.enabled === true, disabled: false, hint: hintFor(plugin) };
     if (!hasKey(plugin, c)) return { checked: false, disabled: true, hint: `Add your ${keyLabel(plugin)} below first` };
     return { checked: c.enabled !== false, disabled: false, hint: hintFor(plugin) };
   }
+  if (isArtistInfoOnly(plugin)) return { checked: c.enabled !== false, disabled: false, hint: hintFor(plugin) };
   return { checked: c.enabled === true || (c.enabled !== false && hasKey(plugin, c)), disabled: false, hint: hintFor(plugin) };
 }
 

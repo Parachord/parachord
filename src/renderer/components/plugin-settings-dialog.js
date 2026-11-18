@@ -21,11 +21,12 @@ const { Modal } = require('./modal');
 const { Badge } = require('./badge');
 const { Button } = require('./button');
 const { SecretField, Select, SettingRow, Switch, TextField } = require('./fields');
-const { pluginSwitchState } = require('../lib/plugin-switch');
+const { pluginSwitchState, keyLabel } = require('../lib/plugin-switch');
+const { librarySyncState } = require('../lib/library-sync-state');
+const { ProgressBar } = require('./progress-bar');
 const { AccountRow } = require('./account-row');
 const { Disclosure } = require('./disclosure');
 const { EmptyState } = require('./states');
-const { transition } = require('../lib/motion');
 
 const PLUGIN_SETTINGS_DIALOG_HANDLERS = [
   'connectAppleMusic',
@@ -54,8 +55,11 @@ const PLUGIN_SETTINGS_DIALOG_HANDLERS = [
   'saveMetaServiceConfig',
   'saveSoundcloudCredentials',
   'saveSpotifyCredentials',
+  'setProviderSyncEnabled',
   'toggleResolver',
 ];
+
+const SYNC_BLOCK = { marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--border-subtle)' };
 
 const PluginSettingsDialog = React.memo(function PluginSettingsDialog(props) {
   const {
@@ -117,8 +121,11 @@ const PluginSettingsDialog = React.memo(function PluginSettingsDialog(props) {
     openSyncSetupModal,
     pluginStatuses,
     refreshPluginStatus,
+    setProviderSyncEnabled,
+    playbackLimits,
     resolverConfigCache,
     resolverSyncSettings,
+    syncSignedOut,
     runLoveBackfill,
     runLoveImport,
     saveAppleMusicDeveloperToken,
@@ -160,12 +167,43 @@ const PluginSettingsDialog = React.memo(function PluginSettingsDialog(props) {
     spotifyClientIdInput,
     spotifyConnected,
     spotifyCredentialsSource,
-    syncProviderConfig,
     toggleResolver,
     watchFolders,
   } = props;
   // The bound local server port (main-process/auth-port.js), 8888 until known.
   const authPort = authServerStatus?.port || 8888;
+  // Library sync: one piece, placed under the account it needs in each
+  // service's section (a sync can't run signed out), above that section's
+  // Advanced settings. lib/library-sync-state.js says what it's doing: a
+  // paused sync used to offer "Set up", and a lapsed sign-in read "Active".
+  const renderLibrarySync = () => {
+              const id = selectedResolver.id;
+              const settings = resolverSyncSettings[id];
+              const state = librarySyncState(settings, syncSignedOut && syncSignedOut[id]);
+              if (state === 'setup') {
+                return React.createElement('div', { style: SYNC_BLOCK }, React.createElement(SettingRow, { label: 'Sync your library', hint: 'Bring your saved music and playlists into your Collection', style: { padding: 0 } },
+                  React.createElement(Button, { variant: 'secondary', onClick: () => openSyncSetupModal(id), 'aria-label': 'Set up library sync' }, 'Set up')));
+              }
+              const last = settings?.lastSyncAt ? `Last synced ${new Date(settings.lastSyncAt).toLocaleString()}` : 'Not synced yet';
+              const hint = state === 'paused' ? `Paused. Your synced music stays. ${last}`
+                : state === 'signed-out' ? 'Signed out. Sign in above to sync again.'
+                : last;
+              return React.createElement('div', { style: { ...SYNC_BLOCK, display: 'flex', flexDirection: 'column', gap: '12px' } },
+                React.createElement(SettingRow, { label: 'Sync your library', hint, style: { padding: 0 } },
+                  React.createElement(Switch, {
+                    // On only while it syncs, as the Collection's Sync menu
+                    // shows it; turning a signed-out one on asks for the sign-in.
+                    checked: state === 'active',
+                    onToggle: () => setProviderSyncEnabled(id, state !== 'active'),
+                    'aria-label': 'Sync your library',
+                  })),
+                React.createElement('div', { style: { display: 'flex', gap: '8px' } },
+                  React.createElement(Button, { variant: 'secondary', onClick: () => openSyncSetupModal(id) }, 'Manage sync'),
+                  // Ends sync for good (the switch above pauses it); works signed out,
+                  // so a service can be dropped without signing in again.
+                  React.createElement(Button, { variant: 'quietDestructive', onClick: () => setStopSyncDialog({ open: true, providerId: id }) }, 'Remove sync…')));
+  };
+
   return React.createElement(Modal, { bare: true, label: "Plugin settings", scrimClassName: 'z-50', onClose: () => { setSelectedResolver(null); }, panelProps: { style: {
           backgroundColor: 'var(--card-bg)',
           borderRadius: '16px',
@@ -286,7 +324,7 @@ React.createElement('div', {
           // what to add first.
           (() => {
             const id = selectedResolver.id;
-            const state = pluginSwitchState({ plugin: selectedResolver, config: metaServiceConfigs[id], activeResolvers });
+            const state = pluginSwitchState({ plugin: selectedResolver, config: metaServiceConfigs[id], activeResolvers, limit: playbackLimits && playbackLimits[id] });
             const setOn = async (next) => {
               if (next) {
                 const isLoaded = allResolvers.some(r => r.id === id) || metaServices.some(s => s.id === id);
@@ -514,105 +552,12 @@ React.createElement('div', {
                 React.createElement(SecretField, { value: spotifyClientIdInput, onChange: (_v, e) => setSpotifyClientIdInput(e.target.value), placeholder: 'Your Spotify Client ID', 'aria-label': 'Your Spotify Client ID', className: 'w-full' })
               ),
               React.createElement(Button, { variant: 'primary', size: 'sm', onClick: saveSpotifyCredentials, disabled: !spotifyClientIdInput.trim() }, 'Save')
-            )
-          ),
-
-          // Library Sync Section - shown for providers that support sync
-          (selectedResolver.id === 'spotify' || selectedResolver.id === 'applemusic') && React.createElement('div', {
-            style: {
-              marginTop: '20px',
-              padding: '16px',
-              backgroundColor: 'var(--hover-bg-default)',
-              borderRadius: '12px',
-              border: '1px solid var(--border-subtle)'
-            }
-          },
-            React.createElement('h4', {
-              style: {
-                fontSize: '11px',
-                fontWeight: '600',
-                color: 'var(--text-tertiary)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.08em',
-                marginBottom: '14px'
-              }
-            }, 'Library Sync'),
-            resolverSyncSettings[selectedResolver.id]?.enabled
-              ? React.createElement('div', {
-                  style: { display: 'flex', flexDirection: 'column', gap: '12px' }
-                },
-                  // Status row
-                  React.createElement('div', {
-                    style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '13px' }
-                  },
-                    React.createElement('span', {
-                      style: { color: 'var(--text-secondary)' }
-                    }, 'Status'),
-                    React.createElement('span', {
-                      style: { color: 'var(--text-success)', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '500' }
-                    },
-                      React.createElement('span', {
-                        style: { width: '8px', height: '8px', backgroundColor: 'var(--success)', borderRadius: '50%' }
-                      }),
-                      'Active'
-                    )
-                  ),
-                  // Last synced row
-                  React.createElement('div', {
-                    style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '13px' }
-                  },
-                    React.createElement('span', {
-                      style: { color: 'var(--text-secondary)' }
-                    }, 'Last synced'),
-                    React.createElement('span', {
-                      style: { color: 'var(--text-primary)' }
-                    },
-                      resolverSyncSettings[selectedResolver.id]?.lastSyncAt
-                        ? new Date(resolverSyncSettings[selectedResolver.id].lastSyncAt).toLocaleString()
-                        : 'Never'
-                    )
-                  ),
-                  // Action buttons
-                  React.createElement('div', {
-                    style: { display: 'flex', gap: '8px', marginTop: '4px' }
-                  },
-                    React.createElement(Button, { variant: 'secondary', onClick: () => openSyncSetupModal(selectedResolver.id) }, 'Manage sync'),
-                    React.createElement(Button, { variant: 'destructive', onClick: () => setStopSyncDialog({ open: true, providerId: selectedResolver.id }) }, 'Stop syncing')
-                  )
-                )
-              : React.createElement(Button, { variant: 'primary', pageColor: syncProviderConfig[selectedResolver.id]?.color || 'var(--accent-fill)', className: 'w-full', onClick: () => openSyncSetupModal(selectedResolver.id) }, 'Set up library sync')
-          ),
-
-          // Auto-launch Spotify section
-          selectedResolver.id === 'spotify' && React.createElement('div', {
-            style: {
-              marginTop: '20px',
-              padding: '16px',
-              backgroundColor: 'var(--hover-bg-default)',
-              borderRadius: '12px',
-              border: '1px solid var(--border-subtle)'
-            }
-          },
-            React.createElement('h4', {
-              style: {
-                fontSize: '11px',
-                fontWeight: '600',
-                color: 'var(--text-tertiary)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.08em',
-                marginBottom: '14px'
-              }
-            }, 'Startup'),
-            React.createElement('div', { className: 'flex items-center justify-between' },
-              React.createElement('div', null,
-                React.createElement('p', { style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' } },
-                  'Auto-launch Spotify'
-                ),
-                React.createElement('p', { style: { fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px', lineHeight: '1.5' } },
-                  'Start Spotify in background when Parachord opens. Ensures a device is always available for playback.'
-                )
-              ),
-              React.createElement(Switch, { checked: autoLaunchSpotify, onToggle: async () => {
+            ),
+            renderLibrarySync(),
+            // Start Spotify at launch, so a device is there to play on.
+            React.createElement('div', { style: SYNC_BLOCK },
+              React.createElement(SettingRow, { label: 'Open Spotify at startup', hint: 'Start it in the background so there’s always a device to play on', style: { padding: 0 } },
+                React.createElement(Switch, { checked: autoLaunchSpotify, onToggle: async () => {
                   const newValue = !autoLaunchSpotify;
                   setAutoLaunchSpotify(newValue);
                   if (window.electron?.store) {
@@ -623,8 +568,7 @@ React.createElement('div', {
                     window.electron.spotify.launchInBackground();
                     showToast('Spotify launched in background', 'success');
                   }
-                }, 'aria-label': 'Open Spotify in the background at startup', style: { flexShrink: 0, marginLeft: '16px' } })
-            )
+                }, 'aria-label': 'Open Spotify in the background at startup', }))),
           ),
 
           // SoundCloud authentication section
@@ -638,22 +582,14 @@ React.createElement('div', {
             },
               React.createElement(AccountRow, {
                 name: 'SoundCloud', color: getServiceColor('soundcloud'), signedIn: soundcloudConnected,
-                status: soundcloudConnected ? 'Signed in' : hasCredentials ? 'Sign in to search and stream SoundCloud' : 'Add your client ID and secret under Advanced first',
+                status: soundcloudConnected ? 'Signed in' : hasCredentials ? 'Sign in to search and stream SoundCloud' : 'Add your client ID and secret below first',
                 onSignIn: connectSoundcloud, onSignOut: disconnectSoundcloud, signInDisabled: !hasCredentials,
               }),
-              soundcloudConnected && React.createElement('p', {
-                style: {
-                  fontSize: '11px',
-                  color: 'var(--text-tertiary)',
-                  marginTop: '12px',
-                  lineHeight: '1.5'
-                }
-              },
-                'Note: Streaming availability depends on individual track permissions set by uploaders.'
-              ),
 
-              // API Credentials section - Advanced accordion with optional BYOK
-              React.createElement(Disclosure, { open: soundcloudAdvancedOpen, onToggle: () => setSoundcloudAdvancedOpen(!soundcloudAdvancedOpen) },
+              // The client ID and secret it signs in with, right under the
+              // sign-in: open until they're saved (it can't sign in without
+              // them), then folded under their own name, not "Advanced".
+              React.createElement(Disclosure, { label: 'Client ID and secret', alwaysOpen: !hasCredentials, open: soundcloudAdvancedOpen, onToggle: () => setSoundcloudAdvancedOpen(!soundcloudAdvancedOpen) },
 React.createElement('p', {
                     style: {
                       fontSize: '11px',
@@ -666,7 +602,7 @@ React.createElement('p', {
                       ? '✓ Using your custom SoundCloud API credentials.'
                       : soundcloudCredentialsSource === 'env'
                         ? '✓ Using credentials from environment variables.'
-                        : 'Optional: Use your own SoundCloud API credentials to avoid rate limiting.'
+                        : 'SoundCloud needs your own client ID and secret before you can sign in.'
                   ),
 React.createElement('div', { style: { marginBottom: '10px' } },
                     React.createElement('label', {
@@ -739,7 +675,10 @@ React.createElement('div', { className: 'flex gap-2' },
                           }
                         }
                       } }, 'Clear')
-                  ))
+                  )),
+              soundcloudConnected && React.createElement('p', {
+                style: { fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '12px', lineHeight: '1.5' }
+              }, 'Streaming depends on each track’s permissions, which its uploader sets.')
             );
           })(),
 
@@ -809,6 +748,8 @@ React.createElement('div', { className: 'flex gap-2' },
               onSignOut: disconnectAppleMusic,
             }),
 
+            renderLibrarySync(),
+
             // Advanced accordion for MusicKit developer token
             React.createElement(Disclosure, { open: appleMusicAdvancedOpen, onToggle: () => setAppleMusicAdvancedOpen(!appleMusicAdvancedOpen) },
 React.createElement('p', {
@@ -856,10 +797,37 @@ React.createElement(Button, { variant: 'primary', size: 'sm', onClick: saveApple
             metaServiceConfigs.lastfm?.username
               ? React.createElement('div', null,
                   // The account (components/account-row.js, #1498 step 3).
+                  // Scrobbling section for Last.fm
+                  // Scrobbling first: it's the sign-in (#1498: sign-in, then
+                  // what needs it); the username's history comes under it.
+                  React.createElement('div', null,
+                    // Scrobbler card for Last.fm
+                    window.scrobblers && window.scrobblers.find(s => s.id === 'lastfm') &&
+                      React.createElement(ScrobblerSettingsCard, {
+                        scrobbler: window.scrobblers.find(s => s.id === 'lastfm'), color: getServiceColor('lastfm'), accountLabel: 'Scrobbling',
+                        config: scrobblerConfigs['lastfm'],
+                        onConfigChange: (id, newConfig) => {
+                          setScrobblerConfigs(prev => ({ ...prev, [id]: newConfig }));
+                        },
+                        lovePushEnabled: !!scrobblerLovePushEnabled.lastfm,
+                        onSetLovePushEnabled: (v) => setLovePushEnabled('lastfm', v),
+                        onRunBackfill: () => runLoveBackfill('lastfm'),
+                        backfillRunning: !!loveBackfillRunning.lastfm,
+                        backfillProgress: loveBackfillProgress.lastfm,
+                        unpushedCount: (collectionDataRef.current?.tracks || collectionData.tracks).filter(t => !lovePushedKeysRef.current[t.id]?.lastfm).length,
+                        onRunLoveImport: () => runLoveImport('lastfm'),
+                        loveImportRunning: !!loveImportRunning.lastfm,
+                        loveImportProgress: loveImportProgress.lastfm,
+                        hasImportedLoves: !!loveImportCursorRef.current?.lastfm,
+                      })
+                  ),
+                  React.createElement('div', { style: SYNC_BLOCK },
+                  // A username reads your history; it isn't a sign-in (that's
+                  // the Scrobbling row above), so the row doesn't say "Signed in".
                   React.createElement(AccountRow, {
-                    name: 'Last.fm', color: getServiceColor('lastfm'), signedIn: true,
-                    status: `Signed in as ${metaServiceConfigs.lastfm.username}`, onSignOut: disconnectLastfm,
-                  }),
+                    name: 'Last.fm', label: 'Listening history', color: getServiceColor('lastfm'), signedIn: true,
+                    status: `Using ${metaServiceConfigs.lastfm.username}’s history`, onSignOut: disconnectLastfm, signOutLabel: 'Remove',
+                  })),
                   // Advanced accordion for API credentials (also shown when connected)
                   React.createElement(Disclosure, { open: lastfmAdvancedOpen, onToggle: () => setLastfmAdvancedOpen(!lastfmAdvancedOpen) },
 React.createElement('p', {
@@ -922,36 +890,7 @@ React.createElement('div', { className: 'flex gap-2' },
                             });
                             showToast('Custom credentials cleared. Using default credentials.', 'info');
                           } }, 'Clear')
-                      )),
-
-                  // Scrobbling section for Last.fm
-                  React.createElement('div', {
-                    style: {
-                      marginTop: '16px',
-                      paddingTop: '16px',
-                      borderTop: '1px solid var(--border-subtle)'
-                    }
-                  },
-                    // Scrobbler card for Last.fm
-                    window.scrobblers && window.scrobblers.find(s => s.id === 'lastfm') &&
-                      React.createElement(ScrobblerSettingsCard, {
-                        scrobbler: window.scrobblers.find(s => s.id === 'lastfm'), color: getServiceColor('lastfm'), accountLabel: 'Scrobbling',
-                        config: scrobblerConfigs['lastfm'],
-                        onConfigChange: (id, newConfig) => {
-                          setScrobblerConfigs(prev => ({ ...prev, [id]: newConfig }));
-                        },
-                        lovePushEnabled: !!scrobblerLovePushEnabled.lastfm,
-                        onSetLovePushEnabled: (v) => setLovePushEnabled('lastfm', v),
-                        onRunBackfill: () => runLoveBackfill('lastfm'),
-                        backfillRunning: !!loveBackfillRunning.lastfm,
-                        backfillProgress: loveBackfillProgress.lastfm,
-                        unpushedCount: (collectionDataRef.current?.tracks || collectionData.tracks).filter(t => !lovePushedKeysRef.current[t.id]?.lastfm).length,
-                        onRunLoveImport: () => runLoveImport('lastfm'),
-                        loveImportRunning: !!loveImportRunning.lastfm,
-                        loveImportProgress: loveImportProgress.lastfm,
-                        hasImportedLoves: !!loveImportCursorRef.current?.lastfm,
-                      })
-                  )
+                      ))
                 )
               // Not connected state
               : React.createElement('div', null,
@@ -959,8 +898,8 @@ React.createElement('div', { className: 'flex gap-2' },
                   // Sign in once there's a username; the fields are below.
                   React.createElement('div', { style: { marginBottom: '16px' } },
                     React.createElement(AccountRow, {
-                      name: 'Last.fm', color: getServiceColor('lastfm'), signedIn: false,
-                      status: 'Enter your Last.fm username below to sign in',
+                      name: 'Last.fm', label: 'Listening history', color: getServiceColor('lastfm'), signedIn: false,
+                      status: 'Enter your Last.fm username below', signInLabel: 'Save',
                       onSignIn: () => connectLastfm(lastfmUsernameInput, lastfmApiKeyInput, lastfmApiSecretInput),
                       signInDisabled: !lastfmUsernameInput.trim(), busy: lastfmConnecting,
                     })),
@@ -1027,36 +966,10 @@ React.createElement('div', null,
             metaServiceConfigs.listenbrainz?.username
               ? React.createElement('div', null,
                   // The account (components/account-row.js, #1498 step 3).
-                  React.createElement(AccountRow, {
-                    name: 'ListenBrainz', color: getServiceColor('listenbrainz'), signedIn: true,
-                    status: `Signed in as ${metaServiceConfigs.listenbrainz.username}`, onSignOut: disconnectListenbrainz,
-                  }),
-                  // Show token status if configured - masked like AI service API keys
-                  metaServiceConfigs.listenbrainz.userToken && React.createElement('div', {
-                    style: {
-                      marginTop: '12px'
-                    }
-                  },
-                    React.createElement('label', {
-                      style: {
-                        display: 'block',
-                        fontSize: '11px',
-                        fontWeight: '500',
-                        color: 'var(--text-primary)',
-                        marginBottom: '4px'
-                      }
-                    }, 'User Token'),
-                    React.createElement(SecretField, { 'aria-label': 'ListenBrainz user token', defaultValue: metaServiceConfigs.listenbrainz.userToken, readOnly: true, className: 'w-full' })
-                  ),
-
                   // Scrobbling section for ListenBrainz
-                  React.createElement('div', {
-                    style: {
-                      marginTop: '16px',
-                      paddingTop: '16px',
-                      borderTop: '1px solid var(--border-subtle)'
-                    }
-                  },
+                  // Scrobbling first: it's the sign-in (#1498: sign-in, then
+                  // what needs it); the username's history comes under it.
+                  React.createElement('div', null,
                     // Scrobbler card for ListenBrainz
                     window.scrobblers && window.scrobblers.find(s => s.id === 'listenbrainz') &&
                       React.createElement(ScrobblerSettingsCard, {
@@ -1076,7 +989,31 @@ React.createElement('div', null,
                         loveImportProgress: loveImportProgress.listenbrainz,
                         hasImportedLoves: !!loveImportCursorRef.current?.listenbrainz,
                       })
-                  )
+                  ),
+                  React.createElement('div', { style: SYNC_BLOCK },
+                  // A username reads your history; it isn't a sign-in (that's
+                  // the Scrobbling row above), so the row doesn't say "Signed in".
+                  React.createElement(AccountRow, {
+                    name: 'ListenBrainz', label: 'Listening history', color: getServiceColor('listenbrainz'), signedIn: true,
+                    status: `Using ${metaServiceConfigs.listenbrainz.username}’s history`, onSignOut: disconnectListenbrainz, signOutLabel: 'Remove',
+                  }),
+                  // Show token status if configured - masked like AI service API keys
+                  metaServiceConfigs.listenbrainz.userToken && React.createElement('div', {
+                    style: {
+                      marginTop: '12px'
+                    }
+                  },
+                    React.createElement('label', {
+                      style: {
+                        display: 'block',
+                        fontSize: '11px',
+                        fontWeight: '500',
+                        color: 'var(--text-primary)',
+                        marginBottom: '4px'
+                      }
+                    }, 'User Token'),
+                    React.createElement(SecretField, { 'aria-label': 'ListenBrainz user token', defaultValue: metaServiceConfigs.listenbrainz.userToken, readOnly: true, className: 'w-full' })
+                  ))
                 )
               // Not connected state
               : React.createElement('div', null,
@@ -1084,8 +1021,8 @@ React.createElement('div', null,
                   // Sign in once there's a username; the fields are below.
                   React.createElement('div', { style: { marginBottom: '16px' } },
                     React.createElement(AccountRow, {
-                      name: 'ListenBrainz', color: getServiceColor('listenbrainz'), signedIn: false,
-                      status: 'Enter your ListenBrainz username below to sign in',
+                      name: 'ListenBrainz', label: 'Listening history', color: getServiceColor('listenbrainz'), signedIn: false,
+                      status: 'Enter your ListenBrainz username below', signInLabel: 'Save',
                       onSignIn: () => connectListenbrainz(listenbrainzUsernameInput, listenbrainzTokenInput),
                       signInDisabled: !listenbrainzUsernameInput.trim(), busy: listenbrainzConnecting,
                     })),
@@ -1296,6 +1233,13 @@ React.createElement('div', null,
                     }
                   }, 100);
                 }, placeholder: authFieldSettings.placeholder || (selectedResolver.id === 'chatgpt' ? 'sk-…' : selectedResolver.id === 'gemini' ? 'AIza…' : selectedResolver.id === 'claude' ? 'sk-ant-…' : ''), 'aria-label': `${selectedResolver.name} API key`, className: 'w-full' }),
+              // Under the key: whether it's saved (left), where to get one (right).
+              React.createElement('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginTop: '6px', fontSize: '12px' } },
+              metaServiceConfigs[selectedResolver.id]?.[authFieldKey]
+                ? React.createElement('span', { className: 'flex items-center gap-1 text-ink-success' },
+                    React.createElement(Icons.Check, { className: 'w-4 h-4', 'aria-hidden': 'true' }),
+                    `${keyLabel(selectedResolver)} saved`)
+                : React.createElement('span', null),
               selectedResolver.homepage && React.createElement('a', {
                 href: '#',
                 onClick: (e) => {
@@ -1308,14 +1252,11 @@ React.createElement('div', null,
                   window.electron?.shell?.openExternal?.(urls[selectedResolver.id] || selectedResolver.homepage);
                 },
                 style: {
-                  display: 'inline-block',
-                  marginTop: '6px',
-                  fontSize: '12px',
                   color: 'var(--accent-primary)',
                   fontWeight: '500',
                   textDecoration: 'none'
                 }
-              }, 'Get your API key →')
+              }, 'Get your API key →'))
             ),
             // Model selector - supports both static and dynamic-select
             selectedResolver.settings?.configurable?.model && React.createElement('div', { style: { marginBottom: '16px' } },
@@ -1474,13 +1415,6 @@ React.createElement('div', null,
                         }, 'aria-label': fieldSetting.label || fieldKey, className: 'w-full' })
                 );
               }),
-            // Connection status
-            metaServiceConfigs[selectedResolver.id]?.[authFieldKey] && React.createElement('div', {
-              className: 'flex items-center gap-2 text-ink-success text-sm'
-            },
-              React.createElement('span', null, React.createElement(Icons.Check, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } })),
-              React.createElement('span', null, (authFieldSettings.label || 'API key') + ' configured')
-            )
           );
           })(),
 
@@ -1657,181 +1591,54 @@ React.createElement('div', null,
           // the generic status-capable plugin row above — the plugin's
           // getStatus reply, its Sign in prompt flow and its Sign out.)
 
-          // Local Files settings section
+          // Local Files settings section: flat rows like the rest of the
+          // dialog (SettingRow, Button, ProgressBar); no headings, cards or
+          // stats grid of its own.
           selectedResolver.id === 'localfiles' && React.createElement('div', {
-            style: {
-              padding: '16px 0',
-              borderTop: '1px solid var(--border-subtle)'
-            }
+            style: { padding: '16px 0', borderTop: '1px solid var(--border-subtle)' }
           },
-            React.createElement('h3', {
-              style: {
-                fontSize: '13px',
-                fontWeight: '500',
-                color: 'var(--text-primary)',
-                marginBottom: '8px'
-              }
-            }, 'Watch Folders'),
-            React.createElement('p', {
-              style: {
-                fontSize: '12px',
-                color: 'var(--text-secondary)',
-                marginBottom: '16px',
-                lineHeight: '1.5'
-              }
-            },
-              'Add folders containing your music files. Parachord will automatically index and watch them for changes.'
-            ),
+            React.createElement(SettingRow, { label: 'Watch folders', hint: 'Parachord adds the music in these folders and keeps watching them for changes', style: { padding: 0 } },
+              React.createElement(Button, { variant: 'secondary', size: 'sm', onClick: handleAddWatchFolder, disabled: isScanning, 'aria-label': 'Add a watch folder' }, React.createElement(Icons.Plus, { className: 'w-4 h-4' }), 'Add folder')),
 
-            // Watch folders list
-            React.createElement('div', { style: { marginBottom: '16px' } },
+            // One row per folder: its path and track count, rescan and remove.
+            React.createElement('div', { style: { marginTop: '8px' } },
               watchFolders.length === 0
                 ? React.createElement(EmptyState, { compact: true, align: 'start', title: 'No watch folders yet' })
                 : watchFolders.map(folder =>
-                    React.createElement('div', {
+                    React.createElement(SettingRow, {
                       key: folder.path,
-                      className: 'flex items-center justify-between',
-                      style: {
-                        padding: '12px',
-                        backgroundColor: 'var(--hover-bg-default)',
-                        borderRadius: '8px',
-                        marginBottom: '8px'
-                      }
+                      label: React.createElement('span', { className: 'block truncate', 'data-tooltip': folder.path }, folder.path),
+                      hint: countOf(folder.track_count || 0, 'track'),
+                      className: 'border-b border-line-light last:border-b-0',
                     },
-                      React.createElement('div', { className: 'flex-1 min-w-0' },
-                        React.createElement('p', {
-                          className: 'truncate',
-                          style: {
-                            fontSize: '13px',
-                            fontWeight: '500',
-                            color: 'var(--text-primary)'
-                          }
-                        }, folder.path),
-                        React.createElement('p', {
-                          style: {
-                            fontSize: '11px',
-                            color: 'var(--text-secondary)',
-                            marginTop: '2px'
-                          }
-                        },
-                          `${countOf(folder.track_count || 0, 'track')}`
-                        )
-                      ),
-                      React.createElement('div', { className: 'flex items-center gap-2', style: { marginLeft: '16px' } },
-                        React.createElement(Button, { variant: 'icon', size: 'sm', 'aria-label': "Rescan folder", onClick: () => handleRescanFolder(folder.path), disabled: isScanning, 'data-tooltip': 'Rescan folder' }, React.createElement(Icons.RefreshCw, { className: 'w-4 h-4' })),
-                        React.createElement(Button, { variant: 'icon', size: 'sm', 'aria-label': "Remove folder", onClick: () => handleRemoveWatchFolder(folder.path), 'data-tooltip': 'Remove folder' }, React.createElement(Icons.X, { className: 'w-4 h-4' }))
-                      )
-                    )
+                      React.createElement('div', { className: 'flex items-center gap-1' },
+                        React.createElement(Button, { variant: 'icon', size: 'sm', 'aria-label': 'Rescan folder', onClick: () => handleRescanFolder(folder.path), disabled: isScanning, 'data-tooltip': 'Rescan folder' }, React.createElement(Icons.RefreshCw, { className: 'w-4 h-4' })),
+                        React.createElement(Button, { variant: 'icon', size: 'sm', 'aria-label': 'Remove folder', onClick: () => handleRemoveWatchFolder(folder.path), 'data-tooltip': 'Remove folder' }, React.createElement(Icons.X, { className: 'w-4 h-4' }))))
                   )
             ),
 
-            // Add folder button
-            React.createElement(Button, { variant: 'secondary', onClick: handleAddWatchFolder, disabled: isScanning, className: 'w-full' }, React.createElement(Icons.Plus, { size: 16 }), 'Add watch folder'),
-
-            // Scan progress
-            isScanning && React.createElement('div', { style: { marginTop: '16px' } },
-              React.createElement('div', { className: 'flex items-center gap-2', style: { marginBottom: '8px' } },
-                React.createElement(Icons.Spinner, { size: 14, style: { color: 'var(--accent-primary)' } }),
-                React.createElement('span', {
-                  style: {
-                    fontSize: '13px',
-                    color: 'var(--text-secondary)'
-                  }
-                }, 'Scanning…')
-              ),
-              React.createElement('div', {
-                style: {
-                  width: '100%',
-                  backgroundColor: 'var(--border-subtle)',
-                  borderRadius: '4px',
-                  height: '6px'
-                }
-              },
-                React.createElement('div', {
-                  style: {
-                    width: `${scanProgress.total > 0 ? (scanProgress.current / scanProgress.total) * 100 : 0}%`,
-                    backgroundColor: 'var(--accent-primary)',
-                    height: '6px',
-                    borderRadius: '4px',
-                    transition: transition('width', 'slow')
-                  }
-                })
-              ),
-              React.createElement('p', {
-                className: 'truncate',
-                style: {
-                  fontSize: '11px',
-                  color: 'var(--text-tertiary)',
-                  marginTop: '6px'
-                }
-              },
-                scanProgress.file || 'Preparing…'
-              )
+            // Scan progress (components/progress-bar.js).
+            isScanning && React.createElement('div', { style: { marginTop: '12px' } },
+              React.createElement('div', { className: 'flex items-center gap-2 text-ink-secondary', style: { fontSize: '13px', marginBottom: '8px' } },
+                React.createElement(Icons.Spinner, { className: 'w-4 h-4 text-accent' }), 'Scanning…'),
+              React.createElement(ProgressBar, { value: scanProgress.current, max: scanProgress.total, label: 'Scanning folders' }),
+              React.createElement('p', { className: 'truncate text-ink-tertiary', style: { fontSize: '11px', marginTop: '6px' } }, scanProgress.file || 'Preparing…')
             ),
 
-            // Stats
-            React.createElement('div', {
-              style: {
-                marginTop: '24px',
-                paddingTop: '16px',
-                borderTop: '1px solid var(--border-subtle)'
-              }
-            },
-              React.createElement('h4', {
-                style: {
-                  fontSize: '11px',
-                  fontWeight: '600',
-                  color: 'var(--text-tertiary)',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.08em',
-                  marginBottom: '12px'
-                }
-              }, 'Library Stats'),
-              React.createElement('div', { className: 'grid grid-cols-4 gap-4' },
-                React.createElement('div', null,
-                  React.createElement('p', {
-                    style: {
-                      fontSize: '12px',
-                      color: 'var(--text-secondary)'
-                    }
-                  }, 'Total tracks'),
-                  React.createElement('p', {
-                    style: {
-                      fontSize: '14px',
-                      fontWeight: '500',
-                      color: 'var(--text-primary)',
-                      marginTop: '2px'
-                    }
-                  }, localFilesStats.totalTracks.toLocaleString())
-                ),
-                React.createElement('div', null,
-                  React.createElement('p', {
-                    style: {
-                      fontSize: '12px',
-                      color: 'var(--text-secondary)'
-                    }
-                  }, 'Last scan'),
-                  React.createElement('p', {
-                    style: {
-                      fontSize: '14px',
-                      fontWeight: '500',
-                      color: 'var(--text-primary)',
-                      marginTop: '2px'
-                    },
-                    // The app's relative time (lib/time-ago.js), the full date
-                    // as its tooltip.
-                    'data-tooltip': localFilesStats.lastScan ? new Date(localFilesStats.lastScan).toLocaleString() : undefined
-                  },
-                    localFilesStats.lastScan ? timeAgo(localFilesStats.lastScan) : 'Never'
-                  )
-                )
-              ),
-              // The panel's actions: small secondary buttons flush with the
-              // content (text buttons' padding indented them).
-              React.createElement('div', { className: 'flex flex-wrap gap-2 mt-4' },
-                React.createElement(Button, { variant: 'secondary', size: 'sm', onClick: handleRescanAll, disabled: isScanning || watchFolders.length === 0 }, 'Rescan all folders'),
-                React.createElement(Button, { variant: 'secondary', size: 'sm', onClick: handleRemoveMissingFiles, disabled: isScanning || watchFolders.length === 0, 'data-tooltip': 'Remove library entries for files that are no longer on disk' }, 'Remove missing files'))
-            )
+            // The library: what's in it and when it was last scanned, then
+            // its two actions, each a row of its own.
+            React.createElement('div', { style: SYNC_BLOCK },
+              React.createElement(SettingRow, {
+                label: 'Library',
+                hint: React.createElement('span', null,
+                  countOf(localFilesStats.totalTracks, 'track'), ' · ',
+                  React.createElement('span', { 'data-tooltip': localFilesStats.lastScan ? new Date(localFilesStats.lastScan).toLocaleString() : undefined },
+                    localFilesStats.lastScan ? `scanned ${timeAgo(localFilesStats.lastScan)}` : 'not scanned yet')),
+                style: { padding: '0 0 10px' },
+              },
+                React.createElement(Button, { variant: 'secondary', size: 'sm', onClick: handleRescanAll, disabled: isScanning || watchFolders.length === 0 }, 'Rescan all')),
+              React.createElement(SettingRow, { label: 'Missing files', hint: 'Remove tracks whose files are no longer on disk', style: { padding: '10px 0 0' } },
+                React.createElement(Button, { variant: 'secondary', size: 'sm', onClick: handleRemoveMissingFiles, disabled: isScanning || watchFolders.length === 0, 'aria-label': 'Remove missing files' }, 'Remove')))
           )
         ),
 React.createElement('div', {

@@ -22,9 +22,11 @@ const { menuKeyHandler } = require('./card-button');
 //   4. Installing (spinner overlay)
 // statusLabel (with statusTitle as its tooltip) replaces "Setup required" for
 // a resolver that is set up but limited, e.g. Amazon without Music Unlimited.
-// unplayable: enabled but left out of playback (a playback limit: Amazon
-// without Music Unlimited, Apple Music not signed in). Grayed like an
-// available card, keeping its checkmark and label.
+// An enabled plug-in left out of playback (a playback limit: Amazon
+// without Music Unlimited, Apple Music not signed in) is on (search,
+// covers, links), so the tile keeps its full colour and checkmark; the
+// warning line under the name says it can't play, and the Plug-Ins grid
+// gives it no priority number. Greying it read as "off" (2026-11-17).
 // An enabled card's problem shows one way, as the warning line under its
 // name ("Setup required" or the statusLabel); there was also an orange "!" on
 // the tile for setup alone, so Apple Music and Amazon read differently.
@@ -36,7 +38,6 @@ const ResolverCard = React.memo(({
   needsConfiguration,
   statusLabel = null,
   statusTitle = null,
-  unplayable = false,
   priorityNumber,
   onClick,
   onDragStart,
@@ -53,7 +54,7 @@ const ResolverCard = React.memo(({
   const logo = SERVICE_LOGOS[resolver.id];
   const isEnabled = isActive === true;
   const isAvailable = !isEnabled && !isInstalling;
-  const isGrayed = isAvailable || (isEnabled && unplayable);
+  const isGrayed = isAvailable;
 
   return React.createElement('div', {
     className: `flex flex-col items-center relative ${isDragging ? 'opacity-50' : ''}`,
@@ -366,6 +367,9 @@ const ScrobblerSettingsCard = React.memo(({
   const usesToken = !usesPassword && scrobbler.id === 'listenbrainz';
   const status = isConnected
     ? (config?.username ? `Scrobbling as ${config.username}` : 'Signed in')
+    // The service ended the session (the loader clears it and keeps the
+    // reason): say so, and what it costs, rather than a plain "Sign in".
+    : config?.authError ? `${scrobbler.name} signed you out. Sign in again to scrobble.`
     : usesPassword ? 'Enter your username and password below'
     : usesToken ? 'Add your user token below to scrobble'
     : 'Sign in to scrobble what you play';
