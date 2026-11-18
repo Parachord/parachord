@@ -172,6 +172,9 @@
 
 ## Settings
 
+- **Every plug-in's settings look and work the same way.** One switch turns a plug-in on, and Done just closes. Every service signs in and out from the same account row, with Sign in in the service's own colour. Advanced sections open the same way everywhere. Descriptions say plainly what each plug-in does for you, and the capability tags leave out the technical ones.
+- **Choose what each service is used for.** Under a plug-in's switch you can now turn off Play from it (it stays in search, covers and links but never plays, and keeps its place in your order for when you turn it back on), Use metadata from it (covers and artist photos come from the others), and Use recommendations from it (its picks stay off Recommendations and Home). A plan that can't play, such as Amazon on Prime, shows Play from switched off and says why.
+- **Settings say what's really on.** Library sync shows when it's paused or you're signed out, instead of offering to set it up again. Discogs and Wikipedia now follow their switch. Last.fm and ListenBrainz show your listening history separately from scrobbling, and turning scrobbling off no longer makes it look as if you're signed out.
 - **The Ticketmaster key link goes to the right place.** The link for getting a Ticketmaster API key, in the plugin's settings and in its error message, pointed to the wrong Ticketmaster site. It now opens developer.ticketmaster.com.
 - **Tidier Discover and Scrobbling settings.** A long description under a Discover switch no longer runs up against the switch and squeezes it, and the note under Enable Scrobbling lines up with the rest of the section instead of sitting centered.
 
