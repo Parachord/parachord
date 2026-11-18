@@ -20,10 +20,10 @@ const { capabilityLabel, visibleCapabilities } = require('../lib/capability-labe
 const { Modal } = require('./modal');
 const { Badge } = require('./badge');
 const { Button } = require('./button');
-const { SecretField, Select, Switch, TextField } = require('./fields');
+const { SecretField, Select, SettingRow, Switch, TextField } = require('./fields');
+const { pluginSwitchState } = require('../lib/plugin-switch');
 const { EmptyState } = require('./states');
 const { transition } = require('../lib/motion');
-const { appendUniqueId, insertInCanonicalOrder } = require('../lib/resolver-order');
 
 const PLUGIN_SETTINGS_DIALOG_HANDLERS = [
   'connectAppleMusic',
@@ -127,7 +127,6 @@ const PluginSettingsDialog = React.memo(function PluginSettingsDialog(props) {
     scrobblerConfigs,
     scrobblerLovePushEnabled,
     selectedResolver,
-    setActiveResolvers,
     setAppleMusicAdvancedOpen,
     setAppleMusicDeveloperToken,
     setAutoLaunchSpotify,
@@ -140,7 +139,6 @@ const PluginSettingsDialog = React.memo(function PluginSettingsDialog(props) {
     setListenbrainzTokenInput,
     setListenbrainzUsernameInput,
     setLovePushEnabled,
-    setResolverOrder,
     setScrobblerConfigs,
     setSelectedResolver,
     setSoundcloudAdvancedOpen,
@@ -278,32 +276,39 @@ React.createElement('div', {
             )
           ),
 
-          // Enable/Disable toggle (only for content resolvers, not meta services)
-          selectedResolver.type !== 'meta-service' && React.createElement('div', {
-            className: 'flex items-center justify-between',
-            style: {
-              padding: '16px 0',
-              borderTop: '1px solid var(--border-subtle)'
-            }
-          },
-            React.createElement('div', null,
-              React.createElement('span', {
-                style: {
-                  fontSize: '13px',
-                  fontWeight: '500',
-                  color: 'var(--text-primary)'
+          // On/off: the ONE control that turns a plug-in on (#1498 step 2;
+          // lib/plugin-switch.js says what it shows for each kind of
+          // plug-in). It replaced the music plug-ins' "Use X" switch, the
+          // footer's Enable/Done button and the body "Enable X" switches. A
+          // plug-in that can't run without a key shows it disabled, saying
+          // what to add first.
+          (() => {
+            const id = selectedResolver.id;
+            const state = pluginSwitchState({ plugin: selectedResolver, config: metaServiceConfigs[id], activeResolvers });
+            const setOn = async (next) => {
+              if (next) {
+                const isLoaded = allResolvers.some(r => r.id === id) || metaServices.some(s => s.id === id);
+                if (!isLoaded) {
+                  // Not downloaded (a marketplace plug-in), or removed before:
+                  // take it off the removed list and install it now.
+                  const uninstalled = await window.electron.store.get('uninstalled_resolvers') || [];
+                  if (uninstalled.includes(id)) await window.electron.store.set('uninstalled_resolvers', uninstalled.filter(x => x !== id));
+                  const marketplaceItem = (marketplaceManifest?.plugins || []).find(r => r.id === id);
+                  if (marketplaceItem) await handleInstallFromMarketplace(marketplaceItem);
                 }
-              }, `Use ${selectedResolver.name}`),
-              React.createElement('p', {
-                style: {
-                  fontSize: '12px',
-                  color: 'var(--text-secondary)',
-                  marginTop: '2px'
-                }
-              }, 'Include in search and playback')
-            ),
-            React.createElement(Switch, { checked: activeResolvers.includes(selectedResolver.id), onToggle: () => toggleResolver(selectedResolver.id), 'aria-label': `Use ${selectedResolver.name}` })
-          ),
+              }
+              if (selectedResolver.type === 'meta-service') {
+                saveMetaServiceConfig(id, { ...metaServiceConfigs[id], enabled: next });
+              } else if (next !== activeResolvers.includes(id)) {
+                toggleResolver(id);
+              }
+            };
+            return React.createElement(SettingRow, {
+              label: `Use ${selectedResolver.name}`,
+              hint: state.hint || undefined,
+              style: { padding: '16px 0', borderTop: '1px solid var(--border-subtle)' },
+            }, React.createElement(Switch, { checked: state.checked, disabled: state.disabled, onToggle: () => setOn(!state.checked) }));
+          })(),
 
           // A status-capable plugin's sign-in row (capabilities.status, the
           // generic surface of #1356): the plugin's own getStatus reply —
@@ -1833,40 +1838,6 @@ React.createElement('div', {
                         }, 'aria-label': fieldSetting.label || fieldKey, className: 'w-full' })
                 );
               }),
-            // Explicit enable toggle for no-key AI services (requiresAuth: false).
-            // These services are enabled solely by the `enabled` flag (see
-            // isServiceEnabled) — a set apiKey alone does NOT enable them, so the
-            // flag must be visible and directly flippable (same affordance the
-            // Ollama block has). Keyed services (chatgpt/claude/gemini) stay
-            // key-gated and render no toggle.
-            (selectedResolver.settings?.requiresAuth ?? selectedResolver.requiresAuth) === false && React.createElement('div', {
-              className: 'flex items-center justify-between',
-              style: { marginTop: '4px' }
-            },
-              React.createElement('span', { style: { fontSize: '13px', color: 'var(--text-primary)' } },
-                `Enable ${selectedResolver.name || selectedResolver.id}`),
-              React.createElement(Switch, { checked: metaServiceConfigs[selectedResolver.id]?.enabled === true, onToggle: async () => { const next = !(metaServiceConfigs[selectedResolver.id]?.enabled === true);
-                    saveMetaServiceConfig(selectedResolver.id, {
-                      ...metaServiceConfigs[selectedResolver.id],
-                      enabled: next
-                    });
-                    // When enabling, ensure the plugin is actually loaded (e.g.
-                    // previously uninstalled)
-                    if (next) {
-                      const isLoaded = metaServices.some(s => s.id === selectedResolver.id);
-                      if (!isLoaded) {
-                        const uninstalled = await window.electron.store.get('uninstalled_resolvers') || [];
-                        if (uninstalled.includes(selectedResolver.id)) {
-                          await window.electron.store.set('uninstalled_resolvers', uninstalled.filter(id => id !== selectedResolver.id));
-                        }
-                        const marketplaceItem = (marketplaceManifest?.plugins || []).find(r => r.id === selectedResolver.id);
-                        if (marketplaceItem) {
-                          await handleInstallFromMarketplace(marketplaceItem);
-                        }
-                      }
-                    }
-                  }, 'aria-label': `Use ${selectedResolver.name}` })
-            ),
             // Connection status
             metaServiceConfigs[selectedResolver.id]?.[authFieldKey] && React.createElement('div', {
               className: 'flex items-center gap-2 text-ink-success text-sm'
@@ -2013,32 +1984,6 @@ React.createElement('div', {
                   options: isLoading ? [{ value: '', label: 'Loading models…' }] : options
                 });
               })()
-            ),
-            // Enable toggle
-            React.createElement('div', { className: 'flex items-center justify-between' },
-              React.createElement('span', { style: { fontSize: '13px', color: 'var(--text-primary)' } }, 'Enable Ollama'),
-              React.createElement(Switch, { checked: metaServiceConfigs[selectedResolver.id]?.enabled === true, onToggle: async () => { const next = !(metaServiceConfigs[selectedResolver.id]?.enabled === true);
-                    saveMetaServiceConfig(selectedResolver.id, {
-                      ...metaServiceConfigs[selectedResolver.id],
-                      enabled: next
-                    });
-                    // When enabling, ensure the plugin is actually loaded
-                    if (next) {
-                      const isLoaded = metaServices.some(s => s.id === selectedResolver.id);
-                      if (!isLoaded) {
-                        // Remove from uninstalled list so it loads on next restart
-                        const uninstalled = await window.electron.store.get('uninstalled_resolvers') || [];
-                        if (uninstalled.includes(selectedResolver.id)) {
-                          await window.electron.store.set('uninstalled_resolvers', uninstalled.filter(id => id !== selectedResolver.id));
-                        }
-                        // Also trigger install from marketplace to hot-load immediately
-                        const marketplaceItem = (marketplaceManifest?.plugins || []).find(r => r.id === selectedResolver.id);
-                        if (marketplaceItem) {
-                          await handleInstallFromMarketplace(marketplaceItem);
-                        }
-                      }
-                    }
-                  }, 'aria-label': `Use ${selectedResolver.name}` })
             )
           ),
 
@@ -2289,74 +2234,10 @@ React.createElement('div', {
               }
               return null;
             })(),
-            (() => {
-              // Determine if this resolver/service needs an "Enable" button
-              const isContentResolver = selectedResolver.capabilities?.resolve && !selectedResolver.type;
-              const isMetaService = selectedResolver.type === 'meta-service';
-              const config = metaServiceConfigs[selectedResolver.id];
-              const isAiServiceNeedingKey = isMetaService &&
-                (selectedResolver.capabilities?.generate || selectedResolver.capabilities?.chat) &&
-                selectedResolver.id !== 'ollama';
-
-              let showEnable = false;
-              if (isContentResolver) {
-                showEnable = !activeResolvers.includes(selectedResolver.id);
-              } else if (isMetaService) {
-                // No-key AI services (Ollama, Custom LLM) are enabled solely by the
-                // explicit `enabled` flag (see isServiceEnabled) — a set apiKey does
-                // NOT count as enabled for them, so the button must track the flag.
-                // Otherwise a configured-but-not-enabled service shows "Done" with no
-                // visible way to enable it.
-                const isNoKeyAiService = (selectedResolver.capabilities?.generate || selectedResolver.capabilities?.chat)
-                  && (selectedResolver.settings?.requiresAuth === false || selectedResolver.requiresAuth === false);
-                if (isNoKeyAiService) {
-                  showEnable = config?.enabled !== true;
-                } else {
-                  showEnable = !(config?.enabled || config?.apiKey || config?.appId || config?.clientId || config?.username);
-                }
-              }
-
-              return React.createElement(Button, { variant: 'primary', onClick: async () => {
-                  if (showEnable) {
-                    const isLoaded = allResolvers.some(r => r.id === selectedResolver.id)
-                      || metaServices.some(s => s.id === selectedResolver.id);
-
-                    if (!isLoaded) {
-                      // Not yet downloaded - install transparently from marketplace
-                      const marketplaceItem = (marketplaceManifest?.plugins || []).find(r => r.id === selectedResolver.id);
-                      if (marketplaceItem) {
-                        await handleInstallFromMarketplace(marketplaceItem);
-                        // Also enable the service after install (install alone doesn't set enabled)
-                        if (isMetaService) {
-                          saveMetaServiceConfig(selectedResolver.id, {
-                            ...metaServiceConfigs[selectedResolver.id],
-                            enabled: true
-                          });
-                        }
-                        setSelectedResolver(null);
-                        return;
-                      }
-                    }
-
-                    if (isContentResolver) {
-                      setActiveResolvers(prev => appendUniqueId(prev, selectedResolver.id));
-                      setResolverOrder(prev => insertInCanonicalOrder(prev, selectedResolver.id));
-                    } else if (isMetaService) {
-                      saveMetaServiceConfig(selectedResolver.id, {
-                        ...metaServiceConfigs[selectedResolver.id],
-                        enabled: true
-                      });
-                    }
-
-                    // For AI services that need an API key, keep the modal open
-                    // so the user can enter their key after enabling
-                    if (isAiServiceNeedingKey) {
-                      return; // Don't close modal - let user enter API key
-                    }
-                  }
-                  setSelectedResolver(null);
-                } }, showEnable ? 'Enable' : 'Done');
-            })()
+            // Done only closes: turning a plug-in on is the switch's job
+            // (#1498 step 2). The old button said "Enable" or "Done" by a
+            // rule nobody could see, and also installed and enabled.
+            React.createElement(Button, { variant: 'primary', onClick: () => setSelectedResolver(null) }, 'Done')
           )
         ));
 });
