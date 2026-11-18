@@ -17,8 +17,8 @@ const LEFT = {
   serviceBranches: 15,
   // Raw <button>s: the dialog's close button and Ollama's download link.
   rawButtons: 2,
-  // Last.fm's and ListenBrainz's Connect/Disconnect: step 3b moves them onto AccountRow.
-  connectButtons: 2,
+  // Connect/Disconnect buttons: every account is an AccountRow now (#1498 step 3b).
+  connectButtons: 0,
   // Hand-built accordions: every one is a Disclosure now.
   handBuiltAccordions: 0,
 };
@@ -26,7 +26,7 @@ const LEFT = {
 const now = {
   serviceBranches: count(/selectedResolver\.id === '[a-z]+'/g),
   rawButtons: count(/createElement\('button'/g),
-  connectButtons: count(/\}, '(?:Connect|Disconnect)'\)/g),
+  connectButtons: count(/'(?:Connect|Disconnect)'\)/g),
   handBuiltAccordions: count(/AdvancedOpen \? 'rotate-90'/g),
 };
 

@@ -855,38 +855,11 @@ React.createElement(Button, { variant: 'primary', size: 'sm', onClick: saveApple
             // Connected state
             metaServiceConfigs.lastfm?.username
               ? React.createElement('div', null,
-                  React.createElement('div', { className: 'flex items-center justify-between' },
-                    React.createElement('div', null,
-                      React.createElement('span', {
-                        style: {
-                          fontSize: '13px',
-                          fontWeight: '500',
-                          color: 'var(--text-primary)'
-                        }
-                      }, 'Last.fm Account'),
-                      React.createElement('p', {
-                        style: {
-                          fontSize: '12px',
-                          color: 'var(--text-secondary)',
-                          marginTop: '2px'
-                        }
-                      },
-                        `Connected as ${metaServiceConfigs.lastfm.username}`
-                      )
-                    ),
-                    React.createElement(Button, { variant: 'secondary', onClick: disconnectLastfm }, 'Disconnect')
-                  ),
-                  React.createElement('div', {
-                    className: 'flex items-center gap-2',
-                    style: {
-                      marginTop: '12px',
-                      fontSize: '12px',
-                      color: 'var(--text-success)'
-                    }
-                  },
-                    React.createElement('span', null, React.createElement(Icons.Check, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } })),
-                    React.createElement('span', null, 'Connected to Last.fm')
-                  ),
+                  // The account (components/account-row.js, #1498 step 3).
+                  React.createElement(AccountRow, {
+                    name: 'Last.fm', color: getServiceColor('lastfm'), signedIn: true,
+                    status: `Signed in as ${metaServiceConfigs.lastfm.username}`, onSignOut: disconnectLastfm,
+                  }),
                   // Advanced accordion for API credentials (also shown when connected)
                   React.createElement(Disclosure, { open: lastfmAdvancedOpen, onToggle: () => setLastfmAdvancedOpen(!lastfmAdvancedOpen) },
 React.createElement('p', {
@@ -959,30 +932,10 @@ React.createElement('div', { className: 'flex gap-2' },
                       borderTop: '1px solid var(--border-subtle)'
                     }
                   },
-                    React.createElement('div', { className: 'flex items-center justify-between', style: { marginBottom: '12px' } },
-                      React.createElement('div', null,
-                        React.createElement('span', {
-                          style: {
-                            fontSize: '13px',
-                            fontWeight: '500',
-                            color: 'var(--text-primary)'
-                          }
-                        }, 'Scrobbling'),
-                        React.createElement('p', {
-                          style: {
-                            fontSize: '12px',
-                            color: 'var(--text-secondary)',
-                            marginTop: '2px'
-                          }
-                        },
-                          'Report your listening history to Last.fm'
-                        )
-                      )
-                    ),
                     // Scrobbler card for Last.fm
                     window.scrobblers && window.scrobblers.find(s => s.id === 'lastfm') &&
                       React.createElement(ScrobblerSettingsCard, {
-                        scrobbler: window.scrobblers.find(s => s.id === 'lastfm'), color: getServiceColor('lastfm'),
+                        scrobbler: window.scrobblers.find(s => s.id === 'lastfm'), color: getServiceColor('lastfm'), accountLabel: 'Scrobbling',
                         config: scrobblerConfigs['lastfm'],
                         onConfigChange: (id, newConfig) => {
                           setScrobblerConfigs(prev => ({ ...prev, [id]: newConfig }));
@@ -1002,24 +955,15 @@ React.createElement('div', { className: 'flex gap-2' },
                 )
               // Not connected state
               : React.createElement('div', null,
-                  React.createElement('span', {
-                    style: {
-                      fontSize: '13px',
-                      fontWeight: '500',
-                      color: 'var(--text-primary)'
-                    }
-                  }, 'Last.fm Account'),
-                  React.createElement('p', {
-                    style: {
-                      fontSize: '12px',
-                      color: 'var(--text-secondary)',
-                      marginTop: '4px',
-                      marginBottom: '16px',
-                      lineHeight: '1.5'
-                    }
-                  },
-                    'Enter your Last.fm username to enable personalized recommendations.'
-                  ),
+                  // The account (components/account-row.js, #1498 step 3):
+                  // Sign in once there's a username; the fields are below.
+                  React.createElement('div', { style: { marginBottom: '16px' } },
+                    React.createElement(AccountRow, {
+                      name: 'Last.fm', color: getServiceColor('lastfm'), signedIn: false,
+                      status: 'Enter your Last.fm username below to sign in',
+                      onSignIn: () => connectLastfm(lastfmUsernameInput, lastfmApiKeyInput, lastfmApiSecretInput),
+                      signInDisabled: !lastfmUsernameInput.trim(), busy: lastfmConnecting,
+                    })),
                   // Username input
                   React.createElement('div', { style: { marginBottom: '16px' } },
                     React.createElement('label', {
@@ -1068,9 +1012,7 @@ React.createElement('div', null,
                           }
                         }, 'API Secret'),
                         React.createElement(SecretField, { value: lastfmApiSecretInput, onChange: (_v, e) => setLastfmApiSecretInput(e.target.value), placeholder: 'Your Last.fm API secret', 'aria-label': 'Your Last.fm API secret', className: 'w-full' })
-                      )),
-                  // Connect button
-                  React.createElement(Button, { variant: 'primary', pageColor: getServiceColor('lastfm') || 'var(--accent-fill)', className: 'w-full', onClick: () => connectLastfm(lastfmUsernameInput, lastfmApiKeyInput, lastfmApiSecretInput), disabled: lastfmConnecting || !lastfmUsernameInput.trim() }, lastfmConnecting ? 'Connecting…' : 'Connect')
+                      ))
                 )
           ),
 
@@ -1084,38 +1026,11 @@ React.createElement('div', null,
             // Connected state
             metaServiceConfigs.listenbrainz?.username
               ? React.createElement('div', null,
-                  React.createElement('div', { className: 'flex items-center justify-between' },
-                    React.createElement('div', null,
-                      React.createElement('span', {
-                        style: {
-                          fontSize: '13px',
-                          fontWeight: '500',
-                          color: 'var(--text-primary)'
-                        }
-                      }, 'ListenBrainz Account'),
-                      React.createElement('p', {
-                        style: {
-                          fontSize: '12px',
-                          color: 'var(--text-secondary)',
-                          marginTop: '2px'
-                        }
-                      },
-                        `Connected as ${metaServiceConfigs.listenbrainz.username}`
-                      )
-                    ),
-                    React.createElement(Button, { variant: 'secondary', onClick: disconnectListenbrainz }, 'Disconnect')
-                  ),
-                  React.createElement('div', {
-                    className: 'flex items-center gap-2',
-                    style: {
-                      marginTop: '12px',
-                      fontSize: '12px',
-                      color: 'var(--text-success)'
-                    }
-                  },
-                    React.createElement('span', null, React.createElement(Icons.Check, { style: { width: '1em', height: '1em', verticalAlign: '-0.125em' } })),
-                    React.createElement('span', null, 'Connected to ListenBrainz')
-                  ),
+                  // The account (components/account-row.js, #1498 step 3).
+                  React.createElement(AccountRow, {
+                    name: 'ListenBrainz', color: getServiceColor('listenbrainz'), signedIn: true,
+                    status: `Signed in as ${metaServiceConfigs.listenbrainz.username}`, onSignOut: disconnectListenbrainz,
+                  }),
                   // Show token status if configured - masked like AI service API keys
                   metaServiceConfigs.listenbrainz.userToken && React.createElement('div', {
                     style: {
@@ -1142,30 +1057,10 @@ React.createElement('div', null,
                       borderTop: '1px solid var(--border-subtle)'
                     }
                   },
-                    React.createElement('div', { className: 'flex items-center justify-between', style: { marginBottom: '12px' } },
-                      React.createElement('div', null,
-                        React.createElement('span', {
-                          style: {
-                            fontSize: '13px',
-                            fontWeight: '500',
-                            color: 'var(--text-primary)'
-                          }
-                        }, 'Scrobbling'),
-                        React.createElement('p', {
-                          style: {
-                            fontSize: '12px',
-                            color: 'var(--text-secondary)',
-                            marginTop: '2px'
-                          }
-                        },
-                          'Report your listening history to ListenBrainz'
-                        )
-                      )
-                    ),
                     // Scrobbler card for ListenBrainz
                     window.scrobblers && window.scrobblers.find(s => s.id === 'listenbrainz') &&
                       React.createElement(ScrobblerSettingsCard, {
-                        scrobbler: window.scrobblers.find(s => s.id === 'listenbrainz'), color: getServiceColor('listenbrainz'),
+                        scrobbler: window.scrobblers.find(s => s.id === 'listenbrainz'), color: getServiceColor('listenbrainz'), accountLabel: 'Scrobbling',
                         config: scrobblerConfigs['listenbrainz'],
                         onConfigChange: (id, newConfig) => {
                           setScrobblerConfigs(prev => ({ ...prev, [id]: newConfig }));
@@ -1185,25 +1080,15 @@ React.createElement('div', null,
                 )
               // Not connected state
               : React.createElement('div', null,
-                  React.createElement('span', {
-                    style: {
-                      fontSize: '13px',
-                      fontWeight: '500',
-                      color: 'var(--text-primary)'
-                    }
-                  }, 'ListenBrainz Account'),
-                  React.createElement('p', {
-                    style: {
-                      fontSize: '12px',
-                      color: 'var(--text-secondary)',
-                      marginTop: '4px',
-                      marginBottom: '16px',
-                      lineHeight: '1.5'
-                    }
-                  },
-                    'Enter your ListenBrainz username to enable open-source music recommendations and history.'
-                  ),
-                  // Username input
+                  // The account (components/account-row.js, #1498 step 3):
+                  // Sign in once there's a username; the fields are below.
+                  React.createElement('div', { style: { marginBottom: '16px' } },
+                    React.createElement(AccountRow, {
+                      name: 'ListenBrainz', color: getServiceColor('listenbrainz'), signedIn: false,
+                      status: 'Enter your ListenBrainz username below to sign in',
+                      onSignIn: () => connectListenbrainz(listenbrainzUsernameInput, listenbrainzTokenInput),
+                      signInDisabled: !listenbrainzUsernameInput.trim(), busy: listenbrainzConnecting,
+                    })),
                   React.createElement('div', { style: { marginBottom: '16px' } },
                     React.createElement('label', {
                       style: {
@@ -1239,9 +1124,7 @@ React.createElement('div', null,
                           }
                         }, 'User Token'),
                         React.createElement(SecretField, { value: listenbrainzTokenInput, onChange: (_v, e) => setListenbrainzTokenInput(e.target.value), placeholder: 'Your ListenBrainz user token', 'aria-label': 'Your ListenBrainz user token', className: 'w-full' })
-                      )),
-                  // Connect button
-                  React.createElement(Button, { variant: 'primary', pageColor: getServiceColor('listenbrainz') || 'var(--accent-fill)', className: 'w-full', onClick: () => connectListenbrainz(listenbrainzUsernameInput, listenbrainzTokenInput), disabled: listenbrainzConnecting || !listenbrainzUsernameInput.trim() }, listenbrainzConnecting ? 'Connecting…' : 'Connect')
+                      ))
                 )
           ),
 
@@ -1744,13 +1627,10 @@ React.createElement('div', null,
           selectedResolver.id === 'librefm' && React.createElement('div', {
             className: 'py-3 border-t border-line-light'
           },
-            React.createElement('div', { className: 'mb-4' },
-              React.createElement('span', { className: 'font-medium text-ink-primary' }, 'Libre.fm Scrobbling')
-            ),
             // Scrobbler card for Libre.fm
             window.scrobblers && window.scrobblers.find(s => s.id === 'librefm') &&
               React.createElement(ScrobblerSettingsCard, {
-                scrobbler: window.scrobblers.find(s => s.id === 'librefm'), color: getServiceColor('librefm'),
+                scrobbler: window.scrobblers.find(s => s.id === 'librefm'), color: getServiceColor('librefm') || selectedResolver.color,
                 config: scrobblerConfigs['librefm'],
                 onConfigChange: (id, newConfig) => {
                   setScrobblerConfigs(prev => ({ ...prev, [id]: newConfig }));

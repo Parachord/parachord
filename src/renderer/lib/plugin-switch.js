@@ -55,7 +55,8 @@ function hintFor(plugin) {
   if (plugin.type !== 'meta-service') return 'Include in search and playback';
   if (caps.concerts) return 'Include in Concerts';
   if (caps.chat || caps.generate) return 'Use with Shuffleupagus';
-  if (caps.scrobbling || caps.recommendations) return 'Use for recommendations and your history';
+  if (caps.recommendations) return 'Use for recommendations and your history';
+  if (caps.scrobbling) return 'Scrobble what you play';
   if (caps.metadata || caps.biography) return 'Use for artist info';
   return '';
 }
