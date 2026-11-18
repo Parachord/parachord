@@ -91,6 +91,7 @@
 - **Every plug-in's settings look and work the same way.** One switch turns a plug-in on, every service signs in and out from the same account row, and Advanced opens the same way everywhere.
 - **Choose what each service is used for.** Under a plug-in's switch you can turn off Play from it, Use metadata from it and Use recommendations from it, and keep the rest. A plan that can't play, such as Amazon on Prime, shows Play from off and says why.
 - **Plain words.** Each plug-in says what it does and what it needs before you turn it on. Settings show what's really on: a paused sync, a plug-in that needs attention, or scrobbling that's off while you're still signed in.
+- **Last.fm keeps working if your own key is turned down.** Last.fm API keys need a Last.fm Pro account from 1 December. If you added your own key in the Last.fm plug-in and Last.fm refuses it, Parachord switches to its own key, tells you once, and keeps your scrobbles until they can be sent. Saving your keys again tries them again, and pressing Save no longer clears a key you didn't retype.
 - **Smaller fixes.** Light, Dark and System are three tiles again. Clear cache asks first. The Ticketmaster key link opens the right site.
 
 ## Look and feel
