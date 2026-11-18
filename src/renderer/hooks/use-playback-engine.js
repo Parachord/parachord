@@ -1952,16 +1952,19 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
           return;
         }
         if (handlePlanRefusal(error, resolverId, streamLabel)) return;
-        // The sign-in prompt-retry is Amazon's own UX (the .axe's old play
-        // path), so it stays gated to the Amazon resolver: a future
-        // non-Amazon plugin's not-signed-in must not open Amazon's sign-in
-        // window. The generic sign-in flow arrives with each plugin's own
-        // migration (the web-session surface).
-        if (error && error.reason === 'not-signed-in' && resolverId === 'amazonmusic' && window.__parachordManageAmazonMusic) {
+        // Not signed in: prompt for the plug-in that refused, then retry
+        // once. Routed by the registry (#1523): app.js's
+        // promptPluginSignIn asks the plug-in that's playing, only if it is
+        // on the status surface with a signIn method, and runs that
+        // plug-in's sign-in (Amazon's carries the consent dialog and the
+        // hiccup rule). One plug-in's not-signed-in never opens another's
+        // sign-in window.
+        if (error && error.reason === 'not-signed-in' && typeof window.__parachordPromptPluginSignIn === 'function'
+          && window.__parachordPromptPluginSignIn.canPrompt(resolverId)) {
           // reason is what #1172's quiet-retry keys on. explicit skips the
           // radio/hidden gates; forcePrompt is NOT set, so live cookies
           // retry once instead of opening the sign-in window.
-          const ok = await window.__parachordManageAmazonMusic({ explicit: true, reason: error.reason });
+          const ok = await window.__parachordPromptPluginSignIn(resolverId, { explicit: true, reason: error.reason });
           if (playbackGenerationRef.current !== thisGeneration) {
             setTrackLoading(false);
             return;

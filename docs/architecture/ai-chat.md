@@ -4,6 +4,7 @@
 
 ### AI Chat (Shuffleupagus)
 - `AIChatService` (L4700s): Manages conversation, tool calls, and provider communication
+- When the provider's request fails, the message comes from `describeProviderError` (`src/renderer/lib/ai-provider-errors.js`): the plug-in's own `describeError` first, then the generic wording. A reply with `serverUnavailable` sets the result's `localServerUnavailable`, and `handleAiChatSend` then tries to start Ollama (`window.electron.ollama.start`, the only local server the app can start today) and resends. See "Dynamic Model Selection" in [plugins.md](plugins.md) (#1523).
 - Tool results must include `name` field (not just `tool_call_id`) — Gemini API requires `function_response.name`
 - `handleToolCalls` (L4779): Deduplicates multiple `queue_add` calls in same response (merges tracks into one call) — prevents models from adding N×requested tracks
 - `queue_add` (`tools/queue-add.js`, `runQueueAdd`): with nothing playing it starts the first track it can find and lists what it skipped in `notFound`, matching mobile (parachord-mobile#525). If none are found it returns `success: false` and leaves the queue alone. Tracks after the one that starts go in as metadata unchecked, so `notFound` can't cover them. `executeDjTool` in `app.js` is what runs; the `execute` wrappers in `tools/dj-tools.js` are not on that path, and the `playFirst` parameter the registry advertises is not honored.

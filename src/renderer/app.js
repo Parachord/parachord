@@ -594,6 +594,8 @@ window.musicbrainzLimiter = window.createLimiter({
 });
 const { mbFetchWithRetries, describeMusicBrainzError } = require('./lib/musicbrainz-fetch');
 const { transition } = require('./lib/motion');
+const { describeProviderError } = require('./lib/ai-provider-errors');
+const { sourceFromUrlHint } = require('./lib/source-url-hint');
 const { CardButton } = require('./components/card-button');
 const { DropZoneOverlay } = require('./components/drop-zone-overlay');
 const { FriendAvatar } = require('./components/friend-avatar');
@@ -2885,8 +2887,8 @@ class AIChatService {
       const errorMessage = this.formatProviderError(error);
       this.messages.push({ role: 'assistant', content: errorMessage });
       const result = { content: errorMessage, error: true };
-      if (this._lastErrorType === 'ollama_connection') {
-        result.ollamaUnavailable = true;
+      if (this._lastErrorType === 'local_server_connection') {
+        result.localServerUnavailable = true;
       }
       return result;
     }
@@ -3212,63 +3214,17 @@ class AIChatService {
     }).join('. ') + '.';
   }
 
+  // The words come from lib/ai-provider-errors.js: the plug-in's own
+  // describeError first (Ollama's local server, Custom LLM's endpoint hints),
+  // then the app's generic ones. No branch on the provider's id (#1523).
   formatProviderError(error) {
-    const message = error.message || '';
-    const lowerMessage = message.toLowerCase();
-
-    // Connection errors (Ollama, network issues)
-    if (lowerMessage.includes('failed to fetch') || lowerMessage.includes('econnrefused') || lowerMessage.includes('network')) {
-      const endpoint = this.provider.config?.endpoint || '';
-      if (endpoint.includes('localhost:11434') || this.provider.id === 'ollama') {
-        // Mark this as an Ollama connection error for auto-start handling
-        this._lastErrorType = 'ollama_connection';
-        return "Can't connect to Ollama. Attempting to start it…";
-      }
-      if (this.provider.id === 'customllm') {
-        return "Can't connect to your custom LLM endpoint. Check that the server is running and the Base URL is correct.";
-      }
-      return "Can't connect to the AI service. Check your internet connection.";
+    const described = describeProviderError(error, this.provider);
+    if (described.serverUnavailable) {
+      // The plug-in's local server isn't answering: the chat panel offers to
+      // start it (handleAiChatSend).
+      this._lastErrorType = 'local_server_connection';
     }
-
-    // Custom-LLM plugin errors are already user-facing — they carry endpoint-
-    // specific hints (e.g. the /v1 path suggestion on 404) that a generic
-    // rewrite would discard.
-    if (this.provider.id === 'customllm') {
-      return message;
-    }
-
-    // Quota/rate limit errors (Gemini, OpenAI)
-    if (lowerMessage.includes('quota') || lowerMessage.includes('exceeded')) {
-      return "API quota exceeded. Check your plan limits or try again later.";
-    }
-    if (message.includes('429') || lowerMessage.includes('rate limit')) {
-      return "Rate limit reached. Please wait a moment and try again.";
-    }
-
-    // Auth errors
-    if (message.includes('401') || lowerMessage.includes('unauthorized') || lowerMessage.includes('invalid api key')) {
-      return "Invalid API key. Please check your settings.";
-    }
-
-    // Model not found
-    if (message.includes('404') || lowerMessage.includes('not found') || lowerMessage.includes('does not exist')) {
-      // Check if this is Ollama
-      const endpoint = this.provider.config?.endpoint || '';
-      if (endpoint.includes('localhost:11434') || this.provider.id === 'ollama') {
-        const model = this.provider.config?.model || 'llama3.1';
-        return `Model "${model}" not installed. Run: ollama pull ${model}`;
-      }
-      return "AI model not found. Check your settings or try a different model.";
-    }
-
-    // Content policy errors
-    if (lowerMessage.includes('content policy') || lowerMessage.includes('safety')) {
-      return "Request was blocked by content policy. Try rephrasing.";
-    }
-
-    // Generic error - truncate long messages
-    const shortMessage = message.length > 100 ? message.substring(0, 100) + '…' : message;
-    return `Error: ${shortMessage}`;
+    return described.message;
   }
 
   /**
@@ -3363,6 +3319,8 @@ const createChatServiceFromPlugin = (plugin, config, toolContext, getContext) =>
   }
   const provider = {
     chat: plugin.chat,
+    // The plug-in's own wording for its failures (lib/ai-provider-errors.js).
+    describeError: typeof plugin.describeError === 'function' ? plugin.describeError : undefined,
     config: config,
     id: plugin.id || plugin.manifest?.id,
     name: plugin.name || plugin.manifest?.name
@@ -7693,6 +7651,39 @@ const Parachord = () => {
     }
   };
   window.__parachordManageAmazonMusic = manageAmazonMusic;
+
+  // The playback engine's "this plug-in needs sign-in" prompt (#1523): a play
+  // refused with reason 'not-signed-in' asks the plug-in that refused,
+  // routed by the registry, never by name. Only a plug-in on the status
+  // surface (capabilities.status) with a signIn method can be prompted. A
+  // plug-in whose sign-in carries host UX of its own runs that flow (Amazon's
+  // consent dialog, hiccup rule and CDM gate, manageAmazonMusic above, which
+  // the plug-in dialog's Sign in and connectPlugin also use); any other runs
+  // its own signIn() and reports whether it ended signed in.
+  const hostSignInFlows = { amazonmusic: manageAmazonMusic };
+  const promptablePlugin = (resolverId) => {
+    const plugin = resolverLoaderRef.current && typeof resolverLoaderRef.current.getResolver === 'function'
+      ? resolverLoaderRef.current.getResolver(resolverId)
+      : null;
+    return plugin && plugin.capabilities && plugin.capabilities.status && typeof plugin.signIn === 'function' ? plugin : null;
+  };
+  const promptPluginSignIn = async (resolverId, opts = {}) => {
+    const plugin = promptablePlugin(resolverId);
+    if (!plugin) return false;
+    const flow = hostSignInFlows[resolverId];
+    if (flow) return flow(opts);
+    try {
+      const login = await plugin.signIn();
+      return !!(login && login.signedIn);
+    } catch (error) {
+      console.error(`${plugin.name} sign-in failed:`, error);
+      return false;
+    } finally {
+      refreshPluginStatus(resolverId).catch(() => {});
+    }
+  };
+  promptPluginSignIn.canPrompt = (resolverId) => !!promptablePlugin(resolverId);
+  window.__parachordPromptPluginSignIn = promptPluginSignIn;
 
   // The generic plugin-status surface (capabilities.status, #1356): a plugin
   // that can report its sign-in/playback-limit state implements getStatus,
@@ -18463,7 +18454,7 @@ ${trackListXml}
       setAiChatProgress(null);
 
       // If Ollama is unavailable, try to auto-start it
-      if (response.ollamaUnavailable && window.electron?.ollama) {
+      if (response.localServerUnavailable && window.electron?.ollama) {
         // Update UI to show we're trying to start Ollama
         setAiChatMessages([...updatedMessages, { role: 'assistant', content: 'Starting Ollama…' }]);
 
@@ -23522,18 +23513,11 @@ ${trackListXml}
 
           let result;
 
-          // If track has a sourceUrl hint matching this resolver, use it directly
-          if (track.sourceUrl && resolver.id === 'bandcamp' && track.sourceUrl.includes('bandcamp.com/track/')) {
-            console.log(`  📎 Using sourceUrl hint for Bandcamp: ${track.sourceUrl}`);
-            result = {
-              id: `bandcamp-${Date.now()}`,
-              title: track.title,
-              artist: artistName,
-              album: track.album || '',
-              duration: track.duration > 0 ? track.duration : null,
-              sources: ['bandcamp'],
-              bandcampUrl: track.sourceUrl
-            };
+          // A track that knows its link on this plug-in's service plays from
+          // that link (lib/source-url-hint.js, routed by the registry).
+          result = await sourceFromUrlHint(track, resolver, resolverLoaderRef.current, artistName, config);
+          if (result) {
+            console.log(`  📎 Using sourceUrl hint for ${resolver.name}: ${track.sourceUrl}`);
           } else {
             result = await resolver.resolve(artistName, track.title, track.album || null, config);
           }
@@ -23666,20 +23650,12 @@ ${trackListXml}
 
         let result;
 
-        // If track has a sourceUrl hint matching this resolver, use it directly
-        // (e.g., Bandcamp tracks scraped from playlists have their original URL)
-        if (track.sourceUrl && resolver.id === 'bandcamp' && track.sourceUrl.includes('bandcamp.com/track/')) {
-          console.log(`  📎 Using sourceUrl hint for Bandcamp: ${track.sourceUrl}`);
-          // Create a source directly from the URL
-          result = {
-            id: `bandcamp-${Date.now()}`,
-            title: track.title,
-            artist: artistName,
-            album: track.album || '',
-            duration: track.duration > 0 ? track.duration : null,
-            sources: ['bandcamp'],
-            bandcampUrl: track.sourceUrl
-          };
+        // A track that knows its link on this plug-in's service (a Bandcamp
+        // track scraped from a playlist page keeps its page) plays from that
+        // link (lib/source-url-hint.js, routed by the registry).
+        result = await sourceFromUrlHint(track, resolver, resolverLoaderRef.current, artistName, config);
+        if (result) {
+          console.log(`  📎 Using sourceUrl hint for ${resolver.name}: ${track.sourceUrl}`);
         } else {
           result = await resolver.resolve(artistName, track.title, track.album || null, config);
         }
@@ -38786,6 +38762,7 @@ useEffect(() => {
       firstRunTutorial,
       loadedResolvers,
       metaServices,
+      metaServiceConfigs,
       setFirstRunTutorial,
       ...firstRunTutorialHandlers
     }),

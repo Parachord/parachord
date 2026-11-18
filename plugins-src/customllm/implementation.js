@@ -501,6 +501,18 @@ module.exports = {
       throw new Error('Could not parse playlist from response');
     }
   },
+  // What Shuffleupagus says when chat fails (the app's
+  // src/renderer/lib/ai-provider-errors.js asks this first). The errors chat
+  // throws are already written for people, with endpoint-specific hints (the
+  // /v1 path on a 404) a generic rewrite would lose, so they pass through.
+  describeError: function (error) {
+    const message = (error && error.message) || '';
+    const lower = message.toLowerCase();
+    if (lower.includes('failed to fetch') || lower.includes('econnrefused') || lower.includes('network')) {
+      return { message: 'Can’t connect to your custom LLM endpoint. Check that the server is running and the Base URL is correct.' };
+    }
+    return message ? { message: message } : null;
+  },
   listModels: async function (config) {
     const baseUrl = (config.baseUrl || '').trim().replace(/\/+$/, '');
     if (!baseUrl) throw new Error('Set a Base URL first');

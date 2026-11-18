@@ -236,6 +236,24 @@ module.exports = {
     }
     return null;
   },
+  // A source for a track that already knows its Bandcamp track page (one
+  // scraped from a playlist page keeps it), built from the link without a
+  // fetch or a search. The app asks this during resolution when the
+  // registry routes the track's link here as a track link
+  // (src/renderer/lib/source-url-hint.js); track is { title, artist, album,
+  // duration } from the app's track.
+  sourceFromUrl: function (url, track) {
+    return {
+      id: 'bandcamp-' + Date.now(),
+      title: track.title,
+      artist: track.artist,
+      album: track.album || '',
+      duration: track.duration > 0 ? track.duration : null,
+      sources: ['bandcamp'],
+      bandcampUrl: url,
+      purchaseUrl: url,
+    };
+  },
   lookupUrl: async function (url, config) {
     try {
       console.log('Bandcamp URL lookup:', url);

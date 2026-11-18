@@ -299,7 +299,9 @@ describe('amazonmusic play (host-owned through capabilities.widevine)', () => {
     const appSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'hooks', 'use-playback-engine.js'), 'utf8');
     expect(appSrc).toContain('if (isWidevineResolver(resolverId)) {');
     expect(appSrc).toMatch(/window\.__parachordWidevine\.play\(audioRef\.current, \{\s*resolverId,\s*startTime: startAt,\s*entity: \{ asin \}/);
-    expect(appSrc).toMatch(/error\.reason === 'not-signed-in' && resolverId === 'amazonmusic' && window\.__parachordManageAmazonMusic/);
+    // Routed by capability since #1523 (the plug-in on the status surface
+    // with a signIn; app.js runs Amazon's own prompt flow for it).
+    expect(appSrc).toMatch(/error\.reason === 'not-signed-in' && typeof window\.__parachordPromptPluginSignIn === 'function'\s*&& window\.__parachordPromptPluginSignIn\.canPrompt\(resolverId\)/);
     expect(appSrc).toContain('await startWidevine();');
   });
 

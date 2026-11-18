@@ -45,6 +45,11 @@ const PLUGIN_IDS = (() => {
   }
 })();
 // What a plug-in's id is called: x.id, resolverId, providerId, serviceId.
+// Only these count, so a string that happens to equal a plug-in id but names
+// something else isn't a branch: MusicBrainz's relation types
+// (rel.type === 'youtube' | 'bandcamp'), a link's kind
+// (classified.kind === 'achordion'). tests/ci/design-drift-service-branches.test.js
+// pins both sides (#1523).
 const isPluginIdRef = (n) => n && ((n.type === 'MemberExpression' && !n.computed && n.property.name === 'id')
   || (n.type === 'Identifier' && /^(?:resolver|provider|service|plugin)Id$/.test(n.name)));
 
