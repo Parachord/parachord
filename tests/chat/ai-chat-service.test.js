@@ -6,6 +6,9 @@
  */
 
 // Recreate the core classes from app.js for testing
+const { describeProviderError } = require('../../src/renderer/lib/ai-provider-errors');
+// Ollama's own wording for its failures (plugins-src/ollama/implementation.js).
+const { describeError: ollamaDescribeError } = require('../../plugins-src/ollama/implementation');
 const djTools = [
   { name: 'play', description: 'Play a track', parameters: { type: 'object', properties: { artist: { type: 'string' }, title: { type: 'string' } }, required: ['artist', 'title'] } },
   { name: 'control', description: 'Control playback', parameters: { type: 'object', properties: { action: { type: 'string', enum: ['pause', 'resume', 'start', 'skip', 'previous'] } }, required: ['action'] } },
@@ -74,8 +77,8 @@ class AIChatService {
       const errorMessage = this.formatProviderError(error);
       this.messages.push({ role: 'assistant', content: errorMessage });
       const result = { content: errorMessage, error: true };
-      if (this._lastErrorType === 'ollama_connection') {
-        result.ollamaUnavailable = true;
+      if (this._lastErrorType === 'local_server_connection') {
+        result.localServerUnavailable = true;
       }
       return result;
     }
@@ -198,40 +201,12 @@ class AIChatService {
     }).join('. ') + '.';
   }
 
+  // As app.js (#1523): the plug-in's describeError first, then the
+  // generic wording, from the shared lib.
   formatProviderError(error) {
-    const message = error.message || '';
-    const lowerMessage = message.toLowerCase();
-
-    if (lowerMessage.includes('failed to fetch') || lowerMessage.includes('econnrefused')) {
-      const endpoint = this.provider.config?.endpoint || '';
-      if (endpoint.includes('localhost:11434') || this.provider.id === 'ollama') {
-        this._lastErrorType = 'ollama_connection';
-        return "Can't connect to Ollama. Attempting to start it...";
-      }
-      return "Can't connect to the AI service. Check your internet connection.";
-    }
-    if (lowerMessage.includes('quota') || lowerMessage.includes('exceeded')) {
-      return "API quota exceeded. Check your plan limits or try again later.";
-    }
-    if (message.includes('429') || lowerMessage.includes('rate limit')) {
-      return "Rate limit reached. Please wait a moment and try again.";
-    }
-    if (message.includes('401') || lowerMessage.includes('unauthorized')) {
-      return "Invalid API key. Please check your settings.";
-    }
-    if (message.includes('404') || lowerMessage.includes('not found')) {
-      const endpoint = this.provider.config?.endpoint || '';
-      if (endpoint.includes('localhost:11434') || this.provider.id === 'ollama') {
-        const model = this.provider.config?.model || 'llama3.1';
-        return `Model "${model}" not installed. Run: ollama pull ${model}`;
-      }
-      return "AI model not found. Check your settings or try a different model.";
-    }
-    if (lowerMessage.includes('content policy') || lowerMessage.includes('safety')) {
-      return "Request was blocked by content policy. Try rephrasing.";
-    }
-    const shortMessage = message.length > 100 ? message.substring(0, 100) + '...' : message;
-    return `Error: ${shortMessage}`;
+    const described = describeProviderError(error, this.provider);
+    if (described.serverUnavailable) this._lastErrorType = 'local_server_connection';
+    return described.message;
   }
 
   clearHistory() { this.messages = []; }
@@ -577,6 +552,7 @@ describe('AIChatService', () => {
     test('identifies Ollama connection error', () => {
       const ollamaProvider = createMockProvider({
         id: 'ollama',
+        describeError: ollamaDescribeError,
         config: { endpoint: 'http://localhost:11434', model: 'llama3.1' }
       });
       const svc = new AIChatService(ollamaProvider, {}, getContext);
@@ -584,7 +560,7 @@ describe('AIChatService', () => {
       const msg = svc.formatProviderError(new Error('Failed to fetch'));
 
       expect(msg).toContain('Ollama');
-      expect(svc._lastErrorType).toBe('ollama_connection');
+      expect(svc._lastErrorType).toBe('local_server_connection');
     });
 
     test('identifies generic connection error', () => {
@@ -614,6 +590,7 @@ describe('AIChatService', () => {
     test('identifies Ollama model not found', () => {
       const ollamaProvider = createMockProvider({
         id: 'ollama',
+        describeError: ollamaDescribeError,
         config: { endpoint: 'http://localhost:11434', model: 'mistral' }
       });
       const svc = new AIChatService(ollamaProvider, {}, getContext);
@@ -635,7 +612,7 @@ describe('AIChatService', () => {
       const msg = service.formatProviderError(new Error(longMsg));
 
       expect(msg.length).toBeLessThan(150);
-      expect(msg).toContain('...');
+      expect(msg).toContain('…');
     });
   });
 
@@ -694,9 +671,10 @@ describe('AIChatService', () => {
       expect(assistantMsg).toBeDefined();
     });
 
-    test('sets ollamaUnavailable flag for Ollama errors', async () => {
+    test('sets localServerUnavailable when the plug-in says its local server is down', async () => {
       const ollamaProvider = createMockProvider({
         id: 'ollama',
+        describeError: ollamaDescribeError,
         config: { endpoint: 'http://localhost:11434' }
       });
       ollamaProvider.chat.mockRejectedValue(new Error('Failed to fetch'));
@@ -704,7 +682,7 @@ describe('AIChatService', () => {
 
       const result = await svc.sendMessage('Hello');
 
-      expect(result.ollamaUnavailable).toBe(true);
+      expect(result.localServerUnavailable).toBe(true);
     });
   });
 });

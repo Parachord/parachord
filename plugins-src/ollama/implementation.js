@@ -68,6 +68,27 @@ module.exports = {
       toolCalls: toolCalls,
     };
   },
+  // What Shuffleupagus says when chat fails (the app's
+  // src/renderer/lib/ai-provider-errors.js asks this first; null leaves it to
+  // the app's generic wording). serverUnavailable tells the chat panel to
+  // offer to start the local server.
+  describeError: function (error, config) {
+    const message = (error && error.message) || '';
+    const lower = message.toLowerCase();
+    if (lower.includes('failed to fetch') || lower.includes('econnrefused') || lower.includes('network')) {
+      return { message: 'Can’t connect to Ollama. Attempting to start it…', serverUnavailable: true };
+    }
+    // Quota, rate-limit and key errors read the same for every AI plug-in.
+    if (lower.includes('quota') || lower.includes('exceeded') || message.includes('429') || lower.includes('rate limit')
+      || message.includes('401') || lower.includes('unauthorized') || lower.includes('invalid api key')) {
+      return null;
+    }
+    if (message.includes('404') || lower.includes('not found') || lower.includes('does not exist')) {
+      const model = (config && config.model) || 'llama3.1';
+      return { message: 'Model "' + model + '" not installed. Run: ollama pull ' + model };
+    }
+    return null;
+  },
   listModels: async function (config) {
     const endpoint = config.endpoint || 'http://localhost:11434';
     const response = await fetch(`${endpoint}/api/tags`);

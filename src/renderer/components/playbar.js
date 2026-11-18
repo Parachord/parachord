@@ -16,7 +16,7 @@ const { findSavedTrack } = require('../lib/collection-ids');
 const { trackSlug } = require('../lib/track-slug');
 const { playbarShowsTrack } = require('../lib/playbar-art');
 const { playStartPending } = require('../lib/play-state');
-const { isOtherVersion } = require('../lib/track-variants');
+const { purchaseSource: pickPurchaseSource } = require('../lib/purchase-source');
 const { sourceBlockId } = require('../lib/bad-match-report');
 const { ResolverIcon, Tooltip, PlaybackProgress } = require('./ui-atoms');
 const { PAGE_COLORS } = require('../lib/page-colors');
@@ -554,42 +554,11 @@ const Playbar = React.memo(function Playbar(props) {
                         Object.entries({ ...(stateSources || {}), ...(cachedSources || {}), ...(currentTrack.sources || {}) }).filter(([, v]) => v && !v.noMatch)
                       );
 
-                      // Find purchasable sources - use resolver-specific URL fields
-                      // Require minimum confidence (0.8) and artist name match to avoid wrong purchases
-                      const MIN_PURCHASE_CONFIDENCE = 0.8;
-                      const purchasableSources = [];
-
-                      // Helper to check if artist names match (case-insensitive, handles "The" prefix)
-                      const artistsMatch = (trackArtist, sourceArtist) => {
-                        if (!trackArtist || !sourceArtist) return false;
-                        const normalize = (s) => s.toLowerCase().replace(/^the\s+/, '').trim();
-                        const a1 = normalize(trackArtist);
-                        const a2 = normalize(sourceArtist);
-                        // Exact match or one contains the other (handles "Artist" vs "Artist feat. Other")
-                        return a1 === a2 || a1.includes(a2) || a2.includes(a1);
-                      };
-
-                      // Check Bandcamp - use bandcampUrl which is always present for Bandcamp sources
-                      const bandcampSource = effectiveSources.bandcamp;
-                      const bandcampUrl = bandcampSource?.bandcampUrl || currentTrack.bandcampUrl;
-                      const bandcampConfidence = bandcampSource?.confidence || 0;
-                      const bandcampArtistMatch = artistsMatch(currentTrack.artist, bandcampSource?.artist);
-                      // A cover, remix or live cut is not the track playing;
-                      // don't sell it (cached sources from before the plugin's
-                      // stricter resolve can still carry one).
-                      const bandcampSameVersion = !isOtherVersion(bandcampSource, currentTrack.artist, currentTrack.title);
-                      if (bandcampUrl && bandcampConfidence >= MIN_PURCHASE_CONFIDENCE && bandcampArtistMatch && bandcampSameVersion) {
-                        const resolver = allResolvers.find(r => r.id === 'bandcamp');
-                        purchasableSources.push({
-                          resolverId: 'bandcamp',
-                          resolverName: resolver ? resolver.name : 'Bandcamp',
-                          purchaseUrl: bandcampUrl
-                        });
-                      }
-
-                      if (purchasableSources.length === 0) return null;
-
-                      const purchaseSource = purchasableSources[0];
+                      // The plug-in that sells it: one declaring
+                      // capabilities.purchase whose source is a sure match
+                      // (lib/purchase-source.js).
+                      const purchaseSource = pickPurchaseSource({ resolvers: allResolvers, sources: effectiveSources, track: currentTrack });
+                      if (!purchaseSource) return null;
 
                       return React.createElement(Tooltip, {
                         content: `Buy on ${purchaseSource.resolverName}`,
