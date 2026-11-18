@@ -15,7 +15,7 @@ const PlaybackLimits = require('../lib/playback-limits');
 const { countOf } = require('../lib/plural');
 const { timeAgo } = require('../lib/time-ago');
 const { SERVICE_LOGOS } = require('./brand-logos');
-const { ScrobblerSettingsCard } = require('./settings-cards');
+const { ScrobblerSettingsCard, PluginSettingsPanel } = require('./settings-cards');
 const { capabilityLabel, visibleCapabilities } = require('../lib/capability-labels');
 const { Modal } = require('./modal');
 const { Badge } = require('./badge');
@@ -26,7 +26,7 @@ const { librarySyncState } = require('../lib/library-sync-state');
 const { ProgressBar } = require('./progress-bar');
 const { AccountRow } = require('./account-row');
 const { Disclosure } = require('./disclosure');
-const { EmptyState } = require('./states');
+const { EmptyState, ErrorState } = require('./states');
 
 const PLUGIN_SETTINGS_DIALOG_HANDLERS = [
   'connectAppleMusic',
@@ -52,6 +52,7 @@ const PLUGIN_SETTINGS_DIALOG_HANDLERS = [
   'openSyncSetupModal',
   'refreshPluginStatus',
   'saveAppleMusicDeveloperToken',
+  'clearMetaServiceConfig',
   'saveMetaServiceConfig',
   'saveSoundcloudCredentials',
   'saveSpotifyCredentials',
@@ -59,6 +60,7 @@ const PLUGIN_SETTINGS_DIALOG_HANDLERS = [
   'setResolverMetadataOn',
   'setResolverPlaybackOn',
   'setResolverRecommendationsOn',
+  'showConfirmDialog',
   'toggleResolver',
 ];
 
@@ -133,11 +135,13 @@ const PluginSettingsDialog = React.memo(function PluginSettingsDialog(props) {
     recommendationsOffResolvers,
     metadataOffResolvers,
     resolverConfigCache,
+    resolverLoaderRef,
     resolverSyncSettings,
     syncSignedOut,
     runLoveBackfill,
     runLoveImport,
     saveAppleMusicDeveloperToken,
+    clearMetaServiceConfig,
     saveMetaServiceConfig,
     saveSoundcloudCredentials,
     saveSpotifyCredentials,
@@ -176,6 +180,7 @@ const PluginSettingsDialog = React.memo(function PluginSettingsDialog(props) {
     spotifyClientIdInput,
     spotifyConnected,
     spotifyCredentialsSource,
+    showConfirmDialog,
     toggleResolver,
     watchFolders,
   } = props;
@@ -1091,6 +1096,38 @@ React.createElement('div', null,
                       ))
                 )
           ),
+
+          // Plug-in-drawn settings (settings.authType 'custom' + renderSettings
+          // in the .axe; Plex is the first). The host supplies React and config
+          // read/write through ctx; the plug-in owns the UI (PluginSettingsPanel).
+          ((selectedResolver.settings?.authType === 'custom') || selectedResolver.authType === 'custom') && (() => {
+            const pluginId = selectedResolver.id;
+            const loaded = resolverLoaderRef && resolverLoaderRef.current && resolverLoaderRef.current.getResolver(pluginId);
+            if (!loaded || typeof loaded.renderSettings !== 'function') return null;
+            const ctx = {
+              React,
+              // The shared parts a plug-in-drawn panel builds with, so it looks
+              // and behaves like every other plug-in's settings (CLAUDE.md,
+              // "every plug-in's settings are one layout"). A panel draws with
+              // these only, never its own buttons, inputs or colours.
+              components: { AccountRow, SettingRow, NestedSettings, Switch, Button, ProgressBar, EmptyState, ErrorState, Disclosure },
+              resolver: loaded,
+              config: metaServiceConfigs[pluginId] || {},
+              saveConfig: async (next) => {
+                await saveMetaServiceConfig(pluginId, next);
+                delete resolverConfigCache.current[pluginId];
+              },
+              clearConfig: async () => {
+                await clearMetaServiceConfig(pluginId);
+                delete resolverConfigCache.current[pluginId];
+              },
+              isActive: activeResolvers.includes(pluginId),
+              setActive: (on) => { if (!!on !== activeResolvers.includes(pluginId)) toggleResolver(pluginId); },
+              showToast,
+              showConfirmDialog
+            };
+            return React.createElement(PluginSettingsPanel, { key: pluginId, resolver: loaded, ctx });
+          })(),
 
           // Username + password credentials (Subsonic). Not an API key: no
           // "get a key" link, and the pair is rendered together rather than

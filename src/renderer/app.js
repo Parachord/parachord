@@ -37552,7 +37552,7 @@ useEffect(() => {
   // Stable function props for the memo'd PluginSettingsDialog (keys must
   // match PLUGIN_SETTINGS_DIALOG_HANDLERS in plugin-settings-dialog.js).
   const pluginSettingsDialogHandlers = useStableHandlers({
-    connectAppleMusic, connectLastfm, connectListenbrainz, connectSoundcloud, connectSpotify, disconnectAppleMusic, disconnectLastfm, disconnectListenbrainz, disconnectSoundcloud, disconnectSpotify, fetchDynamicModels, getServiceColor, handleAddWatchFolder, handleInstallFromMarketplace, handleRemoveMissingFiles, handleRemoveWatchFolder, handleRescanAll, handleRescanFolder, handleUninstallResolver, manageAmazonMusic, openSyncSetupModal, refreshPluginStatus, saveAppleMusicDeveloperToken, saveMetaServiceConfig, saveSoundcloudCredentials, saveSpotifyCredentials, setProviderSyncEnabled, setResolverMetadataOn, setResolverPlaybackOn, setResolverRecommendationsOn, toggleResolver,
+    clearMetaServiceConfig, connectAppleMusic, connectLastfm, connectListenbrainz, connectSoundcloud, connectSpotify, disconnectAppleMusic, disconnectLastfm, disconnectListenbrainz, disconnectSoundcloud, disconnectSpotify, fetchDynamicModels, getServiceColor, handleAddWatchFolder, handleInstallFromMarketplace, handleRemoveMissingFiles, handleRemoveWatchFolder, handleRescanAll, handleRescanFolder, handleUninstallResolver, manageAmazonMusic, openSyncSetupModal, refreshPluginStatus, saveAppleMusicDeveloperToken, saveMetaServiceConfig, saveSoundcloudCredentials, saveSpotifyCredentials, setProviderSyncEnabled, setResolverMetadataOn, setResolverPlaybackOn, setResolverRecommendationsOn, showConfirmDialog, toggleResolver,
   });
 
   // Stable function props for the memo'd ChartsPage (keys must
@@ -38361,6 +38361,7 @@ useEffect(() => {
       recommendationsOffResolvers,
       metadataOffResolvers,
       resolverConfigCache,
+      resolverLoaderRef,
       resolverSyncSettings,
       syncSignedOut: syncSignedOutView,
       runLoveBackfill,

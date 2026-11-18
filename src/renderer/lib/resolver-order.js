@@ -6,7 +6,7 @@
 
 // Canonical priority order for content resolvers (determines insertion position when enabling)
 
-const CANONICAL_RESOLVER_ORDER = ['spotify', 'applemusic', 'amazonmusic', 'bandcamp', 'soundcloud', 'localfiles', 'subsonic', 'youtube'];
+const CANONICAL_RESOLVER_ORDER = ['spotify', 'applemusic', 'amazonmusic', 'bandcamp', 'soundcloud', 'localfiles', 'subsonic', 'plex', 'youtube'];
 
 // Append an id to a resolver list unless it is already there. The plugin
 // order and the active list are rendered keyed by id, and a reinstall used to
