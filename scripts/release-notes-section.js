@@ -2,11 +2,13 @@
 // scripts/release-notes-section.js vX.Y.Z: print one version's section of
 // RELEASE_NOTES.md, ready to be a GitHub release's body.
 //
-// The tag's Build publishes the GitHub release with an auto-generated list of
-// PRs as its body. The app's What's New reads the GitHub release body first
-// (parseHighlights in main.js: each `##` section's first bullet) and falls back
-// to the bundled RELEASE_NOTES.md only when that fails, so after every release
-// the body is replaced with this section (CLAUDE.md "Releasing"):
+// The app's What's New reads the GitHub release body first (parseHighlights
+// in main.js: each `##` section's first bullet) and falls back to the bundled
+// RELEASE_NOTES.md only when that fails. The tag's Build runs this script and
+// publishes the release with its output as the body (the `release` job in
+// .github/workflows/build.yml, #1542). When a tag had no section, the release
+// gets GitHub's generated list of PRs; fix it once the section is added
+// (CLAUDE.md "Releasing"):
 //
 //   node scripts/release-notes-section.js v0.9.13 | gh release edit v0.9.13 --notes-file -
 //

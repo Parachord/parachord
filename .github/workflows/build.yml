@@ -390,11 +390,46 @@ jobs:
             cp $MAC_FILES artifacts/latest-mac.yml
           fi
 
+      # The release's body is this version's RELEASE_NOTES.md section (#1542).
+      # The app's What's New reads the GitHub release body first
+      # (parseHighlights in main.js), so GitHub's generated list of PRs showed
+      # there until someone replaced the body by hand. Checked out into its own
+      # folder: actions/checkout empties a directory that isn't a repo, and the
+      # workspace already holds the downloaded artifacts.
+      - name: Check out the release notes
+        uses: actions/checkout@v6
+        with:
+          path: release-notes
+          sparse-checkout: |
+            RELEASE_NOTES.md
+            scripts/release-notes-section.js
+          sparse-checkout-cone-mode: false
+
+      # A tag pushed without its notes still publishes, with GitHub's
+      # generated notes, and a warning says so (with the command that fixes
+      # the body afterwards).
+      - name: Write the release body
+        id: notes
+        shell: bash
+        run: |
+          if node release-notes/scripts/release-notes-section.js "$GITHUB_REF_NAME" > release-body.md; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "Release body: the $GITHUB_REF_NAME section of RELEASE_NOTES.md ($(wc -l < release-body.md) lines)"
+          else
+            : > release-body.md
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=Release notes missing::RELEASE_NOTES.md has no '# Parachord $GITHUB_REF_NAME' section, so the release uses GitHub's generated notes and What's New shows a PR list. Add the section, then: node scripts/release-notes-section.js $GITHUB_REF_NAME | gh release edit $GITHUB_REF_NAME --notes-file -"
+          fi
+
+      # body_path is the section; when there's none the file is empty and
+      # GitHub's generated notes fill the body instead (the action puts a
+      # body before generated notes, so an empty one adds nothing).
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           files: artifacts/*
           draft: false
-          generate_release_notes: true
+          body_path: release-body.md
+          generate_release_notes: ${{ steps.notes.outputs.found != 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
